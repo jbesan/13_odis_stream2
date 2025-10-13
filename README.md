@@ -12,7 +12,7 @@ Il s'inscrit en complément du projet principal [13_odis](https://github.com/dat
 
 L'innovation de ce prototype est de renverser la logique : au lieu de partir d'un lieu, **on part des besoins et du projet de vie de la personne**. Le persona principal est le travailleur social qui, à travers cet outil, peut identifier les territoires les plus prometteurs pour la réussite d'un projet d'intégration.
 
-![Comparaison Stream 1 vs Stream 2](Screenshot-3.png)
+![Comparaison Stream 1 vs Stream 2](./images/Screenshot-3.png)
 
 Ce prototype a un triple objectif :
 1.  **Valider la pertinence de l'approche** auprès des futurs utilisateurs (travailleurs sociaux, accompagnants).
@@ -33,7 +33,7 @@ Ce prototype a un triple objectif :
 
 | Page des résultats | Vue détaillée d'un résultat |
 | :---: | :---: |
-| ![Screenshot Page résultats](Screenshot-1.png) | ![Screenshot détail d'un résultat](Screenshot-2.png) |
+| ![./images/Screenshot Page résultats](./images/Screenshot-1.png) | ![./images/Screenshot détail d'un résultat](./images/Screenshot-2.png) |
 
 ## 🚀 Installation et Lancement
 
@@ -73,7 +73,7 @@ Le cœur de l'application est un pipeline de scoring qui évalue les communes en
 4.  **Agrégation par Catégorie :** Les scores des critères individuels sont ensuite moyennés pour former des scores de catégories (Emploi, Logement, Éducation, etc.).
 5.  **Score Pondéré Final :** Enfin, un `weighted_score` global est calculé pour chaque commune ou binôme en appliquant les poids définis par l'utilisateur. Les résultats sont ensuite classés selon ce score final.
 
-![Explication de la logique de scoring](Screenshot-4.png)
+![Explication de la logique de scoring](./images/Screenshot-4.png)
 
 ## 🛠️ Stack Technique
 

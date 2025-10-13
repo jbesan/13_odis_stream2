@@ -180,7 +180,7 @@ demo_data = load_demo_data(copy.deepcopy(cfg.DEMO_DATA_DEFAULT))
 
 # Sidebar
 with st.sidebar:
-    st.image('logo-jaccueille-singa.png', width=None)
+    st.image('./images/logo-jaccueille-singa.png', width=None)
     ui.display_sidebar(demo_data)
 
 #Top filter Form
