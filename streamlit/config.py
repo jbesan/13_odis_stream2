@@ -1,17 +1,31 @@
 # /home/jacques/odis/13_odis/eda/streamlit/config.py
 from dataclasses import dataclass, field
 from typing import List, Dict, Any
+import os
+
+GCS_BUCKET_PATH = 'gs://odis-stream2-eu/'
+LOCAL_CSV_PATH = '../csv/'
+
+def get_data_path():
+    """
+    Returns the appropriate data path based on the environment.
+    Checks for the K_SERVICE environment variable to detect Cloud Run.
+    """
+    if 'K_SERVICE' in os.environ:
+        return GCS_BUCKET_PATH
+    else:
+        return LOCAL_CSV_PATH
 
 # --- File Paths ---
-ODIS_FILE = '../csv/odis_june_2025_jacques.parquet'
-SCORES_CAT_FILE = '../csv/odis_scores_cat.csv'
-METIERS_FILE = '../csv/dares_nomenclature_fap2021.csv'
-FORMATIONS_FILE = '../csv/index_formations.csv'
-ECOLES_FILE = '../csv/annuaire_ecoles_france_mini.parquet'
-MATERNITE_FILE = '../csv/annuaire_maternites_DREES.csv'
-SANTE_FILE = '../csv/annuaire_sante_finess.parquet'
-INCLUSION_FILE = '../csv/odis_services_incl_exploded.parquet'
-SNCF_FILE = '../csv/formes-des-lignes-du-rfn.geojson'
+ODIS_FILE = 'odis_june_2025_jacques.parquet'
+SCORES_CAT_FILE = 'odis_scores_cat.csv'
+METIERS_FILE = 'dares_nomenclature_fap2021.csv'
+FORMATIONS_FILE = 'index_formations.csv'
+ECOLES_FILE = 'annuaire_ecoles_france_mini.parquet'
+MATERNITE_FILE = 'annuaire_maternites_DREES.csv'
+SANTE_FILE = 'annuaire_sante_finess.parquet'
+INCLUSION_FILE = 'odis_services_incl_exploded.parquet'
+SNCF_FILE = 'formes-des-lignes-du-rfn.geojson'
 
 # --- Map Defaults ---
 DEFAULT_MAP_CENTER = [46.603354, 1.888334] # Center of France

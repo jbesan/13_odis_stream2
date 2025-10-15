@@ -8,7 +8,9 @@ import geopandas as gpd
 import shapely as shp
 from sklearn import preprocessing
 
-from config import ScoringConfig
+import gcsfs
+from google.cloud import storage
+from config import ScoringConfig, get_data_path
 
 # --- Constants ---
 PROJECTED_CRS = "EPSG:2154"  # RGF93 / Lambert-93, suitable for metropolitan France
@@ -16,39 +18,45 @@ PROJECTED_CRS = "EPSG:2154"  # RGF93 / Lambert-93, suitable for metropolitan Fra
 
 # --- Data Loading Functions ---
 
-def load_all_datasets(odis_file: str, scores_cat_file: str, metiers_file: str, formations_file: str, ecoles_file: str, maternites_file: str, sante_file: str, inclusion_file: str, sncf_file: str) -> tuple:
+def load_all_datasets(odis_file: str, scores_cat_file: str, metiers_file: str, formations_file: str, ecoles_file: str, maternites_file: str, sante_file: str, inclusion_file: str) -> tuple:
     """
     Loads all necessary datasets from specified file paths.
     This function acts as a facade, calling specific loading functions for each dataset.
     """
-    odis = gpd.GeoDataFrame(gpd.read_parquet(odis_file))
-    odis.set_geometry(odis.polygon, inplace=True)
+    base_path = get_data_path()
+
+    odis = pd.read_parquet(base_path + odis_file)
+    odis['polygon'] = odis.polygon.apply(shp.from_wkb)
+    odis = gpd.GeoDataFrame(odis, geometry='polygon', crs='EPSG:4326')
+    odis.set_geometry('polygon', inplace=True)
     odis.polygon.set_precision(10**-5)
     odis = odis[~odis.polygon.isna()]
     odis.set_index('codgeo', inplace=True)
 
     # Index of all scores and their explanations
-    scores_cat = pd.read_csv(scores_cat_file, dtype={'score': str, 'metric': str})
+    scores_cat = pd.read_csv(base_path + scores_cat_file, dtype={'score': str, 'metric': str})
 
     #Later we need the code FAP <-> FAP Name used to classify jobs
-    codfap_index = pd.read_csv(metiers_file, delimiter=';')
+    codfap_index = pd.read_csv(base_path + metiers_file, delimiter=';')
 
     # Later we need the code formation <-> Formation Name used to classify trainings
     # source: https://www.data.gouv.fr/fr/datasets/liste-publique-des-organismes-de-formation-l-6351-7-1-du-code-du-travail/
-    codformations_index = pd.read_csv(formations_file, dtype={'codformation': str}).set_index('codformation')
+    codformations_index = pd.read_csv(base_path + formations_file, dtype={'codformation': str}).set_index('codformation')
 
     # Etablissements scolaires
-    annuaire_ecoles = pd.read_parquet(ecoles_file)
+    annuaire_ecoles = pd.read_parquet(base_path + ecoles_file)
     annuaire_ecoles.geometry = annuaire_ecoles.geometry.apply(shp.from_wkb)
+    annuaire_ecoles = gpd.GeoDataFrame(annuaire_ecoles, geometry='geometry', crs='EPSG:4326')
 
     #Annuaire Maternités
-    annuaire_maternites = pd.read_csv(maternites_file, delimiter=';')
+    annuaire_maternites = pd.read_csv(base_path + maternites_file, delimiter=';')
     annuaire_maternites.drop_duplicates(subset=['FI_ET'], keep='last', inplace=True)
 
     # Annuaire etablissements santé
-    annuaire_sante = pd.read_parquet(sante_file)
+    annuaire_sante = pd.read_parquet(base_path + sante_file)
     annuaire_sante = annuaire_sante[annuaire_sante.LibelleSph == 'Etablissement public de santé']
     annuaire_sante['geometry'] = gpd.points_from_xy(annuaire_sante.coordxet, annuaire_sante.coordyet, crs=PROJECTED_CRS)
+    annuaire_sante = gpd.GeoDataFrame(annuaire_sante, geometry='geometry')
     annuaire_sante = pd.merge(annuaire_sante, annuaire_maternites[['FI_ET']], left_on='nofinesset', right_on='FI_ET', how='left', indicator="maternite")
     annuaire_sante.drop(columns=['FI_ET'], inplace=True)
     annuaire_sante.maternite = np.where(annuaire_sante.maternite == 'both', True, False)
@@ -56,16 +64,14 @@ def load_all_datasets(odis_file: str, scores_cat_file: str, metiers_file: str, f
 
     # Annuaire des services d'inclusion
     # Pre-process inclusion data for faster lookup
-    annuaire_inclusion = gpd.read_parquet(inclusion_file)
+    annuaire_inclusion = pd.read_parquet(base_path + inclusion_file)
+    annuaire_inclusion.geometry = annuaire_inclusion.geometry.apply(shp.from_wkb)
+    annuaire_inclusion = gpd.GeoDataFrame(annuaire_inclusion, geometry='geometry', crs='EPSG:4326')
     incl_index = annuaire_inclusion[['codgeo', 'categorie', 'service']].drop_duplicates()
     incl_index['key'] = incl_index.categorie+'_'+incl_index.service
     incl_index = incl_index.groupby('codgeo').agg({'key': lambda x: set(x)})
 
-    # Carte des voies SNCF / RFF
-    plan_sncf = gpd.read_file(sncf_file)
-    plan_sncf = plan_sncf[plan_sncf.libelle == 'Exploitée'].to_crs(crs=PROJECTED_CRS)
-
-    return odis, scores_cat, codfap_index, codformations_index, annuaire_ecoles, annuaire_sante, annuaire_inclusion, incl_index, plan_sncf
+    return odis, scores_cat, codfap_index, codformations_index, annuaire_ecoles, annuaire_sante, annuaire_inclusion, incl_index
 
 # --- Scoring Pipeline Functions ---
 

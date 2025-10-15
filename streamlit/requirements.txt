@@ -1,0 +1,12 @@
+streamlit
+pandas
+numpy
+geopandas
+shapely
+scikit-learn
+folium
+branca
+streamlit-folium
+plotly
+gcsfs
+google-cloud-storage

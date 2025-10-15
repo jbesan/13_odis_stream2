@@ -29,4 +29,4 @@ primaryColor="rgb(255, 208, 0)"
 toolbarMode = "minimal"
 
 [ui]
-hideTopBar = true
+hideTopBar = false

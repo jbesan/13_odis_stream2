@@ -87,7 +87,7 @@ def session_states_init(defaults):
 def init_datasets():
     """Loads all datasets and returns them in a structured dictionary."""
     print("--- Loading all datasets... ---")
-    odis, scores_cat, codfap_index, codformations_index, annuaire_ecoles, annuaire_sante, annuaire_inclusion, incl_index, plan_sncf = load_all_datasets(
+    odis, scores_cat, codfap_index, codformations_index, annuaire_ecoles, annuaire_sante, annuaire_inclusion, incl_index = load_all_datasets(
         cfg.ODIS_FILE,
         cfg.SCORES_CAT_FILE,
         cfg.METIERS_FILE,
@@ -95,8 +95,7 @@ def init_datasets():
         cfg.ECOLES_FILE,
         cfg.MATERNITE_FILE,
         cfg.SANTE_FILE,
-        cfg.INCLUSION_FILE,
-        cfg.SNCF_FILE
+        cfg.INCLUSION_FILE
         )
     return {
         "odis": odis,
@@ -107,7 +106,6 @@ def init_datasets():
         "annuaire_sante": annuaire_sante,
         "annuaire_inclusion": annuaire_inclusion,
         "incl_index": incl_index,
-        "plan_sncf": plan_sncf,
         "coddep_set": sorted(set(odis['dep_code'])),
         "depcom_df": odis[['dep_code','libgeo']].sort_values('libgeo'),
     }
@@ -180,7 +178,7 @@ demo_data = load_demo_data(copy.deepcopy(cfg.DEMO_DATA_DEFAULT))
 
 # Sidebar
 with st.sidebar:
-    st.image('./images/logo-jaccueille-singa.png', width=None)
+    st.image('./images/logo-jaccueille-singa.png', width=150)
     ui.display_sidebar(demo_data)
 
 #Top filter Form

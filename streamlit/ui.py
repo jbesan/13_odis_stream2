@@ -12,31 +12,31 @@ def display_sidebar(demo_data: dict):
     
     # --- Location ---
     app_data = st.session_state.app_data
-    dep_index = app_data['coddep_set'].index(demo_data.get('departement_actuel', '33'))
-    departement_actuel = st.selectbox("Département", app_data['coddep_set'], index=dep_index, key="ui_departement")
+    departement_actuel = st.selectbox("Département", app_data['coddep_set'], key="ui_departement")
     
     communes = app_data['depcom_df'][app_data['depcom_df'].dep_code == departement_actuel]['libgeo']
     communes.reset_index(drop=True, inplace=True)
-    try:
-        com_index = int(communes[communes == demo_data.get('commune_actuelle')].index[0])
-    except (IndexError, TypeError):
-        com_index = 0
-    st.selectbox("Commune", communes, index=com_index, key="ui_commune")
+    
+    # If the commune from session state is not in the list of communes for the selected departement, reset it.
+    if st.session_state.ui_commune not in communes.tolist():
+        st.session_state.ui_commune = communes[0]
+
+    commune = st.selectbox("Commune", communes, key="ui_commune")
 
     # --- Weights ---
     st.divider()
     with st.expander('Pondérations des critères', expanded=False):
-        st.select_slider("Education", [0, 25, 50, 100], value=demo_data.get('poids_education', 100), key="ui_poids_education")
-        st.select_slider("Projet Pro", [0, 25, 50, 100], value=demo_data.get('poids_emploi', 100), key="ui_poids_emploi")
-        st.select_slider("Logement", [0, 25, 50, 100], value=demo_data.get('poids_logement', 100), key="ui_poids_logement")
-        st.select_slider("Inclusion", [0, 25, 50, 100], value=demo_data.get('poids_inclusion', 25), key="ui_poids_inclusion")
-        st.select_slider("Mobilité", [0, 25, 50, 100], value=demo_data.get('poids_mobilité', 100), key="ui_poids_mobilité")
+        st.select_slider("Education", [0, 25, 50, 100], key="ui_poids_education")
+        st.select_slider("Projet Pro", [0, 25, 50, 100], key="ui_poids_emploi")
+        st.select_slider("Logement", [0, 25, 50, 100], key="ui_poids_logement")
+        st.select_slider("Inclusion", [0, 25, 50, 100], key="ui_poids_inclusion")
+        st.select_slider("Mobilité", [0, 25, 50, 100], key="ui_poids_mobilité")
 
     # --- Technical Params ---
     
     with st.expander('Paramètres avancés'):
-        st.select_slider("Décote binôme %", [1, 10, 25, 50, 100], value=int(demo_data.get('binome_penalty', 0.5)*100), key="ui_penalite_binome")
-        st.select_slider("Population Minimum", [0, 500, 1000, 5000, 10000], value=demo_data.get('pop_min', 1000), key="ui_pop_min")
+        st.select_slider("Décote binôme %", [1, 10, 25, 50, 100], key="ui_penalite_binome")
+        st.select_slider("Population Minimum", [0, 500, 1000, 5000, 10000], key="ui_pop_min")
 
 def display_main_header(name: str):
     """Displays the main header of the input section."""
@@ -56,9 +56,9 @@ def display_input_tabs(demo_data: dict):
     with tab_foyer:
         col1, col2 = st.columns(2)
         with col1:
-            st.radio("Nombre d'adultes", [1, 2], index=demo_data.get('nb_adultes', 1) - 1, horizontal=True, key="ui_nb_adultes")
+            st.radio("Nombre d'adultes", [1, 2], horizontal=True, key="ui_nb_adultes")
         with col2:
-            st.radio("Nombre d'enfants", [0, 1, 2, 3, 4, 5], index=demo_data.get('nb_enfants', 0), horizontal=True, key="ui_nb_enfants")
+            st.radio("Nombre d'enfants", [0, 1, 2, 3, 4, 5], horizontal=True, key="ui_nb_enfants")
 
     with tab_edu:
         if st.session_state.ui_nb_enfants == 0:
@@ -68,13 +68,8 @@ def display_input_tabs(demo_data: dict):
             liste_classes = ['Maternelle', 'Elémentaire', 'Collège', 'Lycée']
             for i in range(st.session_state.ui_nb_enfants):
                 col = col1 if i % 2 == 0 else col2
-                default = demo_data.get('classe_enfants', [])
-                try:
-                    default_index = liste_classes.index(default[i])
-                except (IndexError, ValueError):
-                    default_index = 0
                 with col:
-                    st.selectbox(f'Niveau enfant {i+1}', liste_classes, index=default_index, key=f"ui_classe_enfant_{i}")
+                    st.selectbox(f'Niveau enfant {i+1}', liste_classes, key=f"ui_classe_enfant_{i}")
 
     with tab_emploi:
         col1, col2 = st.columns(2)
@@ -83,50 +78,23 @@ def display_input_tabs(demo_data: dict):
         
         for i in range(st.session_state.ui_nb_adultes):
             with col1:
-                default = demo_data.get('codes_metiers', [])
-                try:
-                    default_val = default[i]
-                except (IndexError, TypeError):
-                    default_val = []
-                st.multiselect(f"Métiers ciblés Adulte {i+1}", codfap_select.index, format_func=lambda x: codfap_select.loc[x].item(), default=default_val, key=f"ui_metiers_adult_{i}")
+                st.multiselect(f"Métiers ciblés Adulte {i+1}", codfap_select.index, format_func=lambda x: codfap_select.loc[x].item(), key=f"ui_metiers_adult_{i}")
             with col2:
-                default = demo_data.get('codes_formations', [])
-                try:
-                    default_val = default[i]
-                except (IndexError, TypeError):
-                    default_val = []
-                st.multiselect(f"Formations recherchées Adulte {i+1}", codform_select.index, format_func=lambda x: codform_select.loc[x].item(), default=default_val, key=f"ui_formations_adult_{i}")
+                st.multiselect(f"Formations recherchées Adulte {i+1}", codform_select.index, format_func=lambda x: codform_select.loc[x].item(), key=f"ui_formations_adult_{i}")
 
     with tab_mobilite:
         options = {25: 'Important (~25km)', 50: 'Assez important (~50km)', 1000: 'Toute la France'}
-        default_dist = demo_data.get('loc_distance_km', 50)
-        try:
-            dist_index = list(options.keys()).index(default_dist)
-        except ValueError:
-            dist_index = 1
-        st.radio('Attachement au lieu de vie actuel :', options.keys(), format_func=options.get, index=dist_index, key="ui_loc_distance_km")
+        st.radio('Attachement au lieu de vie actuel :', options.keys(), format_func=options.get, key="ui_loc_distance_km")
 
     with tab_logement:
         options_heb = ["Chez l'habitant", 'Location', 'Foyer']
         options_log = ['Location', 'Logement Social']
-        try:
-            heb_index = options_heb.index(demo_data.get('hebergement'))
-        except (ValueError, TypeError):
-            heb_index = 1
-        try:
-            log_index = options_log.index(demo_data.get('logement'))
-        except (ValueError, TypeError):
-            log_index = 0
-        st.radio('Hébergement à court terme', options_heb, index=heb_index, key="ui_hebergement")
-        st.radio('Logement à long terme', options_log, index=log_index, key="ui_logement")
+        st.radio('Hébergement à court terme', options_heb, key="ui_hebergement")
+        st.radio('Logement à long terme', options_log, key="ui_logement")
 
     with tab_sante:
         options = ["Aucun", "Hopital", 'Maternité', "Soutien Psychologique & Addictologie"]
-        try:
-            index = options.index(demo_data.get('sante'))
-        except (ValueError, TypeError):
-            index = 0
-        st.radio('Support médical à proximité', options, index=index, key="ui_besoin_sante")
+        st.radio('Support médical à proximité', options, key="ui_besoin_sante")
 
     with tab_autres:
         if 'ui_besoins_autres' not in st.session_state:

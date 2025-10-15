@@ -1,0 +1,20 @@
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['build', '-t', 'europe-west1-docker.pkg.dev/odis-stream2/odis-stream2-repo/odis-streamlit-app', '-f', 'streamlit/Dockerfile', '.']
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['push', 'europe-west1-docker.pkg.dev/odis-stream2/odis-stream2-repo/odis-streamlit-app']
+- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  entrypoint: gcloud
+  args:
+  - 'run'
+  - 'deploy'
+  - 'odis-streamlit-app'
+  - '--image'
+  - 'europe-west1-docker.pkg.dev/odis-stream2/odis-stream2-repo/odis-streamlit-app'
+  - '--region'
+  - 'europe-west1'
+  - '--platform'
+  - 'managed'
+  - '--allow-unauthenticated'
+images:
+- 'europe-west1-docker.pkg.dev/odis-stream2/odis-stream2-repo/odis-streamlit-app'

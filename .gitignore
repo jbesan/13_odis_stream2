@@ -1,3 +1,4 @@
+__pycache__
 csv_large/
 csv_not_used/
 streamlit/__pycache__h
@@ -5,3 +6,4 @@ streamlit/__pycache__
 streamlit/cached_df
 streamlit/cached_df.parquet
 streamlit/cached_df.csv
+.venv/
