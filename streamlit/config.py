@@ -27,6 +27,21 @@ SANTE_FILE = 'annuaire_sante_finess.parquet'
 INCLUSION_FILE = 'odis_services_incl_exploded.parquet'
 SNCF_FILE = 'formes-des-lignes-du-rfn.geojson'
 
+# --- UI Options ---
+
+NOMBRE_ADULTES_OPTIONS = [1, 2]
+NOMBRE_ENFANTS_OPTIONS = [0, 1, 2, 3, 4, 5]
+CLASSES_SCOLAIRES = ['Maternelle', 'Elémentaire', 'Collège', 'Lycée']
+LOC_DISTANCE_OPTIONS = {25: 'Important (~25km)', 50: 'Assez important (~50km)', 1000: 'Toute la France'}
+HEBERGEMENT_OPTIONS = ["Chez l'habitant", 'Location', 'Foyer']
+LOGEMENT_OPTIONS = ['Location', 'Logement Social']
+SANTE_OPTIONS = ["Aucun", "Hopital", 'Maternité', "Soutien Psychologique & Addictologie"]
+MOBILITE_OPTIONS = {25: 'Important (~25km)', 50: 'Assez important (~50km)', 1000: 'Toute la France'}
+POIDS_OPTIONS = [0, 25, 50, 100]
+PENALITE_BINOME_OPTIONS = [1, 10, 25, 50, 100]
+POP_MIN_OPTIONS = [0, 500, 1000, 5000, 10000]
+DEFAULT_DEPARTEMENT_INDEX = 33
+
 # --- Map Defaults ---
 DEFAULT_MAP_CENTER = [46.603354, 1.888334] # Center of France
 

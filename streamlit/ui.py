@@ -8,35 +8,21 @@ import maps
 
 def display_sidebar(demo_data: dict):
     """Displays the sidebar with location and weight controls."""
-    st.subheader('Localisation Actuelle')
     
-    # --- Location ---
-    app_data = st.session_state.app_data
-    departement_actuel = st.selectbox("Département", app_data['coddep_set'], key="ui_departement")
-    
-    communes = app_data['depcom_df'][app_data['depcom_df'].dep_code == departement_actuel]['libgeo']
-    communes.reset_index(drop=True, inplace=True)
-    
-    # If the commune from session state is not in the list of communes for the selected departement, reset it.
-    if st.session_state.ui_commune not in communes.tolist():
-        st.session_state.ui_commune = communes[0]
-
-    commune = st.selectbox("Commune", communes, key="ui_commune")
-
     # --- Weights ---
     st.divider()
     with st.expander('Pondérations des critères', expanded=False):
-        st.select_slider("Education", [0, 25, 50, 100], key="ui_poids_education")
-        st.select_slider("Projet Pro", [0, 25, 50, 100], key="ui_poids_emploi")
-        st.select_slider("Logement", [0, 25, 50, 100], key="ui_poids_logement")
-        st.select_slider("Inclusion", [0, 25, 50, 100], key="ui_poids_inclusion")
-        st.select_slider("Mobilité", [0, 25, 50, 100], key="ui_poids_mobilité")
+        st.select_slider("Education", cfg.POIDS_OPTIONS, key="ui_poids_education")
+        st.select_slider("Projet Pro", cfg.POIDS_OPTIONS, key="ui_poids_emploi")
+        st.select_slider("Logement", cfg.POIDS_OPTIONS, key="ui_poids_logement")
+        st.select_slider("Inclusion", cfg.POIDS_OPTIONS, key="ui_poids_inclusion")
+        st.select_slider("Mobilité", cfg.POIDS_OPTIONS, key="ui_poids_mobilité")
 
     # --- Technical Params ---
     
     with st.expander('Paramètres avancés'):
-        st.select_slider("Décote binôme %", [1, 10, 25, 50, 100], key="ui_penalite_binome")
-        st.select_slider("Population Minimum", [0, 500, 1000, 5000, 10000], key="ui_pop_min")
+        st.select_slider("Décote binôme %", cfg.PENALITE_BINOME_OPTIONS, key="ui_penalite_binome")
+        st.select_slider("Population Minimum", cfg.POP_MIN_OPTIONS, key="ui_pop_min")
 
 def display_main_header(name: str):
     """Displays the main header of the input section."""
@@ -44,32 +30,44 @@ def display_main_header(name: str):
         st.subheader(f"Projet de vie de {name}")
     else:
         st.subheader(f"Projet de vie")
-
+        
 def display_input_tabs(demo_data: dict):
     """Displays the main tabs for user input."""
     app_data = st.session_state.app_data
     
-    tab_foyer, tab_edu, tab_emploi, tab_logement, tab_sante, tab_autres, tab_mobilite = st.tabs([
-        'Situation familiale', 'Education', 'Projet Professionnel', 'Logement', 'Santé', 'Autres Besoins', 'Mobilité'
+    tab_localisation, tab_foyer, tab_edu, tab_emploi, tab_logement, tab_sante, tab_autres, tab_mobilite = st.tabs([
+        'Localisation Actuelle', 'Situation familiale', 'Education', 'Projet Professionnel', 'Logement', 'Santé', 'Autres Besoins', 'Mobilité'
     ])
+    with tab_localisation:
+        app_data = st.session_state.app_data
+        departement_actuel = st.selectbox("Département", app_data['coddep_set'], key="ui_departement")
+        
+        communes = app_data['depcom_df'][app_data['depcom_df'].dep_code == departement_actuel]['libgeo']
+        communes.reset_index(drop=True, inplace=True)
+        
+        # If the commune from session state is not in the list of communes for the selected departement, reset it.
+        if st.session_state.ui_commune not in communes.tolist():
+            st.session_state.ui_commune = communes[0]
+
+        commune = st.selectbox("Commune", communes, key="ui_commune")
+
 
     with tab_foyer:
         col1, col2 = st.columns(2)
         with col1:
-            st.radio("Nombre d'adultes", [1, 2], horizontal=True, key="ui_nb_adultes")
+            st.radio("Nombre d'adultes", cfg.NOMBRE_ADULTES_OPTIONS, horizontal=True, key="ui_nb_adultes")
         with col2:
-            st.radio("Nombre d'enfants", [0, 1, 2, 3, 4, 5], horizontal=True, key="ui_nb_enfants")
+            st.radio("Nombre d'enfants", cfg.NOMBRE_ENFANTS_OPTIONS, horizontal=True, key="ui_nb_enfants")
 
     with tab_edu:
         if st.session_state.ui_nb_enfants == 0:
             st.info("Aucun enfant n'a été ajouté dans l'onglet 'Situation familiale'.")
         else:
             col1, col2 = st.columns(2)
-            liste_classes = ['Maternelle', 'Elémentaire', 'Collège', 'Lycée']
             for i in range(st.session_state.ui_nb_enfants):
                 col = col1 if i % 2 == 0 else col2
                 with col:
-                    st.selectbox(f'Niveau enfant {i+1}', liste_classes, key=f"ui_classe_enfant_{i}")
+                    st.selectbox(f'Niveau enfant {i+1}', cfg.CLASSES_SCOLAIRES, key=f"ui_classe_enfant_{i}")
 
     with tab_emploi:
         col1, col2 = st.columns(2)
@@ -78,19 +76,16 @@ def display_input_tabs(demo_data: dict):
         
         for i in range(st.session_state.ui_nb_adultes):
             with col1:
-                st.multiselect(f"Métiers ciblés Adulte {i+1}", codfap_select.index, format_func=lambda x: codfap_select.loc[x].item(), key=f"ui_metiers_adult_{i}")
+                st.multiselect(f"Métiers ciblés Adulte {i+1}", codfap_select.index, format_func=lambda x: codfap_select.loc[x, 'Intitulé FAP 341'], key=f"ui_metiers_adult_{i}")
             with col2:
-                st.multiselect(f"Formations recherchées Adulte {i+1}", codform_select.index, format_func=lambda x: codform_select.loc[x].item(), key=f"ui_formations_adult_{i}")
+                st.multiselect(f"Formations recherchées Adulte {i+1}", codform_select.index, format_func=lambda x: codform_select.loc[x, 'libformation'], key=f"ui_formations_adult_{i}")
 
     with tab_mobilite:
-        options = {25: 'Important (~25km)', 50: 'Assez important (~50km)', 1000: 'Toute la France'}
-        st.radio('Attachement au lieu de vie actuel :', options.keys(), format_func=options.get, key="ui_loc_distance_km")
+        st.radio('Attachement au lieu de vie actuel :', cfg.LOC_DISTANCE_OPTIONS.keys(), format_func=cfg.LOC_DISTANCE_OPTIONS.get, key="ui_loc_distance_km")
 
     with tab_logement:
-        options_heb = ["Chez l'habitant", 'Location', 'Foyer']
-        options_log = ['Location', 'Logement Social']
-        st.radio('Hébergement à court terme', options_heb, key="ui_hebergement")
-        st.radio('Logement à long terme', options_log, key="ui_logement")
+        st.radio('Hébergement à court terme', cfg.HEBERGEMENT_OPTIONS, key="ui_hebergement")
+        st.radio('Logement à long terme', cfg.LOGEMENT_OPTIONS, key="ui_logement")
 
     with tab_sante:
         options = ["Aucun", "Hopital", 'Maternité', "Soutien Psychologique & Addictologie"]
@@ -98,7 +93,7 @@ def display_input_tabs(demo_data: dict):
 
     with tab_autres:
         if 'ui_besoins_autres' not in st.session_state:
-            st.session_state.ui_besoins_autres = demo_data.get('besoins_autres', {})
+            st.session_state.ui_besoins_autres = st.session_state['demo_data'].get('besoins_autres', {})
 
         st.text("Sélectionnez d'autres besoins:")
         col1, col2 = st.columns(2)
@@ -130,7 +125,7 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
     commune_codgeo = app_data['depcom_df'][
         (app_data['depcom_df'].dep_code == st.session_state.ui_departement) & 
         (app_data['depcom_df'].libgeo == st.session_state.ui_commune)
-    ].index.item()
+    ].index[0]
 
     # Education
     classe_enfants = [st.session_state[f"ui_classe_enfant_{i}"] for i in range(st.session_state.ui_nb_enfants)]

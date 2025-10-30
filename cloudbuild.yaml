@@ -18,3 +18,6 @@ steps:
   - '--allow-unauthenticated'
 images:
 - 'europe-west1-docker.pkg.dev/odis-stream2/odis-stream2-repo/odis-streamlit-app'
+
+# Jacques note: To re-deploy use
+# gcloud builds submit --config cloudbuild.yaml .
