@@ -1,4 +1,3 @@
-
 import streamlit as st
 from scoring import compute_odis_score
 import config as cfg
@@ -41,6 +40,11 @@ def run_search():
     st.session_state['zoom'] = maps.get_map_zoom(config.loc_distance_km)
     st.session_state['fg_dict_ref'] = {}
     st.session_state['highlighted_result'] = [False, None]
+
+# Automatically run the search if not already processed and form is completed
+if st.session_state.get('processed_gdf') is None and st.session_state.get('form_completed'):
+    run_search()
+    st.session_state['form_completed'] = False
 
 # Sidebar
 with st.sidebar:

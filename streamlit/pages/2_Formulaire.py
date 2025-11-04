@@ -43,8 +43,7 @@ def display_localisation_actuelle_page():
     with col1:
         # Using explicit index to set default value, as confirmed by user test
         departements = app_data['coddep_set']
-        dep_index = departements.index(st.session_state.ui_departement) if st.session_state.get('ui_departement') in departements else 0
-        st.selectbox("Département", departements, index=dep_index, key="ui_departement")
+        st.selectbox("Département", departements, index=departements.index(st.session_state.ui_departement) if st.session_state.ui_departement in departements else 0, key="ui_departement")
 
     with col2:  
         communes = app_data['depcom_df'][app_data['depcom_df'].dep_code == st.session_state.ui_departement]['libgeo']
@@ -52,9 +51,7 @@ def display_localisation_actuelle_page():
         
         if st.session_state.get('ui_commune') not in communes_list:
             st.session_state.ui_commune = communes_list[0] if communes_list else None
-        
-        com_index = communes_list.index(st.session_state.ui_commune) if st.session_state.get('ui_commune') in communes_list else 0
-        st.selectbox("Commune", communes_list, index=com_index, key="ui_commune")
+        st.selectbox("Commune", communes_list, index=communes_list.index(st.session_state.ui_commune) if st.session_state.ui_commune in communes_list else 0, key="ui_commune")
 
 def display_family_situation_page():
     st.subheader("Composition du foyer")
@@ -192,4 +189,5 @@ with col2:
                 st.rerun()
         else:
             if st.button("Voir les résultats", type="primary"):
+                st.session_state['form_completed'] = True
                 st.switch_page("pages/3_Resultats.py")

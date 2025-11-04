@@ -44,4 +44,4 @@ ENV PATH="/opt/venv/bin:$PATH"
 EXPOSE 8080
 
 # Run the Streamlit app
-CMD ["streamlit", "run", "main.py", "--server.port=8080", "--server.address=0.0.0.0"]
+CMD ["streamlit", "run", "1_Accueil.py", "--server.port=8080", "--server.address=0.0.0.0"]
