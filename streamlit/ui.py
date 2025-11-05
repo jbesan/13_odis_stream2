@@ -24,6 +24,22 @@ def display_sidebar(demo_data: dict):
         st.select_slider("Décote binôme %", cfg.PENALITE_BINOME_OPTIONS, key="ui_penalite_binome")
         st.select_slider("Population Minimum", cfg.POP_MIN_OPTIONS, key="ui_pop_min")
 
+    if st.session_state.get('processed_gdf') is not None:
+        st.sidebar.divider()
+        if st.sidebar.button('Export des résultats', icon=':material/picture_as_pdf:', type='secondary'):
+            st.cache_data.clear()
+    
+        st.markdown("""
+            <style>
+                .st-key-btn_recommencer .stButton p {color: #1B4429;}
+            </style>
+            """
+        , unsafe_allow_html=True)
+        if st.sidebar.button('Recommencer', type='primary', key='btn_recommencer'):
+            st.session_state['processed_gdf'] = None
+            st.session_state['form_completed'] = False
+            st.switch_page("1_Accueil.py")
+
 def display_main_header(name: str):
     """Displays the main header of the input section."""
     if name:
@@ -113,7 +129,7 @@ def display_input_tabs(demo_data: dict):
                     st.markdown(f"**{key.replace('-', ' ').capitalize()}**")
                     for value in values:
                         st.markdown(f"&nbsp;&nbsp;&nbsp;- {value.replace('-', ' ').capitalize()}")
-            if st.button('Vider', use_container_width=True):
+            if st.button('Vider', width='stretch'):
                 st.session_state.ui_besoins_autres = {}
                 st.rerun()
 
@@ -162,7 +178,7 @@ def _result_highlight_callback(index: int):
     # If the same button is clicked again, un-highlight it
     if is_highlighted and index == highlighted_index:
         st.session_state.highlighted_result = [False, None]
-        st.session_state.center = None # Recenter map
+        # st.session_state.center = None # Recenter map
         st.session_state.zoom = None
     else:
         # Highlight the new result
@@ -193,7 +209,7 @@ def display_results_list(name: str):
             title,
             on_click=_result_highlight_callback,
             args=(index,),
-            use_container_width=True,
+            width='stretch',
             key=f'button_top{index+1}',
             type='primary' if is_highlighted and index == highlighted_index else 'secondary'
         )
@@ -214,7 +230,7 @@ def _display_result_details(row: pd.Series):
         fig = line_polar(theta=cat_scores.index, r=cat_scores.values * 100, line_close=True, range_r=[0, 100])
         fig.update_traces(fill='toself')
         fig.update_layout(margin=dict(l=50, r=50, t=50, b=50))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
         st.caption('Plus le critère s’approche du bord, plus il est attractif.')
 
         # --- Additional Info ---

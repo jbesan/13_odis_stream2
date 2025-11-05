@@ -7,3 +7,5 @@ streamlit/cached_df
 streamlit/cached_df.parquet
 streamlit/cached_df.csv
 .venv/
+.DS_Store
+GEMINI.md

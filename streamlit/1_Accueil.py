@@ -1,8 +1,8 @@
 import time
 import copy
 import streamlit as st
-from scoring import load_all_datasets
 import config as cfg
+import data_loader
 
 print(f"--- App re-run at {time.ctime(time.time())} ---")
 
@@ -69,37 +69,12 @@ def session_states_init(defaults):
         if f'ui_classe_enfant_{i}' not in st.session_state:
             st.session_state[f'ui_classe_enfant_{i}'] = 'Maternelle'
 
-@st.cache_resource
-def init_datasets():
-    """Loads all datasets and returns them in a structured dictionary."""
-    print("--- Loading all datasets... ---")
-    odis, scores_cat, codfap_index, codformations_index, annuaire_ecoles, annuaire_sante, annuaire_inclusion, incl_index = load_all_datasets(
-        cfg.ODIS_FILE,
-        cfg.SCORES_CAT_FILE,
-        cfg.METIERS_FILE,
-        cfg.FORMATIONS_FILE,
-        cfg.ECOLES_FILE,
-        cfg.MATERNITE_FILE,
-        cfg.SANTE_FILE,
-        cfg.INCLUSION_FILE
-    )
-    return {
-        "odis": odis,
-        "scores_cat": scores_cat,
-        "codfap_index": codfap_index,
-        "codformations_index": codformations_index,
-        "annuaire_ecoles": annuaire_ecoles,
-        "annuaire_sante": annuaire_sante,
-        "annuaire_inclusion": annuaire_inclusion,
-        "incl_index": incl_index,
-        "coddep_set": sorted(set(odis['dep_code'])),
-        "depcom_df": odis[['dep_code','libgeo']].sort_values('libgeo'),
-    }
+
 
 # Load Demo data
 def load_demo_data(demo_data):
-    print("session_states_init")
-    """Loads demo data if a 'demo' query parameter is present in the URL."""
+    # print("session_states_init")
+    # """Loads demo data if a 'demo' query parameter is present in the URL."""
     if len(st.query_params) > 0:
         demo_id = st.query_params.get('demo')
         if demo_id in cfg.DEMO_SCENARIOS:
@@ -118,7 +93,7 @@ defaults = cfg.DEMO_DATA_DEFAULT
 session_states_init(defaults)
 
 # Load all datasets and cache them
-st.session_state.app_data = init_datasets()
+st.session_state.app_data = data_loader.init_datasets()
 
 # Handle demo data from URL query params
 st.session_state['demo_data'] = load_demo_data(copy.deepcopy(cfg.DEMO_DATA_DEFAULT))
@@ -135,12 +110,34 @@ st.markdown(
     unsafe_allow_html=True
 )
 # st.image('./images/logo-jaccueille-singa.png', width=250)
-st.title("Bienvenue sur OD&IS")
-st.markdown("L'outil d'aide à la mobilité pour l'intégration des personnes réfugiées.")
 
-with st.container(horizontal_alignment="center"):
-    if st.button("Commencer le formulaire", type="primary", key="lancement_formulaire"):
-        st.switch_page("pages/2_Formulaire.py")
+st.markdown("""
+            <style>
+                .st-key-header_accueil {background-color: #1B4429; color: white; padding:30px; border-radius:30px}
+                .st-key-lancement_formulaire .stButton p {color: #1B4429; font-size:1.3rem;}
+                .st-key-lancement_formulaire .stButton div {margin: 30px;}
+            </style>
+            """
+        , unsafe_allow_html=True)
 
-    if st.button("Aller directement à la page résultats", type="tertiary"):
-        st.switch_page("pages/3_Resultats.py")
+
+with st.container(width="stretch", key="header_accueil", horizontal_alignment="center"):
+    st.image('./images/logo-jaccueille-singa.png', width=200)
+
+    st.title("Bienvenue sur OD&IS")
+    st.markdown("L'outil d'aide à la mobilité pour l'intégration des personnes réfugiées.")
+    st.markdown("\n")
+
+    with st.container(horizontal_alignment="center"):
+
+        if st.button("Commencer le parcours de recherche", type="secondary", key="lancement_formulaire"):
+            st.switch_page("pages/2_Formulaire.py")
+
+        if st.button("Aller directement à la page résultats", type="tertiary"):
+            st.switch_page("pages/3_Resultats.py")
+
+st.markdown("\n")
+st.image('./images/explications_acceuil.png', width="stretch")
+
+st.markdown("\n")
+st.markdown("L'outil respecte la conformité RGPD. Les données collectées sont utilisées uniquement pour fournir le résultat affiché à l'utilisateur")

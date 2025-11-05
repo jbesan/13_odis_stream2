@@ -1,5 +1,5 @@
 # /home/jacques/odis/13_odis/eda/streamlit/config.py
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Dict, Any
 import os
 
@@ -40,10 +40,12 @@ MOBILITE_OPTIONS = {25: 'Important (~25km)', 50: 'Assez important (~50km)', 1000
 POIDS_OPTIONS = [0, 25, 50, 100]
 PENALITE_BINOME_OPTIONS = [1, 10, 25, 50, 100]
 POP_MIN_OPTIONS = [0, 500, 1000, 5000, 10000]
-DEFAULT_DEPARTEMENT_INDEX = 33
 
 # --- Map Defaults ---
 DEFAULT_MAP_CENTER = [46.603354, 1.888334] # Center of France
+
+# --- Constants ---
+PROJECTED_CRS = "EPSG:2154"  # RGF93 / Lambert-93, suitable for metropolitan France
 
 # --- Scoring Configuration ---
 @dataclass

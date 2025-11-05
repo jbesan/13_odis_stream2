@@ -14,7 +14,7 @@ with st.sidebar:
     st.image('./images/logo-jaccueille-singa.png', width=150)
 
     st.text("")
-    st.text("Remplissez ce formulaire afin de préciser le projet de vie de la personne accompagnée.")
+    st.text("Remplissez ce formulaire afin de préciser le projet de vie de la ou des personnes accompagnées.")
 
     st.divider()
 
@@ -137,7 +137,7 @@ def display_other_needs_page():
                 st.markdown(f"**{key.replace('-', ' ').capitalize()}**")
                 for value in values:
                     st.markdown(f"&nbsp;&nbsp;&nbsp;- {value.replace('-', ' ').capitalize()}")
-        if st.button('Vider', use_container_width=True):
+        if st.button('Vider', width='stretch'):
             st.session_state.ui_besoins_autres = {}
             st.rerun()
 

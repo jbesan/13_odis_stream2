@@ -103,15 +103,15 @@ def build_legend(items_list: list) -> str:
 def _build_generic_points_layer(df: gpd.GeoDataFrame, icon: str, color: str, tooltip_cols: list) -> flm.FeatureGroup:
     """Generic helper to build a FastMarkerCluster layer."""
     df = df.copy()
-    df = df[~df.is_empty & df.notna()]
     if df.empty:
         return flm.FeatureGroup()
 
     df['lat'] = df.geometry.y
     df['lon'] = df.geometry.x
+    df.dropna(subset=['lat', 'lon'], inplace=True)
     
     locations = df[['lat', 'lon'] + tooltip_cols].values.tolist()
-    
+
     # Create a JS callback for the markers
     popup_str = " + '<br>' + ".join([f"'{col}: ' + row[{i+2}]" for i, col in enumerate(tooltip_cols)])
     callback = f"""
@@ -161,14 +161,15 @@ def build_sante_layer(annuaire_sante: gpd.GeoDataFrame, target_codgeos: set, con
     if config.besoin_sante == 'Maternité':
         mask = filtered.maternite == True
     elif config.besoin_sante == "Hopital":
-        mask = filtered.Categorie.isin(['355', '362', '101', '106'])
+        mask = filtered.Categorie.astype(str).isin(['355', '362', '101', '106'])
     elif config.besoin_sante == "Soutien Psychologique & Addictologie":
-        mask = filtered.Categorie.isin(['156', '292', '425', '412', '366', '415', '430', '444'])
+        mask = filtered.Categorie.astype(str).isin(['156', '292', '425', '412', '366', '415', '430', '444'])
     
     if not mask.any():
         return fg
 
     cluster = _build_generic_points_layer(filtered[mask], icon='plus', color='blue', tooltip_cols=['RaisonSociale', 'LibelleCategorieAgregat'])
+    print(cluster)
     cluster.add_to(fg)
     return fg
 

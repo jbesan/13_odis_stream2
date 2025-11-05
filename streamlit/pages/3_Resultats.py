@@ -3,6 +3,12 @@ from scoring import compute_odis_score
 import config as cfg
 import ui
 import maps
+import folium as flm
+import data_loader
+
+# Ensure app_data is initialized
+if 'app_data' not in st.session_state:
+    st.session_state['app_data'] = data_loader.init_datasets()
 
 @st.cache_data
 def run_scoring_pipeline(_df_original, scores_cat, config, _incl_index):
@@ -140,11 +146,12 @@ with col_map:
 
                 # Légende
                 legend = maps.build_legend(legend_items)
-                st.markdown(legend, unsafe_allow_html=True)
 
         # Affichage de la carte (toujours en dernier)
         # Base Map
         m = maps.create_base_map(st.session_state["center"], st.session_state["zoom"])
+        if legend_items:
+            m.get_root().html.add_child(flm.Element(legend))
 
         # FeatureGroups
         fgs_to_add = [
@@ -159,12 +166,10 @@ with col_map:
             center=st.session_state["center"],
             feature_group_to_add=fgs_to_add,
             key="odis_scored_map",
-            use_container_width=True,
+            width='stretch',
             returned_objects=[],
         )
         st.markdown('<style>.stCustomComponentV1   {border-radius:10px}</style>', unsafe_allow_html=True) # Rounded corners for the map widget
 
-if st.session_state.get('processed_gdf') is not None:
-    st.sidebar.divider()
-    if st.sidebar.button('Export des résultats', icon=':material/picture_as_pdf:', type='secondary'):
-        st.cache_data.clear()
+
+    
