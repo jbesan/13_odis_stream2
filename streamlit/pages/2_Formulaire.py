@@ -8,7 +8,6 @@ for k, v in st.session_state.items():
     st.session_state[k] = v
 app_data = st.session_state.app_data
 
-
 # Sidebar
 with st.sidebar:
     st.image('./images/logo-jaccueille-singa.png', width=150)
@@ -37,8 +36,13 @@ PAGES = {
 }
 PAGES_LIST = list(PAGES.keys())
 
+def get_person_accompanied_str():
+    if st.session_state.get('ui_nom'):
+        return f"de {st.session_state.ui_nom}"
+    return "de la personne accompagnée"
+
 def display_localisation_actuelle_page():
-    st.subheader("Localisation actuelle de la personne accompagnée")
+    st.subheader(f"Localisation actuelle {get_person_accompanied_str()}")
     col1, col2 = st.columns(2)
     with col1:
         # Using explicit index to set default value, as confirmed by user test
@@ -54,7 +58,7 @@ def display_localisation_actuelle_page():
         st.selectbox("Commune", communes_list, index=communes_list.index(st.session_state.ui_commune) if st.session_state.ui_commune in communes_list else 0, key="ui_commune")
 
 def display_family_situation_page():
-    st.subheader("Composition du foyer")
+    st.subheader(f"Composition du foyer {get_person_accompanied_str()}")
     col1, col2 = st.columns(2)
     with col1:
         st.number_input("Nombre d'adultes", min_value=1, max_value=2, key="ui_nb_adultes", step=1, value=st.session_state.get('ui_nb_adultes', 1))
@@ -62,7 +66,7 @@ def display_family_situation_page():
         st.number_input("Nombre d'enfants", min_value=0, max_value=5, key="ui_nb_enfants", step=1, value=st.session_state.get('ui_nb_enfants', 0))
 
 def display_education_page():
-    st.subheader("Niveau d'étude des enfants")
+    st.subheader(f"Niveau d'étude des enfants {get_person_accompanied_str()}")
     nb_enfants = st.session_state.get('ui_nb_enfants', 0)
     if nb_enfants > 0:
         for i in range(nb_enfants):
@@ -74,7 +78,7 @@ def display_education_page():
         st.info("Aucun enfant n'a été déclaré dans la situation familiale.")
 
 def display_professional_project_page():
-    st.subheader("Métiers et formations")
+    st.subheader(f"Métiers et formations {get_person_accompanied_str()}")
 
     codfap_select = app_data['codfap_index'][['Code FAP 341', 'Intitulé FAP 341']].set_index('Code FAP 341')
     codform_select = app_data['codformations_index']
@@ -99,7 +103,7 @@ def display_professional_project_page():
             )
 
 def display_housing_page():
-    st.subheader("Logement et hébergement")
+    st.subheader(f"Logement et hébergement {get_person_accompanied_str()}")
     col1, col2 = st.columns(2)
     with col1:
         options = cfg.HEBERGEMENT_OPTIONS
@@ -111,13 +115,13 @@ def display_housing_page():
         st.selectbox("Type de logement recherché", options, index=index, key='ui_logement')
 
 def display_health_page():
-    st.subheader("Besoin en santé")
+    st.subheader(f"Besoin en santé {get_person_accompanied_str()}")
     options = cfg.SANTE_OPTIONS
     index = options.index(st.session_state.get('ui_besoin_sante')) if st.session_state.get('ui_besoin_sante') in options else 0
     st.selectbox("Prise en charge spécifique", options, index=index, key='ui_besoin_sante')
 
 def display_other_needs_page():
-    st.subheader("Inclusion et vie sociale")
+    st.subheader(f"Inclusion et vie sociale {get_person_accompanied_str()}")
     st.text("Sélectionnez d'autres besoins:")
     col1, col2 = st.columns(2)
     with col1:
@@ -142,7 +146,7 @@ def display_other_needs_page():
             st.rerun()
 
 def display_mobility_page():
-    st.subheader("Mobilité")
+    st.subheader(f"Mobilité {get_person_accompanied_str()}")
     options = cfg.MOBILITE_OPTIONS
     st.radio(
         'Attachement au lieu de vie actuel :', 

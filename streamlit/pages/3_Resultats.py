@@ -57,6 +57,11 @@ with st.sidebar:
     st.image('./images/logo-jaccueille-singa.png', width=150)
     ui.display_sidebar(st.session_state['demo_data'])
 
+def get_person_accompanied_str():
+    if st.session_state.get('ui_nom'):
+        return f"de {st.session_state.ui_nom}"
+    return "de la personne accompagnée"
+
 #Top filter Form
 with st.container(border=False, key='top_menu'):
     st.markdown("""
@@ -67,19 +72,20 @@ with st.container(border=False, key='top_menu'):
                 """
                 , unsafe_allow_html=True)
 
-    ui.display_main_header("Résultats")
+    ui.display_main_header(f"Résultats {get_person_accompanied_str()}")
 
-    col_intro, col_button = st.columns([4,1])
-    with col_intro:
-        st.text("Renseignez les informations liées au projet de vie. Vous pouvez les modifier à tout moment.")
+    col_tabs, col_button = st.columns([5,1])
+    with col_tabs:
+        #  Input Tabs
+        ui.display_input_tabs(st.session_state['demo_data'])
+        # st.text("Renseignez les informations liées au projet de vie. Vous pouvez les modifier à tout moment.")
     with col_button: 
-        st.button(
-            "Lancer la recherche" if st.session_state.get("processed_gdf") is None else "Mettre à jour la carte",
-            on_click=run_search, type="primary"
+        with st.container(height="stretch", vertical_alignment="center", horizontal_alignment = "center"):
+            st.button(
+                "Lancer la recherche" if st.session_state.get("processed_gdf") is None else "Mettre à jour la carte",
+                on_click=run_search, type="primary"
             )
 
-    # Input Tabs
-    ui.display_input_tabs(st.session_state['demo_data'])
 
 # Main two sections: results and map
 col_results, col_map = st.columns([2, 3])
@@ -87,7 +93,7 @@ col_results, col_map = st.columns([2, 3])
 ### Results Column
 with col_results:
     if st.session_state.get('processed_gdf') is not None:
-        ui.display_results_list("Résultats")
+        ui.display_results_list()
 
 ### Map Column
 with col_map:

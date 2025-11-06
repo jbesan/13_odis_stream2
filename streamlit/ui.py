@@ -56,16 +56,19 @@ def display_input_tabs(demo_data: dict):
     ])
     with tab_localisation:
         app_data = st.session_state.app_data
-        departement_actuel = st.selectbox("Département", app_data['coddep_set'], key="ui_departement")
         
-        communes = app_data['depcom_df'][app_data['depcom_df'].dep_code == departement_actuel]['libgeo']
-        communes.reset_index(drop=True, inplace=True)
-        
-        # If the commune from session state is not in the list of communes for the selected departement, reset it.
-        if st.session_state.ui_commune not in communes.tolist():
-            st.session_state.ui_commune = communes[0]
+        col1, col2 = st.columns(2)
+        with col1:
+            departement_actuel = st.selectbox("Département", app_data['coddep_set'], key="ui_departement")
+        with col2:
+            communes = app_data['depcom_df'][app_data['depcom_df'].dep_code == departement_actuel]['libgeo']
+            communes.reset_index(drop=True, inplace=True)
+            
+            # If the commune from session state is not in the list of communes for the selected departement, reset it.
+            if st.session_state.ui_commune not in communes.tolist():
+                st.session_state.ui_commune = communes[0]
 
-        commune = st.selectbox("Commune", communes, key="ui_commune")
+            st.selectbox("Commune", communes, key="ui_commune")
 
 
     with tab_foyer:
@@ -187,10 +190,15 @@ def _result_highlight_callback(index: int):
         st.session_state.center = [row.polygon.centroid.y, row.polygon.centroid.x]
         st.session_state.zoom = 11
 
-def display_results_list(name: str):
+def get_person_accompanied_str():
+    if st.session_state.get('ui_nom'):
+        return f"de {st.session_state.ui_nom}"
+    return "de la personne accompagnée"
+
+def display_results_list():
     """Displays the list of top N results."""
     st.subheader("Meilleurs résultats")
-    st.text(f'Voici des localités qui pourraient convenir à {name or "ce projet de vie"}.')
+    st.text(f'Voici des localités qui pourraient convenir {get_person_accompanied_str()}.')
     st.markdown('<style>[class*="st-key-button_top"] .stButton button div {text-align:left; width:100%;}</style>', unsafe_allow_html=True)
 
     top_n = 5
