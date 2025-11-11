@@ -1,7 +1,7 @@
 # PRD (Product Requirements Document) - OD&IS "Stream 2"
-**Version :** 1.1
+**Version :** 1.3
 **Projet :** Prototype de Recherche Inversée (Aide à la Localisation)
-**Auteur :** D4G: OD&IS (revu le 06/11/2025)
+**Auteur :** D4G: OD&IS (revu le 08/11/2025)
 
 ---
 
@@ -30,13 +30,9 @@
 
 ### Étape 1 : Accueil (`1_Accueil.py`)
 * Présentation du projet, logos, et information RGPD.
-* **[Feature]** `st.button("Commencer le parcours")` -> `pages/2_Formulaire.py`
-* **[Feature]** `st.button("Aller directement à la page résultats")` -> `pages/3_Resultats.py`
-* **[Feature]** Scénarios de démo via query params (`?demo=...`) qui pré-remplissent `st.session_state` via `config.py`. Passer un scénario de démo dans l'URL amène sur la page d'accueil et le formulaire du projet de vie sera pre-rempli.
-* **[Feature]** Personnalisation du parcours avec le nom de la personne accompagnée
-
-**Description :**
-Sur la page d'accueil (`1_Accueil.py`), un champ de saisie optionnel sera ajouté pour le "Nom de la personne accompagnée". Si un nom est fourni, il sera stocké dans la session Streamlit (`st.session_state['person_name']`) et utilisé pour personnaliser les titres, sous-titres et labels sur les pages du formulaire (`2_Formulaire.py`) et des résultats (`3_Resultats.py`). Par exemple, "Localisation actuelle de la personne accompagnée" deviendra "Localisation actuelle de la personne accompagnée (Nom Prénom)". Si aucun nom n'est saisi, l'application continuera d'utiliser la formulation générique.
+* L'utilisateur peut commencer le parcours pour remplir le formulaire ou aller directement à la page des résultats.
+* Le parcours peut être personnalisé avec le nom de la personne accompagnée.
+* Des scénarios de démonstration peuvent être chargés via des paramètres dans l'URL.
 
 ### Étape 2 : Formulaire "Projet de Vie" (`2_Formulaire.py`)
 Collecte des besoins via un formulaire multi-pages (basé sur `st.session_state['form_page']`).
@@ -59,11 +55,9 @@ Collecte des besoins via un formulaire multi-pages (basé sur `st.session_state[
 ### Étape 3 : Interface de Résultats (`3_Resultats.py`)
 Page principale interactive (layout `col_results`, `col_map`).
 
-* **[Feature] Barre latérale (`ui.py`) :**
-    * Permet d'ajuster les **poids** (sliders) des catégories : `poids_emploi`, `poids_logement`, `poids_education`, etc.
-    * Permet d'ajuster les **filtres** : `pop_min`, `binome_penalty`.
-* **[Feature] Onglets d'Inputs :** Reprise des champs du formulaire (Étape 2) pour modification rapide et itération.
-* **[Feature] Bouton "Mettre à jour" :** Déclenche `run_search()` qui appelle le pipeline de scoring.
+* Une barre latérale permet d'ajuster les poids des catégories et les filtres de recherche.
+* Des onglets permettent de modifier rapidement les critères du "projet de vie".
+* Un bouton "Mettre à jour" relance la recherche avec les nouveaux paramètres.
 
 ### Étape 4 : Moteur de Scoring (`scoring.py`)
 Logique métier principale, orchestrée par `compute_odis_score()`.
@@ -79,20 +73,111 @@ Logique métier principale, orchestrée par `compute_odis_score()`.
 6.  **Score Pondéré :** `compute_weighted_score()` applique les poids (sliders) de l'UI (`config.poids_...`) aux scores de catégorie (`..._cat_score`).
 7.  **Sélection Finale :** `select_best_score_per_commune()` ne garde que la meilleure ligne (monôme OU binôme) pour chaque `codgeo`.
 
-
-
 ### Étape 5 : Visualisation des Résultats (`3_Resultats.py`)
 
-* **[Feature] Colonne de Gauche (Liste) :**
-    * `ui.display_results_list()` : Affiche le Top 5 des résultats (commune ou binôme).
-    * (Impliqué) Affichage détaillé avec points forts et radar des sous-scores par catégorie.
-* **[Feature] Colonne de Droite (Carte) :**
-    * `st_folium` affichant la carte de base.
-    * **Couche de base :** `maps.build_scores_layer()` - Choroplèthe de *toutes* les communes de la zone, colorées par `weighted_score`.
-    * **Couches d'info (Toggles) :**
-        * Affichage des Top 5 résultats.
-        * `maps.build_ecoles_layer()` (si `nb_enfants > 0`).
-        * `maps.build_sante_layer()` (si `besoin_sante != "Aucun"`).
-        * `maps.build_services_layer()` (si `besoins_autres` non vide).
+* **Colonne de Gauche (Liste) :** Affiche le Top 5 des résultats (commune ou binôme) avec leurs points forts et un radar de scores.
+* **Colonne de Droite (Carte) :** Affiche une carte choroplèthe avec le score de toutes les communes. Des couches d'information additionnelles (écoles, santé, services) peuvent être superposées.
 
 ---
+## 4. Features
+
+## 🚀 Feature [F-01]: Navigation Principale
+
+### 📝 User Story
+En tant que travailleur social, je veux des points de départ clairs pour commencer un nouveau profil ou accéder directement aux résultats afin de naviguer efficacement dans l'outil.
+
+### 🔑 Key Features
+* Un bouton "Commencer le parcours" pour démarrer le formulaire.
+* Un bouton "Aller directement à la page résultats" pour contourner le formulaire.
+
+### 📊 Status
+- Completed
+
+## 🚀 Feature [F-02]: Scénarios de Démonstration
+
+### 📝 User Story
+En tant que travailleur social, je veux pouvoir charger des scénarios de démonstration pré-remplis pour comprendre rapidement les capacités de l'outil sans avoir à remplir manuellement le formulaire.
+
+### 🔑 Key Features
+* Charger un profil de démo à l'aide d'un paramètre de requête d'URL (par ex., `?demo=...`).
+* Le formulaire est pré-rempli avec les données de la démo.
+
+### 📊 Status
+- Completed
+
+## 🚀 Feature [F-03]: Personnalisation du Parcours
+
+### 📝 User Story
+En tant que travailleur social, je veux saisir le nom de la personne que j'accompagne pour personnaliser l'interface, rendant le processus plus centré sur l'humain.
+
+### 🔑 Key Features
+* Un champ de saisie pour le nom de la personne sur la page d'accueil.
+* Le nom est utilisé pour personnaliser les titres et les libellés dans toute l'application.
+
+### 📊 Status
+- Completed
+
+## 🚀 Feature [F-04]: Contrôles Interactifs des Résultats
+
+### 📝 User Story
+En tant que travailleur social, je veux ajuster les poids de notation et les filtres en temps réel pour explorer collaborativement différents scénarios avec la personne que j'accompagne.
+
+### 🔑 Key Features
+* Une barre latérale avec des curseurs pour ajuster les poids des différentes catégories de notation.
+* Une barre latérale avec des champs pour filtrer les résultats (par ex., population minimale).
+* Un bouton "Mettre à jour" pour relancer la recherche avec les nouvelles valeurs.
+
+### 📊 Status
+- Completed
+
+## 🚀 Feature [F-05]: Édition Rapide des Entrées
+
+### 📝 User Story
+En tant que travailleur social, je veux pouvoir modifier rapidement les entrées initiales du "projet de vie" depuis la page des résultats pour itérer sur la recherche sans retourner au formulaire principal.
+
+### 🔑 Key Features
+* Des onglets sur la page des résultats qui reflètent les champs du formulaire.
+* La possibilité de changer n'importe quelle valeur d'entrée.
+* Un bouton "Mettre à jour" pour relancer la recherche avec les nouvelles valeurs.
+
+### 📊 Status
+- Completed
+
+## 🚀 Feature [F-06]: Affichage des 5 Meilleurs Résultats
+
+### 📝 User Story
+En tant que travailleur social, je veux voir une liste claire et classée des meilleurs lieux recommandés pour discuter facilement des options les plus prometteuses.
+
+### 🔑 Key Features
+* Affiche les 5 meilleurs résultats (commune seule ou en binôme).
+* Montre les points forts de chaque résultat.
+* Inclut un graphique radar pour visualiser la répartition des scores par catégorie.
+
+### 📊 Status
+- Completed
+
+## 🚀 Feature [F-07]: Visualisation sur Carte Interactive
+
+### 📝 User Story
+En tant que travailleur social, je veux voir les lieux recommandés sur une carte interactive pour mieux comprendre leur contexte géographique et explorer les services environnants.
+
+### 🔑 Key Features
+* Une carte choroplèthe montrant les scores de toutes les communes dans la zone de recherche.
+* Des marqueurs pour les 5 meilleurs résultats.
+* Des couches cartographiques activables pour les écoles, les services de santé et d'autres points d'intérêt.
+
+### 📊 Status
+- Completed
+
+## 🚀 Feature [F-08]: Ajout de l'indicateur loyer moyen
+
+### 📝 User Stories
+- En tant que travailleur social, je veux intégrer le loyer moyen dans le score pour mieux évaluer l'accessibilité financière d'une localité pour la famille que j'accompagne.
+
+### 🔑 Key Features
+* Intégrer une nouvelle source de données (API) fournissant le loyer moyen par commune.
+* Créer un nouveau critère de score "loyer" dans la catégorie "Logement", où un loyer plus bas résulte en un meilleur score.
+* Afficher le loyer comme un point fort (ex: "Loyer modéré") dans la liste des résultats lorsqu'il est significatif pour une localité.
+
+### 📊 Status
+- In Progress

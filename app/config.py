@@ -18,7 +18,7 @@ def get_data_path():
 
 # --- File Paths ---
 ODIS_FILE = 'odis_june_2025_jacques.parquet'
-SCORES_CAT_FILE = 'odis_scores_cat.csv'
+SCORES_CAT_FILE = 'scores_config.yaml'
 METIERS_FILE = 'dares_nomenclature_fap2021.csv'
 FORMATIONS_FILE = 'index_formations.csv'
 ECOLES_FILE = 'annuaire_ecoles_france_mini.parquet'
@@ -43,6 +43,8 @@ POP_MIN_OPTIONS = [0, 500, 1000, 5000, 10000]
 
 # --- Map Defaults ---
 DEFAULT_MAP_CENTER = [46.603354, 1.888334] # Center of France
+DEFAULT_MAP_ZOOM = 10
+DETAIL_MAP_ZOOM = 11
 
 # --- Constants ---
 PROJECTED_CRS = "EPSG:2154"  # RGF93 / Lambert-93, suitable for metropolitan France

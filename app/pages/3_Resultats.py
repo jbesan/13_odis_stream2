@@ -5,6 +5,7 @@ import ui
 import maps
 import folium as flm
 import data_loader
+import geopandas as gpd
 
 # Ensure app_data is initialized
 if 'app_data' not in st.session_state:
@@ -34,6 +35,21 @@ def run_search():
 
     # Pop the current commune from the results and store it separately
     selected_geo = st.session_state.app_data['odis'].loc[[config.commune_actuelle]].copy()
+    
+    # Reproject the geometry to a projected CRS before calculating the centroid for accuracy
+    # The geometry column is named 'polygon' in this GeoDataFrame
+    selected_geo_projected = selected_geo.to_crs(cfg.PROJECTED_CRS)
+    
+    # Convert centroid back to geographic CRS for map display
+    # Create a GeoSeries for the centroid in the projected CRS
+    centroid_geo_series_projected = gpd.GeoSeries([selected_geo_projected.geometry.centroid.iloc[0]], crs=cfg.PROJECTED_CRS)
+    # Reproject to geographic CRS (EPSG:4326)
+    centroid_geo_series_geographic = centroid_geo_series_projected.to_crs('EPSG:4326')
+    
+    # Extract the geographic coordinates
+    final_center_x = centroid_geo_series_geographic.x.iloc[0]
+    final_center_y = centroid_geo_series_geographic.y.iloc[0]
+    
     odis_scored = odis_scored.drop(config.commune_actuelle, errors='ignore')
 
     # Sort results by score
@@ -42,7 +58,8 @@ def run_search():
     # Reset session state for the new results
     st.session_state['processed_gdf'] = odis_scored
     st.session_state['selected_geo'] = selected_geo
-    st.session_state['center'] = [selected_geo.polygon.centroid.y.iloc[0], selected_geo.polygon.centroid.x.iloc[0]]
+    # Calculate centroid on the reprojected geometry
+    st.session_state['center'] = [final_center_y, final_center_x]
     st.session_state['zoom'] = maps.get_map_zoom(config.loc_distance_km)
     st.session_state['fg_dict_ref'] = {}
     st.session_state['highlighted_result'] = [False, None]

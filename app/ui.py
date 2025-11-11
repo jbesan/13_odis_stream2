@@ -12,11 +12,21 @@ def display_sidebar(demo_data: dict):
     # --- Weights ---
     st.divider()
     with st.expander('Pondérations des critères', expanded=False):
-        st.select_slider("Education", cfg.POIDS_OPTIONS, key="ui_poids_education")
-        st.select_slider("Projet Pro", cfg.POIDS_OPTIONS, key="ui_poids_emploi")
-        st.select_slider("Logement", cfg.POIDS_OPTIONS, key="ui_poids_logement")
-        st.select_slider("Inclusion", cfg.POIDS_OPTIONS, key="ui_poids_inclusion")
-        st.select_slider("Mobilité", cfg.POIDS_OPTIONS, key="ui_poids_mobilité")
+        st.select_slider("Education", cfg.POIDS_OPTIONS, 
+                         value=st.session_state.get('ui_poids_education', 100), 
+                         key="ui_poids_education")
+        st.select_slider("Projet Pro", cfg.POIDS_OPTIONS, 
+                         value=st.session_state.get('ui_poids_emploi', 100), 
+                         key="ui_poids_emploi")
+        st.select_slider("Logement", cfg.POIDS_OPTIONS, 
+                         value=st.session_state.get('ui_poids_logement', 100), 
+                         key="ui_poids_logement")
+        st.select_slider("Inclusion", cfg.POIDS_OPTIONS, 
+                         value=st.session_state.get('ui_poids_inclusion', 100), 
+                         key="ui_poids_inclusion")
+        st.select_slider("Mobilité", cfg.POIDS_OPTIONS, 
+                         value=st.session_state.get('ui_poids_mobilité', 100), 
+                         key="ui_poids_mobilité")
 
     # --- Technical Params ---
     
@@ -47,94 +57,122 @@ def display_main_header(name: str):
     else:
         st.subheader(f"Projet de vie")
         
-def display_input_tabs(demo_data: dict):
-    """Displays the main tabs for user input."""
+def render_localisation_form():
+    """Renders the UI for the 'Localisation Actuelle' form section."""
     app_data = st.session_state.app_data
+    col1, col2 = st.columns(2)
+    with col1:
+        options_dep = app_data['coddep_set']
+        # The index is now correctly derived from the session state, preventing the warning.
+        index_dep = options_dep.index(st.session_state.ui_departement) if st.session_state.ui_departement in options_dep else 0
+        departement_actuel = st.selectbox("Département", options_dep, index=index_dep, key="ui_departement")
+    with col2:
+        communes = app_data['depcom_df'][app_data['depcom_df'].dep_code == departement_actuel]['libgeo'].tolist()
+        if st.session_state.ui_commune not in communes:
+            st.session_state.ui_commune = communes[0]
+        index_com = communes.index(st.session_state.ui_commune)
+        st.selectbox("Commune", communes, index=index_com, key="ui_commune")
+
+def render_family_form():
+    """Renders the UI for the 'Situation familiale' form section."""
+    col1, col2 = st.columns(2)
+    with col1:
+        st.radio("Nombre d'adultes", cfg.NOMBRE_ADULTES_OPTIONS, horizontal=True, key="ui_nb_adultes")
+    with col2:
+        st.radio("Nombre d'enfants", cfg.NOMBRE_ENFANTS_OPTIONS, horizontal=True, key="ui_nb_enfants")
+
+def render_education_form():
+    """Renders the UI for the 'Education' form section."""
+    if st.session_state.ui_nb_enfants == 0:
+        st.info("Aucun enfant n'a été ajouté dans l'onglet 'Situation familiale'.")
+    else:
+        col1, col2 = st.columns(2)
+        for i in range(st.session_state.ui_nb_enfants):
+            col = col1 if i % 2 == 0 else col2
+            with col:
+                # This widget also needs the index to be set correctly.
+                options = cfg.CLASSES_SCOLAIRES
+                key = f"ui_classe_enfant_{i}"
+                index = options.index(st.session_state[key]) if key in st.session_state and st.session_state[key] in options else 0
+                st.selectbox(f'Niveau enfant {i+1}', options, index=index, key=key)
+
+def render_employment_form():
+    """Renders the UI for the 'Projet Professionnel' form section."""
+    app_data = st.session_state.app_data
+    col1, col2 = st.columns(2)
+    codfap_select = app_data['codfap_index'][['Code FAP 341', 'Intitulé FAP 341']].set_index('Code FAP 341')
+    codform_select = app_data['codformations_index']
     
+    for i in range(st.session_state.ui_nb_adultes):
+        with col1:
+            st.multiselect(f"Métiers ciblés Adulte {i+1}", codfap_select.index, format_func=lambda x: codfap_select.loc[x, 'Intitulé FAP 341'], key=f"ui_metiers_adult_{i}")
+        with col2:
+            st.multiselect(f"Formations recherchées Adulte {i+1}", codform_select.index, format_func=lambda x: codform_select.loc[x, 'libformation'], key=f"ui_formations_adult_{i}")
+
+def render_housing_form():
+    """Renders the UI for the 'Logement' form section."""
+    st.radio('Hébergement à court terme', cfg.HEBERGEMENT_OPTIONS, key="ui_hebergement")
+    st.radio('Logement à long terme', cfg.LOGEMENT_OPTIONS, key="ui_logement")
+
+def render_health_form():
+    """Renders the UI for the 'Santé' form section."""
+    options = ["Aucun", "Hopital", 'Maternité', "Soutien Psychologique & Addictologie"]
+    st.radio('Support médical à proximité', options, key="ui_besoin_sante")
+
+def render_other_needs_form():
+    """Renders the UI for the 'Autres Besoins' form section."""
+    app_data = st.session_state.app_data
+    if 'ui_besoins_autres' not in st.session_state:
+        st.session_state.ui_besoins_autres = st.session_state['demo_data'].get('besoins_autres', {})
+
+    st.text("Sélectionnez d'autres besoins:")
+    col1, col2 = st.columns(2)
+    with col1:
+        annuaire_inclusion = app_data['annuaire_inclusion']
+        cat = st.selectbox('Catégorie', sorted(set(annuaire_inclusion.categorie)), format_func=lambda x: x.replace('-', ' ').capitalize(), index=2)
+        service = st.selectbox('Service', sorted(set(annuaire_inclusion[annuaire_inclusion.categorie == cat].service)), format_func=lambda x: x.replace('-', ' ').capitalize(), index=0)
+        if st.button('Ajouter'):
+            st.session_state.ui_besoins_autres.setdefault(cat, []).append(service)
+            st.session_state.ui_besoins_autres[cat] = sorted(list(set(st.session_state.ui_besoins_autres[cat])))
+    with col2:
+        st.text('Besoins ajoutés:')
+        if not st.session_state.ui_besoins_autres:
+            st.info('Aucun')
+        else:
+            for key, values in st.session_state.ui_besoins_autres.items():
+                st.markdown(f"**{key.replace('-', ' ').capitalize()}**")
+                for value in values:
+                    st.markdown(f"&nbsp;&nbsp;&nbsp;- {value.replace('-', ' ').capitalize()}")
+        if st.button('Vider', width='stretch'):
+            st.session_state.ui_besoins_autres = {}
+            st.rerun()
+
+def render_mobility_form():
+    """Renders the UI for the 'Mobilité' form section."""
+    st.radio('Attachement au lieu de vie actuel :', cfg.LOC_DISTANCE_OPTIONS.keys(), format_func=cfg.LOC_DISTANCE_OPTIONS.get, key="ui_loc_distance_km")
+
+def display_input_tabs(demo_data: dict):
+    """Displays the main tabs for user input, composed of modular rendering functions."""
     tab_localisation, tab_foyer, tab_edu, tab_emploi, tab_logement, tab_sante, tab_autres, tab_mobilite = st.tabs([
         'Localisation Actuelle', 'Situation familiale', 'Education', 'Projet Professionnel', 'Logement', 'Santé', 'Autres Besoins', 'Mobilité'
     ])
     with tab_localisation:
-        app_data = st.session_state.app_data
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            departement_actuel = st.selectbox("Département", app_data['coddep_set'], key="ui_departement")
-        with col2:
-            communes = app_data['depcom_df'][app_data['depcom_df'].dep_code == departement_actuel]['libgeo']
-            communes.reset_index(drop=True, inplace=True)
-            
-            # If the commune from session state is not in the list of communes for the selected departement, reset it.
-            if st.session_state.ui_commune not in communes.tolist():
-                st.session_state.ui_commune = communes[0]
-
-            st.selectbox("Commune", communes, key="ui_commune")
-
-
+        render_localisation_form()
     with tab_foyer:
-        col1, col2 = st.columns(2)
-        with col1:
-            st.radio("Nombre d'adultes", cfg.NOMBRE_ADULTES_OPTIONS, horizontal=True, key="ui_nb_adultes")
-        with col2:
-            st.radio("Nombre d'enfants", cfg.NOMBRE_ENFANTS_OPTIONS, horizontal=True, key="ui_nb_enfants")
-
+        render_family_form()
     with tab_edu:
-        if st.session_state.ui_nb_enfants == 0:
-            st.info("Aucun enfant n'a été ajouté dans l'onglet 'Situation familiale'.")
-        else:
-            col1, col2 = st.columns(2)
-            for i in range(st.session_state.ui_nb_enfants):
-                col = col1 if i % 2 == 0 else col2
-                with col:
-                    st.selectbox(f'Niveau enfant {i+1}', cfg.CLASSES_SCOLAIRES, key=f"ui_classe_enfant_{i}")
-
+        render_education_form()
     with tab_emploi:
-        col1, col2 = st.columns(2)
-        codfap_select = app_data['codfap_index'][['Code FAP 341', 'Intitulé FAP 341']].set_index('Code FAP 341')
-        codform_select = app_data['codformations_index']
-        
-        for i in range(st.session_state.ui_nb_adultes):
-            with col1:
-                st.multiselect(f"Métiers ciblés Adulte {i+1}", codfap_select.index, format_func=lambda x: codfap_select.loc[x, 'Intitulé FAP 341'], key=f"ui_metiers_adult_{i}")
-            with col2:
-                st.multiselect(f"Formations recherchées Adulte {i+1}", codform_select.index, format_func=lambda x: codform_select.loc[x, 'libformation'], key=f"ui_formations_adult_{i}")
-
-    with tab_mobilite:
-        st.radio('Attachement au lieu de vie actuel :', cfg.LOC_DISTANCE_OPTIONS.keys(), format_func=cfg.LOC_DISTANCE_OPTIONS.get, key="ui_loc_distance_km")
-
+        render_employment_form()
     with tab_logement:
-        st.radio('Hébergement à court terme', cfg.HEBERGEMENT_OPTIONS, key="ui_hebergement")
-        st.radio('Logement à long terme', cfg.LOGEMENT_OPTIONS, key="ui_logement")
-
+        render_housing_form()
     with tab_sante:
-        options = ["Aucun", "Hopital", 'Maternité', "Soutien Psychologique & Addictologie"]
-        st.radio('Support médical à proximité', options, key="ui_besoin_sante")
-
+        render_health_form()
     with tab_autres:
-        if 'ui_besoins_autres' not in st.session_state:
-            st.session_state.ui_besoins_autres = st.session_state['demo_data'].get('besoins_autres', {})
+        render_other_needs_form()
+    with tab_mobilite:
+        render_mobility_form()
 
-        st.text("Sélectionnez d'autres besoins:")
-        col1, col2 = st.columns(2)
-        with col1:
-            annuaire_inclusion = app_data['annuaire_inclusion']
-            cat = st.selectbox('Catégorie', sorted(set(annuaire_inclusion.categorie)), format_func=lambda x: x.replace('-', ' ').capitalize(), index=2)
-            service = st.selectbox('Service', sorted(set(annuaire_inclusion[annuaire_inclusion.categorie == cat].service)), format_func=lambda x: x.replace('-', ' ').capitalize(), index=0)
-            if st.button('Ajouter'):
-                st.session_state.ui_besoins_autres.setdefault(cat, []).append(service)
-                st.session_state.ui_besoins_autres[cat] = sorted(list(set(st.session_state.ui_besoins_autres[cat])))
-        with col2:
-            st.text('Besoins ajoutés:')
-            if not st.session_state.ui_besoins_autres:
-                st.info('Aucun')
-            else:
-                for key, values in st.session_state.ui_besoins_autres.items():
-                    st.markdown(f"**{key.replace('-', ' ').capitalize()}**")
-                    for value in values:
-                        st.markdown(f"&nbsp;&nbsp;&nbsp;- {value.replace('-', ' ').capitalize()}")
-            if st.button('Vider', width='stretch'):
-                st.session_state.ui_besoins_autres = {}
-                st.rerun()
 
 def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
     """Gathers all user inputs from session_state and creates a ScoringConfig object."""
@@ -188,7 +226,7 @@ def _result_highlight_callback(index: int):
         row = st.session_state.processed_gdf.loc[index]
         st.session_state.highlighted_result = [True, index]
         st.session_state.center = [row.polygon.centroid.y, row.polygon.centroid.x]
-        st.session_state.zoom = 11
+        st.session_state.zoom = cfg.DETAIL_MAP_ZOOM
 
 def get_person_accompanied_str():
     if st.session_state.get('ui_nom'):

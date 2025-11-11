@@ -10,3 +10,4 @@ streamlit-folium
 plotly
 gcsfs
 google-cloud-storage
+PyYAML

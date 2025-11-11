@@ -49,8 +49,16 @@ def compute_criteria_scores(df: gpd.GeoDataFrame, prefs: Dict[str, Any], incl_in
     """
     df = df.copy()
     
+    # Determine the optimal n_quantiles for the transformer to avoid warnings.
+    n_samples = len(df)
+    # n_quantiles cannot be greater than the number of samples.
+    n_quantiles = min(n_samples, 1000)
+
     # Use QuantileTransformer to normalize scores to a uniform distribution [0, 1].
-    transformer = preprocessing.QuantileTransformer(output_distribution="uniform")
+    transformer = preprocessing.QuantileTransformer(
+        output_distribution="uniform",
+        n_quantiles=n_quantiles
+    )
 
     # --- EMPLOI ---
     df['met_ratio'] = 1000 * df['met'] / df['pop_be']
@@ -242,13 +250,22 @@ def compute_odis_score(df_original: gpd.GeoDataFrame, scores_cat: pd.DataFrame, 
     df = df_original.copy()
 
     # 1. Filter communes by minimum population
-    df = df[df.population > config.pop_min]
+    df_filtered_by_pop = df[df.population > config.pop_min].copy()
+
+    # Ensure the reference commune (commune_actuelle) is always included,
+    # even if its population is below config.pop_min.
+    if config.commune_actuelle not in df_filtered_by_pop.index:
+        df = pd.concat([df_filtered_by_pop, df.loc[[config.commune_actuelle]]])
+    else:
+        df = df_filtered_by_pop
 
     # 2. Add distance from the user's current location
     df = add_distance_to_current_loc(df, current_codgeo=config.commune_actuelle)
 
     # 3. Filter by max distance to create the primary search area
     odis_search = filter_by_distance(df, max_distance_km=config.loc_distance_km)
+    if odis_search.empty:
+        return odis_search.copy() # Return a copy to avoid warnings
 
     # 4. Compute all individual criteria scores based on preferences.
     odis_scored = compute_criteria_scores(odis_search, prefs=config.__dict__, incl_index=incl_index, df_all_communes=df_original)

@@ -1,23 +1,23 @@
 steps:
 - name: 'gcr.io/cloud-builders/docker'
-  args: ['build', '-t', 'europe-west1-docker.pkg.dev/odis-stream2/odis-stream2-repo/odis-streamlit-app', '-f', 'streamlit/Dockerfile', '.']
+  args: ['build', '-t', 'europe-west1-docker.pkg.dev/odis-stream2/odis-stream2-repo/odis-app', '-f', 'app/Dockerfile', '.']
 - name: 'gcr.io/cloud-builders/docker'
-  args: ['push', 'europe-west1-docker.pkg.dev/odis-stream2/odis-stream2-repo/odis-streamlit-app']
+  args: ['push', 'europe-west1-docker.pkg.dev/odis-stream2/odis-stream2-repo/odis-app']
 - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
   entrypoint: gcloud
   args:
   - 'run'
   - 'deploy'
-  - 'odis-streamlit-app'
+  - 'odis-app'
   - '--image'
-  - 'europe-west1-docker.pkg.dev/odis-stream2/odis-stream2-repo/odis-streamlit-app'
+  - 'europe-west1-docker.pkg.dev/odis-stream2/odis-stream2-repo/odis-app'
   - '--region'
   - 'europe-west1'
   - '--platform'
   - 'managed'
   - '--allow-unauthenticated'
 images:
-- 'europe-west1-docker.pkg.dev/odis-stream2/odis-stream2-repo/odis-streamlit-app'
+- 'europe-west1-docker.pkg.dev/odis-stream2/odis-stream2-repo/odis-app'
 
 # Jacques note: To re-deploy use
 # gcloud builds submit --config cloudbuild.yaml .

@@ -25,7 +25,7 @@ def session_states_init(defaults):
     if 'fgs_to_show' not in st.session_state:
         st.session_state['fgs_to_show'] = set()
     if "zoom" not in st.session_state:
-        st.session_state['zoom'] = 10
+        st.session_state['zoom'] = cfg.DEFAULT_MAP_ZOOM
     if "center" not in st.session_state:
         st.session_state['center'] = cfg.DEFAULT_MAP_CENTER
     if 'demo_data' not in st.session_state:

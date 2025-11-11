@@ -14,7 +14,7 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy and install Python requirements
-COPY streamlit/requirements.txt .
+COPY app/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # ---- Final Stage ----
@@ -35,7 +35,7 @@ WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv
 
 # Copy the application code
-COPY streamlit/ .
+COPY app/ .
 
 # Make the virtual environment's Python the default
 ENV PATH="/opt/venv/bin:$PATH"

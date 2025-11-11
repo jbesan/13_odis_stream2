@@ -6,7 +6,36 @@ import numpy as np
 import geopandas as gpd
 import shapely as shp
 import gcsfs
+import yaml
 import config as cfg # Import config for constants and ScoringConfig
+
+def load_scores_config_as_df(filepath: str) -> pd.DataFrame:
+    """Loads the scores configuration from a YAML file and transforms it into a DataFrame."""
+    with open(filepath, 'r') as f:
+        config = yaml.safe_load(f)
+
+    records = []
+    for score_data in config['scores']:
+        flat_record = {
+            'score': score_data['id'],
+            'cat': score_data['category'],
+            'metric': score_data.get('source_metric'),
+            'incl_binome': score_data['include_in_binom'],
+            'score_name': score_data['display']['name'],
+            'score_affichage': score_data['display']['strong_point_text'],
+            'high_value_adj': score_data['display']['high_value_adjective'],
+            'show_metric': score_data['display']['show'],
+            'unit': score_data['display'].get('unit'),
+            'display_factor': score_data['display']['display_factor'],
+            'tooltip': score_data['display']['tooltip'],
+        }
+        records.append(flat_record)
+
+    df = pd.DataFrame(records)
+    # Ensure correct data types, similar to the original loader
+    df = df.astype({'score': str, 'metric': str})
+    return df
+
 
 def get_data_path():
     """
@@ -25,6 +54,11 @@ def load_all_datasets(odis_file: str, scores_cat_file: str, metiers_file: str, f
     """
     base_path = get_data_path()
 
+    # The YAML config file is located relative to the app directory, not the data directory.
+    # We construct an absolute path to it to prevent FileNotFoundError.
+    app_dir = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.join(app_dir, scores_cat_file)
+
     odis = pd.read_parquet(base_path + odis_file)
     odis['polygon'] = odis.polygon.apply(shp.from_wkb)
     odis = gpd.GeoDataFrame(odis, geometry='polygon', crs='EPSG:4326')
@@ -33,8 +67,8 @@ def load_all_datasets(odis_file: str, scores_cat_file: str, metiers_file: str, f
     odis = odis[~odis.polygon.isna()]
     odis.set_index('codgeo', inplace=True)
 
-    # Index of all scores and their explanations
-    scores_cat = pd.read_csv(base_path + scores_cat_file, dtype={'score': str, 'metric': str})
+    # Index of all scores and their explanations.
+    scores_cat = load_scores_config_as_df(config_path)
 
     #Later we need the code FAP <-> FAP Name used to classify jobs
     codfap_index = pd.read_csv(base_path + metiers_file, delimiter=';')

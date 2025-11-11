@@ -1,0 +1,248 @@
+scores:
+- id: met_scaled
+  category: emploi
+  source_metric: met_ratio
+  include_in_binom: true
+  display:
+    name: Taux Besoin Emploi
+    strong_point_text: De nombreux emplois non pourvus
+    high_value_adjective: élevé
+    show: true
+    unit: offres/1000 hab.
+    display_factor: 1
+    tooltip: "Emplois non pourvus pour 1000 habitants (Source: France Travail)"
+- id: met_tension_scaled
+  category: emploi
+  source_metric: met_tension_ratio
+  include_in_binom: true
+  display:
+    name: Taux Besoin Emploi en Tension
+    strong_point_text: De nombreux emplois en tension non pourvus
+    high_value_adjective: élevé
+    show: false
+    unit: offres/1000 hab.
+    display_factor: 1
+    tooltip: "Emplois en tension non pourvus pour 1000 habitants (Source: France Travail)"
+- id: svc_incl_scaled
+  category: inclusion
+  source_metric: svc_incl_ratio
+  include_in_binom: true
+  display:
+    name: Taux Services Inclusion
+    strong_point_text: De nombre services dédiés à l'inclusion sont offerts
+    high_value_adjective: élevé
+    show: true
+    unit: service(s)/1000 hab.
+    display_factor: 1
+    tooltip: Services d'inclusions pour 1000 habitants
+- id: log_vac_scaled
+  category: logement
+  source_metric: log_vac_ratio
+  include_in_binom: true
+  display:
+    name: Taux Logements Vacants
+    strong_point_text: Nombre élevé de logement vacants pour la région
+    high_value_adjective: élevé
+    show: true
+    unit: '%'
+    display_factor: 100
+    tooltip: Nombre de logements vacants sur le parc
+- id: log_soc_inoc_scaled
+  category: logement
+  source_metric: log_soc_inoc_ratio
+  include_in_binom: true
+  display:
+    name: Taux de Logements Sociaux Inoccupés (Vacants ou Vides)
+    strong_point_text: Un nombre élevé de logements sociaux potentiellement disponibles
+    high_value_adjective: élevé
+    show: true
+    unit: '%'
+    display_factor: 100
+    tooltip: "Nombre de logements sociaux innocupés (vacants ou vide) sur le parc de logements sociaux"
+- id: log_5p_scaled
+  category: logement
+  source_metric: log_5p_ratio
+  include_in_binom: true
+  display:
+    name: Taux Grandes Résidences Principales
+    strong_point_text: Nombre élevé de résidences principales de grande taille susceptible
+      d'accueillir chez l'habitant
+    high_value_adjective: élevé
+    show: true
+    unit: '%'
+    display_factor: 100
+    tooltip: ''
+- id: classes_ferm_scaled
+  category: education
+  source_metric: risque_fermeture_ratio
+  include_in_binom: true
+  display:
+    name: Taux Classes à Risque de Fermeture
+    strong_point_text: Des classes qui risquent de fermer faute d’élèves
+    high_value_adjective: élevé
+    show: true
+    unit: école(s)
+    display_factor: 1
+    tooltip: Ratio du nombre de classes à riques de fermetures sur le nombre total
+      d'établissements
+- id: pol_scaled
+  category: inclusion
+  source_metric: pol_num
+  include_in_binom: false
+  display:
+    name: Couleur Politique de la commmue
+    strong_point_text: La couleur politique de la localité est favorable
+    high_value_adjective: favorable
+    show: false
+    unit: None
+    display_factor: 1
+    tooltip: Affiliation à un parti politique en faveur de l'accueil
+- id: met_match_adult1_scaled
+  category: emploi
+  source_metric: met_match_adult1
+  include_in_binom: true
+  display:
+    name: Match compétences et Besoin Emploi Adult 1
+    strong_point_text: Une forte demande dans le domaine de compétences de l'adulte
+      1
+    high_value_adjective: présent
+    show: true
+    unit: famille(s) d'emplois
+    display_factor: 1
+    tooltip: Nombre de familles d'emplois dans le top 10
+- id: met_match_adult2_scaled
+  category: emploi
+  source_metric: met_match_adult2
+  include_in_binom: true
+  display:
+    name: Match compétences et Besoin Emploi Adult 2
+    strong_point_text: Une forte demande dans le domaine de compétences de l'adulte
+      2
+    high_value_adjective: présent
+    show: true
+    unit: famille(s) d'emplois
+    display_factor: 1
+    tooltip: Nombre de familles d'emplois dans le top 10
+- id: form_match_adult1_scaled
+  category: emploi
+  source_metric: form_match_adult1
+  include_in_binom: true
+  display:
+    name: Match besoins et Centres de formation
+    strong_point_text: Des centres de formations proposent les formations recherchées
+      par l'adulte 1
+    high_value_adjective: présent
+    show: true
+    unit: formations offertes
+    display_factor: 1
+    tooltip: Nombre centres de formations dans la commune
+- id: form_match_adult2_scaled
+  category: emploi
+  source_metric: form_match_adult2
+  include_in_binom: true
+  display:
+    name: Match besoins et Centres de formation
+    strong_point_text: Des centres de formations proposent les formations recherchées
+      par l'adulte 2
+    high_value_adjective: présent
+    show: true
+    unit: formations offertes
+    display_factor: 1
+    tooltip: Nombre centres de formations dans la commune
+- id: reloc_dist_scaled
+  category: mobilité
+  source_metric: dist_current_loc
+  include_in_binom: false
+  display:
+    name: Distance de la localisation actuelle
+    strong_point_text: La localité proposée est proche de la commune actuelle
+    high_value_adjective: réduite
+    show: false
+    unit: mètres
+    display_factor: 1
+    tooltip: Distance en m de la position actuelle
+- id: reloc_epci_scaled
+  category: mobilité
+  source_metric: null
+  include_in_binom: false
+  display:
+    name: Même agglomération que la localisation actuelle
+    strong_point_text: La localité proposée est bien connectée à la commune actuelle
+    high_value_adjective: proche
+    show: false
+    unit: None
+    display_factor: 1
+    tooltip: ''
+- id: edu_enfant1_scaled
+  category: education
+  source_metric: edu_dist_kid1
+  include_in_binom: false
+  display:
+    name: Proximité de l'établissement scolaire enfant 1
+    strong_point_text: ''
+    high_value_adjective: proche
+    show: false
+    unit: mètres
+    display_factor: 1
+    tooltip: Distance en m de la commune proposée (0 si même commune)
+- id: edu_enfant2_scaled
+  category: education
+  source_metric: edu_dist_kid2
+  include_in_binom: false
+  display:
+    name: Proximité de l'établissement scolaire enfant 2
+    strong_point_text: ''
+    high_value_adjective: proche
+    show: false
+    unit: mètres
+    display_factor: 1
+    tooltip: Distance en m de la commune proposée (0 si même commune)
+- id: edu_enfant3_scaled
+  category: education
+  source_metric: edu_dist_kid3
+  include_in_binom: false
+  display:
+    name: Proximité de l'établissement scolaire enfant 3
+    strong_point_text: ''
+    high_value_adjective: proche
+    show: false
+    unit: mètres
+    display_factor: 1
+    tooltip: Distance en m de la commune proposée (0 si même commune)
+- id: edu_enfant4_scaled
+  category: education
+  source_metric: edu_dist_kid4
+  include_in_binom: false
+  display:
+    name: Proximité de l'établissement scolaire enfant 4
+    strong_point_text: ''
+    high_value_adjective: proche
+    show: false
+    unit: mètres
+    display_factor: 1
+    tooltip: Distance en m de la commune proposée (0 si même commune)
+- id: edu_enfant5_scaled
+  category: education
+  source_metric: edu_dist_kid5
+  include_in_binom: false
+  display:
+    name: Proximité de l'établissement scolaire enfant 5
+    strong_point_text: ''
+    high_value_adjective: proche
+    show: false
+    unit: mètres
+    display_factor: 1
+    tooltip: Distance en m de la commune proposée (0 si même commune)
+- id: besoins_match_scaled
+  category: inclusion
+  source_metric: besoin_match
+  include_in_binom: false
+  display:
+    name: Présence de solutions de soutien spécifiques
+    strong_point_text: Les besoins pécifiques sont bien couverts dans la localité
+      proposée
+    high_value_adjective: élevé
+    show: true
+    unit: besoin(s) couvert(s)
+    display_factor: 1
+    tooltip: Présence de solutions de soutien spécifiques

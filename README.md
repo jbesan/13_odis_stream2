@@ -40,7 +40,7 @@ Ce prototype a un triple objectif :
 ### Prérequis
 
 *   [Python 3.10+](https://www.python.org/)
-*   [Poetry](https://python-poetry.org/docs/#installation) pour la gestion des dépendances.
+*   Un environnement virtuel (recommandé).
 
 ### Instructions
 
@@ -50,16 +50,20 @@ Ce prototype a un triple objectif :
     cd 13_odis
     ```
 
-2.  **Installez les dépendances :**
-    Ce projet utilise Poetry. Depuis la racine du projet, exécutez :
+2.  **Créez et activez un environnement virtuel :**
     ```bash
-    poetry install
+    python3 -m venv .venv
+    source .venv/bin/activate
     ```
 
-3.  **Lancez l'application Streamlit :**
-    Le fichier principal de l'application se trouve dans `eda/streamlit/`.
+3.  **Installez les dépendances :**
     ```bash
-    poetry run streamlit run eda/streamlit/main.py
+    pip install -r app/requirements.txt
+    ```
+
+4.  **Lancez l'application Streamlit :**
+    ```bash
+    streamlit run app/1_Accueil.py
     ```
     L'application devrait s'ouvrir dans votre navigateur web.
 
@@ -88,21 +92,28 @@ Le cœur de l'application est un pipeline de scoring qui évalue les communes en
 > Le jeu de données principal qui se trouve dans `odis_june_2025_jacques.parquet` est une compilation de plusieurs autres jeux de données. La logique de cette compilation se trouve dans le Notebook `odis_stream2_data_gathering.ipynb`
 
 ## 📂 Structure du Projet
-Le code de l'application Streamlit est organisé de manière modulaire au sein du répertoire eda/streamlit/ pour séparer les différentes logiques :
+Le code de l'application Streamlit est organisé de manière modulaire au sein du répertoire app/ pour séparer les différentes logiques :
 
-eda/streamlit/
-├── README.md
-├── main.py
-├── ui.py
-├── scoring.py
+app/
+├── 1_Accueil.py
+├── config.py
+├── data_loader.py
 ├── maps.py
-└── config.py
+├── scoring.py
+├── ui.py
+├── pages/
+│   ├── 2_Formulaire.py
+│   └── 3_Resultats.py
+└── requirements.txt
 
-- main.py : C'est le point d'entrée principal de l'application. Il initialise l'état de la session, charge les données, orchestre l'affichage des différentes sections (barre latérale, carte, résultats) et déclenche le calcul du score.
-- ui.py : Ce fichier est responsable de la création de tous les composants de l'interface utilisateur avec Streamlit. Il contient le code pour la barre latérale, les onglets de saisie du projet de vie, et l'affichage de la liste des résultats.
-- scoring.py : Le cœur logique du prototype. Il contient l'ensemble du pipeline de traitement et de notation, depuis le calcul des scores de critères individuels jusqu'à l'agrégation finale et la gestion de la logique de "binômes".
-- maps.py : Regroupe toutes les fonctions liées à la génération des cartes interactives avec Folium. Il gère la création de la carte de base, l'affichage des communes colorées par score, et les différentes couches d'informations (écoles, santé, etc.).
-- config.py : Un fichier central pour la configuration. Il définit les chemins d'accès aux données, les paramètres par défaut de l'application, et contient les scénarios pré-configurés pour le mode de démonstration.
+- 1_Accueil.py : C'est le point d'entrée principal de l'application multipage. Il affiche la page d'accueil.
+- pages/2_Formulaire.py : La deuxième page de l'application, qui contient le formulaire du projet de vie.
+- pages/3_Resultats.py : La troisième page qui affiche les résultats du scoring.
+- ui.py : Ce fichier est responsable de la création de tous les composants de l'interface utilisateur avec Streamlit.
+- scoring.py : Le cœur logique du prototype. Il contient l'ensemble du pipeline de traitement et de notation.
+- maps.py : Regroupe toutes les fonctions liées à la génération des cartes interactives avec Folium.
+- config.py : Un fichier central pour la configuration.
+- data_loader.py : Contient la logique pour charger les données.
 
 
 ## 🔮 Feuille de Route et Améliorations Futures
