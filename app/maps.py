@@ -8,10 +8,17 @@ from shapely.geometry import mapping
 from branca.colormap import linear
 from folium.plugins import FastMarkerCluster
 
+from typing import Union
 import config as cfg
 
-def get_map_zoom(distance_km: int) -> int:
+def get_map_zoom(distance_km: Union[int, str]) -> int:
     """Returns a map zoom level based on a search distance."""
+    if isinstance(distance_km, str):
+        if distance_km == 'departement':
+            return 9
+        if distance_km == 'region':
+            return 8
+    
     if distance_km <= 10: return 11
     if distance_km <= 25: return 10
     if distance_km <= 50: return 9
