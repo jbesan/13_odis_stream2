@@ -10,31 +10,34 @@ from app.config import ScoringConfig
 def sample_data():
     """Creates a sample GeoDataFrame for testing."""
     data = {
-        'codgeo': ['75056', '69123', '13055', '33063'],
-        'libgeo': ['Paris', 'Lyon', 'Marseille', 'Bordeaux'],
-        'population': [2148271, 513275, 861635, 257068],
+        'codgeo': ['75056', '69123', '13055', '33063', '64445'],
+        'libgeo': ['Paris', 'Lyon', 'Marseille', 'Bordeaux', 'Pau'],
+        'dep_code': ['75', '69', '13', '33', '64'],
+        'reg_code': ['11', '84', '93', '75', '75'],
+        'population': [2148271, 513275, 861635, 257068, 77130],
         'geometry': [
             Polygon([(2.224, 48.816), (2.469, 48.816), (2.469, 48.902), (2.224, 48.902)]),
             Polygon([(4.8, 45.7), (4.9, 45.7), (4.9, 45.8), (4.8, 45.8)]),
             Polygon([(5.3, 43.2), (5.4, 43.2), (5.4, 43.3), (5.3, 43.3)]),
-            Polygon([(-0.579, 44.838), (-0.579, 44.838), (-0.579, 44.838), (-0.579, 44.838)])
+            Polygon([(-0.579, 44.838), (-0.579, 44.838), (-0.579, 44.838), (-0.579, 44.838)]),
+            Polygon([(-0.333, 43.3), (-0.333, 43.3), (-0.333, 43.3), (-0.333, 43.3)])
         ],
-        'codgeo_voisins': [['92050', '93001'], ['69001'], ['13001'], ['33062']],
-        'epci_code': ['200054781', '200046977', '200054807', '200023384'],
-        'met': [100, 50, 70, 80],
-        'pop_be': [1000, 500, 700, 800],
-        'be_codfap_top': [[ 'F1', 'G2'], ['F1'], ['G2'], ['H3']],
-        'codes_formations': [['123'], ['456'], ['123', '456'], []],
-        'rp_5+pieces': [10, 20, 15, 12],
-        'log_rp': [100, 200, 150, 120],
-        'log_soc_inoccupes': [5, 2, 3, 4],
-        'log_soc_total': [50, 20, 30, 40],
-        'log_vac': [10, 5, 8, 6],
-        'log_total': [100, 50, 80, 60],
-        'risque_fermeture': [1, 0, 2, 0],
-        'ecoles_ct': [10, 5, 15, 8],
-        'svc_incl_count': [5, 3, 4, 2],
-        'pol_num': [1, 2, 3, 4],
+        'codgeo_voisins': [['92050', '93001'], ['69001'], ['13001'], ['33062'], ['64001']],
+        'epci_code': ['200054781', '200046977', '200054807', '200023384', '246401722'],
+        'met': [100, 50, 70, 80, 60],
+        'pop_be': [1000, 500, 700, 800, 400],
+        'be_codfap_top': [[ 'F1', 'G2'], ['F1'], ['G2'], ['H3'], ['H3']],
+        'codes_formations': [['123'], ['456'], ['123', '456'], [], []],
+        'rp_5+pieces': [10, 20, 15, 12, 10],
+        'log_rp': [100, 200, 150, 120, 90],
+        'log_soc_inoccupes': [5, 2, 3, 4, 2],
+        'log_soc_total': [50, 20, 30, 40, 20],
+        'log_vac': [10, 5, 8, 6, 4],
+        'log_total': [100, 50, 80, 60, 40],
+        'risque_fermeture': [1, 0, 2, 0, 0],
+        'ecoles_ct': [10, 5, 15, 8, 6],
+        'svc_incl_count': [5, 3, 4, 2, 3],
+        'pol_num': [1, 2, 3, 4, 1],
     }
     gdf = gpd.GeoDataFrame(data, crs="EPSG:4326")
     gdf = gdf.set_index('codgeo')
@@ -55,8 +58,8 @@ def sample_scores_cat():
 def sample_incl_index():
     """Creates a sample incl_index DataFrame for testing."""
     data = {
-        'codgeo': ['75056', '69123', '13055', '33063'],
-        'key': [{'cat1_serv1'}, {'cat1_serv2'}, {'cat1_serv1', 'cat1_serv2'}, set()]
+        'codgeo': ['75056', '69123', '13055', '33063', '64445'],
+        'key': [{'cat1_serv1'}, {'cat1_serv2'}, {'cat1_serv1', 'cat1_serv2'}, set(), set()]
     }
     df = pd.DataFrame(data)
     df = df.set_index('codgeo')
@@ -200,3 +203,34 @@ def test_compute_weighted_score_calculates_correctly(default_config):
     # Assert
     expected_score = ((0.8 * 100) + (0.6 * 50)) / (100 + 50)
     assert weighted_score.iloc[0] == pytest.approx(expected_score)
+
+def test_compute_odis_score_area_based_search(sample_data, sample_scores_cat, default_config, sample_incl_index):
+    """Tests that area-based (departement, region) searches work correctly."""
+    # --- Test Département search ---
+    config_dep = default_config
+    config_dep.commune_actuelle = '33063' # Bordeaux
+    config_dep.loc_distance_km = 'departement'
+    config_dep.nb_adultes = 1
+    config_dep.codes_metiers = [[]] # Fix: ensure list has one entry for one adult
+    config_dep.codes_formations = [[]] # Fix: ensure list has one entry for one adult
+
+    result_dep = scoring.compute_odis_score(sample_data, sample_scores_cat, config_dep, sample_incl_index)
+    
+    # Should only contain Bordeaux, as it's the only one in dep 33
+    assert len(result_dep) == 1
+    assert '33063' in result_dep.index
+
+    # --- Test Région search ---
+    config_reg = default_config
+    config_reg.commune_actuelle = '33063' # Bordeaux
+    config_reg.loc_distance_km = 'region'
+    config_reg.nb_adultes = 1
+    config_reg.codes_metiers = [[]] # Fix: ensure list has one entry for one adult
+    config_reg.codes_formations = [[]] # Fix: ensure list has one entry for one adult
+
+    result_reg = scoring.compute_odis_score(sample_data, sample_scores_cat, config_reg, sample_incl_index)
+
+    # Should contain Bordeaux and Pau, as they are both in region 75
+    assert len(result_reg) == 2
+    assert '33063' in result_reg.index
+    assert '64445' in result_reg.index

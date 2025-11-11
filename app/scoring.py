@@ -100,8 +100,9 @@ def compute_criteria_scores(df: gpd.GeoDataFrame, prefs: Dict[str, Any], incl_in
         df['classes_ferm_scaled'] = transformer.fit_transform(df[['risque_fermeture_ratio']].fillna(0))
 
     # --- MOBILITE ---
-    # 1. Distance from the current location 
-    df['reloc_dist_scaled'] = (1 - df['dist_current_loc'] / (prefs['loc_distance_km'] * 1000))
+    # 1. Distance from the current location
+    if isinstance(prefs['loc_distance_km'], int):
+        df['reloc_dist_scaled'] = (1 - df['dist_current_loc'] / (prefs['loc_distance_km'] * 1000))
     # 2. Is the commune in the same EPCI as the current one?
     # We get the EPCI from the original, unfiltered dataframe to avoid KeyErrors
     current_epci = df_all_communes.loc[prefs['commune_actuelle']]['epci_code']
@@ -259,11 +260,28 @@ def compute_odis_score(df_original: gpd.GeoDataFrame, scores_cat: pd.DataFrame, 
     else:
         df = df_filtered_by_pop
 
-    # 2. Add distance from the user's current location
-    df = add_distance_to_current_loc(df, current_codgeo=config.commune_actuelle)
+    # 2. Create the primary search area based on the selected option
+    search_option = config.loc_distance_km
 
-    # 3. Filter by max distance to create the primary search area
-    odis_search = filter_by_distance(df, max_distance_km=config.loc_distance_km)
+    if isinstance(search_option, int):
+        # Distance-based search
+        df = add_distance_to_current_loc(df, current_codgeo=config.commune_actuelle)
+        odis_search = filter_by_distance(df, max_distance_km=search_option)
+    else:
+        # Area-based search
+        current_commune_geo = df_original.loc[config.commune_actuelle]
+        if search_option == 'departement':
+            current_dep = current_commune_geo['dep_code']
+            odis_search = df[df['dep_code'] == current_dep].copy()
+        elif search_option == 'region':
+            current_reg = current_commune_geo['reg_code']
+            odis_search = df[df['reg_code'] == current_reg].copy()
+        else: # Should not happen
+            odis_search = df.copy()
+
+        # We still need the distance for some scores
+        odis_search = add_distance_to_current_loc(odis_search, current_codgeo=config.commune_actuelle)
+
     if odis_search.empty:
         return odis_search.copy() # Return a copy to avoid warnings
 

@@ -1,6 +1,6 @@
 # /home/jacques/odis/13_odis/eda/streamlit/config.py
 from dataclasses import dataclass
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Union
 import os
 
 GCS_BUCKET_PATH = 'gs://odis-stream2-eu/'
@@ -32,11 +32,10 @@ SNCF_FILE = 'formes-des-lignes-du-rfn.geojson'
 NOMBRE_ADULTES_OPTIONS = [1, 2]
 NOMBRE_ENFANTS_OPTIONS = [0, 1, 2, 3, 4, 5]
 CLASSES_SCOLAIRES = ['Maternelle', 'Elémentaire', 'Collège', 'Lycée']
-LOC_DISTANCE_OPTIONS = {25: 'Important (~25km)', 50: 'Assez important (~50km)', 1000: 'Toute la France'}
+LOC_DISTANCE_OPTIONS = {20: '20 km', 50: '50 km', 'departement': 'Département', 'region': 'Région'}
 HEBERGEMENT_OPTIONS = ["Chez l'habitant", 'Location', 'Foyer']
 LOGEMENT_OPTIONS = ['Location', 'Logement Social']
 SANTE_OPTIONS = ["Aucun", "Hopital", 'Maternité', "Soutien Psychologique & Addictologie"]
-MOBILITE_OPTIONS = {25: 'Important (~25km)', 50: 'Assez important (~50km)', 1000: 'Toute la France'}
 POIDS_OPTIONS = [0, 25, 50, 100]
 PENALITE_BINOME_OPTIONS = [1, 10, 25, 50, 100]
 POP_MIN_OPTIONS = [0, 500, 1000, 5000, 10000]
@@ -65,7 +64,7 @@ class ScoringConfig:
     
     # Location
     commune_actuelle: str
-    loc_distance_km: int
+    loc_distance_km: Union[int, str]
     
     # Household
     nb_adultes: int
