@@ -72,6 +72,16 @@ if st.session_state.get('processed_gdf') is None and st.session_state.get('form_
 # Sidebar
 with st.sidebar:
     st.image('./images/logo-jaccueille-singa.png', width=150)
+    st.write("")
+    st.write("")
+    st.markdown(
+        """
+        <div style='text-align: justify;'>
+        Découvrez les 5 communes ou binômes de communes qui répondent le mieux à vos attentes. Les scores vous permettent de comparer facilement leurs atouts.
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
     ui.display_sidebar(st.session_state['demo_data'])
 
 def get_person_accompanied_str():
