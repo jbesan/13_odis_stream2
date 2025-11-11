@@ -10,25 +10,27 @@ st.set_page_config(layout="wide", page_title='OD&IS: Recherche Inversée')
 
 def session_states_init(defaults):
     """Initializes all necessary keys in Streamlit's session state."""
+    is_demo = 'demo' in st.query_params
+
     if 'app_data' not in st.session_state:
         st.session_state['app_data'] = {}
-    if 'config' not in st.session_state:
+    if 'config' not in st.session_state or is_demo:
         st.session_state['config'] = None
-    if "processed_gdf" not in st.session_state:
+    if "processed_gdf" not in st.session_state or is_demo:
         st.session_state['processed_gdf'] = None
-    if "selected_geo" not in st.session_state:
+    if "selected_geo" not in st.session_state or is_demo:
         st.session_state['selected_geo'] = None
-    if "highlighted_result" not in st.session_state:
+    if "highlighted_result" not in st.session_state or is_demo:
         st.session_state['highlighted_result'] = [False, None]
-    if 'fg_dict_ref' not in st.session_state:
+    if 'fg_dict_ref' not in st.session_state or is_demo:
         st.session_state['fg_dict_ref'] = {}
-    if 'fgs_to_show' not in st.session_state:
+    if 'fgs_to_show' not in st.session_state or is_demo:
         st.session_state['fgs_to_show'] = set()
-    if "zoom" not in st.session_state:
+    if "zoom" not in st.session_state or is_demo:
         st.session_state['zoom'] = cfg.DEFAULT_MAP_ZOOM
-    if "center" not in st.session_state:
+    if "center" not in st.session_state or is_demo:
         st.session_state['center'] = cfg.DEFAULT_MAP_CENTER
-    if 'demo_data' not in st.session_state:
+    if 'demo_data' not in st.session_state or is_demo:
         st.session_state['demo_data'] = defaults
     # if 'form_page' not in st.session_state:
     st.session_state['form_page'] = 'localisation'
@@ -57,7 +59,7 @@ def session_states_init(defaults):
     }
 
     for ui_key, config_key in ui_keys_map.items():
-        if ui_key not in st.session_state:
+        if ui_key not in st.session_state or is_demo:
             if isinstance(config_key, tuple):
                 base_key, transform = config_key
                 st.session_state[ui_key] = transform(defaults[base_key])
@@ -66,13 +68,13 @@ def session_states_init(defaults):
 
     # Handle list-based UI keys separately
     for i in range(defaults.get('nb_adultes', 2)):
-        if f'ui_metiers_adult_{i}' not in st.session_state:
+        if f'ui_metiers_adult_{i}' not in st.session_state or is_demo:
             st.session_state[f'ui_metiers_adult_{i}'] = defaults['codes_metiers'][i] if i < len(defaults['codes_metiers']) else []
-        if f'ui_formations_adult_{i}' not in st.session_state:
+        if f'ui_formations_adult_{i}' not in st.session_state or is_demo:
             st.session_state[f'ui_formations_adult_{i}'] = defaults['codes_formations'][i] if i < len(defaults['codes_formations']) else []
     
     for i in range(defaults.get('nb_enfants', 5)):
-        if f'ui_classe_enfant_{i}' not in st.session_state:
+        if f'ui_classe_enfant_{i}' not in st.session_state or is_demo:
             st.session_state[f'ui_classe_enfant_{i}'] = defaults['classe_enfants'][i] if i < len(defaults['classe_enfants']) else 'Maternelle'
 
 
