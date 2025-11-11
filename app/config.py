@@ -122,7 +122,7 @@ DEMO_SCENARIOS = {
         'nom': 'Olga & Dimitri',
         'departement_actuel': '75',
         'commune_actuelle': 'Paris',
-        'loc_distance_km': 1000,
+        'loc_distance_km': 'region',
         'hebergement': "Location",
         'logement': "Logement Social",
         'nb_adultes': 2,
