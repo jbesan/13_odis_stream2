@@ -63,7 +63,7 @@ def load_all_datasets(odis_file: str, scores_cat_file: str, metiers_file: str, f
     columns_to_load = [
         'codgeo', 'libgeo', 'polygon', 'dep_code', 'epci_code', 'epci_nom', 'codgeo_voisins',
         'population', 'pop_be', 'met', 'be_codfap_top', 'be_libfap_top',
-        'codes_formations', 'rp_5+pieces', 'log_rp', 'log_soc_inoccupes',
+        'codes_formations', 'noms_formations', 'rp_5+pieces', 'log_rp', 'log_soc_inoccupes',
         'log_soc_total', 'log_vac', 'log_total', 'risque_fermeture', 'ecoles_ct',
         'svc_incl_count', 'pol_num'
     ]
