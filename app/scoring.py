@@ -83,7 +83,7 @@ def filter_bassins_de_vie(bv_gdf: gpd.GeoDataFrame, start_commune: gpd.GeoSeries
         
     elif loc_type in ['departement', 'region']:
         # Get the geometry for the selected area
-        area_geometry = area_gdf.loc[(loc_type, loc_code)].geometry
+        area_geometry = area_gdf.loc[(loc_type, loc_code)].polygon
         
         # Find all BVs that intersect with that area
         intersecting_mask = bv_gdf.intersects(area_geometry)

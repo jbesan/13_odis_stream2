@@ -186,6 +186,9 @@ def load_area_geodata(_communes_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     # Combine and set index
     area_geo = pd.concat([dep_geo, reg_geo], ignore_index=True)
     area_geo = area_geo.set_index(['area_type', 'area_code'])
+
+    # Explicitly ensure it's a GeoDataFrame with the geometry column set
+    area_geo = gpd.GeoDataFrame(area_geo, geometry='polygon', crs=communes_gdf.crs)
     
     return area_geo
 
