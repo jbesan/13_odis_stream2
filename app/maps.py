@@ -25,6 +25,29 @@ def get_map_zoom(distance_km: Union[int, str]) -> int:
     if distance_km <= 100: return 8
     return 7
 
+def dissolve_communes_to_bassins_de_vie(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """
+    Merges commune geometries into 'bassin de vie' polygons in a robust way.
+    """
+    # Ensure the required columns are present
+    if cfg.BV_CODE_COL not in gdf.columns or not hasattr(gdf, 'geometry'):
+        return gpd.GeoDataFrame()
+
+    # Explicitly create a new, clean GeoDataFrame to avoid any unexpected columns.
+    # gdf.geometry correctly refers to the active geometry column, regardless of its name ('polygon' in this case).
+    gdf_simple = gpd.GeoDataFrame(
+        {cfg.BV_CODE_COL: gdf[cfg.BV_CODE_COL]},
+        geometry=gdf.geometry,
+        crs="EPSG:4326"
+    )
+
+    # Now dissolve this clean GeoDataFrame. The output will have BV_CODE_COL as the index
+    # and a single geometry column named 'geometry'.
+    gdf_bv = gdf_simple.dissolve(by=cfg.BV_CODE_COL)
+    
+    return gdf_bv
+
+
 def create_base_map(center: list, zoom: int):
     """Creates the base Folium map."""
     if center is None: center = cfg.DEFAULT_MAP_CENTER
@@ -32,10 +55,26 @@ def create_base_map(center: list, zoom: int):
     return flm.Map(location=center, zoom_start=zoom, tiles="cartodbpositron")
 
 def build_scores_layer(df: pd.DataFrame) -> tuple:
-    """Builds the FeatureGroup for all scored communes, colored by score."""
+    """Builds the FeatureGroup for all scored communes or bassins de vie, colored by score."""
     fg = flm.FeatureGroup(name="Scores")
     
-    score_dict = df.set_index("codgeo")["weighted_score"]
+    view_level = st.session_state.get('view_level', 'Communes')
+
+    if view_level == 'Bassins de vie':
+        id_col = cfg.BV_CODE_COL
+        name_col = 'libgeo'
+        tooltip_fields = [name_col, 'weighted_score']
+        tooltip_aliases = ['Bassin de vie:', 'Score:']
+    else: # Communes
+        id_col = 'codgeo'
+        name_col = 'libgeo'
+        tooltip_fields = [name_col, 'weighted_score']
+        tooltip_aliases = ['Commune:', 'Score:']
+
+    if id_col not in df.columns:
+        return fg, None # Return empty layer if the required ID is missing
+
+    score_dict = df.set_index(id_col)["weighted_score"]
     colormap = linear.YlGn_09.scale(score_dict.min(), score_dict.max())
 
     # Add current commune in blue
@@ -49,19 +88,19 @@ def build_scores_layer(df: pd.DataFrame) -> tuple:
         tooltip=current_geo_df['libgeo'].iloc[0]
     ).add_to(fg)
 
-    # Add all scored communes
-    df_serializable = df[['codgeo', 'libgeo', 'weighted_score', 'polygon']].copy()
+    # Add all scored geometries (communes or bassins de vie)
+    df_serializable = df[[id_col, name_col, 'weighted_score', 'polygon']].copy()
     df_serializable.set_geometry('polygon', inplace=True)
 
     flm.GeoJson(
         df_serializable,
         style_function=lambda feature: {
-            "fillColor": colormap(score_dict.get(feature["properties"]["codgeo"])),
+            "fillColor": colormap(score_dict.get(feature["properties"][id_col])),
             "color": "grey",
             "weight": 1,
             "fillOpacity": 0.7,
         },
-        tooltip=flm.GeoJsonTooltip(fields=['libgeo', 'weighted_score'], aliases=['Commune:', 'Score:'], fmt=['', '{:.0%}']),
+        tooltip=flm.GeoJsonTooltip(fields=tooltip_fields, aliases=tooltip_aliases, fmt=['', '{:.0%}']),
     ).add_to(fg)
 
     return fg, colormap

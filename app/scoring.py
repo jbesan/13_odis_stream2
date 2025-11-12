@@ -42,6 +42,55 @@ def filter_by_distance(df: pd.DataFrame, max_distance_km: float) -> pd.DataFrame
     """Filters a dataframe to keep only rows within a given distance."""
     return df[df.dist_current_loc < max_distance_km * 1000].copy()
 
+def filter_communes(df: gpd.GeoDataFrame, start_commune: gpd.GeoSeries, loc_type: str, loc_code: str, loc_distance_km: int) -> gpd.GeoDataFrame:
+    """
+    Filters the communes dataframe based on the selected mobility criteria.
+    """
+    if loc_type == 'distance':
+        # Project to a CRS in meters for accurate distance calculation
+        df_proj = df.to_crs(cfg.PROJECTED_CRS)
+        start_centroid_proj = start_commune.to_crs(cfg.PROJECTED_CRS).centroid
+
+        # Calculate distance from the starting centroid to all other centroids
+        distances = df_proj.centroid.distance(start_centroid_proj.iloc[0])
+        
+        # Filter communes within the specified radius
+        filtered_df = df[distances <= loc_distance_km * 1000]
+        return filtered_df.copy()
+        
+    elif loc_type == 'departement':
+        return df[df['dep_code'] == loc_code].copy()
+    elif loc_type == 'region':
+        return df[df['reg_code'] == loc_code].copy()
+    
+    return gpd.GeoDataFrame() # Return empty if no valid type
+
+def filter_bassins_de_vie(bv_gdf: gpd.GeoDataFrame, start_commune: gpd.GeoSeries, loc_type: str, loc_code: str, loc_distance_km: int, area_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """
+    Filters the Bassins de Vie dataframe based on the selected mobility criteria.
+    """
+    if loc_type == 'distance':
+        # Project to a CRS in meters for accurate distance calculation
+        bv_proj = bv_gdf.to_crs(cfg.PROJECTED_CRS)
+        start_centroid_proj = start_commune.to_crs(cfg.PROJECTED_CRS).centroid
+
+        # Calculate distance from the starting centroid to all BV centroids
+        distances = bv_proj.centroid.distance(start_centroid_proj.iloc[0])
+        
+        # Filter BVs within the specified radius
+        filtered_df = bv_gdf[distances <= loc_distance_km * 1000]
+        return filtered_df.copy()
+        
+    elif loc_type in ['departement', 'region']:
+        # Get the geometry for the selected area
+        area_geometry = area_gdf.loc[(loc_type, loc_code)].geometry
+        
+        # Find all BVs that intersect with that area
+        intersecting_mask = bv_gdf.intersects(area_geometry)
+        return bv_gdf[intersecting_mask].copy()
+    
+    return gpd.GeoDataFrame() # Return empty if no valid type
+
 def compute_criteria_scores(df: gpd.GeoDataFrame, prefs: Dict[str, Any], incl_index: pd.DataFrame, df_all_communes: gpd.GeoDataFrame) -> gpd.GeoDataFrame: 
     """
     Computes individual scores for each criterion based on user preferences.
@@ -232,14 +281,51 @@ def select_best_score_per_commune(df: pd.DataFrame) -> pd.DataFrame:
     return df.sort_values('weighted_score', ascending=False).groupby('codgeo').head(1)
 
 
+def aggregate_scores_by_bassin_de_vie(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Aggregates commune scores at the 'bassin de vie' level.
+    """
+    df_agg = df.copy()
+    
+    # Explicitly drop the old geometry column before aggregating to prevent it from being carried over.
+    if 'polygon' in df_agg.columns:
+        df_agg = df_agg.drop(columns='polygon')
+
+    # Define a weighted average function for aggregation
+    def weighted_avg(group, score_col, weight_col='population'):
+        return (group[score_col] * group[weight_col]).sum() / group[weight_col].sum()
+
+    # Identify all score-related columns to be aggregated
+    score_cols = [col for col in df_agg.columns if '_score' in col or '_scaled' in col]
+    
+    # Create a dictionary of aggregation functions
+    agg_dict = {col: lambda x, col=col: weighted_avg(df_agg.loc[x.index], col) for col in score_cols}
+    agg_dict['population'] = 'sum'
+    agg_dict['epci_nom'] = lambda x: ', '.join(x.unique())
+
+    # Group by 'bassin de vie' and aggregate
+    df_bv = df_agg.groupby([cfg.BV_CODE_COL, cfg.BV_NAME_COL]).agg(agg_dict)
+    
+    df_bv.reset_index(inplace=True)
+    df_bv.rename(columns={cfg.BV_NAME_COL: 'libgeo'}, inplace=True) # Use 'libgeo' for consistency
+    
+    # Add columns that exist in the commune view for schema consistency, preventing UI errors
+    df_bv['binome'] = False
+    df_bv['libgeo_binome'] = None
+    df_bv['polygon_binome'] = None
+    
+    return df_bv
+
+
 # --- Main Orchestration Function ---
 
-def compute_odis_score(df_original: gpd.GeoDataFrame, scores_cat: pd.DataFrame, config: 'ScoringConfig', incl_index: pd.DataFrame) -> pd.DataFrame:
+def compute_odis_score(df_search: gpd.GeoDataFrame, df_all_communes: gpd.GeoDataFrame, scores_cat: pd.DataFrame, config: 'ScoringConfig', incl_index: pd.DataFrame) -> pd.DataFrame:
     """
-    Main function that orchestrates the entire scoring pipeline.
+    Main function that orchestrates the entire scoring pipeline on a pre-filtered dataframe.
     
     Args:
-        df_original: The base GeoDataFrame of all communes, unfiltered.
+        df_search: Pre-filtered GeoDataFrame of communes to be scored.
+        df_all_communes: The base GeoDataFrame of all communes, for lookups.
         scores_cat: DataFrame defining scores and their categories.
         config: ScoringConfig object with user preferences.
         incl_index: Pre-processed DataFrame for inclusion services lookup.
@@ -247,46 +333,17 @@ def compute_odis_score(df_original: gpd.GeoDataFrame, scores_cat: pd.DataFrame, 
     Returns:
         A DataFrame with the best score for each commune in the search area.
     """
-    # Make a copy to avoid modifying the original cached dataframe
-    df = df_original.copy()
+    if df_search.empty:
+        return df_search.copy() # Return a copy to avoid warnings
 
-    # 1. Filter communes by minimum population
-    df_filtered_by_pop = df[df.population > config.pop_min].copy()
-
-    # Ensure the reference commune (commune_actuelle) is always included,
-    # even if its population is below config.pop_min.
-    if config.commune_actuelle not in df_filtered_by_pop.index:
-        df = pd.concat([df_filtered_by_pop, df.loc[[config.commune_actuelle]]])
+    # We still need the distance for some scores, calculate it if not present
+    if 'dist_current_loc' not in df_search.columns:
+        odis_search = add_distance_to_current_loc(df_search, current_codgeo=config.commune_actuelle)
     else:
-        df = df_filtered_by_pop
-
-    # 2. Create the primary search area based on the selected option
-    search_option = config.loc_distance_km
-
-    if isinstance(search_option, int):
-        # Distance-based search
-        df = add_distance_to_current_loc(df, current_codgeo=config.commune_actuelle)
-        odis_search = filter_by_distance(df, max_distance_km=search_option)
-    else:
-        # Area-based search
-        current_commune_geo = df_original.loc[config.commune_actuelle]
-        if search_option == 'departement':
-            current_dep = current_commune_geo['dep_code']
-            odis_search = df[df['dep_code'] == current_dep].copy()
-        elif search_option == 'region':
-            current_reg = current_commune_geo['reg_code']
-            odis_search = df[df['reg_code'] == current_reg].copy()
-        else: # Should not happen
-            odis_search = df.copy()
-
-        # We still need the distance for some scores
-        odis_search = add_distance_to_current_loc(odis_search, current_codgeo=config.commune_actuelle)
-
-    if odis_search.empty:
-        return odis_search.copy() # Return a copy to avoid warnings
+        odis_search = df_search.copy()
 
     # 4. Compute all individual criteria scores based on preferences.
-    odis_scored = compute_criteria_scores(odis_search, prefs=config.__dict__, incl_index=incl_index, df_all_communes=df_original)
+    odis_scored = compute_criteria_scores(odis_search, prefs=config.__dict__, incl_index=incl_index, df_all_communes=df_all_communes)
 
     # 5. Expand the dataframe to include neighbor data (creating monomes and binomes).
     odis_exploded = add_neighbor_scores(odis_scored, scores_cat)

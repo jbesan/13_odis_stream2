@@ -2,8 +2,10 @@ import pandas as pd
 import geopandas as gpd
 from shapely.geometry import Polygon
 import pytest
+import numpy as np
 
 from app import scoring
+from app import config as cfg
 from app.config import ScoringConfig
 
 @pytest.fixture
@@ -234,3 +236,35 @@ def test_compute_odis_score_area_based_search(sample_data, sample_scores_cat, de
     assert len(result_reg) == 2
     assert '33063' in result_reg.index
     assert '64445' in result_reg.index
+
+def test_aggregate_scores_by_bassin_de_vie():
+    """Tests that the aggregation by 'bassin de vie' is correct."""
+    # Arrange
+    data = {
+        'libgeo': ['Commune A', 'Commune B', 'Commune C'],
+        'population': [1000, 2000, 500],
+        'weighted_score': [0.8, 0.6, 0.9],
+        'another_score_scaled': [0.5, 0.7, 0.2],
+        cfg.BV_CODE_COL: ['BV1', 'BV1', 'BV2'],
+        cfg.BV_NAME_COL: ['Bassin de Vie 1', 'Bassin de Vie 1', 'Bassin de Vie 2']
+    }
+    df = pd.DataFrame(data)
+
+    # Act
+    result_df = scoring.aggregate_scores_by_bassin_de_vie(df)
+    
+    # Assert
+    assert len(result_df) == 2 # Should be two bassins de vie
+    
+    bv1_result = result_df[result_df[cfg.BV_CODE_COL] == 'BV1'].iloc[0]
+    
+    # Check population aggregation
+    assert bv1_result['population'] == 3000 # 1000 + 2000
+    
+    # Check weighted score aggregation
+    expected_weighted_score_bv1 = ((0.8 * 1000) + (0.6 * 2000)) / (1000 + 2000)
+    assert np.isclose(bv1_result['weighted_score'], expected_weighted_score_bv1)
+    
+    # Check another scaled score to be sure
+    expected_another_score_bv1 = ((0.5 * 1000) + (0.7 * 2000)) / (1000 + 2000)
+    assert np.isclose(bv1_result['another_score_scaled'], expected_another_score_bv1)

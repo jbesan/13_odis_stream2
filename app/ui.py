@@ -30,9 +30,16 @@ def display_sidebar(demo_data: dict):
 
     # --- Technical Params ---
     
-    with st.expander('Paramètres avancés'):
-        st.select_slider("Décote binôme %", cfg.PENALITE_BINOME_OPTIONS, key="ui_penalite_binome")
-        st.select_slider("Population Minimum", cfg.POP_MIN_OPTIONS, key="ui_pop_min")
+    with st.expander('Paramètres Résultats'):
+        st.radio(
+            "Granularité des résultats",
+            ["Communes", "Bassins de vie"],
+            key='view_level',
+            horizontal=True,
+        )
+        st.text("\n\n")
+        st.select_slider("Décote commune binôme\n\n (en %)", cfg.PENALITE_BINOME_OPTIONS, key="ui_penalite_binome")
+        # st.select_slider("Population Minimum", cfg.POP_MIN_OPTIONS, key="ui_pop_min")
 
     if st.session_state.get('processed_gdf') is not None:
         st.sidebar.divider()
@@ -247,7 +254,12 @@ def display_results_list():
 
     # Display buttons and details
     for index, row in df.head(top_n).iterrows():
-        title = f"Top {index+1} | {row.libgeo}" + (f" (avec {row.libgeo_binome})" if row.binome else "")
+        # Adapt title based on the view level
+        if st.session_state.get('view_level') == 'Bassins de vie':
+            title = f"Top {index+1} | Bassin de vie de {row.libgeo}"
+        else:
+            title = f"Top {index+1} | {row.libgeo}" + (f" (avec {row.libgeo_binome})" if row.binome else "")
+
         st.button(
             title,
             on_click=_result_highlight_callback,
@@ -258,7 +270,39 @@ def display_results_list():
         )
 
         if is_highlighted and index == highlighted_index:
-            _display_result_details(row)
+            # For 'Bassin de vie' view, we call the specific details display for aggregated data
+            if st.session_state.get('view_level') == 'Bassins de vie':
+                _display_bv_result_details(row)
+            else:
+                _display_result_details(row)
+
+def _display_bv_result_details(row: pd.Series):
+    """Displays the detailed aggregated scores for a 'bassin de vie'."""
+    with st.container(border=True):
+        st.markdown('**Scores aggrégés pour le bassin de vie :**')
+        
+        # --- Radar Chart for Category Scores ---
+        cat_scores = row[[col for col in row.index if col.endswith('_cat_score')]]
+        cat_scores.rename(lambda x: x.split('_')[0].capitalize(), inplace=True)
+        fig = line_polar(theta=cat_scores.index, r=cat_scores.values * 100, line_close=True, range_r=[0, 100])
+        fig.update_traces(fill='toself')
+        fig.update_layout(margin=dict(l=50, r=50, t=50, b=50))
+        st.plotly_chart(fig, use_container_width=True)
+        st.caption('Plus le critère s’approche du bord, plus il est attractif.')
+
+        st.divider()
+
+        # Display Individual Metric Scores
+        st.markdown('**Détail par métrique :**')
+        metric_scores = {col: row[col] for col in row.index if col.endswith('_scaled')}
+        scores_cat_df = st.session_state.app_data['scores_cat']
+        
+        for metric_col, score in metric_scores.items():
+            if score > 0: # Only show metrics that contributed
+                metric_name = scores_cat_df[scores_cat_df['score'] == metric_col]['score_name'].values
+                display_name = metric_name[0] if len(metric_name) > 0 else metric_col.replace('_scaled', '').replace('_', ' ').capitalize()
+                st.markdown(f"- **{display_name}**: {score:.2f}")
+
 
 def _display_result_details(row: pd.Series):
     """Displays the detailed information for a single highlighted result."""

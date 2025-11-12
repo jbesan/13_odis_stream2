@@ -181,3 +181,16 @@ En tant que travailleur social, je veux voir les lieux recommandés sur une cart
 
 ### 📊 Status
 - In Progress
+
+## 🚀 Feature [F-09]: Résultats par bassin de vie
+
+### 📝 User Stories
+- En tant que travailleur social, je veux pouvoir agréger et visualiser les résultats par "bassin de vie" pour obtenir une perspective régionale plus pertinente et intuitive sur les territoires bien connectés.
+
+### 🔑 Key Features
+*   Ajouter un bouton de bascule (toggle) dans la barre latérale des résultats pour choisir entre la vue "par commune" et la vue "par bassin de vie".
+*   Agréger les indicateurs de score existants au niveau du "bassin de vie" pour calculer un nouveau score global.
+*   Mettre à jour la carte des résultats pour afficher des polygones colorés représentant les "bassins de vie" et leur score.
+
+### 📊 Status
+- Completed

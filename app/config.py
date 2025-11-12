@@ -18,6 +18,7 @@ def get_data_path():
 
 # --- File Paths ---
 ODIS_FILE = 'odis_june_2025_jacques.parquet'
+BV_FILENAME = 'insee-bassins-de-vie-2025.csv'
 SCORES_CAT_FILE = 'scores_config.yaml'
 METIERS_FILE = 'dares_nomenclature_fap2021.csv'
 FORMATIONS_FILE = 'index_formations.csv'
@@ -26,6 +27,10 @@ MATERNITE_FILE = 'annuaire_maternites_DREES.csv'
 SANTE_FILE = 'annuaire_sante_finess.parquet'
 INCLUSION_FILE = 'odis_services_incl_exploded.parquet'
 SNCF_FILE = 'formes-des-lignes-du-rfn.geojson'
+
+# --- Data Columns ---
+BV_CODE_COL = 'BV2022'
+BV_NAME_COL = 'LIBBV2022'
 
 # --- UI Options ---
 

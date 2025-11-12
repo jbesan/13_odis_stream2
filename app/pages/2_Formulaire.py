@@ -2,9 +2,10 @@ import streamlit as st
 import config as cfg
 import ui
 
-# DO NOT REMOVE: This makes sure the session_states persist as expected
+# DO NOT REMOVE: This makes sure the ui_ form state persists as expected
 for k, v in st.session_state.items():
-    st.session_state[k] = v
+    if k.startswith('ui_'):
+        st.session_state[k] = v
 app_data = st.session_state.app_data
 
 # Sidebar
