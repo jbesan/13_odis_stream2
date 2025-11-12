@@ -64,14 +64,12 @@ def render_localisation_form():
     with col1:
         options_dep = app_data['coddep_set']
         # The index is now correctly derived from the session state, preventing the warning.
-        index_dep = options_dep.index(st.session_state.ui_departement) if st.session_state.ui_departement in options_dep else 0
-        departement_actuel = st.selectbox("Département", options_dep, index=index_dep, key="ui_departement")
+        departement_actuel = st.selectbox("Département", options_dep, key="ui_departement")
     with col2:
         communes = app_data['depcom_df'][app_data['depcom_df'].dep_code == departement_actuel]['libgeo'].tolist()
         if st.session_state.ui_commune not in communes:
             st.session_state.ui_commune = communes[0]
-        index_com = communes.index(st.session_state.ui_commune)
-        st.selectbox("Commune", communes, index=index_com, key="ui_commune")
+        st.selectbox("Commune", communes, key="ui_commune")
 
 def render_family_form():
     """Renders the UI for the 'Situation familiale' form section."""
@@ -93,8 +91,7 @@ def render_education_form():
                 # This widget also needs the index to be set correctly.
                 options = cfg.CLASSES_SCOLAIRES
                 key = f"ui_classe_enfant_{i}"
-                index = options.index(st.session_state[key]) if key in st.session_state and st.session_state[key] in options else 0
-                st.selectbox(f'Niveau enfant {i+1}', options, index=index, key=key)
+                st.selectbox(f'Niveau enfant {i+1}', options, key=key)
 
 def render_employment_form():
     """Renders the UI for the 'Projet Professionnel' form section."""
