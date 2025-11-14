@@ -4,7 +4,12 @@ from typing import List, Dict, Any, Union
 import os
 
 GCS_BUCKET_PATH = 'gs://odis-stream2-eu/'
-LOCAL_CSV_PATH = '../csv/'
+# Get the directory of the current file (app/)
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+# Get the project root directory (one level up)
+PROJECT_ROOT = os.path.dirname(APP_DIR)
+
+LOCAL_CSV_PATH = os.path.join(PROJECT_ROOT, 'csv/')
 
 def get_data_path():
     """

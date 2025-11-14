@@ -82,7 +82,8 @@ def load_all_datasets(odis_file: str, bv_file: str, scores_cat_file: str, metier
     odis = odis[~odis.polygon.isna()]
     
     # Add a centroid column for distance calculations
-    odis['centroid'] = odis.geometry.centroid
+    # Reproject to a projected CRS before calculating the centroid to avoid warning and get accurate results
+    odis['centroid'] = odis.to_crs(epsg=2154).centroid.to_crs(odis.crs)
     
     # --- Bassin de Vie Integration ---
     bassin_de_vie = load_bassin_de_vie_data(base_path + bv_file)
@@ -208,7 +209,8 @@ def load_bassin_de_vie_geodata(_communes_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFr
     ).dissolve(by=cfg.BV_CODE_COL)
 
     # Calculate centroids for the new BV polygons
-    bv_geo['centroid'] = bv_geo.geometry.centroid
+    # Reproject to a projected CRS before calculating the centroid to avoid warning and get accurate results
+    bv_geo['centroid'] = bv_geo.to_crs(epsg=2154).centroid.to_crs(bv_geo.crs)
     
     # Get the names for each BV
     bv_names = communes_gdf[[cfg.BV_CODE_COL, cfg.BV_NAME_COL]].drop_duplicates().set_index(cfg.BV_CODE_COL)

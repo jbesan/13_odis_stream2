@@ -335,7 +335,7 @@ def aggregate_scores_by_bassin_de_vie(df: pd.DataFrame) -> pd.DataFrame:
     df_bv = df_agg.groupby([cfg.BV_CODE_COL, cfg.BV_NAME_COL]).agg(agg_dict)
     
     # Then, separately aggregate the codgeo into a list
-    communes_agg = df_agg.groupby([cfg.BV_CODE_COL, cfg.BV_NAME_COL]).apply(lambda x: list(x.index)).rename('communes')
+    communes_agg = df_agg.groupby([cfg.BV_CODE_COL, cfg.BV_NAME_COL]).apply(lambda x: list(x.index), include_groups=False).rename('communes')
     
     # Merge the commune list back into the main aggregated dataframe
     df_bv = df_bv.merge(communes_agg, left_index=True, right_index=True)
