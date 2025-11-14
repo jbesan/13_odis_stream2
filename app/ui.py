@@ -36,6 +36,7 @@ def display_sidebar(demo_data: dict):
             ["Communes", "Bassins de vie"],
             key='view_level',
             horizontal=True,
+            index=1
         )
         st.text("\n\n")
         st.select_slider("Décote commune binôme\n\n (en %)", cfg.PENALITE_BINOME_OPTIONS, key="ui_penalite_binome")
