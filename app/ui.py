@@ -75,8 +75,8 @@ def render_localisation_form():
         departement_actuel = st.selectbox("Département", options_dep, key="ui_departement")
     with col2:
         communes = app_data['depcom_df'][app_data['depcom_df'].dep_code == departement_actuel]['libgeo'].tolist()
-        if st.session_state.ui_commune not in communes:
-            st.session_state.ui_commune = communes[0]
+        if st.session_state['ui_commune'] not in communes:
+            st.session_state['ui_commune'] = communes[0]
         st.selectbox("Commune", communes, key="ui_commune")
 
 def render_family_form():
@@ -89,11 +89,11 @@ def render_family_form():
 
 def render_education_form():
     """Renders the UI for the 'Education' form section."""
-    if st.session_state.ui_nb_enfants == 0:
+    if st.session_state['ui_nb_enfants'] == 0:
         st.info("Aucun enfant n'a été ajouté dans l'onglet 'Situation familiale'.")
     else:
         col1, col2 = st.columns(2)
-        for i in range(st.session_state.ui_nb_enfants):
+        for i in range(st.session_state['ui_nb_enfants']):
             col = col1 if i % 2 == 0 else col2
             with col:
                 # This widget also needs the index to be set correctly.
@@ -181,40 +181,40 @@ def display_input_tabs(demo_data: dict):
 
 def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
     """Gathers all user inputs from session_state and creates a ScoringConfig object."""
-    app_data = st.session_state.app_data
+    app_data = st.session_state['app_data']
     
     # Location
     commune_codgeo = app_data['depcom_df'][
-        (app_data['depcom_df'].dep_code == st.session_state.ui_departement) & 
-        (app_data['depcom_df'].libgeo == st.session_state.ui_commune)
+        (app_data['depcom_df'].dep_code == st.session_state['ui_departement']) & 
+        (app_data['depcom_df'].libgeo == st.session_state['ui_commune'])
     ].index[0]
 
     # Education
-    classe_enfants = [st.session_state[f"ui_classe_enfant_{i}"] for i in range(st.session_state.ui_nb_enfants)]
+    classe_enfants = [st.session_state[f"ui_classe_enfant_{i}"] for i in range(st.session_state['ui_nb_enfants'])]
 
     # Employment
-    codes_metiers = [st.session_state[f"ui_metiers_adult_{i}"] for i in range(st.session_state.ui_nb_adultes)]
-    codes_formations = [st.session_state[f"ui_formations_adult_{i}"] for i in range(st.session_state.ui_nb_adultes)]
+    codes_metiers = [st.session_state[f"ui_metiers_adult_{i}"] for i in range(st.session_state['ui_nb_adultes'])]
+    codes_formations = [st.session_state[f"ui_formations_adult_{i}"] for i in range(st.session_state['ui_nb_adultes'])]
 
     return cfg.ScoringConfig(
-        poids_emploi=st.session_state.ui_poids_emploi,
-        poids_logement=st.session_state.ui_poids_logement,
-        poids_education=st.session_state.ui_poids_education,
-        poids_inclusion=st.session_state.ui_poids_inclusion,
-        poids_mobilité=st.session_state.ui_poids_mobilité,
+        poids_emploi=st.session_state['ui_poids_emploi'],
+        poids_logement=st.session_state['ui_poids_logement'],
+        poids_education=st.session_state['ui_poids_education'],
+        poids_inclusion=st.session_state['ui_poids_inclusion'],
+        poids_mobilité=st.session_state['ui_poids_mobilité'],
         commune_actuelle=commune_codgeo,
-        loc_distance_km=st.session_state.ui_loc_distance_km,
-        nb_adultes=st.session_state.ui_nb_adultes,
-        nb_enfants=st.session_state.ui_nb_enfants,
-        hebergement=st.session_state.ui_hebergement,
-        logement=st.session_state.ui_logement,
+        loc_distance_km=st.session_state['ui_loc_distance_km'],
+        nb_adultes=st.session_state['ui_nb_adultes'],
+        nb_enfants=st.session_state['ui_nb_enfants'],
+        hebergement=st.session_state['ui_hebergement'],
+        logement=st.session_state['ui_logement'],
         codes_metiers=codes_metiers,
         codes_formations=codes_formations,
         classe_enfants=classe_enfants,
-        besoin_sante=st.session_state.ui_besoin_sante,
-        besoins_autres=st.session_state.ui_besoins_autres,
-        binome_penalty=st.session_state.ui_penalite_binome / 100,
-        pop_min=st.session_state.ui_pop_min
+        besoin_sante=st.session_state['ui_besoin_sante'],
+        besoins_autres=st.session_state['ui_besoins_autres'],
+        binome_penalty=st.session_state['ui_penalite_binome'] / 100,
+        pop_min=st.session_state['ui_pop_min']
     )
 
 def _result_highlight_callback(index: int):
@@ -290,7 +290,7 @@ def _display_bv_result_details(row: pd.Series):
         fig = line_polar(theta=cat_scores.index, r=cat_scores.values * 100, line_close=True, range_r=[0, 100])
         fig.update_traces(fill='toself')
         fig.update_layout(margin=dict(l=50, r=50, t=50, b=50))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
         st.caption('Plus le critère s’approche du bord, plus il est attractif.')
 
         # --- Additional Info ---

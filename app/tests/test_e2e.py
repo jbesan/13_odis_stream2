@@ -1,0 +1,189 @@
+import pytest
+import pandas as pd
+import geopandas as gpd
+import copy
+from unittest.mock import patch
+
+# Important: The tests in this file must be run from the 'app/' directory
+# for the data paths to resolve correctly.
+# Example: pytest tests/test_e2e.py
+
+from config import DEMO_DATA_DEFAULT, DEMO_SCENARIOS
+import config as cfg
+import data_loader
+import scoring
+import ui
+
+@pytest.fixture(scope="module")
+def app_data():
+    """
+    Loads the application data once for the entire test module.
+    This is equivalent to st.session_state['app_data'] in the Streamlit app.
+    """
+    return data_loader.init_datasets()
+
+def run_test_scenario(scenario_id, view_level, app_data):
+    """
+    Helper function to run a search scenario by simulating session state
+    and calling the app's own logic.
+    """
+    # 1. Set up a mock session state dictionary
+    mock_session_state = {}
+
+    # 2. Add app_data to the mock session state, as the UI functions expect it
+    mock_session_state['app_data'] = app_data
+
+    # 3. Load demo data into the session state with 'ui_' prefixes
+    scenario_data = DEMO_SCENARIOS[scenario_id]
+    default_data = copy.deepcopy(DEMO_DATA_DEFAULT)
+    default_data.update(scenario_data)
+
+    for key, value in default_data.items():
+        if key == 'sante':
+            mock_session_state['ui_besoin_sante'] = value
+        elif key == 'commune_actuelle':
+            mock_session_state['ui_commune'] = value
+        elif key == 'departement_actuel':
+            mock_session_state['ui_departement'] = value
+        elif key == 'binome_penalty':
+            # The UI slider uses percentage values (e.g., 50), but the config expects a float (e.g., 0.5)
+            # The create_scoring_config_from_inputs function handles the division by 100.
+            mock_session_state['ui_penalite_binome'] = value * 100 if value <= 1 else value
+        # Handle list-based inputs for children's classes and professional goals
+        elif key == 'classe_enfants':
+            for i, class_level in enumerate(value):
+                mock_session_state[f'ui_classe_enfant_{i}'] = class_level
+        elif key == 'codes_metiers':
+            for i, codes in enumerate(value):
+                mock_session_state[f'ui_metiers_adult_{i}'] = codes
+        elif key == 'codes_formations':
+            for i, codes in enumerate(value):
+                mock_session_state[f'ui_formations_adult_{i}'] = codes
+        else:
+            mock_session_state[f'ui_{key}'] = value
+    
+    # Ensure other necessary defaults are present
+    if 'ui_besoins_autres' not in mock_session_state:
+        mock_session_state['ui_besoins_autres'] = {}
+    if 'ui_pop_min' not in mock_session_state:
+        mock_session_state['ui_pop_min'] = 1000
+
+    # Ensure dynamic keys for adults and children are present, even if empty,
+    # to prevent KeyErrors in the list comprehensions in create_scoring_config_from_inputs.
+    for i in range(default_data['nb_adultes']):
+        mock_session_state.setdefault(f"ui_metiers_adult_{i}", [])
+        mock_session_state.setdefault(f"ui_formations_adult_{i}", [])
+
+    for i in range(default_data['nb_enfants']):
+        mock_session_state.setdefault(f"ui_classe_enfant_{i}", cfg.CLASSES_SCOLAIRES[0])
+
+
+    # 4. Create the ScoringConfig by calling the app's own UI function.
+    # We use unittest.mock.patch to temporarily replace streamlit's session_state
+    # with our dictionary for the duration of the call.
+    with patch('ui.st.session_state', mock_session_state):
+        scoring_config = ui.create_scoring_config_from_inputs()
+
+    # 5. Get required dataframes from the loaded app_data
+    df_all_communes = app_data['odis']
+    df_bv_geo = app_data['bv_geo']
+    df_area_geo = app_data['area_geo']
+    start_commune = df_all_communes.loc[[scoring_config.commune_actuelle]]
+
+    # 6. Filter communes or bassins de vie based on the view level
+    loc_type = 'distance' if isinstance(scoring_config.loc_distance_km, int) else scoring_config.loc_distance_km
+    
+    if view_level == 'Communes':
+        loc_col = 'dep_code' if loc_type == 'departement' else 'reg_code'
+        communes_to_score = scoring.filter_communes(
+            df=df_all_communes,
+            start_commune=start_commune,
+            loc_type=loc_type,
+            loc_code=start_commune.iloc[0][loc_col] if loc_type != 'distance' else None,
+            loc_distance_km=scoring_config.loc_distance_km if loc_type == 'distance' else None
+        )
+    else:  # Bassins de vie
+        loc_col = 'dep_code' if loc_type == 'departement' else 'reg_code'
+        filtered_bvs = scoring.filter_bassins_de_vie(
+            bv_gdf=df_bv_geo,
+            start_commune=start_commune,
+            loc_type=loc_type,
+            loc_code=start_commune.iloc[0][loc_col] if loc_type != 'distance' else None,
+            loc_distance_km=scoring_config.loc_distance_km if loc_type == 'distance' else None,
+            area_gdf=df_area_geo
+        )
+        bv_ids_to_keep = filtered_bvs.index.tolist()
+        communes_to_score = df_all_communes[df_all_communes[cfg.BV_CODE_COL].isin(bv_ids_to_keep)]
+
+    # 7. Compute the scores
+    odis_scored = scoring.compute_odis_score(
+        df_search=communes_to_score,
+        df_all_communes=df_all_communes,
+        scores_cat=app_data['scores_cat'],
+        config=scoring_config,
+        incl_index=app_data['incl_index'],
+    )
+    
+    odis_scored = odis_scored.drop(scoring_config.commune_actuelle, errors='ignore')
+
+    # 8. Process the final results (aggregate if necessary)
+    if odis_scored.empty:
+        return gpd.GeoDataFrame()
+    
+    if view_level == 'Bassins de vie':
+        df_bv_scores = scoring.aggregate_scores_by_bassin_de_vie(odis_scored)
+        gdf_bv_geo_filtered = df_bv_geo[df_bv_geo.index.isin(df_bv_scores[cfg.BV_CODE_COL])]
+        processed_gdf = gdf_bv_geo_filtered.merge(df_bv_scores, left_index=True, right_on=cfg.BV_CODE_COL)
+    else:  # Commune level
+        processed_gdf = odis_scored
+        
+    return processed_gdf.sort_values('weighted_score', ascending=False)
+
+
+@pytest.mark.e2e
+def test_scenario_1_communes(app_data):
+    """E2E test for demo scenario 1 at the Communes level."""
+    results = run_test_scenario('1', 'Communes', app_data)
+    assert not results.empty
+    assert 'weighted_score' in results.columns
+    assert results.shape[0] > 5
+
+@pytest.mark.e2e
+def test_scenario_1_bv(app_data):
+    """E2E test for demo scenario 1 at the Bassins de vie level."""
+    results = run_test_scenario('1', 'Bassins de vie', app_data)
+    assert not results.empty
+    assert 'weighted_score' in results.columns
+    assert results.shape[0] > 5
+
+@pytest.mark.e2e
+def test_scenario_2_communes(app_data):
+    """E2E test for demo scenario 2 at the Communes level."""
+    results = run_test_scenario('2', 'Communes', app_data)
+    assert not results.empty
+    assert 'weighted_score' in results.columns
+    assert results.shape[0] > 5
+
+@pytest.mark.e2e
+def test_scenario_2_bv(app_data):
+    """E2E test for demo scenario 2 at the Bassins de vie level."""
+    results = run_test_scenario('2', 'Bassins de vie', app_data)
+    assert not results.empty
+    assert 'weighted_score' in results.columns
+    assert results.shape[0] > 5
+
+@pytest.mark.e2e
+def test_scenario_3_communes(app_data):
+    """E2E test for demo scenario 3 at the Communes level."""
+    results = run_test_scenario('3', 'Communes', app_data)
+    assert not results.empty
+    assert 'weighted_score' in results.columns
+    assert results.shape[0] > 5
+
+@pytest.mark.e2e
+def test_scenario_3_bv(app_data):
+    """E2E test for demo scenario 3 at the Bassins de vie level."""
+    results = run_test_scenario('3', 'Bassins de vie', app_data)
+    assert not results.empty
+    assert 'weighted_score' in results.columns
+    assert results.shape[0] > 5
