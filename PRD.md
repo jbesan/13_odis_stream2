@@ -194,3 +194,16 @@ En tant que travailleur social, je veux voir les lieux recommandés sur une cart
 
 ### 📊 Status
 - Completed
+
+## 🚀 Feature [F-10]: Refonte du Filtrage et Score de Population
+
+### 📝 User Stories
+- En tant que travailleur social, je veux que la pertinence d'une localité ne soit plus limitée par un seuil de population fixe, mais que la population soit un facteur parmi d'autres dans le score pour des résultats plus nuancés.
+- En tant que travailleur social, je souhaite que la recherche par zone géographique (département, région) soit plus précise et retourne toutes les communes réellement présentes dans cette zone.
+
+### 🔑 Key Features
+*   Suppression du filtre de population minimal : la population est désormais un critère de score dans la catégorie "Inclusion", valorisant les pôles urbains sans exclure les zones rurales.
+*   Refonte de la logique de filtrage géographique pour utiliser des calculs géospatiaux (centroïdes et intersections) au lieu de simples distances, s'appliquant de manière cohérente aux communes et aux bassins de vie.
+
+### 📊 Status
+- Completed
