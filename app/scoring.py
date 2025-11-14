@@ -287,29 +287,63 @@ def aggregate_scores_by_bassin_de_vie(df: pd.DataFrame) -> pd.DataFrame:
     """
     df_agg = df.copy()
     
-    # Explicitly drop the old geometry column before aggregating to prevent it from being carried over.
+    # Explicitly drop the old geometry column before aggregating.
     if 'polygon' in df_agg.columns:
         df_agg = df_agg.drop(columns='polygon')
 
-    # Define a weighted average function for aggregation
+    # Define a weighted average function for numerical scores
     def weighted_avg(group, score_col, weight_col='population'):
-        return (group[score_col] * group[weight_col]).sum() / group[weight_col].sum()
+        # Ensure the weight column sum is not zero to avoid division by zero
+        weight_sum = group[weight_col].sum()
+        if weight_sum == 0:
+            return 0
+        return (group[score_col] * group[weight_col]).sum() / weight_sum
 
-    # Identify all score-related columns to be aggregated
+    # --- Aggregation Dictionary ---
     score_cols = [col for col in df_agg.columns if '_score' in col or '_scaled' in col]
-    
-    # Create a dictionary of aggregation functions
     agg_dict = {col: lambda x, col=col: weighted_avg(df_agg.loc[x.index], col) for col in score_cols}
+    
+    # --- Basic Aggregations ---
     agg_dict['population'] = 'sum'
-    agg_dict['epci_nom'] = lambda x: ', '.join(x.unique())
+    if 'epci_nom' in df_agg.columns:
+        agg_dict['epci_nom'] = lambda x: ', '.join(x.unique())
 
-    # Group by 'bassin de vie' and aggregate
+    # --- Complex Aggregations ---
+    def get_url_from_most_populous(series):
+        group_df = df_agg.loc[series.index]
+        if not group_df.empty and 'population' in group_df.columns:
+            most_populous_codgeo = group_df['population'].idxmax()
+            return group_df.loc[most_populous_codgeo, series.name]
+        return None
+
+    if 'url_odis' in df_agg.columns:
+        agg_dict['url_odis'] = get_url_from_most_populous
+    if 'url_wikipedia' in df_agg.columns:
+        agg_dict['url_wikipedia'] = get_url_from_most_populous
+
+    def aggregate_unique_list(series):
+        all_items = [item for sublist in series.dropna() for item in sublist]
+        return sorted(list(set(all_items)))
+
+    if 'be_libfap_top' in df_agg.columns:
+        agg_dict['be_libfap_top'] = aggregate_unique_list
+    if 'noms_formations' in df_agg.columns:
+        agg_dict['noms_formations'] = aggregate_unique_list
+
+    # --- Perform Grouping and Aggregation ---
+    # First, aggregate the main data
     df_bv = df_agg.groupby([cfg.BV_CODE_COL, cfg.BV_NAME_COL]).agg(agg_dict)
     
-    df_bv.reset_index(inplace=True)
-    df_bv.rename(columns={cfg.BV_NAME_COL: 'libgeo'}, inplace=True) # Use 'libgeo' for consistency
+    # Then, separately aggregate the codgeo into a list
+    communes_agg = df_agg.groupby([cfg.BV_CODE_COL, cfg.BV_NAME_COL]).apply(lambda x: list(x.index)).rename('communes')
     
-    # Add columns that exist in the commune view for schema consistency, preventing UI errors
+    # Merge the commune list back into the main aggregated dataframe
+    df_bv = df_bv.merge(communes_agg, left_index=True, right_index=True)
+
+    df_bv.reset_index(inplace=True)
+    df_bv.rename(columns={cfg.BV_NAME_COL: 'libgeo'}, inplace=True)
+    
+    # Add columns for schema consistency
     df_bv['binome'] = False
     df_bv['libgeo_binome'] = None
     df_bv['polygon_binome'] = None
