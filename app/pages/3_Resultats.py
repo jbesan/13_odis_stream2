@@ -152,49 +152,53 @@ with col_map:
             st.session_state['fgs_to_show'].add('Scores')
 
         # Layer toggles and informational layers
-        col1, col2 = st.columns([1,4], vertical_alignment='center')
-        with col1:
-            st.text("Afficher:")
-        with col2:
-            with st.container(key='display_toggles'):
-                st.markdown('<style>.st-key-display_toggles {gap:0rem}</style>',unsafe_allow_html=True)
-                if st.checkbox("Les 5 meilleurs résultats sur la carte"):
-                    for key, value in st.session_state["fg_dict_ref"].items():
-                        if key.startswith("Top"):
-                            st.session_state['fgs_to_show'].add(key)
-                    st.session_state["zoom"] = None           
-                elif st.session_state.get("highlighted_result") and st.session_state.highlighted_result[0]: # A result is highlighted, keep it visible
-                    st.session_state['fgs_to_show'] = {k for k in st.session_state['fgs_to_show'] if not k.startswith('Top')}
-                    fg_key = f'Top{st.session_state.highlighted_result[1] + 1}'
-                    st.session_state['fgs_to_show'].add(fg_key)
-                else: # Clear all top results highlights
-                    st.session_state['fgs_to_show'] = {k for k in st.session_state['fgs_to_show'] if not k.startswith('Top')}
+        cols = st.columns(5, vertical_alignment="center")
+        with cols[0]:
+            st.text("Afficher sur la carte:")
+        
+        with cols[1]:
+            show_top_5 = st.toggle("Top 5", key="show_top_5_toggle")
+        
+        config = st.session_state.get('config')
+        if config:
+            with cols[2]:
+                show_ecoles = config.nb_enfants > 0 and st.toggle('Éducation')
+            with cols[3]:
+                show_sante = config.besoin_sante != "Aucun" and st.toggle('Santé')
+            with cols[4]:
+                show_inclusion = config.besoins_autres and st.toggle("Inclusion")
+
+        if show_top_5:
+            for key in st.session_state["fg_dict_ref"]:
+                if key.startswith("Top"):
+                    st.session_state['fgs_to_show'].add(key)
+            st.session_state["zoom"] = None
+        elif st.session_state.get("highlighted_result") and st.session_state.highlighted_result[0]:
+            st.session_state['fgs_to_show'] = {k for k in st.session_state['fgs_to_show'] if not k.startswith('Top')}
+            fg_key = f'Top{st.session_state.highlighted_result[1] + 1}'
+            st.session_state['fgs_to_show'].add(fg_key)
+        else:
+            st.session_state['fgs_to_show'] = {k for k in st.session_state['fgs_to_show'] if not k.startswith('Top')}
 
         # We add additional informational layers
         legend_items = []
-        config = st.session_state.get('config')
         if config:
-            # Use the unaggregated data to get all relevant communes for the layers
             target_codgeos = set(st.session_state.get('unaggregated_gdf', gpd.GeoDataFrame()).index.tolist())
-
-            # ECOLES
-            if config.nb_enfants > 0 and st.checkbox('Établissements scolaires'):
+            if 'show_ecoles' in locals() and show_ecoles:
                 st.session_state['fg_dict_ref']['fg_ecoles'] = maps.build_ecoles_layer(st.session_state.app_data['annuaire_ecoles'], target_codgeos, config)
                 st.session_state['fgs_to_show'].add('fg_ecoles')
                 legend_items.append({'color': 'green', 'icon': 'pencil', 'text': 'Écoles'})
             else:
                 st.session_state['fgs_to_show'].discard('fg_ecoles')
 
-            # SANTE
-            if config.besoin_sante != "Aucun" and st.checkbox('Établissements de santé'):
+            if 'show_sante' in locals() and show_sante:
                 st.session_state['fg_dict_ref']['fg_sante'] = maps.build_sante_layer(st.session_state.app_data['annuaire_sante'], target_codgeos, config)
                 st.session_state['fgs_to_show'].add('fg_sante')
                 legend_items.append({'color': 'blue', 'icon': 'plus', 'text': 'Santé'})
             else:
                 st.session_state['fgs_to_show'].discard('fg_sante')
 
-            # SERVICES INCLUSION
-            if config.besoins_autres and st.checkbox("Services d'inclusion"):
+            if 'show_inclusion' in locals() and show_inclusion:
                 st.session_state['fg_dict_ref']['fg_services'] = maps.build_services_layer(st.session_state.app_data['annuaire_inclusion'], target_codgeos, config)
                 st.session_state['fgs_to_show'].add('fg_services')
                 legend_items.append({'color': 'purple', 'icon': 'heart', 'text': 'Inclusion'})
