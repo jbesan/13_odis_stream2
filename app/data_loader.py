@@ -37,6 +37,13 @@ def load_scores_config_as_df(filepath: str) -> pd.DataFrame:
     return df
 
 
+@st.cache_data
+def load_bassin_de_vie_data(file_path: str) -> pd.DataFrame:
+    """Loads the 'bassin de vie' dataset."""
+    df = pd.read_csv(file_path, dtype={'CODGEO': str, cfg.BV_CODE_COL: str})
+    return df
+
+
 def get_data_path():
     """
     Returns the appropriate data path based on the environment.
@@ -47,7 +54,7 @@ def get_data_path():
     else:
         return cfg.LOCAL_CSV_PATH
 
-def load_all_datasets(odis_file: str, scores_cat_file: str, metiers_file: str, formations_file: str, ecoles_file: str, maternites_file: str, sante_file: str, inclusion_file: str) -> tuple:
+def load_all_datasets(odis_file: str, bv_file: str, scores_cat_file: str, metiers_file: str, formations_file: str, ecoles_file: str, maternites_file: str, sante_file: str, inclusion_file: str) -> tuple:
     """
     Loads all necessary datasets from specified file paths.
     This function acts as a facade, calling specific loading functions for each dataset.
@@ -73,6 +80,16 @@ def load_all_datasets(odis_file: str, scores_cat_file: str, metiers_file: str, f
     odis.set_geometry('polygon', inplace=True)
     odis.polygon.set_precision(10**-5)
     odis = odis[~odis.polygon.isna()]
+    
+    # Add a centroid column for distance calculations
+    # Reproject to a projected CRS before calculating the centroid to avoid warning and get accurate results
+    odis['centroid'] = odis.to_crs(epsg=2154).centroid.to_crs(odis.crs)
+    
+    # --- Bassin de Vie Integration ---
+    bassin_de_vie = load_bassin_de_vie_data(base_path + bv_file)
+    odis = pd.merge(odis, bassin_de_vie[['CODGEO', cfg.BV_CODE_COL, cfg.BV_NAME_COL]], left_on='codgeo', right_on='CODGEO', how='left')
+    odis.drop(columns='CODGEO', inplace=True)
+    
     odis.set_index('codgeo', inplace=True)
 
     # --- Optimize Data Types ---
@@ -150,12 +167,66 @@ def load_all_datasets(odis_file: str, scores_cat_file: str, metiers_file: str, f
 
     return odis, scores_cat, codfap_index, codformations_index, annuaire_ecoles, annuaire_sante, annuaire_inclusion, incl_index
 
+@st.cache_data
+def load_area_geodata(_communes_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """
+    Creates a GeoDataFrame of departements and regions by dissolving commune geometries.
+    """
+    communes_gdf = _communes_gdf.copy()
+    
+    # Dissolve by departement
+    dep_geo = communes_gdf.dissolve(by='dep_code')
+    dep_geo['area_type'] = 'departement'
+    dep_geo = dep_geo.reset_index().rename(columns={'dep_code': 'area_code'})
+    
+    # Dissolve by region
+    reg_geo = communes_gdf.dissolve(by='reg_code')
+    reg_geo['area_type'] = 'region'
+    reg_geo = reg_geo.reset_index().rename(columns={'reg_code': 'area_code'})
+    
+    # Combine and set index
+    area_geo = pd.concat([dep_geo, reg_geo], ignore_index=True)
+    area_geo = area_geo.set_index(['area_type', 'area_code'])
+
+    # Explicitly ensure it's a GeoDataFrame with the geometry column set
+    area_geo = gpd.GeoDataFrame(area_geo, geometry='polygon', crs=communes_gdf.crs)
+    
+    return area_geo
+
+@st.cache_data
+def load_bassin_de_vie_geodata(_communes_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """
+    Creates a GeoDataFrame of 'bassins de vie' with their dissolved geometries and centroids.
+    """
+    communes_gdf = _communes_gdf.copy()
+    
+    # Dissolve commune polygons into 'bassin de vie' polygons
+    # This logic is copied from maps.dissolve_communes_to_bassins_de_vie to avoid circular imports
+    bv_geo = gpd.GeoDataFrame(
+        {cfg.BV_CODE_COL: communes_gdf[cfg.BV_CODE_COL]},
+        geometry=communes_gdf.geometry,
+        crs="EPSG:4326"
+    ).dissolve(by=cfg.BV_CODE_COL)
+
+    # Calculate centroids for the new BV polygons
+    # Reproject to a projected CRS before calculating the centroid to avoid warning and get accurate results
+    bv_geo['centroid'] = bv_geo.to_crs(epsg=2154).centroid.to_crs(bv_geo.crs)
+    
+    # Get the names for each BV
+    bv_names = communes_gdf[[cfg.BV_CODE_COL, cfg.BV_NAME_COL]].drop_duplicates().set_index(cfg.BV_CODE_COL)
+    
+    # Merge names back into the dissolved geodataframe
+    bv_geo = bv_geo.merge(bv_names, left_index=True, right_index=True, how='left')
+    
+    return bv_geo
+
 @st.cache_resource
 def init_datasets():
     """Loads all datasets and returns them in a structured dictionary."""
     print("--- Loading all datasets... ---")
     odis, scores_cat, codfap_index, codformations_index, annuaire_ecoles, annuaire_sante, annuaire_inclusion, incl_index = load_all_datasets(
         cfg.ODIS_FILE,
+        cfg.BV_FILENAME,
         cfg.SCORES_CAT_FILE,
         cfg.METIERS_FILE,
         cfg.FORMATIONS_FILE,
@@ -164,8 +235,14 @@ def init_datasets():
         cfg.SANTE_FILE,
         cfg.INCLUSION_FILE
     )
+    
+    bv_geo = load_bassin_de_vie_geodata(odis)
+    area_geo = load_area_geodata(odis)
+    
     return {
         "odis": odis,
+        "bv_geo": bv_geo,
+        "area_geo": area_geo,
         "scores_cat": scores_cat,
         "codfap_index": codfap_index,
         "codformations_index": codformations_index,

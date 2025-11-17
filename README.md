@@ -23,7 +23,8 @@ Ce prototype a un triple objectif :
 
 *   **Profil Personnalisé :** Définissez un "projet de vie" détaillé incluant la composition du foyer, le niveau scolaire des enfants, les métiers visés, les besoins en formation, etc.
 *   **Pondération des Critères :** Ajustez l'importance de chaque grande catégorie (emploi, logement, éducation, inclusion) pour l'adapter aux priorités de chaque projet.
-*   **Scoring Intelligent :** Chaque commune de France est évaluée sur sa compatibilité avec le profil, en s'appuyant sur une multitude de sources de données ouvertes.
+*   **Vue par Bassin de Vie :** Agrégez les résultats à l'échelle des "bassins de vie" de l'INSEE pour une analyse plus macroscopique et pertinente des territoires fonctionnels.
+*   **Scoring Intelligent :** Chaque commune de France est évaluée sur sa compatibilité avec le profil. La taille de la population n'est plus un filtre mais un critère de score, favorisant les localités de taille pertinente.
 *   **Système de "Binômes" :** L'algorithme associe de manière unique des communes voisines (`binômes`) pour proposer des solutions conjointes qui répondent à l'ensemble des besoins, même si une seule commune ne le pourrait pas.
 *   **Carte Interactive :** Visualisez les localités les mieux notées, leur score, et superposez des couches d'informations additionnelles (écoles, établissements de santé, services d'inclusion).
 *   **Résultats Détaillés :** Explorez les 5 meilleurs résultats avec une analyse de leurs points forts, un "radar" visuel des scores par catégorie, et des liens pour approfondir.
@@ -69,13 +70,16 @@ Ce prototype a un triple objectif :
 
 ## ⚙️ Fonctionnement : Le Moteur de Scoring
 
-Le cœur de l'application est un pipeline de scoring qui évalue les communes en fonction du profil utilisateur.
+Le cœur de l'application est un pipeline de scoring qui évalue les communes (ou les bassins de vie) en fonction du profil utilisateur.
 
-1.  **Filtrage :** Le moteur délimite d'abord la zone de recherche en fonction de la distance souhaitée par rapport au lieu de vie actuel et d'un filtre de population minimale.
-2.  **Calcul des Critères :** Il calcule ensuite des dizaines de scores individuels pour chaque commune (ex: adéquation des offres d'emploi, disponibilité de logements sociaux, capacité des écoles). Ces scores sont normalisés pour permettre une comparaison équitable.
+1.  **Filtrage Géographique :** Le moteur délimite la zone de recherche. Plutôt qu'un simple rayon, il utilise une logique géospatiale :
+    *   **Recherche par distance :** Sélectionne les communes/bassins de vie dont le centroïde est dans le rayon de recherche.
+    *   **Recherche par zone :** Sélectionne les communes/bassins de vie qui intersectent un département ou une région.
+2.  **Calcul des Critères :** Il calcule ensuite des dizaines de scores individuels pour chaque commune (ex: adéquation des offres d'emploi, disponibilité de logements sociaux, score de population). Ces scores sont normalisés pour permettre une comparaison équitable.
 3.  **Logique de Binôme :** Le moteur identifie les communes voisines et les évalue par paires (`binôme`). Cela permet de recommander deux villes qui, ensemble, remplissent tous les critères (ex: l'une a les emplois, l'autre les logements). Une petite pénalité (`binome_penalty`) est appliquée pour privilégier les solutions au sein d'une même commune (`monôme`) lorsque c'est possible.
 4.  **Agrégation par Catégorie :** Les scores des critères individuels sont ensuite moyennés pour former des scores de catégories (Emploi, Logement, Éducation, etc.).
-5.  **Score Pondéré Final :** Enfin, un `weighted_score` global est calculé pour chaque commune ou binôme en appliquant les poids définis par l'utilisateur. Les résultats sont ensuite classés selon ce score final.
+5.  **Agrégation par Bassin de Vie (Optionnel) :** Si l'utilisateur choisit cette vue, les scores des communes sont agrégés au niveau du bassin de vie (moyenne pondérée par la population) pour obtenir une vue d'ensemble.
+6.  **Score Pondéré Final :** Enfin, un `weighted_score` global est calculé pour chaque entité (commune, binôme ou bassin de vie) en appliquant les poids définis par l'utilisateur. Les résultats sont ensuite classés selon ce score final.
 
 ![Explication de la logique de scoring](./images/Screenshot-4.png)
 
@@ -127,6 +131,7 @@ Ce prototype est une base solide qui peut être grandement améliorée :
     *   **Comparaison des Résultats :** Ajouter une fonction pour comparer 2 ou 3 des meilleurs résultats côte à côte.
 
 *   **📊 Données & Scoring :**
+    *   **Intégrer le Loyer Moyen :** Ajouter le loyer moyen comme critère de score pour mieux évaluer l'accessibilité financière.
     *   **Étendre les Sources de Données :** Intégrer plus de jeux de données (transports en commun, services de santé spécifiques, activités culturelles).
     *   **Fraîcheur des Données :** Mettre en place un pipeline pour mettre à jour automatiquement les données sous-jacentes.
     *   **Affiner les Critères :** Travailler avec des travailleurs sociaux pour affiner la liste des critères et leur pertinence.

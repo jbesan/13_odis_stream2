@@ -2,8 +2,10 @@ import pandas as pd
 import geopandas as gpd
 from shapely.geometry import Polygon
 import pytest
+import numpy as np
 
 from app import scoring
+from app import config as cfg
 from app.config import ScoringConfig
 
 @pytest.fixture
@@ -105,7 +107,7 @@ def test_compute_odis_score_returns_dataframe(sample_data, sample_scores_cat, de
 
 
     # Act
-    result = scoring.compute_odis_score(sample_data, sample_scores_cat, config, sample_incl_index)
+    result = scoring.compute_odis_score(sample_data, sample_data, sample_scores_cat, config, sample_incl_index)
 
     # Assert
     assert isinstance(result, pd.DataFrame)
@@ -214,7 +216,9 @@ def test_compute_odis_score_area_based_search(sample_data, sample_scores_cat, de
     config_dep.codes_metiers = [[]] # Fix: ensure list has one entry for one adult
     config_dep.codes_formations = [[]] # Fix: ensure list has one entry for one adult
 
-    result_dep = scoring.compute_odis_score(sample_data, sample_scores_cat, config_dep, sample_incl_index)
+    # Manually filter the data for the test, as this is done in 3_Resultats.py in the app
+    dep_search_data = sample_data[sample_data['dep_code'] == '33']
+    result_dep = scoring.compute_odis_score(dep_search_data, sample_data, sample_scores_cat, config_dep, sample_incl_index)
     
     # Should only contain Bordeaux, as it's the only one in dep 33
     assert len(result_dep) == 1
@@ -228,9 +232,56 @@ def test_compute_odis_score_area_based_search(sample_data, sample_scores_cat, de
     config_reg.codes_metiers = [[]] # Fix: ensure list has one entry for one adult
     config_reg.codes_formations = [[]] # Fix: ensure list has one entry for one adult
 
-    result_reg = scoring.compute_odis_score(sample_data, sample_scores_cat, config_reg, sample_incl_index)
+    reg_search_data = sample_data[sample_data['reg_code'] == '75']
+    result_reg = scoring.compute_odis_score(reg_search_data, sample_data, sample_scores_cat, config_reg, sample_incl_index)
 
     # Should contain Bordeaux and Pau, as they are both in region 75
     assert len(result_reg) == 2
     assert '33063' in result_reg.index
     assert '64445' in result_reg.index
+
+def test_aggregate_scores_by_bassin_de_vie():
+    """Tests that the aggregation by 'bassin de vie' is correct."""
+    # Arrange
+    data = {
+        'codgeo': ['C1', 'C2', 'C3'],
+        'libgeo': ['Commune A', 'Commune B', 'Commune C'],
+        'population': [1000, 2000, 500],
+        'weighted_score': [0.8, 0.6, 0.9],
+        'another_score_scaled': [0.5, 0.7, 0.2],
+        cfg.BV_CODE_COL: ['BV1', 'BV1', 'BV2'],
+        cfg.BV_NAME_COL: ['Bassin de Vie 1', 'Bassin de Vie 1', 'Bassin de Vie 2'],
+        'epci_nom': ['EPCI 1', 'EPCI 1', 'EPCI 2'],
+        'url_odis': ['url1_A', 'url1_B', 'url2_C'],
+        'url_wikipedia': ['wiki_A', 'wiki_B', 'wiki_C'],
+        'be_libfap_top': [['Job A', 'Job B'], ['Job B', 'Job C'], ['Job D']],
+        'noms_formations': [['Form A'], ['Form B', 'Form C'], ['Form A', 'Form D']]
+    }
+    df = pd.DataFrame(data).set_index('codgeo')
+
+    # Act
+    result_df = scoring.aggregate_scores_by_bassin_de_vie(df)
+    
+    # Assert
+    assert len(result_df) == 2 # Should be two bassins de vie
+    
+    bv1_result = result_df[result_df[cfg.BV_CODE_COL] == 'BV1'].iloc[0]
+    
+    # Check population aggregation
+    assert bv1_result['population'] == 3000 # 1000 + 2000
+    
+    # Check weighted score aggregation
+    expected_weighted_score_bv1 = ((0.8 * 1000) + (0.6 * 2000)) / (1000 + 2000)
+    assert np.isclose(bv1_result['weighted_score'], expected_weighted_score_bv1)
+    
+    # Check another scaled score to be sure
+    expected_another_score_bv1 = ((0.5 * 1000) + (0.7 * 2000)) / (1000 + 2000)
+    assert np.isclose(bv1_result['another_score_scaled'], expected_another_score_bv1)
+    
+    # Check aggregation of textual and URL data
+    assert bv1_result['epci_nom'] == 'EPCI 1'
+    assert bv1_result['communes'] == ['C1', 'C2']
+    assert bv1_result['url_odis'] == 'url1_B' # From Commune B, the most populous
+    assert bv1_result['url_wikipedia'] == 'wiki_B'
+    assert bv1_result['be_libfap_top'] == ['Job A', 'Job B', 'Job C']
+    assert bv1_result['noms_formations'] == ['Form A', 'Form B', 'Form C']

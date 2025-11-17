@@ -97,6 +97,18 @@ scores:
     unit: None
     display_factor: 1
     tooltip: Affiliation à un parti politique en faveur de l'accueil
+- id: population_scaled
+  category: inclusion
+  source_metric: population
+  include_in_binom: false
+  display:
+    name: Population de la commune
+    strong_point_text: La commune est de taille importante
+    high_value_adjective: importante
+    show: false
+    unit: habitants
+    display_factor: 1
+    tooltip: Population totale de la commune
 - id: met_match_adult1_scaled
   category: emploi
   source_metric: met_match_adult1

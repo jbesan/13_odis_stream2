@@ -181,3 +181,29 @@ En tant que travailleur social, je veux voir les lieux recommandés sur une cart
 
 ### 📊 Status
 - In Progress
+
+## 🚀 Feature [F-09]: Résultats par bassin de vie
+
+### 📝 User Stories
+- En tant que travailleur social, je veux pouvoir agréger et visualiser les résultats par "bassin de vie" pour obtenir une perspective régionale plus pertinente et intuitive sur les territoires bien connectés.
+
+### 🔑 Key Features
+*   Ajouter un bouton de bascule (toggle) dans la barre latérale des résultats pour choisir entre la vue "par commune" et la vue "par bassin de vie".
+*   Agréger les indicateurs de score existants au niveau du "bassin de vie" pour calculer un nouveau score global.
+*   Mettre à jour la carte des résultats pour afficher des polygones colorés représentant les "bassins de vie" et leur score.
+
+### 📊 Status
+- Completed
+
+## 🚀 Feature [F-10]: Refonte du Filtrage et Score de Population
+
+### 📝 User Stories
+- En tant que travailleur social, je veux que la pertinence d'une localité ne soit plus limitée par un seuil de population fixe, mais que la population soit un facteur parmi d'autres dans le score pour des résultats plus nuancés.
+- En tant que travailleur social, je souhaite que la recherche par zone géographique (département, région) soit plus précise et retourne toutes les communes réellement présentes dans cette zone.
+
+### 🔑 Key Features
+*   Suppression du filtre de population minimal : la population est désormais un critère de score dans la catégorie "Inclusion", valorisant les pôles urbains sans exclure les zones rurales.
+*   Refonte de la logique de filtrage géographique pour utiliser des calculs géospatiaux (centroïdes et intersections) au lieu de simples distances, s'appliquant de manière cohérente aux communes et aux bassins de vie.
+
+### 📊 Status
+- Completed

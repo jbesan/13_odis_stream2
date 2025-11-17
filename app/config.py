@@ -4,7 +4,12 @@ from typing import List, Dict, Any, Union
 import os
 
 GCS_BUCKET_PATH = 'gs://odis-stream2-eu/'
-LOCAL_CSV_PATH = '../csv/'
+# Get the directory of the current file (app/)
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+# Get the project root directory (one level up)
+PROJECT_ROOT = os.path.dirname(APP_DIR)
+
+LOCAL_CSV_PATH = os.path.join(PROJECT_ROOT, 'csv/')
 
 def get_data_path():
     """
@@ -18,6 +23,7 @@ def get_data_path():
 
 # --- File Paths ---
 ODIS_FILE = 'odis_june_2025_jacques.parquet'
+BV_FILENAME = 'insee-bassins-de-vie-2025.csv'
 SCORES_CAT_FILE = 'scores_config.yaml'
 METIERS_FILE = 'dares_nomenclature_fap2021.csv'
 FORMATIONS_FILE = 'index_formations.csv'
@@ -26,6 +32,10 @@ MATERNITE_FILE = 'annuaire_maternites_DREES.csv'
 SANTE_FILE = 'annuaire_sante_finess.parquet'
 INCLUSION_FILE = 'odis_services_incl_exploded.parquet'
 SNCF_FILE = 'formes-des-lignes-du-rfn.geojson'
+
+# --- Data Columns ---
+BV_CODE_COL = 'BV2022'
+BV_NAME_COL = 'LIBBV2022'
 
 # --- UI Options ---
 
