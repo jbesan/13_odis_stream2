@@ -238,7 +238,9 @@ def get_person_accompanied_str():
 
 def display_results_list():
     """Displays the list of top N results."""
-    st.subheader("Meilleurs résultats")
+    st.subheader("Détails des meilleurs résultats")
+    st.text("")
+    st.text("")
     # st.text(f'Voici des localités qui pourraient convenir {get_person_accompanied_str()}.')
     st.markdown('<style>[class*="st-key-button_top"] .stButton button div {text-align:left; width:100%;}</style>', unsafe_allow_html=True)
 
