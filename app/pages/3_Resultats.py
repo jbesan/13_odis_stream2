@@ -1,4 +1,5 @@
 import streamlit as st
+from streamlit_folium import st_folium
 import scoring
 import config as cfg
 import ui
@@ -90,6 +91,7 @@ def run_search():
             gdf_bv_geo_filtered = df_bv_geo[df_bv_geo.index.isin(df_bv_scores[cfg.BV_CODE_COL])]
             processed_gdf = gdf_bv_geo_filtered.merge(df_bv_scores, left_index=True, right_on=cfg.BV_CODE_COL)
             processed_gdf = processed_gdf.rename_geometry('polygon')
+            processed_gdf = processed_gdf.drop_duplicates(subset=[cfg.BV_CODE_COL])
         else: # Commune level
             processed_gdf = odis_scored
         
@@ -112,18 +114,20 @@ if st.session_state.get('processed_gdf') is None and st.session_state.get('form_
 with st.sidebar:
     st.image('./images/logo-jaccueille-singa.png', width=150)
     st.write("")
-    st.markdown("<div style='text-align: justify;'>Découvrez les 5 communes ou binômes de communes qui répondent le mieux à vos attentes. Les scores vous permettent de comparer facilement leurs atouts.</div>", unsafe_allow_html=True)
-    ui.display_sidebar(st.session_state['demo_data'])
+    st.markdown("Découvrez les 5 cinqs lieux de vie correspondant le mieux au projet de vie renseigné. Les scores vous permettent de comparer facilement leurs atouts.", unsafe_allow_html=True)
+    with st.container(border=False, height='stretch', vertical_alignment="bottom"):
+        ui.display_sidebar(st.session_state['demo_data'])
+        ui.start_over()
 
-def get_person_accompanied_str():
-    if st.session_state.get('ui_nom'):
-        return f"de {st.session_state.ui_nom}"
-    return "de la personne accompagnée"
+# def get_person_accompanied_str():
+#     if st.session_state.get('ui_nom'):
+#         return f"de {st.session_state.ui_nom}"
+#     return "de la personne accompagnée"
 
 # Top filter Form
 with st.container(border=False, key='top_menu'):
     st.markdown("<style>.st-key-top_menu {background-color:whitesmoke; padding:30px; border-radius:10px} .stTabs div div button div p {font-size:1rem}</style>", unsafe_allow_html=True)
-    ui.display_main_header(f"Résultats {get_person_accompanied_str()}")
+    st.subheader(f"Projet de vie {ui.get_person_accompanied_str()}")
     col_tabs, col_button = st.columns([5,1])
     with col_tabs:
         ui.display_input_tabs(st.session_state['demo_data'])
@@ -132,7 +136,7 @@ with st.container(border=False, key='top_menu'):
             st.button("Lancer la recherche", on_click=run_search, type="primary")
 
 # Main two sections: results and map
-col_results, col_map = st.columns([2, 3])
+col_map, col_results  = st.columns([3, 2])
 
 with col_results:
     if st.session_state.get('processed_gdf') is not None:
@@ -142,8 +146,8 @@ with col_results:
             ui.display_results_list()
 
 with col_map:
-    from streamlit_folium import st_folium
     if st.session_state.get('processed_gdf') is not None:
+        st.subheader("Cartographie des résultats")
         m = maps.create_base_map(st.session_state["center"], st.session_state["zoom"])
         
         # Base layer with all scored communes
@@ -151,63 +155,59 @@ with col_map:
             st.session_state['fg_dict_ref']['Scores'], colormap = maps.build_scores_layer(st.session_state['processed_gdf'])
             st.session_state['fgs_to_show'].add('Scores')
 
-        # Layer toggles and informational layers
+        # --- Map Layers Logic ---
+        # This section declaratively builds the set of layers to show on each rerun
+        # based on the current state of UI toggles and selections.
+
+        fgs_to_show = {'Scores'}
+        legend_items = []
+        
+        # Layer toggles are always rendered but disabled if not applicable.
+        # This ensures a stable UI tree for Streamlit to track state.
         cols = st.columns(5, vertical_alignment="center")
         with cols[0]:
             st.text("Afficher sur la carte:")
-        
         with cols[1]:
             show_top_5 = st.toggle("Top 5", key="show_top_5_toggle")
         
         config = st.session_state.get('config')
         if config:
-            with cols[2]:
-                show_ecoles = config.nb_enfants > 0 and st.toggle('Éducation')
-            with cols[3]:
-                show_sante = config.besoin_sante != "Aucun" and st.toggle('Santé')
-            with cols[4]:
-                show_inclusion = config.besoins_autres and st.toggle("Inclusion")
-
-        if show_top_5:
-            for key in st.session_state["fg_dict_ref"]:
-                if key.startswith("Top"):
-                    st.session_state['fgs_to_show'].add(key)
-            st.session_state["zoom"] = None
-        elif st.session_state.get("highlighted_result") and st.session_state.highlighted_result[0]:
-            st.session_state['fgs_to_show'] = {k for k in st.session_state['fgs_to_show'] if not k.startswith('Top')}
-            fg_key = f'Top{st.session_state.highlighted_result[1] + 1}'
-            st.session_state['fgs_to_show'].add(fg_key)
-        else:
-            st.session_state['fgs_to_show'] = {k for k in st.session_state['fgs_to_show'] if not k.startswith('Top')}
-
-        # We add additional informational layers
-        legend_items = []
-        if config:
             target_codgeos = set(st.session_state.get('unaggregated_gdf', gpd.GeoDataFrame()).index.tolist())
-            if 'show_ecoles' in locals() and show_ecoles:
-                st.session_state['fg_dict_ref']['fg_ecoles'] = maps.build_ecoles_layer(st.session_state.app_data['annuaire_ecoles'], target_codgeos, config)
-                st.session_state['fgs_to_show'].add('fg_ecoles')
+            with cols[2]:
+                show_ecoles = st.toggle('Éducation', key='show_ecoles_toggle', disabled=(config.nb_enfants == 0))
+            with cols[3]:
+                show_sante = st.toggle('Santé', key='show_sante_toggle', disabled=(config.besoin_sante == "Aucun"))
+            with cols[4]:
+                show_inclusion = st.toggle("Inclusion", key='show_inclusion_toggle', disabled=(not config.besoins_autres))
+
+            if show_ecoles:
+                st.session_state.fg_dict_ref['fg_ecoles'] = maps.build_ecoles_layer(st.session_state.app_data['annuaire_ecoles'], target_codgeos, config)
+                fgs_to_show.add('fg_ecoles')
                 legend_items.append({'color': 'green', 'icon': 'pencil', 'text': 'Écoles'})
-            else:
-                st.session_state['fgs_to_show'].discard('fg_ecoles')
-
-            if 'show_sante' in locals() and show_sante:
-                st.session_state['fg_dict_ref']['fg_sante'] = maps.build_sante_layer(st.session_state.app_data['annuaire_sante'], target_codgeos, config)
-                st.session_state['fgs_to_show'].add('fg_sante')
+            if show_sante:
+                st.session_state.fg_dict_ref['fg_sante'] = maps.build_sante_layer(st.session_state.app_data['annuaire_sante'], target_codgeos, config)
+                fgs_to_show.add('fg_sante')
                 legend_items.append({'color': 'blue', 'icon': 'plus', 'text': 'Santé'})
-            else:
-                st.session_state['fgs_to_show'].discard('fg_sante')
-
-            if 'show_inclusion' in locals() and show_inclusion:
-                st.session_state['fg_dict_ref']['fg_services'] = maps.build_services_layer(st.session_state.app_data['annuaire_inclusion'], target_codgeos, config)
-                st.session_state['fgs_to_show'].add('fg_services')
+            if show_inclusion:
+                st.session_state.fg_dict_ref['fg_services'] = maps.build_services_layer(st.session_state.app_data['annuaire_inclusion'], target_codgeos, config)
+                fgs_to_show.add('fg_services')
                 legend_items.append({'color': 'purple', 'icon': 'heart', 'text': 'Inclusion'})
-            else:
-                st.session_state['fgs_to_show'].discard('fg_services')
+
+        # Handle Top 5 and highlighted result logic
+        is_highlighted, highlighted_index = st.session_state.highlighted_result
+        if show_top_5:
+            for i in range(5):
+                fgs_to_show.add(f'Top{i + 1}')
+            st.session_state["zoom"] = None
+        elif is_highlighted:
+            fgs_to_show.add(f'Top{highlighted_index + 1}')
+
+        # Update the session state for the map component
+        st.session_state.fgs_to_show = fgs_to_show
 
         # Légende
-        legend = maps.build_legend(legend_items)
         if legend_items:
+            legend = maps.build_legend(legend_items)
             m.get_root().html.add_child(flm.Element(legend))
 
         fgs_to_add = [
@@ -216,12 +216,15 @@ with col_map:
             if name in st.session_state['fg_dict_ref']
         ]
 
+        # Create a dynamic key to force component recreation when layers change
+        map_key = "odis_scored_map_" + "_".join(sorted(list(st.session_state.fgs_to_show)))
+
         st_folium(
             m,
             zoom=st.session_state["zoom"],
             center=st.session_state["center"],
             feature_group_to_add=fgs_to_add,
-            key="odis_scored_map",
+            key=map_key,
             width='stretch',
             returned_objects=[],
         )

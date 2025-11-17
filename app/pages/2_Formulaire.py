@@ -17,11 +17,10 @@ with st.sidebar:
 
     st.divider()
 
-    if st.button("Passer aux résultats", type='tertiary'):
+    if st.button("Passer aux résultats", type='secondary'):
         st.switch_page("pages/3_Resultats.py") 
 
-    if st.button("Revenir à la page d'accueil", type='tertiary'):
-        st.switch_page("./1_Accueil.py") 
+    ui.start_over()
 
 
 PAGES = {

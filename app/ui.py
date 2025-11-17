@@ -9,27 +9,27 @@ import maps
 def display_sidebar(demo_data: dict):
     """Displays the sidebar with location and weight controls."""
     
-    # --- Weights ---
     st.divider()
-    with st.expander('Pondérations des critères', expanded=False):
+
+    # --- Weights ---
+    with st.expander('Pondérations', expanded=False):
         st.select_slider("Education", cfg.POIDS_OPTIONS, 
-                         value=st.session_state.get('ui_poids_education', 100), 
-                         key="ui_poids_education")
+                        value=st.session_state.get('ui_poids_education', 100), 
+                        key="ui_poids_education")
         st.select_slider("Projet Pro", cfg.POIDS_OPTIONS, 
-                         value=st.session_state.get('ui_poids_emploi', 100), 
-                         key="ui_poids_emploi")
+                        value=st.session_state.get('ui_poids_emploi', 100), 
+                        key="ui_poids_emploi")
         st.select_slider("Logement", cfg.POIDS_OPTIONS, 
-                         value=st.session_state.get('ui_poids_logement', 100), 
-                         key="ui_poids_logement")
+                        value=st.session_state.get('ui_poids_logement', 100), 
+                        key="ui_poids_logement")
         st.select_slider("Inclusion", cfg.POIDS_OPTIONS, 
-                         value=st.session_state.get('ui_poids_inclusion', 100), 
-                         key="ui_poids_inclusion")
+                        value=st.session_state.get('ui_poids_inclusion', 100), 
+                        key="ui_poids_inclusion")
         st.select_slider("Mobilité", cfg.POIDS_OPTIONS, 
-                         value=st.session_state.get('ui_poids_mobilité', 100), 
-                         key="ui_poids_mobilité")
+                        value=st.session_state.get('ui_poids_mobilité', 100), 
+                        key="ui_poids_mobilité")
 
     # --- Technical Params ---
-    
     with st.expander('Paramètres Résultats'):
         st.radio(
             "Granularité des résultats",
@@ -42,28 +42,26 @@ def display_sidebar(demo_data: dict):
         st.select_slider("Décote commune binôme\n\n (en %)", cfg.PENALITE_BINOME_OPTIONS, key="ui_penalite_binome")
         # st.select_slider("Population Minimum", cfg.POP_MIN_OPTIONS, key="ui_pop_min")
 
-    if st.session_state.get('processed_gdf') is not None:
-        st.sidebar.divider()
-        if st.sidebar.button('Export des résultats', icon=':material/picture_as_pdf:', type='secondary'):
-            st.cache_data.clear()
-    
-        st.markdown("""
-            <style>
-                .st-key-btn_recommencer .stButton p {color: #1B4429;}
-            </style>
-            """
-        , unsafe_allow_html=True)
-        if st.sidebar.button('Recommencer', type='primary', key='btn_recommencer'):
-            st.session_state['processed_gdf'] = None
-            st.session_state['form_completed'] = False
-            st.switch_page("1_Accueil.py")
+    st.divider()
 
-def display_main_header(name: str):
-    """Displays the main header of the input section."""
-    if name:
-        st.subheader(f"Projet de vie de {name}")
-    else:
-        st.subheader(f"Projet de vie")
+    # --- Export to PDF ---
+    if st.session_state.get('processed_gdf') is not None:
+        
+        if st.button('Export des résultats', icon=':material/picture_as_pdf:', type='secondary'):
+            st.cache_data.clear()
+
+def start_over():
+    # --- Start over ---
+    st.markdown("""
+        <style>
+            .st-key-btn_recommencer .stButton p {color: #1B4429;}
+        </style>
+        """
+    , unsafe_allow_html=True)
+    if st.sidebar.button('Recommencer', type='primary', key='btn_recommencer'):
+        st.session_state['processed_gdf'] = None
+        st.session_state['form_completed'] = False
+        st.switch_page("1_Accueil.py")
         
 def render_localisation_form():
     """Renders the UI for the 'Localisation Actuelle' form section."""
@@ -241,7 +239,7 @@ def get_person_accompanied_str():
 def display_results_list():
     """Displays the list of top N results."""
     st.subheader("Meilleurs résultats")
-    st.text(f'Voici des localités qui pourraient convenir {get_person_accompanied_str()}.')
+    # st.text(f'Voici des localités qui pourraient convenir {get_person_accompanied_str()}.')
     st.markdown('<style>[class*="st-key-button_top"] .stButton button div {text-align:left; width:100%;}</style>', unsafe_allow_html=True)
 
     top_n = 5
@@ -316,7 +314,7 @@ def _display_bv_result_details(row: pd.Series):
 
             if not bv_services.empty:
                 any_service_found = False
-                for cat, group in bv_services.groupby('categorie'):
+                for cat, group in bv_services.groupby('categorie', observed=True):
                     # Filter out empty/placeholder services within the group
                     valid_services = group[group.service != '-'].copy()
                     
