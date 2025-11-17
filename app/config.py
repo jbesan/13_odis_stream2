@@ -38,7 +38,7 @@ BV_CODE_COL = 'BV2022'
 BV_NAME_COL = 'LIBBV2022'
 
 # --- UI Options ---
-
+VIEW_LEVEL_OPTIONS = ['Bassins de vie', 'Communes']
 NOMBRE_ADULTES_OPTIONS = [1, 2]
 NOMBRE_ENFANTS_OPTIONS = [0, 1, 2, 3, 4, 5]
 CLASSES_SCOLAIRES = ['Maternelle', 'Elémentaire', 'Collège', 'Lycée']
@@ -54,6 +54,7 @@ POP_MIN_OPTIONS = [0, 500, 1000, 5000, 10000]
 DEFAULT_MAP_CENTER = [46.603354, 1.888334] # Center of France
 DEFAULT_MAP_ZOOM = 10
 DETAIL_MAP_ZOOM = 11
+DEFAULT_VIEW_LEVEL = 0
 
 # --- Constants ---
 PROJECTED_CRS = "EPSG:2154"  # RGF93 / Lambert-93, suitable for metropolitan France

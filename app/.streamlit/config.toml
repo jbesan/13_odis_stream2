@@ -26,8 +26,16 @@ primaryColor="rgb(255, 208, 0)"
 # secondaryColor="#F5D819"
 
 [client]
-# toolbarMode = "minimal"
+toolbarMode = "minimal"
 showSidebarNavigation = false
 
 [ui]
 hideTopBar = false
+
+[server]
+enableCORS = false
+enableXsrfProtection = false
+headless = true
+
+[browser]
+gatherUsageStats = false

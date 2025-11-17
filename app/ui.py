@@ -33,10 +33,10 @@ def display_sidebar(demo_data: dict):
     with st.expander('Paramètres Résultats'):
         st.radio(
             "Granularité des résultats",
-            ["Communes", "Bassins de vie"],
+            cfg.VIEW_LEVEL_OPTIONS,
             key='view_level',
             horizontal=True,
-            index=1
+            index=cfg.DEFAULT_VIEW_LEVEL
         )
         st.text("\n\n")
         st.select_slider("Décote commune binôme\n\n (en %)", cfg.PENALITE_BINOME_OPTIONS, key="ui_penalite_binome")
@@ -152,7 +152,7 @@ def render_other_needs_form():
 
 def render_mobility_form():
     """Renders the UI for the 'Mobilité' form section."""
-    st.radio('Attachement au lieu de vie actuel :', cfg.LOC_DISTANCE_OPTIONS.keys(), format_func=cfg.LOC_DISTANCE_OPTIONS.get, key="ui_loc_distance_km")
+    st.radio('Zone de recherche autour du lieu de vie actuel :', cfg.LOC_DISTANCE_OPTIONS.keys(), format_func=cfg.LOC_DISTANCE_OPTIONS.get, key="ui_loc_distance_km")
 
 def display_input_tabs(demo_data: dict):
     """Displays the main tabs for user input, composed of modular rendering functions."""
@@ -238,11 +238,10 @@ def get_person_accompanied_str():
 
 def display_results_list():
     """Displays the list of top N results."""
-    st.subheader("Détails des meilleurs résultats")
-    st.text("")
-    st.text("")
+    st.subheader("Meilleurs résultats")
+    st.text("Cliquez sur un résultat pour comprendre le détail du score")
     # st.text(f'Voici des localités qui pourraient convenir {get_person_accompanied_str()}.')
-    st.markdown('<style>[class*="st-key-button_top"] .stButton button div {text-align:left; width:100%;}</style>', unsafe_allow_html=True)
+    st.markdown('<style> [class*="st-key-button_top"] .stButton button div {text-align:left; width:100%;},</style>', unsafe_allow_html=True)
 
     top_n = 5
     df = st.session_state.processed_gdf
@@ -267,7 +266,8 @@ def display_results_list():
             args=(index,),
             width='stretch',
             key=f'button_top{index+1}',
-            type='primary' if is_highlighted and index == highlighted_index else 'secondary'
+            type='primary'
+            # type='primary' if is_highlighted and index == highlighted_index else 'secondary'
         )
 
         if is_highlighted and index == highlighted_index:
@@ -290,7 +290,7 @@ def _display_bv_result_details(row: pd.Series):
         fig = line_polar(theta=cat_scores.index, r=cat_scores.values * 100, line_close=True, range_r=[0, 100])
         fig.update_traces(fill='toself')
         fig.update_layout(margin=dict(l=50, r=50, t=50, b=50))
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, width='stretch', config=None)
         st.caption('Plus le critère s’approche du bord, plus il est attractif.')
 
         # --- Additional Info ---
@@ -350,7 +350,7 @@ def _display_result_details(row: pd.Series):
         fig = line_polar(theta=cat_scores.index, r=cat_scores.values * 100, line_close=True, range_r=[0, 100])
         fig.update_traces(fill='toself')
         fig.update_layout(margin=dict(l=50, r=50, t=50, b=50))
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, width='stretch', config=None)
         st.caption('Plus le critère s’approche du bord, plus il est attractif.')
 
         # --- Additional Info ---
@@ -379,7 +379,7 @@ def _display_result_details(row: pd.Series):
             
             if not commune_services.empty:
                 any_service_found = False
-                for cat, group in commune_services.groupby('categorie'):
+                for cat, group in commune_services.groupby('categorie', observed=True):
                     # Filter out empty/placeholder services within the group
                     valid_services = group[group.service != '-'].copy()
                     

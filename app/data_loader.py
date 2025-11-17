@@ -1,11 +1,9 @@
 import streamlit as st
 import os
-from typing import List, Dict, Set, Any
 import pandas as pd
 import numpy as np
 import geopandas as gpd
 import shapely as shp
-import gcsfs
 import yaml
 import config as cfg # Import config for constants and ScoringConfig
 
@@ -43,6 +41,82 @@ def load_bassin_de_vie_data(file_path: str) -> pd.DataFrame:
     df = pd.read_csv(file_path, dtype={'CODGEO': str, cfg.BV_CODE_COL: str})
     return df
 
+def apply_demo_data_if_present(data):
+    """Updates the data dictionary with demo data if a 'demo' query param is present."""
+    if len(st.query_params) > 0 and 'demo' in st.query_params:
+        demo_id = st.query_params.get('demo')
+        if demo_id in cfg.DEMO_SCENARIOS:
+            print(f"--- Loading Demo Mode {demo_id} ---")
+            data.update(cfg.DEMO_SCENARIOS[demo_id])
+
+def session_states_init(defaults):
+    """Initializes all necessary keys in Streamlit's session state."""
+    is_demo = 'demo' in st.query_params
+
+    if 'app_data' not in st.session_state:
+        st.session_state['app_data'] = {}
+    if 'config' not in st.session_state or is_demo:
+        st.session_state['config'] = None
+    if "processed_gdf" not in st.session_state or is_demo:
+        st.session_state['processed_gdf'] = None
+    if "selected_geo" not in st.session_state or is_demo:
+        st.session_state['selected_geo'] = None
+    if "highlighted_result" not in st.session_state or is_demo:
+        st.session_state['highlighted_result'] = [False, None]
+    if 'fg_dict_ref' not in st.session_state or is_demo:
+        st.session_state['fg_dict_ref'] = {}
+    if 'fgs_to_show' not in st.session_state or is_demo:
+        st.session_state['fgs_to_show'] = set()
+    if "zoom" not in st.session_state or is_demo:
+        st.session_state['zoom'] = cfg.DEFAULT_MAP_ZOOM
+    if "center" not in st.session_state or is_demo:
+        st.session_state['center'] = cfg.DEFAULT_MAP_CENTER
+    if 'demo_data' not in st.session_state or is_demo:
+        st.session_state['demo_data'] = defaults
+    # if 'form_page' not in st.session_state:
+    st.session_state['form_page'] = 'localisation'
+
+    ui_keys_map = {
+        'ui_nom': 'nom',
+        'ui_departement': 'departement_actuel',
+        'ui_commune': 'commune_actuelle',
+        'ui_poids_education': 'poids_education',
+        'ui_poids_emploi': 'poids_emploi',
+        'ui_poids_logement': 'poids_logement',
+        'ui_poids_inclusion': 'poids_inclusion',
+        'ui_poids_mobilité': 'poids_mobilité',
+        'ui_penalite_binome': ('binome_penalty', lambda x: int(x * 100)),
+        'ui_pop_min': 'pop_min',
+        'ui_nb_adultes': 'nb_adultes',
+        'ui_nb_enfants': 'nb_enfants',
+        'ui_loc_distance_km': 'loc_distance_km',
+        'ui_hebergement': 'hebergement',
+        'ui_logement': 'logement',
+        'ui_besoin_sante': 'sante',
+        'ui_besoins_autres': 'besoins_autres',
+        'ui_codes_metiers': 'codes_metiers',
+        'ui_codes_formations': 'codes_formations',
+        'ui_classe_enfants': 'classe_enfants'
+    }
+
+    for ui_key, config_key in ui_keys_map.items():
+        if ui_key not in st.session_state or is_demo:
+            if isinstance(config_key, tuple):
+                base_key, transform = config_key
+                st.session_state[ui_key] = transform(defaults[base_key])
+            else:
+                st.session_state[ui_key] = defaults[config_key]
+
+    # Handle list-based UI keys separately
+    for i in range(defaults.get('nb_adultes', 2)):
+        if f'ui_metiers_adult_{i}' not in st.session_state or is_demo:
+            st.session_state[f'ui_metiers_adult_{i}'] = defaults['codes_metiers'][i] if i < len(defaults['codes_metiers']) else []
+        if f'ui_formations_adult_{i}' not in st.session_state or is_demo:
+            st.session_state[f'ui_formations_adult_{i}'] = defaults['codes_formations'][i] if i < len(defaults['codes_formations']) else []
+    
+    for i in range(defaults.get('nb_enfants', 5)):
+        if f'ui_classe_enfant_{i}' not in st.session_state or is_demo:
+            st.session_state[f'ui_classe_enfant_{i}'] = defaults['classe_enfants'][i] if i < len(defaults['classe_enfants']) else 'Maternelle'
 
 def get_data_path():
     """
@@ -78,7 +152,8 @@ def load_all_datasets(odis_file: str, bv_file: str, scores_cat_file: str, metier
     odis['polygon'] = odis.polygon.apply(shp.from_wkb)
     odis = gpd.GeoDataFrame(odis, geometry='polygon', crs='EPSG:4326')
     odis.set_geometry('polygon', inplace=True)
-    odis.polygon.set_precision(10**-5)
+    # odis.polygon = shp.set_precision(odis.polygon, grid_size=0.001)
+    odis.polygon = odis.polygon.set_precision(grid_size=0.001, mode='valid_output')
     odis = odis[~odis.polygon.isna()]
     
     # Add a centroid column for distance calculations

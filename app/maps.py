@@ -3,7 +3,6 @@ import streamlit as st
 import folium as flm
 import geopandas as gpd
 import pandas as pd
-import numpy as np
 from shapely.geometry import mapping
 from branca.colormap import linear
 from folium.plugins import FastMarkerCluster
@@ -58,7 +57,7 @@ def build_scores_layer(df: pd.DataFrame) -> tuple:
     """Builds the FeatureGroup for all scored communes or bassins de vie, colored by score."""
     fg = flm.FeatureGroup(name="Scores")
     
-    view_level = st.session_state.get('view_level', 'Communes')
+    view_level = st.session_state.get('view_level', 'Bassins de vie')
 
     if view_level == 'Bassins de vie':
         id_col = cfg.BV_CODE_COL

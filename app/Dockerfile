@@ -14,6 +14,7 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy and install Python requirements
+RUN pip install --upgrade pip
 COPY app/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -43,5 +44,12 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Expose the Streamlit port
 EXPOSE 8080
 
-# Run the Streamlit app
-CMD ["streamlit", "run", "1_Accueil.py", "--server.port=8080", "--server.address=0.0.0.0"]
+# The critical command
+# We explicitly use the $PORT variable provided by Cloud Run
+# We disable CORS and XSRF because Cloud Run's proxy handles the security
+CMD streamlit run 1_Accueil.py \
+    --server.port=8080 \
+    --server.address=0.0.0.0 \
+    --server.enableCORS=false \
+    --server.enableXsrfProtection=false \
+    --server.enableWebsocketCompression=false

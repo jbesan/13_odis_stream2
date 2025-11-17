@@ -1,13 +1,13 @@
-streamlit
 pandas
 numpy
 geopandas
 shapely
 scikit-learn
-folium
 branca
-streamlit-folium
 plotly
 gcsfs
 google-cloud-storage
 PyYAML
+streamlit>=1.25.0
+folium>=0.14.0
+streamlit-folium>=0.13.0

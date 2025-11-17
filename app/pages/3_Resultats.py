@@ -8,6 +8,8 @@ import folium as flm
 import data_loader
 import geopandas as gpd
 
+st.set_page_config(layout="wide")
+
 # Ensure app_data is initialized
 if 'app_data' not in st.session_state:
     st.session_state['app_data'] = data_loader.init_datasets()
@@ -75,7 +77,12 @@ def run_search():
     # --- Post-processing and State Update ---
     selected_geo = st.session_state.app_data['odis'].loc[[config.commune_actuelle]].copy()
     
-    centroid_geo_series_geographic = start_commune.to_crs('EPSG:4326').centroid
+    # Reproject to a projected CRS for accurate centroid calculation
+    start_commune_projected = start_commune.to_crs('EPSG:2154')
+    centroid_geo_series_projected = start_commune_projected.centroid
+    
+    # Reproject the centroid back to EPSG:4326 for map display
+    centroid_geo_series_geographic = centroid_geo_series_projected.to_crs('EPSG:4326')
     final_center_x = centroid_geo_series_geographic.x.iloc[0]
     final_center_y = centroid_geo_series_geographic.y.iloc[0]
     
@@ -105,6 +112,7 @@ def run_search():
 
 # Automatically run the search if not already processed and form is completed
 if st.session_state.get('processed_gdf') is None and st.session_state.get('form_completed'):
+    st.session_state['view_level'] = cfg.VIEW_LEVEL_OPTIONS[cfg.DEFAULT_VIEW_LEVEL]
     run_search()
     st.session_state['form_completed'] = False
 
@@ -114,7 +122,7 @@ if st.session_state.get('processed_gdf') is None and st.session_state.get('form_
 with st.sidebar:
     st.image('./images/logo-jaccueille-singa.png', width=150)
     st.write("")
-    st.markdown("Découvrez les 5 cinqs lieux de vie correspondant le mieux au projet de vie renseigné. Les scores vous permettent de comparer facilement leurs atouts.", unsafe_allow_html=True)
+    st.markdown("Découvrez les lieux de vie correspondant le mieux au projet renseigné. Les scores vous permettent de comparer facilement leurs atouts.", unsafe_allow_html=True)
     with st.container(border=False, height='stretch', vertical_alignment="bottom"):
         ui.display_sidebar(st.session_state['demo_data'])
         ui.start_over()
@@ -166,7 +174,7 @@ with col_map:
         # This ensures a stable UI tree for Streamlit to track state.
         cols = st.columns(5, vertical_alignment="center")
         with cols[0]:
-            st.text("Afficher sur la carte:")
+            st.text("Afficher sur \n la carte:")
         with cols[1]:
             show_top_5 = st.toggle("Top 5", key="show_top_5_toggle")
         
@@ -218,7 +226,7 @@ with col_map:
 
         # Create a dynamic key to force component recreation when layers change
         map_key = "odis_scored_map_" + "_".join(sorted(list(st.session_state.fgs_to_show)))
-
+   
         st_folium(
             m,
             zoom=st.session_state["zoom"],
