@@ -375,7 +375,7 @@ def _display_result_details(row: pd.Series):
         
         with st.expander("Services d'inclusions proposés"):
             services_df = st.session_state.app_data['annuaire_inclusion']
-            commune_services = services_df[services_df.codgeo == row.codgeo]
+            commune_services = services_df[services_df.codgeo == row.name]
             
             if not commune_services.empty:
                 any_service_found = False

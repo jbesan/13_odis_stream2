@@ -106,7 +106,8 @@ def compute_criteria_scores(df: gpd.GeoDataFrame, prefs: Dict[str, Any], incl_in
     # Use QuantileTransformer to normalize scores to a uniform distribution [0, 1].
     transformer = preprocessing.QuantileTransformer(
         output_distribution="uniform",
-        n_quantiles=n_quantiles
+        n_quantiles=n_quantiles,
+        random_state=42
     )
 
     # --- EMPLOI ---
@@ -173,6 +174,9 @@ def compute_criteria_scores(df: gpd.GeoDataFrame, prefs: Dict[str, Any], incl_in
         # If no specific needs, score based on the general availability of inclusion services
         df['svc_incl_ratio'] = 1000 * df['svc_incl_count'] / df['pop_be']
         df['svc_incl_scaled'] = transformer.fit_transform(df[['svc_incl_ratio']].fillna(0))
+
+    # Population as a direct score for inclusion
+    df['population_scaled'] = transformer.fit_transform(df[['population']].fillna(0))
 
     # Political orientation score
     df['pol_scaled'] = df['pol_num'].astype('float')
