@@ -47,7 +47,7 @@ Ce prototype a un triple objectif :
 
 1.  **Clonez le dépôt :**
     ```bash
-    git clone https://github.com/dataforgoodfr/13_odis.git
+    git clone https://github.com/jbesan/13_odis_stream2.git
     cd 13_odis
     ```
 
@@ -82,6 +82,35 @@ Le cœur de l'application est un pipeline de scoring qui évalue les communes (o
 6.  **Score Pondéré Final :** Enfin, un `weighted_score` global est calculé pour chaque entité (commune, binôme ou bassin de vie) en appliquant les poids définis par l'utilisateur. Les résultats sont ensuite classés selon ce score final.
 
 ![Explication de la logique de scoring](./images/Screenshot-4.png)
+
+### Critères de Scoring
+
+Le score est calculé à partir d'une multitude de critères, regroupés en grandes catégories. Chaque critère est normalisé pour permettre une comparaison équitable. Voici la liste des critères utilisés :
+
+**Catégorie : Emploi**
+*   **Taux Besoin Emploi** : Mesure le nombre d'emplois non pourvus pour 1000 habitants, indiquant la demande de main-d'œuvre locale.
+*   **Taux Besoin Emploi en Tension** : Identique au critère précédent, mais ciblé sur les métiers officiellement listés comme "en tension".
+*   **Adéquation Compétences/Emploi** : Évalue la correspondance entre les métiers recherchés par les adultes du foyer et les familles de métiers les plus demandées dans la zone.
+*   **Adéquation Besoins/Formations** : Mesure la présence de centres de formation proposant les cursus recherchés par les adultes du foyer.
+
+**Catégorie : Logement**
+*   **Taux de Logements Vacants** : Calcule le pourcentage de logements vacants, un indicateur de la disponibilité sur le marché locatif privé.
+*   **Taux de Logements Sociaux Inoccupés** : Mesure la part des logements sociaux vacants ou vides, indiquant une disponibilité potentielle dans le parc social.
+*   **Taux de Grandes Résidences Principales** : Pour l'hébergement "chez l'habitant", ce critère évalue la proportion de résidences principales de 5 pièces et plus.
+
+**Catégorie : Éducation**
+*   **Taux de Classes à Risque de Fermeture** : Identifie les écoles où des classes risquent de fermer faute d'élèves, ce qui peut être une opportunité pour de nouvelles familles.
+*   **Proximité des Établissements Scolaires** : Calcule la distance entre la commune et l'établissement scolaire requis pour chaque enfant du foyer.
+
+**Catégorie : Inclusion & Vie Locale**
+*   **Taux de Services d'Inclusion** : Mesure la densité de services dédiés à l'inclusion (apprentissage du français, aide juridique, etc.) pour 1000 habitants.
+*   **Présence de Soutien Spécifique** : Vérifie la présence de services répondant aux besoins spécifiques exprimés dans le formulaire (santé, handicap, etc.).
+*   **Taille de la Population** : La population de la commune est utilisée comme un critère, favorisant les communes de taille intermédiaire pour un meilleur équilibre accueil/intégration.
+*   **Couleur Politique** : Prend en compte l'affiliation politique de la municipalité, en valorisant celles jugées plus favorables à l'accueil.
+
+**Catégorie : Mobilité**
+*   **Distance depuis le lieu actuel** : Score basé sur la proximité par rapport à la commune de départ de la personne.
+*   **Appartenance à la même agglomération (EPCI)** : Vérifie si la commune proposée est dans le même Établissement Public de Coopération Intercommunale (EPCI) que la commune de départ.
 
 ## 🛠️ Stack Technique
 

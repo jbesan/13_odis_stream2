@@ -6,6 +6,10 @@ from plotly.express import line_polar
 import config as cfg
 import maps
 
+def open_pdf_modal():
+    """Callback to signal that the PDF modal should be shown."""
+    st.session_state['show_pdf_modal'] = True
+
 def display_sidebar(demo_data: dict):
     """Displays the sidebar with location and weight controls."""
     
@@ -40,17 +44,14 @@ def display_sidebar(demo_data: dict):
         )
         st.text("\n\n")
         st.select_slider("Décote commune binôme\n\n (en %)", cfg.PENALITE_BINOME_OPTIONS, key="ui_penalite_binome")
-        # st.select_slider("Population Minimum", cfg.POP_MIN_OPTIONS, key="ui_pop_min")
 
     st.divider()
 
     # --- Export to PDF ---
-    if st.session_state.get('pdf_bytes'):
-        st.download_button(
-            label="Export des résultats",
-            data=st.session_state.pdf_bytes,
-            file_name="synthese_jaccueille.pdf",
-            mime="application/pdf",
+    if st.session_state.get('processed_gdf') is not None:
+        st.button(
+            "Générer le PDF", 
+            on_click=open_pdf_modal,
             icon=':material/picture_as_pdf:',
             type='secondary'
         )
@@ -227,7 +228,6 @@ def _result_highlight_callback(rank: int):
     # If the same button is clicked again, un-highlight it
     if is_highlighted and rank == highlighted_rank:
         st.session_state.highlighted_result = [False, None]
-        # st.session_state.center = None # Recenter map
         st.session_state.zoom = None
     else:
         # Highlight the new result
@@ -245,7 +245,6 @@ def display_results_list():
     """Displays the list of top N results."""
     st.subheader("Meilleurs résultats")
     st.text("Cliquez sur un résultat pour comprendre le détail du score")
-    # st.text(f'Voici des localités qui pourraient convenir {get_person_accompanied_str()}.')
     st.markdown('<style> [class*="st-key-button_top"] .stButton button div {text-align:left; width:100%;},</style>', unsafe_allow_html=True)
 
     top_n = 5
@@ -272,7 +271,6 @@ def display_results_list():
             width='stretch',
             key=f'button_top{rank+1}',
             type='primary'
-            # type='primary' if is_highlighted and rank == highlighted_rank else 'secondary'
         )
 
         if is_highlighted and rank == highlighted_rank:
@@ -286,7 +284,7 @@ def _display_bv_result_details(row: pd.Series):
     """Displays the detailed aggregated information for a 'bassin de vie'."""
     with st.container(border=True):
         # --- Pitch ---
-        pitch = _produce_pitch_markdown(row)
+        pitch = _produce_pitch_markdown(row, st.session_state.config, st.session_state.app_data['scores_cat'])
         st.markdown(pitch)
 
         # --- Radar Chart ---
@@ -346,7 +344,7 @@ def _display_result_details(row: pd.Series):
     """Displays the detailed information for a single highlighted result."""
     with st.container(border=True):
         # --- Pitch ---
-        pitch = _produce_pitch_markdown(row)
+        pitch = _produce_pitch_markdown(row, st.session_state.config, st.session_state.app_data['scores_cat'])
         st.markdown(pitch)
 
         # --- Radar Chart ---
@@ -404,11 +402,8 @@ def _display_result_details(row: pd.Series):
         # --- Links ---
         st.markdown(f"[Page OD&IS]({row.get('url_odis', '#')}) | [Page Wikipedia]({row.get('url_wikipedia', '#')})")
 
-def _produce_pitch_markdown(row: pd.Series) -> str:
+def _produce_pitch_markdown(row: pd.Series, config: cfg.ScoringConfig, scores_cat: pd.DataFrame) -> str:
     """Generates a summary "pitch" for a result, adapting to commune or bassin de vie."""
-    config = st.session_state.config
-    scores_cat = st.session_state.app_data['scores_cat']
-    
     pitch_md = []
     population = f"{row['population']:,.0f}".replace(",", " ")
 
