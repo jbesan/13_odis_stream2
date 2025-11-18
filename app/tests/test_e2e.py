@@ -3,6 +3,9 @@ import pandas as pd
 import geopandas as gpd
 import copy
 from unittest.mock import patch
+import json
+from pathlib import Path
+import numpy as np
 
 # Important: The tests in this file must be run from the 'app/' directory
 # for the data paths to resolve correctly.
@@ -13,6 +16,64 @@ import config as cfg
 import data_loader
 import scoring
 import ui
+
+SNAPSHOT_DIR = Path(__file__).parent / "snapshots"
+
+def assert_results_match_snapshot(test_name: str, results: pd.DataFrame, request):
+    """
+    Asserts that the top 5 results of a test match a stored snapshot.
+    If --update-snapshots is passed, it generates/updates the snapshot.
+    """
+    snapshot_file = SNAPSHOT_DIR / f"{test_name}.json"
+    
+    # Prepare the snapshot data from the current results
+    # We need to handle potential differences in dtypes for JSON serialization
+    results_for_snapshot = results.copy()
+    if 'geometry' in results_for_snapshot.columns:
+        results_for_snapshot = results_for_snapshot.drop(columns=['geometry'])
+    if 'polygon' in results_for_snapshot.columns:
+        results_for_snapshot = results_for_snapshot.drop(columns=['polygon'])
+
+    snapshot_data = results_for_snapshot.head(5).reset_index().to_dict(orient='records')
+    for record in snapshot_data:
+        for key, value in record.items():
+            if isinstance(value, (pd.Timestamp, pd.Timedelta)):
+                record[key] = str(value)
+            elif isinstance(value, (np.int64, np.int32)):
+                record[key] = int(value)
+            elif isinstance(value, (np.float64, np.float32)):
+                record[key] = float(value)
+            elif isinstance(value, (np.bool_)):
+                record[key] = bool(value)
+            elif isinstance(value, np.ndarray):
+                record[key] = value.tolist()
+            elif hasattr(value, 'wkt'): # Handles shapely geometries (Point, Polygon, etc.)
+                record[key] = value.wkt
+            elif isinstance(value, list) and len(value) > 0 and isinstance(value[0], (np.int64, np.int32)):
+                record[key] = [int(v) for v in value]
+
+
+    if request.config.getoption("--update-snapshots"):
+        SNAPSHOT_DIR.mkdir(exist_ok=True)
+        with open(snapshot_file, 'w', encoding='utf-8') as f:
+            json.dump(snapshot_data, f, indent=4, ensure_ascii=False)
+        pytest.skip(f"Snapshot updated for {test_name}")
+
+    if not snapshot_file.exists():
+        pytest.fail(f"Snapshot file not found for {test_name}. Run with --update-snapshots to create it.")
+
+    with open(snapshot_file, 'r', encoding='utf-8') as f:
+        expected_data = json.load(f)
+    
+    # Compare the data, focusing on key fields
+    for i, (actual, expected) in enumerate(zip(snapshot_data, expected_data)):
+        # For Bassins de vie, the identifier is BV2022, not codgeo
+        actual_id = actual.get('codgeo') or actual.get('BV2022')
+        expected_id = expected.get('codgeo') or expected.get('BV2022')
+        assert actual_id == expected_id, f"Row {i}: ID mismatch (codgeo or BV2022)"
+        assert actual.get('codgeo_binome') == expected.get('codgeo_binome'), f"Row {i}: codgeo_binome mismatch"
+        assert pytest.approx(actual['weighted_score'], rel=1e-4) == expected['weighted_score'], f"Row {i}: weighted_score mismatch"
+
 
 @pytest.fixture(scope="module")
 def app_data():
@@ -141,49 +202,55 @@ def run_test_scenario(scenario_id, view_level, app_data):
 
 
 @pytest.mark.e2e
-def test_scenario_1_communes(app_data):
+def test_scenario_1_communes(app_data, request):
     """E2E test for demo scenario 1 at the Communes level."""
     results = run_test_scenario('1', 'Communes', app_data)
     assert not results.empty
     assert 'weighted_score' in results.columns
     assert results.shape[0] > 5
+    assert_results_match_snapshot('test_scenario_1_communes', results, request)
 
 @pytest.mark.e2e
-def test_scenario_1_bv(app_data):
+def test_scenario_1_bv(app_data, request):
     """E2E test for demo scenario 1 at the Bassins de vie level."""
     results = run_test_scenario('1', 'Bassins de vie', app_data)
     assert not results.empty
     assert 'weighted_score' in results.columns
     assert results.shape[0] > 5
+    assert_results_match_snapshot('test_scenario_1_bv', results, request)
 
 @pytest.mark.e2e
-def test_scenario_2_communes(app_data):
+def test_scenario_2_communes(app_data, request):
     """E2E test for demo scenario 2 at the Communes level."""
     results = run_test_scenario('2', 'Communes', app_data)
     assert not results.empty
     assert 'weighted_score' in results.columns
     assert results.shape[0] > 5
+    assert_results_match_snapshot('test_scenario_2_communes', results, request)
 
 @pytest.mark.e2e
-def test_scenario_2_bv(app_data):
+def test_scenario_2_bv(app_data, request):
     """E2E test for demo scenario 2 at the Bassins de vie level."""
     results = run_test_scenario('2', 'Bassins de vie', app_data)
     assert not results.empty
     assert 'weighted_score' in results.columns
     assert results.shape[0] > 5
+    assert_results_match_snapshot('test_scenario_2_bv', results, request)
 
 @pytest.mark.e2e
-def test_scenario_3_communes(app_data):
+def test_scenario_3_communes(app_data, request):
     """E2E test for demo scenario 3 at the Communes level."""
     results = run_test_scenario('3', 'Communes', app_data)
     assert not results.empty
     assert 'weighted_score' in results.columns
     assert results.shape[0] > 5
+    assert_results_match_snapshot('test_scenario_3_communes', results, request)
 
 @pytest.mark.e2e
-def test_scenario_3_bv(app_data):
+def test_scenario_3_bv(app_data, request):
     """E2E test for demo scenario 3 at the Bassins de vie level."""
     results = run_test_scenario('3', 'Bassins de vie', app_data)
     assert not results.empty
     assert 'weighted_score' in results.columns
     assert results.shape[0] > 5
+    assert_results_match_snapshot('test_scenario_3_bv', results, request)
