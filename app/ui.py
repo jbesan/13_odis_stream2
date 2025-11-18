@@ -45,10 +45,15 @@ def display_sidebar(demo_data: dict):
     st.divider()
 
     # --- Export to PDF ---
-    if st.session_state.get('processed_gdf') is not None:
-        
-        if st.button('Export des résultats', icon=':material/picture_as_pdf:', type='secondary'):
-            st.cache_data.clear()
+    if st.session_state.get('pdf_bytes'):
+        st.download_button(
+            label="Export des résultats",
+            data=st.session_state.pdf_bytes,
+            file_name="synthese_jaccueille.pdf",
+            mime="application/pdf",
+            icon=':material/picture_as_pdf:',
+            type='secondary'
+        )
 
 def start_over():
     # --- Start over ---
@@ -215,19 +220,19 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
         pop_min=st.session_state['ui_pop_min']
     )
 
-def _result_highlight_callback(index: int):
+def _result_highlight_callback(rank: int):
     """Callback to handle highlighting a result."""
-    is_highlighted, highlighted_index = st.session_state.highlighted_result
+    is_highlighted, highlighted_rank = st.session_state.highlighted_result
     
     # If the same button is clicked again, un-highlight it
-    if is_highlighted and index == highlighted_index:
+    if is_highlighted and rank == highlighted_rank:
         st.session_state.highlighted_result = [False, None]
         # st.session_state.center = None # Recenter map
         st.session_state.zoom = None
     else:
         # Highlight the new result
-        row = st.session_state.processed_gdf.loc[index]
-        st.session_state.highlighted_result = [True, index]
+        row = st.session_state.processed_gdf.loc[rank]
+        st.session_state.highlighted_result = [True, rank]
         st.session_state.center = [row.polygon.centroid.y, row.polygon.centroid.x]
         st.session_state.zoom = cfg.DETAIL_MAP_ZOOM
 
@@ -245,32 +250,32 @@ def display_results_list():
 
     top_n = 5
     df = st.session_state.processed_gdf
-    is_highlighted, highlighted_index = st.session_state.highlighted_result
+    is_highlighted, highlighted_rank = st.session_state.highlighted_result
 
     # Pre-build layers for top results to be shown on map
-    for index, row in df.head(top_n).iterrows():
-        fg_key = f'Top{index + 1}'
-        st.session_state.fg_dict_ref[fg_key] = maps.build_top_result_layer(row, index)
+    for rank, row in df.head(top_n).iterrows():
+        fg_key = f'Top{rank + 1}'
+        st.session_state.fg_dict_ref[fg_key] = maps.build_top_result_layer(row, rank)
 
     # Display buttons and details
-    for index, row in df.head(top_n).iterrows():
+    for rank, row in df.head(top_n).iterrows():
         # Adapt title based on the view level
         if st.session_state.get('view_level') == 'Bassins de vie':
-            title = f"Top {index+1} | Bassin de vie de {row.libgeo}"
+            title = f"Top {rank+1} | Bassin de vie de {row.libgeo}"
         else:
-            title = f"Top {index+1} | {row.libgeo}" + (f" (avec {row.libgeo_binome})" if row.binome else "")
+            title = f"Top {rank+1} | {row.libgeo}" + (f" (avec {row.libgeo_binome})" if row.binome else "")
 
         st.button(
             title,
             on_click=_result_highlight_callback,
-            args=(index,),
+            args=(rank,),
             width='stretch',
-            key=f'button_top{index+1}',
+            key=f'button_top{rank+1}',
             type='primary'
-            # type='primary' if is_highlighted and index == highlighted_index else 'secondary'
+            # type='primary' if is_highlighted and rank == highlighted_rank else 'secondary'
         )
 
-        if is_highlighted and index == highlighted_index:
+        if is_highlighted and rank == highlighted_rank:
             # For 'Bassin de vie' view, we call the specific details display for aggregated data
             if st.session_state.get('view_level') == 'Bassins de vie':
                 _display_bv_result_details(row)

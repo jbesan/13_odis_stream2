@@ -104,22 +104,33 @@ def build_scores_layer(df: pd.DataFrame) -> tuple:
 
     return fg, colormap
 
-def build_top_result_layer(row: pd.Series, index: int) -> flm.FeatureGroup:
+def build_top_result_layer(row: pd.Series, rank: int) -> flm.FeatureGroup:
     """Builds a FeatureGroup to highlight a single top result (commune + binome)."""
-    fg = flm.FeatureGroup(name=f"Top{index + 1}")
-    
-    # Main commune
+    fg = flm.FeatureGroup(name=f"Top {rank + 1}")
+
+    # Main commune outline
     flm.GeoJson(
         mapping(row.polygon),
         style_function=lambda x: {"color": "red", "fillOpacity": 0, "weight": 3}
     ).add_to(fg)
 
-    # Binome commune (if it exists)
+    # Binome commune outline (if it exists)
     if row.binome and row.polygon_binome:
         flm.GeoJson(
             mapping(row.polygon_binome),
             style_function=lambda x: {"color": "red", "fillOpacity": 0, "weight": 2, "dashArray": "5, 5"}
         ).add_to(fg)
+
+    # Add rank marker at the centroid of the main polygon
+    centroid = row.polygon.centroid
+    flm.Marker(
+        location=[centroid.y, centroid.x],
+        icon=flm.features.DivIcon(
+            icon_size=(25, 25),
+            icon_anchor=(12, 12),
+            html=f'<div style="font-size: 12pt; font-weight: bold; color: white; background-color: #D63E2A; border-radius: 50%; text-align: center; line-height: 25px;">{rank + 1}</div>',
+        )
+    ).add_to(fg)
         
     return fg
 
