@@ -3,13 +3,14 @@ import geopandas as gpd
 from shapely.geometry import Polygon
 import pytest
 import folium
+import types # Import types for SimpleNamespace
 
 from app.pdf_generator import generate_pdf_report
 from app.config import ScoringConfig
 
 @pytest.fixture
 def sample_session_state():
-    """Creates a sample session_state dictionary for testing."""
+    """Creates a sample session_state object for testing."""
     config = ScoringConfig(
         poids_emploi=100,
         poids_logement=100,
@@ -30,12 +31,43 @@ def sample_session_state():
         binome_penalty=0.5,
         pop_min=1000
     )
-    return {
+    
+    # Mock app_data with necessary dataframes
+    mock_app_data = {
+        'scores_cat': pd.DataFrame({
+            'score': ['emploi_score', 'logement_score', 'education_score', 'inclusion_score', 'mobilité_score'],
+            'cat': ['emploi', 'logement', 'education', 'inclusion', 'mobilité'],
+            'score_affichage': ['Emploi', 'Logement', 'Education', 'Inclusion', 'Mobilité']
+        }),
+        'codfap_index': pd.DataFrame({
+            'Code FAP 341': ['CODE1', 'CODE2'],
+            'Intitulé FAP 341': ['Metier 1', 'Metier 2']
+        }).set_index('Code FAP 341'),
+        'codformations_index': pd.DataFrame({
+            'index': ['FORM1', 'FORM2'],
+            'libformation': ['Formation 1', 'Formation 2']
+        }).set_index('index'),
+        'annuaire_inclusion': pd.DataFrame({
+            'codgeo': ['33063'],
+            'categorie': ['social'],
+            'service': ['aide-sociale']
+        })
+    }
+
+    # Create a dictionary to mimic st.session_state
+    session_state_mock = {
         'config': config,
         'ui_commune': 'Bordeaux',
         'view_level': 'Communes',
-        'binome': False # Assuming not a binome search for simplicity
+        'binome': False,
+        'app_data': mock_app_data,
+        # Add other necessary session state keys that generate_pdf_report might access
+        'ui_nom': "Test User", # For get_person_accompanied_str()
+        'processed_gdf': None, # Will be set by the test itself
+        'map_object': None, # Will be set by the test itself
+        # Add any other keys that generate_pdf_report expects to find in st.session_state
     }
+    return session_state_mock
 
 @pytest.fixture
 def sample_results_df():
@@ -51,6 +83,8 @@ def sample_results_df():
         'inclusion_cat_score': [0.9, 0.7],
         'mobilité_cat_score': [0.8, 0.8],
         'binome': [False, False],
+        'population': [2000000, 500000],
+        'epci_nom': ['Métropole du Grand Paris', 'Métropole de Lyon'],
         'geometry': [
             Polygon([(2.224, 48.816), (2.469, 48.816), (2.469, 48.902), (2.224, 48.902)]),
             Polygon([(4.8, 45.7), (4.9, 45.7), (4.9, 45.8), (4.8, 45.8)])

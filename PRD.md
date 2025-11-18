@@ -223,3 +223,20 @@ En tant que travailleur social, je veux voir les lieux recommandés sur une cart
 
 ### 📊 Status
 - In Progress
+
+## 🚀 Feature [F-12]: Ajout de critères santé et éducation au scoring
+
+### 📝 User Stories
+- En tant que travailleur social, je veux que le score d'éducation reflète le **nombre** de niveaux scolaires pertinents présents dans une localité, pour une évaluation plus fine.
+- En tant que travailleur social, je veux que le besoin de proximité d'un service de santé soit un critère de score pour que les recommandations tiennent compte de l'accès aux soins.
+
+### 🔑 Key Features
+*   **Score d'Éducation Basé sur le Nombre :** Un nouveau score est ajouté à la catégorie "Éducation". Il **compte combien** de niveaux scolaires demandés (ex: "Maternelle", "Collège") sont présents dans la commune. Une commune avec 2 types d'écoles sur 2 demandés aura un score plus élevé qu'une commune avec 1 sur 2.
+*   **Score de Santé Basé sur la Présence :** Un nouveau score est ajouté à la catégorie "Inclusion". Il vaut 100% si une commune possède le service de santé exact sélectionné ("Hôpital", "Maternité", etc.), et 0% sinon.
+*   **Agrégation par Bassin de Vie :**
+    *   Pour le score d'**éducation**, le calcul pour le bassin de vie comptera le nombre de types d'écoles uniques présents dans l'ensemble des communes qui le composent.
+    *   Pour le score de **santé**, le bassin de vie obtiendra 100% si au moins une de ses communes possède le service requis.
+*   **Affichage dans les Résultats :** La présence de ces services est mentionnée dans les points forts du résultat.
+
+### 📊 Status
+- In Progress

@@ -3,7 +3,7 @@ import io
 import pandas as pd
 from fpdf import FPDF
 from fpdf.fonts import FontFace
-from fpdf.enums import TextEmphasis
+from fpdf.enums import TextEmphasis, XPos, YPos
 from plotly.express import line_polar
 import tempfile
 import time
@@ -22,7 +22,8 @@ PDF_TITLE = "Synthèse de votre recherche de territoire"
 
 def _setup_unicode_font(pdf: FPDF):
     """Adds the local Unicode DejaVu fonts to the FPDF instance."""
-    font_dir = "assets/fonts/"
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    font_dir = os.path.join(base_dir, "assets", "fonts")
     try:
         pdf.add_font("DejaVu", "", os.path.join(font_dir, "DejaVuSans.ttf"))
         pdf.add_font("DejaVu", "B", os.path.join(font_dir, "DejaVuSans-Bold.ttf"))
@@ -64,21 +65,24 @@ def generate_pdf_report(st_session_state: dict, results_df: pd.DataFrame, folium
 
     # --- PAGE 1: HEADER & CRITERIA ---
     # Header
-    pdf.image('images/logo_jaccueille_pdf.jpg', x=10, y=8, w=40)
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    logo_path = os.path.join(base_dir, "images", "logo_jaccueille_pdf.jpg")
+    pdf.image(logo_path, x=10, y=8, w=40)
     pdf.ln(50)  # Add space for the logo
     pdf.set_font("DejaVu", 'B', 16)
-    pdf.cell(0, 10, PDF_TITLE, 0, 1, 'C')
+    pdf.cell(0, 10, PDF_TITLE, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
 
     # Subtitle with beneficiary's name
     subtitle = f"Pour le projet de vie {ui.get_person_accompanied_str()}"
     pdf.set_font("DejaVu", '', 12)
-    pdf.cell(0, 10, subtitle, 0, 1, 'C')
+    pdf.cell(0, 10, subtitle, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
     pdf.ln(10)
 
     # --- Search Criteria ---
     pdf.set_font("DejaVu", 'B', 12)
-    pdf.cell(0, 10, "Vos critères de recherche", 0, 1, 'L')
+    pdf.cell(0, 10, "Vos critères de recherche", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='L')
     pdf.ln(2)
+    print(st_session_state)
     config = st_session_state.get('config')
     if config:
         # --- Correctly look up names for Jobs & Formations ---
@@ -142,7 +146,7 @@ def generate_pdf_report(st_session_state: dict, results_df: pd.DataFrame, folium
 
     # Page 2 Title
     pdf.set_font("DejaVu", 'B', 14)
-    pdf.cell(0, 10, "Résultats de la recherche", 0, 1, 'C')
+    pdf.cell(0, 10, "Résultats de la recherche", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
     pdf.ln(5)
 
     # Map Screenshot
@@ -150,7 +154,7 @@ def generate_pdf_report(st_session_state: dict, results_df: pd.DataFrame, folium
         map_png = _capture_map_as_png(folium_map)
         map_image_stream = io.BytesIO(map_png)
         map_image_stream.seek(0)
-        pdf.image(map_image_stream, x=10, w=pdf.w - 20, type='PNG')
+        pdf.image(map_image_stream, x=10, w=pdf.w - 20)
     except Exception as e:
         pdf.set_font("DejaVu", 'I', 8)
         pdf.multi_cell(0, 6, f"Erreur lors de la generation de la carte: {e}")
@@ -158,7 +162,7 @@ def generate_pdf_report(st_session_state: dict, results_df: pd.DataFrame, folium
 
     # Top 5 Summary
     pdf.set_font("DejaVu", 'B', 12)
-    pdf.cell(0, 10, "Top 5 des résultats", 0, 1, 'L')
+    pdf.cell(0, 10, "Top 5 des résultats", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='L')
     pdf.set_font("DejaVu", '', 9)
     for index, row in results_df.head(5).iterrows():
         score_percent = f"{row['weighted_score'] * 100:.0f}%"
@@ -166,7 +170,7 @@ def generate_pdf_report(st_session_state: dict, results_df: pd.DataFrame, folium
             name = f"Bassin de vie de {row.libgeo}"
         else:
             name = row.libgeo + (f" (avec {row.libgeo_binome})" if row.binome else "")
-        pdf.cell(0, 5, f"  {index + 1}. {name} - {score_percent}", 0, 1)
+        pdf.cell(0, 5, f"  {index + 1}. {name} - {score_percent}", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(5)
 
     # --- INDIVIDUAL RESULT PAGES ---
@@ -178,11 +182,11 @@ def generate_pdf_report(st_session_state: dict, results_df: pd.DataFrame, folium
         else:
             title = f"Top {index + 1} | {row.libgeo}" + (f" (avec {row.libgeo_binome})" if row.binome else "")
         pdf.set_font("DejaVu", 'B', 12)
-        pdf.cell(0, 8, title, 0, 1)
+        pdf.cell(0, 8, title, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(2)
 
         # Pitch
-        pitch = ui._produce_pitch_markdown(row, st_session_state.config, st_session_state.app_data['scores_cat'])
+        pitch = ui._produce_pitch_markdown(row, st_session_state['config'], st_session_state['app_data']['scores_cat'])
         pdf.set_font("DejaVu", '', 9)
         pdf.multi_cell(0, 5, pitch, markdown=True)
         pdf.ln(5)
@@ -206,11 +210,11 @@ def generate_pdf_report(st_session_state: dict, results_df: pd.DataFrame, folium
 
         # Additional Info
         pdf.set_font("DejaVu", 'B', 10)
-        pdf.cell(0, 8, "Plus d’informations:", 0, 1)
+        pdf.cell(0, 8, "Plus d’informations:", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
         # Métiers
         pdf.set_font("DejaVu", 'B', 9)
-        pdf.cell(0, 6, "Top métiers recherchés", 0, 1)
+        pdf.cell(0, 6, "Top métiers recherchés", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.set_font("DejaVu", '', 9)
         top_metiers = set(row.get('be_libfap_top', []) or [])
         if top_metiers:
@@ -221,7 +225,7 @@ def generate_pdf_report(st_session_state: dict, results_df: pd.DataFrame, folium
 
         # Formations
         pdf.set_font("DejaVu", 'B', 9)
-        pdf.cell(0, 6, "Formations proposées", 0, 1)
+        pdf.cell(0, 6, "Formations proposées", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.set_font("DejaVu", '', 9)
         formations = set(row.get('noms_formations', []) or [])
         if formations:
@@ -232,9 +236,9 @@ def generate_pdf_report(st_session_state: dict, results_df: pd.DataFrame, folium
 
         # Services d'inclusion
         pdf.set_font("DejaVu", 'B', 9)
-        pdf.cell(0, 6, "Services d'inclusion", 0, 1)
+        pdf.cell(0, 6, "Services d'inclusion", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.set_font("DejaVu", '', 9)
-        services_df = st_session_state.app_data['annuaire_inclusion']
+        services_df = st_session_state['app_data']['annuaire_inclusion']
         communes_to_check = row.get('communes', [row.name])
         bv_services = services_df[services_df.codgeo.isin(communes_to_check)]
         if not bv_services.empty and any(bv_services.service != '-'):
