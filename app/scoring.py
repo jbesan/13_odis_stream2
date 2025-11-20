@@ -5,7 +5,7 @@ Scoring module for the ODIS application.
 This module contains functions to calculate scores for communes based on various criteria
 such as employment, housing, education, and mobility.
 """
-from typing import List, Dict, Set, Any, Optional, Union
+from typing import List, Dict, Set, Any, Optional, Union, Tuple
 
 import geopandas as gpd
 import numpy as np
@@ -446,3 +446,78 @@ def compute_odis_score(
     odis_search_best = select_best_score_per_commune(odis_exploded)
 
     return odis_search_best
+
+
+def run_scoring_pipeline(
+    config: ScoringConfig,
+    df_all_communes: gpd.GeoDataFrame,
+    df_bv_geo: gpd.GeoDataFrame,
+    df_area_geo: gpd.GeoDataFrame,
+    scores_cat: pd.DataFrame,
+    incl_index: pd.DataFrame,
+    view_level: str
+) -> Tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
+    """
+    Orchestrates the full scoring pipeline: filtering -> scoring -> aggregation.
+    
+    Returns:
+        A tuple containing:
+        - processed_gdf: The final aggregated/sorted results ready for display.
+        - unaggregated_gdf: The raw scored communes (useful for map layers).
+    """
+    start_commune = df_all_communes.loc[[config.commune_actuelle]]
+    loc_type = 'distance' if isinstance(config.loc_distance_km, int) else config.loc_distance_km
+    
+    # --- Filtering ---
+    if view_level == 'Communes':
+        loc_col = 'dep_code' if loc_type == 'departement' else 'reg_code'
+        communes_to_score = filter_communes(
+            df=df_all_communes,
+            start_commune=start_commune,
+            loc_type=loc_type,
+            loc_code=start_commune.iloc[0][loc_col] if loc_type != 'distance' else None,
+            loc_distance_km=config.loc_distance_km if loc_type == 'distance' else None
+        )
+    else: # Bassins de vie
+        loc_col = 'dep_code' if loc_type == 'departement' else 'reg_code'
+        filtered_bvs = filter_bassins_de_vie(
+            bv_gdf=df_bv_geo,
+            start_commune=start_commune,
+            loc_type=loc_type,
+            loc_code=start_commune.iloc[0][loc_col] if loc_type != 'distance' else None,
+            loc_distance_km=config.loc_distance_km if loc_type == 'distance' else None,
+            area_gdf=df_area_geo
+        )
+        # Get all communes that belong to those BVs
+        bv_ids_to_keep = filtered_bvs.index.tolist()
+        communes_to_score = df_all_communes[df_all_communes[cfg.BV_CODE_COL].isin(bv_ids_to_keep)]
+
+    # --- Scoring ---
+    odis_scored = compute_odis_score(
+        df_search=communes_to_score,
+        df_all_communes=df_all_communes,
+        scores_cat=scores_cat,
+        config=config,
+        incl_index=incl_index,
+    )
+
+    # --- Post-processing ---
+    odis_scored = odis_scored.drop(config.commune_actuelle, errors='ignore')
+
+    if odis_scored.empty:
+        return gpd.GeoDataFrame(columns=['polygon']), gpd.GeoDataFrame()
+
+    unaggregated_gdf = odis_scored
+
+    if view_level == 'Bassins de vie':
+        df_bv_scores = aggregate_scores_by_bassin_de_vie(odis_scored)
+        gdf_bv_geo_filtered = df_bv_geo[df_bv_geo.index.isin(df_bv_scores[cfg.BV_CODE_COL])]
+        processed_gdf = gdf_bv_geo_filtered.merge(df_bv_scores, left_index=True, right_on=cfg.BV_CODE_COL)
+        processed_gdf = processed_gdf.rename_geometry('polygon')
+        processed_gdf = processed_gdf.drop_duplicates(subset=[cfg.BV_CODE_COL])
+    else: # Commune level
+        processed_gdf = odis_scored
+    
+    processed_gdf = processed_gdf.sort_values('weighted_score', ascending=False).reset_index()
+    
+    return processed_gdf, unaggregated_gdf

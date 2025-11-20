@@ -313,3 +313,43 @@ def test_population_score_is_calculated(sample_data, default_config, sample_incl
     score_paris = scored_df.loc['75056']['population_scaled']
     score_marseille = scored_df.loc['13055']['population_scaled']
     assert score_paris > score_marseille
+
+def test_run_scoring_pipeline(sample_data, sample_scores_cat, default_config, sample_incl_index):
+    """Tests the end-to-end scoring pipeline."""
+    # Arrange
+    config = default_config
+    config.commune_actuelle = '33063' # Bordeaux
+    config.loc_distance_km = 200
+    config.nb_adultes = 1
+    config.codes_metiers = [['F1']]
+    config.codes_formations = [[]]
+    
+    # Mock BV and Area dataframes as they are needed for the pipeline
+    df_bv_geo = gpd.GeoDataFrame(
+        {cfg.BV_CODE_COL: ['BV1', 'BV2'], cfg.BV_NAME_COL: ['Bassin 1', 'Bassin 2']},
+        geometry=[Polygon([(0,0), (1,0), (1,1), (0,1)]), Polygon([(2,2), (3,2), (3,3), (2,3)])],
+        crs="EPSG:4326"
+    ).set_index(cfg.BV_CODE_COL)
+    
+    df_area_geo = gpd.GeoDataFrame() # Not used for distance search
+
+    # Act
+    processed_gdf, unaggregated_gdf = scoring.run_scoring_pipeline(
+        config=config,
+        df_all_communes=sample_data,
+        df_bv_geo=df_bv_geo,
+        df_area_geo=df_area_geo,
+        scores_cat=sample_scores_cat,
+        incl_index=sample_incl_index,
+        view_level='Communes'
+    )
+
+    # Assert
+    assert isinstance(processed_gdf, gpd.GeoDataFrame)
+    assert isinstance(unaggregated_gdf, gpd.GeoDataFrame)
+    assert not processed_gdf.empty
+    assert 'weighted_score' in processed_gdf.columns
+    # Bordeaux should NOT be in the results (it's filtered out)
+    assert '33063' not in processed_gdf['codgeo'].values
+    # Pau should be in the results (it's within 200km)
+    assert '64445' in processed_gdf['codgeo'].values
