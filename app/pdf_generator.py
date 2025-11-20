@@ -14,13 +14,14 @@ import os
 import config as cfg
 import ui
 from config import ScoringConfig
+from typing import Dict, Any, List, Optional
 
 
 # Basic constants
 PDF_TITLE = "Synthèse de votre recherche de territoire"
 
 
-def _setup_unicode_font(pdf: FPDF):
+def _setup_unicode_font(pdf: FPDF) -> None:
     """Adds the local Unicode DejaVu fonts to the FPDF instance."""
     base_dir = os.path.dirname(os.path.abspath(__file__))
     font_dir = os.path.join(base_dir, "assets", "fonts")
@@ -67,7 +68,7 @@ def _capture_map_as_png(m: folium.Map) -> bytes:
         return png
 
 
-def generate_pdf_report(st_session_state: dict, results_df: pd.DataFrame, folium_map: folium.Map) -> bytes:
+def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFrame, folium_map: folium.Map) -> bytes:
     """
     Generates a PDF report with the top 5 results and search criteria using a Unicode font.
     """

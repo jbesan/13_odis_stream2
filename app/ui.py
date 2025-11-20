@@ -5,12 +5,13 @@ from plotly.express import line_polar
 
 import config as cfg
 import maps
+from typing import Dict, Any, List, Optional
 
-def open_pdf_modal():
+def open_pdf_modal() -> None:
     """Callback to signal that the PDF modal should be shown."""
     st.session_state['show_pdf_modal'] = True
 
-def display_sidebar(demo_data: dict):
+def display_sidebar(demo_data: Dict[str, Any]) -> None:
     """Displays the sidebar with location and weight controls."""
     
     st.divider()
@@ -56,7 +57,7 @@ def display_sidebar(demo_data: dict):
             type='secondary'
         )
 
-def start_over():
+def start_over() -> None:
     # --- Start over ---
     st.markdown("""
         <style>
@@ -69,7 +70,7 @@ def start_over():
         st.session_state['form_completed'] = False
         st.switch_page("1_Accueil.py")
         
-def render_localisation_form():
+def render_localisation_form() -> None:
     """Renders the UI for the 'Localisation Actuelle' form section."""
     app_data = st.session_state.app_data
     col1, col2 = st.columns(2)
@@ -83,7 +84,7 @@ def render_localisation_form():
             st.session_state['ui_commune'] = communes[0]
         st.selectbox("Commune", communes, key="ui_commune")
 
-def render_family_form():
+def render_family_form() -> None:
     """Renders the UI for the 'Situation familiale' form section."""
     col1, col2 = st.columns(2)
     with col1:
@@ -91,7 +92,7 @@ def render_family_form():
     with col2:
         st.radio("Nombre d'enfants", cfg.NOMBRE_ENFANTS_OPTIONS, horizontal=True, key="ui_nb_enfants")
 
-def render_education_form():
+def render_education_form() -> None:
     """Renders the UI for the 'Education' form section."""
     if st.session_state['ui_nb_enfants'] == 0:
         st.info("Aucun enfant n'a été ajouté dans l'onglet 'Situation familiale'.")
@@ -105,7 +106,7 @@ def render_education_form():
                 key = f"ui_classe_enfant_{i}"
                 st.selectbox(f'Niveau enfant {i+1}', options, key=key)
 
-def render_employment_form():
+def render_employment_form() -> None:
     """Renders the UI for the 'Projet Professionnel' form section."""
     app_data = st.session_state.app_data
     col1, col2 = st.columns(2)
@@ -118,17 +119,17 @@ def render_employment_form():
         with col2:
             st.multiselect(f"Formations recherchées Adulte {i+1}", codform_select.index, format_func=lambda x: codform_select.loc[x, 'libformation'], key=f"ui_formations_adult_{i}")
 
-def render_housing_form():
+def render_housing_form() -> None:
     """Renders the UI for the 'Logement' form section."""
     st.radio('Hébergement à court terme', cfg.HEBERGEMENT_OPTIONS, key="ui_hebergement")
     st.radio('Logement à long terme', cfg.LOGEMENT_OPTIONS, key="ui_logement")
 
-def render_health_form():
+def render_health_form() -> None:
     """Renders the UI for the 'Santé' form section."""
     options = ["Aucun", "Hopital", 'Maternité', "Soutien Psychologique & Addictologie"]
     st.radio('Support médical à proximité', options, key="ui_besoin_sante")
 
-def render_other_needs_form():
+def render_other_needs_form() -> None:
     """Renders the UI for the 'Autres Besoins' form section."""
     app_data = st.session_state.app_data
     if 'ui_besoins_autres' not in st.session_state:
@@ -156,11 +157,11 @@ def render_other_needs_form():
             st.session_state.ui_besoins_autres = {}
             st.rerun()
 
-def render_mobility_form():
+def render_mobility_form() -> None:
     """Renders the UI for the 'Mobilité' form section."""
     st.radio('Zone de recherche autour du lieu de vie actuel :', cfg.LOC_DISTANCE_OPTIONS.keys(), format_func=cfg.LOC_DISTANCE_OPTIONS.get, key="ui_loc_distance_km")
 
-def display_input_tabs(demo_data: dict):
+def display_input_tabs(demo_data: Dict[str, Any]) -> None:
     """Displays the main tabs for user input, composed of modular rendering functions."""
     tab_localisation, tab_foyer, tab_edu, tab_emploi, tab_logement, tab_sante, tab_autres, tab_mobilite = st.tabs([
         'Localisation Actuelle', 'Situation familiale', 'Education', 'Projet Professionnel', 'Logement', 'Santé', 'Autres Besoins', 'Mobilité'
@@ -221,7 +222,7 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
         pop_min=st.session_state['ui_pop_min']
     )
 
-def _result_highlight_callback(rank: int):
+def _result_highlight_callback(rank: int) -> None:
     """Callback to handle highlighting a result."""
     is_highlighted, highlighted_rank = st.session_state.highlighted_result
     
@@ -236,12 +237,12 @@ def _result_highlight_callback(rank: int):
         st.session_state.center = [row.polygon.centroid.y, row.polygon.centroid.x]
         st.session_state.zoom = cfg.DETAIL_MAP_ZOOM
 
-def get_person_accompanied_str():
+def get_person_accompanied_str() -> str:
     if st.session_state.get('ui_nom'):
         return f"de {st.session_state.ui_nom}"
     return "de la personne accompagnée"
 
-def display_results_list():
+def display_results_list() -> None:
     """Displays the list of top N results."""
     st.subheader("Meilleurs résultats")
     st.text("Cliquez sur un résultat pour comprendre le détail du score")
@@ -280,7 +281,7 @@ def display_results_list():
             else:
                 _display_result_details(row)
 
-def _display_bv_result_details(row: pd.Series):
+def _display_bv_result_details(row: pd.Series) -> None:
     """Displays the detailed aggregated information for a 'bassin de vie'."""
     with st.container(border=True):
         # --- Pitch ---
@@ -340,7 +341,7 @@ def _display_bv_result_details(row: pd.Series):
         st.markdown(f"[Page OD&IS]({row.get('url_odis', '#')}) | [Page Wikipedia]({row.get('url_wikipedia', '#')})")
 
 
-def _display_result_details(row: pd.Series):
+def _display_result_details(row: pd.Series) -> None:
     """Displays the detailed information for a single highlighted result."""
     with st.container(border=True):
         # --- Pitch ---
