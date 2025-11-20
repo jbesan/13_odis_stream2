@@ -164,10 +164,11 @@ En tant que travailleur social, je veux voir les lieux recommandés sur une cart
 ### 🔑 Key Features
 * Une carte choroplèthe montrant les scores de toutes les communes dans la zone de recherche.
 * Des marqueurs pour les 5 meilleurs résultats.
+* L'option "Afficher le Top 5" affiche le rang (1-5) sur la carte au centroïde de chaque résultat du top 5.
 * Des couches cartographiques activables pour les écoles, les services de santé et d'autres points d'intérêt.
 
 ### 📊 Status
-- Completed
+- In Progress
 
 ## 🚀 Feature [F-08]: Ajout de l'indicateur loyer moyen
 
@@ -207,3 +208,35 @@ En tant que travailleur social, je veux voir les lieux recommandés sur une cart
 
 ### 📊 Status
 - Completed
+
+## 🚀 Feature [F-11]: Export des résultats en PDF
+
+### 📝 User Stories
+- En tant que travailleur social, je veux exporter les résultats de la recherche en PDF pour les partager facilement avec la famille accompagnée, afin de leur fournir un résumé clair et professionnel des recommandations.
+
+### 🔑 Key Features
+* Un bouton "Exporter en PDF" sur la page des résultats.
+* La première page rappelle les critères de recherche, et la carte de tous les résultats avec le calque 'Top 5' actif.
+* Le PDF inclut les 5 meilleurs résultats (bassins de vie ou communes), une page par résultat.
+* Pour chaque recommandation, le PDF affiche les points forts et le graphique radar des scores.
+* Le PDF intègre le logo "J'accueille".
+
+### 📊 Status
+- In Progress
+
+## 🚀 Feature [F-12]: Ajout de critères santé et éducation au scoring
+
+### 📝 User Stories
+- En tant que travailleur social, je veux que le score d'éducation reflète le **nombre** de niveaux scolaires pertinents présents dans une localité, pour une évaluation plus fine.
+- En tant que travailleur social, je veux que le besoin de proximité d'un service de santé soit un critère de score pour que les recommandations tiennent compte de l'accès aux soins.
+
+### 🔑 Key Features
+*   **Score d'Éducation Basé sur le Nombre :** Un nouveau score est ajouté à la catégorie "Éducation". Il **compte combien** de niveaux scolaires demandés (ex: "Maternelle", "Collège") sont présents dans la commune. Une commune avec 2 types d'écoles sur 2 demandés aura un score plus élevé qu'une commune avec 1 sur 2.
+*   **Score de Santé Basé sur la Présence :** Un nouveau score est ajouté à la catégorie "Inclusion". Il vaut 100% si une commune possède le service de santé exact sélectionné ("Hôpital", "Maternité", etc.), et 0% sinon.
+*   **Agrégation par Bassin de Vie :**
+    *   Pour le score d'**éducation**, le calcul pour le bassin de vie comptera le nombre de types d'écoles uniques présents dans l'ensemble des communes qui le composent.
+    *   Pour le score de **santé**, le bassin de vie obtiendra 100% si au moins une de ses communes possède le service requis.
+*   **Affichage dans les Résultats :** La présence de ces services est mentionnée dans les points forts du résultat.
+
+### 📊 Status
+- In Progress

@@ -6,6 +6,10 @@ from plotly.express import line_polar
 import config as cfg
 import maps
 
+def open_pdf_modal():
+    """Callback to signal that the PDF modal should be shown."""
+    st.session_state['show_pdf_modal'] = True
+
 def display_sidebar(demo_data: dict):
     """Displays the sidebar with location and weight controls."""
     
@@ -33,22 +37,24 @@ def display_sidebar(demo_data: dict):
     with st.expander('Paramètres Résultats'):
         st.radio(
             "Granularité des résultats",
-            ["Communes", "Bassins de vie"],
+            cfg.VIEW_LEVEL_OPTIONS,
             key='view_level',
             horizontal=True,
-            index=1
+            index=cfg.DEFAULT_VIEW_LEVEL
         )
         st.text("\n\n")
         st.select_slider("Décote commune binôme\n\n (en %)", cfg.PENALITE_BINOME_OPTIONS, key="ui_penalite_binome")
-        # st.select_slider("Population Minimum", cfg.POP_MIN_OPTIONS, key="ui_pop_min")
 
     st.divider()
 
     # --- Export to PDF ---
     if st.session_state.get('processed_gdf') is not None:
-        
-        if st.button('Export des résultats', icon=':material/picture_as_pdf:', type='secondary'):
-            st.cache_data.clear()
+        st.button(
+            "Générer le PDF", 
+            on_click=open_pdf_modal,
+            icon=':material/picture_as_pdf:',
+            type='secondary'
+        )
 
 def start_over():
     # --- Start over ---
@@ -152,7 +158,7 @@ def render_other_needs_form():
 
 def render_mobility_form():
     """Renders the UI for the 'Mobilité' form section."""
-    st.radio('Attachement au lieu de vie actuel :', cfg.LOC_DISTANCE_OPTIONS.keys(), format_func=cfg.LOC_DISTANCE_OPTIONS.get, key="ui_loc_distance_km")
+    st.radio('Zone de recherche autour du lieu de vie actuel :', cfg.LOC_DISTANCE_OPTIONS.keys(), format_func=cfg.LOC_DISTANCE_OPTIONS.get, key="ui_loc_distance_km")
 
 def display_input_tabs(demo_data: dict):
     """Displays the main tabs for user input, composed of modular rendering functions."""
@@ -215,19 +221,18 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
         pop_min=st.session_state['ui_pop_min']
     )
 
-def _result_highlight_callback(index: int):
+def _result_highlight_callback(rank: int):
     """Callback to handle highlighting a result."""
-    is_highlighted, highlighted_index = st.session_state.highlighted_result
+    is_highlighted, highlighted_rank = st.session_state.highlighted_result
     
     # If the same button is clicked again, un-highlight it
-    if is_highlighted and index == highlighted_index:
+    if is_highlighted and rank == highlighted_rank:
         st.session_state.highlighted_result = [False, None]
-        # st.session_state.center = None # Recenter map
         st.session_state.zoom = None
     else:
         # Highlight the new result
-        row = st.session_state.processed_gdf.loc[index]
-        st.session_state.highlighted_result = [True, index]
+        row = st.session_state.processed_gdf.loc[rank]
+        st.session_state.highlighted_result = [True, rank]
         st.session_state.center = [row.polygon.centroid.y, row.polygon.centroid.x]
         st.session_state.zoom = cfg.DETAIL_MAP_ZOOM
 
@@ -238,39 +243,37 @@ def get_person_accompanied_str():
 
 def display_results_list():
     """Displays the list of top N results."""
-    st.subheader("Détails des meilleurs résultats")
-    st.text("")
-    st.text("")
-    # st.text(f'Voici des localités qui pourraient convenir {get_person_accompanied_str()}.')
-    st.markdown('<style>[class*="st-key-button_top"] .stButton button div {text-align:left; width:100%;}</style>', unsafe_allow_html=True)
+    st.subheader("Meilleurs résultats")
+    st.text("Cliquez sur un résultat pour comprendre le détail du score")
+    st.markdown('<style> [class*="st-key-button_top"] .stButton button div {text-align:left; width:100%;},</style>', unsafe_allow_html=True)
 
     top_n = 5
     df = st.session_state.processed_gdf
-    is_highlighted, highlighted_index = st.session_state.highlighted_result
+    is_highlighted, highlighted_rank = st.session_state.highlighted_result
 
     # Pre-build layers for top results to be shown on map
-    for index, row in df.head(top_n).iterrows():
-        fg_key = f'Top{index + 1}'
-        st.session_state.fg_dict_ref[fg_key] = maps.build_top_result_layer(row, index)
+    for rank, row in df.head(top_n).iterrows():
+        fg_key = f'Top{rank + 1}'
+        st.session_state.fg_dict_ref[fg_key] = maps.build_top_result_layer(row, rank)
 
     # Display buttons and details
-    for index, row in df.head(top_n).iterrows():
+    for rank, row in df.head(top_n).iterrows():
         # Adapt title based on the view level
         if st.session_state.get('view_level') == 'Bassins de vie':
-            title = f"Top {index+1} | Bassin de vie de {row.libgeo}"
+            title = f"Top {rank+1} | Bassin de vie de {row.libgeo}"
         else:
-            title = f"Top {index+1} | {row.libgeo}" + (f" (avec {row.libgeo_binome})" if row.binome else "")
+            title = f"Top {rank+1} | {row.libgeo}" + (f" (avec {row.libgeo_binome})" if row.binome else "")
 
         st.button(
             title,
             on_click=_result_highlight_callback,
-            args=(index,),
+            args=(rank,),
             width='stretch',
-            key=f'button_top{index+1}',
-            type='primary' if is_highlighted and index == highlighted_index else 'secondary'
+            key=f'button_top{rank+1}',
+            type='primary'
         )
 
-        if is_highlighted and index == highlighted_index:
+        if is_highlighted and rank == highlighted_rank:
             # For 'Bassin de vie' view, we call the specific details display for aggregated data
             if st.session_state.get('view_level') == 'Bassins de vie':
                 _display_bv_result_details(row)
@@ -281,7 +284,7 @@ def _display_bv_result_details(row: pd.Series):
     """Displays the detailed aggregated information for a 'bassin de vie'."""
     with st.container(border=True):
         # --- Pitch ---
-        pitch = _produce_pitch_markdown(row)
+        pitch = _produce_pitch_markdown(row, st.session_state.config, st.session_state.app_data['scores_cat'])
         st.markdown(pitch)
 
         # --- Radar Chart ---
@@ -290,7 +293,7 @@ def _display_bv_result_details(row: pd.Series):
         fig = line_polar(theta=cat_scores.index, r=cat_scores.values * 100, line_close=True, range_r=[0, 100])
         fig.update_traces(fill='toself')
         fig.update_layout(margin=dict(l=50, r=50, t=50, b=50))
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, width='stretch', config=None)
         st.caption('Plus le critère s’approche du bord, plus il est attractif.')
 
         # --- Additional Info ---
@@ -341,7 +344,7 @@ def _display_result_details(row: pd.Series):
     """Displays the detailed information for a single highlighted result."""
     with st.container(border=True):
         # --- Pitch ---
-        pitch = _produce_pitch_markdown(row)
+        pitch = _produce_pitch_markdown(row, st.session_state.config, st.session_state.app_data['scores_cat'])
         st.markdown(pitch)
 
         # --- Radar Chart ---
@@ -350,7 +353,7 @@ def _display_result_details(row: pd.Series):
         fig = line_polar(theta=cat_scores.index, r=cat_scores.values * 100, line_close=True, range_r=[0, 100])
         fig.update_traces(fill='toself')
         fig.update_layout(margin=dict(l=50, r=50, t=50, b=50))
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, width='stretch', config=None)
         st.caption('Plus le critère s’approche du bord, plus il est attractif.')
 
         # --- Additional Info ---
@@ -375,11 +378,11 @@ def _display_result_details(row: pd.Series):
         
         with st.expander("Services d'inclusions proposés"):
             services_df = st.session_state.app_data['annuaire_inclusion']
-            commune_services = services_df[services_df.codgeo == row.codgeo]
+            commune_services = services_df[services_df.codgeo == row.name]
             
             if not commune_services.empty:
                 any_service_found = False
-                for cat, group in commune_services.groupby('categorie'):
+                for cat, group in commune_services.groupby('categorie', observed=True):
                     # Filter out empty/placeholder services within the group
                     valid_services = group[group.service != '-'].copy()
                     
@@ -399,11 +402,8 @@ def _display_result_details(row: pd.Series):
         # --- Links ---
         st.markdown(f"[Page OD&IS]({row.get('url_odis', '#')}) | [Page Wikipedia]({row.get('url_wikipedia', '#')})")
 
-def _produce_pitch_markdown(row: pd.Series) -> str:
+def _produce_pitch_markdown(row: pd.Series, config: cfg.ScoringConfig, scores_cat: pd.DataFrame) -> str:
     """Generates a summary "pitch" for a result, adapting to commune or bassin de vie."""
-    config = st.session_state.config
-    scores_cat = st.session_state.app_data['scores_cat']
-    
     pitch_md = []
     population = f"{row['population']:,.0f}".replace(",", " ")
 

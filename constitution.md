@@ -10,6 +10,7 @@ This document contains the non-negotiable rules for our project. All AI-generate
 * **Write Tests:** All features must have at least one "happy path" test. For data, this means a simple `assert` statement (e.g., `assert df['id'].is_unique`, `assert df['age'].min() >= 18`).
 * **No Magic Numbers:** Do not use hard-coded numbers in the logic. Define them as constants at the top of the file (e.g., `SALES_TAX_RATE = 0.08`).
 * **Coherence:** ALWAYS make sure that new specs or code is consistant with all other features described in the @PRD.md
+* **Efficiency and compatibility:** The application is deployed on a Google Cloud Platform (GCP) and runs on a Google Cloud Run (GCR) + GCS instance. It MUST be efficient and compatible with this GCP environment.
 
 ---
 

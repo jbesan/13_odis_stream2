@@ -4,9 +4,53 @@ import scoring
 import config as cfg
 import ui
 import maps
+from pdf_generator import generate_pdf_report
 import folium as flm
 import data_loader
 import geopandas as gpd
+
+st.set_page_config(layout="wide")
+
+# --- PDF Modal Logic ---
+if st.session_state.get('show_pdf_modal'):
+    
+    def on_dialog_dismiss():
+        """Callback to clean up state when the dialog is dismissed."""
+        st.session_state.show_pdf_modal = False
+        st.session_state.pdf_modal_data = None
+
+    @st.dialog("Export des résultats en PDF", on_dismiss=on_dialog_dismiss)
+    def pdf_modal():
+        # State 1: Loading / Generating
+        if 'pdf_modal_data' not in st.session_state or st.session_state.pdf_modal_data is None:
+            with st.spinner("Veuillez patienter, nous générons votre document..."):
+                pdf_bytes = generate_pdf_report(
+                    st.session_state, 
+                    st.session_state.processed_gdf, 
+                    st.session_state.map_object
+                )
+                st.session_state.pdf_modal_data = pdf_bytes
+                st.rerun() # Rerun to update the dialog's content to the download state
+        
+        # State 2: Download Ready
+        else:
+            st.success("Votre document est prêt !")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.download_button(
+                label="Télécharger le PDF",
+                data=st.session_state.pdf_modal_data,
+                file_name="synthese_jaccueille.pdf",
+                mime="application/pdf",
+                icon=':material/picture_as_pdf:',
+                type='primary'
+                )
+            with col2:
+                if st.button("Fermer"):
+                    on_dialog_dismiss()
+                    st.rerun()
+
+    pdf_modal()
 
 # Ensure app_data is initialized
 if 'app_data' not in st.session_state:
@@ -25,6 +69,10 @@ def run_search():
     It orchestrates the new filtering and scoring logic.
     """
     print('--- Running new search with refactored logic ---')
+    # Clear any previously generated PDF data on new search
+    st.session_state['pdf_data'] = None
+    st.session_state['map_object'] = None
+
     config = ui.create_scoring_config_from_inputs()
     st.session_state['config'] = config
 
@@ -75,7 +123,12 @@ def run_search():
     # --- Post-processing and State Update ---
     selected_geo = st.session_state.app_data['odis'].loc[[config.commune_actuelle]].copy()
     
-    centroid_geo_series_geographic = start_commune.to_crs('EPSG:4326').centroid
+    # Reproject to a projected CRS for accurate centroid calculation
+    start_commune_projected = start_commune.to_crs('EPSG:2154')
+    centroid_geo_series_projected = start_commune_projected.centroid
+    
+    # Reproject the centroid back to EPSG:4326 for map display
+    centroid_geo_series_geographic = centroid_geo_series_projected.to_crs('EPSG:4326')
     final_center_x = centroid_geo_series_geographic.x.iloc[0]
     final_center_y = centroid_geo_series_geographic.y.iloc[0]
     
@@ -105,6 +158,7 @@ def run_search():
 
 # Automatically run the search if not already processed and form is completed
 if st.session_state.get('processed_gdf') is None and st.session_state.get('form_completed'):
+    st.session_state['view_level'] = cfg.VIEW_LEVEL_OPTIONS[cfg.DEFAULT_VIEW_LEVEL]
     run_search()
     st.session_state['form_completed'] = False
 
@@ -114,15 +168,10 @@ if st.session_state.get('processed_gdf') is None and st.session_state.get('form_
 with st.sidebar:
     st.image('./images/logo-jaccueille-singa.png', width=150)
     st.write("")
-    st.markdown("Découvrez les 5 cinqs lieux de vie correspondant le mieux au projet de vie renseigné. Les scores vous permettent de comparer facilement leurs atouts.", unsafe_allow_html=True)
+    st.markdown("Découvrez les lieux de vie correspondant le mieux au projet renseigné. Les scores vous permettent de comparer facilement leurs atouts.", unsafe_allow_html=True)
     with st.container(border=False, height='stretch', vertical_alignment="bottom"):
         ui.display_sidebar(st.session_state['demo_data'])
         ui.start_over()
-
-# def get_person_accompanied_str():
-#     if st.session_state.get('ui_nom'):
-#         return f"de {st.session_state.ui_nom}"
-#     return "de la personne accompagnée"
 
 # Top filter Form
 with st.container(border=False, key='top_menu'):
@@ -155,20 +204,14 @@ with col_map:
             st.session_state['fg_dict_ref']['Scores'], colormap = maps.build_scores_layer(st.session_state['processed_gdf'])
             st.session_state['fgs_to_show'].add('Scores')
 
-        # --- Map Layers Logic ---
-        # This section declaratively builds the set of layers to show on each rerun
-        # based on the current state of UI toggles and selections.
-
         fgs_to_show = {'Scores'}
         legend_items = []
         
-        # Layer toggles are always rendered but disabled if not applicable.
-        # This ensures a stable UI tree for Streamlit to track state.
         cols = st.columns(5, vertical_alignment="center")
         with cols[0]:
-            st.text("Afficher sur la carte:")
+            st.text("Afficher:")
         with cols[1]:
-            show_top_5 = st.toggle("Top 5", key="show_top_5_toggle")
+            show_top_5 = st.toggle("Top 5", key="show_top_5_toggle", value=True)
         
         config = st.session_state.get('config')
         if config:
@@ -193,7 +236,6 @@ with col_map:
                 fgs_to_show.add('fg_services')
                 legend_items.append({'color': 'purple', 'icon': 'heart', 'text': 'Inclusion'})
 
-        # Handle Top 5 and highlighted result logic
         is_highlighted, highlighted_index = st.session_state.highlighted_result
         if show_top_5:
             for i in range(5):
@@ -202,10 +244,8 @@ with col_map:
         elif is_highlighted:
             fgs_to_show.add(f'Top{highlighted_index + 1}')
 
-        # Update the session state for the map component
         st.session_state.fgs_to_show = fgs_to_show
 
-        # Légende
         if legend_items:
             legend = maps.build_legend(legend_items)
             m.get_root().html.add_child(flm.Element(legend))
@@ -216,8 +256,13 @@ with col_map:
             if name in st.session_state['fg_dict_ref']
         ]
 
-        # Create a dynamic key to force component recreation when layers change
         map_key = "odis_scored_map_" + "_".join(sorted(list(st.session_state.fgs_to_show)))
+
+        # Manually add all visible layers to the map object so it's complete for the PDF export
+        for fg in fgs_to_add:
+            fg.add_to(m)
+   
+        st.session_state['map_object'] = m
 
         st_folium(
             m,
@@ -229,3 +274,5 @@ with col_map:
             returned_objects=[],
         )
         st.markdown('<style>.stCustomComponentV1 {border-radius:10px}</style>', unsafe_allow_html=True)
+
+

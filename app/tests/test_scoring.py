@@ -285,3 +285,31 @@ def test_aggregate_scores_by_bassin_de_vie():
     assert bv1_result['url_wikipedia'] == 'wiki_B'
     assert bv1_result['be_libfap_top'] == ['Job A', 'Job B', 'Job C']
     assert bv1_result['noms_formations'] == ['Form A', 'Form B', 'Form C']
+
+def test_population_score_is_calculated(sample_data, default_config, sample_incl_index):
+    """Tests that the population_scaled score is calculated correctly."""
+    # Arrange
+    config = default_config
+    # FIX: Ensure preference lists match the number of adults to prevent IndexError
+    config.codes_metiers = [[]]
+    config.codes_formations = [[]]
+    
+    # Add distance column, a prerequisite for the function
+    df_with_dist = scoring.add_distance_to_current_loc(sample_data, config.commune_actuelle)
+
+    # Act
+    scored_df = scoring.compute_criteria_scores(df_with_dist, config.__dict__, sample_incl_index, sample_data)
+
+    # Assert
+    # 1. Check if the column was created
+    assert 'population_scaled' in scored_df.columns
+
+    # 2. Check if values are scaled between 0 and 1
+    assert scored_df['population_scaled'].min() >= 0.0
+    assert scored_df['population_scaled'].max() <= 1.0
+
+    # 3. Check if higher population gives a higher score
+    # Paris (75056) has the highest pop, Marseille (13055) is second
+    score_paris = scored_df.loc['75056']['population_scaled']
+    score_marseille = scored_df.loc['13055']['population_scaled']
+    assert score_paris > score_marseille
