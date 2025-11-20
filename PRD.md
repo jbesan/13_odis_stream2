@@ -168,7 +168,7 @@ En tant que travailleur social, je veux voir les lieux recommandés sur une cart
 * Des couches cartographiques activables pour les écoles, les services de santé et d'autres points d'intérêt.
 
 ### 📊 Status
-- In Progress
+- Completed
 
 ## 🚀 Feature [F-08]: Ajout de l'indicateur loyer moyen
 
@@ -181,7 +181,8 @@ En tant que travailleur social, je veux voir les lieux recommandés sur une cart
 * Afficher le loyer comme un point fort (ex: "Loyer modéré") dans la liste des résultats lorsqu'il est significatif pour une localité.
 
 ### 📊 Status
-- In Progress
+- Not Started
+    *Note: This feature is not currently implemented in the codebase.
 
 ## 🚀 Feature [F-09]: Résultats par bassin de vie
 
@@ -222,7 +223,7 @@ En tant que travailleur social, je veux voir les lieux recommandés sur une cart
 * Le PDF intègre le logo "J'accueille".
 
 ### 📊 Status
-- In Progress
+- Completed
 
 ## 🚀 Feature [F-12]: Ajout de critères santé et éducation au scoring
 
@@ -240,3 +241,4 @@ En tant que travailleur social, je veux voir les lieux recommandés sur une cart
 
 ### 📊 Status
 - In Progress
+    *Note: The Health score is based on presence, but the Education score is not yet based on the count of school types.
