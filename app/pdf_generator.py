@@ -45,7 +45,19 @@ def _capture_map_as_png(m: folium.Map) -> bytes:
         options.add_argument('--headless')
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
-        driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
+        
+        # Check for system chromium (Cloud Run / Docker)
+        system_chromium = "/usr/bin/chromium"
+        system_driver = "/usr/bin/chromedriver"
+        
+        if os.path.exists(system_chromium) and os.path.exists(system_driver):
+            options.binary_location = system_chromium
+            service = ChromeService(executable_path=system_driver)
+            driver = webdriver.Chrome(service=service, options=options)
+        else:
+            # Fallback to webdriver_manager (Local Dev)
+            driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
+            
         driver.set_window_size(800, 800)
         driver.get(f"file://{temp_html.name}")
         time.sleep(2)

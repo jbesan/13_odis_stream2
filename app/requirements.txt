@@ -3,7 +3,7 @@ folium>=0.14.0
 fpdf2
 geopandas
 gcsfs
-google-cloud-storage
+
 kaleido
 numpy
 pandas
@@ -14,5 +14,5 @@ selenium
 shapely
 streamlit>=1.25.0
 streamlit-folium>=0.13.0
-svglib
+
 webdriver-manager

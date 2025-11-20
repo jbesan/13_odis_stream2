@@ -8,3 +8,4 @@ app/cached_df.csv
 .venv/
 .DS_Store
 GEMINI.md
+.agent/
