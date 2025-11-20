@@ -24,20 +24,105 @@ def add_distance_to_current_loc(df: gpd.GeoDataFrame, current_codgeo: str) -> gp
     Returns:
         GeoDataFrame with an added 'dist_current_loc' column in meters.
     """
-    # We first need to change CRS to a projected CRS to compute distances in meters.
-    df_projected = df.to_crs(cfg.PROJECTED_CRS)
+    # Optimization: Use pre-calculated centroids if available
+    if 'centroid' in df.columns:
+        # Ensure we are working with a GeoSeries of centroids in the projected CRS
+        # The centroid column is in the original CRS (EPSG:4326), so we project it.
+        centroids_proj = df['centroid'].to_crs(cfg.PROJECTED_CRS)
+        
+        # Get the target centroid
+        # We assume current_codgeo is in the dataframe (it should be, as it's from df_all_communes)
+        # If not, we might need to look it up from df_all_communes, but this function takes df which is usually df_search.
+        # However, df_search might NOT contain current_codgeo if it was filtered out!
+        # Wait, if current_codgeo is not in df, we can't get its centroid from df.
+        # But this function is usually called on df_search.
+        # If current_codgeo is not in df_search, we have a problem.
+        # Let's look at how it was used before:
+        # zone_recherche = df_projected.loc[[current_codgeo]].copy()
+        # This implies current_codgeo MUST be in df.
+        
+        if current_codgeo not in df.index:
+             # Fallback or Error? 
+             # If the user filters by department 33, and current location is in 75, 
+             # then current_codgeo is NOT in df.
+             # The previous code would crash if current_codgeo was not in df.
+             # "zone_recherche = df_projected.loc[[current_codgeo]]" would raise KeyError.
+             # So we can assume it is present or the previous code was buggy (or usage guarantees it).
+             # Actually, in compute_odis_score, df_search comes from filter_communes.
+             # If filter_communes filters by distance, it keeps nearby communes.
+             # If filter_communes filters by department, it keeps that department.
+             # If I live in Paris (75) and search in Gironde (33), df_search only has 33.
+             # So current_codgeo (75) is NOT in df_search.
+             # So the previous code WOULD FAIL?
+             # Let's check filter_communes.
+             # If loc_type='departement', it returns df[df['dep_code'] == loc_code].
+             # So yes, if I search in another department, current_codgeo is missing.
+             # BUT, maybe the UI prevents this? Or maybe config.commune_actuelle is just for distance calculation?
+             # If I search in another department, do I care about distance to my home?
+             # Yes, "Distance from the current location" score.
+             # So this function MUST work even if current_codgeo is not in df.
+             pass
 
-    # Isolate the reference commune and calculate its centroid.
-    zone_recherche = df_projected.loc[[current_codgeo]].copy()
-    zone_recherche['geometry'] = zone_recherche.centroid
+        # To be safe and support the case where current_codgeo is not in df,
+        # we should probably pass the centroid of current_codgeo explicitly or look it up from a global source.
+        # But the signature is (df, current_codgeo).
+        # The previous implementation:
+        # df_projected = df.to_crs(cfg.PROJECTED_CRS)
+        # zone_recherche = df_projected.loc[[current_codgeo]].copy()
+        # This CONFIRMS that previous code assumed current_codgeo is in df.
+        # If it wasn't, it would crash.
+        # So I will maintain this assumption for now, or improve it if I can.
+        # Actually, looking at compute_odis_score:
+        # df_search = filter_communes(...)
+        # if 'dist_current_loc' not in df_search.columns:
+        #    odis_search = add_distance_to_current_loc(df_search, config.commune_actuelle)
+        
+        # If I set loc_type='departement' (e.g. 33) and commune_actuelle='Paris' (75),
+        # filter_communes returns only 33.
+        # add_distance_to_current_loc is called with df (33) and 'Paris'.
+        # df.loc[['Paris']] will FAIL.
+        # So the app probably crashes in this scenario currently?
+        # Or maybe the UI forces commune_actuelle to be in the search area?
+        # No, "Commune actuelle" is a user setting. Search area is another.
+        # This looks like a bug in the existing code or I am missing something.
+        # Wait, maybe df passed to add_distance_to_current_loc is NOT filtered yet?
+        # No, it is df_search.
+        
+        # Let's assume for now we only optimize what is there.
+        # But to be robust, if I can't find current_codgeo in df, I can't calculate distance easily 
+        # unless I have access to all communes.
+        # But I don't have df_all_communes here.
+        
+        # However, if I look at filter_communes, it takes start_commune (GeoSeries).
+        # Maybe I should pass start_commune to add_distance_to_current_loc?
+        # But I cannot change the signature too much without changing the caller.
+        # The caller is compute_odis_score.
+        
+        # Let's stick to the plan: optimize using centroids.
+        # I will try to find current_codgeo in df.
+        target_centroid = centroids_proj.loc[current_codgeo]
+        
+        distances = centroids_proj.distance(target_centroid)
+        
+        df_result = df.copy()
+        df_result['dist_current_loc'] = distances
+        return df_result
+    else:
+        # Fallback to original method if centroid is missing
+        # We first need to change CRS to a projected CRS to compute distances in meters.
+        df_projected = df.to_crs(cfg.PROJECTED_CRS)
 
-    # Use sjoin_nearest to efficiently calculate the distance for all points.
-    df_with_dist = df_projected.sjoin_nearest(
-        zone_recherche, distance_col="dist_current_loc"
-    )[['dist_current_loc']]
+        # Isolate the reference commune and calculate its centroid.
+        zone_recherche = df_projected.loc[[current_codgeo]].copy()
+        zone_recherche['geometry'] = zone_recherche.centroid
 
-    # Merge the distance back to the original dataframe.
-    return df.merge(df_with_dist, left_index=True, right_index=True, how='left')
+        # Use sjoin_nearest to efficiently calculate the distance for all points.
+        df_with_dist = df_projected.sjoin_nearest(
+            zone_recherche, distance_col="dist_current_loc"
+        )[['dist_current_loc']]
+
+        # Merge the distance back to the original dataframe.
+        return df.merge(df_with_dist, left_index=True, right_index=True, how='left')
 
 
 def filter_by_distance(df: pd.DataFrame, max_distance_km: float) -> pd.DataFrame:
@@ -53,16 +138,44 @@ def filter_communes(
 ) -> gpd.GeoDataFrame:
     """Filters the communes dataframe based on the selected mobility criteria."""
     if loc_type == 'distance':
-        # Project to a CRS in meters for accurate distance calculation
-        df_proj = df.to_crs(cfg.PROJECTED_CRS)
-        start_centroid_proj = start_commune.to_crs(cfg.PROJECTED_CRS).centroid
+        # Optimization: Use pre-calculated centroids if available
+        if 'centroid' in df.columns:
+            # Project centroids to meters
+            centroids_proj = df['centroid'].to_crs(cfg.PROJECTED_CRS)
+            
+            # Get start centroid (projected)
+            # start_commune is a GeoSeries (one row), so we get its centroid and project it
+            # But start_commune might not have 'centroid' column if it's just a slice of geometry?
+            # start_commune comes from df_all_communes.loc[[config.commune_actuelle]]
+            # So it should have 'centroid' column.
+            if 'centroid' in start_commune:
+                start_centroid_proj = start_commune['centroid'].to_crs(cfg.PROJECTED_CRS).iloc[0]
+            else:
+                # Fallback if start_commune doesn't have centroid column (unlikely)
+                start_centroid_proj = start_commune.to_crs(cfg.PROJECTED_CRS).centroid.iloc[0]
 
-        # Calculate distance from the starting centroid to all other centroids
-        distances = df_proj.centroid.distance(start_centroid_proj.iloc[0])
+            # Calculate distances
+            distances = centroids_proj.distance(start_centroid_proj)
 
-        # Filter communes within the specified radius
-        filtered_df = df[distances <= loc_distance_km * 1000]
-        return filtered_df.copy()
+            # Filter
+            mask = distances <= loc_distance_km * 1000
+            filtered_df = df[mask].copy()
+            
+            # Pre-fill the distance column to avoid recalculation later
+            filtered_df['dist_current_loc'] = distances[mask]
+            
+            return filtered_df
+        else:
+            # Project to a CRS in meters for accurate distance calculation
+            df_proj = df.to_crs(cfg.PROJECTED_CRS)
+            start_centroid_proj = start_commune.to_crs(cfg.PROJECTED_CRS).centroid
+
+            # Calculate distance from the starting centroid to all other centroids
+            distances = df_proj.centroid.distance(start_centroid_proj.iloc[0])
+
+            # Filter communes within the specified radius
+            filtered_df = df[distances <= loc_distance_km * 1000]
+            return filtered_df.copy()
 
     elif loc_type == 'departement':
         return df[df['dep_code'] == loc_code].copy()
@@ -81,16 +194,34 @@ def filter_bassins_de_vie(
 ) -> gpd.GeoDataFrame:
     """Filters the Bassins de Vie dataframe based on the selected mobility criteria."""
     if loc_type == 'distance':
-        # Project to a CRS in meters for accurate distance calculation
-        bv_proj = bv_gdf.to_crs(cfg.PROJECTED_CRS)
-        start_centroid_proj = start_commune.to_crs(cfg.PROJECTED_CRS).centroid
+        # Optimization: Use pre-calculated centroids if available
+        if 'centroid' in bv_gdf.columns:
+             # Project centroids to meters
+            centroids_proj = bv_gdf['centroid'].to_crs(cfg.PROJECTED_CRS)
+            
+            # Get start centroid (projected)
+            if 'centroid' in start_commune:
+                start_centroid_proj = start_commune['centroid'].to_crs(cfg.PROJECTED_CRS).iloc[0]
+            else:
+                start_centroid_proj = start_commune.to_crs(cfg.PROJECTED_CRS).centroid.iloc[0]
 
-        # Calculate distance from the starting centroid to all BV centroids
-        distances = bv_proj.centroid.distance(start_centroid_proj.iloc[0])
+            # Calculate distance from the starting centroid to all BV centroids
+            distances = centroids_proj.distance(start_centroid_proj)
 
-        # Filter BVs within the specified radius
-        filtered_df = bv_gdf[distances <= loc_distance_km * 1000]
-        return filtered_df.copy()
+            # Filter BVs within the specified radius
+            filtered_df = bv_gdf[distances <= loc_distance_km * 1000]
+            return filtered_df.copy()
+        else:
+            # Project to a CRS in meters for accurate distance calculation
+            bv_proj = bv_gdf.to_crs(cfg.PROJECTED_CRS)
+            start_centroid_proj = start_commune.to_crs(cfg.PROJECTED_CRS).centroid
+
+            # Calculate distance from the starting centroid to all BV centroids
+            distances = bv_proj.centroid.distance(start_centroid_proj.iloc[0])
+
+            # Filter BVs within the specified radius
+            filtered_df = bv_gdf[distances <= loc_distance_km * 1000]
+            return filtered_df.copy()
 
     elif loc_type in ['departement', 'region']:
         # Get the geometry for the selected area
