@@ -96,6 +96,10 @@ def run_search():
     st.session_state['processed_gdf'] = processed_gdf
     st.session_state['unaggregated_gdf'] = unaggregated_gdf
     
+    # --- Logging ---
+    from logger import log_search_results
+    log_search_results(config, processed_gdf)
+    
     # Calculate center for map
     selected_geo = st.session_state.app_data['odis'].loc[[config.commune_actuelle]].copy()
     start_commune_projected = start_commune.to_crs('EPSG:2154')
