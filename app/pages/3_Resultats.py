@@ -26,8 +26,7 @@ if st.session_state.get('show_pdf_modal'):
             with st.spinner("Veuillez patienter, nous générons votre document..."):
                 pdf_bytes = generate_pdf_report(
                     st.session_state, 
-                    st.session_state.processed_gdf, 
-                    st.session_state.map_object
+                    st.session_state.processed_gdf
                 )
                 st.session_state.pdf_modal_data = pdf_bytes
                 st.rerun() # Rerun to update the dialog's content to the download state

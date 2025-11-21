@@ -1,4 +1,3 @@
-import folium
 import io
 import pandas as pd
 from fpdf import FPDF
@@ -6,16 +5,14 @@ from fpdf.fonts import FontFace
 from fpdf.enums import TextEmphasis, XPos, YPos
 from plotly.express import line_polar
 import tempfile
-import time
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service as ChromeService
-from webdriver_manager.chrome import ChromeDriverManager
 import os
 import config as cfg
 import ui
 from config import ScoringConfig
 from typing import Dict, Any, List, Optional
-
+import matplotlib.pyplot as plt
+import contextily as ctx
+import geopandas as gpd
 
 # Basic constants
 PDF_TITLE = "Synthèse de votre recherche de territoire"
@@ -38,37 +35,85 @@ def _setup_unicode_font(pdf: FPDF) -> None:
         pdf.set_font("Arial", size=12)
 
 
-def _capture_map_as_png(m: folium.Map) -> bytes:
-    """Saves a folium map to a temporary HTML file and captures it as a PNG."""
-    with tempfile.NamedTemporaryFile(delete=True, suffix=".html") as temp_html:
-        m.save(temp_html.name)
-        options = webdriver.ChromeOptions()
-        options.add_argument('--headless')
-        options.add_argument('--no-sandbox')
-        options.add_argument('--disable-dev-shm-usage')
+def _generate_static_map_image(results_df: pd.DataFrame, view_level: str) -> bytes:
+    """
+    Generates a static map image using Matplotlib and Contextily.
+    Highlights the top 5 results.
+    """
+    if results_df.empty:
+        return b""
+
+    # Project to Web Mercator for Contextily
+    gdf_plot = results_df.to_crs(epsg=3857)
+    
+    # Initialize figure
+    # Use a square aspect ratio or slightly landscape
+    fig, ax = plt.subplots(figsize=(10, 8))
+    
+    # Plot all scores (choropleth)
+    gdf_plot.plot(
+        column='weighted_score',
+        cmap='YlGn',
+        alpha=0.6,
+        edgecolor='grey',
+        linewidth=0.5,
+        ax=ax,
+        legend=True,
+        legend_kwds={'label': "Score Global", 'orientation': "horizontal", 'shrink': 0.5, 'pad': 0.05}
+    )
+    
+    # Highlight Top 5 results
+    top_5 = gdf_plot.head(5)
+    
+    # Plot outlines for Top 5
+    top_5.plot(
+        ax=ax,
+        facecolor='none',
+        edgecolor='red',
+        linewidth=2
+    )
+    
+    # Add numbered markers for Top 5
+    # Get the name of the geometry column (it might be 'geometry', 'polygon', etc.)
+    geom_col = gdf_plot.geometry.name
+    
+    for idx, row in top_5.iterrows():
+        # Find the rank (0-based index in the dataframe)
+        rank = results_df.index.get_loc(idx) + 1
         
-        # Check for system chromium (Cloud Run / Docker)
-        system_chromium = "/usr/bin/chromium"
-        system_driver = "/usr/bin/chromedriver"
+        # Access geometry using the column name
+        centroid = row[geom_col].centroid
+        ax.annotate(
+            str(rank),
+            xy=(centroid.x, centroid.y),
+            xytext=(0, 0),
+            textcoords="offset points",
+            ha='center',
+            va='center',
+            color='white',
+            weight='bold',
+            fontsize=10,
+            bbox=dict(boxstyle="circle,pad=0.3", fc="#D63E2A", ec="none")
+        )
+
+    # Add basemap
+    try:
+        ctx.add_basemap(ax, source=ctx.providers.CartoDB.Positron)
+    except Exception as e:
+        print(f"Error adding basemap: {e}")
         
-        if os.path.exists(system_chromium) and os.path.exists(system_driver):
-            options.binary_location = system_chromium
-            service = ChromeService(executable_path=system_driver)
-            driver = webdriver.Chrome(service=service, options=options)
-        else:
-            # Fallback to webdriver_manager (Local Dev)
-            driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
-            
-        driver.set_window_size(800, 800)
-        driver.get(f"file://{temp_html.name}")
-        time.sleep(2)
-        map_element = driver.find_element(by="class name", value="folium-map")
-        png = map_element.screenshot_as_png
-        driver.quit()
-        return png
+    # Remove axes
+    ax.set_axis_off()
+    
+    # Save to buffer
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', dpi=150, bbox_inches='tight', pad_inches=0)
+    plt.close(fig)
+    buf.seek(0)
+    return buf.getvalue()
 
 
-def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFrame, folium_map: folium.Map) -> bytes:
+def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFrame, folium_map: Any = None) -> bytes:
     """
     Generates a PDF report with the top 5 results and search criteria using a Unicode font.
     """
@@ -80,7 +125,8 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
     # Header
     base_dir = os.path.dirname(os.path.abspath(__file__))
     logo_path = os.path.join(base_dir, "images", "logo_jaccueille_pdf.jpg")
-    pdf.image(logo_path, x=10, y=8, w=40)
+    if os.path.exists(logo_path):
+        pdf.image(logo_path, x=10, y=8, w=40)
     pdf.ln(50)  # Add space for the logo
     pdf.set_font("DejaVu", 'B', 16)
     pdf.cell(0, 10, PDF_TITLE, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
@@ -95,7 +141,7 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
     pdf.set_font("DejaVu", 'B', 12)
     pdf.cell(0, 10, "Vos critères de recherche", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='L')
     pdf.ln(2)
-    print(st_session_state)
+    
     config = st_session_state.get('config')
     if config:
         # --- Correctly look up names for Jobs & Formations ---
@@ -107,7 +153,9 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
         selected_metier_codes = [code for sublist in config.codes_metiers for code in sublist]
         if selected_metier_codes and metiers_df is not None:
             metiers_df_indexed = metiers_df.set_index('Code FAP 341')
-            metier_names = metiers_df_indexed.loc[selected_metier_codes, 'Intitulé FAP 341'].tolist()
+            # Handle potential missing codes gracefully
+            valid_codes = [c for c in selected_metier_codes if c in metiers_df_indexed.index]
+            metier_names = metiers_df_indexed.loc[valid_codes, 'Intitulé FAP 341'].tolist()
             metiers_str = ", ".join(metier_names)
         else:
             metiers_str = "Non spécifié"
@@ -116,7 +164,8 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
         selected_formation_codes = [code for sublist in config.codes_formations for code in sublist]
         if selected_formation_codes and formations_df is not None:
             formations_df_indexed = formations_df.set_index('index')
-            formation_names = formations_df_indexed.loc[selected_formation_codes, 'libformation'].tolist()
+            valid_codes = [c for c in selected_formation_codes if c in formations_df_indexed.index]
+            formation_names = formations_df_indexed.loc[valid_codes, 'libformation'].tolist()
             formations_str = ", ".join(formation_names)
         else:
             formations_str = "Non spécifié"
@@ -162,12 +211,13 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
     pdf.cell(0, 10, "Résultats de la recherche", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
     pdf.ln(5)
 
-    # Map Screenshot
+    # Map Generation
     try:
-        map_png = _capture_map_as_png(folium_map)
-        map_image_stream = io.BytesIO(map_png)
-        map_image_stream.seek(0)
-        pdf.image(map_image_stream, x=10, w=pdf.w - 20)
+        view_level = st_session_state.get('view_level', 'Bassins de vie')
+        map_png = _generate_static_map_image(results_df, view_level)
+        if map_png:
+            map_image_stream = io.BytesIO(map_png)
+            pdf.image(map_image_stream, x=10, w=pdf.w - 20)
     except Exception as e:
         pdf.set_font("DejaVu", 'I', 8)
         pdf.multi_cell(0, 6, f"Erreur lors de la generation de la carte: {e}")

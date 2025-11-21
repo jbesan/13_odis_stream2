@@ -2,7 +2,6 @@ import pandas as pd
 import geopandas as gpd
 from shapely.geometry import Polygon
 import pytest
-import folium
 import types # Import types for SimpleNamespace
 
 from app.pdf_generator import generate_pdf_report
@@ -94,23 +93,18 @@ def sample_results_df():
     gdf = gdf.set_index('codgeo')
     return gdf.reset_index()
 
-@pytest.fixture
-def sample_folium_map():
-    """Creates a simple Folium map for testing."""
-    return folium.Map(location=[48.8566, 2.3522], zoom_start=13)
 
-def test_generate_pdf_report(sample_session_state, sample_results_df, sample_folium_map):
+def test_generate_pdf_report(sample_session_state, sample_results_df):
     """
     Tests that generate_pdf_report runs without errors and produces a valid PDF bytes object.
     """
     # Arrange
     session_state = sample_session_state
     results_df = sample_results_df
-    folium_map = sample_folium_map
 
     # Act
-    # This will raise an exception if something goes wrong with selenium, fpdf2, etc.
-    pdf_bytes = generate_pdf_report(session_state, results_df, folium_map)
+    # This will raise an exception if something goes wrong with fpdf2, matplotlib, etc.
+    pdf_bytes = generate_pdf_report(session_state, results_df)
 
     # Assert
     # 1. Check that the output is a bytes object
