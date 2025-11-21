@@ -42,6 +42,16 @@ def setup_logging() -> None:
         
     root_logger.addHandler(handler)
 
+    # --- Reduce verbosity of third-party libraries ---
+    logging.getLogger("FPDF").level = logging.ERROR
+    logging.getLogger("fpdf.svg").propagate = False
+    logging.getLogger('fontTools.subset').level = logging.WARN
+
+    # logging.getLogger("fontTools").setLevel(logging.ERROR)
+    # logging.getLogger("_tmpfile").setLevel(logging.ERROR)
+    # logging.getLogger("kaleido").setLevel(logging.ERROR)
+    # logging.getLogger("svg").setLevel(logging.ERROR)
+
 # Initialize logging when module is imported
 setup_logging()
 
