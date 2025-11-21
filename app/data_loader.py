@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+import logging
 from typing import Dict, Any, List, Tuple, Set, Optional
 import pandas as pd
 import numpy as np
@@ -47,7 +48,7 @@ def apply_demo_data_if_present(data: Dict[str, Any]) -> None:
     if len(st.query_params) > 0 and 'demo' in st.query_params:
         demo_id = st.query_params.get('demo')
         if demo_id in cfg.DEMO_SCENARIOS:
-            print(f"--- Loading Demo Mode {demo_id} ---")
+            logging.info(f"--- Loading Demo Mode {demo_id} ---")
             data.update(cfg.DEMO_SCENARIOS[demo_id])
 
 def session_states_init(defaults: Dict[str, Any]) -> None:
@@ -310,7 +311,7 @@ def load_bassin_de_vie_geodata(_communes_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFr
 @st.cache_resource
 def init_datasets() -> Dict[str, Any]:
     """Loads all datasets and returns them in a structured dictionary."""
-    print("--- Loading all datasets... ---")
+    logging.info("--- Loading all datasets... ---")
     odis, scores_cat, codfap_index, codformations_index, annuaire_ecoles, annuaire_sante, annuaire_inclusion, incl_index = load_all_datasets(
         cfg.ODIS_FILE,
         cfg.BV_FILENAME,

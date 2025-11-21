@@ -1,6 +1,7 @@
 import streamlit as st
 import config as cfg
 import ui
+import logging
 
 # DO NOT REMOVE: This makes sure the ui_ form state persists as expected
 for k, v in st.session_state.items():
@@ -100,7 +101,7 @@ with col1:
         if current_page_index > 0:
             if st.button("Précédent"):
                 st.session_state.form_page = PAGES_LIST[current_page_index - 1]
-                print(st.session_state.ui_nb_enfants)
+                logging.info(st.session_state.ui_nb_enfants)
                 st.rerun()
 
 with col2:

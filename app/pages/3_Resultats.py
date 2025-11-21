@@ -8,6 +8,7 @@ from pdf_generator import generate_pdf_report
 import folium as flm
 import data_loader
 import geopandas as gpd
+import logging
 
 st.set_page_config(layout="wide")
 
@@ -67,7 +68,7 @@ def run_search():
     Callback function for the 'Lancer la recherche' button.
     It orchestrates the new filtering and scoring logic.
     """
-    print('--- Running new search with refactored logic ---')
+    logging.info('--- Running new search with refactored logic ---')
     # Clear any previously generated PDF data on new search
     st.session_state['pdf_data'] = None
     st.session_state['map_object'] = None

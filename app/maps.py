@@ -9,6 +9,7 @@ from folium.plugins import FastMarkerCluster
 
 from typing import Union, List, Tuple, Optional, Any, Set, Dict
 import config as cfg
+import logging
 
 def get_map_zoom(distance_km: Union[int, str]) -> int:
     """Returns a map zoom level based on a search distance."""
@@ -228,7 +229,7 @@ def build_sante_layer(annuaire_sante: gpd.GeoDataFrame, target_codgeos: Set[str]
         return fg
 
     cluster = _build_generic_points_layer(filtered[mask], icon='plus', color='blue', tooltip_cols=['RaisonSociale', 'LibelleCategorieAgregat'])
-    print(cluster)
+    logging.info(cluster)
     cluster.add_to(fg)
     return fg
 

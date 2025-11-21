@@ -1,10 +1,17 @@
 import time
 import copy
 import streamlit as st
-import config as cfg
+import config  as cfg
 import data_loader
+import logging
+import logger # Initialize logging configuration
 
-print(f"--- App re-run at {time.ctime(time.time())} ---")
+st.set_page_config(
+    page_title="J'accueille",
+    page_icon="👋",
+)
+
+logging.info(f"--- App re-run at {time.ctime(time.time())} ---")
 
 st.set_page_config(layout="wide", page_title='OD&IS: Recherche Inversée')
 
