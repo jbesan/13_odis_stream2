@@ -11,3 +11,4 @@ app/cached_df.csv
 CONSTITUTION.md
 GEMINI.md
 .agent/
+.vscode/

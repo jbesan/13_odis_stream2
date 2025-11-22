@@ -22,13 +22,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Use a minimal Python image
 FROM python:3.9-slim-bullseye
 
-# Install runtime dependencies for geospatial libraries, required by geopandas
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgdal28 \
-    libgeos-c1v5 \
-    libproj19 \
-    chromium \
-    chromium-driver \
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    software-properties-common \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Set the working directory

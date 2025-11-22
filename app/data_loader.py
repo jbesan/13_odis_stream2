@@ -1,5 +1,7 @@
 import streamlit as st
 import os
+import logging
+from typing import Dict, Any, List, Tuple, Set, Optional
 import pandas as pd
 import numpy as np
 import geopandas as gpd
@@ -41,15 +43,15 @@ def load_bassin_de_vie_data(file_path: str) -> pd.DataFrame:
     df = pd.read_csv(file_path, dtype={'CODGEO': str, cfg.BV_CODE_COL: str})
     return df
 
-def apply_demo_data_if_present(data):
+def apply_demo_data_if_present(data: Dict[str, Any]) -> None:
     """Updates the data dictionary with demo data if a 'demo' query param is present."""
     if len(st.query_params) > 0 and 'demo' in st.query_params:
         demo_id = st.query_params.get('demo')
         if demo_id in cfg.DEMO_SCENARIOS:
-            print(f"--- Loading Demo Mode {demo_id} ---")
+            logging.info(f"--- Loading Demo Mode {demo_id} ---")
             data.update(cfg.DEMO_SCENARIOS[demo_id])
 
-def session_states_init(defaults):
+def session_states_init(defaults: Dict[str, Any]) -> None:
     """Initializes all necessary keys in Streamlit's session state."""
     is_demo = 'demo' in st.query_params
 
@@ -105,7 +107,8 @@ def session_states_init(defaults):
                 base_key, transform = config_key
                 st.session_state[ui_key] = transform(defaults[base_key])
             else:
-                st.session_state[ui_key] = defaults[config_key]
+                # config_key is definitely a string here
+                st.session_state[ui_key] = defaults[str(config_key)]
 
     # Handle list-based UI keys separately
     for i in range(defaults.get('nb_adultes', 2)):
@@ -118,17 +121,27 @@ def session_states_init(defaults):
         if f'ui_classe_enfant_{i}' not in st.session_state or is_demo:
             st.session_state[f'ui_classe_enfant_{i}'] = defaults['classe_enfants'][i] if i < len(defaults['classe_enfants']) else 'Maternelle'
 
-def get_data_path():
+def get_data_path() -> str:
     """
     Returns the appropriate data path based on the environment.
     Checks for the K_SERVICE environment variable to detect Cloud Run.
     """
     if 'K_SERVICE' in os.environ:
-        return cfg.GCS_BUCKET_PATH
+        return str(cfg.GCS_BUCKET_PATH)
     else:
-        return cfg.LOCAL_CSV_PATH
+        return str(cfg.LOCAL_CSV_PATH)
 
-def load_all_datasets(odis_file: str, bv_file: str, scores_cat_file: str, metiers_file: str, formations_file: str, ecoles_file: str, maternites_file: str, sante_file: str, inclusion_file: str) -> tuple:
+def load_all_datasets(
+    odis_file: str,
+    bv_file: str,
+    scores_cat_file: str,
+    metiers_file: str,
+    formations_file: str,
+    ecoles_file: str,
+    maternites_file: str,
+    sante_file: str,
+    inclusion_file: str
+) -> Tuple[gpd.GeoDataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, gpd.GeoDataFrame, gpd.GeoDataFrame, gpd.GeoDataFrame, pd.DataFrame]:
     """
     Loads all necessary datasets from specified file paths.
     This function acts as a facade, calling specific loading functions for each dataset.
@@ -296,9 +309,9 @@ def load_bassin_de_vie_geodata(_communes_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFr
     return bv_geo
 
 @st.cache_resource
-def init_datasets():
+def init_datasets() -> Dict[str, Any]:
     """Loads all datasets and returns them in a structured dictionary."""
-    print("--- Loading all datasets... ---")
+    logging.info("--- Loading all datasets... ---")
     odis, scores_cat, codfap_index, codformations_index, annuaire_ecoles, annuaire_sante, annuaire_inclusion, incl_index = load_all_datasets(
         cfg.ODIS_FILE,
         cfg.BV_FILENAME,

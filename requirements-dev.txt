@@ -1,1 +1,5 @@
 pytest
+mypy
+types-requests
+types-PyYAML
+types-setuptools

@@ -7,8 +7,9 @@ from shapely.geometry import mapping
 from branca.colormap import linear
 from folium.plugins import FastMarkerCluster
 
-from typing import Union
+from typing import Union, List, Tuple, Optional, Any, Set, Dict
 import config as cfg
+import logging
 
 def get_map_zoom(distance_km: Union[int, str]) -> int:
     """Returns a map zoom level based on a search distance."""
@@ -17,11 +18,14 @@ def get_map_zoom(distance_km: Union[int, str]) -> int:
             return 9
         if distance_km == 'region':
             return 8
+        return 7 # Fallback for unknown string
     
-    if distance_km <= 10: return 11
-    if distance_km <= 25: return 10
-    if distance_km <= 50: return 9
-    if distance_km <= 100: return 8
+    # At this point, mypy knows distance_km is int because of the Union and the check above
+    dist_int = int(distance_km)
+    if dist_int <= 10: return 11
+    if dist_int <= 25: return 10
+    if dist_int <= 50: return 9
+    if dist_int <= 100: return 8
     return 7
 
 def dissolve_communes_to_bassins_de_vie(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -47,13 +51,13 @@ def dissolve_communes_to_bassins_de_vie(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFra
     return gdf_bv
 
 
-def create_base_map(center: list, zoom: int):
+def create_base_map(center: List[float], zoom: int) -> flm.Map:
     """Creates the base Folium map."""
     if center is None: center = cfg.DEFAULT_MAP_CENTER
     if zoom is None: zoom = get_map_zoom(st.session_state.config.loc_distance_km)
     return flm.Map(location=center, zoom_start=zoom, tiles="cartodbpositron")
 
-def build_scores_layer(df: pd.DataFrame) -> tuple:
+def build_scores_layer(df: pd.DataFrame) -> Tuple[flm.FeatureGroup, Optional[Any]]:
     """Builds the FeatureGroup for all scored communes or bassins de vie, colored by score."""
     fg = flm.FeatureGroup(name="Scores")
     
@@ -74,7 +78,7 @@ def build_scores_layer(df: pd.DataFrame) -> tuple:
         return fg, None # Return empty layer if the required ID is missing
 
     score_dict = df.set_index(id_col)["weighted_score"]
-    colormap = linear.YlGn_09.scale(score_dict.min(), score_dict.max())
+    colormap = getattr(linear, 'YlGn_09').scale(score_dict.min(), score_dict.max())
 
     # Add current commune in blue
     current_geo_df = st.session_state.selected_geo
@@ -134,7 +138,7 @@ def build_top_result_layer(row: pd.Series, rank: int) -> flm.FeatureGroup:
         
     return fg
 
-def build_legend(items_list: list) -> str:
+def build_legend(items_list: List[Dict[str, str]]) -> str:
     """Builds an HTML legend for the map."""
     leaflet_colors = {
         "red": "#D63E2A", "blue": "#38A9DC", "green": "#72B026", "purple": "#5B396B",
@@ -156,7 +160,7 @@ def build_legend(items_list: list) -> str:
     legend_html += "</ul></div>"
     return legend_html
 
-def _build_generic_points_layer(df: gpd.GeoDataFrame, icon: str, color: str, tooltip_cols: list) -> flm.FeatureGroup:
+def _build_generic_points_layer(df: gpd.GeoDataFrame, icon: str, color: str, tooltip_cols: List[str]) -> Any:
     """Generic helper to build a FastMarkerCluster layer."""
     df = df.copy()
     if df.empty:
@@ -182,7 +186,7 @@ def _build_generic_points_layer(df: gpd.GeoDataFrame, icon: str, color: str, too
     """
     return FastMarkerCluster(locations, callback=callback)
 
-def build_ecoles_layer(annuaire_ecoles: gpd.GeoDataFrame, target_codgeos: set, config: cfg.ScoringConfig) -> flm.FeatureGroup:
+def build_ecoles_layer(annuaire_ecoles: gpd.GeoDataFrame, target_codgeos: Set[str], config: cfg.ScoringConfig) -> flm.FeatureGroup:
     """Builds the map layer for schools."""
     fg = flm.FeatureGroup(name="Établissements Scolaires")
     
@@ -208,7 +212,7 @@ def build_ecoles_layer(annuaire_ecoles: gpd.GeoDataFrame, target_codgeos: set, c
     cluster.add_to(fg)
     return fg
 
-def build_sante_layer(annuaire_sante: gpd.GeoDataFrame, target_codgeos: set, config: cfg.ScoringConfig) -> flm.FeatureGroup:
+def build_sante_layer(annuaire_sante: gpd.GeoDataFrame, target_codgeos: Set[str], config: cfg.ScoringConfig) -> flm.FeatureGroup:
     """Builds the map layer for health facilities."""
     fg = flm.FeatureGroup(name="Établissements de Santé")
     filtered = annuaire_sante[annuaire_sante['codgeo'].isin(target_codgeos)].copy()
@@ -225,11 +229,11 @@ def build_sante_layer(annuaire_sante: gpd.GeoDataFrame, target_codgeos: set, con
         return fg
 
     cluster = _build_generic_points_layer(filtered[mask], icon='plus', color='blue', tooltip_cols=['RaisonSociale', 'LibelleCategorieAgregat'])
-    print(cluster)
+    logging.info(cluster)
     cluster.add_to(fg)
     return fg
 
-def build_services_layer(annuaire_inclusion: gpd.GeoDataFrame, target_codgeos: set, config: cfg.ScoringConfig) -> flm.FeatureGroup:
+def build_services_layer(annuaire_inclusion: gpd.GeoDataFrame, target_codgeos: Set[str], config: cfg.ScoringConfig) -> flm.FeatureGroup:
     """Builds the map layer for inclusion services."""
     fg = flm.FeatureGroup(name="Services d'inclusion")
     

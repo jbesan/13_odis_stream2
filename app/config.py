@@ -3,15 +3,15 @@ from dataclasses import dataclass
 from typing import List, Dict, Any, Union
 import os
 
-GCS_BUCKET_PATH = 'gs://odis-stream2-eu/'
+GCS_BUCKET_PATH: str = 'gs://odis-stream2-eu/'
 # Get the directory of the current file (app/)
-APP_DIR = os.path.dirname(os.path.abspath(__file__))
+APP_DIR: str = os.path.dirname(os.path.abspath(__file__))
 # Get the project root directory (one level up)
-PROJECT_ROOT = os.path.dirname(APP_DIR)
+PROJECT_ROOT: str = os.path.dirname(APP_DIR)
 
-LOCAL_CSV_PATH = os.path.join(PROJECT_ROOT, 'csv/')
+LOCAL_CSV_PATH: str = os.path.join(PROJECT_ROOT, 'csv/')
 
-def get_data_path():
+def get_data_path() -> str:
     """
     Returns the appropriate data path based on the environment.
     Checks for the K_SERVICE environment variable to detect Cloud Run.
@@ -95,7 +95,7 @@ class ScoringConfig:
     pop_min: int
 
 # --- Demo Scenarios ---
-DEMO_DATA_DEFAULT = {
+DEMO_DATA_DEFAULT: Dict[str, Any] = {
     'nom': None,
     'poids_emploi': 100,
     'poids_logement': 100,

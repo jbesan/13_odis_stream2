@@ -10,9 +10,10 @@ pandas
 plotly
 PyYAML
 scikit-learn
-selenium
 shapely
 streamlit>=1.25.0
 streamlit-folium>=0.13.0
 
-webdriver-manager
+matplotlib
+contextily
+openpyxl

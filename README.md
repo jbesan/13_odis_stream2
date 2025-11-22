@@ -89,7 +89,6 @@ Le score est calculé à partir d'une multitude de critères, regroupés en gran
 
 **Catégorie : Emploi**
 *   **Taux Besoin Emploi** : Mesure le nombre d'emplois non pourvus pour 1000 habitants, indiquant la demande de main-d'œuvre locale.
-*   **Taux Besoin Emploi en Tension** : Identique au critère précédent, mais ciblé sur les métiers officiellement listés comme "en tension".
 *   **Adéquation Compétences/Emploi** : Évalue la correspondance entre les métiers recherchés par les adultes du foyer et les familles de métiers les plus demandées dans la zone.
 *   **Adéquation Besoins/Formations** : Mesure la présence de centres de formation proposant les cursus recherchés par les adultes du foyer.
 
@@ -100,7 +99,6 @@ Le score est calculé à partir d'une multitude de critères, regroupés en gran
 
 **Catégorie : Éducation**
 *   **Taux de Classes à Risque de Fermeture** : Identifie les écoles où des classes risquent de fermer faute d'élèves, ce qui peut être une opportunité pour de nouvelles familles.
-*   **Proximité des Établissements Scolaires** : Calcule la distance entre la commune et l'établissement scolaire requis pour chaque enfant du foyer.
 
 **Catégorie : Inclusion & Vie Locale**
 *   **Taux de Services d'Inclusion** : Mesure la densité de services dédiés à l'inclusion (apprentissage du français, aide juridique, etc.) pour 1000 habitants.

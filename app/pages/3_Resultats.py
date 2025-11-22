@@ -8,6 +8,7 @@ from pdf_generator import generate_pdf_report
 import folium as flm
 import data_loader
 import geopandas as gpd
+import logging
 
 st.set_page_config(layout="wide")
 
@@ -26,8 +27,7 @@ if st.session_state.get('show_pdf_modal'):
             with st.spinner("Veuillez patienter, nous générons votre document..."):
                 pdf_bytes = generate_pdf_report(
                     st.session_state, 
-                    st.session_state.processed_gdf, 
-                    st.session_state.map_object
+                    st.session_state.processed_gdf
                 )
                 st.session_state.pdf_modal_data = pdf_bytes
                 st.rerun() # Rerun to update the dialog's content to the download state
@@ -68,7 +68,7 @@ def run_search():
     Callback function for the 'Lancer la recherche' button.
     It orchestrates the new filtering and scoring logic.
     """
-    print('--- Running new search with refactored logic ---')
+    logging.info('--- Running new search with refactored logic ---')
     # Clear any previously generated PDF data on new search
     st.session_state['pdf_data'] = None
     st.session_state['map_object'] = None
@@ -82,73 +82,32 @@ def run_search():
     df_area_geo = st.session_state.app_data['area_geo']
     start_commune = df_all_communes.loc[[config.commune_actuelle]]
 
-    # --- New Filtering Logic ---
-    view_level = st.session_state.get('view_level')
-    loc_type = 'distance' if isinstance(config.loc_distance_km, int) else config.loc_distance_km
-    
-    if view_level == 'Communes':
-        # 1. Filter the communes directly
-        loc_col = 'dep_code' if loc_type == 'departement' else 'reg_code'
-        communes_to_score = scoring.filter_communes(
-            df=df_all_communes,
-            start_commune=start_commune,
-            loc_type=loc_type,
-            loc_code=start_commune.iloc[0][loc_col] if loc_type != 'distance' else None,
-            loc_distance_km=config.loc_distance_km if loc_type == 'distance' else None
-        )
-    else: # Bassins de vie
-        # 1. Filter the Bassins de Vie
-        loc_col = 'dep_code' if loc_type == 'departement' else 'reg_code'
-        filtered_bvs = scoring.filter_bassins_de_vie(
-            bv_gdf=df_bv_geo,
-            start_commune=start_commune,
-            loc_type=loc_type,
-            loc_code=start_commune.iloc[0][loc_col] if loc_type != 'distance' else None,
-            loc_distance_km=config.loc_distance_km if loc_type == 'distance' else None,
-            area_gdf=df_area_geo
-        )
-        # 2. Get all communes that belong to those BVs
-        bv_ids_to_keep = filtered_bvs.index.tolist()
-        communes_to_score = df_all_communes[df_all_communes[cfg.BV_CODE_COL].isin(bv_ids_to_keep)]
-
-    # --- Scoring ---
-    odis_scored = scoring.compute_odis_score(
-        df_search=communes_to_score,
-        df_all_communes=df_all_communes,
-        scores_cat=st.session_state.app_data['scores_cat'],
+    # --- Run Scoring Pipeline ---
+    processed_gdf, unaggregated_gdf = scoring.run_scoring_pipeline(
         config=config,
+        df_all_communes=df_all_communes,
+        df_bv_geo=df_bv_geo,
+        df_area_geo=df_area_geo,
+        scores_cat=st.session_state.app_data['scores_cat'],
         incl_index=st.session_state.app_data['incl_index'],
+        view_level=st.session_state.get('view_level', 'Bassins de vie')
     )
 
-    # --- Post-processing and State Update ---
-    selected_geo = st.session_state.app_data['odis'].loc[[config.commune_actuelle]].copy()
+    # --- State Update ---
+    st.session_state['processed_gdf'] = processed_gdf
+    st.session_state['unaggregated_gdf'] = unaggregated_gdf
     
-    # Reproject to a projected CRS for accurate centroid calculation
+    # --- Logging ---
+    from logger import log_search_results
+    log_search_results(config, processed_gdf)
+    
+    # Calculate center for map
+    selected_geo = st.session_state.app_data['odis'].loc[[config.commune_actuelle]].copy()
     start_commune_projected = start_commune.to_crs('EPSG:2154')
     centroid_geo_series_projected = start_commune_projected.centroid
-    
-    # Reproject the centroid back to EPSG:4326 for map display
     centroid_geo_series_geographic = centroid_geo_series_projected.to_crs('EPSG:4326')
     final_center_x = centroid_geo_series_geographic.x.iloc[0]
     final_center_y = centroid_geo_series_geographic.y.iloc[0]
-    
-    odis_scored = odis_scored.drop(config.commune_actuelle, errors='ignore')
-
-    if odis_scored.empty:
-        st.session_state['processed_gdf'] = gpd.GeoDataFrame(columns=['polygon'])
-        st.session_state['unaggregated_gdf'] = gpd.GeoDataFrame()
-    else:
-        st.session_state['unaggregated_gdf'] = odis_scored
-        if view_level == 'Bassins de vie':
-            df_bv_scores = scoring.aggregate_scores_by_bassin_de_vie(odis_scored)
-            gdf_bv_geo_filtered = df_bv_geo[df_bv_geo.index.isin(df_bv_scores[cfg.BV_CODE_COL])]
-            processed_gdf = gdf_bv_geo_filtered.merge(df_bv_scores, left_index=True, right_on=cfg.BV_CODE_COL)
-            processed_gdf = processed_gdf.rename_geometry('polygon')
-            processed_gdf = processed_gdf.drop_duplicates(subset=[cfg.BV_CODE_COL])
-        else: # Commune level
-            processed_gdf = odis_scored
-        
-        st.session_state['processed_gdf'] = processed_gdf.sort_values('weighted_score', ascending=False).reset_index()
 
     st.session_state['selected_geo'] = selected_geo
     st.session_state['center'] = [final_center_y, final_center_x]
