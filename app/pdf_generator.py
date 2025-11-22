@@ -50,7 +50,7 @@ def _generate_static_map_image(results_df: pd.DataFrame, view_level: str) -> byt
     
     # Initialize figure
     # Use a square aspect ratio or slightly landscape
-    fig, ax = plt.subplots(figsize=(10, 8))
+    fig, ax = plt.subplots(figsize=(8, 8))
     
     # Plot all scores (choropleth)
     gdf_plot.plot(
@@ -109,7 +109,7 @@ def _generate_static_map_image(results_df: pd.DataFrame, view_level: str) -> byt
     
     # Save to buffer
     buf = io.BytesIO()
-    plt.savefig(buf, format='png', dpi=150, bbox_inches='tight', pad_inches=0)
+    plt.savefig(buf, format='png', dpi=100, bbox_inches='tight', pad_inches=0)
     plt.close(fig)
     buf.seek(0)
     return buf.getvalue()
@@ -219,7 +219,10 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
         map_png = _generate_static_map_image(results_df, view_level)
         if map_png:
             map_image_stream = io.BytesIO(map_png)
-            pdf.image(map_image_stream, x=10, w=pdf.w - 20)
+            # Center the image and limit width to avoid it being too big
+            target_width = 150
+            x_pos = (pdf.w - target_width) / 2
+            pdf.image(map_image_stream, x=x_pos, w=target_width)
     except Exception as e:
         pdf.set_font("DejaVu", 'I', 8)
         pdf.multi_cell(0, 6, f"Erreur lors de la generation de la carte: {e}")
