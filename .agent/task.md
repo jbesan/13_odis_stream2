@@ -1,0 +1,49 @@
+# Tasks
+- [x] Rename constitution.md to CONSTITUTION.md
+    - [x] Update PRD.md
+    - [x] Create implementation_plan.md
+    - [x] Rename file
+    - [x] Update references
+- [x] Refactor scoring.py
+    - [x] Run baseline tests
+    - [x] Remove notebook artifacts
+    - [x] Add type hints and docstrings
+    - [x] Verify with tests
+- [x] Improve Type Hinting & Static Analysis
+    - [x] Create mypy.ini
+    - [x] Add type hints to config.py
+    - [x] Add type hints to data_loader.py
+    - [x] Add type hints to maps.py
+    - [x] Add type hints to pdf_generator.py
+    - [x] Add type hints to ui.py
+    - [x] Verify with mypy
+- [x] Item 3: Decouple UI from Business Logic <!-- id: 3 -->
+    - [x] Create `run_scoring_pipeline` in `app/scoring.py` <!-- id: 4 -->
+    - [x] Refactor `app/pages/3_Resultats.py` to use the pipeline <!-- id: 5 -->
+    - [x] Add tests for the pipeline <!-- id: 6 -->
+- [x] Item 6: Optimize Geospatial Operations <!-- id: 7 -->
+    - [x] Create implementation plan <!-- id: 8 -->
+    - [x] Refactor `scoring.py` to use pre-calculated centroids <!-- id: 9 -->
+    - [x] Verify changes <!-- id: 10 -->
+- [x] Item 8: Remove Heavy Dependencies <!-- id: 11 -->
+    - [x] Create implementation plan <!-- id: 12 -->
+    - [x] Create POC for static map generation <!-- id: 16 -->
+    - [x] Refactor `pdf_generator.py` to use Matplotlib + Contextily <!-- id: 13 -->
+    - [x] Clean up `requirements.txt` and `Dockerfile` <!-- id: 14 -->
+    - [x] Verify PDF generation <!-- id: 15 -->
+- [x] Item 7: Enhance Test Coverage & Strategy <!-- id: 27 -->
+    - [x] Create implementation plan <!-- id: 28 -->
+    - [x] Refactor conftest.py <!-- id: 29 -->
+    - [x] Rewrite test_scoring.py <!-- id: 30 -->
+    - [x] Add test_data_loader.py <!-- id: 31 -->
+    - [x] Verify all tests <!-- id: 32 -->
+- [x] Item 7: Implement Logging <!-- id: 17 -->
+    - [x] Create implementation plan <!-- id: 18 -->
+    - [x] Implement JSON logger <!-- id: 19 -->
+    - [x] Integrate logging into search pipeline <!-- id: 20 -->
+    - [x] Verify logging output <!-- id: 21 -->
+- [x] Item 9: Implement Structured Logging <!-- id: 22 -->
+    - [x] Create implementation plan <!-- id: 23 -->
+    - [x] Configure standard logging with JSON formatter <!-- id: 24 -->
+    - [x] Replace print statements with logging calls <!-- id: 25 -->
+    - [x] Verify structured logging <!-- id: 26 -->
