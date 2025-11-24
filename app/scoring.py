@@ -305,6 +305,43 @@ def compute_criteria_scores(
     if prefs['classe_enfants']:
         df['risque_fermeture_ratio'] = df['risque_fermeture'] / df['ecoles_ct']
         df['classes_ferm_scaled'] = transformer.fit_transform(df[['risque_fermeture_ratio']].fillna(0))
+        
+        # Score based on presence of required school types
+        class_mapping = {
+            'Maternelle': 'count_maternelle',
+            'Elémentaire': 'count_elementaire',
+            'Collège': 'count_college',
+            'Lycée': 'count_lycee'
+        }
+        required_cols = {class_mapping[c] for c in prefs['classe_enfants'] if c in class_mapping}
+        
+        if required_cols:
+            # Count matches (boolean logic: count > 0)
+            matches = (df[list(required_cols)] > 0).sum(axis=1)
+            # Linear score: ratio of met requirements
+            df['edu_structures_scaled'] = matches / len(required_cols)
+        else:
+            df['edu_structures_scaled'] = 0.0
+    else:
+        df['classes_ferm_scaled'] = 0.0
+        df['edu_structures_scaled'] = 0.0
+
+    # --- SANTE ---
+    sante_pref = prefs.get('besoin_sante', 'Aucun')
+    if sante_pref != 'Aucun':
+        col_map = {
+            'Hopital': 'count_hopital',
+            'Maternité': 'count_maternite',
+            'Soutien Psychologique & Addictologie': 'count_psy'
+        }
+        target_col = col_map.get(sante_pref)
+        if target_col and target_col in df.columns:
+            # Score 1.0 if count > 0, else 0.0
+            df['sante_structures_scaled'] = (df[target_col] > 0).astype(float)
+        else:
+            df['sante_structures_scaled'] = 0.0
+    else:
+        df['sante_structures_scaled'] = 0.0
 
     # --- MOBILITE ---
     # 1. Distance from the current location
@@ -359,6 +396,8 @@ def add_neighbor_scores(df_search: gpd.GeoDataFrame, scores_cat: pd.DataFrame) -
         + scores_cat[scores_cat.incl_binome]['score'].to_list()
         + scores_cat[scores_cat.incl_binome]['metric'].to_list()
     )
+    # Remove duplicates to avoid DataFrame creation on merge for same-named columns
+    binome_columns = list(dict.fromkeys(binome_columns))
     binome_columns = [col for col in binome_columns if col in df_search.columns]
     df_binomes = df_search[binome_columns].copy()
 
@@ -421,9 +460,14 @@ def compute_category_scores(
             # Check if a corresponding binome score exists
             if f'{col}_binome' in df.columns:
                 score_voisin = df[f'{col}_binome'] * (1 - binome_penalty)
-                # For monomes, the binome score is NaN, so we fill it with 0.
-                # The score of the commune itself is not penalized.
-                effective_score = np.maximum(score_commune.fillna(0), score_voisin.fillna(0))
+                
+                # Debugging: Raise exception with type info
+                s_commune = score_commune.fillna(0)
+                s_voisin = score_voisin.fillna(0)
+                if isinstance(s_commune, pd.DataFrame) or isinstance(s_voisin, pd.DataFrame):
+                     raise ValueError(f"DEBUG: Mixed types for col '{col}'. \nCommune type: {type(s_commune)}\nVoisin type: {type(s_voisin)}\nCommune cols: {s_commune.columns if isinstance(s_commune, pd.DataFrame) else 'Series'}\nVoisin cols: {s_voisin.columns if isinstance(s_voisin, pd.DataFrame) else 'Series'}")
+
+                effective_score = np.maximum(s_commune, s_voisin)
                 max_scores.append(effective_score)
             else:  # This criterion is not applicable to binomes
                 max_scores.append(score_commune.fillna(0))

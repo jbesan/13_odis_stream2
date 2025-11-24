@@ -30,6 +30,9 @@ def display_sidebar(demo_data: Dict[str, Any]) -> None:
         st.select_slider("Inclusion", cfg.POIDS_OPTIONS, 
                         value=st.session_state.get('ui_poids_inclusion', 100), 
                         key="ui_poids_inclusion")
+        st.select_slider("Santé", cfg.POIDS_OPTIONS, # NEW
+                        value=st.session_state.get('ui_poids_sante', 100), # NEW
+                        key="ui_poids_sante") # NEW
         st.select_slider("Mobilité", cfg.POIDS_OPTIONS, 
                         value=st.session_state.get('ui_poids_mobilité', 100), 
                         key="ui_poids_mobilité")
@@ -190,8 +193,12 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
     
     # Location
     commune_codgeo = app_data['depcom_df'][
-        (app_data['depcom_df'].dep_code == st.session_state['ui_departement']) & 
-        (app_data['depcom_df'].libgeo == st.session_state['ui_commune'])
+        (
+            app_data['depcom_df'].dep_code == st.session_state['ui_departement']
+        ) & 
+        (
+            app_data['depcom_df'].libgeo == st.session_state['ui_commune']
+        )
     ].index[0]
 
     # Education
@@ -206,6 +213,7 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
         poids_logement=st.session_state['ui_poids_logement'],
         poids_education=st.session_state['ui_poids_education'],
         poids_inclusion=st.session_state['ui_poids_inclusion'],
+        poids_sante=st.session_state['ui_poids_sante'], # NEW
         poids_mobilité=st.session_state['ui_poids_mobilité'],
         commune_actuelle=commune_codgeo,
         loc_distance_km=st.session_state['ui_loc_distance_km'],
@@ -418,7 +426,7 @@ def _produce_pitch_markdown(row: pd.Series, config: cfg.ScoringConfig, scores_ca
 
     score_percent = f"{row['weighted_score'] * 100:.0f}%"
     if row.get("binome", False):
-        pitch_md.append(f'\nEn [binôme](https://www.google.com "Lorsque des communes sont proposées en binômes, c’est qu’ensemble elles correspondent au projet de vie.") avec sa voisine **{row["libgeo_binome"]}**, la correspondance avec le projet est évaluée à **{score_percent}**. ')
+        pitch_md.append(f'\nEn [binôme](https://www.google.com "Lorsque des communes sont proposed en binômes, c’est qu’ensemble elles correspondent au projet de vie.") avec sa voisine **{row["libgeo_binome"]}**, la correspondance avec le projet est évaluée à **{score_percent}**. ')
     else:
         pitch_md.append(f'\nLa correspondance avec le projet est évaluée à **{score_percent}**. ')
 

@@ -72,7 +72,8 @@ class ScoringConfig:
     poids_education: int
     poids_inclusion: int
     poids_mobilité: int
-    
+    poids_sante: int # Added new weight for sante
+
     # Location
     commune_actuelle: str
     loc_distance_km: Union[int, str]
@@ -102,6 +103,7 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     'poids_education': 100,
     'poids_inclusion': 25,
     'poids_mobilité': 100,
+    'poids_sante': 100, # Added default weight for sante
     'departement_actuel': '33',
     'commune_actuelle': 'Bordeaux',
     'loc_distance_km': 50,

@@ -15,6 +15,7 @@ def sample_session_state():
         poids_logement=100,
         poids_education=100,
         poids_inclusion=25,
+        poids_sante=100, # Added for tests
         poids_mobilité=100,
         commune_actuelle='33063',
         loc_distance_km=50,

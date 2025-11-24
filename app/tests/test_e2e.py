@@ -291,6 +291,7 @@ def test_result_details_display(app_data):
         'ui_poids_logement': 100,
         'ui_poids_education': 100,
         'ui_poids_inclusion': 25,
+        'ui_poids_sante': 100,
         'ui_poids_mobilité': 100,
         'ui_metiers_adult_0': [],
         'ui_formations_adult_0': []

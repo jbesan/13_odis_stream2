@@ -258,3 +258,27 @@ scores:
     unit: besoin(s) couvert(s)
     display_factor: 1
     tooltip: Présence de solutions de soutien spécifiques
+- id: edu_structures_scaled
+  category: education
+  source_metric: edu_structures_count
+  include_in_binom: true
+  display:
+    name: Structures scolaires adaptées
+    strong_point_text: Les établissements scolaires recherchés sont présents
+    high_value_adjective: complet
+    show: true
+    unit: types présents
+    display_factor: 1
+    tooltip: "Nombre de types d'établissements scolaires présents correspondant aux besoins"
+- id: sante_structures_scaled
+  category: santé
+  source_metric: sante_structures_scaled
+  include_in_binom: true
+  display:
+    name: Structure de santé recherchée
+    strong_point_text: L'établissement de santé recherché est présent
+    high_value_adjective: présent
+    show: true
+    unit: ""
+    display_factor: 100
+    tooltip: "Présence de la structure de santé sélectionnée"

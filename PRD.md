@@ -38,7 +38,7 @@
 Collecte des besoins via un formulaire multi-pages (basé sur `st.session_state['form_page']`).
 
 * **Localisation :** `ui_departement`, `ui_commune` (point de départ).
-* **Famille :** `ui_nb_adultes`, `ui_nb_enfants`.
+* **Famille : :** `ui_nb_adultes`, `ui_nb_enfants`.
 * **Éducation :** `ui_classe_enfant_{i}` (déclenche le scoring Éducation si `nb_enfants > 0`).
 * **Projet Pro :**
     * `ui_metiers_adult_{i}` (codes FAP, alimente `met_match_adult_scaled`).
@@ -240,5 +240,22 @@ En tant que travailleur social, je veux voir les lieux recommandés sur une cart
 *   **Affichage dans les Résultats :** La présence de ces services est mentionnée dans les points forts du résultat.
 
 ### 📊 Status
+- Completed
+## 🚀 Feature [F-13]: Nouveau score d'inclusion
+
+### 📝 User Stories
+- En tant que travailleur social, je veux évaluer précisément la présence de services institutionnels essentiels pour garantir un soutien de base à la famille accompagnée.
+- En tant que travailleur social, je veux mesurer le dynamisme social local via le nombre d'associations pour identifier les communautés où la famille accompagnée pourra facilement s'intégrer.
+- En tant que travailleur social, je veux pouvoir faire correspondre les intérêts spécifiques de la famille accompagnée (sport, culture, nature) avec les associations locales disponibles afin de favoriser son épanouissement personnel et son intégration.
+
+### 🔑 Key Features
+* Refonte du calcul du score "Inclusion" intégrant trois composantes : "Socle Administratif", "Lien Social", et "Affinité".
+* Le "Socle Administratif" est basé sur la présence et la densité des services institutionnels clés issus de `annuaire_inclusion_index.csv`.
+* Le "Lien Social" mesure la densité d'associations (via le RNA et les codes WALDEC) correspondant à des catégories fixes définies dans `config.py`.
+* L'"Affinité" mesure la densité d'associations (via le RNA et les codes WALDEC) correspondant aux centres d'intérêt spécifiques sélectionnés par l'utilisateur.
+* Une nouvelle interface utilisateur pour l'étape "Inclusion" (étape 7/8 du formulaire) proposera deux champs multiselect : un pour les services institutionnels (avec des pré-sélections déselectionnables) et un pour les activités associatives (filtré selon `config.py`).
+* La métrique utilisée pour les associations est le nombre total d'associations correspondantes pour 1000 habitants, calculé au niveau communal et agrégé en moyenne pondérée par la population pour les Bassins de Vie.
+* Les trois composantes du score d'inclusion ("Socle Administratif", "Lien Social", "Affinité") sont pondérées de manière égale (1:1:1).
+
+### 📊 Status
 - In Progress
-    *Note: The Health score is based on presence, but the Education score is not yet based on the count of school types.

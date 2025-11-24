@@ -223,6 +223,35 @@ def load_all_datasets(
     annuaire_ecoles.geometry = annuaire_ecoles.geometry.apply(shp.from_wkb)
     annuaire_ecoles = gpd.GeoDataFrame(annuaire_ecoles, geometry='geometry', crs='EPSG:4326')
 
+    # --- Pre-process school counts for scoring ---
+    # 1. Create boolean flags for each type
+    # Note: 'Ecole' usually covers Maternelle and Elementaire, distinguished by specific flags
+    annuaire_ecoles['is_maternelle'] = ((annuaire_ecoles['type_etablissement'] == 'Ecole') & (annuaire_ecoles['ecole_maternelle'] == 1)).astype(int)
+    annuaire_ecoles['is_elementaire'] = ((annuaire_ecoles['type_etablissement'] == 'Ecole') & (annuaire_ecoles['ecole_elementaire'] == 1)).astype(int)
+    annuaire_ecoles['is_college'] = (annuaire_ecoles['type_etablissement'] == 'Collège').astype(int)
+    annuaire_ecoles['is_lycee'] = (annuaire_ecoles['type_etablissement'] == 'Lycée').astype(int)
+
+    # 2. Aggregate by commune
+    school_counts = annuaire_ecoles.groupby('code_commune').agg({
+        'is_maternelle': 'sum',
+        'is_elementaire': 'sum',
+        'is_college': 'sum',
+        'is_lycee': 'sum'
+    }).rename(columns={
+        'is_maternelle': 'count_maternelle',
+        'is_elementaire': 'count_elementaire',
+        'is_college': 'count_college',
+        'is_lycee': 'count_lycee'
+    })
+
+    # 3. Merge into odis (which is indexed by codgeo)
+    # school_counts index is 'code_commune', which matches 'codgeo'
+    odis = odis.join(school_counts, how='left')
+    
+    # Fill NaN with 0 for these counts and optimize types
+    for col in ['count_maternelle', 'count_elementaire', 'count_college', 'count_lycee']:
+        odis[col] = odis[col].fillna(0).astype('int16')
+
     #Annuaire Maternités
     annuaire_maternites = pd.read_csv(base_path + maternites_file, delimiter=';')
     annuaire_maternites.drop_duplicates(subset=['FI_ET'], keep='last', inplace=True)
@@ -237,6 +266,37 @@ def load_all_datasets(
     annuaire_sante.drop(columns=['FI_ET'], inplace=True)
     annuaire_sante.maternite = np.where(annuaire_sante.maternite == 'both', True, False)
     annuaire_sante['codgeo'] = annuaire_sante.Departement + annuaire_sante.Commune
+
+    # --- Pre-process health counts for scoring ---
+    # 1. Create boolean flags for each type
+    annuaire_sante['is_hopital'] = annuaire_sante['LibelleCategorieAgregat'].isin([
+        'Centres Hospitaliers', 
+        'Centres Hospitaliers Régionaux', 
+        'Hôpitaux Locaux'
+    ]).astype(int)
+    
+    annuaire_sante['is_psy'] = annuaire_sante['LibelleCategorieAgregat'].isin([
+        'Centres Hospitaliers Spécialisés Lutte Maladies Mentales', 
+        'Autres Etablissements de Lutte contre les Maladies Mentales'
+    ]).astype(int)
+    
+    annuaire_sante['is_maternite'] = annuaire_sante['maternite'].astype(int)
+    
+    # 2. Aggregate by codgeo
+    health_counts = annuaire_sante.groupby('codgeo').agg({
+        'is_hopital': 'sum',
+        'is_psy': 'sum',
+        'is_maternite': 'sum'
+    }).rename(columns={
+        'is_hopital': 'count_hopital',
+        'is_psy': 'count_psy',
+        'is_maternite': 'count_maternite'
+    })
+    
+    # 3. Merge into odis
+    odis = odis.join(health_counts, how='left')
+    for col in ['count_hopital', 'count_psy', 'count_maternite']:
+        odis[col] = odis[col].fillna(0).astype('int16')
 
     # Annuaire des services d'inclusion
     # Pre-process inclusion data for faster lookup
