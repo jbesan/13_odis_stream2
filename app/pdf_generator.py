@@ -3,7 +3,7 @@ import pandas as pd
 from fpdf import FPDF
 from fpdf.fonts import FontFace
 from fpdf.enums import TextEmphasis, XPos, YPos
-from plotly.express import line_polar
+
 import tempfile
 import os
 import config as cfg
@@ -263,14 +263,40 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
         try:
             cat_scores = row[[col for col in row.index if col.endswith('_cat_score')]]
             cat_scores.rename(lambda x: x.split('_')[0].capitalize(), inplace=True)
-            fig = line_polar(theta=cat_scores.index, r=cat_scores.values * 100, line_close=True, range_r=[0, 100])
-            fig.update_traces(fill='toself')
-            fig.update_layout(margin=dict(l=50, r=50, t=50, b=50), width=400, height=300)
-            image_bytes = fig.to_image(format="svg")
-            with tempfile.NamedTemporaryFile(delete=True, suffix=".svg") as temp_image_file:
-                temp_image_file.write(image_bytes)
-                temp_image_file.flush()
-                pdf.image(temp_image_file.name, w=100)
+            
+            # Matplotlib Radar Chart
+            categories = cat_scores.index.tolist()
+            values = (cat_scores.values * 100).tolist()
+            N = len(categories)
+            
+            if N > 0:
+                # Compute angles
+                angles = [n / float(N) * 2 * 3.14159 for n in range(N)]
+                angles += angles[:1] # Close the loop
+                values += values[:1] # Close the loop
+                
+                fig, ax = plt.subplots(figsize=(4, 4), subplot_kw=dict(polar=True))
+                
+                # Draw one axe per variable + add labels
+                plt.xticks(angles[:-1], categories, size=8)
+                
+                # Draw ylabels
+                ax.set_rlabel_position(0)
+                plt.yticks([25, 50, 75], ["25", "50", "75"], color="grey", size=7)
+                plt.ylim(0, 100)
+                
+                # Plot data
+                ax.plot(angles, values, linewidth=1, linestyle='solid')
+                ax.fill(angles, values, 'b', alpha=0.1)
+                
+                # Save to buffer
+                buf = io.BytesIO()
+                plt.savefig(buf, format='png', dpi=100, bbox_inches='tight')
+                plt.close(fig)
+                buf.seek(0)
+                
+                # Embed in PDF
+                pdf.image(buf, w=100)
         except Exception as e:
             pdf.set_font("DejaVu", 'I', 8)
             pdf.multi_cell(0, 6, f"Erreur lors de la generation du graphique: {e}")
