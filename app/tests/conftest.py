@@ -42,6 +42,15 @@ def sample_data():
         'ecoles_ct': [10, 5, 15, 8, 6],
         'svc_incl_count': [5, 3, 4, 2, 3],
         'pol_num': [1, 2, 3, 4, 1],
+        # New education counts
+        'count_maternelle': [5, 2, 3, 1, 0],
+        'count_elementaire': [4, 3, 2, 1, 0],
+        'count_college': [3, 1, 2, 0, 0],
+        'count_lycee': [2, 1, 1, 0, 0],
+        # New health counts
+        'count_hopital': [2, 1, 1, 0, 0],
+        'count_psy': [1, 0, 1, 0, 0],
+        'count_maternite': [1, 0, 0, 0, 0],
     }
     gdf = gpd.GeoDataFrame(data, crs="EPSG:4326")
     gdf = gdf.set_index('codgeo')
@@ -51,10 +60,46 @@ def sample_data():
 def sample_scores_cat():
     """Creates a sample scores_cat DataFrame for testing."""
     data = {
-        'score': ['met_scaled', 'met_match_adult1_scaled', 'form_match_adult1_scaled', 'log_5p_scaled', 'log_soc_inoc_scaled', 'log_vac_scaled', 'classes_ferm_scaled', 'reloc_dist_scaled', 'reloc_epci_scaled', 'besoins_match_scaled', 'svc_incl_scaled', 'pol_scaled'],
-        'cat': ['emploi', 'emploi', 'emploi', 'logement', 'logement', 'logement', 'education', 'relocalisation', 'relocalisation', 'soutien', 'soutien', 'politique'],
-        'metric': ['met_ratio', 'met_match_adult1', 'form_match_adult1', 'log_5p_ratio', 'log_soc_inoc_ratio', 'log_vac_ratio', 'risque_fermeture_ratio', 'dist_current_loc', 'epci_code', 'besoins_match', 'svc_incl_ratio', 'pol_num'],
-        'incl_binome': [True, True, True, False, False, False, True, False, False, True, True, False]
+        'score': [
+            'met_scaled', 'met_tension_scaled', 'inc_socle_admin_score', 'inc_lien_social_score', 'inc_affinite_score',
+            'log_vac_scaled', 'log_soc_inoc_scaled', 'log_5p_scaled',
+            'edu_classes_ferm_scaled', 'inc_pol_scaled', 'inc_population_scaled',
+            'met_match_adult1_scaled', 'met_match_adult2_scaled',
+            'form_match_adult1_scaled', 'form_match_adult2_scaled',
+            'mob_dist_scaled', 'mob_epci_scaled',
+            'edu_structures_scaled', 'sante_structures_scaled',
+            'besoins_match_scaled'
+        ],
+        'cat': [
+            'emploi', 'emploi', 'inclusion', 'inclusion', 'inclusion',
+            'logement', 'logement', 'logement',
+            'education', 'inclusion', 'inclusion',
+            'emploi', 'emploi',
+            'emploi', 'emploi',
+            'mobilité', 'mobilité',
+            'education', 'santé',
+            'inclusion'
+        ],
+        'metric': [
+            'met_ratio', 'met_tension_ratio', 'socle_match_count', 'lien_social_density', 'affinite_density',
+            'log_vac_ratio', 'log_soc_inoc_ratio', 'log_5p_ratio',
+            'risque_fermeture_ratio', 'pol_num', 'population',
+            'met_match_adult1', 'met_match_adult2',
+            'form_match_adult1', 'form_match_adult2',
+            'dist_current_loc', 'epci_code',
+            'edu_structures_count', 'sante_structures_scaled',
+            'besoins_match'
+        ],
+        'incl_binome': [
+            True, True, True, True, True,
+            True, True, True,
+            True, False, False,
+            True, True,
+            True, True,
+            False, False,
+            True, True,
+            False
+        ]
     }
     return pd.DataFrame(data).copy()
 
@@ -77,6 +122,7 @@ def default_config():
         poids_logement=100,
         poids_education=100,
         poids_inclusion=25,
+        poids_sante=100, # Added for tests
         poids_mobilité=100,
         commune_actuelle='33063', # Bordeaux
         loc_distance_km=50,
@@ -89,6 +135,8 @@ def default_config():
         classe_enfants=[],
         besoin_sante='Aucun',
         besoins_autres={},
+        socle_admin_selection=[],
+        affinite_selection=[],
         binome_penalty=0.5,
         pop_min=1000
     )

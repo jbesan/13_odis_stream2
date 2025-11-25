@@ -86,7 +86,10 @@ def session_states_init(defaults: Dict[str, Any]) -> None:
         'ui_poids_emploi': 'poids_emploi',
         'ui_poids_logement': 'poids_logement',
         'ui_poids_inclusion': 'poids_inclusion',
+        'ui_poids_sante': 'poids_sante',
         'ui_poids_mobilité': 'poids_mobilité',
+        'ui_socle_admin_selection': 'socle_admin_selection',
+        'ui_affinite_selection': 'affinite_selection',
         'ui_penalite_binome': ('binome_penalty', lambda x: int(x * 100)),
         'ui_pop_min': 'pop_min',
         'ui_nb_adultes': 'nb_adultes',
@@ -223,6 +226,35 @@ def load_all_datasets(
     annuaire_ecoles.geometry = annuaire_ecoles.geometry.apply(shp.from_wkb)
     annuaire_ecoles = gpd.GeoDataFrame(annuaire_ecoles, geometry='geometry', crs='EPSG:4326')
 
+    # --- Pre-process school counts for scoring ---
+    # 1. Create boolean flags for each type
+    # Note: 'Ecole' usually covers Maternelle and Elementaire, distinguished by specific flags
+    annuaire_ecoles['is_maternelle'] = ((annuaire_ecoles['type_etablissement'] == 'Ecole') & (annuaire_ecoles['ecole_maternelle'] == 1)).astype(int)
+    annuaire_ecoles['is_elementaire'] = ((annuaire_ecoles['type_etablissement'] == 'Ecole') & (annuaire_ecoles['ecole_elementaire'] == 1)).astype(int)
+    annuaire_ecoles['is_college'] = (annuaire_ecoles['type_etablissement'] == 'Collège').astype(int)
+    annuaire_ecoles['is_lycee'] = (annuaire_ecoles['type_etablissement'] == 'Lycée').astype(int)
+
+    # 2. Aggregate by commune
+    school_counts = annuaire_ecoles.groupby('code_commune').agg({
+        'is_maternelle': 'sum',
+        'is_elementaire': 'sum',
+        'is_college': 'sum',
+        'is_lycee': 'sum'
+    }).rename(columns={
+        'is_maternelle': 'count_maternelle',
+        'is_elementaire': 'count_elementaire',
+        'is_college': 'count_college',
+        'is_lycee': 'count_lycee'
+    })
+
+    # 3. Merge into odis (which is indexed by codgeo)
+    # school_counts index is 'code_commune', which matches 'codgeo'
+    odis = odis.join(school_counts, how='left')
+    
+    # Fill NaN with 0 for these counts and optimize types
+    for col in ['count_maternelle', 'count_elementaire', 'count_college', 'count_lycee']:
+        odis[col] = odis[col].fillna(0).astype('int16')
+
     #Annuaire Maternités
     annuaire_maternites = pd.read_csv(base_path + maternites_file, delimiter=';')
     annuaire_maternites.drop_duplicates(subset=['FI_ET'], keep='last', inplace=True)
@@ -237,6 +269,37 @@ def load_all_datasets(
     annuaire_sante.drop(columns=['FI_ET'], inplace=True)
     annuaire_sante.maternite = np.where(annuaire_sante.maternite == 'both', True, False)
     annuaire_sante['codgeo'] = annuaire_sante.Departement + annuaire_sante.Commune
+
+    # --- Pre-process health counts for scoring ---
+    # 1. Create boolean flags for each type
+    annuaire_sante['is_hopital'] = annuaire_sante['LibelleCategorieAgregat'].isin([
+        'Centres Hospitaliers', 
+        'Centres Hospitaliers Régionaux', 
+        'Hôpitaux Locaux'
+    ]).astype(int)
+    
+    annuaire_sante['is_psy'] = annuaire_sante['LibelleCategorieAgregat'].isin([
+        'Centres Hospitaliers Spécialisés Lutte Maladies Mentales', 
+        'Autres Etablissements de Lutte contre les Maladies Mentales'
+    ]).astype(int)
+    
+    annuaire_sante['is_maternite'] = annuaire_sante['maternite'].astype(int)
+    
+    # 2. Aggregate by codgeo
+    health_counts = annuaire_sante.groupby('codgeo').agg({
+        'is_hopital': 'sum',
+        'is_psy': 'sum',
+        'is_maternite': 'sum'
+    }).rename(columns={
+        'is_hopital': 'count_hopital',
+        'is_psy': 'count_psy',
+        'is_maternite': 'count_maternite'
+    })
+    
+    # 3. Merge into odis
+    odis = odis.join(health_counts, how='left')
+    for col in ['count_hopital', 'count_psy', 'count_maternite']:
+        odis[col] = odis[col].fillna(0).astype('int16')
 
     # Annuaire des services d'inclusion
     # Pre-process inclusion data for faster lookup
@@ -253,7 +316,25 @@ def load_all_datasets(
     incl_index['key'] = incl_index.categorie.astype(str) + '_' + incl_index.service.astype(str)
     incl_index = incl_index.groupby('codgeo').agg({'key': lambda x: set(x)})
 
-    return odis, scores_cat, codfap_index, codformations_index, annuaire_ecoles, annuaire_sante, annuaire_inclusion, incl_index
+    # --- Associations (RNA) ---
+    # Load and pre-process association data
+    # We need to count associations by WALDEC code per commune
+    rna_df = pd.read_csv(base_path + 'rna_waldec_20250901_mini_odis.csv', sep=';', dtype={'adrs_codeinsee': str, 'id_waldec': str, 'objet_social2': str})
+    rna_df = rna_df.rename(columns={'adrs_codeinsee': 'codgeo', 'objet_social1': 'id_waldec'})
+    
+    # Group by codgeo and id_waldec to get counts
+    # Result: index=(codgeo, id_waldec), value=count
+    associations_counts = rna_df.groupby(['codgeo', 'id_waldec']).size().rename('count')
+    
+    # We might want to unstack this to have codgeo as index and waldec codes as columns, 
+    # but that might be too sparse/large.
+    # Keeping it as a Series with MultiIndex is efficient for lookups.
+    # To make it easier to use in scoring, we can group by codgeo and aggregate into a dict or similar structure.
+    # Actually, for scoring, we will need to sum counts for specific sets of WALDEC codes.
+    # Let's keep it as a DataFrame with MultiIndex for now.
+    associations_data = associations_counts.reset_index()
+
+    return odis, scores_cat, codfap_index, codformations_index, annuaire_ecoles, annuaire_sante, annuaire_inclusion, incl_index, associations_data
 
 @st.cache_data
 def load_area_geodata(_communes_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -312,7 +393,7 @@ def load_bassin_de_vie_geodata(_communes_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFr
 def init_datasets() -> Dict[str, Any]:
     """Loads all datasets and returns them in a structured dictionary."""
     logging.info("--- Loading all datasets... ---")
-    odis, scores_cat, codfap_index, codformations_index, annuaire_ecoles, annuaire_sante, annuaire_inclusion, incl_index = load_all_datasets(
+    odis, scores_cat, codfap_index, codformations_index, annuaire_ecoles, annuaire_sante, annuaire_inclusion, incl_index, associations_data = load_all_datasets(
         cfg.ODIS_FILE,
         cfg.BV_FILENAME,
         cfg.SCORES_CAT_FILE,
@@ -338,6 +419,7 @@ def init_datasets() -> Dict[str, Any]:
         "annuaire_sante": annuaire_sante,
         "annuaire_inclusion": annuaire_inclusion,
         "incl_index": incl_index,
+        "associations_data": associations_data,
         "coddep_set": sorted(set(odis['dep_code'])),
         "depcom_df": odis[['dep_code','libgeo']].sort_values('libgeo'),
     }

@@ -6,9 +6,10 @@ app/__pycache__
 app/cached_df
 app/cached_df.parquet
 app/cached_df.csv
+app/.logs/
 .venv/
 .DS_Store
 CONSTITUTION.md
 GEMINI.md
 .agent/
-.vscode/
+

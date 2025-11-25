@@ -72,7 +72,8 @@ class ScoringConfig:
     poids_education: int
     poids_inclusion: int
     poids_mobilité: int
-    
+    poids_sante: int # Added new weight for sante
+
     # Location
     commune_actuelle: str
     loc_distance_km: Union[int, str]
@@ -90,9 +91,21 @@ class ScoringConfig:
     besoin_sante: str
     besoins_autres: Dict[str, List[str]]
     
+    # Inclusion
+    socle_admin_selection: List[str]
+    affinite_selection: List[str]
+    
     # Technical parameters
     binome_penalty: float
     pop_min: int
+
+# --- Inclusion Defaults ---
+DEFAULT_SOCLE_ADMIN = [
+    "logement-hebergement_etre-accompagne-pour-se-loger",
+    "acces-aux-droits-et-citoyennete_accompagnement-juridique",
+    "acces-aux-droits-et-citoyennete_demandeurs-dasile-et-naturalisation",
+    "preparer-sa-candidature_realiser-un-cv-et-ou-une-lettre-de-motivation"
+]
 
 # --- Demo Scenarios ---
 DEMO_DATA_DEFAULT: Dict[str, Any] = {
@@ -102,6 +115,7 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     'poids_education': 100,
     'poids_inclusion': 25,
     'poids_mobilité': 100,
+    'poids_sante': 100, # Added default weight for sante
     'departement_actuel': '33',
     'commune_actuelle': 'Bordeaux',
     'loc_distance_km': 50,
@@ -115,7 +129,9 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     'classe_enfants': [],
     'binome_penalty': 0.5,
     'pop_min': 1000,
-    'besoins_autres': {}
+    'besoins_autres': {},
+    'socle_admin_selection': DEFAULT_SOCLE_ADMIN,
+    'affinite_selection': []
 }
 
 DEMO_SCENARIOS = {
@@ -155,9 +171,85 @@ DEMO_SCENARIOS = {
         'nb_enfants': 2,
         'codes_metiers': [['T2A60']],
         'classe_enfants': ['Elémentaire', 'Collège'],
-        'besoins_autres': {'apprendre-francais': ['-']},
+        'besoins_autres': {'apprendre-francais': ['accompagnement-insertion-pro']},
         'poids_mobilité': 50,
         'poids_inclusion': 50,
         'poids_emploi': 100,
+        'sante': "Maternité",
+        'affinite_selection': ['Entraide / Bénévolat']
     }
 }
+
+WALDEC_CORE_INCLUSION = [
+    # --- SOCIAL & ENTRAIDE ---
+    "009",    # ACTION SOCIOCULTURELLE (Tout le niveau 1 : Centres sociaux, MJC...)
+    "015070", # Apprentissage de langues, alphabétisation (CRITIQUE)
+    "015095", # Soutien scolaire
+    "019016", # Aide à l'insertion des jeunes
+    "019020", # Aide aux chômeurs
+    "019025", # Aide aux réfugiés et aux immigrés (CRITIQUE)
+    "020",    # ASSOCIATIONS CARITATIVES, HUMANITAIRES (Tout le niveau 1 : Secours, Alimentaire...)
+    "021",    # SERVICES FAMILIAUX (Crèches, Halte-garderie...)
+    "014030", # Associations de parents d'élèves (Indicateur de vie scolaire)
+    "014040", # Associations de locataires (Indicateur de vie de quartier)
+    "024020", # Garde d'enfants, crèches parentales
+]
+
+# 2. LE DICTIONNAIRE D'AFFINITÉS (Pour le matching "Projet de Vie")
+# Clés = Ce que le TS sélectionne dans le multiselect
+# Valeurs = Liste des codes WALDEC à scanner
+WALDEC_INTERESTS_MAPPING = {
+    # --- PILIER SPORT ---
+    "Sport (Général)": [
+        "011000", # Sports, activités de plein air (Général)
+        "011010"  # Multisports
+    ],
+    "Football / Sports Co": [
+        "011120", # Football
+        "011035", # Basket-ball
+        "011065", # Handball
+        "011145", # Rugby
+        "011190"  # Volley-ball
+    ],
+    "Sports de Combat": [
+        "011015", # Arts martiaux
+        "011040", # Boxe
+        "011085", # Judo
+        "011090"  # Karaté
+    ],
+    
+    # --- PILIER CULTURE & ART ---
+    "Arts & Culture": [
+        "006"     # CULTURE (Tout le niveau 1 : Théâtre, Musique, Danse...)
+    ],
+    "Musique / Chant": [
+        "006030", # Chant choral, musique
+        "006035"  # Groupes folkloriques
+    ],
+    
+    # --- PILIER NATURE & MANUEL ---
+    "Jardinage / Nature": [
+        "007050", # Jardins ouvriers, floraux, jardins partagés (TOP INCLUSION)
+        "023005"  # Amap, distribution produits bio
+    ],
+    "Bricolage / Création": [
+        "009010", # Activités manuelles (couture, poterie...)
+        "007025"  # Bricolage
+    ],
+    
+    # --- PILIER COMMUNAUTAIRE ---
+    "Lieux de Culte / Spirituel": [
+        "028"     # ACTIVITES RELIGIEUSES, SPIRITUELLES (Tout le niveau 1)
+    ],
+    "Entraide / Bénévolat": [
+        "020",    # Caritatif
+        "024"     # Entraide et solidarité
+    ]
+}
+
+def get_relevant_rna_codes():
+    """Retourne une liste plate unique de tous les codes utiles pour l'extraction SQL/Pandas"""
+    all_codes = set(WALDEC_CORE_INCLUSION)
+    for code_list in WALDEC_INTERESTS_MAPPING.values():
+        all_codes.update(code_list)
+    return list(all_codes)

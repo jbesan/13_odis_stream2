@@ -30,6 +30,9 @@ def display_sidebar(demo_data: Dict[str, Any]) -> None:
         st.select_slider("Inclusion", cfg.POIDS_OPTIONS, 
                         value=st.session_state.get('ui_poids_inclusion', 100), 
                         key="ui_poids_inclusion")
+        st.select_slider("Santé", cfg.POIDS_OPTIONS, # NEW
+                        value=st.session_state.get('ui_poids_sante', 100), # NEW
+                        key="ui_poids_sante") # NEW
         st.select_slider("Mobilité", cfg.POIDS_OPTIONS, 
                         value=st.session_state.get('ui_poids_mobilité', 100), 
                         key="ui_poids_mobilité")
@@ -130,32 +133,89 @@ def render_health_form() -> None:
     st.radio('Support médical à proximité', options, key="ui_besoin_sante")
 
 def render_other_needs_form() -> None:
-    """Renders the UI for the 'Autres Besoins' form section."""
+    """Renders the UI for the 'Inclusion' form section (F-13)."""
     app_data = st.session_state.app_data
-    if 'ui_besoins_autres' not in st.session_state:
-        st.session_state.ui_besoins_autres = st.session_state['demo_data'].get('besoins_autres', {})
+    
+    # --- 1. Socle Administratif (Hidden but Active) ---
+    # st.subheader("Socle Administratif")
+    # st.info("Sélectionnez les services institutionnels essentiels pour vous.")
+    
+    # Pre-defined list from PRD/Config
+    default_socle = cfg.DEFAULT_SOCLE_ADMIN
+    
+    # Initialize session state for this selection if not present
+    if 'ui_socle_admin_selection' not in st.session_state:
+        # Default to the recommended list
+        st.session_state.ui_socle_admin_selection = st.session_state['demo_data'].get('socle_admin_selection', default_socle)
 
-    st.text("Sélectionnez d'autres besoins:")
-    col1, col2 = st.columns(2)
-    with col1:
-        annuaire_inclusion = app_data['annuaire_inclusion']
-        cat = st.selectbox('Catégorie', sorted(set(annuaire_inclusion.categorie)), format_func=lambda x: x.replace('-', ' ').capitalize(), index=2)
-        service = st.selectbox('Service', sorted(set(annuaire_inclusion[annuaire_inclusion.categorie == cat].service)), format_func=lambda x: x.replace('-', ' ').capitalize(), index=0)
-        if st.button('Ajouter'):
-            st.session_state.ui_besoins_autres.setdefault(cat, []).append(service)
-            st.session_state.ui_besoins_autres[cat] = sorted(list(set(st.session_state.ui_besoins_autres[cat])))
-    with col2:
-        st.text('Besoins ajoutés:')
-        if not st.session_state.ui_besoins_autres:
-            st.info('Aucun')
-        else:
-            for key, values in st.session_state.ui_besoins_autres.items():
-                st.markdown(f"**{key.replace('-', ' ').capitalize()}**")
-                for value in values:
-                    st.markdown(f"&nbsp;&nbsp;&nbsp;- {value.replace('-', ' ').capitalize()}")
-        if st.button('Vider', width='stretch'):
-            st.session_state.ui_besoins_autres = {}
-            st.rerun()
+    # Widget hidden as per user request, but state is preserved for scoring.
+    # st.multiselect(...) 
+
+    # --- 2. Affinités (Loisirs & Intérêts) ---
+    st.subheader("Affinités & Loisirs")
+    st.info("Sélectionnez vos centres d'intérêt pour identifier les territoires avec un tissu associatif correspondant.")
+    
+    # from rna_config import WALDEC_INTERESTS_MAPPING
+    interest_options = list(cfg.WALDEC_INTERESTS_MAPPING.keys())
+    
+    if 'ui_affinite_selection' not in st.session_state:
+        st.session_state.ui_affinite_selection = st.session_state['demo_data'].get('affinite_selection', [])
+        
+    st.multiselect(
+        "Centres d'intérêt",
+        options=interest_options,
+        key="ui_affinite_selection"
+    )
+
+    # --- 3. Autres Besoins (Refactored) ---
+    st.subheader("Autres Besoins Spécifiques")
+    st.text("Sélectionnez d'autres services d'inclusion spécifiques.")
+    
+    # Prepare options: All services from annuaire_inclusion EXCEPT those in Socle Admin
+    annuaire = app_data['annuaire_inclusion']
+    unique_services = annuaire[['categorie', 'service']].drop_duplicates()
+    socle_keys = set(default_socle)
+    
+    options_map = {} # Display String -> (Category, Service)
+    options_list = []
+    
+    for _, row in unique_services.iterrows():
+        # Filter out services that are just a placeholder '-' or empty
+        if row['service'] in ['-', '']:
+            continue
+            
+        key = f"{row['categorie']}_{row['service']}"
+        if key not in socle_keys:
+            # Format: Service | Category
+            display_str = f"{row['service'].replace('-', ' ').capitalize()} | {row['categorie'].replace('-', ' ').capitalize()}"
+            options_list.append(display_str)
+            options_map[display_str] = (row['categorie'], row['service'])
+            
+    options_list.sort()
+    
+    # Initialize flat selection state from existing dict state (if any, e.g. from demo data)
+    if 'ui_besoins_autres_flat' not in st.session_state:
+        current_dict = st.session_state.get('ui_besoins_autres', st.session_state['demo_data'].get('besoins_autres', {}))
+        flat_selection = []
+        for cat, services in current_dict.items():
+            for svc in services:
+                # Reconstruct display string to match options
+                display_str = f"{svc.replace('-', ' ').capitalize()} | {cat.replace('-', ' ').capitalize()}"
+                if display_str in options_map:
+                    flat_selection.append(display_str)
+        st.session_state.ui_besoins_autres_flat = flat_selection
+
+    # Widget
+    st.multiselect(
+        "Services disponibles",
+        options=options_list,
+        key="ui_besoins_autres_flat",
+        help="Recherchez et ajoutez des services spécifiques."
+    )
+    
+    # We store the map in session state so we can use it in create_scoring_config_from_inputs
+    # without re-computing it (optimization)
+    st.session_state['ui_besoins_autres_map'] = options_map
 
 def render_mobility_form() -> None:
     """Renders the UI for the 'Mobilité' form section."""
@@ -164,7 +224,7 @@ def render_mobility_form() -> None:
 def display_input_tabs(demo_data: Dict[str, Any]) -> None:
     """Displays the main tabs for user input, composed of modular rendering functions."""
     tab_localisation, tab_foyer, tab_edu, tab_emploi, tab_logement, tab_sante, tab_autres, tab_mobilite = st.tabs([
-        'Localisation Actuelle', 'Situation familiale', 'Education', 'Projet Professionnel', 'Logement', 'Santé', 'Autres Besoins', 'Mobilité'
+        'Localisation Actuelle', 'Situation familiale', 'Education', 'Projet Professionnel', 'Logement', 'Santé', 'Inclusion', 'Mobilité'
     ])
     with tab_localisation:
         render_localisation_form()
@@ -190,8 +250,12 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
     
     # Location
     commune_codgeo = app_data['depcom_df'][
-        (app_data['depcom_df'].dep_code == st.session_state['ui_departement']) & 
-        (app_data['depcom_df'].libgeo == st.session_state['ui_commune'])
+        (
+            app_data['depcom_df'].dep_code == st.session_state['ui_departement']
+        ) & 
+        (
+            app_data['depcom_df'].libgeo == st.session_state['ui_commune']
+        )
     ].index[0]
 
     # Education
@@ -201,11 +265,32 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
     codes_metiers = [st.session_state[f"ui_metiers_adult_{i}"] for i in range(st.session_state['ui_nb_adultes'])]
     codes_formations = [st.session_state[f"ui_formations_adult_{i}"] for i in range(st.session_state['ui_nb_adultes'])]
 
+    # Process Autres Besoins from Flat List (F-13 UI Update)
+    besoins_autres_dict = {}
+    if 'ui_besoins_autres_flat' in st.session_state:
+        flat_selection = st.session_state.ui_besoins_autres_flat
+        options_map = st.session_state.get('ui_besoins_autres_map', {})
+        
+        if options_map:
+            for item in flat_selection:
+                if item in options_map:
+                    cat, svc = options_map[item]
+                    if cat not in besoins_autres_dict:
+                        besoins_autres_dict[cat] = []
+                    besoins_autres_dict[cat].append(svc)
+        
+        # Update session state for compatibility
+        st.session_state.ui_besoins_autres = besoins_autres_dict
+    else:
+        # Fallback to existing dict if flat not present (e.g. tests or legacy)
+        besoins_autres_dict = st.session_state.get('ui_besoins_autres', {})
+
     return cfg.ScoringConfig(
         poids_emploi=st.session_state['ui_poids_emploi'],
         poids_logement=st.session_state['ui_poids_logement'],
         poids_education=st.session_state['ui_poids_education'],
         poids_inclusion=st.session_state['ui_poids_inclusion'],
+        poids_sante=st.session_state['ui_poids_sante'], # NEW
         poids_mobilité=st.session_state['ui_poids_mobilité'],
         commune_actuelle=commune_codgeo,
         loc_distance_km=st.session_state['ui_loc_distance_km'],
@@ -217,7 +302,9 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
         codes_formations=codes_formations,
         classe_enfants=classe_enfants,
         besoin_sante=st.session_state['ui_besoin_sante'],
-        besoins_autres=st.session_state['ui_besoins_autres'],
+        besoins_autres=besoins_autres_dict,
+        socle_admin_selection=st.session_state.get('ui_socle_admin_selection', []), # NEW
+        affinite_selection=st.session_state.get('ui_affinite_selection', []), # NEW
         binome_penalty=st.session_state['ui_penalite_binome'] / 100,
         pop_min=st.session_state['ui_pop_min']
     )
@@ -418,7 +505,7 @@ def _produce_pitch_markdown(row: pd.Series, config: cfg.ScoringConfig, scores_ca
 
     score_percent = f"{row['weighted_score'] * 100:.0f}%"
     if row.get("binome", False):
-        pitch_md.append(f'\nEn [binôme](https://www.google.com "Lorsque des communes sont proposées en binômes, c’est qu’ensemble elles correspondent au projet de vie.") avec sa voisine **{row["libgeo_binome"]}**, la correspondance avec le projet est évaluée à **{score_percent}**. ')
+        pitch_md.append(f'\nEn [binôme](https://www.google.com "Lorsque des communes sont proposed en binômes, c’est qu’ensemble elles correspondent au projet de vie.") avec sa voisine **{row["libgeo_binome"]}**, la correspondance avec le projet est évaluée à **{score_percent}**. ')
     else:
         pitch_md.append(f'\nLa correspondance avec le projet est évaluée à **{score_percent}**. ')
 

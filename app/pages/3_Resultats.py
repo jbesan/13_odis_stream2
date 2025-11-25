@@ -90,6 +90,7 @@ def run_search():
         df_area_geo=df_area_geo,
         scores_cat=st.session_state.app_data['scores_cat'],
         incl_index=st.session_state.app_data['incl_index'],
+        associations_data=st.session_state.app_data['associations_data'], # Pass association data
         view_level=st.session_state.get('view_level', 'Bassins de vie')
     )
 
@@ -99,7 +100,7 @@ def run_search():
     
     # --- Logging ---
     from logger import log_search_results
-    log_search_results(config, processed_gdf)
+    log_search_results(config, processed_gdf, unaggregated_gdf, st.session_state.app_data['scores_cat'])
     
     # Calculate center for map
     selected_geo = st.session_state.app_data['odis'].loc[[config.commune_actuelle]].copy()

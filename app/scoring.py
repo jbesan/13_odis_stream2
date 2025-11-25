@@ -11,6 +11,8 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 from sklearn import preprocessing
+from pyproj import Transformer
+from shapely.ops import transform
 
 import config as cfg
 from config import ScoringConfig
@@ -19,89 +21,20 @@ from config import ScoringConfig
 # --- Scoring Pipeline Functions ---
 
 def add_distance_to_current_loc(df: gpd.GeoDataFrame, current_codgeo: str) -> gpd.GeoDataFrame:
-    """Computes the distance from each commune in the dataframe to a reference commune.
-
-    Returns:
-        GeoDataFrame with an added 'dist_current_loc' column in meters.
-    """
+    """Computes the distance from each commune in the dataframe to a reference commune."""
+    
     # Optimization: Use pre-calculated centroids if available
     if 'centroid' in df.columns:
-        # Ensure we are working with a GeoSeries of centroids in the projected CRS
-        # The centroid column is in the original CRS (EPSG:4326), so we project it.
         centroids_proj = df['centroid'].to_crs(cfg.PROJECTED_CRS)
         
-        # Get the target centroid
-        # We assume current_codgeo is in the dataframe (it should be, as it's from df_all_communes)
-        # If not, we might need to look it up from df_all_communes, but this function takes df which is usually df_search.
-        # However, df_search might NOT contain current_codgeo if it was filtered out!
-        # Wait, if current_codgeo is not in df, we can't get its centroid from df.
-        # But this function is usually called on df_search.
-        # If current_codgeo is not in df_search, we have a problem.
-        # Let's look at how it was used before:
-        # zone_recherche = df_projected.loc[[current_codgeo]].copy()
-        # This implies current_codgeo MUST be in df.
-        
         if current_codgeo not in df.index:
-             # Fallback or Error? 
-             # If the user filters by department 33, and current location is in 75, 
-             # then current_codgeo is NOT in df.
-             # The previous code would crash if current_codgeo was not in df.
-             # "zone_recherche = df_projected.loc[[current_codgeo]]" would raise KeyError.
-             # So we can assume it is present or the previous code was buggy (or usage guarantees it).
-             # Actually, in compute_odis_score, df_search comes from filter_communes.
-             # If filter_communes filters by distance, it keeps nearby communes.
-             # If filter_communes filters by department, it keeps that department.
-             # If I live in Paris (75) and search in Gironde (33), df_search only has 33.
-             # So current_codgeo (75) is NOT in df_search.
-             # So the previous code WOULD FAIL?
-             # Let's check filter_communes.
-             # If loc_type='departement', it returns df[df['dep_code'] == loc_code].
-             # So yes, if I search in another department, current_codgeo is missing.
-             # BUT, maybe the UI prevents this? Or maybe config.commune_actuelle is just for distance calculation?
-             # If I search in another department, do I care about distance to my home?
-             # Yes, "Distance from the current location" score.
-             # So this function MUST work even if current_codgeo is not in df.
              pass
 
-        # To be safe and support the case where current_codgeo is not in df,
-        # we should probably pass the centroid of current_codgeo explicitly or look it up from a global source.
-        # But the signature is (df, current_codgeo).
-        # The previous implementation:
-        # df_projected = df.to_crs(cfg.PROJECTED_CRS)
-        # zone_recherche = df_projected.loc[[current_codgeo]].copy()
-        # This CONFIRMS that previous code assumed current_codgeo is in df.
-        # If it wasn't, it would crash.
-        # So I will maintain this assumption for now, or improve it if I can.
-        # Actually, looking at compute_odis_score:
-        # df_search = filter_communes(...)
-        # if 'dist_current_loc' not in df_search.columns:
-        #    odis_search = add_distance_to_current_loc(df_search, config.commune_actuelle)
-        
-        # If I set loc_type='departement' (e.g. 33) and commune_actuelle='Paris' (75),
-        # filter_communes returns only 33.
-        # add_distance_to_current_loc is called with df (33) and 'Paris'.
-        # df.loc[['Paris']] will FAIL.
-        # So the app probably crashes in this scenario currently?
-        # Or maybe the UI forces commune_actuelle to be in the search area?
-        # No, "Commune actuelle" is a user setting. Search area is another.
-        # This looks like a bug in the existing code or I am missing something.
-        # Wait, maybe df passed to add_distance_to_current_loc is NOT filtered yet?
-        # No, it is df_search.
-        
-        # Let's assume for now we only optimize what is there.
-        # But to be robust, if I can't find current_codgeo in df, I can't calculate distance easily 
-        # unless I have access to all communes.
-        # But I don't have df_all_communes here.
-        
-        # However, if I look at filter_communes, it takes start_commune (GeoSeries).
-        # Maybe I should pass start_commune to add_distance_to_current_loc?
-        # But I cannot change the signature too much without changing the caller.
-        # The caller is compute_odis_score.
-        
-        # Let's stick to the plan: optimize using centroids.
-        # I will try to find current_codgeo in df.
+        # Ensure we get a single geometry, not a Series
         target_centroid = centroids_proj.loc[current_codgeo]
-        
+        if isinstance(target_centroid, (pd.Series, gpd.GeoSeries)):
+             target_centroid = target_centroid.iloc[0]
+
         distances = centroids_proj.distance(target_centroid)
         
         df_result = df.copy()
@@ -109,25 +42,25 @@ def add_distance_to_current_loc(df: gpd.GeoDataFrame, current_codgeo: str) -> gp
         return df_result
     else:
         # Fallback to original method if centroid is missing
-        # We first need to change CRS to a projected CRS to compute distances in meters.
         df_projected = df.to_crs(cfg.PROJECTED_CRS)
-
-        # Isolate the reference commune and calculate its centroid.
         zone_recherche = df_projected.loc[[current_codgeo]].copy()
         zone_recherche['geometry'] = zone_recherche.centroid
 
-        # Use sjoin_nearest to efficiently calculate the distance for all points.
         df_with_dist = df_projected.sjoin_nearest(
             zone_recherche, distance_col="dist_current_loc"
         )[['dist_current_loc']]
 
-        # Merge the distance back to the original dataframe.
         return df.merge(df_with_dist, left_index=True, right_index=True, how='left')
 
 
 def filter_by_distance(df: pd.DataFrame, max_distance_km: float) -> pd.DataFrame:
     """Filters a dataframe to keep only rows within a given distance."""
     return df[df.dist_current_loc < max_distance_km * 1000].copy()
+
+def _transform_point(point, src_crs, dst_crs):
+    """Helper to transform a single shapely point."""
+    project = Transformer.from_crs(src_crs, dst_crs, always_xy=True).transform
+    return transform(project, point)
 
 def filter_communes(
     df: gpd.GeoDataFrame,
@@ -138,51 +71,36 @@ def filter_communes(
 ) -> gpd.GeoDataFrame:
     """Filters the communes dataframe based on the selected mobility criteria."""
     if loc_type == 'distance':
-        # Optimization: Use pre-calculated centroids if available
         if 'centroid' in df.columns:
-            # Project centroids to meters
             centroids_proj = df['centroid'].to_crs(cfg.PROJECTED_CRS)
             
-            # Get start centroid (projected)
-            # start_commune is a GeoSeries (one row), so we get its centroid and project it
-            # But start_commune might not have 'centroid' column if it's just a slice of geometry?
-            # start_commune comes from df_all_communes.loc[[config.commune_actuelle]]
-            # So it should have 'centroid' column.
             if 'centroid' in start_commune:
-                start_centroid_proj = start_commune['centroid'].to_crs(cfg.PROJECTED_CRS).iloc[0]
+                start_centroid = start_commune['centroid'].iloc[0]
             else:
-                # Fallback if start_commune doesn't have centroid column (unlikely)
-                start_centroid_proj = start_commune.to_crs(cfg.PROJECTED_CRS).centroid.iloc[0]
+                start_centroid = start_commune.centroid.iloc[0]
+            
+            # Use direct transformation to avoid DeprecationWarning from pyproj/geopandas interaction on single points
+            start_centroid_proj = _transform_point(start_centroid, df.crs, cfg.PROJECTED_CRS)
 
-            # Calculate distances
             distances = centroids_proj.distance(start_centroid_proj)
-
-            # Filter
             mask = distances <= loc_distance_km * 1000
             filtered_df = df[mask].copy()
-            
-            # Pre-fill the distance column to avoid recalculation later
             filtered_df['dist_current_loc'] = distances[mask]
-            
             return filtered_df
         else:
-            # Project to a CRS in meters for accurate distance calculation
             df_proj = df.to_crs(cfg.PROJECTED_CRS)
-            start_centroid_proj = start_commune.to_crs(cfg.PROJECTED_CRS).centroid
-
-            # Calculate distance from the starting centroid to all other centroids
-            distances = df_proj.centroid.distance(start_centroid_proj.iloc[0])
-
-            # Filter communes within the specified radius
-            filtered_df = df[distances <= loc_distance_km * 1000]
-            return filtered_df.copy()
+            start_centroid = start_commune.centroid.iloc[0]
+            start_centroid_proj = _transform_point(start_centroid, df.crs, cfg.PROJECTED_CRS)
+            
+            distances = df_proj.centroid.distance(start_centroid_proj)
+            return df[distances <= loc_distance_km * 1000].copy()
 
     elif loc_type == 'departement':
         return df[df['dep_code'] == loc_code].copy()
     elif loc_type == 'region':
         return df[df['reg_code'] == loc_code].copy()
 
-    return gpd.GeoDataFrame()  # Return empty if no valid type
+    return gpd.GeoDataFrame()
 
 def filter_bassins_de_vie(
     bv_gdf: gpd.GeoDataFrame,
@@ -194,50 +112,121 @@ def filter_bassins_de_vie(
 ) -> gpd.GeoDataFrame:
     """Filters the Bassins de Vie dataframe based on the selected mobility criteria."""
     if loc_type == 'distance':
-        # Optimization: Use pre-calculated centroids if available
         if 'centroid' in bv_gdf.columns:
-             # Project centroids to meters
             centroids_proj = bv_gdf['centroid'].to_crs(cfg.PROJECTED_CRS)
             
-            # Get start centroid (projected)
             if 'centroid' in start_commune:
-                start_centroid_proj = start_commune['centroid'].to_crs(cfg.PROJECTED_CRS).iloc[0]
+                start_centroid = start_commune['centroid'].iloc[0]
             else:
-                start_centroid_proj = start_commune.to_crs(cfg.PROJECTED_CRS).centroid.iloc[0]
+                start_centroid = start_commune.centroid.iloc[0]
 
-            # Calculate distance from the starting centroid to all BV centroids
+            start_centroid_proj = _transform_point(start_centroid, bv_gdf.crs, cfg.PROJECTED_CRS)
+
             distances = centroids_proj.distance(start_centroid_proj)
-
-            # Filter BVs within the specified radius
-            filtered_df = bv_gdf[distances <= loc_distance_km * 1000]
-            return filtered_df.copy()
+            return bv_gdf[distances <= loc_distance_km * 1000].copy()
         else:
-            # Project to a CRS in meters for accurate distance calculation
             bv_proj = bv_gdf.to_crs(cfg.PROJECTED_CRS)
-            start_centroid_proj = start_commune.to_crs(cfg.PROJECTED_CRS).centroid
-
-            # Calculate distance from the starting centroid to all BV centroids
-            distances = bv_proj.centroid.distance(start_centroid_proj.iloc[0])
-
-            # Filter BVs within the specified radius
-            filtered_df = bv_gdf[distances <= loc_distance_km * 1000]
-            return filtered_df.copy()
+            start_centroid = start_commune.centroid.iloc[0]
+            start_centroid_proj = _transform_point(start_centroid, bv_gdf.crs, cfg.PROJECTED_CRS)
+            
+            distances = bv_proj.centroid.distance(start_centroid_proj)
+            return bv_gdf[distances <= loc_distance_km * 1000].copy()
 
     elif loc_type in ['departement', 'region']:
-        # Get the geometry for the selected area
         area_geometry = area_gdf.loc[(loc_type, loc_code)].polygon
-
-        # Find all BVs that intersect with that area
         intersecting_mask = bv_gdf.intersects(area_geometry)
         return bv_gdf[intersecting_mask].copy()
 
-    return gpd.GeoDataFrame()  # Return empty if no valid type
+    return gpd.GeoDataFrame()
+
+
+
+
+def compute_inclusion_score(
+    df: gpd.GeoDataFrame,
+    prefs: Dict[str, Any],
+    incl_index: pd.DataFrame,
+    associations_data: pd.DataFrame
+) -> gpd.GeoDataFrame:
+    """Computes the new Inclusion score based on 3 components."""
+    
+    df = df.copy()
+    
+    # --- 1. Socle Administratif ---
+    if prefs.get('socle_admin_selection'):
+        needed_services = set(prefs['socle_admin_selection'])
+        df_merged = df.join(incl_index, how='left')
+        df['socle_match_count'] = [
+            len(needed_services.intersection(s)) if isinstance(s, set) else 0
+            for s in df_merged['key']
+        ]
+        df['inc_socle_admin_score'] = df['socle_match_count'] / len(needed_services)
+    else:
+        df['inc_socle_admin_score'] = 0.0
+
+    # --- 2. Lien Social ---
+    # Calculate density of associations in CORE categories
+    # associations_data has MultiIndex (codgeo, id_waldec) -> count
+    
+    # Filter for core codes (handling prefixes)
+    core_codes_prefixes = tuple(cfg.WALDEC_CORE_INCLUSION)
+    
+    # Filter rows where id_waldec starts with any of the core prefixes
+    # We use string operations for this.
+    # Note: associations_data['id_waldec'] should be strings.
+    
+    core_assos = associations_data[associations_data['id_waldec'].astype(str).str.startswith(core_codes_prefixes, na=False)]
+    
+    # Group by codgeo and sum counts
+    core_counts = core_assos.groupby('codgeo')['count'].sum()
+    
+    # Join with df
+    df = df.join(core_counts.rename('lien_social_count'), how='left')
+    df['lien_social_count'] = df['lien_social_count'].fillna(0)
+    
+    # Calculate density (per 1000 hab)
+    df['lien_social_density'] = (df['lien_social_count'] * 1000) / df['pop_be']
+    
+    # Normalize
+    transformer = preprocessing.QuantileTransformer(output_distribution="uniform", n_quantiles=min(len(df), 1000), random_state=42)
+    df['inc_lien_social_score'] = transformer.fit_transform(df[['lien_social_density']].fillna(0))
+
+    # --- 3. Affinité ---
+    selected_interests = prefs.get('affinite_selection', [])
+    if selected_interests:
+        # Gather all relevant WALDEC codes
+        interest_codes = set()
+        for interest in selected_interests:
+            if interest in cfg.WALDEC_INTERESTS_MAPPING:
+                interest_codes.update(cfg.WALDEC_INTERESTS_MAPPING[interest])
+        
+        if interest_codes:
+            interest_prefixes = tuple(interest_codes)
+            affinite_assos = associations_data[associations_data['id_waldec'].astype(str).str.startswith(interest_prefixes, na=False)]
+            affinite_counts = affinite_assos.groupby('codgeo')['count'].sum()
+            
+            df = df.join(affinite_counts.rename('affinite_count'), how='left')
+            df['affinite_count'] = df['affinite_count'].fillna(0)
+            
+            df['affinite_density'] = (df['affinite_count'] * 1000) / df['pop_be']
+            df['inc_affinite_score'] = transformer.fit_transform(df[['affinite_density']].fillna(0))
+        else:
+            df['inc_affinite_score'] = 0.0
+    else:
+        df['inc_affinite_score'] = 0.0
+
+    # --- Global Inclusion Score ---
+    # Removed pre-aggregation. Components are now aggregated by category in compute_category_scores.
+    
+    return df
+
 
 def compute_criteria_scores(
     df: gpd.GeoDataFrame,
     prefs: Dict[str, Any],
     incl_index: pd.DataFrame,
-    df_all_communes: gpd.GeoDataFrame
+    df_all_communes: gpd.GeoDataFrame,
+    associations_data: pd.DataFrame # Added argument
 ) -> gpd.GeoDataFrame:
     """Computes individual scores for each criterion based on user preferences.
 
@@ -302,48 +291,65 @@ def compute_criteria_scores(
         df['log_vac_scaled'] = transformer.fit_transform(df[['log_vac_ratio']].fillna(0))
 
     # --- EDUCATION ---
-    if prefs['classe_enfants']:
-        df['risque_fermeture_ratio'] = df['risque_fermeture'] / df['ecoles_ct']
-        df['classes_ferm_scaled'] = transformer.fit_transform(df[['risque_fermeture_ratio']].fillna(0))
+    if prefs['nb_enfants'] > 0:
+        if prefs['classe_enfants']:
+            df['risque_fermeture_ratio'] = df['risque_fermeture'] / df['ecoles_ct']
+            df['edu_classes_ferm_scaled'] = transformer.fit_transform(df[['risque_fermeture_ratio']].fillna(0))
+            
+            # Score based on presence of required school types
+            class_mapping = {
+                'Maternelle': 'count_maternelle',
+                'Elémentaire': 'count_elementaire',
+                'Collège': 'count_college',
+                'Lycée': 'count_lycee'
+            }
+            required_cols = {class_mapping[c] for c in prefs['classe_enfants'] if c in class_mapping}
+            
+            if required_cols:
+                # Count matches (boolean logic: count > 0)
+                matches = (df[list(required_cols)] > 0).sum(axis=1)
+                # Linear score: ratio of met requirements
+                df['edu_structures_scaled'] = matches / len(required_cols)
+            else:
+                df['edu_structures_scaled'] = 0.0
+        else:
+            df['edu_classes_ferm_scaled'] = 0.0
+            df['edu_structures_scaled'] = 0.0
+    # Else: Education criteria are not calculated/added to df
+
+    # --- SANTE ---
+    sante_pref = prefs.get('besoin_sante', 'Aucun')
+    if sante_pref != 'Aucun':
+        col_map = {
+            'Hopital': 'count_hopital',
+            'Maternité': 'count_maternite',
+            'Soutien Psychologique & Addictologie': 'count_psy'
+        }
+        target_col = col_map.get(sante_pref)
+        if target_col and target_col in df.columns:
+            # Score 1.0 if count > 0, else 0.0
+            df['sante_structures_scaled'] = (df[target_col] > 0).astype(float)
+        else:
+            df['sante_structures_scaled'] = 0.0
+    # Else: Sante criteria are not calculated/added to df
 
     # --- MOBILITE ---
     # 1. Distance from the current location
     if isinstance(prefs['loc_distance_km'], int):
-        df['reloc_dist_scaled'] = (1 - df['dist_current_loc'] / (prefs['loc_distance_km'] * 1000))
+        df['mob_dist_scaled'] = (1 - df['dist_current_loc'] / (prefs['loc_distance_km'] * 1000))
     # 2. Is the commune in the same EPCI as the current one?
     # We get the EPCI from the original, unfiltered dataframe to avoid KeyErrors
     current_epci = df_all_communes.loc[prefs['commune_actuelle']]['epci_code']
-    df['reloc_epci_scaled'] = np.where(df['epci_code'] == current_epci, 1, 0)
+    df['mob_epci_scaled'] = np.where(df['epci_code'] == current_epci, 1, 0)
 
-    # --- SOUTIEN LOCAL ---
-    if prefs['besoins_autres']:
-        # Vectorized approach for 'besoins_match' - much faster than itertuples
-        all_needed_services = {
-            f"{cat}_{serv}"
-            for cat, serv_list in prefs['besoins_autres'].items()
-            for serv in serv_list
-        }
-
-        # Create a boolean mask for communes that have any of the needed services
-        # This merges the pre-calculated incl_index with our current dataframe
-        df_merged = df.join(incl_index, how='left')
-
-        # Calculate the number of matching services for each commune
-        df['besoins_match'] = [
-            len(all_needed_services.intersection(s)) if isinstance(s, set) else 0
-            for s in df_merged['key']
-        ]
-        df['besoins_match_scaled'] = transformer.fit_transform(df[['besoins_match']].fillna(0))
-    else:
-        # If no specific needs, score based on the general availability of inclusion services
-        df['svc_incl_ratio'] = 1000 * df['svc_incl_count'] / df['pop_be']
-        df['svc_incl_scaled'] = transformer.fit_transform(df[['svc_incl_ratio']].fillna(0))
+    # --- INCLUSION (New F-13) ---
+    df = compute_inclusion_score(df, prefs, incl_index, associations_data)
 
     # Population as a direct score for inclusion
-    df['population_scaled'] = transformer.fit_transform(df[['population']].fillna(0))
+    df['inc_population_scaled'] = transformer.fit_transform(df[['population']].fillna(0))
 
     # Political orientation score
-    df['pol_scaled'] = df['pol_num'].astype('float')
+    df['inc_pol_scaled'] = df['pol_num'].astype('float')
 
     return df
 
@@ -359,6 +365,8 @@ def add_neighbor_scores(df_search: gpd.GeoDataFrame, scores_cat: pd.DataFrame) -
         + scores_cat[scores_cat.incl_binome]['score'].to_list()
         + scores_cat[scores_cat.incl_binome]['metric'].to_list()
     )
+    # Remove duplicates to avoid DataFrame creation on merge for same-named columns
+    binome_columns = list(dict.fromkeys(binome_columns))
     binome_columns = [col for col in binome_columns if col in df_search.columns]
     df_binomes = df_search[binome_columns].copy()
 
@@ -394,7 +402,8 @@ def add_neighbor_scores(df_search: gpd.GeoDataFrame, scores_cat: pd.DataFrame) -
 def compute_category_scores(
     df: pd.DataFrame,
     scores_cat: pd.DataFrame,
-    binome_penalty: float
+    binome_penalty: float,
+    config: 'ScoringConfig'
 ) -> pd.DataFrame:
     """Aggregates individual criteria scores into category scores (e.g., 'emploi_cat_score').
 
@@ -404,6 +413,12 @@ def compute_category_scores(
     df = df.copy()
 
     for category in scores_cat['cat'].unique():
+        # Conditional exclusion logic
+        if category == 'education' and config.nb_enfants == 0:
+            continue
+        if category == 'sante' and config.besoin_sante == 'Aucun':
+            continue
+
         # Get the list of score columns for the current category
         score_cols = scores_cat[scores_cat.cat == category]['score'].tolist()
         # Filter to keep only columns that actually exist in our dataframe
@@ -421,9 +436,14 @@ def compute_category_scores(
             # Check if a corresponding binome score exists
             if f'{col}_binome' in df.columns:
                 score_voisin = df[f'{col}_binome'] * (1 - binome_penalty)
-                # For monomes, the binome score is NaN, so we fill it with 0.
-                # The score of the commune itself is not penalized.
-                effective_score = np.maximum(score_commune.fillna(0), score_voisin.fillna(0))
+                
+                # Debugging: Raise exception with type info
+                s_commune = score_commune.fillna(0)
+                s_voisin = score_voisin.fillna(0)
+                if isinstance(s_commune, pd.DataFrame) or isinstance(s_voisin, pd.DataFrame):
+                     raise ValueError(f"DEBUG: Mixed types for col '{col}'. \nCommune type: {type(s_commune)}\nVoisin type: {type(s_voisin)}\nCommune cols: {s_commune.columns if isinstance(s_commune, pd.DataFrame) else 'Series'}\nVoisin cols: {s_voisin.columns if isinstance(s_voisin, pd.DataFrame) else 'Series'}")
+
+                effective_score = np.maximum(s_commune, s_voisin)
                 max_scores.append(effective_score)
             else:  # This criterion is not applicable to binomes
                 max_scores.append(score_commune.fillna(0))
@@ -444,6 +464,13 @@ def compute_weighted_score(df: pd.DataFrame, config: 'ScoringConfig') -> pd.Seri
     for cat_score_col in category_scores:
         # e.g., 'emploi_cat_score' -> 'emploi'
         category_name = cat_score_col.split('_')[0]
+
+        # Conditional exclusion logic
+        if category_name == 'education' and config.nb_enfants == 0:
+            continue
+        if category_name == 'sante' and config.besoin_sante == 'Aucun':
+            continue
+
         weight_key = f'poids_{category_name}'
         weight = getattr(config, weight_key, 0)
 
@@ -476,6 +503,7 @@ def aggregate_scores_by_bassin_de_vie(df: pd.DataFrame) -> pd.DataFrame:
         return (group[score_col] * group[weight_col]).sum() / weight_sum
 
     # --- Aggregation Dictionary ---
+    # 1. Scores (Weighted Average by default)
     score_cols = [col for col in df_agg.columns if '_score' in col or '_scaled' in col]
     agg_dict = {
         col: lambda x, col=col: weighted_avg(df_agg.loc[x.index], col) for col in score_cols
@@ -538,7 +566,9 @@ def compute_odis_score(
     df_all_communes: gpd.GeoDataFrame,
     scores_cat: pd.DataFrame,
     config: 'ScoringConfig',
-    incl_index: pd.DataFrame
+    incl_index: pd.DataFrame,
+    associations_data: pd.DataFrame, # Added argument
+    use_binomes: bool = True # New argument
 ) -> pd.DataFrame:
     """Main function that orchestrates the entire scoring pipeline on a pre-filtered dataframe."""
     if df_search.empty:
@@ -557,23 +587,37 @@ def compute_odis_score(
         odis_search,
         prefs=config.__dict__,
         incl_index=incl_index,
-        df_all_communes=df_all_communes
+        df_all_communes=df_all_communes,
+        associations_data=associations_data # Passed down
     )
 
     # 5. Expand the dataframe to include neighbor data (creating monomes and binomes).
-    odis_exploded = add_neighbor_scores(odis_scored, scores_cat)
+    if use_binomes:
+        odis_exploded = add_neighbor_scores(odis_scored, scores_cat)
+    else:
+        # If not using binomes, we just keep the monomes (the rows themselves)
+        # We need to ensure the structure matches what compute_category_scores expects
+        odis_exploded = odis_scored.copy()
+        # Add dummy binome columns if needed by downstream functions, or ensure downstream handles missing binome cols
+        # compute_category_scores checks for f'{col}_binome' existence, so it should be fine.
+        
+        # However, select_best_score_per_commune expects 'weighted_score' and might group by codgeo.
+        # If we don't explode, we have 1 row per codgeo.
+        pass
 
     # 6. Aggregate criteria scores into category scores, handling the binome logic.
     odis_exploded = compute_category_scores(
         odis_exploded,
         scores_cat=scores_cat,
-        binome_penalty=config.binome_penalty
+        binome_penalty=config.binome_penalty,
+        config=config
     )
 
     # 7. Compute the final weighted score for each commune/binome pair.
     odis_exploded['weighted_score'] = compute_weighted_score(odis_exploded, config=config)
 
     # 8. For each commune, keep only the best result (could be monome or a binome).
+    # If use_binomes is False, this effectively just returns the single row per commune.
     odis_search_best = select_best_score_per_commune(odis_exploded)
 
     return odis_search_best
@@ -586,6 +630,7 @@ def run_scoring_pipeline(
     df_area_geo: gpd.GeoDataFrame,
     scores_cat: pd.DataFrame,
     incl_index: pd.DataFrame,
+    associations_data: pd.DataFrame, # Added argument
     view_level: str
 ) -> Tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
     """
@@ -624,12 +669,17 @@ def run_scoring_pipeline(
         communes_to_score = df_all_communes[df_all_communes[cfg.BV_CODE_COL].isin(bv_ids_to_keep)]
 
     # --- Scoring ---
+    # Disable binomes for 'Bassins de vie' view to ensure aggregation uses monome scores
+    use_binomes = (view_level == 'Communes')
+    
     odis_scored = compute_odis_score(
         df_search=communes_to_score,
         df_all_communes=df_all_communes,
         scores_cat=scores_cat,
         config=config,
         incl_index=incl_index,
+        associations_data=associations_data, # Passed down
+        use_binomes=use_binomes
     )
 
     # --- Post-processing ---
@@ -640,14 +690,20 @@ def run_scoring_pipeline(
 
     unaggregated_gdf = odis_scored
 
+    # 5. Aggregate by Bassin de Vie (Optional)
     if view_level == 'Bassins de vie':
+        # We need to aggregate scores.
+        # For simple scores, weighted average by population is good.
+        # For binary/presence scores (like sante, education), we might want "max" or "union".
         df_bv_scores = aggregate_scores_by_bassin_de_vie(odis_scored)
+        
+        # Merge with geometry
         gdf_bv_geo_filtered = df_bv_geo[df_bv_geo.index.isin(df_bv_scores[cfg.BV_CODE_COL])]
         processed_gdf = gdf_bv_geo_filtered.merge(df_bv_scores, left_index=True, right_on=cfg.BV_CODE_COL)
         processed_gdf = processed_gdf.rename_geometry('polygon')
         processed_gdf = processed_gdf.drop_duplicates(subset=[cfg.BV_CODE_COL])
-    else: # Commune level
-        processed_gdf = odis_scored
+    else:
+        processed_gdf = odis_scored.copy()
     
     processed_gdf = processed_gdf.sort_values('weighted_score', ascending=False).reset_index()
     

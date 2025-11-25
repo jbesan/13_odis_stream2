@@ -1,0 +1,34 @@
+# Ignore everything by default
+*
+
+# Allow app directory
+!app/
+
+# Ignore specific heavy items inside app/ if any (though !app/ allows it, we can be specific if needed)
+# But generally we want app/
+# We definitely want to ignore these in the root if they weren't caught by *
+# Explicitly ignore hidden files/folders in root (since * misses them)
+.git
+.venv/
+venv
+.DS_Store
+.mypy_cache
+.pytest_cache
+.gitignore
+__pycache__
+*.pyc
+.ipynb_checkpoints
+.agent
+
+# Explicitly ignore large folders in root that are not needed
+csv/
+notebooks/
+#images/
+
+# Ignore specific files/folders within app/
+app/__pycache__
+app/.pytest_cache
+app/.logs
+app/tests
+app/*.pyc
+app/.DS_Store

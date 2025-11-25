@@ -23,11 +23,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 FROM python:3.9-slim-bullseye
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    curl \
-    software-properties-common \
-    git \
+# Install system dependencies (minimal)
+# We might need libgdal if binary wheels aren't self-contained, but usually they are.
+# Keeping it empty for now to minimize size.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    libgdal-dev \
+    gdal-bin \
     && rm -rf /var/lib/apt/lists/*
 
 # Set the working directory

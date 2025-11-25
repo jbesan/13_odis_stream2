@@ -78,7 +78,7 @@ Le cœur de l'application est un pipeline de scoring qui évalue les communes (o
 2.  **Calcul des Critères :** Il calcule ensuite des dizaines de scores individuels pour chaque commune (ex: adéquation des offres d'emploi, disponibilité de logements sociaux, score de population). Ces scores sont normalisés pour permettre une comparaison équitable.
 3.  **Logique de Binôme :** Le moteur identifie les communes voisines et les évalue par paires (`binôme`). Cela permet de recommander deux villes qui, ensemble, remplissent tous les critères (ex: l'une a les emplois, l'autre les logements). Une petite pénalité (`binome_penalty`) est appliquée pour privilégier les solutions au sein d'une même commune (`monôme`) lorsque c'est possible.
 4.  **Agrégation par Catégorie :** Les scores des critères individuels sont ensuite moyennés pour former des scores de catégories (Emploi, Logement, Éducation, etc.).
-5.  **Agrégation par Bassin de Vie (Optionnel) :** Si l'utilisateur choisit cette vue, les scores des communes sont agrégés au niveau du bassin de vie (moyenne pondérée par la population) pour obtenir une vue d'ensemble.
+5.  **Agrégation par Bassin de Vie (Optionnel) :** Si l'utilisateur choisit cette vue, **tous les scores** des communes (y compris Éducation, Santé, Inclusion) sont agrégés au niveau du bassin de vie par une **moyenne pondérée par la population**. Cela permet d'obtenir une vue d'ensemble cohérente où les services des grandes communes pèsent plus lourd.
 6.  **Score Pondéré Final :** Enfin, un `weighted_score` global est calculé pour chaque entité (commune, binôme ou bassin de vie) en appliquant les poids définis par l'utilisateur. Les résultats sont ensuite classés selon ce score final.
 
 ![Explication de la logique de scoring](./images/Screenshot-4.png)
@@ -107,8 +107,8 @@ Le score est calculé à partir d'une multitude de critères, regroupés en gran
 *   **Couleur Politique** : Prend en compte l'affiliation politique de la municipalité, en valorisant celles jugées plus favorables à l'accueil.
 
 **Catégorie : Mobilité**
-*   **Distance depuis le lieu actuel** : Score basé sur la proximité par rapport à la commune de départ de la personne.
-*   **Appartenance à la même agglomération (EPCI)** : Vérifie si la commune proposée est dans le même Établissement Public de Coopération Intercommunale (EPCI) que la commune de départ.
+*   **Distance depuis le lieu actuel** (`mob_dist_scaled`) : Score basé sur la proximité par rapport à la commune de départ de la personne.
+*   **Appartenance à la même agglomération (EPCI)** (`mob_epci_scaled`) : Vérifie si la commune proposée est dans le même Établissement Public de Coopération Intercommunale (EPCI) que la commune de départ.
 
 ## 🛠️ Stack Technique
 

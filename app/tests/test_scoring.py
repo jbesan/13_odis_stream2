@@ -87,19 +87,23 @@ class TestScoringLogic:
             df=df_with_dist,
             prefs=config.__dict__,
             incl_index=sample_incl_index,
-            df_all_communes=sample_data
+            df_all_communes=sample_data,
+            associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']) # Mock associations data
         )
         
         expected_cols = [
             'met_match_adult1_scaled', 
             # 'log_soc_inoc_scaled', # Depends on logement type
             'log_vac_scaled', # Default is Location
-            'population_scaled'
+            'inc_population_scaled',
+            'inc_socle_admin_score',
+            'inc_lien_social_score',
+            'inc_affinite_score'
         ]
         for col in expected_cols:
             assert col in scored_df.columns
 
-    def test_compute_category_scores_aggregation(self, sample_data, sample_scores_cat):
+    def test_compute_category_scores_aggregation(self, sample_data, sample_scores_cat, default_config):
         """Tests that category scores are correctly aggregated from criteria scores."""
         df = sample_data.copy()
         # Mock criteria scores
@@ -111,7 +115,7 @@ class TestScoringLogic:
         scores_cat_subset = sample_scores_cat[sample_scores_cat['metric'].isin(relevant_metrics)].copy()
         scores_cat_subset['cat'] = 'emploi' # Force category
         
-        df_cat = scoring.compute_category_scores(df, scores_cat_subset, binome_penalty=0.5)
+        df_cat = scoring.compute_category_scores(df, scores_cat_subset, binome_penalty=0.5, config=default_config)
         
         # Mean of 1.0 and 0.5 is 0.75
         assert 'emploi_cat_score' in df_cat.columns
@@ -158,12 +162,102 @@ class TestAggregation:
             'be_libfap_top': [['JobA'], ['JobB']],
             'noms_formations': [['FormA'], ['FormB']]
         }).set_index('codgeo')
+        # Run aggregation
+        df_bv = scoring.aggregate_scores_by_bassin_de_vie(df)
         
-        result = scoring.aggregate_scores_by_bassin_de_vie(df)
-        
-        assert len(result) == 1
-        bv1 = result.iloc[0]
+        assert len(df_bv) == 1
+        bv1 = df_bv.iloc[0]
         assert bv1['population'] == 300
         # Weighted average: (10*100 + 20*200) / 300 = (1000 + 4000) / 300 = 5000/300 = 16.66
         assert np.isclose(bv1['weighted_score'], 16.666666)
         assert bv1['url_odis'] == 'urlB' # B is bigger
+
+@pytest.mark.unit
+class TestConditionalScoring:
+    def test_compute_weighted_score_conditional_exclusion(self):
+        """
+        Tests that 'education' and 'sante' categories are excluded from the weighted score
+        calculation when specific conditions are met (no kids, no health needs).
+        """
+        # Arrange
+        df = pd.DataFrame({
+            'emploi_cat_score': [1.0],
+            'education_cat_score': [0.5], # Should be ignored
+            'sante_cat_score': [0.5],     # Should be ignored
+            'logement_cat_score': [1.0]
+        })
+
+        # Config with 0 kids and no health needs
+        config = ScoringConfig(
+            poids_emploi=100,
+            poids_logement=100,
+            poids_education=100, # Weight is present, but should be ignored
+            poids_sante=100,     # Weight is present, but should be ignored
+            poids_inclusion=0,
+            poids_mobilité=0,
+            commune_actuelle='33063',
+            loc_distance_km=50,
+            nb_adultes=1,
+            nb_enfants=0,        # Condition to ignore education
+            hebergement='Location',
+            logement='Location',
+            codes_metiers=[],
+            codes_formations=[],
+            classe_enfants=[],
+            besoin_sante='Aucun', # Condition to ignore sante
+            besoins_autres={},
+            socle_admin_selection=[],
+            affinite_selection=[],
+            binome_penalty=0.5,
+            pop_min=1000
+        )
+
+        # Act
+        # Expected behavior (after fix): (1.0*100 + 1.0*100) / 200 = 1.0
+        weighted_score = scoring.compute_weighted_score(df, config)
+
+        # Assert
+        assert weighted_score.iloc[0] == 1.0, f"Expected 1.0, got {weighted_score.iloc[0]}"
+
+    def test_compute_weighted_score_inclusion_when_relevant(self):
+        """
+        Tests that 'education' and 'sante' categories ARE included when conditions are met.
+        """
+        # Arrange
+        df = pd.DataFrame({
+            'emploi_cat_score': [1.0],
+            'education_cat_score': [0.5], # Should be included
+            'sante_cat_score': [0.5],     # Should be included
+        })
+
+        # Config with kids and health needs
+        config = ScoringConfig(
+            poids_emploi=100,
+            poids_logement=0,
+            poids_education=100,
+            poids_sante=100,
+            poids_inclusion=0,
+            poids_mobilité=0,
+            commune_actuelle='33063',
+            loc_distance_km=50,
+            nb_adultes=1,
+            nb_enfants=1,        # Condition to include education
+            hebergement='Location',
+            logement='Location',
+            codes_metiers=[],
+            codes_formations=[],
+            classe_enfants=['Maternelle'],
+            besoin_sante='Hopital', # Condition to include sante
+            besoins_autres={},
+            socle_admin_selection=[],
+            affinite_selection=[],
+            binome_penalty=0.5,
+            pop_min=1000
+        )
+
+        # Act
+        # (1.0*100 + 0.5*100 + 0.5*100) / 300 = 200 / 300 = 0.666...
+        weighted_score = scoring.compute_weighted_score(df, config)
+
+        # Assert
+        assert abs(weighted_score.iloc[0] - 0.666666) < 0.0001

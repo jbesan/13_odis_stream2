@@ -15,6 +15,7 @@ def sample_session_state():
         poids_logement=100,
         poids_education=100,
         poids_inclusion=25,
+        poids_sante=100, # Added for tests
         poids_mobilité=100,
         commune_actuelle='33063',
         loc_distance_km=50,
@@ -27,6 +28,8 @@ def sample_session_state():
         classe_enfants=['Maternelle'],
         besoin_sante='Aucun',
         besoins_autres={},
+        socle_admin_selection=[],
+        affinite_selection=[],
         binome_penalty=0.5,
         pop_min=1000
     )

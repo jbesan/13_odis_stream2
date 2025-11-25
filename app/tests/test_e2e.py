@@ -183,6 +183,7 @@ def run_test_scenario(scenario_id, view_level, app_data):
         scores_cat=app_data['scores_cat'],
         config=scoring_config,
         incl_index=app_data['incl_index'],
+        associations_data=app_data['associations_data'], # Pass association data
     )
     
     odis_scored = odis_scored.drop(scoring_config.commune_actuelle, errors='ignore')
@@ -291,6 +292,7 @@ def test_result_details_display(app_data):
         'ui_poids_logement': 100,
         'ui_poids_education': 100,
         'ui_poids_inclusion': 25,
+        'ui_poids_sante': 100,
         'ui_poids_mobilité': 100,
         'ui_metiers_adult_0': [],
         'ui_formations_adult_0': []
