@@ -28,6 +28,8 @@ FROM python:3.9-slim-bullseye
 # Keeping it empty for now to minimize size.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
+    libgdal-dev \
+    gdal-bin \
     && rm -rf /var/lib/apt/lists/*
 
 # Set the working directory

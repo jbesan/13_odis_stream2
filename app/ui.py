@@ -164,7 +164,6 @@ def render_other_needs_form() -> None:
     st.multiselect(
         "Centres d'intérêt",
         options=interest_options,
-        default=st.session_state.ui_affinite_selection,
         key="ui_affinite_selection"
     )
 
