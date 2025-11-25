@@ -23,18 +23,7 @@ scores:
     unit: offres/1000 hab.
     display_factor: 1
     tooltip: "Emplois en tension non pourvus pour 1000 habitants (Source: France Travail)"
-- id: svc_incl_scaled
-  category: inclusion
-  source_metric: svc_incl_ratio
-  include_in_binom: true
-  display:
-    name: Taux Services Inclusion
-    strong_point_text: De nombre services dédiés à l'inclusion sont offerts
-    high_value_adjective: élevé
-    show: true
-    unit: service(s)/1000 hab.
-    display_factor: 1
-    tooltip: Services d'inclusions pour 1000 habitants
+
 - id: log_vac_scaled
   category: logement
   source_metric: log_vac_ratio
@@ -72,7 +61,7 @@ scores:
     unit: '%'
     display_factor: 100
     tooltip: ''
-- id: classes_ferm_scaled
+- id: edu_classes_ferm_scaled
   category: education
   source_metric: risque_fermeture_ratio
   include_in_binom: true
@@ -85,7 +74,7 @@ scores:
     display_factor: 1
     tooltip: Ratio du nombre de classes à riques de fermetures sur le nombre total
       d'établissements
-- id: pol_scaled
+- id: inc_pol_scaled
   category: inclusion
   source_metric: pol_num
   include_in_binom: false
@@ -97,7 +86,7 @@ scores:
     unit: None
     display_factor: 1
     tooltip: Affiliation à un parti politique en faveur de l'accueil
-- id: population_scaled
+- id: inc_population_scaled
   category: inclusion
   source_metric: population
   include_in_binom: false
@@ -161,7 +150,7 @@ scores:
     unit: formations offertes
     display_factor: 1
     tooltip: Nombre centres de formations dans la commune
-- id: reloc_dist_scaled
+- id: mob_dist_scaled
   category: mobilité
   source_metric: dist_current_loc
   include_in_binom: false
@@ -173,7 +162,7 @@ scores:
     unit: mètres
     display_factor: 1
     tooltip: Distance en m de la position actuelle
-- id: reloc_epci_scaled
+- id: mob_epci_scaled
   category: mobilité
   source_metric: null
   include_in_binom: false
@@ -245,19 +234,42 @@ scores:
     unit: mètres
     display_factor: 1
     tooltip: Distance en m de la commune proposée (0 si même commune)
-- id: besoins_match_scaled
+- id: inc_socle_admin_score
   category: inclusion
-  source_metric: besoin_match
-  include_in_binom: false
+  source_metric: socle_match_count
+  include_in_binom: true
   display:
-    name: Présence de solutions de soutien spécifiques
-    strong_point_text: Les besoins pécifiques sont bien couverts dans la localité
-      proposée
-    high_value_adjective: élevé
+    name: Socle Administratif
+    strong_point_text: Services administratifs essentiels présents
+    high_value_adjective: complet
     show: true
-    unit: besoin(s) couvert(s)
+    unit: '%'
+    display_factor: 100
+    tooltip: "Présence des services administratifs sélectionnés"
+- id: inc_lien_social_score
+  category: inclusion
+  source_metric: lien_social_density
+  include_in_binom: true
+  display:
+    name: Lien Social
+    strong_point_text: Tissu associatif dense favorisant le lien social
+    high_value_adjective: dense
+    show: true
+    unit: assos/1000 hab.
     display_factor: 1
-    tooltip: Présence de solutions de soutien spécifiques
+    tooltip: "Densité d'associations favorisant le lien social"
+- id: inc_affinite_score
+  category: inclusion
+  source_metric: affinite_density
+  include_in_binom: true
+  display:
+    name: Affinités
+    strong_point_text: Associations correspondant aux centres d'intérêt
+    high_value_adjective: présent
+    show: true
+    unit: assos/1000 hab.
+    display_factor: 1
+    tooltip: "Densité d'associations correspondant aux affinités sélectionnées"
 - id: edu_structures_scaled
   category: education
   source_metric: edu_structures_count

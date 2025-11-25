@@ -183,6 +183,7 @@ def run_test_scenario(scenario_id, view_level, app_data):
         scores_cat=app_data['scores_cat'],
         config=scoring_config,
         incl_index=app_data['incl_index'],
+        associations_data=app_data['associations_data'], # Pass association data
     )
     
     odis_scored = odis_scored.drop(scoring_config.commune_actuelle, errors='ignore')

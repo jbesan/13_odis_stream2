@@ -86,7 +86,10 @@ def session_states_init(defaults: Dict[str, Any]) -> None:
         'ui_poids_emploi': 'poids_emploi',
         'ui_poids_logement': 'poids_logement',
         'ui_poids_inclusion': 'poids_inclusion',
+        'ui_poids_sante': 'poids_sante',
         'ui_poids_mobilité': 'poids_mobilité',
+        'ui_socle_admin_selection': 'socle_admin_selection',
+        'ui_affinite_selection': 'affinite_selection',
         'ui_penalite_binome': ('binome_penalty', lambda x: int(x * 100)),
         'ui_pop_min': 'pop_min',
         'ui_nb_adultes': 'nb_adultes',
@@ -313,7 +316,25 @@ def load_all_datasets(
     incl_index['key'] = incl_index.categorie.astype(str) + '_' + incl_index.service.astype(str)
     incl_index = incl_index.groupby('codgeo').agg({'key': lambda x: set(x)})
 
-    return odis, scores_cat, codfap_index, codformations_index, annuaire_ecoles, annuaire_sante, annuaire_inclusion, incl_index
+    # --- Associations (RNA) ---
+    # Load and pre-process association data
+    # We need to count associations by WALDEC code per commune
+    rna_df = pd.read_csv(base_path + 'rna_waldec_20250901_mini_odis.csv', sep=';', dtype={'adrs_codeinsee': str, 'id_waldec': str, 'objet_social2': str})
+    rna_df = rna_df.rename(columns={'adrs_codeinsee': 'codgeo', 'objet_social1': 'id_waldec'})
+    
+    # Group by codgeo and id_waldec to get counts
+    # Result: index=(codgeo, id_waldec), value=count
+    associations_counts = rna_df.groupby(['codgeo', 'id_waldec']).size().rename('count')
+    
+    # We might want to unstack this to have codgeo as index and waldec codes as columns, 
+    # but that might be too sparse/large.
+    # Keeping it as a Series with MultiIndex is efficient for lookups.
+    # To make it easier to use in scoring, we can group by codgeo and aggregate into a dict or similar structure.
+    # Actually, for scoring, we will need to sum counts for specific sets of WALDEC codes.
+    # Let's keep it as a DataFrame with MultiIndex for now.
+    associations_data = associations_counts.reset_index()
+
+    return odis, scores_cat, codfap_index, codformations_index, annuaire_ecoles, annuaire_sante, annuaire_inclusion, incl_index, associations_data
 
 @st.cache_data
 def load_area_geodata(_communes_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -372,7 +393,7 @@ def load_bassin_de_vie_geodata(_communes_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFr
 def init_datasets() -> Dict[str, Any]:
     """Loads all datasets and returns them in a structured dictionary."""
     logging.info("--- Loading all datasets... ---")
-    odis, scores_cat, codfap_index, codformations_index, annuaire_ecoles, annuaire_sante, annuaire_inclusion, incl_index = load_all_datasets(
+    odis, scores_cat, codfap_index, codformations_index, annuaire_ecoles, annuaire_sante, annuaire_inclusion, incl_index, associations_data = load_all_datasets(
         cfg.ODIS_FILE,
         cfg.BV_FILENAME,
         cfg.SCORES_CAT_FILE,
@@ -398,6 +419,7 @@ def init_datasets() -> Dict[str, Any]:
         "annuaire_sante": annuaire_sante,
         "annuaire_inclusion": annuaire_inclusion,
         "incl_index": incl_index,
+        "associations_data": associations_data,
         "coddep_set": sorted(set(odis['dep_code'])),
         "depcom_df": odis[['dep_code','libgeo']].sort_values('libgeo'),
     }

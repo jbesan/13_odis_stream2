@@ -87,14 +87,18 @@ class TestScoringLogic:
             df=df_with_dist,
             prefs=config.__dict__,
             incl_index=sample_incl_index,
-            df_all_communes=sample_data
+            df_all_communes=sample_data,
+            associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']) # Mock associations data
         )
         
         expected_cols = [
             'met_match_adult1_scaled', 
             # 'log_soc_inoc_scaled', # Depends on logement type
             'log_vac_scaled', # Default is Location
-            'population_scaled'
+            'inc_population_scaled',
+            'inc_socle_admin_score',
+            'inc_lien_social_score',
+            'inc_affinite_score'
         ]
         for col in expected_cols:
             assert col in scored_df.columns
@@ -158,11 +162,11 @@ class TestAggregation:
             'be_libfap_top': [['JobA'], ['JobB']],
             'noms_formations': [['FormA'], ['FormB']]
         }).set_index('codgeo')
+        # Run aggregation
+        df_bv = scoring.aggregate_scores_by_bassin_de_vie(df)
         
-        result = scoring.aggregate_scores_by_bassin_de_vie(df)
-        
-        assert len(result) == 1
-        bv1 = result.iloc[0]
+        assert len(df_bv) == 1
+        bv1 = df_bv.iloc[0]
         assert bv1['population'] == 300
         # Weighted average: (10*100 + 20*200) / 300 = (1000 + 4000) / 300 = 5000/300 = 16.66
         assert np.isclose(bv1['weighted_score'], 16.666666)

@@ -249,13 +249,21 @@ En tant que travailleur social, je veux voir les lieux recommandés sur une cart
 - En tant que travailleur social, je veux pouvoir faire correspondre les intérêts spécifiques de la famille accompagnée (sport, culture, nature) avec les associations locales disponibles afin de favoriser son épanouissement personnel et son intégration.
 
 ### 🔑 Key Features
-* Refonte du calcul du score "Inclusion" intégrant trois composantes : "Socle Administratif", "Lien Social", et "Affinité".
-* Le "Socle Administratif" est basé sur la présence et la densité des services institutionnels clés issus de `annuaire_inclusion_index.csv`.
-* Le "Lien Social" mesure la densité d'associations (via le RNA et les codes WALDEC) correspondant à des catégories fixes définies dans `config.py`.
-* L'"Affinité" mesure la densité d'associations (via le RNA et les codes WALDEC) correspondant aux centres d'intérêt spécifiques sélectionnés par l'utilisateur.
-* Une nouvelle interface utilisateur pour l'étape "Inclusion" (étape 7/8 du formulaire) proposera deux champs multiselect : un pour les services institutionnels (avec des pré-sélections déselectionnables) et un pour les activités associatives (filtré selon `config.py`).
+* Refonte du calcul du score "Inclusion" intégrant quatre composantes : "Socle Administratif", "Lien Social", "Affinité" et "Population".
+* Le "Socle Administratif" (`inc_socle_admin_score`) est basé sur la présence et la densité des services institutionnels clés issus de `annuaire_inclusion_index.csv`.
+Note: Les catégories services à cocher par défaut sont:
+- logement-hebergement: etre-accompagne-pour-se-loger
+- acces-aux-droits-et-citoyennete: accompagnement-juridique
+- acces-aux-droits-et-citoyennete: demandeurs-dasile-et-naturalisation
+- preparer-sa-candidature: realiser-un-cv-et-ou-une-lettre-de-motivation
+
+* Le "Lien Social" (`inc_lien_social_score`) mesure la densité d'associations (via le RNA et les codes WALDEC) correspondant à des catégories fixes définies dans `.agent/rna_config.py`. Les données associations sont dans `csv/rna_waldec_20250901_mini_odis.csv`, l'index dans `csv/rna-associations-nomenclature-waldec.json`.
+* L'"Affinité" (`inc_affinite_score`) mesure la densité d'associations (via le RNA et les codes WALDEC) correspondant aux centres d'intérêt spécifiques sélectionnés par l'utilisateur.
+* La "Population" (`inc_population_scaled`) est utilisée comme un critère direct, favorisant les communes de taille importante.
+* Une nouvelle interface utilisateur pour l'étape "Inclusion" (étape 7/8 du formulaire) proposera deux champs multiselect : un pour les services institutionnels (avec des pré-sélections déselectionnables) et un pour les activités associatives.
 * La métrique utilisée pour les associations est le nombre total d'associations correspondantes pour 1000 habitants, calculé au niveau communal et agrégé en moyenne pondérée par la population pour les Bassins de Vie.
-* Les trois composantes du score d'inclusion ("Socle Administratif", "Lien Social", "Affinité") sont pondérées de manière égale (1:1:1).
+* Les quatre composantes du score d'inclusion sont pondérées de manière égale au sein de la catégorie Inclusion.
+* **Note sur l'agrégation** : Pour simplifier la compréhension, tous les scores (y compris Éducation, Santé et Inclusion) sont agrégés au niveau Bassin de Vie par une moyenne pondérée par la population des communes. Cela signifie qu'un service présent dans une petite commune aura moins d'impact sur le score global du bassin qu'un service présent dans une grande commune.
 
 ### 📊 Status
-- In Progress
+- Completed

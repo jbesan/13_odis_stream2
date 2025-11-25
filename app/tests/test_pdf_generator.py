@@ -28,6 +28,8 @@ def sample_session_state():
         classe_enfants=['Maternelle'],
         besoin_sante='Aucun',
         besoins_autres={},
+        socle_admin_selection=[],
+        affinite_selection=[],
         binome_penalty=0.5,
         pop_min=1000
     )

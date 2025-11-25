@@ -31,7 +31,7 @@ PAGES = {
     "professional_project": "Projet professionnel",
     "housing": "Logement",
     "health": "Santé",
-    "other_needs": "Autres besoins",
+    "other_needs": "Inclusion",
     "mobility": "Mobilité"
 }
 PAGES_LIST = list(PAGES.keys())

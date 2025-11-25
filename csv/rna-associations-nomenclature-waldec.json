@@ -1,1 +1,1784 @@
-[{"objet_social_parent_id": "009000", "objet_social_parent_lib": "ACTION SOCIOCULTURELLE", "objet_social_id": "009045", "objet_social_lib": "majorettes, twirlings, carnavals, d\u00e9fil\u00e9s"},{"objet_social_parent_id": "014000", "objet_social_parent_lib": "AMICALES, GROUPEMENTS AFFINITAIRES, GROUPEMENTS D'ENTRAIDE (HORS D\u00c9FENSE DE DROITS FONDAMENTAUX)", "objet_social_id": "014070", "objet_social_lib": "associations de personnes en situation de handicap pour l'entraide et la solidarit\u00e9 (hors d\u00e9fense de droits fondamentaux)"},{"objet_social_parent_id": "038000", "objet_social_parent_lib": "ARM\u00c9E (DONT  PR\u00c9PARATION MILITAIRE, M\u00c9DAILLES), ANCIENS COMBATTANTS", "objet_social_id": "038105", "objet_social_lib": "anciens combattants"},{"objet_social_parent_id": "020000", "objet_social_parent_lib": "ASSOCIATIONS CARITATIVES, HUMANITAIRES, AIDE AU D\u00c9VELOPPEMENT, D\u00c9VELOPPEMENT DU B\u00c9N\u00c9VOLAT", "objet_social_id": "020000", "objet_social_lib": "ASSOCIATIONS CARITATIVES, HUMANITAIRES, AIDE AU D\u00c9VELOPPEMENT, D\u00c9VELOPPEMENT DU B\u00c9N\u00c9VOLAT"},{"objet_social_parent_id": "020000", "objet_social_parent_lib": "ASSOCIATIONS CARITATIVES, HUMANITAIRES, AIDE AU D\u00c9VELOPPEMENT, D\u00c9VELOPPEMENT DU B\u00c9N\u00c9VOLAT", "objet_social_id": "020005", "objet_social_lib": "secours financiers et autres services aux personnes en difficult\u00e9"},{"objet_social_parent_id": "013000", "objet_social_parent_lib": "CHASSE P\u00caCHE", "objet_social_id": "013010", "objet_social_lib": "p\u00eache"},{"objet_social_parent_id": "002000", "objet_social_parent_lib": "CLUBS, CERCLES DE R\u00c9FLEXION", "objet_social_id": "002020", "objet_social_lib": "organisation de conf\u00e9rences"},{"objet_social_parent_id": "023000", "objet_social_parent_lib": "REPR\u00c9SENTATION, PROMOTION ET D\u00c9FENSE D'INT\u00c9R\u00caTS \u00c9CONOMIQUES", "objet_social_id": "022510", "objet_social_lib": "cantines, restaurants d'entreprises"},{"objet_social_parent_id": "006000", "objet_social_parent_lib": "CULTURE, PRATIQUES D'ACTIVIT\u00c9S ARTISTIQUES, PRATIQUES CULTURELLES", "objet_social_id": "006025", "objet_social_lib": "photographie, cin\u00e9ma (dont cin\u00e9-clubs)"},{"objet_social_parent_id": "003000", "objet_social_parent_lib": "D\u00c9FENSE DE DROITS FONDAMENTAUX, ACTIVIT\u00c9S CIVIQUES", "objet_social_id": "003015", "objet_social_lib": "d\u00e9fense des libert\u00e9s publiques et des droits de l'Homme"},{"objet_social_parent_id": "050000", "objet_social_parent_lib": "DOMAINES DIVERS, DOMAINES DE NOMENCLATURE SITADELE \u00c0 RECLASSER", "objet_social_id": "050000", "objet_social_lib": "DOMAINES DIVERS, DOMAINES DE NOMENCLATURE SITADELE \u00c0 RECLASSER"},{"objet_social_parent_id": "015000", "objet_social_parent_lib": "\u00c9DUCATION  FORMATION", "objet_social_id": "015030", "objet_social_lib": "\u0153uvres sociales en faveur des \u00e9l\u00e8ves, \u0153uvres en faveur des pupilles de la nation"},{"objet_social_parent_id": "015000", "objet_social_parent_lib": "\u00c9DUCATION  FORMATION", "objet_social_id": "015090", "objet_social_lib": "promotion de titres, de dipl\u00f4mes"},{"objet_social_parent_id": "015000", "objet_social_parent_lib": "\u00c9DUCATION  FORMATION", "objet_social_id": "015100", "objet_social_lib": "apprentissage"},{"objet_social_parent_id": "005000", "objet_social_parent_lib": "INFORMATION COMMUNICATION", "objet_social_id": "005010", "objet_social_lib": "radios priv\u00e9es"},{"objet_social_parent_id": "005000", "objet_social_parent_lib": "INFORMATION COMMUNICATION", "objet_social_id": "005015", "objet_social_lib": "audiovisuel"},{"objet_social_parent_id": "005000", "objet_social_parent_lib": "INFORMATION COMMUNICATION", "objet_social_id": "005025", "objet_social_lib": "autres supports de communication"},{"objet_social_parent_id": "019000", "objet_social_parent_lib": "INTERVENTIONS SOCIALES", "objet_social_id": "019030", "objet_social_lib": "aide aux victimes de calamit\u00e9s naturelles, de catastrophes naturelles"},{"objet_social_parent_id": "019000", "objet_social_parent_lib": "INTERVENTIONS SOCIALES", "objet_social_id": "019032", "objet_social_lib": "aide aux victimes de violences conjugales"},{"objet_social_parent_id": "016000", "objet_social_parent_lib": "RECHERCHE", "objet_social_id": "016000", "objet_social_lib": "RECHERCHE"},{"objet_social_parent_id": "023000", "objet_social_parent_lib": "REPR\u00c9SENTATION, PROMOTION ET D\u00c9FENSE D'INT\u00c9R\u00caTS \u00c9CONOMIQUES", "objet_social_id": "023002", "objet_social_lib": "mouvements de consommateurs"},{"objet_social_parent_id": "023000", "objet_social_parent_lib": "REPR\u00c9SENTATION, PROMOTION ET D\u00c9FENSE D'INT\u00c9R\u00caTS \u00c9CONOMIQUES", "objet_social_id": "023003", "objet_social_lib": "association de d\u00e9fense des contribuables"},{"objet_social_parent_id": "023000", "objet_social_parent_lib": "REPR\u00c9SENTATION, PROMOTION ET D\u00c9FENSE D'INT\u00c9R\u00caTS \u00c9CONOMIQUES", "objet_social_id": "023030", "objet_social_lib": "unions patronales"},{"objet_social_parent_id": "023000", "objet_social_parent_lib": "REPR\u00c9SENTATION, PROMOTION ET D\u00c9FENSE D'INT\u00c9R\u00caTS \u00c9CONOMIQUES", "objet_social_id": "023040", "objet_social_lib": "repr\u00e9sentation d'int\u00e9r\u00eats \u00e9conomiques sectoriels"},{"objet_social_parent_id": "017000", "objet_social_parent_lib": "SANT\u00c9", "objet_social_id": "017095", "objet_social_lib": "accueil, information pour contraception et avortement"},{"objet_social_parent_id": "017000", "objet_social_parent_lib": "SANT\u00c9", "objet_social_id": "017300", "objet_social_lib": "m\u00e9decine animale, v\u00e9t\u00e9rinaire"},{"objet_social_parent_id": "037000", "objet_social_parent_lib": null, "objet_social_id": "036535", "objet_social_lib": "s\u00e9curit\u00e9 routi\u00e8re"},{"objet_social_parent_id": "021000", "objet_social_parent_lib": "SERVICES FAMILIAUX, SERVICES AUX PERSONNES \u00c2G\u00c9ES", "objet_social_id": "021015", "objet_social_lib": "services aux personnes \u00e2g\u00e9es (t\u00e9l\u00e9alarme.)"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011004", "objet_social_lib": "arbitrage"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011150", "objet_social_lib": "autres arts martiaux  (karat\u00e9, a\u00efkido, taekwondo)"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011165", "objet_social_lib": "tennis  (tennis, longue paume)"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011192", "objet_social_lib": "associations pour la promotion du sport, m\u00e9dailles, m\u00e9rite sportif"},{"objet_social_parent_id": "030000", "objet_social_parent_lib": "AIDE \u00c0 L'EMPLOI, D\u00c9VELOPPEMENT LOCAL, PROMOTION DE SOLIDARIT\u00c9S \u00c9CONOMIQUES, VIE LOCALE", "objet_social_id": "030000", "objet_social_lib": "AIDE \u00c0 L'EMPLOI, D\u00c9VELOPPEMENT LOCAL, PROMOTION DE SOLIDARIT\u00c9S \u00c9CONOMIQUES, VIE LOCALE"},{"objet_social_parent_id": "007000", "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS", "objet_social_id": "007005", "objet_social_lib": "bridge, jeux de cartes, \u00e9checs, dames, jeux de soci\u00e9t\u00e9 ."},{"objet_social_parent_id": "023000", "objet_social_parent_lib": "REPR\u00c9SENTATION, PROMOTION ET D\u00c9FENSE D'INT\u00c9R\u00caTS \u00c9CONOMIQUES", "objet_social_id": "022543", "objet_social_lib": "transports"},{"objet_social_parent_id": "006000", "objet_social_parent_lib": "CULTURE, PRATIQUES D'ACTIVIT\u00c9S ARTISTIQUES, PRATIQUES CULTURELLES", "objet_social_id": "006090", "objet_social_lib": "artisanat, travaux manuels, bricolage, expositions"},{"objet_social_parent_id": "003000", "objet_social_parent_lib": "D\u00c9FENSE DE DROITS FONDAMENTAUX, ACTIVIT\u00c9S CIVIQUES", "objet_social_id": "003040", "objet_social_lib": "lutte contre les discriminations"},{"objet_social_parent_id": "005000", "objet_social_parent_lib": "INFORMATION COMMUNICATION", "objet_social_id": "005035", "objet_social_lib": "professionnels de l'information et de communication"},{"objet_social_parent_id": "019000", "objet_social_parent_lib": "INTERVENTIONS SOCIALES", "objet_social_id": "019005", "objet_social_lib": "associations familiales, services sociaux pour les familles"},{"objet_social_parent_id": "019000", "objet_social_parent_lib": "INTERVENTIONS SOCIALES", "objet_social_id": "019042", "objet_social_lib": "lutte contre la violence routi\u00e8re"},{"objet_social_parent_id": "019000", "objet_social_parent_lib": "INTERVENTIONS SOCIALES", "objet_social_id": "019055", "objet_social_lib": "soutien aux d\u00e9tenus, reclassement des d\u00e9tenus"},{"objet_social_parent_id": "010000", "objet_social_parent_lib": "PR\u00c9SERVATION DU PATRIMOINE", "objet_social_id": "010020", "objet_social_lib": "comm\u00e9morations, entretien de monuments et sites historiques, souvenir militaire"},{"objet_social_parent_id": "023000", "objet_social_parent_lib": "REPR\u00c9SENTATION, PROMOTION ET D\u00c9FENSE D'INT\u00c9R\u00caTS \u00c9CONOMIQUES", "objet_social_id": "023020", "objet_social_lib": "associations d'exploitants agricoles, \u00e9levage, horticulture, aviculture, apiculture, viticulture, viniculture"},{"objet_social_parent_id": "021000", "objet_social_parent_lib": "SERVICES FAMILIAUX, SERVICES AUX PERSONNES \u00c2G\u00c9ES", "objet_social_id": "021010", "objet_social_lib": "aide \u00e0 domicile"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011040", "objet_social_lib": "bowling"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011090", "objet_social_lib": "autres sports collectifs  (baseball, hockey sur gazon, hockey sur glace, football am\u00e9ricain)"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011100", "objet_social_lib": "golf"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011110", "objet_social_lib": "halt\u00e9rophilie"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011180", "objet_social_lib": "cyclisme (cyclisme, v\u00e9lo, VTT, y compris course d.orientation \u00e0 v\u00e9lo, cyclotourisme)"},{"objet_social_parent_id": "001000", "objet_social_parent_lib": "ACTIVIT\u00c9S POLITIQUES", "objet_social_id": "001015", "objet_social_lib": "action politique locale"},{"objet_social_parent_id": "030000", "objet_social_parent_lib": "AIDE \u00c0 L'EMPLOI, D\u00c9VELOPPEMENT LOCAL, PROMOTION DE SOLIDARIT\u00c9S \u00c9CONOMIQUES, VIE LOCALE", "objet_social_id": "030010", "objet_social_lib": "entreprises d'insertion, associations interm\u00e9diaires, r\u00e9gies de quartier"},{"objet_social_parent_id": "030000", "objet_social_parent_lib": "AIDE \u00c0 L'EMPLOI, D\u00c9VELOPPEMENT LOCAL, PROMOTION DE SOLIDARIT\u00c9S \u00c9CONOMIQUES, VIE LOCALE", "objet_social_id": "030012", "objet_social_lib": "comit\u00e9s de d\u00e9fense et d'animation de quartier, association locale ou municipale"},{"objet_social_parent_id": "013000", "objet_social_parent_lib": "CHASSE P\u00caCHE", "objet_social_id": "013005", "objet_social_lib": "chasse"},{"objet_social_parent_id": "002000", "objet_social_parent_lib": "CLUBS, CERCLES DE R\u00c9FLEXION", "objet_social_id": "002000", "objet_social_lib": "CLUBS, CERCLES DE R\u00c9FLEXION"},{"objet_social_parent_id": "002000", "objet_social_parent_lib": "CLUBS, CERCLES DE R\u00c9FLEXION", "objet_social_id": "002005", "objet_social_lib": "associations philanthropiques"},{"objet_social_parent_id": "002000", "objet_social_parent_lib": "CLUBS, CERCLES DE R\u00c9FLEXION", "objet_social_id": "002010", "objet_social_lib": "amicales la\u00efques"},{"objet_social_parent_id": "007000", "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS", "objet_social_id": "007000", "objet_social_lib": "CLUBS DE LOISIRS, RELATIONS"},{"objet_social_parent_id": "007000", "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS", "objet_social_id": "007002", "objet_social_lib": "a\u00e9roclubs"},{"objet_social_parent_id": "007000", "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS", "objet_social_id": "007003", "objet_social_lib": "mod\u00e9lisme"},{"objet_social_parent_id": "007000", "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS", "objet_social_id": "007030", "objet_social_lib": "collectionneurs de v\u00e9hicules, clubs amateurs de voitures anciennes"},{"objet_social_parent_id": "023000", "objet_social_parent_lib": "REPR\u00c9SENTATION, PROMOTION ET D\u00c9FENSE D'INT\u00c9R\u00caTS \u00c9CONOMIQUES", "objet_social_id": "022525", "objet_social_lib": "\u00e9tudes techniques"},{"objet_social_parent_id": "023000", "objet_social_parent_lib": "REPR\u00c9SENTATION, PROMOTION ET D\u00c9FENSE D'INT\u00c9R\u00caTS \u00c9CONOMIQUES", "objet_social_id": "022535", "objet_social_lib": "amicales de commer\u00e7ants, organisation de foires"},{"objet_social_parent_id": "003000", "objet_social_parent_lib": "D\u00c9FENSE DE DROITS FONDAMENTAUX, ACTIVIT\u00c9S CIVIQUES", "objet_social_id": "003030", "objet_social_lib": "d\u00e9fense des droits des  personnes en situation de handicap"},{"objet_social_parent_id": "015000", "objet_social_parent_lib": "\u00c9DUCATION  FORMATION", "objet_social_id": "015065", "objet_social_lib": "associations d'\u00e9tudiants, d'\u00e9l\u00e8ves"},{"objet_social_parent_id": "024000", "objet_social_parent_lib": "ENVIRONNEMENT,  CADRE DE VIE", "objet_social_id": "024000", "objet_social_lib": "ENVIRONNEMENT,  CADRE DE VIE"},{"objet_social_parent_id": "024000", "objet_social_parent_lib": "ENVIRONNEMENT,  CADRE DE VIE", "objet_social_id": "024026", "objet_social_lib": "protection des animaux"},{"objet_social_parent_id": "019000", "objet_social_parent_lib": "INTERVENTIONS SOCIALES", "objet_social_id": "019016", "objet_social_lib": "aide \u00e0 l'insertion des jeunes"},{"objet_social_parent_id": "019000", "objet_social_parent_lib": "INTERVENTIONS SOCIALES", "objet_social_id": "019025", "objet_social_lib": "aide aux r\u00e9fugi\u00e9s et aux immigr\u00e9s (hors d\u00e9fense de droits fondamentaux)"},{"objet_social_parent_id": "019000", "objet_social_parent_lib": "INTERVENTIONS SOCIALES", "objet_social_id": "019047", "objet_social_lib": "foyers socio-\u00e9ducatifs"},{"objet_social_parent_id": "004000", "objet_social_parent_lib": "JUSTICE", "objet_social_id": "004025", "objet_social_lib": "acc\u00e8s aux droits dans les tribunaux, assistance juridique"},{"objet_social_parent_id": "033000", "objet_social_parent_lib": null, "objet_social_id": "032510", "objet_social_lib": "aide au logement"},{"objet_social_parent_id": "017000", "objet_social_parent_lib": "SANT\u00c9", "objet_social_id": "017005", "objet_social_lib": "cliniques, centres m\u00e9dicaux, h\u00f4pitaux, sanatoriums, \u00e9tablissements de r\u00e9\u00e9ducation, maisons de convalescence"},{"objet_social_parent_id": "017000", "objet_social_parent_lib": "SANT\u00c9", "objet_social_id": "017025", "objet_social_lib": "services m\u00e9dicaux d'urgence"},{"objet_social_parent_id": "017000", "objet_social_parent_lib": "SANT\u00c9", "objet_social_id": "017055", "objet_social_lib": "accompagnement, aide aux malades"},{"objet_social_parent_id": "017000", "objet_social_parent_lib": "SANT\u00c9", "objet_social_id": "017155", "objet_social_lib": "organisation de congr\u00e8s m\u00e9dicaux"},{"objet_social_parent_id": "037000", "objet_social_parent_lib": null, "objet_social_id": "036520", "objet_social_lib": "sauvetage, secourisme, protection civile"},{"objet_social_parent_id": "018000", "objet_social_parent_lib": "SERVICES ET \u00c9TABLISSEMENTS M\u00c9DICO-SOCIAUX", "objet_social_id": "018000", "objet_social_lib": "SERVICES ET \u00c9TABLISSEMENTS M\u00c9DICO-SOCIAUX"},{"objet_social_parent_id": "018000", "objet_social_parent_lib": "SERVICES ET \u00c9TABLISSEMENTS M\u00c9DICO-SOCIAUX", "objet_social_id": "018050", "objet_social_lib": "aide sociale aux personnes en situation de handicap"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011025", "objet_social_lib": "aviron, cano\u00eb-kayak (aviron, rafting, cano\u00eb-kayak, joutes)"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011070", "objet_social_lib": "handball"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011155", "objet_social_lib": "sports de neige  (ski alpin, ski de fond, snowboard) sports de montagne"},{"objet_social_parent_id": "034000", "objet_social_parent_lib": "TOURISME", "objet_social_id": "034210", "objet_social_lib": "auberges de jeunesse, organisation de voyages,"},{"objet_social_parent_id": "018000", "objet_social_parent_lib": "SERVICES ET \u00c9TABLISSEMENTS M\u00c9DICO-SOCIAUX", "objet_social_id": "018010", "objet_social_lib": "\u00e9tablissements et services pour adolescents en difficult\u00e9"},{"objet_social_parent_id": "018000", "objet_social_parent_lib": "SERVICES ET \u00c9TABLISSEMENTS M\u00c9DICO-SOCIAUX", "objet_social_id": "018015", "objet_social_lib": "\u00e9tablissements et services pour enfants handicap\u00e9s, \u00e9tablissements et services pour adultes handicap\u00e9s, y compris les CAT (centres d'aide par le travail)."},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011400", "objet_social_lib": "activit\u00e9s de plein air (dont saut \u00e0 l'\u00e9lastique)"},{"objet_social_parent_id": "034000", "objet_social_parent_lib": "TOURISME", "objet_social_id": "034240", "objet_social_lib": "syndicats d'initiative, offices de tourisme, salons du tourisme"},{"objet_social_parent_id": "009000", "objet_social_parent_lib": "ACTION SOCIOCULTURELLE", "objet_social_id": "009030", "objet_social_lib": "comit\u00e9s des f\u00eates"},{"objet_social_parent_id": "040000", "objet_social_parent_lib": "ACTIVIT\u00c9S RELIGIEUSES, SPIRITUELLES OU PHILOSOPHIQUES", "objet_social_id": "040000", "objet_social_lib": "ACTIVIT\u00c9S RELIGIEUSES, SPIRITUELLES OU PHILOSOPHIQUES"},{"objet_social_parent_id": "014000", "objet_social_parent_lib": "AMICALES, GROUPEMENTS AFFINITAIRES, GROUPEMENTS D'ENTRAIDE (HORS D\u00c9FENSE DE DROITS FONDAMENTAUX)", "objet_social_id": "014030", "objet_social_lib": "association du personnel d'une entreprise (hors caract\u00e8re syndical)"},{"objet_social_parent_id": "014000", "objet_social_parent_lib": "AMICALES, GROUPEMENTS AFFINITAIRES, GROUPEMENTS D'ENTRAIDE (HORS D\u00c9FENSE DE DROITS FONDAMENTAUX)", "objet_social_id": "014040", "objet_social_lib": "amicale de personnes originaires d'un m\u00eame pays (hors d\u00e9fense des droits des \u00e9trangers), d'une m\u00eame r\u00e9gion du monde"},{"objet_social_parent_id": "007000", "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS", "objet_social_id": "007010", "objet_social_lib": "billard, quilles"},{"objet_social_parent_id": "007000", "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS", "objet_social_id": "007050", "objet_social_lib": "animaux familiers, colombophilie, aquariophilie"},{"objet_social_parent_id": "023000", "objet_social_parent_lib": "REPR\u00c9SENTATION, PROMOTION ET D\u00c9FENSE D'INT\u00c9R\u00caTS \u00c9CONOMIQUES", "objet_social_id": "022515", "objet_social_lib": "centres de gestion, centres juridiques, audits"},{"objet_social_parent_id": "023000", "objet_social_parent_lib": "REPR\u00c9SENTATION, PROMOTION ET D\u00c9FENSE D'INT\u00c9R\u00caTS \u00c9CONOMIQUES", "objet_social_id": "022545", "objet_social_lib": "caisses de retraite, de pr\u00e9voyance, de pensions"},{"objet_social_parent_id": "006000", "objet_social_parent_lib": "CULTURE, PRATIQUES D'ACTIVIT\u00c9S ARTISTIQUES, PRATIQUES CULTURELLES", "objet_social_id": "006030", "objet_social_lib": "chant choral, musique"},{"objet_social_parent_id": "006000", "objet_social_parent_lib": "CULTURE, PRATIQUES D'ACTIVIT\u00c9S ARTISTIQUES, PRATIQUES CULTURELLES", "objet_social_id": "006100", "objet_social_lib": "promotion de l'art et des artistes"},{"objet_social_parent_id": "006000", "objet_social_parent_lib": "CULTURE, PRATIQUES D'ACTIVIT\u00c9S ARTISTIQUES, PRATIQUES CULTURELLES", "objet_social_id": "006115", "objet_social_lib": "arts de la rue"},{"objet_social_parent_id": "003000", "objet_social_parent_lib": "D\u00c9FENSE DE DROITS FONDAMENTAUX, ACTIVIT\u00c9S CIVIQUES", "objet_social_id": "003020", "objet_social_lib": "d\u00e9fense des droits des femmes, condition f\u00e9minine"},{"objet_social_parent_id": "015000", "objet_social_parent_lib": "\u00c9DUCATION  FORMATION", "objet_social_id": "015025", "objet_social_lib": "associations p\u00e9riscolaires, coop\u00e9ration scolaire, aide \u00e0 l'enseignement"},{"objet_social_parent_id": "015000", "objet_social_parent_lib": "\u00c9DUCATION  FORMATION", "objet_social_id": "015050", "objet_social_lib": "centre d'enseignement et de formation"},{"objet_social_parent_id": "015000", "objet_social_parent_lib": "\u00c9DUCATION  FORMATION", "objet_social_id": "015087", "objet_social_lib": "\u00e9tudes et formations linguistiques"},{"objet_social_parent_id": "024000", "objet_social_parent_lib": "ENVIRONNEMENT,  CADRE DE VIE", "objet_social_id": "024005", "objet_social_lib": "pollutions, assainissement"},{"objet_social_parent_id": "024000", "objet_social_parent_lib": "ENVIRONNEMENT,  CADRE DE VIE", "objet_social_id": "024050", "objet_social_lib": "actions de sensibilisation et d'\u00e9ducation \u00e0 l'environnement et au d\u00e9veloppement durable"},{"objet_social_parent_id": "019000", "objet_social_parent_lib": "INTERVENTIONS SOCIALES", "objet_social_id": "019020", "objet_social_lib": "groupements de ch\u00f4meurs, aide aux ch\u00f4meurs"},{"objet_social_parent_id": "019000", "objet_social_parent_lib": "INTERVENTIONS SOCIALES", "objet_social_id": "019035", "objet_social_lib": "aide aux victimes de violences faites aux enfants"},{"objet_social_parent_id": "004000", "objet_social_parent_lib": "JUSTICE", "objet_social_id": "004020", "objet_social_lib": "contr\u00f4le judiciaire, associations de personnels de justice"},{"objet_social_parent_id": "023000", "objet_social_parent_lib": "REPR\u00c9SENTATION, PROMOTION ET D\u00c9FENSE D'INT\u00c9R\u00caTS \u00c9CONOMIQUES", "objet_social_id": "023004", "objet_social_lib": "association d'actionnaires, d'\u00e9pargnants"},{"objet_social_parent_id": "023000", "objet_social_parent_lib": "REPR\u00c9SENTATION, PROMOTION ET D\u00c9FENSE D'INT\u00c9R\u00caTS \u00c9CONOMIQUES", "objet_social_id": "023045", "objet_social_lib": "repr\u00e9sentation d'int\u00e9r\u00eats r\u00e9gionaux et locaux"},{"objet_social_parent_id": "017000", "objet_social_parent_lib": "SANT\u00c9", "objet_social_id": "017085", "objet_social_lib": "hygi\u00e8ne di\u00e9t\u00e9tique"},{"objet_social_parent_id": "017000", "objet_social_parent_lib": "SANT\u00c9", "objet_social_id": "017125", "objet_social_lib": "pr\u00e9vention de maladies, d\u00e9pistage de maladies (autres que le sida)"},{"objet_social_parent_id": "037000", "objet_social_parent_lib": null, "objet_social_id": "036540", "objet_social_lib": "sauvetage en mer"},{"objet_social_parent_id": "018000", "objet_social_parent_lib": "SERVICES ET \u00c9TABLISSEMENTS M\u00c9DICO-SOCIAUX", "objet_social_id": "018040", "objet_social_lib": "aide aux accident\u00e9s du travail"},{"objet_social_parent_id": "021000", "objet_social_parent_lib": "SERVICES FAMILIAUX, SERVICES AUX PERSONNES \u00c2G\u00c9ES", "objet_social_id": "021005", "objet_social_lib": "cr\u00e8ches, garderies, haltes garderies"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011018", "objet_social_lib": "handisport"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011030", "objet_social_lib": "badminton  (badminton, squash, pelote basque)"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011035", "objet_social_lib": "boules  (p\u00e9tanque, boules)"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011060", "objet_social_lib": "escrime  (escrime)"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011075", "objet_social_lib": "football  (football, futsal)"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011085", "objet_social_lib": "volley ball (volley, beach volley)"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011115", "objet_social_lib": "marche sportive  (randonn\u00e9e p\u00e9destre, raid, trekking, course orientation)"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011170", "objet_social_lib": "tennis de table  (tennis de table, ping-pong)"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011185", "objet_social_lib": "voile  (voile, d\u00e9riveur, planche \u00e0 voile)"},{"objet_social_parent_id": "034000", "objet_social_parent_lib": "TOURISME", "objet_social_id": "034220", "objet_social_lib": "maisons et villages de vacances"},{"objet_social_parent_id": "009000", "objet_social_parent_lib": "ACTION SOCIOCULTURELLE", "objet_social_id": "009007", "objet_social_lib": "maisons de la culture, office municipal,centres culturels"},{"objet_social_parent_id": "001000", "objet_social_parent_lib": "ACTIVIT\u00c9S POLITIQUES", "objet_social_id": "001005", "objet_social_lib": "associations \u00e0 caract\u00e8re politique g\u00e9n\u00e9ral"},{"objet_social_parent_id": "001000", "objet_social_parent_lib": "ACTIVIT\u00c9S POLITIQUES", "objet_social_id": "001020", "objet_social_lib": "action politique globale"},{"objet_social_parent_id": "014000", "objet_social_parent_lib": "AMICALES, GROUPEMENTS AFFINITAIRES, GROUPEMENTS D'ENTRAIDE (HORS D\u00c9FENSE DE DROITS FONDAMENTAUX)", "objet_social_id": "014045", "objet_social_lib": "amicale de personnes originaires d'une m\u00eame r\u00e9gion"},{"objet_social_parent_id": "014000", "objet_social_parent_lib": "AMICALES, GROUPEMENTS AFFINITAIRES, GROUPEMENTS D'ENTRAIDE (HORS D\u00c9FENSE DE DROITS FONDAMENTAUX)", "objet_social_id": "014060", "objet_social_lib": "associations de personnes homosexuelles pour l'entraide et la solidarit\u00e9 (hors d\u00e9fense de droits fondamentaux)"},{"objet_social_parent_id": "020000", "objet_social_parent_lib": "ASSOCIATIONS CARITATIVES, HUMANITAIRES, AIDE AU D\u00c9VELOPPEMENT, D\u00c9VELOPPEMENT DU B\u00c9N\u00c9VOLAT", "objet_social_id": "020010", "objet_social_lib": "secours en nature, distribution de nourriture et de v\u00eatements"},{"objet_social_parent_id": "022000", "objet_social_parent_lib": "CONDUITE D'ACTIVIT\u00c9S \u00c9CONOMIQUES", "objet_social_id": "022000", "objet_social_lib": "CONDUITE D'ACTIVIT\u00c9S \u00c9CONOMIQUES"},{"objet_social_parent_id": "023000", "objet_social_parent_lib": "REPR\u00c9SENTATION, PROMOTION ET D\u00c9FENSE D'INT\u00c9R\u00caTS \u00c9CONOMIQUES", "objet_social_id": "022520", "objet_social_lib": "gestion financi\u00e8re, gestion immobili\u00e8re"},{"objet_social_parent_id": "023000", "objet_social_parent_lib": "REPR\u00c9SENTATION, PROMOTION ET D\u00c9FENSE D'INT\u00c9R\u00caTS \u00c9CONOMIQUES", "objet_social_id": "022530", "objet_social_lib": "groupement d'achat, groupement d'entreprises"},{"objet_social_parent_id": "006000", "objet_social_parent_lib": "CULTURE, PRATIQUES D'ACTIVIT\u00c9S ARTISTIQUES, PRATIQUES CULTURELLES", "objet_social_id": "006040", "objet_social_lib": "danse"},{"objet_social_parent_id": "006000", "objet_social_parent_lib": "CULTURE, PRATIQUES D'ACTIVIT\u00c9S ARTISTIQUES, PRATIQUES CULTURELLES", "objet_social_id": "006105", "objet_social_lib": "loisirs scientifiques et techniques"},{"objet_social_parent_id": "003000", "objet_social_parent_lib": "D\u00c9FENSE DE DROITS FONDAMENTAUX, ACTIVIT\u00c9S CIVIQUES", "objet_social_id": "003000", "objet_social_lib": "D\u00c9FENSE DE DROITS FONDAMENTAUX, ACTIVIT\u00c9S CIVIQUES"},{"objet_social_parent_id": "003000", "objet_social_parent_lib": "D\u00c9FENSE DE DROITS FONDAMENTAUX, ACTIVIT\u00c9S CIVIQUES", "objet_social_id": "003010", "objet_social_lib": "d\u00e9fense de la paix"},{"objet_social_parent_id": "015000", "objet_social_parent_lib": "\u00c9DUCATION  FORMATION", "objet_social_id": "015005", "objet_social_lib": "parents d'\u00e9l\u00e8ves"},{"objet_social_parent_id": "015000", "objet_social_parent_lib": "\u00c9DUCATION  FORMATION", "objet_social_id": "015045", "objet_social_lib": "\u00e9tablissement de formation professionnelle, de formation continue"},{"objet_social_parent_id": "024000", "objet_social_parent_lib": "ENVIRONNEMENT,  CADRE DE VIE", "objet_social_id": "024010", "objet_social_lib": "ressources naturelles"},{"objet_social_parent_id": "005000", "objet_social_parent_lib": "INFORMATION COMMUNICATION", "objet_social_id": "005020", "objet_social_lib": "r\u00e9seaux internet"},{"objet_social_parent_id": "019000", "objet_social_parent_lib": "INTERVENTIONS SOCIALES", "objet_social_id": "019012", "objet_social_lib": "lutte contre le surendettement"},{"objet_social_parent_id": "019000", "objet_social_parent_lib": "INTERVENTIONS SOCIALES", "objet_social_id": "019014", "objet_social_lib": "lutte contre l'illettrisme"},{"objet_social_parent_id": "019000", "objet_social_parent_lib": "INTERVENTIONS SOCIALES", "objet_social_id": "019050", "objet_social_lib": "r\u00e9insertion des d\u00e9linquants"},{"objet_social_parent_id": "004000", "objet_social_parent_lib": "JUSTICE", "objet_social_id": "004035", "objet_social_lib": "maisons du droit, acc\u00e8s au droit"},{"objet_social_parent_id": "010000", "objet_social_parent_lib": "PR\u00c9SERVATION DU PATRIMOINE", "objet_social_id": "010005", "objet_social_lib": "collections d'objets, de documents, biblioth\u00e8ques sp\u00e9cialis\u00e9es pour la sauvegarde et l'entretien du patrimoine"},{"objet_social_parent_id": "016000", "objet_social_parent_lib": "RECHERCHE", "objet_social_id": "016010", "objet_social_lib": "recherche sur la culture"},{"objet_social_parent_id": "023000", "objet_social_parent_lib": "REPR\u00c9SENTATION, PROMOTION ET D\u00c9FENSE D'INT\u00c9R\u00caTS \u00c9CONOMIQUES", "objet_social_id": "023007", "objet_social_lib": "groupements professionnels"},{"objet_social_parent_id": "017000", "objet_social_parent_lib": "SANT\u00c9", "objet_social_id": "017000", "objet_social_lib": "SANT\u00c9"},{"objet_social_parent_id": "017000", "objet_social_parent_lib": "SANT\u00c9", "objet_social_id": "017015", "objet_social_lib": "h\u00f4pitaux psychiatriques, soins ambulatoires en sant\u00e9 mentale"},{"objet_social_parent_id": "017000", "objet_social_parent_lib": "SANT\u00c9", "objet_social_id": "017115", "objet_social_lib": "d\u00e9pistage, pr\u00e9vention du sida"},{"objet_social_parent_id": "017000", "objet_social_parent_lib": "SANT\u00c9", "objet_social_id": "017120", "objet_social_lib": "\u00e9ducation sanitaire, pr\u00e9vention g\u00e9n\u00e9rale"},{"objet_social_parent_id": "017000", "objet_social_parent_lib": "SANT\u00c9", "objet_social_id": "017200", "objet_social_lib": "recherche m\u00e9dicale"},{"objet_social_parent_id": "037000", "objet_social_parent_lib": null, "objet_social_id": "036530", "objet_social_lib": "pr\u00e9vention, formation, cours de secourisme"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011080", "objet_social_lib": "rugby  (rugby \u00e0 13, \u00e0 15)"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011095", "objet_social_lib": "nautisme, glisse sur eau  (ski nautique, surf, char \u00e0 voile)"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011120", "objet_social_lib": "musculation  (culturisme, musculation)"},{"objet_social_parent_id": "034000", "objet_social_parent_lib": "TOURISME", "objet_social_id": "034000", "objet_social_lib": "TOURISME"},{"objet_social_parent_id": "034000", "objet_social_parent_lib": "TOURISME", "objet_social_id": "034230", "objet_social_lib": "g\u00eetes ruraux, camping, caravaning, naturisme"},{"objet_social_parent_id": "009000", "objet_social_parent_lib": "ACTION SOCIOCULTURELLE", "objet_social_id": "009025", "objet_social_lib": "mouvements \u00e9ducatifs de jeunesse et d'\u00e9ducation populaire"},{"objet_social_parent_id": "001000", "objet_social_parent_lib": "ACTIVIT\u00c9S POLITIQUES", "objet_social_id": "001010", "objet_social_lib": "soutien, financement de partis et de campagnes \u00e9lectorales"},{"objet_social_parent_id": "030000", "objet_social_parent_lib": "AIDE \u00c0 L'EMPLOI, D\u00c9VELOPPEMENT LOCAL, PROMOTION DE SOLIDARIT\u00c9S \u00c9CONOMIQUES, VIE LOCALE", "objet_social_id": "030050", "objet_social_lib": "promotion d'initiatives de d\u00e9veloppement durable"},{"objet_social_parent_id": "014000", "objet_social_parent_lib": "AMICALES, GROUPEMENTS AFFINITAIRES, GROUPEMENTS D'ENTRAIDE (HORS D\u00c9FENSE DE DROITS FONDAMENTAUX)", "objet_social_id": "014000", "objet_social_lib": "AMICALES, GROUPEMENTS AFFINITAIRES, GROUPEMENTS D'ENTRAIDE (HORS D\u00c9FENSE DE DROITS FONDAMENTAUX)"},{"objet_social_parent_id": "014000", "objet_social_parent_lib": "AMICALES, GROUPEMENTS AFFINITAIRES, GROUPEMENTS D'ENTRAIDE (HORS D\u00c9FENSE DE DROITS FONDAMENTAUX)", "objet_social_id": "014025", "objet_social_lib": "organisation de professions (hors caract\u00e8re syndical)"},{"objet_social_parent_id": "038000", "objet_social_parent_lib": "ARM\u00c9E (DONT  PR\u00c9PARATION MILITAIRE, M\u00c9DAILLES), ANCIENS COMBATTANTS", "objet_social_id": "038110", "objet_social_lib": "associations de militaires, amicales, associations de conscrits"},{"objet_social_parent_id": "020000", "objet_social_parent_lib": "ASSOCIATIONS CARITATIVES, HUMANITAIRES, AIDE AU D\u00c9VELOPPEMENT, D\u00c9VELOPPEMENT DU B\u00c9N\u00c9VOLAT", "objet_social_id": "020020", "objet_social_lib": "associations caritatives intervenant au plan international"},{"objet_social_parent_id": "007000", "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS", "objet_social_id": "007035", "objet_social_lib": "cercles priv\u00e9s, fan clubs"},{"objet_social_parent_id": "007000", "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS", "objet_social_id": "007040", "objet_social_lib": "activit\u00e9s festives (soir\u00e9es.)"},{"objet_social_parent_id": "007000", "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS", "objet_social_id": "007085", "objet_social_lib": "relaxation, sophrologie"},{"objet_social_parent_id": "023000", "objet_social_parent_lib": "REPR\u00c9SENTATION, PROMOTION ET D\u00c9FENSE D'INT\u00c9R\u00caTS \u00c9CONOMIQUES", "objet_social_id": "022540", "objet_social_lib": "chambres de commerce, chambres \u00e9conomiques"},{"objet_social_parent_id": "023000", "objet_social_parent_lib": "REPR\u00c9SENTATION, PROMOTION ET D\u00c9FENSE D'INT\u00c9R\u00caTS \u00c9CONOMIQUES", "objet_social_id": "022542", "objet_social_lib": "association \u00e0 but commercial, d\u00e9veloppement \u00e9conomique"},{"objet_social_parent_id": "023000", "objet_social_parent_lib": "REPR\u00c9SENTATION, PROMOTION ET D\u00c9FENSE D'INT\u00c9R\u00caTS \u00c9CONOMIQUES", "objet_social_id": "022550", "objet_social_lib": "caisses de cong\u00e9s pay\u00e9s, caisses de secours"},{"objet_social_parent_id": "006000", "objet_social_parent_lib": "CULTURE, PRATIQUES D'ACTIVIT\u00c9S ARTISTIQUES, PRATIQUES CULTURELLES", "objet_social_id": "006110", "objet_social_lib": "langues, dialectes, patois"},{"objet_social_parent_id": "003000", "objet_social_parent_lib": "D\u00c9FENSE DE DROITS FONDAMENTAUX, ACTIVIT\u00c9S CIVIQUES", "objet_social_id": "003050", "objet_social_lib": "d\u00e9fense de droits de personnes \u00e9trang\u00e8res ou immigr\u00e9es, de personnes r\u00e9fugi\u00e9es"},{"objet_social_parent_id": "003000", "objet_social_parent_lib": "D\u00c9FENSE DE DROITS FONDAMENTAUX, ACTIVIT\u00c9S CIVIQUES", "objet_social_id": "003035", "objet_social_lib": "association pour la d\u00e9fense de droits de minorit\u00e9s"},{"objet_social_parent_id": "015000", "objet_social_parent_lib": "\u00c9DUCATION  FORMATION", "objet_social_id": "015010", "objet_social_lib": "organisation de professions enseignantes, amicales de personnel"},{"objet_social_parent_id": "015000", "objet_social_parent_lib": "\u00c9DUCATION  FORMATION", "objet_social_id": "015105", "objet_social_lib": "maisons familiales rurales"},{"objet_social_parent_id": "024000", "objet_social_parent_lib": "ENVIRONNEMENT,  CADRE DE VIE", "objet_social_id": "024025", "objet_social_lib": "pr\u00e9servation de la faune sauvage"},{"objet_social_parent_id": "019000", "objet_social_parent_lib": "INTERVENTIONS SOCIALES", "objet_social_id": "019045", "objet_social_lib": "lutte contre diverses formes de violence"},{"objet_social_parent_id": "004000", "objet_social_parent_lib": "JUSTICE", "objet_social_id": "004010", "objet_social_lib": "m\u00e9diation, pr\u00e9vention"},{"objet_social_parent_id": "010000", "objet_social_parent_lib": "PR\u00c9SERVATION DU PATRIMOINE", "objet_social_id": "010000", "objet_social_lib": "PR\u00c9SERVATION DU PATRIMOINE"},{"objet_social_parent_id": "016000", "objet_social_parent_lib": "RECHERCHE", "objet_social_id": "016030", "objet_social_lib": "association de recherches scientifiques, sciences physiques, sciences humaines."},{"objet_social_parent_id": "023000", "objet_social_parent_lib": "REPR\u00c9SENTATION, PROMOTION ET D\u00c9FENSE D'INT\u00c9R\u00caTS \u00c9CONOMIQUES", "objet_social_id": "023022", "objet_social_lib": "associations d'int\u00e9r\u00eats maritimes, marins"},{"objet_social_parent_id": "017000", "objet_social_parent_lib": "SANT\u00c9", "objet_social_id": "017075", "objet_social_lib": "gestion de mat\u00e9riel m\u00e9dical"},{"objet_social_parent_id": "017000", "objet_social_parent_lib": "SANT\u00c9", "objet_social_id": "017135", "objet_social_lib": "hom\u00e9opathie, m\u00e9decines douces"},{"objet_social_parent_id": "009000", "objet_social_parent_lib": "ACTION SOCIOCULTURELLE", "objet_social_id": "009005", "objet_social_lib": "maisons de jeunes, foyers, clubs de jeunes"},{"objet_social_parent_id": "009000", "objet_social_parent_lib": "ACTION SOCIOCULTURELLE", "objet_social_id": "009050", "objet_social_lib": "jumelages, \u00e9changes culturels, organisation d'\u00e9changes linguistiques, \u00e9changes culturels au plan international"},{"objet_social_parent_id": "014000", "objet_social_parent_lib": "AMICALES, GROUPEMENTS AFFINITAIRES, GROUPEMENTS D'ENTRAIDE (HORS D\u00c9FENSE DE DROITS FONDAMENTAUX)", "objet_social_id": "014080", "objet_social_lib": "associations de classe d.\u00e2ge"},{"objet_social_parent_id": "006000", "objet_social_parent_lib": "CULTURE, PRATIQUES D'ACTIVIT\u00c9S ARTISTIQUES, PRATIQUES CULTURELLES", "objet_social_id": "006010", "objet_social_lib": "expression \u00e9crite, litt\u00e9rature, po\u00e9sie"},{"objet_social_parent_id": "015000", "objet_social_parent_lib": "\u00c9DUCATION  FORMATION", "objet_social_id": "015035", "objet_social_lib": "organisme de gestion d'\u00e9tablissement d'enseignement g\u00e9n\u00e9ral et technique"},{"objet_social_parent_id": "024000", "objet_social_parent_lib": "ENVIRONNEMENT,  CADRE DE VIE", "objet_social_id": "024035", "objet_social_lib": "comit\u00e9s de d\u00e9fense, comit\u00e9s de sauvegarde"},{"objet_social_parent_id": "032000", "objet_social_parent_lib": "LOGEMENT", "objet_social_id": "032000", "objet_social_lib": "LOGEMENT"},{"objet_social_parent_id": "033000", "objet_social_parent_lib": null, "objet_social_id": "032525", "objet_social_lib": "r\u00e9habilitation et construction de logements"},{"objet_social_parent_id": "016000", "objet_social_parent_lib": "RECHERCHE", "objet_social_id": "016015", "objet_social_lib": "recherche sur la vie sociale et politique"},{"objet_social_parent_id": "023000", "objet_social_parent_lib": "REPR\u00c9SENTATION, PROMOTION ET D\u00c9FENSE D'INT\u00c9R\u00caTS \u00c9CONOMIQUES", "objet_social_id": "023001", "objet_social_lib": "usagers de services publics"},{"objet_social_parent_id": "017000", "objet_social_parent_lib": "SANT\u00c9", "objet_social_id": "017045", "objet_social_lib": "centres de r\u00e9adaptation"},{"objet_social_parent_id": "017000", "objet_social_parent_lib": "SANT\u00c9", "objet_social_id": "017065", "objet_social_lib": "don de sang, don d'organe"},{"objet_social_parent_id": "001000", "objet_social_parent_lib": "ACTIVIT\u00c9S POLITIQUES", "objet_social_id": "001025", "objet_social_lib": "activit\u00e9s citoyennes europ\u00e9ennes"},{"objet_social_parent_id": "030000", "objet_social_parent_lib": "AIDE \u00c0 L'EMPLOI, D\u00c9VELOPPEMENT LOCAL, PROMOTION DE SOLIDARIT\u00c9S \u00c9CONOMIQUES, VIE LOCALE", "objet_social_id": "030005", "objet_social_lib": "comit\u00e9, d\u00e9fense d'un emploi"},{"objet_social_parent_id": "002000", "objet_social_parent_lib": "CLUBS, CERCLES DE R\u00c9FLEXION", "objet_social_id": "002015", "objet_social_lib": "clubs de r\u00e9flexion"},{"objet_social_parent_id": "007000", "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS", "objet_social_id": "007025", "objet_social_lib": "clubs de collectionneurs sauf collectionneurs de v\u00e9hicules, mod\u00e9lisme, philat\u00e9lie, numismatique"},{"objet_social_parent_id": "007000", "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS", "objet_social_id": "007045", "objet_social_lib": "\u00e9levages canins, clubs de chiens de d\u00e9fense"},{"objet_social_parent_id": "007000", "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS", "objet_social_id": "007060", "objet_social_lib": "gastronomie, \u0153nologie, confr\u00e9ries, gourmets"},{"objet_social_parent_id": "006000", "objet_social_parent_lib": "CULTURE, PRATIQUES D'ACTIVIT\u00c9S ARTISTIQUES, PRATIQUES CULTURELLES", "objet_social_id": "006005", "objet_social_lib": "biblioth\u00e8ques, ludoth\u00e8ques, discoth\u00e8ques, vid\u00e9oth\u00e8ques"},{"objet_social_parent_id": "003000", "objet_social_parent_lib": "D\u00c9FENSE DE DROITS FONDAMENTAUX, ACTIVIT\u00c9S CIVIQUES", "objet_social_id": "003025", "objet_social_lib": "d\u00e9fense de droits de personnes homosexuelles"},{"objet_social_parent_id": "003000", "objet_social_parent_lib": "D\u00c9FENSE DE DROITS FONDAMENTAUX, ACTIVIT\u00c9S CIVIQUES", "objet_social_id": "003060", "objet_social_lib": "activit\u00e9s civiques, information civique"},{"objet_social_parent_id": "015000", "objet_social_parent_lib": "\u00c9DUCATION  FORMATION", "objet_social_id": "015075", "objet_social_lib": "amicales, associations du personnel d'\u00e9tablissements scolaires ou universitaires"},{"objet_social_parent_id": "024000", "objet_social_parent_lib": "ENVIRONNEMENT,  CADRE DE VIE", "objet_social_id": "024015", "objet_social_lib": "espaces naturels"},{"objet_social_parent_id": "024000", "objet_social_parent_lib": "ENVIRONNEMENT,  CADRE DE VIE", "objet_social_id": "024045", "objet_social_lib": "d\u00e9fense et am\u00e9lioration du cadre de vie"},{"objet_social_parent_id": "019000", "objet_social_parent_lib": "INTERVENTIONS SOCIALES", "objet_social_id": "019010", "objet_social_lib": "centres sociaux, foyers de jeunes travailleurs, centres d'\u00e9tudes et d'action sociale"},{"objet_social_parent_id": "004000", "objet_social_parent_lib": "JUSTICE", "objet_social_id": "004030", "objet_social_lib": "d\u00e9fense des droits des victimes"},{"objet_social_parent_id": "010000", "objet_social_parent_lib": "PR\u00c9SERVATION DU PATRIMOINE", "objet_social_id": "010010", "objet_social_lib": "mus\u00e9es, collections historiques"},{"objet_social_parent_id": "010000", "objet_social_parent_lib": "PR\u00c9SERVATION DU PATRIMOINE", "objet_social_id": "010022", "objet_social_lib": "comit\u00e9s de d\u00e9fense du patrimoine"},{"objet_social_parent_id": "010000", "objet_social_parent_lib": "PR\u00c9SERVATION DU PATRIMOINE", "objet_social_id": "010030", "objet_social_lib": "construction de monuments (sauf lieux de culte)"},{"objet_social_parent_id": "016000", "objet_social_parent_lib": "RECHERCHE", "objet_social_id": "016025", "objet_social_lib": "recherche sur l'environnement et le climat"},{"objet_social_parent_id": "016000", "objet_social_parent_lib": "RECHERCHE", "objet_social_id": "016080", "objet_social_lib": "diffusion de savoirs, soci\u00e9t\u00e9s savantes, soci\u00e9t\u00e9s acad\u00e9miques"},{"objet_social_parent_id": "017000", "objet_social_parent_lib": "SANT\u00c9", "objet_social_id": "017020", "objet_social_lib": "dispensaires, soins infirmiers, services param\u00e9dicaux, services de garde"},{"objet_social_parent_id": "017000", "objet_social_parent_lib": "SANT\u00c9", "objet_social_id": "017105", "objet_social_lib": "m\u00e9decine du travail"},{"objet_social_parent_id": "037000", "objet_social_parent_lib": null, "objet_social_id": "036510", "objet_social_lib": "amicale de sapeurs pompiers"},{"objet_social_parent_id": "037000", "objet_social_parent_lib": null, "objet_social_id": "036545", "objet_social_lib": "s\u00e9curit\u00e9 et sauvetage en montagne"},{"objet_social_parent_id": "018000", "objet_social_parent_lib": "SERVICES ET \u00c9TABLISSEMENTS M\u00c9DICO-SOCIAUX", "objet_social_id": "018005", "objet_social_lib": "accueil et protection de la petite enfance"},{"objet_social_parent_id": "018000", "objet_social_parent_lib": "SERVICES ET \u00c9TABLISSEMENTS M\u00c9DICO-SOCIAUX", "objet_social_id": "018030", "objet_social_lib": "pr\u00e9vention et lutte contre l'alcoolisme, le tabagisme, la toxicomanie"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011000", "objet_social_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011050", "objet_social_lib": "\u00e9quitation  (\u00e9quitation, hippisme, courses camarguaise, landaise)"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011125", "objet_social_lib": "natation - baignade  (natation, plong\u00e9e)"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011130", "objet_social_lib": "roller - skate"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011135", "objet_social_lib": "sports a\u00e9riens  (avion, planeur, ULM, parachutisme)"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011190", "objet_social_lib": "gestion d'\u00e9quipements sportifs, organisation de rencontres sportives, organisation de championnats, clubs de supporters"},{"objet_social_parent_id": "009000", "objet_social_parent_lib": "ACTION SOCIOCULTURELLE", "objet_social_id": "009010", "objet_social_lib": "loisirs pour personnes en situation de handicap"},{"objet_social_parent_id": "009000", "objet_social_parent_lib": "ACTION SOCIOCULTURELLE", "objet_social_id": "009015", "objet_social_lib": "associations socio-\u00e9ducatives, scoutisme"},{"objet_social_parent_id": "009000", "objet_social_parent_lib": "ACTION SOCIOCULTURELLE", "objet_social_id": "009035", "objet_social_lib": "foyers ruraux"},{"objet_social_parent_id": "009000", "objet_social_parent_lib": "ACTION SOCIOCULTURELLE", "objet_social_id": "009040", "objet_social_lib": "clubs troisi\u00e8me \u00e2ge"},{"objet_social_parent_id": "001000", "objet_social_parent_lib": "ACTIVIT\u00c9S POLITIQUES", "objet_social_id": "001000", "objet_social_lib": "ACTIVIT\u00c9S POLITIQUES"},{"objet_social_parent_id": "030000", "objet_social_parent_lib": "AIDE \u00c0 L'EMPLOI, D\u00c9VELOPPEMENT LOCAL, PROMOTION DE SOLIDARIT\u00c9S \u00c9CONOMIQUES, VIE LOCALE", "objet_social_id": "030015", "objet_social_lib": "groupement d'employeurs"},{"objet_social_parent_id": "030000", "objet_social_parent_lib": "AIDE \u00c0 L'EMPLOI, D\u00c9VELOPPEMENT LOCAL, PROMOTION DE SOLIDARIT\u00c9S \u00c9CONOMIQUES, VIE LOCALE", "objet_social_id": "030020", "objet_social_lib": "aide \u00e0 la cr\u00e9ation d'activit\u00e9s \u00e9conomiques individuelles"},{"objet_social_parent_id": "014000", "objet_social_parent_lib": "AMICALES, GROUPEMENTS AFFINITAIRES, GROUPEMENTS D'ENTRAIDE (HORS D\u00c9FENSE DE DROITS FONDAMENTAUX)", "objet_social_id": "014035", "objet_social_lib": "groupements d'entraide et de solidarit\u00e9"},{"objet_social_parent_id": "014000", "objet_social_parent_lib": "AMICALES, GROUPEMENTS AFFINITAIRES, GROUPEMENTS D'ENTRAIDE (HORS D\u00c9FENSE DE DROITS FONDAMENTAUX)", "objet_social_id": "014050", "objet_social_lib": "associations f\u00e9minines pour l'entraide et la solidarit\u00e9 (hors d\u00e9fense de droits fondamentaux)"},{"objet_social_parent_id": "020000", "objet_social_parent_lib": "ASSOCIATIONS CARITATIVES, HUMANITAIRES, AIDE AU D\u00c9VELOPPEMENT, D\u00c9VELOPPEMENT DU B\u00c9N\u00c9VOLAT", "objet_social_id": "020025", "objet_social_lib": "d\u00e9veloppement du b\u00e9n\u00e9volat"},{"objet_social_parent_id": "013000", "objet_social_parent_lib": "CHASSE P\u00caCHE", "objet_social_id": "013000", "objet_social_lib": "CHASSE P\u00caCHE"},{"objet_social_parent_id": "007000", "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS", "objet_social_id": "007070", "objet_social_lib": "jardinage, jardins ouvriers, floralies"},{"objet_social_parent_id": "007000", "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS", "objet_social_id": "007075", "objet_social_lib": "\u00e9changes locaux, r\u00e9seaux d'\u00e9changes"},{"objet_social_parent_id": "007000", "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS", "objet_social_id": "007080", "objet_social_lib": "centres de loisirs, clubs de loisirs multiples"},{"objet_social_parent_id": "006000", "objet_social_parent_lib": "CULTURE, PRATIQUES D'ACTIVIT\u00c9S ARTISTIQUES, PRATIQUES CULTURELLES", "objet_social_id": "006000", "objet_social_lib": "CULTURE, PRATIQUES D'ACTIVIT\u00c9S ARTISTIQUES, PRATIQUES CULTURELLES"},{"objet_social_parent_id": "006000", "objet_social_parent_lib": "CULTURE, PRATIQUES D'ACTIVIT\u00c9S ARTISTIQUES, PRATIQUES CULTURELLES", "objet_social_id": "006045", "objet_social_lib": "folklore"},{"objet_social_parent_id": "006000", "objet_social_parent_lib": "CULTURE, PRATIQUES D'ACTIVIT\u00c9S ARTISTIQUES, PRATIQUES CULTURELLES", "objet_social_id": "006070", "objet_social_lib": "th\u00e9\u00e2tre, marionnettes, cirque, spectacles de vari\u00e9t\u00e9"},{"objet_social_parent_id": "015000", "objet_social_parent_lib": "\u00c9DUCATION  FORMATION", "objet_social_id": "015000", "objet_social_lib": "\u00c9DUCATION  FORMATION"},{"objet_social_parent_id": "015000", "objet_social_parent_lib": "\u00c9DUCATION  FORMATION", "objet_social_id": "015040", "objet_social_lib": "organisme de gestion d'\u00e9tablissement d'enseignement sup\u00e9rieur"},{"objet_social_parent_id": "015000", "objet_social_parent_lib": "\u00c9DUCATION  FORMATION", "objet_social_id": "015070", "objet_social_lib": "amicales, associations d'anciens \u00e9tudiants, d'anciens \u00e9l\u00e8ves"},{"objet_social_parent_id": "015000", "objet_social_parent_lib": "\u00c9DUCATION  FORMATION", "objet_social_id": "015085", "objet_social_lib": "organisation, financement de voyages d'\u00e9tudes, d'\u00e9changes, pour scolaires ou universitaires"},{"objet_social_parent_id": "024000", "objet_social_parent_lib": "ENVIRONNEMENT,  CADRE DE VIE", "objet_social_id": "024020", "objet_social_lib": "protection de sites naturels"},{"objet_social_parent_id": "024000", "objet_social_parent_lib": "ENVIRONNEMENT,  CADRE DE VIE", "objet_social_id": "024040", "objet_social_lib": "mouvements \u00e9cologiques"},{"objet_social_parent_id": "005000", "objet_social_parent_lib": "INFORMATION COMMUNICATION", "objet_social_id": "005030", "objet_social_lib": "auditeurs, consommateurs d'outils d'information et de communication"},{"objet_social_parent_id": "019000", "objet_social_parent_lib": "INTERVENTIONS SOCIALES", "objet_social_id": "019040", "objet_social_lib": "aide aux personnes en danger, solitude, d\u00e9sespoir, soutien psychologique et moral"},{"objet_social_parent_id": "033000", "objet_social_parent_lib": null, "objet_social_id": "032520", "objet_social_lib": "associations et comit\u00e9s de locataires, de propri\u00e9taires, comit\u00e9s de logement"},{"objet_social_parent_id": "010000", "objet_social_parent_lib": "PR\u00c9SERVATION DU PATRIMOINE", "objet_social_id": "010015", "objet_social_lib": "associations, soci\u00e9t\u00e9s savantes pour des \u00e9tudes historiques, histoire du patrimoine"},{"objet_social_parent_id": "016000", "objet_social_parent_lib": "RECHERCHE", "objet_social_id": "016050", "objet_social_lib": "autres associations de recherche"},{"objet_social_parent_id": "036000", "objet_social_parent_lib": "S\u00c9CURIT\u00c9, PROTECTION CIVILE", "objet_social_id": "036000", "objet_social_lib": "S\u00c9CURIT\u00c9, PROTECTION CIVILE"},{"objet_social_parent_id": "018000", "objet_social_parent_lib": "SERVICES ET \u00c9TABLISSEMENTS M\u00c9DICO-SOCIAUX", "objet_social_id": "018045", "objet_social_lib": "aide aux victimes de maladies professionnelles"},{"objet_social_parent_id": "021000", "objet_social_parent_lib": "SERVICES FAMILIAUX, SERVICES AUX PERSONNES \u00c2G\u00c9ES", "objet_social_id": "021020", "objet_social_lib": "foyers pour personnes \u00e2g\u00e9es, maisons de retraite,  maisons de retraite m\u00e9dicalis\u00e9es"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011005", "objet_social_lib": "associations multisports locales"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011015", "objet_social_lib": "associations multisports d'entreprise"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011055", "objet_social_lib": "escalade, montagne  (escalade, sp\u00e9l\u00e9ologie, via ferrata, canyonisme, alpinisme)"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011092", "objet_social_lib": "hockey sur glace, sports de glace"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011140", "objet_social_lib": "judo"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011175", "objet_social_lib": "tir  (tir \u00e0 l.arc, tir \u00e0 balle, ball-trap), javelot"},{"objet_social_parent_id": "009000", "objet_social_parent_lib": "ACTION SOCIOCULTURELLE", "objet_social_id": "009000", "objet_social_lib": "ACTION SOCIOCULTURELLE"},{"objet_social_parent_id": "009000", "objet_social_parent_lib": "ACTION SOCIOCULTURELLE", "objet_social_id": "009020", "objet_social_lib": "centres a\u00e9r\u00e9s, colonies de vacances"},{"objet_social_parent_id": "038000", "objet_social_parent_lib": "ARM\u00c9E (DONT  PR\u00c9PARATION MILITAIRE, M\u00c9DAILLES), ANCIENS COMBATTANTS", "objet_social_id": "038000", "objet_social_lib": "ARM\u00c9E (DONT  PR\u00c9PARATION MILITAIRE, M\u00c9DAILLES), ANCIENS COMBATTANTS"},{"objet_social_parent_id": "020000", "objet_social_parent_lib": "ASSOCIATIONS CARITATIVES, HUMANITAIRES, AIDE AU D\u00c9VELOPPEMENT, D\u00c9VELOPPEMENT DU B\u00c9N\u00c9VOLAT", "objet_social_id": "020015", "objet_social_lib": "associations caritatives \u00e0 but multiple"},{"objet_social_parent_id": "007000", "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS", "objet_social_id": "007095", "objet_social_lib": "radioamateurs"},{"objet_social_parent_id": "006000", "objet_social_parent_lib": "CULTURE, PRATIQUES D'ACTIVIT\u00c9S ARTISTIQUES, PRATIQUES CULTURELLES", "objet_social_id": "006020", "objet_social_lib": "arts graphiques, bandes dessin\u00e9es, peinture, sculpture, architecture"},{"objet_social_parent_id": "003000", "objet_social_parent_lib": "D\u00c9FENSE DE DROITS FONDAMENTAUX, ACTIVIT\u00c9S CIVIQUES", "objet_social_id": "003012", "objet_social_lib": "d\u00e9fense des droits des enfants"},{"objet_social_parent_id": "003000", "objet_social_parent_lib": "D\u00c9FENSE DE DROITS FONDAMENTAUX, ACTIVIT\u00c9S CIVIQUES", "objet_social_id": "003045", "objet_social_lib": "d\u00e9fense de droits de personnes rapatri\u00e9es"},{"objet_social_parent_id": "024000", "objet_social_parent_lib": "ENVIRONNEMENT,  CADRE DE VIE", "objet_social_id": "024030", "objet_social_lib": "pr\u00e9servation de la flore sauvage"},{"objet_social_parent_id": "005000", "objet_social_parent_lib": "INFORMATION COMMUNICATION", "objet_social_id": "005000", "objet_social_lib": "INFORMATION COMMUNICATION"},{"objet_social_parent_id": "005000", "objet_social_parent_lib": "INFORMATION COMMUNICATION", "objet_social_id": "005005", "objet_social_lib": "presse, \u00e9dition"},{"objet_social_parent_id": "019000", "objet_social_parent_lib": "INTERVENTIONS SOCIALES", "objet_social_id": "019000", "objet_social_lib": "INTERVENTIONS SOCIALES"},{"objet_social_parent_id": "019000", "objet_social_parent_lib": "INTERVENTIONS SOCIALES", "objet_social_id": "019004", "objet_social_lib": "aide et conseils aux familles"},{"objet_social_parent_id": "004000", "objet_social_parent_lib": "JUSTICE", "objet_social_id": "004000", "objet_social_lib": "JUSTICE"},{"objet_social_parent_id": "010000", "objet_social_parent_lib": "PR\u00c9SERVATION DU PATRIMOINE", "objet_social_id": "010017", "objet_social_lib": "soci\u00e9t\u00e9s, clubs de g\u00e9n\u00e9alogie"},{"objet_social_parent_id": "016000", "objet_social_parent_lib": "RECHERCHE", "objet_social_id": "016005", "objet_social_lib": "recherche sur l'\u00e9ducation et la formation"},{"objet_social_parent_id": "023000", "objet_social_parent_lib": "REPR\u00c9SENTATION, PROMOTION ET D\u00c9FENSE D'INT\u00c9R\u00caTS \u00c9CONOMIQUES", "objet_social_id": "023000", "objet_social_lib": "REPR\u00c9SENTATION, PROMOTION ET D\u00c9FENSE D'INT\u00c9R\u00caTS \u00c9CONOMIQUES"},{"objet_social_parent_id": "023000", "objet_social_parent_lib": "REPR\u00c9SENTATION, PROMOTION ET D\u00c9FENSE D'INT\u00c9R\u00caTS \u00c9CONOMIQUES", "objet_social_id": "023005", "objet_social_lib": "groupements de salari\u00e9s \u00e0 caract\u00e8re syndical"},{"objet_social_parent_id": "023000", "objet_social_parent_lib": "REPR\u00c9SENTATION, PROMOTION ET D\u00c9FENSE D'INT\u00c9R\u00caTS \u00c9CONOMIQUES", "objet_social_id": "023010", "objet_social_lib": "associations de d\u00e9fense d'int\u00e9r\u00eats des retrait\u00e9s ou des personnes \u00e2g\u00e9es"},{"objet_social_parent_id": "023000", "objet_social_parent_lib": "REPR\u00c9SENTATION, PROMOTION ET D\u00c9FENSE D'INT\u00c9R\u00caTS \u00c9CONOMIQUES", "objet_social_id": "023025", "objet_social_lib": "associations pour la repr\u00e9sentation d'artisans, de commer\u00e7ants"},{"objet_social_parent_id": "023000", "objet_social_parent_lib": "REPR\u00c9SENTATION, PROMOTION ET D\u00c9FENSE D'INT\u00c9R\u00caTS \u00c9CONOMIQUES", "objet_social_id": "023035", "objet_social_lib": "association de repr\u00e9sentation de professions lib\u00e9rales"},{"objet_social_parent_id": "017000", "objet_social_parent_lib": "SANT\u00c9", "objet_social_id": "017130", "objet_social_lib": "association de personnes malades, ou anciens malades"},{"objet_social_parent_id": "017000", "objet_social_parent_lib": "SANT\u00c9", "objet_social_id": "017145", "objet_social_lib": "organisation des professions m\u00e9dicales,  organisation des professions param\u00e9dicales"},{"objet_social_parent_id": "017000", "objet_social_parent_lib": "SANT\u00c9", "objet_social_id": "017210", "objet_social_lib": "financement de la recherche m\u00e9dicale"},{"objet_social_parent_id": "018000", "objet_social_parent_lib": "SERVICES ET \u00c9TABLISSEMENTS M\u00c9DICO-SOCIAUX", "objet_social_id": "018025", "objet_social_lib": "\u00e9tablissements et services pour adultes en difficult\u00e9, CHRS (centres d'h\u00e9bergement et de r\u00e9adaptation sociale)"},{"objet_social_parent_id": "021000", "objet_social_parent_lib": "SERVICES FAMILIAUX, SERVICES AUX PERSONNES \u00c2G\u00c9ES", "objet_social_id": "021000", "objet_social_lib": "SERVICES FAMILIAUX, SERVICES AUX PERSONNES \u00c2G\u00c9ES"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011010", "objet_social_lib": "associations multisports scolaires ou universitaires"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011020", "objet_social_lib": "athl\u00e9tisme  (triathlon, pentathlon, footing, jogging)"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011045", "objet_social_lib": "danse sportive (danse sportive, hip hop, claquettes)"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011065", "objet_social_lib": "basket-ball"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011105", "objet_social_lib": "gymnastique  (gymnastique, gymnastique d.entretien, \u00e9ducation physique, yoga), a\u00e9robic"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011145", "objet_social_lib": "sports de combat  (boxe, kick box, boxe tha\u00ef, lutte)"},{"objet_social_parent_id": "011000", "objet_social_parent_lib": "SPORTS, ACTIVIT\u00c9S DE PLEIN AIR", "objet_social_id": "011160", "objet_social_lib": "sports m\u00e9caniques  (sport automobile, moto, trial)"}]
+[
+    {
+        "objet_social_parent_id": "009000",
+        "objet_social_parent_lib": "ACTION SOCIOCULTURELLE",
+        "objet_social_id": "009045",
+        "objet_social_lib": "majorettes, twirlings, carnavals, défilés"
+    },
+    {
+        "objet_social_parent_id": "014000",
+        "objet_social_parent_lib": "AMICALES, GROUPEMENTS AFFINITAIRES, GROUPEMENTS D'ENTRAIDE (HORS DÉFENSE DE DROITS FONDAMENTAUX)",
+        "objet_social_id": "014070",
+        "objet_social_lib": "associations de personnes en situation de handicap pour l'entraide et la solidarité (hors défense de droits fondamentaux)"
+    },
+    {
+        "objet_social_parent_id": "038000",
+        "objet_social_parent_lib": "ARMÉE (DONT  PRÉPARATION MILITAIRE, MÉDAILLES), ANCIENS COMBATTANTS",
+        "objet_social_id": "038105",
+        "objet_social_lib": "anciens combattants"
+    },
+    {
+        "objet_social_parent_id": "020000",
+        "objet_social_parent_lib": "ASSOCIATIONS CARITATIVES, HUMANITAIRES, AIDE AU DÉVELOPPEMENT, DÉVELOPPEMENT DU BÉNÉVOLAT",
+        "objet_social_id": "020000",
+        "objet_social_lib": "ASSOCIATIONS CARITATIVES, HUMANITAIRES, AIDE AU DÉVELOPPEMENT, DÉVELOPPEMENT DU BÉNÉVOLAT"
+    },
+    {
+        "objet_social_parent_id": "020000",
+        "objet_social_parent_lib": "ASSOCIATIONS CARITATIVES, HUMANITAIRES, AIDE AU DÉVELOPPEMENT, DÉVELOPPEMENT DU BÉNÉVOLAT",
+        "objet_social_id": "020005",
+        "objet_social_lib": "secours financiers et autres services aux personnes en difficulté"
+    },
+    {
+        "objet_social_parent_id": "013000",
+        "objet_social_parent_lib": "CHASSE PÊCHE",
+        "objet_social_id": "013010",
+        "objet_social_lib": "pêche"
+    },
+    {
+        "objet_social_parent_id": "002000",
+        "objet_social_parent_lib": "CLUBS, CERCLES DE RÉFLEXION",
+        "objet_social_id": "002020",
+        "objet_social_lib": "organisation de conférences"
+    },
+    {
+        "objet_social_parent_id": "023000",
+        "objet_social_parent_lib": "REPRÉSENTATION, PROMOTION ET DÉFENSE D'INTÉRÊTS ÉCONOMIQUES",
+        "objet_social_id": "022510",
+        "objet_social_lib": "cantines, restaurants d'entreprises"
+    },
+    {
+        "objet_social_parent_id": "006000",
+        "objet_social_parent_lib": "CULTURE, PRATIQUES D'ACTIVITÉS ARTISTIQUES, PRATIQUES CULTURELLES",
+        "objet_social_id": "006025",
+        "objet_social_lib": "photographie, cinéma (dont ciné-clubs)"
+    },
+    {
+        "objet_social_parent_id": "003000",
+        "objet_social_parent_lib": "DÉFENSE DE DROITS FONDAMENTAUX, ACTIVITÉS CIVIQUES",
+        "objet_social_id": "003015",
+        "objet_social_lib": "défense des libertés publiques et des droits de l'Homme"
+    },
+    {
+        "objet_social_parent_id": "050000",
+        "objet_social_parent_lib": "DOMAINES DIVERS, DOMAINES DE NOMENCLATURE SITADELE À RECLASSER",
+        "objet_social_id": "050000",
+        "objet_social_lib": "DOMAINES DIVERS, DOMAINES DE NOMENCLATURE SITADELE À RECLASSER"
+    },
+    {
+        "objet_social_parent_id": "015000",
+        "objet_social_parent_lib": "ÉDUCATION  FORMATION",
+        "objet_social_id": "015030",
+        "objet_social_lib": "œuvres sociales en faveur des élèves, œuvres en faveur des pupilles de la nation"
+    },
+    {
+        "objet_social_parent_id": "015000",
+        "objet_social_parent_lib": "ÉDUCATION  FORMATION",
+        "objet_social_id": "015090",
+        "objet_social_lib": "promotion de titres, de diplômes"
+    },
+    {
+        "objet_social_parent_id": "015000",
+        "objet_social_parent_lib": "ÉDUCATION  FORMATION",
+        "objet_social_id": "015100",
+        "objet_social_lib": "apprentissage"
+    },
+    {
+        "objet_social_parent_id": "005000",
+        "objet_social_parent_lib": "INFORMATION COMMUNICATION",
+        "objet_social_id": "005010",
+        "objet_social_lib": "radios privées"
+    },
+    {
+        "objet_social_parent_id": "005000",
+        "objet_social_parent_lib": "INFORMATION COMMUNICATION",
+        "objet_social_id": "005015",
+        "objet_social_lib": "audiovisuel"
+    },
+    {
+        "objet_social_parent_id": "005000",
+        "objet_social_parent_lib": "INFORMATION COMMUNICATION",
+        "objet_social_id": "005025",
+        "objet_social_lib": "autres supports de communication"
+    },
+    {
+        "objet_social_parent_id": "019000",
+        "objet_social_parent_lib": "INTERVENTIONS SOCIALES",
+        "objet_social_id": "019030",
+        "objet_social_lib": "aide aux victimes de calamités naturelles, de catastrophes naturelles"
+    },
+    {
+        "objet_social_parent_id": "019000",
+        "objet_social_parent_lib": "INTERVENTIONS SOCIALES",
+        "objet_social_id": "019032",
+        "objet_social_lib": "aide aux victimes de violences conjugales"
+    },
+    {
+        "objet_social_parent_id": "016000",
+        "objet_social_parent_lib": "RECHERCHE",
+        "objet_social_id": "016000",
+        "objet_social_lib": "RECHERCHE"
+    },
+    {
+        "objet_social_parent_id": "023000",
+        "objet_social_parent_lib": "REPRÉSENTATION, PROMOTION ET DÉFENSE D'INTÉRÊTS ÉCONOMIQUES",
+        "objet_social_id": "023002",
+        "objet_social_lib": "mouvements de consommateurs"
+    },
+    {
+        "objet_social_parent_id": "023000",
+        "objet_social_parent_lib": "REPRÉSENTATION, PROMOTION ET DÉFENSE D'INTÉRÊTS ÉCONOMIQUES",
+        "objet_social_id": "023003",
+        "objet_social_lib": "association de défense des contribuables"
+    },
+    {
+        "objet_social_parent_id": "023000",
+        "objet_social_parent_lib": "REPRÉSENTATION, PROMOTION ET DÉFENSE D'INTÉRÊTS ÉCONOMIQUES",
+        "objet_social_id": "023030",
+        "objet_social_lib": "unions patronales"
+    },
+    {
+        "objet_social_parent_id": "023000",
+        "objet_social_parent_lib": "REPRÉSENTATION, PROMOTION ET DÉFENSE D'INTÉRÊTS ÉCONOMIQUES",
+        "objet_social_id": "023040",
+        "objet_social_lib": "représentation d'intérêts économiques sectoriels"
+    },
+    {
+        "objet_social_parent_id": "017000",
+        "objet_social_parent_lib": "SANTÉ",
+        "objet_social_id": "017095",
+        "objet_social_lib": "accueil, information pour contraception et avortement"
+    },
+    {
+        "objet_social_parent_id": "017000",
+        "objet_social_parent_lib": "SANTÉ",
+        "objet_social_id": "017300",
+        "objet_social_lib": "médecine animale, vétérinaire"
+    },
+    {
+        "objet_social_parent_id": "037000",
+        "objet_social_parent_lib": null,
+        "objet_social_id": "036535",
+        "objet_social_lib": "sécurité routière"
+    },
+    {
+        "objet_social_parent_id": "021000",
+        "objet_social_parent_lib": "SERVICES FAMILIAUX, SERVICES AUX PERSONNES ÂGÉES",
+        "objet_social_id": "021015",
+        "objet_social_lib": "services aux personnes âgées (téléalarme.)"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011004",
+        "objet_social_lib": "arbitrage"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011150",
+        "objet_social_lib": "autres arts martiaux  (karaté, aïkido, taekwondo)"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011165",
+        "objet_social_lib": "tennis  (tennis, longue paume)"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011192",
+        "objet_social_lib": "associations pour la promotion du sport, médailles, mérite sportif"
+    },
+    {
+        "objet_social_parent_id": "030000",
+        "objet_social_parent_lib": "AIDE À L'EMPLOI, DÉVELOPPEMENT LOCAL, PROMOTION DE SOLIDARITÉS ÉCONOMIQUES, VIE LOCALE",
+        "objet_social_id": "030000",
+        "objet_social_lib": "AIDE À L'EMPLOI, DÉVELOPPEMENT LOCAL, PROMOTION DE SOLIDARITÉS ÉCONOMIQUES, VIE LOCALE"
+    },
+    {
+        "objet_social_parent_id": "007000",
+        "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS",
+        "objet_social_id": "007005",
+        "objet_social_lib": "bridge, jeux de cartes, échecs, dames, jeux de société ."
+    },
+    {
+        "objet_social_parent_id": "023000",
+        "objet_social_parent_lib": "REPRÉSENTATION, PROMOTION ET DÉFENSE D'INTÉRÊTS ÉCONOMIQUES",
+        "objet_social_id": "022543",
+        "objet_social_lib": "transports"
+    },
+    {
+        "objet_social_parent_id": "006000",
+        "objet_social_parent_lib": "CULTURE, PRATIQUES D'ACTIVITÉS ARTISTIQUES, PRATIQUES CULTURELLES",
+        "objet_social_id": "006090",
+        "objet_social_lib": "artisanat, travaux manuels, bricolage, expositions"
+    },
+    {
+        "objet_social_parent_id": "003000",
+        "objet_social_parent_lib": "DÉFENSE DE DROITS FONDAMENTAUX, ACTIVITÉS CIVIQUES",
+        "objet_social_id": "003040",
+        "objet_social_lib": "lutte contre les discriminations"
+    },
+    {
+        "objet_social_parent_id": "005000",
+        "objet_social_parent_lib": "INFORMATION COMMUNICATION",
+        "objet_social_id": "005035",
+        "objet_social_lib": "professionnels de l'information et de communication"
+    },
+    {
+        "objet_social_parent_id": "019000",
+        "objet_social_parent_lib": "INTERVENTIONS SOCIALES",
+        "objet_social_id": "019005",
+        "objet_social_lib": "associations familiales, services sociaux pour les familles"
+    },
+    {
+        "objet_social_parent_id": "019000",
+        "objet_social_parent_lib": "INTERVENTIONS SOCIALES",
+        "objet_social_id": "019042",
+        "objet_social_lib": "lutte contre la violence routière"
+    },
+    {
+        "objet_social_parent_id": "019000",
+        "objet_social_parent_lib": "INTERVENTIONS SOCIALES",
+        "objet_social_id": "019055",
+        "objet_social_lib": "soutien aux détenus, reclassement des détenus"
+    },
+    {
+        "objet_social_parent_id": "010000",
+        "objet_social_parent_lib": "PRÉSERVATION DU PATRIMOINE",
+        "objet_social_id": "010020",
+        "objet_social_lib": "commémorations, entretien de monuments et sites historiques, souvenir militaire"
+    },
+    {
+        "objet_social_parent_id": "023000",
+        "objet_social_parent_lib": "REPRÉSENTATION, PROMOTION ET DÉFENSE D'INTÉRÊTS ÉCONOMIQUES",
+        "objet_social_id": "023020",
+        "objet_social_lib": "associations d'exploitants agricoles, élevage, horticulture, aviculture, apiculture, viticulture, viniculture"
+    },
+    {
+        "objet_social_parent_id": "021000",
+        "objet_social_parent_lib": "SERVICES FAMILIAUX, SERVICES AUX PERSONNES ÂGÉES",
+        "objet_social_id": "021010",
+        "objet_social_lib": "aide à domicile"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011040",
+        "objet_social_lib": "bowling"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011090",
+        "objet_social_lib": "autres sports collectifs  (baseball, hockey sur gazon, hockey sur glace, football américain)"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011100",
+        "objet_social_lib": "golf"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011110",
+        "objet_social_lib": "haltérophilie"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011180",
+        "objet_social_lib": "cyclisme (cyclisme, vélo, VTT, y compris course d.orientation à vélo, cyclotourisme)"
+    },
+    {
+        "objet_social_parent_id": "001000",
+        "objet_social_parent_lib": "ACTIVITÉS POLITIQUES",
+        "objet_social_id": "001015",
+        "objet_social_lib": "action politique locale"
+    },
+    {
+        "objet_social_parent_id": "030000",
+        "objet_social_parent_lib": "AIDE À L'EMPLOI, DÉVELOPPEMENT LOCAL, PROMOTION DE SOLIDARITÉS ÉCONOMIQUES, VIE LOCALE",
+        "objet_social_id": "030010",
+        "objet_social_lib": "entreprises d'insertion, associations intermédiaires, régies de quartier"
+    },
+    {
+        "objet_social_parent_id": "030000",
+        "objet_social_parent_lib": "AIDE À L'EMPLOI, DÉVELOPPEMENT LOCAL, PROMOTION DE SOLIDARITÉS ÉCONOMIQUES, VIE LOCALE",
+        "objet_social_id": "030012",
+        "objet_social_lib": "comités de défense et d'animation de quartier, association locale ou municipale"
+    },
+    {
+        "objet_social_parent_id": "013000",
+        "objet_social_parent_lib": "CHASSE PÊCHE",
+        "objet_social_id": "013005",
+        "objet_social_lib": "chasse"
+    },
+    {
+        "objet_social_parent_id": "002000",
+        "objet_social_parent_lib": "CLUBS, CERCLES DE RÉFLEXION",
+        "objet_social_id": "002000",
+        "objet_social_lib": "CLUBS, CERCLES DE RÉFLEXION"
+    },
+    {
+        "objet_social_parent_id": "002000",
+        "objet_social_parent_lib": "CLUBS, CERCLES DE RÉFLEXION",
+        "objet_social_id": "002005",
+        "objet_social_lib": "associations philanthropiques"
+    },
+    {
+        "objet_social_parent_id": "002000",
+        "objet_social_parent_lib": "CLUBS, CERCLES DE RÉFLEXION",
+        "objet_social_id": "002010",
+        "objet_social_lib": "amicales laïques"
+    },
+    {
+        "objet_social_parent_id": "007000",
+        "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS",
+        "objet_social_id": "007000",
+        "objet_social_lib": "CLUBS DE LOISIRS, RELATIONS"
+    },
+    {
+        "objet_social_parent_id": "007000",
+        "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS",
+        "objet_social_id": "007002",
+        "objet_social_lib": "aéroclubs"
+    },
+    {
+        "objet_social_parent_id": "007000",
+        "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS",
+        "objet_social_id": "007003",
+        "objet_social_lib": "modélisme"
+    },
+    {
+        "objet_social_parent_id": "007000",
+        "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS",
+        "objet_social_id": "007030",
+        "objet_social_lib": "collectionneurs de véhicules, clubs amateurs de voitures anciennes"
+    },
+    {
+        "objet_social_parent_id": "023000",
+        "objet_social_parent_lib": "REPRÉSENTATION, PROMOTION ET DÉFENSE D'INTÉRÊTS ÉCONOMIQUES",
+        "objet_social_id": "022525",
+        "objet_social_lib": "études techniques"
+    },
+    {
+        "objet_social_parent_id": "023000",
+        "objet_social_parent_lib": "REPRÉSENTATION, PROMOTION ET DÉFENSE D'INTÉRÊTS ÉCONOMIQUES",
+        "objet_social_id": "022535",
+        "objet_social_lib": "amicales de commerçants, organisation de foires"
+    },
+    {
+        "objet_social_parent_id": "003000",
+        "objet_social_parent_lib": "DÉFENSE DE DROITS FONDAMENTAUX, ACTIVITÉS CIVIQUES",
+        "objet_social_id": "003030",
+        "objet_social_lib": "défense des droits des  personnes en situation de handicap"
+    },
+    {
+        "objet_social_parent_id": "015000",
+        "objet_social_parent_lib": "ÉDUCATION  FORMATION",
+        "objet_social_id": "015065",
+        "objet_social_lib": "associations d'étudiants, d'élèves"
+    },
+    {
+        "objet_social_parent_id": "024000",
+        "objet_social_parent_lib": "ENVIRONNEMENT,  CADRE DE VIE",
+        "objet_social_id": "024000",
+        "objet_social_lib": "ENVIRONNEMENT,  CADRE DE VIE"
+    },
+    {
+        "objet_social_parent_id": "024000",
+        "objet_social_parent_lib": "ENVIRONNEMENT,  CADRE DE VIE",
+        "objet_social_id": "024026",
+        "objet_social_lib": "protection des animaux"
+    },
+    {
+        "objet_social_parent_id": "019000",
+        "objet_social_parent_lib": "INTERVENTIONS SOCIALES",
+        "objet_social_id": "019016",
+        "objet_social_lib": "aide à l'insertion des jeunes"
+    },
+    {
+        "objet_social_parent_id": "019000",
+        "objet_social_parent_lib": "INTERVENTIONS SOCIALES",
+        "objet_social_id": "019025",
+        "objet_social_lib": "aide aux réfugiés et aux immigrés (hors défense de droits fondamentaux)"
+    },
+    {
+        "objet_social_parent_id": "019000",
+        "objet_social_parent_lib": "INTERVENTIONS SOCIALES",
+        "objet_social_id": "019047",
+        "objet_social_lib": "foyers socio-éducatifs"
+    },
+    {
+        "objet_social_parent_id": "004000",
+        "objet_social_parent_lib": "JUSTICE",
+        "objet_social_id": "004025",
+        "objet_social_lib": "accès aux droits dans les tribunaux, assistance juridique"
+    },
+    {
+        "objet_social_parent_id": "033000",
+        "objet_social_parent_lib": null,
+        "objet_social_id": "032510",
+        "objet_social_lib": "aide au logement"
+    },
+    {
+        "objet_social_parent_id": "017000",
+        "objet_social_parent_lib": "SANTÉ",
+        "objet_social_id": "017005",
+        "objet_social_lib": "cliniques, centres médicaux, hôpitaux, sanatoriums, établissements de rééducation, maisons de convalescence"
+    },
+    {
+        "objet_social_parent_id": "017000",
+        "objet_social_parent_lib": "SANTÉ",
+        "objet_social_id": "017025",
+        "objet_social_lib": "services médicaux d'urgence"
+    },
+    {
+        "objet_social_parent_id": "017000",
+        "objet_social_parent_lib": "SANTÉ",
+        "objet_social_id": "017055",
+        "objet_social_lib": "accompagnement, aide aux malades"
+    },
+    {
+        "objet_social_parent_id": "017000",
+        "objet_social_parent_lib": "SANTÉ",
+        "objet_social_id": "017155",
+        "objet_social_lib": "organisation de congrès médicaux"
+    },
+    {
+        "objet_social_parent_id": "037000",
+        "objet_social_parent_lib": null,
+        "objet_social_id": "036520",
+        "objet_social_lib": "sauvetage, secourisme, protection civile"
+    },
+    {
+        "objet_social_parent_id": "018000",
+        "objet_social_parent_lib": "SERVICES ET ÉTABLISSEMENTS MÉDICO-SOCIAUX",
+        "objet_social_id": "018000",
+        "objet_social_lib": "SERVICES ET ÉTABLISSEMENTS MÉDICO-SOCIAUX"
+    },
+    {
+        "objet_social_parent_id": "018000",
+        "objet_social_parent_lib": "SERVICES ET ÉTABLISSEMENTS MÉDICO-SOCIAUX",
+        "objet_social_id": "018050",
+        "objet_social_lib": "aide sociale aux personnes en situation de handicap"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011025",
+        "objet_social_lib": "aviron, canoë-kayak (aviron, rafting, canoë-kayak, joutes)"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011070",
+        "objet_social_lib": "handball"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011155",
+        "objet_social_lib": "sports de neige  (ski alpin, ski de fond, snowboard) sports de montagne"
+    },
+    {
+        "objet_social_parent_id": "034000",
+        "objet_social_parent_lib": "TOURISME",
+        "objet_social_id": "034210",
+        "objet_social_lib": "auberges de jeunesse, organisation de voyages,"
+    },
+    {
+        "objet_social_parent_id": "018000",
+        "objet_social_parent_lib": "SERVICES ET ÉTABLISSEMENTS MÉDICO-SOCIAUX",
+        "objet_social_id": "018010",
+        "objet_social_lib": "établissements et services pour adolescents en difficulté"
+    },
+    {
+        "objet_social_parent_id": "018000",
+        "objet_social_parent_lib": "SERVICES ET ÉTABLISSEMENTS MÉDICO-SOCIAUX",
+        "objet_social_id": "018015",
+        "objet_social_lib": "établissements et services pour enfants handicapés, établissements et services pour adultes handicapés, y compris les CAT (centres d'aide par le travail)."
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011400",
+        "objet_social_lib": "activités de plein air (dont saut à l'élastique)"
+    },
+    {
+        "objet_social_parent_id": "034000",
+        "objet_social_parent_lib": "TOURISME",
+        "objet_social_id": "034240",
+        "objet_social_lib": "syndicats d'initiative, offices de tourisme, salons du tourisme"
+    },
+    {
+        "objet_social_parent_id": "009000",
+        "objet_social_parent_lib": "ACTION SOCIOCULTURELLE",
+        "objet_social_id": "009030",
+        "objet_social_lib": "comités des fêtes"
+    },
+    {
+        "objet_social_parent_id": "040000",
+        "objet_social_parent_lib": "ACTIVITÉS RELIGIEUSES, SPIRITUELLES OU PHILOSOPHIQUES",
+        "objet_social_id": "040000",
+        "objet_social_lib": "ACTIVITÉS RELIGIEUSES, SPIRITUELLES OU PHILOSOPHIQUES"
+    },
+    {
+        "objet_social_parent_id": "014000",
+        "objet_social_parent_lib": "AMICALES, GROUPEMENTS AFFINITAIRES, GROUPEMENTS D'ENTRAIDE (HORS DÉFENSE DE DROITS FONDAMENTAUX)",
+        "objet_social_id": "014030",
+        "objet_social_lib": "association du personnel d'une entreprise (hors caractère syndical)"
+    },
+    {
+        "objet_social_parent_id": "014000",
+        "objet_social_parent_lib": "AMICALES, GROUPEMENTS AFFINITAIRES, GROUPEMENTS D'ENTRAIDE (HORS DÉFENSE DE DROITS FONDAMENTAUX)",
+        "objet_social_id": "014040",
+        "objet_social_lib": "amicale de personnes originaires d'un même pays (hors défense des droits des étrangers), d'une même région du monde"
+    },
+    {
+        "objet_social_parent_id": "007000",
+        "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS",
+        "objet_social_id": "007010",
+        "objet_social_lib": "billard, quilles"
+    },
+    {
+        "objet_social_parent_id": "007000",
+        "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS",
+        "objet_social_id": "007050",
+        "objet_social_lib": "animaux familiers, colombophilie, aquariophilie"
+    },
+    {
+        "objet_social_parent_id": "023000",
+        "objet_social_parent_lib": "REPRÉSENTATION, PROMOTION ET DÉFENSE D'INTÉRÊTS ÉCONOMIQUES",
+        "objet_social_id": "022515",
+        "objet_social_lib": "centres de gestion, centres juridiques, audits"
+    },
+    {
+        "objet_social_parent_id": "023000",
+        "objet_social_parent_lib": "REPRÉSENTATION, PROMOTION ET DÉFENSE D'INTÉRÊTS ÉCONOMIQUES",
+        "objet_social_id": "022545",
+        "objet_social_lib": "caisses de retraite, de prévoyance, de pensions"
+    },
+    {
+        "objet_social_parent_id": "006000",
+        "objet_social_parent_lib": "CULTURE, PRATIQUES D'ACTIVITÉS ARTISTIQUES, PRATIQUES CULTURELLES",
+        "objet_social_id": "006030",
+        "objet_social_lib": "chant choral, musique"
+    },
+    {
+        "objet_social_parent_id": "006000",
+        "objet_social_parent_lib": "CULTURE, PRATIQUES D'ACTIVITÉS ARTISTIQUES, PRATIQUES CULTURELLES",
+        "objet_social_id": "006100",
+        "objet_social_lib": "promotion de l'art et des artistes"
+    },
+    {
+        "objet_social_parent_id": "006000",
+        "objet_social_parent_lib": "CULTURE, PRATIQUES D'ACTIVITÉS ARTISTIQUES, PRATIQUES CULTURELLES",
+        "objet_social_id": "006115",
+        "objet_social_lib": "arts de la rue"
+    },
+    {
+        "objet_social_parent_id": "003000",
+        "objet_social_parent_lib": "DÉFENSE DE DROITS FONDAMENTAUX, ACTIVITÉS CIVIQUES",
+        "objet_social_id": "003020",
+        "objet_social_lib": "défense des droits des femmes, condition féminine"
+    },
+    {
+        "objet_social_parent_id": "015000",
+        "objet_social_parent_lib": "ÉDUCATION  FORMATION",
+        "objet_social_id": "015025",
+        "objet_social_lib": "associations périscolaires, coopération scolaire, aide à l'enseignement"
+    },
+    {
+        "objet_social_parent_id": "015000",
+        "objet_social_parent_lib": "ÉDUCATION  FORMATION",
+        "objet_social_id": "015050",
+        "objet_social_lib": "centre d'enseignement et de formation"
+    },
+    {
+        "objet_social_parent_id": "015000",
+        "objet_social_parent_lib": "ÉDUCATION  FORMATION",
+        "objet_social_id": "015087",
+        "objet_social_lib": "études et formations linguistiques"
+    },
+    {
+        "objet_social_parent_id": "024000",
+        "objet_social_parent_lib": "ENVIRONNEMENT,  CADRE DE VIE",
+        "objet_social_id": "024005",
+        "objet_social_lib": "pollutions, assainissement"
+    },
+    {
+        "objet_social_parent_id": "024000",
+        "objet_social_parent_lib": "ENVIRONNEMENT,  CADRE DE VIE",
+        "objet_social_id": "024050",
+        "objet_social_lib": "actions de sensibilisation et d'éducation à l'environnement et au développement durable"
+    },
+    {
+        "objet_social_parent_id": "019000",
+        "objet_social_parent_lib": "INTERVENTIONS SOCIALES",
+        "objet_social_id": "019020",
+        "objet_social_lib": "groupements de chômeurs, aide aux chômeurs"
+    },
+    {
+        "objet_social_parent_id": "019000",
+        "objet_social_parent_lib": "INTERVENTIONS SOCIALES",
+        "objet_social_id": "019035",
+        "objet_social_lib": "aide aux victimes de violences faites aux enfants"
+    },
+    {
+        "objet_social_parent_id": "004000",
+        "objet_social_parent_lib": "JUSTICE",
+        "objet_social_id": "004020",
+        "objet_social_lib": "contrôle judiciaire, associations de personnels de justice"
+    },
+    {
+        "objet_social_parent_id": "023000",
+        "objet_social_parent_lib": "REPRÉSENTATION, PROMOTION ET DÉFENSE D'INTÉRÊTS ÉCONOMIQUES",
+        "objet_social_id": "023004",
+        "objet_social_lib": "association d'actionnaires, d'épargnants"
+    },
+    {
+        "objet_social_parent_id": "023000",
+        "objet_social_parent_lib": "REPRÉSENTATION, PROMOTION ET DÉFENSE D'INTÉRÊTS ÉCONOMIQUES",
+        "objet_social_id": "023045",
+        "objet_social_lib": "représentation d'intérêts régionaux et locaux"
+    },
+    {
+        "objet_social_parent_id": "017000",
+        "objet_social_parent_lib": "SANTÉ",
+        "objet_social_id": "017085",
+        "objet_social_lib": "hygiène diététique"
+    },
+    {
+        "objet_social_parent_id": "017000",
+        "objet_social_parent_lib": "SANTÉ",
+        "objet_social_id": "017125",
+        "objet_social_lib": "prévention de maladies, dépistage de maladies (autres que le sida)"
+    },
+    {
+        "objet_social_parent_id": "037000",
+        "objet_social_parent_lib": null,
+        "objet_social_id": "036540",
+        "objet_social_lib": "sauvetage en mer"
+    },
+    {
+        "objet_social_parent_id": "018000",
+        "objet_social_parent_lib": "SERVICES ET ÉTABLISSEMENTS MÉDICO-SOCIAUX",
+        "objet_social_id": "018040",
+        "objet_social_lib": "aide aux accidentés du travail"
+    },
+    {
+        "objet_social_parent_id": "021000",
+        "objet_social_parent_lib": "SERVICES FAMILIAUX, SERVICES AUX PERSONNES ÂGÉES",
+        "objet_social_id": "021005",
+        "objet_social_lib": "crèches, garderies, haltes garderies"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011018",
+        "objet_social_lib": "handisport"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011030",
+        "objet_social_lib": "badminton  (badminton, squash, pelote basque)"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011035",
+        "objet_social_lib": "boules  (pétanque, boules)"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011060",
+        "objet_social_lib": "escrime  (escrime)"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011075",
+        "objet_social_lib": "football  (football, futsal)"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011085",
+        "objet_social_lib": "volley ball (volley, beach volley)"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011115",
+        "objet_social_lib": "marche sportive  (randonnée pédestre, raid, trekking, course orientation)"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011170",
+        "objet_social_lib": "tennis de table  (tennis de table, ping-pong)"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011185",
+        "objet_social_lib": "voile  (voile, dériveur, planche à voile)"
+    },
+    {
+        "objet_social_parent_id": "034000",
+        "objet_social_parent_lib": "TOURISME",
+        "objet_social_id": "034220",
+        "objet_social_lib": "maisons et villages de vacances"
+    },
+    {
+        "objet_social_parent_id": "009000",
+        "objet_social_parent_lib": "ACTION SOCIOCULTURELLE",
+        "objet_social_id": "009007",
+        "objet_social_lib": "maisons de la culture, office municipal,centres culturels"
+    },
+    {
+        "objet_social_parent_id": "001000",
+        "objet_social_parent_lib": "ACTIVITÉS POLITIQUES",
+        "objet_social_id": "001005",
+        "objet_social_lib": "associations à caractère politique général"
+    },
+    {
+        "objet_social_parent_id": "001000",
+        "objet_social_parent_lib": "ACTIVITÉS POLITIQUES",
+        "objet_social_id": "001020",
+        "objet_social_lib": "action politique globale"
+    },
+    {
+        "objet_social_parent_id": "014000",
+        "objet_social_parent_lib": "AMICALES, GROUPEMENTS AFFINITAIRES, GROUPEMENTS D'ENTRAIDE (HORS DÉFENSE DE DROITS FONDAMENTAUX)",
+        "objet_social_id": "014045",
+        "objet_social_lib": "amicale de personnes originaires d'une même région"
+    },
+    {
+        "objet_social_parent_id": "014000",
+        "objet_social_parent_lib": "AMICALES, GROUPEMENTS AFFINITAIRES, GROUPEMENTS D'ENTRAIDE (HORS DÉFENSE DE DROITS FONDAMENTAUX)",
+        "objet_social_id": "014060",
+        "objet_social_lib": "associations de personnes homosexuelles pour l'entraide et la solidarité (hors défense de droits fondamentaux)"
+    },
+    {
+        "objet_social_parent_id": "020000",
+        "objet_social_parent_lib": "ASSOCIATIONS CARITATIVES, HUMANITAIRES, AIDE AU DÉVELOPPEMENT, DÉVELOPPEMENT DU BÉNÉVOLAT",
+        "objet_social_id": "020010",
+        "objet_social_lib": "secours en nature, distribution de nourriture et de vêtements"
+    },
+    {
+        "objet_social_parent_id": "022000",
+        "objet_social_parent_lib": "CONDUITE D'ACTIVITÉS ÉCONOMIQUES",
+        "objet_social_id": "022000",
+        "objet_social_lib": "CONDUITE D'ACTIVITÉS ÉCONOMIQUES"
+    },
+    {
+        "objet_social_parent_id": "023000",
+        "objet_social_parent_lib": "REPRÉSENTATION, PROMOTION ET DÉFENSE D'INTÉRÊTS ÉCONOMIQUES",
+        "objet_social_id": "022520",
+        "objet_social_lib": "gestion financière, gestion immobilière"
+    },
+    {
+        "objet_social_parent_id": "023000",
+        "objet_social_parent_lib": "REPRÉSENTATION, PROMOTION ET DÉFENSE D'INTÉRÊTS ÉCONOMIQUES",
+        "objet_social_id": "022530",
+        "objet_social_lib": "groupement d'achat, groupement d'entreprises"
+    },
+    {
+        "objet_social_parent_id": "006000",
+        "objet_social_parent_lib": "CULTURE, PRATIQUES D'ACTIVITÉS ARTISTIQUES, PRATIQUES CULTURELLES",
+        "objet_social_id": "006040",
+        "objet_social_lib": "danse"
+    },
+    {
+        "objet_social_parent_id": "006000",
+        "objet_social_parent_lib": "CULTURE, PRATIQUES D'ACTIVITÉS ARTISTIQUES, PRATIQUES CULTURELLES",
+        "objet_social_id": "006105",
+        "objet_social_lib": "loisirs scientifiques et techniques"
+    },
+    {
+        "objet_social_parent_id": "003000",
+        "objet_social_parent_lib": "DÉFENSE DE DROITS FONDAMENTAUX, ACTIVITÉS CIVIQUES",
+        "objet_social_id": "003000",
+        "objet_social_lib": "DÉFENSE DE DROITS FONDAMENTAUX, ACTIVITÉS CIVIQUES"
+    },
+    {
+        "objet_social_parent_id": "003000",
+        "objet_social_parent_lib": "DÉFENSE DE DROITS FONDAMENTAUX, ACTIVITÉS CIVIQUES",
+        "objet_social_id": "003010",
+        "objet_social_lib": "défense de la paix"
+    },
+    {
+        "objet_social_parent_id": "015000",
+        "objet_social_parent_lib": "ÉDUCATION  FORMATION",
+        "objet_social_id": "015005",
+        "objet_social_lib": "parents d'élèves"
+    },
+    {
+        "objet_social_parent_id": "015000",
+        "objet_social_parent_lib": "ÉDUCATION  FORMATION",
+        "objet_social_id": "015045",
+        "objet_social_lib": "établissement de formation professionnelle, de formation continue"
+    },
+    {
+        "objet_social_parent_id": "024000",
+        "objet_social_parent_lib": "ENVIRONNEMENT,  CADRE DE VIE",
+        "objet_social_id": "024010",
+        "objet_social_lib": "ressources naturelles"
+    },
+    {
+        "objet_social_parent_id": "005000",
+        "objet_social_parent_lib": "INFORMATION COMMUNICATION",
+        "objet_social_id": "005020",
+        "objet_social_lib": "réseaux internet"
+    },
+    {
+        "objet_social_parent_id": "019000",
+        "objet_social_parent_lib": "INTERVENTIONS SOCIALES",
+        "objet_social_id": "019012",
+        "objet_social_lib": "lutte contre le surendettement"
+    },
+    {
+        "objet_social_parent_id": "019000",
+        "objet_social_parent_lib": "INTERVENTIONS SOCIALES",
+        "objet_social_id": "019014",
+        "objet_social_lib": "lutte contre l'illettrisme"
+    },
+    {
+        "objet_social_parent_id": "019000",
+        "objet_social_parent_lib": "INTERVENTIONS SOCIALES",
+        "objet_social_id": "019050",
+        "objet_social_lib": "réinsertion des délinquants"
+    },
+    {
+        "objet_social_parent_id": "004000",
+        "objet_social_parent_lib": "JUSTICE",
+        "objet_social_id": "004035",
+        "objet_social_lib": "maisons du droit, accès au droit"
+    },
+    {
+        "objet_social_parent_id": "010000",
+        "objet_social_parent_lib": "PRÉSERVATION DU PATRIMOINE",
+        "objet_social_id": "010005",
+        "objet_social_lib": "collections d'objets, de documents, bibliothèques spécialisées pour la sauvegarde et l'entretien du patrimoine"
+    },
+    {
+        "objet_social_parent_id": "016000",
+        "objet_social_parent_lib": "RECHERCHE",
+        "objet_social_id": "016010",
+        "objet_social_lib": "recherche sur la culture"
+    },
+    {
+        "objet_social_parent_id": "023000",
+        "objet_social_parent_lib": "REPRÉSENTATION, PROMOTION ET DÉFENSE D'INTÉRÊTS ÉCONOMIQUES",
+        "objet_social_id": "023007",
+        "objet_social_lib": "groupements professionnels"
+    },
+    {
+        "objet_social_parent_id": "017000",
+        "objet_social_parent_lib": "SANTÉ",
+        "objet_social_id": "017000",
+        "objet_social_lib": "SANTÉ"
+    },
+    {
+        "objet_social_parent_id": "017000",
+        "objet_social_parent_lib": "SANTÉ",
+        "objet_social_id": "017015",
+        "objet_social_lib": "hôpitaux psychiatriques, soins ambulatoires en santé mentale"
+    },
+    {
+        "objet_social_parent_id": "017000",
+        "objet_social_parent_lib": "SANTÉ",
+        "objet_social_id": "017115",
+        "objet_social_lib": "dépistage, prévention du sida"
+    },
+    {
+        "objet_social_parent_id": "017000",
+        "objet_social_parent_lib": "SANTÉ",
+        "objet_social_id": "017120",
+        "objet_social_lib": "éducation sanitaire, prévention générale"
+    },
+    {
+        "objet_social_parent_id": "017000",
+        "objet_social_parent_lib": "SANTÉ",
+        "objet_social_id": "017200",
+        "objet_social_lib": "recherche médicale"
+    },
+    {
+        "objet_social_parent_id": "037000",
+        "objet_social_parent_lib": null,
+        "objet_social_id": "036530",
+        "objet_social_lib": "prévention, formation, cours de secourisme"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011080",
+        "objet_social_lib": "rugby  (rugby à 13, à 15)"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011095",
+        "objet_social_lib": "nautisme, glisse sur eau  (ski nautique, surf, char à voile)"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011120",
+        "objet_social_lib": "musculation  (culturisme, musculation)"
+    },
+    {
+        "objet_social_parent_id": "034000",
+        "objet_social_parent_lib": "TOURISME",
+        "objet_social_id": "034000",
+        "objet_social_lib": "TOURISME"
+    },
+    {
+        "objet_social_parent_id": "034000",
+        "objet_social_parent_lib": "TOURISME",
+        "objet_social_id": "034230",
+        "objet_social_lib": "gîtes ruraux, camping, caravaning, naturisme"
+    },
+    {
+        "objet_social_parent_id": "009000",
+        "objet_social_parent_lib": "ACTION SOCIOCULTURELLE",
+        "objet_social_id": "009025",
+        "objet_social_lib": "mouvements éducatifs de jeunesse et d'éducation populaire"
+    },
+    {
+        "objet_social_parent_id": "001000",
+        "objet_social_parent_lib": "ACTIVITÉS POLITIQUES",
+        "objet_social_id": "001010",
+        "objet_social_lib": "soutien, financement de partis et de campagnes électorales"
+    },
+    {
+        "objet_social_parent_id": "030000",
+        "objet_social_parent_lib": "AIDE À L'EMPLOI, DÉVELOPPEMENT LOCAL, PROMOTION DE SOLIDARITÉS ÉCONOMIQUES, VIE LOCALE",
+        "objet_social_id": "030050",
+        "objet_social_lib": "promotion d'initiatives de développement durable"
+    },
+    {
+        "objet_social_parent_id": "014000",
+        "objet_social_parent_lib": "AMICALES, GROUPEMENTS AFFINITAIRES, GROUPEMENTS D'ENTRAIDE (HORS DÉFENSE DE DROITS FONDAMENTAUX)",
+        "objet_social_id": "014000",
+        "objet_social_lib": "AMICALES, GROUPEMENTS AFFINITAIRES, GROUPEMENTS D'ENTRAIDE (HORS DÉFENSE DE DROITS FONDAMENTAUX)"
+    },
+    {
+        "objet_social_parent_id": "014000",
+        "objet_social_parent_lib": "AMICALES, GROUPEMENTS AFFINITAIRES, GROUPEMENTS D'ENTRAIDE (HORS DÉFENSE DE DROITS FONDAMENTAUX)",
+        "objet_social_id": "014025",
+        "objet_social_lib": "organisation de professions (hors caractère syndical)"
+    },
+    {
+        "objet_social_parent_id": "038000",
+        "objet_social_parent_lib": "ARMÉE (DONT  PRÉPARATION MILITAIRE, MÉDAILLES), ANCIENS COMBATTANTS",
+        "objet_social_id": "038110",
+        "objet_social_lib": "associations de militaires, amicales, associations de conscrits"
+    },
+    {
+        "objet_social_parent_id": "020000",
+        "objet_social_parent_lib": "ASSOCIATIONS CARITATIVES, HUMANITAIRES, AIDE AU DÉVELOPPEMENT, DÉVELOPPEMENT DU BÉNÉVOLAT",
+        "objet_social_id": "020020",
+        "objet_social_lib": "associations caritatives intervenant au plan international"
+    },
+    {
+        "objet_social_parent_id": "007000",
+        "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS",
+        "objet_social_id": "007035",
+        "objet_social_lib": "cercles privés, fan clubs"
+    },
+    {
+        "objet_social_parent_id": "007000",
+        "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS",
+        "objet_social_id": "007040",
+        "objet_social_lib": "activités festives (soirées.)"
+    },
+    {
+        "objet_social_parent_id": "007000",
+        "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS",
+        "objet_social_id": "007085",
+        "objet_social_lib": "relaxation, sophrologie"
+    },
+    {
+        "objet_social_parent_id": "023000",
+        "objet_social_parent_lib": "REPRÉSENTATION, PROMOTION ET DÉFENSE D'INTÉRÊTS ÉCONOMIQUES",
+        "objet_social_id": "022540",
+        "objet_social_lib": "chambres de commerce, chambres économiques"
+    },
+    {
+        "objet_social_parent_id": "023000",
+        "objet_social_parent_lib": "REPRÉSENTATION, PROMOTION ET DÉFENSE D'INTÉRÊTS ÉCONOMIQUES",
+        "objet_social_id": "022542",
+        "objet_social_lib": "association à but commercial, développement économique"
+    },
+    {
+        "objet_social_parent_id": "023000",
+        "objet_social_parent_lib": "REPRÉSENTATION, PROMOTION ET DÉFENSE D'INTÉRÊTS ÉCONOMIQUES",
+        "objet_social_id": "022550",
+        "objet_social_lib": "caisses de congés payés, caisses de secours"
+    },
+    {
+        "objet_social_parent_id": "006000",
+        "objet_social_parent_lib": "CULTURE, PRATIQUES D'ACTIVITÉS ARTISTIQUES, PRATIQUES CULTURELLES",
+        "objet_social_id": "006110",
+        "objet_social_lib": "langues, dialectes, patois"
+    },
+    {
+        "objet_social_parent_id": "003000",
+        "objet_social_parent_lib": "DÉFENSE DE DROITS FONDAMENTAUX, ACTIVITÉS CIVIQUES",
+        "objet_social_id": "003050",
+        "objet_social_lib": "défense de droits de personnes étrangères ou immigrées, de personnes réfugiées"
+    },
+    {
+        "objet_social_parent_id": "003000",
+        "objet_social_parent_lib": "DÉFENSE DE DROITS FONDAMENTAUX, ACTIVITÉS CIVIQUES",
+        "objet_social_id": "003035",
+        "objet_social_lib": "association pour la défense de droits de minorités"
+    },
+    {
+        "objet_social_parent_id": "015000",
+        "objet_social_parent_lib": "ÉDUCATION  FORMATION",
+        "objet_social_id": "015010",
+        "objet_social_lib": "organisation de professions enseignantes, amicales de personnel"
+    },
+    {
+        "objet_social_parent_id": "015000",
+        "objet_social_parent_lib": "ÉDUCATION  FORMATION",
+        "objet_social_id": "015105",
+        "objet_social_lib": "maisons familiales rurales"
+    },
+    {
+        "objet_social_parent_id": "024000",
+        "objet_social_parent_lib": "ENVIRONNEMENT,  CADRE DE VIE",
+        "objet_social_id": "024025",
+        "objet_social_lib": "préservation de la faune sauvage"
+    },
+    {
+        "objet_social_parent_id": "019000",
+        "objet_social_parent_lib": "INTERVENTIONS SOCIALES",
+        "objet_social_id": "019045",
+        "objet_social_lib": "lutte contre diverses formes de violence"
+    },
+    {
+        "objet_social_parent_id": "004000",
+        "objet_social_parent_lib": "JUSTICE",
+        "objet_social_id": "004010",
+        "objet_social_lib": "médiation, prévention"
+    },
+    {
+        "objet_social_parent_id": "010000",
+        "objet_social_parent_lib": "PRÉSERVATION DU PATRIMOINE",
+        "objet_social_id": "010000",
+        "objet_social_lib": "PRÉSERVATION DU PATRIMOINE"
+    },
+    {
+        "objet_social_parent_id": "016000",
+        "objet_social_parent_lib": "RECHERCHE",
+        "objet_social_id": "016030",
+        "objet_social_lib": "association de recherches scientifiques, sciences physiques, sciences humaines."
+    },
+    {
+        "objet_social_parent_id": "023000",
+        "objet_social_parent_lib": "REPRÉSENTATION, PROMOTION ET DÉFENSE D'INTÉRÊTS ÉCONOMIQUES",
+        "objet_social_id": "023022",
+        "objet_social_lib": "associations d'intérêts maritimes, marins"
+    },
+    {
+        "objet_social_parent_id": "017000",
+        "objet_social_parent_lib": "SANTÉ",
+        "objet_social_id": "017075",
+        "objet_social_lib": "gestion de matériel médical"
+    },
+    {
+        "objet_social_parent_id": "017000",
+        "objet_social_parent_lib": "SANTÉ",
+        "objet_social_id": "017135",
+        "objet_social_lib": "homéopathie, médecines douces"
+    },
+    {
+        "objet_social_parent_id": "009000",
+        "objet_social_parent_lib": "ACTION SOCIOCULTURELLE",
+        "objet_social_id": "009005",
+        "objet_social_lib": "maisons de jeunes, foyers, clubs de jeunes"
+    },
+    {
+        "objet_social_parent_id": "009000",
+        "objet_social_parent_lib": "ACTION SOCIOCULTURELLE",
+        "objet_social_id": "009050",
+        "objet_social_lib": "jumelages, échanges culturels, organisation d'échanges linguistiques, échanges culturels au plan international"
+    },
+    {
+        "objet_social_parent_id": "014000",
+        "objet_social_parent_lib": "AMICALES, GROUPEMENTS AFFINITAIRES, GROUPEMENTS D'ENTRAIDE (HORS DÉFENSE DE DROITS FONDAMENTAUX)",
+        "objet_social_id": "014080",
+        "objet_social_lib": "associations de classe d.âge"
+    },
+    {
+        "objet_social_parent_id": "006000",
+        "objet_social_parent_lib": "CULTURE, PRATIQUES D'ACTIVITÉS ARTISTIQUES, PRATIQUES CULTURELLES",
+        "objet_social_id": "006010",
+        "objet_social_lib": "expression écrite, littérature, poésie"
+    },
+    {
+        "objet_social_parent_id": "015000",
+        "objet_social_parent_lib": "ÉDUCATION  FORMATION",
+        "objet_social_id": "015035",
+        "objet_social_lib": "organisme de gestion d'établissement d'enseignement général et technique"
+    },
+    {
+        "objet_social_parent_id": "024000",
+        "objet_social_parent_lib": "ENVIRONNEMENT,  CADRE DE VIE",
+        "objet_social_id": "024035",
+        "objet_social_lib": "comités de défense, comités de sauvegarde"
+    },
+    {
+        "objet_social_parent_id": "032000",
+        "objet_social_parent_lib": "LOGEMENT",
+        "objet_social_id": "032000",
+        "objet_social_lib": "LOGEMENT"
+    },
+    {
+        "objet_social_parent_id": "033000",
+        "objet_social_parent_lib": null,
+        "objet_social_id": "032525",
+        "objet_social_lib": "réhabilitation et construction de logements"
+    },
+    {
+        "objet_social_parent_id": "016000",
+        "objet_social_parent_lib": "RECHERCHE",
+        "objet_social_id": "016015",
+        "objet_social_lib": "recherche sur la vie sociale et politique"
+    },
+    {
+        "objet_social_parent_id": "023000",
+        "objet_social_parent_lib": "REPRÉSENTATION, PROMOTION ET DÉFENSE D'INTÉRÊTS ÉCONOMIQUES",
+        "objet_social_id": "023001",
+        "objet_social_lib": "usagers de services publics"
+    },
+    {
+        "objet_social_parent_id": "017000",
+        "objet_social_parent_lib": "SANTÉ",
+        "objet_social_id": "017045",
+        "objet_social_lib": "centres de réadaptation"
+    },
+    {
+        "objet_social_parent_id": "017000",
+        "objet_social_parent_lib": "SANTÉ",
+        "objet_social_id": "017065",
+        "objet_social_lib": "don de sang, don d'organe"
+    },
+    {
+        "objet_social_parent_id": "001000",
+        "objet_social_parent_lib": "ACTIVITÉS POLITIQUES",
+        "objet_social_id": "001025",
+        "objet_social_lib": "activités citoyennes européennes"
+    },
+    {
+        "objet_social_parent_id": "030000",
+        "objet_social_parent_lib": "AIDE À L'EMPLOI, DÉVELOPPEMENT LOCAL, PROMOTION DE SOLIDARITÉS ÉCONOMIQUES, VIE LOCALE",
+        "objet_social_id": "030005",
+        "objet_social_lib": "comité, défense d'un emploi"
+    },
+    {
+        "objet_social_parent_id": "002000",
+        "objet_social_parent_lib": "CLUBS, CERCLES DE RÉFLEXION",
+        "objet_social_id": "002015",
+        "objet_social_lib": "clubs de réflexion"
+    },
+    {
+        "objet_social_parent_id": "007000",
+        "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS",
+        "objet_social_id": "007025",
+        "objet_social_lib": "clubs de collectionneurs sauf collectionneurs de véhicules, modélisme, philatélie, numismatique"
+    },
+    {
+        "objet_social_parent_id": "007000",
+        "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS",
+        "objet_social_id": "007045",
+        "objet_social_lib": "élevages canins, clubs de chiens de défense"
+    },
+    {
+        "objet_social_parent_id": "007000",
+        "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS",
+        "objet_social_id": "007060",
+        "objet_social_lib": "gastronomie, œnologie, confréries, gourmets"
+    },
+    {
+        "objet_social_parent_id": "006000",
+        "objet_social_parent_lib": "CULTURE, PRATIQUES D'ACTIVITÉS ARTISTIQUES, PRATIQUES CULTURELLES",
+        "objet_social_id": "006005",
+        "objet_social_lib": "bibliothèques, ludothèques, discothèques, vidéothèques"
+    },
+    {
+        "objet_social_parent_id": "003000",
+        "objet_social_parent_lib": "DÉFENSE DE DROITS FONDAMENTAUX, ACTIVITÉS CIVIQUES",
+        "objet_social_id": "003025",
+        "objet_social_lib": "défense de droits de personnes homosexuelles"
+    },
+    {
+        "objet_social_parent_id": "003000",
+        "objet_social_parent_lib": "DÉFENSE DE DROITS FONDAMENTAUX, ACTIVITÉS CIVIQUES",
+        "objet_social_id": "003060",
+        "objet_social_lib": "activités civiques, information civique"
+    },
+    {
+        "objet_social_parent_id": "015000",
+        "objet_social_parent_lib": "ÉDUCATION  FORMATION",
+        "objet_social_id": "015075",
+        "objet_social_lib": "amicales, associations du personnel d'établissements scolaires ou universitaires"
+    },
+    {
+        "objet_social_parent_id": "024000",
+        "objet_social_parent_lib": "ENVIRONNEMENT,  CADRE DE VIE",
+        "objet_social_id": "024015",
+        "objet_social_lib": "espaces naturels"
+    },
+    {
+        "objet_social_parent_id": "024000",
+        "objet_social_parent_lib": "ENVIRONNEMENT,  CADRE DE VIE",
+        "objet_social_id": "024045",
+        "objet_social_lib": "défense et amélioration du cadre de vie"
+    },
+    {
+        "objet_social_parent_id": "019000",
+        "objet_social_parent_lib": "INTERVENTIONS SOCIALES",
+        "objet_social_id": "019010",
+        "objet_social_lib": "centres sociaux, foyers de jeunes travailleurs, centres d'études et d'action sociale"
+    },
+    {
+        "objet_social_parent_id": "004000",
+        "objet_social_parent_lib": "JUSTICE",
+        "objet_social_id": "004030",
+        "objet_social_lib": "défense des droits des victimes"
+    },
+    {
+        "objet_social_parent_id": "010000",
+        "objet_social_parent_lib": "PRÉSERVATION DU PATRIMOINE",
+        "objet_social_id": "010010",
+        "objet_social_lib": "musées, collections historiques"
+    },
+    {
+        "objet_social_parent_id": "010000",
+        "objet_social_parent_lib": "PRÉSERVATION DU PATRIMOINE",
+        "objet_social_id": "010022",
+        "objet_social_lib": "comités de défense du patrimoine"
+    },
+    {
+        "objet_social_parent_id": "010000",
+        "objet_social_parent_lib": "PRÉSERVATION DU PATRIMOINE",
+        "objet_social_id": "010030",
+        "objet_social_lib": "construction de monuments (sauf lieux de culte)"
+    },
+    {
+        "objet_social_parent_id": "016000",
+        "objet_social_parent_lib": "RECHERCHE",
+        "objet_social_id": "016025",
+        "objet_social_lib": "recherche sur l'environnement et le climat"
+    },
+    {
+        "objet_social_parent_id": "016000",
+        "objet_social_parent_lib": "RECHERCHE",
+        "objet_social_id": "016080",
+        "objet_social_lib": "diffusion de savoirs, sociétés savantes, sociétés académiques"
+    },
+    {
+        "objet_social_parent_id": "017000",
+        "objet_social_parent_lib": "SANTÉ",
+        "objet_social_id": "017020",
+        "objet_social_lib": "dispensaires, soins infirmiers, services paramédicaux, services de garde"
+    },
+    {
+        "objet_social_parent_id": "017000",
+        "objet_social_parent_lib": "SANTÉ",
+        "objet_social_id": "017105",
+        "objet_social_lib": "médecine du travail"
+    },
+    {
+        "objet_social_parent_id": "037000",
+        "objet_social_parent_lib": null,
+        "objet_social_id": "036510",
+        "objet_social_lib": "amicale de sapeurs pompiers"
+    },
+    {
+        "objet_social_parent_id": "037000",
+        "objet_social_parent_lib": null,
+        "objet_social_id": "036545",
+        "objet_social_lib": "sécurité et sauvetage en montagne"
+    },
+    {
+        "objet_social_parent_id": "018000",
+        "objet_social_parent_lib": "SERVICES ET ÉTABLISSEMENTS MÉDICO-SOCIAUX",
+        "objet_social_id": "018005",
+        "objet_social_lib": "accueil et protection de la petite enfance"
+    },
+    {
+        "objet_social_parent_id": "018000",
+        "objet_social_parent_lib": "SERVICES ET ÉTABLISSEMENTS MÉDICO-SOCIAUX",
+        "objet_social_id": "018030",
+        "objet_social_lib": "prévention et lutte contre l'alcoolisme, le tabagisme, la toxicomanie"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011000",
+        "objet_social_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011050",
+        "objet_social_lib": "équitation  (équitation, hippisme, courses camarguaise, landaise)"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011125",
+        "objet_social_lib": "natation - baignade  (natation, plongée)"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011130",
+        "objet_social_lib": "roller - skate"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011135",
+        "objet_social_lib": "sports aériens  (avion, planeur, ULM, parachutisme)"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011190",
+        "objet_social_lib": "gestion d'équipements sportifs, organisation de rencontres sportives, organisation de championnats, clubs de supporters"
+    },
+    {
+        "objet_social_parent_id": "009000",
+        "objet_social_parent_lib": "ACTION SOCIOCULTURELLE",
+        "objet_social_id": "009010",
+        "objet_social_lib": "loisirs pour personnes en situation de handicap"
+    },
+    {
+        "objet_social_parent_id": "009000",
+        "objet_social_parent_lib": "ACTION SOCIOCULTURELLE",
+        "objet_social_id": "009015",
+        "objet_social_lib": "associations socio-éducatives, scoutisme"
+    },
+    {
+        "objet_social_parent_id": "009000",
+        "objet_social_parent_lib": "ACTION SOCIOCULTURELLE",
+        "objet_social_id": "009035",
+        "objet_social_lib": "foyers ruraux"
+    },
+    {
+        "objet_social_parent_id": "009000",
+        "objet_social_parent_lib": "ACTION SOCIOCULTURELLE",
+        "objet_social_id": "009040",
+        "objet_social_lib": "clubs troisième âge"
+    },
+    {
+        "objet_social_parent_id": "001000",
+        "objet_social_parent_lib": "ACTIVITÉS POLITIQUES",
+        "objet_social_id": "001000",
+        "objet_social_lib": "ACTIVITÉS POLITIQUES"
+    },
+    {
+        "objet_social_parent_id": "030000",
+        "objet_social_parent_lib": "AIDE À L'EMPLOI, DÉVELOPPEMENT LOCAL, PROMOTION DE SOLIDARITÉS ÉCONOMIQUES, VIE LOCALE",
+        "objet_social_id": "030015",
+        "objet_social_lib": "groupement d'employeurs"
+    },
+    {
+        "objet_social_parent_id": "030000",
+        "objet_social_parent_lib": "AIDE À L'EMPLOI, DÉVELOPPEMENT LOCAL, PROMOTION DE SOLIDARITÉS ÉCONOMIQUES, VIE LOCALE",
+        "objet_social_id": "030020",
+        "objet_social_lib": "aide à la création d'activités économiques individuelles"
+    },
+    {
+        "objet_social_parent_id": "014000",
+        "objet_social_parent_lib": "AMICALES, GROUPEMENTS AFFINITAIRES, GROUPEMENTS D'ENTRAIDE (HORS DÉFENSE DE DROITS FONDAMENTAUX)",
+        "objet_social_id": "014035",
+        "objet_social_lib": "groupements d'entraide et de solidarité"
+    },
+    {
+        "objet_social_parent_id": "014000",
+        "objet_social_parent_lib": "AMICALES, GROUPEMENTS AFFINITAIRES, GROUPEMENTS D'ENTRAIDE (HORS DÉFENSE DE DROITS FONDAMENTAUX)",
+        "objet_social_id": "014050",
+        "objet_social_lib": "associations féminines pour l'entraide et la solidarité (hors défense de droits fondamentaux)"
+    },
+    {
+        "objet_social_parent_id": "020000",
+        "objet_social_parent_lib": "ASSOCIATIONS CARITATIVES, HUMANITAIRES, AIDE AU DÉVELOPPEMENT, DÉVELOPPEMENT DU BÉNÉVOLAT",
+        "objet_social_id": "020025",
+        "objet_social_lib": "développement du bénévolat"
+    },
+    {
+        "objet_social_parent_id": "013000",
+        "objet_social_parent_lib": "CHASSE PÊCHE",
+        "objet_social_id": "013000",
+        "objet_social_lib": "CHASSE PÊCHE"
+    },
+    {
+        "objet_social_parent_id": "007000",
+        "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS",
+        "objet_social_id": "007070",
+        "objet_social_lib": "jardinage, jardins ouvriers, floralies"
+    },
+    {
+        "objet_social_parent_id": "007000",
+        "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS",
+        "objet_social_id": "007075",
+        "objet_social_lib": "échanges locaux, réseaux d'échanges"
+    },
+    {
+        "objet_social_parent_id": "007000",
+        "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS",
+        "objet_social_id": "007080",
+        "objet_social_lib": "centres de loisirs, clubs de loisirs multiples"
+    },
+    {
+        "objet_social_parent_id": "006000",
+        "objet_social_parent_lib": "CULTURE, PRATIQUES D'ACTIVITÉS ARTISTIQUES, PRATIQUES CULTURELLES",
+        "objet_social_id": "006000",
+        "objet_social_lib": "CULTURE, PRATIQUES D'ACTIVITÉS ARTISTIQUES, PRATIQUES CULTURELLES"
+    },
+    {
+        "objet_social_parent_id": "006000",
+        "objet_social_parent_lib": "CULTURE, PRATIQUES D'ACTIVITÉS ARTISTIQUES, PRATIQUES CULTURELLES",
+        "objet_social_id": "006045",
+        "objet_social_lib": "folklore"
+    },
+    {
+        "objet_social_parent_id": "006000",
+        "objet_social_parent_lib": "CULTURE, PRATIQUES D'ACTIVITÉS ARTISTIQUES, PRATIQUES CULTURELLES",
+        "objet_social_id": "006070",
+        "objet_social_lib": "théâtre, marionnettes, cirque, spectacles de variété"
+    },
+    {
+        "objet_social_parent_id": "015000",
+        "objet_social_parent_lib": "ÉDUCATION  FORMATION",
+        "objet_social_id": "015000",
+        "objet_social_lib": "ÉDUCATION  FORMATION"
+    },
+    {
+        "objet_social_parent_id": "015000",
+        "objet_social_parent_lib": "ÉDUCATION  FORMATION",
+        "objet_social_id": "015040",
+        "objet_social_lib": "organisme de gestion d'établissement d'enseignement supérieur"
+    },
+    {
+        "objet_social_parent_id": "015000",
+        "objet_social_parent_lib": "ÉDUCATION  FORMATION",
+        "objet_social_id": "015070",
+        "objet_social_lib": "amicales, associations d'anciens étudiants, d'anciens élèves"
+    },
+    {
+        "objet_social_parent_id": "015000",
+        "objet_social_parent_lib": "ÉDUCATION  FORMATION",
+        "objet_social_id": "015085",
+        "objet_social_lib": "organisation, financement de voyages d'études, d'échanges, pour scolaires ou universitaires"
+    },
+    {
+        "objet_social_parent_id": "024000",
+        "objet_social_parent_lib": "ENVIRONNEMENT,  CADRE DE VIE",
+        "objet_social_id": "024020",
+        "objet_social_lib": "protection de sites naturels"
+    },
+    {
+        "objet_social_parent_id": "024000",
+        "objet_social_parent_lib": "ENVIRONNEMENT,  CADRE DE VIE",
+        "objet_social_id": "024040",
+        "objet_social_lib": "mouvements écologiques"
+    },
+    {
+        "objet_social_parent_id": "005000",
+        "objet_social_parent_lib": "INFORMATION COMMUNICATION",
+        "objet_social_id": "005030",
+        "objet_social_lib": "auditeurs, consommateurs d'outils d'information et de communication"
+    },
+    {
+        "objet_social_parent_id": "019000",
+        "objet_social_parent_lib": "INTERVENTIONS SOCIALES",
+        "objet_social_id": "019040",
+        "objet_social_lib": "aide aux personnes en danger, solitude, désespoir, soutien psychologique et moral"
+    },
+    {
+        "objet_social_parent_id": "033000",
+        "objet_social_parent_lib": null,
+        "objet_social_id": "032520",
+        "objet_social_lib": "associations et comités de locataires, de propriétaires, comités de logement"
+    },
+    {
+        "objet_social_parent_id": "010000",
+        "objet_social_parent_lib": "PRÉSERVATION DU PATRIMOINE",
+        "objet_social_id": "010015",
+        "objet_social_lib": "associations, sociétés savantes pour des études historiques, histoire du patrimoine"
+    },
+    {
+        "objet_social_parent_id": "016000",
+        "objet_social_parent_lib": "RECHERCHE",
+        "objet_social_id": "016050",
+        "objet_social_lib": "autres associations de recherche"
+    },
+    {
+        "objet_social_parent_id": "036000",
+        "objet_social_parent_lib": "SÉCURITÉ, PROTECTION CIVILE",
+        "objet_social_id": "036000",
+        "objet_social_lib": "SÉCURITÉ, PROTECTION CIVILE"
+    },
+    {
+        "objet_social_parent_id": "018000",
+        "objet_social_parent_lib": "SERVICES ET ÉTABLISSEMENTS MÉDICO-SOCIAUX",
+        "objet_social_id": "018045",
+        "objet_social_lib": "aide aux victimes de maladies professionnelles"
+    },
+    {
+        "objet_social_parent_id": "021000",
+        "objet_social_parent_lib": "SERVICES FAMILIAUX, SERVICES AUX PERSONNES ÂGÉES",
+        "objet_social_id": "021020",
+        "objet_social_lib": "foyers pour personnes âgées, maisons de retraite,  maisons de retraite médicalisées"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011005",
+        "objet_social_lib": "associations multisports locales"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011015",
+        "objet_social_lib": "associations multisports d'entreprise"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011055",
+        "objet_social_lib": "escalade, montagne  (escalade, spéléologie, via ferrata, canyonisme, alpinisme)"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011092",
+        "objet_social_lib": "hockey sur glace, sports de glace"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011140",
+        "objet_social_lib": "judo"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011175",
+        "objet_social_lib": "tir  (tir à l.arc, tir à balle, ball-trap), javelot"
+    },
+    {
+        "objet_social_parent_id": "009000",
+        "objet_social_parent_lib": "ACTION SOCIOCULTURELLE",
+        "objet_social_id": "009000",
+        "objet_social_lib": "ACTION SOCIOCULTURELLE"
+    },
+    {
+        "objet_social_parent_id": "009000",
+        "objet_social_parent_lib": "ACTION SOCIOCULTURELLE",
+        "objet_social_id": "009020",
+        "objet_social_lib": "centres aérés, colonies de vacances"
+    },
+    {
+        "objet_social_parent_id": "038000",
+        "objet_social_parent_lib": "ARMÉE (DONT  PRÉPARATION MILITAIRE, MÉDAILLES), ANCIENS COMBATTANTS",
+        "objet_social_id": "038000",
+        "objet_social_lib": "ARMÉE (DONT  PRÉPARATION MILITAIRE, MÉDAILLES), ANCIENS COMBATTANTS"
+    },
+    {
+        "objet_social_parent_id": "020000",
+        "objet_social_parent_lib": "ASSOCIATIONS CARITATIVES, HUMANITAIRES, AIDE AU DÉVELOPPEMENT, DÉVELOPPEMENT DU BÉNÉVOLAT",
+        "objet_social_id": "020015",
+        "objet_social_lib": "associations caritatives à but multiple"
+    },
+    {
+        "objet_social_parent_id": "007000",
+        "objet_social_parent_lib": "CLUBS DE LOISIRS, RELATIONS",
+        "objet_social_id": "007095",
+        "objet_social_lib": "radioamateurs"
+    },
+    {
+        "objet_social_parent_id": "006000",
+        "objet_social_parent_lib": "CULTURE, PRATIQUES D'ACTIVITÉS ARTISTIQUES, PRATIQUES CULTURELLES",
+        "objet_social_id": "006020",
+        "objet_social_lib": "arts graphiques, bandes dessinées, peinture, sculpture, architecture"
+    },
+    {
+        "objet_social_parent_id": "003000",
+        "objet_social_parent_lib": "DÉFENSE DE DROITS FONDAMENTAUX, ACTIVITÉS CIVIQUES",
+        "objet_social_id": "003012",
+        "objet_social_lib": "défense des droits des enfants"
+    },
+    {
+        "objet_social_parent_id": "003000",
+        "objet_social_parent_lib": "DÉFENSE DE DROITS FONDAMENTAUX, ACTIVITÉS CIVIQUES",
+        "objet_social_id": "003045",
+        "objet_social_lib": "défense de droits de personnes rapatriées"
+    },
+    {
+        "objet_social_parent_id": "024000",
+        "objet_social_parent_lib": "ENVIRONNEMENT,  CADRE DE VIE",
+        "objet_social_id": "024030",
+        "objet_social_lib": "préservation de la flore sauvage"
+    },
+    {
+        "objet_social_parent_id": "005000",
+        "objet_social_parent_lib": "INFORMATION COMMUNICATION",
+        "objet_social_id": "005000",
+        "objet_social_lib": "INFORMATION COMMUNICATION"
+    },
+    {
+        "objet_social_parent_id": "005000",
+        "objet_social_parent_lib": "INFORMATION COMMUNICATION",
+        "objet_social_id": "005005",
+        "objet_social_lib": "presse, édition"
+    },
+    {
+        "objet_social_parent_id": "019000",
+        "objet_social_parent_lib": "INTERVENTIONS SOCIALES",
+        "objet_social_id": "019000",
+        "objet_social_lib": "INTERVENTIONS SOCIALES"
+    },
+    {
+        "objet_social_parent_id": "019000",
+        "objet_social_parent_lib": "INTERVENTIONS SOCIALES",
+        "objet_social_id": "019004",
+        "objet_social_lib": "aide et conseils aux familles"
+    },
+    {
+        "objet_social_parent_id": "004000",
+        "objet_social_parent_lib": "JUSTICE",
+        "objet_social_id": "004000",
+        "objet_social_lib": "JUSTICE"
+    },
+    {
+        "objet_social_parent_id": "010000",
+        "objet_social_parent_lib": "PRÉSERVATION DU PATRIMOINE",
+        "objet_social_id": "010017",
+        "objet_social_lib": "sociétés, clubs de généalogie"
+    },
+    {
+        "objet_social_parent_id": "016000",
+        "objet_social_parent_lib": "RECHERCHE",
+        "objet_social_id": "016005",
+        "objet_social_lib": "recherche sur l'éducation et la formation"
+    },
+    {
+        "objet_social_parent_id": "023000",
+        "objet_social_parent_lib": "REPRÉSENTATION, PROMOTION ET DÉFENSE D'INTÉRÊTS ÉCONOMIQUES",
+        "objet_social_id": "023000",
+        "objet_social_lib": "REPRÉSENTATION, PROMOTION ET DÉFENSE D'INTÉRÊTS ÉCONOMIQUES"
+    },
+    {
+        "objet_social_parent_id": "023000",
+        "objet_social_parent_lib": "REPRÉSENTATION, PROMOTION ET DÉFENSE D'INTÉRÊTS ÉCONOMIQUES",
+        "objet_social_id": "023005",
+        "objet_social_lib": "groupements de salariés à caractère syndical"
+    },
+    {
+        "objet_social_parent_id": "023000",
+        "objet_social_parent_lib": "REPRÉSENTATION, PROMOTION ET DÉFENSE D'INTÉRÊTS ÉCONOMIQUES",
+        "objet_social_id": "023010",
+        "objet_social_lib": "associations de défense d'intérêts des retraités ou des personnes âgées"
+    },
+    {
+        "objet_social_parent_id": "023000",
+        "objet_social_parent_lib": "REPRÉSENTATION, PROMOTION ET DÉFENSE D'INTÉRÊTS ÉCONOMIQUES",
+        "objet_social_id": "023025",
+        "objet_social_lib": "associations pour la représentation d'artisans, de commerçants"
+    },
+    {
+        "objet_social_parent_id": "023000",
+        "objet_social_parent_lib": "REPRÉSENTATION, PROMOTION ET DÉFENSE D'INTÉRÊTS ÉCONOMIQUES",
+        "objet_social_id": "023035",
+        "objet_social_lib": "association de représentation de professions libérales"
+    },
+    {
+        "objet_social_parent_id": "017000",
+        "objet_social_parent_lib": "SANTÉ",
+        "objet_social_id": "017130",
+        "objet_social_lib": "association de personnes malades, ou anciens malades"
+    },
+    {
+        "objet_social_parent_id": "017000",
+        "objet_social_parent_lib": "SANTÉ",
+        "objet_social_id": "017145",
+        "objet_social_lib": "organisation des professions médicales,  organisation des professions paramédicales"
+    },
+    {
+        "objet_social_parent_id": "017000",
+        "objet_social_parent_lib": "SANTÉ",
+        "objet_social_id": "017210",
+        "objet_social_lib": "financement de la recherche médicale"
+    },
+    {
+        "objet_social_parent_id": "018000",
+        "objet_social_parent_lib": "SERVICES ET ÉTABLISSEMENTS MÉDICO-SOCIAUX",
+        "objet_social_id": "018025",
+        "objet_social_lib": "établissements et services pour adultes en difficulté, CHRS (centres d'hébergement et de réadaptation sociale)"
+    },
+    {
+        "objet_social_parent_id": "021000",
+        "objet_social_parent_lib": "SERVICES FAMILIAUX, SERVICES AUX PERSONNES ÂGÉES",
+        "objet_social_id": "021000",
+        "objet_social_lib": "SERVICES FAMILIAUX, SERVICES AUX PERSONNES ÂGÉES"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011010",
+        "objet_social_lib": "associations multisports scolaires ou universitaires"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011020",
+        "objet_social_lib": "athlétisme  (triathlon, pentathlon, footing, jogging)"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011045",
+        "objet_social_lib": "danse sportive (danse sportive, hip hop, claquettes)"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011065",
+        "objet_social_lib": "basket-ball"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011105",
+        "objet_social_lib": "gymnastique  (gymnastique, gymnastique d.entretien, éducation physique, yoga), aérobic"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011145",
+        "objet_social_lib": "sports de combat  (boxe, kick box, boxe thaï, lutte)"
+    },
+    {
+        "objet_social_parent_id": "011000",
+        "objet_social_parent_lib": "SPORTS, ACTIVITÉS DE PLEIN AIR",
+        "objet_social_id": "011160",
+        "objet_social_lib": "sports mécaniques  (sport automobile, moto, trial)"
+    }
+]
