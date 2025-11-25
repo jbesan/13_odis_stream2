@@ -33,7 +33,7 @@
         "inclusion_cat_score": 0.191728884936493,
         "mobilité_cat_score": 0.004671658753523012,
         "santé_cat_score": 0.0,
-        "weighted_score": 0.4387348578349887,
+        "weighted_score": 0.5982748061386209,
         "population": 11335,
         "epci_nom": "CC de la Haute Saintonge, CC des 4B Sud Charente",
         "be_libfap_top": [
@@ -129,7 +129,7 @@
         "inclusion_cat_score": 0.19429781550515104,
         "mobilité_cat_score": 0.005942365507936808,
         "santé_cat_score": 0.0,
-        "weighted_score": 0.42586444876106966,
+        "weighted_score": 0.5807242483105495,
         "population": 10153,
         "epci_nom": "CC de la Haute Saintonge, CC Latitude Nord Gironde",
         "be_libfap_top": [
@@ -219,7 +219,7 @@
         "inclusion_cat_score": 0.24778683932373055,
         "mobilité_cat_score": 0.10093069969842279,
         "santé_cat_score": 0.0,
-        "weighted_score": 0.3953925582942483,
+        "weighted_score": 0.5391716704012477,
         "population": 22048,
         "epci_nom": "CC Médoc Cœur de Presqu'île, CC Médoc Estuaire",
         "be_libfap_top": [
@@ -304,7 +304,7 @@
         "inclusion_cat_score": 0.21166070312048466,
         "mobilité_cat_score": 0.06256303271038238,
         "santé_cat_score": 0.0,
-        "weighted_score": 0.3943573735126129,
+        "weighted_score": 0.5377600547899267,
         "population": 20034,
         "epci_nom": "CC Castillon/Pujols, CC du Grand Saint-Émilionnais, CC de Montaigne Montravel et Gurson, CC rurales de l'Entre-Deux-Mers",
         "be_libfap_top": [
@@ -419,7 +419,7 @@
         "inclusion_cat_score": 0.2592711819217798,
         "mobilité_cat_score": 0.22836832773011229,
         "santé_cat_score": 0.0,
-        "weighted_score": 0.3739203478496334,
+        "weighted_score": 0.5098913834313183,
         "population": 16462,
         "epci_nom": "CC Médullienne",
         "be_libfap_top": [

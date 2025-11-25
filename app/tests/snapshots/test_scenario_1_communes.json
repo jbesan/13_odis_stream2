@@ -116,7 +116,7 @@
         "inclusion_cat_score": 0.1051643192488263,
         "mobilité_cat_score": 0.014246040958793005,
         "santé_cat_score": 0.0,
-        "weighted_score": 0.5049980732288025
+        "weighted_score": 0.6886337362210944
     },
     {
         "codgeo": "24466",
@@ -239,7 +239,7 @@
         "inclusion_cat_score": 0.13427230046948357,
         "mobilité_cat_score": 0.025610523456807255,
         "santé_cat_score": 0.0,
-        "weighted_score": 0.49352244399819367
+        "weighted_score": 0.6729851509066278
     },
     {
         "codgeo": "33297",
@@ -378,7 +378,7 @@
         "inclusion_cat_score": 0.2384976525821596,
         "mobilité_cat_score": 0.22666791025050886,
         "santé_cat_score": 0.0,
-        "weighted_score": 0.4933835827407075
+        "weighted_score": 0.6727957946464194
     },
     {
         "codgeo": "33016",
@@ -598,7 +598,7 @@
         "inclusion_cat_score": 0.15070422535211267,
         "mobilité_cat_score": 0.3448853797306385,
         "santé_cat_score": 0.0,
-        "weighted_score": 0.4898344760605004
+        "weighted_score": 0.6679561037188642
     },
     {
         "codgeo": "33420",
@@ -714,6 +714,6 @@
         "inclusion_cat_score": 0.10657276995305165,
         "mobilité_cat_score": 0.14181696983990594,
         "santé_cat_score": 0.0,
-        "weighted_score": 0.48955055914742374
+        "weighted_score": 0.6675689442919415
     }
 ]

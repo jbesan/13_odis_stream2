@@ -291,29 +291,31 @@ def compute_criteria_scores(
         df['log_vac_scaled'] = transformer.fit_transform(df[['log_vac_ratio']].fillna(0))
 
     # --- EDUCATION ---
-    if prefs['classe_enfants']:
-        df['risque_fermeture_ratio'] = df['risque_fermeture'] / df['ecoles_ct']
-        df['edu_classes_ferm_scaled'] = transformer.fit_transform(df[['risque_fermeture_ratio']].fillna(0))
-        
-        # Score based on presence of required school types
-        class_mapping = {
-            'Maternelle': 'count_maternelle',
-            'Elémentaire': 'count_elementaire',
-            'Collège': 'count_college',
-            'Lycée': 'count_lycee'
-        }
-        required_cols = {class_mapping[c] for c in prefs['classe_enfants'] if c in class_mapping}
-        
-        if required_cols:
-            # Count matches (boolean logic: count > 0)
-            matches = (df[list(required_cols)] > 0).sum(axis=1)
-            # Linear score: ratio of met requirements
-            df['edu_structures_scaled'] = matches / len(required_cols)
+    if prefs['nb_enfants'] > 0:
+        if prefs['classe_enfants']:
+            df['risque_fermeture_ratio'] = df['risque_fermeture'] / df['ecoles_ct']
+            df['edu_classes_ferm_scaled'] = transformer.fit_transform(df[['risque_fermeture_ratio']].fillna(0))
+            
+            # Score based on presence of required school types
+            class_mapping = {
+                'Maternelle': 'count_maternelle',
+                'Elémentaire': 'count_elementaire',
+                'Collège': 'count_college',
+                'Lycée': 'count_lycee'
+            }
+            required_cols = {class_mapping[c] for c in prefs['classe_enfants'] if c in class_mapping}
+            
+            if required_cols:
+                # Count matches (boolean logic: count > 0)
+                matches = (df[list(required_cols)] > 0).sum(axis=1)
+                # Linear score: ratio of met requirements
+                df['edu_structures_scaled'] = matches / len(required_cols)
+            else:
+                df['edu_structures_scaled'] = 0.0
         else:
+            df['edu_classes_ferm_scaled'] = 0.0
             df['edu_structures_scaled'] = 0.0
-    else:
-        df['edu_classes_ferm_scaled'] = 0.0
-        df['edu_structures_scaled'] = 0.0
+    # Else: Education criteria are not calculated/added to df
 
     # --- SANTE ---
     sante_pref = prefs.get('besoin_sante', 'Aucun')
@@ -329,8 +331,7 @@ def compute_criteria_scores(
             df['sante_structures_scaled'] = (df[target_col] > 0).astype(float)
         else:
             df['sante_structures_scaled'] = 0.0
-    else:
-        df['sante_structures_scaled'] = 0.0
+    # Else: Sante criteria are not calculated/added to df
 
     # --- MOBILITE ---
     # 1. Distance from the current location
@@ -401,7 +402,8 @@ def add_neighbor_scores(df_search: gpd.GeoDataFrame, scores_cat: pd.DataFrame) -
 def compute_category_scores(
     df: pd.DataFrame,
     scores_cat: pd.DataFrame,
-    binome_penalty: float
+    binome_penalty: float,
+    config: 'ScoringConfig'
 ) -> pd.DataFrame:
     """Aggregates individual criteria scores into category scores (e.g., 'emploi_cat_score').
 
@@ -411,6 +413,12 @@ def compute_category_scores(
     df = df.copy()
 
     for category in scores_cat['cat'].unique():
+        # Conditional exclusion logic
+        if category == 'education' and config.nb_enfants == 0:
+            continue
+        if category == 'sante' and config.besoin_sante == 'Aucun':
+            continue
+
         # Get the list of score columns for the current category
         score_cols = scores_cat[scores_cat.cat == category]['score'].tolist()
         # Filter to keep only columns that actually exist in our dataframe
@@ -456,6 +464,13 @@ def compute_weighted_score(df: pd.DataFrame, config: 'ScoringConfig') -> pd.Seri
     for cat_score_col in category_scores:
         # e.g., 'emploi_cat_score' -> 'emploi'
         category_name = cat_score_col.split('_')[0]
+
+        # Conditional exclusion logic
+        if category_name == 'education' and config.nb_enfants == 0:
+            continue
+        if category_name == 'sante' and config.besoin_sante == 'Aucun':
+            continue
+
         weight_key = f'poids_{category_name}'
         weight = getattr(config, weight_key, 0)
 
@@ -594,7 +609,8 @@ def compute_odis_score(
     odis_exploded = compute_category_scores(
         odis_exploded,
         scores_cat=scores_cat,
-        binome_penalty=config.binome_penalty
+        binome_penalty=config.binome_penalty,
+        config=config
     )
 
     # 7. Compute the final weighted score for each commune/binome pair.
