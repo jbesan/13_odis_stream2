@@ -32,6 +32,7 @@ MATERNITE_FILE = 'annuaire_maternites_DREES.csv'
 SANTE_FILE = 'annuaire_sante_finess.parquet'
 INCLUSION_FILE = 'odis_services_incl_exploded.parquet'
 SNCF_FILE = 'formes-des-lignes-du-rfn.geojson'
+CAF_FILE = 'caf_taux_couverture_petite_enfance_2022.csv'
 
 # --- Data Columns ---
 BV_CODE_COL = 'BV2022'
@@ -41,7 +42,7 @@ BV_NAME_COL = 'LIBBV2022'
 VIEW_LEVEL_OPTIONS = ['Bassins de vie', 'Communes']
 NOMBRE_ADULTES_OPTIONS = [1, 2]
 NOMBRE_ENFANTS_OPTIONS = [0, 1, 2, 3, 4, 5]
-CLASSES_SCOLAIRES = ['Maternelle', 'Elémentaire', 'Collège', 'Lycée']
+CLASSES_SCOLAIRES = ['Crêche / Assistante Maternelle', 'Maternelle', 'Elémentaire', 'Collège', 'Lycée']
 LOC_DISTANCE_OPTIONS = {20: '20 km', 50: '50 km', 'departement': 'Département', 'region': 'Région'}
 HEBERGEMENT_OPTIONS = ["Chez l'habitant", 'Location', 'Foyer']
 LOGEMENT_OPTIONS = ['Location', 'Logement Social']
