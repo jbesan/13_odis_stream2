@@ -355,8 +355,8 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
         
     # Other Needs Priority (F-15)
     if st.session_state.get("ui_priority_other_needs", False):
-        # We assume this maps to the Socle Admin / Services score
-        criteria_weights['inc_socle_admin_score'] = 3.0
+        # Maps to the new Extra Services score
+        criteria_weights['inc_extra_services_score'] = 3.0
 
     return cfg.ScoringConfig(
         poids_emploi=st.session_state['ui_poids_emploi'],

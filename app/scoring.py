@@ -215,6 +215,48 @@ def compute_inclusion_score(
     else:
         df['inc_affinite_score'] = 0.0
 
+    # --- 4. Services Spécifiques (F-15) ---
+    # Uses 'besoins_autres' which is a dict {category: [service, ...]}
+    besoins_autres = prefs.get('besoins_autres', {})
+    # Flatten the needed services into a set of "category_service" keys
+    needed_extra_services = set()
+    for cat, services in besoins_autres.items():
+        for svc in services:
+            needed_extra_services.add(f"{cat}_{svc}")
+            
+    if needed_extra_services:
+        # We need to join with incl_index again or reuse the previous join if possible.
+        # incl_index has 'key' = "category_service"
+        # We can reuse the logic from Socle Admin but with different keys
+        if 'key' not in df.columns: # Should be there if Socle Admin ran, but let's be safe
+             df_merged = df.join(incl_index, how='left')
+             df['extra_match_count'] = [
+                len(needed_extra_services.intersection(s)) if isinstance(s, set) else 0
+                for s in df_merged['key']
+            ]
+        else:
+            # If df already has 'key' from previous join (unlikely as join adds columns to left, not right)
+            # Actually df.join(incl_index) adds columns from incl_index to df.
+            # If we did it in step 1, df has 'key'.
+            # Let's check if we did step 1.
+            if prefs.get('socle_admin_selection'):
+                 # df already has 'key' column from the join in step 1
+                 df['extra_match_count'] = [
+                    len(needed_extra_services.intersection(s)) if isinstance(s, set) else 0
+                    for s in df['key']
+                ]
+            else:
+                 # Need to join
+                 df_merged = df.join(incl_index, how='left')
+                 df['extra_match_count'] = [
+                    len(needed_extra_services.intersection(s)) if isinstance(s, set) else 0
+                    for s in df_merged['key']
+                ]
+        
+        df['inc_extra_services_score'] = df['extra_match_count'] / len(needed_extra_services)
+    else:
+        df['inc_extra_services_score'] = 0.0
+
     # --- Global Inclusion Score ---
     # Removed pre-aggregation. Components are now aggregated by category in compute_category_scores.
     
