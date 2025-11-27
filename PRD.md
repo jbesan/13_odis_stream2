@@ -91,6 +91,7 @@ Logique métier principale, orchestrée par `compute_odis_score()`.
 Liste en vrac d'idées d'amélioration
 
 - Ajouter un call-to-action dans les fiches du top 5 (e.g. appeler TS local)
+  - Annuaire TS local
 - Génerer un prompt pour une Deep Research sur un des territoires recommandés
 - Normaliser les scores de catégorie pour éviter une surévaluation de certains critères
 - Ajouter des profils de pondération (famille vs célibataire)
@@ -347,3 +348,31 @@ En tant que travailleur social, je veux voir les lieux recommandés sur une cart
 ### 📊 Status
 
 - Completed
+
+## 🚀 Feature [F-15]: Profils de Pondération et Affinage des Critères
+
+### 📝 User Stories
+
+- En tant que travailleur social, je veux appliquer en un clic une configuration de poids standard (ex: "Priorité Famille") pour gagner du temps lors de l'entretien.
+- En tant que travailleur social, je veux pouvoir indiquer qu'un critère spécifique (ex: "Présence d'un Lycée") est **prioritaire** au sein de sa catégorie, sans avoir à gérer des dizaines de curseurs complexes.
+
+### 🔑 Key Features
+
+- **Sélecteur de Profils (Presets) :**
+
+  - Ajout d'un menu déroulant "Profil de Priorité" dans la barre latérale (au-dessus des sliders).
+  - **Options proposées :**
+    - _Équilibré_ (Défaut) : Tous les poids à 100.
+    - _Famille_ (Stabilité & Education) : Logement (300), Education (300), Reste (100).
+    - _Santé_ (Soins & Stabilité) : Santé (300), Logement (200), Reste (100).
+    - _Economique_ (Emploi & Formation) : Emploi (300), Mobilité (200), Reste (100).
+  - La sélection d'un profil met à jour automatiquement les sliders de catégorie existants.
+
+- **Pondération Intra-Catégorie (Niveau Critère) :**
+  - Refonte du moteur de scoring (`compute_category_scores`) pour passer d'une moyenne simple à une **moyenne pondérée** des critères.
+  - **UI d'Affinage :** Dans les formulaires (onglets), ajout d'un contrôle "Importance" (ex: Toggle ou Sélecteur "Normal / Important") à côté des critères clés (Niveaux scolaires, Types de santé, Thématiques associatives).
+  - **Impact Mathématique :** Un critère marqué "Important" reçoit un coefficient multiplicateur (ex: x3) dans le calcul du score de sa catégorie.
+
+### 📊 Status
+
+- Not Started
