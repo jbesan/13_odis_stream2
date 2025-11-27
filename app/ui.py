@@ -139,11 +139,18 @@ def render_employment_form() -> None:
             st.multiselect(f"Métiers ciblés Adulte {i+1}", codfap_select.index, format_func=lambda x: codfap_select.loc[x, 'Intitulé FAP 341'], key=f"ui_metiers_adult_{i}")
         with col2:
             st.multiselect(f"Formations recherchées Adulte {i+1}", codform_select.index, format_func=lambda x: codform_select.loc[x, 'libformation'], key=f"ui_formations_adult_{i}")
+            
+            # F-15: Priority Toggle
+            st.toggle("Prioritaire", key=f"ui_priority_job_adult_{i}", help="Donne plus de poids à la recherche d'emploi pour cet adulte")
 
 def render_housing_form() -> None:
     """Renders the UI for the 'Logement' form section."""
     st.radio('Hébergement à court terme', cfg.HEBERGEMENT_OPTIONS, key="ui_hebergement")
-    st.radio('Logement à long terme', cfg.LOGEMENT_OPTIONS, key="ui_logement")
+    if st.session_state.ui_hebergement == 'Location':
+        st.radio('Type de logement', cfg.LOGEMENT_OPTIONS, key="ui_logement")
+        
+    # F-15: Priority Toggle
+    st.toggle("Prioritaire", key="ui_priority_housing", help="Donne plus de poids aux critères de logement")
 
 def render_health_form() -> None:
     """Renders the UI for the 'Santé' form section."""
@@ -186,8 +193,6 @@ def render_other_needs_form() -> None:
         options=interest_options,
         key="ui_affinite_selection"
     )
-    if st.session_state.ui_affinite_selection:
-        st.toggle("Prioritaire", key="ui_priority_affinite", help="Donne plus de poids aux affinités")
 
     # --- 3. Autres Besoins (Refactored) ---
     st.subheader("Autres Besoins Spécifiques")
@@ -234,6 +239,8 @@ def render_other_needs_form() -> None:
         key="ui_besoins_autres_flat",
         help="Recherchez et ajoutez des services spécifiques."
     )
+    if st.session_state.ui_besoins_autres_flat:
+        st.toggle("Prioritaire", key="ui_priority_other_needs", help="Donne plus de poids à ces besoins spécifiques")
     
     # We store the map in session state so we can use it in create_scoring_config_from_inputs
     # without re-computing it (optimization)
@@ -324,13 +331,32 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
         if is_priority and level in edu_map:
             criteria_weights[edu_map[level]] = 3.0
             
+    # Employment Priorities (F-15)
+    for i in range(st.session_state['ui_nb_adultes']):
+        if st.session_state.get(f"ui_priority_job_adult_{i}", False):
+            # Boost the match score for this adult
+            criteria_weights[f'met_match_adult{i+1}_scaled'] = 3.0
+            # Also boost the general employment availability? Maybe not, keep it specific.
+            
+    # Housing Priorities (F-15)
+    if st.session_state.get("ui_priority_housing", False):
+        # Boost based on selection
+        if st.session_state.get('ui_logement') == 'Logement Social':
+             criteria_weights['log_soc_inoc_scaled'] = 3.0
+        elif st.session_state.get('ui_hebergement') == "Chez l'habitant":
+             criteria_weights['log_5p_scaled'] = 3.0
+        else:
+             # Default: Location -> Vacancy rate
+             criteria_weights['log_vac_scaled'] = 3.0
+            
     # Health Priority
     if st.session_state.get("ui_priority_sante", False):
         criteria_weights['sante_structures_scaled'] = 3.0
         
-    # Affinity Priority
-    if st.session_state.get("ui_priority_affinite", False):
-        criteria_weights['inc_affinite_score'] = 3.0
+    # Other Needs Priority (F-15)
+    if st.session_state.get("ui_priority_other_needs", False):
+        # We assume this maps to the Socle Admin / Services score
+        criteria_weights['inc_socle_admin_score'] = 3.0
 
     return cfg.ScoringConfig(
         poids_emploi=st.session_state['ui_poids_emploi'],
