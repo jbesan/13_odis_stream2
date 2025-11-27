@@ -379,7 +379,7 @@ def _display_bv_result_details(row: pd.Series) -> None:
         cat_scores = row[[col for col in row.index if col.endswith('_cat_score')]]
         cat_scores.rename(lambda x: x.split('_')[0].capitalize(), inplace=True)
         fig = line_polar(theta=cat_scores.index, r=cat_scores.values * 100, line_close=True, range_r=[0, 100])
-        fig.update_traces(fill='toself')
+        fig.update_traces(fill='toself', hovertemplate='%{theta}: %{r:.0f}%<extra></extra>')
         fig.update_layout(margin=dict(l=50, r=50, t=50, b=50))
         st.plotly_chart(fig, width='stretch', config=None)
         st.caption('Plus le critère s’approche du bord, plus il est attractif.')
@@ -439,7 +439,7 @@ def _display_result_details(row: pd.Series) -> None:
         cat_scores = row[[col for col in row.index if col.endswith('_cat_score')]]
         cat_scores.rename(lambda x: x.split('_')[0].capitalize(), inplace=True)
         fig = line_polar(theta=cat_scores.index, r=cat_scores.values * 100, line_close=True, range_r=[0, 100])
-        fig.update_traces(fill='toself')
+        fig.update_traces(fill='toself', hovertemplate='%{theta}: %{r:.0f}%<extra></extra>')
         fig.update_layout(margin=dict(l=50, r=50, t=50, b=50))
         st.plotly_chart(fig, width='stretch', config=None)
         st.caption('Plus le critère s’approche du bord, plus il est attractif.')

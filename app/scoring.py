@@ -296,25 +296,62 @@ def compute_criteria_scores(
             df['risque_fermeture_ratio'] = df['risque_fermeture'] / df['ecoles_ct']
             df['edu_classes_ferm_scaled'] = transformer.fit_transform(df[['risque_fermeture_ratio']].fillna(0))
             
-            # Score based on presence of required school types
-            class_mapping = {
-                'Maternelle': 'count_maternelle',
-                'Elémentaire': 'count_elementaire',
-                'Collège': 'count_college',
-                'Lycée': 'count_lycee'
-            }
-            required_cols = {class_mapping[c] for c in prefs['classe_enfants'] if c in class_mapping}
+            # --- New Granular Scoring (F-14) ---
             
-            if required_cols:
-                # Count matches (boolean logic: count > 0)
-                matches = (df[list(required_cols)] > 0).sum(axis=1)
-                # Linear score: ratio of met requirements
-                df['edu_structures_scaled'] = matches / len(required_cols)
-            else:
-                df['edu_structures_scaled'] = 0.0
+            # 1. Petite Enfance (Crèche / Assistante Maternelle)
+            if 'Crêche / Assistante Maternelle' in prefs['classe_enfants']:
+                # Use CAF coverage rate if available, normalized
+                if 'taux_couverture' in df.columns:
+                    # F-14 Refinement: Do NOT fillna(0). Keep NaNs to exclude them later.
+                    # We need to handle NaNs in fit_transform. QuantileTransformer handles NaNs by ignoring them?
+                    # Actually sklearn transformers usually raise error on NaN.
+                    # We need to transform only valid values.
+                    
+                    # Strategy: Fill NaNs with a dummy value for transformation, then put NaNs back?
+                    # Or better: transform only non-NaNs.
+                    
+                    series = df['taux_couverture']
+                    mask = series.notna()
+                    if mask.any():
+                        # Create a temporary array for transformation
+                        values = series[mask].values.reshape(-1, 1)
+                        transformed = transformer.fit_transform(values)
+                        
+                        # Assign back
+                        df.loc[mask, 'edu_petite_enfance_scaled'] = transformed.flatten()
+                        df.loc[~mask, 'edu_petite_enfance_scaled'] = np.nan
+                    else:
+                        df['edu_petite_enfance_scaled'] = np.nan
+                else:
+                    df['edu_petite_enfance_scaled'] = np.nan
+
+            # 2. Schools (Maternelle, Elementaire, College, Lycee)
+            # We check presence (count > 0) for each type if selected
+            
+            # Maternelle
+            if 'Maternelle' in prefs['classe_enfants']:
+                df['edu_maternelle_scaled'] = (df['count_maternelle'] > 0).astype(float)
+                
+            # Elementaire
+            if 'Elémentaire' in prefs['classe_enfants']:
+                df['edu_elementaire_scaled'] = (df['count_elementaire'] > 0).astype(float)
+                
+            # College
+            if 'Collège' in prefs['classe_enfants']:
+                df['edu_college_scaled'] = (df['count_college'] > 0).astype(float)
+                
+            # Lycee
+            if 'Lycée' in prefs['classe_enfants']:
+                df['edu_lycee_scaled'] = (df['count_lycee'] > 0).astype(float)
+
+            # Remove old score column if it exists to avoid confusion
+            if 'edu_structures_scaled' in df.columns:
+                df.drop(columns=['edu_structures_scaled'], inplace=True)
+                
         else:
             df['edu_classes_ferm_scaled'] = 0.0
-            df['edu_structures_scaled'] = 0.0
+            # If no kids, we don't calculate any education scores.
+            # They won't be in the df, so they won't be averaged.
     # Else: Education criteria are not calculated/added to df
 
     # --- SANTE ---
@@ -446,9 +483,11 @@ def compute_category_scores(
                 effective_score = np.maximum(s_commune, s_voisin)
                 max_scores.append(effective_score)
             else:  # This criterion is not applicable to binomes
-                max_scores.append(score_commune.fillna(0))
+                # F-14: Preserve NaNs for aggregation
+                max_scores.append(score_commune)
 
         # The category score is the mean of the effective scores of its criteria.
+        # axis=1 means row-wise. mean() ignores NaNs by default.
         df[f'{category}_cat_score'] = pd.concat(max_scores, axis=1).mean(axis=1)
 
     return df
@@ -458,8 +497,9 @@ def compute_weighted_score(df: pd.DataFrame, config: 'ScoringConfig') -> pd.Seri
     """Computes the final weighted score for each row based on category scores and user-defined weights."""
     category_scores = [col for col in df.columns if col.endswith('_cat_score')]
 
-    total_score = 0
-    total_weight = 0
+    # Initialize total score and total weight vectors (Series) to handle row-specific weights
+    total_score = pd.Series(0.0, index=df.index)
+    total_weight = pd.Series(0.0, index=df.index)
 
     for cat_score_col in category_scores:
         # e.g., 'emploi_cat_score' -> 'emploi'
@@ -475,10 +515,22 @@ def compute_weighted_score(df: pd.DataFrame, config: 'ScoringConfig') -> pd.Seri
         weight = getattr(config, weight_key, 0)
 
         if weight > 0:
-            total_score += df[cat_score_col].fillna(0) * weight
-            total_weight += weight
+            # Get the score series
+            score_series = df[cat_score_col]
+            
+            # Identify valid (non-NaN) scores
+            valid_mask = score_series.notna()
+            
+            # Add weighted score where valid
+            # fillna(0) is used for the addition, but we only add weight where valid
+            total_score += score_series.fillna(0) * weight * valid_mask.astype(float)
+            
+            # Add weight to total_weight only where score is valid
+            total_weight += weight * valid_mask.astype(float)
 
-    return total_score / total_weight if total_weight > 0 else 0
+    # Avoid division by zero
+    final_score = total_score / total_weight
+    return final_score.fillna(0)
 
 
 def select_best_score_per_commune(df: pd.DataFrame) -> pd.DataFrame:

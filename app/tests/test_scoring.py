@@ -82,7 +82,12 @@ class TestScoringLogic:
         # Update config to ensure met_match columns are generated
         config = default_config
         config.codes_metiers = [['F1']] # Provide at least one code for adult 1
+        config.nb_enfants = 1 # Enable education scoring
+        config.classe_enfants = ['Crêche / Assistante Maternelle', 'Maternelle', 'Elémentaire', 'Collège', 'Lycée'] # Select all for full coverage
         
+        # Add mock data for petite enfance
+        df_with_dist['taux_couverture'] = 50.0
+
         scored_df = scoring.compute_criteria_scores(
             df=df_with_dist,
             prefs=config.__dict__,
@@ -98,10 +103,42 @@ class TestScoringLogic:
             'inc_population_scaled',
             'inc_socle_admin_score',
             'inc_lien_social_score',
-            'inc_affinite_score'
+            'inc_affinite_score',
+            'edu_petite_enfance_scaled', # New
+            'edu_maternelle_scaled', # New
+            'edu_elementaire_scaled', # New
+            'edu_college_scaled', # New
+            'edu_lycee_scaled' # New
         ]
         for col in expected_cols:
             assert col in scored_df.columns
+
+    def test_compute_criteria_scores_partial_selection(self, sample_data, default_config, sample_incl_index):
+        """Tests that only selected education criteria are added."""
+        # Prerequisite: distance
+        df_with_dist = scoring.add_distance_to_current_loc(sample_data, default_config.commune_actuelle)
+        
+        config = default_config
+        config.nb_enfants = 1
+        # Only select Maternelle
+        config.classe_enfants = ['Maternelle']
+        
+        scored_df = scoring.compute_criteria_scores(
+            df=df_with_dist,
+            prefs=config.__dict__,
+            incl_index=sample_incl_index,
+            df_all_communes=sample_data,
+            associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count'])
+        )
+        
+        # Maternelle should be there
+        assert 'edu_maternelle_scaled' in scored_df.columns
+        
+        # Others should NOT be there
+        assert 'edu_petite_enfance_scaled' not in scored_df.columns
+        assert 'edu_elementaire_scaled' not in scored_df.columns
+        assert 'edu_college_scaled' not in scored_df.columns
+        assert 'edu_lycee_scaled' not in scored_df.columns
 
     def test_compute_category_scores_aggregation(self, sample_data, sample_scores_cat, default_config):
         """Tests that category scores are correctly aggregated from criteria scores."""
@@ -115,11 +152,44 @@ class TestScoringLogic:
         scores_cat_subset = sample_scores_cat[sample_scores_cat['metric'].isin(relevant_metrics)].copy()
         scores_cat_subset['cat'] = 'emploi' # Force category
         
-        df_cat = scoring.compute_category_scores(df, scores_cat_subset, binome_penalty=0.5, config=default_config)
+        df_cat = scoring.compute_category_scores(df, scores_cat_subset, 0.5, default_config)
         
         # Mean of 1.0 and 0.5 is 0.75
         assert 'emploi_cat_score' in df_cat.columns
         assert df_cat.iloc[0]['emploi_cat_score'] == 0.75
+
+    def test_compute_weighted_score_nan_handling(self, sample_data, default_config):
+        """Tests that NaN scores are excluded from the weighted average."""
+        df = sample_data.copy()
+        
+        # Setup: 3 categories with equal weights (100)
+        # Emploi: 1.0
+        # Logement: 1.0
+        # Education: NaN (Missing data)
+        
+        df['emploi_cat_score'] = 1.0
+        df['logement_cat_score'] = 1.0
+        df['education_cat_score'] = float('nan')
+        
+        # Ensure weights are set
+        config = default_config
+        config.poids_emploi = 100
+        config.poids_logement = 100
+        config.poids_education = 100
+        config.nb_enfants = 1 # Ensure education is not skipped by exclusion logic
+        
+        # Act
+        weighted_score = scoring.compute_weighted_score(df, config)
+        
+        # Assert
+        # Should be (1.0*100 + 1.0*100) / 200 = 1.0
+        # If NaN was treated as 0, it would be (200) / 300 = 0.66
+        assert weighted_score.iloc[0] == 1.0
+        
+        # Case 2: Education is 0.0 (Valid score)
+        df['education_cat_score'] = 0.0
+        weighted_score_zero = scoring.compute_weighted_score(df, config)
+        assert weighted_score_zero.iloc[0] == pytest.approx(0.6666, rel=1e-3)
 
     def test_compute_weighted_score(self, default_config):
         """Tests the final weighted score calculation."""

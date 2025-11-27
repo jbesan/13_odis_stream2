@@ -143,7 +143,8 @@ def load_all_datasets(
     ecoles_file: str,
     maternites_file: str,
     sante_file: str,
-    inclusion_file: str
+    inclusion_file: str,
+    caf_file: str # Added argument
 ) -> Tuple[gpd.GeoDataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, gpd.GeoDataFrame, gpd.GeoDataFrame, gpd.GeoDataFrame, pd.DataFrame]:
     """
     Loads all necessary datasets from specified file paths.
@@ -334,6 +335,19 @@ def load_all_datasets(
     # Let's keep it as a DataFrame with MultiIndex for now.
     associations_data = associations_counts.reset_index()
 
+    # --- CAF Petite Enfance ---
+    # Load CAF data
+    # CSV format: ,codgeo,taux_accueil_collectif,taux_accueil_individuel,taux_accueil_total,annee
+    caf_df = pd.read_csv(base_path + caf_file, delimiter=',', dtype={'codgeo': str})
+    
+    # Rename the total coverage column to the expected name
+    if 'taux_accueil_total' in caf_df.columns:
+        caf_df.rename(columns={'taux_accueil_total': 'taux_couverture'}, inplace=True)
+    
+    # Merge into odis
+    odis = odis.merge(caf_df[['codgeo', 'taux_couverture']], on='codgeo', how='left')
+    odis['taux_couverture'] = odis['taux_couverture'].fillna(0).astype('float32')
+
     return odis, scores_cat, codfap_index, codformations_index, annuaire_ecoles, annuaire_sante, annuaire_inclusion, incl_index, associations_data
 
 @st.cache_data
@@ -402,7 +416,8 @@ def init_datasets() -> Dict[str, Any]:
         cfg.ECOLES_FILE,
         cfg.MATERNITE_FILE,
         cfg.SANTE_FILE,
-        cfg.INCLUSION_FILE
+        cfg.INCLUSION_FILE,
+        cfg.CAF_FILE # Added argument
     )
     
     bv_geo = load_bassin_de_vie_geodata(odis)
