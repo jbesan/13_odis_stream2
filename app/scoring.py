@@ -468,17 +468,16 @@ def compute_category_scores(
         # (score_commune, score_voisin * (1 - penalty)).
         # This is done for all criteria in the category.
         max_scores = []
+        weights = [] # F-15
+
         for col in score_cols:
             score_commune = df[col]
             # Check if a corresponding binome score exists
             if f'{col}_binome' in df.columns:
                 score_voisin = df[f'{col}_binome'] * (1 - binome_penalty)
                 
-                # Debugging: Raise exception with type info
                 s_commune = score_commune.fillna(0)
                 s_voisin = score_voisin.fillna(0)
-                if isinstance(s_commune, pd.DataFrame) or isinstance(s_voisin, pd.DataFrame):
-                     raise ValueError(f"DEBUG: Mixed types for col '{col}'. \nCommune type: {type(s_commune)}\nVoisin type: {type(s_voisin)}\nCommune cols: {s_commune.columns if isinstance(s_commune, pd.DataFrame) else 'Series'}\nVoisin cols: {s_voisin.columns if isinstance(s_voisin, pd.DataFrame) else 'Series'}")
 
                 effective_score = np.maximum(s_commune, s_voisin)
                 max_scores.append(effective_score)
@@ -486,9 +485,31 @@ def compute_category_scores(
                 # F-14: Preserve NaNs for aggregation
                 max_scores.append(score_commune)
 
-        # The category score is the mean of the effective scores of its criteria.
-        # axis=1 means row-wise. mean() ignores NaNs by default.
-        df[f'{category}_cat_score'] = pd.concat(max_scores, axis=1).mean(axis=1)
+            # F-15: Get Weight
+            # We assume scores_cat has 'weight' column (added in data_loader)
+            base_weight = scores_cat[scores_cat.score == col]['weight'].iloc[0]
+            dynamic_multiplier = config.criteria_weights.get(col, 1.0)
+            weights.append(base_weight * dynamic_multiplier)
+
+        # F-15: Weighted Average Calculation
+        scores_df = pd.concat(max_scores, axis=1)
+        weights_array = np.array(weights)
+        
+        # 1. Mask of valid values (not NaN)
+        mask = scores_df.notna()
+        
+        # 2. Weighted Sum of Scores (NaNs treated as 0 for sum)
+        # We multiply by mask to ensure NaNs don't contribute (redundant if fillna(0) but safer)
+        weighted_sum = (scores_df.fillna(0) * weights_array).sum(axis=1)
+        
+        # 3. Sum of Weights for valid values
+        weights_sum = (mask * weights_array).sum(axis=1)
+        
+        # 4. Divide
+        # If weights_sum is 0 (all values NaN), result will be inf or NaN. We want NaN.
+        category_score = weighted_sum / weights_sum.replace(0, np.nan)
+        
+        df[f'{category}_cat_score'] = category_score
 
     return df
 

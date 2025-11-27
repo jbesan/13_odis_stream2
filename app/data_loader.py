@@ -27,7 +27,9 @@ def load_scores_config_as_df(filepath: str) -> pd.DataFrame:
             'show_metric': score_data['display']['show'],
             'unit': score_data['display'].get('unit'),
             'display_factor': score_data['display']['display_factor'],
+            'display_factor': score_data['display']['display_factor'],
             'tooltip': score_data['display']['tooltip'],
+            'weight': score_data.get('weight', 1.0), # F-15
         }
         records.append(flat_record)
 

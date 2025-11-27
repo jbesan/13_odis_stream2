@@ -18,6 +18,23 @@ def display_sidebar(demo_data: Dict[str, Any]) -> None:
 
     # --- Weights ---
     with st.expander('Pondérations', expanded=False):
+        # F-15: Profile Selector
+        def _update_weights_from_profile():
+            profile = st.session_state.ui_weight_profile
+            if profile in cfg.WEIGHT_PROFILES:
+                weights = cfg.WEIGHT_PROFILES[profile]
+                for key, value in weights.items():
+                    # Update session state keys for sliders (e.g. ui_poids_education)
+                    st.session_state[f"ui_{key}"] = value
+
+        st.selectbox(
+            "Profil de Priorité",
+            options=list(cfg.WEIGHT_PROFILES.keys()),
+            key="ui_weight_profile",
+            on_change=_update_weights_from_profile,
+            index=0 # Default to Balanced
+        )
+        
         st.select_slider("Education", cfg.POIDS_OPTIONS, 
                         value=st.session_state.get('ui_poids_education', 100), 
                         key="ui_poids_education")
@@ -108,6 +125,7 @@ def render_education_form() -> None:
                 options = cfg.CLASSES_SCOLAIRES
                 key = f"ui_classe_enfant_{i}"
                 st.selectbox(f'Niveau enfant {i+1}', options, key=key)
+                st.toggle("Prioritaire", key=f"ui_priority_edu_{i}", help="Donne plus de poids à ce critère")
 
 def render_employment_form() -> None:
     """Renders the UI for the 'Projet Professionnel' form section."""
@@ -131,6 +149,8 @@ def render_health_form() -> None:
     """Renders the UI for the 'Santé' form section."""
     options = ["Aucun", "Hopital", 'Maternité', "Soutien Psychologique & Addictologie"]
     st.radio('Support médical à proximité', options, key="ui_besoin_sante")
+    if st.session_state.ui_besoin_sante != "Aucun":
+        st.toggle("Prioritaire", key="ui_priority_sante", help="Donne plus de poids à ce critère")
 
 def render_other_needs_form() -> None:
     """Renders the UI for the 'Inclusion' form section (F-13)."""
@@ -166,6 +186,8 @@ def render_other_needs_form() -> None:
         options=interest_options,
         key="ui_affinite_selection"
     )
+    if st.session_state.ui_affinite_selection:
+        st.toggle("Prioritaire", key="ui_priority_affinite", help="Donne plus de poids aux affinités")
 
     # --- 3. Autres Besoins (Refactored) ---
     st.subheader("Autres Besoins Spécifiques")
@@ -285,12 +307,38 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
         # Fallback to existing dict if flat not present (e.g. tests or legacy)
         besoins_autres_dict = st.session_state.get('ui_besoins_autres', {})
 
+    # F-15: Compute Criteria Weights
+    criteria_weights = {}
+    
+    # Education Priorities
+    edu_map = {
+        'Crêche / Assistante Maternelle': 'edu_petite_enfance_scaled',
+        'Maternelle': 'edu_maternelle_scaled',
+        'Elémentaire': 'edu_elementaire_scaled',
+        'Collège': 'edu_college_scaled',
+        'Lycée': 'edu_lycee_scaled'
+    }
+    for i in range(st.session_state['ui_nb_enfants']):
+        level = st.session_state.get(f"ui_classe_enfant_{i}")
+        is_priority = st.session_state.get(f"ui_priority_edu_{i}", False)
+        if is_priority and level in edu_map:
+            criteria_weights[edu_map[level]] = 3.0
+            
+    # Health Priority
+    if st.session_state.get("ui_priority_sante", False):
+        criteria_weights['sante_structures_scaled'] = 3.0
+        
+    # Affinity Priority
+    if st.session_state.get("ui_priority_affinite", False):
+        criteria_weights['inc_affinite_score'] = 3.0
+
     return cfg.ScoringConfig(
         poids_emploi=st.session_state['ui_poids_emploi'],
         poids_logement=st.session_state['ui_poids_logement'],
         poids_education=st.session_state['ui_poids_education'],
         poids_inclusion=st.session_state['ui_poids_inclusion'],
         poids_sante=st.session_state['ui_poids_sante'], # NEW
+        criteria_weights=criteria_weights, # F-15
         poids_mobilité=st.session_state['ui_poids_mobilité'],
         commune_actuelle=commune_codgeo,
         loc_distance_km=st.session_state['ui_loc_distance_km'],
@@ -515,7 +563,13 @@ def _produce_pitch_markdown(row: pd.Series, config: cfg.ScoringConfig, scores_ca
     weighted_scores = {}
     for col in crit_scores_cols:
         cat = scores_cat[scores_cat.score == col]['cat'].iloc[0]
-        weight = getattr(config, f'poids_{cat}', 0)
+        cat_weight = getattr(config, f'poids_{cat}', 0)
+        
+        # F-15: Include criteria-level weights
+        base_weight = scores_cat[scores_cat.score == col]['weight'].iloc[0]
+        dynamic_multiplier = config.criteria_weights.get(col, 1.0)
+        
+        total_weight = cat_weight * base_weight * dynamic_multiplier
         
         penalty = config.binome_penalty if row.get("binome", False) and col + '_binome' in row.index else 0
         
@@ -523,7 +577,7 @@ def _produce_pitch_markdown(row: pd.Series, config: cfg.ScoringConfig, scores_ca
         score_binome = row.get(col + '_binome', 0) * (1 - penalty)
         effective_score = max(score_commune or 0, score_binome or 0)
         
-        weighted_scores[col] = effective_score * weight
+        weighted_scores[col] = effective_score * total_weight
 
     sorted_scores = sorted(weighted_scores.items(), key=lambda item: item[1], reverse=True)
 
