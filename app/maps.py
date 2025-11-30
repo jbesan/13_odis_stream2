@@ -82,13 +82,41 @@ def build_scores_layer(df: pd.DataFrame) -> Tuple[flm.FeatureGroup, Optional[Any
 
     # Add current commune in blue
     current_geo_df = st.session_state.selected_geo
-    current_geo_df_serializable = current_geo_df[['libgeo', 'polygon']].copy()
-    current_geo_df_serializable.set_geometry('polygon', inplace=True)
+    
+    if view_level == 'Bassins de vie':
+        # Get the BV code from the current commune
+        bv_code = current_geo_df[cfg.BV_CODE_COL].iloc[0]
+        # Get the BV geometry from the app_data
+        bv_geo_df = st.session_state.app_data['bv_geo']
+        
+        if bv_code in bv_geo_df.index:
+            # Create a serializable DF for the BV
+            # bv_geo_df has geometry column (already set as geometry)
+            current_geo_df_serializable = bv_geo_df.loc[[bv_code]].copy()
+            
+            # Fix for serialization error: drop non-serializable columns like 'centroid'
+            if 'centroid' in current_geo_df_serializable.columns:
+                current_geo_df_serializable.drop(columns=['centroid'], inplace=True)
+
+            # Ensure we have a libgeo for the tooltip, fallback to BV name if available or code
+            if cfg.BV_NAME_COL in current_geo_df_serializable.columns:
+                 current_geo_df_serializable['libgeo'] = current_geo_df_serializable[cfg.BV_NAME_COL]
+            else:
+                 current_geo_df_serializable['libgeo'] = f"Bassin de vie {bv_code}"
+        else:
+            # Fallback to commune if BV not found (should not happen if data is consistent)
+            current_geo_df_serializable = current_geo_df[['libgeo', 'polygon']].copy()
+            current_geo_df_serializable.set_geometry('polygon', inplace=True)
+            
+    else:
+        # Default to Commune view
+        current_geo_df_serializable = current_geo_df[['libgeo', 'polygon']].copy()
+        current_geo_df_serializable.set_geometry('polygon', inplace=True)
 
     flm.GeoJson(
         current_geo_df_serializable,
         style_function=lambda x: {"fillColor": 'blue', "fillOpacity": 0.5, "stroke": True, "color": "blue"},
-        tooltip=current_geo_df['libgeo'].iloc[0]
+        tooltip=current_geo_df_serializable['libgeo'].iloc[0]
     ).add_to(fg)
 
     # Add all scored geometries (communes or bassins de vie)
