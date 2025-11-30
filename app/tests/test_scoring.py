@@ -2,6 +2,7 @@ import pytest
 import pandas as pd
 import geopandas as gpd
 import numpy as np
+import copy
 from app import scoring
 from app import config as cfg
 from app.config import ScoringConfig
@@ -74,7 +75,7 @@ class TestDistanceCalculation:
 
 @pytest.mark.unit
 class TestScoringLogic:
-    def test_compute_criteria_scores_structure(self, sample_data, default_config, sample_incl_index):
+    def test_compute_criteria_scores_structure(self, sample_data, default_config, sample_incl_index, sample_scores_cat, global_stats):
         """Tests that criteria scores are added as columns."""
         # Prerequisite: distance
         df_with_dist = scoring.add_distance_to_current_loc(sample_data, default_config.commune_actuelle)
@@ -93,7 +94,9 @@ class TestScoringLogic:
             prefs=config.__dict__,
             incl_index=sample_incl_index,
             df_all_communes=sample_data,
-            associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']) # Mock associations data
+            associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']), # Mock associations data
+            scores_cat=sample_scores_cat,
+            global_stats=global_stats
         )
         
         expected_cols = [
@@ -113,7 +116,7 @@ class TestScoringLogic:
         for col in expected_cols:
             assert col in scored_df.columns
 
-    def test_compute_criteria_scores_partial_selection(self, sample_data, default_config, sample_incl_index):
+    def test_compute_criteria_scores_partial_selection(self, sample_data, default_config, sample_incl_index, sample_scores_cat, global_stats):
         """Tests that only selected education criteria are added."""
         # Prerequisite: distance
         df_with_dist = scoring.add_distance_to_current_loc(sample_data, default_config.commune_actuelle)
@@ -128,7 +131,9 @@ class TestScoringLogic:
             prefs=config.__dict__,
             incl_index=sample_incl_index,
             df_all_communes=sample_data,
-            associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count'])
+            associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']),
+            scores_cat=sample_scores_cat,
+            global_stats=global_stats
         )
         
         # Maternelle should be there
@@ -279,7 +284,8 @@ class TestConditionalScoring:
             socle_admin_selection=[],
             affinite_selection=[],
             binome_penalty=0.5,
-            pop_min=1000
+            pop_min=1000,
+            criteria_weights={}
         )
 
         # Act
@@ -322,7 +328,8 @@ class TestConditionalScoring:
             socle_admin_selection=[],
             affinite_selection=[],
             binome_penalty=0.5,
-            pop_min=1000
+            pop_min=1000,
+            criteria_weights={}
         )
 
         # Act
@@ -331,3 +338,40 @@ class TestConditionalScoring:
 
         # Assert
         assert abs(weighted_score.iloc[0] - 0.666666) < 0.0001
+
+    def test_compute_criteria_scores_dynamic_bounds(self, sample_data, default_config, sample_incl_index, sample_scores_cat, global_stats):
+        """Tests that match scores use dynamic max bounds based on preference length."""
+        # Prerequisite: distance
+        df_with_dist = scoring.add_distance_to_current_loc(sample_data, default_config.commune_actuelle)
+        
+        # Mock data for matches
+        df_with_dist['be_codfap_top'] = [['A1', 'B2'], ['A1'], [], [], []]
+        df_with_dist['codes_formations'] = [['F1', 'F2'], ['F1'], [], [], []]
+        
+        # Config with 2 metiers selected and 3 formations selected
+        config = copy.deepcopy(default_config)
+        config.codes_metiers[0] = ['A1', 'B2'] # 2 items -> max bound 2
+        config.codes_formations[0] = ['F1', 'F2', 'F3'] # 3 items -> max bound 3
+        
+        # Ensure max_bound is null in scores_cat for these scores (as per new config)
+        scores_cat_dynamic = sample_scores_cat.copy()
+        scores_cat_dynamic.loc[scores_cat_dynamic['score'] == 'met_match_adult1_scaled', 'max_bound'] = None
+        scores_cat_dynamic.loc[scores_cat_dynamic['score'] == 'form_match_adult1_scaled', 'max_bound'] = None
+        
+        scored_df = scoring.compute_criteria_scores(
+            df=df_with_dist,
+            prefs=config.__dict__,
+            incl_index=sample_incl_index,
+            df_all_communes=sample_data,
+            associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']),
+            scores_cat=scores_cat_dynamic,
+            global_stats=global_stats
+        )
+        
+        # Check met_match_adult1_scaled
+        # Row 0: matches A1, B2 (2 matches). Max bound 2. Score should be 2/2 = 1.0
+        assert scored_df.loc['75056', 'met_match_adult1_scaled'] == 1.0
+        
+        # Check form_match_adult1_scaled
+        # Row 0: matches F1, F2 (2 matches). Max bound 3. Score should be 2/3 = 0.666...
+        assert scored_df.loc['75056', 'form_match_adult1_scaled'] == pytest.approx(2/3, rel=1e-3)

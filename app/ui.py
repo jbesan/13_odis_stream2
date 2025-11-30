@@ -36,22 +36,22 @@ def display_sidebar(demo_data: Dict[str, Any]) -> None:
         )
         
         st.select_slider("Education", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_education', 100), 
+                        value=st.session_state.get('ui_poids_education', 50), 
                         key="ui_poids_education")
         st.select_slider("Projet Pro", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_emploi', 100), 
+                        value=st.session_state.get('ui_poids_emploi', 50), 
                         key="ui_poids_emploi")
         st.select_slider("Logement", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_logement', 100), 
+                        value=st.session_state.get('ui_poids_logement', 50), 
                         key="ui_poids_logement")
         st.select_slider("Inclusion", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_inclusion', 100), 
+                        value=st.session_state.get('ui_poids_inclusion', 50), 
                         key="ui_poids_inclusion")
         st.select_slider("Santé", cfg.POIDS_OPTIONS, # NEW
-                        value=st.session_state.get('ui_poids_sante', 100), # NEW
+                        value=st.session_state.get('ui_poids_sante', 50), # NEW
                         key="ui_poids_sante") # NEW
         st.select_slider("Mobilité", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_mobilité', 100), 
+                        value=st.session_state.get('ui_poids_mobilité', 50), 
                         key="ui_poids_mobilité")
 
     # --- Technical Params ---
@@ -200,10 +200,10 @@ def render_other_needs_form() -> None:
     
     # Prepare options: All services from annuaire_inclusion EXCEPT those in Socle Admin
     annuaire = app_data['annuaire_inclusion']
-    unique_services = annuaire[['categorie', 'service']].drop_duplicates()
+    unique_services = annuaire[['categorie', 'service', 'label', 'thematiques']].drop_duplicates()
     socle_keys = set(default_socle)
     
-    options_map = {} # Display String -> (Category, Service)
+    options_map = {} # Display String -> Slug (thematiques)
     options_list = []
     
     for _, row in unique_services.iterrows():
@@ -211,25 +211,28 @@ def render_other_needs_form() -> None:
         if row['service'] in ['-', '']:
             continue
             
-        key = f"{row['categorie']}_{row['service']}"
+        key = row['thematiques']
         if key not in socle_keys:
-            # Format: Service | Category
-            display_str = f"{row['service'].replace('-', ' ').capitalize()} | {row['categorie'].replace('-', ' ').capitalize()}"
+            # Use the human-readable label
+            display_str = row['label']
             options_list.append(display_str)
-            options_map[display_str] = (row['categorie'], row['service'])
+            options_map[display_str] = key
             
     options_list.sort()
     
-    # Initialize flat selection state from existing dict state (if any, e.g. from demo data)
+    # Initialize flat selection state from existing list state (if any, e.g. from demo data)
     if 'ui_besoins_autres_flat' not in st.session_state:
-        current_dict = st.session_state.get('ui_besoins_autres', st.session_state['demo_data'].get('besoins_autres', {}))
+        # User config now stores a list of slugs
+        current_list = st.session_state.get('ui_besoins_autres', st.session_state['demo_data'].get('besoins_autres', []))
         flat_selection = []
-        for cat, services in current_dict.items():
-            for svc in services:
-                # Reconstruct display string to match options
-                display_str = f"{svc.replace('-', ' ').capitalize()} | {cat.replace('-', ' ').capitalize()}"
-                if display_str in options_map:
-                    flat_selection.append(display_str)
+        
+        # Create reverse map for initialization: Slug -> Display String
+        slug_to_display = {v: k for k, v in options_map.items()}
+        
+        for slug in current_list:
+            if slug in slug_to_display:
+                flat_selection.append(slug_to_display[slug])
+                
         st.session_state.ui_besoins_autres_flat = flat_selection
 
     # Widget
@@ -295,7 +298,8 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
     codes_formations = [st.session_state[f"ui_formations_adult_{i}"] for i in range(st.session_state['ui_nb_adultes'])]
 
     # Process Autres Besoins from Flat List (F-13 UI Update)
-    besoins_autres_dict = {}
+    # Process Autres Besoins from Flat List (F-13 UI Update)
+    besoins_autres_list = []
     if 'ui_besoins_autres_flat' in st.session_state:
         flat_selection = st.session_state.ui_besoins_autres_flat
         options_map = st.session_state.get('ui_besoins_autres_map', {})
@@ -303,16 +307,14 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
         if options_map:
             for item in flat_selection:
                 if item in options_map:
-                    cat, svc = options_map[item]
-                    if cat not in besoins_autres_dict:
-                        besoins_autres_dict[cat] = []
-                    besoins_autres_dict[cat].append(svc)
+                    slug = options_map[item]
+                    besoins_autres_list.append(slug)
         
         # Update session state for compatibility
-        st.session_state.ui_besoins_autres = besoins_autres_dict
+        st.session_state.ui_besoins_autres = besoins_autres_list
     else:
-        # Fallback to existing dict if flat not present (e.g. tests or legacy)
-        besoins_autres_dict = st.session_state.get('ui_besoins_autres', {})
+        # Fallback to existing list if flat not present (e.g. tests or legacy)
+        besoins_autres_list = st.session_state.get('ui_besoins_autres', [])
 
     # F-15: Compute Criteria Weights
     criteria_weights = {}
@@ -376,7 +378,7 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
         codes_formations=codes_formations,
         classe_enfants=classe_enfants,
         besoin_sante=st.session_state['ui_besoin_sante'],
-        besoins_autres=besoins_autres_dict,
+        besoins_autres=besoins_autres_list,
         socle_admin_selection=st.session_state.get('ui_socle_admin_selection', []), # NEW
         affinite_selection=st.session_state.get('ui_affinite_selection', []), # NEW
         binome_penalty=st.session_state['ui_penalite_binome'] / 100,

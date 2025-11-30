@@ -33,6 +33,8 @@ SANTE_FILE = 'annuaire_sante_finess.parquet'
 INCLUSION_FILE = 'odis_services_incl_exploded.parquet'
 SNCF_FILE = 'formes-des-lignes-du-rfn.geojson'
 CAF_FILE = 'caf_taux_couverture_petite_enfance_2022.csv'
+LOVAC_FILE = 'lovac-opendata-communes-2025.csv'
+INCLUSION_REF_FILE = 'referentiel_services_inclusion.csv'
 
 # --- Data Columns ---
 BV_CODE_COL = 'BV2022'
@@ -113,7 +115,7 @@ class ScoringConfig:
     codes_formations: List[List[str]]
     classe_enfants: List[str]
     besoin_sante: str
-    besoins_autres: Dict[str, List[str]]
+    besoins_autres: List[str]
     
     # Inclusion
     socle_admin_selection: List[str]
@@ -125,21 +127,20 @@ class ScoringConfig:
 
 # --- Inclusion Defaults ---
 DEFAULT_SOCLE_ADMIN = [
-    "logement-hebergement_etre-accompagne-pour-se-loger",
-    "acces-aux-droits-et-citoyennete_accompagnement-juridique",
-    "acces-aux-droits-et-citoyennete_demandeurs-dasile-et-naturalisation",
-    "preparer-sa-candidature_realiser-un-cv-et-ou-une-lettre-de-motivation"
+    "logement-hebergement--sinformer-sur-les-demarches-liees-a-lacces-au-logement",
+    "difficultes-administratives-ou-juridiques--accompagnement-aux-demarches-administratives",
+    "preparer-sa-candidature--organiser-ses-demarches-de-recherche-demploi"
 ]
 
 # --- Demo Scenarios ---
 DEMO_DATA_DEFAULT: Dict[str, Any] = {
     'nom': None,
-    'poids_emploi': 100,
-    'poids_logement': 100,
-    'poids_education': 100,
-    'poids_inclusion': 25,
-    'poids_mobilité': 100,
-    'poids_sante': 100, # Added default weight for sante
+    'poids_emploi': 50,
+    'poids_logement': 50,
+    'poids_education': 50,
+    'poids_inclusion': 50,
+    'poids_mobilité': 50,
+    'poids_sante': 50, # Added default weight for sante
     'departement_actuel': '33',
     'commune_actuelle': 'Bordeaux',
     'loc_distance_km': 50,
@@ -153,7 +154,7 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     'classe_enfants': [],
     'binome_penalty': 0.5,
     'pop_min': 1000,
-    'besoins_autres': {},
+    'besoins_autres': [],
     'socle_admin_selection': DEFAULT_SOCLE_ADMIN,
     'affinite_selection': []
 }
@@ -195,7 +196,7 @@ DEMO_SCENARIOS = {
         'nb_enfants': 2,
         'codes_metiers': [['T2A60']],
         'classe_enfants': ['Elémentaire', 'Collège'],
-        'besoins_autres': {'apprendre-francais': ['accompagnement-insertion-pro']},
+        'besoins_autres': ['lecture-ecriture-calcul--maitriser-le-francais'],
         'poids_mobilité': 50,
         'poids_inclusion': 50,
         'poids_emploi': 100,

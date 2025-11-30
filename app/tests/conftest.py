@@ -51,6 +51,8 @@ def sample_data():
         'count_hopital': [2, 1, 1, 0, 0],
         'count_psy': [1, 0, 1, 0, 0],
         'count_maternite': [1, 0, 0, 0, 0],
+        # New vacant housing metric
+        'pp_vacant_plus_2ans_25': [0.05, 0.02, 0.03, 0.04, 0.01],
     }
     gdf = gpd.GeoDataFrame(data, crs="EPSG:4326")
     gdf = gdf.set_index('codgeo')
@@ -99,7 +101,10 @@ def sample_scores_cat():
             False, False,
             True, True,
             False
-        ]
+        ],
+        'weight': [1.0] * 20,
+        'min_bound': [0.0] * 20,
+        'max_bound': [1.0] * 20
     }
     return pd.DataFrame(data).copy()
 
@@ -134,9 +139,25 @@ def default_config():
         codes_formations=[[]], # Ensure at least one empty list for adult 1
         classe_enfants=[],
         besoin_sante='Aucun',
-        besoins_autres={},
+        besoins_autres=[],
         socle_admin_selection=[],
         affinite_selection=[],
         binome_penalty=0.5,
-        pop_min=1000
+        pop_min=1000,
+        criteria_weights={} # Added for F-15
     )
+
+@pytest.fixture
+def global_stats():
+    """Returns sample global stats for testing."""
+    return {
+        'met_scaled': {'min': 0.0, 'max': 100.0},
+        'log_vac_scaled': {'min': 0.0, 'max': 0.2},
+        'log_soc_inoc_scaled': {'min': 0.0, 'max': 0.1},
+        'log_5p_scaled': {'min': 0.0, 'max': 0.5},
+        'edu_classes_ferm_scaled': {'min': 0.0, 'max': 0.1},
+        'inc_lien_social_score': {'min': 0.0, 'max': 10.0},
+        'inc_affinite_score': {'min': 0.0, 'max': 10.0},
+        'inc_population_scaled': {'min': 0.0, 'max': 100000.0},
+        'edu_petite_enfance_scaled': {'min': 0.0, 'max': 100.0},
+    }

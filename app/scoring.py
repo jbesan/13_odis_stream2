@@ -18,32 +18,80 @@ import config as cfg
 from config import ScoringConfig
 
 
+# --- Helper Functions ---
+
+def get_bounds(score_id: str, scores_cat: pd.DataFrame, global_stats: Dict[str, Dict[str, float]]) -> Tuple[float, float]:
+    """Retrieves the min and max bounds for a given score."""
+    # 1. Check global computed stats
+    if score_id in global_stats:
+        return global_stats[score_id]['min'], global_stats[score_id]['max']
+    
+    # 2. Check hardcoded bounds in scores_cat
+    row = scores_cat[scores_cat['score'] == score_id]
+    if not row.empty:
+        min_b = row.iloc[0]['min_bound']
+        max_b = row.iloc[0]['max_bound']
+        # Return values directly, converting to float (NaN stays NaN)
+        # We use float() but handle None/NaN safely if needed, though pandas usually handles it.
+        # If min_b is None/NaN, we want to return np.nan
+        val_min = float(min_b) if pd.notna(min_b) else np.nan
+        val_max = float(max_b) if pd.notna(max_b) else np.nan
+        return val_min, val_max
+            
+    # 3. Default fallback (should not happen if config is correct)
+    return 0.0, 1.0
+
+def min_max_scale(series: pd.Series, min_val: float, max_val: float) -> pd.Series:
+    """Scales a series to [0, 1] using min-max scaling."""
+    if max_val == min_val:
+        return pd.Series(0.0, index=series.index)
+    return ((series - min_val) / (max_val - min_val)).clip(0, 1)
+
+
 # --- Scoring Pipeline Functions ---
 
-def add_distance_to_current_loc(df: gpd.GeoDataFrame, current_codgeo: str) -> gpd.GeoDataFrame:
+def add_distance_to_current_loc(df: gpd.GeoDataFrame, current_codgeo: str, df_all: Optional[gpd.GeoDataFrame] = None) -> gpd.GeoDataFrame:
     """Computes the distance from each commune in the dataframe to a reference commune."""
     
     # Optimization: Use pre-calculated centroids if available
     if 'centroid' in df.columns:
         centroids_proj = df['centroid'].to_crs(cfg.PROJECTED_CRS)
         
-        if current_codgeo not in df.index:
-             pass
-
-        # Ensure we get a single geometry, not a Series
-        target_centroid = centroids_proj.loc[current_codgeo]
-        if isinstance(target_centroid, (pd.Series, gpd.GeoSeries)):
-             target_centroid = target_centroid.iloc[0]
-
-        distances = centroids_proj.distance(target_centroid)
+        target_centroid = None
+        if current_codgeo in df.index:
+            target_centroid = centroids_proj.loc[current_codgeo]
+        elif df_all is not None and current_codgeo in df_all.index and 'centroid' in df_all.columns:
+             target_centroid = df_all.loc[current_codgeo, 'centroid']
+             # Ensure it's projected
+             # We assume df_all has centroid in same CRS as df (usually 4326)
+             # So we need to project it
+             target_centroid = _transform_point(target_centroid, df_all.crs, cfg.PROJECTED_CRS)
         
-        df_result = df.copy()
-        df_result['dist_current_loc'] = distances
-        return df_result
-    else:
-        # Fallback to original method if centroid is missing
-        df_projected = df.to_crs(cfg.PROJECTED_CRS)
+        if target_centroid is None:
+             # Fallback or error?
+             # If we can't find the start point, we can't calculate distance.
+             # But maybe we should fall back to the non-centroid method?
+             pass
+        else:
+            if isinstance(target_centroid, (pd.Series, gpd.GeoSeries)):
+                target_centroid = target_centroid.iloc[0]
+
+            distances = centroids_proj.distance(target_centroid)
+            
+            df_result = df.copy()
+            df_result['dist_current_loc'] = distances
+            return df_result
+
+    # Fallback to original method if centroid is missing or we fell through
+    df_projected = df.to_crs(cfg.PROJECTED_CRS)
+    
+    zone_recherche = None
+    if current_codgeo in df_projected.index:
         zone_recherche = df_projected.loc[[current_codgeo]].copy()
+    elif df_all is not None and current_codgeo in df_all.index:
+        zone_recherche = df_all.loc[[current_codgeo]].to_crs(cfg.PROJECTED_CRS).copy()
+        
+    if zone_recherche is not None:
         zone_recherche['geometry'] = zone_recherche.centroid
 
         df_with_dist = df_projected.sjoin_nearest(
@@ -51,6 +99,8 @@ def add_distance_to_current_loc(df: gpd.GeoDataFrame, current_codgeo: str) -> gp
         )[['dist_current_loc']]
 
         return df.merge(df_with_dist, left_index=True, right_index=True, how='left')
+    
+    return df # Should probably raise error if we can't calculate distance
 
 
 def filter_by_distance(df: pd.DataFrame, max_distance_km: float) -> pd.DataFrame:
@@ -146,7 +196,9 @@ def compute_inclusion_score(
     df: gpd.GeoDataFrame,
     prefs: Dict[str, Any],
     incl_index: pd.DataFrame,
-    associations_data: pd.DataFrame
+    associations_data: pd.DataFrame,
+    scores_cat: pd.DataFrame, # Added
+    global_stats: Dict[str, Dict[str, float]] # Added
 ) -> gpd.GeoDataFrame:
     """Computes the new Inclusion score based on 3 components."""
     
@@ -169,27 +221,33 @@ def compute_inclusion_score(
     # associations_data has MultiIndex (codgeo, id_waldec) -> count
     
     # Filter for core codes (handling prefixes)
-    core_codes_prefixes = tuple(cfg.WALDEC_CORE_INCLUSION)
-    
-    # Filter rows where id_waldec starts with any of the core prefixes
-    # We use string operations for this.
     # Note: associations_data['id_waldec'] should be strings.
-    
-    core_assos = associations_data[associations_data['id_waldec'].astype(str).str.startswith(core_codes_prefixes, na=False)]
-    
-    # Group by codgeo and sum counts
-    core_counts = core_assos.groupby('codgeo')['count'].sum()
-    
-    # Join with df
-    df = df.join(core_counts.rename('lien_social_count'), how='left')
-    df['lien_social_count'] = df['lien_social_count'].fillna(0)
+    if 'lien_social_count' not in df.columns:
+        core_codes_prefixes = tuple(cfg.WALDEC_CORE_INCLUSION)
+        # Filter rows where id_waldec starts with any of the core prefixes
+        # We use string operations for this.
+        core_assos = associations_data[associations_data['id_waldec'].astype(str).str.startswith(core_codes_prefixes, na=False)]
+        
+        # Group by codgeo and sum counts
+        core_counts = core_assos.groupby('codgeo')['count'].sum()
+        
+        # Join with df
+        df = df.join(core_counts.rename('lien_social_count'), how='left')
+        df['lien_social_count'] = df['lien_social_count'].fillna(0)
     
     # Calculate density (per 1000 hab)
     df['lien_social_density'] = (df['lien_social_count'] * 1000) / df['pop_be']
     
+    # Calculate density (per 1000 hab)
+    # Pre-calculated in data_loader, but we need to ensure it's in df
+    # If df is a subset of odis, it should have 'lien_social_density'
+    if 'lien_social_density' not in df.columns:
+         # Fallback if not present (e.g. tests)
+         df['lien_social_density'] = (df['lien_social_count'] * 1000) / df['pop_be']
+
     # Normalize
-    transformer = preprocessing.QuantileTransformer(output_distribution="uniform", n_quantiles=min(len(df), 1000), random_state=42)
-    df['inc_lien_social_score'] = transformer.fit_transform(df[['lien_social_density']].fillna(0))
+    min_b, max_b = get_bounds('inc_lien_social_score', scores_cat, global_stats)
+    df['inc_lien_social_score'] = min_max_scale(df['lien_social_density'].fillna(0), min_b, max_b)
 
     # --- 3. Affinité ---
     selected_interests = prefs.get('affinite_selection', [])
@@ -209,20 +267,21 @@ def compute_inclusion_score(
             df['affinite_count'] = df['affinite_count'].fillna(0)
             
             df['affinite_density'] = (df['affinite_count'] * 1000) / df['pop_be']
-            df['inc_affinite_score'] = transformer.fit_transform(df[['affinite_density']].fillna(0))
+            
+            min_b, max_b = get_bounds('inc_affinite_score', scores_cat, global_stats)
+            df['inc_affinite_score'] = min_max_scale(df['affinite_density'].fillna(0), min_b, max_b)
         else:
             df['inc_affinite_score'] = 0.0
     else:
         df['inc_affinite_score'] = 0.0
 
     # --- 4. Services Spécifiques (F-15) ---
-    # Uses 'besoins_autres' which is a dict {category: [service, ...]}
-    besoins_autres = prefs.get('besoins_autres', {})
-    # Flatten the needed services into a set of "category_service" keys
+    # Uses 'besoins_autres' which is a list of slugs [category--service, ...]
+    besoins_autres = prefs.get('besoins_autres', [])
+    # Flatten the needed services into a set of "category--service" keys
     needed_extra_services = set()
-    for cat, services in besoins_autres.items():
-        for svc in services:
-            needed_extra_services.add(f"{cat}_{svc}")
+    for slug in besoins_autres:
+        needed_extra_services.add(slug)
             
     if needed_extra_services:
         # We need to join with incl_index again or reuse the previous join if possible.
@@ -268,7 +327,9 @@ def compute_criteria_scores(
     prefs: Dict[str, Any],
     incl_index: pd.DataFrame,
     df_all_communes: gpd.GeoDataFrame,
-    associations_data: pd.DataFrame # Added argument
+    associations_data: pd.DataFrame, # Added argument
+    scores_cat: pd.DataFrame, # Added
+    global_stats: Dict[str, Dict[str, float]] # Added
 ) -> gpd.GeoDataFrame:
     """Computes individual scores for each criterion based on user preferences.
 
@@ -289,8 +350,12 @@ def compute_criteria_scores(
     )
 
     # --- EMPLOI ---
-    df['met_ratio'] = 1000 * df['met'] / df['pop_be']
-    df['met_scaled'] = transformer.fit_transform(df[['met_ratio']].fillna(0))
+    # met_ratio is pre-calculated in data_loader
+    if 'met_ratio' not in df.columns:
+        df['met_ratio'] = 1000 * df['met'] / df['pop_be']
+        
+    min_b, max_b = get_bounds('met_scaled', scores_cat, global_stats)
+    df['met_scaled'] = min_max_scale(df['met_ratio'].fillna(0), min_b, max_b)
 
     # Job categories that match user preferences
     for i in range(prefs['nb_adultes']):
@@ -302,9 +367,13 @@ def compute_criteria_scores(
                 for x in df.be_codfap_top
             ]
             df[f'met_match_{adult_key}'] = df[f'met_match_codes_{adult_key}'].str.len()
-            df[f'met_match_{adult_key}_scaled'] = transformer.fit_transform(
-                df[[f'met_match_{adult_key}']].fillna(0)
-            )
+            
+            # Dynamic max bound based on number of selected items
+            min_b, max_b = get_bounds(f'met_match_{adult_key}_scaled', scores_cat, global_stats)
+            if pd.isna(max_b):
+                 max_b = float(len(prefs_metiers))
+            
+            df[f'met_match_{adult_key}_scaled'] = min_max_scale(df[f'met_match_{adult_key}'].fillna(0), min_b, max_b)
 
     # Training centers that match
     for i in range(prefs['nb_adultes']):
@@ -316,27 +385,46 @@ def compute_criteria_scores(
                 for x in df.codes_formations
             ]
             df[f'form_match_{adult_key}'] = df[f'form_match_codes_{adult_key}'].str.len()
-            df[f'form_match_{adult_key}_scaled'] = transformer.fit_transform(
-                df[[f'form_match_{adult_key}']].fillna(0)
-            )
+            
+            # Dynamic max bound based on number of selected items
+            min_b, max_b = get_bounds(f'form_match_{adult_key}_scaled', scores_cat, global_stats)
+            if pd.isna(max_b):
+                 max_b = float(len(prefs_formations))
+
+            df[f'form_match_{adult_key}_scaled'] = min_max_scale(df[f'form_match_{adult_key}'].fillna(0), min_b, max_b)
 
     # --- HEBERGEMENT / LOGEMENT ---
     if prefs['hebergement'] == "Chez l'habitant":
-        df['log_5p_ratio'] = df['rp_5+pieces'] / df['log_rp']
-        df['log_5p_scaled'] = transformer.fit_transform(df[['log_5p_ratio']].fillna(0))
+        # log_5p_ratio is pre-calculated
+        if 'log_5p_ratio' not in df.columns:
+             df['log_5p_ratio'] = df['rp_5+pieces'] / df['log_rp']
+             
+        min_b, max_b = get_bounds('log_5p_scaled', scores_cat, global_stats)
+        df['log_5p_scaled'] = min_max_scale(df['log_5p_ratio'].fillna(0), min_b, max_b)
 
     if prefs['logement'] == "Logement Social":
-        df['log_soc_inoc_ratio'] = df['log_soc_inoccupes'] / df['log_soc_total']
-        df['log_soc_inoc_scaled'] = transformer.fit_transform(df[['log_soc_inoc_ratio']].fillna(0))
+        if 'log_soc_inoc_ratio' not in df.columns:
+            df['log_soc_inoc_ratio'] = df['log_soc_inoccupes'] / df['log_soc_total']
+            
+        min_b, max_b = get_bounds('log_soc_inoc_scaled', scores_cat, global_stats)
+        df['log_soc_inoc_scaled'] = min_max_scale(df['log_soc_inoc_ratio'].fillna(0), min_b, max_b)
     elif prefs['logement'] == "Location":
-        df['log_vac_ratio'] = df['log_vac'] / df['log_total']
-        df['log_vac_scaled'] = transformer.fit_transform(df[['log_vac_ratio']].fillna(0))
+        if 'log_vac_struct_ratio' not in df.columns:
+             # Fallback if not pre-calculated (though it should be)
+             # We assume columns exist if we are here, or we accept potential KeyError if data loading failed
+             df['log_vac_struct_ratio'] = df['pp_vacant_plus_2ans_25'] / df['log_total']
+
+        min_b, max_b = get_bounds('log_vac_scaled', scores_cat, global_stats)
+        df['log_vac_scaled'] = min_max_scale(df['log_vac_struct_ratio'].fillna(0), min_b, max_b)
 
     # --- EDUCATION ---
     if prefs['nb_enfants'] > 0:
         if prefs['classe_enfants']:
-            df['risque_fermeture_ratio'] = df['risque_fermeture'] / df['ecoles_ct']
-            df['edu_classes_ferm_scaled'] = transformer.fit_transform(df[['risque_fermeture_ratio']].fillna(0))
+            if 'risque_fermeture_ratio' not in df.columns:
+                df['risque_fermeture_ratio'] = df['risque_fermeture'] / df['ecoles_ct']
+                
+            min_b, max_b = get_bounds('edu_classes_ferm_scaled', scores_cat, global_stats)
+            df['edu_classes_ferm_scaled'] = min_max_scale(df['risque_fermeture_ratio'].fillna(0), min_b, max_b)
             
             # --- New Granular Scoring (F-14) ---
             
@@ -345,22 +433,16 @@ def compute_criteria_scores(
                 # Use CAF coverage rate if available, normalized
                 if 'taux_couverture' in df.columns:
                     # F-14 Refinement: Do NOT fillna(0). Keep NaNs to exclude them later.
-                    # We need to handle NaNs in fit_transform. QuantileTransformer handles NaNs by ignoring them?
-                    # Actually sklearn transformers usually raise error on NaN.
-                    # We need to transform only valid values.
-                    
-                    # Strategy: Fill NaNs with a dummy value for transformation, then put NaNs back?
-                    # Or better: transform only non-NaNs.
                     
                     series = df['taux_couverture']
                     mask = series.notna()
                     if mask.any():
-                        # Create a temporary array for transformation
-                        values = series[mask].values.reshape(-1, 1)
-                        transformed = transformer.fit_transform(values)
+                        min_b, max_b = get_bounds('edu_petite_enfance_scaled', scores_cat, global_stats)
+                        # Scale only valid values
+                        scaled_values = min_max_scale(series[mask], min_b, max_b)
                         
                         # Assign back
-                        df.loc[mask, 'edu_petite_enfance_scaled'] = transformed.flatten()
+                        df.loc[mask, 'edu_petite_enfance_scaled'] = scaled_values
                         df.loc[~mask, 'edu_petite_enfance_scaled'] = np.nan
                     else:
                         df['edu_petite_enfance_scaled'] = np.nan
@@ -422,10 +504,11 @@ def compute_criteria_scores(
     df['mob_epci_scaled'] = np.where(df['epci_code'] == current_epci, 1, 0)
 
     # --- INCLUSION (New F-13) ---
-    df = compute_inclusion_score(df, prefs, incl_index, associations_data)
+    df = compute_inclusion_score(df, prefs, incl_index, associations_data, scores_cat, global_stats)
 
     # Population as a direct score for inclusion
-    df['inc_population_scaled'] = transformer.fit_transform(df[['population']].fillna(0))
+    min_b, max_b = get_bounds('inc_population_scaled', scores_cat, global_stats)
+    df['inc_population_scaled'] = min_max_scale(df['population'].fillna(0), min_b, max_b)
 
     # Political orientation score
     df['inc_pol_scaled'] = df['pol_num'].astype('float')
@@ -683,6 +766,7 @@ def compute_odis_score(
     config: 'ScoringConfig',
     incl_index: pd.DataFrame,
     associations_data: pd.DataFrame, # Added argument
+    global_stats: Dict[str, Dict[str, float]], # Added
     use_binomes: bool = True # New argument
 ) -> pd.DataFrame:
     """Main function that orchestrates the entire scoring pipeline on a pre-filtered dataframe."""
@@ -692,7 +776,7 @@ def compute_odis_score(
     # We still need the distance for some scores, calculate it if not present
     if 'dist_current_loc' not in df_search.columns:
         odis_search = add_distance_to_current_loc(
-            df_search, current_codgeo=config.commune_actuelle
+            df_search, current_codgeo=config.commune_actuelle, df_all=df_all_communes
         )
     else:
         odis_search = df_search.copy()
@@ -703,7 +787,9 @@ def compute_odis_score(
         prefs=config.__dict__,
         incl_index=incl_index,
         df_all_communes=df_all_communes,
-        associations_data=associations_data # Passed down
+        associations_data=associations_data, # Passed down
+        scores_cat=scores_cat, # Passed down
+        global_stats=global_stats # Passed down
     )
 
     # 5. Expand the dataframe to include neighbor data (creating monomes and binomes).
@@ -746,6 +832,7 @@ def run_scoring_pipeline(
     scores_cat: pd.DataFrame,
     incl_index: pd.DataFrame,
     associations_data: pd.DataFrame, # Added argument
+    global_stats: Dict[str, Dict[str, float]], # Added
     view_level: str
 ) -> Tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
     """
@@ -781,6 +868,17 @@ def run_scoring_pipeline(
         )
         # Get all communes that belong to those BVs
         bv_ids_to_keep = filtered_bvs.index.tolist()
+        
+        # Exclude the BV of the current commune
+        current_bv = start_commune.iloc[0][cfg.BV_CODE_COL]
+        print(f"DEBUG: current_bv = {current_bv}")
+        print(f"DEBUG: bv_ids_to_keep BEFORE = {bv_ids_to_keep}")
+        
+        if current_bv in bv_ids_to_keep:
+            bv_ids_to_keep.remove(current_bv)
+            
+        print(f"DEBUG: bv_ids_to_keep AFTER = {bv_ids_to_keep}")
+            
         communes_to_score = df_all_communes[df_all_communes[cfg.BV_CODE_COL].isin(bv_ids_to_keep)]
 
     # --- Scoring ---
@@ -794,6 +892,7 @@ def run_scoring_pipeline(
         config=config,
         incl_index=incl_index,
         associations_data=associations_data, # Passed down
+        global_stats=global_stats, # Passed down
         use_binomes=use_binomes
     )
 
