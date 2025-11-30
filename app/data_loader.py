@@ -27,7 +27,11 @@ def load_scores_config_as_df(filepath: str) -> pd.DataFrame:
             'show_metric': score_data['display']['show'],
             'unit': score_data['display'].get('unit'),
             'display_factor': score_data['display']['display_factor'],
+            'display_factor': score_data['display']['display_factor'],
             'tooltip': score_data['display']['tooltip'],
+            'weight': score_data.get('weight', 1.0), # F-15
+            'min_bound': score_data.get('min_bound'),
+            'max_bound': score_data.get('max_bound'),
         }
         records.append(flat_record)
 
@@ -134,6 +138,32 @@ def get_data_path() -> str:
     else:
         return str(cfg.LOCAL_CSV_PATH)
 
+def compute_global_score_stats(df: pd.DataFrame, scores_cat: pd.DataFrame) -> Dict[str, Dict[str, float]]:
+    """Computes global min/max stats for continuous scores."""
+    stats = {}
+    # Filter for scores that do NOT have hardcoded bounds
+    # We check if min_bound is null (NaN)
+    continuous_scores = scores_cat[scores_cat['min_bound'].isna()]
+    
+    for _, row in continuous_scores.iterrows():
+        metric = row['metric']
+        # Check if metric is valid and exists in df
+        if pd.notna(metric) and metric in df.columns:
+            # Compute 1st and 99th percentiles to be robust to outliers
+            # We use quantile which handles NaNs gracefully
+            min_val = float(df[metric].quantile(0.01))
+            max_val = float(df[metric].quantile(0.99))
+            
+            # Ensure min < max to avoid division by zero (though scaler handles it, good to be safe)
+            if min_val == max_val:
+                # If constant, we can't really scale. 
+                # But let's just store what we found.
+                pass
+            
+            stats[row['score']] = {'min': min_val, 'max': max_val}
+            
+    return stats
+
 def load_all_datasets(
     odis_file: str,
     bv_file: str,
@@ -144,8 +174,10 @@ def load_all_datasets(
     maternites_file: str,
     sante_file: str,
     inclusion_file: str,
-    caf_file: str # Added argument
-) -> Tuple[gpd.GeoDataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, gpd.GeoDataFrame, gpd.GeoDataFrame, gpd.GeoDataFrame, pd.DataFrame]:
+    caf_file: str, # Added argument
+    lovac_file: str, # Added argument
+    inclusion_ref_file: str # Added argument
+) -> Tuple[gpd.GeoDataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, gpd.GeoDataFrame, gpd.GeoDataFrame, gpd.GeoDataFrame, pd.DataFrame, Dict[str, Dict[str, float]]]:
     """
     Loads all necessary datasets from specified file paths.
     This function acts as a facade, calling specific loading functions for each dataset.
@@ -304,24 +336,43 @@ def load_all_datasets(
 
     # Annuaire des services d'inclusion
     # Pre-process inclusion data for faster lookup
-    inclusion_cols_to_load = ['nom', 'codgeo', 'categorie', 'service', 'geometry']
+    # We now load 'thematiques' which contains the full slug (category--service)
+    inclusion_cols_to_load = ['nom', 'codgeo', 'thematiques', 'geometry']
     annuaire_inclusion = pd.read_parquet(base_path + inclusion_file, columns=inclusion_cols_to_load)
 
-    # Optimize data types
-    annuaire_inclusion['categorie'] = annuaire_inclusion['categorie'].astype('category')
-    annuaire_inclusion['service'] = annuaire_inclusion['service'].astype('category')
+    # Load the reference file for labels
+    # CSV format: Nom,Label
+    ref_inclusion = pd.read_csv(base_path + inclusion_ref_file)
+    # Create a mapping dictionary: Nom (slug) -> Label
+    label_map = ref_inclusion.set_index('Nom')['Label'].to_dict()
+
+    # Map the labels
+    annuaire_inclusion['label'] = annuaire_inclusion['thematiques'].map(label_map).fillna(annuaire_inclusion['thematiques'])
+    
+    # Extract category and service from thematiques for backward compatibility or display grouping if needed
+    # thematiques format: category--service
+    # We can split it efficiently
+    split_thematiques = annuaire_inclusion['thematiques'].str.split('--', n=1, expand=True)
+    annuaire_inclusion['categorie'] = split_thematiques[0].astype('category')
+    annuaire_inclusion['service'] = split_thematiques[1].fillna('-').astype('category')
 
     annuaire_inclusion.geometry = annuaire_inclusion.geometry.apply(shp.from_wkb)
     annuaire_inclusion = gpd.GeoDataFrame(annuaire_inclusion, geometry='geometry', crs='EPSG:4326')
-    incl_index = annuaire_inclusion[['codgeo', 'categorie', 'service']].drop_duplicates()
-    incl_index['key'] = incl_index.categorie.astype(str) + '_' + incl_index.service.astype(str)
-    incl_index = incl_index.groupby('codgeo').agg({'key': lambda x: set(x)})
+    
+    # Update index to use the full slug (thematiques) as the key
+    incl_index = annuaire_inclusion[['codgeo', 'thematiques']].drop_duplicates()
+    incl_index = incl_index.groupby('codgeo').agg({'thematiques': lambda x: set(x)})
+    # Rename column to 'key' to match expected interface if needed, or just use 'thematiques'
+    incl_index.rename(columns={'thematiques': 'key'}, inplace=True)
 
     # --- Associations (RNA) ---
     # Load and pre-process association data
     # We need to count associations by WALDEC code per commune
     rna_df = pd.read_csv(base_path + 'rna_waldec_20250901_mini_odis.csv', sep=';', dtype={'adrs_codeinsee': str, 'id_waldec': str, 'objet_social2': str})
     rna_df = rna_df.rename(columns={'adrs_codeinsee': 'codgeo', 'objet_social1': 'id_waldec'})
+    
+    # Pad id_waldec with zeros to ensure 6 digits for prefix matching
+    rna_df['id_waldec'] = rna_df['id_waldec'].astype(str).str.zfill(6)
     
     # Group by codgeo and id_waldec to get counts
     # Result: index=(codgeo, id_waldec), value=count
@@ -345,10 +396,59 @@ def load_all_datasets(
         caf_df.rename(columns={'taux_accueil_total': 'taux_couverture'}, inplace=True)
     
     # Merge into odis
-    odis = odis.merge(caf_df[['codgeo', 'taux_couverture']], on='codgeo', how='left')
+    # Use join to preserve odis index (codgeo)
+    caf_subset = caf_df[['codgeo', 'taux_couverture']].set_index('codgeo')
+    odis = odis.join(caf_subset, how='left')
     odis['taux_couverture'] = odis['taux_couverture'].fillna(0).astype('float32')
 
-    return odis, scores_cat, codfap_index, codformations_index, annuaire_ecoles, annuaire_sante, annuaire_inclusion, incl_index, associations_data
+    # --- LOVAC Vacance Structurelle ---
+    # Load LOVAC data
+    # CSV format: CODGEO_25;LIBGEO_25;pp_vacant_25;pp_vacant_plus_2ans_25;...
+    lovac_df = pd.read_csv(base_path + lovac_file, delimiter=';', dtype={'CODGEO_25': str}, encoding='latin-1')
+    
+    # Clean 's' values (secret statistique) -> treat as NaN or 0? 
+    # For vacancy, 's' usually means small numbers, so 0 might be safer than NaN to avoid dropping data,
+    # but strictly it's unknown. Let's convert 's' to NaN first, then decide.
+    # Actually, if we want to calculate a ratio, 0 vacancy is better than NaN.
+    # Let's replace 's' with 0 for now, assuming suppressed values are negligible for the score.
+    lovac_df['pp_vacant_plus_2ans_25'] = pd.to_numeric(lovac_df['pp_vacant_plus_2ans_25'].replace('s', 0), errors='coerce').fillna(0)
+    
+    # Merge into odis
+    lovac_subset = lovac_df[['CODGEO_25', 'pp_vacant_plus_2ans_25']].set_index('CODGEO_25')
+    odis = odis.join(lovac_subset, how='left')
+    odis['pp_vacant_plus_2ans_25'] = odis['pp_vacant_plus_2ans_25'].fillna(0).astype('float32')
+
+    # --- Pre-calculate Ratios for Scoring ---
+    # Emploi
+    # Handle division by zero/NaNs
+    odis['met_ratio'] = (1000 * odis['met'] / odis['pop_be']).replace([np.inf, -np.inf], np.nan)
+    
+    # Logement
+    odis['log_vac_ratio'] = (odis['log_vac'] / odis['log_total']).replace([np.inf, -np.inf], np.nan)
+    # New structural vacancy ratio
+    # We use log_total from ODIS as the denominator.
+    odis['log_vac_struct_ratio'] = (odis['pp_vacant_plus_2ans_25'] / odis['log_total']).replace([np.inf, -np.inf], np.nan)
+    
+    odis['log_soc_inoc_ratio'] = (odis['log_soc_inoccupes'] / odis['log_soc_total']).replace([np.inf, -np.inf], np.nan)
+    odis['log_5p_ratio'] = (odis['rp_5+pieces'] / odis['log_rp']).replace([np.inf, -np.inf], np.nan)
+    
+    # Education
+    odis['risque_fermeture_ratio'] = (odis['risque_fermeture'] / odis['ecoles_ct']).replace([np.inf, -np.inf], np.nan)
+    
+    # Inclusion: Lien Social
+    core_codes_prefixes = tuple(cfg.WALDEC_CORE_INCLUSION)
+    # associations_data has MultiIndex (codgeo, id_waldec) -> count. Reset index in load_all_datasets makes it a DF.
+    # We need to filter rows.
+    core_assos = associations_data[associations_data['id_waldec'].astype(str).str.startswith(core_codes_prefixes, na=False)]
+    core_counts = core_assos.groupby('codgeo')['count'].sum()
+    odis = odis.join(core_counts.rename('lien_social_count'), how='left')
+    odis['lien_social_count'] = odis['lien_social_count'].fillna(0)
+    odis['lien_social_density'] = ((odis['lien_social_count'] * 1000) / odis['pop_be']).replace([np.inf, -np.inf], np.nan)
+
+    # --- Compute Global Stats ---
+    global_score_stats = compute_global_score_stats(odis, scores_cat)
+
+    return odis, scores_cat, codfap_index, codformations_index, annuaire_ecoles, annuaire_sante, annuaire_inclusion, incl_index, associations_data, global_score_stats
 
 @st.cache_data
 def load_area_geodata(_communes_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -407,7 +507,7 @@ def load_bassin_de_vie_geodata(_communes_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFr
 def init_datasets() -> Dict[str, Any]:
     """Loads all datasets and returns them in a structured dictionary."""
     logging.info("--- Loading all datasets... ---")
-    odis, scores_cat, codfap_index, codformations_index, annuaire_ecoles, annuaire_sante, annuaire_inclusion, incl_index, associations_data = load_all_datasets(
+    odis, scores_cat, codfap_index, codformations_index, annuaire_ecoles, annuaire_sante, annuaire_inclusion, incl_index, associations_data, global_score_stats = load_all_datasets(
         cfg.ODIS_FILE,
         cfg.BV_FILENAME,
         cfg.SCORES_CAT_FILE,
@@ -417,7 +517,9 @@ def init_datasets() -> Dict[str, Any]:
         cfg.MATERNITE_FILE,
         cfg.SANTE_FILE,
         cfg.INCLUSION_FILE,
-        cfg.CAF_FILE # Added argument
+        cfg.CAF_FILE, # Added argument
+        cfg.LOVAC_FILE, # Added argument
+        cfg.INCLUSION_REF_FILE # Added argument
     )
     
     bv_geo = load_bassin_de_vie_geodata(odis)
@@ -435,6 +537,7 @@ def init_datasets() -> Dict[str, Any]:
         "annuaire_inclusion": annuaire_inclusion,
         "incl_index": incl_index,
         "associations_data": associations_data,
+        "global_score_stats": global_score_stats,
         "coddep_set": sorted(set(odis['dep_code'])),
         "depcom_df": odis[['dep_code','libgeo']].sort_values('libgeo'),
     }

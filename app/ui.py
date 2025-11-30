@@ -18,23 +18,40 @@ def display_sidebar(demo_data: Dict[str, Any]) -> None:
 
     # --- Weights ---
     with st.expander('Pondérations', expanded=False):
+        # F-15: Profile Selector
+        def _update_weights_from_profile():
+            profile = st.session_state.ui_weight_profile
+            if profile in cfg.WEIGHT_PROFILES:
+                weights = cfg.WEIGHT_PROFILES[profile]
+                for key, value in weights.items():
+                    # Update session state keys for sliders (e.g. ui_poids_education)
+                    st.session_state[f"ui_{key}"] = value
+
+        st.selectbox(
+            "Profil de Priorité",
+            options=list(cfg.WEIGHT_PROFILES.keys()),
+            key="ui_weight_profile",
+            on_change=_update_weights_from_profile,
+            index=0 # Default to Balanced
+        )
+        
         st.select_slider("Education", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_education', 100), 
+                        value=st.session_state.get('ui_poids_education', 50), 
                         key="ui_poids_education")
         st.select_slider("Projet Pro", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_emploi', 100), 
+                        value=st.session_state.get('ui_poids_emploi', 50), 
                         key="ui_poids_emploi")
         st.select_slider("Logement", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_logement', 100), 
+                        value=st.session_state.get('ui_poids_logement', 50), 
                         key="ui_poids_logement")
         st.select_slider("Inclusion", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_inclusion', 100), 
+                        value=st.session_state.get('ui_poids_inclusion', 50), 
                         key="ui_poids_inclusion")
         st.select_slider("Santé", cfg.POIDS_OPTIONS, # NEW
-                        value=st.session_state.get('ui_poids_sante', 100), # NEW
+                        value=st.session_state.get('ui_poids_sante', 50), # NEW
                         key="ui_poids_sante") # NEW
         st.select_slider("Mobilité", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_mobilité', 100), 
+                        value=st.session_state.get('ui_poids_mobilité', 50), 
                         key="ui_poids_mobilité")
 
     # --- Technical Params ---
@@ -108,6 +125,7 @@ def render_education_form() -> None:
                 options = cfg.CLASSES_SCOLAIRES
                 key = f"ui_classe_enfant_{i}"
                 st.selectbox(f'Niveau enfant {i+1}', options, key=key)
+                st.toggle("Prioritaire", key=f"ui_priority_edu_{i}", help="Donne plus de poids à ce critère")
 
 def render_employment_form() -> None:
     """Renders the UI for the 'Projet Professionnel' form section."""
@@ -121,16 +139,25 @@ def render_employment_form() -> None:
             st.multiselect(f"Métiers ciblés Adulte {i+1}", codfap_select.index, format_func=lambda x: codfap_select.loc[x, 'Intitulé FAP 341'], key=f"ui_metiers_adult_{i}")
         with col2:
             st.multiselect(f"Formations recherchées Adulte {i+1}", codform_select.index, format_func=lambda x: codform_select.loc[x, 'libformation'], key=f"ui_formations_adult_{i}")
+            
+            # F-15: Priority Toggle
+            st.toggle("Prioritaire", key=f"ui_priority_job_adult_{i}", help="Donne plus de poids à la recherche d'emploi pour cet adulte")
 
 def render_housing_form() -> None:
     """Renders the UI for the 'Logement' form section."""
     st.radio('Hébergement à court terme', cfg.HEBERGEMENT_OPTIONS, key="ui_hebergement")
-    st.radio('Logement à long terme', cfg.LOGEMENT_OPTIONS, key="ui_logement")
+    if st.session_state.ui_hebergement == 'Location':
+        st.radio('Type de logement', cfg.LOGEMENT_OPTIONS, key="ui_logement")
+        
+    # F-15: Priority Toggle
+    st.toggle("Prioritaire", key="ui_priority_housing", help="Donne plus de poids aux critères de logement")
 
 def render_health_form() -> None:
     """Renders the UI for the 'Santé' form section."""
     options = ["Aucun", "Hopital", 'Maternité', "Soutien Psychologique & Addictologie"]
     st.radio('Support médical à proximité', options, key="ui_besoin_sante")
+    if st.session_state.ui_besoin_sante != "Aucun":
+        st.toggle("Prioritaire", key="ui_priority_sante", help="Donne plus de poids à ce critère")
 
 def render_other_needs_form() -> None:
     """Renders the UI for the 'Inclusion' form section (F-13)."""
@@ -173,10 +200,10 @@ def render_other_needs_form() -> None:
     
     # Prepare options: All services from annuaire_inclusion EXCEPT those in Socle Admin
     annuaire = app_data['annuaire_inclusion']
-    unique_services = annuaire[['categorie', 'service']].drop_duplicates()
+    unique_services = annuaire[['categorie', 'service', 'label', 'thematiques']].drop_duplicates()
     socle_keys = set(default_socle)
     
-    options_map = {} # Display String -> (Category, Service)
+    options_map = {} # Display String -> Slug (thematiques)
     options_list = []
     
     for _, row in unique_services.iterrows():
@@ -184,25 +211,28 @@ def render_other_needs_form() -> None:
         if row['service'] in ['-', '']:
             continue
             
-        key = f"{row['categorie']}_{row['service']}"
+        key = row['thematiques']
         if key not in socle_keys:
-            # Format: Service | Category
-            display_str = f"{row['service'].replace('-', ' ').capitalize()} | {row['categorie'].replace('-', ' ').capitalize()}"
+            # Use the human-readable label
+            display_str = row['label']
             options_list.append(display_str)
-            options_map[display_str] = (row['categorie'], row['service'])
+            options_map[display_str] = key
             
     options_list.sort()
     
-    # Initialize flat selection state from existing dict state (if any, e.g. from demo data)
+    # Initialize flat selection state from existing list state (if any, e.g. from demo data)
     if 'ui_besoins_autres_flat' not in st.session_state:
-        current_dict = st.session_state.get('ui_besoins_autres', st.session_state['demo_data'].get('besoins_autres', {}))
+        # User config now stores a list of slugs
+        current_list = st.session_state.get('ui_besoins_autres', st.session_state['demo_data'].get('besoins_autres', []))
         flat_selection = []
-        for cat, services in current_dict.items():
-            for svc in services:
-                # Reconstruct display string to match options
-                display_str = f"{svc.replace('-', ' ').capitalize()} | {cat.replace('-', ' ').capitalize()}"
-                if display_str in options_map:
-                    flat_selection.append(display_str)
+        
+        # Create reverse map for initialization: Slug -> Display String
+        slug_to_display = {v: k for k, v in options_map.items()}
+        
+        for slug in current_list:
+            if slug in slug_to_display:
+                flat_selection.append(slug_to_display[slug])
+                
         st.session_state.ui_besoins_autres_flat = flat_selection
 
     # Widget
@@ -212,6 +242,8 @@ def render_other_needs_form() -> None:
         key="ui_besoins_autres_flat",
         help="Recherchez et ajoutez des services spécifiques."
     )
+    if st.session_state.ui_besoins_autres_flat:
+        st.toggle("Prioritaire", key="ui_priority_other_needs", help="Donne plus de poids à ces besoins spécifiques")
     
     # We store the map in session state so we can use it in create_scoring_config_from_inputs
     # without re-computing it (optimization)
@@ -266,7 +298,8 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
     codes_formations = [st.session_state[f"ui_formations_adult_{i}"] for i in range(st.session_state['ui_nb_adultes'])]
 
     # Process Autres Besoins from Flat List (F-13 UI Update)
-    besoins_autres_dict = {}
+    # Process Autres Besoins from Flat List (F-13 UI Update)
+    besoins_autres_list = []
     if 'ui_besoins_autres_flat' in st.session_state:
         flat_selection = st.session_state.ui_besoins_autres_flat
         options_map = st.session_state.get('ui_besoins_autres_map', {})
@@ -274,16 +307,58 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
         if options_map:
             for item in flat_selection:
                 if item in options_map:
-                    cat, svc = options_map[item]
-                    if cat not in besoins_autres_dict:
-                        besoins_autres_dict[cat] = []
-                    besoins_autres_dict[cat].append(svc)
+                    slug = options_map[item]
+                    besoins_autres_list.append(slug)
         
         # Update session state for compatibility
-        st.session_state.ui_besoins_autres = besoins_autres_dict
+        st.session_state.ui_besoins_autres = besoins_autres_list
     else:
-        # Fallback to existing dict if flat not present (e.g. tests or legacy)
-        besoins_autres_dict = st.session_state.get('ui_besoins_autres', {})
+        # Fallback to existing list if flat not present (e.g. tests or legacy)
+        besoins_autres_list = st.session_state.get('ui_besoins_autres', [])
+
+    # F-15: Compute Criteria Weights
+    criteria_weights = {}
+    
+    # Education Priorities
+    edu_map = {
+        'Crêche / Assistante Maternelle': 'edu_petite_enfance_scaled',
+        'Maternelle': 'edu_maternelle_scaled',
+        'Elémentaire': 'edu_elementaire_scaled',
+        'Collège': 'edu_college_scaled',
+        'Lycée': 'edu_lycee_scaled'
+    }
+    for i in range(st.session_state['ui_nb_enfants']):
+        level = st.session_state.get(f"ui_classe_enfant_{i}")
+        is_priority = st.session_state.get(f"ui_priority_edu_{i}", False)
+        if is_priority and level in edu_map:
+            criteria_weights[edu_map[level]] = 3.0
+            
+    # Employment Priorities (F-15)
+    for i in range(st.session_state['ui_nb_adultes']):
+        if st.session_state.get(f"ui_priority_job_adult_{i}", False):
+            # Boost the match score for this adult
+            criteria_weights[f'met_match_adult{i+1}_scaled'] = 3.0
+            # Also boost the general employment availability? Maybe not, keep it specific.
+            
+    # Housing Priorities (F-15)
+    if st.session_state.get("ui_priority_housing", False):
+        # Boost based on selection
+        if st.session_state.get('ui_logement') == 'Logement Social':
+             criteria_weights['log_soc_inoc_scaled'] = 3.0
+        elif st.session_state.get('ui_hebergement') == "Chez l'habitant":
+             criteria_weights['log_5p_scaled'] = 3.0
+        else:
+             # Default: Location -> Vacancy rate
+             criteria_weights['log_vac_scaled'] = 3.0
+            
+    # Health Priority
+    if st.session_state.get("ui_priority_sante", False):
+        criteria_weights['sante_structures_scaled'] = 3.0
+        
+    # Other Needs Priority (F-15)
+    if st.session_state.get("ui_priority_other_needs", False):
+        # Maps to the new Extra Services score
+        criteria_weights['inc_extra_services_score'] = 3.0
 
     return cfg.ScoringConfig(
         poids_emploi=st.session_state['ui_poids_emploi'],
@@ -291,6 +366,7 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
         poids_education=st.session_state['ui_poids_education'],
         poids_inclusion=st.session_state['ui_poids_inclusion'],
         poids_sante=st.session_state['ui_poids_sante'], # NEW
+        criteria_weights=criteria_weights, # F-15
         poids_mobilité=st.session_state['ui_poids_mobilité'],
         commune_actuelle=commune_codgeo,
         loc_distance_km=st.session_state['ui_loc_distance_km'],
@@ -302,7 +378,7 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
         codes_formations=codes_formations,
         classe_enfants=classe_enfants,
         besoin_sante=st.session_state['ui_besoin_sante'],
-        besoins_autres=besoins_autres_dict,
+        besoins_autres=besoins_autres_list,
         socle_admin_selection=st.session_state.get('ui_socle_admin_selection', []), # NEW
         affinite_selection=st.session_state.get('ui_affinite_selection', []), # NEW
         binome_penalty=st.session_state['ui_penalite_binome'] / 100,
@@ -515,7 +591,13 @@ def _produce_pitch_markdown(row: pd.Series, config: cfg.ScoringConfig, scores_ca
     weighted_scores = {}
     for col in crit_scores_cols:
         cat = scores_cat[scores_cat.score == col]['cat'].iloc[0]
-        weight = getattr(config, f'poids_{cat}', 0)
+        cat_weight = getattr(config, f'poids_{cat}', 0)
+        
+        # F-15: Include criteria-level weights
+        base_weight = scores_cat[scores_cat.score == col]['weight'].iloc[0]
+        dynamic_multiplier = config.criteria_weights.get(col, 1.0)
+        
+        total_weight = cat_weight * base_weight * dynamic_multiplier
         
         penalty = config.binome_penalty if row.get("binome", False) and col + '_binome' in row.index else 0
         
@@ -523,7 +605,7 @@ def _produce_pitch_markdown(row: pd.Series, config: cfg.ScoringConfig, scores_ca
         score_binome = row.get(col + '_binome', 0) * (1 - penalty)
         effective_score = max(score_commune or 0, score_binome or 0)
         
-        weighted_scores[col] = effective_score * weight
+        weighted_scores[col] = effective_score * total_weight
 
     sorted_scores = sorted(weighted_scores.items(), key=lambda item: item[1], reverse=True)
 

@@ -98,6 +98,7 @@ Liste en vrac d'idées d'amélioration
 - Ajouter la base J'accuille d'accueil chez l'habitant
 - Ajouter la base des loyers moyens
 - Ajouter la base des transports publics ?
+- Niveau de vie
 
 ## 5. Features
 

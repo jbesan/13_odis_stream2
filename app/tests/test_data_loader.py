@@ -100,7 +100,7 @@ class TestDataLoader:
         mock_load_bv.return_value = pd.DataFrame(columns=['CODGEO', cfg.BV_CODE_COL, cfg.BV_NAME_COL])
 
         # Act
-        odis, _, _, _, _, _, _, _, _ = data_loader.load_all_datasets(
+        odis, _, _, _, _, _, _, _, _, _ = data_loader.load_all_datasets(
             'odis.parquet', 'bv.csv', 'scores.yaml', 'metiers.csv', 
             'formations.csv', 'ecoles.parquet', 'maternites.csv', 
             'sante.parquet', 'inclusion.parquet', 'caf.csv'

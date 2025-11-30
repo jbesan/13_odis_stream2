@@ -34,21 +34,21 @@ def mock_geo_df():
     }
     return gpd.GeoDataFrame(data).set_index('codgeo')
 
-def test_compute_inclusion_score_socle_admin(mock_geo_df, mock_incl_index, mock_associations_data):
+def test_compute_inclusion_score_socle_admin(mock_geo_df, mock_incl_index, mock_associations_data, sample_scores_cat, global_stats):
     """Tests Socle Administratif score calculation."""
     prefs = {
         'socle_admin_selection': ['social_aide', 'admin_mairie'],
         'affinite_selection': []
     }
     
-    scores = scoring.compute_inclusion_score(mock_geo_df, prefs, mock_incl_index, mock_associations_data)
+    scores = scoring.compute_inclusion_score(mock_geo_df, prefs, mock_incl_index, mock_associations_data, sample_scores_cat, global_stats)
     
     # 33063 has both services -> score 1.0
     # 64445 has only social_aide -> score 0.5
     assert scores.loc['33063', 'inc_socle_admin_score'] == 1.0
     assert scores.loc['64445', 'inc_socle_admin_score'] == 0.5
 
-def test_compute_inclusion_score_affinite(mock_geo_df, mock_incl_index, mock_associations_data):
+def test_compute_inclusion_score_affinite(mock_geo_df, mock_incl_index, mock_associations_data, sample_scores_cat, global_stats):
     """Tests Affinité score calculation."""
     # 009010 is mapped to "Bricolage / Création"
     # 011000 is mapped to "Sport (Général)"
@@ -58,7 +58,7 @@ def test_compute_inclusion_score_affinite(mock_geo_df, mock_incl_index, mock_ass
         'affinite_selection': ['Bricolage / Création']
     }
     
-    scores = scoring.compute_inclusion_score(mock_geo_df, prefs, mock_incl_index, mock_associations_data)
+    scores = scoring.compute_inclusion_score(mock_geo_df, prefs, mock_incl_index, mock_associations_data, sample_scores_cat, global_stats)
     
     # 33063 has 5 associations for Bricolage -> density 5/1000 = 0.005
     # 64445 has 2 associations for Bricolage -> density 2/500 = 0.004
@@ -76,7 +76,7 @@ def test_compute_inclusion_score_affinite(mock_geo_df, mock_incl_index, mock_ass
         'socle_admin_selection': [],
         'affinite_selection': ['Sport (Général)']
     }
-    scores_sport = scoring.compute_inclusion_score(mock_geo_df, prefs_sport, mock_incl_index, mock_associations_data)
+    scores_sport = scoring.compute_inclusion_score(mock_geo_df, prefs_sport, mock_incl_index, mock_associations_data, sample_scores_cat, global_stats)
     # 64445 has no sport associations in mock data
     # But wait, compute_inclusion_score fills missing with 0 before density calc?
     # Yes, if not in associations_data, count is 0.
@@ -87,14 +87,14 @@ def test_compute_inclusion_score_affinite(mock_geo_df, mock_incl_index, mock_ass
     
     assert scores_sport.loc['33063', 'inc_affinite_score'] > scores_sport.loc['64445', 'inc_affinite_score']
 
-def test_compute_inclusion_score_components(mock_geo_df, mock_incl_index, mock_associations_data):
+def test_compute_inclusion_score_components(mock_geo_df, mock_incl_index, mock_associations_data, sample_scores_cat, global_stats):
     """Tests that all inclusion components are present."""
     prefs = {
         'socle_admin_selection': ['social_aide'], # Both have it -> 1.0
         'affinite_selection': ['Bricolage / Création'] # 33063 > 64445
     }
     
-    scores = scoring.compute_inclusion_score(mock_geo_df, prefs, mock_incl_index, mock_associations_data)
+    scores = scoring.compute_inclusion_score(mock_geo_df, prefs, mock_incl_index, mock_associations_data, sample_scores_cat, global_stats)
     
     # Check for presence of all new inclusion scores
     assert 'inc_socle_admin_score' in scores.columns
