@@ -13,3 +13,6 @@ CONSTITUTION.md
 GEMINI.md
 .agent/
 
+DATA_SOURCES_SUMMARY.md
+csv/DS_RP_LOGEMENT_COMPL_2022_data.csv
+csv/waldec.parquet

@@ -198,7 +198,7 @@ DEMO_SCENARIOS = {
         'classe_enfants': ['Elémentaire', 'Collège'],
         'besoins_autres': ['lecture-ecriture-calcul--maitriser-le-francais'],
         'poids_mobilité': 50,
-        'poids_inclusion': 50,
+        'poids_inclusion': 100,
         'poids_emploi': 100,
         'sante': "Maternité",
         'affinite_selection': ['Entraide / Bénévolat']
