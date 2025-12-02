@@ -60,12 +60,23 @@ sources:
     local_name: "maternites_drees.json"
     description: "Liste des maternités (DREES)"
 
-  bmo_rome:
-    url: "https://www.francetravail.fr/files/live/sites/normandie/files/normandie/plus-dinfos/statistiques/demande_d_emploi/Fiches_Communes"
+  bmo:
+    url: "https://www.data.gouv.fr/api/1/datasets/r/54478315-aafd-4070-b8df-a5647297e0c0"
     format: "xlsx"
-    local_name: "bmo_top5_communes.xlsx"
-    sheet_name: "export_top5_diff"
-    description: "Top 5 Métiers (ROME) par commune"
+    local_name: "bmo_2025.xlsx"
+    description: "Enquête Besoins en Main d'Oeuvre 2025"
+
+  communes_bassins_emploi:
+    url: "https://statistiques.pole-emploi.org/bmo/Handlers/HTFile.ashx?MEDIAID=156688&SITEKEY=620c8132-d522-44fa-8efa-27a62c26702c"
+    format: "xlsx"
+    local_name: "communes_bassins_emploi_2021.xlsx"
+    description: "Référentiel Communes -> Bassins d'Emploi 2021"
+
+  referentiel_fap:
+    url: "https://www.data.gouv.fr/api/1/datasets/r/f1be98eb-0414-4648-a683-7dbed3ebaca7"
+    format: "csv"
+    local_name: "referentiel_fap_2021.csv"
+    description: "Nomenclature des Familles Professionnelles (FAP 2021)"
 
   caf:
     url: "https://www.data.gouv.fr/api/1/datasets/r/6d3b1cf8-cbef-4f30-96c3-0b63a2b0502c"
@@ -80,10 +91,10 @@ sources:
     description: "Effectifs d'élèves par niveau"
 
   education_annuaire:
-    url: "https://www.data.gouv.fr/api/1/datasets/r/9eb02ac9-4bce-4fa8-a6f7-451c5b366f66"
-    format: "geojson"
-    local_name: "education_annuaire.geojson"
-    description: "Annuaire de l'éducation"
+    url: "https://www.data.gouv.fr/api/1/datasets/r/9af76efc-51a6-4659-87ba-82c02652613a"
+    format: "parquet"
+    local_name: "education_annuaire.parquet"
+    description: "Annuaire de l'éducation (Premier et Second degré)"
 
   formations:
     url: "https://www.data.gouv.fr/api/1/datasets/r/803121dd-1acf-423d-b7d8-8511f1c607c1"

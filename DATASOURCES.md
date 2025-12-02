@@ -102,25 +102,25 @@
 
 # Emploi
 
-## BOM Top 5 par commune / Codes ROME (très récent)
-
-- Page: https://www.francetravail.fr/region/normandie/les-publications-statistiques/les-donnees-statistiques-par-ter/les-communes.html
-- Lien direct: https://www.francetravail.fr/files/live/sites/normandie/files/normandie/plus-dinfos/statistiques/demande_d_emploi/Fiches_Communes
-- Type de fichier: xlsx
-- Onglet utiles: export_top5_diff (offres diffusées), export_top5_defm (demandes reçues)
-
-## Référentiel ROME
-
-- Page: https://www.data.gouv.fr/datasets/repertoire-operationnel-des-metiers-et-des-emplois-rome/#/resources/1c893376-8476-4262-9a0e-8df519883e1e
-- Lien direct: https://www.data.gouv.fr/api/1/datasets/r/1c893376-8476-4262-9a0e-8df519883e1e
-- Type de fichier: zip
-- Fichiers utile: unix_referentiel_code_rome_v460.json
-
 ## Besoin en main d'oeuvre (BMO)
 
 - Données: https://www.data.gouv.fr/datasets/enquete-besoins-en-main-doeuvre-bmo/#/resources/54478315-aafd-4070-b8df-a5647297e0c0
 - Lien direct: https://www.data.gouv.fr/api/1/datasets/r/54478315-aafd-4070-b8df-a5647297e0c0
 - Type de fichier: xlsx
+
+## Référentiel Communes -> Bassins d'Emploi (2021)
+
+- Page: https://statistiques.francetravail.org/bmo/static/methode_2021
+- Lien direct: https://statistiques.pole-emploi.org/bmo/Handlers/HTFile.ashx?MEDIAID=156688&SITEKEY=620c8132-d522-44fa-8efa-27a62c26702c
+- Type de fichier: xlsx
+- Onglet utiles: Feuil1
+
+## Référentiel métiers FAP 2021
+
+- Page: https://www.data.gouv.fr/datasets/la-nomenclature-des-familles-professionnelles-2021/#/resources/f1be98eb-0414-4648-a683-7dbed3ebaca7
+- Lien direct: https://www.data.gouv.fr/api/1/datasets/r/f1be98eb-0414-4648-a683-7dbed3ebaca7
+- Type de fichier: csv
+- colonnes utiles: Code FAP 228, Intitulé FAP 228
 
 ## Population Active & Chomage
 
