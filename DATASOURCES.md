@@ -10,7 +10,8 @@
 
 - Données: https://www.data.gouv.fr/datasets/population-municipale-des-communes-france-entiere/#/resources/630e7917-02db-4838-8856-09235719551c
 - URL Stable: https://www.data.gouv.fr/api/1/datasets/r/630e7917-02db-4838-8856-09235719551c
-- Type de fichier: csv
+- Type de fichier: xlsx
+- Onglet utiles: III_1_insee_population_fr_commu
 
 ## Communes Voisines
 
@@ -110,10 +111,10 @@
 
 ## Référentiel ROME
 
-- Page: https://www.data.gouv.fr/datasets/repertoire-operationnel-des-metiers-et-des-emplois-rome/#/resources/3cf88405-3362-417e-9dda-d93c31880b93
-- Lien direct: https://www.data.gouv.fr/api/1/datasets/r/3cf88405-3362-417e-9dda-d93c31880b93
+- Page: https://www.data.gouv.fr/datasets/repertoire-operationnel-des-metiers-et-des-emplois-rome/#/resources/1c893376-8476-4262-9a0e-8df519883e1e
+- Lien direct: https://www.data.gouv.fr/api/1/datasets/r/1c893376-8476-4262-9a0e-8df519883e1e
 - Type de fichier: zip
-- Fichiers utile: unix_cr_gd_dp_v460_utf8.csv
+- Fichiers utile: unix_referentiel_code_rome_v460.json
 
 ## Besoin en main d'oeuvre (BMO)
 
@@ -150,3 +151,9 @@
 - Données: https://www.data.gouv.fr/datasets/finess-extraction-du-fichier-des-etablissements/#/resources/98f3161f-79ff-4f16-8f6a-6d571a80fea2
 - URL Stable: https://www.data.gouv.fr/api/1/datasets/r/98f3161f-79ff-4f16-8f6a-6d571a80fea2
 - Type de fichier: csv
+
+## Annuaire Maternités
+
+- Données: https://www.data.gouv.fr/datasets/liste-des-maternites-de-france-depuis-2000/#/resources/a822f7ae-7c46-42c0-86e1-ad7d381c1ad2
+- URL Stable: https://www.data.gouv.fr/api/1/datasets/r/a822f7ae-7c46-42c0-86e1-ad7d381c1ad2
+- Type de fichier: json

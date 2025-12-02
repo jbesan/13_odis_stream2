@@ -1,0 +1,123 @@
+sources:
+  communes:
+    url: "https://www.data.gouv.fr/api/1/datasets/r/12f8cdc9-5844-4666-a4b5-6385d5415f67"
+    format: "geojson"
+    local_name: "communes.geojson"
+    description: "Contours administratifs des communes (simplifiés)"
+
+  population:
+    url: "https://www.data.gouv.fr/api/1/datasets/r/630e7917-02db-4838-8856-09235719551c"
+    format: "xlsx"
+    local_name: "population.xlsx"
+    sheet_name: 0 # Default sheet
+    description: "Population municipale 2024"
+
+  voisins:
+    url: "https://www.data.gouv.fr/api/1/datasets/r/6ca4e113-271d-45bb-8995-5d9779f7b10d"
+    format: "csv"
+    local_name: "voisins.csv"
+    description: "Adjacence des communes"
+
+  bassins_de_vie:
+    url: "https://www.insee.fr/fr/statistiques/fichier/6676988/BV2022_au_01-01-2025.zip"
+    format: "zip"
+    local_name: "bassins_de_vie.zip"
+    archive_file: "BV2022_au_01-01-2025.xlsx" # File to extract
+    sheet_name: "Composition_communale"
+    header: 4 # Skip metadata rows
+    description: "Bassins de vie 2022 (INSEE)"
+
+  services_inclusion:
+    url: "https://www.data.gouv.fr/api/1/datasets/r/de4856b8-bb67-4b79-83bd-038e846a1774"
+    format: "parquet"
+    local_name: "services_inclusion.parquet"
+    description: "Services de l'inclusion (Data Inclusion)"
+
+  associations:
+    url: "https://www.data.gouv.fr/api/1/datasets/r/cc7b8f0c-45ea-4444-8b55-55d30bc34ac5"
+    format: "parquet"
+    local_name: "associations.parquet"
+    description: "RNA agrégé (Associations)"
+
+  logement_vacant:
+    url: "https://www.data.gouv.fr/api/1/datasets/r/2e0417b4-902d-4c60-90e7-bf5df148cb87"
+    format: "csv"
+    local_name: "logement_vacant.csv"
+    encoding: "iso-8859-1"
+    description: "Logements vacants du parc privé (LOVAC)"
+
+  logement_social:
+    url: "https://www.statistiques.developpement-durable.gouv.fr/media/7970/download?inline"
+    format: "xlsx"
+    local_name: "logement_social.xlsx"
+    sheet_name: "COMMUNES"
+    header: 5
+    description: "Parc locatif social (RPLS)"
+
+  maternites:
+    url: "https://www.data.gouv.fr/api/1/datasets/r/a822f7ae-7c46-42c0-86e1-ad7d381c1ad2"
+    format: "json"
+    local_name: "maternites_drees.json"
+    description: "Liste des maternités (DREES)"
+
+  bmo_rome:
+    url: "https://www.francetravail.fr/files/live/sites/normandie/files/normandie/plus-dinfos/statistiques/demande_d_emploi/Fiches_Communes"
+    format: "xlsx"
+    local_name: "bmo_top5_communes.xlsx"
+    sheet_name: "export_top5_diff"
+    description: "Top 5 Métiers (ROME) par commune"
+
+  caf:
+    url: "https://www.data.gouv.fr/api/1/datasets/r/6d3b1cf8-cbef-4f30-96c3-0b63a2b0502c"
+    format: "json"
+    local_name: "caf_taux_couverture.json"
+    description: "Taux de couverture petite enfance (CAF)"
+
+  education_effectifs:
+    url: "https://www.data.gouv.fr/api/1/datasets/r/b4642552-6777-4265-a263-f190621ec40f"
+    format: "parquet"
+    local_name: "education_effectifs.parquet"
+    description: "Effectifs d'élèves par niveau"
+
+  education_annuaire:
+    url: "https://www.data.gouv.fr/api/1/datasets/r/9eb02ac9-4bce-4fa8-a6f7-451c5b366f66"
+    format: "geojson"
+    local_name: "education_annuaire.geojson"
+    description: "Annuaire de l'éducation"
+
+  formations:
+    url: "https://www.data.gouv.fr/api/1/datasets/r/803121dd-1acf-423d-b7d8-8511f1c607c1"
+    format: "xlsx"
+    local_name: "formations.xlsx"
+    description: "Liste des organismes de formation"
+
+  finess_national:
+    url: "file:///Users/jacques/dev/13_odis_stream2/csv/annuaire_sante_finess.parquet"
+    format: "parquet"
+    local_name: "finess_national.parquet"
+    description: "FINESS National (Local Clean Copy)"
+
+  rome:
+    url: "https://www.data.gouv.fr/api/1/datasets/r/1c893376-8476-4262-9a0e-8df519883e1e"
+    format: "zip"
+    archive_file: "unix_referentiel_code_rome_v460.json"
+    local_name: "rome.zip"
+    description: "Référentiel ROME v4.60 (JSON)"
+
+  population_active:
+    url: "https://www.data.gouv.fr/api/1/datasets/r/f43b668d-251e-472a-9385-3d006d1ca6b8"
+    format: "zip"
+    archive_file: "DS_RP_EMPLOI_LR_COMP_2022_data.csv"
+    local_name: "population_active.zip"
+    description: "Population active et chômage (INSEE)"
+
+local_files:
+  finess:
+    path: "csv/annuaire_sante_finess.parquet"
+    format: "parquet"
+    description: "Fichier FINESS local (nettoyé)"
+
+  rome_referentiel:
+    path: "csv/referentiel_codes_emploi_ROME.csv"
+    format: "csv"
+    description: "Référentiel des codes ROME"
