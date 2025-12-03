@@ -44,7 +44,16 @@ def load_scores_config_as_df(filepath: str) -> pd.DataFrame:
 @st.cache_data
 def load_bassin_de_vie_data(file_path: str) -> pd.DataFrame:
     """Loads the 'bassin de vie' dataset."""
-    df = pd.read_csv(file_path, dtype={'CODGEO': str, cfg.BV_CODE_COL: str})
+    """Loads the 'bassin de vie' dataset."""
+    if file_path.endswith('.parquet'):
+        df = pd.read_parquet(file_path)
+        # Ensure columns are strings
+        if 'CODGEO' in df.columns:
+            df['CODGEO'] = df['CODGEO'].astype(str)
+        if cfg.BV_CODE_COL in df.columns:
+            df[cfg.BV_CODE_COL] = df[cfg.BV_CODE_COL].astype(str)
+    else:
+        df = pd.read_csv(file_path, dtype={'CODGEO': str, cfg.BV_CODE_COL: str})
     return df
 
 def apply_demo_data_if_present(data: Dict[str, Any]) -> None:
@@ -176,8 +185,10 @@ def load_all_datasets(
     inclusion_file: str,
     caf_file: str, # Added argument
     lovac_file: str, # Added argument
-    inclusion_ref_file: str # Added argument
-) -> Tuple[gpd.GeoDataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, gpd.GeoDataFrame, gpd.GeoDataFrame, gpd.GeoDataFrame, pd.DataFrame, Dict[str, Dict[str, float]]]:
+    inclusion_ref_file: str, # Added argument
+    pois_file: str = "pois.parquet",
+    bmo_vertical_file: str = "bmo_vertical.parquet"
+) -> Tuple[gpd.GeoDataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, gpd.GeoDataFrame, gpd.GeoDataFrame, gpd.GeoDataFrame, pd.DataFrame, Dict[str, Dict[str, float]], gpd.GeoDataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Loads all necessary datasets from specified file paths.
     This function acts as a facade, calling specific loading functions for each dataset.
@@ -192,15 +203,20 @@ def load_all_datasets(
     # Define the specific columns to load from the main dataset to save memory
     columns_to_load = [
         'codgeo', 'libgeo', 'polygon', 'dep_code', 'reg_code', 'epci_code', 'epci_nom', 'codgeo_voisins',
-        'population', 'pop_be', 'met', 'be_codfap_top', 'be_libfap_top',
-        'codes_formations', 'noms_formations', 'rp_5+pieces', 'log_rp', 'log_soc_inoccupes',
-        'log_soc_total', 'log_vac', 'log_total', 'risque_fermeture', 'ecoles_ct',
-        'svc_incl_count', 'pol_num'
+        'population', 'pop_active',
+        'log_soc_inoccupes',
+        'log_soc_total', 'log_priv_vacant_plus_2ans', 'log_total',
+        'svc_incl_count', 'pol_num',
+        'MOD_OVER_OCC', 'MOD_UNDER_OCC', 'SEV_OVER_OCC', 'SEV_UNDER_OCC', 'STD_OCC', 'VSEV_UNDER_OCC', 'log_pp_occup',
+        'total_eleves', 'ecoles_count', 'lien_social_count',
+        'metiers_offres_ratio'
     ]
     odis = pd.read_parquet(base_path + odis_file, columns=columns_to_load)
     odis['polygon'] = odis.polygon.apply(shp.from_wkb)
     odis = gpd.GeoDataFrame(odis, geometry='polygon', crs='EPSG:4326')
     odis.set_geometry('polygon', inplace=True)
+    # Fix invalid geometries before setting precision
+    odis['polygon'] = odis.polygon.buffer(0)
     # odis.polygon = shp.set_precision(odis.polygon, grid_size=0.001)
     odis.polygon = odis.polygon.set_precision(grid_size=0.001, mode='valid_output')
     odis = odis[~odis.polygon.isna()]
@@ -219,14 +235,11 @@ def load_all_datasets(
     # --- Optimize Data Types ---
     # Downcast integer columns to save memory
     odis['population'] = odis['population'].astype('int32')
-    odis['met'] = odis['met'].astype(pd.Int32Dtype())
-    odis['ecoles_ct'] = odis['ecoles_ct'].astype(pd.Int16Dtype())
-    odis['risque_fermeture'] = odis['risque_fermeture'].astype(pd.Int16Dtype())
     odis['svc_incl_count'] = odis['svc_incl_count'].astype(pd.Int16Dtype())
 
     # Downcast float columns to save memory
-    float_cols = ['pop_be', 'rp_5+pieces', 'log_rp', 'log_soc_inoccupes',
-                  'log_soc_total', 'log_vac', 'log_total', 'pol_num']
+    float_cols = ['log_soc_inoccupes',
+                  'log_soc_total', 'log_priv_vacant_plus_2ans', 'log_total', 'pol_num']
     for col in float_cols:
         if col in odis.columns:
             odis[col] = odis[col].astype('float32')
@@ -241,11 +254,11 @@ def load_all_datasets(
     scores_cat = load_scores_config_as_df(config_path)
 
     #Later we need the code FAP <-> FAP Name used to classify jobs
-    codfap_index = pd.read_csv(base_path + metiers_file, delimiter=';')
+    codfap_index = pd.read_csv(base_path + metiers_file, delimiter=';', encoding='utf-8-sig')
 
     # Later we need the code formation <-> Formation Name used to classify trainings
     # source: https://www.data.gouv.fr/fr/datasets/liste-publique-des-organismes-de-formation-l-6351-7-1-du-code-du-travail/
-    codformations_index = pd.read_csv(base_path + formations_file, dtype={'codformation': str}).set_index('codformation')
+    codformations_index = pd.read_csv(base_path + formations_file, dtype={'codformation': str}, encoding='utf-8-sig').set_index('codformation')
 
     # Etablissements scolaires
     ecoles_cols_to_load = ['code_commune', 'nom_etablissement', 'type_etablissement', 'ecole_maternelle', 'ecole_elementaire', 'geometry']
@@ -289,7 +302,7 @@ def load_all_datasets(
         odis[col] = odis[col].fillna(0).astype('int16')
 
     #Annuaire Maternités
-    annuaire_maternites = pd.read_csv(base_path + maternites_file, delimiter=';')
+    annuaire_maternites = pd.read_csv(base_path + maternites_file, delimiter=';', encoding='utf-8-sig')
     annuaire_maternites.drop_duplicates(subset=['FI_ET'], keep='last', inplace=True)
 
     # Annuaire etablissements santé
@@ -368,7 +381,7 @@ def load_all_datasets(
     # --- Associations (RNA) ---
     # Load and pre-process association data
     # We need to count associations by WALDEC code per commune
-    rna_df = pd.read_csv(base_path + 'rna_waldec_20250901_mini_odis.csv', sep=';', dtype={'adrs_codeinsee': str, 'id_waldec': str, 'objet_social2': str})
+    rna_df = pd.read_csv(base_path + 'rna_waldec_20250901_mini_odis.csv', sep=';', dtype={'adrs_codeinsee': str, 'id_waldec': str, 'objet_social2': str}, encoding='latin-1')
     rna_df = rna_df.rename(columns={'adrs_codeinsee': 'codgeo', 'objet_social1': 'id_waldec'})
     
     # Pad id_waldec with zeros to ensure 6 digits for prefix matching
@@ -421,19 +434,23 @@ def load_all_datasets(
     # --- Pre-calculate Ratios for Scoring ---
     # Emploi
     # Handle division by zero/NaNs
-    odis['met_ratio'] = (1000 * odis['met'] / odis['pop_be']).replace([np.inf, -np.inf], np.nan)
+    # metiers_offres_ratio is already calculated in build.py as (offers / pop_active_be)
+    # We just need to scale it to per 1000 inhabitants if that's what the score expects.
+    # The original calculation was 1000 * met / pop_active.
+    odis['met_ratio'] = (1000 * odis['metiers_offres_ratio']).replace([np.inf, -np.inf], np.nan)
     
     # Logement
-    odis['log_vac_ratio'] = (odis['log_vac'] / odis['log_total']).replace([np.inf, -np.inf], np.nan)
+    # odis['log_vac_ratio'] = (odis['log_vac'] / odis['log_total']).replace([np.inf, -np.inf], np.nan)
     # New structural vacancy ratio
     # We use log_total from ODIS as the denominator.
     odis['log_vac_struct_ratio'] = (odis['pp_vacant_plus_2ans_25'] / odis['log_total']).replace([np.inf, -np.inf], np.nan)
     
     odis['log_soc_inoc_ratio'] = (odis['log_soc_inoccupes'] / odis['log_soc_total']).replace([np.inf, -np.inf], np.nan)
-    odis['log_5p_ratio'] = (odis['rp_5+pieces'] / odis['log_rp']).replace([np.inf, -np.inf], np.nan)
+    # odis['log_5p_ratio'] = (odis['rp_5+pieces'] / odis['log_rp']).replace([np.inf, -np.inf], np.nan)
     
     # Education
-    odis['risque_fermeture_ratio'] = (odis['risque_fermeture'] / odis['ecoles_ct']).replace([np.inf, -np.inf], np.nan)
+    # Risque fermeture: Average school size. Higher is better (less risk).
+    odis['risque_fermeture_ratio'] = (odis['total_eleves'] / odis['ecoles_count']).replace([np.inf, -np.inf], 0).fillna(0)
     
     # Inclusion: Lien Social
     core_codes_prefixes = tuple(cfg.WALDEC_CORE_INCLUSION)
@@ -441,14 +458,46 @@ def load_all_datasets(
     # We need to filter rows.
     core_assos = associations_data[associations_data['id_waldec'].astype(str).str.startswith(core_codes_prefixes, na=False)]
     core_counts = core_assos.groupby('codgeo')['count'].sum()
-    odis = odis.join(core_counts.rename('lien_social_count'), how='left')
-    odis['lien_social_count'] = odis['lien_social_count'].fillna(0)
-    odis['lien_social_density'] = ((odis['lien_social_count'] * 1000) / odis['pop_be']).replace([np.inf, -np.inf], np.nan)
+    # odis = odis.join(core_counts.rename('lien_social_count'), how='left')
+    # odis['lien_social_count'] = odis['lien_social_count'].fillna(0)
+    odis['lien_social_density'] = ((odis['lien_social_count'] * 1000) / odis['population']).replace([np.inf, -np.inf], np.nan)
 
     # --- Compute Global Stats ---
     global_score_stats = compute_global_score_stats(odis, scores_cat)
 
-    return odis, scores_cat, codfap_index, codformations_index, annuaire_ecoles, annuaire_sante, annuaire_inclusion, incl_index, associations_data, global_score_stats
+    # --- BMO Vertical Integration ---
+    bmo_vertical = pd.read_parquet(base_path + bmo_vertical_file)
+    
+    # Aggregate top metiers for scoring (list of FAP codes per commune)
+    # We need this in 'odis' for the scoring engine
+    if not bmo_vertical.empty:
+        top_metiers = bmo_vertical.groupby('codgeo')['fap_code'].apply(list).rename('metiers_offres_top5')
+        odis = odis.join(top_metiers, how='left')
+
+    # --- Load Unified POIs for Maps ---
+    pois = pd.read_parquet(base_path + pois_file)
+    # Parse metadata if needed, but for maps we might just use it as is or parse on the fly
+    # Ensure geometry
+    pois = gpd.GeoDataFrame(
+        pois,
+        geometry=gpd.points_from_xy(pois.lon, pois.lat),
+        crs="EPSG:4326"
+    )
+
+    return (
+        odis,
+        scores_cat,
+        codfap_index, # This was 'metiers' in the instruction, but 'codfap_index' is used in init_datasets
+        codformations_index, # This was 'formations' in the instruction, but 'codformations_index' is used in init_datasets
+        annuaire_ecoles, # This was 'annuaire_education' in the instruction, but 'annuaire_ecoles' is used in init_datasets
+        annuaire_sante,
+        annuaire_inclusion,
+        incl_index, # This was 'codfap_index' in the instruction, but 'incl_index' is used in init_datasets
+        associations_data, # This was removed in the instruction, but is used in init_datasets
+        global_score_stats,
+        pois,
+        bmo_vertical
+    )
 
 @st.cache_data
 def load_area_geodata(_communes_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -507,19 +556,21 @@ def load_bassin_de_vie_geodata(_communes_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFr
 def init_datasets() -> Dict[str, Any]:
     """Loads all datasets and returns them in a structured dictionary."""
     logging.info("--- Loading all datasets... ---")
-    odis, scores_cat, codfap_index, codformations_index, annuaire_ecoles, annuaire_sante, annuaire_inclusion, incl_index, associations_data, global_score_stats = load_all_datasets(
-        cfg.ODIS_FILE,
-        cfg.BV_FILENAME,
-        cfg.SCORES_CAT_FILE,
-        cfg.METIERS_FILE,
-        cfg.FORMATIONS_FILE,
-        cfg.ECOLES_FILE,
-        cfg.MATERNITE_FILE,
-        cfg.SANTE_FILE,
-        cfg.INCLUSION_FILE,
-        cfg.CAF_FILE, # Added argument
-        cfg.LOVAC_FILE, # Added argument
-        cfg.INCLUSION_REF_FILE # Added argument
+    odis, scores_cat, codfap_index, codformations_index, annuaire_ecoles, annuaire_sante, annuaire_inclusion, incl_index, associations_data, global_score_stats, pois, bmo_vertical = load_all_datasets(
+        odis_file=cfg.ODIS_FILE,
+        bv_file=cfg.BV_FILENAME,
+        scores_cat_file=cfg.SCORES_CAT_FILE,
+        metiers_file=cfg.METIERS_FILE,
+        formations_file=cfg.FORMATIONS_FILE,
+        ecoles_file=cfg.ECOLES_FILE,
+        maternites_file=cfg.MATERNITE_FILE,
+        sante_file=cfg.SANTE_FILE,
+        inclusion_file=cfg.INCLUSION_FILE,
+        caf_file=cfg.CAF_FILE,
+        lovac_file=cfg.LOVAC_FILE,
+        inclusion_ref_file=cfg.INCLUSION_REF_FILE,
+        pois_file=cfg.POIS_FILE if hasattr(cfg, 'POIS_FILE') else "pois.parquet",
+        bmo_vertical_file=cfg.BMO_VERTICAL_FILE
     )
     
     bv_geo = load_bassin_de_vie_geodata(odis)
@@ -538,6 +589,8 @@ def init_datasets() -> Dict[str, Any]:
         "incl_index": incl_index,
         "associations_data": associations_data,
         "global_score_stats": global_score_stats,
+        "pois": pois,
+        "bmo_vertical": bmo_vertical,
         "coddep_set": sorted(set(odis['dep_code'])),
         "depcom_df": odis[['dep_code','libgeo']].sort_values('libgeo'),
     }

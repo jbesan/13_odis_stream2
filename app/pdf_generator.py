@@ -185,8 +185,12 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
             "Hébergement": config.hebergement,
             "Logement à long terme": config.logement,
             "Besoin de santé": config.besoin_sante,
-            "Autres besoins": ", ".join(
-                [f"{cat}: {', '.join(serv)}" for cat, serv in config.besoins_autres.items()]) if config.besoins_autres else "Aucun",
+            "Autres besoins": (lambda: 
+                ", ".join([
+                    {v: k for k, v in st_session_state.get('ui_besoins_autres_map', {}).items()}.get(slug, slug)
+                    for slug in config.besoins_autres
+                ]) if config.besoins_autres else "Aucun"
+            )(),
         }
         
         table_data = [[key, str(value)] for key, value in criteria.items() if value]

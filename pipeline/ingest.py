@@ -444,12 +444,12 @@ def clean_voisins(config: Dict[str, Any], logger: PipelineLogger):
         # Let's assume standard format: 'insee_com', 'insee_voisins' (list of codes)
         # If it's the adjacency file from data.gouv, it might be an adjacency list.
         
-        # Assuming format: insee, voisins (string separated by | or ,)
-        if 'insee' in df.columns and 'voisins' in df.columns:
+        # Assuming format: insee, insee_voisins (string separated by | or ,)
+        if 'insee' in df.columns and 'insee_voisins' in df.columns:
              df['codgeo'] = df['insee'].astype(str).str.zfill(5)
              # Voisins might be a string "12345|67890"
              # We want a list.
-             df['codgeo_voisins'] = df['voisins'].astype(str).apply(lambda x: x.split('|') if '|' in x else x.split(','))
+             df['codgeo_voisins'] = df['insee_voisins'].astype(str).apply(lambda x: x.split('|') if '|' in x else x.split(','))
              
              df_out = df[['codgeo', 'codgeo_voisins']]
              output_path = CLEAN_DIR / "voisins.parquet"
@@ -507,6 +507,175 @@ def clean_communes(config: Dict[str, Any], logger: PipelineLogger):
     except Exception as e:
         logger.log_step("clean_communes", "ERROR", {"error": str(e)})
 
+def clean_political(config: Dict[str, Any], logger: PipelineLogger):
+    """Cleans Political Nuance and saves to parquet."""
+    logger.log_step("clean_political", "STARTED")
+    try:
+        source = config['sources']['political_nuance']
+        path = CACHE_DIR / source['local_name']
+        if not path.exists(): return
+
+        df = load_dataset(path, source)
+        df.columns = [c.strip() for c in df.columns]
+        
+        # Expected: 'Code Insee Commune', 'Nuance' OR 'cog_commune', 'nuance_politique'
+        codgeo_col = next((c for c in df.columns if 'Code Insee' in c or 'cog_commune' in c), None)
+        nuance_col = next((c for c in df.columns if ('Nuance' in c or 'nuance_politique' in c) and 'Libellé' not in c), None)
+        
+        if codgeo_col and nuance_col:
+            # Mapping
+            POL_MAPPING = {
+                'UG': 1.0, 'COM': 1.0, 'FI': 1.0, 'SOC': 1.0, 'RDG': 1.0, 'ECO': 1.0, 'DVG': 1.0, 'VEC': 1.0,
+                'REN': 0.5, 'MDM': 0.5, 'HOR': 0.5, 'DVC': 0.5,
+                'LR': 0.2, 'DVD': 0.2, 'UDI': 0.2,
+                'RN': 0.0, 'REC': 0.0, 'EXD': 0.0
+            }
+            
+            df['pol_num'] = df[nuance_col].map(POL_MAPPING).fillna(0.5) # Default to neutral
+            df['codgeo'] = df[codgeo_col].astype(str).str.zfill(5)
+            
+            df_out = df[['codgeo', 'pol_num']]
+            output_path = CLEAN_DIR / "political.parquet"
+            df_out.to_parquet(output_path)
+            logger.log_step("clean_political", "COMPLETED", {"path": str(output_path)})
+        else:
+            logging.warning(f"Political: Columns not found. Found: {df.columns}")
+            
+    except Exception as e:
+        logger.log_step("clean_political", "ERROR", {"error": str(e)})
+
+def clean_housing_occupation(config: Dict[str, Any], logger: PipelineLogger):
+    """Cleans Housing Occupation and saves to parquet."""
+    logger.log_step("clean_housing_occupation", "STARTED")
+    try:
+        source = config['sources']['housing_occupation']
+        path = CACHE_DIR / source['archive_file']
+        if not path.exists(): return
+
+        # Load with correct separator (likely ';')
+        try:
+            df = pd.read_csv(path, sep=';')
+            if len(df.columns) < 2:
+                 df = pd.read_csv(path, sep=',')
+        except:
+             df = pd.read_csv(path, sep=',')
+             
+        # Filter
+        if 'TIME_PERIOD' in df.columns:
+            df = df[df['TIME_PERIOD'] == 2022]
+        if 'GEO_OBJECT' in df.columns:
+            df = df[df['GEO_OBJECT'] == 'COM']
+            
+        # We need Taux d'occupation.
+        # Assuming OCC_IND has 'STD_OCC' (Standard), 'OVER_OCC' (Suroccupation), 'UNDER_OCC' (Sous-occupation)
+        # And OBS_VALUE is the count of dwellings.
+        # We want the rate of "Good" occupation? Or rate of "Under" (room to spare)?
+        # User said "build a scale based of OCC_IND".
+        # Let's save the raw counts pivoted by OCC_IND and let build.py calculate the ratio.
+        
+        if 'GEO' in df.columns and 'OCC_IND' in df.columns and 'OBS_VALUE' in df.columns:
+            df_pivot = df.pivot_table(index='GEO', columns='OCC_IND', values='OBS_VALUE', aggfunc='sum').reset_index()
+            df_pivot.rename(columns={'GEO': 'codgeo'}, inplace=True)
+            df_pivot['codgeo'] = df_pivot['codgeo'].astype(str).str.zfill(5)
+            
+            output_path = CLEAN_DIR / "housing_occupation.parquet"
+            df_pivot.to_parquet(output_path)
+            logger.log_step("clean_housing_occupation", "COMPLETED", {"path": str(output_path)})
+            
+    except Exception as e:
+        logger.log_step("clean_housing_occupation", "ERROR", {"error": str(e)})
+
+def clean_school_effectifs(config: Dict[str, Any], logger: PipelineLogger):
+    """Cleans School Effectifs and saves to parquet."""
+    logger.log_step("clean_school_effectifs", "STARTED")
+    try:
+        source = config['sources']['education_effectifs']
+        path = CACHE_DIR / source['local_name']
+        if not path.exists(): return
+
+        df = load_dataset(path, source)
+        
+        # Columns: 'commune' (code insee?), 'nombre_total_eleves'
+        # Check columns
+        codgeo_col = next((c for c in df.columns if c in ['commune', 'code_commune']), None)
+        effectif_col = next((c for c in df.columns if 'nombre_total_eleves' in c), None)
+        
+        if codgeo_col and effectif_col:
+            # Group by commune
+            df_agg = df.groupby(codgeo_col)[effectif_col].sum().reset_index()
+            df_agg.rename(columns={codgeo_col: 'codgeo', effectif_col: 'total_eleves'}, inplace=True)
+            df_agg['codgeo'] = df_agg['codgeo'].astype(str).str.zfill(5)
+            
+            # Also count schools?
+            # 'numero_ecole' might be present
+            if 'numero_ecole' in df.columns:
+                df_count = df.groupby(codgeo_col)['numero_ecole'].nunique().reset_index().rename(columns={codgeo_col: 'codgeo', 'numero_ecole': 'ecoles_count'})
+                df_agg = df_agg.merge(df_count, on='codgeo', how='left')
+            
+            output_path = CLEAN_DIR / "school_effectifs.parquet"
+            df_agg.to_parquet(output_path)
+            logger.log_step("clean_school_effectifs", "COMPLETED", {"path": str(output_path)})
+            
+    except Exception as e:
+        logger.log_step("clean_school_effectifs", "ERROR", {"error": str(e)})
+
+def clean_formations(config: Dict[str, Any], logger: PipelineLogger):
+    """Cleans Formations and saves to parquet."""
+    logger.log_step("clean_formations", "STARTED")
+    try:
+        source = config['sources']['formations']
+        path = CACHE_DIR / source['local_name']
+        if not path.exists(): return
+
+        # Load Excel, skip first row if empty (header=1 usually works if row 2 is header)
+        # We saw row 1 was empty, row 2 had "Formations générales".
+        # Let's try header=1 or 2.
+        # Actually, let's load with header=None and find the row with "Code postal" or "Ville"
+        df = pd.read_excel(path, header=None)
+        
+        # Find header row
+        header_idx = None
+        for i, row in df.iterrows():
+            row_str = row.astype(str).str.lower().tolist()
+            if any('code postal' in s for s in row_str) or any('ville' in s for s in row_str):
+                header_idx = i
+                break
+        
+        if header_idx is not None:
+            df.columns = df.iloc[header_idx]
+            df = df.iloc[header_idx+1:]
+            
+            # Identify columns
+            # We need to map to commune code. We only have Code Postal and Ville.
+            # We need a CP -> INSEE mapping.
+            # We have 'codes_postaux' source in DATASOURCES.md but not in sources.yaml?
+            # Wait, sources.yaml has 'communes' geojson.
+            # We can use a CP mapping file if we have one.
+            # Or we can just save the raw formations with CP and let build.py handle mapping (if we have a mapping table).
+            # For now, let's save what we have.
+            
+            # Columns might be: 'Raison sociale', 'Code postal', 'Ville', 'Domaines de formation'
+            df.columns = [str(c).strip() for c in df.columns]
+            
+            cp_col = next((c for c in df.columns if 'code postal' in c.lower()), None)
+            ville_col = next((c for c in df.columns if 'ville' in c.lower()), None)
+            domaine_col = next((c for c in df.columns if 'domaines' in c.lower()), None)
+            
+            if cp_col:
+                df_out = df[[cp_col, ville_col, domaine_col]].copy() if ville_col and domaine_col else df[[cp_col]].copy()
+                df_out.rename(columns={cp_col: 'code_postal'}, inplace=True)
+                
+                output_path = CLEAN_DIR / "formations.parquet"
+                df_out.to_parquet(output_path)
+                logger.log_step("clean_formations", "COMPLETED", {"path": str(output_path)})
+            else:
+                 logging.warning(f"Formations: Columns not found. Found: {df.columns}")
+        else:
+             logging.warning("Formations: Header not found")
+                
+    except Exception as e:
+        logger.log_step("clean_formations", "ERROR", {"error": str(e)})
+
 def main():
     logger = PipelineLogger(STATUS_FILE)
     config = load_config(CONFIG_FILE)
@@ -532,6 +701,10 @@ def main():
     clean_inclusion(config, logger)
     clean_associations(config, logger)
     clean_voisins(config, logger)
+    clean_political(config, logger)
+    clean_housing_occupation(config, logger)
+    clean_school_effectifs(config, logger)
+    clean_formations(config, logger)
     
     logger.log_step("ingest_all", "COMPLETED")
 

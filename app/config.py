@@ -22,8 +22,10 @@ def get_data_path() -> str:
         return LOCAL_CSV_PATH
 
 # --- File Paths ---
-ODIS_FILE = 'odis_june_2025_jacques.parquet'
+# --- File Paths ---
+ODIS_FILE = 'odis_communes.parquet'
 BV_FILENAME = 'insee-bassins-de-vie-2025.csv'
+BMO_VERTICAL_FILE = 'bmo_vertical.parquet'
 SCORES_CAT_FILE = 'scores_config.yaml'
 METIERS_FILE = 'dares_nomenclature_fap2021.csv'
 FORMATIONS_FILE = 'index_formations.csv'

@@ -185,15 +185,15 @@ with col_map:
                 show_inclusion = st.toggle("Inclusion", key='show_inclusion_toggle', disabled=(not config.besoins_autres))
 
             if show_ecoles:
-                st.session_state.fg_dict_ref['fg_ecoles'] = maps.build_ecoles_layer(st.session_state.app_data['annuaire_ecoles'], target_codgeos, config)
+                st.session_state.fg_dict_ref['fg_ecoles'] = maps.build_ecoles_layer(st.session_state.app_data['pois'], target_codgeos, config)
                 fgs_to_show.add('fg_ecoles')
                 legend_items.append({'color': 'green', 'icon': 'pencil', 'text': 'Écoles'})
             if show_sante:
-                st.session_state.fg_dict_ref['fg_sante'] = maps.build_sante_layer(st.session_state.app_data['annuaire_sante'], target_codgeos, config)
+                st.session_state.fg_dict_ref['fg_sante'] = maps.build_sante_layer(st.session_state.app_data['pois'], target_codgeos, config)
                 fgs_to_show.add('fg_sante')
                 legend_items.append({'color': 'blue', 'icon': 'plus', 'text': 'Santé'})
             if show_inclusion:
-                st.session_state.fg_dict_ref['fg_services'] = maps.build_services_layer(st.session_state.app_data['annuaire_inclusion'], target_codgeos, config)
+                st.session_state.fg_dict_ref['fg_services'] = maps.build_services_layer(st.session_state.app_data['pois'], target_codgeos, config)
                 fgs_to_show.add('fg_services')
                 legend_items.append({'color': 'purple', 'icon': 'heart', 'text': 'Inclusion'})
 

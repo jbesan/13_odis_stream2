@@ -145,12 +145,15 @@ def render_employment_form() -> None:
 
 def render_housing_form() -> None:
     """Renders the UI for the 'Logement' form section."""
-    st.radio('Hébergement à court terme', cfg.HEBERGEMENT_OPTIONS, key="ui_hebergement")
-    if st.session_state.ui_hebergement == 'Location':
-        st.radio('Type de logement', cfg.LOGEMENT_OPTIONS, key="ui_logement")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.radio('Hébergement cible à court terme', cfg.HEBERGEMENT_OPTIONS, key="ui_hebergement")
+        st.toggle("Prioritaire", key="ui_priority_hebergement", help="Donne plus de poids à ce critère")
+    with col2:
+        st.radio('Logement cible à long terme', cfg.LOGEMENT_OPTIONS, key="ui_logement")
+        st.toggle("Prioritaire", key="ui_priority_logement", help="Donne plus de poids à ce critère")
         
-    # F-15: Priority Toggle
-    st.toggle("Prioritaire", key="ui_priority_housing", help="Donne plus de poids aux critères de logement")
+    # F-15: Priority Toggle (Removed global toggle)
 
 def render_health_form() -> None:
     """Renders the UI for the 'Santé' form section."""
@@ -341,12 +344,20 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
             # Also boost the general employment availability? Maybe not, keep it specific.
             
     # Housing Priorities (F-15)
-    if st.session_state.get("ui_priority_housing", False):
-        # Boost based on selection
+    # Housing Priorities (F-15)
+    # 1. Hebergement Priority
+    if st.session_state.get("ui_priority_hebergement", False):
+        if st.session_state.get('ui_hebergement') == "Chez l'habitant":
+             criteria_weights['log_occup_scaled'] = 3.0
+        else:
+             # Default: Location -> Vacancy rate (or maybe we should boost general vacancy?)
+             # Let's stick to boosting vacancy as a proxy for availability
+             criteria_weights['log_vac_scaled'] = 3.0
+
+    # 2. Logement Priority
+    if st.session_state.get("ui_priority_logement", False):
         if st.session_state.get('ui_logement') == 'Logement Social':
              criteria_weights['log_soc_inoc_scaled'] = 3.0
-        elif st.session_state.get('ui_hebergement') == "Chez l'habitant":
-             criteria_weights['log_5p_scaled'] = 3.0
         else:
              # Default: Location -> Vacancy rate
              criteria_weights['log_vac_scaled'] = 3.0
@@ -464,14 +475,45 @@ def _display_bv_result_details(row: pd.Series) -> None:
         st.divider()
         st.markdown('**Plus d’informations sur ce bassin de vie :**')
         with st.expander('Top 10 des métiers recherchés'):
-            top_metiers = set(row.be_libfap_top if row.be_libfap_top is not None else [])
-            if top_metiers:
-                st.markdown("\n".join([f'- {item}' for item in sorted(list(top_metiers))]))
+            bmo_vertical = st.session_state.app_data['bmo_vertical']
+            codfap_index = st.session_state.app_data['codfap_index']
+            
+            # For BV, we need to aggregate across all communes in the BV
+            # Or better, we can just look up by BV code if we had it in bmo_vertical.
+            # But bmo_vertical is by codgeo.
+            # Actually, the user wants "count will be based on the Bassin d'Emploi of the commune".
+            # So all communes in the same BE have the same top metiers.
+            # We can just pick one commune from the BV and get its top metiers.
+            # Or we can aggregate. But since they are identical per BE, picking one is fine.
+            
+            # Get one commune code from the list
+            if 'communes' in row and row['communes']:
+                sample_codgeo = row['communes'][0]
+                commune_metiers = bmo_vertical[bmo_vertical.codgeo == sample_codgeo]
+                
+                if not commune_metiers.empty:
+                    # Join with labels
+                    # codfap_index has 'Code' and 'Libellé' (or similar, need to check data_loader)
+                    # data_loader says: codfap_index = pd.read_csv(..., dtype=str)
+                    # Let's assume it has 'Code' and 'Libellé' as per build.py logic
+                    
+                    # Actually, let's look at how it was loaded in data_loader.
+                    # It's just a raw CSV load.
+                    # We need to ensure we have the right columns.
+                    
+                    # Merge
+                    merged = commune_metiers.merge(codfap_index, left_on='fap_code', right_on='Code FAP 228', how='left')
+                    merged['Intitulé FAP 228'] = merged['Intitulé FAP 228'].fillna(merged['fap_code'])
+                    
+                    top_metiers = sorted(merged['Intitulé FAP 228'].unique())
+                    st.markdown("\n".join([f'- {item}' for item in top_metiers]))
+                else:
+                    st.info("Pas de données disponibles.")
             else:
                 st.info("Pas de données disponibles.")
         
         with st.expander('Formations proposées'):
-            formations = set(row.noms_formations if row.noms_formations is not None else [])
+            formations = set(row.get('noms_formations') if row.get('noms_formations') is not None else [])
             if formations:
                 st.markdown("\n".join([f'- {item}' for item in sorted(list(formations))]))
             else:
@@ -524,17 +566,25 @@ def _display_result_details(row: pd.Series) -> None:
         st.divider()
         st.markdown('**Plus d’informations sur cette localité :**')
         with st.expander('Top 10 des métiers recherchés'):
-            top_metiers = set(row.be_libfap_top if row.be_libfap_top is not None else [])
-            if top_metiers:
-                st.markdown("\n".join([f'- {item}' for item in sorted(list(top_metiers))]))
+            bmo_vertical = st.session_state.app_data['bmo_vertical']
+            codfap_index = st.session_state.app_data['codfap_index']
+            
+            commune_metiers = bmo_vertical[bmo_vertical.codgeo == row.name]
+            
+            if not commune_metiers.empty:
+                merged = commune_metiers.merge(codfap_index, left_on='fap_code', right_on='Code FAP 228', how='left')
+                merged['Intitulé FAP 228'] = merged['Intitulé FAP 228'].fillna(merged['fap_code'])
+                
+                top_metiers = sorted(merged['Intitulé FAP 228'].unique())
+                st.markdown("\n".join([f'- {item}' for item in top_metiers]))
             else:
                 st.info("Pas de données disponibles.")
         
         with st.expander('Formations proposées'):
-            formations = set(row.noms_formations if row.noms_formations is not None else [])
-            if row.binome:
+            formations = set(row.get('noms_formations') if row.get('noms_formations') is not None else [])
+            if row.get('binome'):
                 binome_row = st.session_state.app_data['odis'].loc[row.codgeo_binome]
-                formations.update(binome_row.noms_formations if binome_row.noms_formations is not None else [])
+                formations.update(binome_row.get('noms_formations') if binome_row.get('noms_formations') is not None else [])
             if formations:
                 st.markdown("\n".join([f'- {item}' for item in sorted(list(formations))]))
             else:

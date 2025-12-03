@@ -1,3 +1,4 @@
+.agent/
 __pycache__
 .pytest_cache
 csv_large/
@@ -8,10 +9,9 @@ app/cached_df
 app/cached_df.parquet
 app/cached_df.csv
 app/.logs/
+pipeline/cache/
+pipeline/output/
 .venv/
 .DS_Store
 CONSTITUTION.md
 GEMINI.md
-.agent/
-pipeline/cache/
-DATA_SOURCES_SUMMARY.md

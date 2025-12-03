@@ -3,6 +3,8 @@ import logging
 import pandas as pd
 import geopandas as gpd
 import json
+import logging
+import shutil
 import numpy as np
 from pathlib import Path
 from typing import Dict, Any
@@ -66,6 +68,15 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         # Merge Inclusion
         merge_clean("inclusion", ['svc_incl_count'])
         
+        # Merge Political
+        merge_clean("political", ['pol_num'])
+        
+        # Merge Housing Occupation
+        merge_clean("housing_occupation", ['MOD_OVER_OCC', 'MOD_UNDER_OCC', 'SEV_OVER_OCC', 'SEV_UNDER_OCC', 'STD_OCC', 'VSEV_UNDER_OCC'])
+        
+        # Merge School Effectifs
+        merge_clean("school_effectifs", ['total_eleves', 'ecoles_count'])
+        
         # Merge Associations (Vertical, so we only merge count if needed, or skip here)
         # Actually, we might want a count of associations per commune in the main table?
         # The user said "vertical lookup tables dedicated... rather than adding columns".
@@ -83,6 +94,15 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
             assoc_count = assoc_df.groupby('codgeo').size().rename('lien_social_count').reset_index()
             communes_gdf = communes_gdf.merge(assoc_count, on='codgeo', how='left')
             
+        # Merge Top Metiers (from bmo_vertical)
+        # We need a list of top metiers per commune for scoring (metiers_offres_top5)
+        bmo_vert_path = CLEAN_DIR / "bmo_vertical.parquet"
+        if bmo_vert_path.exists():
+            bmo_vert = pd.read_parquet(bmo_vert_path)
+            # Group by codgeo and aggregate fap_code into list
+            top_metiers = bmo_vert.groupby('codgeo')['fap_code'].apply(list).rename('metiers_offres_top5').reset_index()
+            communes_gdf = communes_gdf.merge(top_metiers, on='codgeo', how='left')
+            
         # Merge Voisins
         merge_clean("voisins", ['codgeo_voisins'])
         
@@ -93,7 +113,11 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         rename_map = {
             'taux_couverture': 'edu_pe_tx_couverture',
             'pp_vacant_plus_2ans_25': 'log_priv_vacant_plus_2ans',
-            'code_be': 'bassin_emploi'
+            'code_be': 'bassin_emploi',
+            'nom': 'libgeo',
+            'departement': 'dep_code',
+            'region': 'reg_code',
+            'epci': 'epci_code'
         }
         communes_gdf.rename(columns=rename_map, inplace=True)
         
@@ -109,12 +133,56 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
             if col in communes_gdf.columns:
                 communes_gdf[col] = communes_gdf[col].fillna(0)
                 
+        # Ensure epci_nom exists (placeholder if missing)
+        if 'epci_nom' not in communes_gdf.columns:
+            if 'epci_code' in communes_gdf.columns:
+                communes_gdf['epci_nom'] = communes_gdf['epci_code'] # Fallback
+            else:
+                communes_gdf['epci_nom'] = "Inconnu"
+                
         # Calculated Columns
         # log_soc_tx_vacant
         communes_gdf['log_soc_tx_vacant'] = np.where(
             communes_gdf['log_soc_total'] > 0,
             communes_gdf['log_soc_inoccupes'] / communes_gdf['log_soc_total'],
             0.0
+        )
+        
+        # log_pp_occup (Weighted Average of Occupancy)
+        # Weights:
+        # SEV_OVER_OCC: 0.0
+        # MOD_OVER_OCC: 0.25
+        # STD_OCC: 0.5
+        # MOD_UNDER_OCC: 0.75
+        # SEV_UNDER_OCC: 1.0
+        # VSEV_UNDER_OCC: 1.0
+        
+        # Ensure columns exist and fillna
+        occup_cols = ['SEV_OVER_OCC', 'MOD_OVER_OCC', 'STD_OCC', 'MOD_UNDER_OCC', 'SEV_UNDER_OCC', 'VSEV_UNDER_OCC']
+        for col in occup_cols:
+            if col not in communes_gdf.columns:
+                communes_gdf[col] = 0.0
+            else:
+                communes_gdf[col] = communes_gdf[col].fillna(0.0)
+                
+        # Total households for occupancy (sum of all categories)
+        total_occup_households = communes_gdf[occup_cols].sum(axis=1)
+        communes_gdf['log_total'] = total_occup_households # Use as log_total (RP)
+        
+        # Weighted Sum
+        weighted_sum_occup = (
+            communes_gdf['SEV_OVER_OCC'] * 0.0 +
+            communes_gdf['MOD_OVER_OCC'] * 0.25 +
+            communes_gdf['STD_OCC'] * 0.5 +
+            communes_gdf['MOD_UNDER_OCC'] * 0.75 +
+            communes_gdf['SEV_UNDER_OCC'] * 1.0 +
+            communes_gdf['VSEV_UNDER_OCC'] * 1.0
+        )
+        
+        communes_gdf['log_pp_occup'] = np.where(
+            total_occup_households > 0,
+            weighted_sum_occup / total_occup_households,
+            0.0 # Default if no data
         )
         
         # Rounding
@@ -167,12 +235,108 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
                     communes_gdf['pop_chomeurs'] / communes_gdf['pop_active'],
                     0.0
                 )
+
+        # --- Pre-calculate Ratios and Scaled Scores (Optimization) ---
+        # Ratios
+        communes_gdf['met_ratio'] = np.where(
+             communes_gdf['pop_active'] > 0,
+             1000 * communes_gdf['metiers_offres_ratio'] * communes_gdf['pop_active'] / communes_gdf['pop_active'], # Re-verify logic: ratio is offers/active. met_ratio in app was 1000 * met / active.
+             0.0
+        )
+        # Wait, metiers_offres_ratio is (offers in BE / active in BE).
+        # App used: df['met_ratio'] = 1000 * df['met'] / df['pop_active'] where 'met' was local offers?
+        # No, 'met' was BMO offers.
+        # If we want to pre-calculate what the app uses:
+        # App: df['met_ratio'] = 1000 * df['met'] / df['pop_active']
+        # But we replaced 'met' with 'metiers_offres_ratio' which is already a ratio?
+        # Let's stick to the requested optimization: "any score that can be min-max scaled before hand... should be there"
+        # We need to calculate the raw metric first, then scale it.
         
-        # 5. Output
+        # 1. Metiers Ratio (Offers per 1000 active)
+        # We already have 'metiers_offres_ratio' = Offers / Active (in BE).
+        # So met_ratio = metiers_offres_ratio * 1000.
+        communes_gdf['met_ratio'] = communes_gdf['metiers_offres_ratio'] * 1000
+        
+        # 2. Logement Vacant Structurel Ratio
+        communes_gdf['log_vac_struct_ratio'] = np.where(
+            communes_gdf['log_total'] > 0,
+            communes_gdf['log_priv_vacant_plus_2ans'] / communes_gdf['log_total'],
+            0.0
+        )
+        
+        # 3. Lien Social Density (Associations per 1000 hab)
+        communes_gdf['lien_social_density'] = np.where(
+            communes_gdf['population'] > 0,
+            (communes_gdf['lien_social_count'] * 1000) / communes_gdf['population'],
+            0.0
+        )
+        
+        # 4. Affinite Density (Associations per 1000 active - wait, app uses active? check scoring.py)
+        # scoring.py: df['affinite_density'] = (df['affinite_count'] * 1000) / df['pop_active']
+        # We can't pre-calculate affinite_density because it depends on USER SELECTION of interests.
+        
+        # --- Scaling ---
+        # We need global stats to scale.
+        # We can compute them on the fly here since we have the full dataset.
+        def get_min_max(series):
+            return series.quantile(0.01), series.quantile(0.99)
+            
+        def scale_series(series, min_val, max_val):
+            if max_val == min_val: return 0.0
+            return ((series - min_val) / (max_val - min_val)).clip(0, 1)
+
+        # met_scaled
+        min_b, max_b = get_min_max(communes_gdf['met_ratio'])
+        communes_gdf['met_scaled'] = scale_series(communes_gdf['met_ratio'], min_b, max_b)
+        
+        # log_vac_scaled
+        min_b, max_b = get_min_max(communes_gdf['log_vac_struct_ratio'])
+        communes_gdf['log_vac_scaled'] = scale_series(communes_gdf['log_vac_struct_ratio'], min_b, max_b)
+        
+        # inc_lien_social_score
+        min_b, max_b = get_min_max(communes_gdf['lien_social_density'])
+        communes_gdf['inc_lien_social_score'] = scale_series(communes_gdf['lien_social_density'], min_b, max_b)
+        
+        # inc_population_scaled
+        min_b, max_b = get_min_max(communes_gdf['population'])
+        communes_gdf['inc_population_scaled'] = scale_series(communes_gdf['population'], min_b, max_b)
+        
+        # inc_pol_scaled (already 0-1)
+        communes_gdf['inc_pol_scaled'] = communes_gdf['pol_num']
+
+        # --- Drop Unused Columns ---
+        cols_to_drop = [
+            'MOD_OVER_OCC', 'MOD_UNDER_OCC', 'SEV_OVER_OCC', 'SEV_UNDER_OCC', 'STD_OCC', 'VSEV_UNDER_OCC', # *_OCC
+            'total_eleves', 'ecoles_count', 
+            'log_total', 'log_soc_total', 'log_soc_inoccupes'
+        ]
+        # Keep 'log_pp_occup' as it is used for 'log_occup_scaled' (or pre-calculate it?)
+        # We can pre-calculate log_occup_scaled too.
+        min_b, max_b = get_min_max(communes_gdf['log_pp_occup'])
+        communes_gdf['log_occup_scaled'] = scale_series(communes_gdf['log_pp_occup'], min_b, max_b)
+        
+        # We can drop log_pp_occup if we have the scaled version and don't need raw for anything else.
+        # But let's keep it just in case, or drop if requested "unused columns".
+        # User said "log_total" specifically.
+        
+        communes_gdf.drop(columns=[c for c in cols_to_drop if c in communes_gdf.columns], inplace=True)
+
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        
+        # Rename geometry to polygon to match app expectation
+        communes_gdf.rename_geometry('polygon', inplace=True)
+        
+        output_path = OUTPUT_DIR / "odis_communes.parquet"
+        communes_gdf.to_parquet(output_path)
         output_path = OUTPUT_DIR / "odis_communes.parquet"
         communes_gdf.to_parquet(output_path)
         logger.log_step("build_communes", "CREATED", {"path": str(output_path), "rows": len(communes_gdf)})
+        
+        # Copy bmo_vertical to output
+        bmo_vertical_path = CLEAN_DIR / "bmo_vertical.parquet"
+        if bmo_vertical_path.exists():
+            shutil.copy2(bmo_vertical_path, OUTPUT_DIR / "bmo_vertical.parquet")
+            logger.log_step("build_communes", "COPIED", {"file": "bmo_vertical.parquet"})
         
         return communes_gdf
 
@@ -191,14 +355,20 @@ def build_bassins_de_vie(communes_gdf: gpd.GeoDataFrame, config: Dict[str, Any],
 
         # Dissolve
         # Fix geometries
-        communes_gdf['geometry'] = communes_gdf['geometry'].buffer(0)
+        if 'polygon' in communes_gdf.columns:
+            communes_gdf = communes_gdf.set_geometry('polygon')
+        # communes_gdf['geometry'] = communes_gdf.geometry.buffer(0)
+        # communes_gdf['geometry'] = communes_gdf.geometry.make_valid()
+        
+        from shapely.validation import make_valid
+        communes_gdf['geometry'] = communes_gdf.geometry.apply(make_valid)
         
         numeric_cols = [
             'population', 'log_soc_total', 'log_soc_inoccupes', 
             'count_maternelle', 'count_elementaire', 'ecoles_ct',
             'lien_social_count', 'svc_incl_count', 
             'pop_active', 'pop_employes', 'pop_chomeurs', 
-            'metiers_offres_diff', 'pp_vacant_plus_2ans_25'
+            'log_priv_vacant_plus_2ans'
         ]
         # metiers_offres_diff was dropped in build_communes, so we can't sum it here if we load from there.
         # But wait, build_bassins_de_vie takes the returned communes_gdf.
@@ -294,6 +464,12 @@ def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
                  edu_df['lat'] = edu_df['latitude']
                  edu_df['lon'] = edu_df['longitude']
             
+            # Calculate flags (logic from data_loader.py)
+            edu_df['ecole_maternelle'] = edu_df['nature_uai_libe'].str.contains('maternelle', case=False, na=False) | \
+                                          edu_df['nature_uai_libe'].str.contains('primaire', case=False, na=False)
+            edu_df['ecole_elementaire'] = edu_df['nature_uai_libe'].str.contains('élémentaire', case=False, na=False) | \
+                                           edu_df['nature_uai_libe'].str.contains('primaire', case=False, na=False)
+
             edu_pois = pd.DataFrame({
                 'id': edu_df['numero_uai'],
                 'name': edu_df['appellation_officielle'],
@@ -301,7 +477,8 @@ def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
                 'category': 'education',
                 'lat': edu_df['lat'],
                 'lon': edu_df['lon'],
-                'metadata': edu_df[['secteur_public_prive_libe', 'code_commune', 'adresse_uai']].rename(columns={
+                'codgeo': edu_df['code_commune'],
+                'metadata': edu_df[['secteur_public_prive_libe', 'code_commune', 'adresse_uai', 'ecole_maternelle', 'ecole_elementaire']].rename(columns={
                     'secteur_public_prive_libe': 'statut',
                     'adresse_uai': 'adresse'
                 }).to_dict(orient='records')
@@ -321,6 +498,29 @@ def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
                 crs="EPSG:2154"
             ).to_crs("EPSG:4326")
             
+            # Merge Maternites
+            mat_cfg = config['sources']['maternites']
+            mat_path = CACHE_DIR / mat_cfg['local_name']
+            if mat_path.exists():
+                 # JSON format
+                 mat_df = pd.read_json(mat_path)
+                 # Expecting 'FI_ET' column
+                 if 'FI_ET' in mat_df.columns:
+                     mat_ids = set(mat_df['FI_ET'].astype(str))
+                     gdf_finess['is_maternite'] = gdf_finess['nofinesset'].astype(str).isin(mat_ids)
+                 else:
+                     gdf_finess['is_maternite'] = False
+            else:
+                 gdf_finess['is_maternite'] = False
+
+            # Ensure we have codgeo. If Departement and Commune exist, construct it.
+            if 'Departement' in gdf_finess.columns and 'Commune' in gdf_finess.columns:
+                 gdf_finess['codgeo'] = gdf_finess['Departement'].astype(str) + gdf_finess['Commune'].astype(str).str.zfill(3)
+            elif 'codgeo' not in gdf_finess.columns:
+                 # Fallback: try to get it from nofinesset (first 2 digits = dept) + Commune? Unreliable.
+                 # Or assume it's already there.
+                 gdf_finess['codgeo'] = None
+
             finess_pois = pd.DataFrame({
                 'id': gdf_finess['nofinesset'],
                 'name': gdf_finess['RaisonSociale'],
@@ -328,7 +528,8 @@ def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
                 'category': 'sante',
                 'lat': gdf_finess.geometry.y,
                 'lon': gdf_finess.geometry.x,
-                'metadata': gdf_finess[['CategorieAgregat', 'Commune', 'LibelleVoie']].to_dict(orient='records')
+                'codgeo': gdf_finess['codgeo'],
+                'metadata': gdf_finess[['CategorieAgregat', 'Commune', 'LibelleVoie', 'is_maternite']].to_dict(orient='records')
             })
             pois_list.append(finess_pois)
             
@@ -343,9 +544,10 @@ def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
                 'id': incl_df['id'],
                 'name': incl_df['nom'],
                 'type': incl_df['thematiques'].apply(lambda x: str(x) if x is not None else 'Autre'),
-                'category': 'inclusion',
+                'category': 'incl_services', # Renamed from 'inclusion'
                 'lat': incl_df['latitude'],
                 'lon': incl_df['longitude'],
+                'codgeo': incl_df['code_insee'],
                 'metadata': incl_df[['description', 'adresse', 'code_insee']].to_dict(orient='records')
             })
             pois_list.append(incl_pois)

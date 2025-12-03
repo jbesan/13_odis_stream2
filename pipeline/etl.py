@@ -1,13 +1,25 @@
 import argparse
 import logging
 from pipeline import ingest, build
+import shutil
+import os
+
+SOURCE_DIR = 'pipeline/output'
+DEST_DIR = 'data'
+
+FILES_TO_COPY = [
+    'odis_communes.parquet',
+    'odis_bassins_de_vie.parquet',
+    'pois.parquet',
+    'bmo_vertical.parquet'
+]
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def main():
     parser = argparse.ArgumentParser(description="ODIS Data Pipeline ETL")
-    parser.add_argument("--step", choices=["ingest", "build", "all"], default="all", help="Step to run")
+    parser.add_argument("--step", choices=["ingest", "build", "deploy", "all"], default="all", help="Step to run")
     args = parser.parse_args()
 
     if args.step in ["ingest", "all"]:
@@ -19,6 +31,23 @@ def main():
         logging.info("=== Starting Build Phase ===")
         build.main()
         logging.info("=== Build Phase Completed ===")
+
+    if args.step in ["deploy", "all"]:
+        logging.info("=== Starting Deployment Phase ===")
+        if not os.path.exists(DEST_DIR):
+            os.makedirs(DEST_DIR)
+            logging.info(f"Created {DEST_DIR}")
+
+        for f in FILES_TO_COPY:
+            src = os.path.join(SOURCE_DIR, f)
+            dst = os.path.join(DEST_DIR, f)
+            
+            if os.path.exists(src):
+                shutil.copy2(src, dst)
+                logging.info(f"Copied {f} to {DEST_DIR}")
+            else:
+                logging.error(f"Source file {f} not found in {SOURCE_DIR}")
+        logging.info("=== Deployment Phase Completed ===")
 
 if __name__ == "__main__":
     main()

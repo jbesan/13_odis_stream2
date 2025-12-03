@@ -9,7 +9,9 @@ from folium.plugins import FastMarkerCluster
 
 from typing import Union, List, Tuple, Optional, Any, Set, Dict
 import config as cfg
+import config as cfg
 import logging
+import json # Added for metadata parsing
 
 def get_map_zoom(distance_km: Union[int, str]) -> int:
     """Returns a map zoom level based on a search distance."""
@@ -214,19 +216,33 @@ def _build_generic_points_layer(df: gpd.GeoDataFrame, icon: str, color: str, too
     """
     return FastMarkerCluster(locations, callback=callback)
 
-def build_ecoles_layer(annuaire_ecoles: gpd.GeoDataFrame, target_codgeos: Set[str], config: cfg.ScoringConfig) -> flm.FeatureGroup:
-    """Builds the map layer for schools."""
+def build_ecoles_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config: cfg.ScoringConfig) -> flm.FeatureGroup:
+    """Builds the map layer for schools using unified POIs."""
     fg = flm.FeatureGroup(name="Établissements Scolaires")
     
-    filtered = annuaire_ecoles[annuaire_ecoles['code_commune'].isin(target_codgeos)].copy()
-    if not config.classe_enfants:
-        return fg # No kids, no schools to show
+    # Filter by category and codgeo
+    filtered = pois[
+        (pois['category'] == 'education') & 
+        (pois['codgeo'].isin(target_codgeos))
+    ].copy()
+    
+    if not config.classe_enfants or filtered.empty:
+        return fg # No kids or no schools
         
+    # Filter by type (nature_uai_libe)
+    # Replicate logic from data_loader.py using 'type' column
+    is_maternelle = filtered['type'].str.contains('maternelle', case=False, na=False) | \
+                    filtered['type'].str.contains('primaire', case=False, na=False)
+    is_elementaire = filtered['type'].str.contains('élémentaire', case=False, na=False) | \
+                     filtered['type'].str.contains('primaire', case=False, na=False)
+    is_college = filtered['type'] == 'Collège'
+    is_lycee = filtered['type'] == 'Lycée'
+
     niveaux_map = {
-        'Maternelle': (filtered.ecole_maternelle > 0),
-        'Elémentaire': (filtered.ecole_elementaire > 0),
-        'Collège': (filtered.type_etablissement == 'Collège'),
-        'Lycée': (filtered.type_etablissement == 'Lycée')
+        'Maternelle': is_maternelle,
+        'Elémentaire': is_elementaire,
+        'Collège': is_college,
+        'Lycée': is_lycee
     }
     
     mask = pd.Series(False, index=filtered.index)
@@ -236,44 +252,87 @@ def build_ecoles_layer(annuaire_ecoles: gpd.GeoDataFrame, target_codgeos: Set[st
             
     filtered = filtered[mask]
     
-    cluster = _build_generic_points_layer(filtered, icon='pencil', color='green', tooltip_cols=['nom_etablissement', 'type_etablissement'])
+    if filtered.empty:
+        return fg
+
+    cluster = _build_generic_points_layer(filtered, icon='pencil', color='green', tooltip_cols=['name', 'type'])
     cluster.add_to(fg)
     return fg
 
-def build_sante_layer(annuaire_sante: gpd.GeoDataFrame, target_codgeos: Set[str], config: cfg.ScoringConfig) -> flm.FeatureGroup:
-    """Builds the map layer for health facilities."""
+def build_sante_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config: cfg.ScoringConfig) -> flm.FeatureGroup:
+    """Builds the map layer for health facilities using unified POIs."""
     fg = flm.FeatureGroup(name="Établissements de Santé")
-    filtered = annuaire_sante[annuaire_sante['codgeo'].isin(target_codgeos)].copy()
+    
+    filtered = pois[
+        (pois['category'] == 'sante') & 
+        (pois['codgeo'].isin(target_codgeos))
+    ].copy()
+    
+    if filtered.empty:
+        return fg
+
+    # Parse metadata for detailed filtering
+    # metadata is JSON string
+    def parse_meta(x):
+        try:
+            return json.loads(x)
+        except:
+            return {}
+            
+    meta_df = filtered['metadata'].apply(parse_meta).apply(pd.Series)
+    # meta_df should have 'CategorieAgregat', 'is_maternite'
+    
+    # Join meta back to filtered (reset index to ensure alignment if needed, but apply preserves index)
+    filtered = pd.concat([filtered, meta_df], axis=1)
 
     mask = pd.Series(False, index=filtered.index)
     if config.besoin_sante == 'Maternité':
-        mask = filtered.maternite == True
+        if 'is_maternite' in filtered.columns:
+            mask = filtered['is_maternite'].astype(bool)
     elif config.besoin_sante == "Hopital":
-        mask = filtered.Categorie.astype(str).isin(['355', '362', '101', '106'])
+        if 'CategorieAgregat' in filtered.columns:
+            mask = filtered['CategorieAgregat'].astype(str).isin(['355', '362', '101', '106'])
     elif config.besoin_sante == "Soutien Psychologique & Addictologie":
-        mask = filtered.Categorie.astype(str).isin(['156', '292', '425', '412', '366', '415', '430', '444'])
+        if 'CategorieAgregat' in filtered.columns:
+            mask = filtered['CategorieAgregat'].astype(str).isin(['156', '292', '425', '412', '366', '415', '430', '444'])
     
     if not mask.any():
         return fg
 
-    cluster = _build_generic_points_layer(filtered[mask], icon='plus', color='blue', tooltip_cols=['RaisonSociale', 'LibelleCategorieAgregat'])
-    logging.info(cluster)
+    cluster = _build_generic_points_layer(filtered[mask], icon='plus', color='blue', tooltip_cols=['name', 'type'])
     cluster.add_to(fg)
     return fg
 
-def build_services_layer(annuaire_inclusion: gpd.GeoDataFrame, target_codgeos: Set[str], config: cfg.ScoringConfig) -> flm.FeatureGroup:
-    """Builds the map layer for inclusion services."""
+def build_services_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config: cfg.ScoringConfig) -> flm.FeatureGroup:
+    """Builds the map layer for inclusion services using unified POIs."""
     fg = flm.FeatureGroup(name="Services d'inclusion")
     
     if not config.besoins_autres:
         return fg
         
-    filtered = annuaire_inclusion[annuaire_inclusion['codgeo'].isin(target_codgeos)].copy()
-    mask = filtered.categorie.isin(config.besoins_autres.keys())
+    filtered = pois[
+        (pois['category'] == 'incl_services') & 
+        (pois['codgeo'].isin(target_codgeos))
+    ].copy()
+    
+    if filtered.empty:
+        return fg
+
+    # 'type' column contains 'thematiques' (e.g. "category--service")
+    # We check if 'type' starts with any of the selected categories
+    # config.besoins_autres is a dict or list of slugs?
+    # It's a dict {slug: label} or just keys.
+    # In data_loader.py, we split thematiques into categorie and service.
+    # Here we can just check string containment or split 'type'.
+    
+    # Extract category from type
+    filtered['categorie'] = filtered['type'].str.split('--').str[0]
+    
+    mask = filtered['categorie'].isin(config.besoins_autres.keys())
     
     if not mask.any():
         return fg
 
-    cluster = _build_generic_points_layer(filtered[mask], icon='heart', color='purple', tooltip_cols=['nom', 'categorie', 'service'])
+    cluster = _build_generic_points_layer(filtered[mask], icon='heart', color='purple', tooltip_cols=['name', 'type'])
     cluster.add_to(fg)
     return fg

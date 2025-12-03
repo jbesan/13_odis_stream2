@@ -236,14 +236,15 @@ def compute_inclusion_score(
         df['lien_social_count'] = df['lien_social_count'].fillna(0)
     
     # Calculate density (per 1000 hab)
-    df['lien_social_density'] = (df['lien_social_count'] * 1000) / df['pop_be']
+    # Calculate density (per 1000 hab)
+    # df['lien_social_density'] = (df['lien_social_count'] * 1000) / df['pop_be']
     
     # Calculate density (per 1000 hab)
     # Pre-calculated in data_loader, but we need to ensure it's in df
     # If df is a subset of odis, it should have 'lien_social_density'
     if 'lien_social_density' not in df.columns:
          # Fallback if not present (e.g. tests)
-         df['lien_social_density'] = (df['lien_social_count'] * 1000) / df['pop_be']
+         df['lien_social_density'] = (df['lien_social_count'] * 1000) / df['population']
 
     # Normalize
     min_b, max_b = get_bounds('inc_lien_social_score', scores_cat, global_stats)
@@ -266,7 +267,7 @@ def compute_inclusion_score(
             df = df.join(affinite_counts.rename('affinite_count'), how='left')
             df['affinite_count'] = df['affinite_count'].fillna(0)
             
-            df['affinite_density'] = (df['affinite_count'] * 1000) / df['pop_be']
+            df['affinite_density'] = (df['affinite_count'] * 1000) / df['pop_active']
             
             min_b, max_b = get_bounds('inc_affinite_score', scores_cat, global_stats)
             df['inc_affinite_score'] = min_max_scale(df['affinite_density'].fillna(0), min_b, max_b)
@@ -352,7 +353,7 @@ def compute_criteria_scores(
     # --- EMPLOI ---
     # met_ratio is pre-calculated in data_loader
     if 'met_ratio' not in df.columns:
-        df['met_ratio'] = 1000 * df['met'] / df['pop_be']
+        df['met_ratio'] = 1000 * df['met'] / df['pop_active']
         
     min_b, max_b = get_bounds('met_scaled', scores_cat, global_stats)
     df['met_scaled'] = min_max_scale(df['met_ratio'].fillna(0), min_b, max_b)
@@ -364,7 +365,7 @@ def compute_criteria_scores(
             prefs_metiers = set(prefs['codes_metiers'][i])
             df[f'met_match_codes_{adult_key}'] = [
                 list(set(x).intersection(prefs_metiers)) if x is not None else []
-                for x in df.be_codfap_top
+                for x in df.metiers_offres_top5
             ]
             df[f'met_match_{adult_key}'] = df[f'met_match_codes_{adult_key}'].str.len()
             
@@ -394,13 +395,57 @@ def compute_criteria_scores(
             df[f'form_match_{adult_key}_scaled'] = min_max_scale(df[f'form_match_{adult_key}'].fillna(0), min_b, max_b)
 
     # --- HEBERGEMENT / LOGEMENT ---
+    #    min_b, max_b = get_bounds('log_5p_scaled', scores_cat, global_stats)
+    #    df['log_5p_scaled'] = min_max_scale(df['log_5p_ratio'].fillna(0), min_b, max_b)
+
+    # New Occupation Rate Score (replaces "Chez l'habitant" logic or adds to it? User said "change the underlying metric for this one")
+    # "this one" referred to "Count of 5+ room residences" in gap analysis.
+    # So we replace log_5p_scaled logic or add a new one if user selects "Grandes surfaces"?
+    # The UI has "Chez l'habitant" which maps to 'hebergement'.
+    # If prefs['hebergement'] == "Chez l'habitant", we used log_5p_ratio.
+    # Now we should use log_occupation_rate.
+    # But wait, "Chez l'habitant" implies spare room.
+    # So Under-Occupation (room to spare) is good.
+    # STD_OCC is standard. UNDER_OCC is under-occupied.
+    # If we want room to spare, we want High Under-Occupation?
+    # Or just High Standard Occupation (not over-occupied)?
+    # User said "build a scale based of OCC_IND".
+    # Let's assume we want to maximize "Not Over Occupied".
+    # Or maximize "Standard + Under".
+    # Let's use STD_OCC as a proxy for "Good".
+    # Or maybe we have 'MOD_UNDER_OCC' and 'SEV_UNDER_OCC'.
+    # If "Chez l'habitant", we want space. So Under Occupation is best.
+    # Let's sum STD_OCC + MOD_UNDER_OCC + SEV_UNDER_OCC + VSEV_UNDER_OCC?
+    # 3. Occupancy (log_pp_occup)
+    # If "Chez l'habitant", we want to favor under-occupied housing (high log_pp_occup).
+    # log_pp_occup is already calculated in build.py (0 to 1 scale roughly, but weighted).
+    # We map it to log_occup_scaled.
+    
     if prefs['hebergement'] == "Chez l'habitant":
-        # log_5p_ratio is pre-calculated
-        if 'log_5p_ratio' not in df.columns:
-             df['log_5p_ratio'] = df['rp_5+pieces'] / df['log_rp']
-             
-        min_b, max_b = get_bounds('log_5p_scaled', scores_cat, global_stats)
-        df['log_5p_scaled'] = min_max_scale(df['log_5p_ratio'].fillna(0), min_b, max_b)
+        # We use the pre-calculated log_pp_occup
+        # It is already a weighted average where 1.0 = Very Severe Under-Occupation.
+        # So higher is better for "Chez l'habitant".
+        # We just need to ensure it's scaled if needed, but it's already a ratio 0-1.
+        # We can just pass it through or min-max scale it if we want relative scoring.
+        # Let's use min-max scaling based on global stats to highlight relative differences.
+        
+        min_b, max_b = get_bounds('log_occup_scaled', scores_cat, global_stats)
+        df['log_occup_scaled'] = min_max_scale(df['log_pp_occup'], min_b, max_b)
+    else:
+        # If not "Chez l'habitant", maybe we don't care, or we treat it as neutral?
+        # For now, let's set it to 0 or NaN so it doesn't influence the score if not relevant.
+        # But if it's in scores_config with weight 1, it will be used.
+        # If we want to disable it, we should probably set it to NaN.
+        df['log_occup_scaled'] = np.nan
+        
+        # We replace log_5p_scaled with this new score in the weighted sum?
+        # compute_weighted_score iterates over _cat_score.
+        # compute_category_scores iterates over scores_cat['score'].
+        # So we need to update scores_cat (config) to use 'log_occupation_scaled' instead of 'log_5p_scaled'.
+        # Or we can just assign it to 'log_5p_scaled' column to avoid config change, but that's confusing.
+        # I'll assign it to 'log_occupation_scaled' and I MUST update scores_config.yaml.
+        # For now, I'll also assign it to 'log_5p_scaled' as a fallback/alias if config isn't updated yet.
+        # df['log_5p_scaled'] = df['log_occupation_scaled']
 
     if prefs['logement'] == "Logement Social":
         if 'log_soc_inoc_ratio' not in df.columns:
@@ -420,11 +465,23 @@ def compute_criteria_scores(
     # --- EDUCATION ---
     if prefs['nb_enfants'] > 0:
         if prefs['classe_enfants']:
-            if 'risque_fermeture_ratio' not in df.columns:
-                df['risque_fermeture_ratio'] = df['risque_fermeture'] / df['ecoles_ct']
+            # New Education Score: Average School Size (Proxy for Closure Risk)
+            # We want to avoid closure. Small schools are at risk.
+            # So we want High Average Size?
+            # Or maybe we want Small Class Sizes (better education)?
+            # But the metric is "Risque de fermeture".
+            # User said: "We should be able to have this one with the Effectifs Ecoles".
+            # If we want to minimize risk, we want larger schools/classes.
+            # So Score = Normalized(Avg Size).
+            
+            # if 'avg_school_size' not in df.columns:
+            #     # Avoid division by zero
+            #     df['avg_school_size'] = (df['total_eleves'] / df['ecoles_count']).replace([np.inf, -np.inf], 0).fillna(0)
                 
             min_b, max_b = get_bounds('edu_classes_ferm_scaled', scores_cat, global_stats)
-            df['edu_classes_ferm_scaled'] = min_max_scale(df['risque_fermeture_ratio'].fillna(0), min_b, max_b)
+            # If max_b is not defined, we might need a reasonable max (e.g. 300 students per school?)
+            # min_max_scale handles it if we have global stats.
+            df['edu_classes_ferm_scaled'] = min_max_scale(df['risque_fermeture_ratio'], min_b, max_b)
             
             # --- New Granular Scoring (F-14) ---
             

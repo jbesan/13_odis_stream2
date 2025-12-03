@@ -59,42 +59,54 @@ scores:
         Nombre de logements sociaux innocupés (vacants ou vide) sur le parc de
         logements sociaux
     weight: 1.0
-    min_bound: null
-    max_bound: null
-  - id: log_5p_scaled
+    min_bound: 0.0
+    max_bound: 1.0
+  - id: log_occup_scaled
     category: logement
-    source_metric: log_5p_ratio
+    source_metric: log_pp_occup
     include_in_binom: true
     display:
-      name: Taux Grandes Résidences Principales
-      strong_point_text:
-        Nombre élevé de résidences principales de grande taille susceptible
-        d'accueillir chez l'habitant
+      name: Taux d'Occupation (Sous-occupation)
+      strong_point_text: Logements sous-occupés (potentiel d'accueil)
       high_value_adjective: élevé
       show: true
       unit: "%"
       display_factor: 100
-      tooltip: ""
+      tooltip: "Part des logements sous-occupés (Source: INSEE)"
+    weight: 1.0
+    min_bound: null
+    max_bound: null
+
+  - id: log_occupation_scaled
+    category: logement
+    source_metric: log_occupation_rate
+    include_in_binom: true
+    display:
+      name: Taux d'Occupation Standard
+      strong_point_text: Logements avec un taux d'occupation standard ou sous-occupés
+      high_value_adjective: élevé
+      show: true
+      unit: "%"
+      display_factor: 100
+      tooltip: "Part des résidences principales avec un taux d'occupation standard ou sous-occupé"
     weight: 0.5
     min_bound: null
     max_bound: null
   - id: edu_classes_ferm_scaled
     category: education
-    source_metric: risque_fermeture_ratio
+    source_metric: avg_school_size
     include_in_binom: true
     display:
-      name: Taux Classes à Risque de Fermeture
-      strong_point_text: Des classes qui risquent de fermer faute d’élèves
+      name: Taille Moyenne des Écoles
+      strong_point_text: Écoles avec un effectif moyen élevé (moins de risque de fermeture)
       high_value_adjective: élevé
       show: true
-      unit: école(s)
+      unit: élèves/école
       display_factor: 1
-      tooltip:
-        Ratio du nombre de classes à riques de fermetures sur le nombre total
-        d'établissements
+      tooltip: "Nombre moyen d'élèves par école"
     weight: 0.5
-    min_bound: 0.0
-    max_bound: 3.0
+    min_bound: null
+    max_bound: null
   - id: inc_pol_scaled
     category: inclusion
     source_metric: pol_num
@@ -435,6 +447,21 @@ scores:
     weight: 1.0
     min_bound: 0.0
     max_bound: 1.0
+  - id: edu_classes_ferm_scaled
+    category: education
+    source_metric: risque_fermeture_ratio
+    include_in_binom: true
+    display:
+      name: Risque de fermeture de classe
+      strong_point_text: Faible risque de fermeture de classe
+      high_value_adjective: faible
+      show: true
+      unit: élèves/école
+      display_factor: 1
+      tooltip: Nombre moyen d'élèves par école (plus c'est élevé, moins le risque est grand)
+    weight: 1.0
+    min_bound: null
+    max_bound: null
   - id: sante_structures_scaled
     category: santé
     source_metric: sante_structures_scaled

@@ -33,6 +33,12 @@ sources:
     local_name: "services_inclusion.parquet"
     description: "Services de l'inclusion (Data Inclusion)"
 
+  political_nuance:
+    url: "https://www.data.gouv.fr/api/1/datasets/r/ea5d6bc3-37d0-4884-a437-155a90c3e05f"
+    format: "csv"
+    local_name: "political_nuance.csv"
+    description: "Nuance politique des communes (France)"
+
   associations:
     url: "https://www.data.gouv.fr/api/1/datasets/r/cc7b8f0c-45ea-4444-8b55-55d30bc34ac5"
     format: "parquet"
@@ -45,6 +51,13 @@ sources:
     local_name: "logement_vacant.csv"
     encoding: "iso-8859-1"
     description: "Logements vacants du parc privé (LOVAC)"
+
+  housing_occupation:
+    url: "https://www.data.gouv.fr/api/1/datasets/r/cae4e8a4-15e0-40ff-88fe-087b9e206514"
+    format: "zip"
+    archive_file: "DS_RP_LOGEMENT_COMPL_2022_data.csv"
+    local_name: "housing_occupation.zip"
+    description: "Logements : Taux d'occupation (INSEE)"
 
   logement_social:
     url: "https://www.statistiques.developpement-durable.gouv.fr/media/7970/download?inline"
@@ -124,11 +137,6 @@ sources:
 
 local_files:
   finess:
-    path: "csv/annuaire_sante_finess.parquet"
+    path: "pipeline/local/annuaire_sante_finess.parquet"
     format: "parquet"
     description: "Fichier FINESS local (nettoyé)"
-
-  rome_referentiel:
-    path: "csv/referentiel_codes_emploi_ROME.csv"
-    format: "csv"
-    description: "Référentiel des codes ROME"
