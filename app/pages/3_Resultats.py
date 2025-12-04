@@ -53,8 +53,8 @@ if st.session_state.get('show_pdf_modal'):
     pdf_modal()
 
 # Ensure app_data is initialized
-if 'app_data' not in st.session_state:
-    st.session_state['app_data'] = data_loader.init_datasets()
+# Ensure app data and session state are initialized
+data_loader.ensure_data_initialized()
 
 # DO NOT REMOVE: This makes sure the ui_ form state persists as expected
 for k, v in st.session_state.items():
@@ -91,6 +91,9 @@ def run_search():
         scores_cat=st.session_state.app_data['scores_cat'],
         incl_index=st.session_state.app_data['incl_index'],
         associations_data=st.session_state.app_data['associations_data'], # Pass association data
+        bmo_vertical=st.session_state.app_data['bmo_vertical'], # Pass bmo_vertical
+        formations_data=st.session_state.app_data['formations_data'], # Pass formations_data
+        codformations_index=st.session_state.app_data['codformations_index'], # Pass codformations_index
         global_stats=st.session_state.app_data['global_score_stats'], # Added
         view_level=st.session_state.get('view_level', 'Bassins de vie')
     )
@@ -115,6 +118,7 @@ def run_search():
     st.session_state['center'] = [final_center_y, final_center_x]
     st.session_state['zoom'] = maps.get_map_zoom(config.loc_distance_km)
     st.session_state['fg_dict_ref'] = {}
+    st.session_state['fgs_to_show'] = set()
     st.session_state['highlighted_result'] = [False, None]
 
 # Automatically run the search if not already processed and form is completed
@@ -163,7 +167,6 @@ with col_map:
         # Base layer with all scored communes
         if not st.session_state.processed_gdf.empty:
             st.session_state['fg_dict_ref']['Scores'], colormap = maps.build_scores_layer(st.session_state['processed_gdf'])
-            st.session_state['fgs_to_show'].add('Scores')
 
         fgs_to_show = {'Scores'}
         legend_items = []
@@ -222,7 +225,9 @@ with col_map:
         # Manually add all visible layers to the map object so it's complete for the PDF export
         for fg in fgs_to_add:
             fg.add_to(m)
-   
+        
+        flm.LayerControl().add_to(m)
+
         st.session_state['map_object'] = m
 
         st_folium(

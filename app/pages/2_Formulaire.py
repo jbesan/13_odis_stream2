@@ -2,6 +2,10 @@ import streamlit as st
 import config as cfg
 import ui
 import logging
+import data_loader
+
+# Ensure app data and session state are initialized
+data_loader.ensure_data_initialized()
 
 # DO NOT REMOVE: This makes sure the ui_ form state persists as expected
 for k, v in st.session_state.items():

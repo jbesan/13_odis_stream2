@@ -28,7 +28,8 @@ POIS_FILE = 'pois.parquet'
 REFERENTIELS_FILE = 'referentiels.parquet'
 BV_FILE = 'odis_bassins_de_vie.parquet'
 REL_METIERS_FILE = 'odis_rel_metiers.parquet'
-REL_ASSOCIATIONS_FILE = 'odis_rel_associations.parquet'
+REL_ASSOCIATIONS_FILE = 'associations_vertical.parquet'
+REL_FORMATIONS_FILE = 'odis_rel_formations.parquet'
 SCORES_CAT_FILE = 'scores_config.yaml'
 
 # Legacy files removed:
@@ -37,8 +38,8 @@ SCORES_CAT_FILE = 'scores_config.yaml'
 # SNCF_FILE, CAF_FILE, LOVAC_FILE, INCLUSION_REF_FILE
 
 # --- Data Columns ---
-BV_CODE_COL = 'BV2022'
-BV_NAME_COL = 'LIBBV2022'
+BV_CODE_COL = 'bassin_de_vie'
+BV_NAME_COL = 'libelle_bassin_de_vie'
 
 # --- UI Options ---
 VIEW_LEVEL_OPTIONS = ['Bassins de vie', 'Communes']

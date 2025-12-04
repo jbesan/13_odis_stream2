@@ -184,6 +184,9 @@ def run_test_scenario(scenario_id, view_level, app_data):
         config=scoring_config,
         incl_index=app_data['incl_index'],
         associations_data=app_data['associations_data'], # Pass association data
+        bmo_vertical=app_data['bmo_vertical'],
+        formations_data=app_data['formations_data'],
+        codformations_index=app_data['codformations_index'],
         global_stats=app_data['global_score_stats'], # Added
     )
     

@@ -205,16 +205,10 @@ def compute_inclusion_score(
     df = df.copy()
     
     # --- 1. Socle Administratif ---
-    if prefs.get('socle_admin_selection'):
-        needed_services = set(prefs['socle_admin_selection'])
-        df_merged = df.join(incl_index, how='left')
-        df['socle_match_count'] = [
-            len(needed_services.intersection(s)) if isinstance(s, set) else 0
-            for s in df_merged['key']
-        ]
-        df['inc_socle_admin_score'] = df['socle_match_count'] / len(needed_services)
-    else:
-        df['inc_socle_admin_score'] = 0.0
+    # Pre-calculated in prescoring.py
+    if 'inc_socle_admin_score' not in df.columns:
+         # Fallback if prescoring didn't run or failed (should be 0.0 from prescoring)
+         df['inc_socle_admin_score'] = 0.0
 
     # --- 2. Lien Social ---
     # Calculate density of associations in CORE categories
@@ -247,9 +241,10 @@ def compute_inclusion_score(
          df['lien_social_density'] = (df['lien_social_count'] * 1000) / df['population']
 
     # Normalize
+    # We use the pre-calculated score from prescoring
     if 'inc_lien_social_score' not in df.columns:
-        raise ValueError("Missing pre-calculated score: inc_lien_social_score")
-
+         raise ValueError("Missing pre-calculated score: inc_lien_social_score")
+    
     # --- 3. Affinité ---
     selected_interests = prefs.get('affinite_selection', [])
     if selected_interests:
@@ -329,6 +324,9 @@ def compute_criteria_scores(
     incl_index: pd.DataFrame,
     df_all_communes: gpd.GeoDataFrame,
     associations_data: pd.DataFrame, # Added argument
+    bmo_vertical: pd.DataFrame, # Added argument
+    formations_data: pd.DataFrame, # Added argument
+    codformations_index: pd.DataFrame, # Added argument
     scores_cat: pd.DataFrame, # Added
     global_stats: Dict[str, Dict[str, float]] # Added
 ) -> gpd.GeoDataFrame:
@@ -355,16 +353,35 @@ def compute_criteria_scores(
     if 'met_scaled' not in df.columns:
         raise ValueError("Missing pre-calculated score: met_scaled")
 
+    # Pre-process BMO data for the current set of communes
+    # We need to know which FAP codes are available for each commune in df
+    # bmo_vertical has columns: codgeo, fap_code (and maybe others)
+    # Filter bmo_vertical to only include communes in df
+    relevant_bmo = bmo_vertical[bmo_vertical['codgeo'].isin(df.index)]
+    
+    # Create a mapping: codgeo -> set of available FAP codes
+    # This is much faster than applying per row
+    commune_fap_map = relevant_bmo.groupby('codgeo')['fap_code'].apply(set).to_dict()
+
     # Job categories that match user preferences
     for i in range(prefs['nb_adultes']):
         adult_key = f'adult{i+1}'
         if prefs['codes_metiers'][i]:
             prefs_metiers = set(prefs['codes_metiers'][i])
-            df[f'met_match_codes_{adult_key}'] = [
-                list(set(x).intersection(prefs_metiers)) if x is not None else []
-                for x in df.metiers_offres_top5
-            ]
-            df[f'met_match_{adult_key}'] = df[f'met_match_codes_{adult_key}'].str.len()
+            
+            # Calculate intersection size
+            # We use map to get the set of available metiers for each commune
+            # Then intersect with prefs
+            
+            def get_match_count(codgeo):
+                available = commune_fap_map.get(codgeo, set())
+                return len(available.intersection(prefs_metiers))
+            
+            df[f'met_match_{adult_key}'] = df.index.map(get_match_count)
+            
+            # Store matched codes for display/debug if needed (optional, might be heavy)
+            # df[f'met_match_codes_{adult_key}'] = df.index.map(lambda x: list(commune_fap_map.get(x, set()).intersection(prefs_metiers)))
+
             
             # Dynamic max bound based on number of selected items
             min_b, max_b = get_bounds(f'met_match_{adult_key}_scaled', scores_cat, global_stats)
@@ -374,14 +391,23 @@ def compute_criteria_scores(
             df[f'met_match_{adult_key}_scaled'] = min_max_scale(df[f'met_match_{adult_key}'].fillna(0), min_b, max_b)
 
     # Training centers that match
+    # We need to know which Formation codes are available for each commune in df
+    # formations_data has columns: codgeo, formation_code, count
+    relevant_formations = formations_data[formations_data['codgeo'].isin(df.index)]
+    
+    # Create a mapping: codgeo -> set of available Formation codes
+    commune_formation_map = relevant_formations.groupby('codgeo')['formation_code'].apply(set).to_dict()
+
     for i in range(prefs['nb_adultes']):
         adult_key = f'adult{i+1}'
         if prefs['codes_formations'][i]:
             prefs_formations = set(prefs['codes_formations'][i])
-            df[f'form_match_codes_{adult_key}'] = [
-                list(set(x).intersection(prefs_formations)) if x is not None else []
-                for x in df.codes_formations
-            ]
+            
+            def get_formation_matches(codgeo):
+                available = commune_formation_map.get(codgeo, set())
+                return list(available.intersection(prefs_formations))
+
+            df[f'form_match_codes_{adult_key}'] = df.index.map(get_formation_matches)
             df[f'form_match_{adult_key}'] = df[f'form_match_codes_{adult_key}'].str.len()
             
             # Dynamic max bound based on number of selected items
@@ -390,6 +416,29 @@ def compute_criteria_scores(
                  max_b = float(len(prefs_formations))
 
             df[f'form_match_{adult_key}_scaled'] = min_max_scale(df[f'form_match_{adult_key}'].fillna(0), min_b, max_b)
+            
+    # Aggregate formation names for display (union of all adults)
+    # We want 'noms_formations' column containing list of labels
+    if codformations_index is not None and not codformations_index.empty:
+        def get_all_formation_labels(row):
+            codes = set()
+            for i in range(prefs['nb_adultes']):
+                adult_key = f'adult{i+1}'
+                col = f'form_match_codes_{adult_key}'
+                if col in row and isinstance(row[col], list):
+                    codes.update(row[col])
+            
+            labels = []
+            for c in codes:
+                if c in codformations_index.index:
+                    labels.append(codformations_index.loc[c, 'label'])
+                else:
+                    labels.append(c)
+            return labels
+
+        df['noms_formations'] = df.apply(get_all_formation_labels, axis=1)
+    else:
+        df['noms_formations'] = [[] for _ in range(len(df))]
 
     # --- HEBERGEMENT / LOGEMENT ---
     #    min_b, max_b = get_bounds('log_5p_scaled', scores_cat, global_stats)
@@ -445,9 +494,6 @@ def compute_criteria_scores(
         # df['log_5p_scaled'] = df['log_occupation_scaled']
 
     if prefs['logement'] == "Logement Social":
-        if 'log_soc_inoc_ratio' not in df.columns:
-            df['log_soc_inoc_ratio'] = df['log_soc_inoccupes'] / df['log_soc_total']
-            
         if 'log_soc_inoc_scaled' not in df.columns:
             raise ValueError("Missing pre-calculated score: log_soc_inoc_scaled")
     elif prefs['logement'] == "Location":
@@ -480,12 +526,10 @@ def compute_criteria_scores(
             
             # 1. Petite Enfance (Crèche / Assistante Maternelle)
             if 'Crêche / Assistante Maternelle' in prefs['classe_enfants']:
-                # Use CAF coverage rate if available, normalized
-                if 'taux_couverture' in df.columns:
+                # Use pre-calculated scaled score
+                if 'edu_petite_enfance_scaled' in df.columns:
                     # F-14 Refinement: Do NOT fillna(0). Keep NaNs to exclude them later.
-                    
-                    if 'edu_petite_enfance_scaled' not in df.columns:
-                        raise ValueError("Missing pre-calculated score: edu_petite_enfance_scaled")
+                    pass
                 else:
                     df['edu_petite_enfance_scaled'] = np.nan
 
@@ -813,6 +857,9 @@ def compute_odis_score(
     config: 'ScoringConfig',
     incl_index: pd.DataFrame,
     associations_data: pd.DataFrame, # Added argument
+    bmo_vertical: pd.DataFrame, # Added argument
+    formations_data: pd.DataFrame, # Added argument
+    codformations_index: pd.DataFrame, # Added argument
     global_stats: Dict[str, Dict[str, float]], # Added
     use_binomes: bool = True # New argument
 ) -> pd.DataFrame:
@@ -835,6 +882,9 @@ def compute_odis_score(
         incl_index=incl_index,
         df_all_communes=df_all_communes,
         associations_data=associations_data, # Passed down
+        bmo_vertical=bmo_vertical, # Passed down
+        formations_data=formations_data, # Passed down
+        codformations_index=codformations_index, # Passed down
         scores_cat=scores_cat, # Passed down
         global_stats=global_stats # Passed down
     )
@@ -879,6 +929,9 @@ def run_scoring_pipeline(
     scores_cat: pd.DataFrame,
     incl_index: pd.DataFrame,
     associations_data: pd.DataFrame, # Added argument
+    bmo_vertical: pd.DataFrame, # Added argument
+    formations_data: pd.DataFrame, # Added argument
+    codformations_index: pd.DataFrame, # Added argument
     global_stats: Dict[str, Dict[str, float]], # Added
     view_level: str
 ) -> Tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
@@ -935,6 +988,9 @@ def run_scoring_pipeline(
         config=config,
         incl_index=incl_index,
         associations_data=associations_data, # Passed down
+        bmo_vertical=bmo_vertical, # Passed down
+        formations_data=formations_data, # Passed down
+        codformations_index=codformations_index, # Passed down
         global_stats=global_stats, # Passed down
         use_binomes=use_binomes
     )
@@ -957,7 +1013,8 @@ def run_scoring_pipeline(
         # Merge with geometry
         gdf_bv_geo_filtered = df_bv_geo[df_bv_geo.index.isin(df_bv_scores[cfg.BV_CODE_COL])]
         processed_gdf = gdf_bv_geo_filtered.merge(df_bv_scores, left_index=True, right_on=cfg.BV_CODE_COL)
-        processed_gdf = processed_gdf.rename_geometry('polygon')
+        if processed_gdf.geometry.name != 'polygon':
+            processed_gdf = processed_gdf.rename_geometry('polygon')
         processed_gdf = processed_gdf.drop_duplicates(subset=[cfg.BV_CODE_COL])
     else:
         processed_gdf = odis_scored.copy()

@@ -26,9 +26,9 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
 
         # --- Calculated Columns ---
         
-        # log_soc_tx_vacant
+        # log_soc_inoc_ratio
         if 'log_soc_total' in communes_gdf.columns and 'log_soc_inoccupes' in communes_gdf.columns:
-            communes_gdf['log_soc_tx_vacant'] = np.where(
+            communes_gdf['log_soc_inoc_ratio'] = np.where(
                 communes_gdf['log_soc_total'] > 0,
                 communes_gdf['log_soc_inoccupes'] / communes_gdf['log_soc_total'],
                 0.0
@@ -158,9 +158,9 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             communes_gdf['log_occup_scaled'] = scale_series(communes_gdf['log_pp_occup'], min_b, max_b)
 
         # log_soc_inoc_scaled
-        if 'log_soc_tx_vacant' in communes_gdf.columns:
-            min_b, max_b = get_min_max(communes_gdf['log_soc_tx_vacant'])
-            communes_gdf['log_soc_inoc_scaled'] = scale_series(communes_gdf['log_soc_tx_vacant'], min_b, max_b)
+        if 'log_soc_inoc_ratio' in communes_gdf.columns:
+            min_b, max_b = get_min_max(communes_gdf['log_soc_inoc_ratio'])
+            communes_gdf['log_soc_inoc_scaled'] = scale_series(communes_gdf['log_soc_inoc_ratio'], min_b, max_b)
 
         # edu_classes_ferm_scaled
         if 'risque_fermeture_ratio' in communes_gdf.columns:
@@ -210,8 +210,68 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             'MOD_OVER_OCC', 'MOD_UNDER_OCC', 'SEV_OVER_OCC', 'SEV_UNDER_OCC', 'STD_OCC', 'VSEV_UNDER_OCC', # *_OCC
             'total_eleves', 'ecoles_count', 
             'log_total', 'log_soc_total', 'log_soc_inoccupes',
-            'pol_num', 'log_priv_vacant_plus_2ans'
+            'pol_num', 'log_priv_vacant_plus_2ans',
+            # Unused columns identified in cleanup
+            'edu_maternelle_ct', 'edu_elementaire_ct', 'edu_college_ct', 'edu_lycee_ct',
+            'svc_incl_count',
+            'count_hopital', 'count_psy', 'count_maternite',
+            'log_soc_inoc_ratio', 'log_pp_occup',
+            'metiers_offres_ratio', 'pop_chomage_ratio', 'met_ratio',
+            'log_vac_struct_ratio', 'lien_social_density', 'risque_fermeture_ratio',
+            'edu_pe_tx_couverture' # Dropped after use in scaling
         ]
+        
+        # --- Socle Administratif (Pre-calculated) ---
+        # Load POIs to get inclusion services
+        pois_path = OUTPUT_DIR / "pois.parquet"
+        if pois_path.exists():
+            try:
+                # Import config from app to get DEFAULT_SOCLE_ADMIN
+                import sys
+                import os
+                sys.path.append(os.getcwd())
+                from app import config as app_cfg
+                
+                pois_df = pd.read_parquet(pois_path)
+                incl_pois = pois_df[pois_df['category'] == 'incl_services'].copy()
+                
+                if not incl_pois.empty:
+                    # Parse 'type' column (stringified list)
+                    import ast
+                    def parse_types(x):
+                        try:
+                            return ast.literal_eval(x)
+                        except:
+                            return []
+                    
+                    # Ensure 'type' is string (not categorical) before apply
+                    incl_pois['services'] = incl_pois['type'].astype(str).apply(parse_types)
+                    incl_pois = incl_pois.explode('services')
+                    
+                    # Drop NaNs and ensure strings to avoid unhashable type error
+                    incl_pois = incl_pois.dropna(subset=['services'])
+                    incl_pois = incl_pois[incl_pois['services'].apply(lambda x: isinstance(x, str))]
+                    
+                    # Group by codgeo
+                    commune_services = incl_pois.groupby('codgeo')['services'].apply(set).to_dict()
+                    
+                    needed_services = set(app_cfg.DEFAULT_SOCLE_ADMIN)
+                    
+                    def calculate_socle_score(codgeo):
+                        available = commune_services.get(codgeo, set())
+                        match_count = len(needed_services.intersection(available))
+                        return match_count / len(needed_services) if needed_services else 0.0
+                    
+                    communes_gdf['inc_socle_admin_score'] = communes_gdf.index.map(calculate_socle_score).fillna(0.0)
+                    logging.info("Calculated inc_socle_admin_score")
+                    
+            except Exception as e:
+                logging.error(f"Failed to calculate socle admin score: {e}")
+                communes_gdf['inc_socle_admin_score'] = 0.0
+        else:
+             logging.warning("pois.parquet not found, skipping socle admin score")
+             communes_gdf['inc_socle_admin_score'] = 0.0
+
         communes_gdf.drop(columns=[c for c in cols_to_drop if c in communes_gdf.columns], inplace=True)
         
         # Save

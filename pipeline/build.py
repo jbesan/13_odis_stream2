@@ -77,17 +77,9 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         # Merge School Effectifs
         merge_clean("school_effectifs", ['total_eleves', 'ecoles_count'])
         
-        # Merge Associations (Vertical, so we only merge count if needed, or skip here)
-        # Actually, we might want a count of associations per commune in the main table?
-        # The user said "vertical lookup tables dedicated... rather than adding columns".
-        # But a total count is useful. Let's keep 'lien_social_count' if we can derive it from vertical or if we still have it.
-        # In ingest.py, I changed clean_associations to output vertical. I didn't keep a count file.
-        # So I should probably load the vertical file and aggregate it here to get a count, OR just skip it in the main table.
-        # Let's skip it in the main table for now as requested, or calculate it on the fly.
-        # I'll calculate it on the fly from vertical if possible, or just leave it out if the user wants purely vertical.
-        # "je pense qu'il faudrait des tables de lookup dédiées 'verticales' plutot que d'ajouter des colonnes avec supplémentaires"
-        # This likely refers to the LIST columns. A simple count is probably fine.
-        # Let's try to load vertical and count.
+        # Merge Associations (Vertical)
+        # We skip merging count into main table as we use vertical file directly in app now.
+        # BUT prescoring needs lien_social_count to calculate inc_lien_social_score.
         assoc_path = CLEAN_DIR / "associations_vertical.parquet"
         if assoc_path.exists():
             assoc_df = pd.read_parquet(assoc_path)
@@ -96,13 +88,13 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
             communes_gdf = communes_gdf.merge(assoc_count, on='codgeo', how='left')
             
         # Merge Top Metiers (from bmo_vertical)
-        # We need a list of top metiers per commune for scoring (metiers_offres_top5)
-        bmo_vert_path = CLEAN_DIR / "bmo_vertical.parquet"
-        if bmo_vert_path.exists():
-            bmo_vert = pd.read_parquet(bmo_vert_path)
-            # Group by codgeo and aggregate fap_code into list
-            top_metiers = bmo_vert.groupby('codgeo')['fap_code'].apply(list).rename('metiers_offres_top5').reset_index()
-            communes_gdf = communes_gdf.merge(top_metiers, on='codgeo', how='left')
+        # We skip merging top metiers list as we use vertical file directly in app now.
+        # bmo_vert_path = CLEAN_DIR / "bmo_vertical.parquet"
+        # if bmo_vert_path.exists():
+        #     bmo_vert = pd.read_parquet(bmo_vert_path)
+        #     # Group by codgeo and aggregate fap_code into list
+        #     top_metiers = bmo_vert.groupby('codgeo')['fap_code'].apply(list).rename('metiers_offres_top5').reset_index()
+        #     communes_gdf = communes_gdf.merge(top_metiers, on='codgeo', how='left')
             
         # Merge Voisins
         merge_clean("voisins", ['codgeo_voisins'])
@@ -216,10 +208,14 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         
         if bv_path.exists():
             bv_df = load_dataset(bv_path, bv_cfg)
-            bv_df = bv_df.rename(columns={'Code géographique': 'CODGEO', 'Bassin de vie 2022': 'bassin_de_vie'})
+            bv_df = bv_df.rename(columns={
+                'Code géographique': 'CODGEO', 
+                'Bassin de vie 2022': 'bassin_de_vie',
+                'Libellé géographique du bassin de vie 2022': 'libelle_bassin_de_vie'
+            })
             if 'CODGEO' in bv_df.columns and 'bassin_de_vie' in bv_df.columns:
                 bv_df['CODGEO'] = bv_df['CODGEO'].astype(str).str.zfill(5)
-                bv_mapping = bv_df[['CODGEO', 'bassin_de_vie']].set_index('CODGEO')
+                bv_mapping = bv_df[['CODGEO', 'bassin_de_vie', 'libelle_bassin_de_vie']].set_index('CODGEO')
                 communes_gdf = communes_gdf.join(bv_mapping, on='codgeo', how='left')
                 
                 # Calculate pop_active_be for Ratio
@@ -360,6 +356,23 @@ def build_vertical_tables(config: Dict[str, Any], logger: PipelineLogger):
             # Copy raw vertical file to output as well if requested
             shutil.copy2(assoc_path, OUTPUT_DIR / "associations_vertical.parquet")
             
+        # 3. Formations
+        form_path = CLEAN_DIR / "formations_annuaire.parquet"
+        if form_path.exists():
+            df = pd.read_parquet(form_path)
+            # Aggregate count by codgeo and formation_code
+            # The file has 'codgeo', 'formation_code' (one row per entity)
+            # We want count of entities per formation type per commune?
+            # Or just list of available formations?
+            # User said: "aggregations count of avaliable formation codes by codgeo"
+            # So we group by codgeo, formation_code and count.
+            
+            df_agg = df.groupby(['codgeo', 'formation_code']).size().rename('count').reset_index()
+            
+            out = OUTPUT_DIR / "odis_rel_formations.parquet"
+            df_agg.to_parquet(out)
+            logger.log_step("build_vertical_tables", "FORMATIONS", {"path": str(out)})
+            
     except Exception as e:
         logger.log_step("build_vertical_tables", "ERROR", {"error": str(e)})
 
@@ -409,10 +422,21 @@ def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
             edu_df['ecole_elementaire'] = edu_df['nature_uai_libe'].str.contains('élémentaire', case=False, na=False) | \
                                            edu_df['nature_uai_libe'].str.contains('primaire', case=False, na=False)
 
+            # Standardize Types
+            def map_edu_type(row):
+                t = row['nature_uai_libe']
+                if t == 'ECOLE MATERNELLE': return 'Maternelle'
+                if t == 'ECOLE DE NIVEAU ELEMENTAIRE': return 'Elémentaire'
+                if t == 'COLLEGE': return 'Collège'
+                if t in ['LYCEE PROFESSIONNEL', 'LYCEE ENSEIGNT GENERAL ET TECHNOLOGIQUE', 'LYCEE D ENSEIGNEMENT GENERAL', 'LYCEE D ENSEIGNEMENT TECHNOLOGIQUE']: return 'Lycée'
+                return t
+
+            edu_df['standard_type'] = edu_df.apply(map_edu_type, axis=1)
+
             edu_pois = pd.DataFrame({
                 'id': edu_df['numero_uai'],
                 'name': edu_df['appellation_officielle'],
-                'type': edu_df['nature_uai_libe'],
+                'type': edu_df['standard_type'],
                 'category': 'education',
                 'lat': edu_df['lat'],
                 'lon': edu_df['lon'],
@@ -455,6 +479,10 @@ def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
                  gdf_finess['is_maternite'] = False
 
             # Define categories
+            # Clean strings first
+            if 'LibelleCategorieAgregat' in gdf_finess.columns:
+                gdf_finess['LibelleCategorieAgregat'] = gdf_finess['LibelleCategorieAgregat'].astype(str).str.strip()
+            
             gdf_finess['is_hopital'] = gdf_finess['LibelleCategorieAgregat'].isin([
                 'Centres Hospitaliers', 
                 'Centres Hospitaliers Régionaux', 
@@ -476,10 +504,19 @@ def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
             sante_mask = gdf_finess['is_hopital'] | gdf_finess['is_psy']
             sante_df = gdf_finess[sante_mask].copy()
 
+            # Standardize Types
+            def map_sante_type(row):
+                if row['is_maternite']: return 'Maternité'
+                if row['is_hopital']: return 'Hopital'
+                if row['is_psy']: return 'Soutien Psychologique & Addictologie'
+                return row['LibelleCategorieAgregat']
+
+            sante_df['standard_type'] = sante_df.apply(map_sante_type, axis=1)
+
             finess_pois = pd.DataFrame({
                 'id': sante_df['nofinesset'],
                 'name': sante_df['RaisonSociale'],
-                'type': sante_df['LibelleCategorieAgregat'],
+                'type': sante_df['standard_type'],
                 'category': 'sante',
                 'lat': sante_df.geometry.y,
                 'lon': sante_df.geometry.x,
@@ -564,6 +601,61 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
                 })
                 refs_list.append(fap_ref)
             
+        if refs_list:
+            all_refs = pd.concat(refs_list, ignore_index=True)
+            output_path = OUTPUT_DIR / "referentiels.parquet"
+            all_refs.to_parquet(output_path)
+            logger.log_step("generate_referentiels", "CREATED", {"path": str(output_path)})
+
+    except Exception as e:
+        logger.log_step("generate_referentiels", "ERROR", {"error": str(e)})
+
+    try:
+        # Formations
+        form_ref_path = CLEAN_DIR / "formations_referentiel.parquet"
+        if form_ref_path.exists():
+            form_df = pd.read_parquet(form_ref_path)
+            # Expected: code, label
+            if 'code' in form_df.columns and 'label' in form_df.columns:
+                form_ref = pd.DataFrame({
+                    'key': 'formation_codes',
+                    'code': form_df['code'],
+                    'label': form_df['label'],
+                    'metadata': None
+                })
+                refs_list.append(form_ref)
+                
+        if refs_list:
+            all_refs = pd.concat(refs_list, ignore_index=True)
+            output_path = OUTPUT_DIR / "referentiels.parquet"
+            all_refs.to_parquet(output_path)
+            logger.log_step("generate_referentiels", "CREATED", {"path": str(output_path)})
+
+    except Exception as e:
+        logger.log_step("generate_referentiels", "ERROR", {"error": str(e)})
+
+    try:
+        # Inclusion Services Referentiel (Local CSV)
+        incl_cfg = config['sources'].get('referentiel_services_inclusion')
+        if incl_cfg:
+            incl_path = CACHE_DIR / incl_cfg['local_name']
+            if incl_path.exists():
+                # Expected cols: Nom, Label
+                incl_df = load_dataset(incl_path, incl_cfg)
+                incl_df.columns = [c.strip() for c in incl_df.columns]
+                
+                if 'Nom' in incl_df.columns and 'Label' in incl_df.columns:
+                    incl_ref = pd.DataFrame({
+                        'key': 'inclusion_services',
+                        'code': incl_df['Nom'],
+                        'label': incl_df['Label'],
+                        'metadata': None
+                    })
+                    refs_list.append(incl_ref)
+                    logger.log_step("generate_referentiels", "INCLUSION", {"count": len(incl_ref)})
+                else:
+                     logging.warning(f"Inclusion Referentiel: Missing columns. Found: {incl_df.columns}")
+
         if refs_list:
             all_refs = pd.concat(refs_list, ignore_index=True)
             output_path = OUTPUT_DIR / "referentiels.parquet"

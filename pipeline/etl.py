@@ -14,8 +14,8 @@ FILES_TO_COPY = [
     'bmo_vertical.parquet',
     'associations_vertical.parquet',
     'referentiels.parquet',
-    'odis_rel_associations.parquet',
-    'odis_rel_metiers.parquet'
+    'odis_rel_metiers.parquet',
+    'odis_rel_formations.parquet'
 ]
 
 # Configure logging

@@ -44,7 +44,8 @@ def fetch_source(name: str, source_cfg: Dict[str, Any], logger: PipelineLogger) 
                 else:
                      raise FileNotFoundError(f"Source file not found: {src_path}")
             else:
-                response = requests.get(url, stream=True)
+                verify_ssl = source_cfg.get('verify_ssl', True)
+                response = requests.get(url, stream=True, verify=verify_ssl)
                 response.raise_for_status()
                 with open(local_path, 'wb') as f:
                     for chunk in response.iter_content(chunk_size=8192):
@@ -706,9 +707,156 @@ def main():
     clean_political(config, logger)
     clean_housing_occupation(config, logger)
     clean_school_effectifs(config, logger)
+    clean_school_effectifs(config, logger)
+    clean_codes_postaux(config, logger)
     clean_formations(config, logger)
     
     logger.log_step("ingest_all", "COMPLETED")
+
+def clean_codes_postaux(config: Dict[str, Any], logger: PipelineLogger):
+    """Cleans Codes Postaux and saves to parquet."""
+    logger.log_step("clean_codes_postaux", "STARTED")
+    try:
+        source = config['sources']['codes_postaux']
+        path = CACHE_DIR / source['local_name']
+        if not path.exists(): return
+
+        df = load_dataset(path, source)
+        
+        # Normalize columns
+        df.columns = [c.strip() for c in df.columns]
+        
+        # Identify columns
+        cp_col = next((c for c in df.columns if 'Code_postal' in c or 'code_postal' in c), None)
+        insee_col = next((c for c in df.columns if 'Code_commune_INSEE' in c or 'code_commune_insee' in c), None)
+        
+        if cp_col and insee_col:
+            df = df[[cp_col, insee_col]].copy()
+            df['code_postal'] = df[cp_col].astype(str).str.zfill(5)
+            df['codgeo'] = df[insee_col].astype(str).str.zfill(5)
+            
+            df_out = df[['code_postal', 'codgeo']].drop_duplicates()
+            
+            output_path = CLEAN_DIR / "codes_postaux.parquet"
+            df_out.to_parquet(output_path)
+            logger.log_step("clean_codes_postaux", "COMPLETED", {"path": str(output_path)})
+        else:
+             logging.warning(f"Codes Postaux: Columns not found. Found: {df.columns}")
+
+    except Exception as e:
+        logger.log_step("clean_codes_postaux", "ERROR", {"error": str(e)})
+
+def clean_formations(config: Dict[str, Any], logger: PipelineLogger):
+    """Cleans Formations and saves to parquet."""
+    logger.log_step("clean_formations", "STARTED")
+    try:
+        # 1. Load Codes Postaux Mapping
+        cp_path = CLEAN_DIR / "codes_postaux.parquet"
+        if not cp_path.exists():
+            logging.warning("Codes Postaux clean file not found. Skipping formations.")
+            return
+        
+        cp_df = pd.read_parquet(cp_path)
+        # cp_df has 'code_postal', 'codgeo'
+        
+        # 2. Formations Referentiel (XLSX)
+        ref_cfg = config['sources']['formations_referentiel']
+        ref_path = CACHE_DIR / ref_cfg['local_name']
+        
+        if ref_path.exists():
+            # Read with header=None, skip first 2 rows (based on inspection)
+            # Row 2 (index 2) has data "100.0 Formations générales"
+            # So we can read from row 2 onwards.
+            # Actually, read_excel with header=None gives index 0, 1...
+            # We saw row 0, 1 are NaN. Row 2 has data.
+            df_ref = pd.read_excel(ref_path, header=None, skiprows=2)
+            # Columns 0: Code, 1: Label
+            if len(df_ref.columns) >= 2:
+                df_ref = df_ref.iloc[:, :2]
+                df_ref.columns = ['code', 'label']
+                df_ref['code'] = df_ref['code'].astype(str).str.replace('.0', '', regex=False)
+                
+                output_ref = CLEAN_DIR / "formations_referentiel.parquet"
+                df_ref.to_parquet(output_ref)
+                logger.log_step("clean_formations", "REFERENTIEL", {"path": str(output_ref)})
+            else:
+                 logging.warning("Formations Referentiel: Unexpected columns.")
+        
+        # 3. Formations Annuaire (CSV)
+        annuaire_cfg = config['sources']['formations_annuaire']
+        annuaire_path = CACHE_DIR / annuaire_cfg['local_name']
+        
+        if annuaire_path.exists():
+            # Load CSV (semicolon likely)
+            try:
+                df_annuaire = pd.read_csv(annuaire_path, sep=';', on_bad_lines='skip')
+            except:
+                df_annuaire = pd.read_csv(annuaire_path, sep=',', on_bad_lines='skip')
+            
+            # Normalize columns
+            df_annuaire.columns = [c.strip() for c in df_annuaire.columns]
+            
+            # Identify columns
+            # We need 'code_postal' (to map to codgeo) and 'domaines_formation' (codes)
+            # Let's look for them.
+            cp_col = next((c for c in df_annuaire.columns if 'code_postal' in c.lower() or 'codepostal' in c.lower()), None)
+            
+            # For formation codes, we need to know the column name.
+            # Based on typical data.gouv files, it might be 'domaines_formation' or 'code_domaine'.
+            # If we don't know, we can't proceed.
+            # But I'll assume 'domaines_formation' or similar based on user description "The formations annuaire which lists all the entities".
+            # And "The formations referentiel which maps codes to labels".
+            # So Annuaire must have the codes.
+            # Let's try to find a column that looks like it contains codes (e.g. '100', '110').
+            # Or 'liste_formations'.
+            
+            # I will log columns and try to guess.
+            logging.info(f"Formations Annuaire Columns: {df_annuaire.columns.tolist()}")
+            
+            # Heuristic: find column with 'formation' or 'domaine'
+            formation_col = next((c for c in df_annuaire.columns if 'domaine' in c.lower() or 'formation' in c.lower()), None)
+            
+            if cp_col and formation_col:
+                df_annuaire['code_postal'] = df_annuaire[cp_col].astype(str).str.zfill(5)
+            # Identify Postal Code Column
+            # Raw: adressePhysiqueOrganismeFormation.codePostal
+            cp_col = next((c for c in df_annuaire.columns if 'adressePhysiqueOrganismeFormation.codePostal' in c), None)
+            if not cp_col:
+                cp_col = next((c for c in df_annuaire.columns if 'code_postal' in c.lower() or 'codepostal' in c.lower()), None)
+            
+            # Identify Formation Code Columns
+            # Raw: informationsDeclarees.specialitesDeFormation.codeSpecialite1, 2, 3
+            formation_cols = [c for c in df_annuaire.columns if 'codeSpecialite' in c]
+            
+            if cp_col and formation_cols:
+                # Melt to get one row per formation code
+                df_melted = df_annuaire.melt(
+                    id_vars=[cp_col], 
+                    value_vars=formation_cols, 
+                    value_name='formation_code'
+                ).dropna(subset=['formation_code'])
+                
+                # Fix Postal Codes (handle float strings like "75011.0")
+                df_melted['code_postal'] = pd.to_numeric(df_melted[cp_col], errors='coerce').fillna(0).astype(int).astype(str).str.zfill(5)
+                
+                # Merge with codes postaux to get codgeo
+                merged = df_melted.merge(cp_df, on='code_postal', how='inner')
+                
+                merged['formation_code'] = merged['formation_code'].astype(str).str.strip()
+                
+                # Filter out invalid codes (optional, maybe length check?)
+                merged = merged[merged['formation_code'] != 'nan']
+                
+                df_out = merged[['codgeo', 'formation_code']].drop_duplicates()
+                
+                output_annuaire = CLEAN_DIR / "formations_annuaire.parquet"
+                df_out.to_parquet(output_annuaire)
+                logger.log_step("clean_formations", "ANNUAIRE", {"path": str(output_annuaire), "rows": len(df_out)})
+            else:
+                logging.warning(f"Formations Annuaire: Columns not found. CP: {cp_col}, Formations: {formation_cols}")
+
+    except Exception as e:
+        logger.log_step("clean_formations", "ERROR", {"error": str(e)})
 
 if __name__ == "__main__":
     main()

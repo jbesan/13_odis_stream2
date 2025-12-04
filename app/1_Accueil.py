@@ -17,12 +17,8 @@ st.set_page_config(layout="wide", page_title='OD&IS: Recherche Inversée')
 
 
 # --- Main App Execution ---
-defaults = copy.deepcopy(cfg.DEMO_DATA_DEFAULT)
-data_loader.apply_demo_data_if_present(defaults)
-data_loader.session_states_init(defaults)
-
-# Load all datasets and cache them
-st.session_state.app_data = data_loader.init_datasets()
+# --- Main App Execution ---
+data_loader.ensure_data_initialized()
 
 # Display demo mode exit button if in demo mode
 if len(st.query_params) > 0 and 'demo' in st.query_params:

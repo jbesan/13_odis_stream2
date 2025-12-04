@@ -41,8 +41,13 @@
 
 ## Services Inclusion
 
-- Données: https://www.data.gouv.fr/api/1/datasets/r/de4856b8-bb67-4b79-83bd-038e846a1774
-- Référentiel: csv/referentiel_services_inclusion.csv
+- Données: https://www.data.gouv.fr/datasets/referentiel-de-loffre-dinsertion-sociale-et-professionnelle-data-inclusion/#/resources/307529c0-dcc5-449a-a88d-9290a8a86a14
+- URL Stable: https://www.data.gouv.fr/api/1/datasets/r/de4856b8-bb67-4b79-83bd-038e846a1774
+- Type de fichier: geojson
+
+## Référentiel services inclusion
+
+- Données: local/referentiel_services_inclusion.csv
 - Type de fichier: csv
 
 ## Couleur politique
@@ -138,9 +143,15 @@
 - Données: https://www.data.gouv.fr/datasets/repertoire-operationnel-des-metiers-et-des-emplois-rome/
   NE MARCHE PAS
 
-## Formations
+## Formations Annuaire
 
-- Données: https://www.data.gouv.fr/fr/datasets/liste-publique-des-organismes-de-formation-l-6351-7-1-du-code-du-travail/
+- Données: https://www.data.gouv.fr/datasets/liste-publique-des-organismes-de-formation-l-6351-7-1-du-code-du-travail/#/resources/ac59a0f5-fa83-4b82-bf12-3c5806d4f19f
+- URL Stable: https://www.data.gouv.fr/api/1/datasets/r/ac59a0f5-fa83-4b82-bf12-3c5806d4f19f
+- Type de fichier: csv
+
+## Formations Référentiel
+
+- Données: https://www.data.gouv.fr/datasets/liste-publique-des-organismes-de-formation-l-6351-7-1-du-code-du-travail/#/resources/803121dd-1acf-423d-b7d8-8511f1c607c1
 - URL Stable: https://www.data.gouv.fr/api/1/datasets/r/803121dd-1acf-423d-b7d8-8511f1c607c1
 - Type de fichier: xlsx
 

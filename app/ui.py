@@ -131,14 +131,14 @@ def render_employment_form() -> None:
     """Renders the UI for the 'Projet Professionnel' form section."""
     app_data = st.session_state.app_data
     col1, col2 = st.columns(2)
-    codfap_select = app_data['codfap_index'][['Code FAP 341', 'Intitulé FAP 341']].set_index('Code FAP 341')
+    codfap_select = app_data['codfap_index']
     codform_select = app_data['codformations_index']
     
     for i in range(st.session_state.ui_nb_adultes):
         with col1:
-            st.multiselect(f"Métiers ciblés Adulte {i+1}", codfap_select.index, format_func=lambda x: codfap_select.loc[x, 'Intitulé FAP 341'], key=f"ui_metiers_adult_{i}")
+            st.multiselect(f"Métiers ciblés Adulte {i+1}", codfap_select.index, format_func=lambda x: codfap_select.loc[x, 'label'], key=f"ui_metiers_adult_{i}")
         with col2:
-            st.multiselect(f"Formations recherchées Adulte {i+1}", codform_select.index, format_func=lambda x: codform_select.loc[x, 'libformation'], key=f"ui_formations_adult_{i}")
+            st.multiselect(f"Formations recherchées Adulte {i+1}", codform_select.index, format_func=lambda x: codform_select.loc[x, 'label'], key=f"ui_formations_adult_{i}")
             
             # F-15: Priority Toggle
             st.toggle("Prioritaire", key=f"ui_priority_job_adult_{i}", help="Donne plus de poids à la recherche d'emploi pour cet adulte")
@@ -201,25 +201,21 @@ def render_other_needs_form() -> None:
     st.subheader("Autres Besoins Spécifiques")
     st.text("Sélectionnez d'autres services d'inclusion spécifiques.")
     
-    # Prepare options: All services from annuaire_inclusion EXCEPT those in Socle Admin
-    annuaire = app_data['annuaire_inclusion']
-    unique_services = annuaire[['categorie', 'service', 'label', 'thematiques']].drop_duplicates()
+    # Prepare options: Use the Referentiel loaded in app_data
+    inclusion_index = app_data.get('inclusion_services_index', pd.DataFrame())
     socle_keys = set(default_socle)
     
-    options_map = {} # Display String -> Slug (thematiques)
+    options_map = {} # Display String -> Slug (Nom)
     options_list = []
     
-    for _, row in unique_services.iterrows():
-        # Filter out services that are just a placeholder '-' or empty
-        if row['service'] in ['-', '']:
-            continue
-            
-        key = row['thematiques']
-        if key not in socle_keys:
-            # Use the human-readable label
-            display_str = row['label']
-            options_list.append(display_str)
-            options_map[display_str] = key
+    if not inclusion_index.empty:
+        for code, row in inclusion_index.iterrows():
+            # Filter out if in socle (optional, depending on if socle uses same codes)
+            # The user said "use Nom as the code and use the resulting label as options"
+            if code not in socle_keys:
+                display_str = row['label']
+                options_list.append(display_str)
+                options_map[display_str] = code
             
     options_list.sort()
     
@@ -502,10 +498,10 @@ def _display_bv_result_details(row: pd.Series) -> None:
                     # We need to ensure we have the right columns.
                     
                     # Merge
-                    merged = commune_metiers.merge(codfap_index, left_on='fap_code', right_on='Code FAP 228', how='left')
-                    merged['Intitulé FAP 228'] = merged['Intitulé FAP 228'].fillna(merged['fap_code'])
+                    merged = commune_metiers.merge(codfap_index, left_on='fap_code', right_index=True, how='left')
+                    merged['label'] = merged['label'].fillna(merged['fap_code'])
                     
-                    top_metiers = sorted(merged['Intitulé FAP 228'].unique())
+                    top_metiers = sorted(merged['label'].unique())
                     st.markdown("\n".join([f'- {item}' for item in top_metiers]))
                 else:
                     st.info("Pas de données disponibles.")
@@ -572,10 +568,10 @@ def _display_result_details(row: pd.Series) -> None:
             commune_metiers = bmo_vertical[bmo_vertical.codgeo == row.name]
             
             if not commune_metiers.empty:
-                merged = commune_metiers.merge(codfap_index, left_on='fap_code', right_on='Code FAP 228', how='left')
-                merged['Intitulé FAP 228'] = merged['Intitulé FAP 228'].fillna(merged['fap_code'])
+                merged = commune_metiers.merge(codfap_index, left_on='fap_code', right_index=True, how='left')
+                merged['label'] = merged['label'].fillna(merged['fap_code'])
                 
-                top_metiers = sorted(merged['Intitulé FAP 228'].unique())
+                top_metiers = sorted(merged['label'].unique())
                 st.markdown("\n".join([f'- {item}' for item in top_metiers]))
             else:
                 st.info("Pas de données disponibles.")

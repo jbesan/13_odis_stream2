@@ -177,7 +177,7 @@ def build_legend(items_list: List[Dict[str, str]]) -> str:
     
     legend_html = """
         <div style='position: absolute; z-index: 9999; background-color: rgba(255, 255, 255, 0.8);
-                    border-radius: 6px; padding: 10px; font-size: 12px; right: 10px; top: 10px;'>
+                    border-radius: 6px; padding: 10px; font-size: 12px; left: 10px; top: 10px;'>
             <ul style='list-style: none; margin: 0; padding: 0;'>
                 <li><span style='display: inline-block; width:100px; background: linear-gradient(90deg, #ffffcc 0%, #006837 100%); 
                     border: 1px solid grey;'>&nbsp;</span> Score</li>
@@ -196,8 +196,17 @@ def _build_generic_points_layer(df: gpd.GeoDataFrame, icon: str, color: str, too
     if df.empty:
         return flm.FeatureGroup()
 
-    df['lat'] = df.geometry.y
-    df['lon'] = df.geometry.x
+    # Robustness: Check if geometry is available
+    if hasattr(df, 'geometry') and df.geometry.name in df.columns:
+        df['lat'] = df.geometry.y
+        df['lon'] = df.geometry.x
+    elif 'lat' in df.columns and 'lon' in df.columns:
+        # Use existing lat/lon if geometry is missing (e.g. DataFrame instead of GeoDataFrame)
+        pass
+    else:
+        logging.error("_build_generic_points_layer: No geometry or lat/lon columns found.")
+        return flm.FeatureGroup()
+
     df.dropna(subset=['lat', 'lon'], inplace=True)
     
     # Prepare data for FastMarkerCluster
@@ -254,10 +263,10 @@ def build_ecoles_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config:
         
     # Filter by type (nature_uai_libe)
     # Replicate logic from data_loader.py using 'type' column
-    is_maternelle = filtered['type'].str.contains('maternelle', case=False, na=False) | \
-                    filtered['type'].str.contains('primaire', case=False, na=False)
-    is_elementaire = filtered['type'].str.contains('élémentaire', case=False, na=False) | \
-                     filtered['type'].str.contains('primaire', case=False, na=False)
+    # Data is now standardized in ETL (pipeline/build.py)
+    
+    is_maternelle = filtered['type'] == 'Maternelle'
+    is_elementaire = filtered['type'] == 'Elémentaire'
     is_college = filtered['type'] == 'Collège'
     is_lycee = filtered['type'] == 'Lycée'
 
@@ -298,20 +307,14 @@ def build_sante_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config: 
         
     logging.info(f"build_sante_layer: Found {len(filtered)} health facilities before filtering.")
 
+    # Filter by type (Standardized in ETL)
     mask = pd.Series(False, index=filtered.index)
     if config.besoin_sante == 'Maternité':
         mask = filtered['type'] == 'Maternité'
     elif config.besoin_sante == "Hopital":
-        mask = filtered['type'].isin([
-            'Centres Hospitaliers', 
-            'Centres Hospitaliers Régionaux', 
-            'Hôpitaux Locaux'
-        ])
+        mask = filtered['type'] == 'Hopital'
     elif config.besoin_sante == "Soutien Psychologique & Addictologie":
-        mask = filtered['type'].isin([
-            'Centres Hospitaliers Spécialisés Lutte Maladies Mentales', 
-            'Autres Etablissements de Lutte contre les Maladies Mentales'
-        ])
+        mask = filtered['type'] == 'Soutien Psychologique & Addictologie'
     
     if not mask.any():
         logging.info("build_sante_layer: No facilities match the selected type.")

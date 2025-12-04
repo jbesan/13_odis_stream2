@@ -86,8 +86,23 @@ class TestScoringLogic:
         config.nb_enfants = 1 # Enable education scoring
         config.classe_enfants = ['Crêche / Assistante Maternelle', 'Maternelle', 'Elémentaire', 'Collège', 'Lycée'] # Select all for full coverage
         
-        # Add mock data for petite enfance
+        # Add mock data for petite enfance and met_scaled
         df_with_dist['taux_couverture'] = 50.0
+        df_with_dist['met_scaled'] = 0.5
+        df_with_dist['log_vac_scaled'] = 0.5
+        df_with_dist['inc_population_scaled'] = 0.5
+        df_with_dist['inc_pol_scaled'] = 0.5
+        df_with_dist['log_occup_scaled'] = 0.5
+        df_with_dist['log_soc_inoc_scaled'] = 0.5
+        df_with_dist['edu_classes_ferm_scaled'] = 0.5
+        df_with_dist['edu_petite_enfance_scaled'] = 0.5 # Mock pre-calculated score
+        df_with_dist['edu_maternelle_scaled'] = 0.5
+        df_with_dist['edu_elementaire_scaled'] = 0.5
+        df_with_dist['edu_college_scaled'] = 0.5
+        df_with_dist['edu_lycee_scaled'] = 0.5
+        df_with_dist['sante_hopital_scaled'] = 0.5
+        df_with_dist['sante_maternite_scaled'] = 0.5
+        df_with_dist['sante_psy_scaled'] = 0.5
 
         scored_df = scoring.compute_criteria_scores(
             df=df_with_dist,
@@ -95,6 +110,9 @@ class TestScoringLogic:
             incl_index=sample_incl_index,
             df_all_communes=sample_data,
             associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']), # Mock associations data
+            bmo_vertical=pd.DataFrame({'codgeo': ['75056', '33063'], 'fap_code': ['F1', 'F1']}), # Mock BMO data
+            formations_data=pd.DataFrame(columns=['codgeo', 'formation_code']), # Mock formations
+            codformations_index=pd.DataFrame(columns=['label']), # Mock index
             scores_cat=sample_scores_cat,
             global_stats=global_stats
         )
@@ -120,6 +138,12 @@ class TestScoringLogic:
         """Tests that only selected education criteria are added."""
         # Prerequisite: distance
         df_with_dist = scoring.add_distance_to_current_loc(sample_data, default_config.commune_actuelle)
+        df_with_dist['met_scaled'] = 0.5
+        df_with_dist['log_vac_scaled'] = 0.5
+        df_with_dist['edu_maternelle_scaled'] = 0.5 # Needed for partial selection test
+        df_with_dist['edu_classes_ferm_scaled'] = 0.5
+        df_with_dist['inc_population_scaled'] = 0.5
+        df_with_dist['inc_pol_scaled'] = 0.5
         
         config = default_config
         config.nb_enfants = 1
@@ -132,6 +156,9 @@ class TestScoringLogic:
             incl_index=sample_incl_index,
             df_all_communes=sample_data,
             associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']),
+            bmo_vertical=pd.DataFrame(columns=['codgeo', 'fap_code']),
+            formations_data=pd.DataFrame(columns=['codgeo', 'formation_code']),
+            codformations_index=pd.DataFrame(columns=['label']),
             scores_cat=sample_scores_cat,
             global_stats=global_stats
         )
@@ -343,6 +370,10 @@ class TestConditionalScoring:
         """Tests that match scores use dynamic max bounds based on preference length."""
         # Prerequisite: distance
         df_with_dist = scoring.add_distance_to_current_loc(sample_data, default_config.commune_actuelle)
+        df_with_dist['met_scaled'] = 0.5
+        df_with_dist['log_vac_scaled'] = 0.5
+        df_with_dist['inc_population_scaled'] = 0.5
+        df_with_dist['inc_pol_scaled'] = 0.5
         
         # Mock data for matches
         df_with_dist['be_codfap_top'] = [['A1', 'B2'], ['A1'], [], [], []]
@@ -364,6 +395,15 @@ class TestConditionalScoring:
             incl_index=sample_incl_index,
             df_all_communes=sample_data,
             associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']),
+            bmo_vertical=pd.DataFrame({
+                'codgeo': ['75056', '75056', '33063'], 
+                'fap_code': ['A1', 'B2', 'F1'] # 75056 has A1, B2. 33063 has F1.
+            }),
+            formations_data=pd.DataFrame({
+                'codgeo': ['75056', '75056', '33063'],
+                'formation_code': ['F1', 'F2', 'F1'] # 75056 has F1, F2. 33063 has F1.
+            }),
+            codformations_index=pd.DataFrame(columns=['label']),
             scores_cat=scores_cat_dynamic,
             global_stats=global_stats
         )

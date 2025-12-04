@@ -109,11 +109,24 @@ sources:
     local_name: "education_annuaire.parquet"
     description: "Annuaire de l'éducation (Premier et Second degré)"
 
-  formations:
+  codes_postaux:
+    url: "https://object.files.data.gouv.fr/hydra-parquet/hydra-parquet/008a2dda-2c60-4b63-b910-998f6f818089.parquet"
+    format: "parquet"
+    local_name: "codes_postaux.parquet"
+    description: "Base officielle des codes postaux"
+
+  formations_annuaire:
+    url: "https://www.data.gouv.fr/api/1/datasets/r/ac59a0f5-fa83-4b82-bf12-3c5806d4f19f"
+    format: "csv"
+    local_name: "formations_annuaire.csv"
+    description: "Annuaire des organismes de formation"
+    verify_ssl: false
+
+  formations_referentiel:
     url: "https://www.data.gouv.fr/api/1/datasets/r/803121dd-1acf-423d-b7d8-8511f1c607c1"
     format: "xlsx"
-    local_name: "formations.xlsx"
-    description: "Liste des organismes de formation"
+    local_name: "formations_referentiel.xlsx"
+    description: "Référentiel des organismes de formation"
 
   finess_national:
     url: "file:///Users/jacques/dev/13_odis_stream2/csv/annuaire_sante_finess.parquet"
@@ -134,6 +147,12 @@ sources:
     archive_file: "DS_RP_EMPLOI_LR_COMP_2022_data.csv"
     local_name: "population_active.zip"
     description: "Population active et chômage (INSEE)"
+
+  referentiel_services_inclusion:
+    url: "file:///Users/jacques/dev/13_odis_stream2/pipeline/local/referentiel_services_inclusion.csv"
+    format: "csv"
+    local_name: "referentiel_services_inclusion.csv"
+    description: "Référentiel des services d'inclusion (Local)"
 
 local_files:
   finess:

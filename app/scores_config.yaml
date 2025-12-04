@@ -3,6 +3,7 @@ scores:
     category: emploi
     source_metric: met_ratio
     include_in_binom: true
+    computation: precomputed
     display:
       name: Taux Besoin Emploi
       strong_point_text: De nombreux emplois non pourvus
@@ -18,6 +19,7 @@ scores:
     category: emploi
     source_metric: met_tension_ratio
     include_in_binom: true
+    computation: precomputed
     display:
       name: Taux Besoin Emploi en Tension
       strong_point_text: De nombreux emplois en tension non pourvus
@@ -33,6 +35,7 @@ scores:
     category: logement
     source_metric: log_vac_struct_ratio
     include_in_binom: true
+    computation: precomputed
     display:
       name: Taux Vacance Structurelle (> 2 ans)
       strong_point_text: Nombre élevé de logements vacants depuis plus de 2 ans
@@ -48,6 +51,7 @@ scores:
     category: logement
     source_metric: log_soc_inoc_ratio
     include_in_binom: true
+    computation: precomputed
     display:
       name: Taux de Logements Sociaux Inoccupés (Vacants ou Vides)
       strong_point_text: Un nombre élevé de logements sociaux potentiellement disponibles
@@ -65,6 +69,7 @@ scores:
     category: logement
     source_metric: log_pp_occup
     include_in_binom: true
+    computation: precomputed
     display:
       name: Taux d'Occupation (Sous-occupation)
       strong_point_text: Logements sous-occupés (potentiel d'accueil)
@@ -81,6 +86,7 @@ scores:
     category: logement
     source_metric: log_occupation_rate
     include_in_binom: true
+    computation: precomputed
     display:
       name: Taux d'Occupation Standard
       strong_point_text: Logements avec un taux d'occupation standard ou sous-occupés
@@ -96,6 +102,7 @@ scores:
     category: education
     source_metric: avg_school_size
     include_in_binom: true
+    computation: precomputed
     display:
       name: Taille Moyenne des Écoles
       strong_point_text: Écoles avec un effectif moyen élevé (moins de risque de fermeture)
@@ -111,6 +118,7 @@ scores:
     category: inclusion
     source_metric: pol_num
     include_in_binom: false
+    computation: precomputed
     display:
       name: Couleur Politique de la commmue
       strong_point_text: La couleur politique de la localité est favorable
@@ -126,6 +134,7 @@ scores:
     category: inclusion
     source_metric: population
     include_in_binom: false
+    computation: precomputed
     display:
       name: Population de la commune
       strong_point_text: La commune est de taille importante
@@ -141,6 +150,7 @@ scores:
     category: emploi
     source_metric: met_match_adult1
     include_in_binom: true
+    computation: live
     display:
       name: Match compétences et Besoin Emploi Adult 1
       strong_point_text:
@@ -158,6 +168,7 @@ scores:
     category: emploi
     source_metric: met_match_adult2
     include_in_binom: true
+    computation: live
     display:
       name: Match compétences et Besoin Emploi Adult 2
       strong_point_text:
@@ -175,6 +186,7 @@ scores:
     category: emploi
     source_metric: form_match_adult1
     include_in_binom: true
+    computation: live
     display:
       name: Match besoins et Centres de formation
       strong_point_text:
@@ -192,6 +204,7 @@ scores:
     category: emploi
     source_metric: form_match_adult2
     include_in_binom: true
+    computation: live
     display:
       name: Match besoins et Centres de formation
       strong_point_text:
@@ -209,6 +222,7 @@ scores:
     category: mobilité
     source_metric: dist_current_loc
     include_in_binom: false
+    computation: live
     display:
       name: Distance de la localisation actuelle
       strong_point_text: La localité proposée est proche de la commune actuelle
@@ -224,6 +238,7 @@ scores:
     category: mobilité
     source_metric: null
     include_in_binom: false
+    computation: live
     display:
       name: Même agglomération que la localisation actuelle
       strong_point_text: La localité proposée est bien connectée à la commune actuelle
@@ -239,6 +254,7 @@ scores:
     category: education
     source_metric: edu_dist_kid1
     include_in_binom: false
+    computation: live
     display:
       name: Proximité de l'établissement scolaire enfant 1
       strong_point_text: ""
@@ -254,6 +270,7 @@ scores:
     category: education
     source_metric: edu_dist_kid2
     include_in_binom: false
+    computation: live
     display:
       name: Proximité de l'établissement scolaire enfant 2
       strong_point_text: ""
@@ -269,6 +286,7 @@ scores:
     category: education
     source_metric: edu_dist_kid3
     include_in_binom: false
+    computation: live
     display:
       name: Proximité de l'établissement scolaire enfant 3
       strong_point_text: ""
@@ -284,6 +302,7 @@ scores:
     category: education
     source_metric: edu_dist_kid4
     include_in_binom: false
+    computation: live
     display:
       name: Proximité de l'établissement scolaire enfant 4
       strong_point_text: ""
@@ -299,6 +318,7 @@ scores:
     category: education
     source_metric: edu_dist_kid5
     include_in_binom: false
+    computation: live
     display:
       name: Proximité de l'établissement scolaire enfant 5
       strong_point_text: ""
@@ -314,6 +334,7 @@ scores:
     category: inclusion
     source_metric: socle_match_count
     include_in_binom: true
+    computation: precomputed
     display:
       name: Socle Administratif
       strong_point_text: Services administratifs essentiels présents
@@ -329,6 +350,7 @@ scores:
     category: inclusion
     source_metric: lien_social_density
     include_in_binom: true
+    computation: precomputed
     display:
       name: Lien Social
       strong_point_text: Tissu associatif dense favorisant le lien social
@@ -344,6 +366,7 @@ scores:
     category: inclusion
     source_metric: affinite_density
     include_in_binom: true
+    computation: live
     display:
       name: Affinités
       strong_point_text: Associations correspondant aux centres d'intérêt
@@ -359,6 +382,7 @@ scores:
     category: inclusion
     source_metric: extra_services_match_count
     include_in_binom: true
+    computation: live
     display:
       name: Services Spécifiques
       strong_point_text: Services spécifiques recherchés présents
@@ -374,6 +398,7 @@ scores:
     category: education
     source_metric: taux_couverture
     include_in_binom: true
+    computation: precomputed
     display:
       name: Accueil Petite Enfance
       strong_point_text: Bonne couverture en crèches et assistantes maternelles
@@ -391,6 +416,7 @@ scores:
     category: education
     source_metric: count_maternelle
     include_in_binom: true
+    computation: precomputed
     display:
       name: Ecole Maternelle
       strong_point_text: Présence d'une école maternelle
@@ -406,6 +432,7 @@ scores:
     category: education
     source_metric: count_elementaire
     include_in_binom: true
+    computation: precomputed
     display:
       name: Ecole Elémentaire
       strong_point_text: Présence d'une école élémentaire
@@ -421,6 +448,7 @@ scores:
     category: education
     source_metric: count_college
     include_in_binom: true
+    computation: precomputed
     display:
       name: Collège
       strong_point_text: Présence d'un collège
@@ -436,6 +464,7 @@ scores:
     category: education
     source_metric: count_lycee
     include_in_binom: true
+    computation: precomputed
     display:
       name: Lycée
       strong_point_text: Présence d'un lycée
@@ -451,6 +480,7 @@ scores:
     category: education
     source_metric: risque_fermeture_ratio
     include_in_binom: true
+    computation: precomputed
     display:
       name: Risque de fermeture de classe
       strong_point_text: Faible risque de fermeture de classe
@@ -466,6 +496,7 @@ scores:
     category: santé
     source_metric: sante_structures_scaled
     include_in_binom: true
+    computation: precomputed
     display:
       name: Structure de santé recherchée
       strong_point_text: L'établissement de santé recherché est présent
