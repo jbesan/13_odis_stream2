@@ -247,8 +247,8 @@ def compute_inclusion_score(
          df['lien_social_density'] = (df['lien_social_count'] * 1000) / df['population']
 
     # Normalize
-    min_b, max_b = get_bounds('inc_lien_social_score', scores_cat, global_stats)
-    df['inc_lien_social_score'] = min_max_scale(df['lien_social_density'].fillna(0), min_b, max_b)
+    if 'inc_lien_social_score' not in df.columns:
+        raise ValueError("Missing pre-calculated score: inc_lien_social_score")
 
     # --- 3. Affinité ---
     selected_interests = prefs.get('affinite_selection', [])
@@ -267,7 +267,7 @@ def compute_inclusion_score(
             df = df.join(affinite_counts.rename('affinite_count'), how='left')
             df['affinite_count'] = df['affinite_count'].fillna(0)
             
-            df['affinite_density'] = (df['affinite_count'] * 1000) / df['pop_active']
+            df['affinite_density'] = (df['affinite_count'] * 1000) / df['population']
             
             min_b, max_b = get_bounds('inc_affinite_score', scores_cat, global_stats)
             df['inc_affinite_score'] = min_max_scale(df['affinite_density'].fillna(0), min_b, max_b)
@@ -352,11 +352,8 @@ def compute_criteria_scores(
 
     # --- EMPLOI ---
     # met_ratio is pre-calculated in data_loader
-    if 'met_ratio' not in df.columns:
-        df['met_ratio'] = 1000 * df['met'] / df['pop_active']
-        
-    min_b, max_b = get_bounds('met_scaled', scores_cat, global_stats)
-    df['met_scaled'] = min_max_scale(df['met_ratio'].fillna(0), min_b, max_b)
+    if 'met_scaled' not in df.columns:
+        raise ValueError("Missing pre-calculated score: met_scaled")
 
     # Job categories that match user preferences
     for i in range(prefs['nb_adultes']):
@@ -429,8 +426,8 @@ def compute_criteria_scores(
         # We can just pass it through or min-max scale it if we want relative scoring.
         # Let's use min-max scaling based on global stats to highlight relative differences.
         
-        min_b, max_b = get_bounds('log_occup_scaled', scores_cat, global_stats)
-        df['log_occup_scaled'] = min_max_scale(df['log_pp_occup'], min_b, max_b)
+        if 'log_occup_scaled' not in df.columns:
+            raise ValueError("Missing pre-calculated score: log_occup_scaled")
     else:
         # If not "Chez l'habitant", maybe we don't care, or we treat it as neutral?
         # For now, let's set it to 0 or NaN so it doesn't influence the score if not relevant.
@@ -451,16 +448,11 @@ def compute_criteria_scores(
         if 'log_soc_inoc_ratio' not in df.columns:
             df['log_soc_inoc_ratio'] = df['log_soc_inoccupes'] / df['log_soc_total']
             
-        min_b, max_b = get_bounds('log_soc_inoc_scaled', scores_cat, global_stats)
-        df['log_soc_inoc_scaled'] = min_max_scale(df['log_soc_inoc_ratio'].fillna(0), min_b, max_b)
+        if 'log_soc_inoc_scaled' not in df.columns:
+            raise ValueError("Missing pre-calculated score: log_soc_inoc_scaled")
     elif prefs['logement'] == "Location":
-        if 'log_vac_struct_ratio' not in df.columns:
-             # Fallback if not pre-calculated (though it should be)
-             # We assume columns exist if we are here, or we accept potential KeyError if data loading failed
-             df['log_vac_struct_ratio'] = df['pp_vacant_plus_2ans_25'] / df['log_total']
-
-        min_b, max_b = get_bounds('log_vac_scaled', scores_cat, global_stats)
-        df['log_vac_scaled'] = min_max_scale(df['log_vac_struct_ratio'].fillna(0), min_b, max_b)
+        if 'log_vac_scaled' not in df.columns:
+            raise ValueError("Missing pre-calculated score: log_vac_scaled")
 
     # --- EDUCATION ---
     if prefs['nb_enfants'] > 0:
@@ -481,7 +473,8 @@ def compute_criteria_scores(
             min_b, max_b = get_bounds('edu_classes_ferm_scaled', scores_cat, global_stats)
             # If max_b is not defined, we might need a reasonable max (e.g. 300 students per school?)
             # min_max_scale handles it if we have global stats.
-            df['edu_classes_ferm_scaled'] = min_max_scale(df['risque_fermeture_ratio'], min_b, max_b)
+            if 'edu_classes_ferm_scaled' not in df.columns:
+                raise ValueError("Missing pre-calculated score: edu_classes_ferm_scaled")
             
             # --- New Granular Scoring (F-14) ---
             
@@ -491,18 +484,8 @@ def compute_criteria_scores(
                 if 'taux_couverture' in df.columns:
                     # F-14 Refinement: Do NOT fillna(0). Keep NaNs to exclude them later.
                     
-                    series = df['taux_couverture']
-                    mask = series.notna()
-                    if mask.any():
-                        min_b, max_b = get_bounds('edu_petite_enfance_scaled', scores_cat, global_stats)
-                        # Scale only valid values
-                        scaled_values = min_max_scale(series[mask], min_b, max_b)
-                        
-                        # Assign back
-                        df.loc[mask, 'edu_petite_enfance_scaled'] = scaled_values
-                        df.loc[~mask, 'edu_petite_enfance_scaled'] = np.nan
-                    else:
-                        df['edu_petite_enfance_scaled'] = np.nan
+                    if 'edu_petite_enfance_scaled' not in df.columns:
+                        raise ValueError("Missing pre-calculated score: edu_petite_enfance_scaled")
                 else:
                     df['edu_petite_enfance_scaled'] = np.nan
 
@@ -511,19 +494,23 @@ def compute_criteria_scores(
             
             # Maternelle
             if 'Maternelle' in prefs['classe_enfants']:
-                df['edu_maternelle_scaled'] = (df['count_maternelle'] > 0).astype(float)
+                if 'edu_maternelle_scaled' not in df.columns:
+                    raise ValueError("Missing pre-calculated score: edu_maternelle_scaled")
                 
             # Elementaire
             if 'Elémentaire' in prefs['classe_enfants']:
-                df['edu_elementaire_scaled'] = (df['count_elementaire'] > 0).astype(float)
+                if 'edu_elementaire_scaled' not in df.columns:
+                    raise ValueError("Missing pre-calculated score: edu_elementaire_scaled")
                 
             # College
             if 'Collège' in prefs['classe_enfants']:
-                df['edu_college_scaled'] = (df['count_college'] > 0).astype(float)
+                if 'edu_college_scaled' not in df.columns:
+                    raise ValueError("Missing pre-calculated score: edu_college_scaled")
                 
             # Lycee
             if 'Lycée' in prefs['classe_enfants']:
-                df['edu_lycee_scaled'] = (df['count_lycee'] > 0).astype(float)
+                if 'edu_lycee_scaled' not in df.columns:
+                    raise ValueError("Missing pre-calculated score: edu_lycee_scaled")
 
             # Remove old score column if it exists to avoid confusion
             if 'edu_structures_scaled' in df.columns:
@@ -539,14 +526,16 @@ def compute_criteria_scores(
     sante_pref = prefs.get('besoin_sante', 'Aucun')
     if sante_pref != 'Aucun':
         col_map = {
-            'Hopital': 'count_hopital',
-            'Maternité': 'count_maternite',
-            'Soutien Psychologique & Addictologie': 'count_psy'
+            'Hopital': 'sante_hopital_scaled',
+            'Maternité': 'sante_maternite_scaled',
+            'Soutien Psychologique & Addictologie': 'sante_psy_scaled'
         }
         target_col = col_map.get(sante_pref)
         if target_col and target_col in df.columns:
-            # Score 1.0 if count > 0, else 0.0
-            df['sante_structures_scaled'] = (df[target_col] > 0).astype(float)
+            # Already scaled (0 or 1)
+            df['sante_structures_scaled'] = df[target_col]
+        elif target_col:
+             raise ValueError(f"Missing pre-calculated score: {target_col}")
         else:
             df['sante_structures_scaled'] = 0.0
     # Else: Sante criteria are not calculated/added to df
@@ -564,11 +553,12 @@ def compute_criteria_scores(
     df = compute_inclusion_score(df, prefs, incl_index, associations_data, scores_cat, global_stats)
 
     # Population as a direct score for inclusion
-    min_b, max_b = get_bounds('inc_population_scaled', scores_cat, global_stats)
-    df['inc_population_scaled'] = min_max_scale(df['population'].fillna(0), min_b, max_b)
+    if 'inc_population_scaled' not in df.columns:
+        raise ValueError("Missing pre-calculated score: inc_population_scaled")
 
     # Political orientation score
-    df['inc_pol_scaled'] = df['pol_num'].astype('float')
+    if 'inc_pol_scaled' not in df.columns:
+        raise ValueError("Missing pre-calculated score: inc_pol_scaled")
 
     return df
 
@@ -928,14 +918,10 @@ def run_scoring_pipeline(
         
         # Exclude the BV of the current commune
         current_bv = start_commune.iloc[0][cfg.BV_CODE_COL]
-        print(f"DEBUG: current_bv = {current_bv}")
-        print(f"DEBUG: bv_ids_to_keep BEFORE = {bv_ids_to_keep}")
         
         if current_bv in bv_ids_to_keep:
             bv_ids_to_keep.remove(current_bv)
-            
-        print(f"DEBUG: bv_ids_to_keep AFTER = {bv_ids_to_keep}")
-            
+  
         communes_to_score = df_all_communes[df_all_communes[cfg.BV_CODE_COL].isin(bv_ids_to_keep)]
 
     # --- Scoring ---

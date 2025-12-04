@@ -12,9 +12,9 @@ from typing import Dict, Any, Optional, List, Union
 
 # Constants
 CONFIG_FILE = "pipeline/sources.yaml"
-CACHE_DIR = Path("pipeline/cache")
-CLEAN_DIR = CACHE_DIR / "clean"
-OUTPUT_DIR = Path("pipeline/output")
+CACHE_DIR = Path("pipeline/cache/raw")
+CLEAN_DIR = Path("pipeline/cache/clean")
+OUTPUT_DIR = Path("pipeline/cache/output")
 STATUS_FILE = Path("pipeline/status.json")
 
 # Configure logging

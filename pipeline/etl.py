@@ -1,17 +1,21 @@
 import argparse
 import logging
-from pipeline import ingest, build
+from pipeline import ingest, build, prescoring
 import shutil
 import os
 
-SOURCE_DIR = 'pipeline/output'
+SOURCE_DIR = 'pipeline/cache/output'
 DEST_DIR = 'data'
 
 FILES_TO_COPY = [
     'odis_communes.parquet',
     'odis_bassins_de_vie.parquet',
     'pois.parquet',
-    'bmo_vertical.parquet'
+    'bmo_vertical.parquet',
+    'associations_vertical.parquet',
+    'referentiels.parquet',
+    'odis_rel_associations.parquet',
+    'odis_rel_metiers.parquet'
 ]
 
 # Configure logging
@@ -19,7 +23,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 def main():
     parser = argparse.ArgumentParser(description="ODIS Data Pipeline ETL")
-    parser.add_argument("--step", choices=["ingest", "build", "deploy", "all"], default="all", help="Step to run")
+    parser.add_argument("--step", choices=["ingest", "build", "prescoring", "deploy", "all"], default="all", help="Step to run")
     args = parser.parse_args()
 
     if args.step in ["ingest", "all"]:
@@ -31,6 +35,11 @@ def main():
         logging.info("=== Starting Build Phase ===")
         build.main()
         logging.info("=== Build Phase Completed ===")
+
+    if args.step in ["prescoring", "all"]:
+        logging.info("=== Starting Prescoring Phase ===")
+        prescoring.main()
+        logging.info("=== Prescoring Phase Completed ===")
 
     if args.step in ["deploy", "all"]:
         logging.info("=== Starting Deployment Phase ===")

@@ -9,7 +9,7 @@ APP_DIR: str = os.path.dirname(os.path.abspath(__file__))
 # Get the project root directory (one level up)
 PROJECT_ROOT: str = os.path.dirname(APP_DIR)
 
-LOCAL_CSV_PATH: str = os.path.join(PROJECT_ROOT, 'csv/')
+LOCAL_CSV_PATH: str = os.path.join(PROJECT_ROOT, 'data/')
 
 def get_data_path() -> str:
     """
@@ -24,19 +24,17 @@ def get_data_path() -> str:
 # --- File Paths ---
 # --- File Paths ---
 ODIS_FILE = 'odis_communes.parquet'
-BV_FILENAME = 'insee-bassins-de-vie-2025.csv'
-BMO_VERTICAL_FILE = 'bmo_vertical.parquet'
+POIS_FILE = 'pois.parquet'
+REFERENTIELS_FILE = 'referentiels.parquet'
+BV_FILE = 'odis_bassins_de_vie.parquet'
+REL_METIERS_FILE = 'odis_rel_metiers.parquet'
+REL_ASSOCIATIONS_FILE = 'odis_rel_associations.parquet'
 SCORES_CAT_FILE = 'scores_config.yaml'
-METIERS_FILE = 'dares_nomenclature_fap2021.csv'
-FORMATIONS_FILE = 'index_formations.csv'
-ECOLES_FILE = 'annuaire_ecoles_france_mini.parquet'
-MATERNITE_FILE = 'annuaire_maternites_DREES.csv'
-SANTE_FILE = 'annuaire_sante_finess.parquet'
-INCLUSION_FILE = 'odis_services_incl_exploded.parquet'
-SNCF_FILE = 'formes-des-lignes-du-rfn.geojson'
-CAF_FILE = 'caf_taux_couverture_petite_enfance_2022.csv'
-LOVAC_FILE = 'lovac-opendata-communes-2025.csv'
-INCLUSION_REF_FILE = 'referentiel_services_inclusion.csv'
+
+# Legacy files removed:
+# BV_FILENAME, BMO_VERTICAL_FILE, METIERS_FILE, FORMATIONS_FILE, 
+# ECOLES_FILE, MATERNITE_FILE, SANTE_FILE, INCLUSION_FILE, 
+# SNCF_FILE, CAF_FILE, LOVAC_FILE, INCLUSION_REF_FILE
 
 # --- Data Columns ---
 BV_CODE_COL = 'BV2022'

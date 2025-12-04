@@ -421,11 +421,13 @@ def clean_associations(config: Dict[str, Any], logger: PipelineLogger):
             df['id_waldec'] = df['id_waldec'].astype(str).str.zfill(6)
             df['codgeo'] = df['codgeo'].astype(str).str.zfill(5)
             
-            core_mask = df['id_waldec'].str.startswith(core_prefixes, na=False)
-            lien_social = df[core_mask].groupby('codgeo').size().rename('lien_social_count').reset_index()
+            # Save detailed associations for vertical table
+            # We keep all associations to allow dynamic filtering in the app (Core vs Affinities)
+            # We aggregate by codgeo and id_waldec to save space and provide a count
+            df_out = df.groupby(['codgeo', 'id_waldec']).size().rename('count').reset_index()
             
             output_path = CLEAN_DIR / "associations_vertical.parquet"
-            lien_social.to_parquet(output_path)
+            df_out.to_parquet(output_path)
             logger.log_step("clean_associations", "COMPLETED", {"path": str(output_path)})
     except Exception as e:
         logger.log_step("clean_associations", "ERROR", {"error": str(e)})

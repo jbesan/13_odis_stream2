@@ -5,7 +5,7 @@ import geopandas as gpd
 import pandas as pd
 from shapely.geometry import mapping
 from branca.colormap import linear
-from folium.plugins import FastMarkerCluster
+from folium.plugins import FastMarkerCluster, MarkerCluster
 
 from typing import Union, List, Tuple, Optional, Any, Set, Dict
 import config as cfg
@@ -200,21 +200,41 @@ def _build_generic_points_layer(df: gpd.GeoDataFrame, icon: str, color: str, too
     df['lon'] = df.geometry.x
     df.dropna(subset=['lat', 'lon'], inplace=True)
     
-    locations = df[['lat', 'lon'] + tooltip_cols].values.tolist()
+    # Prepare data for FastMarkerCluster
+    # If using custom callback, we pass all columns.
+    # If using default, we should pass [lat, lon, popup].
+    
+    # Construct popup string
+    df['popup'] = df.apply(lambda row: "<br>".join([f"{col}: {row[col]}" for col in tooltip_cols]), axis=1)
+    
+    # Select only lat, lon, popup
+    locations = df[['lat', 'lon', 'popup']].values.tolist()
 
     # Create a JS callback for the markers
-    popup_str = " + '<br>' + ".join([f"'{col}: ' + row[{i+2}]" for i, col in enumerate(tooltip_cols)])
-    callback = f"""
-    function (row) {{
-        var icon, marker;
-        icon = L.AwesomeMarkers.icon({{icon: '{icon}', markerColor: '{color}', prefix: 'fa'}});
-        marker = L.marker(new L.LatLng(row[0], row[1]));
-        marker.setIcon(icon);
-        marker.bindPopup('<b>' + {popup_str} + '</b>');
-        return marker;
-    }};
-    """
-    return FastMarkerCluster(locations, callback=callback)
+    # Create a JS callback for the markers
+    # popup_str = " + '<br>' + ".join([f"'{col}: ' + row[{i+2}]" for i, col in enumerate(tooltip_cols)])
+    # callback = f"""
+    # function (row) {{
+    #     var icon, marker;
+    #     icon = L.AwesomeMarkers.icon({{icon: '{icon}', markerColor: '{color}', prefix: 'fa'}});
+    #     marker = L.marker(new L.LatLng(row[0], row[1]));
+    #     marker.setIcon(icon);
+    #     marker.bindPopup('<b>' + {popup_str} + '</b>');
+    #     return marker;
+    # }};
+    # """
+    # logging.info(f"Building FastMarkerCluster with {len(locations)} points. Icon: {icon}, Color: {color}")
+    # logging.info(f"Building FastMarkerCluster with {len(locations)} points. Icon: {icon}, Color: {color}")
+    # return FastMarkerCluster(locations) #, callback=callback)
+    
+    # Fallback to MarkerCluster which is more robust with st_folium
+    # logging.info(f"Building FastMarkerCluster with {len(locations)} points. Icon: {icon}, Color: {color}")
+    # return FastMarkerCluster(locations) #, callback=callback)
+    
+    # Reverting to FastMarkerCluster as requested by user
+    # But disabling the custom callback temporarily to ensure it works
+    logging.info(f"Building FastMarkerCluster with {len(locations)} points. Icon: {icon}, Color: {color}")
+    return FastMarkerCluster(locations) #, callback=callback)
 
 def build_ecoles_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config: cfg.ScoringConfig) -> flm.FeatureGroup:
     """Builds the map layer for schools using unified POIs."""
@@ -227,7 +247,10 @@ def build_ecoles_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config:
     ].copy()
     
     if not config.classe_enfants or filtered.empty:
+        logging.info("build_ecoles_layer: No children or no schools found.")
         return fg # No kids or no schools
+        
+    logging.info(f"build_ecoles_layer: Found {len(filtered)} schools before filtering by type.")
         
     # Filter by type (nature_uai_libe)
     # Replicate logic from data_loader.py using 'type' column
@@ -251,6 +274,7 @@ def build_ecoles_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config:
             mask |= niveaux_map[niveau]
             
     filtered = filtered[mask]
+    logging.info(f"build_ecoles_layer: {len(filtered)} schools remaining after type filtering.")
     
     if filtered.empty:
         return fg
@@ -269,35 +293,31 @@ def build_sante_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config: 
     ].copy()
     
     if filtered.empty:
+        logging.info("build_sante_layer: No health facilities found.")
         return fg
-
-    # Parse metadata for detailed filtering
-    # metadata is JSON string
-    def parse_meta(x):
-        try:
-            return json.loads(x)
-        except:
-            return {}
-            
-    meta_df = filtered['metadata'].apply(parse_meta).apply(pd.Series)
-    # meta_df should have 'CategorieAgregat', 'is_maternite'
-    
-    # Join meta back to filtered (reset index to ensure alignment if needed, but apply preserves index)
-    filtered = pd.concat([filtered, meta_df], axis=1)
+        
+    logging.info(f"build_sante_layer: Found {len(filtered)} health facilities before filtering.")
 
     mask = pd.Series(False, index=filtered.index)
     if config.besoin_sante == 'Maternité':
-        if 'is_maternite' in filtered.columns:
-            mask = filtered['is_maternite'].astype(bool)
+        mask = filtered['type'] == 'Maternité'
     elif config.besoin_sante == "Hopital":
-        if 'CategorieAgregat' in filtered.columns:
-            mask = filtered['CategorieAgregat'].astype(str).isin(['355', '362', '101', '106'])
+        mask = filtered['type'].isin([
+            'Centres Hospitaliers', 
+            'Centres Hospitaliers Régionaux', 
+            'Hôpitaux Locaux'
+        ])
     elif config.besoin_sante == "Soutien Psychologique & Addictologie":
-        if 'CategorieAgregat' in filtered.columns:
-            mask = filtered['CategorieAgregat'].astype(str).isin(['156', '292', '425', '412', '366', '415', '430', '444'])
+        mask = filtered['type'].isin([
+            'Centres Hospitaliers Spécialisés Lutte Maladies Mentales', 
+            'Autres Etablissements de Lutte contre les Maladies Mentales'
+        ])
     
     if not mask.any():
+        logging.info("build_sante_layer: No facilities match the selected type.")
         return fg
+    
+    logging.info(f"build_sante_layer: {mask.sum()} facilities match the selected type.")
 
     cluster = _build_generic_points_layer(filtered[mask], icon='plus', color='blue', tooltip_cols=['name', 'type'])
     cluster.add_to(fg)
@@ -326,9 +346,27 @@ def build_services_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], confi
     # Here we can just check string containment or split 'type'.
     
     # Extract category from type
-    filtered['categorie'] = filtered['type'].str.split('--').str[0]
+    # filtered['categorie'] = filtered['type'].str.split('--').str[0]
     
-    mask = filtered['categorie'].isin(config.besoins_autres.keys())
+    # mask = filtered['categorie'].isin(config.besoins_autres.keys())
+    
+    # New logic: check if 'type' (slug) is in the list of selected slugs
+    if isinstance(config.besoins_autres, list):
+        mask = filtered['type'].isin(config.besoins_autres)
+    elif isinstance(config.besoins_autres, dict):
+        # Backward compatibility if it's still a dict (keys are categories?)
+        # Or keys are slugs? The old code used keys() as categories.
+        # Let's assume keys are categories if it's a dict, but user said it's a list of slugs.
+        # If it was a dict of slugs, we'd check keys.
+        # But old code split type to get category.
+        # Let's just try to match type against keys if it's a dict, or split.
+        # Safest is to log warning and try exact match.
+        logging.warning("build_services_layer: besoins_autres is a dict, using keys as slugs.")
+        mask = filtered['type'].isin(config.besoins_autres.keys())
+    else:
+        mask = pd.Series(False, index=filtered.index)
+        
+    logging.info(f"build_services_layer: {mask.sum()} services match the selection.")
     
     if not mask.any():
         return fg
