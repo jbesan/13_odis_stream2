@@ -93,8 +93,9 @@ def run_search():
         associations_data=st.session_state.app_data['associations_data'], # Pass association data
         bmo_vertical=st.session_state.app_data['bmo_vertical'], # Pass bmo_vertical
         formations_data=st.session_state.app_data['formations_data'], # Pass formations_data
+        # codformations_index=st.session_state.app_data['codformations_index'], # Pass codformations_index
         codformations_index=st.session_state.app_data['codformations_index'], # Pass codformations_index
-        global_stats=st.session_state.app_data['global_score_stats'], # Added
+        global_stats={}, # Removed global_score_stats from data_loader
         view_level=st.session_state.get('view_level', 'Bassins de vie')
     )
 
@@ -226,7 +227,7 @@ with col_map:
         for fg in fgs_to_add:
             fg.add_to(m)
         
-        flm.LayerControl().add_to(m)
+        # flm.LayerControl().add_to(m)
 
         st.session_state['map_object'] = m
 

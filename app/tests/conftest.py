@@ -53,6 +53,9 @@ def sample_data():
         'count_maternite': [1, 0, 0, 0, 0],
         # New vacant housing metric
         'pp_vacant_plus_2ans_25': [0.05, 0.02, 0.03, 0.04, 0.01],
+        # New inclusion metrics
+        'lien_social_count': [10, 5, 8, 6, 4],
+        'lien_social_density': [5.0, 2.5, 4.0, 3.0, 2.0],
     }
     gdf = gpd.GeoDataFrame(data, crs="EPSG:4326")
     gdf = gdf.set_index('codgeo')

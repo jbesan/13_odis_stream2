@@ -1,4 +1,3 @@
-# /home/jacques/odis/13_odis/eda/streamlit/ui.py
 import streamlit as st
 import pandas as pd
 from plotly.express import line_polar

@@ -3,5 +3,5 @@ geopandas
 requests
 pyyaml
 openpyxl
-duckdb
+openpyxl
 python-calamine

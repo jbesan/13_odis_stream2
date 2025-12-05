@@ -102,7 +102,9 @@ class TestScoringLogic:
         df_with_dist['edu_lycee_scaled'] = 0.5
         df_with_dist['sante_hopital_scaled'] = 0.5
         df_with_dist['sante_maternite_scaled'] = 0.5
+        df_with_dist['sante_maternite_scaled'] = 0.5
         df_with_dist['sante_psy_scaled'] = 0.5
+        df_with_dist['inc_lien_social_score'] = 0.5 # Mock pre-calculated score
 
         scored_df = scoring.compute_criteria_scores(
             df=df_with_dist,
@@ -143,7 +145,9 @@ class TestScoringLogic:
         df_with_dist['edu_maternelle_scaled'] = 0.5 # Needed for partial selection test
         df_with_dist['edu_classes_ferm_scaled'] = 0.5
         df_with_dist['inc_population_scaled'] = 0.5
+        df_with_dist['inc_population_scaled'] = 0.5
         df_with_dist['inc_pol_scaled'] = 0.5
+        df_with_dist['inc_lien_social_score'] = 0.5
         
         config = default_config
         config.nb_enfants = 1
@@ -373,7 +377,9 @@ class TestConditionalScoring:
         df_with_dist['met_scaled'] = 0.5
         df_with_dist['log_vac_scaled'] = 0.5
         df_with_dist['inc_population_scaled'] = 0.5
+        df_with_dist['inc_population_scaled'] = 0.5
         df_with_dist['inc_pol_scaled'] = 0.5
+        df_with_dist['inc_lien_social_score'] = 0.5
         
         # Mock data for matches
         df_with_dist['be_codfap_top'] = [['A1', 'B2'], ['A1'], [], [], []]

@@ -102,17 +102,9 @@ def load_scores_config_as_df(config_path: str) -> pd.DataFrame:
 @st.cache_data
 def load_parquet_dataset(path: str, columns: list = None) -> pd.DataFrame:
     """Generic loader for parquet datasets with caching."""
-    # Force cache invalidation by adding this comment
-    try:
-        if columns:
-            return pd.read_parquet(path, columns=columns)
-        return pd.read_parquet(path)
-    except FileNotFoundError:
-        logger.error(f"File not found: {path}")
-        return pd.DataFrame()
-    except Exception as e:
-        logger.error(f"Error loading {path}: {e}")
-        return pd.DataFrame()
+    if columns:
+        return pd.read_parquet(path, columns=columns)
+    return pd.read_parquet(path)
 
 def get_pois_by_category(pois_df: pd.DataFrame, category: str) -> pd.DataFrame:
     """Filters POIs by category and returns a copy."""
@@ -187,23 +179,9 @@ def init_datasets() -> Dict[str, Any]:
     
     # Split POIs
     # Map to expected variable names for compatibility
-    annuaire_ecoles = get_pois_by_category(pois_df, 'education')
-    annuaire_sante = get_pois_by_category(pois_df, 'sante')
-    annuaire_inclusion = get_pois_by_category(pois_df, 'incl_services') 
-    # Map POI columns to expected UI columns for inclusion
-    # UI expects: 'categorie', 'service', 'label', 'thematiques'
-    # POI has: 'id', 'name', 'type', 'category', 'lat', 'lon', 'codgeo'
-    if not annuaire_inclusion.empty:
-        annuaire_inclusion = annuaire_inclusion.rename(columns={
-            'type': 'categorie', # Assuming type maps to category/theme
-            'name': 'label',
-            'category': 'service' # This might need adjustment, but 'incl_services' is the main category
-        })
-        # Add missing columns if needed
-        if 'thematiques' not in annuaire_inclusion.columns:
-             annuaire_inclusion['thematiques'] = annuaire_inclusion['categorie'] # Fallback
-        if 'service' not in annuaire_inclusion.columns:
-             annuaire_inclusion['service'] = 'Service d\'inclusion'
+    # Note: We re-filter later after converting to GDF, so we skip detailed processing here
+    # to avoid duplication.
+    pass
 
     # Optimize POI Geometries (if needed for map display)
     # The app seems to use lat/lon columns directly for some maps, or geometry for others.
@@ -213,6 +191,28 @@ def init_datasets() -> Dict[str, Any]:
     if not pois_df.empty and 'lat' in pois_df.columns and 'lon' in pois_df.columns:
         pois_df['geometry'] = gpd.points_from_xy(pois_df.lon, pois_df.lat)
         pois_df = gpd.GeoDataFrame(pois_df, geometry='geometry', crs='EPSG:4326')
+
+    # Clean Inclusion Slugs in main POIs DataFrame
+    # 'type' column for inclusion services often contains stringified lists e.g. "['slug']"
+    def clean_slug_global(val):
+        try:
+            if isinstance(val, str) and val.startswith('[') and val.endswith(']'):
+                import ast
+                l = ast.literal_eval(val)
+                if isinstance(l, list) and len(l) > 0:
+                    return l[0]
+            return val
+        except:
+            return val
+
+    if not pois_df.empty and 'category' in pois_df.columns:
+        # Convert to object to avoid Categorical errors when setting new values
+        if isinstance(pois_df['type'].dtype, pd.CategoricalDtype):
+            pois_df['type'] = pois_df['type'].astype(str)
+            
+        mask_incl = pois_df['category'] == 'incl_services'
+        if mask_incl.any():
+            pois_df.loc[mask_incl, 'type'] = pois_df.loc[mask_incl, 'type'].apply(clean_slug_global)
 
     # Update subsets to be GeoDataFrames as well (slices of the GeoDataFrame)
     # Note: get_pois_by_category returns a copy, so we need to convert them if we want them to be GDFs
@@ -263,14 +263,15 @@ def init_datasets() -> Dict[str, Any]:
     
     # Placeholders for missing/removed files (to avoid breaking unpacking)
     codformations_index = pd.DataFrame(columns=['label']) 
-    inclusion_services_index = pd.DataFrame(columns=['label']) # NEW
+    codformations_index = pd.DataFrame(columns=['label']) 
+    inclusion_services_index = pd.DataFrame(columns=['label'])
     
     if not refs_df.empty:
         form_ref_df = refs_df[refs_df['key'] == 'formation_codes']
         if not form_ref_df.empty:
             codformations_index = form_ref_df[['code', 'label']].set_index('code')
             
-        # NEW: Load Inclusion Services Referentiel
+        # Load Inclusion Services Referentiel
         incl_ref_df = refs_df[refs_df['key'] == 'inclusion_services']
         if not incl_ref_df.empty:
             inclusion_services_index = incl_ref_df[['code', 'label']].set_index('code')
@@ -278,35 +279,15 @@ def init_datasets() -> Dict[str, Any]:
     # Build incl_index from annuaire_inclusion
     incl_index = pd.DataFrame()
     if not annuaire_inclusion.empty:
-        # Clean slugs from 'categorie' (which comes from 'type' in POIs)
-        # It seems 'type' contains the slug but wrapped in a list string e.g. "['slug']"
-        def clean_slug(val):
-            try:
-                if isinstance(val, str) and val.startswith('[') and val.endswith(']'):
-                    import ast
-                    l = ast.literal_eval(val)
-                    if isinstance(l, list) and len(l) > 0:
-                        return l[0]
-                return val
-            except:
-                return val
-
-        # Use the cleaned category as the slug directly
-        annuaire_inclusion['slug'] = annuaire_inclusion['categorie'].apply(clean_slug)
+        # 'categorie' (mapped from 'type') is now already cleaned in pois_df
+        annuaire_inclusion['slug'] = annuaire_inclusion['categorie']
         
         # Group by codgeo and aggregate slugs into a set
         # We use 'key' as the column name to match scoring.py expectation
         incl_index = annuaire_inclusion.groupby('codgeo')['slug'].apply(set).rename('key').to_frame()
 
-    global_score_stats = {} # Was calculated in legacy loader, maybe needed?
-    
-    # Calculate global stats if needed
-    if not odis.empty:
-        # Example: Calculate quantiles for scores if used for relative coloring
-        pass
-
     # Generate helper structures for UI
-    depcom_df = odis[['libgeo', 'dep_code']].reset_index()
+    depcom_df = odis[['libgeo', 'dep_code']].copy()
     coddep_set = sorted(odis['dep_code'].dropna().unique().tolist())
 
     # 6. Load Bassins de Vie Geometry
@@ -375,11 +356,10 @@ def init_datasets() -> Dict[str, Any]:
         'incl_index': incl_index,
         'associations_data': associations_data,
         'formations_data': formations_data,
-        'global_score_stats': global_score_stats,
-        'pois': pois_df,
-        'bmo_vertical': bmo_vertical,
         'depcom_df': depcom_df,
         'coddep_set': coddep_set,
         'bv_geo': bv_geo,
-        'area_geo': area_geo
+        'area_geo': area_geo,
+        'bmo_vertical': bmo_vertical,
+        'pois': pois_df
     }

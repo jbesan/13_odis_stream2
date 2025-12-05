@@ -187,7 +187,7 @@ def run_test_scenario(scenario_id, view_level, app_data):
         bmo_vertical=app_data['bmo_vertical'],
         formations_data=app_data['formations_data'],
         codformations_index=app_data['codformations_index'],
-        global_stats=app_data['global_score_stats'], # Added
+        global_stats={}, # Removed
     )
     
     odis_scored = odis_scored.drop(scoring_config.commune_actuelle, errors='ignore')
@@ -200,6 +200,14 @@ def run_test_scenario(scenario_id, view_level, app_data):
         df_bv_scores = scoring.aggregate_scores_by_bassin_de_vie(odis_scored)
         gdf_bv_geo_filtered = df_bv_geo[df_bv_geo.index.isin(df_bv_scores[cfg.BV_CODE_COL])]
         processed_gdf = gdf_bv_geo_filtered.merge(df_bv_scores, left_index=True, right_on=cfg.BV_CODE_COL)
+        
+        # Handle duplicate columns from merge (e.g. libgeo)
+        if 'libgeo_x' in processed_gdf.columns and 'libgeo_y' in processed_gdf.columns:
+            processed_gdf = processed_gdf.rename(columns={'libgeo_x': 'libgeo'}).drop(columns=['libgeo_y'])
+        elif 'libgeo_x' in processed_gdf.columns:
+             processed_gdf = processed_gdf.rename(columns={'libgeo_x': 'libgeo'})
+        elif 'libgeo_y' in processed_gdf.columns:
+             processed_gdf = processed_gdf.rename(columns={'libgeo_y': 'libgeo'})
     else:  # Commune level
         processed_gdf = odis_scored
         
@@ -317,7 +325,7 @@ def test_result_details_display(app_data):
             try:
                 ui._display_result_details(row)
             except Exception as e:
-                pytest.fail(f"Failed to display details for commune result {row.libgeo} ({index}): {e}")
+                pytest.fail(f"Failed to display details for commune result {row.get('libgeo', 'UNKNOWN')} ({index}): {e}")
 
     # 5. Test the "Bassin de vie" details display
     mock_session_state.processed_gdf = results_bv
@@ -328,4 +336,4 @@ def test_result_details_display(app_data):
             try:
                 ui._display_bv_result_details(row)
             except Exception as e:
-                pytest.fail(f"Failed to display details for BV result {row.libgeo} ({index}): {e}")
+                pytest.fail(f"Failed to display details for BV result {row.get('libgeo', 'UNKNOWN')} ({index}): {e}")

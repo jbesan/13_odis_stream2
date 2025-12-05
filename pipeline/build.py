@@ -77,25 +77,6 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         # Merge School Effectifs
         merge_clean("school_effectifs", ['total_eleves', 'ecoles_count'])
         
-        # Merge Associations (Vertical)
-        # We skip merging count into main table as we use vertical file directly in app now.
-        # BUT prescoring needs lien_social_count to calculate inc_lien_social_score.
-        assoc_path = CLEAN_DIR / "associations_vertical.parquet"
-        if assoc_path.exists():
-            assoc_df = pd.read_parquet(assoc_path)
-            # Sum the 'count' column (since we now have aggregated data)
-            assoc_count = assoc_df.groupby('codgeo')['count'].sum().rename('lien_social_count').reset_index()
-            communes_gdf = communes_gdf.merge(assoc_count, on='codgeo', how='left')
-            
-        # Merge Top Metiers (from bmo_vertical)
-        # We skip merging top metiers list as we use vertical file directly in app now.
-        # bmo_vert_path = CLEAN_DIR / "bmo_vertical.parquet"
-        # if bmo_vert_path.exists():
-        #     bmo_vert = pd.read_parquet(bmo_vert_path)
-        #     # Group by codgeo and aggregate fap_code into list
-        #     top_metiers = bmo_vert.groupby('codgeo')['fap_code'].apply(list).rename('metiers_offres_top5').reset_index()
-        #     communes_gdf = communes_gdf.merge(top_metiers, on='codgeo', how='left')
-            
         # Merge Voisins
         merge_clean("voisins", ['codgeo_voisins'])
 
@@ -319,10 +300,10 @@ def build_bassins_de_vie(communes_gdf: gpd.GeoDataFrame, config: Dict[str, Any],
             # Rename to match our dissolved index 'bassin_de_vie'
             df_bv_source = df_bv_source.rename(columns={
                 'Bassin de vie 2022': 'bassin_de_vie',
-                'Libellé géographique du bassin de vie 2022': 'libelle_bassin_de_vie'
+                'Libellé géographique du bassin de vie 2022': 'libgeo'
             })
             # Deduplicate (one label per BV code)
-            labels = df_bv_source[['bassin_de_vie', 'libelle_bassin_de_vie']].drop_duplicates()
+            labels = df_bv_source[['bassin_de_vie', 'libgeo']].drop_duplicates()
             bv_gdf = bv_gdf.merge(labels, on='bassin_de_vie', how='left')
         
         output_path = OUTPUT_DIR / "odis_bassins_de_vie.parquet"

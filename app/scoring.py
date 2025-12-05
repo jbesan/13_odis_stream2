@@ -216,29 +216,6 @@ def compute_inclusion_score(
     
     # Filter for core codes (handling prefixes)
     # Note: associations_data['id_waldec'] should be strings.
-    if 'lien_social_count' not in df.columns:
-        core_codes_prefixes = tuple(cfg.WALDEC_CORE_INCLUSION)
-        # Filter rows where id_waldec starts with any of the core prefixes
-        # We use string operations for this.
-        core_assos = associations_data[associations_data['id_waldec'].astype(str).str.startswith(core_codes_prefixes, na=False)]
-        
-        # Group by codgeo and sum counts
-        core_counts = core_assos.groupby('codgeo')['count'].sum()
-        
-        # Join with df
-        df = df.join(core_counts.rename('lien_social_count'), how='left')
-        df['lien_social_count'] = df['lien_social_count'].fillna(0)
-    
-    # Calculate density (per 1000 hab)
-    # Calculate density (per 1000 hab)
-    # df['lien_social_density'] = (df['lien_social_count'] * 1000) / df['pop_be']
-    
-    # Calculate density (per 1000 hab)
-    # Pre-calculated in data_loader, but we need to ensure it's in df
-    # If df is a subset of odis, it should have 'lien_social_density'
-    if 'lien_social_density' not in df.columns:
-         # Fallback if not present (e.g. tests)
-         df['lien_social_density'] = (df['lien_social_count'] * 1000) / df['population']
 
     # Normalize
     # We use the pre-calculated score from prescoring
@@ -271,7 +248,7 @@ def compute_inclusion_score(
     else:
         df['inc_affinite_score'] = 0.0
 
-    # --- 4. Services Spécifiques (F-15) ---
+    # --- 4. Services Spécifiques ---
     # Uses 'besoins_autres' which is a list of slugs [category--service, ...]
     besoins_autres = prefs.get('besoins_autres', [])
     # Flatten the needed services into a set of "category--service" keys
@@ -441,57 +418,17 @@ def compute_criteria_scores(
         df['noms_formations'] = [[] for _ in range(len(df))]
 
     # --- HEBERGEMENT / LOGEMENT ---
-    #    min_b, max_b = get_bounds('log_5p_scaled', scores_cat, global_stats)
-    #    df['log_5p_scaled'] = min_max_scale(df['log_5p_ratio'].fillna(0), min_b, max_b)
-
-    # New Occupation Rate Score (replaces "Chez l'habitant" logic or adds to it? User said "change the underlying metric for this one")
-    # "this one" referred to "Count of 5+ room residences" in gap analysis.
-    # So we replace log_5p_scaled logic or add a new one if user selects "Grandes surfaces"?
-    # The UI has "Chez l'habitant" which maps to 'hebergement'.
-    # If prefs['hebergement'] == "Chez l'habitant", we used log_5p_ratio.
-    # Now we should use log_occupation_rate.
-    # But wait, "Chez l'habitant" implies spare room.
-    # So Under-Occupation (room to spare) is good.
-    # STD_OCC is standard. UNDER_OCC is under-occupied.
-    # If we want room to spare, we want High Under-Occupation?
-    # Or just High Standard Occupation (not over-occupied)?
-    # User said "build a scale based of OCC_IND".
-    # Let's assume we want to maximize "Not Over Occupied".
-    # Or maximize "Standard + Under".
-    # Let's use STD_OCC as a proxy for "Good".
-    # Or maybe we have 'MOD_UNDER_OCC' and 'SEV_UNDER_OCC'.
-    # If "Chez l'habitant", we want space. So Under Occupation is best.
-    # Let's sum STD_OCC + MOD_UNDER_OCC + SEV_UNDER_OCC + VSEV_UNDER_OCC?
-    # 3. Occupancy (log_pp_occup)
-    # If "Chez l'habitant", we want to favor under-occupied housing (high log_pp_occup).
-    # log_pp_occup is already calculated in build.py (0 to 1 scale roughly, but weighted).
-    # We map it to log_occup_scaled.
     
     if prefs['hebergement'] == "Chez l'habitant":
         # We use the pre-calculated log_pp_occup
         # It is already a weighted average where 1.0 = Very Severe Under-Occupation.
         # So higher is better for "Chez l'habitant".
-        # We just need to ensure it's scaled if needed, but it's already a ratio 0-1.
-        # We can just pass it through or min-max scale it if we want relative scoring.
-        # Let's use min-max scaling based on global stats to highlight relative differences.
         
         if 'log_occup_scaled' not in df.columns:
             raise ValueError("Missing pre-calculated score: log_occup_scaled")
     else:
-        # If not "Chez l'habitant", maybe we don't care, or we treat it as neutral?
-        # For now, let's set it to 0 or NaN so it doesn't influence the score if not relevant.
-        # But if it's in scores_config with weight 1, it will be used.
-        # If we want to disable it, we should probably set it to NaN.
+        # If not "Chez l'habitant", we don't use this score.
         df['log_occup_scaled'] = np.nan
-        
-        # We replace log_5p_scaled with this new score in the weighted sum?
-        # compute_weighted_score iterates over _cat_score.
-        # compute_category_scores iterates over scores_cat['score'].
-        # So we need to update scores_cat (config) to use 'log_occupation_scaled' instead of 'log_5p_scaled'.
-        # Or we can just assign it to 'log_5p_scaled' column to avoid config change, but that's confusing.
-        # I'll assign it to 'log_occupation_scaled' and I MUST update scores_config.yaml.
-        # For now, I'll also assign it to 'log_5p_scaled' as a fallback/alias if config isn't updated yet.
-        # df['log_5p_scaled'] = df['log_occupation_scaled']
 
     if prefs['logement'] == "Logement Social":
         if 'log_soc_inoc_scaled' not in df.columns:
@@ -504,17 +441,8 @@ def compute_criteria_scores(
     if prefs['nb_enfants'] > 0:
         if prefs['classe_enfants']:
             # New Education Score: Average School Size (Proxy for Closure Risk)
-            # We want to avoid closure. Small schools are at risk.
-            # So we want High Average Size?
-            # Or maybe we want Small Class Sizes (better education)?
-            # But the metric is "Risque de fermeture".
-            # User said: "We should be able to have this one with the Effectifs Ecoles".
-            # If we want to minimize risk, we want larger schools/classes.
-            # So Score = Normalized(Avg Size).
-            
-            # if 'avg_school_size' not in df.columns:
-            #     # Avoid division by zero
-            #     df['avg_school_size'] = (df['total_eleves'] / df['ecoles_count']).replace([np.inf, -np.inf], 0).fillna(0)
+            # We want to minimize risk, so we want larger schools/classes.
+            # Score = Normalized(Avg Size).
                 
             min_b, max_b = get_bounds('edu_classes_ferm_scaled', scores_cat, global_stats)
             # If max_b is not defined, we might need a reasonable max (e.g. 300 students per school?)
@@ -522,13 +450,13 @@ def compute_criteria_scores(
             if 'edu_classes_ferm_scaled' not in df.columns:
                 raise ValueError("Missing pre-calculated score: edu_classes_ferm_scaled")
             
-            # --- New Granular Scoring (F-14) ---
+            # --- Granular Scoring ---
             
             # 1. Petite Enfance (Crèche / Assistante Maternelle)
             if 'Crêche / Assistante Maternelle' in prefs['classe_enfants']:
                 # Use pre-calculated scaled score
                 if 'edu_petite_enfance_scaled' in df.columns:
-                    # F-14 Refinement: Do NOT fillna(0). Keep NaNs to exclude them later.
+                    # Do NOT fillna(0). Keep NaNs to exclude them later.
                     pass
                 else:
                     df['edu_petite_enfance_scaled'] = np.nan
@@ -593,7 +521,7 @@ def compute_criteria_scores(
     current_epci = df_all_communes.loc[prefs['commune_actuelle']]['epci_code']
     df['mob_epci_scaled'] = np.where(df['epci_code'] == current_epci, 1, 0)
 
-    # --- INCLUSION (New F-13) ---
+    # --- INCLUSION ---
     df = compute_inclusion_score(df, prefs, incl_index, associations_data, scores_cat, global_stats)
 
     # Population as a direct score for inclusion
@@ -684,7 +612,7 @@ def compute_category_scores(
         # (score_commune, score_voisin * (1 - penalty)).
         # This is done for all criteria in the category.
         max_scores = []
-        weights = [] # F-15
+        weights = []
 
         for col in score_cols:
             score_commune = df[col]
@@ -698,16 +626,16 @@ def compute_category_scores(
                 effective_score = np.maximum(s_commune, s_voisin)
                 max_scores.append(effective_score)
             else:  # This criterion is not applicable to binomes
-                # F-14: Preserve NaNs for aggregation
+                # Preserve NaNs for aggregation
                 max_scores.append(score_commune)
 
-            # F-15: Get Weight
+            # Get Weight
             # We assume scores_cat has 'weight' column (added in data_loader)
             base_weight = scores_cat[scores_cat.score == col]['weight'].iloc[0]
             dynamic_multiplier = config.criteria_weights.get(col, 1.0)
             weights.append(base_weight * dynamic_multiplier)
 
-        # F-15: Weighted Average Calculation
+        # Weighted Average Calculation
         scores_df = pd.concat(max_scores, axis=1)
         weights_array = np.array(weights)
         
@@ -1013,6 +941,15 @@ def run_scoring_pipeline(
         # Merge with geometry
         gdf_bv_geo_filtered = df_bv_geo[df_bv_geo.index.isin(df_bv_scores[cfg.BV_CODE_COL])]
         processed_gdf = gdf_bv_geo_filtered.merge(df_bv_scores, left_index=True, right_on=cfg.BV_CODE_COL)
+        
+        # Handle duplicate columns from merge (e.g. libgeo)
+        if 'libgeo_x' in processed_gdf.columns and 'libgeo_y' in processed_gdf.columns:
+            processed_gdf = processed_gdf.rename(columns={'libgeo_x': 'libgeo'}).drop(columns=['libgeo_y'])
+        elif 'libgeo_x' in processed_gdf.columns:
+             processed_gdf = processed_gdf.rename(columns={'libgeo_x': 'libgeo'})
+        elif 'libgeo_y' in processed_gdf.columns:
+             processed_gdf = processed_gdf.rename(columns={'libgeo_y': 'libgeo'})
+
         if processed_gdf.geometry.name != 'polygon':
             processed_gdf = processed_gdf.rename_geometry('polygon')
         processed_gdf = processed_gdf.drop_duplicates(subset=[cfg.BV_CODE_COL])

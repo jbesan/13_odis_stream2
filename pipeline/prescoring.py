@@ -6,7 +6,7 @@ from typing import Dict, Any
 
 from pipeline.common import (
     PipelineLogger, load_config,
-    CONFIG_FILE, CACHE_DIR, OUTPUT_DIR, STATUS_FILE
+    CONFIG_FILE, CACHE_DIR, OUTPUT_DIR, CLEAN_DIR, STATUS_FILE
 )
 
 # Configure logging
@@ -26,6 +26,16 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
 
         # --- Calculated Columns ---
         
+        # 0. Load Associations for Lien Social Score (moved from build.py)
+        if 'lien_social_count' not in communes_gdf.columns:
+            assoc_path = CLEAN_DIR / "associations_vertical.parquet"
+            if assoc_path.exists():
+                assoc_df = pd.read_parquet(assoc_path)
+                assoc_count = assoc_df.groupby('codgeo')['count'].sum().rename('lien_social_count').reset_index()
+                communes_gdf = communes_gdf.merge(assoc_count, on='codgeo', how='left')
+                communes_gdf['lien_social_count'] = communes_gdf['lien_social_count'].fillna(0)
+                logging.info("Calculated lien_social_count in prescoring")
+
         # log_soc_inoc_ratio
         if 'log_soc_total' in communes_gdf.columns and 'log_soc_inoccupes' in communes_gdf.columns:
             communes_gdf['log_soc_inoc_ratio'] = np.where(
@@ -218,7 +228,9 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             'log_soc_inoc_ratio', 'log_pp_occup',
             'metiers_offres_ratio', 'pop_chomage_ratio', 'met_ratio',
             'log_vac_struct_ratio', 'lien_social_density', 'risque_fermeture_ratio',
-            'edu_pe_tx_couverture' # Dropped after use in scaling
+            'edu_pe_tx_couverture', # Dropped after use in scaling
+            'lien_social_count', # Dropped after use in scaling
+            'pop_active', 'pop_employes', 'pop_chomeurs' # Dropped after use in ratios
         ]
         
         # --- Socle Administratif (Pre-calculated) ---

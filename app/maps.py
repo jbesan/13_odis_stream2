@@ -177,7 +177,7 @@ def build_legend(items_list: List[Dict[str, str]]) -> str:
     
     legend_html = """
         <div style='position: absolute; z-index: 9999; background-color: rgba(255, 255, 255, 0.8);
-                    border-radius: 6px; padding: 10px; font-size: 12px; left: 10px; top: 10px;'>
+                    border-radius: 6px; padding: 10px; font-size: 12px; right: 10px; top: 10px;'>
             <ul style='list-style: none; margin: 0; padding: 0;'>
                 <li><span style='display: inline-block; width:100px; background: linear-gradient(90deg, #ffffcc 0%, #006837 100%); 
                     border: 1px solid grey;'>&nbsp;</span> Score</li>
@@ -306,6 +306,9 @@ def build_sante_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config: 
         return fg
         
     logging.info(f"build_sante_layer: Found {len(filtered)} health facilities before filtering.")
+    logging.info(f"build_sante_layer: Config selection: '{config.besoin_sante}'")
+    if not filtered.empty:
+        logging.info(f"build_sante_layer: Available types: {filtered['type'].unique()}")
 
     # Filter by type (Standardized in ETL)
     mask = pd.Series(False, index=filtered.index)

@@ -154,7 +154,7 @@ app/
 - pages/2_Formulaire.py : La deuxième page de l'application, qui contient le formulaire du projet de vie.
 - pages/3_Resultats.py : La troisième page qui affiche les résultats du scoring.
 - ui.py : Ce fichier est responsable de la création de tous les composants de l'interface utilisateur avec Streamlit.
-- scoring.py : Le cœur logique du prototype. Il contient l'ensemble du pipeline de traitement et de notation.
+- scoring.py : Le cœur logique du prototype. Il contient l'ensemble du pipeline de traitement et de notation, optimisé pour la performance.
 - maps.py : Regroupe toutes les fonctions liées à la génération des cartes interactives avec Folium.
 - config.py : Un fichier central pour la configuration.
 - data_loader.py : Contient la logique pour charger les données.
@@ -177,7 +177,7 @@ Ce prototype est une base solide qui peut être grandement améliorée :
   - **Affiner les Critères :** Travailler avec des travailleurs sociaux pour affiner la liste des critères et leur pertinence.
 
 - **💻 Technique & UX :**
-  - **Refactoring du Scoring :** La logique de scoring, actuellement dans un fichier Python exporté d'un notebook, mériterait d'être réécrite dans une bibliothèque plus modulaire et testable.
+  - **Refactoring du Scoring :** La logique de scoring a été refactorisée et optimisée, mais peut encore être améliorée pour plus de modularité.
   - **Tests :** Ajouter des tests unitaires et d'intégration pour fiabiliser le pipeline de scoring et l'interface.
   - **Performance :** Optimiser le chargement des données et les calculs de score pour une meilleure fluidité.
   - **Design UI/UX :** Améliorer le design visuel, la mise en page et l'ergonomie sur mobile.
