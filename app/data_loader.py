@@ -8,6 +8,7 @@ import logging
 from typing import Dict, Any, Tuple
 import config as cfg
 import copy
+import gc
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -103,7 +104,7 @@ def load_scores_config_as_df(config_path: str) -> pd.DataFrame:
         })
     return pd.DataFrame(data)
 
-@st.cache_data
+@st.cache_resource
 def load_parquet_dataset(path: str, columns: list = None) -> pd.DataFrame:
     """Generic loader for parquet datasets with caching."""
     if columns:
@@ -116,7 +117,7 @@ def get_pois_by_category(pois_df: pd.DataFrame, category: str) -> pd.DataFrame:
         return pd.DataFrame()
     return pois_df[pois_df['category'] == category].copy()
 
-@st.cache_data
+@st.cache_resource
 def init_datasets() -> Dict[str, Any]:
     """
     Initializes and loads all necessary datasets for the application.
@@ -342,6 +343,10 @@ def init_datasets() -> Dict[str, Any]:
         area_geo = area_geo.set_index(['type', 'code'])
     else:
         area_geo = gpd.GeoDataFrame()
+
+    # Clean up temporary geometry objects
+    del deps, regs, area_dfs
+    gc.collect()
 
 
     return {

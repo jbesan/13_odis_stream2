@@ -9,6 +9,7 @@ import folium as flm
 import data_loader
 import geopandas as gpd
 import logging
+import gc
 
 st.set_page_config(layout="wide")
 
@@ -69,6 +70,7 @@ def run_search():
     It orchestrates the new filtering and scoring logic.
     """
     logging.info('--- Running new search with refactored logic ---')
+    gc.collect()
     # Clear any previously generated PDF data on new search
     st.session_state['pdf_data'] = None
     st.session_state['map_object'] = None
