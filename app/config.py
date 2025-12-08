@@ -204,7 +204,7 @@ DEMO_SCENARIOS = {
         'nb_adultes': 1,
         'nb_enfants': 2,
         'codes_metiers': [['T2A60']],
-        'classe_enfants': ['Elémentaire', 'Collège'],
+        'classe_enfants': ['Crèche / Assistante Maternelle', 'Collège'],
         'besoins_autres': ['lecture-ecriture-calcul--maitriser-le-francais'],
         'poids_mobilité': 50,
         'poids_inclusion': 100,

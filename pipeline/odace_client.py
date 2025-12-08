@@ -62,5 +62,7 @@ class OdaceClient:
         # Columns: gare_sk, commune_sk, gare_code, gare_label...
         return df
 
+
+
 def get_odace_client(logger: Optional[PipelineLogger] = None) -> OdaceClient:
     return OdaceClient(logger)

@@ -899,14 +899,12 @@ def main():
     clean_education(config, logger)
     clean_inclusion(config, logger)
     clean_associations(config, logger)
-    clean_voisins(config, logger)
     clean_political(config, logger)
     clean_housing_occupation(config, logger)
     clean_school_effectifs(config, logger)
     clean_bpe(config, logger)
     clean_codes_postaux(config, logger)
     clean_formations(config, logger)
-    
     clean_odace_gares(config, logger)
 
     logger.log_step("ingest_all", "COMPLETED")
@@ -1154,3 +1152,5 @@ def clean_odace_gares(config: Dict[str, Any], logger: PipelineLogger):
     except Exception as e:
         logger.log_step("clean_odace_gares", "ERROR", {"error": str(e)})
         logging.error(f"Odace Gares Cleaning failed: {e}")
+
+

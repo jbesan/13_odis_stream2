@@ -61,6 +61,25 @@ def session_states_init(defaults: Dict[str, Any]) -> None:
         if key not in st.session_state:
             st.session_state[key] = value
 
+    # Special handling for list-based inputs that map to indexed UI widgets
+    if 'classe_enfants' in defaults and isinstance(defaults['classe_enfants'], list):
+        for i, val in enumerate(defaults['classe_enfants']):
+            key = f"ui_classe_enfant_{i}"
+            if key not in st.session_state:
+                st.session_state[key] = val
+
+    if 'codes_metiers' in defaults and isinstance(defaults['codes_metiers'], list):
+        for i, val in enumerate(defaults['codes_metiers']):
+             key = f"ui_metiers_adult_{i}"
+             if key not in st.session_state:
+                 st.session_state[key] = val
+                 
+    if 'codes_formations' in defaults and isinstance(defaults['codes_formations'], list):
+        for i, val in enumerate(defaults['codes_formations']):
+             key = f"ui_formations_adult_{i}"
+             if key not in st.session_state:
+                 st.session_state[key] = val
+
 def ensure_data_initialized() -> None:
     """
     Ensures that the session state and datasets are initialized.

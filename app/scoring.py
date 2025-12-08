@@ -194,7 +194,7 @@ def filter_bassins_de_vie(
 
 def compute_inclusion_score(
     df: gpd.GeoDataFrame,
-    prefs: Dict[str, Any],
+    config: ScoringConfig,
     incl_index: pd.DataFrame,
     associations_data: pd.DataFrame,
     scores_cat: pd.DataFrame, # Added
@@ -223,7 +223,7 @@ def compute_inclusion_score(
          raise ValueError("Missing pre-calculated score: inc_lien_social_score")
     
     # --- 3. Affinité ---
-    selected_interests = prefs.get('affinite_selection', [])
+    selected_interests = config.affinite_selection
     if selected_interests:
         # Gather all relevant WALDEC codes
         interest_codes = set()
@@ -250,7 +250,7 @@ def compute_inclusion_score(
 
     # --- 4. Services Spécifiques ---
     # Uses 'besoins_autres' which is a list of slugs [category--service, ...]
-    besoins_autres = prefs.get('besoins_autres', [])
+    besoins_autres = config.besoins_autres
     # Flatten the needed services into a set of "category--service" keys
     needed_extra_services = set()
     for slug in besoins_autres:
@@ -277,7 +277,7 @@ def compute_inclusion_score(
             # Actually df.join(incl_index) adds columns from incl_index to df.
             # If we did it in step 1, df has 'key'.
             # Let's check if we did step 1.
-            if prefs.get('socle_admin_selection'):
+            if config.socle_admin_selection:
                  # df already has 'key' column from the join in step 1
                  df['extra_match_count'] = df['key'].apply(count_extra_matches)
             else:
@@ -297,7 +297,7 @@ def compute_inclusion_score(
 
 def compute_criteria_scores(
     df: gpd.GeoDataFrame,
-    prefs: Dict[str, Any],
+    config: ScoringConfig,
     incl_index: pd.DataFrame,
     df_all_communes: gpd.GeoDataFrame,
     associations_data: pd.DataFrame, # Added argument
@@ -341,10 +341,10 @@ def compute_criteria_scores(
     commune_fap_map = relevant_bmo.groupby('codgeo')['fap_code'].apply(set).to_dict()
 
     # Job categories that match user preferences
-    for i in range(prefs['nb_adultes']):
+    for i in range(config.nb_adultes):
         adult_key = f'adult{i+1}'
-        if prefs['codes_metiers'][i]:
-            prefs_metiers = set(prefs['codes_metiers'][i])
+        if config.codes_metiers[i]:
+            prefs_metiers = set(config.codes_metiers[i])
             
             # Calculate intersection size
             # We use map to get the set of available metiers for each commune
@@ -375,10 +375,10 @@ def compute_criteria_scores(
     # Create a mapping: codgeo -> set of available Formation codes
     commune_formation_map = relevant_formations.groupby('codgeo')['formation_code'].apply(set).to_dict()
 
-    for i in range(prefs['nb_adultes']):
+    for i in range(config.nb_adultes):
         adult_key = f'adult{i+1}'
-        if prefs['codes_formations'][i]:
-            prefs_formations = set(prefs['codes_formations'][i])
+        if config.codes_formations[i]:
+            prefs_formations = set(config.codes_formations[i])
             
             def get_formation_matches(codgeo):
                 available = commune_formation_map.get(codgeo, set())
@@ -399,7 +399,7 @@ def compute_criteria_scores(
     if codformations_index is not None and not codformations_index.empty:
         def get_all_formation_labels(row):
             codes = set()
-            for i in range(prefs['nb_adultes']):
+            for i in range(config.nb_adultes):
                 adult_key = f'adult{i+1}'
                 col = f'form_match_codes_{adult_key}'
                 if col in row and isinstance(row[col], list):
@@ -430,28 +430,28 @@ def compute_criteria_scores(
 
     # 1. Taux de Vacance (log_vac_scaled)
     # Used if "Location" is selected in EITHER Hébergement OR Logement
-    if prefs['hebergement'] == 'Location' or prefs['logement'] == 'Location':
+    if config.hebergement == 'Location' or config.logement == 'Location':
         pass
     else:
         drop_score_cols(df, 'log_vac_scaled')
 
     # 2. Logement Social (log_soc_inoc_scaled)
     # Used ONLY if "Logement Social" is selected in Logement
-    if prefs['logement'] == 'Logement Social':
+    if config.logement == 'Logement Social':
         pass
     else:
         drop_score_cols(df, 'log_soc_inoc_scaled')
 
     # 3. Occupation (log_occup_scaled)
     # Used ONLY if "Chez l'habitant" is selected in Hébergement
-    if prefs['hebergement'] == "Chez l'habitant":
+    if config.hebergement == "Chez l'habitant":
         pass
     else:
         drop_score_cols(df, 'log_occup_scaled')
 
     # --- EDUCATION ---
-    if prefs['nb_enfants'] > 0:
-        if prefs['classe_enfants']:
+    if config.nb_enfants > 0:
+        if config.classe_enfants:
             # New Education Score: Average School Size (Proxy for Closure Risk)
             # We want to minimize risk, so we want larger schools/classes.
             # Score = Normalized(Avg Size).
@@ -465,7 +465,7 @@ def compute_criteria_scores(
             # --- Granular Scoring ---
             
             # 1. Petite Enfance (Crèche / Assistante Maternelle)
-            if 'Crêche / Assistante Maternelle' in prefs['classe_enfants']:
+            if 'Crêche / Assistante Maternelle' in config.classe_enfants:
                 # Use pre-calculated scaled score
                 if 'edu_petite_enfance_scaled' in df.columns:
                     # Do NOT fillna(0). Keep NaNs to exclude them later.
@@ -477,22 +477,22 @@ def compute_criteria_scores(
             # We check presence (count > 0) for each type if selected
             
             # Maternelle
-            if 'Maternelle' in prefs['classe_enfants']:
+            if 'Maternelle' in config.classe_enfants:
                 if 'edu_maternelle_scaled' not in df.columns:
                     raise ValueError("Missing pre-calculated score: edu_maternelle_scaled")
                 
             # Elementaire
-            if 'Elémentaire' in prefs['classe_enfants']:
+            if 'Elémentaire' in config.classe_enfants:
                 if 'edu_elementaire_scaled' not in df.columns:
                     raise ValueError("Missing pre-calculated score: edu_elementaire_scaled")
                 
             # College
-            if 'Collège' in prefs['classe_enfants']:
+            if 'Collège' in config.classe_enfants:
                 if 'edu_college_scaled' not in df.columns:
                     raise ValueError("Missing pre-calculated score: edu_college_scaled")
                 
             # Lycee
-            if 'Lycée' in prefs['classe_enfants']:
+            if 'Lycée' in config.classe_enfants:
                 if 'edu_lycee_scaled' not in df.columns:
                     raise ValueError("Missing pre-calculated score: edu_lycee_scaled")
 
@@ -507,7 +507,7 @@ def compute_criteria_scores(
     # Else: Education criteria are not calculated/added to df
 
     # --- SANTE ---
-    sante_pref = prefs.get('besoin_sante', 'Aucun')
+    sante_pref = config.besoin_sante
     if sante_pref != 'Aucun':
         col_map = {
             'Hopital': 'sante_hopital_scaled',
@@ -526,15 +526,15 @@ def compute_criteria_scores(
 
     # --- MOBILITE ---
     # 1. Distance from the current location
-    if isinstance(prefs['loc_distance_km'], int):
-        df['mob_dist_scaled'] = (1 - df['dist_current_loc'] / (prefs['loc_distance_km'] * 1000))
+    if isinstance(config.loc_distance_km, int):
+        df['mob_dist_scaled'] = (1 - df['dist_current_loc'] / (config.loc_distance_km * 1000))
     # 2. Is the commune in the same EPCI as the current one?
     # We get the EPCI from the original, unfiltered dataframe to avoid KeyErrors
-    current_epci = df_all_communes.loc[prefs['commune_actuelle']]['epci_code']
+    current_epci = df_all_communes.loc[config.commune_actuelle]['epci_code']
     df['mob_epci_scaled'] = np.where(df['epci_code'] == current_epci, 1, 0)
 
     # --- INCLUSION ---
-    df = compute_inclusion_score(df, prefs, incl_index, associations_data, scores_cat, global_stats)
+    df = compute_inclusion_score(df, config, incl_index, associations_data, scores_cat, global_stats)
 
     # Population as a direct score for inclusion
     if 'inc_population_scaled' not in df.columns:
@@ -818,7 +818,7 @@ def compute_odis_score(
     # 4. Compute all individual criteria scores based on preferences.
     odis_scored = compute_criteria_scores(
         odis_search,
-        prefs=config.__dict__,
+        config=config,
         incl_index=incl_index,
         df_all_communes=df_all_communes,
         associations_data=associations_data, # Passed down

@@ -120,6 +120,7 @@ Le score est calculé à partir d'une multitude de critères, regroupés en gran
 
 - **Distance depuis le lieu actuel** (`mob_dist_scaled`) : Score basé sur la proximité par rapport à la commune de départ de la personne.
 - **Appartenance à la même agglomération (EPCI)** (`mob_epci_scaled`) : Vérifie si la commune proposée est dans le même Établissement Public de Coopération Intercommunale (EPCI) que la commune de départ.
+- **Présence d'une Gare (`mob_gare_scaled`)** : Bonifie les communes disposant d'une gare ferroviaire (Source: Odace).
 
 ## 🛠️ Stack Technique
 
@@ -128,7 +129,7 @@ Le score est calculé à partir d'une multitude de critères, regroupés en gran
 - **Scoring & Normalisation :** [Scikit-learn](https://scikit-learn.org/)
 - **Cartographie Interactive :** [Folium](https://python-visualization.github.io/folium/) & [streamlit-folium](https://github.com/randyzwitch/streamlit-folium)
 - **Graphiques :** [Plotly Express](https://plotly.com/python/plotly-express/)
-- **Sources de Données :** Les données sont agrégées depuis de nombreuses sources ouvertes, notamment l'INSEE, Data.gouv.fr, France Travail (Pôle Emploi), etc.
+- **Sources de Données :** Les données sont agrégées depuis de nombreuses sources ouvertes, notamment l'INSEE, Data.gouv.fr, France Travail (Pôle Emploi), Odace (Gares), etc.
 
 > Note
 > Le jeu de données principal qui se trouve dans `odis_june_2025_jacques.parquet` est une compilation de plusieurs autres jeux de données. La logique de cette compilation se trouve dans le Notebook `odis_stream2_data_gathering.ipynb`

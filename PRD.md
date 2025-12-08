@@ -1,8 +1,8 @@
 # PRD (Product Requirements Document) - OD&IS "Stream 2"
 
-**Version :** 1.3
+**Version :** 1.4
 **Projet :** Prototype de Recherche Inversée (Aide à la Localisation)
-**Auteur :** D4G: OD&IS (revu le 08/11/2025)
+**Auteur :** D4G: OD&IS (revu le 08/12/2025)
 
 ---
 
@@ -390,6 +390,23 @@ En tant que travailleur social, je veux voir les lieux recommandés sur une cart
 - **Pré-calcul des Scores :** Déplacement de la logique de normalisation (Min-Max Scaling) du temps d'exécution (`scoring.py`) vers le temps de construction (`build.py`) pour les indicateurs statiques.
 - **Optimisation des Fichiers :** Suppression des colonnes inutilisées dans `odis_communes.parquet` et utilisation de formats verticaux (`bmo_vertical.parquet`) pour les données volumineuses (métiers).
 - **Gestion des Erreurs Topologiques :** Correction robuste des géométries invalides lors de l'agrégation des Bassins de Vie.
+
+### 📊 Status
+
+- Completed
+
+## 🚀 Feature [F-17]: Intégration Données Odace (Gares)
+
+### 📝 User Stories
+
+- En tant que travailleur social, je veux savoir si une commune dispose d'une gare ferroviaire pour évaluer la mobilité pendulaire et l'accès aux grands pôles urbains pour la famille accompagnée.
+
+### 🔑 Key Features
+
+- **Intégration API Odace :** Connexion à l'API Odace pour récupérer les données référentielles (`dim_commune` et `dim_gare`).
+- **Indicateur Gare :** Création d'un indicateur binaire "Présence d'une gare" (`mob_gare_scaled`) pour chaque commune.
+- **Scoring Mobilité :** Intégration de ce nouvel indicateur dans la catégorie "Mobilité", permettant de valoriser les communes desservies par le train.
+- **Affichage :** Mention de la présence d'une gare dans les points forts de la localité.
 
 ### 📊 Status
 

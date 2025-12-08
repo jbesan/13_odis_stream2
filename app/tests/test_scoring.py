@@ -108,7 +108,7 @@ class TestScoringLogic:
 
         scored_df = scoring.compute_criteria_scores(
             df=df_with_dist,
-            prefs=config.__dict__,
+            config=config,
             incl_index=sample_incl_index,
             df_all_communes=sample_data,
             associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']), # Mock associations data
@@ -156,7 +156,7 @@ class TestScoringLogic:
         
         scored_df = scoring.compute_criteria_scores(
             df=df_with_dist,
-            prefs=config.__dict__,
+            config=config,
             incl_index=sample_incl_index,
             df_all_communes=sample_data,
             associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']),
@@ -397,7 +397,7 @@ class TestConditionalScoring:
         
         scored_df = scoring.compute_criteria_scores(
             df=df_with_dist,
-            prefs=config.__dict__,
+            config=config,
             incl_index=sample_incl_index,
             df_all_communes=sample_data,
             associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']),
