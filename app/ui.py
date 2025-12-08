@@ -44,6 +44,9 @@ def display_sidebar(demo_data: Dict[str, Any]) -> None:
                 for key, value in weights.items():
                     # Update session state keys for sliders (e.g. ui_poids_education)
                     st.session_state[f"ui_{key}"] = value
+            
+            st.session_state['processed_gdf'] = None
+        
 
         st.selectbox(
             "Profil de Priorité",
@@ -700,7 +703,7 @@ def _produce_pitch_markdown(row: pd.Series, config: cfg.ScoringConfig, scores_ca
         pitch_md.append(f'Le bassin de vie de **{row["libgeo"]}** ({population} habitants), composé de **{len(row["communes"])} communes**, présente un bon équilibre pour le projet.')
     else:
         # It's a commune
-        pitch_md.append(f'**{row["libgeo"]}** ({population} habitants) fait partie de l\'EPCI : **{row["epci_nom"]}**.  ')
+        pitch_md.append(f'**{row["libgeo"]}** ({population} habitants) fait partie du bassin de vie de : **{row["libelle_bassin_de_vie"]}**.  ')
 
     score_percent = f"{row['weighted_score'] * 100:.0f}%"
     if row.get("binome", False):

@@ -873,6 +873,8 @@ def clean_formations(config: Dict[str, Any], logger: PipelineLogger):
     except Exception as e:
         logger.log_step("clean_formations", "ERROR", {"error": str(e)})
 
+
+
 def main():
     logger = PipelineLogger(STATUS_FILE)
     config = load_config(CONFIG_FILE)

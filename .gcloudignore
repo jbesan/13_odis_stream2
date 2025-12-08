@@ -3,6 +3,7 @@
 
 # Allow app directory
 !app/
+!data/
 
 # Explicitly ignore hidden files/folders in root (since * misses them)
 .git
@@ -16,11 +17,6 @@ __pycache__
 *.pyc
 .ipynb_checkpoints
 .agent
-
-# Explicitly ignore large folders in root that are not needed
-csv/
-notebooks/
-#images/
 
 # Ignore specific files/folders within app/
 app/__pycache__

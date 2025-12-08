@@ -420,20 +420,19 @@ def compute_criteria_scores(
     # --- HEBERGEMENT / LOGEMENT ---
 
     def drop_score_cols(df, col_name):
-        cols_to_drop = [col_name]
-        if f"{col_name}_binome" in df.columns:
-            cols_to_drop.append(f"{col_name}_binome")
-        df.drop(columns=cols_to_drop, inplace=True, errors='ignore')
+        # Build list of cols to drop including potential binome cols
+        cols_to_drop = [col_name, f"{col_name}_binome"]
+        # Drop only those present to avoid errors, although errors='ignore' handles it.
+        # We use strict list for clarity.
+        existing_cols = [c for c in cols_to_drop if c in df.columns]
+        if existing_cols:
+            df.drop(columns=existing_cols, inplace=True)
 
     # 1. Taux de Vacance (log_vac_scaled)
     # Used if "Location" is selected in EITHER Hébergement OR Logement
     if prefs['hebergement'] == 'Location' or prefs['logement'] == 'Location':
-        if 'log_vac_scaled' not in df.columns:
-            # Maybe it was dropped or not loaded?
-            # It should be there from data_loader.
-            pass
+        pass
     else:
-        # Explicitly remove it so it is excluded from category calculation
         drop_score_cols(df, 'log_vac_scaled')
 
     # 2. Logement Social (log_soc_inoc_scaled)

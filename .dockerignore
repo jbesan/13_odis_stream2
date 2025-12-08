@@ -3,6 +3,7 @@
 
 # Allow app directory
 !app/
+!data/
 
 # Ignore specific heavy items inside app/ if any (though !app/ allows it, we can be specific if needed)
 # But generally we want app/
@@ -19,11 +20,6 @@ __pycache__
 *.pyc
 .ipynb_checkpoints
 .agent
-
-# Explicitly ignore large folders in root that are not needed
-csv/
-notebooks/
-#images/
 
 # Ignore specific files/folders within app/
 app/__pycache__
