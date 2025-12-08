@@ -3,6 +3,7 @@ scores:
     category: emploi
     source_metric: met_ratio
     include_in_binom: true
+    computation: precomputed
     display:
       name: Taux Besoin Emploi
       strong_point_text: De nombreux emplois non pourvus
@@ -18,6 +19,7 @@ scores:
     category: emploi
     source_metric: met_tension_ratio
     include_in_binom: true
+    computation: precomputed
     display:
       name: Taux Besoin Emploi en Tension
       strong_point_text: De nombreux emplois en tension non pourvus
@@ -33,6 +35,7 @@ scores:
     category: logement
     source_metric: log_vac_struct_ratio
     include_in_binom: true
+    computation: precomputed
     display:
       name: Taux Vacance Structurelle (> 2 ans)
       strong_point_text: Nombre élevé de logements vacants depuis plus de 2 ans
@@ -42,12 +45,13 @@ scores:
       display_factor: 100
       tooltip: Part des logements vacants depuis plus de 2 ans sur le parc total
     weight: 1.0
-    min_bound: null
-    max_bound: null
+    min_bound: 0
+    max_bound: 0.10
   - id: log_soc_inoc_scaled
     category: logement
     source_metric: log_soc_inoc_ratio
     include_in_binom: true
+    computation: precomputed
     display:
       name: Taux de Logements Sociaux Inoccupés (Vacants ou Vides)
       strong_point_text: Un nombre élevé de logements sociaux potentiellement disponibles
@@ -59,46 +63,62 @@ scores:
         Nombre de logements sociaux innocupés (vacants ou vide) sur le parc de
         logements sociaux
     weight: 1.0
-    min_bound: null
-    max_bound: null
-  - id: log_5p_scaled
+    min_bound: 0.0
+    max_bound: 1.0
+  - id: log_occup_scaled
     category: logement
-    source_metric: log_5p_ratio
+    source_metric: log_pp_occup
     include_in_binom: true
+    computation: precomputed
     display:
-      name: Taux Grandes Résidences Principales
-      strong_point_text:
-        Nombre élevé de résidences principales de grande taille susceptible
-        d'accueillir chez l'habitant
+      name: Taux d'Occupation (Sous-occupation)
+      strong_point_text: Logements sous-occupés (potentiel d'accueil)
       high_value_adjective: élevé
       show: true
       unit: "%"
       display_factor: 100
-      tooltip: ""
+      tooltip: "Part des logements sous-occupés (Source: INSEE)"
+    weight: 1.0
+    min_bound: null
+    max_bound: null
+
+  - id: log_occupation_scaled
+    category: logement
+    source_metric: log_occupation_rate
+    include_in_binom: true
+    computation: precomputed
+    display:
+      name: Taux d'Occupation Standard
+      strong_point_text: Logements avec un taux d'occupation standard ou sous-occupés
+      high_value_adjective: élevé
+      show: true
+      unit: "%"
+      display_factor: 100
+      tooltip: "Part des résidences principales avec un taux d'occupation standard ou sous-occupé"
     weight: 0.5
     min_bound: null
     max_bound: null
   - id: edu_classes_ferm_scaled
     category: education
-    source_metric: risque_fermeture_ratio
+    source_metric: avg_school_size
     include_in_binom: true
+    computation: precomputed
     display:
-      name: Taux Classes à Risque de Fermeture
-      strong_point_text: Des classes qui risquent de fermer faute d’élèves
+      name: Taille Moyenne des Écoles
+      strong_point_text: Écoles avec un effectif moyen élevé (moins de risque de fermeture)
       high_value_adjective: élevé
       show: true
-      unit: école(s)
+      unit: élèves/école
       display_factor: 1
-      tooltip:
-        Ratio du nombre de classes à riques de fermetures sur le nombre total
-        d'établissements
+      tooltip: "Nombre moyen d'élèves par école"
     weight: 0.5
-    min_bound: 0.0
-    max_bound: 3.0
+    min_bound: null
+    max_bound: null
   - id: inc_pol_scaled
     category: inclusion
     source_metric: pol_num
     include_in_binom: false
+    computation: precomputed
     display:
       name: Couleur Politique de la commmue
       strong_point_text: La couleur politique de la localité est favorable
@@ -114,6 +134,7 @@ scores:
     category: inclusion
     source_metric: population
     include_in_binom: false
+    computation: precomputed
     display:
       name: Population de la commune
       strong_point_text: La commune est de taille importante
@@ -129,6 +150,7 @@ scores:
     category: emploi
     source_metric: met_match_adult1
     include_in_binom: true
+    computation: live
     display:
       name: Match compétences et Besoin Emploi Adult 1
       strong_point_text:
@@ -139,13 +161,14 @@ scores:
       unit: famille(s) d'emplois
       display_factor: 1
       tooltip: Nombre de familles d'emplois dans le top 10
-    weight: 1.0
+    weight: 2.0
     min_bound: 0.0
     max_bound: null
   - id: met_match_adult2_scaled
     category: emploi
     source_metric: met_match_adult2
     include_in_binom: true
+    computation: live
     display:
       name: Match compétences et Besoin Emploi Adult 2
       strong_point_text:
@@ -156,13 +179,14 @@ scores:
       unit: famille(s) d'emplois
       display_factor: 1
       tooltip: Nombre de familles d'emplois dans le top 10
-    weight: 1.0
+    weight: 2.0
     min_bound: 0.0
     max_bound: null
   - id: form_match_adult1_scaled
     category: emploi
     source_metric: form_match_adult1
     include_in_binom: true
+    computation: live
     display:
       name: Match besoins et Centres de formation
       strong_point_text:
@@ -173,13 +197,14 @@ scores:
       unit: formations offertes
       display_factor: 1
       tooltip: Nombre centres de formations dans la commune
-    weight: 1.0
+    weight: 2.0
     min_bound: 0.0
     max_bound: null
   - id: form_match_adult2_scaled
     category: emploi
     source_metric: form_match_adult2
     include_in_binom: true
+    computation: live
     display:
       name: Match besoins et Centres de formation
       strong_point_text:
@@ -190,13 +215,14 @@ scores:
       unit: formations offertes
       display_factor: 1
       tooltip: Nombre centres de formations dans la commune
-    weight: 1.0
+    weight: 2.0
     min_bound: 0.0
     max_bound: null
   - id: mob_dist_scaled
     category: mobilité
     source_metric: dist_current_loc
     include_in_binom: false
+    computation: live
     display:
       name: Distance de la localisation actuelle
       strong_point_text: La localité proposée est proche de la commune actuelle
@@ -212,6 +238,7 @@ scores:
     category: mobilité
     source_metric: null
     include_in_binom: false
+    computation: live
     display:
       name: Même agglomération que la localisation actuelle
       strong_point_text: La localité proposée est bien connectée à la commune actuelle
@@ -227,6 +254,7 @@ scores:
     category: education
     source_metric: edu_dist_kid1
     include_in_binom: false
+    computation: live
     display:
       name: Proximité de l'établissement scolaire enfant 1
       strong_point_text: ""
@@ -242,6 +270,7 @@ scores:
     category: education
     source_metric: edu_dist_kid2
     include_in_binom: false
+    computation: live
     display:
       name: Proximité de l'établissement scolaire enfant 2
       strong_point_text: ""
@@ -257,6 +286,7 @@ scores:
     category: education
     source_metric: edu_dist_kid3
     include_in_binom: false
+    computation: live
     display:
       name: Proximité de l'établissement scolaire enfant 3
       strong_point_text: ""
@@ -272,6 +302,7 @@ scores:
     category: education
     source_metric: edu_dist_kid4
     include_in_binom: false
+    computation: live
     display:
       name: Proximité de l'établissement scolaire enfant 4
       strong_point_text: ""
@@ -287,6 +318,7 @@ scores:
     category: education
     source_metric: edu_dist_kid5
     include_in_binom: false
+    computation: live
     display:
       name: Proximité de l'établissement scolaire enfant 5
       strong_point_text: ""
@@ -302,6 +334,7 @@ scores:
     category: inclusion
     source_metric: socle_match_count
     include_in_binom: true
+    computation: precomputed
     display:
       name: Socle Administratif
       strong_point_text: Services administratifs essentiels présents
@@ -317,6 +350,7 @@ scores:
     category: inclusion
     source_metric: lien_social_density
     include_in_binom: true
+    computation: precomputed
     display:
       name: Lien Social
       strong_point_text: Tissu associatif dense favorisant le lien social
@@ -332,6 +366,7 @@ scores:
     category: inclusion
     source_metric: affinite_density
     include_in_binom: true
+    computation: live
     display:
       name: Affinités
       strong_point_text: Associations correspondant aux centres d'intérêt
@@ -347,6 +382,7 @@ scores:
     category: inclusion
     source_metric: extra_services_match_count
     include_in_binom: true
+    computation: live
     display:
       name: Services Spécifiques
       strong_point_text: Services spécifiques recherchés présents
@@ -362,6 +398,7 @@ scores:
     category: education
     source_metric: taux_couverture
     include_in_binom: true
+    computation: precomputed
     display:
       name: Accueil Petite Enfance
       strong_point_text: Bonne couverture en crèches et assistantes maternelles
@@ -379,6 +416,7 @@ scores:
     category: education
     source_metric: count_maternelle
     include_in_binom: true
+    computation: precomputed
     display:
       name: Ecole Maternelle
       strong_point_text: Présence d'une école maternelle
@@ -394,6 +432,7 @@ scores:
     category: education
     source_metric: count_elementaire
     include_in_binom: true
+    computation: precomputed
     display:
       name: Ecole Elémentaire
       strong_point_text: Présence d'une école élémentaire
@@ -409,6 +448,7 @@ scores:
     category: education
     source_metric: count_college
     include_in_binom: true
+    computation: precomputed
     display:
       name: Collège
       strong_point_text: Présence d'un collège
@@ -424,6 +464,7 @@ scores:
     category: education
     source_metric: count_lycee
     include_in_binom: true
+    computation: precomputed
     display:
       name: Lycée
       strong_point_text: Présence d'un lycée
@@ -435,10 +476,27 @@ scores:
     weight: 1.0
     min_bound: 0.0
     max_bound: 1.0
+  - id: edu_classes_ferm_scaled
+    category: education
+    source_metric: risque_fermeture_ratio
+    include_in_binom: true
+    computation: precomputed
+    display:
+      name: Risque de fermeture de classe
+      strong_point_text: Faible risque de fermeture de classe
+      high_value_adjective: faible
+      show: true
+      unit: élèves/école
+      display_factor: 1
+      tooltip: Nombre moyen d'élèves par école (plus c'est élevé, moins le risque est grand)
+    weight: 1.0
+    min_bound: null
+    max_bound: null
   - id: sante_structures_scaled
     category: santé
     source_metric: sante_structures_scaled
     include_in_binom: true
+    computation: precomputed
     display:
       name: Structure de santé recherchée
       strong_point_text: L'établissement de santé recherché est présent

@@ -376,4 +376,21 @@ En tant que travailleur social, je veux voir les lieux recommandés sur une cart
 
 ### 📊 Status
 
-- Not Started
+- Completed
+
+## 🚀 Feature [F-16]: Optimisation et Refactoring ETL
+
+### 📝 User Stories
+
+- En tant que développeur, je veux que le pipeline ETL soit robuste, rapide et produise des fichiers optimisés pour l'application afin de réduire le temps de chargement et d'améliorer la réactivité.
+
+### 🔑 Key Features
+
+- **Pipeline Unifié :** Intégration de l'étape de déploiement (`deploy_data.py`) directement dans le CLI `etl.py`.
+- **Pré-calcul des Scores :** Déplacement de la logique de normalisation (Min-Max Scaling) du temps d'exécution (`scoring.py`) vers le temps de construction (`build.py`) pour les indicateurs statiques.
+- **Optimisation des Fichiers :** Suppression des colonnes inutilisées dans `odis_communes.parquet` et utilisation de formats verticaux (`bmo_vertical.parquet`) pour les données volumineuses (métiers).
+- **Gestion des Erreurs Topologiques :** Correction robuste des géométries invalides lors de l'agrégation des Bassins de Vie.
+
+### 📊 Status
+
+- Completed

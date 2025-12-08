@@ -5,11 +5,13 @@ import geopandas as gpd
 import pandas as pd
 from shapely.geometry import mapping
 from branca.colormap import linear
-from folium.plugins import FastMarkerCluster
+from folium.plugins import FastMarkerCluster, MarkerCluster
 
 from typing import Union, List, Tuple, Optional, Any, Set, Dict
 import config as cfg
+
 import logging
+import json # Added for metadata parsing
 
 def get_map_zoom(distance_km: Union[int, str]) -> int:
     """Returns a map zoom level based on a search distance."""
@@ -194,39 +196,73 @@ def _build_generic_points_layer(df: gpd.GeoDataFrame, icon: str, color: str, too
     if df.empty:
         return flm.FeatureGroup()
 
-    df['lat'] = df.geometry.y
-    df['lon'] = df.geometry.x
+    # Robustness: Check if geometry is available
+    if hasattr(df, 'geometry') and df.geometry.name in df.columns:
+        df['lat'] = df.geometry.y
+        df['lon'] = df.geometry.x
+    elif 'lat' in df.columns and 'lon' in df.columns:
+        # Use existing lat/lon if geometry is missing (e.g. DataFrame instead of GeoDataFrame)
+        pass
+    else:
+        logging.error("_build_generic_points_layer: No geometry or lat/lon columns found.")
+        return flm.FeatureGroup()
+
     df.dropna(subset=['lat', 'lon'], inplace=True)
     
-    locations = df[['lat', 'lon'] + tooltip_cols].values.tolist()
+    # Prepare data for map layer
+    
+    # Switch to MarkerCluster for robustness with icons and popups
+    # FastMarkerCluster with JS callback was proving fragile/broken in some contexts
+    logging.info(f"Building MarkerCluster with {len(df)} points. Icon: {icon}, Color: {color}")
+    
+    cluster = MarkerCluster()
+    
+    for _, row in df.iterrows():
+        # Construct popup content safely
+        popup_content = "<br>".join([f"<b>{'Catégorie' if col == 'type' else 'Nom'}</b>: {row.get(col, '')}" for col in tooltip_cols])
+        
+        flm.Marker(
+            location=[row['lat'], row['lon']],
+            popup=flm.Popup(popup_content, max_width=300),
+            icon=flm.Icon(color=color, icon=icon, prefix='fa')
+        ).add_to(cluster)
 
-    # Create a JS callback for the markers
-    popup_str = " + '<br>' + ".join([f"'{col}: ' + row[{i+2}]" for i, col in enumerate(tooltip_cols)])
-    callback = f"""
-    function (row) {{
-        var icon, marker;
-        icon = L.AwesomeMarkers.icon({{icon: '{icon}', markerColor: '{color}', prefix: 'fa'}});
-        marker = L.marker(new L.LatLng(row[0], row[1]));
-        marker.setIcon(icon);
-        marker.bindPopup('<b>' + {popup_str} + '</b>');
-        return marker;
-    }};
-    """
-    return FastMarkerCluster(locations, callback=callback)
+    return cluster
 
-def build_ecoles_layer(annuaire_ecoles: gpd.GeoDataFrame, target_codgeos: Set[str], config: cfg.ScoringConfig) -> flm.FeatureGroup:
-    """Builds the map layer for schools."""
+def build_ecoles_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config: cfg.ScoringConfig) -> flm.FeatureGroup:
+    """Builds the map layer for schools using unified POIs."""
     fg = flm.FeatureGroup(name="Établissements Scolaires")
     
-    filtered = annuaire_ecoles[annuaire_ecoles['code_commune'].isin(target_codgeos)].copy()
-    if not config.classe_enfants:
-        return fg # No kids, no schools to show
+    # Filter by category and codgeo
+    filtered = pois[
+        (pois['category'] == 'education') & 
+        (pois['codgeo'].isin(target_codgeos))
+    ].copy()
+    
+    if not config.classe_enfants or filtered.empty:
+        logging.info("build_ecoles_layer: No children or no schools found.")
+        return fg # No kids or no schools
         
+    logging.info(f"build_ecoles_layer: Found {len(filtered)} schools before filtering by type.")
+        
+    # Filter by type (nature_uai_libe)
+    # Replicate logic from data_loader.py using 'type' column
+    # Data is now standardized in ETL (pipeline/build.py)
+    
+    is_maternelle = filtered['type'] == 'Maternelle'
+    is_elementaire = filtered['type'] == 'Elémentaire'
+    is_college = filtered['type'] == 'Collège'
+    is_lycee = filtered['type'] == 'Lycée'
+    
+    # Map "Crêche / Assistante Maternelle" to available Creche types
+    is_creche = filtered['type'].isin(['Creche', 'Micro_Creche', 'Creche_Familiale'])
+
     niveaux_map = {
-        'Maternelle': (filtered.ecole_maternelle > 0),
-        'Elémentaire': (filtered.ecole_elementaire > 0),
-        'Collège': (filtered.type_etablissement == 'Collège'),
-        'Lycée': (filtered.type_etablissement == 'Lycée')
+        'Maternelle': is_maternelle,
+        'Elémentaire': is_elementaire,
+        'Collège': is_college,
+        'Lycée': is_lycee,
+        'Crêche / Assistante Maternelle': is_creche
     }
     
     mask = pd.Series(False, index=filtered.index)
@@ -235,45 +271,100 @@ def build_ecoles_layer(annuaire_ecoles: gpd.GeoDataFrame, target_codgeos: Set[st
             mask |= niveaux_map[niveau]
             
     filtered = filtered[mask]
+    logging.info(f"build_ecoles_layer: {len(filtered)} schools remaining after type filtering.")
     
-    cluster = _build_generic_points_layer(filtered, icon='pencil', color='green', tooltip_cols=['nom_etablissement', 'type_etablissement'])
-    cluster.add_to(fg)
-    return fg
-
-def build_sante_layer(annuaire_sante: gpd.GeoDataFrame, target_codgeos: Set[str], config: cfg.ScoringConfig) -> flm.FeatureGroup:
-    """Builds the map layer for health facilities."""
-    fg = flm.FeatureGroup(name="Établissements de Santé")
-    filtered = annuaire_sante[annuaire_sante['codgeo'].isin(target_codgeos)].copy()
-
-    mask = pd.Series(False, index=filtered.index)
-    if config.besoin_sante == 'Maternité':
-        mask = filtered.maternite == True
-    elif config.besoin_sante == "Hopital":
-        mask = filtered.Categorie.astype(str).isin(['355', '362', '101', '106'])
-    elif config.besoin_sante == "Soutien Psychologique & Addictologie":
-        mask = filtered.Categorie.astype(str).isin(['156', '292', '425', '412', '366', '415', '430', '444'])
-    
-    if not mask.any():
+    if filtered.empty:
         return fg
 
-    cluster = _build_generic_points_layer(filtered[mask], icon='plus', color='blue', tooltip_cols=['RaisonSociale', 'LibelleCategorieAgregat'])
-    logging.info(cluster)
+    cluster = _build_generic_points_layer(filtered, icon='pencil', color='green', tooltip_cols=['name', 'type'])
     cluster.add_to(fg)
     return fg
 
-def build_services_layer(annuaire_inclusion: gpd.GeoDataFrame, target_codgeos: Set[str], config: cfg.ScoringConfig) -> flm.FeatureGroup:
-    """Builds the map layer for inclusion services."""
+def build_sante_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config: cfg.ScoringConfig) -> flm.FeatureGroup:
+    """Builds the map layer for health facilities using unified POIs."""
+    fg = flm.FeatureGroup(name="Établissements de Santé")
+    
+    filtered = pois[
+        (pois['category'] == 'sante') & 
+        (pois['codgeo'].isin(target_codgeos))
+    ].copy()
+    
+    if filtered.empty:
+        logging.info("build_sante_layer: No health facilities found.")
+        return fg
+        
+    logging.info(f"build_sante_layer: Found {len(filtered)} health facilities before filtering.")
+    logging.info(f"build_sante_layer: Config selection: '{config.besoin_sante}'")
+    if not filtered.empty:
+        logging.info(f"build_sante_layer: Available types: {filtered['type'].unique()}")
+
+    # Filter by type (Standardized in ETL)
+    mask = pd.Series(False, index=filtered.index)
+    if config.besoin_sante == 'Maternité':
+        mask = filtered['type'] == 'Maternité'
+    elif config.besoin_sante == "Hopital":
+        mask = filtered['type'] == 'Hopital'
+    elif config.besoin_sante == "Soutien Psychologique & Addictologie":
+        mask = filtered['type'] == 'Soutien Psychologique & Addictologie'
+    
+    if not mask.any():
+        logging.info("build_sante_layer: No facilities match the selected type.")
+        return fg
+    
+    logging.info(f"build_sante_layer: {mask.sum()} facilities match the selected type.")
+
+    cluster = _build_generic_points_layer(filtered[mask], icon='plus', color='blue', tooltip_cols=['name', 'type'])
+    cluster.add_to(fg)
+    return fg
+
+def build_services_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config: cfg.ScoringConfig) -> flm.FeatureGroup:
+    """Builds the map layer for inclusion services using unified POIs."""
     fg = flm.FeatureGroup(name="Services d'inclusion")
     
     if not config.besoins_autres:
         return fg
         
-    filtered = annuaire_inclusion[annuaire_inclusion['codgeo'].isin(target_codgeos)].copy()
-    mask = filtered.categorie.isin(config.besoins_autres.keys())
+    filtered = pois[
+        (pois['category'] == 'incl_services') & 
+        (pois['codgeo'].isin(target_codgeos))
+    ].copy()
+    
+    if filtered.empty:
+        return fg
+
+    # 'type' column contains 'thematiques' (e.g. "category--service")
+    # We check if 'type' starts with any of the selected categories
+    # config.besoins_autres is a dict or list of slugs?
+    # It's a dict {slug: label} or just keys.
+    # In data_loader.py, we split thematiques into categorie and service.
+    # Here we can just check string containment or split 'type'.
+    
+    # Extract category from type
+    # filtered['categorie'] = filtered['type'].str.split('--').str[0]
+    
+    # mask = filtered['categorie'].isin(config.besoins_autres.keys())
+    
+    # New logic: check if 'type' (slug) is in the list of selected slugs
+    if isinstance(config.besoins_autres, list):
+        mask = filtered['type'].isin(config.besoins_autres)
+    elif isinstance(config.besoins_autres, dict):
+        # Backward compatibility if it's still a dict (keys are categories?)
+        # Or keys are slugs? The old code used keys() as categories.
+        # Let's assume keys are categories if it's a dict, but user said it's a list of slugs.
+        # If it was a dict of slugs, we'd check keys.
+        # But old code split type to get category.
+        # Let's just try to match type against keys if it's a dict, or split.
+        # Safest is to log warning and try exact match.
+        logging.warning("build_services_layer: besoins_autres is a dict, using keys as slugs.")
+        mask = filtered['type'].isin(config.besoins_autres.keys())
+    else:
+        mask = pd.Series(False, index=filtered.index)
+        
+    logging.info(f"build_services_layer: {mask.sum()} services match the selection.")
     
     if not mask.any():
         return fg
 
-    cluster = _build_generic_points_layer(filtered[mask], icon='heart', color='purple', tooltip_cols=['nom', 'categorie', 'service'])
+    cluster = _build_generic_points_layer(filtered[mask], icon='heart', color='purple', tooltip_cols=['name', 'type'])
     cluster.add_to(fg)
     return fg

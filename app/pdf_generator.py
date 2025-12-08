@@ -154,10 +154,9 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
         # Get job names from codes
         selected_metier_codes = [code for sublist in config.codes_metiers for code in sublist]
         if selected_metier_codes and metiers_df is not None:
-            metiers_df_indexed = metiers_df.set_index('Code FAP 341')
-            # Handle potential missing codes gracefully
-            valid_codes = [c for c in selected_metier_codes if c in metiers_df_indexed.index]
-            metier_names = metiers_df_indexed.loc[valid_codes, 'Intitulé FAP 341'].tolist()
+            # metiers_df is already indexed by code (from data_loader)
+            valid_codes = [c for c in selected_metier_codes if c in metiers_df.index]
+            metier_names = metiers_df.loc[valid_codes, 'label'].tolist()
             metiers_str = ", ".join(metier_names)
         else:
             metiers_str = "Non spécifié"
@@ -165,9 +164,9 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
         # Get formation names from codes
         selected_formation_codes = [code for sublist in config.codes_formations for code in sublist]
         if selected_formation_codes and formations_df is not None:
-            formations_df_indexed = formations_df.set_index('index')
-            valid_codes = [c for c in selected_formation_codes if c in formations_df_indexed.index]
-            formation_names = formations_df_indexed.loc[valid_codes, 'libformation'].tolist()
+            # formations_df is indexed by code (from data_loader)
+            valid_codes = [c for c in selected_formation_codes if c in formations_df.index]
+            formation_names = formations_df.loc[valid_codes, 'label'].tolist()
             formations_str = ", ".join(formation_names)
         else:
             formations_str = "Non spécifié"
@@ -185,8 +184,12 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
             "Hébergement": config.hebergement,
             "Logement à long terme": config.logement,
             "Besoin de santé": config.besoin_sante,
-            "Autres besoins": ", ".join(
-                [f"{cat}: {', '.join(serv)}" for cat, serv in config.besoins_autres.items()]) if config.besoins_autres else "Aucun",
+            "Autres besoins": (lambda: 
+                ", ".join([
+                    {v: k for k, v in st_session_state.get('ui_besoins_autres_map', {}).items()}.get(slug, slug)
+                    for slug in config.besoins_autres
+                ]) if config.besoins_autres else "Aucun"
+            )(),
         }
         
         table_data = [[key, str(value)] for key, value in criteria.items() if value]
@@ -332,20 +335,55 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
         pdf.set_font("DejaVu", 'B', 9)
         pdf.cell(0, 6, "Services d'inclusion", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.set_font("DejaVu", '', 9)
+        
         services_df = st_session_state['app_data']['annuaire_inclusion']
+        incl_index = st_session_state['app_data'].get('inclusion_services_index', pd.DataFrame())
+        
+        # Determine Target Slugs for Filtering
+        target_slugs = set(cfg.DEFAULT_SOCLE_ADMIN)
+        
+        # Add user selected specific needs
+        if 'ui_besoins_autres' in st_session_state and st_session_state['ui_besoins_autres']:
+                target_slugs.update(st_session_state['ui_besoins_autres'])
+        
         communes_to_check = row.get('communes', [row.name])
-        bv_services = services_df[services_df.codgeo.isin(communes_to_check)]
-        if not bv_services.empty and any(bv_services.service != '-'):
-            service_text = []
-            for cat, group in bv_services.groupby('categorie', observed=True):
-                valid_services = group[group.service != '-']
-                if not valid_services.empty:
-                    services_list_str = ", ".join(
-                        valid_services['service'].str.replace('-', ' ').str.capitalize().unique())
-                    service_text.append(f"**{cat.replace('-', ' ').capitalize()}**: {services_list_str}")
-            pdf.multi_cell(0, 5, "\n".join(service_text), markdown=True)
+        
+        # Filter services
+        # We look for services in any of the communes (if aggregated) or the single commune
+        bv_services = services_df[
+            (services_df['codgeo'].isin(communes_to_check)) &
+            (services_df['categorie'].isin(target_slugs))
+        ]
+
+        if not bv_services.empty:
+            # Get unique slugs found
+            unique_slugs = sorted(bv_services['categorie'].unique())
+            
+            valid_labels = []
+            for slug in unique_slugs:
+                # Lookup label
+                if not incl_index.empty and slug in incl_index.index:
+                    try:
+                        label = incl_index.loc[slug, 'label']
+                        # If duplicate index
+                        if isinstance(label, (pd.Series, pd.DataFrame)):
+                            label = label.iloc[0]
+                    except:
+                        label = slug
+                else:
+                    label = slug # Fallback
+                
+                if label:
+                        valid_labels.append(label)
+
+            if valid_labels:
+                    # Deduplicate labels
+                    valid_labels = sorted(list(set(valid_labels)))
+                    pdf.multi_cell(0, 5, "\n".join([f'- {label}' for label in valid_labels]))
+            else:
+                pdf.multi_cell(0, 5, "Aucun service d'inclusion correspondant aux critères trouvé.")
         else:
-            pdf.multi_cell(0, 5, "Pas de services d'inclusion répertoriés.")
+            pdf.multi_cell(0, 5, "Aucun service d'inclusion correspondant aux critères trouvé.")
         pdf.ln(3)
 
     return bytes(pdf.output())

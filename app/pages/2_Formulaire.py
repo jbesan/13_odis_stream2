@@ -2,6 +2,10 @@ import streamlit as st
 import config as cfg
 import ui
 import logging
+import data_loader
+
+# Ensure app data and session state are initialized
+data_loader.ensure_data_initialized()
 
 # DO NOT REMOVE: This makes sure the ui_ form state persists as expected
 for k, v in st.session_state.items():
@@ -11,7 +15,12 @@ app_data = st.session_state.app_data
 
 # Sidebar
 with st.sidebar:
-    st.image('./images/logo-jaccueille-singa.png', width=150)
+    logo_path = ui.get_image_path('logo-jaccueille-singa.png')
+    logo_b64 = ui.get_base64_image(logo_path)
+    if logo_b64:
+        st.markdown(f'<img src="data:image/png;base64,{logo_b64}" width="150" style="margin-bottom: 20px;">', unsafe_allow_html=True)
+    else:
+        st.error("Logo not found")
 
     st.text("")
     st.text("Remplissez ce formulaire afin de préciser le projet de vie de la ou des personnes accompagnées.")

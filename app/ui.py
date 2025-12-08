@@ -1,4 +1,3 @@
-# /home/jacques/odis/13_odis/eda/streamlit/ui.py
 import streamlit as st
 import pandas as pd
 from plotly.express import line_polar
@@ -6,6 +5,25 @@ from plotly.express import line_polar
 import config as cfg
 import maps
 from typing import Dict, Any, List, Optional
+from pathlib import Path
+import base64
+import logging
+import scoring
+
+def get_image_path(filename: str) -> str:
+    """Returns the absolute path to an image file, robust to launch directory."""
+    # Assumes images are in 'images/' subdirectory relative to this script
+    current_dir = Path(__file__).parent.resolve()
+    return str(current_dir / "images" / filename)
+
+def get_base64_image(image_path: str) -> str:
+    """Encodes an image to base64 for embedding in HTML."""
+    try:
+        with open(image_path, "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode()
+    except Exception as e:
+        logging.error(f"Could not load image {image_path}: {e}")
+        return ""
 
 def open_pdf_modal() -> None:
     """Callback to signal that the PDF modal should be shown."""
@@ -26,6 +44,9 @@ def display_sidebar(demo_data: Dict[str, Any]) -> None:
                 for key, value in weights.items():
                     # Update session state keys for sliders (e.g. ui_poids_education)
                     st.session_state[f"ui_{key}"] = value
+            
+            st.session_state['processed_gdf'] = None
+        
 
         st.selectbox(
             "Profil de Priorité",
@@ -54,6 +75,9 @@ def display_sidebar(demo_data: Dict[str, Any]) -> None:
                         value=st.session_state.get('ui_poids_mobilité', 50), 
                         key="ui_poids_mobilité")
 
+    def clear_processed_gdf():
+        st.session_state['processed_gdf'] = None
+
     # --- Technical Params ---
     with st.expander('Paramètres Résultats'):
         st.radio(
@@ -61,10 +85,12 @@ def display_sidebar(demo_data: Dict[str, Any]) -> None:
             cfg.VIEW_LEVEL_OPTIONS,
             key='view_level',
             horizontal=True,
-            index=cfg.DEFAULT_VIEW_LEVEL
+            index=cfg.DEFAULT_VIEW_LEVEL,
+            on_change=clear_processed_gdf
         )
         st.text("\n\n")
-        st.select_slider("Décote commune binôme\n\n (en %)", cfg.PENALITE_BINOME_OPTIONS, key="ui_penalite_binome")
+        st.select_slider("Décote commune binôme\n\n (en %)", cfg.PENALITE_BINOME_OPTIONS, key="ui_binome_penalty", value=st.session_state.get('ui_binome_penalty', 50))
+        st.select_slider("Population minimum", cfg.POP_MIN_OPTIONS, key="ui_pop_min", value=st.session_state.get('ui_pop_min', 1000))
 
     st.divider()
 
@@ -131,26 +157,29 @@ def render_employment_form() -> None:
     """Renders the UI for the 'Projet Professionnel' form section."""
     app_data = st.session_state.app_data
     col1, col2 = st.columns(2)
-    codfap_select = app_data['codfap_index'][['Code FAP 341', 'Intitulé FAP 341']].set_index('Code FAP 341')
+    codfap_select = app_data['codfap_index']
     codform_select = app_data['codformations_index']
     
     for i in range(st.session_state.ui_nb_adultes):
         with col1:
-            st.multiselect(f"Métiers ciblés Adulte {i+1}", codfap_select.index, format_func=lambda x: codfap_select.loc[x, 'Intitulé FAP 341'], key=f"ui_metiers_adult_{i}")
+            st.multiselect(f"Métiers ciblés Adulte {i+1}", codfap_select.index, format_func=lambda x: codfap_select.loc[x, 'label'], key=f"ui_metiers_adult_{i}")
         with col2:
-            st.multiselect(f"Formations recherchées Adulte {i+1}", codform_select.index, format_func=lambda x: codform_select.loc[x, 'libformation'], key=f"ui_formations_adult_{i}")
+            st.multiselect(f"Formations recherchées Adulte {i+1}", codform_select.index, format_func=lambda x: codform_select.loc[x, 'label'], key=f"ui_formations_adult_{i}")
             
             # F-15: Priority Toggle
             st.toggle("Prioritaire", key=f"ui_priority_job_adult_{i}", help="Donne plus de poids à la recherche d'emploi pour cet adulte")
 
 def render_housing_form() -> None:
     """Renders the UI for the 'Logement' form section."""
-    st.radio('Hébergement à court terme', cfg.HEBERGEMENT_OPTIONS, key="ui_hebergement")
-    if st.session_state.ui_hebergement == 'Location':
-        st.radio('Type de logement', cfg.LOGEMENT_OPTIONS, key="ui_logement")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.radio('Hébergement cible à court terme', cfg.HEBERGEMENT_OPTIONS, key="ui_hebergement")
+        st.toggle("Prioritaire", key="ui_priority_hebergement", help="Donne plus de poids à ce critère")
+    with col2:
+        st.radio('Logement cible à long terme', cfg.LOGEMENT_OPTIONS, key="ui_logement")
+        st.toggle("Prioritaire", key="ui_priority_logement", help="Donne plus de poids à ce critère")
         
-    # F-15: Priority Toggle
-    st.toggle("Prioritaire", key="ui_priority_housing", help="Donne plus de poids aux critères de logement")
+    # F-15: Priority Toggle (Removed global toggle)
 
 def render_health_form() -> None:
     """Renders the UI for the 'Santé' form section."""
@@ -198,25 +227,21 @@ def render_other_needs_form() -> None:
     st.subheader("Autres Besoins Spécifiques")
     st.text("Sélectionnez d'autres services d'inclusion spécifiques.")
     
-    # Prepare options: All services from annuaire_inclusion EXCEPT those in Socle Admin
-    annuaire = app_data['annuaire_inclusion']
-    unique_services = annuaire[['categorie', 'service', 'label', 'thematiques']].drop_duplicates()
+    # Prepare options: Use the Referentiel loaded in app_data
+    inclusion_index = app_data.get('inclusion_services_index', pd.DataFrame())
     socle_keys = set(default_socle)
     
-    options_map = {} # Display String -> Slug (thematiques)
+    options_map = {} # Display String -> Slug (Nom)
     options_list = []
     
-    for _, row in unique_services.iterrows():
-        # Filter out services that are just a placeholder '-' or empty
-        if row['service'] in ['-', '']:
-            continue
-            
-        key = row['thematiques']
-        if key not in socle_keys:
-            # Use the human-readable label
-            display_str = row['label']
-            options_list.append(display_str)
-            options_map[display_str] = key
+    if not inclusion_index.empty:
+        for code, row in inclusion_index.iterrows():
+            # Filter out if in socle (optional, depending on if socle uses same codes)
+            # The user said "use Nom as the code and use the resulting label as options"
+            if code not in socle_keys:
+                display_str = row['label']
+                options_list.append(display_str)
+                options_map[display_str] = code
             
     options_list.sort()
     
@@ -341,12 +366,20 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
             # Also boost the general employment availability? Maybe not, keep it specific.
             
     # Housing Priorities (F-15)
-    if st.session_state.get("ui_priority_housing", False):
-        # Boost based on selection
+    # Housing Priorities (F-15)
+    # 1. Hebergement Priority
+    if st.session_state.get("ui_priority_hebergement", False):
+        if st.session_state.get('ui_hebergement') == "Chez l'habitant":
+             criteria_weights['log_occup_scaled'] = 3.0
+        else:
+             # Default: Location -> Vacancy rate (or maybe we should boost general vacancy?)
+             # Let's stick to boosting vacancy as a proxy for availability
+             criteria_weights['log_vac_scaled'] = 3.0
+
+    # 2. Logement Priority
+    if st.session_state.get("ui_priority_logement", False):
         if st.session_state.get('ui_logement') == 'Logement Social':
              criteria_weights['log_soc_inoc_scaled'] = 3.0
-        elif st.session_state.get('ui_hebergement') == "Chez l'habitant":
-             criteria_weights['log_5p_scaled'] = 3.0
         else:
              # Default: Location -> Vacancy rate
              criteria_weights['log_vac_scaled'] = 3.0
@@ -381,8 +414,8 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
         besoins_autres=besoins_autres_list,
         socle_admin_selection=st.session_state.get('ui_socle_admin_selection', []), # NEW
         affinite_selection=st.session_state.get('ui_affinite_selection', []), # NEW
-        binome_penalty=st.session_state['ui_penalite_binome'] / 100,
-        pop_min=st.session_state['ui_pop_min']
+        binome_penalty=st.session_state.get('ui_binome_penalty', 50) / 100,
+        pop_min=st.session_state.get('ui_pop_min', 1000)
     )
 
 def _result_highlight_callback(rank: int) -> None:
@@ -464,14 +497,45 @@ def _display_bv_result_details(row: pd.Series) -> None:
         st.divider()
         st.markdown('**Plus d’informations sur ce bassin de vie :**')
         with st.expander('Top 10 des métiers recherchés'):
-            top_metiers = set(row.be_libfap_top if row.be_libfap_top is not None else [])
-            if top_metiers:
-                st.markdown("\n".join([f'- {item}' for item in sorted(list(top_metiers))]))
+            bmo_vertical = st.session_state.app_data['bmo_vertical']
+            codfap_index = st.session_state.app_data['codfap_index']
+            
+            # For BV, we need to aggregate across all communes in the BV
+            # Or better, we can just look up by BV code if we had it in bmo_vertical.
+            # But bmo_vertical is by codgeo.
+            # Actually, the user wants "count will be based on the Bassin d'Emploi of the commune".
+            # So all communes in the same BE have the same top metiers.
+            # We can just pick one commune from the BV and get its top metiers.
+            # Or we can aggregate. But since they are identical per BE, picking one is fine.
+            
+            # Get one commune code from the list
+            if 'communes' in row and row['communes']:
+                sample_codgeo = row['communes'][0]
+                commune_metiers = bmo_vertical[bmo_vertical.codgeo == sample_codgeo]
+                
+                if not commune_metiers.empty:
+                    # Join with labels
+                    # codfap_index has 'Code' and 'Libellé' (or similar, need to check data_loader)
+                    # data_loader says: codfap_index = pd.read_csv(..., dtype=str)
+                    # Let's assume it has 'Code' and 'Libellé' as per build.py logic
+                    
+                    # Actually, let's look at how it was loaded in data_loader.
+                    # It's just a raw CSV load.
+                    # We need to ensure we have the right columns.
+                    
+                    # Merge
+                    merged = commune_metiers.merge(codfap_index, left_on='fap_code', right_index=True, how='left')
+                    merged['label'] = merged['label'].fillna(merged['fap_code'])
+                    
+                    top_metiers = sorted(merged['label'].unique())
+                    st.markdown("\n".join([f'- {item}' for item in top_metiers]))
+                else:
+                    st.info("Pas de données disponibles.")
             else:
                 st.info("Pas de données disponibles.")
         
         with st.expander('Formations proposées'):
-            formations = set(row.noms_formations if row.noms_formations is not None else [])
+            formations = set(row.get('noms_formations') if row.get('noms_formations') is not None else [])
             if formations:
                 st.markdown("\n".join([f'- {item}' for item in sorted(list(formations))]))
             else:
@@ -479,26 +543,57 @@ def _display_bv_result_details(row: pd.Series) -> None:
         
         with st.expander("Services d'inclusions proposés"):
             services_df = st.session_state.app_data['annuaire_inclusion']
-            bv_services = services_df[services_df.codgeo.isin(row.communes)]
+            incl_index = st.session_state.app_data.get('inclusion_services_index', pd.DataFrame())
+            
+            # Determine Target Slugs for Filtering
+            target_slugs = set(cfg.DEFAULT_SOCLE_ADMIN)
+            
+            # Add user selected specific needs
+            if 'ui_besoins_autres' in st.session_state and st.session_state.ui_besoins_autres:
+                 target_slugs.update(st.session_state.ui_besoins_autres)
+            
+            # Filter services for this BV
+            # Ensure codgeo matching is robust (str vs category)
+            # row.communes is a list of codgeos for the BV
+            bv_services = services_df[
+                (services_df['codgeo'].isin(row.communes)) & 
+                (services_df['categorie'].isin(target_slugs))
+            ]
 
             if not bv_services.empty:
-                any_service_found = False
-                for cat, group in bv_services.groupby('categorie', observed=True):
-                    # Filter out empty/placeholder services within the group
-                    valid_services = group[group.service != '-'].copy()
+                # The 'categorie' column in annuaire_inclusion comes from 'type' in pois.parquet
+                # which is now the clean slug (e.g. 'mobilite--permis-de-conduire')
+                # We want to display: "- Human Readable Label"
+                
+                # Get unique slugs found
+                unique_slugs = sorted(bv_services['categorie'].unique())
+                
+                valid_labels = []
+                for slug in unique_slugs:
+                    # Lookup label
+                    if not incl_index.empty and slug in incl_index.index:
+                        try:
+                            label = incl_index.loc[slug, 'label']
+                            # If duplicate index, loc returns Series/DataFrame
+                            if isinstance(label, (pd.Series, pd.DataFrame)):
+                                label = label.iloc[0]
+                        except:
+                            label = slug
+                    else:
+                        label = slug # Fallback
                     
-                    if not valid_services.empty:
-                        any_service_found = True
-                        # Get unique, capitalized service names and join them
-                        services_list_str = ", ".join(
-                            valid_services['service'].str.replace('-', ' ').str.capitalize().unique()
-                        )
-                        st.markdown(f"**{cat.replace('-', ' ').capitalize()}**: {services_list_str}")
+                    if label:
+                         valid_labels.append(label)
+                
+                if valid_labels:
+                     # Deduplicate labels just in case multiple slugs map to same label
+                     valid_labels = sorted(list(set(valid_labels)))
+                     st.markdown("\n".join([f'- {label}' for label in valid_labels]))
+                else:
+                    st.info("Aucun service d'inclusion correspondant aux critères trouvé dans ce bassin de vie.")
 
-                if not any_service_found:
-                    st.info("Pas de services d'inclusion répertoriés dans ce bassin de vie.")
             else:
-                st.info("Pas de services d'inclusion répertoriés dans ce bassin de vie.")
+                st.info("Aucun service d'inclusion correspondant aux critères trouvé dans ce bassin de vie.")
 
         # --- Links ---
         st.markdown(f"[Page OD&IS]({row.get('url_odis', '#')}) | [Page Wikipedia]({row.get('url_wikipedia', '#')})")
@@ -524,17 +619,25 @@ def _display_result_details(row: pd.Series) -> None:
         st.divider()
         st.markdown('**Plus d’informations sur cette localité :**')
         with st.expander('Top 10 des métiers recherchés'):
-            top_metiers = set(row.be_libfap_top if row.be_libfap_top is not None else [])
-            if top_metiers:
-                st.markdown("\n".join([f'- {item}' for item in sorted(list(top_metiers))]))
+            bmo_vertical = st.session_state.app_data['bmo_vertical']
+            codfap_index = st.session_state.app_data['codfap_index']
+            
+            commune_metiers = bmo_vertical[bmo_vertical.codgeo == row.name]
+            
+            if not commune_metiers.empty:
+                merged = commune_metiers.merge(codfap_index, left_on='fap_code', right_index=True, how='left')
+                merged['label'] = merged['label'].fillna(merged['fap_code'])
+                
+                top_metiers = sorted(merged['label'].unique())
+                st.markdown("\n".join([f'- {item}' for item in top_metiers]))
             else:
                 st.info("Pas de données disponibles.")
         
         with st.expander('Formations proposées'):
-            formations = set(row.noms_formations if row.noms_formations is not None else [])
-            if row.binome:
+            formations = set(row.get('noms_formations') if row.get('noms_formations') is not None else [])
+            if row.get('binome'):
                 binome_row = st.session_state.app_data['odis'].loc[row.codgeo_binome]
-                formations.update(binome_row.noms_formations if binome_row.noms_formations is not None else [])
+                formations.update(binome_row.get('noms_formations') if binome_row.get('noms_formations') is not None else [])
             if formations:
                 st.markdown("\n".join([f'- {item}' for item in sorted(list(formations))]))
             else:
@@ -542,26 +645,49 @@ def _display_result_details(row: pd.Series) -> None:
         
         with st.expander("Services d'inclusions proposés"):
             services_df = st.session_state.app_data['annuaire_inclusion']
-            commune_services = services_df[services_df.codgeo == row.name]
+            incl_index = st.session_state.app_data.get('inclusion_services_index', pd.DataFrame())
+            
+            # Determine Target Slugs for Filtering
+            target_slugs = set(cfg.DEFAULT_SOCLE_ADMIN)
+            
+            # Add user selected specific needs
+            if 'ui_besoins_autres' in st.session_state and st.session_state.ui_besoins_autres:
+                 target_slugs.update(st.session_state.ui_besoins_autres)
+
+            commune_services = services_df[
+                (services_df['codgeo'] == row.name) &
+                (services_df['categorie'].isin(target_slugs))
+            ]
             
             if not commune_services.empty:
-                any_service_found = False
-                for cat, group in commune_services.groupby('categorie', observed=True):
-                    # Filter out empty/placeholder services within the group
-                    valid_services = group[group.service != '-'].copy()
-                    
-                    if not valid_services.empty:
-                        any_service_found = True
-                        # Get unique, capitalized service names and join them
-                        services_list_str = ", ".join(
-                            valid_services['service'].str.replace('-', ' ').str.capitalize().unique()
-                        )
-                        st.markdown(f"**{cat.replace('-', ' ').capitalize()}**: {services_list_str}")
+                # Get unique slugs found
+                unique_slugs = sorted(commune_services['categorie'].unique())
                 
-                if not any_service_found:
-                    st.info("Pas de services d'inclusion répertoriés dans cette commune.")
+                valid_labels = []
+                for slug in unique_slugs:
+                    # Lookup label
+                    if not incl_index.empty and slug in incl_index.index:
+                        try:
+                            label = incl_index.loc[slug, 'label']
+                            # If duplicate index
+                            if isinstance(label, (pd.Series, pd.DataFrame)):
+                                label = label.iloc[0]
+                        except:
+                            label = slug
+                    else:
+                        label = slug # Fallback
+                    
+                    if label:
+                         valid_labels.append(label)
+
+                if valid_labels:
+                     # Deduplicate labels
+                     valid_labels = sorted(list(set(valid_labels)))
+                     st.markdown("\n".join([f'- {label}' for label in valid_labels]))
+                else:
+                    st.info("Aucun service d'inclusion correspondant aux critères trouvé dans cette commune.")
             else:
-                st.info("Pas de services d'inclusion répertoriés dans cette commune.")
+                st.info("Aucun service d'inclusion correspondant aux critères trouvé dans cette commune.")
 
         # --- Links ---
         st.markdown(f"[Page OD&IS]({row.get('url_odis', '#')}) | [Page Wikipedia]({row.get('url_wikipedia', '#')})")
@@ -577,7 +703,7 @@ def _produce_pitch_markdown(row: pd.Series, config: cfg.ScoringConfig, scores_ca
         pitch_md.append(f'Le bassin de vie de **{row["libgeo"]}** ({population} habitants), composé de **{len(row["communes"])} communes**, présente un bon équilibre pour le projet.')
     else:
         # It's a commune
-        pitch_md.append(f'**{row["libgeo"]}** ({population} habitants) fait partie de l\'EPCI : **{row["epci_nom"]}**.  ')
+        pitch_md.append(f'**{row["libgeo"]}** ({population} habitants) fait partie du bassin de vie de : **{row["libelle_bassin_de_vie"]}**.  ')
 
     score_percent = f"{row['weighted_score'] * 100:.0f}%"
     if row.get("binome", False):

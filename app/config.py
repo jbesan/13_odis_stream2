@@ -3,42 +3,51 @@ from dataclasses import dataclass
 from typing import List, Dict, Any, Union
 import os
 
-GCS_BUCKET_PATH: str = 'gs://odis-stream2-eu/'
+
 # Get the directory of the current file (app/)
 APP_DIR: str = os.path.dirname(os.path.abspath(__file__))
 # Get the project root directory (one level up)
 PROJECT_ROOT: str = os.path.dirname(APP_DIR)
 
-LOCAL_CSV_PATH: str = os.path.join(PROJECT_ROOT, 'csv/')
+LOCAL_CSV_PATH: str = os.path.join(PROJECT_ROOT, 'data/')
 
 def get_data_path() -> str:
     """
     Returns the appropriate data path based on the environment.
-    Checks for the K_SERVICE environment variable to detect Cloud Run.
+    Since data is now included in the Docker image, we always use the local path.
     """
-    if 'K_SERVICE' in os.environ:
-        return GCS_BUCKET_PATH
-    else:
-        return LOCAL_CSV_PATH
+    # In Docker, we will copy data to /app/data or similar, or keep structure
+    # The config says LOCAL_CSV_PATH = os.path.join(PROJECT_ROOT, 'data/')
+    # In Docker: PROJECT_ROOT is /app (if we copy app/ to /app ?) 
+    # Let's check Dockerfile: COPY app/ . -> So /app contains contents of app/. 
+    # Wait, PROJECT_ROOT is os.path.dirname(APP_DIR). APP_DIR is /app/ (if code is in /app).
+    # If Dockerfile does WORKDIR /app and COPY app/ ., then:
+    # /app/1_Accueil.py existing.
+    # APP_DIR = /app
+    # PROJECT_ROOT = /
+    # So LOCAL_CSV_PATH = /data/
+    # If we copy data/ to /data in Docker, this works perfectly.
+    return LOCAL_CSV_PATH
 
 # --- File Paths ---
-ODIS_FILE = 'odis_june_2025_jacques.parquet'
-BV_FILENAME = 'insee-bassins-de-vie-2025.csv'
+# --- File Paths ---
+ODIS_FILE = 'odis_communes.parquet'
+POIS_FILE = 'pois.parquet'
+REFERENTIELS_FILE = 'referentiels.parquet'
+BV_FILE = 'odis_bassins_de_vie.parquet'
+REL_METIERS_FILE = 'odis_rel_metiers.parquet'
+REL_ASSOCIATIONS_FILE = 'associations_vertical.parquet'
+REL_FORMATIONS_FILE = 'odis_rel_formations.parquet'
 SCORES_CAT_FILE = 'scores_config.yaml'
-METIERS_FILE = 'dares_nomenclature_fap2021.csv'
-FORMATIONS_FILE = 'index_formations.csv'
-ECOLES_FILE = 'annuaire_ecoles_france_mini.parquet'
-MATERNITE_FILE = 'annuaire_maternites_DREES.csv'
-SANTE_FILE = 'annuaire_sante_finess.parquet'
-INCLUSION_FILE = 'odis_services_incl_exploded.parquet'
-SNCF_FILE = 'formes-des-lignes-du-rfn.geojson'
-CAF_FILE = 'caf_taux_couverture_petite_enfance_2022.csv'
-LOVAC_FILE = 'lovac-opendata-communes-2025.csv'
-INCLUSION_REF_FILE = 'referentiel_services_inclusion.csv'
+
+# Legacy files removed:
+# BV_FILENAME, BMO_VERTICAL_FILE, METIERS_FILE, FORMATIONS_FILE, 
+# ECOLES_FILE, MATERNITE_FILE, SANTE_FILE, INCLUSION_FILE, 
+# SNCF_FILE, CAF_FILE, LOVAC_FILE, INCLUSION_REF_FILE
 
 # --- Data Columns ---
-BV_CODE_COL = 'BV2022'
-BV_NAME_COL = 'LIBBV2022'
+BV_CODE_COL = 'bassin_de_vie'
+BV_NAME_COL = 'libelle_bassin_de_vie'
 
 # --- UI Options ---
 VIEW_LEVEL_OPTIONS = ['Bassins de vie', 'Communes']
@@ -152,7 +161,7 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     'codes_metiers': [],
     'codes_formations': [],
     'classe_enfants': [],
-    'binome_penalty': 0.5,
+    'binome_penalty': 50,
     'pop_min': 1000,
     'besoins_autres': [],
     'socle_admin_selection': DEFAULT_SOCLE_ADMIN,

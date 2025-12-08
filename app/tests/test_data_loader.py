@@ -29,11 +29,7 @@ class TestDataLoader:
             'libgeo': ['Bordeaux', 'Paris'],
             'polygon': [b'dummy_wkb', b'dummy_wkb'], 
             'dep_code': ['33', '75'],
-            'population': [1000, 2000],
-            'met': [10, 20],
-            'ecoles_ct': [1, 2],
-            'risque_fermeture': [0, 0],
-            'svc_incl_count': [0, 0]
+            'population': [1000, 2000]
         })
         
         # Mock from_wkb to return a simple Polygon

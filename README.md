@@ -23,12 +23,12 @@ Ce prototype a un triple objectif :
 ## ✨ Fonctionnalités Principales
 
 - **Profil Personnalisé :** Définissez un "projet de vie" détaillé incluant la composition du foyer, le niveau scolaire des enfants, les métiers visés, les besoins en formation, etc.
-- **Pondération des Critères :** Ajustez l'importance de chaque grande catégorie (emploi, logement, éducation, inclusion) pour l'adapter aux priorités de chaque projet.
+- **Pondération Avancée :** Ajustez l'importance de chaque grande catégorie ou utilisez des profils prédéfinis (Famille, Santé, Emploi). Affinez la priorité de critères spécifiques (ex: "Logement Social" prioritaire).
 - **Vue par Bassin de Vie :** Agrégez les résultats à l'échelle des "bassins de vie" de l'INSEE pour une analyse plus macroscopique et pertinente des territoires fonctionnels.
 - **Scoring Intelligent :** Chaque commune de France est évaluée sur sa compatibilité avec le profil. La taille de la population n'est plus un filtre mais un critère de score, favorisant les localités de taille pertinente.
 - **Système de "Binômes" :** L'algorithme associe de manière unique des communes voisines (`binômes`) pour proposer des solutions conjointes qui répondent à l'ensemble des besoins, même si une seule commune ne le pourrait pas.
 - **Carte Interactive :** Visualisez les localités les mieux notées, leur score, et superposez des couches d'informations additionnelles (écoles, établissements de santé, services d'inclusion).
-- **Résultats Détaillés :** Explorez les 5 meilleurs résultats avec une analyse de leurs points forts, un "radar" visuel des scores par catégorie, et des liens pour approfondir.
+- **Résultats Détaillés & Export PDF :** Explorez les 5 meilleurs résultats avec une analyse de leurs points forts et exportez un rapport PDF complet pour la famille accompagnée.
 - **Scénarios de Démonstration :** Chargez rapidement des profils pré-configurés pour découvrir le potentiel de l'outil.
 
 ## 📸 Aperçu de l'Application
@@ -107,6 +107,7 @@ Le score est calculé à partir d'une multitude de critères, regroupés en gran
 
 - **Taux de Classes à Risque de Fermeture** : Identifie les écoles où des classes risquent de fermer faute d'élèves, ce qui peut être une opportunité pour de nouvelles familles.
 - **Taux de Couverture Petite Enfance** : Évalue la disponibilité des modes de garde (crèches, assistantes maternelles) pour les jeunes enfants (< 3 ans), basé sur les données de la CAF.
+- **Education**: Annuaire de l'éducation (Data.gouv), Effectifs (Data.gouv), Taux de couverture Petite Enfance (CAF), Crèches (BPE/INSEE), Formations (Data.gouv).
 
 **Catégorie : Inclusion & Vie Locale**
 
@@ -136,6 +137,7 @@ Le score est calculé à partir d'une multitude de critères, regroupés en gran
 
 Le code de l'application Streamlit est organisé de manière modulaire au sein du répertoire app/ pour séparer les différentes logiques :
 
+```
 app/
 ├── 1_Accueil.py
 ├── config.py
@@ -147,12 +149,13 @@ app/
 │ ├── 2_Formulaire.py
 │ └── 3_Resultats.py
 └── requirements.txt
+```
 
 - 1_Accueil.py : C'est le point d'entrée principal de l'application multipage. Il affiche la page d'accueil.
 - pages/2_Formulaire.py : La deuxième page de l'application, qui contient le formulaire du projet de vie.
 - pages/3_Resultats.py : La troisième page qui affiche les résultats du scoring.
 - ui.py : Ce fichier est responsable de la création de tous les composants de l'interface utilisateur avec Streamlit.
-- scoring.py : Le cœur logique du prototype. Il contient l'ensemble du pipeline de traitement et de notation.
+- scoring.py : Le cœur logique du prototype. Il contient l'ensemble du pipeline de traitement et de notation, optimisé pour la performance.
 - maps.py : Regroupe toutes les fonctions liées à la génération des cartes interactives avec Folium.
 - config.py : Un fichier central pour la configuration.
 - data_loader.py : Contient la logique pour charger les données.
@@ -164,7 +167,6 @@ Ce prototype est une base solide qui peut être grandement améliorée :
 - **⭐ Fonctionnalités :**
 
   - **Comptes Utilisateurs :** Permettre de sauvegarder, nommer et gérer plusieurs scénarios de "projets de vie".
-  - **Export PDF :** Implémenter un export propre et imprimable de la synthèse des résultats.
   - **Filtres Avancés :** Ajouter des filtres plus fins (ex: exclure certaines régions, filtrer par couleur politique).
   - **Comparaison des Résultats :** Ajouter une fonction pour comparer 2 ou 3 des meilleurs résultats côte à côte.
 
@@ -176,7 +178,7 @@ Ce prototype est une base solide qui peut être grandement améliorée :
   - **Affiner les Critères :** Travailler avec des travailleurs sociaux pour affiner la liste des critères et leur pertinence.
 
 - **💻 Technique & UX :**
-  - **Refactoring du Scoring :** La logique de scoring, actuellement dans un fichier Python exporté d'un notebook, mériterait d'être réécrite dans une bibliothèque plus modulaire et testable.
+  - **Refactoring du Scoring :** La logique de scoring a été refactorisée et optimisée, mais peut encore être améliorée pour plus de modularité.
   - **Tests :** Ajouter des tests unitaires et d'intégration pour fiabiliser le pipeline de scoring et l'interface.
   - **Performance :** Optimiser le chargement des données et les calculs de score pour une meilleure fluidité.
   - **Design UI/UX :** Améliorer le design visuel, la mise en page et l'ergonomie sur mobile.

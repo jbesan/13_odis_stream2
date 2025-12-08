@@ -53,8 +53,8 @@ if st.session_state.get('show_pdf_modal'):
     pdf_modal()
 
 # Ensure app_data is initialized
-if 'app_data' not in st.session_state:
-    st.session_state['app_data'] = data_loader.init_datasets()
+# Ensure app data and session state are initialized
+data_loader.ensure_data_initialized()
 
 # DO NOT REMOVE: This makes sure the ui_ form state persists as expected
 for k, v in st.session_state.items():
@@ -91,7 +91,11 @@ def run_search():
         scores_cat=st.session_state.app_data['scores_cat'],
         incl_index=st.session_state.app_data['incl_index'],
         associations_data=st.session_state.app_data['associations_data'], # Pass association data
-        global_stats=st.session_state.app_data['global_score_stats'], # Added
+        bmo_vertical=st.session_state.app_data['bmo_vertical'], # Pass bmo_vertical
+        formations_data=st.session_state.app_data['formations_data'], # Pass formations_data
+        # codformations_index=st.session_state.app_data['codformations_index'], # Pass codformations_index
+        codformations_index=st.session_state.app_data['codformations_index'], # Pass codformations_index
+        global_stats={}, # Removed global_score_stats from data_loader
         view_level=st.session_state.get('view_level', 'Bassins de vie')
     )
 
@@ -115,6 +119,7 @@ def run_search():
     st.session_state['center'] = [final_center_y, final_center_x]
     st.session_state['zoom'] = maps.get_map_zoom(config.loc_distance_km)
     st.session_state['fg_dict_ref'] = {}
+    st.session_state['fgs_to_show'] = set()
     st.session_state['highlighted_result'] = [False, None]
 
 # Automatically run the search if not already processed and form is completed
@@ -127,7 +132,12 @@ if st.session_state.get('processed_gdf') is None and st.session_state.get('form_
 
 # Sidebar
 with st.sidebar:
-    st.image('./images/logo-jaccueille-singa.png', width=150)
+    logo_path = ui.get_image_path('logo-jaccueille-singa.png')
+    logo_b64 = ui.get_base64_image(logo_path)
+    if logo_b64:
+        st.markdown(f'<img src="data:image/png;base64,{logo_b64}" width="150" style="margin-bottom: 20px;">', unsafe_allow_html=True)
+    else:
+        st.error("Logo not found")
     st.write("")
     st.markdown("Découvrez les lieux de vie correspondant le mieux au projet renseigné. Les scores vous permettent de comparer facilement leurs atouts.", unsafe_allow_html=True)
     with st.container(border=False, height='stretch', vertical_alignment="bottom"):
@@ -163,7 +173,6 @@ with col_map:
         # Base layer with all scored communes
         if not st.session_state.processed_gdf.empty:
             st.session_state['fg_dict_ref']['Scores'], colormap = maps.build_scores_layer(st.session_state['processed_gdf'])
-            st.session_state['fgs_to_show'].add('Scores')
 
         fgs_to_show = {'Scores'}
         legend_items = []
@@ -185,15 +194,15 @@ with col_map:
                 show_inclusion = st.toggle("Inclusion", key='show_inclusion_toggle', disabled=(not config.besoins_autres))
 
             if show_ecoles:
-                st.session_state.fg_dict_ref['fg_ecoles'] = maps.build_ecoles_layer(st.session_state.app_data['annuaire_ecoles'], target_codgeos, config)
+                st.session_state.fg_dict_ref['fg_ecoles'] = maps.build_ecoles_layer(st.session_state.app_data['pois'], target_codgeos, config)
                 fgs_to_show.add('fg_ecoles')
                 legend_items.append({'color': 'green', 'icon': 'pencil', 'text': 'Écoles'})
             if show_sante:
-                st.session_state.fg_dict_ref['fg_sante'] = maps.build_sante_layer(st.session_state.app_data['annuaire_sante'], target_codgeos, config)
+                st.session_state.fg_dict_ref['fg_sante'] = maps.build_sante_layer(st.session_state.app_data['pois'], target_codgeos, config)
                 fgs_to_show.add('fg_sante')
                 legend_items.append({'color': 'blue', 'icon': 'plus', 'text': 'Santé'})
             if show_inclusion:
-                st.session_state.fg_dict_ref['fg_services'] = maps.build_services_layer(st.session_state.app_data['annuaire_inclusion'], target_codgeos, config)
+                st.session_state.fg_dict_ref['fg_services'] = maps.build_services_layer(st.session_state.app_data['pois'], target_codgeos, config)
                 fgs_to_show.add('fg_services')
                 legend_items.append({'color': 'purple', 'icon': 'heart', 'text': 'Inclusion'})
 
@@ -222,7 +231,9 @@ with col_map:
         # Manually add all visible layers to the map object so it's complete for the PDF export
         for fg in fgs_to_add:
             fg.add_to(m)
-   
+        
+        # flm.LayerControl().add_to(m)
+
         st.session_state['map_object'] = m
 
         st_folium(

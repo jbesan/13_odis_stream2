@@ -2,7 +2,7 @@ branca
 folium>=0.14.0
 fpdf2
 geopandas
-gcsfs
+geopandas
 
 
 numpy

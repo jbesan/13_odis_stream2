@@ -17,6 +17,7 @@ def sample_session_state():
         poids_inclusion=25,
         poids_sante=100, # Added for tests
         poids_mobilité=100,
+        criteria_weights={}, # Added for F-15
         commune_actuelle='33063',
         loc_distance_km=50,
         nb_adultes=1,

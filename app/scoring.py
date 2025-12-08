@@ -205,16 +205,10 @@ def compute_inclusion_score(
     df = df.copy()
     
     # --- 1. Socle Administratif ---
-    if prefs.get('socle_admin_selection'):
-        needed_services = set(prefs['socle_admin_selection'])
-        df_merged = df.join(incl_index, how='left')
-        df['socle_match_count'] = [
-            len(needed_services.intersection(s)) if isinstance(s, set) else 0
-            for s in df_merged['key']
-        ]
-        df['inc_socle_admin_score'] = df['socle_match_count'] / len(needed_services)
-    else:
-        df['inc_socle_admin_score'] = 0.0
+    # Pre-calculated in prescoring.py
+    if 'inc_socle_admin_score' not in df.columns:
+         # Fallback if prescoring didn't run or failed (should be 0.0 from prescoring)
+         df['inc_socle_admin_score'] = 0.0
 
     # --- 2. Lien Social ---
     # Calculate density of associations in CORE categories
@@ -222,33 +216,12 @@ def compute_inclusion_score(
     
     # Filter for core codes (handling prefixes)
     # Note: associations_data['id_waldec'] should be strings.
-    if 'lien_social_count' not in df.columns:
-        core_codes_prefixes = tuple(cfg.WALDEC_CORE_INCLUSION)
-        # Filter rows where id_waldec starts with any of the core prefixes
-        # We use string operations for this.
-        core_assos = associations_data[associations_data['id_waldec'].astype(str).str.startswith(core_codes_prefixes, na=False)]
-        
-        # Group by codgeo and sum counts
-        core_counts = core_assos.groupby('codgeo')['count'].sum()
-        
-        # Join with df
-        df = df.join(core_counts.rename('lien_social_count'), how='left')
-        df['lien_social_count'] = df['lien_social_count'].fillna(0)
-    
-    # Calculate density (per 1000 hab)
-    df['lien_social_density'] = (df['lien_social_count'] * 1000) / df['pop_be']
-    
-    # Calculate density (per 1000 hab)
-    # Pre-calculated in data_loader, but we need to ensure it's in df
-    # If df is a subset of odis, it should have 'lien_social_density'
-    if 'lien_social_density' not in df.columns:
-         # Fallback if not present (e.g. tests)
-         df['lien_social_density'] = (df['lien_social_count'] * 1000) / df['pop_be']
 
     # Normalize
-    min_b, max_b = get_bounds('inc_lien_social_score', scores_cat, global_stats)
-    df['inc_lien_social_score'] = min_max_scale(df['lien_social_density'].fillna(0), min_b, max_b)
-
+    # We use the pre-calculated score from prescoring
+    if 'inc_lien_social_score' not in df.columns:
+         raise ValueError("Missing pre-calculated score: inc_lien_social_score")
+    
     # --- 3. Affinité ---
     selected_interests = prefs.get('affinite_selection', [])
     if selected_interests:
@@ -266,7 +239,7 @@ def compute_inclusion_score(
             df = df.join(affinite_counts.rename('affinite_count'), how='left')
             df['affinite_count'] = df['affinite_count'].fillna(0)
             
-            df['affinite_density'] = (df['affinite_count'] * 1000) / df['pop_be']
+            df['affinite_density'] = (df['affinite_count'] * 1000) / df['population']
             
             min_b, max_b = get_bounds('inc_affinite_score', scores_cat, global_stats)
             df['inc_affinite_score'] = min_max_scale(df['affinite_density'].fillna(0), min_b, max_b)
@@ -275,7 +248,7 @@ def compute_inclusion_score(
     else:
         df['inc_affinite_score'] = 0.0
 
-    # --- 4. Services Spécifiques (F-15) ---
+    # --- 4. Services Spécifiques ---
     # Uses 'besoins_autres' which is a list of slugs [category--service, ...]
     besoins_autres = prefs.get('besoins_autres', [])
     # Flatten the needed services into a set of "category--service" keys
@@ -287,12 +260,18 @@ def compute_inclusion_score(
         # We need to join with incl_index again or reuse the previous join if possible.
         # incl_index has 'key' = "category_service"
         # We can reuse the logic from Socle Admin but with different keys
+        # Helper to count matches with substring support
+        def count_extra_matches(available_set):
+            if not isinstance(available_set, set): return 0
+            matches = 0
+            for needed in needed_extra_services:
+                if any(needed in av for av in available_set):
+                    matches += 1
+            return matches
+
         if 'key' not in df.columns: # Should be there if Socle Admin ran, but let's be safe
              df_merged = df.join(incl_index, how='left')
-             df['extra_match_count'] = [
-                len(needed_extra_services.intersection(s)) if isinstance(s, set) else 0
-                for s in df_merged['key']
-            ]
+             df['extra_match_count'] = df_merged['key'].apply(count_extra_matches)
         else:
             # If df already has 'key' from previous join (unlikely as join adds columns to left, not right)
             # Actually df.join(incl_index) adds columns from incl_index to df.
@@ -300,17 +279,11 @@ def compute_inclusion_score(
             # Let's check if we did step 1.
             if prefs.get('socle_admin_selection'):
                  # df already has 'key' column from the join in step 1
-                 df['extra_match_count'] = [
-                    len(needed_extra_services.intersection(s)) if isinstance(s, set) else 0
-                    for s in df['key']
-                ]
+                 df['extra_match_count'] = df['key'].apply(count_extra_matches)
             else:
                  # Need to join
                  df_merged = df.join(incl_index, how='left')
-                 df['extra_match_count'] = [
-                    len(needed_extra_services.intersection(s)) if isinstance(s, set) else 0
-                    for s in df_merged['key']
-                ]
+                 df['extra_match_count'] = df_merged['key'].apply(count_extra_matches)
         
         df['inc_extra_services_score'] = df['extra_match_count'] / len(needed_extra_services)
     else:
@@ -328,6 +301,9 @@ def compute_criteria_scores(
     incl_index: pd.DataFrame,
     df_all_communes: gpd.GeoDataFrame,
     associations_data: pd.DataFrame, # Added argument
+    bmo_vertical: pd.DataFrame, # Added argument
+    formations_data: pd.DataFrame, # Added argument
+    codformations_index: pd.DataFrame, # Added argument
     scores_cat: pd.DataFrame, # Added
     global_stats: Dict[str, Dict[str, float]] # Added
 ) -> gpd.GeoDataFrame:
@@ -351,22 +327,38 @@ def compute_criteria_scores(
 
     # --- EMPLOI ---
     # met_ratio is pre-calculated in data_loader
-    if 'met_ratio' not in df.columns:
-        df['met_ratio'] = 1000 * df['met'] / df['pop_be']
-        
-    min_b, max_b = get_bounds('met_scaled', scores_cat, global_stats)
-    df['met_scaled'] = min_max_scale(df['met_ratio'].fillna(0), min_b, max_b)
+    if 'met_scaled' not in df.columns:
+        raise ValueError("Missing pre-calculated score: met_scaled")
+
+    # Pre-process BMO data for the current set of communes
+    # We need to know which FAP codes are available for each commune in df
+    # bmo_vertical has columns: codgeo, fap_code (and maybe others)
+    # Filter bmo_vertical to only include communes in df
+    relevant_bmo = bmo_vertical[bmo_vertical['codgeo'].isin(df.index)]
+    
+    # Create a mapping: codgeo -> set of available FAP codes
+    # This is much faster than applying per row
+    commune_fap_map = relevant_bmo.groupby('codgeo')['fap_code'].apply(set).to_dict()
 
     # Job categories that match user preferences
     for i in range(prefs['nb_adultes']):
         adult_key = f'adult{i+1}'
         if prefs['codes_metiers'][i]:
             prefs_metiers = set(prefs['codes_metiers'][i])
-            df[f'met_match_codes_{adult_key}'] = [
-                list(set(x).intersection(prefs_metiers)) if x is not None else []
-                for x in df.be_codfap_top
-            ]
-            df[f'met_match_{adult_key}'] = df[f'met_match_codes_{adult_key}'].str.len()
+            
+            # Calculate intersection size
+            # We use map to get the set of available metiers for each commune
+            # Then intersect with prefs
+            
+            def get_match_count(codgeo):
+                available = commune_fap_map.get(codgeo, set())
+                return len(available.intersection(prefs_metiers))
+            
+            df[f'met_match_{adult_key}'] = df.index.map(get_match_count)
+            
+            # Store matched codes for display/debug if needed (optional, might be heavy)
+            # df[f'met_match_codes_{adult_key}'] = df.index.map(lambda x: list(commune_fap_map.get(x, set()).intersection(prefs_metiers)))
+
             
             # Dynamic max bound based on number of selected items
             min_b, max_b = get_bounds(f'met_match_{adult_key}_scaled', scores_cat, global_stats)
@@ -376,14 +368,23 @@ def compute_criteria_scores(
             df[f'met_match_{adult_key}_scaled'] = min_max_scale(df[f'met_match_{adult_key}'].fillna(0), min_b, max_b)
 
     # Training centers that match
+    # We need to know which Formation codes are available for each commune in df
+    # formations_data has columns: codgeo, formation_code, count
+    relevant_formations = formations_data[formations_data['codgeo'].isin(df.index)]
+    
+    # Create a mapping: codgeo -> set of available Formation codes
+    commune_formation_map = relevant_formations.groupby('codgeo')['formation_code'].apply(set).to_dict()
+
     for i in range(prefs['nb_adultes']):
         adult_key = f'adult{i+1}'
         if prefs['codes_formations'][i]:
             prefs_formations = set(prefs['codes_formations'][i])
-            df[f'form_match_codes_{adult_key}'] = [
-                list(set(x).intersection(prefs_formations)) if x is not None else []
-                for x in df.codes_formations
-            ]
+            
+            def get_formation_matches(codgeo):
+                available = commune_formation_map.get(codgeo, set())
+                return list(available.intersection(prefs_formations))
+
+            df[f'form_match_codes_{adult_key}'] = df.index.map(get_formation_matches)
             df[f'form_match_{adult_key}'] = df[f'form_match_codes_{adult_key}'].str.len()
             
             # Dynamic max bound based on number of selected items
@@ -392,60 +393,83 @@ def compute_criteria_scores(
                  max_b = float(len(prefs_formations))
 
             df[f'form_match_{adult_key}_scaled'] = min_max_scale(df[f'form_match_{adult_key}'].fillna(0), min_b, max_b)
+            
+    # Aggregate formation names for display (union of all adults)
+    # We want 'noms_formations' column containing list of labels
+    if codformations_index is not None and not codformations_index.empty:
+        def get_all_formation_labels(row):
+            codes = set()
+            for i in range(prefs['nb_adultes']):
+                adult_key = f'adult{i+1}'
+                col = f'form_match_codes_{adult_key}'
+                if col in row and isinstance(row[col], list):
+                    codes.update(row[col])
+            
+            labels = []
+            for c in codes:
+                if c in codformations_index.index:
+                    labels.append(codformations_index.loc[c, 'label'])
+                else:
+                    labels.append(c)
+            return labels
+
+        df['noms_formations'] = df.apply(get_all_formation_labels, axis=1)
+    else:
+        df['noms_formations'] = [[] for _ in range(len(df))]
 
     # --- HEBERGEMENT / LOGEMENT ---
+
+    def drop_score_cols(df, col_name):
+        # Build list of cols to drop including potential binome cols
+        cols_to_drop = [col_name, f"{col_name}_binome"]
+        # Drop only those present to avoid errors, although errors='ignore' handles it.
+        # We use strict list for clarity.
+        existing_cols = [c for c in cols_to_drop if c in df.columns]
+        if existing_cols:
+            df.drop(columns=existing_cols, inplace=True)
+
+    # 1. Taux de Vacance (log_vac_scaled)
+    # Used if "Location" is selected in EITHER Hébergement OR Logement
+    if prefs['hebergement'] == 'Location' or prefs['logement'] == 'Location':
+        pass
+    else:
+        drop_score_cols(df, 'log_vac_scaled')
+
+    # 2. Logement Social (log_soc_inoc_scaled)
+    # Used ONLY if "Logement Social" is selected in Logement
+    if prefs['logement'] == 'Logement Social':
+        pass
+    else:
+        drop_score_cols(df, 'log_soc_inoc_scaled')
+
+    # 3. Occupation (log_occup_scaled)
+    # Used ONLY if "Chez l'habitant" is selected in Hébergement
     if prefs['hebergement'] == "Chez l'habitant":
-        # log_5p_ratio is pre-calculated
-        if 'log_5p_ratio' not in df.columns:
-             df['log_5p_ratio'] = df['rp_5+pieces'] / df['log_rp']
-             
-        min_b, max_b = get_bounds('log_5p_scaled', scores_cat, global_stats)
-        df['log_5p_scaled'] = min_max_scale(df['log_5p_ratio'].fillna(0), min_b, max_b)
-
-    if prefs['logement'] == "Logement Social":
-        if 'log_soc_inoc_ratio' not in df.columns:
-            df['log_soc_inoc_ratio'] = df['log_soc_inoccupes'] / df['log_soc_total']
-            
-        min_b, max_b = get_bounds('log_soc_inoc_scaled', scores_cat, global_stats)
-        df['log_soc_inoc_scaled'] = min_max_scale(df['log_soc_inoc_ratio'].fillna(0), min_b, max_b)
-    elif prefs['logement'] == "Location":
-        if 'log_vac_struct_ratio' not in df.columns:
-             # Fallback if not pre-calculated (though it should be)
-             # We assume columns exist if we are here, or we accept potential KeyError if data loading failed
-             df['log_vac_struct_ratio'] = df['pp_vacant_plus_2ans_25'] / df['log_total']
-
-        min_b, max_b = get_bounds('log_vac_scaled', scores_cat, global_stats)
-        df['log_vac_scaled'] = min_max_scale(df['log_vac_struct_ratio'].fillna(0), min_b, max_b)
+        pass
+    else:
+        drop_score_cols(df, 'log_occup_scaled')
 
     # --- EDUCATION ---
     if prefs['nb_enfants'] > 0:
         if prefs['classe_enfants']:
-            if 'risque_fermeture_ratio' not in df.columns:
-                df['risque_fermeture_ratio'] = df['risque_fermeture'] / df['ecoles_ct']
+            # New Education Score: Average School Size (Proxy for Closure Risk)
+            # We want to minimize risk, so we want larger schools/classes.
+            # Score = Normalized(Avg Size).
                 
             min_b, max_b = get_bounds('edu_classes_ferm_scaled', scores_cat, global_stats)
-            df['edu_classes_ferm_scaled'] = min_max_scale(df['risque_fermeture_ratio'].fillna(0), min_b, max_b)
+            # If max_b is not defined, we might need a reasonable max (e.g. 300 students per school?)
+            # min_max_scale handles it if we have global stats.
+            if 'edu_classes_ferm_scaled' not in df.columns:
+                raise ValueError("Missing pre-calculated score: edu_classes_ferm_scaled")
             
-            # --- New Granular Scoring (F-14) ---
+            # --- Granular Scoring ---
             
             # 1. Petite Enfance (Crèche / Assistante Maternelle)
             if 'Crêche / Assistante Maternelle' in prefs['classe_enfants']:
-                # Use CAF coverage rate if available, normalized
-                if 'taux_couverture' in df.columns:
-                    # F-14 Refinement: Do NOT fillna(0). Keep NaNs to exclude them later.
-                    
-                    series = df['taux_couverture']
-                    mask = series.notna()
-                    if mask.any():
-                        min_b, max_b = get_bounds('edu_petite_enfance_scaled', scores_cat, global_stats)
-                        # Scale only valid values
-                        scaled_values = min_max_scale(series[mask], min_b, max_b)
-                        
-                        # Assign back
-                        df.loc[mask, 'edu_petite_enfance_scaled'] = scaled_values
-                        df.loc[~mask, 'edu_petite_enfance_scaled'] = np.nan
-                    else:
-                        df['edu_petite_enfance_scaled'] = np.nan
+                # Use pre-calculated scaled score
+                if 'edu_petite_enfance_scaled' in df.columns:
+                    # Do NOT fillna(0). Keep NaNs to exclude them later.
+                    pass
                 else:
                     df['edu_petite_enfance_scaled'] = np.nan
 
@@ -454,19 +478,23 @@ def compute_criteria_scores(
             
             # Maternelle
             if 'Maternelle' in prefs['classe_enfants']:
-                df['edu_maternelle_scaled'] = (df['count_maternelle'] > 0).astype(float)
+                if 'edu_maternelle_scaled' not in df.columns:
+                    raise ValueError("Missing pre-calculated score: edu_maternelle_scaled")
                 
             # Elementaire
             if 'Elémentaire' in prefs['classe_enfants']:
-                df['edu_elementaire_scaled'] = (df['count_elementaire'] > 0).astype(float)
+                if 'edu_elementaire_scaled' not in df.columns:
+                    raise ValueError("Missing pre-calculated score: edu_elementaire_scaled")
                 
             # College
             if 'Collège' in prefs['classe_enfants']:
-                df['edu_college_scaled'] = (df['count_college'] > 0).astype(float)
+                if 'edu_college_scaled' not in df.columns:
+                    raise ValueError("Missing pre-calculated score: edu_college_scaled")
                 
             # Lycee
             if 'Lycée' in prefs['classe_enfants']:
-                df['edu_lycee_scaled'] = (df['count_lycee'] > 0).astype(float)
+                if 'edu_lycee_scaled' not in df.columns:
+                    raise ValueError("Missing pre-calculated score: edu_lycee_scaled")
 
             # Remove old score column if it exists to avoid confusion
             if 'edu_structures_scaled' in df.columns:
@@ -482,14 +510,16 @@ def compute_criteria_scores(
     sante_pref = prefs.get('besoin_sante', 'Aucun')
     if sante_pref != 'Aucun':
         col_map = {
-            'Hopital': 'count_hopital',
-            'Maternité': 'count_maternite',
-            'Soutien Psychologique & Addictologie': 'count_psy'
+            'Hopital': 'sante_hopital_scaled',
+            'Maternité': 'sante_maternite_scaled',
+            'Soutien Psychologique & Addictologie': 'sante_psy_scaled'
         }
         target_col = col_map.get(sante_pref)
         if target_col and target_col in df.columns:
-            # Score 1.0 if count > 0, else 0.0
-            df['sante_structures_scaled'] = (df[target_col] > 0).astype(float)
+            # Already scaled (0 or 1)
+            df['sante_structures_scaled'] = df[target_col]
+        elif target_col:
+             raise ValueError(f"Missing pre-calculated score: {target_col}")
         else:
             df['sante_structures_scaled'] = 0.0
     # Else: Sante criteria are not calculated/added to df
@@ -503,15 +533,16 @@ def compute_criteria_scores(
     current_epci = df_all_communes.loc[prefs['commune_actuelle']]['epci_code']
     df['mob_epci_scaled'] = np.where(df['epci_code'] == current_epci, 1, 0)
 
-    # --- INCLUSION (New F-13) ---
+    # --- INCLUSION ---
     df = compute_inclusion_score(df, prefs, incl_index, associations_data, scores_cat, global_stats)
 
     # Population as a direct score for inclusion
-    min_b, max_b = get_bounds('inc_population_scaled', scores_cat, global_stats)
-    df['inc_population_scaled'] = min_max_scale(df['population'].fillna(0), min_b, max_b)
+    if 'inc_population_scaled' not in df.columns:
+        raise ValueError("Missing pre-calculated score: inc_population_scaled")
 
     # Political orientation score
-    df['inc_pol_scaled'] = df['pol_num'].astype('float')
+    if 'inc_pol_scaled' not in df.columns:
+        raise ValueError("Missing pre-calculated score: inc_pol_scaled")
 
     return df
 
@@ -593,7 +624,7 @@ def compute_category_scores(
         # (score_commune, score_voisin * (1 - penalty)).
         # This is done for all criteria in the category.
         max_scores = []
-        weights = [] # F-15
+        weights = []
 
         for col in score_cols:
             score_commune = df[col]
@@ -607,16 +638,16 @@ def compute_category_scores(
                 effective_score = np.maximum(s_commune, s_voisin)
                 max_scores.append(effective_score)
             else:  # This criterion is not applicable to binomes
-                # F-14: Preserve NaNs for aggregation
+                # Preserve NaNs for aggregation
                 max_scores.append(score_commune)
 
-            # F-15: Get Weight
+            # Get Weight
             # We assume scores_cat has 'weight' column (added in data_loader)
             base_weight = scores_cat[scores_cat.score == col]['weight'].iloc[0]
             dynamic_multiplier = config.criteria_weights.get(col, 1.0)
             weights.append(base_weight * dynamic_multiplier)
 
-        # F-15: Weighted Average Calculation
+        # Weighted Average Calculation
         scores_df = pd.concat(max_scores, axis=1)
         weights_array = np.array(weights)
         
@@ -710,7 +741,7 @@ def aggregate_scores_by_bassin_de_vie(df: pd.DataFrame) -> pd.DataFrame:
     # --- Basic Aggregations ---
     agg_dict['population'] = 'sum'
     if 'epci_nom' in df_agg.columns:
-        agg_dict['epci_nom'] = lambda x: ', '.join(x.unique())
+        agg_dict['epci_nom'] = lambda x: ', '.join(x.dropna().unique())
 
     # --- Complex Aggregations ---
     def get_url_from_most_populous(series):
@@ -766,6 +797,9 @@ def compute_odis_score(
     config: 'ScoringConfig',
     incl_index: pd.DataFrame,
     associations_data: pd.DataFrame, # Added argument
+    bmo_vertical: pd.DataFrame, # Added argument
+    formations_data: pd.DataFrame, # Added argument
+    codformations_index: pd.DataFrame, # Added argument
     global_stats: Dict[str, Dict[str, float]], # Added
     use_binomes: bool = True # New argument
 ) -> pd.DataFrame:
@@ -788,6 +822,9 @@ def compute_odis_score(
         incl_index=incl_index,
         df_all_communes=df_all_communes,
         associations_data=associations_data, # Passed down
+        bmo_vertical=bmo_vertical, # Passed down
+        formations_data=formations_data, # Passed down
+        codformations_index=codformations_index, # Passed down
         scores_cat=scores_cat, # Passed down
         global_stats=global_stats # Passed down
     )
@@ -832,6 +869,9 @@ def run_scoring_pipeline(
     scores_cat: pd.DataFrame,
     incl_index: pd.DataFrame,
     associations_data: pd.DataFrame, # Added argument
+    bmo_vertical: pd.DataFrame, # Added argument
+    formations_data: pd.DataFrame, # Added argument
+    codformations_index: pd.DataFrame, # Added argument
     global_stats: Dict[str, Dict[str, float]], # Added
     view_level: str
 ) -> Tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
@@ -871,14 +911,10 @@ def run_scoring_pipeline(
         
         # Exclude the BV of the current commune
         current_bv = start_commune.iloc[0][cfg.BV_CODE_COL]
-        print(f"DEBUG: current_bv = {current_bv}")
-        print(f"DEBUG: bv_ids_to_keep BEFORE = {bv_ids_to_keep}")
         
         if current_bv in bv_ids_to_keep:
             bv_ids_to_keep.remove(current_bv)
-            
-        print(f"DEBUG: bv_ids_to_keep AFTER = {bv_ids_to_keep}")
-            
+  
         communes_to_score = df_all_communes[df_all_communes[cfg.BV_CODE_COL].isin(bv_ids_to_keep)]
 
     # --- Scoring ---
@@ -892,6 +928,9 @@ def run_scoring_pipeline(
         config=config,
         incl_index=incl_index,
         associations_data=associations_data, # Passed down
+        bmo_vertical=bmo_vertical, # Passed down
+        formations_data=formations_data, # Passed down
+        codformations_index=codformations_index, # Passed down
         global_stats=global_stats, # Passed down
         use_binomes=use_binomes
     )
@@ -914,7 +953,17 @@ def run_scoring_pipeline(
         # Merge with geometry
         gdf_bv_geo_filtered = df_bv_geo[df_bv_geo.index.isin(df_bv_scores[cfg.BV_CODE_COL])]
         processed_gdf = gdf_bv_geo_filtered.merge(df_bv_scores, left_index=True, right_on=cfg.BV_CODE_COL)
-        processed_gdf = processed_gdf.rename_geometry('polygon')
+        
+        # Handle duplicate columns from merge (e.g. libgeo)
+        if 'libgeo_x' in processed_gdf.columns and 'libgeo_y' in processed_gdf.columns:
+            processed_gdf = processed_gdf.rename(columns={'libgeo_x': 'libgeo'}).drop(columns=['libgeo_y'])
+        elif 'libgeo_x' in processed_gdf.columns:
+             processed_gdf = processed_gdf.rename(columns={'libgeo_x': 'libgeo'})
+        elif 'libgeo_y' in processed_gdf.columns:
+             processed_gdf = processed_gdf.rename(columns={'libgeo_y': 'libgeo'})
+
+        if processed_gdf.geometry.name != 'polygon':
+            processed_gdf = processed_gdf.rename_geometry('polygon')
         processed_gdf = processed_gdf.drop_duplicates(subset=[cfg.BV_CODE_COL])
     else:
         processed_gdf = odis_scored.copy()

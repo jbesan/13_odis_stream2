@@ -34,25 +34,12 @@ def sample_data():
         'codes_formations': [['123'], ['456'], ['123', '456'], [], []],
         'rp_5+pieces': [10, 20, 15, 12, 10],
         'log_rp': [100, 200, 150, 120, 90],
-        'log_soc_inoccupes': [5, 2, 3, 4, 2],
-        'log_soc_total': [50, 20, 30, 40, 20],
         'log_vac': [10, 5, 8, 6, 4],
-        'log_total': [100, 50, 80, 60, 40],
-        'risque_fermeture': [1, 0, 2, 0, 0],
-        'ecoles_ct': [10, 5, 15, 8, 6],
-        'svc_incl_count': [5, 3, 4, 2, 3],
-        'pol_num': [1, 2, 3, 4, 1],
-        # New education counts
-        'count_maternelle': [5, 2, 3, 1, 0],
-        'count_elementaire': [4, 3, 2, 1, 0],
-        'count_college': [3, 1, 2, 0, 0],
-        'count_lycee': [2, 1, 1, 0, 0],
-        # New health counts
-        'count_hopital': [2, 1, 1, 0, 0],
-        'count_psy': [1, 0, 1, 0, 0],
-        'count_maternite': [1, 0, 0, 0, 0],
         # New vacant housing metric
         'pp_vacant_plus_2ans_25': [0.05, 0.02, 0.03, 0.04, 0.01],
+        # New inclusion metrics
+        'lien_social_count': [10, 5, 8, 6, 4],
+        'lien_social_density': [5.0, 2.5, 4.0, 3.0, 2.0],
     }
     gdf = gpd.GeoDataFrame(data, crs="EPSG:4326")
     gdf = gdf.set_index('codgeo')

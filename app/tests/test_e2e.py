@@ -109,7 +109,7 @@ def run_test_scenario(scenario_id, view_level, app_data):
         elif key == 'binome_penalty':
             # The UI slider uses percentage values (e.g., 50), but the config expects a float (e.g., 0.5)
             # The create_scoring_config_from_inputs function handles the division by 100.
-            mock_session_state['ui_penalite_binome'] = value * 100 if value <= 1 else value
+            mock_session_state['ui_binome_penalty'] = value * 100 if value <= 1 else value
         # Handle list-based inputs for children's classes and professional goals
         elif key == 'classe_enfants':
             for i, class_level in enumerate(value):
@@ -184,7 +184,10 @@ def run_test_scenario(scenario_id, view_level, app_data):
         config=scoring_config,
         incl_index=app_data['incl_index'],
         associations_data=app_data['associations_data'], # Pass association data
-        global_stats=app_data['global_score_stats'], # Added
+        bmo_vertical=app_data['bmo_vertical'],
+        formations_data=app_data['formations_data'],
+        codformations_index=app_data['codformations_index'],
+        global_stats={}, # Removed
     )
     
     odis_scored = odis_scored.drop(scoring_config.commune_actuelle, errors='ignore')
@@ -197,6 +200,14 @@ def run_test_scenario(scenario_id, view_level, app_data):
         df_bv_scores = scoring.aggregate_scores_by_bassin_de_vie(odis_scored)
         gdf_bv_geo_filtered = df_bv_geo[df_bv_geo.index.isin(df_bv_scores[cfg.BV_CODE_COL])]
         processed_gdf = gdf_bv_geo_filtered.merge(df_bv_scores, left_index=True, right_on=cfg.BV_CODE_COL)
+        
+        # Handle duplicate columns from merge (e.g. libgeo)
+        if 'libgeo_x' in processed_gdf.columns and 'libgeo_y' in processed_gdf.columns:
+            processed_gdf = processed_gdf.rename(columns={'libgeo_x': 'libgeo'}).drop(columns=['libgeo_y'])
+        elif 'libgeo_x' in processed_gdf.columns:
+             processed_gdf = processed_gdf.rename(columns={'libgeo_x': 'libgeo'})
+        elif 'libgeo_y' in processed_gdf.columns:
+             processed_gdf = processed_gdf.rename(columns={'libgeo_y': 'libgeo'})
     else:  # Commune level
         processed_gdf = odis_scored
         
@@ -287,7 +298,7 @@ def test_result_details_display(app_data):
         'ui_logement': 'Location',
         'ui_besoin_sante': 'Aucun',
         'ui_besoins_autres': {},
-        'ui_penalite_binome': 50,
+        'ui_binome_penalty': 50,
         'ui_pop_min': 1000,
         'ui_poids_emploi': 100,
         'ui_poids_logement': 100,
@@ -314,7 +325,7 @@ def test_result_details_display(app_data):
             try:
                 ui._display_result_details(row)
             except Exception as e:
-                pytest.fail(f"Failed to display details for commune result {row.libgeo} ({index}): {e}")
+                pytest.fail(f"Failed to display details for commune result {row.get('libgeo', 'UNKNOWN')} ({index}): {e}")
 
     # 5. Test the "Bassin de vie" details display
     mock_session_state.processed_gdf = results_bv
@@ -325,4 +336,4 @@ def test_result_details_display(app_data):
             try:
                 ui._display_bv_result_details(row)
             except Exception as e:
-                pytest.fail(f"Failed to display details for BV result {row.libgeo} ({index}): {e}")
+                pytest.fail(f"Failed to display details for BV result {row.get('libgeo', 'UNKNOWN')} ({index}): {e}")
