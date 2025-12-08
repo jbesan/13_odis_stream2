@@ -143,7 +143,7 @@ scores:
       unit: habitants
       display_factor: 1
       tooltip: Population totale de la commune
-    weight: 1.0
+    weight: 3.0
     min_bound: null
     max_bound: null
   - id: met_match_adult1_scaled
@@ -505,6 +505,22 @@ scores:
       unit: ""
       display_factor: 100
       tooltip: Présence de la structure de santé sélectionnée
+    weight: 1.0
+    min_bound: 0.0
+    max_bound: 1.0
+  - id: mob_gare_scaled
+    category: mobilité
+    source_metric: mob_gare_scaled
+    include_in_binom: false
+    computation: precomputed
+    display:
+      name: Gare ferroviaire
+      strong_point_text: Présence d'une gare ferroviaire
+      high_value_adjective: présente
+      show: true
+      unit: ""
+      display_factor: 1
+      tooltip: "Présence d'une gare ferroviaire dans la commune (Source: Odace)"
     weight: 1.0
     min_bound: 0.0
     max_bound: 1.0

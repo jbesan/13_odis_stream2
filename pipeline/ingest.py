@@ -11,6 +11,7 @@ from pipeline.common import (
     PipelineLogger, load_config, load_dataset, extract_zip,
     CONFIG_FILE, CACHE_DIR, CLEAN_DIR, STATUS_FILE
 )
+from pipeline.odace_client import get_odace_client
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -897,17 +898,17 @@ def main():
     clean_caf(config, logger)
     clean_education(config, logger)
     clean_inclusion(config, logger)
-    clean_inclusion(config, logger)
     clean_associations(config, logger)
     clean_voisins(config, logger)
     clean_political(config, logger)
     clean_housing_occupation(config, logger)
     clean_school_effectifs(config, logger)
-    clean_school_effectifs(config, logger)
     clean_bpe(config, logger)
     clean_codes_postaux(config, logger)
     clean_formations(config, logger)
     
+    clean_odace_gares(config, logger)
+
     logger.log_step("ingest_all", "COMPLETED")
 
 def clean_codes_postaux(config: Dict[str, Any], logger: PipelineLogger):
@@ -1057,3 +1058,99 @@ def clean_formations(config: Dict[str, Any], logger: PipelineLogger):
 
 if __name__ == "__main__":
     main()
+
+def clean_odace_gares(config: Dict[str, Any], logger: PipelineLogger):
+    """Fetches and cleans Gare data from Odace API."""
+    logger.log_step("clean_odace_gares", "STARTED")
+    try:
+        client = get_odace_client(logger)
+        
+        # Fetch Data
+        df_commune = client.fetch_dim_commune()
+        df_gare = client.fetch_dim_gare()
+        
+        if df_commune.empty or df_gare.empty:
+            logging.warning("Odace API returned empty data for communes or gares.")
+            return
+
+        # Initialize output
+        # Join Strategy:
+        # 1. Primary: commune_sk
+        # 2. Fallback: gare_label == commune_label (for rows with empty/null commune_sk)
+        
+        # Prepare Fallback
+        # Ensure common columns, drop duplicates in commune for name match
+        # commune_label might not be unique? Assume it is or take first.
+        # Actually commune_insee_code is unique. Labels might repeat (e.g. Saint-Sauveur).
+        # We should be careful. 
+        # But for 'Ambérieu-en-Bugey', it's likely unique.
+        
+        # Split gares into linked and unlinked
+        df_gare['commune_sk'] = df_gare['commune_sk'].replace('', pd.NA)
+        
+        linked_gares = df_gare.dropna(subset=['commune_sk'])
+        unlinked_gares = df_gare[df_gare['commune_sk'].isna()]
+        
+        logging.info(f"Gares: Total={len(df_gare)}, Linked={len(linked_gares)}, Unlinked={len(unlinked_gares)}")
+        
+        # 1. Merge Linked
+        merged_linked = linked_gares.merge(df_commune, on='commune_sk', how='inner')
+        
+        # 2. Merge Unlinked (Fallback on Name)
+        if not unlinked_gares.empty:
+            # Prepare commune name lookup
+            # We want to match unlinked 'gare_label' to 'commune_label'
+            # To avoid bad matches on duplicate names, we could filter for unique names only?
+            # Or just proceed.
+            unlinked_gares = unlinked_gares.copy()
+            # Normalize for matching
+            unlinked_gares['match_name'] = unlinked_gares['gare_label'].astype(str).str.lower().str.strip()
+            
+            df_commune_lookup = df_commune.copy()
+            df_commune_lookup['match_name'] = df_commune_lookup['commune_label'].astype(str).str.lower().str.strip()
+            
+            # Drop duplicates in lookup (if multiple communes have same name, we can't safely match)
+            # Actually, let's keep duplicate names but log.
+            # Convert to dict?
+            
+            merged_fallback = unlinked_gares.merge(df_commune_lookup, on='match_name', how='inner', suffixes=('', '_commune'))
+            
+            logging.info(f"Fallback Name Match: Recovered {len(merged_fallback)} gares.")
+            
+            # Align columns
+            # merged_linked has cols from dim_commune
+            # merged_fallback has cols from dim_commune with possible suffixes if collision (but we joined on match_name)
+            # We want 'commune_insee_code'
+            
+            cols_needed = ['gare_sk', 'commune_insee_code']
+            
+            combined = pd.concat([
+                merged_linked[cols_needed], 
+                merged_fallback[cols_needed]
+            ], ignore_index=True)
+            
+        else:
+            combined = merged_linked[['gare_sk', 'commune_insee_code']]
+
+        # 2. Group by INSEE Code
+        if 'commune_insee_code' not in combined.columns:
+             logging.warning("Missing commune_insee_code in Odace data.")
+             return
+
+        # Count unique gares
+        stats = combined.groupby('commune_insee_code')['gare_sk'].nunique().rename('gare_count').reset_index()
+        stats.rename(columns={'commune_insee_code': 'codgeo'}, inplace=True)
+        stats['codgeo'] = stats['codgeo'].astype(str).str.zfill(5)
+        stats['has_gare'] = (stats['gare_count'] > 0).astype(int)
+        
+        # Save
+        clean_dir = CLEAN_DIR
+        clean_dir.mkdir(parents=True, exist_ok=True)
+        output_path = clean_dir / "gares.parquet"
+        stats.to_parquet(output_path)
+        
+        logger.log_step("clean_odace_gares", "COMPLETED", {"path": str(output_path), "rows": len(stats)})
+        
+    except Exception as e:
+        logger.log_step("clean_odace_gares", "ERROR", {"error": str(e)})
+        logging.error(f"Odace Gares Cleaning failed: {e}")

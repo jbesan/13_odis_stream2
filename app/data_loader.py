@@ -136,7 +136,8 @@ def init_datasets() -> Dict[str, Any]:
         'edu_classes_ferm_scaled', 'edu_creches_scaled', 'edu_petite_enfance_scaled',
         'edu_maternelle_scaled', 'edu_elementaire_scaled', 'edu_college_scaled', 'edu_lycee_scaled',
         'sante_hopital_scaled', 'sante_maternite_scaled', 'sante_psy_scaled',
-        'inc_socle_admin_score'
+        'inc_socle_admin_score',
+        'mob_gare_scaled'
     ]
     
     odis_path = os.path.join(base_path, cfg.ODIS_FILE)

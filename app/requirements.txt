@@ -11,7 +11,7 @@ plotly
 PyYAML
 scikit-learn
 shapely
-streamlit>=1.25.0
+streamlit>=1.40.0
 streamlit-folium>=0.13.0
 
 matplotlib

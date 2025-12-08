@@ -192,6 +192,11 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             min_b, max_b = get_min_max(communes_gdf['edu_pe_tx_couverture'])
             communes_gdf['edu_petite_enfance_scaled'] = scale_series(communes_gdf['edu_pe_tx_couverture'], min_b, max_b)
 
+        # mob_gare_scaled
+        if 'has_gare' in communes_gdf.columns:
+            # Binary score: 1 if present, 0 if not
+            communes_gdf['mob_gare_scaled'] = communes_gdf['has_gare'].fillna(0).astype(float)
+        
         # Static Boolean Scores (Education)
         for col, score_col in [
             ('edu_maternelle_ct', 'edu_maternelle_scaled'),

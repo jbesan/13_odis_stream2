@@ -9,6 +9,10 @@ import zipfile
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, Optional, List, Union
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv(Path(__file__).parent / ".env")
 
 # Constants
 CONFIG_FILE = "pipeline/sources.yaml"
