@@ -132,7 +132,12 @@ if st.session_state.get('processed_gdf') is None and st.session_state.get('form_
 
 # Sidebar
 with st.sidebar:
-    st.image('./images/logo-jaccueille-singa.png', width=150)
+    logo_path = ui.get_image_path('logo-jaccueille-singa.png')
+    logo_b64 = ui.get_base64_image(logo_path)
+    if logo_b64:
+        st.markdown(f'<img src="data:image/png;base64,{logo_b64}" width="150" style="margin-bottom: 20px;">', unsafe_allow_html=True)
+    else:
+        st.error("Logo not found")
     st.write("")
     st.markdown("Découvrez les lieux de vie correspondant le mieux au projet renseigné. Les scores vous permettent de comparer facilement leurs atouts.", unsafe_allow_html=True)
     with st.container(border=False, height='stretch', vertical_alignment="bottom"):

@@ -125,11 +125,14 @@ def init_datasets() -> Dict[str, Any]:
     # Define columns to load to save memory
     columns_to_load = [
         'codgeo', 'libgeo', 'polygon', 'dep_code', 'reg_code', 'epci_code', 'epci_nom', 'codgeo_voisins',
-        'population', 'bassin_de_vie', 'libelle_bassin_de_vie', # Added bassin_de_vie and label
-        'met_scaled', 'log_vac_scaled', 'inc_lien_social_score', 'inc_population_scaled', 'inc_pol_scaled', 'log_occup_scaled',
-        'log_soc_inoc_scaled', 'edu_classes_ferm_scaled', 'edu_petite_enfance_scaled',
+        'population', 'bassin_de_vie', 'libelle_bassin_de_vie',
+        # Calculated Scores (Output of Prescoring)
+        'met_scaled', 'log_vac_scaled', 'inc_lien_social_score', 'inc_population_scaled', 'inc_pol_scaled',
+        'log_occup_scaled', 'log_soc_inoc_scaled', 
+        'edu_classes_ferm_scaled', 'edu_creches_scaled', 'edu_petite_enfance_scaled',
         'edu_maternelle_scaled', 'edu_elementaire_scaled', 'edu_college_scaled', 'edu_lycee_scaled',
-        'sante_hopital_scaled', 'sante_maternite_scaled', 'sante_psy_scaled'
+        'sante_hopital_scaled', 'sante_maternite_scaled', 'sante_psy_scaled',
+        'inc_socle_admin_score'
     ]
     
     odis_path = os.path.join(base_path, cfg.ODIS_FILE)
@@ -256,6 +259,9 @@ def init_datasets() -> Dict[str, Any]:
 
     formations_path = os.path.join(base_path, cfg.REL_FORMATIONS_FILE)
     formations_data = load_parquet_dataset(formations_path)
+    if not formations_data.empty and 'formation_code' in formations_data.columns:
+        # Hotfix: Ensure formation codes are clean strings (remove .0 suffix if present)
+        formations_data['formation_code'] = formations_data['formation_code'].astype(str).str.replace(r'\.0$', '', regex=True)
 
     # 5. Load Configs
     app_dir = os.path.dirname(os.path.abspath(__file__))

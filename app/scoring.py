@@ -260,12 +260,18 @@ def compute_inclusion_score(
         # We need to join with incl_index again or reuse the previous join if possible.
         # incl_index has 'key' = "category_service"
         # We can reuse the logic from Socle Admin but with different keys
+        # Helper to count matches with substring support
+        def count_extra_matches(available_set):
+            if not isinstance(available_set, set): return 0
+            matches = 0
+            for needed in needed_extra_services:
+                if any(needed in av for av in available_set):
+                    matches += 1
+            return matches
+
         if 'key' not in df.columns: # Should be there if Socle Admin ran, but let's be safe
              df_merged = df.join(incl_index, how='left')
-             df['extra_match_count'] = [
-                len(needed_extra_services.intersection(s)) if isinstance(s, set) else 0
-                for s in df_merged['key']
-            ]
+             df['extra_match_count'] = df_merged['key'].apply(count_extra_matches)
         else:
             # If df already has 'key' from previous join (unlikely as join adds columns to left, not right)
             # Actually df.join(incl_index) adds columns from incl_index to df.
@@ -273,17 +279,11 @@ def compute_inclusion_score(
             # Let's check if we did step 1.
             if prefs.get('socle_admin_selection'):
                  # df already has 'key' column from the join in step 1
-                 df['extra_match_count'] = [
-                    len(needed_extra_services.intersection(s)) if isinstance(s, set) else 0
-                    for s in df['key']
-                ]
+                 df['extra_match_count'] = df['key'].apply(count_extra_matches)
             else:
                  # Need to join
                  df_merged = df.join(incl_index, how='left')
-                 df['extra_match_count'] = [
-                    len(needed_extra_services.intersection(s)) if isinstance(s, set) else 0
-                    for s in df_merged['key']
-                ]
+                 df['extra_match_count'] = df_merged['key'].apply(count_extra_matches)
         
         df['inc_extra_services_score'] = df['extra_match_count'] / len(needed_extra_services)
     else:
@@ -418,24 +418,37 @@ def compute_criteria_scores(
         df['noms_formations'] = [[] for _ in range(len(df))]
 
     # --- HEBERGEMENT / LOGEMENT ---
-    
-    if prefs['hebergement'] == "Chez l'habitant":
-        # We use the pre-calculated log_pp_occup
-        # It is already a weighted average where 1.0 = Very Severe Under-Occupation.
-        # So higher is better for "Chez l'habitant".
-        
-        if 'log_occup_scaled' not in df.columns:
-            raise ValueError("Missing pre-calculated score: log_occup_scaled")
-    else:
-        # If not "Chez l'habitant", we don't use this score.
-        df['log_occup_scaled'] = np.nan
 
-    if prefs['logement'] == "Logement Social":
-        if 'log_soc_inoc_scaled' not in df.columns:
-            raise ValueError("Missing pre-calculated score: log_soc_inoc_scaled")
-    elif prefs['logement'] == "Location":
+    def drop_score_cols(df, col_name):
+        cols_to_drop = [col_name]
+        if f"{col_name}_binome" in df.columns:
+            cols_to_drop.append(f"{col_name}_binome")
+        df.drop(columns=cols_to_drop, inplace=True, errors='ignore')
+
+    # 1. Taux de Vacance (log_vac_scaled)
+    # Used if "Location" is selected in EITHER Hébergement OR Logement
+    if prefs['hebergement'] == 'Location' or prefs['logement'] == 'Location':
         if 'log_vac_scaled' not in df.columns:
-            raise ValueError("Missing pre-calculated score: log_vac_scaled")
+            # Maybe it was dropped or not loaded?
+            # It should be there from data_loader.
+            pass
+    else:
+        # Explicitly remove it so it is excluded from category calculation
+        drop_score_cols(df, 'log_vac_scaled')
+
+    # 2. Logement Social (log_soc_inoc_scaled)
+    # Used ONLY if "Logement Social" is selected in Logement
+    if prefs['logement'] == 'Logement Social':
+        pass
+    else:
+        drop_score_cols(df, 'log_soc_inoc_scaled')
+
+    # 3. Occupation (log_occup_scaled)
+    # Used ONLY if "Chez l'habitant" is selected in Hébergement
+    if prefs['hebergement'] == "Chez l'habitant":
+        pass
+    else:
+        drop_score_cols(df, 'log_occup_scaled')
 
     # --- EDUCATION ---
     if prefs['nb_enfants'] > 0:
@@ -729,7 +742,7 @@ def aggregate_scores_by_bassin_de_vie(df: pd.DataFrame) -> pd.DataFrame:
     # --- Basic Aggregations ---
     agg_dict['population'] = 'sum'
     if 'epci_nom' in df_agg.columns:
-        agg_dict['epci_nom'] = lambda x: ', '.join(x.unique())
+        agg_dict['epci_nom'] = lambda x: ', '.join(x.dropna().unique())
 
     # --- Complex Aggregations ---
     def get_url_from_most_populous(series):

@@ -45,8 +45,8 @@ scores:
       display_factor: 100
       tooltip: Part des logements vacants depuis plus de 2 ans sur le parc total
     weight: 1.0
-    min_bound: null
-    max_bound: null
+    min_bound: 0
+    max_bound: 0.10
   - id: log_soc_inoc_scaled
     category: logement
     source_metric: log_soc_inoc_ratio

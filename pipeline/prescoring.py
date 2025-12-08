@@ -26,15 +26,8 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
 
         # --- Calculated Columns ---
         
-        # 0. Load Associations for Lien Social Score (moved from build.py)
-        if 'lien_social_count' not in communes_gdf.columns:
-            assoc_path = CLEAN_DIR / "associations_vertical.parquet"
-            if assoc_path.exists():
-                assoc_df = pd.read_parquet(assoc_path)
-                assoc_count = assoc_df.groupby('codgeo')['count'].sum().rename('lien_social_count').reset_index()
-                communes_gdf = communes_gdf.merge(assoc_count, on='codgeo', how='left')
-                communes_gdf['lien_social_count'] = communes_gdf['lien_social_count'].fillna(0)
-                logging.info("Calculated lien_social_count in prescoring")
+        # 0. Load Associations for Lien Social Score (moved to build.py)
+        # Block removed.
 
         # log_soc_inoc_ratio
         if 'log_soc_total' in communes_gdf.columns and 'log_soc_inoccupes' in communes_gdf.columns:
@@ -107,10 +100,11 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             communes_gdf['met_ratio'] = communes_gdf['metiers_offres_ratio'] * 1000
         
         # 2. Logement Vacant Structurel Ratio
-        if 'log_total' in communes_gdf.columns and 'log_priv_vacant_plus_2ans' in communes_gdf.columns:
+        # 2. Logement Vacant Structurel Ratio
+        if 'log_priv_total' in communes_gdf.columns and 'log_priv_vacant_plus_2ans' in communes_gdf.columns:
             communes_gdf['log_vac_struct_ratio'] = np.where(
-                communes_gdf['log_total'] > 0,
-                communes_gdf['log_priv_vacant_plus_2ans'] / communes_gdf['log_total'],
+                communes_gdf['log_priv_total'] > 0,
+                communes_gdf['log_priv_vacant_plus_2ans'] / communes_gdf['log_priv_total'],
                 0.0
             )
         
@@ -127,6 +121,14 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             communes_gdf['risque_fermeture_ratio'] = np.where(
                 communes_gdf['ecoles_count'] > 0,
                 communes_gdf['total_eleves'] / communes_gdf['ecoles_count'],
+                0.0
+            )
+
+        # 5. Creches Density (Places/Structures per 1000 hab - using count of structures for now)
+        if 'population' in communes_gdf.columns and 'bpe_creches_count' in communes_gdf.columns:
+            communes_gdf['bpe_creches_density'] = np.where(
+                communes_gdf['population'] > 0,
+                (communes_gdf['bpe_creches_count'] * 1000) / communes_gdf['population'],
                 0.0
             )
         
@@ -176,6 +178,11 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         if 'risque_fermeture_ratio' in communes_gdf.columns:
             min_b, max_b = get_min_max(communes_gdf['risque_fermeture_ratio'])
             communes_gdf['edu_classes_ferm_scaled'] = scale_series(communes_gdf['risque_fermeture_ratio'], min_b, max_b)
+
+        # edu_creches_scaled
+        if 'bpe_creches_density' in communes_gdf.columns:
+            min_b, max_b = get_min_max(communes_gdf['bpe_creches_density'])
+            communes_gdf['edu_creches_scaled'] = scale_series(communes_gdf['bpe_creches_density'], min_b, max_b)
 
         # edu_petite_enfance_scaled
         if 'edu_pe_tx_couverture' in communes_gdf.columns:
@@ -227,8 +234,8 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             'count_hopital', 'count_psy', 'count_maternite',
             'log_soc_inoc_ratio', 'log_pp_occup',
             'metiers_offres_ratio', 'pop_chomage_ratio', 'met_ratio',
-            'log_vac_struct_ratio', 'lien_social_density', 'risque_fermeture_ratio',
-            'edu_pe_tx_couverture', # Dropped after use in scaling
+            'log_vac_struct_ratio', 'lien_social_density', 'risque_fermeture_ratio', 'bpe_creches_density',
+            'edu_pe_tx_couverture', 'bpe_creches_count', # Dropped after use in scaling
             'lien_social_count', # Dropped after use in scaling
             'pop_active', 'pop_employes', 'pop_chomeurs' # Dropped after use in ratios
         ]
@@ -269,11 +276,19 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
                     
                     needed_services = set(app_cfg.DEFAULT_SOCLE_ADMIN)
                     
+                    # Ensure we are using codgeo as index (Critical for map)
+                    if 'codgeo' in communes_gdf.columns:
+                        communes_gdf.set_index('codgeo', inplace=True, drop=False)
+                    
                     def calculate_socle_score(codgeo):
                         available = commune_services.get(codgeo, set())
-                        match_count = len(needed_services.intersection(available))
-                        return match_count / len(needed_services) if needed_services else 0.0
-                    
+                        matches = 0
+                        for needed in needed_services:
+                            # Check if needed slug is strictly present OR is a substring of any available service key
+                            if any(needed in av for av in available):
+                                matches += 1
+                        return matches / len(needed_services) if needed_services else 0.0
+
                     communes_gdf['inc_socle_admin_score'] = communes_gdf.index.map(calculate_socle_score).fillna(0.0)
                     logging.info("Calculated inc_socle_admin_score")
                     
@@ -295,10 +310,140 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         logging.error(f"Prescoring failed: {e}")
         raise e
 
+
+def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
+    """Calculates scores for Bassins de Vie."""
+    logger.log_step("score_bassins_de_vie", "STARTED")
+    try:
+        bv_path = OUTPUT_DIR / "odis_bassins_de_vie.parquet"
+        communes_path = OUTPUT_DIR / "odis_communes.parquet"
+        
+        if not bv_path.exists() or not communes_path.exists():
+             logging.error("BV or Communes parquet not found.")
+             return
+
+        bv_gdf = gpd.read_parquet(bv_path)
+        communes_df = pd.read_parquet(communes_path)
+        
+        # We need Aggregated Counts which should be in 'bv_gdf' if build.py did its job.
+        # Check columns
+        logging.info(f"BV Columns: {bv_gdf.columns}")
+        
+        # --- 1. Ratios & Densities ---
+        
+        # Metiers Ratio (Active Pop / Offers)
+        # Note: 'metiers_offres_diff' might be missing if we dropped it in build?
+        # build.py aggregates 'metiers_offres_diff'.
+        if 'metiers_offres_diff' in bv_gdf.columns and 'pop_active' in bv_gdf.columns:
+             bv_gdf['met_ratio'] = np.where(
+                 bv_gdf['pop_active'] > 0,
+                 bv_gdf['metiers_offres_diff'] / bv_gdf['pop_active'] * 1000,
+                 0.0
+             )
+        
+        # Lien Social
+        if 'lien_social_count' in bv_gdf.columns and 'population_bv' in bv_gdf.columns:
+             bv_gdf['lien_social_density'] = np.where(
+                 bv_gdf['population_bv'] > 0,
+                 bv_gdf['lien_social_count'] / bv_gdf['population_bv'] * 1000,
+                 0.0
+             )
+
+        # Creches
+        # Note: 'population_bv' is the sum of population.
+        if 'bpe_creches_count' in bv_gdf.columns and 'population_bv' in bv_gdf.columns:
+             bv_gdf['bpe_creches_density'] = np.where(
+                 bv_gdf['population_bv'] > 0,
+                 bv_gdf['bpe_creches_count'] / bv_gdf['population_bv'] * 1000,
+                 0.0
+             )
+             
+        # --- 2. Scaling ---
+        def get_min_max(series):
+             return series.quantile(0.01), series.quantile(0.99)
+            
+        def scale_series(series, min_val, max_val):
+             if max_val == min_val: return 0.0
+             return ((series - min_val) / (max_val - min_val)).clip(0, 1)
+
+        if 'met_ratio' in bv_gdf.columns:
+            min_b, max_b = get_min_max(bv_gdf['met_ratio'])
+            bv_gdf['met_scaled'] = scale_series(bv_gdf['met_ratio'], min_b, max_b)
+
+        if 'lien_social_density' in bv_gdf.columns:
+            min_b, max_b = get_min_max(bv_gdf['lien_social_density'])
+            bv_gdf['inc_lien_social_score'] = scale_series(bv_gdf['lien_social_density'], min_b, max_b)
+            
+        if 'bpe_creches_density' in bv_gdf.columns:
+            min_b, max_b = get_min_max(bv_gdf['bpe_creches_density'])
+            bv_gdf['edu_creches_scaled'] = scale_series(bv_gdf['bpe_creches_density'], min_b, max_b)
+
+        # --- 3. Weighted Averages from Communes ---
+        metrics_to_avg = [
+            'inc_socle_admin_score', 
+            'edu_classes_ferm_scaled', 
+            'log_vac_scaled', 
+            'log_occup_scaled',
+            'log_soc_inoc_scaled',
+            'edu_petite_enfance_scaled',
+            'sante_hopital_scaled', 'sante_maternite_scaled', 'sante_psy_scaled',
+            'edu_lycee_scaled', 'edu_college_scaled',
+            'edu_maternelle_scaled', 'edu_elementaire_scaled'
+        ]
+        
+        # Idempotency: Drop existing metrics to prevent duplication during merge
+        cols_to_drop_bv = [col for col in metrics_to_avg if col in bv_gdf.columns]
+        # Also drop _x, _y variants if they exist from failed runs
+        for col in metrics_to_avg:
+            if f"{col}_x" in bv_gdf.columns: cols_to_drop_bv.append(f"{col}_x")
+            if f"{col}_y" in bv_gdf.columns: cols_to_drop_bv.append(f"{col}_y")
+            
+        if cols_to_drop_bv:
+            bv_gdf.drop(columns=cols_to_drop_bv, inplace=True)
+        
+        communes_subset = communes_df[['codgeo', 'bassin_de_vie', 'population'] + [m for m in metrics_to_avg if m in communes_df.columns]].copy()
+        
+        if 'bassin_de_vie' in communes_subset.columns:
+            for metric in metrics_to_avg:
+                if metric in communes_subset.columns:
+                    # weighted average
+                    communes_subset[f'{metric}_w'] = communes_subset[metric] * communes_subset['population']
+            
+            grouped = communes_subset.groupby('bassin_de_vie')
+            
+            bv_aggs = pd.DataFrame(index=grouped.groups.keys())
+            
+            sum_pop = grouped['population'].sum()
+            
+            for metric in metrics_to_avg:
+                if metric in communes_subset.columns:
+                    bv_aggs[metric] = grouped[f'{metric}_w'].sum() / sum_pop
+            
+            # Merge back
+            if 'bassin_de_vie' in bv_gdf.columns:
+                bv_gdf = bv_gdf.merge(bv_aggs, left_on='bassin_de_vie', right_index=True, how='left')
+            else:
+                 # assume index matches if sorted? Safe to use merge if we have key.
+                 # If bv_gdf has 'bassin_de_vie' as column.
+                 pass
+                 
+        # --- 4. Special cases ---
+        if 'population_bv' in bv_gdf.columns:
+            min_b, max_b = get_min_max(bv_gdf['population_bv'])
+            bv_gdf['inc_population_scaled'] = scale_series(bv_gdf['population_bv'], min_b, max_b)
+            
+        # Clean up
+        logger.log_step("score_bassins_de_vie", "UPDATED", {"path": str(bv_path)})
+        bv_gdf.to_parquet(bv_path)
+
+    except Exception as e:
+        logger.log_step("score_bassins_de_vie", "ERROR", {"error": str(e)})
+
 def main():
     logger = PipelineLogger(STATUS_FILE)
     config = load_config(CONFIG_FILE)
     apply_prescoring(config, logger)
+    score_bassins_de_vie(config, logger)
 
 if __name__ == "__main__":
     main()

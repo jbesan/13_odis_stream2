@@ -141,6 +141,12 @@ sources:
     local_name: "rome.zip"
     description: "Référentiel ROME v4.60 (JSON)"
 
+  bpe:
+    url: "https://www.insee.fr/fr/statistiques/fichier/8217525/BPE24.parquet"
+    format: "parquet"
+    local_name: "BPE24.parquet"
+    description: "Base Permanente des Équipements 2024"
+
   population_active:
     url: "https://www.data.gouv.fr/api/1/datasets/r/f43b668d-251e-472a-9385-3d006d1ca6b8"
     format: "zip"

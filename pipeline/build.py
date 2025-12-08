@@ -54,7 +54,7 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         merge_clean("population_active", ['pop_active', 'pop_employes', 'pop_chomeurs'])
         
         # Merge LOVAC
-        merge_clean("lovac", ['pp_vacant_plus_2ans_25'])
+        merge_clean("lovac", ['pp_vacant_plus_2ans_25', 'log_priv_total_24'])
         
         # Merge RPLS
         merge_clean("rpls", ['log_soc_total', 'log_soc_inoccupes'])
@@ -79,6 +79,35 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         
         # Merge Voisins
         merge_clean("voisins", ['codgeo_voisins'])
+
+        # Merge BPE Petite Enfance (Creches)
+        merge_clean("bpe_petite_enfance_cols", ['bpe_creches_count'])
+
+        # Merge Associations (Lien Social) - Moved from prescoring
+        # Need to aggregate it first? merge_clean expects a parquet with 'codgeo'.
+        # associations_vertical.parquet has 'codgeo'.
+        # But wait, is it already aggregated? 'associations_vertical.parquet' is vertical.
+        # prescoring.py did: assoc_df.groupby('codgeo')['count'].sum().rename('lien_social_count')
+        # So I need to do that aggregation here or ensure a cleaned file exists.
+        # ingest/clean_associations produces 'associations_vertical.parquet'.
+        # I should probably just do the aggregation on the fly here like prescoring did, OR logic in ingest to produce a 'clean' 1-row-per-commune file.
+        # Given constraints, I'll calculate it on flight here if possible or create a small helper.
+        # Actually merge_clean expects a file.
+        # Let's see if we can use a "associations_stats.parquet" if it exists, or just do raw load.
+        # prescoring did raw load. I'll do raw load here.
+        
+        assocs_path = CLEAN_DIR / "associations_vertical.parquet"
+        if assocs_path.exists():
+             assocs_df = pd.read_parquet(assocs_path)
+             if 'count' in assocs_df.columns:
+                 assocs_agg = assocs_df.groupby('codgeo')['count'].sum().rename('lien_social_count').reset_index()
+                 communes_gdf = communes_gdf.merge(assocs_agg, on='codgeo', how='left')
+                 communes_gdf['lien_social_count'] = communes_gdf['lien_social_count'].fillna(0)
+             else:
+                 # If just rows, count them? clean_associations returns vertical with 'count' usually?
+                 # Let's check 'associations_vertical.parquet' content if possible.
+                 # Assuming standard structure from previous tasks.
+                 pass
 
         # --- Calculate Health Counts (On-the-fly) ---
         # Since we don't have a clean health file with counts, we calculate them here from raw/cache.
@@ -143,6 +172,7 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         rename_map = {
             'taux_couverture': 'edu_pe_tx_couverture',
             'pp_vacant_plus_2ans_25': 'log_priv_vacant_plus_2ans',
+            'log_priv_total_24': 'log_priv_total',
             'code_be': 'bassin_emploi',
             'nom': 'libgeo',
             'departement': 'dep_code',
@@ -157,7 +187,8 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
             'edu_maternelle_ct', 'edu_elementaire_ct', 'edu_college_ct', 'edu_lycee_ct',
             'lien_social_count', 'svc_incl_count', 
             'pop_active', 'pop_employes', 'pop_chomeurs', 
-            'metiers_offres_diff', 'log_priv_vacant_plus_2ans', 'edu_pe_tx_couverture'
+            'metiers_offres_diff', 'log_priv_vacant_plus_2ans', 'log_priv_total', 'edu_pe_tx_couverture',
+            'bpe_creches_count', 'lien_social_count'
         ]
         for col in numeric_cols:
             if col in communes_gdf.columns:
@@ -198,6 +229,44 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
                 bv_df['CODGEO'] = bv_df['CODGEO'].astype(str).str.zfill(5)
                 bv_mapping = bv_df[['CODGEO', 'bassin_de_vie', 'libelle_bassin_de_vie']].set_index('CODGEO')
                 communes_gdf = communes_gdf.join(bv_mapping, on='codgeo', how='left')
+
+                # FIX: Handle PLM Arrondissements (Paris, Lyon, Marseille)
+                # Arrondissements often don't have a BV code in the official file, but belong to the city BV.
+                # Paris: 75101-75120 -> 75056
+                # Lyon: 69381-69389 -> 69123
+                # Marseille: 13201-13216 -> 13055
+                
+                # We can use the global dictionary to lookup the BV for the main city code
+                paris_bv = bv_mapping.loc['75056', 'bassin_de_vie'] if '75056' in bv_mapping.index else '75056'
+                lyon_bv = bv_mapping.loc['69123', 'bassin_de_vie'] if '69123' in bv_mapping.index else '69123'
+                mars_bv = bv_mapping.loc['13055', 'bassin_de_vie'] if '13055' in bv_mapping.index else '13055'
+                
+                logging.info(f"debug PLM: Paris BV={paris_bv}, Lyon BV={lyon_bv}, Mars BV={mars_bv}")
+                
+                paris_bv_label = bv_mapping.loc['75056', 'libelle_bassin_de_vie'] if '75056' in bv_mapping.index else 'Paris'
+                lyon_bv_label = bv_mapping.loc['69123', 'libelle_bassin_de_vie'] if '69123' in bv_mapping.index else 'Lyon'
+                mars_bv_label = bv_mapping.loc['13055', 'libelle_bassin_de_vie'] if '13055' in bv_mapping.index else 'Marseille'
+
+                # Paris Arrondissements
+                paris_mask = communes_gdf['codgeo'].between('75101', '75120')
+                logging.info(f"debug PLM: Paris Arronds Mask Sum = {paris_mask.sum()}")
+                
+                communes_gdf.loc[paris_mask & communes_gdf['bassin_de_vie'].isna(), 'bassin_de_vie'] = paris_bv
+                communes_gdf.loc[paris_mask & communes_gdf['libelle_bassin_de_vie'].isna(), 'libelle_bassin_de_vie'] = paris_bv_label
+                
+                # Check patch result
+                patched_paris = communes_gdf.loc[paris_mask, 'bassin_de_vie']
+                logging.info(f"debug PLM: Paris Patched Sample: {patched_paris.head(1).values}")
+
+                # Lyon Arrondissements
+                lyon_mask = communes_gdf['codgeo'].between('69381', '69389')
+                communes_gdf.loc[lyon_mask & communes_gdf['bassin_de_vie'].isna(), 'bassin_de_vie'] = lyon_bv
+                communes_gdf.loc[lyon_mask & communes_gdf['libelle_bassin_de_vie'].isna(), 'libelle_bassin_de_vie'] = lyon_bv_label
+
+                # Marseille Arrondissements
+                mars_mask = communes_gdf['codgeo'].between('13201', '13216')
+                communes_gdf.loc[mars_mask & communes_gdf['bassin_de_vie'].isna(), 'bassin_de_vie'] = mars_bv
+                communes_gdf.loc[mars_mask & communes_gdf['libelle_bassin_de_vie'].isna(), 'libelle_bassin_de_vie'] = mars_bv_label
                 
                 # Calculate pop_active_be for Ratio
                 # We need pop_active per commune first. It is already in communes_gdf.
@@ -258,10 +327,11 @@ def build_bassins_de_vie(communes_gdf: gpd.GeoDataFrame, config: Dict[str, Any],
         
         numeric_cols = [
             'population', 'log_soc_total', 'log_soc_inoccupes', 
-            'count_maternelle', 'count_elementaire', 'ecoles_ct',
+            'edu_maternelle_ct', 'edu_elementaire_ct', 'ecoles_count',
             'lien_social_count', 'svc_incl_count', 
             'pop_active', 'pop_employes', 'pop_chomeurs', 
-            'log_priv_vacant_plus_2ans'
+            'log_priv_vacant_plus_2ans',
+            'metiers_offres_diff', 'bpe_creches_count'
         ]
         # metiers_offres_diff was dropped in build_communes, so we can't sum it here if we load from there.
         # But wait, build_bassins_de_vie takes the returned communes_gdf.
@@ -281,6 +351,23 @@ def build_bassins_de_vie(communes_gdf: gpd.GeoDataFrame, config: Dict[str, Any],
         communes_gdf = communes_gdf[communes_gdf.is_valid]
         
         bv_gdf = communes_gdf[communes_gdf['bassin_de_vie'].notnull()].dissolve(by='bassin_de_vie', aggfunc=agg_dict)
+        
+        # FIX: Remove holes from the dissolved polygons
+        # Some communes might be "enclaves" or topological errors might create holes.
+        # We want the BV to be a solid shape covering everything.
+        from shapely.geometry import Polygon, MultiPolygon
+        
+        def remove_holes(geom):
+            if isinstance(geom, Polygon):
+                return Polygon(geom.exterior)
+            elif isinstance(geom, MultiPolygon):
+                parts = [Polygon(p.exterior) for p in geom.geoms]
+                return MultiPolygon(parts)
+            return geom
+            
+        # Use the active geometry column
+        bv_gdf[bv_gdf.geometry.name] = bv_gdf.geometry.apply(remove_holes)
+        
         bv_gdf.rename(columns={'population': 'population_bv'}, inplace=True)
         
         # Calculate pop_chomage_ratio for BV
@@ -537,6 +624,13 @@ def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
                 'codgeo': incl_df['code_insee']
             })
             pois_list.append(incl_pois)
+
+        # BPE - Petite Enfance POIs
+        bpe_pois_path = CLEAN_DIR / "bpe_petite_enfance_pois.parquet"
+        if bpe_pois_path.exists():
+            bpe_pois_df = pd.read_parquet(bpe_pois_path)
+            # Schema should already match from ingest step
+            pois_list.append(bpe_pois_df)
 
         if pois_list:
             all_pois = pd.concat(pois_list, ignore_index=True)

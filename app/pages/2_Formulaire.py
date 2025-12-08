@@ -15,7 +15,12 @@ app_data = st.session_state.app_data
 
 # Sidebar
 with st.sidebar:
-    st.image('./images/logo-jaccueille-singa.png', width=150)
+    logo_path = ui.get_image_path('logo-jaccueille-singa.png')
+    logo_b64 = ui.get_base64_image(logo_path)
+    if logo_b64:
+        st.markdown(f'<img src="data:image/png;base64,{logo_b64}" width="150" style="margin-bottom: 20px;">', unsafe_allow_html=True)
+    else:
+        st.error("Logo not found")
 
     st.text("")
     st.text("Remplissez ce formulaire afin de préciser le projet de vie de la ou des personnes accompagnées.")

@@ -153,7 +153,7 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     'codes_metiers': [],
     'codes_formations': [],
     'classe_enfants': [],
-    'binome_penalty': 0.5,
+    'binome_penalty': 50,
     'pop_min': 1000,
     'besoins_autres': [],
     'socle_admin_selection': DEFAULT_SOCLE_ADMIN,

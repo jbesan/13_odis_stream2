@@ -52,6 +52,8 @@ def main():
             dst = os.path.join(DEST_DIR, f)
             
             if os.path.exists(src):
+                if os.path.exists(dst):
+                    os.remove(dst)
                 shutil.copy2(src, dst)
                 logging.info(f"Copied {f} to {DEST_DIR}")
             else:

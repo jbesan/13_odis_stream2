@@ -109,7 +109,7 @@ def run_test_scenario(scenario_id, view_level, app_data):
         elif key == 'binome_penalty':
             # The UI slider uses percentage values (e.g., 50), but the config expects a float (e.g., 0.5)
             # The create_scoring_config_from_inputs function handles the division by 100.
-            mock_session_state['ui_penalite_binome'] = value * 100 if value <= 1 else value
+            mock_session_state['ui_binome_penalty'] = value * 100 if value <= 1 else value
         # Handle list-based inputs for children's classes and professional goals
         elif key == 'classe_enfants':
             for i, class_level in enumerate(value):
@@ -298,7 +298,7 @@ def test_result_details_display(app_data):
         'ui_logement': 'Location',
         'ui_besoin_sante': 'Aucun',
         'ui_besoins_autres': {},
-        'ui_penalite_binome': 50,
+        'ui_binome_penalty': 50,
         'ui_pop_min': 1000,
         'ui_poids_emploi': 100,
         'ui_poids_logement': 100,

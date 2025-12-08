@@ -107,6 +107,7 @@ Le score est calculé à partir d'une multitude de critères, regroupés en gran
 
 - **Taux de Classes à Risque de Fermeture** : Identifie les écoles où des classes risquent de fermer faute d'élèves, ce qui peut être une opportunité pour de nouvelles familles.
 - **Taux de Couverture Petite Enfance** : Évalue la disponibilité des modes de garde (crèches, assistantes maternelles) pour les jeunes enfants (< 3 ans), basé sur les données de la CAF.
+- **Education**: Annuaire de l'éducation (Data.gouv), Effectifs (Data.gouv), Taux de couverture Petite Enfance (CAF), Crèches (BPE/INSEE), Formations (Data.gouv).
 
 **Catégorie : Inclusion & Vie Locale**
 

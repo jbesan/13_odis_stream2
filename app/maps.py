@@ -9,7 +9,7 @@ from folium.plugins import FastMarkerCluster, MarkerCluster
 
 from typing import Union, List, Tuple, Optional, Any, Set, Dict
 import config as cfg
-import config as cfg
+
 import logging
 import json # Added for metadata parsing
 
@@ -209,41 +209,25 @@ def _build_generic_points_layer(df: gpd.GeoDataFrame, icon: str, color: str, too
 
     df.dropna(subset=['lat', 'lon'], inplace=True)
     
-    # Prepare data for FastMarkerCluster
-    # If using custom callback, we pass all columns.
-    # If using default, we should pass [lat, lon, popup].
+    # Prepare data for map layer
     
-    # Construct popup string
-    df['popup'] = df.apply(lambda row: "<br>".join([f"{col}: {row[col]}" for col in tooltip_cols]), axis=1)
+    # Switch to MarkerCluster for robustness with icons and popups
+    # FastMarkerCluster with JS callback was proving fragile/broken in some contexts
+    logging.info(f"Building MarkerCluster with {len(df)} points. Icon: {icon}, Color: {color}")
     
-    # Select only lat, lon, popup
-    locations = df[['lat', 'lon', 'popup']].values.tolist()
+    cluster = MarkerCluster()
+    
+    for _, row in df.iterrows():
+        # Construct popup content safely
+        popup_content = "<br>".join([f"<b>{'Catégorie' if col == 'type' else 'Nom'}</b>: {row.get(col, '')}" for col in tooltip_cols])
+        
+        flm.Marker(
+            location=[row['lat'], row['lon']],
+            popup=flm.Popup(popup_content, max_width=300),
+            icon=flm.Icon(color=color, icon=icon, prefix='fa')
+        ).add_to(cluster)
 
-    # Create a JS callback for the markers
-    # Create a JS callback for the markers
-    # popup_str = " + '<br>' + ".join([f"'{col}: ' + row[{i+2}]" for i, col in enumerate(tooltip_cols)])
-    # callback = f"""
-    # function (row) {{
-    #     var icon, marker;
-    #     icon = L.AwesomeMarkers.icon({{icon: '{icon}', markerColor: '{color}', prefix: 'fa'}});
-    #     marker = L.marker(new L.LatLng(row[0], row[1]));
-    #     marker.setIcon(icon);
-    #     marker.bindPopup('<b>' + {popup_str} + '</b>');
-    #     return marker;
-    # }};
-    # """
-    # logging.info(f"Building FastMarkerCluster with {len(locations)} points. Icon: {icon}, Color: {color}")
-    # logging.info(f"Building FastMarkerCluster with {len(locations)} points. Icon: {icon}, Color: {color}")
-    # return FastMarkerCluster(locations) #, callback=callback)
-    
-    # Fallback to MarkerCluster which is more robust with st_folium
-    # logging.info(f"Building FastMarkerCluster with {len(locations)} points. Icon: {icon}, Color: {color}")
-    # return FastMarkerCluster(locations) #, callback=callback)
-    
-    # Reverting to FastMarkerCluster as requested by user
-    # But disabling the custom callback temporarily to ensure it works
-    logging.info(f"Building FastMarkerCluster with {len(locations)} points. Icon: {icon}, Color: {color}")
-    return FastMarkerCluster(locations) #, callback=callback)
+    return cluster
 
 def build_ecoles_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config: cfg.ScoringConfig) -> flm.FeatureGroup:
     """Builds the map layer for schools using unified POIs."""
@@ -269,12 +253,16 @@ def build_ecoles_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config:
     is_elementaire = filtered['type'] == 'Elémentaire'
     is_college = filtered['type'] == 'Collège'
     is_lycee = filtered['type'] == 'Lycée'
+    
+    # Map "Crêche / Assistante Maternelle" to available Creche types
+    is_creche = filtered['type'].isin(['Creche', 'Micro_Creche', 'Creche_Familiale'])
 
     niveaux_map = {
         'Maternelle': is_maternelle,
         'Elémentaire': is_elementaire,
         'Collège': is_college,
-        'Lycée': is_lycee
+        'Lycée': is_lycee,
+        'Crêche / Assistante Maternelle': is_creche
     }
     
     mask = pd.Series(False, index=filtered.index)

@@ -91,6 +91,13 @@
 - Lien direct: https://www.data.gouv.fr/api/1/datasets/r/6d3b1cf8-cbef-4f30-96c3-0b63a2b0502c
 - Type de fichier: json
 
+## Base Permanente des Equipements (inclus les creches)
+
+- Page: https://www.insee.fr/fr/statistiques/8217525?sommaire=8217537
+- Lien direct: https://www.insee.fr/fr/statistiques/fichier/8217525/BPE24.parquet
+- Type de fichier: parquet
+- Données utilisées: Crèches et accueil petite enfance (Types A401-A406)
+
 ## Effectifs Ecoles
 
 - Données: https://www.data.gouv.fr/datasets/effectifs-deleves-par-niveau-et-nombre-de-classes-par-ecole-date-dobservation-au-debut-du-mois-doctobre-chaque-annee/#/resources/b4642552-6777-4265-a263-f190621ec40f

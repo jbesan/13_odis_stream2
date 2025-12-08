@@ -5,6 +5,24 @@ from plotly.express import line_polar
 import config as cfg
 import maps
 from typing import Dict, Any, List, Optional
+from pathlib import Path
+import base64
+import logging
+
+def get_image_path(filename: str) -> str:
+    """Returns the absolute path to an image file, robust to launch directory."""
+    # Assumes images are in 'images/' subdirectory relative to this script
+    current_dir = Path(__file__).parent.resolve()
+    return str(current_dir / "images" / filename)
+
+def get_base64_image(image_path: str) -> str:
+    """Encodes an image to base64 for embedding in HTML."""
+    try:
+        with open(image_path, "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode()
+    except Exception as e:
+        logging.error(f"Could not load image {image_path}: {e}")
+        return ""
 
 def open_pdf_modal() -> None:
     """Callback to signal that the PDF modal should be shown."""
@@ -63,7 +81,8 @@ def display_sidebar(demo_data: Dict[str, Any]) -> None:
             index=cfg.DEFAULT_VIEW_LEVEL
         )
         st.text("\n\n")
-        st.select_slider("Décote commune binôme\n\n (en %)", cfg.PENALITE_BINOME_OPTIONS, key="ui_penalite_binome")
+        st.select_slider("Décote commune binôme\n\n (en %)", cfg.PENALITE_BINOME_OPTIONS, key="ui_binome_penalty", value=st.session_state.get('ui_binome_penalty', 50))
+        st.select_slider("Population minimum", cfg.POP_MIN_OPTIONS, key="ui_pop_min", value=st.session_state.get('ui_pop_min', 1000))
 
     st.divider()
 
@@ -387,8 +406,8 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
         besoins_autres=besoins_autres_list,
         socle_admin_selection=st.session_state.get('ui_socle_admin_selection', []), # NEW
         affinite_selection=st.session_state.get('ui_affinite_selection', []), # NEW
-        binome_penalty=st.session_state['ui_penalite_binome'] / 100,
-        pop_min=st.session_state['ui_pop_min']
+        binome_penalty=st.session_state.get('ui_binome_penalty', 50) / 100,
+        pop_min=st.session_state.get('ui_pop_min', 1000)
     )
 
 def _result_highlight_callback(rank: int) -> None:

@@ -100,13 +100,32 @@ def clean_bmo_fap(config: Dict[str, Any], logger: PipelineLogger):
         df_mapping['code_be'] = df_mapping['code_be'].astype(str)
         
         # 2. Load BMO Data (Bassins d'Emploi)
-        # Sheet: BMO_2025_open_data
-        # Cols: BE25, Code métier BMO, met
-        df_bmo = load_dataset(bmo_path, bmo_source, sheet_name="BMO_2025_open_data")
+        # Dynamic Sheet Detection
+        import re
+        bmo_xl = pd.ExcelFile(bmo_path, engine='calamine')
+        sheet_pattern = re.compile(r'BMO_(\d+)_open_data', re.IGNORECASE)
+        
+        target_sheet = None
+        for sheet in bmo_xl.sheet_names:
+            if sheet_pattern.search(sheet) or sheet == "BMO_2025_open_data": # Fallback/Priority
+                target_sheet = sheet
+                break
+        
+        if not target_sheet:
+             # Fallback to first sheet or specific default?
+             logging.warning(f"BMO: No matching sheet found in {bmo_xl.sheet_names}. Using default 'BMO_2025_open_data'")
+             target_sheet = "BMO_2025_open_data"
+
+        logging.info(f"BMO: Using sheet {target_sheet}")
+        
+        df_bmo = pd.read_excel(bmo_path, sheet_name=target_sheet, engine='calamine')
         df_bmo.columns = [c.strip() for c in df_bmo.columns]
         
         # Identify columns
-        bmo_be_col = next((c for c in df_bmo.columns if 'BE25' in c), None)
+        # BE column usually "BE25", "BE24", etc.
+        be_pattern = re.compile(r'^BE(\d+)$')
+        bmo_be_col = next((c for c in df_bmo.columns if be_pattern.match(c)), None)
+        
         fap_col = next((c for c in df_bmo.columns if 'Code métier BMO' in c), None)
         count_col = next((c for c in df_bmo.columns if 'met' == c or 'met ' in c), None) # 'met' is exact match usually
         
@@ -175,8 +194,11 @@ def clean_population_active(config: Dict[str, Any], logger: PipelineLogger):
              logging.warning("Population Active missing columns")
              return
              
+        max_year = actif['TIME_PERIOD'].max()
+        logging.info(f"Population Active: Using max year {max_year}")
+        
         actif_2022 = actif[
-            (actif.TIME_PERIOD == 2022) & 
+            (actif.TIME_PERIOD == max_year) & 
             (actif.GEO_OBJECT == "COM") & 
             (actif.PCS == "_T") & 
             (actif.EMPSTA_ENQ.isin(["1T2", "1"]))
@@ -217,18 +239,71 @@ def clean_lovac(config: Dict[str, Any], logger: PipelineLogger):
         df.columns = [c.strip() for c in df.columns]
         
         codgeo_col = next((c for c in df.columns if 'CODGEO' in c), None)
-        vac_col = 'pp_vacant_plus_2ans_25'
-        if vac_col not in df.columns:
-             vac_col = next((c for c in df.columns if 'vacant_plus_2ans' in c), None)
-
-        if codgeo_col and vac_col:
-            df[vac_col] = pd.to_numeric(df[vac_col].replace('s', 0), errors='coerce').fillna(0)
-            df_out = df[[codgeo_col, vac_col]].rename(columns={codgeo_col: 'codgeo', vac_col: 'pp_vacant_plus_2ans_25'})
-            df_out['codgeo'] = df_out['codgeo'].astype(str)
+        if codgeo_col:
+            # Dynamic Year Detection
+            import re
             
-            output_path = CLEAN_DIR / "lovac.parquet"
-            df_out.to_parquet(output_path)
-            logger.log_step("clean_lovac", "COMPLETED", {"path": str(output_path)})
+            # Find all years for vacancy data
+            years = []
+            year_pattern = re.compile(r'pp_vacant_plus_2ans_(\d+)')
+            
+            for col in df.columns:
+                match = year_pattern.search(col)
+                if match:
+                    years.append(int(match.group(1)))
+            
+            if years:
+                max_year = max(years)
+                # Ensure it's two digits if format assumes that, but usually int is fine for logic
+                # The headers were like 'pp_vacant_plus_2ans_25'
+                # so N is 25.
+                
+                # Vacancy Column (Year N)
+                vac_col = f'pp_vacant_plus_2ans_{max_year}'
+                
+                # Total Column (Year N-1)
+                target_total_year = max_year - 1
+                total_col = f'pp_total_{target_total_year}'
+                
+                logging.info(f"LOVAC: Detected max year {max_year}. Using {vac_col} and {total_col}")
+            else:
+                # Fallback
+                logging.warning("LOVAC: Could not detect years. Using default 25/24.")
+                vac_col = 'pp_vacant_plus_2ans_25'
+                total_col = 'pp_total_24'
+
+            # Allow fallback if dynamic total dict doesn't exist but static might? 
+            # Actually, let's just stick to the specific columns.
+            
+            if vac_col not in df.columns:
+                 # Try finding any valid vac col
+                 vac_col = next((c for c in df.columns if 'vacant_plus_2ans' in c), None)
+
+            if vac_col and vac_col in df.columns:
+                df[vac_col] = pd.to_numeric(df[vac_col].replace('s', 0), errors='coerce').fillna(0)
+                
+                # Extract Total Housing
+                if total_col in df.columns:
+                    df[total_col] = pd.to_numeric(df[total_col].replace('s', 0), errors='coerce').fillna(0)
+                else:
+                    logging.warning(f"LOVAC: {total_col} not found in {df.columns}. Setting to 0.")
+                    df[total_col] = 0
+
+                df_out = df[[codgeo_col, vac_col, total_col]].rename(columns={
+                    codgeo_col: 'codgeo', 
+                    vac_col: 'pp_vacant_plus_2ans_25', # Keep standardized internal name
+                    total_col: 'log_priv_total_24'     # Keep standardized internal name
+                })
+                df_out['codgeo'] = df_out['codgeo'].astype(str)
+                
+                output_path = CLEAN_DIR / "lovac.parquet"
+                df_out.to_parquet(output_path)
+                logger.log_step("clean_lovac", "COMPLETED", {"path": str(output_path), "year_vac": vac_col, "year_total": total_col})
+            else:
+                 logging.warning(f"LOVAC: Vacancy column {vac_col} not found.")
+
+        else:
+            logging.warning("LOVAC: CODGEO not found.")
     except Exception as e:
         logger.log_step("clean_lovac", "ERROR", {"error": str(e)})
 
@@ -565,7 +640,9 @@ def clean_housing_occupation(config: Dict[str, Any], logger: PipelineLogger):
              
         # Filter
         if 'TIME_PERIOD' in df.columns:
-            df = df[df['TIME_PERIOD'] == 2022]
+            max_year = df['TIME_PERIOD'].max()
+            logging.info(f"Housing Occupation: Using max year {max_year}")
+            df = df[df['TIME_PERIOD'] == max_year]
         if 'GEO_OBJECT' in df.columns:
             df = df[df['GEO_OBJECT'] == 'COM']
             
@@ -594,33 +671,155 @@ def clean_school_effectifs(config: Dict[str, Any], logger: PipelineLogger):
     try:
         source = config['sources']['education_effectifs']
         path = CACHE_DIR / source['local_name']
+        
+        # Load Codes Postaux for mapping
+        cp_source = config['sources']['codes_postaux']
+        cp_path = CACHE_DIR / cp_source['local_name']
+        
+        if not path.exists() or not cp_path.exists():
+             logging.warning("Education Effectifs or Codes Postaux not found.")
+             return
+
+        df = load_dataset(path, source)
+        df_cp = load_dataset(cp_path, cp_source)
+        
+        # Prepare CP data
+        # Index(['#Code_commune_INSEE', 'Nom_de_la_commune', 'Code_postal', ...])
+        df_cp = df_cp.rename(columns={
+            '#Code_commune_INSEE': 'code_insee',
+            'Code_postal': 'code_postal',
+            'Nom_de_la_commune': 'nom_commune'
+        })
+        df_cp['code_postal'] = df_cp['code_postal'].astype(str).str.zfill(5)
+        
+        def normalize_city(s):
+            if not isinstance(s, str): return ""
+            # Replace hyphens with spaces
+            s = s.upper().replace('-', ' ').replace("'", " ")
+            # Standardize Saint/Sainte
+            s = s.replace("SAINT ", "ST ").replace("SAINTE ", "STE ")
+            # Strip extra spaces
+            return " ".join(s.split())
+
+        df_cp['nom_commune_norm'] = df_cp['nom_commune'].apply(normalize_city)
+        
+        # Prepare Effectifs data
+        df['code_postal'] = df['code_postal'].astype(str).str.zfill(5)
+        df['commune_norm'] = df['commune'].apply(normalize_city)
+        
+        # Merge on Code Postal and Normalized Name
+        merged = df.merge(df_cp, left_on=['code_postal', 'commune_norm'], right_on=['code_postal', 'nom_commune_norm'], how='left')
+        
+        # Check match rate
+        missing = merged[merged['code_insee'].isna()]
+        if not missing.empty:
+            logging.warning(f"Education Effectifs: {len(missing)} rows failed to map to INSEE code.")
+            # Debug sample
+            if len(missing) > 0:
+                logging.warning(f"Sample missing: {missing[['code_postal', 'commune', 'commune_norm']].head(5).to_dict('records')}")
+        
+        # Filter valid
+        valid = merged.dropna(subset=['code_insee'])
+        
+        effectif_col = 'nombre_total_eleves'
+        if effectif_col not in valid.columns:
+             logging.warning(f"Col {effectif_col} not found")
+             return
+
+        # Group by INSEE Code
+        df_agg = valid.groupby('code_insee')[effectif_col].sum().reset_index()
+        df_agg.rename(columns={'code_insee': 'codgeo', effectif_col: 'total_eleves'}, inplace=True)
+        
+        # Count Schools
+        if 'numero_ecole' in valid.columns:
+            df_count = valid.groupby('code_insee')['numero_ecole'].nunique().reset_index().rename(columns={'code_insee': 'codgeo', 'numero_ecole': 'ecoles_count'})
+            df_agg = df_agg.merge(df_count, on='codgeo', how='left')
+        
+        output_path = CLEAN_DIR / "school_effectifs.parquet"
+        df_agg.to_parquet(output_path)
+        logger.log_step("clean_school_effectifs", "COMPLETED", {"path": str(output_path), "mapped": len(valid), "total": len(df)})
+            
+    except Exception as e:
+        logger.log_step("clean_school_effectifs", "ERROR", {"error": str(e)})
+
+def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
+    """Cleans BPE data for Creches and Petite Enfance."""
+    logger.log_step("clean_bpe", "STARTED")
+    try:
+        source = config['sources']['bpe']
+        path = CACHE_DIR / source['local_name']
         if not path.exists(): return
 
         df = load_dataset(path, source)
         
-        # Columns: 'commune' (code insee?), 'nombre_total_eleves'
-        # Check columns
-        codgeo_col = next((c for c in df.columns if c in ['commune', 'code_commune']), None)
-        effectif_col = next((c for c in df.columns if 'nombre_total_eleves' in c), None)
+        # Filter for relevant types
+        target_types = {
+            'A401': 'Creche',
+            'A402': 'Halte_Garderie',
+            'A403': 'Micro_Creche',
+            'A404': 'Creche_Familiale',
+            'A405': 'Jardin_Enfants',
+            'A406': 'MAM'
+        }
         
-        if codgeo_col and effectif_col:
-            # Group by commune
-            df_agg = df.groupby(codgeo_col)[effectif_col].sum().reset_index()
-            df_agg.rename(columns={codgeo_col: 'codgeo', effectif_col: 'total_eleves'}, inplace=True)
-            df_agg['codgeo'] = df_agg['codgeo'].astype(str).str.zfill(5)
+        # Check columns: DEP, COM, TYPEQU, LAMBERT_X, LAMBERT_Y
+        # Construct CODGEO
+        if 'DEPCOM' in df.columns:
+             df['codgeo'] = df['DEPCOM'].astype(str).str.zfill(5)
+        elif 'DEP' in df.columns and 'COM' in df.columns:
+            df['codgeo'] = df['DEP'].astype(str).str.zfill(2) + df['COM'].astype(str).str.zfill(3)
+        elif 'CODGEO' in df.columns:
+            df['codgeo'] = df['CODGEO'].astype(str).str.zfill(5)
             
-            # Also count schools?
-            # 'numero_ecole' might be present
-            if 'numero_ecole' in df.columns:
-                df_count = df.groupby(codgeo_col)['numero_ecole'].nunique().reset_index().rename(columns={codgeo_col: 'codgeo', 'numero_ecole': 'ecoles_count'})
-                df_agg = df_agg.merge(df_count, on='codgeo', how='left')
-            
-            output_path = CLEAN_DIR / "school_effectifs.parquet"
-            df_agg.to_parquet(output_path)
-            logger.log_step("clean_school_effectifs", "COMPLETED", {"path": str(output_path)})
-            
+        if 'TYPEQU' not in df.columns:
+             logging.warning("BPE: TYPEQU column not found.")
+             return
+
+        df_filtered = df[df['TYPEQU'].isin(target_types.keys())].copy()
+        df_filtered['type_libelle'] = df_filtered['TYPEQU'].map(target_types)
+        
+        # 1. Output Counts (aggregated by commune)
+        counts = df_filtered.groupby('codgeo').size().rename('bpe_creches_count').reset_index()
+        
+        output_cols = CLEAN_DIR / "bpe_petite_enfance_cols.parquet"
+        counts.to_parquet(output_cols)
+        
+        # 2. Output POIs Details
+        # Rename columns to match POI schema
+        # id (generated), name (default?), type, category, lat, lon
+        # BPE parquet usually has LAMBERT_X, LAMBERT_Y in RGF93 (EPSG:2154)
+        if 'LAMBERT_X' in df_filtered.columns and 'LAMBERT_Y' in df_filtered.columns:
+             gdf = gpd.GeoDataFrame(
+                 df_filtered, 
+                 geometry=gpd.points_from_xy(df_filtered.LAMBERT_X, df_filtered.LAMBERT_Y),
+                 crs="EPSG:2154"
+             ).to_crs("EPSG:4326")
+             
+             pois = pd.DataFrame({
+                 'code_equip': gdf.index.astype(str), # Use index as partial ID
+                 'type': gdf['type_libelle'],
+                 'category': 'education', # or 'petite_enfance'
+                 'lat': gdf.geometry.y,
+                 'lon': gdf.geometry.x,
+                 'codgeo': gdf['codgeo'],
+                 'metadata': gdf['TYPEQU']
+             })
+             
+             output_pois = CLEAN_DIR / "bpe_petite_enfance_pois.parquet"
+             pois.to_parquet(output_pois)
+             
+             logger.log_step("clean_bpe", "COMPLETED", {
+                 "cols": str(output_cols),
+                 "pois": str(output_pois),
+                 "count": len(df_filtered)
+             })
+        else:
+             logging.warning("BPE: Coordinates columns not found (LAMBERT_X, LAMBERT_Y). Skipping POIs.")
+             # Still save counts
+             logger.log_step("clean_bpe", "PARTIAL", {"cols": str(output_cols)})
+
     except Exception as e:
-        logger.log_step("clean_school_effectifs", "ERROR", {"error": str(e)})
+        logger.log_step("clean_bpe", "ERROR", {"error": str(e)})
 
 def clean_formations(config: Dict[str, Any], logger: PipelineLogger):
     """Cleans Formations and saves to parquet."""
@@ -708,6 +907,7 @@ def main():
     clean_housing_occupation(config, logger)
     clean_school_effectifs(config, logger)
     clean_school_effectifs(config, logger)
+    clean_bpe(config, logger)
     clean_codes_postaux(config, logger)
     clean_formations(config, logger)
     
@@ -842,7 +1042,7 @@ def clean_formations(config: Dict[str, Any], logger: PipelineLogger):
                 # Merge with codes postaux to get codgeo
                 merged = df_melted.merge(cp_df, on='code_postal', how='inner')
                 
-                merged['formation_code'] = merged['formation_code'].astype(str).str.strip()
+                merged['formation_code'] = merged['formation_code'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
                 
                 # Filter out invalid codes (optional, maybe length check?)
                 merged = merged[merged['formation_code'] != 'nan']
