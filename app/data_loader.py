@@ -8,6 +8,7 @@ import logging
 from typing import Dict, Any, Tuple
 import config as cfg
 import copy
+import gc
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -103,7 +104,7 @@ def load_scores_config_as_df(config_path: str) -> pd.DataFrame:
         })
     return pd.DataFrame(data)
 
-@st.cache_data
+@st.cache_resource
 def load_parquet_dataset(path: str, columns: list = None) -> pd.DataFrame:
     """Generic loader for parquet datasets with caching."""
     if columns:
@@ -116,7 +117,7 @@ def get_pois_by_category(pois_df: pd.DataFrame, category: str) -> pd.DataFrame:
         return pd.DataFrame()
     return pois_df[pois_df['category'] == category].copy()
 
-@st.cache_data
+@st.cache_resource
 def init_datasets() -> Dict[str, Any]:
     """
     Initializes and loads all necessary datasets for the application.
@@ -136,7 +137,8 @@ def init_datasets() -> Dict[str, Any]:
         'edu_classes_ferm_scaled', 'edu_creches_scaled', 'edu_petite_enfance_scaled',
         'edu_maternelle_scaled', 'edu_elementaire_scaled', 'edu_college_scaled', 'edu_lycee_scaled',
         'sante_hopital_scaled', 'sante_maternite_scaled', 'sante_psy_scaled',
-        'inc_socle_admin_score'
+        'inc_socle_admin_score',
+        'mob_gare_scaled'
     ]
     
     odis_path = os.path.join(base_path, cfg.ODIS_FILE)
@@ -341,6 +343,10 @@ def init_datasets() -> Dict[str, Any]:
         area_geo = area_geo.set_index(['type', 'code'])
     else:
         area_geo = gpd.GeoDataFrame()
+
+    # Clean up temporary geometry objects
+    del deps, regs, area_dfs
+    gc.collect()
 
 
     return {

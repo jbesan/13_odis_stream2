@@ -88,6 +88,7 @@ def sample_results_df():
         'binome': [False, False],
         'population': [2000000, 500000],
         'epci_nom': ['Métropole du Grand Paris', 'Métropole de Lyon'],
+        'libelle_bassin_de_vie': ['Paris', 'Lyon'],
         'geometry': [
             Polygon([(2.224, 48.816), (2.469, 48.816), (2.469, 48.902), (2.224, 48.902)]),
             Polygon([(4.8, 45.7), (4.9, 45.7), (4.9, 45.8), (4.8, 45.8)])
