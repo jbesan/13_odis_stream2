@@ -171,7 +171,7 @@ with col_input:
 with col_go:
     st.write("") # Alignment spacer
     st.write("")
-    if st.button(":speaking_head: Commencer l'entretien", type="primary", use_container_width=True):
+    if st.button(":speaking_head:    Commencer l'entretien", type="primary", use_container_width=True):
         st.session_state.ui_nom = person_name_input
         st.switch_page("pages/2_Formulaire.py")
 

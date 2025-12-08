@@ -754,12 +754,7 @@ def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
         
         # Filter for relevant types
         target_types = {
-            'A401': 'Creche',
-            'A402': 'Halte_Garderie',
-            'A403': 'Micro_Creche',
-            'A404': 'Creche_Familiale',
-            'A405': 'Jardin_Enfants',
-            'A406': 'MAM'
+            'D502': 'Creche'
         }
         
         # Check columns: DEP, COM, TYPEQU, LAMBERT_X, LAMBERT_Y
@@ -796,13 +791,13 @@ def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
              ).to_crs("EPSG:4326")
              
              pois = pd.DataFrame({
-                 'code_equip': gdf.index.astype(str), # Use index as partial ID
+                 'id': gdf.index.astype(str), # Use index as partial ID
+                 'name': gdf['NOMRS'].astype(str),
                  'type': gdf['type_libelle'],
                  'category': 'education', # or 'petite_enfance'
                  'lat': gdf.geometry.y,
                  'lon': gdf.geometry.x,
                  'codgeo': gdf['codgeo'],
-                 'metadata': gdf['TYPEQU']
              })
              
              output_pois = CLEAN_DIR / "bpe_petite_enfance_pois.parquet"

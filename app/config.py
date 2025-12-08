@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import List, Dict, Any, Union
 import os
 
-GCS_BUCKET_PATH: str = 'gs://odis-stream2-eu/'
+
 # Get the directory of the current file (app/)
 APP_DIR: str = os.path.dirname(os.path.abspath(__file__))
 # Get the project root directory (one level up)
@@ -14,12 +14,20 @@ LOCAL_CSV_PATH: str = os.path.join(PROJECT_ROOT, 'data/')
 def get_data_path() -> str:
     """
     Returns the appropriate data path based on the environment.
-    Checks for the K_SERVICE environment variable to detect Cloud Run.
+    Since data is now included in the Docker image, we always use the local path.
     """
-    if 'K_SERVICE' in os.environ:
-        return GCS_BUCKET_PATH
-    else:
-        return LOCAL_CSV_PATH
+    # In Docker, we will copy data to /app/data or similar, or keep structure
+    # The config says LOCAL_CSV_PATH = os.path.join(PROJECT_ROOT, 'data/')
+    # In Docker: PROJECT_ROOT is /app (if we copy app/ to /app ?) 
+    # Let's check Dockerfile: COPY app/ . -> So /app contains contents of app/. 
+    # Wait, PROJECT_ROOT is os.path.dirname(APP_DIR). APP_DIR is /app/ (if code is in /app).
+    # If Dockerfile does WORKDIR /app and COPY app/ ., then:
+    # /app/1_Accueil.py existing.
+    # APP_DIR = /app
+    # PROJECT_ROOT = /
+    # So LOCAL_CSV_PATH = /data/
+    # If we copy data/ to /data in Docker, this works perfectly.
+    return LOCAL_CSV_PATH
 
 # --- File Paths ---
 # --- File Paths ---

@@ -37,6 +37,15 @@ WORKDIR /app
 # Copy the virtual environment from the builder stage
 COPY --from=builder /opt/venv /opt/venv
 
+# Copy the data directory
+# We copy it to /data because config.py expects it at PROJECT_ROOT/data/
+# In the container:
+# WORKDIR /app
+# APP_DIR (where config.py is) = /app
+# PROJECT_ROOT = /
+# So we need data at /data
+COPY data/ /data/
+
 # Copy the application code
 COPY app/ .
 

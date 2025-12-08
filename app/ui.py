@@ -8,6 +8,7 @@ from typing import Dict, Any, List, Optional
 from pathlib import Path
 import base64
 import logging
+import scoring
 
 def get_image_path(filename: str) -> str:
     """Returns the absolute path to an image file, robust to launch directory."""
@@ -71,6 +72,9 @@ def display_sidebar(demo_data: Dict[str, Any]) -> None:
                         value=st.session_state.get('ui_poids_mobilité', 50), 
                         key="ui_poids_mobilité")
 
+    def clear_processed_gdf():
+        st.session_state['processed_gdf'] = None
+
     # --- Technical Params ---
     with st.expander('Paramètres Résultats'):
         st.radio(
@@ -78,7 +82,8 @@ def display_sidebar(demo_data: Dict[str, Any]) -> None:
             cfg.VIEW_LEVEL_OPTIONS,
             key='view_level',
             horizontal=True,
-            index=cfg.DEFAULT_VIEW_LEVEL
+            index=cfg.DEFAULT_VIEW_LEVEL,
+            on_change=clear_processed_gdf
         )
         st.text("\n\n")
         st.select_slider("Décote commune binôme\n\n (en %)", cfg.PENALITE_BINOME_OPTIONS, key="ui_binome_penalty", value=st.session_state.get('ui_binome_penalty', 50))
@@ -535,26 +540,57 @@ def _display_bv_result_details(row: pd.Series) -> None:
         
         with st.expander("Services d'inclusions proposés"):
             services_df = st.session_state.app_data['annuaire_inclusion']
-            bv_services = services_df[services_df.codgeo.isin(row.communes)]
+            incl_index = st.session_state.app_data.get('inclusion_services_index', pd.DataFrame())
+            
+            # Determine Target Slugs for Filtering
+            target_slugs = set(cfg.DEFAULT_SOCLE_ADMIN)
+            
+            # Add user selected specific needs
+            if 'ui_besoins_autres' in st.session_state and st.session_state.ui_besoins_autres:
+                 target_slugs.update(st.session_state.ui_besoins_autres)
+            
+            # Filter services for this BV
+            # Ensure codgeo matching is robust (str vs category)
+            # row.communes is a list of codgeos for the BV
+            bv_services = services_df[
+                (services_df['codgeo'].isin(row.communes)) & 
+                (services_df['categorie'].isin(target_slugs))
+            ]
 
             if not bv_services.empty:
-                any_service_found = False
-                for cat, group in bv_services.groupby('categorie', observed=True):
-                    # Filter out empty/placeholder services within the group
-                    valid_services = group[group.service != '-'].copy()
+                # The 'categorie' column in annuaire_inclusion comes from 'type' in pois.parquet
+                # which is now the clean slug (e.g. 'mobilite--permis-de-conduire')
+                # We want to display: "- Human Readable Label"
+                
+                # Get unique slugs found
+                unique_slugs = sorted(bv_services['categorie'].unique())
+                
+                valid_labels = []
+                for slug in unique_slugs:
+                    # Lookup label
+                    if not incl_index.empty and slug in incl_index.index:
+                        try:
+                            label = incl_index.loc[slug, 'label']
+                            # If duplicate index, loc returns Series/DataFrame
+                            if isinstance(label, (pd.Series, pd.DataFrame)):
+                                label = label.iloc[0]
+                        except:
+                            label = slug
+                    else:
+                        label = slug # Fallback
                     
-                    if not valid_services.empty:
-                        any_service_found = True
-                        # Get unique, capitalized service names and join them
-                        services_list_str = ", ".join(
-                            valid_services['service'].str.replace('-', ' ').str.capitalize().unique()
-                        )
-                        st.markdown(f"**{cat.replace('-', ' ').capitalize()}**: {services_list_str}")
+                    if label:
+                         valid_labels.append(label)
+                
+                if valid_labels:
+                     # Deduplicate labels just in case multiple slugs map to same label
+                     valid_labels = sorted(list(set(valid_labels)))
+                     st.markdown("\n".join([f'- {label}' for label in valid_labels]))
+                else:
+                    st.info("Aucun service d'inclusion correspondant aux critères trouvé dans ce bassin de vie.")
 
-                if not any_service_found:
-                    st.info("Pas de services d'inclusion répertoriés dans ce bassin de vie.")
             else:
-                st.info("Pas de services d'inclusion répertoriés dans ce bassin de vie.")
+                st.info("Aucun service d'inclusion correspondant aux critères trouvé dans ce bassin de vie.")
 
         # --- Links ---
         st.markdown(f"[Page OD&IS]({row.get('url_odis', '#')}) | [Page Wikipedia]({row.get('url_wikipedia', '#')})")
@@ -606,26 +642,49 @@ def _display_result_details(row: pd.Series) -> None:
         
         with st.expander("Services d'inclusions proposés"):
             services_df = st.session_state.app_data['annuaire_inclusion']
-            commune_services = services_df[services_df.codgeo == row.name]
+            incl_index = st.session_state.app_data.get('inclusion_services_index', pd.DataFrame())
+            
+            # Determine Target Slugs for Filtering
+            target_slugs = set(cfg.DEFAULT_SOCLE_ADMIN)
+            
+            # Add user selected specific needs
+            if 'ui_besoins_autres' in st.session_state and st.session_state.ui_besoins_autres:
+                 target_slugs.update(st.session_state.ui_besoins_autres)
+
+            commune_services = services_df[
+                (services_df['codgeo'] == row.name) &
+                (services_df['categorie'].isin(target_slugs))
+            ]
             
             if not commune_services.empty:
-                any_service_found = False
-                for cat, group in commune_services.groupby('categorie', observed=True):
-                    # Filter out empty/placeholder services within the group
-                    valid_services = group[group.service != '-'].copy()
-                    
-                    if not valid_services.empty:
-                        any_service_found = True
-                        # Get unique, capitalized service names and join them
-                        services_list_str = ", ".join(
-                            valid_services['service'].str.replace('-', ' ').str.capitalize().unique()
-                        )
-                        st.markdown(f"**{cat.replace('-', ' ').capitalize()}**: {services_list_str}")
+                # Get unique slugs found
+                unique_slugs = sorted(commune_services['categorie'].unique())
                 
-                if not any_service_found:
-                    st.info("Pas de services d'inclusion répertoriés dans cette commune.")
+                valid_labels = []
+                for slug in unique_slugs:
+                    # Lookup label
+                    if not incl_index.empty and slug in incl_index.index:
+                        try:
+                            label = incl_index.loc[slug, 'label']
+                            # If duplicate index
+                            if isinstance(label, (pd.Series, pd.DataFrame)):
+                                label = label.iloc[0]
+                        except:
+                            label = slug
+                    else:
+                        label = slug # Fallback
+                    
+                    if label:
+                         valid_labels.append(label)
+
+                if valid_labels:
+                     # Deduplicate labels
+                     valid_labels = sorted(list(set(valid_labels)))
+                     st.markdown("\n".join([f'- {label}' for label in valid_labels]))
+                else:
+                    st.info("Aucun service d'inclusion correspondant aux critères trouvé dans cette commune.")
             else:
-                st.info("Pas de services d'inclusion répertoriés dans cette commune.")
+                st.info("Aucun service d'inclusion correspondant aux critères trouvé dans cette commune.")
 
         # --- Links ---
         st.markdown(f"[Page OD&IS]({row.get('url_odis', '#')}) | [Page Wikipedia]({row.get('url_wikipedia', '#')})")

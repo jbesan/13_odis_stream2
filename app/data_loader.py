@@ -75,7 +75,11 @@ def ensure_data_initialized() -> None:
     if 'app_data' not in st.session_state:
         st.session_state['app_data'] = init_datasets()
 
-@st.cache_data
+    # 3. Force Reload of Scores Config (to pick up live edits)
+    # init_datasets is cached, so it might return old config. We overwrite it here.
+    scores_path = os.path.join(cfg.APP_DIR, cfg.SCORES_CAT_FILE)
+    st.session_state['app_data']['scores_cat'] = load_scores_config_as_df(scores_path)
+
 def load_scores_config_as_df(config_path: str) -> pd.DataFrame:
     """Loads the scores configuration YAML as a DataFrame."""
     with open(config_path, 'r') as f:
@@ -197,25 +201,14 @@ def init_datasets() -> Dict[str, Any]:
 
     # Clean Inclusion Slugs in main POIs DataFrame
     # 'type' column for inclusion services often contains stringified lists e.g. "['slug']"
-    def clean_slug_global(val):
-        try:
-            if isinstance(val, str) and val.startswith('[') and val.endswith(']'):
-                import ast
-                l = ast.literal_eval(val)
-                if isinstance(l, list) and len(l) > 0:
-                    return l[0]
-            return val
-        except:
-            return val
-
-    if not pois_df.empty and 'category' in pois_df.columns:
-        # Convert to object to avoid Categorical errors when setting new values
-        if isinstance(pois_df['type'].dtype, pd.CategoricalDtype):
-            pois_df['type'] = pois_df['type'].astype(str)
+    # Clean Inclusion Slugs in main POIs DataFrame - handled in pipeline/build.py now
+    # if not pois_df.empty and 'category' in pois_df.columns:
+    #     if isinstance(pois_df['type'].dtype, pd.CategoricalDtype):
+    #         pois_df['type'] = pois_df['type'].astype(str)
             
-        mask_incl = pois_df['category'] == 'incl_services'
-        if mask_incl.any():
-            pois_df.loc[mask_incl, 'type'] = pois_df.loc[mask_incl, 'type'].apply(clean_slug_global)
+    #     mask_incl = pois_df['category'] == 'incl_services'
+    #     # if mask_incl.any():
+    #     #     pois_df.loc[mask_incl, 'type'] = pois_df.loc[mask_incl, 'type'].apply(clean_slug_global)
 
     # Update subsets to be GeoDataFrames as well (slices of the GeoDataFrame)
     # Note: get_pois_by_category returns a copy, so we need to convert them if we want them to be GDFs

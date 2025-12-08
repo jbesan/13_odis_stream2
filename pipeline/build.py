@@ -614,15 +614,89 @@ def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
             incl_df = load_dataset(incl_path, incl_cfg)
             incl_df = incl_df.dropna(subset=['latitude', 'longitude', 'thematiques'])
             
+            # Parse 'thematiques' (which might be stringified list "['slug1', 'slug2']")
+            def parse_thematiques(val):
+                try:
+                    raw_extracted = []
+                    if isinstance(val, str):
+                        val = val.strip()
+                        if val.startswith('[') and val.endswith(']'):
+                            # Check for space-separated stringified array "['a' 'b']"
+                            if "' '" in val and "," not in val:
+                                import re
+                                raw_extracted = re.findall(r"'([^']*)'", val)
+                            else:
+                                import ast
+                                try:
+                                    raw_extracted = ast.literal_eval(val)
+                                except:
+                                    # Fallback
+                                    raw_extracted = [val]
+                        else:
+                            raw_extracted = [val]
+                    elif isinstance(val, list):
+                        raw_extracted = val
+                    elif hasattr(val, 'tolist'): # Handle numpy arrays
+                        raw_extracted = val.tolist()
+                    
+                    # Aggressively flatten
+                    flat_list = []
+                    def flatten(x):
+                        if isinstance(x, (list, tuple, np.ndarray)):
+                            for item in x:
+                                flatten(item)
+                        elif x is not None:
+                            flat_list.append(str(x))
+                    
+                    flatten(raw_extracted)
+                    return flat_list
+                except Exception as e:
+                    logging.warning(f"Error parsing thematiques: {val} -> {e}")
+                    return []
+
+            incl_df['thematique_list'] = incl_df['thematiques'].apply(parse_thematiques)
+            
+            # Debug logging
+            if not incl_df.empty:
+                logging.info(f"Sample parsed thematiques: {incl_df['thematique_list'].head(3).tolist()}")
+
+            # Explode
+            incl_exploded = incl_df.explode('thematique_list')
+            incl_exploded = incl_exploded.dropna(subset=['thematique_list'])
+            
+            # Debug logging post-explode
+            if not incl_exploded.empty:
+                 sample_vals = incl_exploded['thematique_list'].head(3).tolist()
+                 sample_types = [type(x) for x in sample_vals]
+                 logging.info(f"Sample exploded values: {sample_vals}")
+                 logging.info(f"Sample exploded types: {sample_types}")
+            
+            # Create unique ID using MD5 hash of (id + slug)
+            import hashlib
+            def generate_hash_id(row):
+                composite_key = f"{row['id']}_{row['thematique_list']}"
+                return hashlib.md5(composite_key.encode()).hexdigest()
+
             incl_pois = pd.DataFrame({
-                'id': incl_df['id'],
-                'name': incl_df['nom'],
-                'type': incl_df['thematiques'].astype(str),
+                'id': incl_exploded.apply(generate_hash_id, axis=1),
+                'name': incl_exploded['nom'],
+                'type': incl_exploded['thematique_list'].astype(str),
                 'category': 'incl_services', # Renamed from 'inclusion'
-                'lat': incl_df['latitude'],
-                'lon': incl_df['longitude'],
-                'codgeo': incl_df['code_insee']
+                'lat': incl_exploded['latitude'],
+                'lon': incl_exploded['longitude'],
+                'codgeo': incl_exploded['code_insee']
             })
+            
+            # Additional cleanup: remove any remaining list-like strings from 'type' if they exist
+            # This shouldn't happen with correct flattening, but as a safeguard against "['slug']"
+            def clean_final_slug(val):
+                 val = str(val).strip()
+                 if val.startswith("['") and val.endswith("']"):
+                     return val[2:-2]
+                 return val
+            
+            incl_pois['type'] = incl_pois['type'].apply(clean_final_slug)
+            
             pois_list.append(incl_pois)
 
         # BPE - Petite Enfance POIs
