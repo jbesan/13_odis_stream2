@@ -86,6 +86,7 @@ The pipeline generates the following Parquet files in `pipeline/cache/output/` a
 | **`gares.parquet`**                 | Train Stations presence (Odace).           | `codgeo`, `gare_count`, `has_gare`                                                                                                                                                                                                   |
 | **`pois.parquet`**                  | Points of Interest for map layers.         | `id`, `type`, `lat`, `lon`, `metadata`                                                                                                                                                                                               |
 | **`referentiels.parquet`**          | Reference tables for UI dropdowns.         | `type`, `code`, `label`                                                                                                                                                                                                              |
+| **`loyers.parquet`**                | Average Rent data (Appartements).          | `codgeo`, `loyer_app_m2`                                                                                                                                                                                                             |
 
 ## 🔄 Data Flow
 

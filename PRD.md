@@ -226,8 +226,14 @@ En tant que travailleur social, je veux voir les lieux recommandés sur une cart
 
 ### 📊 Status
 
-- Not Started
-  \*Note: This feature is not currently implemented in the codebase.
+- Completed
+
+### 🔑 Key Features
+
+- **Intégration Données :** Source "Carte des Loyers" (2023) du Ministère de la Transition Écologique (Data Gouv).
+- **Indicateur Loyer :** `loyer_app_m2` (Loyer d'annonce moyen prédictif pour les appartements).
+- **Scoring :** `loyer_abordable_scaled` (Logique "Lower is Better" : plus le loyer est bas, meilleur est le score).
+- **Intégration UI :** Affichage dans la catégorie "Logement" si l'utilisateur choisit "Location".
 
 ## 🚀 Feature [F-09]: Résultats par bassin de vie
 
