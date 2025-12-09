@@ -33,9 +33,9 @@ Ce prototype a un triple objectif :
 
 ## 📸 Aperçu de l'Application
 
-|                        Page des résultats                        |                      Vue détaillée d'un résultat                       |
-| :--------------------------------------------------------------: | :--------------------------------------------------------------------: |
-| ![./images/Screenshot Page résultats](./images/Screenshot-1.png) | ![./images/Screenshot détail d'un résultat](./images/Screenshot-2.png) |
+|                         Page d'accueil                         |                      Vue détaillée d'un résultat                       |
+| :------------------------------------------------------------: | :--------------------------------------------------------------------: |
+| ![./images/Screenshot Page Accueil](./images/Screenshot-1.png) | ![./images/Screenshot détail d'un résultat](./images/Screenshot-2.png) |
 
 ## 🚀 Installation et Lancement
 
