@@ -86,6 +86,9 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         # Merge Gares (Odace API)
         merge_clean("gares", ['gare_count', 'has_gare'])
 
+        # Merge Loyers (Appartements)
+        merge_clean("loyers", ['loyer_app_m2'])
+
         # Merge Associations (Lien Social) - Moved from prescoring
         # Need to aggregate it first? merge_clean expects a parquet with 'codgeo'.
         # associations_vertical.parquet has 'codgeo'.

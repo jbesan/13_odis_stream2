@@ -379,6 +379,12 @@ def compute_criteria_scores(
     else:
         drop_score_cols(df, 'log_occup_scaled')
 
+    # 4. Loyer Abordable (loyer_abordable_scaled)
+    if config.hebergement == 'Location' or config.logement == 'Location':
+        pass
+    else:
+        drop_score_cols(df, 'loyer_abordable_scaled')
+
     # --- EDUCATION ---
     if config.nb_enfants > 0:
         if config.classe_enfants:

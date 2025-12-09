@@ -98,6 +98,22 @@ scores:
     weight: 0.5
     min_bound: null
     max_bound: null
+  - id: loyer_abordable_scaled
+    category: logement
+    source_metric: loyer_app_m2
+    include_in_binom: true
+    computation: precomputed
+    display:
+      name: Loyer Abordable
+      strong_point_text: Loyer moyen au m² attractif
+      high_value_adjective: attractif
+      show: true
+      unit: "€/m²"
+      display_factor: 1
+      tooltip: "Loyer moyen d'annonce par m² pour les appartements (Source: Carte des Loyers 2023)"
+    weight: 1.0
+    min_bound: null
+    max_bound: null
   - id: edu_classes_ferm_scaled
     category: education
     source_metric: avg_school_size

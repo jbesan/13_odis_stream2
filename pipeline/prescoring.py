@@ -140,10 +140,18 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             if max_val == min_val: return 0.0
             return ((series - min_val) / (max_val - min_val)).clip(0, 1)
 
-        # met_scaled
         if 'met_ratio' in communes_gdf.columns:
             min_b, max_b = get_min_max(communes_gdf['met_ratio'])
             communes_gdf['met_scaled'] = scale_series(communes_gdf['met_ratio'], min_b, max_b)
+
+        # loyer_abordable_scaled (Lower is Better)
+        if 'loyer_app_m2' in communes_gdf.columns:
+            min_b, max_b = get_min_max(communes_gdf['loyer_app_m2'])
+            # Inverted scale: (max - val) / (max - min)
+            if max_b > min_b:
+                communes_gdf['loyer_abordable_scaled'] = ((max_b - communes_gdf['loyer_app_m2']) / (max_b - min_b)).clip(0, 1)
+            else:
+                communes_gdf['loyer_abordable_scaled'] = 0.5 # Default if no variance
         
         # log_vac_scaled
         if 'log_vac_struct_ratio' in communes_gdf.columns:

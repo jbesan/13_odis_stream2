@@ -798,81 +798,71 @@ def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
                  'category': 'education', # or 'petite_enfance'
                  'lat': gdf.geometry.y,
                  'lon': gdf.geometry.x,
-                 'codgeo': gdf['codgeo'],
              })
              
              output_pois = CLEAN_DIR / "bpe_petite_enfance_pois.parquet"
              pois.to_parquet(output_pois)
-             
-             logger.log_step("clean_bpe", "COMPLETED", {
-                 "cols": str(output_cols),
-                 "pois": str(output_pois),
-                 "count": len(df_filtered)
-             })
+             logger.log_step("clean_bpe", "COMPLETED", {"counts": str(output_cols), "pois": str(output_pois)})
+            
         else:
-             logging.warning("BPE: Coordinates columns not found (LAMBERT_X, LAMBERT_Y). Skipping POIs.")
-             # Still save counts
-             logger.log_step("clean_bpe", "PARTIAL", {"cols": str(output_cols)})
+             logging.warning("BPE: LAMBERT coordinates not found.")
+             # Still valid to save counts
+             logger.log_step("clean_bpe", "PARTIAL", {"counts": str(output_cols)})
 
     except Exception as e:
         logger.log_step("clean_bpe", "ERROR", {"error": str(e)})
 
-def clean_formations(config: Dict[str, Any], logger: PipelineLogger):
-    """Cleans Formations and saves to parquet."""
-    logger.log_step("clean_formations", "STARTED")
-    try:
-        source = config['sources']['formations']
-        path = CACHE_DIR / source['local_name']
-        if not path.exists(): return
 
-        # Load Excel, skip first row if empty (header=1 usually works if row 2 is header)
-        # We saw row 1 was empty, row 2 had "Formations générales".
-        # Let's try header=1 or 2.
-        # Actually, let's load with header=None and find the row with "Code postal" or "Ville"
-        df = pd.read_excel(path, header=None)
+def clean_loyers(config: Dict[str, Any], logger: PipelineLogger):
+    """Cleans Loyers data (Appartements) and saves to parquet."""
+    logger.log_step("clean_loyers", "STARTED")
+    try:
+        source = config['sources']['loyers_apparts']
+        path = CACHE_DIR / source['local_name']
         
-        # Find header row
-        header_idx = None
-        for i, row in df.iterrows():
-            row_str = row.astype(str).str.lower().tolist()
-            if any('code postal' in s for s in row_str) or any('ville' in s for s in row_str):
-                header_idx = i
-                break
+        if not path.exists():
+            return
+
+        # Load with correct options
+        sep = source.get('sep', ';')
+        encoding = source.get('encoding', 'utf-8')
         
-        if header_idx is not None:
-            df.columns = df.iloc[header_idx]
-            df = df.iloc[header_idx+1:]
-            
-            # Identify columns
-            # We need to map to commune code. We only have Code Postal and Ville.
-            # We need a CP -> INSEE mapping.
-            # We have 'codes_postaux' source in DATASOURCES.md but not in sources.yaml?
-            # Wait, sources.yaml has 'communes' geojson.
-            # We can use a CP mapping file if we have one.
-            # Or we can just save the raw formations with CP and let build.py handle mapping (if we have a mapping table).
-            # For now, let's save what we have.
-            
-            # Columns might be: 'Raison sociale', 'Code postal', 'Ville', 'Domaines de formation'
-            df.columns = [str(c).strip() for c in df.columns]
-            
-            cp_col = next((c for c in df.columns if 'code postal' in c.lower()), None)
-            ville_col = next((c for c in df.columns if 'ville' in c.lower()), None)
-            domaine_col = next((c for c in df.columns if 'domaines' in c.lower()), None)
-            
-            if cp_col:
-                df_out = df[[cp_col, ville_col, domaine_col]].copy() if ville_col and domaine_col else df[[cp_col]].copy()
-                df_out.rename(columns={cp_col: 'code_postal'}, inplace=True)
-                
-                output_path = CLEAN_DIR / "formations.parquet"
-                df_out.to_parquet(output_path)
-                logger.log_step("clean_formations", "COMPLETED", {"path": str(output_path)})
-            else:
-                 logging.warning(f"Formations: Columns not found. Found: {df.columns}")
-        else:
-             logging.warning("Formations: Header not found")
-                
+        df = pd.read_csv(path, sep=sep, encoding=encoding, dtype={'INSEE_C': str})
+        
+        # Expected columns: INSEE_C (code commune), loypredm2 (loyer moyen m2)
+        if 'INSEE_C' in df.columns:
+            df.rename(columns={'INSEE_C': 'codgeo'}, inplace=True)
+        
+        if 'codgeo' not in df.columns:
+             # Try to find a code column
+             codgeo_col = next((c for c in df.columns if 'INSEE' in c or 'COD' in c), None)
+             if codgeo_col:
+                 df.rename(columns={codgeo_col: 'codgeo'}, inplace=True)
+                 
+        if 'codgeo' not in df.columns:
+             logging.warning(f"Loyers: CODGEO not found. Found: {df.columns}")
+             return
+
+        df['codgeo'] = df['codgeo'].astype(str).str.zfill(5)
+        
+        # Loyer column
+        val_col = 'loypredm2'
+        if val_col not in df.columns:
+             logging.warning(f"Loyers: {val_col} not found. Found: {df.columns}")
+             return
+             
+        # Extract and clean
+        df[val_col] = pd.to_numeric(df[val_col].astype(str).str.replace(',', '.'), errors='coerce')
+        
+        df_out = df[['codgeo', val_col]].rename(columns={val_col: 'loyer_app_m2'})
+        df_out = df_out.groupby('codgeo')['loyer_app_m2'].mean().reset_index()
+        
+        output_path = CLEAN_DIR / "loyers.parquet"
+        df_out.to_parquet(output_path)
+        logger.log_step("clean_loyers", "COMPLETED", {"path": str(output_path)})
+        
     except Exception as e:
-        logger.log_step("clean_formations", "ERROR", {"error": str(e)})
+        logger.log_step("clean_loyers", "ERROR", {"error": str(e)})
 
 
 
@@ -906,6 +896,7 @@ def main():
     clean_codes_postaux(config, logger)
     clean_formations(config, logger)
     clean_odace_gares(config, logger)
+    clean_loyers(config, logger)
 
     logger.log_step("ingest_all", "COMPLETED")
 

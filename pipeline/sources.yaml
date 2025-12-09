@@ -160,6 +160,14 @@ sources:
     local_name: "referentiel_services_inclusion.csv"
     description: "Référentiel des services d'inclusion (Local)"
 
+  loyers_apparts:
+    url: "https://www.data.gouv.fr/api/1/datasets/r/43618998-3b37-4a69-bb25-f321f1a93ed1"
+    format: "csv"
+    local_name: "loyers_apparts_2023.csv"
+    encoding: "iso-8859-1"
+    sep: ";"
+    description: "Carte des loyers 2023 - Appartements (Ensemble)"
+
 local_files:
   finess:
     path: "pipeline/local/annuaire_sante_finess.parquet"
