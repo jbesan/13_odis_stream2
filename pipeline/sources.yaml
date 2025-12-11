@@ -168,6 +168,12 @@ sources:
     sep: ";"
     description: "Carte des loyers 2023 - Appartements (Ensemble)"
 
+  structures_inclusion:
+    url: "https://www.data.gouv.fr/api/1/datasets/r/915c05e8-77ea-44f6-9837-0f1eff897a54"
+    format: "parquet"
+    local_name: "structures_inclusion.parquet"
+    description: "Annuaire des structures de l'inclusion (Data Inclusion)"
+
 local_files:
   finess:
     path: "pipeline/local/annuaire_sante_finess.parquet"

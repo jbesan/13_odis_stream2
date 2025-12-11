@@ -130,6 +130,15 @@ def load_parquet_dataset(path: str, columns: list = None) -> pd.DataFrame:
         return pd.read_parquet(path, columns=columns)
     return pd.read_parquet(path)
 
+@st.cache_resource
+def load_ccas_structures(base_path: str) -> pd.DataFrame:
+    """Loads CCAS structures."""
+    # Hardcoded filename as per build.py output
+    path = os.path.join(base_path, "structures_inclusion_ccas.parquet")
+    if os.path.exists(path):
+         return pd.read_parquet(path)
+    return pd.DataFrame()
+
 def get_pois_by_category(pois_df: pd.DataFrame, category: str) -> pd.DataFrame:
     """Filters POIs by category and returns a copy."""
     if pois_df.empty:
@@ -278,6 +287,9 @@ def init_datasets() -> Dict[str, Any]:
         # Hotfix: Ensure formation codes are clean strings (remove .0 suffix if present)
         formations_data['formation_code'] = formations_data['formation_code'].astype(str).str.replace(r'\.0$', '', regex=True)
 
+    # 4b. Load Structures (CCAS)
+    structures_ccas = load_ccas_structures(base_path)
+
     # 5. Load Configs
     app_dir = os.path.dirname(os.path.abspath(__file__))
     scores_cat = load_scores_config_as_df(os.path.join(app_dir, cfg.SCORES_CAT_FILE))
@@ -386,5 +398,6 @@ def init_datasets() -> Dict[str, Any]:
         'bv_geo': bv_geo,
         'area_geo': area_geo,
         'bmo_vertical': bmo_vertical,
+        'structures_ccas': structures_ccas,
         'pois': pois_df
     }

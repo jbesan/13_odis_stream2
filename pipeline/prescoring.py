@@ -116,15 +116,14 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
                 0.0
             )
 
-        # 4. Risque Fermeture Ratio (Avg School Size)
-        if 'total_eleves' in communes_gdf.columns and 'ecoles_count' in communes_gdf.columns:
-            communes_gdf['risque_fermeture_ratio'] = np.where(
-                communes_gdf['ecoles_count'] > 0,
-                communes_gdf['total_eleves'] / communes_gdf['ecoles_count'],
-                0.0
-            )
+        # 4. Risque Fermeture (Count of schools with < 20 students/class)
+        # We use the count directly. Lower is better.
+        if 'risky_schools_count' in communes_gdf.columns:
+            communes_gdf['risque_fermeture_ratio'] = communes_gdf['risky_schools_count'].fillna(0)
+        else:
+            communes_gdf['risque_fermeture_ratio'] = 0.0
 
-        # 5. Creches Density (Places/Structures per 1000 hab - using count of structures for now)
+        # ... (Creches Density)
         if 'population' in communes_gdf.columns and 'bpe_creches_count' in communes_gdf.columns:
             communes_gdf['bpe_creches_density'] = np.where(
                 communes_gdf['population'] > 0,
@@ -136,9 +135,13 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         def get_min_max(series):
             return series.quantile(0.01), series.quantile(0.99)
             
-        def scale_series(series, min_val, max_val):
-            if max_val == min_val: return 0.0
-            return ((series - min_val) / (max_val - min_val)).clip(0, 1)
+        def scale_series(series, min_val, max_val, inverted=False):
+            if max_val == min_val: return 1.0 if inverted else 0.0 # If all same...
+            
+            scaled = (series - min_val) / (max_val - min_val)
+            if inverted:
+                scaled = 1.0 - scaled
+            return scaled.clip(0, 1)
 
         if 'met_ratio' in communes_gdf.columns:
             min_b, max_b = get_min_max(communes_gdf['met_ratio'])
@@ -182,10 +185,12 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             min_b, max_b = get_min_max(communes_gdf['log_soc_inoc_ratio'])
             communes_gdf['log_soc_inoc_scaled'] = scale_series(communes_gdf['log_soc_inoc_ratio'], min_b, max_b)
 
-        # edu_classes_ferm_scaled
-        if 'risque_fermeture_ratio' in communes_gdf.columns:
+        # edu_classes_ferm_scaled (Higher Risk Count is Better/Opportunity)
+        if 'risque_fermeture_ratio' in communes_gdf.columns: # Contains risky_schools_count
+            # User Request: "schools with classes at risk are closing are more likely to welcome new families -> higher is better"
+            # So Max count -> 1.0 score. 0 count -> 0.0 score.
             min_b, max_b = get_min_max(communes_gdf['risque_fermeture_ratio'])
-            communes_gdf['edu_classes_ferm_scaled'] = scale_series(communes_gdf['risque_fermeture_ratio'], min_b, max_b)
+            communes_gdf['edu_classes_ferm_scaled'] = scale_series(communes_gdf['risque_fermeture_ratio'], min_b, max_b, inverted=False)
 
         # edu_creches_scaled
         if 'bpe_creches_density' in communes_gdf.columns:
@@ -265,7 +270,11 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
                 from app import config as app_cfg
                 
                 pois_df = pd.read_parquet(pois_path)
+                logging.info(f"POIS DF Columns: {pois_df.columns}")
                 incl_pois = pois_df[pois_df['category'] == 'incl_services'].copy()
+                logging.info(f"Incl POIS Shape: {incl_pois.shape}")
+                if not incl_pois.empty:
+                     logging.info(f"Incl POIS Sample: {incl_pois[['codgeo', 'services']].head() if 'services' in incl_pois.columns else incl_pois.columns}")
                 
                 if not incl_pois.empty:
                     # Parse 'type' column (stringified list)
@@ -277,13 +286,34 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
                             return []
                     
                     # Ensure 'type' is string (not categorical) before apply
-                    incl_pois['services'] = incl_pois['type'].astype(str).apply(parse_types)
-                    incl_pois = incl_pois.explode('services')
+                    # Ensure 'type' is string (not categorical) before apply
+                    def parse_types(x):
+                        if not isinstance(x, str): return []
+                        x = x.strip()
+                        if not x: return []
+                        # Try parsing as python literal (list)
+                        try:
+                            val = ast.literal_eval(x)
+                            if isinstance(val, list): return val
+                            return [str(val)]
+                        except (ValueError, SyntaxError):
+                            # It's a raw string slug
+                            return [x]
+
+                    try:
+                        incl_pois['services'] = incl_pois['type'].astype(str).apply(parse_types)
+                        incl_pois = incl_pois.explode('services')
+                        
+                        # Drop NaNs
+                        incl_pois = incl_pois.dropna(subset=['services'])
+                        incl_pois = incl_pois[incl_pois['services'].apply(lambda x: isinstance(x, str) and len(x) > 0)]
+                        
+                    except Exception as e_proc:
+                         logging.error(f"Error during df processing: {e_proc}")
+                         raise e_proc
                     
-                    # Drop NaNs and ensure strings to avoid unhashable type error
-                    incl_pois = incl_pois.dropna(subset=['services'])
-                    incl_pois = incl_pois[incl_pois['services'].apply(lambda x: isinstance(x, str))]
-                    
+                    logging.info(f"Socle Admin: Processing {len(incl_pois)} rows after explode.")
+
                     # Group by codgeo
                     commune_services = incl_pois.groupby('codgeo')['services'].apply(set).to_dict()
                     
@@ -297,7 +327,6 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
                         available = commune_services.get(codgeo, set())
                         matches = 0
                         for needed in needed_services:
-                            # Check if needed slug is strictly present OR is a substring of any available service key
                             if any(needed in av for av in available):
                                 matches += 1
                         return matches / len(needed_services) if needed_services else 0.0
@@ -306,7 +335,9 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
                     logging.info("Calculated inc_socle_admin_score")
                     
             except Exception as e:
-                logging.error(f"Failed to calculate socle admin score: {e}")
+                logging.error(f"Failed to calculate socle admin score at line {e.__traceback__.tb_lineno}: {e}")
+                import traceback
+                traceback.print_exc()
                 communes_gdf['inc_socle_admin_score'] = 0.0
         else:
              logging.warning("pois.parquet not found, skipping socle admin score")

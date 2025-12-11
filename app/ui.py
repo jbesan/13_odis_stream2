@@ -25,6 +25,57 @@ def get_base64_image(image_path: str) -> str:
         logging.error(f"Could not load image {image_path}: {e}")
         return ""
 
+@st.dialog("Centre Communal d'Action Sociale", width="large")
+def show_ccas_dialog(codgeo_or_list: Any, structures_df: pd.DataFrame, priority_code: str = None):
+     target_codes = []
+     if isinstance(codgeo_or_list, list):
+         target_codes = [str(c) for c in codgeo_or_list]
+     else:
+         target_codes = [str(codgeo_or_list)]
+         
+     if not structures_df.empty and 'codgeo' in structures_df.columns:
+         subset = structures_df[structures_df['codgeo'].isin(target_codes)].copy()
+         
+         if not subset.empty:
+             # Sorting: Priority code first, then alphabetical by commune/nom
+             if priority_code:
+                 subset['is_main'] = subset['codgeo'] == str(priority_code)
+                 subset = subset.sort_values(by=['is_main', 'commune', 'nom'], ascending=[False, True, True])
+             
+             st.write(f"**Structures trouvées : {len(subset)}**")
+             
+             for _, struct in subset.iterrows():
+                 # Layout: Commune First
+                 label = struct['commune'] if pd.notna(struct.get('commune')) else "Commune Inconnue"
+                 st.subheader(f"📍 {label}")
+                 
+                 # Name
+                 st.write(f"**{struct['nom']}**")
+                 
+                 # Address
+                 if pd.notna(struct.get('adresse')):
+                     st.write(f"{struct['adresse']}")
+                 
+                 # Contact Info
+                 c1, c2 = st.columns(2)
+                 with c1:
+                     if pd.notna(struct.get('telephone')):
+                         st.write(f"📞 {struct['telephone']}")
+                 with c2:
+                     if pd.notna(struct.get('courriel')):
+                         # Simple email link
+                         st.markdown(f"✉️ [{struct['courriel']}](mailto:{struct['courriel']})")
+                 
+                 if pd.notna(struct.get('site_web')):
+                     st.markdown(f"🌐 [Site Web]({struct['site_web']})")
+                     
+                 # Separator AFTER
+                 st.markdown("---")
+         else:
+             st.info("Aucune structure CCAS/CIAS référencée (avec contact) pour cette zone.")
+     else:
+         st.warning("Données structures non disponibles.")
+
 def open_pdf_modal() -> None:
     """Callback to signal that the PDF modal should be shown."""
     st.session_state['show_pdf_modal'] = True
@@ -596,11 +647,30 @@ def _display_bv_result_details(row: pd.Series) -> None:
                 st.info("Aucun service d'inclusion correspondant aux critères trouvé dans ce bassin de vie.")
 
         # --- Links ---
-        st.markdown(f"[Page OD&IS]({row.get('url_odis', '#')}) | [Page Wikipedia]({row.get('url_wikipedia', '#')})")
-
+        st.divider()
+        # Using columns for layout
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            if st.button("Contact local", key=f"btn_ccas_bv_{row.name}", type="primary", width="stretch"):
+                # For BV, pass the list of communes
+                target = row['communes'] if 'communes' in row else str(row.name)
+                # Ensure we pass the BV code as priority
+                show_ccas_dialog(target, st.session_state['app_data'].get('structures_ccas', pd.DataFrame()), priority_code=str(row.name))
+        with c2:
+             st.link_button("Page OD&IS", row.get('url_odis', '#'), width="stretch")
+        with c3:
+            st.link_button("Page Wikipedia", row.get('url_wikipedia', '#'), width="stretch")
+        
 
 def _display_result_details(row: pd.Series) -> None:
     """Displays the detailed information for a single highlighted result."""
+    
+    # --- Structures Inclusion (Dialog Trigger) ---
+    # We moved the display to the bottom links section or a header button
+    
+    # ... Skipping inline section ...
+    
+    # --- Existing Details ---
     with st.container(border=True):
         # --- Pitch ---
         pitch = _produce_pitch_markdown(row, st.session_state.config, st.session_state.app_data['scores_cat'])
@@ -690,7 +760,22 @@ def _display_result_details(row: pd.Series) -> None:
                 st.info("Aucun service d'inclusion correspondant aux critères trouvé dans cette commune.")
 
         # --- Links ---
-        st.markdown(f"[Page OD&IS]({row.get('url_odis', '#')}) | [Page Wikipedia]({row.get('url_wikipedia', '#')})")
+        st.divider()
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            if st.button("Contact local", key=f"btn_ccas_commune_{row.name}", type="primary", width="stretch"):
+                # For commune: Include binome if present
+                targets = [str(row.name)]
+                if row.get("binome", False) and pd.notna(row.get('codgeo_binome')):
+                     targets.append(str(row['codgeo_binome']))
+                
+                # Priority code is the main commune
+                show_ccas_dialog(targets, st.session_state['app_data'].get('structures_ccas', pd.DataFrame()), priority_code=str(row.name))
+        with c2:
+             st.link_button("Page OD&IS", row.get('url_odis', '#'), width="stretch")
+        with c3:
+            st.link_button("Page Wikipedia", row.get('url_wikipedia', '#'), width="stretch")
+        
 
 def _produce_pitch_markdown(row: pd.Series, config: cfg.ScoringConfig, scores_cat: pd.DataFrame) -> str:
     """Generates a summary "pitch" for a result, adapting to commune or bassin de vie."""

@@ -498,13 +498,13 @@ scores:
     include_in_binom: true
     computation: precomputed
     display:
-      name: Risque de fermeture de classe
-      strong_point_text: Faible risque de fermeture de classe
-      high_value_adjective: faible
+      name: Opportunité scolaire (Petites classes)
+      strong_point_text: Classes à petits effectifs (Opportunité d'intégration)
+      high_value_adjective: forte
       show: true
-      unit: élèves/école
+      unit: écoles
       display_factor: 1
-      tooltip: Nombre moyen d'élèves par école (plus c'est élevé, moins le risque est grand)
+      tooltip: Nombre d'écoles avec des classes à faible effectif (< 20 élèves)
     weight: 1.0
     min_bound: null
     max_bound: null

@@ -50,6 +50,12 @@
 - Données: local/referentiel_services_inclusion.csv
 - Type de fichier: csv
 
+## Structures Inclusion
+
+- Données: https://www.data.gouv.fr/datasets/referentiel-de-loffre-dinsertion-sociale-et-professionnelle-data-inclusion/#/resources/915c05e8-77ea-44f6-9837-0f1eff897a54
+- URL Stable: https://www.data.gouv.fr/api/1/datasets/r/915c05e8-77ea-44f6-9837-0f1eff897a54
+- Type de fichier: parquet
+
 ## Couleur politique
 
 - Données: https://www.data.gouv.fr/datasets/communes-enrichies-avec-la-nuance-politique-france/#/resources/ea5d6bc3-37d0-4884-a437-155a90c3e05f
