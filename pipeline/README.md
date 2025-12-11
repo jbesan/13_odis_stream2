@@ -57,6 +57,7 @@ The pipeline is split into four main stages:
 - **`prescoring.py`**: Handles scoring logic, ratios, and scaling.
 - **`common.py`**: Shared utilities (logging, config, IO).
 - **`sources.yaml`**: Configuration file defining all data sources.
+- **`prescoring_config.yaml`**: Configuration for metrics and inputs (e.g. socle admin).
 - **`cache/`**:
   - `raw/`: Raw downloaded files (zips, excel, etc.).
   - `clean/`: Intermediate cleaned Parquet files.
@@ -87,6 +88,7 @@ The pipeline generates the following Parquet files in `pipeline/cache/output/` a
 | **`pois.parquet`**                  | Points of Interest for map layers.         | `id`, `type`, `lat`, `lon`, `metadata`                                                                                                                                                                                               |
 | **`referentiels.parquet`**          | Reference tables for UI dropdowns.         | `type`, `code`, `label`                                                                                                                                                                                                              |
 | **`loyers.parquet`**                | Average Rent data (Appartements).          | `codgeo`, `loyer_app_m2`                                                                                                                                                                                                             |
+| **`population_details.parquet`**    | Age-specific population counts (2016-2022) | `codgeo`, `pop_jeune_2016`, `pop_jeune_2022`, `pop_active_2016`, `pop_active_2022`                                                                                                                                                   |
 
 ## 🔄 Data Flow
 

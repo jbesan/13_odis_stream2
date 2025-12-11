@@ -96,6 +96,7 @@ Le score est calculé à partir d'une multitude de critères, regroupés en gran
 - **Taux Besoin Emploi** : Mesure le nombre d'emplois non pourvus pour 1000 habitants, indiquant la demande de main-d'œuvre locale.
 - **Adéquation Compétences/Emploi** : Évalue la correspondance entre les métiers recherchés par les adultes du foyer et les familles de métiers les plus demandées dans la zone.
 - **Adéquation Besoins/Formations** : Mesure la présence de centres de formation proposant les cursus recherchés par les adultes du foyer.
+- **Déclin Démographique Actif** : Valorise les communes perdant leur population active (25-54 ans), signalant un besoin de main-d'œuvre.
 
 **Catégorie : Logement**
 
@@ -107,6 +108,7 @@ Le score est calculé à partir d'une multitude de critères, regroupés en gran
 
 - **Taux de Classes à Risque de Fermeture** : Identifie les écoles où des classes risquent de fermer faute d'élèves, ce qui peut être une opportunité pour de nouvelles familles.
 - **Taux de Couverture Petite Enfance** : Évalue la disponibilité des modes de garde (crèches, assistantes maternelles) pour les jeunes enfants (< 3 ans), basé sur les données de la CAF.
+- **Déclin Démographique Jeune** : Valorise les communes perdant leur population jeune (-15 ans), indicateur d'un besoin de repeuplement scolaire.
 - **Education**: Annuaire de l'éducation (Data.gouv), Effectifs (Data.gouv), Taux de couverture Petite Enfance (CAF), Crèches (BPE/INSEE), Formations (Data.gouv).
 
 **Catégorie : Inclusion & Vie Locale**

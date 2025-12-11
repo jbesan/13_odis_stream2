@@ -40,7 +40,18 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
                     # Ensure codgeo is present
                     cols_to_use = ['codgeo'] + [c for c in cols if c in df.columns and c != 'codgeo']
                     df = df[cols_to_use]
+                    
+                if name == "population_details":
+                     logging.info(f"DEBUG MERGE {name}: Cols selected: {df.columns.tolist()}")
+                     logging.info(f"DEBUG MERGE {name}: DF Shape: {df.shape}")
+                     logging.info(f"DEBUG MERGE {name}: Sample Codgeo: {df.codgeo.head().tolist()}")
+                     logging.info(f"DEBUG MAIN GDF Shape BEFORE: {communes_gdf.shape}")
+                     
                 communes_gdf = communes_gdf.merge(df, on='codgeo', how='left')
+                
+                if name == "population_details":
+                     logging.info(f"DEBUG MAIN GDF Shape AFTER: {communes_gdf.shape}")
+                     logging.info(f"DEBUG Has pop_jeune_2022: {'pop_jeune_2022' in communes_gdf.columns}")
             else:
                 logging.warning(f"Clean {name} file not found.")
 
@@ -52,6 +63,9 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         
         # Merge Population Active
         merge_clean("population_active", ['pop_active', 'pop_employes', 'pop_chomeurs'])
+
+        # Merge Population Details (Age Breakdown)
+        merge_clean("population_details", ['pop_jeune_2016', 'pop_jeune_2022', 'pop_active_2016', 'pop_active_2022'])
         
         # Merge LOVAC
         merge_clean("lovac", ['pp_vacant_plus_2ans_25', 'log_priv_total_24'])
@@ -191,7 +205,8 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
             'lien_social_count', 'svc_incl_count', 
             'pop_active', 'pop_employes', 'pop_chomeurs', 
             'metiers_offres_diff', 'log_priv_vacant_plus_2ans', 'log_priv_total', 'edu_pe_tx_couverture',
-            'bpe_creches_count', 'lien_social_count'
+            'bpe_creches_count', 'lien_social_count',
+            'pop_jeune_2016', 'pop_jeune_2022', 'pop_active_2016', 'pop_active_2022'
         ]
         for col in numeric_cols:
             if col in communes_gdf.columns:
@@ -291,8 +306,6 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         # Rename geometry to polygon to match app expectation
         communes_gdf.rename_geometry('polygon', inplace=True)
         
-        output_path = OUTPUT_DIR / "odis_communes.parquet"
-        communes_gdf.to_parquet(output_path)
         output_path = OUTPUT_DIR / "odis_communes.parquet"
         communes_gdf.to_parquet(output_path)
         logger.log_step("build_communes", "CREATED", {"path": str(output_path), "rows": len(communes_gdf)})

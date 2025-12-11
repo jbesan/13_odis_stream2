@@ -1043,6 +1043,88 @@ def clean_loyers(config: Dict[str, Any], logger: PipelineLogger):
 
 
 
+def clean_population_details(config: Dict[str, Any], logger: PipelineLogger):
+    """Cleans Population Details (Age Breakdown) and saves to parquet."""
+    logger.log_step("clean_population_details", "STARTED")
+    source = config['sources']['population_details']
+    path = CACHE_DIR / source['archive_file']
+    
+    if not path.exists():
+        logging.warning("Population Details file not found.")
+        return
+
+    # Load CSV (Long Format)
+    # "AGE";"GEO";"GEO_OBJECT";"RP_MEASURE";"SEX";"TIME_PERIOD";"OBS_VALUE"
+    df = pd.read_csv(path, sep=';', low_memory=False)
+    
+    # Filter Checks
+    required_cols = ['AGE', 'GEO', 'GEO_OBJECT', 'SEX', 'TIME_PERIOD', 'OBS_VALUE']
+    if not all(col in df.columns for col in required_cols):
+        logging.warning(f"Population Details: Missing columns. Found: {df.columns}")
+        return
+
+    # Filter Rows
+    # GEO_OBJECT == 'COM'
+    # SEX == '_T' (Total)
+    df = df[
+        (df['GEO_OBJECT'] == 'COM') & 
+        (df['SEX'] == '_T')
+    ]
+    
+    # We need Age Groups:
+    # Youth: < 15 -> 'Y_LT15'
+    # Active: 25-54 -> 'Y25T39' + 'Y40T54'
+    
+    target_ages = ['Y_LT15', 'Y25T39', 'Y40T54']
+    df = df[df['AGE'].isin(target_ages)]
+    
+    # Normalize GEO -> codgeo
+    df.rename(columns={'GEO': 'codgeo'}, inplace=True)
+    df['codgeo'] = df['codgeo'].astype(str).str.zfill(5)
+    
+    # Normalize Year
+    df['year'] = df['TIME_PERIOD'].astype(str)
+    
+    # Value to numeric
+    df['count'] = pd.to_numeric(df['OBS_VALUE'], errors='coerce').fillna(0)
+    
+    # Aggregate Active Group
+    # Map ages to broad categories
+    age_mapping = {
+        'Y_LT15': 'jeune',
+        'Y25T39': 'active',
+        'Y40T54': 'active'
+    }
+    df['age_group'] = df['AGE'].map(age_mapping)
+    
+    # Pivot
+    # Index: codgeo
+    # Columns: {age_group}_{year}
+    # Values: Sum of count
+    
+    df_pivot = df.pivot_table(
+        index='codgeo',
+        columns=['age_group', 'year'],
+        values='count',
+        aggfunc='sum'
+    )
+    
+    # Flatten Columns
+    # e.g. active_2016, active_2022
+    df_pivot.columns = [f"pop_{c[0]}_{c[1]}" for c in df_pivot.columns]
+    df_pivot.reset_index(inplace=True)
+    
+    # Ensure expected columns exist (fill 0 if checking years 2016/2022)
+    expected_cols = ['pop_jeune_2016', 'pop_jeune_2022', 'pop_active_2016', 'pop_active_2022']
+    for col in expected_cols:
+        if col not in df_pivot.columns:
+            logging.warning(f"Population Details: Missing expected column {col}. Setting to 0.")
+            df_pivot[col] = 0.0
+
+    output_path = CLEAN_DIR / "population_details.parquet"
+    df_pivot.to_parquet(output_path)
+    logger.log_step("clean_population_details", "COMPLETED", {"path": str(output_path), "rows": len(df_pivot)})
+
 def main():
     parser = argparse.ArgumentParser(description="ODIS Ingest Pipeline")
     parser.add_argument('--steps', type=str, help="Comma-separated list of steps to run (e.g. communes,inclusion)")
@@ -1082,14 +1164,22 @@ def main():
         'codes_postaux': clean_codes_postaux,
         'formations': clean_formations,
         'gares': clean_odace_gares,
-        'loyers': clean_loyers
+        'loyers': clean_loyers,
+        'population_details': clean_population_details
     }
 
     selected_steps = args.steps.split(',') if args.steps else steps_map.keys()
+    print(f"DEBUG: Selected steps: {selected_steps}")
     
     for step_name in selected_steps:
+        print(f"DEBUG: Running step {step_name}")
         if step_name in steps_map:
-            steps_map[step_name](config, logger)
+            try:
+                steps_map[step_name](config, logger)
+            except Exception as e:
+                print(f"ERROR running step {step_name}: {e}")
+                import traceback
+                traceback.print_exc()
         else:
             logging.warning(f"Unknown step: {step_name}")
 

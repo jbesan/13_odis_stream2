@@ -13,6 +13,13 @@
 - Type de fichier: xlsx
 - Onglet utiles: III_1_insee_population_fr_commu
 
+## Population Détails
+
+- Données: https://www.data.gouv.fr/datasets/population-2/#/resources/7e3937bb-e815-4e58-92d4-d7ef478abcc0
+- URL Stable: https://www.data.gouv.fr/api/1/datasets/r/7e3937bb-e815-4e58-92d4-d7ef478abcc0
+- Type de fichier: zip
+- Fichier utile: DS_RP_POPULATION_COMP_2022_data.csv
+
 ## Communes Voisines
 
 - Données: https://www.data.gouv.fr/datasets/liste-des-adjacences-des-communes-francaises/#/resources/6ca4e113-271d-45bb-8995-5d9779f7b10d

@@ -38,6 +38,8 @@ The algorithm calculates a score between 0 and 1 for each category for every can
   - If present, score is high; otherwise 0.
 - **Training Match (`form_match_adult1_scaled`)**:
   - Checks for training centers offering relevant formations. (None specified in demo 3, so likely 0 or irrelevant).
+- **Workclass Decline (`workclass_decline_scaled`)**:
+  - Scores the decline in active population (25-54) between 2016 and 2022. High decline = High score (opportunity).
 
 **Category Score**: Weighted average of the above metrics.
 
@@ -56,6 +58,8 @@ The algorithm calculates a score between 0 and 1 for each category for every can
   - If neither: Score = 0.0.
 - **Closure Risk (`edu_classes_ferm_scaled`)**:
   - Considers the ratio of classes at risk of closure. Lower risk is better (but metric might be inverted or normalized such that "good" is 1).
+- **Youth Decline (`youth_decline_scaled`)**:
+  - Scores the decline in youth population (<15) between 2016 and 2022. High decline = High score (opportunity).
 
 ### D. Santé (Weight: 100)
 

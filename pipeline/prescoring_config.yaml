@@ -1,0 +1,10 @@
+# Prescoring Configuration
+# Used by pipeline/prescoring.py
+
+# Slugs of services that constitute the "Socle Administratif"
+socle_admin:
+  - "logement-hebergement--sinformer-sur-les-demarches-liees-a-lacces-au-logement"
+  - "difficultes-administratives-ou-juridiques--accompagnement-aux-demarches-administratives"
+  - "preparer-sa-candidature--organiser-ses-demarches-de-recherche-demploi"
+# Metrics Definitions (Documentation & Metadata)
+# Metrics are now defined in app/scores_config.yaml

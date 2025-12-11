@@ -536,6 +536,10 @@ def compute_category_scores(
         weights = []
 
         for col in score_cols:
+            # Conditional exclusion logic for specific scores
+            if col == 'youth_decline_scaled' and config.nb_enfants == 0:
+                continue
+
             score_commune = df[col]
             # Check if a corresponding binome score exists
             if f'{col}_binome' in df.columns:

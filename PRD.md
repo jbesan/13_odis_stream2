@@ -417,3 +417,21 @@ En tant que travailleur social, je veux voir les lieux recommandés sur une cart
 ### 📊 Status
 
 - Completed
+
+## 🚀 Feature [F-18]: Indicateurs de Déclin de Population
+
+### 📝 User Stories
+
+- En tant que travailleur social, je veux identifier les communes qui perdent des habitants, en particulier des jeunes, car elles pourraient être plus incitées à accueillir de nouvelles familles pour maintenir leurs écoles et services.
+
+### 🔑 Key Features
+
+- **Nouvelle Source de Données :** "Population Détails" (Insee) avec ventilation par âge (2011, 2016, 2022).
+- **Indicateur Déclin Jeune :** `youth_decline_scaled`. Score élevé si la population des moins de 15 ans diminue. Intégré à la catégorie "Éducation".
+- **Indicateur Déclin Actifs :** `workclass_decline_scaled`. Score élevé si la population des 25-54 ans diminue. Intégré à la catégorie "Emploi".
+- **Scoring :** Plus le déclin est fort, plus le score est élevé (opportunité d'accueil).
+- **Affichage :** Point fort "Besoin de familles" ou "Besoin d'actifs".
+
+### 📊 Status
+
+- Not Started

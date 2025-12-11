@@ -155,25 +155,31 @@ def init_datasets() -> Dict[str, Any]:
     logger.info(f"Loading datasets from: {base_path}")
 
     # 1. Load Main ODIS Communes Data
-    # Define columns to load to save memory
-    columns_to_load = [
-        'codgeo', 'libgeo', 'polygon', 'dep_code', 'reg_code', 'epci_code', 'epci_nom', 'codgeo_voisins',
-        'population', 'bassin_de_vie', 'libelle_bassin_de_vie',
-        # Calculated Scores (Output of Prescoring)
-        'met_scaled', 'log_vac_scaled', 'inc_lien_social_score', 'inc_population_scaled', 'inc_pol_scaled',
-        'log_occup_scaled', 'log_soc_inoc_scaled', 
-        'edu_classes_ferm_scaled', 'edu_creches_scaled', 'edu_petite_enfance_scaled',
-        'edu_maternelle_scaled', 'edu_elementaire_scaled', 'edu_college_scaled', 'edu_lycee_scaled',
-        'sante_hopital_scaled', 'sante_maternite_scaled', 'sante_psy_scaled',
-        'inc_socle_admin_score',
-        'mob_gare_scaled',
-        'loyer_abordable_scaled'
-    ]
-    
     odis_path = os.path.join(base_path, cfg.ODIS_FILE)
-    logger.info(f"Loading ODIS from: {odis_path}")
     
     try:
+        # Dynamic Column Loading
+        from pyarrow.parquet import ParquetFile
+        pq_file = ParquetFile(odis_path)
+        all_cols = pq_file.schema.names
+        
+        # Essential columns
+        essential_cols = {
+            'codgeo', 'libgeo', 'polygon', 'dep_code', 'reg_code', 'epci_code', 'epci_nom', 'codgeo_voisins',
+            'population', 'bassin_de_vie', 'libelle_bassin_de_vie',
+            'youth_growth_rate', 'workclass_growth_rate' # Keep growth rates for tooltips
+        }
+        
+        # Select columns that are essential OR scores
+        columns_to_load = [
+            c for c in all_cols 
+            if c in essential_cols 
+            or c.endswith('_scaled') 
+            or c.endswith('_score')
+            or c.endswith('_density') # Keep densities if useful? No, user said save memory.
+        ]
+        
+        logger.info(f"Loading {len(columns_to_load)} columns from ODIS.")
         odis = pd.read_parquet(odis_path, columns=columns_to_load)
         
         # Geometry processing
@@ -351,6 +357,16 @@ def init_datasets() -> Dict[str, Any]:
             if cfg.BV_CODE_COL != 'bassin_de_vie':
                 bv_geo.index.name = cfg.BV_CODE_COL
 
+    # 8. Optimization: Restore libelle_bassin_de_vie in ODIS from BV Geo
+    # (Avoids storing it in the main parquet file)
+    if 'bassin_de_vie' in odis.columns and 'libelle_bassin_de_vie' not in odis.columns:
+        if not bv_geo.empty and 'libgeo' in bv_geo.columns:
+            # bv_geo index is the code (bassin_de_vie)
+            bv_label_map = bv_geo['libgeo'].to_dict()
+            odis['libelle_bassin_de_vie'] = odis['bassin_de_vie'].map(bv_label_map)
+            # Fill NaNs if any (e.g. for PLM or isolated communes)
+            odis['libelle_bassin_de_vie'] = odis['libelle_bassin_de_vie'].fillna(odis['libgeo'])
+            
     # 7. Generate Area Geometries (Departments & Regions)
     area_dfs = []
     if not odis.empty and isinstance(odis, gpd.GeoDataFrame):

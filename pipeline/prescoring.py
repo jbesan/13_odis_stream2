@@ -14,12 +14,11 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
     """Applies pre-scoring logic (ratios, densities, scaling) to odis_communes."""
-    logger.log_step("apply_prescoring", "STARTED")
     try:
         communes_path = OUTPUT_DIR / "odis_communes.parquet"
         if not communes_path.exists():
-            logging.error("odis_communes.parquet not found. Run build first.")
-            return
+             logger.error(f"Input file not found: {communes_path}")
+             return
 
         communes_gdf = gpd.read_parquet(communes_path)
         logging.info(f"Loaded {len(communes_gdf)} communes for prescoring.")
@@ -131,79 +130,135 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
                 0.0
             )
         
+        # --- Load Configuration ---
+        import yaml
+        from pathlib import Path
+        
+        # Load App Config for Scores (Source of Truth)
+        # We access the sibling 'app' directory
+        app_config_path = Path(__file__).parent.parent / "app" / "scores_config.yaml"
+        scores_config = {}
+        socle_admin_list = []
+        
+        if app_config_path.exists():
+            with open(app_config_path, 'r') as f:
+                full_config = yaml.safe_load(f)
+                # Parse scores config into a dict for easy lookup: id -> {min: x, max: y}
+                if 'scores' in full_config:
+                    for s in full_config['scores']:
+                        scores_config[s['id']] = {
+                            'min': s.get('min_bound'), 
+                            'max': s.get('max_bound')
+                        }
+        else:
+             logging.warning(f"App config not found at {app_config_path}")
+
+        # Note: socle_admin list is separate... currently in prescoring_config or app?
+        # User wants unified. socle_admin is in app/config.py usually, not scores_config.yaml.
+        # But we previously created prescoring_config.yaml for it.
+        # We will keep prescoring_config ONLY for socle_admin if it's not in scores_config?
+        # Or better: Read it from prescoring_config if exists, else empty?
+        # User said "Pipeline vs App configs" split was bad.
+        # Let's check prescoring_config.yaml content. It has socle_admin.
+        # We can keep prescoring_config.yaml JUST for pipeline-specific inputs that aren't scores.
+        # OR put socle_admin in scores_config? No, it's a list of slugs.
+        # Let's keep prescoring_config.yaml for INPUTS (socle slugs) but use scores_config.yaml for BOUNDS.
+        
+        prescoring_conf_path = Path(__file__).parent / "prescoring_config.yaml"
+        if prescoring_conf_path.exists():
+             with open(prescoring_conf_path, 'r') as f:
+                 prescoring_conf = yaml.safe_load(f)
+             default_socle_admin = prescoring_conf.get('socle_admin', [])
+        else:
+             default_socle_admin = []
+
+
         # --- Scaling ---
         def get_min_max(series):
             return series.quantile(0.01), series.quantile(0.99)
             
-        def scale_series(series, min_val, max_val, inverted=False):
-            if max_val == min_val: return 1.0 if inverted else 0.0 # If all same...
+        def scale_series(series, min_b, max_b, inverted=False):
+            if max_b is None or min_b is None:
+                 # Fallback to auto-detection (should check caller, but safe here)
+                 min_b, max_b = get_min_max(series)
+                 
+            if max_b == min_b: return 1.0 if inverted else 0.0
             
-            scaled = (series - min_val) / (max_val - min_val)
+            # Cast bounds to float just in case
+            min_b, max_b = float(min_b), float(max_b)
+            
+            scaled = (series - min_b) / (max_b - min_b)
             if inverted:
                 scaled = 1.0 - scaled
             return scaled.clip(0, 1)
 
-        if 'met_ratio' in communes_gdf.columns:
-            min_b, max_b = get_min_max(communes_gdf['met_ratio'])
-            communes_gdf['met_scaled'] = scale_series(communes_gdf['met_ratio'], min_b, max_b)
-
-        # loyer_abordable_scaled (Lower is Better)
-        if 'loyer_app_m2' in communes_gdf.columns:
-            min_b, max_b = get_min_max(communes_gdf['loyer_app_m2'])
-            # Inverted scale: (max - val) / (max - min)
-            if max_b > min_b:
-                communes_gdf['loyer_abordable_scaled'] = ((max_b - communes_gdf['loyer_app_m2']) / (max_b - min_b)).clip(0, 1)
+        # Helper to get bounds from config or auto-calc
+        def process_scaling(df, col_name, output_col, inverted=False):
+            if col_name not in df.columns: return
+            
+            conf = scores_config.get(output_col, {})
+            c_min, c_max = conf.get('min'), conf.get('max')
+            
+            # If config has bounds, use them. Else auto-calc.
+            if c_min is not None and c_max is not None:
+                min_b, max_b = c_min, c_max
             else:
-                communes_gdf['loyer_abordable_scaled'] = 0.5 # Default if no variance
+                min_b, max_b = get_min_max(df[col_name])
+                
+            df[output_col] = scale_series(df[col_name], min_b, max_b, inverted)
+
         
-        # log_vac_scaled
-        if 'log_vac_struct_ratio' in communes_gdf.columns:
-            min_b, max_b = get_min_max(communes_gdf['log_vac_struct_ratio'])
-            communes_gdf['log_vac_scaled'] = scale_series(communes_gdf['log_vac_struct_ratio'], min_b, max_b)
+        process_scaling(communes_gdf, 'met_ratio', 'met_scaled')
         
-        # inc_lien_social_score
-        if 'lien_social_density' in communes_gdf.columns:
-            min_b, max_b = get_min_max(communes_gdf['lien_social_density'])
-            communes_gdf['inc_lien_social_score'] = scale_series(communes_gdf['lien_social_density'], min_b, max_b)
-        
-        # inc_population_scaled
-        if 'population' in communes_gdf.columns:
-            min_b, max_b = get_min_max(communes_gdf['population'])
-            communes_gdf['inc_population_scaled'] = scale_series(communes_gdf['population'], min_b, max_b)
+        # loyer_abordable_scaled (Lower is Better)
+        # Custom logic for this one? Or standard inverted?
+        # It was: ((max_b - val) / (max - min)). clip(0,1). This is exactly inverted MinMax.
+        process_scaling(communes_gdf, 'loyer_app_m2', 'loyer_abordable_scaled', inverted=True)
+
+        process_scaling(communes_gdf, 'log_vac_struct_ratio', 'log_vac_scaled')
+        process_scaling(communes_gdf, 'lien_social_density', 'inc_lien_social_score')
+        process_scaling(communes_gdf, 'population', 'inc_population_scaled')
         
         # inc_pol_scaled (already 0-1)
         if 'pol_num' in communes_gdf.columns:
             communes_gdf['inc_pol_scaled'] = communes_gdf['pol_num']
 
-        # log_occup_scaled
-        if 'log_pp_occup' in communes_gdf.columns:
-            min_b, max_b = get_min_max(communes_gdf['log_pp_occup'])
-            communes_gdf['log_occup_scaled'] = scale_series(communes_gdf['log_pp_occup'], min_b, max_b)
+        process_scaling(communes_gdf, 'log_pp_occup', 'log_occup_scaled')
 
-        # log_soc_inoc_scaled
-        if 'log_soc_inoc_ratio' in communes_gdf.columns:
-            min_b, max_b = get_min_max(communes_gdf['log_soc_inoc_ratio'])
-            communes_gdf['log_soc_inoc_scaled'] = scale_series(communes_gdf['log_soc_inoc_ratio'], min_b, max_b)
+        # Population Decline (Inverted logic handled in process_scaling)
+        if 'pop_jeune_2016' in communes_gdf.columns and 'pop_jeune_2022' in communes_gdf.columns:
+             communes_gdf['youth_growth_rate'] = np.where(
+                communes_gdf['pop_jeune_2016'] > 0,
+                (communes_gdf['pop_jeune_2022'] - communes_gdf['pop_jeune_2016']) / communes_gdf['pop_jeune_2016'],
+                0.0
+             )
+             
+        if 'pop_active_2016' in communes_gdf.columns and 'pop_active_2022' in communes_gdf.columns:
+             communes_gdf['workclass_growth_rate'] = np.where(
+                communes_gdf['pop_active_2016'] > 0,
+                (communes_gdf['pop_active_2022'] - communes_gdf['pop_active_2016']) / communes_gdf['pop_active_2016'],
+                0.0
+             )
 
-        # edu_classes_ferm_scaled (Higher Risk Count is Better/Opportunity)
-        if 'risque_fermeture_ratio' in communes_gdf.columns: # Contains risky_schools_count
-            # User Request: "schools with classes at risk are closing are more likely to welcome new families -> higher is better"
-            # So Max count -> 1.0 score. 0 count -> 0.0 score.
-            min_b, max_b = get_min_max(communes_gdf['risque_fermeture_ratio'])
-            communes_gdf['edu_classes_ferm_scaled'] = scale_series(communes_gdf['risque_fermeture_ratio'], min_b, max_b, inverted=False)
+        if 'youth_growth_rate' in communes_gdf.columns:
+            process_scaling(communes_gdf, 'youth_growth_rate', 'youth_decline_scaled', inverted=True)
+            
+        if 'workclass_growth_rate' in communes_gdf.columns:
+            process_scaling(communes_gdf, 'workclass_growth_rate', 'workclass_decline_scaled', inverted=True)
 
-        # edu_creches_scaled
-        if 'bpe_creches_density' in communes_gdf.columns:
-            min_b, max_b = get_min_max(communes_gdf['bpe_creches_density'])
-            communes_gdf['edu_creches_scaled'] = scale_series(communes_gdf['bpe_creches_density'], min_b, max_b)
+        process_scaling(communes_gdf, 'log_soc_inoc_ratio', 'log_soc_inoc_scaled')
+        
+        # edu_classes_ferm_scaled
+        # Logic was: max count -> 1.0 (inverted=False in previous edit).
+        # User said: "schools with classes at risk are closing are more likely to welcome new families -> higher is better"
+        # So Higher Ratio (Risk Count) -> Higher Score. Standard scaling.
+        # But wait, previous edit said: inverted=False.
+        # Let's keep it standard.
+        process_scaling(communes_gdf, 'risque_fermeture_ratio', 'edu_classes_ferm_scaled')
 
-        # edu_petite_enfance_scaled
-        if 'edu_pe_tx_couverture' in communes_gdf.columns:
-            # Only scale valid values (not 0 if 0 means missing? No, 0 is 0 coverage. NaN is missing.)
-            # build.py fills NaNs with 0 for this column? Line 130: 'edu_pe_tx_couverture' in numeric_cols.
-            # So it is 0.
-            min_b, max_b = get_min_max(communes_gdf['edu_pe_tx_couverture'])
-            communes_gdf['edu_petite_enfance_scaled'] = scale_series(communes_gdf['edu_pe_tx_couverture'], min_b, max_b)
+        process_scaling(communes_gdf, 'bpe_creches_density', 'edu_creches_scaled')
+        process_scaling(communes_gdf, 'edu_pe_tx_couverture', 'edu_petite_enfance_scaled') # Usually 0-100? or 0-1?
+
 
         # mob_gare_scaled
         if 'has_gare' in communes_gdf.columns:
@@ -263,11 +318,18 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         pois_path = OUTPUT_DIR / "pois.parquet"
         if pois_path.exists():
             try:
-                # Import config from app to get DEFAULT_SOCLE_ADMIN
-                import sys
-                import os
-                sys.path.append(os.getcwd())
-                from app import config as app_cfg
+                # Import prescoring config
+                import yaml
+                from pathlib import Path
+                prescoring_conf_path = Path(__file__).parent / "prescoring_config.yaml"
+                if prescoring_conf_path.exists():
+                     with open(prescoring_conf_path, 'r') as f:
+                         prescoring_conf = yaml.safe_load(f)
+                     default_socle_admin = prescoring_conf.get('socle_admin', [])
+                else:
+                     logging.warning("prescoring_config.yaml not found, using empty socle admin.")
+                     default_socle_admin = []
+
                 
                 pois_df = pd.read_parquet(pois_path)
                 logging.info(f"POIS DF Columns: {pois_df.columns}")
@@ -277,21 +339,11 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
                      logging.info(f"Incl POIS Sample: {incl_pois[['codgeo', 'services']].head() if 'services' in incl_pois.columns else incl_pois.columns}")
                 
                 if not incl_pois.empty:
-                    # Parse 'type' column (stringified list)
                     import ast
-                    def parse_types(x):
-                        try:
-                            return ast.literal_eval(x)
-                        except:
-                            return []
-                    
-                    # Ensure 'type' is string (not categorical) before apply
-                    # Ensure 'type' is string (not categorical) before apply
                     def parse_types(x):
                         if not isinstance(x, str): return []
                         x = x.strip()
                         if not x: return []
-                        # Try parsing as python literal (list)
                         try:
                             val = ast.literal_eval(x)
                             if isinstance(val, list): return val
@@ -300,39 +352,27 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
                             # It's a raw string slug
                             return [x]
 
-                    try:
-                        incl_pois['services'] = incl_pois['type'].astype(str).apply(parse_types)
-                        incl_pois = incl_pois.explode('services')
+                    # Explode types for analysis
+                    incl_pois['services_list'] = incl_pois['type'].astype(str).apply(parse_types)
+                    exploded = incl_pois.explode('services_list')
+                    
+                    socle_slugs = set(default_socle_admin)
+                    if socle_slugs:
+                        exploded['is_socle'] = exploded['services_list'].isin(socle_slugs)
+                        socle_presence = exploded[exploded['is_socle']].groupby('codgeo')['services_list'].nunique()
+                    
+                        max_score = len(socle_slugs)
+                        socle_scores = (socle_presence / max_score)
                         
-                        # Drop NaNs
-                        incl_pois = incl_pois.dropna(subset=['services'])
-                        incl_pois = incl_pois[incl_pois['services'].apply(lambda x: isinstance(x, str) and len(x) > 0)]
-                        
-                    except Exception as e_proc:
-                         logging.error(f"Error during df processing: {e_proc}")
-                         raise e_proc
-                    
-                    logging.info(f"Socle Admin: Processing {len(incl_pois)} rows after explode.")
+                        # Assign directly (aligns by index)
+                        communes_gdf['inc_socle_admin_score'] = socle_scores
+                        communes_gdf['inc_socle_admin_score'] = communes_gdf['inc_socle_admin_score'].fillna(0.0)
+                    else:
+                         communes_gdf['inc_socle_admin_score'] = 0.0
 
-                    # Group by codgeo
-                    commune_services = incl_pois.groupby('codgeo')['services'].apply(set).to_dict()
-                    
-                    needed_services = set(app_cfg.DEFAULT_SOCLE_ADMIN)
-                    
-                    # Ensure we are using codgeo as index (Critical for map)
-                    if 'codgeo' in communes_gdf.columns:
-                        communes_gdf.set_index('codgeo', inplace=True, drop=False)
-                    
-                    def calculate_socle_score(codgeo):
-                        available = commune_services.get(codgeo, set())
-                        matches = 0
-                        for needed in needed_services:
-                            if any(needed in av for av in available):
-                                matches += 1
-                        return matches / len(needed_services) if needed_services else 0.0
-
-                    communes_gdf['inc_socle_admin_score'] = communes_gdf.index.map(calculate_socle_score).fillna(0.0)
                     logging.info("Calculated inc_socle_admin_score")
+                else:
+                    communes_gdf['inc_socle_admin_score'] = 0.0
                     
             except Exception as e:
                 logging.error(f"Failed to calculate socle admin score at line {e.__traceback__.tb_lineno}: {e}")
@@ -345,6 +385,20 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
 
         communes_gdf.drop(columns=[c for c in cols_to_drop if c in communes_gdf.columns], inplace=True)
         
+        # Additional drop request from user
+        more_cols_to_drop = [
+            'pop_jeune_2016', 'pop_jeune_2022', 'pop_active_2016', 'pop_active_2022',
+            'libelle_bassin_de_vie', 'loyer_app_m2', 'has_gare', 'gare_count', 
+            'risky_schools_count', 'log_priv_total'
+        ]
+        communes_gdf.drop(columns=[c for c in more_cols_to_drop if c in communes_gdf.columns], inplace=True)
+
+        # Optimization: Cast floats to float32 (float16 caused UI issues and overflow)
+        exclude_cols = {'population', 'plm'}
+        for col in communes_gdf.select_dtypes(include=['float64']).columns:
+             # We generally want everything float32
+             communes_gdf[col] = communes_gdf[col].astype('float32')
+
         # Save
         communes_gdf.to_parquet(communes_path)
         logger.log_step("apply_prescoring", "UPDATED", {"path": str(communes_path), "rows": len(communes_gdf)})
@@ -432,7 +486,8 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
             'edu_petite_enfance_scaled',
             'sante_hopital_scaled', 'sante_maternite_scaled', 'sante_psy_scaled',
             'edu_lycee_scaled', 'edu_college_scaled',
-            'edu_maternelle_scaled', 'edu_elementaire_scaled'
+            'edu_maternelle_scaled', 'edu_elementaire_scaled',
+            'youth_decline_scaled', 'workclass_decline_scaled'
         ]
         
         # Idempotency: Drop existing metrics to prevent duplication during merge

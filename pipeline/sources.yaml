@@ -174,8 +174,17 @@ sources:
     local_name: "structures_inclusion.parquet"
     description: "Annuaire des structures de l'inclusion (Data Inclusion)"
 
+  population_details:
+    url: "https://www.data.gouv.fr/api/1/datasets/r/7e3937bb-e815-4e58-92d4-d7ef478abcc0"
+    format: "zip"
+    archive_file: "DS_RP_POPULATION_PRINC_2022_data.csv"
+    local_name: "population_details.zip"
+    description: "Population détaillée 2022 (Historique 2011, 2016)"
+
 local_files:
   finess:
     path: "pipeline/local/annuaire_sante_finess.parquet"
     format: "parquet"
+    description: "Fichier FINESS local (nettoyé)"
+
     description: "Fichier FINESS local (nettoyé)"
