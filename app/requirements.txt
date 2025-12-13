@@ -9,7 +9,7 @@ pandas
 plotly
 pyproj
 PyYAML
-scikit-learn
+
 shapely
 streamlit>=1.40.0
 streamlit-folium>=0.13.0

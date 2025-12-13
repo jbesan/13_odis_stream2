@@ -10,7 +10,7 @@ from typing import List, Dict, Set, Any, Optional, Union, Tuple
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-from sklearn import preprocessing
+
 from pyproj import Transformer
 from shapely.ops import transform
 
@@ -268,21 +268,11 @@ def compute_criteria_scores(
 ) -> gpd.GeoDataFrame:
     """Computes individual scores for each criterion based on user preferences.
 
-    All scores are normalized between 0 and 1 using a QuantileTransformer.
+    All scores are normalized between 0 and 1.
     """
     df = df.copy()
 
-    # Determine the optimal n_quantiles for the transformer to avoid warnings.
-    n_samples = len(df)
-    # n_quantiles cannot be greater than the number of samples.
-    n_quantiles = min(n_samples, 1000)
 
-    # Use QuantileTransformer to normalize scores to a uniform distribution [0, 1].
-    transformer = preprocessing.QuantileTransformer(
-        output_distribution="uniform",
-        n_quantiles=n_quantiles,
-        random_state=42
-    )
 
     # --- EMPLOI ---
     if 'met_scaled' not in df.columns:
@@ -393,27 +383,28 @@ def compute_criteria_scores(
                 raise ValueError("Missing pre-calculated score: edu_classes_ferm_scaled")
             
             # --- Granular Scoring ---
-            # 1. Petite Enfance (Crèche / Assistante Maternelle)
-            if 'Crêche / Assistante Maternelle' in config.classe_enfants:
-                if 'edu_petite_enfance_scaled' not in df.columns:
-                    df['edu_petite_enfance_scaled'] = np.nan
+            # Define mapping of option name to score column
+            edu_score_map = {
+                'Crèche / Assistante Maternelle': 'edu_petite_enfance_scaled',
+                'Maternelle': 'edu_maternelle_scaled',
+                'Elémentaire': 'edu_elementaire_scaled',
+                'Collège': 'edu_college_scaled',
+                'Lycée': 'edu_lycee_scaled'
+            }
 
-            # 2. Schools
-            if 'Maternelle' in config.classe_enfants:
-                if 'edu_maternelle_scaled' not in df.columns:
-                    raise ValueError("Missing pre-calculated score: edu_maternelle_scaled")
-                
-            if 'Elémentaire' in config.classe_enfants:
-                if 'edu_elementaire_scaled' not in df.columns:
-                    raise ValueError("Missing pre-calculated score: edu_elementaire_scaled")
-                
-            if 'Collège' in config.classe_enfants:
-                if 'edu_college_scaled' not in df.columns:
-                    raise ValueError("Missing pre-calculated score: edu_college_scaled")
-                
-            if 'Lycée' in config.classe_enfants:
-                if 'edu_lycee_scaled' not in df.columns:
-                    raise ValueError("Missing pre-calculated score: edu_lycee_scaled")
+            for option, score_col in edu_score_map.items():
+                if option in config.classe_enfants:
+                     # Verify existence only if selected
+                    if score_col not in df.columns:
+                        if score_col == 'edu_petite_enfance_scaled':
+                             df['edu_petite_enfance_scaled'] = np.nan
+                        else:
+                             raise ValueError(f"Missing pre-calculated score: {score_col}")
+                else:
+                    # Explicitly set to NaN instead of dropping column
+                    # This avoids KeyErrors later if code tries to access it
+                    if score_col in df.columns:
+                        df[score_col] = np.nan
 
             if 'edu_structures_scaled' in df.columns:
                 df.drop(columns=['edu_structures_scaled'], inplace=True)

@@ -26,20 +26,31 @@ def get_base64_image(image_path: str) -> str:
         return ""
 
 @st.dialog("Centre Communal d'Action Sociale", width="large")
-def show_ccas_dialog(codgeo_or_list: Any, structures_df: pd.DataFrame, priority_code: str = None):
+def show_ccas_dialog(codgeo_or_list: Any, structures_df: pd.DataFrame, priority_code: str = None, priority_label: str = None):
      target_codes = []
      if isinstance(codgeo_or_list, list):
-         target_codes = [str(c) for c in codgeo_or_list]
+         target_codes = [str(c).strip() for c in codgeo_or_list]
      else:
-         target_codes = [str(codgeo_or_list)]
-         
+         target_codes = [str(codgeo_or_list).strip()]
+
      if not structures_df.empty and 'codgeo' in structures_df.columns:
+         # Filter with clean string types
          subset = structures_df[structures_df['codgeo'].isin(target_codes)].copy()
          
          if not subset.empty:
+             # Check if priority code is missing (and we have results for others)
+             if priority_code:
+                 p_code_clean = str(priority_code).strip()
+                 if p_code_clean not in subset['codgeo'].values:
+                     label = priority_label if priority_label else "la zone sélectionnée"
+                     st.markdown(f"⚠️ **{label}** ne dispose pas de structure référencée.")
+                     st.caption("Affichage des structures disponibles pour les autres communes de la zone :")
+                     st.divider()
+
              # Sorting: Priority code first, then alphabetical by commune/nom
              if priority_code:
-                 subset['is_main'] = subset['codgeo'] == str(priority_code)
+                 p_code_clean = str(priority_code).strip()
+                 subset['is_main'] = subset['codgeo'] == p_code_clean
                  subset = subset.sort_values(by=['is_main', 'commune', 'nom'], ascending=[False, True, True])
              
              st.write(f"**Structures trouvées : {len(subset)}**")
@@ -397,7 +408,7 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
     
     # Education Priorities
     edu_map = {
-        'Crêche / Assistante Maternelle': 'edu_petite_enfance_scaled',
+        'Crèche / Assistante Maternelle': 'edu_petite_enfance_scaled',
         'Maternelle': 'edu_maternelle_scaled',
         'Elémentaire': 'edu_elementaire_scaled',
         'Collège': 'edu_college_scaled',
@@ -655,7 +666,8 @@ def _display_bv_result_details(row: pd.Series) -> None:
                 # For BV, pass the list of communes
                 target = row['communes'] if 'communes' in row else str(row.name)
                 # Ensure we pass the BV code as priority
-                show_ccas_dialog(target, st.session_state['app_data'].get('structures_ccas', pd.DataFrame()), priority_code=str(row.name))
+                bv_code = str(row['bassin_de_vie']) if 'bassin_de_vie' in row else str(row.name)
+                show_ccas_dialog(target, st.session_state['app_data'].get('structures_ccas', pd.DataFrame()), priority_code=bv_code, priority_label=row['libgeo'])
         with c2:
              st.link_button("Page OD&IS", row.get('url_odis', '#'), width="stretch")
         with c3:
@@ -663,7 +675,9 @@ def _display_bv_result_details(row: pd.Series) -> None:
         
 
 def _display_result_details(row: pd.Series) -> None:
-    """Displays the detailed information for a single highlighted result."""
+    """Displays the detailed information for a single search result (Commune)."""
+    # Use codgeo from column if available, else fallback to index (row.name)
+    main_code = str(row['codgeo']) if 'codgeo' in row else str(row.name)
     
     # --- Structures Inclusion (Dialog Trigger) ---
     # We moved the display to the bottom links section or a header button
@@ -692,7 +706,7 @@ def _display_result_details(row: pd.Series) -> None:
             bmo_vertical = st.session_state.app_data['bmo_vertical']
             codfap_index = st.session_state.app_data['codfap_index']
             
-            commune_metiers = bmo_vertical[bmo_vertical.codgeo == row.name]
+            commune_metiers = bmo_vertical[bmo_vertical.codgeo == main_code]
             
             if not commune_metiers.empty:
                 merged = commune_metiers.merge(codfap_index, left_on='fap_code', right_index=True, how='left')
@@ -725,7 +739,7 @@ def _display_result_details(row: pd.Series) -> None:
                  target_slugs.update(st.session_state.ui_besoins_autres)
 
             commune_services = services_df[
-                (services_df['codgeo'] == row.name) &
+                (services_df['codgeo'] == main_code) &
                 (services_df['categorie'].isin(target_slugs))
             ]
             
@@ -765,12 +779,12 @@ def _display_result_details(row: pd.Series) -> None:
         with c1:
             if st.button("Contact local", key=f"btn_ccas_commune_{row.name}", type="primary", width="stretch"):
                 # For commune: Include binome if present
-                targets = [str(row.name)]
+                targets = [main_code]
                 if row.get("binome", False) and pd.notna(row.get('codgeo_binome')):
                      targets.append(str(row['codgeo_binome']))
                 
                 # Priority code is the main commune
-                show_ccas_dialog(targets, st.session_state['app_data'].get('structures_ccas', pd.DataFrame()), priority_code=str(row.name))
+                show_ccas_dialog(targets, st.session_state['app_data'].get('structures_ccas', pd.DataFrame()), priority_code=main_code, priority_label=row['libgeo'])
         with c2:
              st.link_button("Page OD&IS", row.get('url_odis', '#'), width="stretch")
         with c3:

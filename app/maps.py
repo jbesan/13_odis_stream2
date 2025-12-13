@@ -254,15 +254,21 @@ def build_ecoles_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config:
     is_college = filtered['type'] == 'Collège'
     is_lycee = filtered['type'] == 'Lycée'
     
-    # Map "Crêche / Assistante Maternelle" to available Creche types
-    is_creche = filtered['type'].isin(['Creche', 'Micro_Creche', 'Creche_Familiale'])
+    # Map "Crèche / Assistante Maternelle" to available Crèche types
+    creche_types = ['Crèche', 'Micro crèche', "Halte-garderie", "Crèche familiale", "Crèche collective", "Crèche parentale"]
+    # Ensure 'type_standardized' exists for the new logic, if not, fallback to 'type'
+    if 'type_standardized' not in filtered.columns:
+        filtered['type_standardized'] = filtered['type']
+    
+    def is_creche_func(row):
+        return row['type_standardized'] in creche_types
 
     niveaux_map = {
         'Maternelle': is_maternelle,
         'Elémentaire': is_elementaire,
         'Collège': is_college,
         'Lycée': is_lycee,
-        'Crêche / Assistante Maternelle': is_creche
+        'Crèche / Assistante Maternelle': filtered.apply(is_creche_func, axis=1)
     }
     
     mask = pd.Series(False, index=filtered.index)

@@ -25,6 +25,7 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         communes_path = CLEAN_DIR / "communes.parquet"
         if not communes_path.exists():
             logging.error("Clean Communes file not found. Run ingest first.")
+            logger.log_step("build_communes", "FAILED", {"reason": "Clean Communes file not found"})
             return gpd.GeoDataFrame()
             
         communes_gdf = gpd.read_parquet(communes_path)
@@ -42,18 +43,13 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
                     df = df[cols_to_use]
                     
                 if name == "population_details":
-                     logging.info(f"DEBUG MERGE {name}: Cols selected: {df.columns.tolist()}")
-                     logging.info(f"DEBUG MERGE {name}: DF Shape: {df.shape}")
-                     logging.info(f"DEBUG MERGE {name}: Sample Codgeo: {df.codgeo.head().tolist()}")
-                     logging.info(f"DEBUG MAIN GDF Shape BEFORE: {communes_gdf.shape}")
+                     pass
                      
                 communes_gdf = communes_gdf.merge(df, on='codgeo', how='left')
-                
-                if name == "population_details":
-                     logging.info(f"DEBUG MAIN GDF Shape AFTER: {communes_gdf.shape}")
-                     logging.info(f"DEBUG Has pop_jeune_2022: {'pop_jeune_2022' in communes_gdf.columns}")
             else:
                 logging.warning(f"Clean {name} file not found.")
+                # Optional: Detailed log if impactful?
+                # logger.log_step("build_communes_merge", "WARNING", {"missing": name})
 
         # Merge BMO (Stats only + code_be)
         merge_clean("bmo_stats", ['metiers_offres_diff', 'code_be'])
@@ -174,9 +170,9 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
                 
                 # Fill NaNs for health counts
                 for col in ['count_hopital', 'count_psy', 'count_maternite']:
-                    communes_gdf[col] = communes_gdf[col].fillna(0)
+                    communes_gdf['count_maternite'] = communes_gdf['count_maternite'].fillna(0)
                 
-                logging.info(f"Health counts calculated. Columns added: {[c for c in ['count_hopital', 'count_psy', 'count_maternite'] if c in communes_gdf.columns]}")
+                logging.info(f"Health counts calculated.")
                     
         except Exception as e:
             logging.error(f"Failed to calculate health counts: {e}")
@@ -229,7 +225,12 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
                 communes_gdf[col] = communes_gdf[col].round(0).astype(int)
         
         # Centroids
-        communes_gdf['centroid'] = communes_gdf.geometry.centroid              
+        # Use projected CRS (Lambert-93) for accurate centroid calculation
+        if communes_gdf.crs:
+            communes_gdf['centroid'] = communes_gdf.geometry.to_crs(epsg=2154).centroid.to_crs(communes_gdf.crs)
+        else:
+            communes_gdf['centroid'] = communes_gdf.geometry.centroid
+              
         # 4. Bassins de Vie Mapping (for pop_be)
         # We need to load BV mapping. It's in the raw zip usually, but we can extract it or maybe we should have cleaned it?
         # Let's load it from cache as in etl.py
@@ -258,23 +259,20 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
                 paris_bv = bv_mapping.loc['75056', 'bassin_de_vie'] if '75056' in bv_mapping.index else '75056'
                 lyon_bv = bv_mapping.loc['69123', 'bassin_de_vie'] if '69123' in bv_mapping.index else '69123'
                 mars_bv = bv_mapping.loc['13055', 'bassin_de_vie'] if '13055' in bv_mapping.index else '13055'
-                
-                logging.info(f"debug PLM: Paris BV={paris_bv}, Lyon BV={lyon_bv}, Mars BV={mars_bv}")
-                
+                                
                 paris_bv_label = bv_mapping.loc['75056', 'libelle_bassin_de_vie'] if '75056' in bv_mapping.index else 'Paris'
                 lyon_bv_label = bv_mapping.loc['69123', 'libelle_bassin_de_vie'] if '69123' in bv_mapping.index else 'Lyon'
                 mars_bv_label = bv_mapping.loc['13055', 'libelle_bassin_de_vie'] if '13055' in bv_mapping.index else 'Marseille'
 
                 # Paris Arrondissements
                 paris_mask = communes_gdf['codgeo'].between('75101', '75120')
-                logging.info(f"debug PLM: Paris Arronds Mask Sum = {paris_mask.sum()}")
                 
                 communes_gdf.loc[paris_mask & communes_gdf['bassin_de_vie'].isna(), 'bassin_de_vie'] = paris_bv
                 communes_gdf.loc[paris_mask & communes_gdf['libelle_bassin_de_vie'].isna(), 'libelle_bassin_de_vie'] = paris_bv_label
                 
                 # Check patch result
                 patched_paris = communes_gdf.loc[paris_mask, 'bassin_de_vie']
-                logging.info(f"debug PLM: Paris Patched Sample: {patched_paris.head(1).values}")
+                
 
                 # Lyon Arrondissements
                 lyon_mask = communes_gdf['codgeo'].between('69381', '69389')

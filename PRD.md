@@ -346,7 +346,7 @@ En tant que travailleur social, je veux voir les lieux recommandés sur une cart
 
 - **Nouveau Critère "Petite Enfance" :** Ajout d'un critère de score spécifique pour l'accueil des jeunes enfants, distinct des structures scolaires classiques.
 - **Source de Données :** Utilisation des données de la CAF (Taux de couverture ou nombre de places) pour évaluer l'offre.
-- **Intégration UI :** Ajout d'une option "Crêche / Assistante Maternelle" dans le menu déroulant "Education" existant.
+- **Intégration UI :** Ajout d'une option "Crèche / Assistante Maternelle" dans le menu déroulant "Education" existant.
 - **Scoring :**
   - Le score est calculé sur la base du taux de couverture (places pour 100 enfants) ou de la densité de places.
   - Il est intégré à la catégorie "Education" mais calculé indépendamment des écoles.

@@ -84,7 +84,7 @@ class TestScoringLogic:
         config = default_config
         config.codes_metiers = [['F1']] # Provide at least one code for adult 1
         config.nb_enfants = 1 # Enable education scoring
-        config.classe_enfants = ['Crêche / Assistante Maternelle', 'Maternelle', 'Elémentaire', 'Collège', 'Lycée'] # Select all for full coverage
+        config.classe_enfants = ['Crèche / Assistante Maternelle', 'Maternelle', 'Elémentaire', 'Collège', 'Lycée'] # Select all for full coverage
         
         # Add mock data for petite enfance and met_scaled
         df_with_dist['taux_couverture'] = 50.0

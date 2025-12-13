@@ -159,9 +159,10 @@ def init_datasets() -> Dict[str, Any]:
     
     try:
         # Dynamic Column Loading
-        from pyarrow.parquet import ParquetFile
-        pq_file = ParquetFile(odis_path)
-        all_cols = pq_file.schema.names
+        import pyarrow.parquet as pq
+        # ParquetFile.schema.names is unreliable for list columns (skips root name)
+        # pq.read_schema returns the correct column names
+        all_cols = pq.read_schema(odis_path).names
         
         # Essential columns
         essential_cols = {
@@ -180,6 +181,7 @@ def init_datasets() -> Dict[str, Any]:
         ]
         
         logger.info(f"Loading {len(columns_to_load)} columns from ODIS.")
+
         odis = pd.read_parquet(odis_path, columns=columns_to_load)
         
         # Geometry processing

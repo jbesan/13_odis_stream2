@@ -14,14 +14,17 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
     """Applies pre-scoring logic (ratios, densities, scaling) to odis_communes."""
+    logger.log_step("apply_prescoring", "STARTED")
     try:
         communes_path = OUTPUT_DIR / "odis_communes.parquet"
         if not communes_path.exists():
              logger.error(f"Input file not found: {communes_path}")
+             logger.log_step("apply_prescoring", "FAILED", {"reason": "Input file not found"})
              return
 
         communes_gdf = gpd.read_parquet(communes_path)
-        logging.info(f"Loaded {len(communes_gdf)} communes for prescoring.")
+        # logging.info(f"Loaded {len(communes_gdf)} communes for prescoring.") # Removed noisy log
+        logger.log_step("apply_prescoring_load", "LOADED", {"rows": len(communes_gdf)})
 
         # --- Calculated Columns ---
         
@@ -72,7 +75,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         # metiers_offres_ratio and pop_chomage_ratio
         # Requires pop_active_be
         if 'bassin_emploi' in communes_gdf.columns and 'pop_active' in communes_gdf.columns:
-             pop_active_be = communes_gdf.groupby('bassin_emploi')['pop_active'].transform('sum')
+             pop_active_be = communes_gdf.groupby('bassin_emploi', observed=True)['pop_active'].transform('sum')
              
              # metiers_offres_ratio
              # metiers_offres_diff is total offers in BE.
@@ -187,8 +190,13 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             # Cast bounds to float just in case
             min_b, max_b = float(min_b), float(max_b)
             
-            scaled = (series - min_b) / (max_b - min_b)
-            if inverted:
+            denom = max_b - min_b
+            if denom == 0:
+                scaled = pd.Series(0.0 if not inverted else 1.0, index=series.index)
+            else:
+                scaled = (series - min_b) / denom
+                
+            if inverted and denom != 0:
                 scaled = 1.0 - scaled
             return scaled.clip(0, 1)
 
@@ -229,16 +237,19 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         if 'pop_jeune_2016' in communes_gdf.columns and 'pop_jeune_2022' in communes_gdf.columns:
              communes_gdf['youth_growth_rate'] = np.where(
                 communes_gdf['pop_jeune_2016'] > 0,
-                (communes_gdf['pop_jeune_2022'] - communes_gdf['pop_jeune_2016']) / communes_gdf['pop_jeune_2016'],
+                (communes_gdf['pop_jeune_2022'] - communes_gdf['pop_jeune_2016']) / communes_gdf['pop_jeune_2016'].replace(0, np.nan),
                 0.0
-             )
+             ).astype(float)
+             communes_gdf['youth_growth_rate'] = communes_gdf['youth_growth_rate'].fillna(0.0)
              
         if 'pop_active_2016' in communes_gdf.columns and 'pop_active_2022' in communes_gdf.columns:
              communes_gdf['workclass_growth_rate'] = np.where(
                 communes_gdf['pop_active_2016'] > 0,
-                (communes_gdf['pop_active_2022'] - communes_gdf['pop_active_2016']) / communes_gdf['pop_active_2016'],
+                (communes_gdf['pop_active_2022'] - communes_gdf['pop_active_2016']) / communes_gdf['pop_active_2016'].replace(0, np.nan),
                 0.0
-             )
+             ).astype(float) # Ensure float type
+             # Fill nan back to 0.0 if any division resulted in NaN
+             communes_gdf['workclass_growth_rate'] = communes_gdf['workclass_growth_rate'].fillna(0.0)
 
         if 'youth_growth_rate' in communes_gdf.columns:
             process_scaling(communes_gdf, 'youth_growth_rate', 'youth_decline_scaled', inverted=True)
@@ -246,7 +257,13 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         if 'workclass_growth_rate' in communes_gdf.columns:
             process_scaling(communes_gdf, 'workclass_growth_rate', 'workclass_decline_scaled', inverted=True)
 
-        process_scaling(communes_gdf, 'log_soc_inoc_ratio', 'log_soc_inoc_scaled')
+        if 'log_soc_total' in communes_gdf.columns and 'log_soc_inoccupes' in communes_gdf.columns:
+             communes_gdf['log_soc_inoc_ratio'] = np.where(
+                 communes_gdf['log_soc_total'] > 0,
+                 communes_gdf['log_soc_inoccupes'] / communes_gdf['log_soc_total'],
+                 0.0
+             )
+             process_scaling(communes_gdf, 'log_soc_inoc_ratio', 'log_soc_inoc_scaled')
         
         # edu_classes_ferm_scaled
         # Logic was: max count -> 1.0 (inverted=False in previous edit).
@@ -292,9 +309,10 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
                 communes_gdf[score_col] = (communes_gdf[col] > 0).astype(float)
             else:
                 logging.warning(f"Column {col} missing for {score_col}")
+               # 2. Add static scores that don't need calc (just rename/copy effectively, but already done in build?)
+        # Actually most are calculated. 
+        # But 'inc_population_scaled' etc are done above.
         
-        logging.info(f"Columns after static scoring: {[c for c in communes_gdf.columns if 'scaled' in c]}")
-
         # --- Drop Unused Columns ---
         cols_to_drop = [
             'MOD_OVER_OCC', 'MOD_UNDER_OCC', 'SEV_OVER_OCC', 'SEV_UNDER_OCC', 'STD_OCC', 'VSEV_UNDER_OCC', # *_OCC
@@ -332,11 +350,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
 
                 
                 pois_df = pd.read_parquet(pois_path)
-                logging.info(f"POIS DF Columns: {pois_df.columns}")
                 incl_pois = pois_df[pois_df['category'] == 'incl_services'].copy()
-                logging.info(f"Incl POIS Shape: {incl_pois.shape}")
-                if not incl_pois.empty:
-                     logging.info(f"Incl POIS Sample: {incl_pois[['codgeo', 'services']].head() if 'services' in incl_pois.columns else incl_pois.columns}")
                 
                 if not incl_pois.empty:
                     import ast
@@ -359,18 +373,18 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
                     socle_slugs = set(default_socle_admin)
                     if socle_slugs:
                         exploded['is_socle'] = exploded['services_list'].isin(socle_slugs)
-                        socle_presence = exploded[exploded['is_socle']].groupby('codgeo')['services_list'].nunique()
+                        socle_presence = exploded[exploded['is_socle']].groupby('codgeo', observed=True)['services_list'].nunique()
                     
                         max_score = len(socle_slugs)
                         socle_scores = (socle_presence / max_score)
                         
-                        # Assign directly (aligns by index)
-                        communes_gdf['inc_socle_admin_score'] = socle_scores
+                        # Assign using map on codgeo
+                        communes_gdf['inc_socle_admin_score'] = communes_gdf['codgeo'].map(socle_scores)
                         communes_gdf['inc_socle_admin_score'] = communes_gdf['inc_socle_admin_score'].fillna(0.0)
                     else:
                          communes_gdf['inc_socle_admin_score'] = 0.0
 
-                    logging.info("Calculated inc_socle_admin_score")
+                    logger.log_step("inc_socle_admin_score", "CALCULATED")
                 else:
                     communes_gdf['inc_socle_admin_score'] = 0.0
                     
@@ -398,10 +412,13 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         for col in communes_gdf.select_dtypes(include=['float64']).columns:
              # We generally want everything float32
              communes_gdf[col] = communes_gdf[col].astype('float32')
+        
+        if 'inc_socle_admin_score' not in communes_gdf.columns:
+            communes_gdf['inc_socle_admin_score'] = 0.0
 
         # Save
         communes_gdf.to_parquet(communes_path)
-        logger.log_step("apply_prescoring", "UPDATED", {"path": str(communes_path), "rows": len(communes_gdf)})
+        logger.log_step("apply_prescoring", "COMPLETED", {"columns": len(communes_gdf.columns), "path": str(communes_path), "rows": len(communes_gdf)})
 
     except Exception as e:
         logger.log_step("apply_prescoring", "ERROR", {"error": str(e)})
@@ -424,8 +441,6 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
         communes_df = pd.read_parquet(communes_path)
         
         # We need Aggregated Counts which should be in 'bv_gdf' if build.py did its job.
-        # Check columns
-        logging.info(f"BV Columns: {bv_gdf.columns}")
         
         # --- 1. Ratios & Densities ---
         
@@ -508,7 +523,7 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
                     # weighted average
                     communes_subset[f'{metric}_w'] = communes_subset[metric] * communes_subset['population']
             
-            grouped = communes_subset.groupby('bassin_de_vie')
+            grouped = communes_subset.groupby('bassin_de_vie', observed=True)
             
             bv_aggs = pd.DataFrame(index=grouped.groups.keys())
             
@@ -532,11 +547,12 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
             bv_gdf['inc_population_scaled'] = scale_series(bv_gdf['population_bv'], min_b, max_b)
             
         # Clean up
-        logger.log_step("score_bassins_de_vie", "UPDATED", {"path": str(bv_path)})
         bv_gdf.to_parquet(bv_path)
+        logger.log_step("score_bassins_de_vie", "COMPLETED", {"rows": len(bv_gdf)})
 
     except Exception as e:
         logger.log_step("score_bassins_de_vie", "ERROR", {"error": str(e)})
+        logging.error(f"Score BV failed: {e}")
 
 def main():
     logger = PipelineLogger(STATUS_FILE)

@@ -32,10 +32,10 @@ def fetch_source(name: str, source_cfg: Dict[str, Any], logger: PipelineLogger) 
 
     try:
         if local_path.exists():
-            logging.info(f"[{name}] File exists. Skipping download.")
+            logging.info(f"[Fetch] {name}: File exists. Skipping download.")
             logger.log_source(name, "CACHED", local_path)
         else:
-            logging.info(f"[{name}] Downloading from {url}...")
+            logging.info(f"[Fetch] {name}: Downloading from {url}...")
             
             if url.startswith("file://"):
                 import shutil
@@ -59,7 +59,7 @@ def fetch_source(name: str, source_cfg: Dict[str, Any], logger: PipelineLogger) 
             extracted_file = source_cfg['archive_file']
             extracted_path = CACHE_DIR / extracted_file
             if not extracted_path.exists():
-                logging.info(f"[{name}] Extracting {extracted_file}...")
+                logging.info(f"[Fetch] {name}: Extracting {extracted_file}...")
                 extract_zip(local_path, extracted_file)
             return extracted_path
             
@@ -289,7 +289,7 @@ def clean_lovac(config: Dict[str, Any], logger: PipelineLogger):
             
             output_path = CLEAN_DIR / "lovac.parquet"
             df_out.to_parquet(output_path)
-            logger.log_step("clean_lovac", "COMPLETED", {"path": str(output_path), "year_vac": vac_col, "year_total": total_col})
+            logger.log_step("clean_lovac", "COMPLETED", {"rows": len(df_out)})
         else:
                 logging.warning(f"LOVAC: Vacancy column {vac_col} not found.")
 
@@ -1169,10 +1169,8 @@ def main():
     }
 
     selected_steps = args.steps.split(',') if args.steps else steps_map.keys()
-    print(f"DEBUG: Selected steps: {selected_steps}")
     
     for step_name in selected_steps:
-        print(f"DEBUG: Running step {step_name}")
         if step_name in steps_map:
             try:
                 steps_map[step_name](config, logger)
@@ -1277,21 +1275,11 @@ def clean_formations(config: Dict[str, Any], logger: PipelineLogger):
         # Based on typical data.gouv files, it might be 'domaines_formation' or 'code_domaine'.
         # If we don't know, we can't proceed.
         # But I'll assume 'domaines_formation' or similar based on user description "The formations annuaire which lists all the entities".
-        # And "The formations referentiel which maps codes to labels".
-        # So Annuaire must have the codes.
-        # Let's try to find a column that looks like it contains codes (e.g. '100', '110').
-        # Or 'liste_formations'.
-        
-        # I will log columns and try to guess.
-        logging.info(f"Formations Annuaire Columns: {df_annuaire.columns.tolist()}")
-        
-        # Heuristic: find column with 'formation' or 'domaine'
+        # We need 'Code UAI' and 'Patronyme uai' (Name)th 'formation' or 'domaine'
         formation_col = next((c for c in df_annuaire.columns if 'domaine' in c.lower() or 'formation' in c.lower()), None)
         
         if cp_col and formation_col:
             df_annuaire['code_postal'] = df_annuaire[cp_col].astype(str).str.zfill(5)
-        # Identify Postal Code Column
-        # Raw: adressePhysiqueOrganismeFormation.codePostal
         cp_col = next((c for c in df_annuaire.columns if 'adressePhysiqueOrganismeFormation.codePostal' in c), None)
         if not cp_col:
             cp_col = next((c for c in df_annuaire.columns if 'code_postal' in c.lower() or 'codepostal' in c.lower()), None)
@@ -1422,5 +1410,3 @@ def clean_odace_gares(config: Dict[str, Any], logger: PipelineLogger):
 
 if __name__ == "__main__":
     main()
-
-
