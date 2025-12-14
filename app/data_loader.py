@@ -185,17 +185,18 @@ def init_datasets() -> Dict[str, Any]:
         odis = pd.read_parquet(odis_path, columns=columns_to_load)
         
         # Geometry processing
+        # Geometry processing
         if 'polygon' in odis.columns:
             odis['polygon'] = odis.polygon.apply(wkb.loads)
-            odis = gpd.GeoDataFrame(odis, geometry='polygon', crs='EPSG:4326')
+            # The file is now in EPSG:2154 (Projected)
+            odis = gpd.GeoDataFrame(odis, geometry='polygon', crs='EPSG:2154')
             odis.set_geometry('polygon', inplace=True)
             # Fix invalid geometries
             odis['polygon'] = odis.polygon.buffer(0)
-            odis.polygon = odis.polygon.set_precision(grid_size=0.001, mode='valid_output')
-            odis = odis[~odis.polygon.isna()]
             
-            # Centroid
-            odis['centroid'] = odis.to_crs(epsg=2154).centroid.to_crs(odis.crs)
+            # Centroid is already in the file in EPSG:2154
+            if 'centroid' not in odis.columns:
+                 odis['centroid'] = odis.geometry.centroid
         
         odis.set_index('codgeo', inplace=True)
         
@@ -325,7 +326,7 @@ def init_datasets() -> Dict[str, Any]:
         
         # Group by codgeo and aggregate slugs into a set
         # We use 'key' as the column name to match scoring.py expectation
-        incl_index = annuaire_inclusion.groupby('codgeo')['slug'].apply(set).rename('key').to_frame()
+        incl_index = annuaire_inclusion.groupby('codgeo', observed=False)['slug'].apply(set).rename('key').to_frame()
 
     # Generate helper structures for UI
     depcom_df = odis[['libgeo', 'dep_code']].copy()
@@ -341,13 +342,15 @@ def init_datasets() -> Dict[str, Any]:
         if 'polygon' in bv_geo.columns:
              if isinstance(bv_geo['polygon'].iloc[0], bytes):
                  bv_geo['polygon'] = bv_geo['polygon'].apply(wkb.loads)
-             bv_geo = gpd.GeoDataFrame(bv_geo, geometry='polygon', crs='EPSG:4326')
+             # File should be in EPSG:2154 (Projected)
+             bv_geo = gpd.GeoDataFrame(bv_geo, geometry='polygon', crs=cfg.PROJECTED_CRS)
              
              # Fix invalid geometries
              bv_geo['polygon'] = bv_geo.polygon.buffer(0)
              
-             # Calculate centroid
-             bv_geo['centroid'] = bv_geo.to_crs(epsg=2154).centroid.to_crs(bv_geo.crs)
+             # Centroid (already in file or calc in 2154)
+             if 'centroid' not in bv_geo.columns:
+                 bv_geo['centroid'] = bv_geo.geometry.centroid
         
         # Set index
         # We prefer cfg.BV_CODE_COL, but fallback to 'bassin_de_vie'

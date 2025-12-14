@@ -1,3 +1,4 @@
+from shapely import wkb
 import logging
 import pandas as pd
 import geopandas as gpd
@@ -8,6 +9,7 @@ from pipeline.common import (
     PipelineLogger, load_config,
     CONFIG_FILE, CACHE_DIR, OUTPUT_DIR, CLEAN_DIR, STATUS_FILE
 )
+import app.config as cfg
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -22,8 +24,17 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
              logger.log_step("apply_prescoring", "FAILED", {"reason": "Input file not found"})
              return
 
-        communes_gdf = gpd.read_parquet(communes_path)
-        # logging.info(f"Loaded {len(communes_gdf)} communes for prescoring.") # Removed noisy log
+        # Read as standard Parquet (WKB)
+        communes_df = pd.read_parquet(communes_path)
+        
+        # Convert WKB to Geometry
+        if 'polygon' in communes_df.columns:
+            communes_df['geometry'] = communes_df['polygon'].apply(lambda x: wkb.loads(bytes(x)))
+            communes_gdf = gpd.GeoDataFrame(communes_df, geometry='geometry', crs=cfg.PROJECTED_CRS)
+        else:
+            # Fallback
+            communes_gdf = gpd.GeoDataFrame(communes_df, geometry='geometry')
+
         logger.log_step("apply_prescoring_load", "LOADED", {"rows": len(communes_gdf)})
 
         # --- Calculated Columns ---
@@ -417,7 +428,12 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             communes_gdf['inc_socle_admin_score'] = 0.0
 
         # Save
-        communes_gdf.to_parquet(communes_path)
+        # Save
+        if 'geometry' in communes_gdf.columns:
+             communes_gdf['polygon'] = communes_gdf.geometry.to_wkb()
+             communes_gdf.drop(columns=['geometry'], inplace=True)
+             
+        pd.DataFrame(communes_gdf).to_parquet(communes_path)
         logger.log_step("apply_prescoring", "COMPLETED", {"columns": len(communes_gdf.columns), "path": str(communes_path), "rows": len(communes_gdf)})
 
     except Exception as e:
@@ -437,8 +453,18 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
              logging.error("BV or Communes parquet not found.")
              return
 
-        bv_gdf = gpd.read_parquet(bv_path)
+        # Read as standard Parquet (WKB) - BV
+        bv_df = pd.read_parquet(bv_path)
+        if 'polygon' in bv_df.columns:
+             bv_df['geometry'] = bv_df['polygon'].apply(lambda x: wkb.loads(bytes(x)))
+             bv_gdf = gpd.GeoDataFrame(bv_df, geometry='geometry', crs=cfg.PROJECTED_CRS)
+        else:
+             bv_gdf = gpd.GeoDataFrame(bv_df, geometry='geometry')
+
+        # Read as standard Parquet (WKB) - Communes
         communes_df = pd.read_parquet(communes_path)
+        # We don't need geometry for communes here, just scores.
+
         
         # We need Aggregated Counts which should be in 'bv_gdf' if build.py did its job.
         
@@ -547,7 +573,12 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
             bv_gdf['inc_population_scaled'] = scale_series(bv_gdf['population_bv'], min_b, max_b)
             
         # Clean up
-        bv_gdf.to_parquet(bv_path)
+        # Clean up
+        if 'geometry' in bv_gdf.columns:
+             bv_gdf['polygon'] = bv_gdf.geometry.to_wkb()
+             bv_gdf.drop(columns=['geometry'], inplace=True)
+
+        pd.DataFrame(bv_gdf).to_parquet(bv_path)
         logger.log_step("score_bassins_de_vie", "COMPLETED", {"rows": len(bv_gdf)})
 
     except Exception as e:

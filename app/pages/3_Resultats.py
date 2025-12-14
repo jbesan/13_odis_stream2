@@ -85,19 +85,22 @@ def run_search():
     start_commune = df_all_communes.loc[[config.commune_actuelle]]
 
     # --- Run Scoring Pipeline ---
-    processed_gdf, unaggregated_gdf = scoring.run_scoring_pipeline(
-        config=config,
+    # Instantiate the stateless engine with current data
+    engine = scoring.ScoringEngine(
         df_all_communes=df_all_communes,
         df_bv_geo=df_bv_geo,
         df_area_geo=df_area_geo,
         scores_cat=st.session_state.app_data['scores_cat'],
         incl_index=st.session_state.app_data['incl_index'],
-        associations_data=st.session_state.app_data['associations_data'], # Pass association data
-        bmo_vertical=st.session_state.app_data['bmo_vertical'], # Pass bmo_vertical
-        formations_data=st.session_state.app_data['formations_data'], # Pass formations_data
-        # codformations_index=st.session_state.app_data['codformations_index'], # Pass codformations_index
-        codformations_index=st.session_state.app_data['codformations_index'], # Pass codformations_index
-        global_stats={}, # Removed global_score_stats from data_loader
+        associations_data=st.session_state.app_data['associations_data'],
+        bmo_vertical=st.session_state.app_data['bmo_vertical'],
+        formations_data=st.session_state.app_data['formations_data'],
+        codformations_index=st.session_state.app_data['codformations_index'],
+        global_stats={}  # Removed global_score_stats from data_loader if not present
+    )
+
+    processed_gdf, unaggregated_gdf = engine.run(
+        config=config,
         view_level=st.session_state.get('view_level', 'Bassins de vie')
     )
 

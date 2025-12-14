@@ -28,16 +28,16 @@ L'architecture repose sur un **Client MCP** (L'Agent Gemini) et un **Serveur MCP
 
 ### A. Le Client (L'Interface Chat)
 
-- **Technologie** : Streamlit (refactoré en mode Chat) ou Chainlit.
-- **Cerveau** : Gemini 2.0 Flash (via Vertex AI).
-- **Rôle** : Gérer le dialogue, détecter les intentions, et orchestrer les appels aux outils.
+- **Technologie** : Streamlit Chat widget.
+- **Cerveau** : Gemini
+- **Rôle** : Gérer le dialogue, détecter les intentions, et orchestrer les appels aux outils. Le prompt doit poser des questions essentiels et deviner des questions optionelles pour affiner la recherche et la pondération des critères.
 
 ### B. Le Serveur MCP "ODIS-Core" (Ton focus d'apprentissage)
 
 - **Technologie** : Python (FastMCP ou SDK mcp-python).
 - **Hébergement** : Google Cloud Run.
 - **Responsabilité** : Exposer le moteur de calcul `scoring.py` comme un "Outil" standardisé que n'importe quel LLM peut appeler.
-- **Données** : Charge le fichier `odis_june_2025_jacques.parquet` en mémoire au démarrage.
+- **Données** : Charge les fichier du data_loader() et expose les resultats avec la fonction compute_odis_score(). L'agent passe les paramètres de recherches + pondérations et reçoit en retour un top 10 avec le détail des sous scores.
 
 ---
 

@@ -2,6 +2,7 @@ import pytest
 import pandas as pd
 import geopandas as gpd
 from shapely.geometry import Polygon
+import app.config as cfg
 from app.config import ScoringConfig
 import copy
 
@@ -42,6 +43,13 @@ def sample_data():
         'lien_social_density': [5.0, 2.5, 4.0, 3.0, 2.0],
     }
     gdf = gpd.GeoDataFrame(data, crs="EPSG:4326")
+    
+    # Project to EPSG:2154 (Lambert-93) as per new pipeline standard
+    gdf = gdf.to_crs(cfg.PROJECTED_CRS)
+    
+    # Add centroid column (as build.py does)
+    gdf['centroid'] = gdf.geometry.centroid
+    
     gdf = gdf.set_index('codgeo')
     return gdf.copy()
 

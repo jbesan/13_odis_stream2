@@ -43,7 +43,7 @@ def dissolve_communes_to_bassins_de_vie(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFra
     gdf_simple = gpd.GeoDataFrame(
         {cfg.BV_CODE_COL: gdf[cfg.BV_CODE_COL]},
         geometry=gdf.geometry,
-        crs="EPSG:4326"
+        crs=gdf.crs # Preserve CRS
     )
 
     # Now dissolve this clean GeoDataFrame. The output will have BV_CODE_COL as the index
@@ -77,7 +77,21 @@ def build_scores_layer(df: pd.DataFrame) -> Tuple[flm.FeatureGroup, Optional[Any
         tooltip_aliases = ['Commune:', 'Score:']
 
     if id_col not in df.columns:
-        return fg, None # Return empty layer if the required ID is missing
+        # Check if it's in the index
+        if df.index.name == id_col:
+             df = df.reset_index()
+        else:
+             # Try resetting anyway, maybe index doesn't have a name but is the ID
+             df = df.reset_index()
+             if id_col not in df.columns:
+                 # If still not found, rename 'index' to id_col if it looks right? 
+                 # Or just return empty.
+                 # Let's try to be robust: if 'index' is the column now, rename it?
+                 if 'index' in df.columns:
+                     df.rename(columns={'index': id_col}, inplace=True)
+                 
+                 if id_col not in df.columns:
+                     return fg, None # Return empty layer if the required ID is missing
 
     score_dict = df.set_index(id_col)["weighted_score"]
     colormap = getattr(linear, 'YlGn_09').scale(score_dict.min(), score_dict.max())
@@ -112,8 +126,11 @@ def build_scores_layer(df: pd.DataFrame) -> Tuple[flm.FeatureGroup, Optional[Any
             
     else:
         # Default to Commune view
+        # Prepare serializable DF in 4326 for Folium
         current_geo_df_serializable = current_geo_df[['libgeo', 'polygon']].copy()
         current_geo_df_serializable.set_geometry('polygon', inplace=True)
+        if current_geo_df_serializable.crs != "EPSG:4326":
+            current_geo_df_serializable = current_geo_df_serializable.to_crs("EPSG:4326")
 
     flm.GeoJson(
         current_geo_df_serializable,
@@ -124,6 +141,13 @@ def build_scores_layer(df: pd.DataFrame) -> Tuple[flm.FeatureGroup, Optional[Any
     # Add all scored geometries (communes or bassins de vie)
     df_serializable = df[[id_col, name_col, 'weighted_score', 'polygon']].copy()
     df_serializable.set_geometry('polygon', inplace=True)
+    
+    # Force the known CRS (PROJECTED_CRS) if missing, then convert to 4326 for Folium
+    if df_serializable.crs is None:
+        df_serializable.crs = cfg.PROJECTED_CRS
+    
+    if df_serializable.crs != "EPSG:4326":
+        df_serializable = df_serializable.to_crs("EPSG:4326")
 
     flm.GeoJson(
         df_serializable,
@@ -143,22 +167,28 @@ def build_top_result_layer(row: pd.Series, rank: int) -> flm.FeatureGroup:
     fg = flm.FeatureGroup(name=f"Top {rank + 1}")
 
     # Main commune outline
+    # Project to 4326
+    poly_4326 = gpd.GeoSeries([row.polygon], crs=cfg.PROJECTED_CRS).to_crs("EPSG:4326").iloc[0]
+    
     flm.GeoJson(
-        mapping(row.polygon),
+        mapping(poly_4326),
         style_function=lambda x: {"color": "red", "fillOpacity": 0, "weight": 3}
     ).add_to(fg)
 
     # Binome commune outline (if it exists)
     if row.binome and row.polygon_binome:
+        poly_binome_4326 = gpd.GeoSeries([row.polygon_binome], crs=cfg.PROJECTED_CRS).to_crs("EPSG:4326").iloc[0]
         flm.GeoJson(
-            mapping(row.polygon_binome),
+            mapping(poly_binome_4326),
             style_function=lambda x: {"color": "red", "fillOpacity": 0, "weight": 2, "dashArray": "5, 5"}
         ).add_to(fg)
 
     # Add rank marker at the centroid of the main polygon
-    centroid = row.polygon.centroid
+    # Project centroid to 4326
+    centroid_4326 = gpd.GeoSeries([row.polygon.centroid], crs=cfg.PROJECTED_CRS).to_crs("EPSG:4326").iloc[0]
+    
     flm.Marker(
-        location=[centroid.y, centroid.x],
+        location=[centroid_4326.y, centroid_4326.x],
         icon=flm.features.DivIcon(
             icon_size=(25, 25),
             icon_anchor=(12, 12),

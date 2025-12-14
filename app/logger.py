@@ -133,12 +133,7 @@ def log_search_results(
         md_lines.append("| " + " | ".join([":---"] * len(headers)) + " |")
 
         top_5_rows = results_df.head(5)
-        for idx, row in top_5_rows.iterrows():
-            rank = idx + 1 # Assuming index is 0-based, but rank should be 1-based relative to this list
-            # Actually results_df index might be codgeo, so let's use a counter or enumerate if we were iterating list
-            # But here we iterate dataframe. Let's use a counter.
-            pass 
-        
+
         # Let's iterate with enumerate on the head
         for i, (index, row) in enumerate(top_5_rows.iterrows()):
             rank = i + 1

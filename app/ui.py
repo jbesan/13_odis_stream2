@@ -1,14 +1,13 @@
 import streamlit as st
 import pandas as pd
 from plotly.express import line_polar
-
+import geopandas as gpd
 import config as cfg
 import maps
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 import base64
 import logging
-import scoring
 
 def get_image_path(filename: str) -> str:
     """Returns the absolute path to an image file, robust to launch directory."""
@@ -492,7 +491,13 @@ def _result_highlight_callback(rank: int) -> None:
         # Highlight the new result
         row = st.session_state.processed_gdf.loc[rank]
         st.session_state.highlighted_result = [True, rank]
-        st.session_state.center = [row.polygon.centroid.y, row.polygon.centroid.x]
+        
+        # Project centroid to 4326 for map centering (On-the-fly)
+        # processed_gdf is in EPSG:2154
+        centroid_2154 = row.polygon.centroid
+        centroid_4326 = gpd.GeoSeries([centroid_2154], crs=cfg.PROJECTED_CRS).to_crs("EPSG:4326").iloc[0]
+        
+        st.session_state.center = [centroid_4326.y, centroid_4326.x]
         st.session_state.zoom = cfg.DETAIL_MAP_ZOOM
 
 def get_person_accompanied_str() -> str:
@@ -511,28 +516,31 @@ def display_results_list() -> None:
     is_highlighted, highlighted_rank = st.session_state.highlighted_result
 
     # Pre-build layers for top results to be shown on map
-    for rank, row in df.head(top_n).iterrows():
-        fg_key = f'Top{rank + 1}'
-        st.session_state.fg_dict_ref[fg_key] = maps.build_top_result_layer(row, rank)
+    for i, (index, row) in enumerate(df.head(top_n).iterrows()):
+        fg_key = f'Top{i + 1}'
+        st.session_state.fg_dict_ref[fg_key] = maps.build_top_result_layer(row, i)
 
     # Display buttons and details
-    for rank, row in df.head(top_n).iterrows():
+    for i, (index, row) in enumerate(df.head(top_n).iterrows()):
         # Adapt title based on the view level
         if st.session_state.get('view_level') == 'Bassins de vie':
-            title = f"Top {rank+1} | Bassin de vie de {row.libgeo}"
+            title = f"Top {i+1} | Bassin de vie de {row.libgeo}"
         else:
-            title = f"Top {rank+1} | {row.libgeo}" + (f" (avec {row.libgeo_binome})" if row.binome else "")
+            title = f"Top {i+1} | {row.libgeo}" + (f" (avec {row.libgeo_binome})" if row.binome else "")
 
         st.button(
             title,
             on_click=_result_highlight_callback,
-            args=(rank,),
+            # We pass the index (label) to the callback so .loc[index] works
+            args=(index,),
             width='stretch',
-            key=f'button_top{rank+1}',
+            # Key uses relative rank i
+            key=f'button_top{i+1}',
             type='primary'
         )
 
-        if is_highlighted and rank == highlighted_rank:
+        # Check if this row's index matches the highlighted index
+        if is_highlighted and index == highlighted_rank:
             # For 'Bassin de vie' view, we call the specific details display for aggregated data
             if st.session_state.get('view_level') == 'Bassins de vie':
                 _display_bv_result_details(row)
@@ -797,12 +805,13 @@ def _produce_pitch_markdown(row: pd.Series, config: cfg.ScoringConfig, scores_ca
     population = f"{row['population']:,.0f}".replace(",", " ")
 
     # Adapt the intro based on whether it's a bassin de vie or a commune
+    libgeo = row.get('libgeo', row.get('libelle_bassin_de_vie', 'Localité'))
     if 'communes' in row and isinstance(row['communes'], list):
         # It's a bassin de vie
-        pitch_md.append(f'Le bassin de vie de **{row["libgeo"]}** ({population} habitants), composé de **{len(row["communes"])} communes**, présente un bon équilibre pour le projet.')
+        pitch_md.append(f'Le bassin de vie de **{libgeo}** ({population} habitants), composé de **{len(row["communes"])} communes**, présente un bon équilibre pour le projet.')
     else:
         # It's a commune
-        pitch_md.append(f'**{row["libgeo"]}** ({population} habitants) fait partie du bassin de vie de : **{row["libelle_bassin_de_vie"]}**.  ')
+        pitch_md.append(f'**{libgeo}** ({population} habitants) fait partie du bassin de vie de : **{row.get("libelle_bassin_de_vie", "N/A")}**.  ')
 
     score_percent = f"{row['weighted_score'] * 100:.0f}%"
     if row.get("binome", False):

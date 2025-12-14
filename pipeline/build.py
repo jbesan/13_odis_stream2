@@ -11,8 +11,10 @@ from typing import Dict, Any
 
 from pipeline.common import (
     PipelineLogger, load_config, load_dataset,
+    PipelineLogger, load_config, load_dataset,
     CONFIG_FILE, CACHE_DIR, CLEAN_DIR, OUTPUT_DIR, STATUS_FILE
 )
+import app.config as cfg
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -224,13 +226,16 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
             if col in communes_gdf.columns:
                 communes_gdf[col] = communes_gdf[col].round(0).astype(int)
         
-        # Centroids
-        # Use projected CRS (Lambert-93) for accurate centroid calculation
-        if communes_gdf.crs:
-            communes_gdf['centroid'] = communes_gdf.geometry.to_crs(epsg=2154).centroid.to_crs(communes_gdf.crs)
-        else:
-            communes_gdf['centroid'] = communes_gdf.geometry.centroid
-              
+        # Centroids & Geometry
+        # CRITICAL: We project the STORAGE to EPSG:2154 (Lambert-93) for performance and consistency.
+        # This allows scoring.py to run without constantly re-projecting.
+        
+        if communes_gdf.crs != cfg.PROJECTED_CRS:
+            communes_gdf = communes_gdf.to_crs(cfg.PROJECTED_CRS)
+            
+        # Store centroids in projected CRS (for fast distance calc)
+        communes_gdf['centroid'] = communes_gdf.geometry.centroid
+                      
         # 4. Bassins de Vie Mapping (for pop_be)
         # We need to load BV mapping. It's in the raw zip usually, but we can extract it or maybe we should have cleaned it?
         # Let's load it from cache as in etl.py
@@ -301,12 +306,26 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
 
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         
-        # Rename geometry to polygon to match app expectation
-        communes_gdf.rename_geometry('polygon', inplace=True)
+        # LOGGING CRS STATE
+        logger.log_step("build_communes", "DEBUG", {"crs": str(communes_gdf.crs)})
+        print(f"DEBUG: communes_gdf.crs = {communes_gdf.crs}")
+        
+        # Explicitly convert to WKB to ensure we save the PROJECTED geometry (EPSG:2154)
+        # and avoid any implicit conversion to EPSG:4326 by GeoParquet logic
+        if communes_gdf.crs != cfg.PROJECTED_CRS:
+             logger.log_step("build_communes", "WARNING", {"msg": "CRS mismatch before save, re-projecting"})
+             communes_gdf = communes_gdf.to_crs(cfg.PROJECTED_CRS)
+             
+        communes_gdf['polygon'] = communes_gdf.geometry.to_wkb()
+        
+        # Drop the geometry column and conversion artifacts to avoid GeoParquet metadata overriding
+        # Also drop 'centroid' (shapely objects) which fails to serialize. app/data_loader.py will re-calc it.
+        cols_to_drop = ['geometry', 'centroid'] if 'centroid' in communes_gdf.columns else ['geometry']
+        df_to_save = pd.DataFrame(communes_gdf.drop(columns=cols_to_drop))
         
         output_path = OUTPUT_DIR / "odis_communes.parquet"
-        communes_gdf.to_parquet(output_path)
-        logger.log_step("build_communes", "CREATED", {"path": str(output_path), "rows": len(communes_gdf)})
+        df_to_save.to_parquet(output_path)
+        logger.log_step("build_communes", "CREATED", {"path": str(output_path), "rows": len(df_to_save)})
         
         # Copy bmo_vertical to output
         bmo_vertical_path = CLEAN_DIR / "bmo_vertical.parquet"
@@ -332,7 +351,13 @@ def build_bassins_de_vie(communes_gdf: gpd.GeoDataFrame, config: Dict[str, Any],
         # Dissolve
         # Fix geometries
         if 'polygon' in communes_gdf.columns:
-            communes_gdf = communes_gdf.set_geometry('polygon')
+            # Only set geometry to 'polygon' if it's not already the active geometry
+            # AND if it seems to contain geometry objects (not bytes)
+            if communes_gdf.geometry.name != 'polygon':
+                if not isinstance(communes_gdf['polygon'].iloc[0], bytes):
+                     communes_gdf = communes_gdf.set_geometry('polygon')
+                # If bytes, we assume active geometry is already correct (from build_communes)
+                # or we would need to load it. Since build_communes returns valid GDF, we do nothing.
         # communes_gdf['geometry'] = communes_gdf.geometry.buffer(0)
         # communes_gdf['geometry'] = communes_gdf.geometry.make_valid()
         
@@ -407,9 +432,18 @@ def build_bassins_de_vie(communes_gdf: gpd.GeoDataFrame, config: Dict[str, Any],
             labels = df_bv_source[['bassin_de_vie', 'libgeo']].drop_duplicates()
             bv_gdf = bv_gdf.merge(labels, on='bassin_de_vie', how='left')
         
+        # Explicitly convert to WKB to ensure we save the PROJECTED geometry (EPSG:2154)
+        if bv_gdf.crs != cfg.PROJECTED_CRS:
+             bv_gdf = bv_gdf.to_crs(cfg.PROJECTED_CRS)
+             
+        bv_gdf['polygon'] = bv_gdf.geometry.to_wkb()
+        
+        # Drop geometry to avoid GeoParquet 4326 default
+        df_to_save = pd.DataFrame(bv_gdf.drop(columns='geometry'))
+        
         output_path = OUTPUT_DIR / "odis_bassins_de_vie.parquet"
-        bv_gdf.to_parquet(output_path)
-        logger.log_step("build_bassins_de_vie", "CREATED", {"path": str(output_path), "rows": len(bv_gdf)})
+        df_to_save.to_parquet(output_path)
+        logger.log_step("build_bassins_de_vie", "CREATED", {"path": str(output_path), "rows": len(df_to_save)})
 
     except Exception as e:
         logger.log_step("build_bassins_de_vie", "ERROR", {"error": str(e)})

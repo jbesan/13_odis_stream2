@@ -16,3 +16,4 @@ pipeline/cache/
 CONSTITUTION.md
 GEMINI.md
 pipeline/.env
+app/.env
