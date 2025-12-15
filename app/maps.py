@@ -11,7 +11,7 @@ from typing import Union, List, Tuple, Optional, Any, Set, Dict
 import config as cfg
 
 import logging
-import json # Added for metadata parsing
+
 
 def get_map_zoom(distance_km: Union[int, str]) -> int:
     """Returns a map zoom level based on a search distance."""

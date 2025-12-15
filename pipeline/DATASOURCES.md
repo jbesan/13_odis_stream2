@@ -75,6 +75,12 @@
 - URL Stable: https://www.data.gouv.fr/api/1/datasets/r/cc7b8f0c-45ea-4444-8b55-55d30bc34ac5
 - Type de fichier: parquet
 
+## Nomenclature WALDEC
+
+- Données: https://www.data.gouv.fr/datasets/repertoire-national-des-associations-nomenclature-waldec/#/resources/d65d5cae-399f-4150-804f-493026645fd5
+- URL Stable: https://www.data.gouv.fr/api/1/datasets/r/d65d5cae-399f-4150-804f-493026645fd5
+- Type de fichier: json
+
 # Logement
 
 ## Logement vacants parc privé

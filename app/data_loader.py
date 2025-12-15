@@ -123,21 +123,28 @@ def load_scores_config_as_df(config_path: str) -> pd.DataFrame:
         })
     return pd.DataFrame(data)
 
-@st.cache_resource
-def load_parquet_dataset(path: str, columns: list = None) -> pd.DataFrame:
-    """Generic loader for parquet datasets with caching."""
+def _load_parquet(path: str, columns: list = None) -> pd.DataFrame:
+    """Internal non-cached loader."""
     if columns:
         return pd.read_parquet(path, columns=columns)
     return pd.read_parquet(path)
 
 @st.cache_resource
-def load_ccas_structures(base_path: str) -> pd.DataFrame:
-    """Loads CCAS structures."""
-    # Hardcoded filename as per build.py output
-    path = os.path.join(base_path, "structures_inclusion_ccas.parquet")
+def load_parquet_dataset(path: str, columns: list = None) -> pd.DataFrame:
+    """Generic loader for parquet datasets with caching."""
+    return _load_parquet(path, columns)
+
+def _load_ccas(base_path: str) -> pd.DataFrame:
+    """Internal non-cached CCAS loader."""
+    path = os.path.join(base_path, cfg.CCAS_FILE)
     if os.path.exists(path):
          return pd.read_parquet(path)
     return pd.DataFrame()
+
+@st.cache_resource
+def load_ccas_structures(base_path: str) -> pd.DataFrame:
+    """Loads CCAS structures."""
+    return _load_ccas(base_path)
 
 def get_pois_by_category(pois_df: pd.DataFrame, category: str) -> pd.DataFrame:
     """Filters POIs by category and returns a copy."""
@@ -145,11 +152,11 @@ def get_pois_by_category(pois_df: pd.DataFrame, category: str) -> pd.DataFrame:
         return pd.DataFrame()
     return pois_df[pois_df['category'] == category].copy()
 
-@st.cache_resource
-def init_datasets() -> Dict[str, Any]:
+def load_all_data_raw() -> Dict[str, Any]:
     """
     Initializes and loads all necessary datasets for the application.
     Returns a dictionary containing all loaded dataframes.
+    (Non-cached version for MCP usage)
     """
     base_path = cfg.get_data_path()
     logger.info(f"Loading datasets from: {base_path}")
@@ -160,9 +167,10 @@ def init_datasets() -> Dict[str, Any]:
     try:
         # Dynamic Column Loading
         import pyarrow.parquet as pq
-        # ParquetFile.schema.names is unreliable for list columns (skips root name)
-        # pq.read_schema returns the correct column names
-        all_cols = pq.read_schema(odis_path).names
+        # ParquetFile is often safer for schema reading than read_schema
+        # as it avoids some global fs registration calls in older/mixed pyarrow versions
+        pf = pq.ParquetFile(odis_path)
+        all_cols = pf.schema.names
         
         # Essential columns
         essential_cols = {
@@ -216,13 +224,19 @@ def init_datasets() -> Dict[str, Any]:
 
     except Exception as e:
         logger.error(f"Failed to load ODIS data: {e}")
-        st.error(f"Erreur critique: Impossible de charger les données principales. Détails: {e}")
+        # Only show st.error if running continuously (not inside MCP)
+        # We check if st.session_state is accessible or similar, but simplified:
+        try:
+            st.error(f"Erreur critique: Impossible de charger les données principales. Détails: {e}")
+        except:
+            pass
         raise e # Re-raise to see the error in Streamlit traceback
 
     # 2. Load POIs
     pois_path = os.path.join(base_path, cfg.POIS_FILE)
     logger.info(f"Loading POIs from: {pois_path}")
-    pois_df = load_parquet_dataset(pois_path)
+    # Rename internal calls
+    pois_df = _load_parquet(pois_path)
     
     # Split POIs
     # Map to expected variable names for compatibility
@@ -272,7 +286,7 @@ def init_datasets() -> Dict[str, Any]:
     # 3. Load Referentiels (FAP, etc.)
     ref_path = os.path.join(base_path, cfg.REFERENTIELS_FILE)
     logger.info(f"Loading Referentiels from: {ref_path}")
-    refs_df = load_parquet_dataset(ref_path)
+    refs_df = _load_parquet(ref_path)
     
     codfap_index = pd.DataFrame()
     if not refs_df.empty:
@@ -280,24 +294,24 @@ def init_datasets() -> Dict[str, Any]:
         if not fap_df.empty:
             # Reconstruct expected format for FAP index
             # Expected: index=code, columns=[libelle, ...]
-            # refs_df has 'code', 'label', 'metadata'
+            # refs_df has 'code', 'label'
             codfap_index = fap_df[['code', 'label']].drop_duplicates(subset=['code']).set_index('code')
 
     # 4. Load Vertical Data
     bmo_vertical_path = os.path.join(base_path, cfg.REL_METIERS_FILE) # Was BMO_VERTICAL_FILE
-    bmo_vertical = load_parquet_dataset(bmo_vertical_path)
+    bmo_vertical = _load_parquet(bmo_vertical_path)
     
     associations_path = os.path.join(base_path, cfg.REL_ASSOCIATIONS_FILE)
-    associations_data = load_parquet_dataset(associations_path)
+    associations_data = _load_parquet(associations_path)
 
     formations_path = os.path.join(base_path, cfg.REL_FORMATIONS_FILE)
-    formations_data = load_parquet_dataset(formations_path)
+    formations_data = _load_parquet(formations_path)
     if not formations_data.empty and 'formation_code' in formations_data.columns:
         # Hotfix: Ensure formation codes are clean strings (remove .0 suffix if present)
         formations_data['formation_code'] = formations_data['formation_code'].astype(str).str.replace(r'\.0$', '', regex=True)
 
     # 4b. Load Structures (CCAS)
-    structures_ccas = load_ccas_structures(base_path)
+    structures_ccas = _load_ccas(base_path)
 
     # 5. Load Configs
     app_dir = os.path.dirname(os.path.abspath(__file__))
@@ -335,7 +349,7 @@ def init_datasets() -> Dict[str, Any]:
     # 6. Load Bassins de Vie Geometry
     bv_path = os.path.join(base_path, cfg.BV_FILE)
     logger.info(f"Loading BV Geo from: {bv_path}")
-    bv_geo = load_parquet_dataset(bv_path)
+    bv_geo = _load_parquet(bv_path)
     
     if not bv_geo.empty:
         # Ensure geometry
@@ -420,5 +434,14 @@ def init_datasets() -> Dict[str, Any]:
         'area_geo': area_geo,
         'bmo_vertical': bmo_vertical,
         'structures_ccas': structures_ccas,
-        'pois': pois_df
+        'pois': pois_df,
+        'referentiels_raw': refs_df, # Exposed for search tool
     }
+@st.cache_resource
+def init_datasets() -> Dict[str, Any]:
+    """
+    Initializes and loads all necessary datasets for the application.
+    Returns a dictionary containing all loaded dataframes.
+    (Cached wrapper for Streamlit)
+    """
+    return load_all_data_raw()

@@ -181,6 +181,9 @@ with col_skip:
     if st.button(":next_track_button: Passer à la page résultats", type="secondary", use_container_width=True):
         st.switch_page("pages/3_Resultats.py")
 
+if st.button("[New] Let's chat 🤖", type="secondary", use_container_width=True):
+    st.switch_page("pages/4_AI_Chatbot.py")
+
 st.markdown("---")
 
 # --- "How it works" Steps ---

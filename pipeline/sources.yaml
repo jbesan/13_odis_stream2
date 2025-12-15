@@ -91,6 +91,12 @@ sources:
     local_name: "referentiel_fap_2021.csv"
     description: "Nomenclature des Familles Professionnelles (FAP 2021)"
 
+  nomenclature_waldec:
+    url: "https://www.data.gouv.fr/api/1/datasets/r/d65d5cae-399f-4150-804f-493026645fd5"
+    format: "json"
+    local_name: "nomenclature_waldec.json"
+    description: "Nomenclature WALDEC (Associations)"
+
   caf:
     url: "https://www.data.gouv.fr/api/1/datasets/r/6d3b1cf8-cbef-4f30-96c3-0b63a2b0502c"
     format: "json"

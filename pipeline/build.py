@@ -327,11 +327,11 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         df_to_save.to_parquet(output_path)
         logger.log_step("build_communes", "CREATED", {"path": str(output_path), "rows": len(df_to_save)})
         
-        # Copy bmo_vertical to output
-        bmo_vertical_path = CLEAN_DIR / "bmo_vertical.parquet"
-        if bmo_vertical_path.exists():
-            shutil.copy2(bmo_vertical_path, OUTPUT_DIR / "bmo_vertical.parquet")
-            logger.log_step("build_communes", "COPIED", {"file": "bmo_vertical.parquet"})
+        # Copy bmo_vertical to output -> Handled in build_vertical_tables as odis_metiers_agg.parquet
+        # bmo_vertical_path = CLEAN_DIR / "bmo_vertical.parquet"
+        # if bmo_vertical_path.exists():
+        #    shutil.copy2(bmo_vertical_path, OUTPUT_DIR / "bmo_vertical.parquet")
+        #    logger.log_step("build_communes", "COPIED", {"file": "bmo_vertical.parquet"})
         
         return communes_gdf
 
@@ -457,7 +457,7 @@ def build_vertical_tables(config: Dict[str, Any], logger: PipelineLogger):
         bmo_path = CLEAN_DIR / "bmo_vertical.parquet"
         if bmo_path.exists():
             df = pd.read_parquet(bmo_path)
-            out = OUTPUT_DIR / "odis_rel_metiers.parquet"
+            out = OUTPUT_DIR / "odis_metiers_agg.parquet"
             df.to_parquet(out)
             logger.log_step("build_vertical_tables", "METIERS", {"path": str(out)})
             
@@ -465,17 +465,17 @@ def build_vertical_tables(config: Dict[str, Any], logger: PipelineLogger):
         assoc_path = CLEAN_DIR / "associations_vertical.parquet"
         if assoc_path.exists():
             df = pd.read_parquet(assoc_path)
-            out = OUTPUT_DIR / "odis_rel_associations.parquet"
+            out = OUTPUT_DIR / "odis_associations_agg.parquet"
             df.to_parquet(out)
             logger.log_step("build_vertical_tables", "ASSOCIATIONS", {"path": str(out)})
             
-            # Copy raw vertical file to output as well if requested
-            shutil.copy2(assoc_path, OUTPUT_DIR / "associations_vertical.parquet")
+            # Copy raw vertical file to output as well if requested -> Replaced by odis_associations_agg
+            # shutil.copy2(assoc_path, OUTPUT_DIR / "associations_vertical.parquet")
             
         # 3. Structures Inclusion (CCAS/CIAS)
         struct_path = CLEAN_DIR / "structures_inclusion.parquet"
         if struct_path.exists():
-             out = OUTPUT_DIR / "structures_inclusion_ccas.parquet"
+             out = OUTPUT_DIR / "odis_ccas.parquet"
              shutil.copy2(struct_path, out)
              logger.log_step("build_vertical_tables", "STRUCTURES", {"path": str(out)})
             
@@ -492,7 +492,7 @@ def build_vertical_tables(config: Dict[str, Any], logger: PipelineLogger):
             
             df_agg = df.groupby(['codgeo', 'formation_code']).size().rename('count').reset_index()
             
-            out = OUTPUT_DIR / "odis_rel_formations.parquet"
+            out = OUTPUT_DIR / "odis_formations_agg.parquet"
             df_agg.to_parquet(out)
             logger.log_step("build_vertical_tables", "FORMATIONS", {"path": str(out)})
             
@@ -519,7 +519,7 @@ def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
             # nature_uai_libe -> type
             # latitude -> lat
             # longitude -> lon
-            # secteur_public_prive_libe -> metadata
+            # secteur_public_prive_libe -> metadata (unused)
             
             if 'latitude' in edu_df.columns and 'longitude' in edu_df.columns:
                  edu_df['lat'] = edu_df['latitude']
@@ -706,7 +706,7 @@ def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
             if 'codgeo' in all_pois.columns:
                  all_pois['codgeo'] = all_pois['codgeo'].astype('category')
             
-            output_path = OUTPUT_DIR / "pois.parquet"
+            output_path = OUTPUT_DIR / "odis_pois.parquet"
             all_pois.to_parquet(output_path)
             logger.log_step("generate_pois", "CREATED", {"path": str(output_path)})
 
@@ -734,14 +734,14 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
                 fap_ref = pd.DataFrame({
                     'key': 'fap_codes',
                     'code': fap_df[code_col],
-                    'label': fap_df[label_col],
-                    'metadata': fap_df.drop(columns=[code_col, label_col]).to_json(orient='records')
+                    'label': fap_df[label_col]
+                    #'metadata': fap_df.drop(columns=[code_col, label_col]).to_json(orient='records') # Removed
                 })
                 refs_list.append(fap_ref)
             
         if refs_list:
             all_refs = pd.concat(refs_list, ignore_index=True)
-            output_path = OUTPUT_DIR / "referentiels.parquet"
+            output_path = OUTPUT_DIR / "odis_referentiels.parquet"
             all_refs.to_parquet(output_path)
             logger.log_step("generate_referentiels", "CREATED", {"path": str(output_path)})
 
@@ -758,8 +758,8 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
                 form_ref = pd.DataFrame({
                     'key': 'formation_codes',
                     'code': form_df['code'],
-                    'label': form_df['label'],
-                    'metadata': None
+                    'label': form_df['label']
+                    #'metadata': None # Removed
                 })
                 refs_list.append(form_ref)
                 
@@ -786,24 +786,42 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
                     incl_ref = pd.DataFrame({
                         'key': 'inclusion_services',
                         'code': incl_df['Nom'],
-                        'label': incl_df['Label'],
-                        'metadata': None
+                        'label': incl_df['Label']
+                        #'metadata': None # Removed
                     })
                     refs_list.append(incl_ref)
                     logger.log_step("generate_referentiels", "INCLUSION", {"count": len(incl_ref)})
                 else:
                      logging.warning(f"Inclusion Referentiel: Missing columns. Found: {incl_df.columns}")
 
-        if refs_list:
-            all_refs = pd.concat(refs_list, ignore_index=True)
-            output_path = OUTPUT_DIR / "referentiels.parquet"
-            all_refs.to_parquet(output_path)
-            logger.log_step("generate_referentiels", "CREATED", {"path": str(output_path)})
+    except Exception as e:
+        logger.log_step("generate_referentiels", "ERROR", {"error": str(e)})
+
+    try:
+        # WALDEC
+        waldec_path = CLEAN_DIR / "referentiel_waldec.parquet"
+        if waldec_path.exists():
+            waldec_df = pd.read_parquet(waldec_path)
+            if 'code' in waldec_df.columns and 'label' in waldec_df.columns:
+                 waldec_ref = pd.DataFrame({
+                    'key': 'waldec_codes',
+                    'code': waldec_df['code'],
+                    'label': waldec_df['label']
+                })
+                 refs_list.append(waldec_ref)
+                 logger.log_step("generate_referentiels", "WALDEC", {"count": len(waldec_ref)})
 
     except Exception as e:
         logger.log_step("generate_referentiels", "ERROR", {"error": str(e)})
 
-def main():
+    # Final concatenation and save for all referentiels
+    if refs_list:
+        all_refs = pd.concat(refs_list, ignore_index=True)
+        output_path = OUTPUT_DIR / "odis_referentiels.parquet"
+        all_refs.to_parquet(output_path)
+        logger.log_step("generate_referentiels", "CREATED", {"path": str(output_path)})
+
+def main(argv=None):
     logger = PipelineLogger(STATUS_FILE)
     config = load_config(CONFIG_FILE)
     

@@ -9,6 +9,13 @@ APP_DIR: str = os.path.dirname(os.path.abspath(__file__))
 # Get the project root directory (one level up)
 PROJECT_ROOT: str = os.path.dirname(APP_DIR)
 
+# Load environment variables from .env if present
+from dotenv import load_dotenv
+# Try loading from app/.env (Priority)
+load_dotenv(os.path.join(APP_DIR, '.env'))
+# Try loading from root .env (Fallback/Override depending on behavior, but good to have both)
+load_dotenv(os.path.join(PROJECT_ROOT, '.env'))
+
 LOCAL_CSV_PATH: str = os.path.join(PROJECT_ROOT, 'data/')
 
 def get_data_path() -> str:
@@ -16,34 +23,20 @@ def get_data_path() -> str:
     Returns the appropriate data path based on the environment.
     Since data is now included in the Docker image, we always use the local path.
     """
-    # In Docker, we will copy data to /app/data or similar, or keep structure
-    # The config says LOCAL_CSV_PATH = os.path.join(PROJECT_ROOT, 'data/')
-    # In Docker: PROJECT_ROOT is /app (if we copy app/ to /app ?) 
-    # Let's check Dockerfile: COPY app/ . -> So /app contains contents of app/. 
-    # Wait, PROJECT_ROOT is os.path.dirname(APP_DIR). APP_DIR is /app/ (if code is in /app).
-    # If Dockerfile does WORKDIR /app and COPY app/ ., then:
-    # /app/1_Accueil.py existing.
-    # APP_DIR = /app
-    # PROJECT_ROOT = /
-    # So LOCAL_CSV_PATH = /data/
-    # If we copy data/ to /data in Docker, this works perfectly.
+
     return LOCAL_CSV_PATH
 
 # --- File Paths ---
 # --- File Paths ---
 ODIS_FILE = 'odis_communes.parquet'
-POIS_FILE = 'pois.parquet'
-REFERENTIELS_FILE = 'referentiels.parquet'
+POIS_FILE = 'odis_pois.parquet'
+REFERENTIELS_FILE = 'odis_referentiels.parquet'
 BV_FILE = 'odis_bassins_de_vie.parquet'
-REL_METIERS_FILE = 'odis_rel_metiers.parquet'
-REL_ASSOCIATIONS_FILE = 'associations_vertical.parquet'
-REL_FORMATIONS_FILE = 'odis_rel_formations.parquet'
+REL_METIERS_FILE = 'odis_metiers_agg.parquet'
+REL_ASSOCIATIONS_FILE = 'odis_associations_agg.parquet'
+REL_FORMATIONS_FILE = 'odis_formations_agg.parquet'
+CCAS_FILE = 'odis_ccas.parquet'
 SCORES_CAT_FILE = 'scores_config.yaml'
-
-# Legacy files removed:
-# BV_FILENAME, BMO_VERTICAL_FILE, METIERS_FILE, FORMATIONS_FILE, 
-# ECOLES_FILE, MATERNITE_FILE, SANTE_FILE, INCLUSION_FILE, 
-# SNCF_FILE, CAF_FILE, LOVAC_FILE, INCLUSION_REF_FILE
 
 # --- Data Columns ---
 BV_CODE_COL = 'bassin_de_vie'
@@ -216,17 +209,18 @@ DEMO_SCENARIOS = {
 
 WALDEC_CORE_INCLUSION = [
     # --- SOCIAL & ENTRAIDE ---
-    "009",    # ACTION SOCIOCULTURELLE (Tout le niveau 1 : Centres sociaux, MJC...)
+    # "009",    # ACTION SOCIOCULTURELLE (Tout le niveau 1 : Centres sociaux, MJC...)
     "015070", # Apprentissage de langues, alphabétisation (CRITIQUE)
     "015095", # Soutien scolaire
     "019016", # Aide à l'insertion des jeunes
-    "019020", # Aide aux chômeurs
+    # "019020", # Aide aux chômeurs
     "019025", # Aide aux réfugiés et aux immigrés (CRITIQUE)
     "020",    # ASSOCIATIONS CARITATIVES, HUMANITAIRES (Tout le niveau 1 : Secours, Alimentaire...)
-    "021",    # SERVICES FAMILIAUX (Crèches, Halte-garderie...)
-    "014030", # Associations de parents d'élèves (Indicateur de vie scolaire)
-    "014040", # Associations de locataires (Indicateur de vie de quartier)
-    "024020", # Garde d'enfants, crèches parentales
+    "024",    # Entraide et solidarité
+    # "021",    # SERVICES FAMILIAUX (Crèches, Halte-garderie...)
+    # "014030", # Associations de parents d'élèves (Indicateur de vie scolaire)
+    # "014040", # Associations de locataires (Indicateur de vie de quartier)
+    # "024020", # Garde d'enfants, crèches parentales
 ]
 
 # 2. LE DICTIONNAIRE D'AFFINITÉS (Pour le matching "Projet de Vie")

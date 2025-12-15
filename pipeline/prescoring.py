@@ -585,7 +585,7 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
         logger.log_step("score_bassins_de_vie", "ERROR", {"error": str(e)})
         logging.error(f"Score BV failed: {e}")
 
-def main():
+def main(argv=None):
     logger = PipelineLogger(STATUS_FILE)
     config = load_config(CONFIG_FILE)
     apply_prescoring(config, logger)
