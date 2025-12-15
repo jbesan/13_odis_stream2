@@ -4,9 +4,11 @@ from typing import Dict, Any, List
 import json
 import pandas as pd
 import geopandas as gpd
+import numpy as np
 from data_loader import load_all_data_raw
 from scoring import ScoringEngine
 from config import ScoringConfig
+import config as cfg
 import logging
 
 # Configure Logging
@@ -71,7 +73,7 @@ def _search_referentiels_logic(query: str, domain: str = None) -> List[Dict[str,
     if df.empty:
         return []
 
-    # 1. Filter by domain if provided
+    # 2. Standard Dataframe Search
     if domain:
         df = df[df['key'] == domain]
     
@@ -98,34 +100,20 @@ def _search_referentiels_logic(query: str, domain: str = None) -> List[Dict[str,
         if query_norm in row_label:
             score += 100
         
-        # B. Token Match
-        # Split query, remove stopwords and short words
-        raw_tokens = query_norm.replace("'", " ").split()
-        query_tokens = [
-            t for t in raw_tokens 
-            if len(t) > 1 and t not in STOP_WORDS
-        ]
+        # B. Token Overlap
+        row_tokens = set(row_label.split())
+        query_tokens = set(query_norm.split()) - STOP_WORDS
         
-        if not query_tokens:
-             return score
-             
-        matches = 0
-        for token in query_tokens:
-            if token in row_label:
-                matches += 1
+        if not query_tokens: # Check just in case query was only stop words
+             query_tokens = set(query_norm.split())
+
+        overlap = len(query_tokens.intersection(row_tokens))
+        score += overlap * 20
         
-        # Add score based on coverage (boosted multiplier)
-        if matches > 0:
-            score += (matches * 20)
-            
         return score
 
-    # Apply scoring (vectorized-ish or apply)
-    # Since dataset is small (<1000 rows usually), apply is fine.
     work_df['score'] = work_df['label_lower'].apply(calculate_relevance)
     
-    # Filter non-zero scores
-    results_df = work_df[work_df['score'] > 0]
     
     # Sort by score descending
     results_df = results_df.sort_values(by='score', ascending=False)
@@ -189,27 +177,96 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
              else:
                  logger.warning(f"   ⚠️ City '{commune_input}' not found.")
 
-    # 2. Map Inputs (Keep existing)
+    # 2. Map Inputs to ScoringConfig
+    # Robustness: Handle aliasing
+    socle_sel = filters.get('socle_admin_selection', [])
+    if not socle_sel and 'codes_inclusion' in filters:
+        socle_sel = filters.get('codes_inclusion')
+        logger.info(f"   [MCP] Mapped alias 'codes_inclusion' -> 'socle_admin_selection': {socle_sel}")
+
+    # Robustness: Coerce codes_metiers to List[List]
+    raw_metiers = filters.get('codes_metiers', [])
+    c_metiers = []
+    nb_adultes = int(filters.get('nb_adultes', 1))
+
+    if isinstance(raw_metiers, list):
+         if raw_metiers and isinstance(raw_metiers[0], str):
+             # Detected flat list ["A", "B"] -> Assume one code per adult, or all for first?
+             # Heuristic: Assign to first adult.
+             c_metiers = [raw_metiers] + [[]]*(nb_adultes-1)
+         else:
+             c_metiers = raw_metiers
+    
+    # Pad to nb_adultes
+    if len(c_metiers) < nb_adultes:
+        c_metiers += [[]] * (nb_adultes - len(c_metiers))
+
+    # Same for Formations
+    raw_formations = filters.get('codes_formations', [])
+    c_formations = []
+    if isinstance(raw_formations, list):
+         if raw_formations and isinstance(raw_formations[0], str):
+             c_formations = [raw_formations] + [[]]*(nb_adultes-1)
+         else:
+             c_formations = raw_formations
+    
+    if len(c_formations) < nb_adultes:
+        c_formations += [[]] * (nb_adultes - len(c_formations))
+
+    # Provide safe defaults for missing fields
+    # Fix: Agent sends 'poids_education' but config expects int values.
+    # The keys in `weights` dict from Agent are like 'poids_education'.
+    # We map them correctly.
+    
+    # Robustness: Handle aliasing for Inclusion Services
+    # User feedback: Specific needs (FLE, etc.) should map to 'besoins_autres', not 'socle_admin_selection'.
+    # 'socle_admin_selection' should ideally keep defaults (base services).
+    
+    specific_needs = filters.get('besoins_autres', [])
+    if not specific_needs and 'codes_inclusion' in filters:
+        specific_needs = filters.get('codes_inclusion')
+        logger.info(f"   [MCP] Mapped alias 'codes_inclusion' -> 'besoins_autres': {specific_needs}")
+    
+    # Ensure default socle is present if not strictly overridden?
+    # For now, we trust the defaults of ScoringConfig logic or defaults defined in config.py
+    # But ScoringConfig dataclass doesn't have defaults. 
+    # We should use cfg.DEFAULT_SOCLE_ADMIN if agent doesn't specify (which it doesn't usually).
+    socle_sel = filters.get('socle_admin_selection', cfg.DEFAULT_SOCLE_ADMIN)
+
+    # Robustness: Check for codgeo_voisins in loaded data
+    if 'codgeo_voisins' not in DATA_CONTEXT['odis'].columns:
+        logger.warning("⚠️ 'codgeo_voisins' missing from ODIS data. Disabling Binome logic (adding empty col).")
+        DATA_CONTEXT['odis']['codgeo_voisins'] = [np.array([], dtype=object) for _ in range(len(DATA_CONTEXT['odis']))]
+
+    def get_weight(key_suffix, default=50):
+        # Try exact match (e.g. 'emploi')
+        if key_suffix in weights:
+             return int(weights[key_suffix])
+        # Try with prefix (e.g. 'poids_emploi')
+        if f"poids_{key_suffix}" in weights:
+             return int(weights[f"poids_{key_suffix}"])
+        return default
+
     config = ScoringConfig(
-        poids_emploi=int(weights.get('emploi', 50)),
-        poids_logement=int(weights.get('logement', 50)),
-        poids_education=int(weights.get('education', 50)),
-        poids_inclusion=int(weights.get('inclusion', 50)),
-        poids_mobilité=int(weights.get('mobilité', 50)),
-        poids_sante=int(weights.get('sante', 50)),
+        poids_emploi=get_weight('emploi'),
+        poids_logement=get_weight('logement'),
+        poids_education=get_weight('education'),
+        poids_inclusion=get_weight('inclusion'),
+        poids_mobilité=get_weight('mobilité'),
+        poids_sante=get_weight('sante'),
         criteria_weights=filters.get('criteria_weights', {}),
         commune_actuelle=resolved_commune,
         loc_distance_km=filters.get('loc_distance_km', 'departement'),
-        nb_adultes=int(filters.get('nb_adultes', 1)),
+        nb_adultes=nb_adultes,
         nb_enfants=int(filters.get('nb_enfants', 0)),
         hebergement=filters.get('hebergement', 'Location'),
         logement=filters.get('logement', 'Location'),
-        codes_metiers=filters.get('codes_metiers', []) + [[]] * (int(filters.get('nb_adultes', 1)) - len(filters.get('codes_metiers', []))),
-        codes_formations=filters.get('codes_formations', []) + [[]] * (int(filters.get('nb_adultes', 1)) - len(filters.get('codes_formations', []))),
+        codes_metiers=c_metiers,
+        codes_formations=c_formations,
         classe_enfants=filters.get('classe_enfants', []),
         besoin_sante=filters.get('besoin_sante', 'Aucun'),
-        besoins_autres=filters.get('besoins_autres', []),
-        socle_admin_selection=filters.get('socle_admin_selection', []),
+        besoins_autres=specific_needs, # Mapped from codes_inclusion
+        socle_admin_selection=socle_sel,
         affinite_selection=filters.get('affinite_selection', []),
         binome_penalty=float(filters.get('binome_penalty', 0.1)),
         pop_min=int(filters.get('pop_min', 0))

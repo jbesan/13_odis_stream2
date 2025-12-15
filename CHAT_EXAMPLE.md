@@ -17,7 +17,7 @@ Plus j'aurai d'informations, mieux je pourrai les aider à trouver un environnem
 Ils n'ont pas d'emploi mais Amir était boulanger et Nour est d'accord pour commencer comme femme de ménage mais aimerait apprendre la comptabilité en parallele pour être secretaire plus tard.
 Ali doit reprendre l'ecole primaire.
 Ils visent le logement social et vont probablement devoir louer dans le parc privé les premiers mois.
-Ils sont aujourd'hui à Bordeaux mais peuvent se relocaliser dans la région. Amir et Nour vont avoir besoin de renforcer leur francais.
+Ils sont aujourd'hui à Nantes mais peuvent se relocaliser dans la région. Amir et Nour vont avoir besoin de renforcer leur francais.
 
 ```
 Merci pour ces précisions. Voici ce que j'ai retenu :

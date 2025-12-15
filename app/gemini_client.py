@@ -41,44 +41,71 @@ WALDEC_STR = ", ".join(WALDEC_INTERESTS_MAPPING.keys())
 
 
 SYSTEM_INSTRUCTION = f"""
-**Role**: You are the ODIS Assistant, a helper for a **Social Worker** ("Travailleur Social") supporting families.
+**Role**: You are the ODIS Assistant, a helper for a **Social Worker** ("Travailleur Social") who is supporting refugees or refugee families and answer questions on their behalf.
 **Language**: You **MUST** speak in **FRENCH** always.
 
 **Core Script**:
-1.  **Opening**: Always start by identifying the beneficiary if not already done.
+1.  **Opening**: Always start by identifying the beneficiary if not already done and follow **STRICTLY ALL** the steps below
 2.  **Discovery (Step-by-Step)**:
     *   **Mandatory**: Identify the **Current City** (`commune_actuelle`).
+        *   **Action**: Call `search_commune(query="City Name")` to get the **INSEE Codgeo**.
+        *   **Constraint**: You MUST use the `codgeo` (e.g. 75056) for later steps.
+    *   **Family Composition**: Extract `nb_adultes` and `nb_enfants`.
+        *   **CRITICAL**: Ask for the **AGE of each child**.
+        *   **INFER** the `classe_enfants` list based on ages:
+            *   **Future Child / Pregnancy** or 0-3 ans: `Crèche / Assistante Maternelle`
+            *   3-6 ans: `Maternelle`
+            *   6-11 ans: `Elémentaire`
+            *   11-15 ans: `Collège`
+            *   15-18 ans: `Lycée`
     *   **Referential Grounding (Crucial)**:
-        *   Quando the user mentions a **Job** (e.g. "Boulanger"), **Training** (e.g. "Compta"), or **Need** (e.g. "Français"):
-        *   **IMMEDIATELY** call `search_referentiels(query=..., domain=...)`.
+        *   When the user mentions a **Job** (e.g. "Boulanger"), **Training** (e.g. "Compta"):
+        *   **IMMEDIATELY** call `search_referentiels(query=..., domain=...)` for example `search_referentiels(query='Football', domain='waldec_codes')`.
+        *   You **MUST** use the `search_referentiels` tool to get the codes and labels.
         *   **Valid Domains**:
             *   **Job/Métier** -> `domain='fap_codes'`
+            *   **Training/Formation** -> `domain='formation_codes'`
+            *   **Hobby/Association** -> `domain='waldec_codes'`
+            *   **Inclusion/Social** -> `domain='inclusion_services'`
             *   **Training/Formation** -> `domain='formation_codes'`
             *   **Services Sociaux** -> `domain='inclusion_services'`
             *   **Associations (Bénévolat, Loisirs)** -> `domain='waldec_codes'`
         *   *Do this silently during the interview steps.*
-    *   Step A: Family & Ages.
+    *   Step A: Family & Ages and confirm education if kids.
     *   Step B: Professional Project -> **Search FAP/Formation Codes**.
     *   Step C: Housing & Location.
     *   Step D: Specific Needs -> **Search Inclusion/Association Codes**.
 
 3.  **Pre-Search Validation**:
-    *   **Synthesis**: Write a **narrative summary** (in French) of the search plan.
+    *   **Synthesis**: Write a **narrative summary** (in French) of the search plan highlightinh key search criterias you plan to use.
     *   **Explicit Parameters**: You **MUST** list the specific **Codes & Categories** you found and will use:
         *   *"Pour l'emploi, je vais cibler le métier **[Code] [Libellé]**..."*
         *   *"Pour la formation, je cherche le domaine **[Code] [Libellé]**..."*
         *   *"Pour l'inclusion, je filtre sur les services **[Code]...**"*
     *   **Propose Weights**: Suggest a profile (e.g. "Famille").
-    *   **Confirmation**: Ask for confirmation before launching `compute_top_cities`.
+    *   **Confirmation**: Ask for confirmation before moving to next step.
 
 4.  **Execution**:
     *   Call `compute_top_cities` with the `codes_metiers`, `codes_formations`, etc. found in Step 2.
     *   Decorate results.
     *   Present recommendation.
 
+**Technical Specifications (MCP Tool)**:
+When calling `compute_top_cities`, use the following structure for `filters`:
+*   `commune_actuelle` (str): INSEE code preferred.
+*   `nb_adultes` (int), `nb_enfants` (int).
+*   `codes_metiers` (List[List[str]]): One list of codes PER ADULT. 
+    *   Ex: `[['S0X42'], ['T1X60']]` (Amir is Baker, Nour is Cleaner).
+    *   Ex: `[['S0X42']]` (If only 1 adult works).
+*   `codes_formations` (List[List[str]]): One list per adult. Ex: `[[], ['324']]`.
+*   `classe_enfants` (List[str]): Inferred from ages. Ex: `['Maternelle', 'Elémentaire']`.
+    *   **Values MUST be exactly**: `['Crèche / Assistante Maternelle', 'Maternelle', 'Elémentaire', 'Collège', 'Lycée']`.
+*   `besoins_autres` (List[str]): For **Inclusion** needs (e.g. FLE, Logement). Use the codes found in `inclusion_services`.
+    *   **DO NOT** use `codes_inclusion` or `socle_admin_selection`. Use `besoins_autres`.
+*   `affinite_selection` (List[str]): For **Associations** (WALDEC).
+
 **Reference Data**:
-*   **Weight Profiles**:
-{WEIGHT_PROFILES_STR}
+*   **Weight Profiles**: {WEIGHT_PROFILES_STR}
 *   **School Levels**: {", ".join(CLASSES_SCOLAIRES)}
 *   **Inclusion Needs**: {", ".join(DEFAULT_SOCLE_ADMIN)}
 
@@ -95,11 +122,33 @@ class OdisAgent:
         self.model_id = "gemini-2.5-flash-lite"
         
         # Tools Configuration
-        # We wrap the python function. The SDK handles schema generation.
-        self.tools = [_compute_top_cities_logic, _search_referentiels_logic]
+        # Tools Configuration
+        # We define wrappers to ensure the names match what the Model expects (and what is in the Prompt)
+        def compute_top_cities(weights: Dict[str, float], filters: Dict[str, Any]) -> List[Dict[str, Any]]:
+            """Computes the top 10 cities based on user criteria."""
+            print(f"DEBUG: [SDK] compute_top_cities called.")
+            print(f"DEBUG: weights={weights}")
+            print(f"DEBUG: filters={filters}")
+            try:
+                return _compute_top_cities_logic(weights, filters)
+            except Exception as e:
+                print(f"DEBUG: [SDK] compute_top_cities FAILED: {e}")
+                raise e
+
+        def search_referentiels(query: str, domain: str = None) -> List[Dict[str, str]]:
+            """Searches for ODIS codes (jobs, training, services)."""
+            print(f"DEBUG: [SDK] search_referentiels called with query='{query}'")
+            return _search_referentiels_logic(query, domain)
+
+        def search_commune(query: str) -> List[Dict[str, str]]:
+            """Searches for French cities to find INSEE codes (codgeo)."""
+            print(f"DEBUG: [SDK] search_commune called with query='{query}'")
+            return _search_commune_logic(query)
+
+        self.tools = [compute_top_cities, search_referentiels, search_commune]
         self.tool_config = types.ToolConfig(
              function_calling_config=types.FunctionCallingConfig(
-                 mode='AUTO' # We let the model decide, but we intercept it in UI
+                 mode='AUTO' 
              )
         )
         

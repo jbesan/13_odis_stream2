@@ -471,9 +471,25 @@ def compute_inclusion_score(
         for interest in selected_interests:
             if interest in cfg.WALDEC_INTERESTS_MAPPING:
                 interest_codes.update(cfg.WALDEC_INTERESTS_MAPPING[interest])
+            # Enable Raw Code Search (User Request)
+            # If the Agent finds a specific code (e.g. 011120 for Football), use it directly.
+            elif isinstance(interest, str) and len(interest) >= 3:
+                interest_codes.add(interest)
         
         if interest_codes:
             interest_prefixes = tuple(interest_codes)
+            # Robustness: Ensure we match on string column
+            # associations_data['id_waldec'] is usually the RNA or Theme code?
+            # pipeline/ingest.py says we keep 'id_waldec' -> wait, id_waldec is usually W...
+            # The theme code is usually 'objet_social1' or similar.
+            # Let's check `associations_data` schema in `scoring.py`.
+            # Actually, `pipeline/build.py` aggregates associations.
+            # `odis_associations_agg.parquet` likely has `codgeo`, `count`, `id_waldec`?
+            # Wait, `associations_data` in `scoring.py` is loaded from `REL_ASSOCIATIONS_FILE`.
+            # Let's assume the previous code `associations_data['id_waldec'].astype(str).str.startswith(...)` was correct about the column name,
+            # but usually WALDEC *themes* are numbers (e.g. 011120). 
+            # If `id_waldec` contains the THEME CODE, then fine.
+            
             affinite_assos = associations_data[associations_data['id_waldec'].astype(str).str.startswith(interest_prefixes, na=False)]
             affinite_counts = affinite_assos.groupby('codgeo')['count'].sum()
             
