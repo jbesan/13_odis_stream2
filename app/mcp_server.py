@@ -54,6 +54,17 @@ def get_scoring_engine() -> ScoringEngine:
         global_stats={} # TODO: Compute or load global stats if needed for scaling
     )
 
+
+def normalize_text(text: str) -> str:
+    """
+    Normalizes text by removing accents and lowercasing.
+    """
+    import unicodedata
+    if not isinstance(text, str):
+        return str(text)
+    return ''.join(c for c in unicodedata.normalize('NFD', text)
+                   if unicodedata.category(c) != 'Mn').lower()
+
 def _search_referentiels_logic(query: str, domain: str = None) -> List[Dict[str, str]]:
     """
     Searches for codes in the ODIS referentials (Jobs, Formations, Inclusion).
@@ -73,35 +84,55 @@ def _search_referentiels_logic(query: str, domain: str = None) -> List[Dict[str,
     if df.empty:
         return []
 
-    # 2. Standard Dataframe Search
+    # 1. Filter by Domain
     if domain:
         df = df[df['key'] == domain]
-    
     
     # 2. Robust Search Logic
     STOP_WORDS = {
         "le", "la", "les", "l", "d", "de", "du", "des", 
         "un", "une", "et", "ou", "au", "aux", "en", 
-        "par", "pour", "sur", "dans"
+        "par", "pour", "sur", "dans", "a", "à"
     }
     
-    query_norm = query.lower()
+    query_norm = normalize_text(query)
     if 'label' not in df.columns:
         return []
 
     # Prepare DataFrame for scoring
     work_df = df.copy()
-    work_df['label_lower'] = work_df['label'].astype(str).str.lower()
+    work_df['label_norm'] = work_df['label'].apply(normalize_text)
+    work_df['code_norm'] = work_df['code'].apply(normalize_text)
     
     # 2.1 Calculate Score
-    def calculate_relevance(row_label: str) -> int:
+    def calculate_relevance(row):
         score = 0
-        # A. Phrase Match
-        if query_norm in row_label:
+        label_norm = row['label_norm']
+        code_norm = row['code_norm']
+        
+        # A. Exact Phrase Match
+        if query_norm in label_norm:
             score += 100
         
         # B. Token Overlap
-        row_tokens = set(row_label.split())
+        row_tokens = set(label_norm.split())
+        query_tokens = set(query_norm.split()) - STOP_WORDS
+        
+        if not query_tokens: # Check just in case query was only stop words
+             query_tokens = set(query_norm.split())
+
+    # 2.1 Calculate Score
+    def calculate_relevance(row):
+        score = 0
+        label_norm = row['label_norm']
+        code_norm = row['code_norm']
+        
+        # A. Exact Phrase Match
+        if query_norm in label_norm:
+            score += 100
+        
+        # B. Token Overlap
+        row_tokens = set(label_norm.split()) - STOP_WORDS
         query_tokens = set(query_norm.split()) - STOP_WORDS
         
         if not query_tokens: # Check just in case query was only stop words
@@ -110,13 +141,29 @@ def _search_referentiels_logic(query: str, domain: str = None) -> List[Dict[str,
         overlap = len(query_tokens.intersection(row_tokens))
         score += overlap * 20
         
+        # C. Substring Token Match (for minor misspellings or plurals)
+        # e.g. "francais" in "francaise"
+        sub_score = 0
+        for qt in query_tokens:
+            if len(qt) > 3:
+                for rt in row_tokens:
+                    if len(rt) > 3: # Only match significant tokens
+                        if qt in rt or rt in qt:
+                             # Don't double count if exact match already handled by intersection
+                             if qt != rt:
+                                 sub_score += 5
+        score += sub_score
+                             
+        # D. Match in Code
+        if query_norm in code_norm:
+            score += 50
+        
         return score
 
-    work_df['score'] = work_df['label_lower'].apply(calculate_relevance)
-    
+    work_df['score'] = work_df.apply(calculate_relevance, axis=1)
     
     # Sort by score descending
-    results_df = results_df.sort_values(by='score', ascending=False)
+    results_df = work_df[work_df['score'] > 0].sort_values(by='score', ascending=False)
     
     # 3. Format Output
     results_df = results_df.head(20)
@@ -135,6 +182,53 @@ def _search_referentiels_logic(query: str, domain: str = None) -> List[Dict[str,
          top_summary = [f"{r['label']} ({r['relevance']})" for r in results[:3]]
          logger.info(f"   Top matches: {top_summary}")
          
+    return results
+
+
+def _search_commune_logic(query: str) -> List[Dict[str, str]]:
+    """
+    Searches for French cities to find INSEE codes (codgeo).
+    """
+    logger.info(f"👉 [MCP] Request: search_commune")
+    logger.info(f"   Query: '{query}'")
+    
+    if 'odis' not in DATA_CONTEXT:
+         logger.warning("   ⚠️ ODIS data not available.")
+         return []
+         
+    df = DATA_CONTEXT['odis']
+    
+    # robust search
+    q_norm = query.lower().strip()
+    
+    # 1. Exact Match
+    exact = df[df['libgeo'].str.lower() == q_norm]
+    if not exact.empty:
+         # take top matches sorted by population if available?
+         # population is probably in df
+         results_df = exact
+    else:
+         # 2. Contains Match
+         results_df = df[df['libgeo'].str.lower().str.contains(q_norm, na=False)]
+    
+    if results_df.empty:
+        logger.info("   [MCP] No cities found.")
+        return []
+
+    # Sort by population descending
+    if 'population' in results_df.columns:
+        results_df = results_df.sort_values(by='population', ascending=False)
+        
+    results = []
+    for codgeo, row in results_df.head(10).iterrows():
+        results.append({
+            "codgeo": str(codgeo),
+            "libgeo": row['libgeo'],
+            "bassin_de_vie": str(row['bassin_de_vie']) if 'bassin_de_vie' in row else "N/A",
+            "population": int(row['population']) if 'population' in row else 0
+        })
+        
+    logger.info(f"✅ [MCP] Response: Found {len(results)} cities. Top: {[r['libgeo'] for r in results[:3]]}")
     return results
 
 def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]) -> List[Dict[str, Any]]:

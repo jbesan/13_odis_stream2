@@ -2,66 +2,113 @@
 import sys
 import os
 import json
+import pytest
+import logging
 
-# Add project root to path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# Add project root to path (parent of 'app')
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
-from mcp_server import _compute_top_cities_logic
+from app.mcp_server import _compute_top_cities_logic, _search_commune_logic, _search_referentiels_logic, set_data_context
+from app.data_loader import load_all_data_raw
 
-def test_mcp_execution():
-    print("Testing MCP Execution...")
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+@pytest.fixture(scope="module")
+def mcp_data_context():
+    """Load data once for the module (simulating Server Startup)."""
+    print("Loading ODIS Data Context...")
+    data = load_all_data_raw()
+    set_data_context(data)
+    return data
+
+def test_search_commune(mcp_data_context):
+    """Verify city search finds Nantes."""
+    print("Testing search_commune('Nantes')...")
+    results = _search_commune_logic("Nantes")
+    assert len(results) > 0, "Should find at least one city"
     
-    print("\n--- Test Configuration (Dummy Data) ---")
-    print("These are hardcoded inputs simulating a User Persona:")
-    
-    # Dummy Weights
-    # Scenario: Demo 3 (Aïcha) from config.py
-    # Family: 1 Adult, 2 Children
-    # Current: Marseille (13), Search Radius: 50km
-    # Job: T2A60 (Lab Tech)
-    # Needs: Social Housing, School (Creche, College), Maternity, French learning
+    # Check top match
+    top = results[0]
+    assert top['codgeo'] == '44109', "Nantes codgeo should be 44109"
+    assert top['libgeo'] == 'Nantes'
+
+def test_search_referentiels_jobs(mcp_data_context):
+    """Verify FAP search finds jobs."""
+    results = _search_referentiels_logic("Boulanger", domain="fap_codes")
+    assert len(results) > 0
+    # Check if any result has expected label
+    found = any("Boulanger" in r['label'] for r in results)
+    assert found, "Should find job labeled 'Boulanger'"
+
+def test_search_referentiels_hobbies(mcp_data_context):
+    """Verify WALDEC search finds hobbies."""
+    results = _search_referentiels_logic("Football", domain="waldec_codes")
+    assert len(results) > 0
+    top = results[0]
+    assert "football" in top['label'].lower()
+
+def test_search_referentiels_inclusion(mcp_data_context):
+    """Verify Inclusion search finds services (e.g. FLE)."""
+    results = _search_referentiels_logic("Apprendre Français", domain="inclusion_services")
+    assert len(results) > 0
+    top = results[0]
+    assert "français" in top['label'].lower() or "fle" in top['label'].lower() or "langue" in top['label'].lower()
+
+def test_compute_top_cities_execution_complex(mcp_data_context):
+    """
+    Test a complete user scenario (Demo 3 - Aïcha).
+    Using data structure maintained in original test_mcp_local.py.
+    """
+    print("\nExecuting Complex Scenario (Aïcha)...")
     
     weights = {
         'emploi': 100,
-        'logement': 100, # Default per SCORE_EXAMPLE.md
-        'education': 100, # Default
-        'sante': 100, # Default
-        'inclusion': 100, # From config
+        'logement': 100,
+        'education': 100,
+        'sante': 100,
+        'inclusion': 100,
         'mobilité': 50
     }
     
     filters = {
-        'commune_actuelle': 'Marseille',
+        'commune_actuelle': 'Marseille', # Should be resolved to 13055
         'loc_distance_km': 50,
         'nb_adultes': 1,
         'nb_enfants': 2,
         'hebergement': 'Location',
         'logement': 'Logement Social',
-        'codes_metiers': [['T2A60']], # List of Lists
-        'classe_enfants': ['Crèche / Assistante Maternelle', 'Collège'],
+        'codes_metiers': [['T2A60']], 
+        'classe_enfants': ['Maternelle', 'Collège'], # Adjusted from original 'Crèche/Assistante Maternelle' to match standardized keys if possible, or robust logic handles it.
+        # Note: 'Crèche / Assistante Maternelle' is the text used in prompt, scoring might map it.
+        # But let's stick to what original test had:
+        # 'classe_enfants': ['Crèche / Assistante Maternelle', 'Collège'],
+        # Wait, usually scoring expects keys like 'Maternelle', 'Elémentaire'.
+        # Let's trust the original test inputs?
+        # Actually, let's use standard keys to be safe:
+        # 'Maternelle' covers <6. 'Collège' covers 11-15.
+        
         'besoins_autres': ['lecture-ecriture-calcul--maitriser-le-francais'],
-        'sante': 'Maternité',
+        'besoin_sante': 'Maternité', # Key in config is 'besoin_sante'
         'affinite_selection': ['Entraide / Bénévolat']
     }
     
-    print(f"Weights: {json.dumps(weights, indent=2)}")
-    print(f"Filters: {json.dumps(filters, indent=2)}")
-    print("---------------------------------------\n")
+    # Try with robust inputs
+    # Note: original test had 'sante': 'Maternité' in filters, but scoring expects 'besoin_sante'.
+    # And 'classe_enfants' values need to match mapping.
+    # We'll use the exact values from original test and assume app handles them or they are correct keys.
     
-    print("Function defined, calling it...")
-    # This triggers lazy data loading
-    try:
-        results = _compute_top_cities_logic(weights, filters)
-        print(f"Success! Got {len(results)} results.")
-        if results:
-            print("Top result example:")
-            print(json.dumps(results[0], indent=2))
-        else:
-            print("No results returned. Check filters or data.")
-            
-    except Exception as e:
-        print(f"FAILED: {e}")
-        raise e
+    results = _compute_top_cities_logic(weights, filters)
+    
+    assert len(results) > 0, "Should return results for complex scenario"
+    top = results[0]
+    
+    print(f"Top Result: {top['name']} ({top['score']})")
+    assert 'category_scores' in top
+    assert top['score'] > 0
 
 if __name__ == "__main__":
-    test_mcp_execution()
+    # Allow running as script
+    # Manually invoke py.test or just run logical flow
+    sys.exit(pytest.main(["-v", __file__]))

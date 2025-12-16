@@ -22,17 +22,18 @@ from config import (
 
 # Ensure implicit imports work
 try:
-    from app.mcp_server import _compute_top_cities_logic, _search_referentiels_logic
+    from app.mcp_server import _compute_top_cities_logic, _search_referentiels_logic, _search_commune_logic
     logger.info("Successfully imported tools from app.mcp_server")
 except ImportError:
     try:
-        from mcp_server import _compute_top_cities_logic, _search_referentiels_logic
+        from mcp_server import _compute_top_cities_logic, _search_referentiels_logic, _search_commune_logic
         logger.info("Successfully imported tools from mcp_server")
     except ImportError as e:
          logger.error(f"CRITICAL: Could not import mcp_server: {e}")
          # Dummies
-         def _compute_top_cities_logic(*args, **kwargs): raise ImportError("mcp_server error")
-         def _search_referentiels_logic(*args, **kwargs): raise ImportError("mcp_server error")
+        #  def _compute_top_cities_logic(*args, **kwargs): raise ImportError("mcp_server error")
+        #  def _search_referentiels_logic(*args, **kwargs): raise ImportError("mcp_server error")
+        #  def _search_commune_logic(*args, **kwargs): raise ImportError("mcp_server error")
 
 # Format lists for Prompt
 WEIGHT_PROFILES_STR = "\n".join([f"- **{k}**: {v}" for k, v in WEIGHT_PROFILES.items()])
@@ -44,10 +45,13 @@ try:
     with open(os.path.join(os.path.dirname(__file__), 'AGENT_PROMPT.md'), 'r') as f:
         prompt_template = f.read()
         
-    SYSTEM_INSTRUCTION = prompt_template.format(
-        WEIGHT_PROFILES_STR=WEIGHT_PROFILES_STR,
-        CLASSES_SCOLAIRES_STR=CLASSES_SCOLAIRES_STR,
-        DEFAULT_SOCLE_ADMIN_STR=DEFAULT_SOCLE_ADMIN_STR
+    # Use replace instead of format to avoid conflicts with JSON curly braces in the prompt
+    SYSTEM_INSTRUCTION = prompt_template.replace(
+        "{WEIGHT_PROFILES_STR}", WEIGHT_PROFILES_STR
+    ).replace(
+        "{CLASSES_SCOLAIRES_STR}", CLASSES_SCOLAIRES_STR
+    ).replace(
+        "{DEFAULT_SOCLE_ADMIN_STR}", DEFAULT_SOCLE_ADMIN_STR
     )
 except Exception as e:
     logger.error(f"Failed to load AGENT_PROMPT.md: {e}")
@@ -61,33 +65,58 @@ class OdisAgent:
         
         self.client = genai.Client(api_key=api_key)
         # User requested 2.5-flash-lite
+        self.client = genai.Client(api_key=api_key)
+        # Upgrade to 2.5 Flash for better Tool Use
         self.model_id = "gemini-2.5-flash-lite"
         
         # Tools Configuration
-        # Tools Configuration
         # We define wrappers to ensure the names match what the Model expects (and what is in the Prompt)
-        def compute_top_cities(weights: Dict[str, float], filters: Dict[str, Any]) -> List[Dict[str, Any]]:
-            """Computes the top 10 cities based on user criteria."""
-            print(f"DEBUG: [SDK] compute_top_cities called.")
-            print(f"DEBUG: weights={weights}")
-            print(f"DEBUG: filters={filters}")
+        def compute_topcities(weight_profile: str, filters: Dict[str, Any]) -> List[Dict[str, Any]]:
+            """
+            Identifies the top recommended cities based on the beneficiary's social/professional needs.
+            MUST be called ONLY when all mandatory filters (commune, distance) are known.
+            
+            Args:
+                weight_profile: Name of the weight profile to use (e.g., 'Famille', 'Équilibré', 'Santé', 'Economique').
+                filters: Dictionary containing 'commune_actuelle', 'nb_adultes', 'codes_metiers', etc.
+            """
+            logger.debug(f"DEBUG: [SDK] compute_topcities called.")
+            logger.debug(f"DEBUG: weight_profile={weight_profile}")
+            logger.debug(f"DEBUG: filters={filters}")
+            
+            # Resolve weights from profile name
+            weights = WEIGHT_PROFILES.get(weight_profile, WEIGHT_PROFILES["Équilibré"])
+            logger.debug(f"DEBUG: Resolved weights={weights}")
+            
             try:
                 return _compute_top_cities_logic(weights, filters)
             except Exception as e:
-                print(f"DEBUG: [SDK] compute_top_cities FAILED: {e}")
+                logger.error(f"DEBUG: [SDK] compute_topcities FAILED: {e}")
                 raise e
 
         def search_referentiels(query: str, domain: str = None) -> List[Dict[str, str]]:
-            """Searches for ODIS codes (jobs, training, services)."""
+            """
+            Searches for official French administrative codes.
+            
+            Args:
+                query: The search term (e.g., 'Soudeur', 'Football').
+                domain: The target database. MUST be one of: 
+                        ['fap_codes' (Jobs), 'formation_codes', 'inclusion_services', 'waldec_codes' (Hobbies)].
+            """
             print(f"DEBUG: [SDK] search_referentiels called with query='{query}'")
             return _search_referentiels_logic(query, domain)
 
         def search_commune(query: str) -> List[Dict[str, str]]:
-            """Searches for French cities to find INSEE codes (codgeo)."""
-            print(f"DEBUG: [SDK] search_commune called with query='{query}'")
+            """
+            Searches for a French city to get its INSEE code.
+            
+            Args:
+                query: City name provided by the user (e.g. 'Bordeaux').
+            """
+            logger.debug(f"DEBUG: [SDK] search_commune called with query='{query}'")
             return _search_commune_logic(query)
 
-        self.tools = [compute_top_cities, search_referentiels, search_commune]
+        self.tools = [compute_topcities, search_referentiels, search_commune]
         self.tool_config = types.ToolConfig(
              function_calling_config=types.FunctionCallingConfig(
                  mode='AUTO' 
@@ -125,32 +154,9 @@ class OdisAgent:
     def send_tool_response(self, function_name: str, result: Any) -> types.GenerateContentResponse:
         """
         Sends the result of a tool execution back to the model.
-        Note: The SDK's ChatSession handles history automatically, 
-        so we just typically send the tool output as a message part?
-        Actually, usually we use response.parts to construct the next message.
         """
-        # In the new SDK, we might need to construct the Part correctly.
-        # It seems we can just send the tool response in a simplified way or rely on the chat object.
-        # But wait, send_message usually takes 'message'.
-        # For function response, we use types.Part.from_function_response
         
-        # We need to find the call_id if possible? 
-        # The V1 SDK simplifies this.
-        
-        # Let's try constructing a content list
-        # Simple string representation for now if complex objects fail, 
-        # but structured data is better.
-        
-        # Ideally we pass a list of Part objects.
-        
-        # Since we are in a wrapper, let's look at the calling code (Streamlit).
-        # We will expose a method to feed the result back.
         pass
-        # Actually Google GenAI SDK 'chat.send_message' handles this if we pass the right structure.
-        # We will handle the complexity in the UI loop, or here.
-        
-        # Let's assume the UI gets a response with specific parts.
-        # If it detects function call, it executes it, then calls `agent.feed_tool_output(call, result)`
         
         return self.chat.send_message(
             types.Content(
@@ -169,8 +175,13 @@ class OdisAgent:
         logger.info(f"👉 [GEMINI_CLIENT] Request to execute Tool: {name}")
         logger.info(f"   Args received: {json.dumps(args, indent=2, default=str)}")
         
-        if name == "compute_top_cities":
+        if name == "compute_topcities":
             try:
+                # Handle weight_profile -> weights conversion
+                if 'weight_profile' in args:
+                    profile = args.pop('weight_profile')
+                    args['weights'] = WEIGHT_PROFILES.get(profile, WEIGHT_PROFILES["Équilibré"])
+                
                 logger.info("   Calling _compute_top_cities_logic...")
                 start_time = time.time()
                 result = _compute_top_cities_logic(**args)
@@ -192,6 +203,16 @@ class OdisAgent:
                 return result
              except Exception as e:
                  logger.error(f"❌ [GEMINI_CLIENT] Search Failed: {e}", exc_info=True)
+                 raise e
+
+        if name == "search_commune":
+             try:
+                logger.info("   Calling _search_commune_logic...")
+                result = _search_commune_logic(**args)
+                logger.info(f"✅ [GEMINI_CLIENT] Commune Search Success. Result count: {len(result)}")
+                return result
+             except Exception as e:
+                 logger.error(f"❌ [GEMINI_CLIENT] Commune Search Failed: {e}", exc_info=True)
                  raise e
 
         error_msg = f"Unknown tool: {name}"

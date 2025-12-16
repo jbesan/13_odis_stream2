@@ -170,7 +170,8 @@ def load_all_data_raw() -> Dict[str, Any]:
         # ParquetFile is often safer for schema reading than read_schema
         # as it avoids some global fs registration calls in older/mixed pyarrow versions
         pf = pq.ParquetFile(odis_path)
-        all_cols = pf.schema.names
+        # FIX: Use Arrow Schema to get high-level column names (handling Lists correctly)
+        all_cols = pf.schema.to_arrow_schema().names
         
         # Essential columns
         essential_cols = {

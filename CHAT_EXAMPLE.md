@@ -1,4 +1,9 @@
 Bonjour j'accompagne Amir et sa femme Nour ainsi que leur enfant Ali 7 ans
+Ils sont aujourd'hui à Nantes mais peuvent se relocaliser dans la région.
+Ils n'ont pas d'emploi mais Amir était boulanger et Nour est d'accord pour commencer comme femme de ménage mais aimerait apprendre la bureautique en parallèle pour être secrétaire ou assistante administrative plus tard.
+Ali doit reprendre l'ecole primaire.
+Ils visent le logement social et vont probablement devoir louer dans le parc privé les premiers mois.
+Amir et Nour vont avoir besoin de renforcer leur francais et Ali adore le foot. Ils sont tres fiers de leur culture syrienne et aimerait la partager et si possible rejoindre une communauté de syriens sur place.
 
 ```
 Bonjour, je suis là pour vous aider.
@@ -14,10 +19,11 @@ Inclusion : Ont-ils des liens communautaires ou des besoins spécifiques en mati
 Plus j'aurai d'informations, mieux je pourrai les aider à trouver un environnement adapté.
 ```
 
-Ils n'ont pas d'emploi mais Amir était boulanger et Nour est d'accord pour commencer comme femme de ménage mais aimerait apprendre la comptabilité en parallele pour être secretaire plus tard.
+Ils n'ont pas d'emploi mais Amir était boulanger et Nour est d'accord pour commencer comme femme de ménage mais aimerait apprendre la bureautique en parallele pour être secretaire ou assistante administrative plus tard.
 Ali doit reprendre l'ecole primaire.
 Ils visent le logement social et vont probablement devoir louer dans le parc privé les premiers mois.
-Ils sont aujourd'hui à Nantes mais peuvent se relocaliser dans la région. Amir et Nour vont avoir besoin de renforcer leur francais.
+Ils sont aujourd'hui à Nantes mais peuvent se relocaliser dans la région.
+Amir et Nour vont avoir besoin de renforcer leur francais et Ali adore le foot. Ils sont tres fiers de leur culture syrienne et aimerait la partager et si possible rejoindre une communauté de syriens sur place.
 
 ```
 Merci pour ces précisions. Voici ce que j'ai retenu :
