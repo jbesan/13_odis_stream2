@@ -1,0 +1,23 @@
+from typing import List, Optional, Union
+from pydantic import BaseModel, Field
+
+class SearchCriterias(BaseModel):
+    """
+    Criteria for searching and scoring cities based on user needs.
+    """
+    commune_actuelle: str = Field(..., description="INSEE code of the user's current city (e.g. '75056')")
+    loc_distance_km: Union[int, str] = Field(..., description="Search radius in km (20, 50) or scope ('departement', 'region')")
+    
+    nb_adultes: int = Field(1, description="Number of adults in the household")
+    nb_enfants: int = Field(0, description="Number of children in the household")
+    
+    classe_enfants: List[str] = Field(default_factory=list, description="School levels needed (e.g. ['Maternelle', 'Collège'])")
+    codes_metiers: List[List[str]] = Field(default_factory=list, description="List of list of FAP codes for jobs (e.g. [['T2A60']]")
+    codes_formations: List[List[str]] = Field(default_factory=list, description="List of list of training codes")
+    
+    besoins_autres: List[str] = Field(default_factory=list, description="List of inclusion need codes")
+    affinite_selection: List[str] = Field(default_factory=list, description="List of hobby/association codes (WALDEC)")
+    
+    hebergement: Optional[str] = Field(None, description="Preferred accommodation type (e.g. 'Location')")
+    logement: Optional[str] = Field(None, description="Housing type (e.g. 'Logement Social')")
+    sante: Optional[str] = Field(None, description="Specific health need (e.g. 'Maternité')")

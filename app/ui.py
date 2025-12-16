@@ -258,12 +258,12 @@ def render_other_needs_form() -> None:
     # st.info("Sélectionnez les services institutionnels essentiels pour vous.")
     
     # Pre-defined list from PRD/Config
-    default_socle = cfg.DEFAULT_SOCLE_ADMIN
+    default_socle = cfg.DEFAULT_INC_SERVICES_CORE
     
     # Initialize session state for this selection if not present
-    if 'ui_socle_admin_selection' not in st.session_state:
+    if 'ui_inc_services_core_selection' not in st.session_state:
         # Default to the recommended list
-        st.session_state.ui_socle_admin_selection = st.session_state['demo_data'].get('socle_admin_selection', default_socle)
+        st.session_state.ui_inc_services_core_selection = st.session_state['demo_data'].get('inc_services_core_selection', default_socle)
 
     # Widget hidden as per user request, but state is preserved for scoring.
     # st.multiselect(...) 
@@ -272,16 +272,16 @@ def render_other_needs_form() -> None:
     st.subheader("Affinités & Loisirs")
     st.info("Sélectionnez vos centres d'intérêt pour identifier les territoires avec un tissu associatif correspondant.")
     
-    # from rna_config import WALDEC_INTERESTS_MAPPING
-    interest_options = list(cfg.WALDEC_INTERESTS_MAPPING.keys())
+    # from rna_config import WALDEC_INC_ASSO_ADD_MAPPING
+    interest_options = list(cfg.WALDEC_INC_ASSO_ADD_MAPPING.keys())
     
-    if 'ui_affinite_selection' not in st.session_state:
-        st.session_state.ui_affinite_selection = st.session_state['demo_data'].get('affinite_selection', [])
+    if 'ui_inc_asso_add_selection' not in st.session_state:
+        st.session_state.ui_inc_asso_add_selection = st.session_state['demo_data'].get('inc_asso_add_selection', [])
         
     st.multiselect(
         "Centres d'intérêt",
         options=interest_options,
-        key="ui_affinite_selection"
+        key="ui_inc_asso_add_selection"
     )
 
     # --- 3. Autres Besoins (Refactored) ---
@@ -452,7 +452,7 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
     # Other Needs Priority (F-15)
     if st.session_state.get("ui_priority_other_needs", False):
         # Maps to the new Extra Services score
-        criteria_weights['inc_extra_services_score'] = 3.0
+        criteria_weights['inc_services_add_scaled'] = 3.0
 
     return cfg.ScoringConfig(
         poids_emploi=st.session_state['ui_poids_emploi'],
@@ -473,8 +473,8 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
         classe_enfants=classe_enfants,
         besoin_sante=st.session_state['ui_besoin_sante'],
         besoins_autres=besoins_autres_list,
-        socle_admin_selection=st.session_state.get('ui_socle_admin_selection', []), # NEW
-        affinite_selection=st.session_state.get('ui_affinite_selection', []), # NEW
+        inc_services_core_selection=st.session_state.get('ui_inc_services_core_selection', []), # NEW
+        inc_asso_add_selection=st.session_state.get('ui_inc_asso_add_selection', []), # NEW
         binome_penalty=st.session_state.get('ui_binome_penalty', 50) / 100,
         pop_min=st.session_state.get('ui_pop_min', 1000)
     )
@@ -616,7 +616,7 @@ def _display_bv_result_details(row: pd.Series) -> None:
             incl_index = st.session_state.app_data.get('inclusion_services_index', pd.DataFrame())
             
             # Determine Target Slugs for Filtering
-            target_slugs = set(cfg.DEFAULT_SOCLE_ADMIN)
+            target_slugs = set(cfg.DEFAULT_INC_SERVICES_CORE)
             
             # Add user selected specific needs
             if 'ui_besoins_autres' in st.session_state and st.session_state.ui_besoins_autres:
@@ -740,7 +740,7 @@ def _display_result_details(row: pd.Series) -> None:
             incl_index = st.session_state.app_data.get('inclusion_services_index', pd.DataFrame())
             
             # Determine Target Slugs for Filtering
-            target_slugs = set(cfg.DEFAULT_SOCLE_ADMIN)
+            target_slugs = set(cfg.DEFAULT_INC_SERVICES_CORE)
             
             # Add user selected specific needs
             if 'ui_besoins_autres' in st.session_state and st.session_state.ui_besoins_autres:

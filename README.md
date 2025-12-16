@@ -29,6 +29,7 @@ Ce prototype a un triple objectif :
 - **Système de "Binômes" :** L'algorithme associe de manière unique des communes voisines (`binômes`) pour proposer des solutions conjointes qui répondent à l'ensemble des besoins, même si une seule commune ne le pourrait pas.
 - **Carte Interactive :** Visualisez les localités les mieux notées, leur score, et superposez des couches d'informations additionnelles (écoles, établissements de santé, services d'inclusion).
 - **Résultats Détaillés & Export PDF :** Explorez les 5 meilleurs résultats avec une analyse de leurs points forts et exportez un rapport PDF complet pour la famille accompagnée.
+- **Assistant IA (Agent ODIS) :** Interagissez en langage naturel avec un agent intelligent (Gemini 2.5) capable de conduire l'entretien, de rechercher des codes métiers/formations et de lancer le calcul pour vous.
 - **Scénarios de Démonstration :** Chargez rapidement des profils pré-configurés pour découvrir le potentiel de l'outil.
 
 ## 📸 Aperçu de l'Application

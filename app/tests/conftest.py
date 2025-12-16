@@ -58,7 +58,7 @@ def sample_scores_cat():
     """Creates a sample scores_cat DataFrame for testing."""
     data = {
         'score': [
-            'met_scaled', 'met_tension_scaled', 'inc_socle_admin_score', 'inc_lien_social_score', 'inc_affinite_score',
+            'met_scaled', 'met_tension_scaled', 'inc_services_core_scaled', 'inc_asso_core_scaled', 'inc_asso_add_scaled',
             'log_vac_scaled', 'log_soc_inoc_scaled', 'log_5p_scaled',
             'edu_classes_ferm_scaled', 'inc_pol_scaled', 'inc_population_scaled',
             'met_match_adult1_scaled', 'met_match_adult2_scaled',
@@ -135,8 +135,8 @@ def default_config():
         classe_enfants=[],
         besoin_sante='Aucun',
         besoins_autres=[],
-        socle_admin_selection=[],
-        affinite_selection=[],
+        inc_services_core_selection=[],
+        inc_asso_add_selection=[],
         binome_penalty=0.5,
         pop_min=1000,
         criteria_weights={} # Added for F-15
@@ -151,8 +151,8 @@ def global_stats():
         'log_soc_inoc_scaled': {'min': 0.0, 'max': 0.1},
         'log_5p_scaled': {'min': 0.0, 'max': 0.5},
         'edu_classes_ferm_scaled': {'min': 0.0, 'max': 0.1},
-        'inc_lien_social_score': {'min': 0.0, 'max': 10.0},
-        'inc_affinite_score': {'min': 0.0, 'max': 10.0},
+        'inc_asso_core_scaled': {'min': 0.0, 'max': 10.0},
+        'inc_asso_add_scaled': {'min': 0.0, 'max': 10.0},
         'inc_population_scaled': {'min': 0.0, 'max': 100000.0},
         'edu_petite_enfance_scaled': {'min': 0.0, 'max': 100.0},
     }

@@ -405,6 +405,13 @@ def filter_communes(
         return df[df['dep_code'] == loc_code].copy()
     elif loc_type == 'region':
         return df[df['reg_code'] == loc_code].copy()
+    elif loc_type == 'france':
+        # Exclude DROM-COM (97, 98) 
+        # Ideally we check dep_code. Metadata says 'dep_code' is string.
+        # DROM codes start with 97 (971, 972...)
+        # We also keep Corse (2A, 2B) which are fine.
+        mask = ~df['dep_code'].astype(str).str.startswith(('97', '98'))
+        return df[mask].copy()
 
     return gpd.GeoDataFrame()
 
@@ -440,6 +447,8 @@ def filter_bassins_de_vie(
         area_geometry = area_gdf.loc[(loc_type, loc_code)].polygon
         intersecting_mask = bv_gdf.intersects(area_geometry)
         return bv_gdf[intersecting_mask].copy()
+    elif loc_type == 'france':
+        return bv_gdf.copy()
 
     return gpd.GeoDataFrame()
 
@@ -456,21 +465,21 @@ def compute_inclusion_score(
     df = df.copy()
     
     # --- 1. Socle Administratif ---
-    if 'inc_socle_admin_score' not in df.columns:
-         df['inc_socle_admin_score'] = 0.0
+    if 'inc_services_core_scaled' not in df.columns:
+         df['inc_services_core_scaled'] = 0.0
 
     # --- 2. Lien Social ---
-    if 'inc_lien_social_score' not in df.columns:
+    if 'inc_asso_core_scaled' not in df.columns:
          # Warn instead of raise if data is missing, for robustness
-         df['inc_lien_social_score'] = 0.0
+         df['inc_asso_core_scaled'] = 0.0
     
     # --- 3. Affinité ---
-    selected_interests = config.affinite_selection
+    selected_interests = config.inc_asso_add_selection
     if selected_interests:
         interest_codes = set()
         for interest in selected_interests:
-            if interest in cfg.WALDEC_INTERESTS_MAPPING:
-                interest_codes.update(cfg.WALDEC_INTERESTS_MAPPING[interest])
+            if interest in cfg.WALDEC_INC_ASSO_ADD_MAPPING:
+                interest_codes.update(cfg.WALDEC_INC_ASSO_ADD_MAPPING[interest])
             # Enable Raw Code Search (User Request)
             # If the Agent finds a specific code (e.g. 011120 for Football), use it directly.
             elif isinstance(interest, str) and len(interest) >= 3:
@@ -498,12 +507,12 @@ def compute_inclusion_score(
             
             df['affinite_density'] = (df['affinite_count'] * 1000) / df['population']
             
-            min_b, max_b = get_bounds('inc_affinite_score', scores_cat, global_stats)
-            df['inc_affinite_score'] = min_max_scale(df['affinite_density'].fillna(0), min_b, max_b)
+            min_b, max_b = get_bounds('inc_asso_add_scaled', scores_cat, global_stats)
+            df['inc_asso_add_scaled'] = min_max_scale(df['affinite_density'].fillna(0), min_b, max_b)
         else:
-            df['inc_affinite_score'] = 0.0
+            df['inc_asso_add_scaled'] = 0.0
     else:
-        df['inc_affinite_score'] = 0.0
+        df['inc_asso_add_scaled'] = 0.0
 
     # --- 4. Services Spécifiques ---
     besoins_autres = config.besoins_autres
@@ -524,15 +533,15 @@ def compute_inclusion_score(
              df_merged = df.join(incl_index, how='left')
              df['extra_match_count'] = df_merged['key'].apply(count_extra_matches)
         else:
-            if config.socle_admin_selection:
+            if config.inc_services_core_selection:
                  df['extra_match_count'] = df['key'].apply(count_extra_matches)
             else:
                  df_merged = df.join(incl_index, how='left')
                  df['extra_match_count'] = df_merged['key'].apply(count_extra_matches)
         
-        df['inc_extra_services_score'] = df['extra_match_count'] / len(needed_extra_services)
+        df['inc_services_add_scaled'] = df['extra_match_count'] / len(needed_extra_services)
     else:
-        df['inc_extra_services_score'] = 0.0
+        df['inc_services_add_scaled'] = 0.0
 
     return df
 

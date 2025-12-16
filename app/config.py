@@ -47,7 +47,7 @@ VIEW_LEVEL_OPTIONS = ['Bassins de vie', 'Communes']
 NOMBRE_ADULTES_OPTIONS = [1, 2]
 NOMBRE_ENFANTS_OPTIONS = [0, 1, 2, 3, 4, 5]
 CLASSES_SCOLAIRES = ['Crèche / Assistante Maternelle', 'Maternelle', 'Elémentaire', 'Collège', 'Lycée']
-LOC_DISTANCE_OPTIONS = {20: '20 km', 50: '50 km', 'departement': 'Département', 'region': 'Région'}
+LOC_DISTANCE_OPTIONS = {20: '20 km', 50: '50 km', 'departement': 'Département', 'region': 'Région', 'france': 'France Métropolitaine'}
 HEBERGEMENT_OPTIONS = ["Chez l'habitant", 'Location', 'Foyer']
 LOGEMENT_OPTIONS = ['Location', 'Logement Social']
 SANTE_OPTIONS = ["Aucun", "Hopital", 'Maternité', "Soutien Psychologique & Addictologie"]
@@ -120,15 +120,15 @@ class ScoringConfig:
     besoins_autres: List[str]
     
     # Inclusion
-    socle_admin_selection: List[str]
-    affinite_selection: List[str]
+    inc_services_core_selection: List[str]
+    inc_asso_add_selection: List[str]
     
     # Technical parameters
     binome_penalty: float
     pop_min: int
 
 # --- Inclusion Defaults ---
-DEFAULT_SOCLE_ADMIN = [
+DEFAULT_INC_SERVICES_CORE = [
     "logement-hebergement--sinformer-sur-les-demarches-liees-a-lacces-au-logement",
     "difficultes-administratives-ou-juridiques--accompagnement-aux-demarches-administratives",
     "preparer-sa-candidature--organiser-ses-demarches-de-recherche-demploi"
@@ -157,8 +157,9 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     'binome_penalty': 50,
     'pop_min': 1000,
     'besoins_autres': [],
-    'socle_admin_selection': DEFAULT_SOCLE_ADMIN,
-    'affinite_selection': []
+    'besoins_autres': [],
+    'inc_services_core_selection': DEFAULT_INC_SERVICES_CORE,
+    'inc_asso_add_selection': []
 }
 
 DEMO_SCENARIOS = {
@@ -203,7 +204,7 @@ DEMO_SCENARIOS = {
         'poids_inclusion': 100,
         'poids_emploi': 100,
         'sante': "Maternité",
-        'affinite_selection': ['Entraide / Bénévolat']
+        'inc_asso_add_selection': ['Entraide / Bénévolat']
     }
 }
 
@@ -211,8 +212,8 @@ WALDEC_CORE_INCLUSION = [
     # --- SOCIAL & ENTRAIDE ---
     # "009",    # ACTION SOCIOCULTURELLE (Tout le niveau 1 : Centres sociaux, MJC...)
     "015070", # Apprentissage de langues, alphabétisation (CRITIQUE)
-    "015095", # Soutien scolaire
-    "019016", # Aide à l'insertion des jeunes
+    # "015095", # Soutien scolaire
+    # "019016", # Aide à l'insertion des jeunes
     # "019020", # Aide aux chômeurs
     "019025", # Aide aux réfugiés et aux immigrés (CRITIQUE)
     "020",    # ASSOCIATIONS CARITATIVES, HUMANITAIRES (Tout le niveau 1 : Secours, Alimentaire...)
@@ -226,7 +227,7 @@ WALDEC_CORE_INCLUSION = [
 # 2. LE DICTIONNAIRE D'AFFINITÉS (Pour le matching "Projet de Vie")
 # Clés = Ce que le TS sélectionne dans le multiselect
 # Valeurs = Liste des codes WALDEC à scanner
-WALDEC_INTERESTS_MAPPING = {
+WALDEC_INC_ASSO_ADD_MAPPING = {
     # --- PILIER SPORT ---
     "Sport (Général)": [
         "011000", # Sports, activités de plein air (Général)
@@ -278,6 +279,6 @@ WALDEC_INTERESTS_MAPPING = {
 def get_relevant_rna_codes():
     """Retourne une liste plate unique de tous les codes utiles pour l'extraction SQL/Pandas"""
     all_codes = set(WALDEC_CORE_INCLUSION)
-    for code_list in WALDEC_INTERESTS_MAPPING.values():
+    for code_list in WALDEC_INC_ASSO_ADD_MAPPING.values():
         all_codes.update(code_list)
     return list(all_codes)

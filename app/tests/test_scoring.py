@@ -60,7 +60,33 @@ class TestFilterCommunes:
         assert len(filtered) == 2
         assert '33063' in filtered.index
         assert '64445' in filtered.index
+        assert len(filtered) == 2
+        assert '33063' in filtered.index
+        assert '64445' in filtered.index
         assert '75056' not in filtered.index
+
+    def test_filter_communes_france(self, sample_data):
+        """Tests filtering for France Metro (excludes DROM)."""
+        start_commune = sample_data.loc[['33063']]
+        
+        # Add a DROM commune to sample data if not present, or mock it
+        # sample_data usually comes from conftest. Let's create a local extended DF
+        df_extended = sample_data.copy()
+        # Add a fake DROM line (Reunion)
+        df_extended.loc['97411'] = df_extended.loc['33063'].copy()
+        df_extended.loc['97411', 'dep_code'] = '974'
+        df_extended.loc['97411', 'reg_code'] = '04'
+        
+        filtered = scoring.filter_communes(
+            df=df_extended,
+            start_commune=start_commune,
+            loc_type='france',
+            loc_code=None,
+            loc_distance_km=0
+        )
+        
+        assert '33063' in filtered.index # Bordeaux (Metro)
+        assert '97411' not in filtered.index # Saint-Denis (DROM)
 
 @pytest.mark.unit
 class TestDistanceCalculation:
@@ -103,7 +129,7 @@ class TestScoringLogic:
         df_with_dist['sante_maternite_scaled'] = 0.5
         df_with_dist['sante_maternite_scaled'] = 0.5
         df_with_dist['sante_psy_scaled'] = 0.5
-        df_with_dist['inc_lien_social_score'] = 0.5 # Mock pre-calculated score
+        df_with_dist['inc_asso_core_scaled'] = 0.5 # Mock pre-calculated score
 
         engine = scoring.ScoringEngine(
             df_all_communes=sample_data,
@@ -128,9 +154,9 @@ class TestScoringLogic:
             # 'log_soc_inoc_scaled', # Depends on logement type
             'log_vac_scaled', # Default is Location
             'inc_population_scaled',
-            'inc_socle_admin_score',
-            'inc_lien_social_score',
-            'inc_affinite_score',
+            'inc_services_core_scaled',
+            'inc_asso_core_scaled',
+            'inc_asso_add_scaled',
             'edu_petite_enfance_scaled', # New
             'edu_maternelle_scaled', # New
             'edu_elementaire_scaled', # New
@@ -151,7 +177,7 @@ class TestScoringLogic:
         df_with_dist['inc_population_scaled'] = 0.5
         df_with_dist['inc_population_scaled'] = 0.5
         df_with_dist['inc_pol_scaled'] = 0.5
-        df_with_dist['inc_lien_social_score'] = 0.5
+        df_with_dist['inc_asso_core_scaled'] = 0.5
         
         config = default_config
         config.nb_enfants = 1
@@ -321,8 +347,8 @@ class TestConditionalScoring:
             classe_enfants=[],
             besoin_sante='Aucun', # Condition to ignore sante
             besoins_autres={},
-            socle_admin_selection=[],
-            affinite_selection=[],
+            inc_services_core_selection=[],
+            inc_asso_add_selection=[],
             binome_penalty=0.5,
             pop_min=1000,
             criteria_weights={}
@@ -365,8 +391,8 @@ class TestConditionalScoring:
             classe_enfants=['Maternelle'],
             besoin_sante='Hopital', # Condition to include sante
             besoins_autres={},
-            socle_admin_selection=[],
-            affinite_selection=[],
+            inc_services_core_selection=[],
+            inc_asso_add_selection=[],
             binome_penalty=0.5,
             pop_min=1000,
             criteria_weights={}
@@ -388,7 +414,7 @@ class TestConditionalScoring:
         df_with_dist['inc_population_scaled'] = 0.5
         df_with_dist['inc_population_scaled'] = 0.5
         df_with_dist['inc_pol_scaled'] = 0.5
-        df_with_dist['inc_lien_social_score'] = 0.5
+        df_with_dist['inc_asso_core_scaled'] = 0.5
         
         # Mock data for matches
         df_with_dist['be_codfap_top'] = [['A1', 'B2'], ['A1'], [], [], []]
@@ -467,8 +493,8 @@ class TestMCPScenario:
              classe_enfants=[],
              besoin_sante='Aucun',
              besoins_autres={},
-             socle_admin_selection=[],
-             affinite_selection=[],
+             inc_services_core_selection=[],
+             inc_asso_add_selection=[],
              binome_penalty=0.0,
              pop_min=0,
              criteria_weights={}
@@ -586,8 +612,8 @@ class TestBVExclusionRepro:
             classe_enfants=[],
             besoin_sante='Aucun',
             besoins_autres={},
-            socle_admin_selection=[],
-            affinite_selection=[],
+            inc_services_core_selection=[],
+            inc_asso_add_selection=[],
             binome_penalty=0.0,
             pop_min=0,
             criteria_weights={}
@@ -680,8 +706,8 @@ class TestInclusionScoringLogic:
             'pop_be': [1000, 500],
             'lien_social_count': [10, 5],
             'lien_social_density': [10.0, 10.0],
-            'inc_lien_social_score': [0.5, 0.5],
-            'inc_socle_admin_score': [1.0, 0.5]
+            'inc_asso_core_scaled': [0.5, 0.5],
+            'inc_services_core_scaled': [1.0, 0.5]
         }
         return gpd.GeoDataFrame(data).set_index('codgeo')
 
@@ -689,54 +715,54 @@ class TestInclusionScoringLogic:
         """Tests Socle Administratif score calculation."""
         from types import SimpleNamespace
         prefs = SimpleNamespace(
-            socle_admin_selection=['social_aide', 'admin_mairie'],
-            affinite_selection=[],
+            inc_services_core_selection=['social_aide', 'admin_mairie'],
+            inc_asso_add_selection=[],
             besoins_autres=[]
         )
         
         scores = scoring.compute_inclusion_score(mock_geo_df, prefs, mock_incl_index, mock_associations_data, sample_scores_cat, global_stats)
         
-        assert scores.loc['33063', 'inc_socle_admin_score'] == 1.0
-        assert scores.loc['64445', 'inc_socle_admin_score'] == 0.5
+        assert scores.loc['33063', 'inc_services_core_scaled'] == 1.0
+        assert scores.loc['64445', 'inc_services_core_scaled'] == 0.5
 
     def test_compute_inclusion_score_affinite(self, mock_geo_df, mock_incl_index, mock_associations_data, sample_scores_cat, global_stats):
         """Tests Affinité score calculation."""
         from types import SimpleNamespace
         prefs = SimpleNamespace(
-            socle_admin_selection=[],
-            affinite_selection=['Bricolage / Création'],
+            inc_services_core_selection=[],
+            inc_asso_add_selection=['Bricolage / Création'],
             besoins_autres=[]
         )
         
         scores = scoring.compute_inclusion_score(mock_geo_df, prefs, mock_incl_index, mock_associations_data, sample_scores_cat, global_stats)
         
-        assert 'inc_affinite_score' in scores.columns
-        assert scores.loc['33063', 'inc_affinite_score'] >= 0
-        assert scores.loc['64445', 'inc_affinite_score'] >= 0
+        assert 'inc_asso_add_scaled' in scores.columns
+        assert scores.loc['33063', 'inc_asso_add_scaled'] >= 0
+        assert scores.loc['64445', 'inc_asso_add_scaled'] >= 0
         
         prefs_sport = SimpleNamespace(
-            socle_admin_selection=[],
-            affinite_selection=['Sport (Général)'],
+            inc_services_core_selection=[],
+            inc_asso_add_selection=['Sport (Général)'],
             besoins_autres=[]
         )
         scores_sport = scoring.compute_inclusion_score(mock_geo_df, prefs_sport, mock_incl_index, mock_associations_data, sample_scores_cat, global_stats)
         
-        assert scores_sport.loc['33063', 'inc_affinite_score'] > scores_sport.loc['64445', 'inc_affinite_score']
+        assert scores_sport.loc['33063', 'inc_asso_add_scaled'] > scores_sport.loc['64445', 'inc_asso_add_scaled']
 
     def test_compute_inclusion_score_components(self, mock_geo_df, mock_incl_index, mock_associations_data, sample_scores_cat, global_stats):
         """Tests that all inclusion components are present."""
         from types import SimpleNamespace
         prefs = SimpleNamespace(
-            socle_admin_selection=['social_aide'], 
-            affinite_selection=['Bricolage / Création'],
+            inc_services_core_selection=['social_aide'], 
+            inc_asso_add_selection=['Bricolage / Création'],
             besoins_autres=[]
         )
         
         scores = scoring.compute_inclusion_score(mock_geo_df, prefs, mock_incl_index, mock_associations_data, sample_scores_cat, global_stats)
         
-        assert 'inc_socle_admin_score' in scores.columns
-        assert 'inc_lien_social_score' in scores.columns
-        assert 'inc_affinite_score' in scores.columns
+        assert 'inc_services_core_scaled' in scores.columns
+        assert 'inc_asso_core_scaled' in scores.columns
+        assert 'inc_asso_add_scaled' in scores.columns
 
 
 @pytest.mark.unit
@@ -757,8 +783,8 @@ class TestHousingScoresLogic:
             'log_occup_scaled': [0.9, 0.2],
             'log_occup_scaled_binome': [0.5, 0.5],
             'met_scaled': [0.5, 0.5], 
-            'inc_socle_admin_score': [0.0, 0.0],
-            'inc_lien_social_score': [0.0, 0.0],
+            'inc_services_core_scaled': [0.0, 0.0],
+            'inc_asso_core_scaled': [0.0, 0.0],
             'inc_population_scaled': [0.0, 0.0],
             'inc_pol_scaled': [0.0, 0.0],
             'dist_current_loc': [1000, 1000],
@@ -790,9 +816,9 @@ class TestHousingScoresLogic:
                 codes_formations=[[]],
                 classe_enfants=[],
                 loc_distance_km=20,
-                affinite_selection=[],
+                inc_asso_add_selection=[],
                 besoins_autres=[],
-                socle_admin_selection=[],
+                inc_services_core_selection=[],
                 poids_emploi=0, poids_logement=100, poids_education=0, poids_inclusion=0, poids_sante=0, poids_mobilité=0,
                 criteria_weights={}, binome_penalty=0.0, pop_min=0, besoin_sante="Aucun"
             )

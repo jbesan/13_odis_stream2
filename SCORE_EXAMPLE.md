@@ -69,13 +69,13 @@ The algorithm calculates a score between 0 and 1 for each category for every can
 
 ### E. Inclusion (Weight: 50)
 
-- **Socle Administratif (`inc_socle_admin_score`)**:
+- **Socle Administratif (`inc_services_core_scaled`)**:
   - Checks for presence of default services (CAF, Pôle Emploi/France Travail, Mairie, etc.).
   - Score = (Number of present services) / (Total requested services).
-- **Lien Social (`inc_lien_social_score`)**:
+- **Lien Social (`inc_asso_core_scaled`)**:
   - Calculates density of "Core" associations (Social, Entraide, etc.) per 1000 inhabitants.
   - Normalized relative to other communes.
-- **Affinité (`inc_affinite_score`)**:
+- **Affinité (`inc_asso_add_scaled`)**:
   - Calculates density of associations matching "Entraide / Bénévolat".
   - Normalized relative to other communes.
 - **Population (`inc_population_scaled`)**:

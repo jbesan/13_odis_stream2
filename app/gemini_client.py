@@ -19,6 +19,7 @@ from config import (
     WALDEC_INTERESTS_MAPPING,
     CLASSES_SCOLAIRES
 )
+from models import SearchCriterias
 
 # Ensure implicit imports work
 try:
@@ -71,25 +72,29 @@ class OdisAgent:
         
         # Tools Configuration
         # We define wrappers to ensure the names match what the Model expects (and what is in the Prompt)
-        def compute_topcities(weight_profile: str, filters: Dict[str, Any]) -> List[Dict[str, Any]]:
+        def compute_topcities(weight_profile: str, criterias: SearchCriterias) -> List[Dict[str, Any]]:
             """
             Identifies the top recommended cities based on the beneficiary's social/professional needs.
-            MUST be called ONLY when all mandatory filters (commune, distance) are known.
+            MUST be called ONLY when all mandatory criterias (commune, distance) are known.
             
             Args:
                 weight_profile: Name of the weight profile to use (e.g., 'Famille', 'Équilibré', 'Santé', 'Economique').
-                filters: Dictionary containing 'commune_actuelle', 'nb_adultes', 'codes_metiers', etc.
+                criterias: Structured search criteria containing 'commune_actuelle', 'nb_adultes', etc.
             """
             logger.debug(f"DEBUG: [SDK] compute_topcities called.")
             logger.debug(f"DEBUG: weight_profile={weight_profile}")
-            logger.debug(f"DEBUG: filters={filters}")
+            logger.debug(f"DEBUG: criterias={criterias}")
             
             # Resolve weights from profile name
             weights = WEIGHT_PROFILES.get(weight_profile, WEIGHT_PROFILES["Équilibré"])
             logger.debug(f"DEBUG: Resolved weights={weights}")
             
+            # Convert Pydantic model to dict for internal logic if needed, or pass as is if logic handles it
+            # mcp_server logic expects a dict for filters
+            filters_dict = criterias.model_dump()
+            
             try:
-                return _compute_top_cities_logic(weights, filters)
+                return _compute_top_cities_logic(weights, filters_dict)
             except Exception as e:
                 logger.error(f"DEBUG: [SDK] compute_topcities FAILED: {e}")
                 raise e
@@ -103,7 +108,7 @@ class OdisAgent:
                 domain: The target database. MUST be one of: 
                         ['fap_codes' (Jobs), 'formation_codes', 'inclusion_services', 'waldec_codes' (Hobbies)].
             """
-            print(f"DEBUG: [SDK] search_referentiels called with query='{query}'")
+            logger.debug(f"DEBUG: [SDK] search_referentiels called with query='{query}'")
             return _search_referentiels_logic(query, domain)
 
         def search_commune(query: str) -> List[Dict[str, str]]:
@@ -181,6 +186,11 @@ class OdisAgent:
                 if 'weight_profile' in args:
                     profile = args.pop('weight_profile')
                     args['weights'] = WEIGHT_PROFILES.get(profile, WEIGHT_PROFILES["Équilibré"])
+                
+                # Handle Pydantic 'criterias' mapping to 'filters' arg of backend logic
+                if 'criterias' in args:
+                    # Arg is a dict coming from JSON
+                    args['filters'] = args.pop('criterias')
                 
                 logger.info("   Calling _compute_top_cities_logic...")
                 start_time = time.time()

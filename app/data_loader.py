@@ -166,12 +166,12 @@ def load_all_data_raw() -> Dict[str, Any]:
     
     try:
         # Dynamic Column Loading
-        import pyarrow.parquet as pq
-        # ParquetFile is often safer for schema reading than read_schema
-        # as it avoids some global fs registration calls in older/mixed pyarrow versions
-        pf = pq.ParquetFile(odis_path)
-        # FIX: Use Arrow Schema to get high-level column names (handling Lists correctly)
-        all_cols = pf.schema.to_arrow_schema().names
+        # FIX: Use pandas to get schema safely to avoid pyarrow 'file' scheme registration errors
+        # Reading the parquet file with pandas handles the underlying pyarrow context better
+        temp_df = pd.read_parquet(odis_path)
+        all_cols = temp_df.columns.tolist()
+        del temp_df
+        gc.collect()
         
         # Essential columns
         essential_cols = {
@@ -185,8 +185,8 @@ def load_all_data_raw() -> Dict[str, Any]:
             c for c in all_cols 
             if c in essential_cols 
             or c.endswith('_scaled') 
-            or c.endswith('_score')
-            or c.endswith('_density') # Keep densities if useful? No, user said save memory.
+            # or c.endswith('_score')
+            # or c.endswith('_density') # Keep densities if useful? No, user said save memory.
         ]
         
         logger.info(f"Loading {len(columns_to_load)} columns from ODIS.")

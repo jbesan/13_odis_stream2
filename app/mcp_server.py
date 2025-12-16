@@ -273,10 +273,10 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
 
     # 2. Map Inputs to ScoringConfig
     # Robustness: Handle aliasing
-    socle_sel = filters.get('socle_admin_selection', [])
+    socle_sel = filters.get('inc_services_core_selection', [])
     if not socle_sel and 'codes_inclusion' in filters:
         socle_sel = filters.get('codes_inclusion')
-        logger.info(f"   [MCP] Mapped alias 'codes_inclusion' -> 'socle_admin_selection': {socle_sel}")
+        logger.info(f"   [MCP] Mapped alias 'codes_inclusion' -> 'inc_services_core_selection': {socle_sel}")
 
     # Robustness: Coerce codes_metiers to List[List]
     raw_metiers = filters.get('codes_metiers', [])
@@ -313,8 +313,8 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
     # We map them correctly.
     
     # Robustness: Handle aliasing for Inclusion Services
-    # User feedback: Specific needs (FLE, etc.) should map to 'besoins_autres', not 'socle_admin_selection'.
-    # 'socle_admin_selection' should ideally keep defaults (base services).
+    # User feedback: Specific needs (FLE, etc.) should map to 'besoins_autres', not 'inc_services_core_selection'.
+    # 'inc_services_core_selection' should ideally keep defaults (base services).
     
     specific_needs = filters.get('besoins_autres', [])
     if not specific_needs and 'codes_inclusion' in filters:
@@ -324,8 +324,8 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
     # Ensure default socle is present if not strictly overridden?
     # For now, we trust the defaults of ScoringConfig logic or defaults defined in config.py
     # But ScoringConfig dataclass doesn't have defaults. 
-    # We should use cfg.DEFAULT_SOCLE_ADMIN if agent doesn't specify (which it doesn't usually).
-    socle_sel = filters.get('socle_admin_selection', cfg.DEFAULT_SOCLE_ADMIN)
+    # We should use cfg.DEFAULT_INC_SERVICES_CORE if agent doesn't specify (which it doesn't usually).
+    socle_sel = filters.get('inc_services_core_selection', cfg.DEFAULT_INC_SERVICES_CORE)
 
     # Robustness: Check for codgeo_voisins in loaded data
     if 'codgeo_voisins' not in DATA_CONTEXT['odis'].columns:
@@ -360,8 +360,8 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
         classe_enfants=filters.get('classe_enfants', []),
         besoin_sante=filters.get('besoin_sante', 'Aucun'),
         besoins_autres=specific_needs, # Mapped from codes_inclusion
-        socle_admin_selection=socle_sel,
-        affinite_selection=filters.get('affinite_selection', []),
+        inc_services_core_selection=socle_sel,
+        inc_asso_add_selection=filters.get('inc_asso_add_selection', []),
         binome_penalty=float(filters.get('binome_penalty', 0.1)),
         pop_min=int(filters.get('pop_min', 0))
     )
