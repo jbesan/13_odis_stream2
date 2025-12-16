@@ -15,8 +15,8 @@ logger = logging.getLogger("gemini_client")
 from config import (
     LOC_DISTANCE_OPTIONS, 
     WEIGHT_PROFILES, 
-    DEFAULT_SOCLE_ADMIN,
-    WALDEC_INTERESTS_MAPPING,
+    DEFAULT_INC_SERVICES_CORE,
+    WALDEC_CORE_INCLUSION,
     CLASSES_SCOLAIRES
 )
 from models import SearchCriterias
@@ -39,7 +39,7 @@ except ImportError:
 # Format lists for Prompt
 WEIGHT_PROFILES_STR = "\n".join([f"- **{k}**: {v}" for k, v in WEIGHT_PROFILES.items()])
 CLASSES_SCOLAIRES_STR = ", ".join(CLASSES_SCOLAIRES)
-DEFAULT_SOCLE_ADMIN_STR = ", ".join(DEFAULT_SOCLE_ADMIN)
+DEFAULT_INC_SERVICES_CORE_STR = ", ".join(DEFAULT_INC_SERVICES_CORE)
 
 # Load System Instruction from external file
 try:
@@ -52,7 +52,7 @@ try:
     ).replace(
         "{CLASSES_SCOLAIRES_STR}", CLASSES_SCOLAIRES_STR
     ).replace(
-        "{DEFAULT_SOCLE_ADMIN_STR}", DEFAULT_SOCLE_ADMIN_STR
+        "{DEFAULT_INC_SERVICES_CORE_STR}", DEFAULT_INC_SERVICES_CORE_STR
     )
 except Exception as e:
     logger.error(f"Failed to load AGENT_PROMPT.md: {e}")
