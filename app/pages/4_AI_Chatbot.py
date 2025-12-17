@@ -10,6 +10,11 @@ logger = logging.getLogger(__name__)
 
 st.set_page_config(page_title="Assistant ODIS", page_icon="🤖", layout="wide")
 
+# --- Authentication ---
+import auth
+if not auth.check_password():
+    st.stop()
+
 # Inject global CSS
 # inject_custom_css()
 

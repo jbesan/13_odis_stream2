@@ -77,7 +77,7 @@ class OdisAgent:
         # User requested 2.5-flash-lite
         self.client = genai.Client(api_key=api_key)
         # Upgrade to 2.5 Flash for better Tool Use
-        self.model_id = "gemini-2.5-flash"
+        self.model_id = "gemini-2.5-flash-lite"
         
         # Tools Configuration
         # We define wrappers to ensure the names match what the Model expects (and what is in the Prompt)
