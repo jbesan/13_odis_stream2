@@ -9,6 +9,13 @@ APP_DIR: str = os.path.dirname(os.path.abspath(__file__))
 # Get the project root directory (one level up)
 PROJECT_ROOT: str = os.path.dirname(APP_DIR)
 
+# Load environment variables from .env if present
+from dotenv import load_dotenv
+# Try loading from app/.env (Priority)
+load_dotenv(os.path.join(APP_DIR, '.env'))
+# Try loading from root .env (Fallback/Override depending on behavior, but good to have both)
+load_dotenv(os.path.join(PROJECT_ROOT, '.env'))
+
 LOCAL_CSV_PATH: str = os.path.join(PROJECT_ROOT, 'data/')
 
 def get_data_path() -> str:
@@ -16,34 +23,20 @@ def get_data_path() -> str:
     Returns the appropriate data path based on the environment.
     Since data is now included in the Docker image, we always use the local path.
     """
-    # In Docker, we will copy data to /app/data or similar, or keep structure
-    # The config says LOCAL_CSV_PATH = os.path.join(PROJECT_ROOT, 'data/')
-    # In Docker: PROJECT_ROOT is /app (if we copy app/ to /app ?) 
-    # Let's check Dockerfile: COPY app/ . -> So /app contains contents of app/. 
-    # Wait, PROJECT_ROOT is os.path.dirname(APP_DIR). APP_DIR is /app/ (if code is in /app).
-    # If Dockerfile does WORKDIR /app and COPY app/ ., then:
-    # /app/1_Accueil.py existing.
-    # APP_DIR = /app
-    # PROJECT_ROOT = /
-    # So LOCAL_CSV_PATH = /data/
-    # If we copy data/ to /data in Docker, this works perfectly.
+
     return LOCAL_CSV_PATH
 
 # --- File Paths ---
 # --- File Paths ---
 ODIS_FILE = 'odis_communes.parquet'
-POIS_FILE = 'pois.parquet'
-REFERENTIELS_FILE = 'referentiels.parquet'
+POIS_FILE = 'odis_pois.parquet'
+REFERENTIELS_FILE = 'odis_referentiels.parquet'
 BV_FILE = 'odis_bassins_de_vie.parquet'
-REL_METIERS_FILE = 'odis_rel_metiers.parquet'
-REL_ASSOCIATIONS_FILE = 'associations_vertical.parquet'
-REL_FORMATIONS_FILE = 'odis_rel_formations.parquet'
+REL_METIERS_FILE = 'odis_metiers_agg.parquet'
+REL_ASSOCIATIONS_FILE = 'odis_associations_agg.parquet'
+REL_FORMATIONS_FILE = 'odis_formations_agg.parquet'
+CCAS_FILE = 'odis_ccas.parquet'
 SCORES_CAT_FILE = 'scores_config.yaml'
-
-# Legacy files removed:
-# BV_FILENAME, BMO_VERTICAL_FILE, METIERS_FILE, FORMATIONS_FILE, 
-# ECOLES_FILE, MATERNITE_FILE, SANTE_FILE, INCLUSION_FILE, 
-# SNCF_FILE, CAF_FILE, LOVAC_FILE, INCLUSION_REF_FILE
 
 # --- Data Columns ---
 BV_CODE_COL = 'bassin_de_vie'
@@ -54,7 +47,7 @@ VIEW_LEVEL_OPTIONS = ['Bassins de vie', 'Communes']
 NOMBRE_ADULTES_OPTIONS = [1, 2]
 NOMBRE_ENFANTS_OPTIONS = [0, 1, 2, 3, 4, 5]
 CLASSES_SCOLAIRES = ['Crèche / Assistante Maternelle', 'Maternelle', 'Elémentaire', 'Collège', 'Lycée']
-LOC_DISTANCE_OPTIONS = {20: '20 km', 50: '50 km', 'departement': 'Département', 'region': 'Région'}
+LOC_DISTANCE_OPTIONS = {20: '20 km', 50: '50 km', 'departement': 'Département', 'region': 'Région', 'france': 'France Métropolitaine'}
 HEBERGEMENT_OPTIONS = ["Chez l'habitant", 'Location', 'Foyer']
 LOGEMENT_OPTIONS = ['Location', 'Logement Social']
 SANTE_OPTIONS = ["Aucun", "Hopital", 'Maternité', "Soutien Psychologique & Addictologie"]
@@ -124,18 +117,18 @@ class ScoringConfig:
     codes_formations: List[List[str]]
     classe_enfants: List[str]
     besoin_sante: str
-    besoins_autres: List[str]
+    inc_services_add_selection: List[str]
     
     # Inclusion
-    socle_admin_selection: List[str]
-    affinite_selection: List[str]
+    inc_services_core_selection: List[str]
+    inc_asso_add_selection: List[str]
     
     # Technical parameters
     binome_penalty: float
     pop_min: int
 
 # --- Inclusion Defaults ---
-DEFAULT_SOCLE_ADMIN = [
+DEFAULT_INC_SERVICES_CORE = [
     "logement-hebergement--sinformer-sur-les-demarches-liees-a-lacces-au-logement",
     "difficultes-administratives-ou-juridiques--accompagnement-aux-demarches-administratives",
     "preparer-sa-candidature--organiser-ses-demarches-de-recherche-demploi"
@@ -163,9 +156,10 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     'classe_enfants': [],
     'binome_penalty': 50,
     'pop_min': 1000,
-    'besoins_autres': [],
-    'socle_admin_selection': DEFAULT_SOCLE_ADMIN,
-    'affinite_selection': []
+    'inc_services_add_selection': [],
+    'inc_services_add_selection': [],
+    'inc_services_core_selection': DEFAULT_INC_SERVICES_CORE,
+    'inc_asso_add_selection': []
 }
 
 DEMO_SCENARIOS = {
@@ -205,34 +199,35 @@ DEMO_SCENARIOS = {
         'nb_enfants': 2,
         'codes_metiers': [['T2A60']],
         'classe_enfants': ['Crèche / Assistante Maternelle', 'Collège'],
-        'besoins_autres': ['lecture-ecriture-calcul--maitriser-le-francais'],
+        'inc_services_add_selection': ['lecture-ecriture-calcul--maitriser-le-francais'],
         'poids_mobilité': 50,
         'poids_inclusion': 100,
         'poids_emploi': 100,
         'sante': "Maternité",
-        'affinite_selection': ['Entraide / Bénévolat']
+        'inc_asso_add_selection': ['Entraide / Bénévolat']
     }
 }
 
 WALDEC_CORE_INCLUSION = [
     # --- SOCIAL & ENTRAIDE ---
-    "009",    # ACTION SOCIOCULTURELLE (Tout le niveau 1 : Centres sociaux, MJC...)
+    # "009",    # ACTION SOCIOCULTURELLE (Tout le niveau 1 : Centres sociaux, MJC...)
     "015070", # Apprentissage de langues, alphabétisation (CRITIQUE)
-    "015095", # Soutien scolaire
-    "019016", # Aide à l'insertion des jeunes
-    "019020", # Aide aux chômeurs
+    # "015095", # Soutien scolaire
+    # "019016", # Aide à l'insertion des jeunes
+    # "019020", # Aide aux chômeurs
     "019025", # Aide aux réfugiés et aux immigrés (CRITIQUE)
     "020",    # ASSOCIATIONS CARITATIVES, HUMANITAIRES (Tout le niveau 1 : Secours, Alimentaire...)
-    "021",    # SERVICES FAMILIAUX (Crèches, Halte-garderie...)
-    "014030", # Associations de parents d'élèves (Indicateur de vie scolaire)
-    "014040", # Associations de locataires (Indicateur de vie de quartier)
-    "024020", # Garde d'enfants, crèches parentales
+    "024",    # Entraide et solidarité
+    # "021",    # SERVICES FAMILIAUX (Crèches, Halte-garderie...)
+    # "014030", # Associations de parents d'élèves (Indicateur de vie scolaire)
+    # "014040", # Associations de locataires (Indicateur de vie de quartier)
+    # "024020", # Garde d'enfants, crèches parentales
 ]
 
 # 2. LE DICTIONNAIRE D'AFFINITÉS (Pour le matching "Projet de Vie")
 # Clés = Ce que le TS sélectionne dans le multiselect
 # Valeurs = Liste des codes WALDEC à scanner
-WALDEC_INTERESTS_MAPPING = {
+WALDEC_INC_ASSO_ADD_MAPPING = {
     # --- PILIER SPORT ---
     "Sport (Général)": [
         "011000", # Sports, activités de plein air (Général)
@@ -284,6 +279,6 @@ WALDEC_INTERESTS_MAPPING = {
 def get_relevant_rna_codes():
     """Retourne une liste plate unique de tous les codes utiles pour l'extraction SQL/Pandas"""
     all_codes = set(WALDEC_CORE_INCLUSION)
-    for code_list in WALDEC_INTERESTS_MAPPING.values():
+    for code_list in WALDEC_INC_ASSO_ADD_MAPPING.values():
         all_codes.update(code_list)
     return list(all_codes)

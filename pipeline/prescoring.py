@@ -1,3 +1,4 @@
+from shapely import wkb
 import logging
 import pandas as pd
 import geopandas as gpd
@@ -8,6 +9,7 @@ from pipeline.common import (
     PipelineLogger, load_config,
     CONFIG_FILE, CACHE_DIR, OUTPUT_DIR, CLEAN_DIR, STATUS_FILE
 )
+import app.config as cfg
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -22,8 +24,17 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
              logger.log_step("apply_prescoring", "FAILED", {"reason": "Input file not found"})
              return
 
-        communes_gdf = gpd.read_parquet(communes_path)
-        # logging.info(f"Loaded {len(communes_gdf)} communes for prescoring.") # Removed noisy log
+        # Read as standard Parquet (WKB)
+        communes_df = pd.read_parquet(communes_path)
+        
+        # Convert WKB to Geometry
+        if 'polygon' in communes_df.columns:
+            communes_df['geometry'] = communes_df['polygon'].apply(lambda x: wkb.loads(bytes(x)))
+            communes_gdf = gpd.GeoDataFrame(communes_df, geometry='geometry', crs=cfg.PROJECTED_CRS)
+        else:
+            # Fallback
+            communes_gdf = gpd.GeoDataFrame(communes_df, geometry='geometry')
+
         logger.log_step("apply_prescoring_load", "LOADED", {"rows": len(communes_gdf)})
 
         # --- Calculated Columns ---
@@ -167,13 +178,8 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         # OR put socle_admin in scores_config? No, it's a list of slugs.
         # Let's keep prescoring_config.yaml for INPUTS (socle slugs) but use scores_config.yaml for BOUNDS.
         
-        prescoring_conf_path = Path(__file__).parent / "prescoring_config.yaml"
-        if prescoring_conf_path.exists():
-             with open(prescoring_conf_path, 'r') as f:
-                 prescoring_conf = yaml.safe_load(f)
-             default_socle_admin = prescoring_conf.get('socle_admin', [])
-        else:
-             default_socle_admin = []
+        # Use defaults from app.config
+        default_socle_admin = cfg.DEFAULT_INC_SERVICES_CORE
 
 
         # --- Scaling ---
@@ -224,7 +230,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         process_scaling(communes_gdf, 'loyer_app_m2', 'loyer_abordable_scaled', inverted=True)
 
         process_scaling(communes_gdf, 'log_vac_struct_ratio', 'log_vac_scaled')
-        process_scaling(communes_gdf, 'lien_social_density', 'inc_lien_social_score')
+        process_scaling(communes_gdf, 'lien_social_density', 'inc_asso_core_scaled')
         process_scaling(communes_gdf, 'population', 'inc_population_scaled')
         
         # inc_pol_scaled (already 0-1)
@@ -336,17 +342,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         pois_path = OUTPUT_DIR / "pois.parquet"
         if pois_path.exists():
             try:
-                # Import prescoring config
-                import yaml
-                from pathlib import Path
-                prescoring_conf_path = Path(__file__).parent / "prescoring_config.yaml"
-                if prescoring_conf_path.exists():
-                     with open(prescoring_conf_path, 'r') as f:
-                         prescoring_conf = yaml.safe_load(f)
-                     default_socle_admin = prescoring_conf.get('socle_admin', [])
-                else:
-                     logging.warning("prescoring_config.yaml not found, using empty socle admin.")
-                     default_socle_admin = []
+                default_socle_admin = cfg.DEFAULT_INC_SERVICES_CORE
 
                 
                 pois_df = pd.read_parquet(pois_path)
@@ -379,23 +375,23 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
                         socle_scores = (socle_presence / max_score)
                         
                         # Assign using map on codgeo
-                        communes_gdf['inc_socle_admin_score'] = communes_gdf['codgeo'].map(socle_scores)
-                        communes_gdf['inc_socle_admin_score'] = communes_gdf['inc_socle_admin_score'].fillna(0.0)
+                        communes_gdf['inc_services_core_scaled'] = communes_gdf['codgeo'].map(socle_scores)
+                        communes_gdf['inc_services_core_scaled'] = communes_gdf['inc_services_core_scaled'].fillna(0.0)
                     else:
-                         communes_gdf['inc_socle_admin_score'] = 0.0
+                         communes_gdf['inc_services_core_scaled'] = 0.0
 
-                    logger.log_step("inc_socle_admin_score", "CALCULATED")
+                    logger.log_step("inc_services_core_scaled", "CALCULATED")
                 else:
-                    communes_gdf['inc_socle_admin_score'] = 0.0
+                    communes_gdf['inc_services_core_scaled'] = 0.0
                     
             except Exception as e:
                 logging.error(f"Failed to calculate socle admin score at line {e.__traceback__.tb_lineno}: {e}")
                 import traceback
                 traceback.print_exc()
-                communes_gdf['inc_socle_admin_score'] = 0.0
+                communes_gdf['inc_services_core_scaled'] = 0.0
         else:
              logging.warning("pois.parquet not found, skipping socle admin score")
-             communes_gdf['inc_socle_admin_score'] = 0.0
+             communes_gdf['inc_services_core_scaled'] = 0.0
 
         communes_gdf.drop(columns=[c for c in cols_to_drop if c in communes_gdf.columns], inplace=True)
         
@@ -413,11 +409,16 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
              # We generally want everything float32
              communes_gdf[col] = communes_gdf[col].astype('float32')
         
-        if 'inc_socle_admin_score' not in communes_gdf.columns:
-            communes_gdf['inc_socle_admin_score'] = 0.0
+        if 'inc_services_core_scaled' not in communes_gdf.columns:
+            communes_gdf['inc_services_core_scaled'] = 0.0
 
         # Save
-        communes_gdf.to_parquet(communes_path)
+        # Save
+        if 'geometry' in communes_gdf.columns:
+             communes_gdf['polygon'] = communes_gdf.geometry.to_wkb()
+             communes_gdf.drop(columns=['geometry'], inplace=True)
+             
+        pd.DataFrame(communes_gdf).to_parquet(communes_path)
         logger.log_step("apply_prescoring", "COMPLETED", {"columns": len(communes_gdf.columns), "path": str(communes_path), "rows": len(communes_gdf)})
 
     except Exception as e:
@@ -437,8 +438,18 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
              logging.error("BV or Communes parquet not found.")
              return
 
-        bv_gdf = gpd.read_parquet(bv_path)
+        # Read as standard Parquet (WKB) - BV
+        bv_df = pd.read_parquet(bv_path)
+        if 'polygon' in bv_df.columns:
+             bv_df['geometry'] = bv_df['polygon'].apply(lambda x: wkb.loads(bytes(x)))
+             bv_gdf = gpd.GeoDataFrame(bv_df, geometry='geometry', crs=cfg.PROJECTED_CRS)
+        else:
+             bv_gdf = gpd.GeoDataFrame(bv_df, geometry='geometry')
+
+        # Read as standard Parquet (WKB) - Communes
         communes_df = pd.read_parquet(communes_path)
+        # We don't need geometry for communes here, just scores.
+
         
         # We need Aggregated Counts which should be in 'bv_gdf' if build.py did its job.
         
@@ -485,7 +496,7 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
 
         if 'lien_social_density' in bv_gdf.columns:
             min_b, max_b = get_min_max(bv_gdf['lien_social_density'])
-            bv_gdf['inc_lien_social_score'] = scale_series(bv_gdf['lien_social_density'], min_b, max_b)
+            bv_gdf['inc_asso_core_scaled'] = scale_series(bv_gdf['lien_social_density'], min_b, max_b)
             
         if 'bpe_creches_density' in bv_gdf.columns:
             min_b, max_b = get_min_max(bv_gdf['bpe_creches_density'])
@@ -493,7 +504,7 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
 
         # --- 3. Weighted Averages from Communes ---
         metrics_to_avg = [
-            'inc_socle_admin_score', 
+            'inc_services_core_scaled', 
             'edu_classes_ferm_scaled', 
             'log_vac_scaled', 
             'log_occup_scaled',
@@ -547,14 +558,19 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
             bv_gdf['inc_population_scaled'] = scale_series(bv_gdf['population_bv'], min_b, max_b)
             
         # Clean up
-        bv_gdf.to_parquet(bv_path)
+        # Clean up
+        if 'geometry' in bv_gdf.columns:
+             bv_gdf['polygon'] = bv_gdf.geometry.to_wkb()
+             bv_gdf.drop(columns=['geometry'], inplace=True)
+
+        pd.DataFrame(bv_gdf).to_parquet(bv_path)
         logger.log_step("score_bassins_de_vie", "COMPLETED", {"rows": len(bv_gdf)})
 
     except Exception as e:
         logger.log_step("score_bassins_de_vie", "ERROR", {"error": str(e)})
         logging.error(f"Score BV failed: {e}")
 
-def main():
+def main(argv=None):
     logger = PipelineLogger(STATUS_FILE)
     config = load_config(CONFIG_FILE)
     apply_prescoring(config, logger)

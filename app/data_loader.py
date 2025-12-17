@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import geopandas as gpd
+import numpy as np
 import shapely.wkb as wkb
 import os
 import yaml
@@ -123,21 +124,28 @@ def load_scores_config_as_df(config_path: str) -> pd.DataFrame:
         })
     return pd.DataFrame(data)
 
-@st.cache_resource
-def load_parquet_dataset(path: str, columns: list = None) -> pd.DataFrame:
-    """Generic loader for parquet datasets with caching."""
+def _load_parquet(path: str, columns: list = None) -> pd.DataFrame:
+    """Internal non-cached loader."""
     if columns:
         return pd.read_parquet(path, columns=columns)
     return pd.read_parquet(path)
 
 @st.cache_resource
-def load_ccas_structures(base_path: str) -> pd.DataFrame:
-    """Loads CCAS structures."""
-    # Hardcoded filename as per build.py output
-    path = os.path.join(base_path, "structures_inclusion_ccas.parquet")
+def load_parquet_dataset(path: str, columns: list = None) -> pd.DataFrame:
+    """Generic loader for parquet datasets with caching."""
+    return _load_parquet(path, columns)
+
+def _load_ccas(base_path: str) -> pd.DataFrame:
+    """Internal non-cached CCAS loader."""
+    path = os.path.join(base_path, cfg.CCAS_FILE)
     if os.path.exists(path):
          return pd.read_parquet(path)
     return pd.DataFrame()
+
+@st.cache_resource
+def load_ccas_structures(base_path: str) -> pd.DataFrame:
+    """Loads CCAS structures."""
+    return _load_ccas(base_path)
 
 def get_pois_by_category(pois_df: pd.DataFrame, category: str) -> pd.DataFrame:
     """Filters POIs by category and returns a copy."""
@@ -145,11 +153,11 @@ def get_pois_by_category(pois_df: pd.DataFrame, category: str) -> pd.DataFrame:
         return pd.DataFrame()
     return pois_df[pois_df['category'] == category].copy()
 
-@st.cache_resource
-def init_datasets() -> Dict[str, Any]:
+def load_all_data_raw() -> Dict[str, Any]:
     """
     Initializes and loads all necessary datasets for the application.
     Returns a dictionary containing all loaded dataframes.
+    (Non-cached version for MCP usage)
     """
     base_path = cfg.get_data_path()
     logger.info(f"Loading datasets from: {base_path}")
@@ -159,15 +167,17 @@ def init_datasets() -> Dict[str, Any]:
     
     try:
         # Dynamic Column Loading
-        import pyarrow.parquet as pq
-        # ParquetFile.schema.names is unreliable for list columns (skips root name)
-        # pq.read_schema returns the correct column names
-        all_cols = pq.read_schema(odis_path).names
+        # FIX: Use pandas to get schema safely to avoid pyarrow 'file' scheme registration errors
+        # Reading the parquet file with pandas handles the underlying pyarrow context better
+        temp_df = pd.read_parquet(odis_path)
+        all_cols = temp_df.columns.tolist()
+        del temp_df
+        gc.collect()
         
         # Essential columns
         essential_cols = {
-            'codgeo', 'libgeo', 'polygon', 'dep_code', 'reg_code', 'epci_code', 'epci_nom', 'codgeo_voisins',
-            'population', 'bassin_de_vie', 'libelle_bassin_de_vie',
+            'codgeo', 'polygon', 'dep_code', 'reg_code', 'epci_code', 'epci_nom', 'codgeo_voisins',
+            'population', 'bassin_de_vie',
             'youth_growth_rate', 'workclass_growth_rate' # Keep growth rates for tooltips
         }
         
@@ -176,8 +186,8 @@ def init_datasets() -> Dict[str, Any]:
             c for c in all_cols 
             if c in essential_cols 
             or c.endswith('_scaled') 
-            or c.endswith('_score')
-            or c.endswith('_density') # Keep densities if useful? No, user said save memory.
+            # or c.endswith('_score')
+            # or c.endswith('_density') # Keep densities if useful? No, user said save memory.
         ]
         
         logger.info(f"Loading {len(columns_to_load)} columns from ODIS.")
@@ -185,19 +195,32 @@ def init_datasets() -> Dict[str, Any]:
         odis = pd.read_parquet(odis_path, columns=columns_to_load)
         
         # Geometry processing
+        # Geometry processing
         if 'polygon' in odis.columns:
             odis['polygon'] = odis.polygon.apply(wkb.loads)
-            odis = gpd.GeoDataFrame(odis, geometry='polygon', crs='EPSG:4326')
+            # The file is now in EPSG:2154 (Projected)
+            odis = gpd.GeoDataFrame(odis, geometry='polygon', crs='EPSG:2154')
             odis.set_geometry('polygon', inplace=True)
             # Fix invalid geometries
             odis['polygon'] = odis.polygon.buffer(0)
-            odis.polygon = odis.polygon.set_precision(grid_size=0.001, mode='valid_output')
-            odis = odis[~odis.polygon.isna()]
             
-            # Centroid
-            odis['centroid'] = odis.to_crs(epsg=2154).centroid.to_crs(odis.crs)
+            # Centroid is already in the file in EPSG:2154
+            if 'centroid' not in odis.columns:
+                 odis['centroid'] = odis.geometry.centroid
         
         odis.set_index('codgeo', inplace=True)
+        
+        # fix: fill nan codgeo_voisins with empty array/list to avoid issues in scoring
+        if 'codgeo_voisins' in odis.columns:
+             # Ensure we don't have None/NaN that causes "nan" string in np.append
+             # It seems loaded as object (arrays or None)
+             # Let's standardize to empty list for NaNs
+             def sanitize_voisins(x):
+                 if isinstance(x, (np.ndarray, list)):
+                     return x
+                 return np.array([]) # Empty array preferred for consistency if others are arrays
+             
+             odis['codgeo_voisins'] = odis['codgeo_voisins'].apply(sanitize_voisins)
         
         # Optimize types
         if 'population' in odis.columns:
@@ -215,13 +238,19 @@ def init_datasets() -> Dict[str, Any]:
 
     except Exception as e:
         logger.error(f"Failed to load ODIS data: {e}")
-        st.error(f"Erreur critique: Impossible de charger les données principales. Détails: {e}")
+        # Only show st.error if running continuously (not inside MCP)
+        # We check if st.session_state is accessible or similar, but simplified:
+        try:
+            st.error(f"Erreur critique: Impossible de charger les données principales. Détails: {e}")
+        except:
+            pass
         raise e # Re-raise to see the error in Streamlit traceback
 
     # 2. Load POIs
     pois_path = os.path.join(base_path, cfg.POIS_FILE)
     logger.info(f"Loading POIs from: {pois_path}")
-    pois_df = load_parquet_dataset(pois_path)
+    # Rename internal calls
+    pois_df = _load_parquet(pois_path)
     
     # Split POIs
     # Map to expected variable names for compatibility
@@ -271,7 +300,40 @@ def init_datasets() -> Dict[str, Any]:
     # 3. Load Referentiels (FAP, etc.)
     ref_path = os.path.join(base_path, cfg.REFERENTIELS_FILE)
     logger.info(f"Loading Referentiels from: {ref_path}")
-    refs_df = load_parquet_dataset(ref_path)
+    refs_df = _load_parquet(ref_path)
+
+    # FIX: Re-hydrate Names (libgeo, libelle_bassin_de_vie) from Referentiels EARLY
+    # This must happen before depcom_df generation which uses libgeo
+    
+    # Extract Lookups
+    commune_names = {}
+    bv_names = {}
+    
+    if not refs_df.empty:
+         # Communes
+         c_ref = refs_df[refs_df['key'] == 'communes']
+         if not c_ref.empty:
+             commune_names = c_ref.set_index('code')['label'].to_dict()
+         
+         # Bassins de Vie
+         bv_ref = refs_df[refs_df['key'] == 'bassins_de_vie']
+         if not bv_ref.empty:
+             bv_names = bv_ref.set_index('code')['label'].to_dict()
+
+    # Apply to ODIS (Communes)
+    if 'libgeo' not in odis.columns:
+        odis['libgeo'] = odis.index.map(commune_names)
+        # Fallback for missing
+        mask = odis['libgeo'].isna()
+        odis.loc[mask, 'libgeo'] = odis.index[mask]
+
+    # Apply to ODIS (BV Labels)
+    if 'bassin_de_vie' in odis.columns:
+        odis['libelle_bassin_de_vie'] = odis['bassin_de_vie'].astype(str).map(bv_names)
+        # odis['libelle_bassin_de_vie'] = odis['libelle_bassin_de_vie'].fillna(odis['bassin_de_vie'])
+        mask = odis['libelle_bassin_de_vie'].isna()
+        odis.loc[mask, 'libelle_bassin_de_vie'] = odis.loc[mask, 'bassin_de_vie']
+
     
     codfap_index = pd.DataFrame()
     if not refs_df.empty:
@@ -279,24 +341,24 @@ def init_datasets() -> Dict[str, Any]:
         if not fap_df.empty:
             # Reconstruct expected format for FAP index
             # Expected: index=code, columns=[libelle, ...]
-            # refs_df has 'code', 'label', 'metadata'
+            # refs_df has 'code', 'label'
             codfap_index = fap_df[['code', 'label']].drop_duplicates(subset=['code']).set_index('code')
 
     # 4. Load Vertical Data
     bmo_vertical_path = os.path.join(base_path, cfg.REL_METIERS_FILE) # Was BMO_VERTICAL_FILE
-    bmo_vertical = load_parquet_dataset(bmo_vertical_path)
+    bmo_vertical = _load_parquet(bmo_vertical_path)
     
     associations_path = os.path.join(base_path, cfg.REL_ASSOCIATIONS_FILE)
-    associations_data = load_parquet_dataset(associations_path)
+    associations_data = _load_parquet(associations_path)
 
     formations_path = os.path.join(base_path, cfg.REL_FORMATIONS_FILE)
-    formations_data = load_parquet_dataset(formations_path)
+    formations_data = _load_parquet(formations_path)
     if not formations_data.empty and 'formation_code' in formations_data.columns:
         # Hotfix: Ensure formation codes are clean strings (remove .0 suffix if present)
         formations_data['formation_code'] = formations_data['formation_code'].astype(str).str.replace(r'\.0$', '', regex=True)
 
     # 4b. Load Structures (CCAS)
-    structures_ccas = load_ccas_structures(base_path)
+    structures_ccas = _load_ccas(base_path)
 
     # 5. Load Configs
     app_dir = os.path.dirname(os.path.abspath(__file__))
@@ -325,7 +387,7 @@ def init_datasets() -> Dict[str, Any]:
         
         # Group by codgeo and aggregate slugs into a set
         # We use 'key' as the column name to match scoring.py expectation
-        incl_index = annuaire_inclusion.groupby('codgeo')['slug'].apply(set).rename('key').to_frame()
+        incl_index = annuaire_inclusion.groupby('codgeo', observed=False)['slug'].apply(set).rename('key').to_frame()
 
     # Generate helper structures for UI
     depcom_df = odis[['libgeo', 'dep_code']].copy()
@@ -334,20 +396,22 @@ def init_datasets() -> Dict[str, Any]:
     # 6. Load Bassins de Vie Geometry
     bv_path = os.path.join(base_path, cfg.BV_FILE)
     logger.info(f"Loading BV Geo from: {bv_path}")
-    bv_geo = load_parquet_dataset(bv_path)
+    bv_geo = _load_parquet(bv_path)
     
     if not bv_geo.empty:
         # Ensure geometry
         if 'polygon' in bv_geo.columns:
              if isinstance(bv_geo['polygon'].iloc[0], bytes):
                  bv_geo['polygon'] = bv_geo['polygon'].apply(wkb.loads)
-             bv_geo = gpd.GeoDataFrame(bv_geo, geometry='polygon', crs='EPSG:4326')
+             # File should be in EPSG:2154 (Projected)
+             bv_geo = gpd.GeoDataFrame(bv_geo, geometry='polygon', crs=cfg.PROJECTED_CRS)
              
              # Fix invalid geometries
              bv_geo['polygon'] = bv_geo.polygon.buffer(0)
              
-             # Calculate centroid
-             bv_geo['centroid'] = bv_geo.to_crs(epsg=2154).centroid.to_crs(bv_geo.crs)
+             # Centroid (already in file or calc in 2154)
+             if 'centroid' not in bv_geo.columns:
+                 bv_geo['centroid'] = bv_geo.geometry.centroid
         
         # Set index
         # We prefer cfg.BV_CODE_COL, but fallback to 'bassin_de_vie'
@@ -361,13 +425,13 @@ def init_datasets() -> Dict[str, Any]:
 
     # 8. Optimization: Restore libelle_bassin_de_vie in ODIS from BV Geo
     # (Avoids storing it in the main parquet file)
-    if 'bassin_de_vie' in odis.columns and 'libelle_bassin_de_vie' not in odis.columns:
-        if not bv_geo.empty and 'libgeo' in bv_geo.columns:
-            # bv_geo index is the code (bassin_de_vie)
-            bv_label_map = bv_geo['libgeo'].to_dict()
-            odis['libelle_bassin_de_vie'] = odis['bassin_de_vie'].map(bv_label_map)
-            # Fill NaNs if any (e.g. for PLM or isolated communes)
-            odis['libelle_bassin_de_vie'] = odis['libelle_bassin_de_vie'].fillna(odis['libgeo'])
+    # Apply to BV Geo
+    if not bv_geo.empty and 'libgeo' not in bv_geo.columns:
+        # Index is code
+        bv_geo['libgeo'] = bv_geo.index.astype(str).map(bv_names)
+        # bv_geo['libgeo'] = bv_geo['libgeo'].fillna(bv_geo.index)
+        mask = bv_geo['libgeo'].isna()
+        bv_geo.loc[mask, 'libgeo'] = bv_geo.index[mask]
             
     # 7. Generate Area Geometries (Departments & Regions)
     area_dfs = []
@@ -417,5 +481,14 @@ def init_datasets() -> Dict[str, Any]:
         'area_geo': area_geo,
         'bmo_vertical': bmo_vertical,
         'structures_ccas': structures_ccas,
-        'pois': pois_df
+        'pois': pois_df,
+        'referentiels_raw': refs_df, # Exposed for search tool
     }
+@st.cache_resource
+def init_datasets() -> Dict[str, Any]:
+    """
+    Initializes and loads all necessary datasets for the application.
+    Returns a dictionary containing all loaded dataframes.
+    (Cached wrapper for Streamlit)
+    """
+    return load_all_data_raw()

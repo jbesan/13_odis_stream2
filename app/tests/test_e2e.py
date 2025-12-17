@@ -124,8 +124,8 @@ def run_test_scenario(scenario_id, view_level, app_data):
             mock_session_state[f'ui_{key}'] = value
     
     # Ensure other necessary defaults are present
-    if 'ui_besoins_autres' not in mock_session_state:
-        mock_session_state['ui_besoins_autres'] = {}
+    if 'ui_inc_services_add_selection' not in mock_session_state:
+        mock_session_state['ui_inc_services_add_selection'] = {}
     if 'ui_pop_min' not in mock_session_state:
         mock_session_state['ui_pop_min'] = 1000
 
@@ -145,73 +145,33 @@ def run_test_scenario(scenario_id, view_level, app_data):
     with patch('ui.st.session_state', mock_session_state):
         scoring_config = ui.create_scoring_config_from_inputs()
 
-    # 5. Get required dataframes from the loaded app_data
-    df_all_communes = app_data['odis']
-    df_bv_geo = app_data['bv_geo']
-    df_area_geo = app_data['area_geo']
-    start_commune = df_all_communes.loc[[scoring_config.commune_actuelle]]
-
-    # 6. Filter communes or bassins de vie based on the view level
-    loc_type = 'distance' if isinstance(scoring_config.loc_distance_km, int) else scoring_config.loc_distance_km
-    
-    if view_level == 'Communes':
-        loc_col = 'dep_code' if loc_type == 'departement' else 'reg_code'
-        communes_to_score = scoring.filter_communes(
-            df=df_all_communes,
-            start_commune=start_commune,
-            loc_type=loc_type,
-            loc_code=start_commune.iloc[0][loc_col] if loc_type != 'distance' else None,
-            loc_distance_km=scoring_config.loc_distance_km if loc_type == 'distance' else None
-        )
-    else:  # Bassins de vie
-        loc_col = 'dep_code' if loc_type == 'departement' else 'reg_code'
-        filtered_bvs = scoring.filter_bassins_de_vie(
-            bv_gdf=df_bv_geo,
-            start_commune=start_commune,
-            loc_type=loc_type,
-            loc_code=start_commune.iloc[0][loc_col] if loc_type != 'distance' else None,
-            loc_distance_km=scoring_config.loc_distance_km if loc_type == 'distance' else None,
-            area_gdf=df_area_geo
-        )
-        bv_ids_to_keep = filtered_bvs.index.tolist()
-        communes_to_score = df_all_communes[df_all_communes[cfg.BV_CODE_COL].isin(bv_ids_to_keep)]
-
-    # 7. Compute the scores
-    odis_scored = scoring.compute_odis_score(
-        df_search=communes_to_score,
-        df_all_communes=df_all_communes,
+    # 5. Instantiate ScoringEngine
+    # We pass empty global_stats as in the app page
+    engine = scoring.ScoringEngine(
+        df_all_communes=app_data['odis'],
+        df_bv_geo=app_data['bv_geo'],
+        df_area_geo=app_data['area_geo'],
         scores_cat=app_data['scores_cat'],
-        config=scoring_config,
         incl_index=app_data['incl_index'],
-        associations_data=app_data['associations_data'], # Pass association data
+        associations_data=app_data['associations_data'],
         bmo_vertical=app_data['bmo_vertical'],
         formations_data=app_data['formations_data'],
         codformations_index=app_data['codformations_index'],
-        global_stats={}, # Removed
+        global_stats={} 
     )
-    
-    odis_scored = odis_scored.drop(scoring_config.commune_actuelle, errors='ignore')
 
-    # 8. Process the final results (aggregate if necessary)
-    if odis_scored.empty:
-        return gpd.GeoDataFrame()
+    # 6. Run the engine
+    processed_gdf, _ = engine.run(scoring_config, view_level)
+
+    # 7. Post-processing (Legacy test consistency)
+    # The previous test implementation manually dropped the start commune.
+    # To match snapshots, we might need to remove it if it's present.
+    if view_level == 'Communes':
+        if scoring_config.commune_actuelle in processed_gdf.index:
+            processed_gdf = processed_gdf.drop(scoring_config.commune_actuelle)
     
-    if view_level == 'Bassins de vie':
-        df_bv_scores = scoring.aggregate_scores_by_bassin_de_vie(odis_scored)
-        gdf_bv_geo_filtered = df_bv_geo[df_bv_geo.index.isin(df_bv_scores[cfg.BV_CODE_COL])]
-        processed_gdf = gdf_bv_geo_filtered.merge(df_bv_scores, left_index=True, right_on=cfg.BV_CODE_COL)
-        
-        # Handle duplicate columns from merge (e.g. libgeo)
-        if 'libgeo_x' in processed_gdf.columns and 'libgeo_y' in processed_gdf.columns:
-            processed_gdf = processed_gdf.rename(columns={'libgeo_x': 'libgeo'}).drop(columns=['libgeo_y'])
-        elif 'libgeo_x' in processed_gdf.columns:
-             processed_gdf = processed_gdf.rename(columns={'libgeo_x': 'libgeo'})
-        elif 'libgeo_y' in processed_gdf.columns:
-             processed_gdf = processed_gdf.rename(columns={'libgeo_y': 'libgeo'})
-    else:  # Commune level
-        processed_gdf = odis_scored
-        
-    return processed_gdf.sort_values('weighted_score', ascending=False)
+    # Engine returns results sorted by score descending
+    return processed_gdf
 
 
 @pytest.mark.e2e
@@ -297,7 +257,7 @@ def test_result_details_display(app_data):
         'ui_hebergement': 'Location',
         'ui_logement': 'Location',
         'ui_besoin_sante': 'Aucun',
-        'ui_besoins_autres': {},
+        'ui_inc_services_add_selection': {},
         'ui_binome_penalty': 50,
         'ui_pop_min': 1000,
         'ui_poids_emploi': 100,

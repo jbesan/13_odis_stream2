@@ -11,8 +11,10 @@ from typing import Dict, Any
 
 from pipeline.common import (
     PipelineLogger, load_config, load_dataset,
+    PipelineLogger, load_config, load_dataset,
     CONFIG_FILE, CACHE_DIR, CLEAN_DIR, OUTPUT_DIR, STATUS_FILE
 )
+import app.config as cfg
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -224,13 +226,16 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
             if col in communes_gdf.columns:
                 communes_gdf[col] = communes_gdf[col].round(0).astype(int)
         
-        # Centroids
-        # Use projected CRS (Lambert-93) for accurate centroid calculation
-        if communes_gdf.crs:
-            communes_gdf['centroid'] = communes_gdf.geometry.to_crs(epsg=2154).centroid.to_crs(communes_gdf.crs)
-        else:
-            communes_gdf['centroid'] = communes_gdf.geometry.centroid
-              
+        # Centroids & Geometry
+        # CRITICAL: We project the STORAGE to EPSG:2154 (Lambert-93) for performance and consistency.
+        # This allows scoring.py to run without constantly re-projecting.
+        
+        if communes_gdf.crs != cfg.PROJECTED_CRS:
+            communes_gdf = communes_gdf.to_crs(cfg.PROJECTED_CRS)
+            
+        # Store centroids in projected CRS (for fast distance calc)
+        communes_gdf['centroid'] = communes_gdf.geometry.centroid
+                      
         # 4. Bassins de Vie Mapping (for pop_be)
         # We need to load BV mapping. It's in the raw zip usually, but we can extract it or maybe we should have cleaned it?
         # Let's load it from cache as in etl.py
@@ -301,18 +306,35 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
 
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         
-        # Rename geometry to polygon to match app expectation
-        communes_gdf.rename_geometry('polygon', inplace=True)
+        # LOGGING CRS STATE
+        logger.log_step("build_communes", "DEBUG", {"crs": str(communes_gdf.crs)})
+        print(f"DEBUG: communes_gdf.crs = {communes_gdf.crs}")
+        
+        # Explicitly convert to WKB to ensure we save the PROJECTED geometry (EPSG:2154)
+        # and avoid any implicit conversion to EPSG:4326 by GeoParquet logic
+        if communes_gdf.crs != cfg.PROJECTED_CRS:
+             logger.log_step("build_communes", "WARNING", {"msg": "CRS mismatch before save, re-projecting"})
+             communes_gdf = communes_gdf.to_crs(cfg.PROJECTED_CRS)
+             
+        communes_gdf['polygon'] = communes_gdf.geometry.to_wkb()
+        
+        # Drop the geometry column and conversion artifacts to avoid GeoParquet metadata overriding
+        # Also drop 'centroid' (shapely objects) which fails to serialize. app/data_loader.py will re-calc it.
+        # FIX: Drop names (libgeo, libelle_bassin_de_vie) as they are now in referentiels
+        cols_to_drop = ['geometry', 'centroid', 'libgeo', 'libelle_bassin_de_vie']
+        # Handle case where columns might not exist (e.g. if already dropped or renamed)
+        cols_to_drop = [c for c in cols_to_drop if c in communes_gdf.columns]
+        df_to_save = pd.DataFrame(communes_gdf.drop(columns=cols_to_drop))
         
         output_path = OUTPUT_DIR / "odis_communes.parquet"
-        communes_gdf.to_parquet(output_path)
-        logger.log_step("build_communes", "CREATED", {"path": str(output_path), "rows": len(communes_gdf)})
+        df_to_save.to_parquet(output_path)
+        logger.log_step("build_communes", "CREATED", {"path": str(output_path), "rows": len(df_to_save)})
         
-        # Copy bmo_vertical to output
-        bmo_vertical_path = CLEAN_DIR / "bmo_vertical.parquet"
-        if bmo_vertical_path.exists():
-            shutil.copy2(bmo_vertical_path, OUTPUT_DIR / "bmo_vertical.parquet")
-            logger.log_step("build_communes", "COPIED", {"file": "bmo_vertical.parquet"})
+        # Copy bmo_vertical to output -> Handled in build_vertical_tables as odis_metiers_agg.parquet
+        # bmo_vertical_path = CLEAN_DIR / "bmo_vertical.parquet"
+        # if bmo_vertical_path.exists():
+        #    shutil.copy2(bmo_vertical_path, OUTPUT_DIR / "bmo_vertical.parquet")
+        #    logger.log_step("build_communes", "COPIED", {"file": "bmo_vertical.parquet"})
         
         return communes_gdf
 
@@ -332,7 +354,13 @@ def build_bassins_de_vie(communes_gdf: gpd.GeoDataFrame, config: Dict[str, Any],
         # Dissolve
         # Fix geometries
         if 'polygon' in communes_gdf.columns:
-            communes_gdf = communes_gdf.set_geometry('polygon')
+            # Only set geometry to 'polygon' if it's not already the active geometry
+            # AND if it seems to contain geometry objects (not bytes)
+            if communes_gdf.geometry.name != 'polygon':
+                if not isinstance(communes_gdf['polygon'].iloc[0], bytes):
+                     communes_gdf = communes_gdf.set_geometry('polygon')
+                # If bytes, we assume active geometry is already correct (from build_communes)
+                # or we would need to load it. Since build_communes returns valid GDF, we do nothing.
         # communes_gdf['geometry'] = communes_gdf.geometry.buffer(0)
         # communes_gdf['geometry'] = communes_gdf.geometry.make_valid()
         
@@ -392,24 +420,29 @@ def build_bassins_de_vie(communes_gdf: gpd.GeoDataFrame, config: Dict[str, Any],
                  0.0
              )
         
-        # Add Label
-        bv_cfg = config['sources']['bassins_de_vie']
-        bv_path = CACHE_DIR / bv_cfg['archive_file']
-        if bv_path.exists():
-            df_bv_source = load_dataset(bv_path, bv_cfg)
-            # 'Bassin de vie 2022', 'Libellé géographique du bassin de vie 2022'
-            # Rename to match our dissolved index 'bassin_de_vie'
-            df_bv_source = df_bv_source.rename(columns={
-                'Bassin de vie 2022': 'bassin_de_vie',
-                'Libellé géographique du bassin de vie 2022': 'libgeo'
-            })
-            # Deduplicate (one label per BV code)
-            labels = df_bv_source[['bassin_de_vie', 'libgeo']].drop_duplicates()
-            bv_gdf = bv_gdf.merge(labels, on='bassin_de_vie', how='left')
+        # Add Label - REMOVED (Now in Referentiels)
+        # bv_cfg = config['sources']['bassins_de_vie']
+        # bv_path = CACHE_DIR / bv_cfg['archive_file']
+        # if bv_path.exists():
+             # Logic removed to avoid adding 'libgeo' back
+        #    pass
+        
+        # Explicitly convert to WKB to ensure we save the PROJECTED geometry (EPSG:2154)
+        if bv_gdf.crs != cfg.PROJECTED_CRS:
+             bv_gdf = bv_gdf.to_crs(cfg.PROJECTED_CRS)
+             
+        bv_gdf['polygon'] = bv_gdf.geometry.to_wkb()
+        
+        # Drop geometry to avoid GeoParquet 4326 default
+        # Also drop name columns if present (libgeo)
+        cols_to_drop = ['geometry', 'libgeo', 'libelle_bassin_de_vie']
+        cols_to_drop = [c for c in cols_to_drop if c in bv_gdf.columns]
+        
+        df_to_save = pd.DataFrame(bv_gdf.drop(columns=cols_to_drop))
         
         output_path = OUTPUT_DIR / "odis_bassins_de_vie.parquet"
-        bv_gdf.to_parquet(output_path)
-        logger.log_step("build_bassins_de_vie", "CREATED", {"path": str(output_path), "rows": len(bv_gdf)})
+        df_to_save.to_parquet(output_path)
+        logger.log_step("build_bassins_de_vie", "CREATED", {"path": str(output_path), "rows": len(df_to_save)})
 
     except Exception as e:
         logger.log_step("build_bassins_de_vie", "ERROR", {"error": str(e)})
@@ -423,7 +456,7 @@ def build_vertical_tables(config: Dict[str, Any], logger: PipelineLogger):
         bmo_path = CLEAN_DIR / "bmo_vertical.parquet"
         if bmo_path.exists():
             df = pd.read_parquet(bmo_path)
-            out = OUTPUT_DIR / "odis_rel_metiers.parquet"
+            out = OUTPUT_DIR / "odis_metiers_agg.parquet"
             df.to_parquet(out)
             logger.log_step("build_vertical_tables", "METIERS", {"path": str(out)})
             
@@ -431,17 +464,17 @@ def build_vertical_tables(config: Dict[str, Any], logger: PipelineLogger):
         assoc_path = CLEAN_DIR / "associations_vertical.parquet"
         if assoc_path.exists():
             df = pd.read_parquet(assoc_path)
-            out = OUTPUT_DIR / "odis_rel_associations.parquet"
+            out = OUTPUT_DIR / "odis_associations_agg.parquet"
             df.to_parquet(out)
             logger.log_step("build_vertical_tables", "ASSOCIATIONS", {"path": str(out)})
             
-            # Copy raw vertical file to output as well if requested
-            shutil.copy2(assoc_path, OUTPUT_DIR / "associations_vertical.parquet")
+            # Copy raw vertical file to output as well if requested -> Replaced by odis_associations_agg
+            # shutil.copy2(assoc_path, OUTPUT_DIR / "associations_vertical.parquet")
             
         # 3. Structures Inclusion (CCAS/CIAS)
         struct_path = CLEAN_DIR / "structures_inclusion.parquet"
         if struct_path.exists():
-             out = OUTPUT_DIR / "structures_inclusion_ccas.parquet"
+             out = OUTPUT_DIR / "odis_ccas.parquet"
              shutil.copy2(struct_path, out)
              logger.log_step("build_vertical_tables", "STRUCTURES", {"path": str(out)})
             
@@ -458,7 +491,7 @@ def build_vertical_tables(config: Dict[str, Any], logger: PipelineLogger):
             
             df_agg = df.groupby(['codgeo', 'formation_code']).size().rename('count').reset_index()
             
-            out = OUTPUT_DIR / "odis_rel_formations.parquet"
+            out = OUTPUT_DIR / "odis_formations_agg.parquet"
             df_agg.to_parquet(out)
             logger.log_step("build_vertical_tables", "FORMATIONS", {"path": str(out)})
             
@@ -485,7 +518,7 @@ def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
             # nature_uai_libe -> type
             # latitude -> lat
             # longitude -> lon
-            # secteur_public_prive_libe -> metadata
+            # secteur_public_prive_libe -> metadata (unused)
             
             if 'latitude' in edu_df.columns and 'longitude' in edu_df.columns:
                  edu_df['lat'] = edu_df['latitude']
@@ -672,7 +705,7 @@ def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
             if 'codgeo' in all_pois.columns:
                  all_pois['codgeo'] = all_pois['codgeo'].astype('category')
             
-            output_path = OUTPUT_DIR / "pois.parquet"
+            output_path = OUTPUT_DIR / "odis_pois.parquet"
             all_pois.to_parquet(output_path)
             logger.log_step("generate_pois", "CREATED", {"path": str(output_path)})
 
@@ -700,14 +733,14 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
                 fap_ref = pd.DataFrame({
                     'key': 'fap_codes',
                     'code': fap_df[code_col],
-                    'label': fap_df[label_col],
-                    'metadata': fap_df.drop(columns=[code_col, label_col]).to_json(orient='records')
+                    'label': fap_df[label_col]
+                    #'metadata': fap_df.drop(columns=[code_col, label_col]).to_json(orient='records') # Removed
                 })
                 refs_list.append(fap_ref)
             
         if refs_list:
             all_refs = pd.concat(refs_list, ignore_index=True)
-            output_path = OUTPUT_DIR / "referentiels.parquet"
+            output_path = OUTPUT_DIR / "odis_referentiels.parquet"
             all_refs.to_parquet(output_path)
             logger.log_step("generate_referentiels", "CREATED", {"path": str(output_path)})
 
@@ -724,8 +757,8 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
                 form_ref = pd.DataFrame({
                     'key': 'formation_codes',
                     'code': form_df['code'],
-                    'label': form_df['label'],
-                    'metadata': None
+                    'label': form_df['label']
+                    #'metadata': None # Removed
                 })
                 refs_list.append(form_ref)
                 
@@ -752,24 +785,85 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
                     incl_ref = pd.DataFrame({
                         'key': 'inclusion_services',
                         'code': incl_df['Nom'],
-                        'label': incl_df['Label'],
-                        'metadata': None
+                        'label': incl_df['Label']
+                        #'metadata': None # Removed
                     })
                     refs_list.append(incl_ref)
                     logger.log_step("generate_referentiels", "INCLUSION", {"count": len(incl_ref)})
                 else:
                      logging.warning(f"Inclusion Referentiel: Missing columns. Found: {incl_df.columns}")
 
-        if refs_list:
-            all_refs = pd.concat(refs_list, ignore_index=True)
-            output_path = OUTPUT_DIR / "referentiels.parquet"
-            all_refs.to_parquet(output_path)
-            logger.log_step("generate_referentiels", "CREATED", {"path": str(output_path)})
+    except Exception as e:
+        logger.log_step("generate_referentiels", "ERROR", {"error": str(e)})
+
+    try:
+        # WALDEC
+        waldec_path = CLEAN_DIR / "referentiel_waldec.parquet"
+        if waldec_path.exists():
+            waldec_df = pd.read_parquet(waldec_path)
+            if 'code' in waldec_df.columns and 'label' in waldec_df.columns:
+                 waldec_ref = pd.DataFrame({
+                    'key': 'waldec_codes',
+                    'code': waldec_df['code'],
+                    'label': waldec_df['label']
+                })
+                 refs_list.append(waldec_ref)
+                 logger.log_step("generate_referentiels", "WALDEC", {"count": len(waldec_ref)})
 
     except Exception as e:
         logger.log_step("generate_referentiels", "ERROR", {"error": str(e)})
 
-def main():
+    try:
+        # Communes (from Clean or Raw)
+        # We need code (codgeo) and label (libgeo or nom)
+        # We can load the clean communes file
+        communes_path = CLEAN_DIR / "communes.parquet"
+        if communes_path.exists():
+            # Clean file uses 'nom' instead of 'libgeo'
+            communes_df = pd.read_parquet(communes_path, columns=['codgeo', 'nom'])
+            if 'codgeo' in communes_df.columns and 'nom' in communes_df.columns:
+                 communes_ref = pd.DataFrame({
+                    'key': 'communes',
+                    'code': communes_df['codgeo'],
+                    'label': communes_df['nom']
+                })
+                 refs_list.append(communes_ref)
+                 logger.log_step("generate_referentiels", "COMMUNES", {"count": len(communes_ref)})
+
+    except Exception as e:
+        logger.log_step("generate_referentiels", "ERROR_COMMUNES", {"error": str(e)})
+
+    try:
+        # Bassins de Vie
+        bv_cfg = config['sources']['bassins_de_vie']
+        bv_path = CACHE_DIR / bv_cfg['archive_file']
+        if bv_path.exists():
+            # Load raw to get names
+            df_bv_source = load_dataset(bv_path, bv_cfg)
+             # 'Bassin de vie 2022', 'Libellé géographique du bassin de vie 2022'
+            if 'Bassin de vie 2022' in df_bv_source.columns and 'Libellé géographique du bassin de vie 2022' in df_bv_source.columns:
+                 bv_ref = df_bv_source[['Bassin de vie 2022', 'Libellé géographique du bassin de vie 2022']].drop_duplicates()
+                 bv_ref.columns = ['code', 'label']
+                 
+                 bv_ref = pd.DataFrame({
+                    'key': 'bassins_de_vie',
+                    'code': bv_ref['code'].astype(str),
+                    'label': bv_ref['label']
+                })
+                 refs_list.append(bv_ref)
+                 logger.log_step("generate_referentiels", "BASSINS_VIE", {"count": len(bv_ref)})
+
+    except Exception as e:
+        logger.log_step("generate_referentiels", "ERROR_BASSINS_VIE", {"error": str(e)})
+
+    # Final concatenation and save for all referentiels
+    if refs_list:
+        all_refs = pd.concat(refs_list, ignore_index=True)
+        output_path = OUTPUT_DIR / "odis_referentiels.parquet"
+        all_refs.to_parquet(output_path)
+        logger.log_step("generate_referentiels", "CREATED", {"path": str(output_path)})
+
+def main(argv=None):
     logger = PipelineLogger(STATUS_FILE)
     config = load_config(CONFIG_FILE)
     

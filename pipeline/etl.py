@@ -10,12 +10,12 @@ DEST_DIR = 'data'
 FILES_TO_COPY = [
     'odis_communes.parquet',
     'odis_bassins_de_vie.parquet',
-    'pois.parquet',
-    'bmo_vertical.parquet',
-    'associations_vertical.parquet',
-    'referentiels.parquet',
-    'odis_rel_metiers.parquet',
-    'odis_rel_formations.parquet'
+    'odis_pois.parquet',
+    'odis_metiers_agg.parquet',
+    'odis_associations_agg.parquet',
+    'odis_referentiels.parquet',
+    'odis_formations_agg.parquet',
+    'odis_ccas.parquet'
 ]
 
 # Configure logging
@@ -28,17 +28,17 @@ def main():
 
     if args.step in ["ingest", "all"]:
         logging.info("=== Starting Ingestion Phase ===")
-        ingest.main()
+        ingest.main([])
         logging.info("=== Ingestion Phase Completed ===")
 
     if args.step in ["build", "all"]:
         logging.info("=== Starting Build Phase ===")
-        build.main()
+        build.main([])
         logging.info("=== Build Phase Completed ===")
 
     if args.step in ["prescoring", "all"]:
         logging.info("=== Starting Prescoring Phase ===")
-        prescoring.main()
+        prescoring.main([])
         logging.info("=== Prescoring Phase Completed ===")
 
     if args.step in ["deploy", "all"]:

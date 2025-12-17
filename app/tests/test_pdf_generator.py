@@ -28,9 +28,9 @@ def sample_session_state():
         codes_formations=[[]],
         classe_enfants=['Maternelle'],
         besoin_sante='Aucun',
-        besoins_autres={},
-        socle_admin_selection=[],
-        affinite_selection=[],
+        inc_services_add_selection={},
+        inc_services_core_selection=[],
+        inc_asso_add_selection=[],
         binome_penalty=0.5,
         pop_min=1000
     )

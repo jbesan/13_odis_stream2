@@ -96,9 +96,14 @@ Liste en vrac d'idées d'amélioration
 - Normaliser les scores de catégorie pour éviter une surévaluation de certains critères
 - Ajouter des profils de pondération (famille vs célibataire)
 - Ajouter la base J'accuille d'accueil chez l'habitant
-- Ajouter la base des loyers moyens
 - Ajouter la base des transports publics ?
 - Niveau de vie
+- Enlever la couleur politique --> remplacer par y-a-t'il un CTAI (signe que la commune s'implique dans l'intégration) + Est-ce que la commune est adhérante ANVTA ? Ajouter un label ?
+- Rechercher au niveau national ou viser une région/ département en particulier?
+- Ajouter un 'en savoir plus' pour comprendre le scoring
+- Gare --> a conditionner avec une question mobilité (besoin de revenir regulierement)
+- FLE doit être un critere à part entiere et il faut trouver une base spécifique
+- Les multiselects sont frustrants car il faut trouver la terminologie exacte
 
 ## 5. Features
 
@@ -315,8 +320,8 @@ En tant que travailleur social, je veux voir les lieux recommandés sur une cart
 
 ### 🔑 Key Features
 
-- Refonte du calcul du score "Inclusion" intégrant quatre composantes : "Socle Administratif", "Lien Social", "Affinité" et "Population".
-- Le "Socle Administratif" (`inc_socle_admin_score`) est basé sur la présence et la densité des services institutionnels clés issus de `annuaire_inclusion_index.csv`.
+- Refonte du calcul du score "Inclusion" intégrant cinq composantes : "Socle Administratif" (`inc_services_core_scaled`), "Services Spécifiques" (`inc_services_add_scaled`), "Lien Social" (`inc_asso_core_scaled`), "Affinité" (`inc_asso_add_scaled`) et "Population".
+- Le "Socle Administratif" (`inc_services_core_scaled`) est basé sur la présence et la densité des services institutionnels clés issus de `annuaire_inclusion_index.csv`.
   Note: Les catégories services à cocher par défaut sont:
 
 * logement-hebergement: etre-accompagne-pour-se-loger
@@ -324,8 +329,9 @@ En tant que travailleur social, je veux voir les lieux recommandés sur une cart
 * acces-aux-droits-et-citoyennete: demandeurs-dasile-et-naturalisation
 * preparer-sa-candidature: realiser-un-cv-et-ou-une-lettre-de-motivation
 
-- Le "Lien Social" (`inc_lien_social_score`) mesure la densité d'associations (via le RNA et les codes WALDEC) correspondant à des catégories fixes définies dans `.agent/rna_config.py`. Les données associations sont dans `csv/rna_waldec_20250901_mini_odis.csv`, l'index dans `csv/rna-associations-nomenclature-waldec.json`.
-- L'"Affinité" (`inc_affinite_score`) mesure la densité d'associations (via le RNA et les codes WALDEC) correspondant aux centres d'intérêt spécifiques sélectionnés par l'utilisateur.
+- Le "Lien Social" (`inc_asso_core_scaled`) mesure la densité d'associations (via le RNA et les codes WALDEC) correspondant à des catégories fixes définies dans `.agent/rna_config.py`. Les données associations sont dans `csv/rna_waldec_20250901_mini_odis.csv`, l'index dans `csv/rna-associations-nomenclature-waldec.json`.
+- L'"Affinité" (`inc_asso_add_scaled`) mesure la densité d'associations (via le RNA et les codes WALDEC) correspondant aux centres d'intérêt spécifiques sélectionnés par l'utilisateur.
+- "Services Spécifiques" (`inc_services_add_scaled`) mesure la présence d'autres services d'inclusion sélectionnés.
 - La "Population" (`inc_population_scaled`) est utilisée comme un critère direct, favorisant les communes de taille importante.
 - Une nouvelle interface utilisateur pour l'étape "Inclusion" (étape 7/8 du formulaire) proposera deux champs multiselect : un pour les services institutionnels (avec des pré-sélections déselectionnables) et un pour les activités associatives.
 - La métrique utilisée pour les associations est le nombre total d'associations correspondantes pour 1000 habitants, calculé au niveau communal et agrégé en moyenne pondérée par la population pour les Bassins de Vie.
@@ -435,3 +441,27 @@ En tant que travailleur social, je veux voir les lieux recommandés sur une cart
 ### 📊 Status
 
 - Not Started
+
+## 🚀 Feature [F-19]: Odis AI Agent (Assistant Virtuel)
+
+### 📝 User Stories
+
+- En tant que travailleur social, je veux interagir en langage naturel avec l'outil pour décrire la situation de la famille (récit de vie) et obtenir des recommandations sans avoir à remplir manuellement chaque champ du formulaire.
+- En tant que travailleur social, je veux que l'assistant comprenne le jargon métier (codes ROME, besoins spécifiques) et trouve automatiquement les correspondances dans les référentiels.
+
+### 🔑 Key Features
+
+- **Moteur LLM :** Intégration de **Gemini 2.5-flash-lite** pour une compréhension contextuelle avancée et une capacité de "Tool Use" robuste.
+- **Architecture MCP (Model Context Protocol) :**
+  - Serveur MCP (`app/mcp_server.py`) exposant les données ODIS (Référentiels, Communes, Scoring) comme des outils standardisés.
+  - Client Gemini (`app/gemini_client.py`) consommant ces outils.
+- **Outils Intelligents :**
+  - `search_commune(query)`: Trouve le code INSEE exact d'une ville.
+  - `search_referentiels(query, domain)`: Recherche sémantique robuste (tolérance aux fautes, mots vides) dans les référentiels Métiers (FAP), Formations et Associations (WALDEC).
+  - `compute_top_cities(weight_profile, criterias)`: Lance le moteur de scoring ODIS avec des critères structurés.
+- **Robustesse & Typage :** Utilisation de modèles **Pydantic** (`app/models.py`) pour garantir que l'IA génère des paramètres de recherche valides (schéma strict).
+- **Prompt Engineering :** "System Instruction" externalisée (`AGENT_PROMPT.md`) définissant un persona "Assistant Expert" avec un protocole d'entretien strict en 4 phases (Ancrage, Famille, Besoins, Validation).
+
+### 📊 Status
+
+- Completed

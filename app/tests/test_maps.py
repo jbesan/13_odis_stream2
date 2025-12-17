@@ -7,17 +7,21 @@ import folium
 
 # Adjust the import path to match your project structure
 from app.maps import build_top_result_layer
+import app.config as cfg
 
 @pytest.fixture
 def sample_result_row():
     """Creates a sample GeoDataFrame row for testing."""
+    # Use coordinates that are valid for EPSG:2154 (Lambert-93)
+    # Roughly a triangle near Paris
     data = {
         'libgeo': ['Testville'],
         'binome': [False],
         'polygon_binome': [None],
-        'geometry': [Polygon([(0, 0), (1, 1), (1, 0)])]
+        'geometry': [Polygon([(600000, 6800000), (610000, 6810000), (610000, 6800000)])]
     }
-    gdf = gpd.GeoDataFrame(data, geometry='geometry', crs="EPSG:4326")
+    # Note: We create it without CRS, or generic, because the function assumes 2154
+    gdf = gpd.GeoDataFrame(data, geometry='geometry')
     # The geometry column in the app is named 'polygon', let's align with that
     gdf = gdf.rename_geometry('polygon')
     return gdf.iloc[0]
@@ -51,9 +55,15 @@ def test_build_top_result_layer_creates_ranked_marker(sample_result_row):
     assert expected_rank_html in div_icon_marker.icon.options['html'], \
         f"The marker's HTML does not contain the correct rank. Expected '{expected_rank_html}'."
 
-    # Check marker position
+    # Check marker position (Must convert to EPSG:4326 to match marker)
     centroid = row.polygon.centroid
-    assert div_icon_marker.location == [centroid.y, centroid.x]
+    centroid_4326 = gpd.GeoSeries([centroid], crs=cfg.PROJECTED_CRS).to_crs("EPSG:4326").iloc[0]
+    
+    # Folium uses [lat, lon] -> [y, x]
+    expected_location = [centroid_4326.y, centroid_4326.x]
+    
+    # Allow for small floating point differences
+    assert div_icon_marker.location == pytest.approx(expected_location, abs=1e-6)
 
 def test_build_top_result_layer_handles_binome(sample_result_row):
     """
@@ -64,7 +74,8 @@ def test_build_top_result_layer_handles_binome(sample_result_row):
     rank = 0
     row = sample_result_row.copy()
     row['binome'] = True
-    row['polygon_binome'] = Polygon([(2, 2), (3, 3), (3, 2)])
+    # Valid 2154 coords for binome too
+    row['polygon_binome'] = Polygon([(620000, 6820000), (630000, 6830000), (630000, 6820000)])
 
     # Act
     feature_group = build_top_result_layer(row, rank)
@@ -72,4 +83,3 @@ def test_build_top_result_layer_handles_binome(sample_result_row):
     # Assert
     geojson_layers = [child for child in feature_group._children.values() if isinstance(child, folium.GeoJson)]
     assert len(geojson_layers) == 2, "Expected two GeoJson layers for a binome result."
-

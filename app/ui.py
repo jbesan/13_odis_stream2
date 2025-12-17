@@ -1,14 +1,13 @@
 import streamlit as st
 import pandas as pd
 from plotly.express import line_polar
-
+import geopandas as gpd
 import config as cfg
 import maps
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 import base64
 import logging
-import scoring
 
 def get_image_path(filename: str) -> str:
     """Returns the absolute path to an image file, robust to launch directory."""
@@ -259,12 +258,12 @@ def render_other_needs_form() -> None:
     # st.info("Sélectionnez les services institutionnels essentiels pour vous.")
     
     # Pre-defined list from PRD/Config
-    default_socle = cfg.DEFAULT_SOCLE_ADMIN
+    default_socle = cfg.DEFAULT_INC_SERVICES_CORE
     
     # Initialize session state for this selection if not present
-    if 'ui_socle_admin_selection' not in st.session_state:
+    if 'ui_inc_services_core_selection' not in st.session_state:
         # Default to the recommended list
-        st.session_state.ui_socle_admin_selection = st.session_state['demo_data'].get('socle_admin_selection', default_socle)
+        st.session_state.ui_inc_services_core_selection = st.session_state['demo_data'].get('inc_services_core_selection', default_socle)
 
     # Widget hidden as per user request, but state is preserved for scoring.
     # st.multiselect(...) 
@@ -273,16 +272,16 @@ def render_other_needs_form() -> None:
     st.subheader("Affinités & Loisirs")
     st.info("Sélectionnez vos centres d'intérêt pour identifier les territoires avec un tissu associatif correspondant.")
     
-    # from rna_config import WALDEC_INTERESTS_MAPPING
-    interest_options = list(cfg.WALDEC_INTERESTS_MAPPING.keys())
+    # from rna_config import WALDEC_INC_ASSO_ADD_MAPPING
+    interest_options = list(cfg.WALDEC_INC_ASSO_ADD_MAPPING.keys())
     
-    if 'ui_affinite_selection' not in st.session_state:
-        st.session_state.ui_affinite_selection = st.session_state['demo_data'].get('affinite_selection', [])
+    if 'ui_inc_asso_add_selection' not in st.session_state:
+        st.session_state.ui_inc_asso_add_selection = st.session_state['demo_data'].get('inc_asso_add_selection', [])
         
     st.multiselect(
         "Centres d'intérêt",
         options=interest_options,
-        key="ui_affinite_selection"
+        key="ui_inc_asso_add_selection"
     )
 
     # --- 3. Autres Besoins (Refactored) ---
@@ -308,9 +307,9 @@ def render_other_needs_form() -> None:
     options_list.sort()
     
     # Initialize flat selection state from existing list state (if any, e.g. from demo data)
-    if 'ui_besoins_autres_flat' not in st.session_state:
+    if 'ui_inc_services_add_selection_flat' not in st.session_state:
         # User config now stores a list of slugs
-        current_list = st.session_state.get('ui_besoins_autres', st.session_state['demo_data'].get('besoins_autres', []))
+        current_list = st.session_state.get('ui_inc_services_add_selection', st.session_state['demo_data'].get('inc_services_add_selection', []))
         flat_selection = []
         
         # Create reverse map for initialization: Slug -> Display String
@@ -320,21 +319,21 @@ def render_other_needs_form() -> None:
             if slug in slug_to_display:
                 flat_selection.append(slug_to_display[slug])
                 
-        st.session_state.ui_besoins_autres_flat = flat_selection
+        st.session_state.ui_inc_services_add_selection_flat = flat_selection
 
     # Widget
     st.multiselect(
         "Services disponibles",
         options=options_list,
-        key="ui_besoins_autres_flat",
+        key="ui_inc_services_add_selection_flat",
         help="Recherchez et ajoutez des services spécifiques."
     )
-    if st.session_state.ui_besoins_autres_flat:
+    if st.session_state.ui_inc_services_add_selection_flat:
         st.toggle("Prioritaire", key="ui_priority_other_needs", help="Donne plus de poids à ces besoins spécifiques")
     
     # We store the map in session state so we can use it in create_scoring_config_from_inputs
     # without re-computing it (optimization)
-    st.session_state['ui_besoins_autres_map'] = options_map
+    st.session_state['ui_inc_services_add_selection_map'] = options_map
 
 def render_mobility_form() -> None:
     """Renders the UI for the 'Mobilité' form section."""
@@ -386,22 +385,22 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
 
     # Process Autres Besoins from Flat List (F-13 UI Update)
     # Process Autres Besoins from Flat List (F-13 UI Update)
-    besoins_autres_list = []
-    if 'ui_besoins_autres_flat' in st.session_state:
-        flat_selection = st.session_state.ui_besoins_autres_flat
-        options_map = st.session_state.get('ui_besoins_autres_map', {})
+    inc_services_add_selection_list = []
+    if 'ui_inc_services_add_selection_flat' in st.session_state:
+        flat_selection = st.session_state.ui_inc_services_add_selection_flat
+        options_map = st.session_state.get('ui_inc_services_add_selection_map', {})
         
         if options_map:
-            for item in flat_selection:
-                if item in options_map:
-                    slug = options_map[item]
-                    besoins_autres_list.append(slug)
+            for ui_inc_asso_add_selection in flat_selection:
+                if ui_inc_asso_add_selection in options_map:
+                    slug = options_map[ui_inc_asso_add_selection]
+                    inc_services_add_selection_list.append(slug)
         
         # Update session state for compatibility
-        st.session_state.ui_besoins_autres = besoins_autres_list
+        st.session_state.ui_inc_services_add_selection = inc_services_add_selection_list
     else:
         # Fallback to existing list if flat not present (e.g. tests or legacy)
-        besoins_autres_list = st.session_state.get('ui_besoins_autres', [])
+        inc_services_add_selection_list = st.session_state.get('ui_inc_services_add_selection', [])
 
     # F-15: Compute Criteria Weights
     criteria_weights = {}
@@ -453,7 +452,7 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
     # Other Needs Priority (F-15)
     if st.session_state.get("ui_priority_other_needs", False):
         # Maps to the new Extra Services score
-        criteria_weights['inc_extra_services_score'] = 3.0
+        criteria_weights['inc_services_add_scaled'] = 3.0
 
     return cfg.ScoringConfig(
         poids_emploi=st.session_state['ui_poids_emploi'],
@@ -473,9 +472,9 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
         codes_formations=codes_formations,
         classe_enfants=classe_enfants,
         besoin_sante=st.session_state['ui_besoin_sante'],
-        besoins_autres=besoins_autres_list,
-        socle_admin_selection=st.session_state.get('ui_socle_admin_selection', []), # NEW
-        affinite_selection=st.session_state.get('ui_affinite_selection', []), # NEW
+        inc_services_add_selection=inc_services_add_selection_list,
+        inc_services_core_selection=st.session_state.get('ui_inc_services_core_selection', []), # NEW
+        inc_asso_add_selection=st.session_state.get('ui_inc_asso_add_selection', []), # NEW
         binome_penalty=st.session_state.get('ui_binome_penalty', 50) / 100,
         pop_min=st.session_state.get('ui_pop_min', 1000)
     )
@@ -492,7 +491,13 @@ def _result_highlight_callback(rank: int) -> None:
         # Highlight the new result
         row = st.session_state.processed_gdf.loc[rank]
         st.session_state.highlighted_result = [True, rank]
-        st.session_state.center = [row.polygon.centroid.y, row.polygon.centroid.x]
+        
+        # Project centroid to 4326 for map centering (On-the-fly)
+        # processed_gdf is in EPSG:2154
+        centroid_2154 = row.polygon.centroid
+        centroid_4326 = gpd.GeoSeries([centroid_2154], crs=cfg.PROJECTED_CRS).to_crs("EPSG:4326").iloc[0]
+        
+        st.session_state.center = [centroid_4326.y, centroid_4326.x]
         st.session_state.zoom = cfg.DETAIL_MAP_ZOOM
 
 def get_person_accompanied_str() -> str:
@@ -511,28 +516,31 @@ def display_results_list() -> None:
     is_highlighted, highlighted_rank = st.session_state.highlighted_result
 
     # Pre-build layers for top results to be shown on map
-    for rank, row in df.head(top_n).iterrows():
-        fg_key = f'Top{rank + 1}'
-        st.session_state.fg_dict_ref[fg_key] = maps.build_top_result_layer(row, rank)
+    for i, (index, row) in enumerate(df.head(top_n).iterrows()):
+        fg_key = f'Top{i + 1}'
+        st.session_state.fg_dict_ref[fg_key] = maps.build_top_result_layer(row, i)
 
     # Display buttons and details
-    for rank, row in df.head(top_n).iterrows():
+    for i, (index, row) in enumerate(df.head(top_n).iterrows()):
         # Adapt title based on the view level
         if st.session_state.get('view_level') == 'Bassins de vie':
-            title = f"Top {rank+1} | Bassin de vie de {row.libgeo}"
+            title = f"Top {i+1} | Bassin de vie de {row.libgeo}"
         else:
-            title = f"Top {rank+1} | {row.libgeo}" + (f" (avec {row.libgeo_binome})" if row.binome else "")
+            title = f"Top {i+1} | {row.libgeo}" + (f" (avec {row.libgeo_binome})" if row.binome else "")
 
         st.button(
             title,
             on_click=_result_highlight_callback,
-            args=(rank,),
+            # We pass the index (label) to the callback so .loc[index] works
+            args=(index,),
             width='stretch',
-            key=f'button_top{rank+1}',
+            # Key uses relative rank i
+            key=f'button_top{i+1}',
             type='primary'
         )
 
-        if is_highlighted and rank == highlighted_rank:
+        # Check if this row's index matches the highlighted index
+        if is_highlighted and index == highlighted_rank:
             # For 'Bassin de vie' view, we call the specific details display for aggregated data
             if st.session_state.get('view_level') == 'Bassins de vie':
                 _display_bv_result_details(row)
@@ -608,11 +616,11 @@ def _display_bv_result_details(row: pd.Series) -> None:
             incl_index = st.session_state.app_data.get('inclusion_services_index', pd.DataFrame())
             
             # Determine Target Slugs for Filtering
-            target_slugs = set(cfg.DEFAULT_SOCLE_ADMIN)
+            target_slugs = set(cfg.DEFAULT_INC_SERVICES_CORE)
             
             # Add user selected specific needs
-            if 'ui_besoins_autres' in st.session_state and st.session_state.ui_besoins_autres:
-                 target_slugs.update(st.session_state.ui_besoins_autres)
+            if 'ui_inc_services_add_selection' in st.session_state and st.session_state.ui_inc_services_add_selection:
+                 target_slugs.update(st.session_state.ui_inc_services_add_selection)
             
             # Filter services for this BV
             # Ensure codgeo matching is robust (str vs category)
@@ -732,11 +740,11 @@ def _display_result_details(row: pd.Series) -> None:
             incl_index = st.session_state.app_data.get('inclusion_services_index', pd.DataFrame())
             
             # Determine Target Slugs for Filtering
-            target_slugs = set(cfg.DEFAULT_SOCLE_ADMIN)
+            target_slugs = set(cfg.DEFAULT_INC_SERVICES_CORE)
             
             # Add user selected specific needs
-            if 'ui_besoins_autres' in st.session_state and st.session_state.ui_besoins_autres:
-                 target_slugs.update(st.session_state.ui_besoins_autres)
+            if 'ui_inc_services_add_selection' in st.session_state and st.session_state.ui_inc_services_add_selection:
+                 target_slugs.update(st.session_state.ui_inc_services_add_selection)
 
             commune_services = services_df[
                 (services_df['codgeo'] == main_code) &
@@ -797,12 +805,13 @@ def _produce_pitch_markdown(row: pd.Series, config: cfg.ScoringConfig, scores_ca
     population = f"{row['population']:,.0f}".replace(",", " ")
 
     # Adapt the intro based on whether it's a bassin de vie or a commune
+    libgeo = row.get('libgeo', row.get('libelle_bassin_de_vie', 'Localité'))
     if 'communes' in row and isinstance(row['communes'], list):
         # It's a bassin de vie
-        pitch_md.append(f'Le bassin de vie de **{row["libgeo"]}** ({population} habitants), composé de **{len(row["communes"])} communes**, présente un bon équilibre pour le projet.')
+        pitch_md.append(f'Le bassin de vie de **{libgeo}** ({population} habitants), composé de **{len(row["communes"])} communes**, présente un bon équilibre pour le projet.')
     else:
         # It's a commune
-        pitch_md.append(f'**{row["libgeo"]}** ({population} habitants) fait partie du bassin de vie de : **{row["libelle_bassin_de_vie"]}**.  ')
+        pitch_md.append(f'**{libgeo}** ({population} habitants) fait partie du bassin de vie de : **{row.get("libelle_bassin_de_vie", "N/A")}**.  ')
 
     score_percent = f"{row['weighted_score'] * 100:.0f}%"
     if row.get("binome", False):

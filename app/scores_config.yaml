@@ -346,7 +346,7 @@ scores:
     weight: 1.0
     min_bound: 0.0
     max_bound: 1.0
-  - id: inc_socle_admin_score
+  - id: inc_services_core_scaled
     category: inclusion
     source_metric: socle_match_count
     include_in_binom: true
@@ -362,7 +362,7 @@ scores:
     weight: 1.0
     min_bound: 0.0
     max_bound: 1.0
-  - id: inc_lien_social_score
+  - id: inc_asso_core_scaled
     category: inclusion
     source_metric: lien_social_density
     include_in_binom: true
@@ -378,7 +378,7 @@ scores:
     weight: 1.0
     min_bound: null
     max_bound: null
-  - id: inc_affinite_score
+  - id: inc_asso_add_scaled
     category: inclusion
     source_metric: affinite_density
     include_in_binom: true
@@ -394,7 +394,7 @@ scores:
     weight: 1.0
     min_bound: 0.0
     max_bound: 0.25 ## This is Jacques guess looking at the data
-  - id: inc_extra_services_score
+  - id: inc_services_add_scaled
     category: inclusion
     source_metric: extra_services_match_count
     include_in_binom: true

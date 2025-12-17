@@ -182,4 +182,4 @@ class TestTaxonomyUpdate:
         # We mocked 3 keys in ref_inclusion. 
         # config.DEFAULT_SOCLE_ADMIN has 3 keys.
         # Let's check if the first one matches what we mocked.
-        assert cfg.DEFAULT_SOCLE_ADMIN[0] in mock_ref_inclusion['Nom'].values
+        assert cfg.DEFAULT_INC_SERVICES_CORE[0] in mock_ref_inclusion['Nom'].values

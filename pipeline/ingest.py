@@ -1125,10 +1125,60 @@ def clean_population_details(config: Dict[str, Any], logger: PipelineLogger):
     df_pivot.to_parquet(output_path)
     logger.log_step("clean_population_details", "COMPLETED", {"path": str(output_path), "rows": len(df_pivot)})
 
-def main():
+def clean_nomenclature_waldec(config: Dict[str, Any], logger: PipelineLogger):
+    """Cleans WALDEC Nomenclature and saves to parquet."""
+    logger.log_step("clean_nomenclature_waldec", "STARTED")
+    source = config['sources']['nomenclature_waldec']
+    path = CACHE_DIR / source['local_name']
+    
+    if not path.exists():
+         # Ingest typically fetches, but if we run step manually loop might needed.
+         # The 'Fetch' phase runs before.
+         logging.warning("WALDEC Nomenclature file not found.")
+         return
+
+    # Load JSON
+    # Structure based on URL: List of objects or Dict?
+    # Usually: [{"code": "...", "label": "..."}] or similar.
+    # Let's assume standard extraction or inspect first?
+    # User said "Type de fichier: json".
+    # I'll implement a robust loader.
+    
+    try:
+        df = pd.read_json(path)
+        # Expected columns? 'Code', 'Libellé'?
+        # If deeply nested, might need normalization.
+        # Let's assume flat or simple list given Data Gouv standard.
+        
+        # Standardize columns
+        df.columns = [c.strip().lower() for c in df.columns]
+        
+        # Identify Code and Label
+        # Found: objet_social_id, objet_social_lib
+        code_col = next((c for c in df.columns if c in ['code', 'id', 'id_waldec', 'objet_social_id']), None)
+        label_col = next((c for c in df.columns if c in ['libelle', 'label', 'titre', 'lib', 'objet_social_lib']), None)
+        
+        if code_col and label_col:
+            df_out = df[[code_col, label_col]].rename(columns={code_col: 'code', label_col: 'label'})
+            # Ensure strings
+            df_out['code'] = df_out['code'].astype(str)
+            df_out['label'] = df_out['label'].astype(str)
+            
+            output_path = CLEAN_DIR / "referentiel_waldec.parquet"
+            df_out.to_parquet(output_path)
+            logger.log_step("clean_nomenclature_waldec", "COMPLETED", {"path": str(output_path), "rows": len(df_out)})
+        else:
+            logging.warning(f"WALDEC: Could not identify code/label columns. Found: {df.columns}")
+            logger.log_step("clean_nomenclature_waldec", "FAILED", {"reason": "Columns not found"})
+
+    except Exception as e:
+        logger.log_step("clean_nomenclature_waldec", "ERROR", {"error": str(e)})
+        logging.error(f"WALDEC clean failed: {e}")
+
+def main(argv=None):
     parser = argparse.ArgumentParser(description="ODIS Ingest Pipeline")
     parser.add_argument('--steps', type=str, help="Comma-separated list of steps to run (e.g. communes,inclusion)")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     logger = PipelineLogger(STATUS_FILE)
     config = load_config(CONFIG_FILE)
@@ -1165,7 +1215,8 @@ def main():
         'formations': clean_formations,
         'gares': clean_odace_gares,
         'loyers': clean_loyers,
-        'population_details': clean_population_details
+        'population_details': clean_population_details,
+        'nomenclature_waldec': clean_nomenclature_waldec
     }
 
     selected_steps = args.steps.split(',') if args.steps else steps_map.keys()

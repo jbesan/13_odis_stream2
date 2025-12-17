@@ -181,6 +181,8 @@ with col_skip:
     if st.button(":next_track_button: Passer à la page résultats", type="secondary", use_container_width=True):
         st.switch_page("pages/3_Resultats.py")
 
+
+
 st.markdown("---")
 
 # --- "How it works" Steps ---
@@ -223,6 +225,9 @@ for col, step in zip(step_cols, steps):
 st.divider()
 
 # --- Footer ---
+if st.button("[New] Let's chat 🤖", type="secondary", use_container_width=False):
+    st.switch_page("pages/4_AI_Chatbot.py")
+    
 st.markdown(
     """
     <div style='text-align: center; color: #a0c0a0; font-size: 0.8em; margin-top: 20px;'>
