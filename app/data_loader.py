@@ -176,8 +176,8 @@ def load_all_data_raw() -> Dict[str, Any]:
         
         # Essential columns
         essential_cols = {
-            'codgeo', 'libgeo', 'polygon', 'dep_code', 'reg_code', 'epci_code', 'epci_nom', 'codgeo_voisins',
-            'population', 'bassin_de_vie', 'libelle_bassin_de_vie',
+            'codgeo', 'polygon', 'dep_code', 'reg_code', 'epci_code', 'epci_nom', 'codgeo_voisins',
+            'population', 'bassin_de_vie',
             'youth_growth_rate', 'workclass_growth_rate' # Keep growth rates for tooltips
         }
         
@@ -301,6 +301,39 @@ def load_all_data_raw() -> Dict[str, Any]:
     ref_path = os.path.join(base_path, cfg.REFERENTIELS_FILE)
     logger.info(f"Loading Referentiels from: {ref_path}")
     refs_df = _load_parquet(ref_path)
+
+    # FIX: Re-hydrate Names (libgeo, libelle_bassin_de_vie) from Referentiels EARLY
+    # This must happen before depcom_df generation which uses libgeo
+    
+    # Extract Lookups
+    commune_names = {}
+    bv_names = {}
+    
+    if not refs_df.empty:
+         # Communes
+         c_ref = refs_df[refs_df['key'] == 'communes']
+         if not c_ref.empty:
+             commune_names = c_ref.set_index('code')['label'].to_dict()
+         
+         # Bassins de Vie
+         bv_ref = refs_df[refs_df['key'] == 'bassins_de_vie']
+         if not bv_ref.empty:
+             bv_names = bv_ref.set_index('code')['label'].to_dict()
+
+    # Apply to ODIS (Communes)
+    if 'libgeo' not in odis.columns:
+        odis['libgeo'] = odis.index.map(commune_names)
+        # Fallback for missing
+        mask = odis['libgeo'].isna()
+        odis.loc[mask, 'libgeo'] = odis.index[mask]
+
+    # Apply to ODIS (BV Labels)
+    if 'bassin_de_vie' in odis.columns:
+        odis['libelle_bassin_de_vie'] = odis['bassin_de_vie'].astype(str).map(bv_names)
+        # odis['libelle_bassin_de_vie'] = odis['libelle_bassin_de_vie'].fillna(odis['bassin_de_vie'])
+        mask = odis['libelle_bassin_de_vie'].isna()
+        odis.loc[mask, 'libelle_bassin_de_vie'] = odis.loc[mask, 'bassin_de_vie']
+
     
     codfap_index = pd.DataFrame()
     if not refs_df.empty:
@@ -392,13 +425,13 @@ def load_all_data_raw() -> Dict[str, Any]:
 
     # 8. Optimization: Restore libelle_bassin_de_vie in ODIS from BV Geo
     # (Avoids storing it in the main parquet file)
-    if 'bassin_de_vie' in odis.columns and 'libelle_bassin_de_vie' not in odis.columns:
-        if not bv_geo.empty and 'libgeo' in bv_geo.columns:
-            # bv_geo index is the code (bassin_de_vie)
-            bv_label_map = bv_geo['libgeo'].to_dict()
-            odis['libelle_bassin_de_vie'] = odis['bassin_de_vie'].map(bv_label_map)
-            # Fill NaNs if any (e.g. for PLM or isolated communes)
-            odis['libelle_bassin_de_vie'] = odis['libelle_bassin_de_vie'].fillna(odis['libgeo'])
+    # Apply to BV Geo
+    if not bv_geo.empty and 'libgeo' not in bv_geo.columns:
+        # Index is code
+        bv_geo['libgeo'] = bv_geo.index.astype(str).map(bv_names)
+        # bv_geo['libgeo'] = bv_geo['libgeo'].fillna(bv_geo.index)
+        mask = bv_geo['libgeo'].isna()
+        bv_geo.loc[mask, 'libgeo'] = bv_geo.index[mask]
             
     # 7. Generate Area Geometries (Departments & Regions)
     area_dfs = []

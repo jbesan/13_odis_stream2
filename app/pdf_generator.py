@@ -186,9 +186,9 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
             "Besoin de santé": config.besoin_sante,
             "Autres besoins": (lambda: 
                 ", ".join([
-                    {v: k for k, v in st_session_state.get('ui_besoins_autres_map', {}).items()}.get(slug, slug)
-                    for slug in config.besoins_autres
-                ]) if config.besoins_autres else "Aucun"
+                    {v: k for k, v in st_session_state.get('ui_inc_services_add_selection_map', {}).items()}.get(slug, slug)
+                    for slug in config.inc_services_add_selection
+                ]) if config.inc_services_add_selection else "Aucun"
             )(),
         }
         
@@ -235,23 +235,23 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
     pdf.set_font("DejaVu", 'B', 12)
     pdf.cell(0, 10, "Top 5 des résultats", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='L')
     pdf.set_font("DejaVu", '', 9)
-    for index, row in results_df.head(5).iterrows():
+    for rank, (index, row) in enumerate(results_df.head(5).iterrows(), start=1):
         score_percent = f"{row['weighted_score'] * 100:.0f}%"
         if st_session_state.get('view_level') == 'Bassins de vie':
             name = f"Bassin de vie de {row.libgeo}"
         else:
             name = row.libgeo + (f" (avec {row.libgeo_binome})" if row.binome else "")
-        pdf.cell(0, 5, f"  {index + 1}. {name} - {score_percent}", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.cell(0, 5, f"  {rank}. {name} - {score_percent}", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(5)
 
     # --- INDIVIDUAL RESULT PAGES ---
-    for index, row in results_df.head(5).iterrows():
+    for rank, (index, row) in enumerate(results_df.head(5).iterrows(), start=1):
         pdf.add_page()
         # Result Title
         if st_session_state.get('view_level') == 'Bassins de vie':
-            title = f"Top {index + 1} | Bassin de vie de {row.libgeo}"
+            title = f"Top {rank} | Bassin de vie de {row.libgeo}"
         else:
-            title = f"Top {index + 1} | {row.libgeo}" + (f" (avec {row.libgeo_binome})" if row.binome else "")
+            title = f"Top {rank} | {row.libgeo}" + (f" (avec {row.libgeo_binome})" if row.binome else "")
         pdf.set_font("DejaVu", 'B', 12)
         pdf.cell(0, 8, title, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(2)
@@ -340,11 +340,11 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
         incl_index = st_session_state['app_data'].get('inclusion_services_index', pd.DataFrame())
         
         # Determine Target Slugs for Filtering
-        target_slugs = set(cfg.DEFAULT_SOCLE_ADMIN)
+        target_slugs = set(cfg.DEFAULT_INC_SERVICES_CORE)
         
         # Add user selected specific needs
-        if 'ui_besoins_autres' in st_session_state and st_session_state['ui_besoins_autres']:
-                target_slugs.update(st_session_state['ui_besoins_autres'])
+        if 'ui_inc_services_add_selection' in st_session_state and st_session_state['ui_inc_services_add_selection']:
+                target_slugs.update(st_session_state['ui_inc_services_add_selection'])
         
         communes_to_check = row.get('communes', [row.name])
         

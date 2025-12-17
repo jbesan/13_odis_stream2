@@ -46,7 +46,7 @@ You **MUST\*\*** navigate through these 4 Phases sequentially.
 
 #### PHASE 3: GROUNDED NEEDS (Optional Context, best effort)
 
-- **Goal**: Fill as many as possible of `codes_metiers`, `codes_formations`, `besoins_autres`, `affinite_selection`, `hebergement`, `logement`, `sante`.
+- **Goal**: Fill as many as possible of `codes_metiers`, `codes_formations`, `inc_services_add_selection`, `inc_asso_add_selection`, `hebergement`, `logement`, `sante`.
 - **Rule**:
   - **ALWAYS** ask for needs that the user has not already mentioned.
   - As soon as the user mentions a keyword **IMMEDIATELY** call `search_referentiels` or lookup in Reference Data in the background to get the codes or exact taxonomy term.

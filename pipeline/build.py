@@ -320,7 +320,10 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         
         # Drop the geometry column and conversion artifacts to avoid GeoParquet metadata overriding
         # Also drop 'centroid' (shapely objects) which fails to serialize. app/data_loader.py will re-calc it.
-        cols_to_drop = ['geometry', 'centroid'] if 'centroid' in communes_gdf.columns else ['geometry']
+        # FIX: Drop names (libgeo, libelle_bassin_de_vie) as they are now in referentiels
+        cols_to_drop = ['geometry', 'centroid', 'libgeo', 'libelle_bassin_de_vie']
+        # Handle case where columns might not exist (e.g. if already dropped or renamed)
+        cols_to_drop = [c for c in cols_to_drop if c in communes_gdf.columns]
         df_to_save = pd.DataFrame(communes_gdf.drop(columns=cols_to_drop))
         
         output_path = OUTPUT_DIR / "odis_communes.parquet"
@@ -417,20 +420,12 @@ def build_bassins_de_vie(communes_gdf: gpd.GeoDataFrame, config: Dict[str, Any],
                  0.0
              )
         
-        # Add Label
-        bv_cfg = config['sources']['bassins_de_vie']
-        bv_path = CACHE_DIR / bv_cfg['archive_file']
-        if bv_path.exists():
-            df_bv_source = load_dataset(bv_path, bv_cfg)
-            # 'Bassin de vie 2022', 'Libellé géographique du bassin de vie 2022'
-            # Rename to match our dissolved index 'bassin_de_vie'
-            df_bv_source = df_bv_source.rename(columns={
-                'Bassin de vie 2022': 'bassin_de_vie',
-                'Libellé géographique du bassin de vie 2022': 'libgeo'
-            })
-            # Deduplicate (one label per BV code)
-            labels = df_bv_source[['bassin_de_vie', 'libgeo']].drop_duplicates()
-            bv_gdf = bv_gdf.merge(labels, on='bassin_de_vie', how='left')
+        # Add Label - REMOVED (Now in Referentiels)
+        # bv_cfg = config['sources']['bassins_de_vie']
+        # bv_path = CACHE_DIR / bv_cfg['archive_file']
+        # if bv_path.exists():
+             # Logic removed to avoid adding 'libgeo' back
+        #    pass
         
         # Explicitly convert to WKB to ensure we save the PROJECTED geometry (EPSG:2154)
         if bv_gdf.crs != cfg.PROJECTED_CRS:
@@ -439,7 +434,11 @@ def build_bassins_de_vie(communes_gdf: gpd.GeoDataFrame, config: Dict[str, Any],
         bv_gdf['polygon'] = bv_gdf.geometry.to_wkb()
         
         # Drop geometry to avoid GeoParquet 4326 default
-        df_to_save = pd.DataFrame(bv_gdf.drop(columns='geometry'))
+        # Also drop name columns if present (libgeo)
+        cols_to_drop = ['geometry', 'libgeo', 'libelle_bassin_de_vie']
+        cols_to_drop = [c for c in cols_to_drop if c in bv_gdf.columns]
+        
+        df_to_save = pd.DataFrame(bv_gdf.drop(columns=cols_to_drop))
         
         output_path = OUTPUT_DIR / "odis_bassins_de_vie.parquet"
         df_to_save.to_parquet(output_path)
@@ -813,6 +812,49 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
 
     except Exception as e:
         logger.log_step("generate_referentiels", "ERROR", {"error": str(e)})
+
+    try:
+        # Communes (from Clean or Raw)
+        # We need code (codgeo) and label (libgeo or nom)
+        # We can load the clean communes file
+        communes_path = CLEAN_DIR / "communes.parquet"
+        if communes_path.exists():
+            # Clean file uses 'nom' instead of 'libgeo'
+            communes_df = pd.read_parquet(communes_path, columns=['codgeo', 'nom'])
+            if 'codgeo' in communes_df.columns and 'nom' in communes_df.columns:
+                 communes_ref = pd.DataFrame({
+                    'key': 'communes',
+                    'code': communes_df['codgeo'],
+                    'label': communes_df['nom']
+                })
+                 refs_list.append(communes_ref)
+                 logger.log_step("generate_referentiels", "COMMUNES", {"count": len(communes_ref)})
+
+    except Exception as e:
+        logger.log_step("generate_referentiels", "ERROR_COMMUNES", {"error": str(e)})
+
+    try:
+        # Bassins de Vie
+        bv_cfg = config['sources']['bassins_de_vie']
+        bv_path = CACHE_DIR / bv_cfg['archive_file']
+        if bv_path.exists():
+            # Load raw to get names
+            df_bv_source = load_dataset(bv_path, bv_cfg)
+             # 'Bassin de vie 2022', 'Libellé géographique du bassin de vie 2022'
+            if 'Bassin de vie 2022' in df_bv_source.columns and 'Libellé géographique du bassin de vie 2022' in df_bv_source.columns:
+                 bv_ref = df_bv_source[['Bassin de vie 2022', 'Libellé géographique du bassin de vie 2022']].drop_duplicates()
+                 bv_ref.columns = ['code', 'label']
+                 
+                 bv_ref = pd.DataFrame({
+                    'key': 'bassins_de_vie',
+                    'code': bv_ref['code'].astype(str),
+                    'label': bv_ref['label']
+                })
+                 refs_list.append(bv_ref)
+                 logger.log_step("generate_referentiels", "BASSINS_VIE", {"count": len(bv_ref)})
+
+    except Exception as e:
+        logger.log_step("generate_referentiels", "ERROR_BASSINS_VIE", {"error": str(e)})
 
     # Final concatenation and save for all referentiels
     if refs_list:

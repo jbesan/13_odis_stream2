@@ -89,9 +89,9 @@ def test_compute_top_cities_execution_complex(mcp_data_context):
         # Actually, let's use standard keys to be safe:
         # 'Maternelle' covers <6. 'Collège' covers 11-15.
         
-        'besoins_autres': ['lecture-ecriture-calcul--maitriser-le-francais'],
+        'inc_services_add_selection': ['lecture-ecriture-calcul--maitriser-le-francais'],
         'besoin_sante': 'Maternité', # Key in config is 'besoin_sante'
-        'affinite_selection': ['Entraide / Bénévolat']
+        'inc_asso_add_selection': ['Entraide / Bénévolat']
     }
     
     # Try with robust inputs
@@ -99,13 +99,14 @@ def test_compute_top_cities_execution_complex(mcp_data_context):
     # And 'classe_enfants' values need to match mapping.
     # We'll use the exact values from original test and assume app handles them or they are correct keys.
     
-    results = _compute_top_cities_logic(weights, filters)
+    results_dict = _compute_top_cities_logic(weights, filters)
+    results = results_dict.get('cities', [])
     
     assert len(results) > 0, "Should return results for complex scenario"
     top = results[0]
     
     print(f"Top Result: {top['name']} ({top['score']})")
-    assert 'category_scores' in top
+    assert 'detailed_scores' in top
     assert top['score'] > 0
 
 if __name__ == "__main__":

@@ -196,7 +196,7 @@ with col_map:
             with cols[3]:
                 show_sante = st.toggle('Santé', key='show_sante_toggle', disabled=(config.besoin_sante == "Aucun"))
             with cols[4]:
-                show_inclusion = st.toggle("Inclusion", key='show_inclusion_toggle', disabled=(not config.besoins_autres))
+                show_inclusion = st.toggle("Inclusion", key='show_inclusion_toggle', disabled=(not config.inc_services_add_selection))
 
             if show_ecoles:
                 st.session_state.fg_dict_ref['fg_ecoles'] = maps.build_ecoles_layer(st.session_state.app_data['pois'], target_codgeos, config)

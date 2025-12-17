@@ -124,8 +124,8 @@ def run_test_scenario(scenario_id, view_level, app_data):
             mock_session_state[f'ui_{key}'] = value
     
     # Ensure other necessary defaults are present
-    if 'ui_besoins_autres' not in mock_session_state:
-        mock_session_state['ui_besoins_autres'] = {}
+    if 'ui_inc_services_add_selection' not in mock_session_state:
+        mock_session_state['ui_inc_services_add_selection'] = {}
     if 'ui_pop_min' not in mock_session_state:
         mock_session_state['ui_pop_min'] = 1000
 
@@ -257,7 +257,7 @@ def test_result_details_display(app_data):
         'ui_hebergement': 'Location',
         'ui_logement': 'Location',
         'ui_besoin_sante': 'Aucun',
-        'ui_besoins_autres': {},
+        'ui_inc_services_add_selection': {},
         'ui_binome_penalty': 50,
         'ui_pop_min': 1000,
         'ui_poids_emploi': 100,

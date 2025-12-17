@@ -270,9 +270,7 @@ class ScoringEngine:
                 for option, score_col in edu_score_map.items():
                     if option not in config.classe_enfants:
                         if score_col in df.columns:
-                            df[score_col] = np.nan
-                    elif score_col == 'edu_petite_enfance_scaled' and score_col not in df.columns:
-                         df['edu_petite_enfance_scaled'] = np.nan
+                            df.drop(columns=[score_col], inplace=True)
 
                 if 'edu_structures_scaled' in df.columns:
                     df.drop(columns=['edu_structures_scaled'], inplace=True)

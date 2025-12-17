@@ -187,47 +187,88 @@ def _search_referentiels_logic(query: str, domain: str = None) -> List[Dict[str,
 
 def _search_commune_logic(query: str) -> List[Dict[str, str]]:
     """
-    Searches for French cities to find INSEE codes (codgeo).
+    Searches for French cities using Referentiels first, then ODIS for details.
     """
-    logger.info(f"👉 [MCP] Request: search_commune")
+    logger.info(f"👉 [MCP] Request: search_commune (via Referentiels)")
     logger.info(f"   Query: '{query}'")
     
-    if 'odis' not in DATA_CONTEXT:
-         logger.warning("   ⚠️ ODIS data not available.")
+    if 'referentiels_raw' not in DATA_CONTEXT or 'odis' not in DATA_CONTEXT:
+         logger.warning("   ⚠️ Data context missing (referentiels or odis).")
          return []
          
-    df = DATA_CONTEXT['odis']
+    refs_df = DATA_CONTEXT['referentiels_raw']
+    odis_df = DATA_CONTEXT['odis']
     
-    # robust search
-    q_norm = query.lower().strip()
+    # 1. Filter for Communes in Referentiels
+    # We assume 'communes' key exists (added in pipeline)
+    communes_ref = refs_df[refs_df['key'] == 'communes']
     
-    # 1. Exact Match
-    exact = df[df['libgeo'].str.lower() == q_norm]
-    if not exact.empty:
-         # take top matches sorted by population if available?
-         # population is probably in df
-         results_df = exact
-    else:
-         # 2. Contains Match
-         results_df = df[df['libgeo'].str.lower().str.contains(q_norm, na=False)]
+    if communes_ref.empty:
+        logger.warning("   ⚠️ No communes found in referentiels.")
+        return []
+
+    # 2. Search Logic (Re-using logic similar to _search_referentiels, simplified)
+    q_norm = normalize_text(query)
+    STOP_WORDS = {"le", "la", "les", "l", "d", "de", "du", "des", "saint", "st", "sainte", "ste"} # Adjusted stop words for cities? actually "saint" is important.
+    # Reset stop words for cities, maybe just articles.
+    STOP_WORDS = {"le", "la", "les", "l", "d", "de", "du", "des", "en", "sur", "aux"}
+
+    work_df = communes_ref.copy()
+    work_df['label_norm'] = work_df['label'].apply(normalize_text)
     
+    def calculate_city_score(row):
+        score = 0
+        lbl = row['label_norm']
+        
+        # Exact match
+        if lbl == q_norm:
+            score += 1000
+        elif lbl.startswith(q_norm):
+            score += 200
+        elif q_norm in lbl:
+            score += 100
+            
+        # Token overlap
+        row_tokens = set(lbl.split())
+        query_tokens = set(q_norm.split()) - STOP_WORDS
+        if not query_tokens: query_tokens = set(q_norm.split())
+        
+        overlap = len(query_tokens.intersection(row_tokens))
+        score += overlap * 50
+        
+        return score
+
+    work_df['score'] = work_df.apply(calculate_city_score, axis=1)
+    results_df = work_df[work_df['score'] > 0].sort_values(by='score', ascending=False).head(15)
+
     if results_df.empty:
         logger.info("   [MCP] No cities found.")
         return []
 
-    # Sort by population descending
-    if 'population' in results_df.columns:
-        results_df = results_df.sort_values(by='population', ascending=False)
-        
+    # 3. Lookup Details in ODIS
     results = []
-    for codgeo, row in results_df.head(10).iterrows():
-        results.append({
-            "codgeo": str(codgeo),
-            "libgeo": row['libgeo'],
-            "bassin_de_vie": str(row['bassin_de_vie']) if 'bassin_de_vie' in row else "N/A",
-            "population": int(row['population']) if 'population' in row else 0
-        })
-        
+    # We used 'code' column in referentiels which maps to 'codgeo'
+    found_codes = results_df['code'].unique()
+    
+    # Get details
+    # ODIS index is codgeo
+    details = odis_df.loc[odis_df.index.intersection(found_codes)]
+    
+    # We iterate through results_df to maintain score order
+    for _, ref_row in results_df.iterrows():
+        codgeo = ref_row['code']
+        if codgeo in details.index:
+            row = details.loc[codgeo]
+            results.append({
+                "codgeo": str(codgeo),
+                "libgeo": ref_row['label'], # Use label from ref or ODIS
+                "bassin_de_vie": str(row['bassin_de_vie']) if 'bassin_de_vie' in row else "N/A",
+                "population": int(row['population']) if 'population' in row else 0
+            })
+    
+    # Sort final results by Score then Population?
+    # Actually results_df is already sorted by score.
+    
     logger.info(f"✅ [MCP] Response: Found {len(results)} cities. Top: {[r['libgeo'] for r in results[:3]]}")
     return results
 
