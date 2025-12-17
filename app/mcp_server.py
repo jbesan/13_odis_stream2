@@ -231,7 +231,35 @@ def _search_commune_logic(query: str) -> List[Dict[str, str]]:
     logger.info(f"✅ [MCP] Response: Found {len(results)} cities. Top: {[r['libgeo'] for r in results[:3]]}")
     return results
 
-def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]) -> List[Dict[str, Any]]:
+def sanitize_for_json(obj):
+    """
+    Recursively sanitizes the object for JSON serialization.
+    - Dicts: Recursively sanitize values. Keys with None/NaN values are REMOVED.
+    - Lists: Recursively sanitize items.
+    - Floats: NaNs become None (which allows them to be filtered out from parent dicts)
+    """
+    if isinstance(obj, dict):
+        clean = {}
+        for k, v in obj.items():
+            sanitized_val = sanitize_for_json(v)
+            if sanitized_val is not None:
+                clean[k] = sanitized_val
+        return clean
+    elif isinstance(obj, list):
+        return [sanitize_for_json(v) for v in obj]
+    elif isinstance(obj, float):
+        if np.isnan(obj) or pd.isna(obj):
+            return None
+        return obj
+    elif isinstance(obj, (np.integer, np.floating)):
+        if pd.isna(obj):
+             return None
+        return obj.item()
+    elif pd.isna(obj): # Catch-all for other NA types
+        return None
+    return obj
+
+def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]) -> Dict[str, Any]:
     """
     Computes the top 10 cities (communes) based on user criteria.
     
@@ -240,7 +268,9 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
         filters: Dictionary of filter criteria (commune_actuelle, loc_distance_km, nb_adultes, etc.).
         
     Returns:
-        List of top 10 cities with their detailed scores.
+        Dictionary with:
+        - "cities": List of top 10 cities with their detailed scores grouped by category.
+        - "criteria_definitions": Definitions of the scores.
     """
     logger.info(f"👉 [MCP] Request: compute_top_cities")
     logger.info(f"   Weights: {json.dumps(weights, default=str)}")
@@ -316,10 +346,10 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
     # User feedback: Specific needs (FLE, etc.) should map to 'besoins_autres', not 'inc_services_core_selection'.
     # 'inc_services_core_selection' should ideally keep defaults (base services).
     
-    specific_needs = filters.get('besoins_autres', [])
+    specific_needs = filters.get('inc_services_add_selection', filters.get('besoins_autres', []))
     if not specific_needs and 'codes_inclusion' in filters:
         specific_needs = filters.get('codes_inclusion')
-        logger.info(f"   [MCP] Mapped alias 'codes_inclusion' -> 'besoins_autres': {specific_needs}")
+        logger.info(f"   [MCP] Mapped alias 'codes_inclusion' -> 'inc_services_add_selection': {specific_needs}")
     
     # Ensure default socle is present if not strictly overridden?
     # For now, we trust the defaults of ScoringConfig logic or defaults defined in config.py
@@ -359,7 +389,7 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
         codes_formations=c_formations,
         classe_enfants=filters.get('classe_enfants', []),
         besoin_sante=filters.get('besoin_sante', 'Aucun'),
-        besoins_autres=specific_needs, # Mapped from codes_inclusion
+        inc_services_add_selection=specific_needs, # Mapped from codes_inclusion
         inc_services_core_selection=socle_sel,
         inc_asso_add_selection=filters.get('inc_asso_add_selection', []),
         binome_penalty=float(filters.get('binome_penalty', 0.1)),
@@ -377,30 +407,118 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
     # 3. Format Output
     if processed_gdf.empty:
         logger.info("   [MCP] No results found.")
-        return []
+        return {"cities": [], "criteria_definitions": {}}
         
     # Take top 10
     top_10 = processed_gdf.head(10).copy()
     
+    # --- Prepare Criteria Definitions ---
+    criteria_definitions = {}
+    if 'scores_cat' in DATA_CONTEXT:
+        scores_cat = DATA_CONTEXT['scores_cat']
+        # We want to export definitions for ALL possible scores that might appear
+        # Or at least the ones that are likely to be relevant.
+        # Let's iterate over unique scores in scores_cat
+        # We need to access the 'display' properties which are in the dataframe columns if flattened, 
+        # or we rely on the logic that built scores_cat.
+        # Assuming scores_cat has columns like 'score', 'cat', 'weight', 'display_name', 'strong_point_text', 'tooltip' etc.
+        # Let's check `scoring.py` -> `ScoringEngine` uses `scores_cat`.
+        # Usually `scores_cat` columns come from the YAML.
+        
+        # Helper to safely get value
+        def safe_get(row, col, default=""):
+            return row[col] if col in row.index and pd.notna(row[col]) else default
+
+        for idx, row in scores_cat.iterrows():
+            score_id = row['score']
+            category = row['cat']
+            
+            if category not in criteria_definitions:
+                criteria_definitions[category] = {}
+            
+            # Use 'name' or 'display_name' depending on how it was loaded.
+            # Looking at `scores_config.yaml`, keys are `display.name`, `display.strong_point_text`.
+            # The loader likely flattens them or keeps them accessible.
+            # Let's assume standard flattening or check `pipeline/build.py` if we could (we can't easily).
+            # But usually it's `display_name` etc. 
+            # If not sure, we can try to look at columns if we were debugging.
+            # For now, let's assume `name`, `strong_point`, `tooltip` columns exist or similar.
+            # actually, `scores_cat` usually has 'score', 'cat', 'weight', 'min_bound', 'max_bound' + display cols.
+            
+            # Fallback if specific columns missing (Robustness)
+            label = safe_get(row, 'name', score_id)
+            desc = safe_get(row, 'strong_point_text', "Critère important")
+            tooltip = safe_get(row, 'tooltip', "")
+            
+            criteria_definitions[category][score_id] = {
+                "label": label,
+                "description": desc,
+                "tooltip": tooltip
+            }
+
     results = []
     for codgeo, row in top_10.iterrows():
-        cat_scores = {col: float(row[col]) for col in row.index if col.endswith('_cat_score')}
+        # Group scores by category
+        detailed_scores = {}
+        
+        for col in row.index:
+            if col.endswith('_cat_score'):
+                # Category aggregated score
+                 cat_name = col.replace('_cat_score', '')
+                 if cat_name not in detailed_scores:
+                     detailed_scores[cat_name] = {}
+                 detailed_scores[cat_name]['score_global'] = float(row[col])
+            
+            if col.endswith('_scaled') or col.endswith('_scaled_binome'):
+                # Individual criteria score
+                # We need to find which category it belongs to.
+                # Use criteria_definitions lookup or name parsing
+                # This is slightly inefficient but robust.
+                is_binome = col.endswith('_binome')
+                base_col = col.replace('_binome', '')
+                
+                # Find category
+                found_cat = "autre"
+                for cat, items in criteria_definitions.items():
+                    if base_col in items:
+                        found_cat = cat
+                        break
+                
+                if found_cat not in detailed_scores:
+                    detailed_scores[found_cat] = {}
+                
+                key = "binome" if is_binome else "commune"
+                 # We might want a cleaner structure:
+                 # education: { "edu_lycee_scaled": 0.8 }
+                 # instead of separating binome?
+                 # Agent prefers simplicity.
+                 # Let's just output the effective score if possible, or just the raw column.
+                detailed_scores[found_cat][col] = float(row[col])
+
+        # Bassin de vie
+        bdv = row['libelle_bassin_de_vie'] if 'libelle_bassin_de_vie' in row else "N/A"
+        
         item = {
             "codgeo": str(codgeo),
             "name": row['libgeo'],
-            "score": float(row['weighted_score']) if 'weighted_score' in row else 0.0,
+            "bassin_de_vie": bdv,
             "population": int(row['population']) if 'population' in row else 0,
-            "category_scores": cat_scores,
+            "score": float(row['weighted_score']) if 'weighted_score' in row else 0.0,
+            "detailed_scores": detailed_scores,
         }
         results.append(item)
         
     # Log Response Summary
     top_names = [r['name'] for r in results[:5]]
     logger.info(f"✅ [MCP] Response: Found {len(results)} cities. Top 5: {top_names}")
-    return results
+    
+    return sanitize_for_json({
+        "cities": results,
+        "criteria_definitions": criteria_definitions
+    })
 
 @mcp.tool()
-def compute_top_cities(weights: Dict[str, float], filters: Dict[str, Any]) -> List[Dict[str, Any]]:
+def compute_top_cities(weights: Dict[str, float], filters: Dict[str, Any]) -> Dict[str, Any]:
     """
     Computes the top 10 cities (communes) based on user criteria.
     
@@ -409,7 +527,7 @@ def compute_top_cities(weights: Dict[str, float], filters: Dict[str, Any]) -> Li
         filters: Dictionary of filter criteria (commune_actuelle, loc_distance_km, nb_adultes, etc.).
         
     Returns:
-        List of top 10 cities with their detailed scores.
+        Dictionary containing top 10 cities and criteria definitions.
     """
     return _compute_top_cities_logic(weights, filters)
 

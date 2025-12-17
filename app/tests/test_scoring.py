@@ -346,7 +346,7 @@ class TestConditionalScoring:
             codes_formations=[],
             classe_enfants=[],
             besoin_sante='Aucun', # Condition to ignore sante
-            besoins_autres={},
+            inc_services_add_selection={},
             inc_services_core_selection=[],
             inc_asso_add_selection=[],
             binome_penalty=0.5,
@@ -390,7 +390,7 @@ class TestConditionalScoring:
             codes_formations=[],
             classe_enfants=['Maternelle'],
             besoin_sante='Hopital', # Condition to include sante
-            besoins_autres={},
+            inc_services_add_selection={},
             inc_services_core_selection=[],
             inc_asso_add_selection=[],
             binome_penalty=0.5,
@@ -492,7 +492,7 @@ class TestMCPScenario:
              codes_formations=[[]],
              classe_enfants=[],
              besoin_sante='Aucun',
-             besoins_autres={},
+             inc_services_add_selection={},
              inc_services_core_selection=[],
              inc_asso_add_selection=[],
              binome_penalty=0.0,
@@ -611,7 +611,7 @@ class TestBVExclusionRepro:
             codes_formations=[[]],
             classe_enfants=[],
             besoin_sante='Aucun',
-            besoins_autres={},
+            inc_services_add_selection={},
             inc_services_core_selection=[],
             inc_asso_add_selection=[],
             binome_penalty=0.0,
@@ -717,7 +717,7 @@ class TestInclusionScoringLogic:
         prefs = SimpleNamespace(
             inc_services_core_selection=['social_aide', 'admin_mairie'],
             inc_asso_add_selection=[],
-            besoins_autres=[]
+            inc_services_add_selection=[]
         )
         
         scores = scoring.compute_inclusion_score(mock_geo_df, prefs, mock_incl_index, mock_associations_data, sample_scores_cat, global_stats)
@@ -731,7 +731,7 @@ class TestInclusionScoringLogic:
         prefs = SimpleNamespace(
             inc_services_core_selection=[],
             inc_asso_add_selection=['Bricolage / Création'],
-            besoins_autres=[]
+            inc_services_add_selection=[]
         )
         
         scores = scoring.compute_inclusion_score(mock_geo_df, prefs, mock_incl_index, mock_associations_data, sample_scores_cat, global_stats)
@@ -743,7 +743,7 @@ class TestInclusionScoringLogic:
         prefs_sport = SimpleNamespace(
             inc_services_core_selection=[],
             inc_asso_add_selection=['Sport (Général)'],
-            besoins_autres=[]
+            inc_services_add_selection=[]
         )
         scores_sport = scoring.compute_inclusion_score(mock_geo_df, prefs_sport, mock_incl_index, mock_associations_data, sample_scores_cat, global_stats)
         
@@ -755,7 +755,7 @@ class TestInclusionScoringLogic:
         prefs = SimpleNamespace(
             inc_services_core_selection=['social_aide'], 
             inc_asso_add_selection=['Bricolage / Création'],
-            besoins_autres=[]
+            inc_services_add_selection=[]
         )
         
         scores = scoring.compute_inclusion_score(mock_geo_df, prefs, mock_incl_index, mock_associations_data, sample_scores_cat, global_stats)
@@ -817,7 +817,7 @@ class TestHousingScoresLogic:
                 classe_enfants=[],
                 loc_distance_km=20,
                 inc_asso_add_selection=[],
-                besoins_autres=[],
+                inc_services_add_selection=[],
                 inc_services_core_selection=[],
                 poids_emploi=0, poids_logement=100, poids_education=0, poids_inclusion=0, poids_sante=0, poids_mobilité=0,
                 criteria_weights={}, binome_penalty=0.0, pop_min=0, besoin_sante="Aucun"

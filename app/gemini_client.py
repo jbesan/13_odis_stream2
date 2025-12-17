@@ -17,7 +17,10 @@ from config import (
     WEIGHT_PROFILES, 
     DEFAULT_INC_SERVICES_CORE,
     WALDEC_CORE_INCLUSION,
-    CLASSES_SCOLAIRES
+    CLASSES_SCOLAIRES,
+    LOGEMENT_OPTIONS,
+    HEBERGEMENT_OPTIONS,
+    SANTE_OPTIONS
 )
 from models import SearchCriterias
 
@@ -39,7 +42,9 @@ except ImportError:
 # Format lists for Prompt
 WEIGHT_PROFILES_STR = "\n".join([f"- **{k}**: {v}" for k, v in WEIGHT_PROFILES.items()])
 CLASSES_SCOLAIRES_STR = ", ".join(CLASSES_SCOLAIRES)
-DEFAULT_INC_SERVICES_CORE_STR = ", ".join(DEFAULT_INC_SERVICES_CORE)
+LOGEMENTS_STR = ", ".join(LOGEMENT_OPTIONS)
+HEBERGEMENTS_STR = ", ".join(HEBERGEMENT_OPTIONS)
+SANTE_STR = ", ".join(SANTE_OPTIONS)
 
 # Load System Instruction from external file
 try:
@@ -52,7 +57,11 @@ try:
     ).replace(
         "{CLASSES_SCOLAIRES_STR}", CLASSES_SCOLAIRES_STR
     ).replace(
-        "{DEFAULT_INC_SERVICES_CORE_STR}", DEFAULT_INC_SERVICES_CORE_STR
+        "{LOGEMENTS_STR}", LOGEMENTS_STR
+    ).replace(
+        "{HEBERGEMENTS_STR}", HEBERGEMENTS_STR
+    ).replace(
+        "{SANTE_STR}", SANTE_STR
     )
 except Exception as e:
     logger.error(f"Failed to load AGENT_PROMPT.md: {e}")
@@ -68,11 +77,11 @@ class OdisAgent:
         # User requested 2.5-flash-lite
         self.client = genai.Client(api_key=api_key)
         # Upgrade to 2.5 Flash for better Tool Use
-        self.model_id = "gemini-2.5-flash-lite"
+        self.model_id = "gemini-2.5-flash"
         
         # Tools Configuration
         # We define wrappers to ensure the names match what the Model expects (and what is in the Prompt)
-        def compute_topcities(weight_profile: str, criterias: SearchCriterias) -> List[Dict[str, Any]]:
+        def compute_top_cities(weight_profile: str, criterias: SearchCriterias) -> Dict[str, Any]:
             """
             Identifies the top recommended cities based on the beneficiary's social/professional needs.
             MUST be called ONLY when all mandatory criterias (commune, distance) are known.
@@ -80,8 +89,13 @@ class OdisAgent:
             Args:
                 weight_profile: Name of the weight profile to use (e.g., 'Famille', 'Équilibré', 'Santé', 'Economique').
                 criterias: Structured search criteria containing 'commune_actuelle', 'nb_adultes', etc.
+
+            Returns:
+                A dictionary containing:
+                - "cities": List of top 10 cities with detailed scores.
+                - "criteria_definitions": Dictionary describing the meaning of each criteria score.
             """
-            logger.debug(f"DEBUG: [SDK] compute_topcities called.")
+            logger.debug(f"DEBUG: [SDK] compute_top_cities called.")
             logger.debug(f"DEBUG: weight_profile={weight_profile}")
             logger.debug(f"DEBUG: criterias={criterias}")
             
@@ -96,7 +110,7 @@ class OdisAgent:
             try:
                 return _compute_top_cities_logic(weights, filters_dict)
             except Exception as e:
-                logger.error(f"DEBUG: [SDK] compute_topcities FAILED: {e}")
+                logger.error(f"DEBUG: [SDK] compute_top_cities FAILED: {e}")
                 raise e
 
         def search_referentiels(query: str, domain: str = None) -> List[Dict[str, str]]:
@@ -121,7 +135,7 @@ class OdisAgent:
             logger.debug(f"DEBUG: [SDK] search_commune called with query='{query}'")
             return _search_commune_logic(query)
 
-        self.tools = [compute_topcities, search_referentiels, search_commune]
+        self.tools = [compute_top_cities, search_referentiels, search_commune]
         self.tool_config = types.ToolConfig(
              function_calling_config=types.FunctionCallingConfig(
                  mode='AUTO' 
@@ -180,7 +194,7 @@ class OdisAgent:
         logger.info(f"👉 [GEMINI_CLIENT] Request to execute Tool: {name}")
         logger.info(f"   Args received: {json.dumps(args, indent=2, default=str)}")
         
-        if name == "compute_topcities":
+        if name == "compute_top_cities":
             try:
                 # Handle weight_profile -> weights conversion
                 if 'weight_profile' in args:

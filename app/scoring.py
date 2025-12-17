@@ -515,9 +515,9 @@ def compute_inclusion_score(
         df['inc_asso_add_scaled'] = 0.0
 
     # --- 4. Services Spécifiques ---
-    besoins_autres = config.besoins_autres
+    inc_services_add_selection = config.inc_services_add_selection
     needed_extra_services = set()
-    for slug in besoins_autres:
+    for slug in inc_services_add_selection:
         needed_extra_services.add(slug)
             
     if needed_extra_services:

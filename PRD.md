@@ -458,7 +458,7 @@ En tant que travailleur social, je veux voir les lieux recommandés sur une cart
 - **Outils Intelligents :**
   - `search_commune(query)`: Trouve le code INSEE exact d'une ville.
   - `search_referentiels(query, domain)`: Recherche sémantique robuste (tolérance aux fautes, mots vides) dans les référentiels Métiers (FAP), Formations et Associations (WALDEC).
-  - `compute_topcities(weight_profile, criterias)`: Lance le moteur de scoring ODIS avec des critères structurés.
+  - `compute_top_cities(weight_profile, criterias)`: Lance le moteur de scoring ODIS avec des critères structurés.
 - **Robustesse & Typage :** Utilisation de modèles **Pydantic** (`app/models.py`) pour garantir que l'IA génère des paramètres de recherche valides (schéma strict).
 - **Prompt Engineering :** "System Instruction" externalisée (`AGENT_PROMPT.md`) définissant un persona "Assistant Expert" avec un protocole d'entretien strict en 4 phases (Ancrage, Famille, Besoins, Validation).
 

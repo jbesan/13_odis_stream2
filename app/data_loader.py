@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import geopandas as gpd
+import numpy as np
 import shapely.wkb as wkb
 import os
 import yaml
@@ -208,6 +209,18 @@ def load_all_data_raw() -> Dict[str, Any]:
                  odis['centroid'] = odis.geometry.centroid
         
         odis.set_index('codgeo', inplace=True)
+        
+        # fix: fill nan codgeo_voisins with empty array/list to avoid issues in scoring
+        if 'codgeo_voisins' in odis.columns:
+             # Ensure we don't have None/NaN that causes "nan" string in np.append
+             # It seems loaded as object (arrays or None)
+             # Let's standardize to empty list for NaNs
+             def sanitize_voisins(x):
+                 if isinstance(x, (np.ndarray, list)):
+                     return x
+                 return np.array([]) # Empty array preferred for consistency if others are arrays
+             
+             odis['codgeo_voisins'] = odis['codgeo_voisins'].apply(sanitize_voisins)
         
         # Optimize types
         if 'population' in odis.columns:

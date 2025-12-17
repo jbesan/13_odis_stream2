@@ -307,9 +307,9 @@ def render_other_needs_form() -> None:
     options_list.sort()
     
     # Initialize flat selection state from existing list state (if any, e.g. from demo data)
-    if 'ui_besoins_autres_flat' not in st.session_state:
+    if 'ui_inc_services_add_selection_flat' not in st.session_state:
         # User config now stores a list of slugs
-        current_list = st.session_state.get('ui_besoins_autres', st.session_state['demo_data'].get('besoins_autres', []))
+        current_list = st.session_state.get('ui_inc_services_add_selection', st.session_state['demo_data'].get('inc_services_add_selection', []))
         flat_selection = []
         
         # Create reverse map for initialization: Slug -> Display String
@@ -319,21 +319,21 @@ def render_other_needs_form() -> None:
             if slug in slug_to_display:
                 flat_selection.append(slug_to_display[slug])
                 
-        st.session_state.ui_besoins_autres_flat = flat_selection
+        st.session_state.ui_inc_services_add_selection_flat = flat_selection
 
     # Widget
     st.multiselect(
         "Services disponibles",
         options=options_list,
-        key="ui_besoins_autres_flat",
+        key="ui_inc_services_add_selection_flat",
         help="Recherchez et ajoutez des services spécifiques."
     )
-    if st.session_state.ui_besoins_autres_flat:
+    if st.session_state.ui_inc_services_add_selection_flat:
         st.toggle("Prioritaire", key="ui_priority_other_needs", help="Donne plus de poids à ces besoins spécifiques")
     
     # We store the map in session state so we can use it in create_scoring_config_from_inputs
     # without re-computing it (optimization)
-    st.session_state['ui_besoins_autres_map'] = options_map
+    st.session_state['ui_inc_services_add_selection_map'] = options_map
 
 def render_mobility_form() -> None:
     """Renders the UI for the 'Mobilité' form section."""
@@ -385,22 +385,22 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
 
     # Process Autres Besoins from Flat List (F-13 UI Update)
     # Process Autres Besoins from Flat List (F-13 UI Update)
-    besoins_autres_list = []
-    if 'ui_besoins_autres_flat' in st.session_state:
-        flat_selection = st.session_state.ui_besoins_autres_flat
-        options_map = st.session_state.get('ui_besoins_autres_map', {})
+    inc_services_add_selection_list = []
+    if 'ui_inc_services_add_selection_flat' in st.session_state:
+        flat_selection = st.session_state.ui_inc_services_add_selection_flat
+        options_map = st.session_state.get('ui_inc_services_add_selection_map', {})
         
         if options_map:
-            for item in flat_selection:
-                if item in options_map:
-                    slug = options_map[item]
-                    besoins_autres_list.append(slug)
+            for ui_inc_asso_add_selection in flat_selection:
+                if ui_inc_asso_add_selection in options_map:
+                    slug = options_map[ui_inc_asso_add_selection]
+                    inc_services_add_selection_list.append(slug)
         
         # Update session state for compatibility
-        st.session_state.ui_besoins_autres = besoins_autres_list
+        st.session_state.ui_inc_services_add_selection = inc_services_add_selection_list
     else:
         # Fallback to existing list if flat not present (e.g. tests or legacy)
-        besoins_autres_list = st.session_state.get('ui_besoins_autres', [])
+        inc_services_add_selection_list = st.session_state.get('ui_inc_services_add_selection', [])
 
     # F-15: Compute Criteria Weights
     criteria_weights = {}
@@ -472,7 +472,7 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
         codes_formations=codes_formations,
         classe_enfants=classe_enfants,
         besoin_sante=st.session_state['ui_besoin_sante'],
-        besoins_autres=besoins_autres_list,
+        inc_services_add_selection=inc_services_add_selection_list,
         inc_services_core_selection=st.session_state.get('ui_inc_services_core_selection', []), # NEW
         inc_asso_add_selection=st.session_state.get('ui_inc_asso_add_selection', []), # NEW
         binome_penalty=st.session_state.get('ui_binome_penalty', 50) / 100,
@@ -619,8 +619,8 @@ def _display_bv_result_details(row: pd.Series) -> None:
             target_slugs = set(cfg.DEFAULT_INC_SERVICES_CORE)
             
             # Add user selected specific needs
-            if 'ui_besoins_autres' in st.session_state and st.session_state.ui_besoins_autres:
-                 target_slugs.update(st.session_state.ui_besoins_autres)
+            if 'ui_inc_services_add_selection' in st.session_state and st.session_state.ui_inc_services_add_selection:
+                 target_slugs.update(st.session_state.ui_inc_services_add_selection)
             
             # Filter services for this BV
             # Ensure codgeo matching is robust (str vs category)
@@ -743,8 +743,8 @@ def _display_result_details(row: pd.Series) -> None:
             target_slugs = set(cfg.DEFAULT_INC_SERVICES_CORE)
             
             # Add user selected specific needs
-            if 'ui_besoins_autres' in st.session_state and st.session_state.ui_besoins_autres:
-                 target_slugs.update(st.session_state.ui_besoins_autres)
+            if 'ui_inc_services_add_selection' in st.session_state and st.session_state.ui_inc_services_add_selection:
+                 target_slugs.update(st.session_state.ui_inc_services_add_selection)
 
             commune_services = services_df[
                 (services_df['codgeo'] == main_code) &

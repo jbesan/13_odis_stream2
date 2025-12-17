@@ -117,7 +117,7 @@ class ScoringConfig:
     codes_formations: List[List[str]]
     classe_enfants: List[str]
     besoin_sante: str
-    besoins_autres: List[str]
+    inc_services_add_selection: List[str]
     
     # Inclusion
     inc_services_core_selection: List[str]
@@ -156,8 +156,8 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     'classe_enfants': [],
     'binome_penalty': 50,
     'pop_min': 1000,
-    'besoins_autres': [],
-    'besoins_autres': [],
+    'inc_services_add_selection': [],
+    'inc_services_add_selection': [],
     'inc_services_core_selection': DEFAULT_INC_SERVICES_CORE,
     'inc_asso_add_selection': []
 }
@@ -199,7 +199,7 @@ DEMO_SCENARIOS = {
         'nb_enfants': 2,
         'codes_metiers': [['T2A60']],
         'classe_enfants': ['Crèche / Assistante Maternelle', 'Collège'],
-        'besoins_autres': ['lecture-ecriture-calcul--maitriser-le-francais'],
+        'inc_services_add_selection': ['lecture-ecriture-calcul--maitriser-le-francais'],
         'poids_mobilité': 50,
         'poids_inclusion': 100,
         'poids_emploi': 100,

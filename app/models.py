@@ -6,7 +6,7 @@ class SearchCriterias(BaseModel):
     Criteria for searching and scoring cities based on user needs.
     """
     commune_actuelle: str = Field(..., description="INSEE code of the user's current city (e.g. '75056')")
-    loc_distance_km: Union[int, str] = Field(..., description="Search radius in km (20, 50) or scope ('departement', 'region')")
+    loc_distance_km: str = Field(..., description="scope for search radius ('departement', 'region', 'france')")
     
     nb_adultes: int = Field(1, description="Number of adults in the household")
     nb_enfants: int = Field(0, description="Number of children in the household")
@@ -15,8 +15,8 @@ class SearchCriterias(BaseModel):
     codes_metiers: List[List[str]] = Field(default_factory=list, description="List of list of FAP codes for jobs (e.g. [['T2A60']]")
     codes_formations: List[List[str]] = Field(default_factory=list, description="List of list of training codes")
     
-    besoins_autres: List[str] = Field(default_factory=list, description="List of inclusion need codes")
-    affinite_selection: List[str] = Field(default_factory=list, description="List of hobby/association codes (WALDEC)")
+    inc_services_add_selection: List[str] = Field(default_factory=list, description="List of additional inclusion need codes")
+    inc_asso_add_selection: List[str] = Field(default_factory=list, description="List of additional hobby/association codes (WALDEC)")
     
     hebergement: Optional[str] = Field(None, description="Preferred accommodation type (e.g. 'Location')")
     logement: Optional[str] = Field(None, description="Housing type (e.g. 'Logement Social')")
