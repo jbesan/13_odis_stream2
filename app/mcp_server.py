@@ -1,6 +1,6 @@
 
 from fastmcp import FastMCP
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import json
 import pandas as pd
 import geopandas as gpd
@@ -51,7 +51,8 @@ def get_scoring_engine() -> ScoringEngine:
         bmo_vertical=DATA_CONTEXT['bmo_vertical'],
         formations_data=DATA_CONTEXT['formations_data'],
         codformations_index=DATA_CONTEXT['codformations_index'],
-        global_stats={} # TODO: Compute or load global stats if needed for scaling
+        global_stats={}, # TODO: Compute or load global stats if needed for scaling
+        codfap_index=DATA_CONTEXT.get('codfap_index')
     )
 
 
@@ -314,8 +315,8 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
         - "criteria_definitions": Definitions of the scores.
     """
     logger.info(f"👉 [MCP] Request: compute_top_cities")
-    logger.info(f"   Weights: {json.dumps(weights, default=str)}")
-    logger.info(f"   Filters: {json.dumps(filters, default=str)}")
+    logger.info(f"   Weights: {json.dumps(weights, indent=2, default=str)}")
+    logger.info(f"   Filters: {json.dumps(filters, indent=2, default=str)}")
     
     engine = get_scoring_engine()
     
@@ -487,9 +488,9 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
             # actually, `scores_cat` usually has 'score', 'cat', 'weight', 'min_bound', 'max_bound' + display cols.
             
             # Fallback if specific columns missing (Robustness)
-            label = safe_get(row, 'name', score_id)
-            desc = safe_get(row, 'strong_point_text', "Critère important")
-            tooltip = safe_get(row, 'tooltip', "")
+            label = safe_get(row, 'label', score_id)
+            desc = safe_get(row, 'score_affichage', "Critère important")
+            tooltip = safe_get(row, 'description', "")
             
             criteria_definitions[category][score_id] = {
                 "label": label,
@@ -539,13 +540,18 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
         # Bassin de vie
         bdv = row['libelle_bassin_de_vie'] if 'libelle_bassin_de_vie' in row else "N/A"
         
+        # Enrich with full Score Details (using new ScoringEngine helper)
+        # This gives us the "Why" (raw values, sub-scores) without re-simulation.
+        details_full = engine.format_city_details(row)
+        
         item = {
             "codgeo": str(codgeo),
             "name": row['libgeo'],
             "bassin_de_vie": bdv,
             "population": int(row['population']) if 'population' in row else 0,
             "score": float(row['weighted_score']) if 'weighted_score' in row else 0.0,
-            "detailed_scores": detailed_scores,
+            "detailed_scores": detailed_scores, 
+            "details": details_full # The full breakout
         }
         results.append(item)
         
@@ -571,6 +577,39 @@ def compute_top_cities(weights: Dict[str, float], filters: Dict[str, Any]) -> Di
         Dictionary containing top 10 cities and criteria definitions.
     """
     return _compute_top_cities_logic(weights, filters)
+
+def _get_city_details_logic(codgeo: str) -> Dict[str, Any]:
+    """
+    Retrieves detailed information about a specific city including scores, services, and associations.
+    """
+    logger.info(f"👉 [MCP] Request: get_city_details")
+    logger.info(f"   Codgeo: '{codgeo}'")
+    
+    engine = get_scoring_engine()
+    
+    try:
+        details = engine.get_city_details(codgeo)
+    except Exception as e:
+        logger.error(f"❌ [MCP] Error in get_city_details: {e}")
+        return {"error": str(e)}
+        
+    logger.info(f"✅ [MCP] Response: Found details for {details.get('identity', {}).get('nom', 'Unknown')}")
+    return sanitize_for_json(details)
+
+@mcp.tool()
+def get_city_details(codgeo: str) -> Dict[str, Any]:
+    """
+    Retrieves detailed information about a specific city.
+    Useful for "Learn More" or answering specific questions about a town (e.g. associations, schools).
+    
+    Args:
+        codgeo: The INSEE code of the city (e.g. "33063" for Bordeaux).
+        
+    Returns:
+        Dictionary containing identity, scores, employment stats, education counts, health, inclusion services, and associations.
+    """
+    return _get_city_details_logic(codgeo)
+
 
 if __name__ == "__main__":
     # For testing or running standalone

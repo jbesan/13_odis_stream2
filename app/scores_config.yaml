@@ -114,20 +114,7 @@ scores:
     weight: 1.0
     min_bound: null
     max_bound: null
-  - id: edu_classes_ferm_scaled
-    category: education
-    source_metric: avg_school_size
-    include_in_binom: true
-    computation: precomputed
-    display:
-      name: Taille Moyenne des Écoles
-      strong_point_text: Écoles avec un effectif moyen élevé (moins de risque de fermeture)
-      high_value_adjective: élevé
-      show: true
-      unit: élèves/école
-      display_factor: 1
-      tooltip: "Nombre moyen d'élèves par école"
-    weight: 0.5
+
     min_bound: null
     max_bound: null
   - id: inc_pol_scaled
@@ -412,7 +399,7 @@ scores:
     max_bound: 1.0
   - id: edu_petite_enfance_scaled
     category: education
-    source_metric: taux_couverture
+    source_metric: edu_pe_tx_couverture
     include_in_binom: true
     computation: precomputed
     display:
@@ -430,7 +417,7 @@ scores:
     max_bound: null
   - id: edu_maternelle_scaled
     category: education
-    source_metric: count_maternelle
+    source_metric: edu_maternelle_ct
     include_in_binom: true
     computation: precomputed
     display:
@@ -446,7 +433,7 @@ scores:
     max_bound: 1.0
   - id: edu_elementaire_scaled
     category: education
-    source_metric: count_elementaire
+    source_metric: edu_elementaire_ct
     include_in_binom: true
     computation: precomputed
     display:
@@ -462,7 +449,7 @@ scores:
     max_bound: 1.0
   - id: edu_college_scaled
     category: education
-    source_metric: count_college
+    source_metric: edu_college_ct
     include_in_binom: true
     computation: precomputed
     display:
@@ -478,7 +465,7 @@ scores:
     max_bound: 1.0
   - id: edu_lycee_scaled
     category: education
-    source_metric: count_lycee
+    source_metric: edu_lycee_ct
     include_in_binom: true
     computation: precomputed
     display:
@@ -494,11 +481,11 @@ scores:
     max_bound: 1.0
   - id: edu_classes_ferm_scaled
     category: education
-    source_metric: risque_fermeture_ratio
+    source_metric: risky_schools_count
     include_in_binom: true
     computation: precomputed
     display:
-      name: Opportunité scolaire (Petites classes)
+      name: Nombre de classes à risque de fermeture
       strong_point_text: Classes à petits effectifs (Opportunité d'intégration)
       high_value_adjective: forte
       show: true

@@ -15,6 +15,29 @@ import gc
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+def load_scores_config_as_df(config_path: str) -> pd.DataFrame:
+    """Loads the scores configuration YAML as a DataFrame."""
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    data = []
+    scores_list = config.get('scores', [])
+    for item in scores_list:
+        data.append({
+            'cat': item.get('category'),
+            'score': item.get('id'),
+            'label': item.get('display', {}).get('name', item.get('id')),
+            'description': item.get('display', {}).get('tooltip', ''),
+            'weight': item.get('weight', 1.0),
+            'min_bound': item.get('min_bound'),
+            'max_bound': item.get('max_bound'),
+            'score_affichage': item.get('display', {}).get('strong_point_text', ''),
+            'incl_binome': item.get('include_in_binom', False),
+            'metric': item.get('source_metric'),
+            'computation': item.get('computation', 'live')
+        })
+    return pd.DataFrame(data)
+
 def apply_demo_data_if_present(defaults: Dict[str, Any]) -> None:
     """
     Checks query params for 'demo' and updates defaults with demo scenario.
@@ -101,28 +124,7 @@ def ensure_data_initialized() -> None:
     scores_path = os.path.join(cfg.APP_DIR, cfg.SCORES_CAT_FILE)
     st.session_state['app_data']['scores_cat'] = load_scores_config_as_df(scores_path)
 
-def load_scores_config_as_df(config_path: str) -> pd.DataFrame:
-    """Loads the scores configuration YAML as a DataFrame."""
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
-    
-    data = []
-    scores_list = config.get('scores', [])
-    for item in scores_list:
-        data.append({
-            'cat': item.get('category'),
-            'score': item.get('id'),
-            'label': item.get('display', {}).get('name', item.get('id')),
-            'description': item.get('display', {}).get('tooltip', ''),
-            'weight': item.get('weight', 1.0),
-            'min_bound': item.get('min_bound'),
-            'max_bound': item.get('max_bound'),
-            'score_affichage': item.get('display', {}).get('strong_point_text', ''),
-            'incl_binome': item.get('include_in_binom', False),
-            'metric': item.get('source_metric'),
-            'computation': item.get('computation', 'live')
-        })
-    return pd.DataFrame(data)
+
 
 def _load_parquet(path: str, columns: list = None) -> pd.DataFrame:
     """Internal non-cached loader."""
@@ -178,7 +180,8 @@ def load_all_data_raw() -> Dict[str, Any]:
         essential_cols = {
             'codgeo', 'polygon', 'dep_code', 'reg_code', 'epci_code', 'epci_nom', 'codgeo_voisins',
             'population', 'bassin_de_vie',
-            'youth_growth_rate', 'workclass_growth_rate' # Keep growth rates for tooltips
+            'youth_growth_rate', 'workclass_growth_rate', # Keep growth rates for tooltips
+            'count_hopital', 'count_maternite', 'count_psy', # Health counts for details
         }
         
         # Select columns that are essential OR scores
@@ -189,6 +192,23 @@ def load_all_data_raw() -> Dict[str, Any]:
             # or c.endswith('_score')
             # or c.endswith('_density') # Keep densities if useful? No, user said save memory.
         ]
+
+        # F-20: Load Raw Metrics defined in scores_config
+        # We need to know which columns are "source_metrics".
+        # We do a quick read of scores_config here because we haven't loaded it yet.
+        try:
+             app_dir = os.path.dirname(os.path.abspath(__file__))
+             sc_path = os.path.join(app_dir, cfg.SCORES_CAT_FILE)
+             if os.path.exists(sc_path):
+                 sc_df = load_scores_config_as_df(sc_path)
+                 raw_metrics = sc_df['metric'].dropna().unique().tolist()
+                 # Add them to columns_to_load if they exist in all_cols
+                 for m in raw_metrics:
+                     if m in all_cols and m not in columns_to_load:
+                         columns_to_load.append(m)
+        except Exception as e:
+            logger.warning(f"Could not load raw metrics from config: {e}")
+
         
         logger.info(f"Loading {len(columns_to_load)} columns from ODIS.")
 

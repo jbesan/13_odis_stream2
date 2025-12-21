@@ -95,9 +95,9 @@ Liste en vrac d'idées d'amélioration
 - Génerer un prompt pour une Deep Research sur un des territoires recommandés
 - Normaliser les scores de catégorie pour éviter une surévaluation de certains critères
 - Ajouter des profils de pondération (famille vs célibataire)
-- Ajouter la base J'accuille d'accueil chez l'habitant
+- Ajouter la base J'accueille d'accueil chez l'habitant
 - Ajouter la base des transports publics ?
-- Niveau de vie
+- Critere 'Niveau de vie' de l'INSEE ?
 - Enlever la couleur politique --> remplacer par y-a-t'il un CTAI (signe que la commune s'implique dans l'intégration) + Est-ce que la commune est adhérante ANVTA ? Ajouter un label ?
 - Rechercher au niveau national ou viser une région/ département en particulier?
 - Ajouter un 'en savoir plus' pour comprendre le scoring
@@ -465,3 +465,27 @@ En tant que travailleur social, je veux voir les lieux recommandés sur une cart
 ### 📊 Status
 
 - Completed
+
+## 🚀 Feature [F-20]: Détails Territoire (Learn More)
+
+### 📝 User Stories
+
+- En tant qu'utilisateur (via UI classique ou Agent IA), je veux accéder à une fiche détaillée agrégeant toutes les informations disponibles sur un territoire (emploi, éducation, santé, inclusion, vie associative) pour approfondir ma compréhension au-delà du simple score.
+
+### 🔑 Key Features
+
+- **Nouveau Outil MCP :** `get_city_details(codgeo)` qui agrège les données de toutes les sources disponibles (ODIS, Annuaire Education/Santé/Inclusion, Associations, BMO).
+- **Structure des Données :** Retourne un objet JSON structuré avec :
+  - **Identité :** Nom, Code, Population, Bassin de Vie.
+  - **Scores :** Détail des scores bruts et normalisés.
+  - **Emploi :** Top secteurs recruteurs (BMO).
+  - **Education :** Nombre d'établissements par niveau.
+  - **Santé :** Dénombrement des services clés.
+  - **Inclusion :** Liste des services disponibles.
+  - **Associations :** Thématiques principales et volumétrie.
+- **Intégration UI :** Bouton "En savoir plus" dans la liste des résultats ouvrant une vue détaillée.
+- **Intégration Agent :** Le chatbot peut appeler cet outil pour répondre à des questions spécifiques comme "Quelles sont les associations sportives à X ?" ou "Y a-t-il un hôpital à Y ?".
+
+### 📊 Status
+
+- Not Started

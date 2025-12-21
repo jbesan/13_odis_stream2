@@ -54,7 +54,7 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
                 # logger.log_step("build_communes_merge", "WARNING", {"missing": name})
 
         # Merge BMO (Stats only + code_be)
-        merge_clean("bmo_stats", ['metiers_offres_diff', 'code_be'])
+        merge_clean("bmo_stats", ['metiers_offres_diff', 'metiers_tension_diff', 'code_be'])
         
         # Merge Population
         merge_clean("population", ['population'])

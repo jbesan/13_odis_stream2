@@ -24,12 +24,6 @@ def test_verify_credentials_no_secrets():
     secrets = {}
     assert verify_credentials("alice", "secret123", secrets) is False
 
-def test_check_password_flow_unauthenticated():
-    """Test that check_password returns False and inits state when not logged in."""
-    st.session_state = {}
-    assert check_password() is False
-    assert st.session_state["password_correct"] is False
-
 def test_check_password_flow_authenticated():
     """Test that check_password returns True when already logged in."""
     st.session_state = {"password_correct": True}

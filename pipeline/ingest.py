@@ -132,17 +132,27 @@ def clean_bmo_fap(config: Dict[str, Any], logger: PipelineLogger):
     
     if not count_col and 'met' in df_bmo.columns: count_col = 'met'
     
+    tension_col = next((c for c in df_bmo.columns if 'xmet' == c), None) # 'xmet' is diff part
+    if not tension_col and 'xmet' in df_bmo.columns: tension_col = 'xmet'
+
     if not bmo_be_col or not fap_col or not count_col:
             logging.warning(f"BMO Data: Missing columns. Found: {df_bmo.columns}")
             return
             
-    df_bmo = df_bmo[[bmo_be_col, fap_col, count_col]].rename(columns={
+    cols_to_keep = [bmo_be_col, fap_col, count_col]
+    if tension_col: cols_to_keep.append(tension_col)
+    
+    df_bmo = df_bmo[cols_to_keep].rename(columns={
         bmo_be_col: 'code_be', 
         fap_col: 'fap_code', 
-        count_col: 'count'
+        count_col: 'count',
+        tension_col: 'difficile' if tension_col else 'difficile'
     })
+    if 'difficile' not in df_bmo.columns: df_bmo['difficile'] = 0
+
     df_bmo['code_be'] = df_bmo['code_be'].astype(str)
     df_bmo['count'] = pd.to_numeric(df_bmo['count'], errors='coerce').fillna(0).astype(int)
+    df_bmo['difficile'] = pd.to_numeric(df_bmo['difficile'], errors='coerce').fillna(0).astype(int)
     
     # 3. Join Mapping + BMO
     # We want to attribute the BMO data of the Bassin to EACH commune in that Bassin.
@@ -162,11 +172,16 @@ def clean_bmo_fap(config: Dict[str, Any], logger: PipelineLogger):
     bmo_vertical.to_parquet(output_vertical)
     
     # 5. Stats (Total offers per commune = Total offers in its Bassin)
+    # 5. Stats (Total offers per commune = Total offers in its Bassin)
     # Sum of all offers in the Bassin
-    bmo_total = df_bmo.groupby('code_be')['count'].sum().reset_index().rename(columns={'count': 'metiers_offres_diff'})
-    stats = df_mapping.merge(bmo_total, on='code_be', how='left')
-    stats = stats[['codgeo', 'metiers_offres_diff', 'code_be']]
+    # Aggregating both count and difficile
+    bmo_agg = df_bmo.groupby('code_be')[['count', 'difficile']].sum().reset_index()
+    bmo_agg.rename(columns={'count': 'metiers_offres_diff', 'difficile': 'metiers_tension_diff'}, inplace=True)
+    
+    stats = df_mapping.merge(bmo_agg, on='code_be', how='left')
+    stats = stats[['codgeo', 'metiers_offres_diff', 'metiers_tension_diff', 'code_be']]
     stats['metiers_offres_diff'] = stats['metiers_offres_diff'].fillna(0).astype(int)
+    stats['metiers_tension_diff'] = stats['metiers_tension_diff'].fillna(0).astype(int)
     
     output_stats = CLEAN_DIR / "bmo_stats.parquet"
     stats.to_parquet(output_stats)

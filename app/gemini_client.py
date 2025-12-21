@@ -87,21 +87,21 @@ class OdisAgent:
             MUST be called ONLY when all mandatory criterias (commune, distance) are known.
             
             Args:
-                weight_profile: Name of the weight profile to use (e.g., 'Famille', 'Équilibré', 'Santé', 'Economique').
-                criterias: Structured search criteria containing 'commune_actuelle', 'nb_adultes', etc.
+                weight_profile: [string] Name of the weight profile to use (e.g., 'Famille', 'Équilibré', 'Santé', 'Economique').
+                criterias: [SearchCriterias] Structured search criteria containing 'commune_actuelle', 'nb_adultes', etc.
 
             Returns:
                 A dictionary containing:
                 - "cities": List of top 10 cities with detailed scores.
                 - "criteria_definitions": Dictionary describing the meaning of each criteria score.
             """
-            logger.debug(f"DEBUG: [SDK] compute_top_cities called.")
-            logger.debug(f"DEBUG: weight_profile={weight_profile}")
-            logger.debug(f"DEBUG: criterias={criterias}")
+            # logger.debug(f"DEBUG: [SDK] compute_top_cities called.")
+            # logger.debug(f"DEBUG: weight_profile={weight_profile}")
+            # logger.debug(f"DEBUG: criterias={criterias}")
             
             # Resolve weights from profile name
             weights = WEIGHT_PROFILES.get(weight_profile, WEIGHT_PROFILES["Équilibré"])
-            logger.debug(f"DEBUG: Resolved weights={weights}")
+            # logger.debug(f"DEBUG: Resolved weights={weights}")
             
             # Convert Pydantic model to dict for internal logic if needed, or pass as is if logic handles it
             # mcp_server logic expects a dict for filters
@@ -122,7 +122,7 @@ class OdisAgent:
                 domain: The target database. MUST be one of: 
                         ['fap_codes' (Jobs), 'formation_codes', 'inclusion_services', 'waldec_codes' (Hobbies)].
             """
-            logger.debug(f"DEBUG: [SDK] search_referentiels called with query='{query}'")
+            # logger.debug(f"DEBUG: [SDK] search_referentiels called with query='{query}'")
             return _search_referentiels_logic(query, domain)
 
         def search_commune(query: str) -> List[Dict[str, str]]:
@@ -132,7 +132,7 @@ class OdisAgent:
             Args:
                 query: City name provided by the user (e.g. 'Bordeaux').
             """
-            logger.debug(f"DEBUG: [SDK] search_commune called with query='{query}'")
+            # logger.debug(f"DEBUG: [SDK] search_commune called with query='{query}'")
             return _search_commune_logic(query)
 
         self.tools = [compute_top_cities, search_referentiels, search_commune]
@@ -191,8 +191,8 @@ class OdisAgent:
 
     def execute_tool_local(self, name: str, args: Dict[str, Any]) -> Any:
         """Executes the tool locally (MCP)."""
-        logger.info(f"👉 [GEMINI_CLIENT] Request to execute Tool: {name}")
-        logger.info(f"   Args received: {json.dumps(args, indent=2, default=str)}")
+        # logger.info(f"👉 [GEMINI_CLIENT] Request to execute Tool: {name}")
+        # logger.info(f"   Args received: {json.dumps(args, indent=2, default=str)}")
         
         if name == "compute_top_cities":
             try:
@@ -206,11 +206,11 @@ class OdisAgent:
                     # Arg is a dict coming from JSON
                     args['filters'] = args.pop('criterias')
                 
-                logger.info("   Calling _compute_top_cities_logic...")
+                # logger.info("   Calling _compute_top_cities_logic...")
                 start_time = time.time()
                 result = _compute_top_cities_logic(**args)
                 duration = time.time() - start_time
-                logger.info(f"✅ [GEMINI_CLIENT] Tool Execution Success ({duration:.2f}s). Result count: {len(result)}")
+                # logger.info(f"✅ [GEMINI_CLIENT] Tool Execution Success ({duration:.2f}s). Result count: {len(result)}")
                 return result
             except Exception as e:
                 logger.error(f"❌ [GEMINI_CLIENT] Tool Execution Failed: {e}", exc_info=True)
@@ -221,9 +221,9 @@ class OdisAgent:
              # We should handle flexible naming or check how SDK registers it.
              # Usually SDK uses the function name.
              try:
-                logger.info("   Calling _search_referentiels_logic...")
+                # logger.info("   Calling _search_referentiels_logic...")
                 result = _search_referentiels_logic(**args)
-                logger.info(f"✅ [GEMINI_CLIENT] Search Success. Result count: {len(result)}")
+                # logger.info(f"✅ [GEMINI_CLIENT] Search Success. Result count: {len(result)}")
                 return result
              except Exception as e:
                  logger.error(f"❌ [GEMINI_CLIENT] Search Failed: {e}", exc_info=True)
@@ -231,9 +231,9 @@ class OdisAgent:
 
         if name == "search_commune":
              try:
-                logger.info("   Calling _search_commune_logic...")
+                # logger.info("   Calling _search_commune_logic...")
                 result = _search_commune_logic(**args)
-                logger.info(f"✅ [GEMINI_CLIENT] Commune Search Success. Result count: {len(result)}")
+                # logger.info(f"✅ [GEMINI_CLIENT] Commune Search Success. Result count: {len(result)}")
                 return result
              except Exception as e:
                  logger.error(f"❌ [GEMINI_CLIENT] Commune Search Failed: {e}", exc_info=True)

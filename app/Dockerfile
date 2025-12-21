@@ -1,6 +1,6 @@
 # ---- Builder Stage ----
 # Use a full-featured Python image to build dependencies
-FROM python:3.9-slim-bullseye as builder
+FROM python:3.11-slim-bookworm as builder
 
 # Install build dependencies for geospatial libraries
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -20,7 +20,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # ---- Final Stage ----
 # Use a minimal Python image
-FROM python:3.9-slim-bullseye
+FROM python:3.11-slim-bookworm
 
 # Install system dependencies
 # Install system dependencies (minimal)

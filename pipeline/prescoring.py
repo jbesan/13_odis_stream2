@@ -11,8 +11,60 @@ from pipeline.common import (
 )
 import app.config as cfg
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+import logging
+import pandas as pd
+import geopandas as gpd
+import numpy as np
+from typing import Dict, Any
+
+def aggregate_plm(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Aggregates data from arrondissements to the global commune for PLM."""
+    plm_mapping = {
+        '75056': [str(x) for x in range(75101, 75121)], # Paris
+        '13055': [str(x) for x in range(13201, 13217)], # Marseille
+        '69123': [str(x) for x in range(69381, 69390)]  # Lyon
+    }
+    
+    # Columns to aggregate (sum)
+    cols_to_sum = [
+        'population', 'pop_active', 'pop_chomeurs', 'pop_employes',
+        'edu_maternelle_ct', 'edu_elementaire_ct', 'edu_college_ct', 'edu_lycee_ct',
+        'count_hopital', 'count_maternite', 'count_psy',
+        'lien_social_count', 'bpe_creches_count', 'risky_schools_count',
+        'log_priv_total', 'log_priv_vacant_plus_2ans',
+        'metiers_offres_diff', 'total_eleves', 'ecoles_count',
+        'socle_match_count' # Also sum this? No, socle is presence.
+        # Ideally calculate socle for 75056 based on POIs.
+        # But summing match_count is weird if max is different.
+        # Let's skip socle for now or re-calculate it later.
+    ]
+    
+    # Socle calculation is done AFTER this function in apply_prescoring (lines 350+).
+    # So we don't need to aggregate socle_match_count here because it's not yet calculated!
+    # Correct. aggregate_plm is called at the TOP.
+    
+    for global_code, arrondissements in plm_mapping.items():
+        if global_code in gdf['codgeo'].values:
+            # Check if we have data for arrondissements
+            mask_arr = gdf['codgeo'].isin(arrondissements)
+            if mask_arr.any():
+                # For each column, sum values from arrondissements
+                for col in cols_to_sum:
+                    if col in gdf.columns:
+                        # Sum, treating NaN as 0
+                        total_val = gdf.loc[mask_arr, col].sum(min_count=0) # min_count=0 -> 0 if all nan? No, sum returns 0 if empty.
+                        # Update global row
+                        # Only update if > 0 or if we want to force 0?
+                        # If arrondissements have data, we want the sum.
+                        gdf.loc[gdf['codgeo'] == global_code, col] = total_val
+                        
+                logging.info(f"Aggregated PLM for {global_code} from {mask_arr.sum()} arrondissements.")
+            else:
+                logging.warning(f"No arrdt data found for {global_code}")
+        else:
+             logging.warning(f"Global code {global_code} not found in GDF")
+             
+    return gdf
 
 def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
     """Applies pre-scoring logic (ratios, densities, scaling) to odis_communes."""
@@ -37,8 +89,22 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
 
         logger.log_step("apply_prescoring_load", "LOADED", {"rows": len(communes_gdf)})
 
+        # --- PLM Aggregation ---
+        communes_gdf = aggregate_plm(communes_gdf)
+        
         # --- Calculated Columns ---
         
+        # --- Fill NaNs for Raw Metrics (Fix N/A display) ---
+        raw_metrics_to_fill = [
+            'edu_maternelle_ct', 'edu_elementaire_ct', 'edu_college_ct', 'edu_lycee_ct',
+            'count_hopital', 'count_maternite', 'count_psy',
+            'risky_schools_count', 'lien_social_count', 'bpe_creches_count',
+            'edu_pe_tx_couverture', 'metiers_offres_diff', 'pop_chomeurs', 'log_priv_vacant_plus_2ans',
+            'met_ratio', 'pol_num', 'log_vac_struct_ratio'
+        ]
+        for col in raw_metrics_to_fill:
+            if col in communes_gdf.columns:
+                 communes_gdf[col] = communes_gdf[col].fillna(0)
         # 0. Load Associations for Lien Social Score (moved to build.py)
         # Block removed.
 
@@ -86,17 +152,27 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         # metiers_offres_ratio and pop_chomage_ratio
         # Requires pop_active_be
         if 'bassin_emploi' in communes_gdf.columns and 'pop_active' in communes_gdf.columns:
+             # DEBUG dependencies
+             logging.info("DEBUG: Found bassin_emploi and pop_active.")
              pop_active_be = communes_gdf.groupby('bassin_emploi', observed=True)['pop_active'].transform('sum')
              
+             # metiers_tension_ratio
+             if 'metiers_tension_diff' in communes_gdf.columns:
+                 communes_gdf['metiers_tension_ratio'] = np.where(
+                     pop_active_be > 0,
+                     communes_gdf['metiers_tension_diff'] / pop_active_be,
+                     0.0
+                 )
+                 communes_gdf.drop(columns=['metiers_tension_diff'], inplace=True)
+             
              # metiers_offres_ratio
-             # metiers_offres_diff is total offers in BE.
              if 'metiers_offres_diff' in communes_gdf.columns:
+                 logging.info("DEBUG: Found metiers_offres_diff. Calculating metiers_offres_ratio.")
                  communes_gdf['metiers_offres_ratio'] = np.where(
                      pop_active_be > 0,
                      communes_gdf['metiers_offres_diff'] / pop_active_be,
                      0.0
                  )
-                 # Drop metiers_offres_diff as requested
                  communes_gdf.drop(columns=['metiers_offres_diff'], inplace=True)
         
         if 'pop_active' in communes_gdf.columns and 'pop_chomeurs' in communes_gdf.columns:
@@ -223,6 +299,8 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
 
         
         process_scaling(communes_gdf, 'met_ratio', 'met_scaled')
+        if 'met_tension_ratio' in communes_gdf.columns:
+             process_scaling(communes_gdf, 'met_tension_ratio', 'met_tension_scaled')
         
         # loyer_abordable_scaled (Lower is Better)
         # Custom logic for this one? Or standard inverted?
@@ -322,19 +400,18 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         # --- Drop Unused Columns ---
         cols_to_drop = [
             'MOD_OVER_OCC', 'MOD_UNDER_OCC', 'SEV_OVER_OCC', 'SEV_UNDER_OCC', 'STD_OCC', 'VSEV_UNDER_OCC', # *_OCC
-            'total_eleves', 'ecoles_count', 
+            # 'total_eleves', 'ecoles_count', # KEEP for details
             'log_total', 'log_soc_total', 'log_soc_inoccupes',
-            'pol_num', 'log_priv_vacant_plus_2ans',
-            # Unused columns identified in cleanup
-            'edu_maternelle_ct', 'edu_elementaire_ct', 'edu_college_ct', 'edu_lycee_ct',
+            # 'pol_num', #'log_priv_vacant_plus_2ans', # KEEP for details
+            # 'edu_maternelle_ct', 'edu_elementaire_ct', 'edu_college_ct', 'edu_lycee_ct', # KEEP
             'svc_incl_count',
-            'count_hopital', 'count_psy', 'count_maternite',
-            'log_soc_inoc_ratio', 'log_pp_occup',
-            'metiers_offres_ratio', 'pop_chomage_ratio', 'met_ratio',
-            'log_vac_struct_ratio', 'lien_social_density', 'risque_fermeture_ratio', 'bpe_creches_density',
-            'edu_pe_tx_couverture', 'bpe_creches_count', # Dropped after use in scaling
-            'lien_social_count', # Dropped after use in scaling
-            'pop_active', 'pop_employes', 'pop_chomeurs' # Dropped after use in ratios
+            # 'count_hopital', 'count_psy', 'count_maternite', # KEEP for details
+            # 'log_soc_inoc_ratio', 'log_pp_occup', # KEEP for details
+            # 'metiers_offres_ratio', 'pop_chomage_ratio', # 'met_ratio', # KEEP
+            # 'log_vac_struct_ratio', 'risque_fermeture_ratio', 'bpe_creches_density', # 'lien_social_density', # KEEP
+            #'edu_pe_tx_couverture', # 'bpe_creches_count', # KEEP
+            # 'lien_social_count', # KEEP
+            # 'pop_active', 'pop_employes', 'pop_chomeurs' # KEEP
         ]
         
         # --- Socle Administratif (Pre-calculated) ---
@@ -377,8 +454,12 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
                         # Assign using map on codgeo
                         communes_gdf['inc_services_core_scaled'] = communes_gdf['codgeo'].map(socle_scores)
                         communes_gdf['inc_services_core_scaled'] = communes_gdf['inc_services_core_scaled'].fillna(0.0)
+
+                        # Save Raw Count
+                        communes_gdf['socle_match_count'] = communes_gdf['codgeo'].map(socle_presence).fillna(0).astype(int)
                     else:
                          communes_gdf['inc_services_core_scaled'] = 0.0
+                         communes_gdf['socle_match_count'] = 0
 
                     logger.log_step("inc_services_core_scaled", "CALCULATED")
                 else:
@@ -395,11 +476,18 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
 
         communes_gdf.drop(columns=[c for c in cols_to_drop if c in communes_gdf.columns], inplace=True)
         
+        # DEBUG met_ratio existence
+        if 'met_ratio' in communes_gdf.columns:
+             logging.info("DEBUG: met_ratio present after first drop.")
+        else:
+             logging.warning("DEBUG: met_ratio DROPPED or MISSING after first drop!")
+        
         # Additional drop request from user
         more_cols_to_drop = [
             'pop_jeune_2016', 'pop_jeune_2022', 'pop_active_2016', 'pop_active_2022',
-            'libelle_bassin_de_vie', 'loyer_app_m2', 'has_gare', 'gare_count', 
-            'risky_schools_count', 'log_priv_total'
+            'libelle_bassin_de_vie', 'loyer_app_m2', 'has_gare', #'gare_count', # KEEP
+            #'risky_schools_count', # KEEP
+            'log_priv_total'
         ]
         communes_gdf.drop(columns=[c for c in more_cols_to_drop if c in communes_gdf.columns], inplace=True)
 
@@ -412,7 +500,6 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         if 'inc_services_core_scaled' not in communes_gdf.columns:
             communes_gdf['inc_services_core_scaled'] = 0.0
 
-        # Save
         # Save
         if 'geometry' in communes_gdf.columns:
              communes_gdf['polygon'] = communes_gdf.geometry.to_wkb()
