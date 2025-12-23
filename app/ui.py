@@ -8,6 +8,7 @@ from typing import Dict, Any, List, Optional
 from pathlib import Path
 import base64
 import logging
+from scoring import ScoringEngine
 
 def get_image_path(filename: str) -> str:
     """Returns the absolute path to an image file, robust to launch directory."""
@@ -86,6 +87,210 @@ def show_ccas_dialog(codgeo_or_list: Any, structures_df: pd.DataFrame, priority_
      else:
          st.warning("Données structures non disponibles.")
 
+@st.dialog("Détails du Territoire", width="large")
+def show_details_dialog(details: Dict[str, Any]):
+    """Displays thematic details for a city in a large modal."""
+    if not details:
+        st.error("Détails non disponibles.")
+        return
+
+    # --- Header ---
+    identity = details.get('identity', {})
+    st.title(f"📍 {identity.get('nom', 'Inconnu')}")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        pop = identity.get('population', 0)
+        if pd.isna(pop) or pop is None:
+            pop = 0
+        st.metric("Population", f"{int(pop):,}".replace(",", " "))
+    with col2:
+        st.metric("Bassin de Vie", identity.get('bassin_de_vie', 'N/A'))
+    with col3:
+        score_gl = identity.get('score_global')
+        if pd.notna(score_gl) and score_gl is not None:
+            st.metric("Score Global", f"{float(score_gl)*100:.0f}%")
+
+    # --- Helper to render scores table ---
+    def render_scores_for_category(category_key: str):
+        scores_dict = details.get('scores', {})
+        # Map tab categories to config categories
+        # Config cats: emploi, logement, education, santé, inclusion, mobilité
+        
+        scores = scores_dict.get(category_key, [])
+        if not scores:
+            st.info("Aucun indicateur spécifique pour cette catégorie.")
+            return
+        
+        # Filter out redundant education presence scores if we have the counts tab
+        if category_key == 'education':
+            scores = [s for s in scores if not s['label'].startswith('Présence')]
+
+        # Display directly (No Expanders as per V3 request)
+        df_scores = pd.DataFrame(scores)
+        # Sort by score_normalise desc to show strengths
+        df_scores = df_scores.sort_values(by='score_normalise', ascending=False)
+        
+        for _, s in df_scores.iterrows():
+            c_label, c_val = st.columns([3, 1])
+            with c_label:
+                st.write(f"**{s['label']}**")
+                # Progress bar for the normalized score
+                # Handle NaN values safely (prevent StreamlitAPIException)
+                p_val = s['score_normalise']
+                if pd.isna(p_val):
+                    p_val = 0.0
+                st.progress(float(max(0.0, min(1.0, p_val))))
+            with c_val:
+                st.write(f" `{s['valeur_kpi']}`")
+                st.caption(s['unit'])
+
+    # --- Tabs ---
+    tab_emploi, tab_logement, tab_edu, tab_sante, tab_vie = st.tabs([
+        "💼 Emploi & Formation", 
+        "🏠 Logement", 
+        "🎓 Education", 
+        "🏥 Santé", 
+        "🤝 Vie Sociale & Inclusion"
+    ])
+
+    with tab_emploi:
+        c1, c2 = st.columns(2)
+        emploi_data = details.get('emploi', {})
+        
+        with c1:
+            st.subheader("Marché de l'emploi")
+            with st.expander("Top 10 des métiers recherchés", expanded=True):
+                top_metiers = emploi_data.get('top_metiers', [])
+                if top_metiers:
+                    # Highlighting (F-15 / V2)
+                    codes_metiers_prefs = []
+                    # Flatten user preferences to highlight labels
+                    if 'ui_metiers_adult_0' in st.session_state:
+                         codes_metiers_prefs.extend(st.session_state.ui_metiers_adult_0)
+                    if 'ui_metiers_adult_1' in st.session_state:
+                         codes_metiers_prefs.extend(st.session_state.ui_metiers_adult_1)
+                    
+                    # Resolve labels for prefs to highlight correctly
+                    codfap_index = st.session_state.app_data.get('codfap_index')
+                    pref_labels = []
+                    if codfap_index is not None:
+                         for code in codes_metiers_prefs:
+                              if code in codfap_index.index:
+                                   pref_labels.append(codfap_index.loc[code, 'label'])
+
+                    for job in top_metiers:
+                        if job in pref_labels:
+                            st.markdown(f"- **{job}** ✨")
+                        else:
+                            st.markdown(f"- {job}")
+                else:
+                    st.info("Données non disponibles.")
+        
+        with c2:
+            st.subheader("Formations")
+            with st.expander("Centres de formation", expanded=True):
+                formations = emploi_data.get('formations', [])
+                if formations:
+                    # Highlighting
+                    codes_form_prefs = []
+                    if 'ui_formations_adult_0' in st.session_state:
+                        codes_form_prefs.extend(st.session_state.ui_formations_adult_0)
+                    if 'ui_formations_adult_1' in st.session_state:
+                        codes_form_prefs.extend(st.session_state.ui_formations_adult_1)
+                    
+                    codform_index = st.session_state.app_data.get('codformations_index')
+                    pref_form_labels = []
+                    if codform_index is not None:
+                        for code in codes_form_prefs:
+                            if code in codform_index.index:
+                                pref_form_labels.append(codform_index.loc[code, 'label'])
+
+                    for form in formations:
+                        if form in pref_form_labels:
+                            st.markdown(f"- **{form}** ✨")
+                        else:
+                            st.markdown(f"- {form}")
+                else:
+                    st.info("Aucune formation référencée.")
+
+        st.divider()
+        st.subheader("Indicateurs Emploi")
+        render_scores_for_category('emploi')
+
+    with tab_logement:
+        st.subheader("Indicateurs Logement")
+        render_scores_for_category('logement')
+
+    with tab_edu:
+        edu_data = details.get('education', {})
+        counts = edu_data.get('counts', {})
+        
+        if counts:
+            st.subheader("Établissements scolaires")
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Maternelles", counts.get('maternelle', 0))
+            c2.metric("Elémentaires", counts.get('elementaire', 0))
+            c3.metric("Collèges", counts.get('college', 0))
+            c4.metric("Lycées", counts.get('lycee', 0))
+            st.divider()
+            
+        st.subheader("Indicateurs Education")
+        render_scores_for_category('education')
+
+    with tab_sante:
+        st.subheader("Équipements de santé")
+        sante_data = details.get('sante', {})
+        s_counts = sante_data.get('counts', {})
+        
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.write("**Maternité**")
+            st.write(f"📄 {s_counts.get('maternite', 0)}")
+        with c2:
+            st.write("**Hôpital**")
+            st.write(f"🏥 {s_counts.get('hopital', 0)}")
+        with c3:
+            st.write("**Addiction / Psy**")
+            st.write(f"🧠 {s_counts.get('psy', 0)}")
+            
+        st.divider()
+        st.subheader("Indicateurs Santé")
+        render_scores_for_category('santé')
+
+    with tab_vie:
+        inclusion_data = details.get('inclusion', {})
+        st.subheader("Associations")
+        assos = details.get('associations', {})
+        if assos:
+            st.metric("Total Associations", assos.get('total', 0))
+            if assos.get('refugee_count', 0) > 0:
+                 st.caption(f"Dont {assos['refugee_count']} orientées aide aux réfugiés/immigrés.")
+        
+        st.divider()
+        st.subheader("Services d'Inclusion")
+        services = inclusion_data.get('services', [])
+        if services:
+            # V2 Logic for labels
+            incl_index = st.session_state.app_data.get('inclusion_services_index', pd.DataFrame())
+            labels = []
+            for s in services:
+                if not incl_index.empty and s in incl_index.index:
+                    labels.append(incl_index.loc[s, 'label'])
+                else:
+                    labels.append(s)
+            
+            # Display sorted
+            for label in sorted(labels):
+                st.markdown(f"- {label}")
+        else:
+            st.info("Aucun service spécifique référencé.")
+
+        st.divider()
+        st.subheader("Indicateurs Inclusion")
+        render_scores_for_category('inclusion')
+        st.subheader("Indicateurs Mobilité")
+        render_scores_for_category('mobilité')
+
 def open_pdf_modal() -> None:
     """Callback to signal that the PDF modal should be shown."""
     st.session_state['show_pdf_modal'] = True
@@ -141,16 +346,6 @@ def display_sidebar(demo_data: Dict[str, Any]) -> None:
 
     # --- Technical Params ---
     with st.expander('Paramètres Résultats'):
-        st.radio(
-            "Granularité des résultats",
-            cfg.VIEW_LEVEL_OPTIONS,
-            key='view_level',
-            horizontal=True,
-            index=cfg.DEFAULT_VIEW_LEVEL,
-            on_change=clear_processed_gdf
-        )
-        st.text("\n\n")
-        st.select_slider("Décote commune binôme\n\n (en %)", cfg.PENALITE_BINOME_OPTIONS, key="ui_binome_penalty", value=st.session_state.get('ui_binome_penalty', 50))
         st.select_slider("Population minimum", cfg.POP_MIN_OPTIONS, key="ui_pop_min", value=st.session_state.get('ui_pop_min', 1000))
 
     st.divider()
@@ -475,7 +670,6 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
         inc_services_add_selection=inc_services_add_selection_list,
         inc_services_core_selection=st.session_state.get('ui_inc_services_core_selection', []), # NEW
         inc_asso_add_selection=st.session_state.get('ui_inc_asso_add_selection', []), # NEW
-        binome_penalty=st.session_state.get('ui_binome_penalty', 50) / 100,
         pop_min=st.session_state.get('ui_pop_min', 1000)
     )
 
@@ -500,6 +694,30 @@ def _result_highlight_callback(rank: int) -> None:
         st.session_state.center = [centroid_4326.y, centroid_4326.x]
         st.session_state.zoom = cfg.DETAIL_MAP_ZOOM
 
+def _show_details_callback(rank: int) -> None:
+    """Callback to compute and show city details modal."""
+    row = st.session_state.processed_gdf.loc[rank]
+    app_data = st.session_state['app_data']
+    
+    # Initialize ScoringEngine to format details
+    engine = ScoringEngine(
+        df_all_communes=app_data['odis'],
+        df_bv_geo=app_data['bv_geo'],
+        df_area_geo=app_data['area_geo'],
+        scores_cat=app_data['scores_cat'],
+        incl_index=app_data['incl_index'],
+        associations_data=app_data['associations_data'],
+        bmo_vertical=app_data['bmo_vertical'],
+        formations_data=app_data['formations_data'],
+        codformations_index=app_data['codformations_index'],
+        global_stats={},
+        codfap_index=app_data['codfap_index']
+    )
+    
+    details = engine.format_city_details(row)
+    show_details_dialog(details)
+
+
 def get_person_accompanied_str() -> str:
     if st.session_state.get('ui_nom'):
         return f"de {st.session_state.ui_nom}"
@@ -522,11 +740,7 @@ def display_results_list() -> None:
 
     # Display buttons and details
     for i, (index, row) in enumerate(df.head(top_n).iterrows()):
-        # Adapt title based on the view level
-        if st.session_state.get('view_level') == 'Bassins de vie':
-            title = f"Top {i+1} | Bassin de vie de {row.libgeo}"
-        else:
-            title = f"Top {i+1} | {row.libgeo}" + (f" (avec {row.libgeo_binome})" if row.binome else "")
+        title = f"Top {i+1} | {row.libgeo}"
 
         st.button(
             title,
@@ -541,11 +755,7 @@ def display_results_list() -> None:
 
         # Check if this row's index matches the highlighted index
         if is_highlighted and index == highlighted_rank:
-            # For 'Bassin de vie' view, we call the specific details display for aggregated data
-            if st.session_state.get('view_level') == 'Bassins de vie':
-                _display_bv_result_details(row)
-            else:
-                _display_result_details(row)
+            _display_result_details(row)
 
 def _display_bv_result_details(row: pd.Series) -> None:
     """Displays the detailed aggregated information for a 'bassin de vie'."""
@@ -668,18 +878,21 @@ def _display_bv_result_details(row: pd.Series) -> None:
         # --- Links ---
         st.divider()
         # Using columns for layout
-        c1, c2, c3 = st.columns(3)
+        c1, c2 = st.columns(2)
         with c1:
+            if st.button("En savoir plus", key=f"btn_details_bv_{row.name}", width="stretch"):
+                _show_details_callback(row.name)
+        with c2:
             if st.button("Contact local", key=f"btn_ccas_bv_{row.name}", type="primary", width="stretch"):
                 # For BV, pass the list of communes
                 target = row['communes'] if 'communes' in row else str(row.name)
                 # Ensure we pass the BV code as priority
                 bv_code = str(row['bassin_de_vie']) if 'bassin_de_vie' in row else str(row.name)
                 show_ccas_dialog(target, st.session_state['app_data'].get('structures_ccas', pd.DataFrame()), priority_code=bv_code, priority_label=row['libgeo'])
-        with c2:
-             st.link_button("Page OD&IS", row.get('url_odis', '#'), width="stretch")
-        with c3:
-            st.link_button("Page Wikipedia", row.get('url_wikipedia', '#'), width="stretch")
+        # with c3:
+        #      st.link_button("Page OD&IS", row.get('url_odis', '#'), width="stretch")
+        # with c4:
+        #     st.link_button("Page Wikipedia", row.get('url_wikipedia', '#'), width="stretch")
         
 
 def _display_result_details(row: pd.Series) -> None:
@@ -708,84 +921,85 @@ def _display_result_details(row: pd.Series) -> None:
         st.caption('Plus le critère s’approche du bord, plus il est attractif.')
 
         # --- Additional Info ---
-        st.divider()
-        st.markdown('**Plus d’informations sur cette localité :**')
-        with st.expander('Top 10 des métiers recherchés'):
-            bmo_vertical = st.session_state.app_data['bmo_vertical']
-            codfap_index = st.session_state.app_data['codfap_index']
+        # st.divider()
+        # st.markdown('**Plus d’informations sur cette localité :**')
+        # with st.expander('Top 10 des métiers recherchés'):
+        #     bmo_vertical = st.session_state.app_data['bmo_vertical']
+        #     codfap_index = st.session_state.app_data['codfap_index']
             
-            commune_metiers = bmo_vertical[bmo_vertical.codgeo == main_code]
+        #     commune_metiers = bmo_vertical[bmo_vertical.codgeo == main_code]
             
-            if not commune_metiers.empty:
-                merged = commune_metiers.merge(codfap_index, left_on='fap_code', right_index=True, how='left')
-                merged['label'] = merged['label'].fillna(merged['fap_code'])
+        #     if not commune_metiers.empty:
+        #         merged = commune_metiers.merge(codfap_index, left_on='fap_code', right_index=True, how='left')
+        #         merged['label'] = merged['label'].fillna(merged['fap_code'])
                 
-                top_metiers = sorted(merged['label'].unique())
-                st.markdown("\n".join([f'- {item}' for item in top_metiers]))
-            else:
-                st.info("Pas de données disponibles.")
+        #         top_metiers = sorted(merged['label'].unique())
+        #         st.markdown("\n".join([f'- {item}' for item in top_metiers]))
+        #     else:
+        #         st.info("Pas de données disponibles.")
         
-        with st.expander('Formations proposées'):
-            formations = set(row.get('noms_formations') if row.get('noms_formations') is not None else [])
-            if row.get('binome'):
-                binome_row = st.session_state.app_data['odis'].loc[row.codgeo_binome]
-                formations.update(binome_row.get('noms_formations') if binome_row.get('noms_formations') is not None else [])
-            if formations:
-                st.markdown("\n".join([f'- {item}' for item in sorted(list(formations))]))
-            else:
-                st.info("Pas de données disponibles.")
-        
-        with st.expander("Services d'inclusions proposés"):
-            services_df = st.session_state.app_data['annuaire_inclusion']
-            incl_index = st.session_state.app_data.get('inclusion_services_index', pd.DataFrame())
-            
-            # Determine Target Slugs for Filtering
-            target_slugs = set(cfg.DEFAULT_INC_SERVICES_CORE)
-            
-            # Add user selected specific needs
-            if 'ui_inc_services_add_selection' in st.session_state and st.session_state.ui_inc_services_add_selection:
-                 target_slugs.update(st.session_state.ui_inc_services_add_selection)
+        # with st.expander('Formations proposées'):
+        #     formations = set(row.get('noms_formations') if row.get('noms_formations') is not None else [])
 
-            commune_services = services_df[
-                (services_df['codgeo'] == main_code) &
-                (services_df['categorie'].isin(target_slugs))
-            ]
+        #     if formations:
+        #         st.markdown("\n".join([f'- {item}' for item in sorted(list(formations))]))
+        #     else:
+        #         st.info("Pas de données disponibles.")
+        
+        # with st.expander("Services d'inclusions proposés"):
+        #     services_df = st.session_state.app_data['annuaire_inclusion']
+        #     incl_index = st.session_state.app_data.get('inclusion_services_index', pd.DataFrame())
             
-            if not commune_services.empty:
-                # Get unique slugs found
-                unique_slugs = sorted(commune_services['categorie'].unique())
+        #     # Determine Target Slugs for Filtering
+        #     target_slugs = set(cfg.DEFAULT_INC_SERVICES_CORE)
+            
+        #     # Add user selected specific needs
+        #     if 'ui_inc_services_add_selection' in st.session_state and st.session_state.ui_inc_services_add_selection:
+        #          target_slugs.update(st.session_state.ui_inc_services_add_selection)
+
+        #     commune_services = services_df[
+        #         (services_df['codgeo'] == main_code) &
+        #         (services_df['categorie'].isin(target_slugs))
+        #     ]
+            
+        #     if not commune_services.empty:
+        #         # Get unique slugs found
+        #         unique_slugs = sorted(commune_services['categorie'].unique())
                 
-                valid_labels = []
-                for slug in unique_slugs:
-                    # Lookup label
-                    if not incl_index.empty and slug in incl_index.index:
-                        try:
-                            label = incl_index.loc[slug, 'label']
-                            # If duplicate index
-                            if isinstance(label, (pd.Series, pd.DataFrame)):
-                                label = label.iloc[0]
-                        except:
-                            label = slug
-                    else:
-                        label = slug # Fallback
+        #         valid_labels = []
+        #         for slug in unique_slugs:
+        #             # Lookup label
+        #             if not incl_index.empty and slug in incl_index.index:
+        #                 try:
+        #                     label = incl_index.loc[slug, 'label']
+        #                     # If duplicate index
+        #                     if isinstance(label, (pd.Series, pd.DataFrame)):
+        #                         label = label.iloc[0]
+        #                 except:
+        #                     label = slug
+        #             else:
+        #                 label = slug # Fallback
                     
-                    if label:
-                         valid_labels.append(label)
+        #             if label:
+        #                  valid_labels.append(label)
 
-                if valid_labels:
-                     # Deduplicate labels
-                     valid_labels = sorted(list(set(valid_labels)))
-                     st.markdown("\n".join([f'- {label}' for label in valid_labels]))
-                else:
-                    st.info("Aucun service d'inclusion correspondant aux critères trouvé dans cette commune.")
-            else:
-                st.info("Aucun service d'inclusion correspondant aux critères trouvé dans cette commune.")
-
+        #         if valid_labels:
+        #              # Deduplicate labels
+        #              valid_labels = sorted(list(set(valid_labels)))
+        #              st.markdown("\n".join([f'- {label}' for label in valid_labels]))
+        #         else:
+        #             st.info("Aucun service d'inclusion correspondant aux critères trouvé dans cette commune.")
+        #     else:
+        #         st.info("Aucun service d'inclusion correspondant aux critères trouvé dans cette commune.")
+        
         # --- Links ---
         st.divider()
-        c1, c2, c3 = st.columns(3)
+        c1, c2 = st.columns(2)
         with c1:
-            if st.button("Contact local", key=f"btn_ccas_commune_{row.name}", type="primary", width="stretch"):
+            if st.button("En savoir plus", key=f"btn_details_comm_{row.name}", icon=':material/analytics:', width="stretch"):
+                _show_details_callback(row.name)
+        with c2:
+            if st.button("Contact local", key=f"btn_ccas_commune_{row.name}", icon=':material/phone:', type="primary", width="stretch"):
                 # For commune: Include binome if present
                 targets = [main_code]
                 if row.get("binome", False) and pd.notna(row.get('codgeo_binome')):
@@ -793,10 +1007,10 @@ def _display_result_details(row: pd.Series) -> None:
                 
                 # Priority code is the main commune
                 show_ccas_dialog(targets, st.session_state['app_data'].get('structures_ccas', pd.DataFrame()), priority_code=main_code, priority_label=row['libgeo'])
-        with c2:
-             st.link_button("Page OD&IS", row.get('url_odis', '#'), width="stretch")
-        with c3:
-            st.link_button("Page Wikipedia", row.get('url_wikipedia', '#'), width="stretch")
+        # with c3:
+        #      st.link_button("Page OD&IS", row.get('url_odis', '#'), width="stretch")
+        # with c4:
+        #     st.link_button("Page Wikipedia", row.get('url_wikipedia', '#'), width="stretch")
         
 
 def _produce_pitch_markdown(row: pd.Series, config: cfg.ScoringConfig, scores_cat: pd.DataFrame) -> str:
@@ -814,10 +1028,7 @@ def _produce_pitch_markdown(row: pd.Series, config: cfg.ScoringConfig, scores_ca
         pitch_md.append(f'**{libgeo}** ({population} habitants) fait partie du bassin de vie de : **{row.get("libelle_bassin_de_vie", "N/A")}**.  ')
 
     score_percent = f"{row['weighted_score'] * 100:.0f}%"
-    if row.get("binome", False):
-        pitch_md.append(f'\nEn [binôme](https://www.google.com "Lorsque des communes sont proposed en binômes, c’est qu’ensemble elles correspondent au projet de vie.") avec sa voisine **{row["libgeo_binome"]}**, la correspondance avec le projet est évaluée à **{score_percent}**. ')
-    else:
-        pitch_md.append(f'\nLa correspondance avec le projet est évaluée à **{score_percent}**. ')
+    pitch_md.append(f'\nLa correspondance avec le projet est évaluée à **{score_percent}**. ')
 
     # --- Top contributing criteria (common logic) ---
     all_scores = scores_cat['score'].unique()
@@ -825,6 +1036,8 @@ def _produce_pitch_markdown(row: pd.Series, config: cfg.ScoringConfig, scores_ca
     weighted_scores = {}
     for col in crit_scores_cols:
         cat = scores_cat[scores_cat.score == col]['cat'].iloc[0]
+        # Skip if row doesn't have cat weight or it's 0 (optimization)
+        # But we need to use the config object
         cat_weight = getattr(config, f'poids_{cat}', 0)
         
         # F-15: Include criteria-level weights
@@ -833,11 +1046,8 @@ def _produce_pitch_markdown(row: pd.Series, config: cfg.ScoringConfig, scores_ca
         
         total_weight = cat_weight * base_weight * dynamic_multiplier
         
-        penalty = config.binome_penalty if row.get("binome", False) and col + '_binome' in row.index else 0
-        
-        score_commune = row.get(col, 0)
-        score_binome = row.get(col + '_binome', 0) * (1 - penalty)
-        effective_score = max(score_commune or 0, score_binome or 0)
+        # New Scoring: The value in 'row[col]' IS the effective score (max of commune & bdv)
+        effective_score = row.get(col, 0)
         
         weighted_scores[col] = effective_score * total_weight
 
@@ -848,8 +1058,11 @@ def _produce_pitch_markdown(row: pd.Series, config: cfg.ScoringConfig, scores_ca
         count = 0
         for score_col, weighted_val in sorted_scores:
             if weighted_val > 0 and count < 5:
-                score_details = scores_cat[scores_cat.score == score_col].iloc[0]
-                pitch_md.append(f'- {score_details["score_affichage"]}')
-                count += 1
+                # Robust lookup
+                details_rows = scores_cat[scores_cat.score == score_col]
+                if not details_rows.empty:
+                    score_details = details_rows.iloc[0]
+                    pitch_md.append(f'- {score_details["score_affichage"]}')
+                    count += 1
 
     return "\n".join(pitch_md)

@@ -161,14 +161,13 @@ def run_test_scenario(scenario_id, view_level, app_data):
     )
 
     # 6. Run the engine
-    processed_gdf, _ = engine.run(scoring_config, view_level)
+    processed_gdf = engine.run(scoring_config)
 
     # 7. Post-processing (Legacy test consistency)
     # The previous test implementation manually dropped the start commune.
     # To match snapshots, we might need to remove it if it's present.
-    if view_level == 'Communes':
-        if scoring_config.commune_actuelle in processed_gdf.index:
-            processed_gdf = processed_gdf.drop(scoring_config.commune_actuelle)
+    if scoring_config.commune_actuelle in processed_gdf.index:
+        processed_gdf = processed_gdf.drop(scoring_config.commune_actuelle)
     
     # Engine returns results sorted by score descending
     return processed_gdf
@@ -184,15 +183,6 @@ def test_scenario_1_communes(app_data, request):
     assert_results_match_snapshot('test_scenario_1_communes', results, request)
 
 @pytest.mark.e2e
-def test_scenario_1_bv(app_data, request):
-    """E2E test for demo scenario 1 at the Bassins de vie level."""
-    results = run_test_scenario('1', 'Bassins de vie', app_data)
-    assert not results.empty
-    assert 'weighted_score' in results.columns
-    assert results.shape[0] > 5
-    assert_results_match_snapshot('test_scenario_1_bv', results, request)
-
-@pytest.mark.e2e
 def test_scenario_2_communes(app_data, request):
     """E2E test for demo scenario 2 at the Communes level."""
     results = run_test_scenario('2', 'Communes', app_data)
@@ -200,15 +190,6 @@ def test_scenario_2_communes(app_data, request):
     assert 'weighted_score' in results.columns
     assert results.shape[0] > 5
     assert_results_match_snapshot('test_scenario_2_communes', results, request)
-
-@pytest.mark.e2e
-def test_scenario_2_bv(app_data, request):
-    """E2E test for demo scenario 2 at the Bassins de vie level."""
-    results = run_test_scenario('2', 'Bassins de vie', app_data)
-    assert not results.empty
-    assert 'weighted_score' in results.columns
-    assert results.shape[0] > 5
-    assert_results_match_snapshot('test_scenario_2_bv', results, request)
 
 @pytest.mark.e2e
 def test_scenario_3_communes(app_data, request):
@@ -219,23 +200,6 @@ def test_scenario_3_communes(app_data, request):
     assert results.shape[0] > 5
     assert_results_match_snapshot('test_scenario_3_communes', results, request)
 
-@pytest.mark.e2e
-
-def test_scenario_3_bv(app_data, request):
-
-    """E2E test for demo scenario 3 at the Bassins de vie level."""
-
-    results = run_test_scenario('3', 'Bassins de vie', app_data)
-
-    assert not results.empty
-
-    assert 'weighted_score' in results.columns
-
-    assert results.shape[0] > 5
-
-    assert_results_match_snapshot('test_scenario_3_bv', results, request)
-
-
 
 @pytest.mark.e2e
 def test_result_details_display(app_data):
@@ -244,7 +208,6 @@ def test_result_details_display(app_data):
     """
     # 1. Run a scenario to get some results
     results_communes = run_test_scenario('1', 'Communes', app_data)
-    results_bv = run_test_scenario('1', 'Bassins de vie', app_data)
 
     # 2. Get the scoring config and app_data that the UI functions will need
     mock_config_state = {
@@ -258,7 +221,6 @@ def test_result_details_display(app_data):
         'ui_logement': 'Location',
         'ui_besoin_sante': 'Aucun',
         'ui_inc_services_add_selection': {},
-        'ui_binome_penalty': 50,
         'ui_pop_min': 1000,
         'ui_poids_emploi': 100,
         'ui_poids_logement': 100,
@@ -277,7 +239,7 @@ def test_result_details_display(app_data):
     mock_session_state.app_data = app_data
     mock_session_state.config = scoring_config
     mock_session_state.processed_gdf = results_communes
-    mock_session_state.view_level = 'Communes'
+    # mock_session_state.view_level = 'Communes' # Removed from UI state
 
     # 4. Test the commune details display
     with patch('ui.st.session_state', mock_session_state):
@@ -286,14 +248,3 @@ def test_result_details_display(app_data):
                 ui._display_result_details(row)
             except Exception as e:
                 pytest.fail(f"Failed to display details for commune result {row.get('libgeo', 'UNKNOWN')} ({index}): {e}")
-
-    # 5. Test the "Bassin de vie" details display
-    mock_session_state.processed_gdf = results_bv
-    mock_session_state.view_level = 'Bassins de vie'
-    
-    with patch('ui.st.session_state', mock_session_state):
-        for index, row in results_bv.head(5).iterrows():
-            try:
-                ui._display_bv_result_details(row)
-            except Exception as e:
-                pytest.fail(f"Failed to display details for BV result {row.get('libgeo', 'UNKNOWN')} ({index}): {e}")

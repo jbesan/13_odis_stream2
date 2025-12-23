@@ -32,9 +32,9 @@ ODIS_FILE = 'odis_communes.parquet'
 POIS_FILE = 'odis_pois.parquet'
 REFERENTIELS_FILE = 'odis_referentiels.parquet'
 BV_FILE = 'odis_bassins_de_vie.parquet'
-REL_METIERS_FILE = 'odis_metiers_agg.parquet'
-REL_ASSOCIATIONS_FILE = 'odis_associations_agg.parquet'
-REL_FORMATIONS_FILE = 'odis_formations_agg.parquet'
+AGG_METIERS_FILE = 'odis_metiers_agg.parquet'
+AGG_ASSOCIATIONS_FILE = 'odis_associations_agg.parquet'
+AGG_FORMATIONS_FILE = 'odis_formations_agg.parquet'
 CCAS_FILE = 'odis_ccas.parquet'
 SCORES_CAT_FILE = 'scores_config.yaml'
 
@@ -43,7 +43,7 @@ BV_CODE_COL = 'bassin_de_vie'
 BV_NAME_COL = 'libelle_bassin_de_vie'
 
 # --- UI Options ---
-VIEW_LEVEL_OPTIONS = ['Bassins de vie', 'Communes']
+VIEW_LEVEL_OPTIONS = ['Communes']
 NOMBRE_ADULTES_OPTIONS = [1, 2]
 NOMBRE_ENFANTS_OPTIONS = [0, 1, 2, 3, 4, 5]
 CLASSES_SCOLAIRES = ['Crèche / Assistante Maternelle', 'Maternelle', 'Elémentaire', 'Collège', 'Lycée']
@@ -52,7 +52,6 @@ HEBERGEMENT_OPTIONS = ["Chez l'habitant", 'Location', 'Foyer']
 LOGEMENT_OPTIONS = ['Location', 'Logement Social']
 SANTE_OPTIONS = ["Aucun", "Hopital", 'Maternité', "Soutien Psychologique & Addictologie"]
 POIDS_OPTIONS = [0, 25, 50, 75, 100]
-PENALITE_BINOME_OPTIONS = [1, 10, 25, 50, 100]
 POP_MIN_OPTIONS = [0, 500, 1000, 5000, 10000]
 
 # --- Weight Profiles (F-15) ---
@@ -124,7 +123,6 @@ class ScoringConfig:
     inc_asso_add_selection: List[str]
     
     # Technical parameters
-    binome_penalty: float
     pop_min: int
 
 # --- Inclusion Defaults ---
@@ -154,8 +152,6 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     'codes_metiers': [],
     'codes_formations': [],
     'classe_enfants': [],
-    'binome_penalty': 50,
-    'pop_min': 1000,
     'inc_services_add_selection': [],
     'inc_services_add_selection': [],
     'inc_services_core_selection': DEFAULT_INC_SERVICES_CORE,

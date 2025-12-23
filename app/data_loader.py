@@ -32,7 +32,8 @@ def load_scores_config_as_df(config_path: str) -> pd.DataFrame:
             'min_bound': item.get('min_bound'),
             'max_bound': item.get('max_bound'),
             'score_affichage': item.get('display', {}).get('strong_point_text', ''),
-            'incl_binome': item.get('include_in_binom', False),
+            'score_affichage': item.get('display', {}).get('strong_point_text', ''),
+            'bdv_factor': item.get('bdv_factor', 0.0),
             'metric': item.get('source_metric'),
             'computation': item.get('computation', 'live')
         })
@@ -178,7 +179,7 @@ def load_all_data_raw() -> Dict[str, Any]:
         
         # Essential columns
         essential_cols = {
-            'codgeo', 'polygon', 'dep_code', 'reg_code', 'epci_code', 'epci_nom', 'codgeo_voisins',
+            'codgeo', 'polygon', 'dep_code', 'reg_code', 'epci_code', 'epci_nom',
             'population', 'bassin_de_vie',
             'youth_growth_rate', 'workclass_growth_rate', # Keep growth rates for tooltips
             'count_hopital', 'count_maternite', 'count_psy', # Health counts for details
@@ -229,18 +230,6 @@ def load_all_data_raw() -> Dict[str, Any]:
                  odis['centroid'] = odis.geometry.centroid
         
         odis.set_index('codgeo', inplace=True)
-        
-        # fix: fill nan codgeo_voisins with empty array/list to avoid issues in scoring
-        if 'codgeo_voisins' in odis.columns:
-             # Ensure we don't have None/NaN that causes "nan" string in np.append
-             # It seems loaded as object (arrays or None)
-             # Let's standardize to empty list for NaNs
-             def sanitize_voisins(x):
-                 if isinstance(x, (np.ndarray, list)):
-                     return x
-                 return np.array([]) # Empty array preferred for consistency if others are arrays
-             
-             odis['codgeo_voisins'] = odis['codgeo_voisins'].apply(sanitize_voisins)
         
         # Optimize types
         if 'population' in odis.columns:
@@ -365,13 +354,13 @@ def load_all_data_raw() -> Dict[str, Any]:
             codfap_index = fap_df[['code', 'label']].drop_duplicates(subset=['code']).set_index('code')
 
     # 4. Load Vertical Data
-    bmo_vertical_path = os.path.join(base_path, cfg.REL_METIERS_FILE) # Was BMO_VERTICAL_FILE
+    bmo_vertical_path = os.path.join(base_path, cfg.AGG_METIERS_FILE) # Was BMO_VERTICAL_FILE
     bmo_vertical = _load_parquet(bmo_vertical_path)
     
-    associations_path = os.path.join(base_path, cfg.REL_ASSOCIATIONS_FILE)
+    associations_path = os.path.join(base_path, cfg.AGG_ASSOCIATIONS_FILE)
     associations_data = _load_parquet(associations_path)
 
-    formations_path = os.path.join(base_path, cfg.REL_FORMATIONS_FILE)
+    formations_path = os.path.join(base_path, cfg.AGG_FORMATIONS_FILE)
     formations_data = _load_parquet(formations_path)
     if not formations_data.empty and 'formation_code' in formations_data.columns:
         # Hotfix: Ensure formation codes are clean strings (remove .0 suffix if present)
@@ -498,6 +487,7 @@ def load_all_data_raw() -> Dict[str, Any]:
         'depcom_df': depcom_df,
         'coddep_set': coddep_set,
         'bv_geo': bv_geo,
+        'bv_data': bv_geo, # For scoring lookup (it has the aggregated stats)
         'area_geo': area_geo,
         'bmo_vertical': bmo_vertical,
         'structures_ccas': structures_ccas,

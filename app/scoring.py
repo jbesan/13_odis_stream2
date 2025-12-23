@@ -32,6 +32,7 @@ class ScoringEngine:
         formations_data: pd.DataFrame,
         codformations_index: pd.DataFrame,
         global_stats: Dict[str, Dict[str, float]],
+        bv_data: gpd.GeoDataFrame = None,
         codfap_index: Optional[pd.DataFrame] = None
     ):
         self.df_all_communes = df_all_communes
@@ -44,6 +45,7 @@ class ScoringEngine:
         self.formations_data = formations_data
         self.codformations_index = codformations_index
         self.global_stats = global_stats
+        self.bv_data = bv_data if bv_data is not None else df_bv_geo
         self.codfap_index = codfap_index
     
     def format_city_details(self, row: pd.Series) -> Dict[str, Any]:
@@ -238,9 +240,9 @@ class ScoringEngine:
         return self.format_city_details(commune_row)
 
 
-    def run(self, config: ScoringConfig, view_level: str) -> Tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
+    def run(self, config: ScoringConfig) -> Tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
         """
-        Orchestrates the full scoring pipeline: filtering -> scoring -> aggregation.
+        Orchestrates the full scoring pipeline: filtering -> scoring
             
         Returns:
             A tuple containing:
@@ -251,75 +253,26 @@ class ScoringEngine:
         loc_type = 'distance' if isinstance(config.loc_distance_km, int) else config.loc_distance_km
         
         # --- Filtering ---
-        if view_level == 'Communes':
-            loc_col = 'dep_code' if loc_type == 'departement' else 'reg_code'
-            communes_to_score = filter_communes(
-                df=self.df_all_communes,
-                start_commune=start_commune,
-                loc_type=loc_type,
-                loc_code=start_commune.iloc[0][loc_col] if loc_type != 'distance' else None,
-                loc_distance_km=config.loc_distance_km if loc_type == 'distance' else 0
-            )
-            
-            result_prospects = self._compute_scores(communes_to_score, config, use_binomes=True)
-            
-            processed_gdf = result_prospects.sort_values(by='weighted_score', ascending=False)
-            unaggregated_gdf = result_prospects.copy()
-            
-        else: # Bassins de vie
-            # 1. Filter Bassins de Vie geometries
-            loc_col = 'dep_code' if loc_type == 'departement' else 'reg_code'
-            
-            bv_to_score = filter_bassins_de_vie(
-                bv_gdf=self.df_bv_geo,
-                start_commune=start_commune,
-                loc_type=loc_type,
-                loc_code=start_commune.iloc[0][loc_col] if loc_type != 'distance' else None,
-                loc_distance_km=config.loc_distance_km if loc_type == 'distance' else 0,
-                area_gdf=self.df_area_geo
-            )
-
-            # Exclude current BV
-            current_bv_code = start_commune.iloc[0][cfg.BV_CODE_COL]
-            if cfg.BV_CODE_COL in bv_to_score.columns:
-                 bv_to_score = bv_to_score[bv_to_score[cfg.BV_CODE_COL] != current_bv_code]
-            else:
-                 bv_to_score = bv_to_score[bv_to_score.index != current_bv_code]
-            
-            # 2. Identify all communes belonging to those BVs
-            if cfg.BV_CODE_COL in bv_to_score.columns:
-                target_bv_codes = bv_to_score[cfg.BV_CODE_COL].unique()
-            else:
-                target_bv_codes = bv_to_score.index.unique()
-            
-            communes_subset = self.df_all_communes[self.df_all_communes[cfg.BV_CODE_COL].isin(target_bv_codes)].copy()
-            
-            # 3. Score all these communes individually 
-            scored_communes = self._compute_scores(communes_subset, config, use_binomes=False)
-            
-            # 4. Aggregate by BV
-            result_prospects = aggregate_scores_by_bassin_de_vie(scored_communes)
-            
-            # 5. Join with geometry
-            if cfg.BV_CODE_COL in self.df_bv_geo.columns:
-                processed_gdf = self.df_bv_geo.merge(result_prospects, on=cfg.BV_CODE_COL, how='inner', suffixes=('', '_agg'))
-            else:
-                processed_gdf = self.df_bv_geo.merge(result_prospects, left_index=True, right_on=cfg.BV_CODE_COL, how='inner', suffixes=('', '_agg'))
-            
-            # Ensure we use the aggregated scores for sorting
-            if not processed_gdf.empty and 'weighted_score' in processed_gdf.columns:
-                processed_gdf = processed_gdf.sort_values(by='weighted_score', ascending=False)
-            
-            unaggregated_gdf = scored_communes # Return the detailed communes for map display
-
-        return processed_gdf, unaggregated_gdf
+        # Always output communes
+        
+        loc_col = 'dep_code' if loc_type == 'departement' else 'reg_code'
+        communes_to_score = filter_communes(
+            df=self.df_all_communes,
+            start_commune=start_commune,
+            loc_type=loc_type,
+            loc_code=start_commune.iloc[0][loc_col] if loc_type != 'distance' else None,
+            loc_distance_km=config.loc_distance_km if loc_type == 'distance' else 0
+        )
+        
+        # Use new fallback logic (no binomes param needed really, it's config driven)
+        return self._compute_scores(communes_to_score, config)
 # ... Keep rest of the file ...
 # For brevity I'll supply the rest of the file contents as well, 
 # although I could use replace_file_content if I was sure about exact lines.
 # To be safe, I'm just appending the rest of the file content in my head and writing the whole thing.
 # Actually I need to include the helper functions in the write_to_file content.
 
-    def _compute_scores(self, df_search: gpd.GeoDataFrame, config: ScoringConfig, use_binomes: bool = True) -> pd.DataFrame:
+    def _compute_scores(self, df_search: gpd.GeoDataFrame, config: ScoringConfig) -> pd.DataFrame:
         """Main function that orchestrates the entire scoring pipeline on a pre-filtered dataframe."""
         if df_search.empty:
             return df_search.copy()
@@ -332,28 +285,46 @@ class ScoringEngine:
         else:
             odis_search = df_search.copy()
 
-        # Compute individual criteria scores
-        odis_scored = self._compute_criteria_scores(odis_search, config)
+        # Merge BdV Data for Fallback
+        if self.bv_data is not None and not self.bv_data.empty:
+             bv_col = 'bassin_de_vie'
+             if bv_col in odis_search.columns:
+                 # Check if bv_data index is the code
+                 # self.bv_data is loaded from odis_bassins_de_vie.parquet
+                 # Usually index is the code? Or column?
+                 # pipeline/build.py sets index to 'bassin_de_vie' (or cfg.BV_CODE_COL)
+                 
+                 # To be safe, try merge on index or column
+                 bv_data_suffixed = self.bv_data.add_suffix('_bdv')
+                 
+                 # Identify merge key in right df
+                 right_on = None
+                 left_on = bv_col
+                 right_index = True
+                 
+                 odis_search = pd.merge(
+                     odis_search, 
+                     bv_data_suffixed, 
+                     left_on=left_on, 
+                     right_index=right_index, 
+                     how='left'
+                 )
 
-        # Expand with neighbors (binomes)
-        if use_binomes:
-            odis_exploded = add_neighbor_scores(odis_scored, self.scores_cat)
-        else:
-            odis_exploded = odis_scored.copy()
+        # Compute individual criteria scores (Includes BdV Fallback logic)
+        odis_scored = self._compute_criteria_scores(odis_search, config)
 
         # Aggregate into Category Scores
         odis_exploded = compute_category_scores(
-            odis_exploded,
+            odis_scored,
             scores_cat=self.scores_cat,
-            binome_penalty=config.binome_penalty,
             config=config
         )
 
         # Compute Final Score
         odis_exploded['weighted_score'] = compute_weighted_score(odis_exploded, config=config)
 
-        # Selection (Best of Monome/Binome)
-        odis_search_best = select_best_score_per_commune(odis_exploded)
+        # Sort by Final Score (Descending)
+        odis_search_best = odis_exploded.sort_values(by='weighted_score', ascending=False)
 
         return odis_search_best
 
@@ -432,7 +403,7 @@ class ScoringEngine:
 
         # --- HEBERGEMENT / LOGEMENT ---
         def drop_score_cols(df, col_name):
-            cols_to_drop = [col_name, f"{col_name}_binome"]
+            cols_to_drop = [col_name]
             existing_cols = [c for c in cols_to_drop if c in df.columns]
             if existing_cols:
                 df.drop(columns=existing_cols, inplace=True)
@@ -763,51 +734,11 @@ def compute_inclusion_score(
 
     return df
 
-def add_neighbor_scores(df_search: gpd.GeoDataFrame, scores_cat: pd.DataFrame) -> pd.DataFrame:
-    """Expands the dataframe to include data from neighboring communes ('voisins')."""
-    # Define columns needed for binome analysis.
-    binome_columns = (
-        ['codgeo', 'libgeo', 'polygon', 'epci_code', 'epci_nom']
-        + scores_cat[scores_cat.incl_binome]['score'].to_list()
-        + scores_cat[scores_cat.incl_binome]['metric'].to_list()
-    )
-    # Remove duplicates
-    binome_columns = list(dict.fromkeys(binome_columns))
-    binome_columns = [col for col in binome_columns if col in df_search.columns]
-    df_binomes = df_search[binome_columns].copy()
 
-    # Create a series with the commune itself and its neighbors.
-    df_search_copy = df_search.copy()
-    df_search_copy['codgeo_voisins_and_self'] = [
-        np.append(voisins, codgeo)
-        for voisins, codgeo in zip(df_search_copy['codgeo_voisins'], df_search_copy.index)
-    ]
-
-    # Explode the dataframe to have one row per (commune, neighbor) pair.
-    df_search_exploded = df_search_copy.explode('codgeo_voisins_and_self')
-    df_search_exploded.rename(columns={'codgeo_voisins_and_self': 'codgeo_binome'}, inplace=True)
-
-    # Merge to bring in the scores of the binome commune.
-    odis_search_exploded = pd.merge(
-        df_search_exploded,
-        df_binomes.add_suffix('_binome'),
-        left_on='codgeo_binome',
-        right_index=True,
-        how='inner',
-        validate="many_to_one"
-    )
-
-    # Add a boolean column to identify binomes (True) vs monomes (False).
-    odis_search_exploded['binome'] = np.where(
-        odis_search_exploded.index == odis_search_exploded.codgeo_binome, False, True
-    )
-
-    return odis_search_exploded
 
 def compute_category_scores(
     df: pd.DataFrame,
     scores_cat: pd.DataFrame,
-    binome_penalty: float,
     config: 'ScoringConfig'
 ) -> pd.DataFrame:
     """Aggregates individual criteria scores into category scores."""
@@ -871,17 +802,25 @@ def compute_category_scores(
                         continue
 
             score_commune = df[col]
-            # Check if a corresponding binome score exists
-            if f'{col}_binome' in df.columns:
-                score_voisin = df[f'{col}_binome'] * (1 - binome_penalty)
-                
-                s_commune = score_commune.fillna(0)
-                s_voisin = score_voisin.fillna(0)
+            
+            # --- BdV Fallback Logic ---
+            bdv_col = f'{col}_bdv'
+            if bdv_col in df.columns and 'bdv_factor' in scores_cat.columns:
+                 # Extract factor for this score
+                 params = scores_cat[scores_cat.score == col]
+                 if not params.empty:
+                     factor = params['bdv_factor'].iloc[0]
+                     try:
+                         factor = float(factor)
+                     except (ValueError, TypeError):
+                         factor = 0.0
+                     
+                     if factor > 0:
+                         score_bdv = df[bdv_col]
+                         # Apply logic which boosts score if BdV is better (weighted)
+                         score_commune = np.maximum(score_commune.fillna(0), score_bdv.fillna(0) * factor)
 
-                effective_score = np.maximum(s_commune, s_voisin)
-                max_scores.append(effective_score)
-            else:  # This criterion is not applicable to binomes
-                max_scores.append(score_commune)
+            max_scores.append(score_commune)
 
             # Get Weight
             base_weight = scores_cat[scores_cat.score == col]['weight'].iloc[0]
@@ -889,16 +828,19 @@ def compute_category_scores(
             weights.append(base_weight * dynamic_multiplier)
 
         # Weighted Average Calculation
-        scores_df = pd.concat(max_scores, axis=1)
-        weights_array = np.array(weights)
-        
-        mask = scores_df.notna()
-        weighted_sum = (scores_df.fillna(0) * weights_array).sum(axis=1)
-        weights_sum = (mask * weights_array).sum(axis=1)
-        
-        category_score = weighted_sum / weights_sum.replace(0, np.nan)
-        
-        df[f'{category}_cat_score'] = category_score
+        if weights:
+            scores_df = pd.concat(max_scores, axis=1)
+            weights_array = np.array(weights)
+            
+            mask = scores_df.notna()
+            weighted_sum = (scores_df.fillna(0) * weights_array).sum(axis=1)
+            weights_sum = (mask * weights_array).sum(axis=1)
+            
+            category_score = weighted_sum / weights_sum.replace(0, np.nan)
+            
+            df[f'{category}_cat_score'] = category_score.fillna(0)
+        else:
+             df[f'{category}_cat_score'] = 0.0
 
     return df
 
@@ -930,21 +872,7 @@ def compute_weighted_score(df: pd.DataFrame, config: 'ScoringConfig') -> pd.Seri
     final_score = total_score / total_weight
     return final_score.fillna(0)
 
-def select_best_score_per_commune(df: pd.DataFrame) -> pd.DataFrame:
-    """For each commune, keeps only the best scoring result.
-    In case of ties (common with 100% penalty), prefer the Monome (binome=False).
-    """
-    if 'weighted_score' in df.columns:
-        # Sort by Score (Desc) then by Binome (Asc -> False first)
-        sort_cols = ['weighted_score']
-        ascending = [False]
-        
-        if 'binome' in df.columns:
-            sort_cols.append('binome')
-            ascending.append(True)
-            
-        return df.sort_values(sort_cols, ascending=ascending).groupby('codgeo').head(1)
-    return df
+
 
 def aggregate_scores_by_bassin_de_vie(df: pd.DataFrame) -> pd.DataFrame:
     """Aggregates commune scores at the 'bassin de vie' level."""

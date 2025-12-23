@@ -2,7 +2,7 @@ scores:
   - id: met_scaled
     category: emploi
     source_metric: met_ratio
-    include_in_binom: true
+    bdv_factor: 0.9
     computation: precomputed
     display:
       name: Taux Besoin Emploi
@@ -18,7 +18,7 @@ scores:
   - id: met_tension_scaled
     category: emploi
     source_metric: met_tension_ratio
-    include_in_binom: true
+    bdv_factor: 0.9
     computation: precomputed
     display:
       name: Taux Besoin Emploi en Tension
@@ -34,7 +34,7 @@ scores:
   - id: log_vac_scaled
     category: logement
     source_metric: log_vac_struct_ratio
-    include_in_binom: true
+    bdv_factor: 0.0
     computation: precomputed
     display:
       name: Taux Vacance Structurelle (> 2 ans)
@@ -50,7 +50,7 @@ scores:
   - id: log_soc_inoc_scaled
     category: logement
     source_metric: log_soc_inoc_ratio
-    include_in_binom: true
+    bdv_factor: 0.0
     computation: precomputed
     display:
       name: Taux de Logements Sociaux Inoccupés (Vacants ou Vides)
@@ -68,7 +68,7 @@ scores:
   - id: log_occup_scaled
     category: logement
     source_metric: log_pp_occup
-    include_in_binom: true
+    bdv_factor: 0.0
     computation: precomputed
     display:
       name: Taux d'Occupation (Sous-occupation)
@@ -85,7 +85,7 @@ scores:
   - id: log_occupation_scaled
     category: logement
     source_metric: log_occupation_rate
-    include_in_binom: true
+    bdv_factor: 0.0
     computation: precomputed
     display:
       name: Taux d'Occupation Standard
@@ -101,7 +101,7 @@ scores:
   - id: loyer_abordable_scaled
     category: logement
     source_metric: loyer_app_m2
-    include_in_binom: true
+    bdv_factor: 0.0
     computation: precomputed
     display:
       name: Loyer Abordable
@@ -120,7 +120,7 @@ scores:
   - id: inc_pol_scaled
     category: inclusion
     source_metric: pol_num
-    include_in_binom: false
+    bdv_factor: 0.0
     computation: precomputed
     display:
       name: Couleur Politique de la commmue
@@ -136,7 +136,7 @@ scores:
   - id: inc_population_scaled
     category: inclusion
     source_metric: population
-    include_in_binom: false
+    bdv_factor: 0.0
     computation: precomputed
     display:
       name: Population de la commune
@@ -152,7 +152,7 @@ scores:
   - id: met_match_adult1_scaled
     category: emploi
     source_metric: met_match_adult1
-    include_in_binom: true
+    bdv_factor: 0.9
     computation: live
     display:
       name: Match compétences et Besoin Emploi Adult 1
@@ -170,7 +170,7 @@ scores:
   - id: met_match_adult2_scaled
     category: emploi
     source_metric: met_match_adult2
-    include_in_binom: true
+    bdv_factor: 0.9
     computation: live
     display:
       name: Match compétences et Besoin Emploi Adult 2
@@ -188,7 +188,7 @@ scores:
   - id: form_match_adult1_scaled
     category: emploi
     source_metric: form_match_adult1
-    include_in_binom: true
+    bdv_factor: 0.9
     computation: live
     display:
       name: Match besoins et Centres de formation
@@ -206,7 +206,7 @@ scores:
   - id: form_match_adult2_scaled
     category: emploi
     source_metric: form_match_adult2
-    include_in_binom: true
+    bdv_factor: 0.9
     computation: live
     display:
       name: Match besoins et Centres de formation
@@ -224,7 +224,7 @@ scores:
   - id: mob_dist_scaled
     category: mobilité
     source_metric: dist_current_loc
-    include_in_binom: false
+    bdv_factor: 0.0
     computation: live
     display:
       name: Distance de la localisation actuelle
@@ -240,7 +240,7 @@ scores:
   - id: mob_epci_scaled
     category: mobilité
     source_metric: null
-    include_in_binom: false
+    bdv_factor: 0.0
     computation: live
     display:
       name: Même agglomération que la localisation actuelle
@@ -256,7 +256,7 @@ scores:
   - id: edu_enfant1_scaled
     category: education
     source_metric: edu_dist_kid1
-    include_in_binom: false
+    bdv_factor: 0.0
     computation: live
     display:
       name: Proximité de l'établissement scolaire enfant 1
@@ -272,7 +272,7 @@ scores:
   - id: edu_enfant2_scaled
     category: education
     source_metric: edu_dist_kid2
-    include_in_binom: false
+    bdv_factor: 0.0
     computation: live
     display:
       name: Proximité de l'établissement scolaire enfant 2
@@ -288,7 +288,7 @@ scores:
   - id: edu_enfant3_scaled
     category: education
     source_metric: edu_dist_kid3
-    include_in_binom: false
+    bdv_factor: 0.0
     computation: live
     display:
       name: Proximité de l'établissement scolaire enfant 3
@@ -304,7 +304,7 @@ scores:
   - id: edu_enfant4_scaled
     category: education
     source_metric: edu_dist_kid4
-    include_in_binom: false
+    bdv_factor: 0.0
     computation: live
     display:
       name: Proximité de l'établissement scolaire enfant 4
@@ -320,7 +320,7 @@ scores:
   - id: edu_enfant5_scaled
     category: education
     source_metric: edu_dist_kid5
-    include_in_binom: false
+    bdv_factor: 0.0
     computation: live
     display:
       name: Proximité de l'établissement scolaire enfant 5
@@ -336,7 +336,7 @@ scores:
   - id: inc_services_core_scaled
     category: inclusion
     source_metric: socle_match_count
-    include_in_binom: true
+    bdv_factor: 0.8
     computation: precomputed
     display:
       name: Socle Administratif
@@ -352,7 +352,7 @@ scores:
   - id: inc_asso_core_scaled
     category: inclusion
     source_metric: lien_social_density
-    include_in_binom: true
+    bdv_factor: 0.8
     computation: precomputed
     display:
       name: Lien Social
@@ -368,7 +368,7 @@ scores:
   - id: inc_asso_add_scaled
     category: inclusion
     source_metric: affinite_density
-    include_in_binom: true
+    bdv_factor: 0.8
     computation: live
     display:
       name: Affinités
@@ -384,7 +384,7 @@ scores:
   - id: inc_services_add_scaled
     category: inclusion
     source_metric: extra_services_match_count
-    include_in_binom: true
+    bdv_factor: 0.8
     computation: live
     display:
       name: Services Spécifiques
@@ -400,7 +400,7 @@ scores:
   - id: edu_petite_enfance_scaled
     category: education
     source_metric: edu_pe_tx_couverture
-    include_in_binom: true
+    bdv_factor: 0.5
     computation: precomputed
     display:
       name: Accueil Petite Enfance
@@ -418,7 +418,7 @@ scores:
   - id: edu_maternelle_scaled
     category: education
     source_metric: edu_maternelle_ct
-    include_in_binom: true
+    bdv_factor: 0.5
     computation: precomputed
     display:
       name: Ecole Maternelle
@@ -434,7 +434,7 @@ scores:
   - id: edu_elementaire_scaled
     category: education
     source_metric: edu_elementaire_ct
-    include_in_binom: true
+    bdv_factor: 0.5
     computation: precomputed
     display:
       name: Ecole Elémentaire
@@ -450,7 +450,7 @@ scores:
   - id: edu_college_scaled
     category: education
     source_metric: edu_college_ct
-    include_in_binom: true
+    bdv_factor: 0.8
     computation: precomputed
     display:
       name: Collège
@@ -466,7 +466,7 @@ scores:
   - id: edu_lycee_scaled
     category: education
     source_metric: edu_lycee_ct
-    include_in_binom: true
+    bdv_factor: 0.8
     computation: precomputed
     display:
       name: Lycée
@@ -482,7 +482,7 @@ scores:
   - id: edu_classes_ferm_scaled
     category: education
     source_metric: risky_schools_count
-    include_in_binom: true
+    bdv_factor: 0.5
     computation: precomputed
     display:
       name: Nombre de classes à risque de fermeture
@@ -498,7 +498,7 @@ scores:
   - id: sante_structures_scaled
     category: santé
     source_metric: sante_structures_scaled
-    include_in_binom: true
+    bdv_factor: 0.5
     computation: precomputed
     display:
       name: Structure de santé recherchée
@@ -514,7 +514,7 @@ scores:
   - id: mob_gare_scaled
     category: mobilité
     source_metric: mob_gare_scaled
-    include_in_binom: false
+    bdv_factor: 1.0
     computation: precomputed
     display:
       name: Gare ferroviaire
@@ -529,7 +529,7 @@ scores:
   - id: youth_decline_scaled
     category: education
     source_metric: youth_growth_rate
-    include_in_binom: true
+    bdv_factor: 0.0
     computation: precomputed
     display:
       name: Déclin Démographique Jeune
@@ -545,7 +545,7 @@ scores:
   - id: workclass_decline_scaled
     category: emploi
     source_metric: workclass_growth_rate
-    include_in_binom: true
+    bdv_factor: 0.0
     computation: precomputed
     display:
       name: Déclin Démographique Actif

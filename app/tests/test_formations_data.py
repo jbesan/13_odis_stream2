@@ -20,7 +20,7 @@ def test_formation_codes_intersection():
     # Calling init_datasets() might require valid config/env, let's try to just load and clean like data_loader does.
     
     import app.data_loader as data_loader
-    formations_path = os.path.join(data_path, cfg.REL_FORMATIONS_FILE)
+    formations_path = os.path.join(data_path, cfg.AGG_FORMATIONS_FILE)
     formations_df = data_loader.load_parquet_dataset(formations_path)
     
     if not formations_df.empty and 'formation_code' in formations_df.columns:

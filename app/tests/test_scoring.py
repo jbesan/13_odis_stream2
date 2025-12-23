@@ -223,7 +223,7 @@ class TestScoringLogic:
         scores_cat_subset = sample_scores_cat[sample_scores_cat['metric'].isin(relevant_metrics)].copy()
         scores_cat_subset['cat'] = 'emploi' # Force category
         
-        df_cat = scoring.compute_category_scores(df, scores_cat_subset, 0.5, default_config)
+        df_cat = scoring.compute_category_scores(df, scores_cat_subset, default_config)
         
         # Mean of 1.0 and 0.5 is 0.75
         assert 'emploi_cat_score' in df_cat.columns
@@ -349,7 +349,6 @@ class TestConditionalScoring:
             inc_services_add_selection={},
             inc_services_core_selection=[],
             inc_asso_add_selection=[],
-            binome_penalty=0.5,
             pop_min=1000,
             criteria_weights={}
         )
@@ -393,7 +392,6 @@ class TestConditionalScoring:
             inc_services_add_selection={},
             inc_services_core_selection=[],
             inc_asso_add_selection=[],
-            binome_penalty=0.5,
             pop_min=1000,
             criteria_weights={}
         )
@@ -495,7 +493,6 @@ class TestMCPScenario:
              inc_services_add_selection={},
              inc_services_core_selection=[],
              inc_asso_add_selection=[],
-             binome_penalty=0.0,
              pop_min=0,
              criteria_weights={}
         )
@@ -516,7 +513,7 @@ class TestMCPScenario:
         )
         
         # 3. Execution
-        processed_gdf, unaggregated_gdf = engine.run(config, view_level='Communes')
+        processed_gdf = engine.run(config)
         
         # 4. Verification of Return Values
         assert not processed_gdf.empty
@@ -537,145 +534,7 @@ class TestMCPScenario:
 
 # --- Consolidated Tests from other files ---
 
-@pytest.mark.unit
-class TestBVExclusionRepro:
-    """Tests related to the specific bug where current BV was not excluded or handled correctly."""
-    
-    def test_repro_current_bv_exclusion(self):
-        """
-        Reproduction test from repro_issue_bv_exclusion.py:
-        When view_level is 'Bassins de vie', the bassin de vie containing the 
-        current commune should be excluded from the results.
-        """
-        from shapely.geometry import Point, Polygon
-        
-        # 1. Setup Mock Data
-        # Communes: A (Current - Bordeaux), B (Neighbor - Pessac), C (Other - Paris)
-        communes_data = {
-            'codgeo': ['A', 'B', 'C'],
-            'libgeo': ['Bordeaux', 'Pessac', 'Paris'],
-            cfg.BV_CODE_COL: ['BV1', 'BV1', 'BV2'], # A and B in BV1, C in BV2
-            cfg.BV_NAME_COL: ['Bassin Bordeaux', 'Bassin Bordeaux', 'Bassin Paris'],
-            'population': [1000, 1000, 1000],
-            'dep_code': ['33', '33', '75'],
-            'reg_code': ['75', '75', '11'],
-            'epci_code': ['EPCI1', 'EPCI1', 'EPCI2'],
-            'epci_nom': ['EPCI 1', 'EPCI 1', 'EPCI 2']
-        }
-        df_communes = gpd.GeoDataFrame(
-            communes_data, 
-            geometry=[
-                Point(-0.5792, 44.8378), # Bordeaux
-                Point(-0.6314, 44.8067), # Pessac (nearby)
-                Point(2.3522, 48.8566)   # Paris (far)
-            ],
-            crs="EPSG:4326"
-        ).to_crs(cfg.PROJECTED_CRS).set_index('codgeo') # Project to 2154
-        
-        # Bassins de vie Geometry
-        bv_data = {
-            cfg.BV_CODE_COL: ['BV1', 'BV2'],
-            cfg.BV_NAME_COL: ['Bassin Bordeaux', 'Bassin Paris']
-        }
-        df_bv_geo = gpd.GeoDataFrame(
-            bv_data,
-            geometry=[
-                Polygon([(-1, 44), (-1, 45), (0, 45), (0, 44)]), # Covers Bordeaux
-                Polygon([(2, 48), (2, 49), (3, 49), (3, 48)])    # Covers Paris
-            ],
-            crs="EPSG:4326"
-        ).to_crs(cfg.PROJECTED_CRS).set_index(cfg.BV_CODE_COL) # Project to 2154
-        
-        # Area Geometry (Department)
-        df_area_geo = gpd.GeoDataFrame(
-            {'code': ['01'], 'type': ['departement']},
-            geometry=[Polygon([(-1,-1), (-1,12), (12,12), (12,-1)])],
-            crs="EPSG:4326"
-        ).to_crs(cfg.PROJECTED_CRS).set_index(['type', 'code']) # Project to 2154
-        
-        # Config
-        config = ScoringConfig(
-            commune_actuelle='A', # Current commune is A (in BV1)
-            loc_distance_km=1000,
-            poids_emploi=100,
-            poids_logement=0,
-            poids_education=0,
-            poids_sante=0,
-            poids_inclusion=0,
-            poids_mobilité=0,
-            nb_adultes=1,
-            nb_enfants=0,
-            hebergement='Location',
-            logement='Location',
-            codes_metiers=[[]],
-            codes_formations=[[]],
-            classe_enfants=[],
-            besoin_sante='Aucun',
-            inc_services_add_selection={},
-            inc_services_core_selection=[],
-            inc_asso_add_selection=[],
-            binome_penalty=0.0,
-            pop_min=0,
-            criteria_weights={}
-        )
-        
-        # Mock Scores Catalog
-        scores_cat = pd.DataFrame({
-            'cat': ['emploi'],
-            'score': ['met_scaled'],
-            'metric': ['met_ratio'],
-            'weight': [1.0],
-            'min_bound': [0.0],
-            'max_bound': [1.0],
-            'incl_binome': [False]
-        })
-        
-        # Mock Global Stats
-        global_stats = {'met_scaled': {'min': 0.0, 'max': 1.0}}
-        
-        # Mock Inclusion Index & Associations (Empty)
-        incl_index = pd.DataFrame()
-        associations_data = pd.DataFrame(columns=['codgeo', 'id_waldec', 'count'])
-        
-        # Add dummy score column to communes
-        df_communes['met_ratio'] = 0.5
-        df_communes['log_vac'] = 10
-        df_communes['log_total'] = 100
-        df_communes['pol_num'] = 1
-        df_communes['pop_be'] = 1000
-        df_communes['log_soc_total'] = 100
-        df_communes['log_soc_inoccupes'] = 10
-        df_communes['rp_5+pieces'] = 50
-        df_communes['log_rp'] = 100
-        
-        # Mock new required DataFrames
-        bmo_vertical = pd.DataFrame(columns=['codgeo', 'fap_code', 'count'])
-        formations_data = pd.DataFrame(columns=['codgeo', 'formation_code', 'count'])
-        codformations_index = pd.DataFrame(columns=['label'])
 
-        # Run Pipeline
-        engine = scoring.ScoringEngine(
-            df_all_communes=df_communes,
-            df_bv_geo=df_bv_geo,
-            df_area_geo=df_area_geo,
-            scores_cat=scores_cat,
-            incl_index=incl_index,
-            associations_data=associations_data,
-            bmo_vertical=bmo_vertical,
-            formations_data=formations_data,
-            codformations_index=codformations_index,
-            global_stats=global_stats
-        )
-
-        processed_gdf, _ = engine.run(
-            config=config,
-            view_level='Bassins de vie'
-        )
-        
-        # Assertions
-        # BV1 (containing A) should be EXCLUDED.
-        assert 'BV1' not in processed_gdf[cfg.BV_CODE_COL].values, "BV1 (containing current commune) should be excluded from results"
-        assert 'BV2' in processed_gdf[cfg.BV_CODE_COL].values, "BV2 should be included"
 
 
 @pytest.mark.unit
@@ -820,7 +679,7 @@ class TestHousingScoresLogic:
                 inc_services_add_selection=[],
                 inc_services_core_selection=[],
                 poids_emploi=0, poids_logement=100, poids_education=0, poids_inclusion=0, poids_sante=0, poids_mobilité=0,
-                criteria_weights={}, binome_penalty=0.0, pop_min=0, besoin_sante="Aucun"
+                criteria_weights={}, pop_min=0, besoin_sante="Aucun"
             )
             df_copy = df.copy()
             return engine._compute_criteria_scores(df_copy, config)
@@ -828,18 +687,12 @@ class TestHousingScoresLogic:
         # 1. Test: Location + Location -> Keep log_vac, Drop others
         res1 = run_scoring('Location', 'Location')
         assert 'log_vac_scaled' in res1.columns
-        assert 'log_vac_scaled_binome' in res1.columns
         assert 'log_soc_inoc_scaled' not in res1.columns
-        assert 'log_soc_inoc_scaled_binome' not in res1.columns
         assert 'log_occup_scaled' not in res1.columns
-        assert 'log_occup_scaled_binome' not in res1.columns
 
         # 2. Test: Chez l'habitant + Logement Social -> Keep occup & soc_inoc. Drop vac.
         res2 = run_scoring("Chez l'habitant", 'Logement Social')
         assert 'log_vac_scaled' not in res2.columns
-        assert 'log_vac_scaled_binome' not in res2.columns
         assert 'log_occup_scaled' in res2.columns
-        assert 'log_occup_scaled_binome' in res2.columns
         assert 'log_soc_inoc_scaled' in res2.columns
-        assert 'log_soc_inoc_scaled_binome' in res2.columns
 

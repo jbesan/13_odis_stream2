@@ -434,14 +434,13 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
         inc_services_add_selection=specific_needs, # Mapped from codes_inclusion
         inc_services_core_selection=socle_sel,
         inc_asso_add_selection=filters.get('inc_asso_add_selection', []),
-        binome_penalty=float(filters.get('binome_penalty', 0.1)),
         pop_min=int(filters.get('pop_min', 0))
     )
     
     # 2. Run Engine
     view_level = filters.get('view_level', 'Communes')
     try:
-        processed_gdf, _ = engine.run(config, view_level=view_level)
+        processed_gdf = engine.run(config)
     except Exception as e:
         logger.error(f"❌ [MCP] Error: {e}")
         return [{"error": str(e)}]

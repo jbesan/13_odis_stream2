@@ -99,10 +99,10 @@ def run_search():
         global_stats={}  # Removed global_score_stats from data_loader if not present
     )
 
-    processed_gdf, unaggregated_gdf = engine.run(
-        config=config,
-        view_level=st.session_state.get('view_level', 'Bassins de vie')
+    processed_gdf = engine.run(
+        config=config
     )
+    unaggregated_gdf = processed_gdf # Single view now, they are identical
 
     # --- State Update ---
     st.session_state['processed_gdf'] = processed_gdf
@@ -129,7 +129,6 @@ def run_search():
 
 # Automatically run the search if not already processed and form is completed
 if st.session_state.get('processed_gdf') is None and st.session_state.get('form_completed'):
-    st.session_state['view_level'] = cfg.VIEW_LEVEL_OPTIONS[cfg.DEFAULT_VIEW_LEVEL]
     run_search()
     st.session_state['form_completed'] = False
 

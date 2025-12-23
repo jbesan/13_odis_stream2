@@ -47,6 +47,15 @@ def main():
             os.makedirs(DEST_DIR)
             logging.info(f"Created {DEST_DIR}")
 
+        # Cleanup legacy files
+        for f in os.listdir(DEST_DIR):
+            if f.startswith("odis_rel_") and f.endswith(".parquet"):
+                try:
+                    os.remove(os.path.join(DEST_DIR, f))
+                    logging.info(f"Removed legacy file: {f}")
+                except Exception as e:
+                    logging.warning(f"Failed to remove legacy file {f}: {e}")
+
         for f in FILES_TO_COPY:
             src = os.path.join(SOURCE_DIR, f)
             dst = os.path.join(DEST_DIR, f)

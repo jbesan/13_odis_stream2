@@ -63,7 +63,7 @@ def build_scores_layer(df: pd.DataFrame) -> Tuple[flm.FeatureGroup, Optional[Any
     """Builds the FeatureGroup for all scored communes or bassins de vie, colored by score."""
     fg = flm.FeatureGroup(name="Scores")
     
-    view_level = st.session_state.get('view_level', 'Bassins de vie')
+    view_level = st.session_state.get('view_level', 'Communes')
 
     if view_level == 'Bassins de vie':
         id_col = cfg.BV_CODE_COL
@@ -175,13 +175,7 @@ def build_top_result_layer(row: pd.Series, rank: int) -> flm.FeatureGroup:
         style_function=lambda x: {"color": "red", "fillOpacity": 0, "weight": 3}
     ).add_to(fg)
 
-    # Binome commune outline (if it exists)
-    if row.binome and row.polygon_binome:
-        poly_binome_4326 = gpd.GeoSeries([row.polygon_binome], crs=cfg.PROJECTED_CRS).to_crs("EPSG:4326").iloc[0]
-        flm.GeoJson(
-            mapping(poly_binome_4326),
-            style_function=lambda x: {"color": "red", "fillOpacity": 0, "weight": 2, "dashArray": "5, 5"}
-        ).add_to(fg)
+
 
     # Add rank marker at the centroid of the main polygon
     # Project centroid to 4326
