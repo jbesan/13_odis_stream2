@@ -13,10 +13,12 @@ for k, v in st.session_state.items():
         st.session_state[k] = v
 app_data = st.session_state.app_data
 
+import utils
+
 # Sidebar
 with st.sidebar:
-    logo_path = ui.get_image_path('logo-jaccueille-singa.png')
-    logo_b64 = ui.get_base64_image(logo_path)
+    logo_path = utils.get_asset_path('logo-jaccueille-singa.png')
+    logo_b64 = utils.get_base64_image(logo_path)
     if logo_b64:
         st.markdown(f'<img src="data:image/png;base64,{logo_b64}" width="150" style="margin-bottom: 20px;">', unsafe_allow_html=True)
     else:

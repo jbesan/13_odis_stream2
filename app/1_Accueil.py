@@ -139,9 +139,11 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+import utils
+
 # --- Header Section (With Included Base64 Logo) ---
-logo_path = ui.get_image_path('logo-jaccueille-singa.png')
-logo_b64 = ui.get_base64_image(logo_path)
+logo_path = utils.get_asset_path('logo-jaccueille-singa.png')
+logo_b64 = utils.get_base64_image(logo_path)
 # Increased width to 240px (3x original 80px)
 logo_img_tag = f'<img src="data:image/png;base64,{logo_b64}" width="240" style="margin-bottom: 15px;">' if logo_b64 else ''
 

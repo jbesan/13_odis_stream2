@@ -30,27 +30,6 @@ def get_map_zoom(distance_km: Union[int, str]) -> int:
     if dist_int <= 100: return 8
     return 7
 
-def dissolve_communes_to_bassins_de_vie(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """
-    Merges commune geometries into 'bassin de vie' polygons in a robust way.
-    """
-    # Ensure the required columns are present
-    if cfg.BV_CODE_COL not in gdf.columns or not hasattr(gdf, 'geometry'):
-        return gpd.GeoDataFrame()
-
-    # Explicitly create a new, clean GeoDataFrame to avoid any unexpected columns.
-    # gdf.geometry correctly refers to the active geometry column, regardless of its name ('polygon' in this case).
-    gdf_simple = gpd.GeoDataFrame(
-        {cfg.BV_CODE_COL: gdf[cfg.BV_CODE_COL]},
-        geometry=gdf.geometry,
-        crs=gdf.crs # Preserve CRS
-    )
-
-    # Now dissolve this clean GeoDataFrame. The output will have BV_CODE_COL as the index
-    # and a single geometry column named 'geometry'.
-    gdf_bv = gdf_simple.dissolve(by=cfg.BV_CODE_COL)
-    
-    return gdf_bv
 
 
 def create_base_map(center: List[float], zoom: int) -> flm.Map:
@@ -63,18 +42,10 @@ def build_scores_layer(df: pd.DataFrame) -> Tuple[flm.FeatureGroup, Optional[Any
     """Builds the FeatureGroup for all scored communes or bassins de vie, colored by score."""
     fg = flm.FeatureGroup(name="Scores")
     
-    view_level = st.session_state.get('view_level', 'Communes')
-
-    if view_level == 'Bassins de vie':
-        id_col = cfg.BV_CODE_COL
-        name_col = 'libgeo'
-        tooltip_fields = [name_col, 'weighted_score']
-        tooltip_aliases = ['Bassin de vie:', 'Score:']
-    else: # Communes
-        id_col = 'codgeo'
-        name_col = 'libgeo'
-        tooltip_fields = [name_col, 'weighted_score']
-        tooltip_aliases = ['Commune:', 'Score:']
+    id_col = 'codgeo'
+    name_col = 'libgeo'
+    tooltip_fields = [name_col, 'weighted_score']
+    tooltip_aliases = ['Commune:', 'Score:']
 
     if id_col not in df.columns:
         # Check if it's in the index
@@ -99,38 +70,12 @@ def build_scores_layer(df: pd.DataFrame) -> Tuple[flm.FeatureGroup, Optional[Any
     # Add current commune in blue
     current_geo_df = st.session_state.selected_geo
     
-    if view_level == 'Bassins de vie':
-        # Get the BV code from the current commune
-        bv_code = current_geo_df[cfg.BV_CODE_COL].iloc[0]
-        # Get the BV geometry from the app_data
-        bv_geo_df = st.session_state.app_data['bv_geo']
-        
-        if bv_code in bv_geo_df.index:
-            # Create a serializable DF for the BV
-            # bv_geo_df has geometry column (already set as geometry)
-            current_geo_df_serializable = bv_geo_df.loc[[bv_code]].copy()
-            
-            # Fix for serialization error: drop non-serializable columns like 'centroid'
-            if 'centroid' in current_geo_df_serializable.columns:
-                current_geo_df_serializable.drop(columns=['centroid'], inplace=True)
-
-            # Ensure we have a libgeo for the tooltip, fallback to BV name if available or code
-            if cfg.BV_NAME_COL in current_geo_df_serializable.columns:
-                 current_geo_df_serializable['libgeo'] = current_geo_df_serializable[cfg.BV_NAME_COL]
-            else:
-                 current_geo_df_serializable['libgeo'] = f"Bassin de vie {bv_code}"
-        else:
-            # Fallback to commune if BV not found (should not happen if data is consistent)
-            current_geo_df_serializable = current_geo_df[['libgeo', 'polygon']].copy()
-            current_geo_df_serializable.set_geometry('polygon', inplace=True)
-            
-    else:
-        # Default to Commune view
-        # Prepare serializable DF in 4326 for Folium
-        current_geo_df_serializable = current_geo_df[['libgeo', 'polygon']].copy()
-        current_geo_df_serializable.set_geometry('polygon', inplace=True)
-        if current_geo_df_serializable.crs != "EPSG:4326":
-            current_geo_df_serializable = current_geo_df_serializable.to_crs("EPSG:4326")
+    # Default to Commune view
+    # Prepare serializable DF in 4326 for Folium
+    current_geo_df_serializable = current_geo_df[['libgeo', 'polygon']].copy()
+    current_geo_df_serializable.set_geometry('polygon', inplace=True)
+    if current_geo_df_serializable.crs != "EPSG:4326":
+        current_geo_df_serializable = current_geo_df_serializable.to_crs("EPSG:4326")
 
     flm.GeoJson(
         current_geo_df_serializable,

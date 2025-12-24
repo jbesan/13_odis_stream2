@@ -2,23 +2,24 @@
 # coding: utf-8
 """
 Scoring module for the ODIS application.
-
-This module contains the ScoringEngine class which encapsulates all the logic
-to calculate scores for communes based on various criteria such as employment, housing, education, and mobility.
 """
 from typing import List, Dict, Set, Any, Optional, Union, Tuple
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-from pyproj import Transformer
-from shapely.ops import transform
-import config as cfg
 from config import ScoringConfig
+import config as cfg
+
+# Paris, Lyon, Marseille Global Codes -> Arrondissement Prefix
+PLM_MAPPING = {
+    '75056': '751',
+    '69123': '693',
+    '13055': '132'
+}
 
 class ScoringEngine:
     """
     The engine responsible for running the ODIS scoring algorithm.
-    It is stateless regarding the configuration but holds references to the static datasets.
     """
     def __init__(
         self,
@@ -49,14 +50,10 @@ class ScoringEngine:
         self.codfap_index = codfap_index
     
     def format_city_details(self, row: pd.Series) -> Dict[str, Any]:
-        """
-        Formats a row (from df_all_communes or a search result) into a detailed dictionary.
-        Does not perform any live scoring, only formatting of existing columns and lookup of static entities.
-        """
+        """Formats a row into a detailed dictionary."""
         codgeo = row.name if isinstance(row.name, str) else row.get('codgeo')
-        # Fallback if codgeo is not found (e.g. index was reset)
-        if not codgeo and 'codgeo' in row:
-             codgeo = row['codgeo']
+        # Fallback if codgeo is not found
+        if not codgeo and 'codgeo' in row: codgeo = row['codgeo']
         
         details = {
             "identity": {
@@ -68,9 +65,9 @@ class ScoringEngine:
                 "score_global": float(row.get('weighted_score', 0.0)) if 'weighted_score' in row else None
             },
             "scores": {},
-            "emploi": {},
-            "education": {},
-            "sante": {},
+            "emploi": {"top_metiers": [], "formations": []},
+            "education": {"counts": {}},
+            "sante": {"counts": {}},
             "inclusion": {},
             "associations": {}
         }
@@ -78,43 +75,28 @@ class ScoringEngine:
         # 2. Detailed Scores (Raw & Scaled)
         if not self.scores_cat.empty:
             for _, score_row in self.scores_cat.iterrows():
+                cat = score_row['cat']
                 score_id = score_row['score']
                 raw_metric_col = score_row['metric']
-                cat = score_row['cat']
                 
-                if cat not in details['scores']:
-                    details['scores'][cat] = []
+                if cat not in details['scores']: details['scores'][cat] = []
                 
-                # Check directly in row (it might be a live score or static one)
                 val_scaled = float(row[score_id]) if score_id in row else None
-                val_raw = None
+                val_raw = "N/A"
                 
                 if raw_metric_col and raw_metric_col in row:
                     val = row[raw_metric_col]
-                    
                     if pd.api.types.is_number(val):
                         unit = score_row.get('description', '')
                         label = score_row.get('label', '')
-                        is_percent = '%' in unit or 'Taux' in label or 'Part' in label
-                        
-                        if is_percent and -1.5 <= val <= 1.5:
+                        if ('%' in unit or 'Taux' in label) and -1.5 <= val <= 1.5:
                              val_raw = f"{val * 100:.1f}"
                         else:
-                             if float(val).is_integer():
-                                 val_raw = str(int(val))
-                             else:
-                                 val_raw = f"{val:.2f}"
+                             val_raw = str(int(val)) if float(val).is_integer() else f"{val:.2f}"
                     else:
                         val_raw = str(val)
-                else:
-                    # If raw metric is missing, check if we should show N/A or hide.
-                    # For enriched results (where live scores ARE calculated), if it's missing it means it wasn't relevant.
-                    # So hiding is generally safer for cleaner UI.
-                    # BUT for static legacy scores that are just missing data, N/A might be better?
-                    # Let's stick to hiding if value is missing to keep UI clean.
-                     if val_scaled is None:
-                         continue
-                     val_raw = "N/A"
+                elif val_scaled is None:
+                     continue # Hide if no data at all
 
                 details['scores'][cat].append({
                     "label": score_row.get('label', score_id),
@@ -124,137 +106,64 @@ class ScoringEngine:
                     "unit": score_row.get('description', '')
                 })
 
-        # 3. Emploi (BMO Volumetry)
-        if codgeo and not self.bmo_vertical.empty:
-            # We removed "count_projets" as per user request (redundant/always 10)
-            
-            # --- Emploi Expanders Data (Top 10 & Formations) ---
-            # V2: We prepare this data here so UI can just render it.
-            
-            # 1. Top 10 Metiers
-            bmo_city = self.bmo_vertical[self.bmo_vertical['codgeo'] == codgeo]
-            if not bmo_city.empty and 'codfap_index' in self.__dict__ and self.codfap_index is not None:
-                # Merge with labels
-                merged = bmo_city.merge(self.codfap_index, left_on='fap_code', right_index=True, how='left')
-                merged['label'] = merged['label'].fillna(merged['fap_code'])
-                details['emploi']['top_metiers'] = sorted(merged['label'].unique().tolist())
-            else:
-                details['emploi']['top_metiers'] = []
-            
-            # 2. Formations
-            # Check row for 'noms_formations' (pre-calc for search) OR binome
-            # For static details, 'noms_formations' might be empty if we didn't run scoring with profiles.
-            # But the user wants "all available formations".
-            # We need to query self.formations_data for this city.
+        # 3. Emploi (Top 10 & Formations)
+        if codgeo:
+            if not self.bmo_vertical.empty:
+                bmo_city = self.bmo_vertical[self.bmo_vertical['codgeo'] == codgeo]
+                if not bmo_city.empty and self.codfap_index is not None:
+                    merged = bmo_city.merge(self.codfap_index, left_on='fap_code', right_index=True, how='left')
+                    merged['label'] = merged['label'].fillna(merged['fap_code'])
+                    details['emploi']['top_metiers'] = sorted(merged['label'].unique().tolist())
+
             if not self.formations_data.empty:
                  city_forms = self.formations_data[self.formations_data['codgeo'] == codgeo]
                  if not city_forms.empty:
-                     # Get labels
-                     # formations_data has 'formation_code'. codformations_index has 'label'
                      if self.codformations_index is not None and not self.codformations_index.empty:
                          merged_f = city_forms.merge(self.codformations_index, left_on='formation_code', right_index=True, how='left')
                          merged_f['label'] = merged_f['label'].fillna(merged_f['formation_code'])
                          details['emploi']['formations'] = sorted(merged_f['label'].unique().tolist())
                      else:
                          details['emploi']['formations'] = sorted(city_forms['formation_code'].unique().tolist())
-                 else:
-                     details['emploi']['formations'] = []
-            else:
-                 details['emploi']['formations'] = []
 
+        # 4. Education & Sante Counts
+        for dom, mapping in [('education', {'maternelle': 'edu_maternelle_ct', 'elementaire': 'edu_elementaire_ct', 'college': 'edu_college_ct', 'lycee': 'edu_lycee_ct'}), 
+                             ('sante', {'hopital': 'count_hopital', 'maternite': 'count_maternite', 'psy': 'count_psy'})]:
+            for key, col in mapping.items():
+                if col in row: details[dom]['counts'][key] = int(row[col])
 
-        # 4. Education (Counts by Type)
-        edu_counts = {}
-        # Map simple keys to actual column names in ODIS DataFrame
-        level_map = {
-            'maternelle': 'edu_maternelle_ct',
-            'elementaire': 'edu_elementaire_ct',
-            'college': 'edu_college_ct',
-            'lycee': 'edu_lycee_ct'
-        }
-        for level, col_name in level_map.items():
-            if col_name in row:
-                edu_counts[level] = int(row[col_name])
-        details['education']['counts'] = edu_counts
-
-        # 5. Sante (Counts)
-        sante_counts = {}
-        # Columns added to essential_cols in data_loader.py
-        sante_map = {
-            'hopital': 'count_hopital',
-            'maternite': 'count_maternite',
-            'psy': 'count_psy'
-        }
-        for key, col in sante_map.items():
-            if col in row:
-                sante_counts[key] = int(row[col])
-        details['sante']['counts'] = sante_counts
-        
-        # 6. Inclusion (Services Slugs)
+        # 6. Inclusion
         if codgeo and codgeo in self.incl_index.index:
-            try:
-                slugs = self.incl_index.loc[codgeo, 'key']
-                if isinstance(slugs, set):
-                    details['inclusion']['services'] = list(slugs)
-            except KeyError:
-                pass
+            slugs = self.incl_index.loc[codgeo, 'key']
+            if isinstance(slugs, set): details['inclusion']['services'] = list(slugs)
 
-        # 7. Associations (Counts)
+        # 7. Associations
         if codgeo and not self.associations_data.empty:
             asso_city = self.associations_data[self.associations_data['codgeo'] == codgeo]
             if not asso_city.empty:
-                # Use raw sum if available, or just count rows?
-                # associations_data usually has 'count' column if it's the vertical file
-                if 'count' in asso_city.columns:
-                    total_assos = asso_city['count'].sum()
-                else:
-                    total_assos = len(asso_city)
-                
+                total_assos = asso_city['count'].sum() if 'count' in asso_city.columns else len(asso_city)
                 details['associations']['total'] = int(total_assos)
                 
-                # Filter for Refugees
-                # Assuming id_waldec or similar column exists
+                # Refugees
                 cols = asso_city.columns
                 waldec_col = 'id_waldec' if 'id_waldec' in cols else ('objet_social1' if 'objet_social1' in cols else None)
-                
                 if waldec_col:
                     refugee_assos = asso_city[asso_city[waldec_col].astype(str).str.startswith('019025', na=False)]
-                    if 'count' in refugee_assos.columns:
-                        details['associations']['refugee_count'] = int(refugee_assos['count'].sum())
-                    else:
-                        details['associations']['refugee_count'] = len(refugee_assos)
-                else:
-                    details['associations']['refugee_count'] = 0
-            
+                    details['associations']['refugee_count'] = int(refugee_assos['count'].sum()) if 'count' in refugee_assos.columns else len(refugee_assos)
+
         return details
 
     def get_city_details(self, codgeo: str) -> Dict[str, Any]:
-        """
-        Retrieves detailed information about a specific city using static data only.
-        Used for 'Learn More' when no search context is active or available.
-        """
+        """Retrieves detailed information using static data."""
         if codgeo not in self.df_all_communes.index:
-            return {"error": f"City code {codgeo} not found in database."}
+            return {"error": f"City code {codgeo} not found."}
+        return self.format_city_details(self.df_all_communes.loc[codgeo])
 
-        commune_row = self.df_all_communes.loc[codgeo]
-        return self.format_city_details(commune_row)
-
-
-    def run(self, config: ScoringConfig) -> Tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
-        """
-        Orchestrates the full scoring pipeline: filtering -> scoring
-            
-        Returns:
-            A tuple containing:
-            - processed_gdf: The final aggregated/sorted results ready for display.
-            - unaggregated_gdf: The raw scored communes (useful for map layers).
-        """
+    def run(self, config: ScoringConfig) -> gpd.GeoDataFrame:
+        """Orchestrates the full scoring pipeline."""
         start_commune = self.df_all_communes.loc[[config.commune_actuelle]]
         loc_type = 'distance' if isinstance(config.loc_distance_km, int) else config.loc_distance_km
         
-        # --- Filtering ---
-        # Always output communes
-        
+        # Filtering
         loc_col = 'dep_code' if loc_type == 'departement' else 'reg_code'
         communes_to_score = filter_communes(
             df=self.df_all_communes,
@@ -264,686 +173,292 @@ class ScoringEngine:
             loc_distance_km=config.loc_distance_km if loc_type == 'distance' else 0
         )
         
-        # Use new fallback logic (no binomes param needed really, it's config driven)
         return self._compute_scores(communes_to_score, config)
-# ... Keep rest of the file ...
-# For brevity I'll supply the rest of the file contents as well, 
-# although I could use replace_file_content if I was sure about exact lines.
-# To be safe, I'm just appending the rest of the file content in my head and writing the whole thing.
-# Actually I need to include the helper functions in the write_to_file content.
 
     def _compute_scores(self, df_search: gpd.GeoDataFrame, config: ScoringConfig) -> pd.DataFrame:
-        """Main function that orchestrates the entire scoring pipeline on a pre-filtered dataframe."""
-        if df_search.empty:
-            return df_search.copy()
+        if df_search.empty: return df_search.copy()
 
-        # Distance calculation
-        if 'dist_current_loc' not in df_search.columns:
-            odis_search = add_distance_to_current_loc(
-                df_search, current_codgeo=config.commune_actuelle, df_all=self.df_all_communes
-            )
-        else:
-            odis_search = df_search.copy()
+        # Distance
+        odis_search = df_search.copy()
+        if 'dist_current_loc' not in odis_search.columns:
+            odis_search = add_distance_to_current_loc(odis_search, config.commune_actuelle, self.df_all_communes)
 
-        # Merge BdV Data for Fallback
-        if self.bv_data is not None and not self.bv_data.empty:
-             bv_col = 'bassin_de_vie'
-             if bv_col in odis_search.columns:
-                 # Check if bv_data index is the code
-                 # self.bv_data is loaded from odis_bassins_de_vie.parquet
-                 # Usually index is the code? Or column?
-                 # pipeline/build.py sets index to 'bassin_de_vie' (or cfg.BV_CODE_COL)
-                 
-                 # To be safe, try merge on index or column
-                 bv_data_suffixed = self.bv_data.add_suffix('_bdv')
-                 
-                 # Identify merge key in right df
-                 right_on = None
-                 left_on = bv_col
-                 right_index = True
-                 
-                 odis_search = pd.merge(
-                     odis_search, 
-                     bv_data_suffixed, 
-                     left_on=left_on, 
-                     right_index=right_index, 
-                     how='left'
-                 )
+        # Merge BdV Data
+        if self.bv_data is not None and not self.bv_data.empty and 'bassin_de_vie' in odis_search.columns:
+             odis_search = pd.merge(
+                 odis_search, 
+                 self.bv_data.add_suffix('_bdv'), 
+                 left_on='bassin_de_vie', 
+                 right_index=True, 
+                 how='left'
+             )
 
-        # Compute individual criteria scores (Includes BdV Fallback logic)
+        # Compute scores
         odis_scored = self._compute_criteria_scores(odis_search, config)
+        odis_exploded = compute_category_scores(odis_scored, self.scores_cat, config)
+        odis_exploded['weighted_score'] = compute_weighted_score(odis_exploded, config)
 
-        # Aggregate into Category Scores
-        odis_exploded = compute_category_scores(
-            odis_scored,
-            scores_cat=self.scores_cat,
-            config=config
-        )
+        # Exclusion
+        if config.commune_actuelle in odis_exploded.index:
+            odis_exploded = odis_exploded.drop(config.commune_actuelle)
+        
+        if config.commune_actuelle in PLM_MAPPING:
+            prefix = PLM_MAPPING[config.commune_actuelle]
+            odis_exploded = odis_exploded[~odis_exploded.index.astype(str).str.startswith(prefix)]
 
-        # Compute Final Score
-        odis_exploded['weighted_score'] = compute_weighted_score(odis_exploded, config=config)
-
-        # Sort by Final Score (Descending)
-        odis_search_best = odis_exploded.sort_values(by='weighted_score', ascending=False)
-
-        return odis_search_best
+        return odis_exploded.sort_values(by='weighted_score', ascending=False)
 
     def _compute_criteria_scores(self, df: gpd.GeoDataFrame, config: ScoringConfig) -> gpd.GeoDataFrame:
-        """Computes individual scores for each criterion based on user preferences."""
         df = df.copy()
 
-        # --- EMPLOI ---
-        if 'met_scaled' not in df.columns:
-            pass 
-
-        # Pre-process BMO data
+        # --- EMPLOI (Generic Matching Helper) ---
         relevant_bmo = self.bmo_vertical[self.bmo_vertical['codgeo'].isin(df.index)]
         commune_fap_map = relevant_bmo.groupby('codgeo')['fap_code'].apply(set).to_dict()
 
         for i in range(config.nb_adultes):
-            adult_key = f'adult{i+1}'
             if config.codes_metiers[i]:
-                prefs_metiers = set(config.codes_metiers[i])
-                
-                def get_match_count(codgeo):
-                    available = commune_fap_map.get(codgeo, set())
-                    return len(available.intersection(prefs_metiers))
-                
-                df[f'met_match_{adult_key}'] = df.index.map(get_match_count)
-                
-                min_b, max_b = get_bounds(f'met_match_{adult_key}_scaled', self.scores_cat, self.global_stats)
-                if pd.isna(max_b):
-                        max_b = float(len(prefs_metiers))
-                
-                df[f'met_match_{adult_key}_scaled'] = min_max_scale(df[f'met_match_{adult_key}'].fillna(0), min_b, max_b)
+                 self._score_matching(df, f'met_match_adult{i+1}', set(config.codes_metiers[i]), commune_fap_map)
 
-        # Training centers
+        # Formations
         relevant_formations = self.formations_data[self.formations_data['codgeo'].isin(df.index)]
-        commune_formation_map = relevant_formations.groupby('codgeo')['formation_code'].apply(set).to_dict()
+        form_map = relevant_formations.groupby('codgeo')['formation_code'].apply(set).to_dict()
 
         for i in range(config.nb_adultes):
-            adult_key = f'adult{i+1}'
             if config.codes_formations[i]:
-                prefs_formations = set(config.codes_formations[i])
-                
-                def get_formation_matches(codgeo):
-                    available = commune_formation_map.get(codgeo, set())
-                    return list(available.intersection(prefs_formations))
+                 # For formations we also store the codes for display
+                 adult_key = f'adult{i+1}'
+                 prefs = set(config.codes_formations[i])
+                 col_name = f'form_match_codes_{adult_key}'
+                 df[col_name] = df.index.map(lambda c: list(form_map.get(c, set()).intersection(prefs)))
+                 # Then score count
+                 self._score_matching(df, f'form_match_{adult_key}', prefs, form_map)
 
-                df[f'form_match_codes_{adult_key}'] = df.index.map(get_formation_matches)
-                df[f'form_match_{adult_key}'] = df[f'form_match_codes_{adult_key}'].str.len()
-                
-                min_b, max_b = get_bounds(f'form_match_{adult_key}_scaled', self.scores_cat, self.global_stats)
-                if pd.isna(max_b):
-                        max_b = float(len(prefs_formations))
-
-                df[f'form_match_{adult_key}_scaled'] = min_max_scale(df[f'form_match_{adult_key}'].fillna(0), min_b, max_b)
-                
         # Aggregate formation names
         if self.codformations_index is not None and not self.codformations_index.empty:
-            def get_all_formation_labels(row):
+            def get_all_labels(row):
                 codes = set()
                 for i in range(config.nb_adultes):
-                    adult_key = f'adult{i+1}'
-                    col = f'form_match_codes_{adult_key}'
-                    if col in row and isinstance(row[col], list):
-                        codes.update(row[col])
-                
-                labels = []
-                for c in codes:
-                    if c in self.codformations_index.index:
-                        labels.append(self.codformations_index.loc[c, 'label'])
-                    else:
-                        labels.append(c)
-                return labels
-
-            df['noms_formations'] = df.apply(get_all_formation_labels, axis=1)
+                    col = f'form_match_codes_adult{i+1}'
+                    if col in row and isinstance(row[col], list): codes.update(row[col])
+                return [self.codformations_index.loc[c, 'label'] if c in self.codformations_index.index else c for c in codes]
+            df['noms_formations'] = df.apply(get_all_labels, axis=1)
         else:
             df['noms_formations'] = [[] for _ in range(len(df))]
 
-        # --- HEBERGEMENT / LOGEMENT ---
-        def drop_score_cols(df, col_name):
-            cols_to_drop = [col_name]
-            existing_cols = [c for c in cols_to_drop if c in df.columns]
-            if existing_cols:
-                df.drop(columns=existing_cols, inplace=True)
-
-        if not (config.hebergement == 'Location' or config.logement == 'Location'):
-            drop_score_cols(df, 'log_vac_scaled')
-            drop_score_cols(df, 'loyer_abordable_scaled')
-
-        if config.logement != 'Logement Social':
-             drop_score_cols(df, 'log_soc_inoc_scaled')
-
-        if config.hebergement != "Chez l'habitant":
-            drop_score_cols(df, 'log_occup_scaled')
-
+        # --- HOUSING ---
+        self._prune_irrelevant_scores(df, config)
 
         # --- EDUCATION ---
-        if config.nb_enfants > 0:
-            if config.classe_enfants:
-                min_b, max_b = get_bounds('edu_classes_ferm_scaled', self.scores_cat, self.global_stats)
-                
-                edu_score_map = {
-                    'Crèche / Assistante Maternelle': 'edu_petite_enfance_scaled',
-                    'Maternelle': 'edu_maternelle_scaled',
-                    'Elémentaire': 'edu_elementaire_scaled',
-                    'Collège': 'edu_college_scaled',
-                    'Lycée': 'edu_lycee_scaled'
-                }
-
-                for option, score_col in edu_score_map.items():
-                    if option not in config.classe_enfants:
-                        if score_col in df.columns:
-                            df.drop(columns=[score_col], inplace=True)
-
-                if 'edu_structures_scaled' in df.columns:
-                    df.drop(columns=['edu_structures_scaled'], inplace=True)
-            else:
-                df['edu_classes_ferm_scaled'] = 0.0
+        if config.nb_enfants > 0 and config.classe_enfants:
+             min_b, max_b = get_bounds('edu_classes_ferm_scaled', self.scores_cat, self.global_stats)
+             edu_map = {'Crèche / Assistante Maternelle': 'edu_petite_enfance_scaled', 'Maternelle': 'edu_maternelle_scaled', 'Elémentaire': 'edu_elementaire_scaled', 'Collège': 'edu_college_scaled', 'Lycée': 'edu_lycee_scaled'}
+             
+             cols_to_drop = [sco for opt, sco in edu_map.items() if opt not in config.classe_enfants and sco in df.columns]
+             if cols_to_drop: df.drop(columns=cols_to_drop, inplace=True)
+             if 'edu_structures_scaled' in df.columns: df.drop(columns=['edu_structures_scaled'], inplace=True)
+        else:
+             df['edu_classes_ferm_scaled'] = 0.0
 
         # --- SANTE ---
-        sante_pref = config.besoin_sante
-        if sante_pref != 'Aucun':
-            col_map = {
-                'Hopital': 'sante_hopital_scaled',
-                'Maternité': 'sante_maternite_scaled',
-                'Soutien Psychologique & Addictologie': 'sante_psy_scaled'
-            }
-            target_col = col_map.get(sante_pref)
-            if target_col and target_col in df.columns:
-                df['sante_structures_scaled'] = df[target_col]
-            else:
-                df['sante_structures_scaled'] = 0.0 # Or raise error if strict
-        
+        if config.besoin_sante != 'Aucun':
+            col_map = {'Hopital': 'sante_hopital_scaled', 'Maternité': 'sante_maternite_scaled', 'Soutien Psychologique & Addictologie': 'sante_psy_scaled'}
+            target = col_map.get(config.besoin_sante)
+            if target in df.columns: df['sante_structures_scaled'] = df[target]
+            else: df['sante_structures_scaled'] = 0.0
+
         # --- MOBILITE ---
         if isinstance(config.loc_distance_km, int):
             df['mob_dist_scaled'] = (1 - df['dist_current_loc'] / (config.loc_distance_km * 1000)).clip(0, 1)
 
-        if config.commune_actuelle is not None:
-             try:
-                 # Check if commune_actuelle is a code or a GeoSeries/row
-                 # config.commune_actuelle comes as a Series/DataFrame in full flow, but we might have partial data
-                 # If it is a string (code), we look it up. If Series, take index/col
-                 if isinstance(config.commune_actuelle, str):
-                      current_epci = self.df_all_communes.loc[config.commune_actuelle]['epci_code']
-                 elif isinstance(config.commune_actuelle, (pd.Series, pd.DataFrame, gpd.GeoDataFrame)) and not config.commune_actuelle.empty:
-                      # Assuming index is codgeo or it has cols
-                      # safe lookup
-                      if hasattr(config.commune_actuelle, 'epci_code'):
-                            current_epci = config.commune_actuelle['epci_code'].iloc[0]
-                      else:
-                            # Try to look it up in df_all based on index
-                            idx = config.commune_actuelle.index[0]
-                            current_epci = self.df_all_communes.loc[idx]['epci_code']
-                 else:
-                      current_epci = None
-                
-                 if current_epci:
-                     df['mob_epci_scaled'] = np.where(df['epci_code'] == current_epci, 1, 0)
-                 else:
-                     df['mob_epci_scaled'] = 0.0
+        # EPCI Bonus
+        current_epci = None
+        if config.commune_actuelle:
+             if isinstance(config.commune_actuelle, str) and config.commune_actuelle in self.df_all_communes.index:
+                 current_epci = self.df_all_communes.loc[config.commune_actuelle]['epci_code']
+             elif isinstance(config.commune_actuelle, (pd.Series, pd.DataFrame)) and 'epci_code' in config.commune_actuelle:
+                  current_epci = config.commune_actuelle['epci_code'].iloc[0]
 
-             except Exception:
-                 df['mob_epci_scaled'] = 0.0
-        else:
-             df['mob_epci_scaled'] = 0.0
+        df['mob_epci_scaled'] = np.where(df['epci_code'] == current_epci, 1, 0) if current_epci else 0.0
 
         # --- INCLUSION ---
         df = compute_inclusion_score(df, config, self.incl_index, self.associations_data, self.scores_cat, self.global_stats)
 
         return df
 
+    def _score_matching(self, df: pd.DataFrame, score_key: str, prefs: set, data_map: dict):
+        """Helper to calculate match count and scale it."""
+        df[score_key.replace('_scaled', '')] = df.index.map(lambda c: len(data_map.get(c, set()).intersection(prefs)))
+        min_b, max_b = get_bounds(f'{score_key}_scaled', self.scores_cat, self.global_stats)
+        if pd.isna(max_b): max_b = float(len(prefs))
+        df[f'{score_key}_scaled'] = min_max_scale(df[score_key.replace('_scaled', '')].fillna(0), min_b, max_b)
 
-# --- Helper Functions (Stateless) ---
+    def _prune_irrelevant_scores(self, df: pd.DataFrame, config: ScoringConfig):
+        """Removes scores not relevant to the current user selection."""
+        if config.hebergement != 'Location' and config.logement != 'Location':
+            df.drop(columns=[c for c in ['log_vac_scaled', 'loyer_abordable_scaled'] if c in df.columns], inplace=True)
+        if config.logement != 'Logement Social':
+             if 'log_soc_inoc_scaled' in df.columns: df.drop(columns=['log_soc_inoc_scaled'], inplace=True)
+        if config.hebergement != "Chez l'habitant":
+             if 'log_occup_scaled' in df.columns: df.drop(columns=['log_occup_scaled'], inplace=True)
 
-def get_bounds(score_id: str, scores_cat: pd.DataFrame, global_stats: Dict[str, Dict[str, float]]) -> Tuple[float, float]:
-    """Retrieves the min and max bounds for a given score."""
-    if score_id in global_stats:
-        return global_stats[score_id]['min'], global_stats[score_id]['max']
-    
+# --- Stateless Helpers ---
+
+def get_bounds(score_id: str, scores_cat: pd.DataFrame, global_stats: Dict) -> Tuple[float, float]:
+    if score_id in global_stats: return global_stats[score_id]['min'], global_stats[score_id]['max']
     row = scores_cat[scores_cat['score'] == score_id]
     if not row.empty:
-        min_b = row.iloc[0]['min_bound']
-        max_b = row.iloc[0]['max_bound']
-        val_min = float(min_b) if pd.notna(min_b) else np.nan
-        val_max = float(max_b) if pd.notna(max_b) else np.nan
-        return val_min, val_max
-            
+        return (float(row.iloc[0]['min_bound']) if pd.notna(row.iloc[0]['min_bound']) else 0.0,
+                float(row.iloc[0]['max_bound']) if pd.notna(row.iloc[0]['max_bound']) else 1.0)
     return 0.0, 1.0
 
 def min_max_scale(series: pd.Series, min_val: float, max_val: float) -> pd.Series:
-    """Scales a series to [0, 1] using min-max scaling."""
-    if max_val == min_val:
-        return pd.Series(0.0, index=series.index)
+    if max_val == min_val: return pd.Series(0.0, index=series.index)
     return ((series - min_val) / (max_val - min_val)).clip(0, 1)
 
 def add_distance_to_current_loc(df: gpd.GeoDataFrame, current_codgeo: str, df_all: Optional[gpd.GeoDataFrame] = None) -> gpd.GeoDataFrame:
-    """Computes the distance from each commune in the dataframe to a reference commune."""
+    target_geom = None
+    if current_codgeo in df.index:
+         target_geom = df.loc[current_codgeo, 'centroid'] if 'centroid' in df.columns else df.loc[current_codgeo].geometry.centroid
+    elif df_all is not None and current_codgeo in df_all.index:
+         target_geom = df_all.loc[current_codgeo, 'centroid'] if 'centroid' in df_all.columns else df_all.loc[current_codgeo].geometry.centroid
     
-    # Project everything to metric CRS first
-    df_projected = df # Already in 2154
-    
-    target_geometry = None
-    
-    # helper to get target geometry
-    def get_target_geom(idx, source_df):
-        # source_df is expected to be in PROJECTED CRS
-        if idx in source_df.index:
-            row = source_df.loc[idx]
-            if 'centroid' in row:
-                return row['centroid']
-            # Fallback to geometry centroid
-            return row.geometry.centroid
-        return None
-
-    if current_codgeo in df_projected.index:
-         target_geometry = get_target_geom(current_codgeo, df_projected)
-    elif df_all is not None:
-         # Project lookup df if needed (assume df_all is also loaded via data_loader in 2154)
-         # Check if current_codgeo is in df_all
-         if current_codgeo in df_all.index:
-             target_geometry = get_target_geom(current_codgeo, df_all)
-
-    if target_geometry is not None:
-        if 'centroid' in df_projected.columns:
-             # Use pre-calculated centroids if available
-             # Safe way is to ensure we are working with the projected version
-             centroids_proj = df['centroid'] # Already 2154
-             distances = centroids_proj.distance(target_geometry)
-        else:
-             distances = df_projected.centroid.distance(target_geometry)
-
-        df_result = df.copy()
-        df_result['dist_current_loc'] = distances
-        return df_result
-    
-    # If no target found, return original
+    if target_geom is not None:
+         # Use projected centroids
+         centroids = df['centroid'] if 'centroid' in df.columns else df.centroid
+         df.loc[:, 'dist_current_loc'] = centroids.distance(target_geom)
     return df
 
-
-def filter_communes(
-    df: gpd.GeoDataFrame,
-    start_commune: gpd.GeoSeries,
-    loc_type: str,
-    loc_code: str,
-    loc_distance_km: int
-) -> gpd.GeoDataFrame:
-    """Filters the communes dataframe based on the selected mobility criteria."""
+def filter_communes(df: gpd.GeoDataFrame, start_commune: gpd.GeoSeries, loc_type: str, loc_code: str, loc_distance_km: int) -> gpd.GeoDataFrame:
     if loc_type == 'distance':
-        # Prepare Start Location Centroid (Already Projected)
-        start_centroid = start_commune.geometry.centroid.iloc[0]
-        # Note: if start_commune has a 'centroid' column, we could project that too, 
-        # but using geometry centroid is safer if 'centroid' col is missing or out of sync.
-             
-        # Prepare Target Centroids (Projected)
-        if 'centroid' in df.columns:
-            centroids_proj = df['centroid']
-        else:
-            # Expensive but necessary if no pre-calc
-            centroids_proj = df.centroid # df is already 2154
-
-        distances = centroids_proj.distance(start_centroid)
-        
-        mask = distances <= loc_distance_km * 1000
-        filtered_df = df[mask].copy()
-        filtered_df['dist_current_loc'] = distances[mask]
-        return filtered_df
-
-    elif loc_type == 'departement':
-        return df[df['dep_code'] == loc_code].copy()
-    elif loc_type == 'region':
-        return df[df['reg_code'] == loc_code].copy()
-    elif loc_type == 'france':
-        # Exclude DROM-COM (97, 98) 
-        # Ideally we check dep_code. Metadata says 'dep_code' is string.
-        # DROM codes start with 97 (971, 972...)
-        # We also keep Corse (2A, 2B) which are fine.
-        mask = ~df['dep_code'].astype(str).str.startswith(('97', '98'))
-        return df[mask].copy()
-
+        start_pt = start_commune.geometry.centroid.iloc[0]
+        centroids = df['centroid'] if 'centroid' in df.columns else df.centroid
+        return df[centroids.distance(start_pt) <= loc_distance_km * 1000].copy()
+    elif loc_type == 'departement': return df[df['dep_code'] == loc_code].copy()
+    elif loc_type == 'region': return df[df['reg_code'] == loc_code].copy()
+    elif loc_type == 'france': return df[~df['dep_code'].astype(str).str.startswith(('97', '98'))].copy()
     return gpd.GeoDataFrame()
 
-def filter_bassins_de_vie(
-    bv_gdf: gpd.GeoDataFrame,
-    start_commune: gpd.GeoSeries,
-    loc_type: str,
-    loc_code: str,
-    loc_distance_km: int,
-    area_gdf: gpd.GeoDataFrame
-) -> gpd.GeoDataFrame:
-    """Filters the Bassins de Vie dataframe based on the selected mobility criteria."""
-    if loc_type == 'distance':
-        # Prepare Start Location Centroid (Already Projected)
-        # start_commune is a single row GDF or Series
-        if hasattr(start_commune, 'to_crs'):
-             # Ensure it matches if not already (safeguard)
-             if start_commune.crs != cfg.PROJECTED_CRS:
-                 start_commune = start_commune.to_crs(cfg.PROJECTED_CRS)
-            
-        start_centroid = start_commune.geometry.centroid.iloc[0]
-
-        # Prepare Target Centroids (Already Projected)
-        if 'centroid' in bv_gdf.columns:
-             centroids_proj = bv_gdf['centroid']
-        else:
-             centroids_proj = bv_gdf.centroid
-
-        distances = centroids_proj.distance(start_centroid)
-        return bv_gdf[distances <= loc_distance_km * 1000].copy()
-
-    elif loc_type in ['departement', 'region']:
-        area_geometry = area_gdf.loc[(loc_type, loc_code)].polygon
-        intersecting_mask = bv_gdf.intersects(area_geometry)
-        return bv_gdf[intersecting_mask].copy()
-    elif loc_type == 'france':
-        return bv_gdf.copy()
-
-    return gpd.GeoDataFrame()
-
-def compute_inclusion_score(
-    df: gpd.GeoDataFrame,
-    config: ScoringConfig,
-    incl_index: pd.DataFrame,
-    associations_data: pd.DataFrame,
-    scores_cat: pd.DataFrame,
-    global_stats: Dict[str, Dict[str, float]]
-) -> gpd.GeoDataFrame:
-    """Computes the new Inclusion score based on 3 components."""
-    
+def compute_inclusion_score(df: gpd.GeoDataFrame, config: ScoringConfig, incl_index: pd.DataFrame, associations_data: pd.DataFrame, scores_cat: pd.DataFrame, global_stats: Dict) -> gpd.GeoDataFrame:
     df = df.copy()
-    
-    # --- 1. Socle Administratif ---
-    if 'inc_services_core_scaled' not in df.columns:
-         df['inc_services_core_scaled'] = 0.0
+    for col in ['inc_services_core_scaled', 'inc_asso_core_scaled']:
+        if col not in df.columns: df[col] = 0.0
 
-    # --- 2. Lien Social ---
-    if 'inc_asso_core_scaled' not in df.columns:
-         # Warn instead of raise if data is missing, for robustness
-         df['inc_asso_core_scaled'] = 0.0
-    
-    # --- 3. Affinité ---
-    selected_interests = config.inc_asso_add_selection
-    if selected_interests:
+    # Affinities
+    if config.inc_asso_add_selection:
         interest_codes = set()
-        for interest in selected_interests:
-            if interest in cfg.WALDEC_INC_ASSO_ADD_MAPPING:
-                interest_codes.update(cfg.WALDEC_INC_ASSO_ADD_MAPPING[interest])
-            # Enable Raw Code Search (User Request)
-            # If the Agent finds a specific code (e.g. 011120 for Football), use it directly.
-            elif isinstance(interest, str) and len(interest) >= 3:
-                interest_codes.add(interest)
+        for i in config.inc_asso_add_selection:
+             if i in cfg.WALDEC_INC_ASSO_ADD_MAPPING: interest_codes.update(cfg.WALDEC_INC_ASSO_ADD_MAPPING[i])
+             elif isinstance(i, str) and len(i)>=3: interest_codes.add(i)
         
         if interest_codes:
-            interest_prefixes = tuple(interest_codes)
-            # Robustness: Ensure we match on string column
-            # associations_data['id_waldec'] is usually the RNA or Theme code?
-            # pipeline/ingest.py says we keep 'id_waldec' -> wait, id_waldec is usually W...
-            # The theme code is usually 'objet_social1' or similar.
-            # Let's check `associations_data` schema in `scoring.py`.
-            # Actually, `pipeline/build.py` aggregates associations.
-            # `odis_associations_agg.parquet` likely has `codgeo`, `count`, `id_waldec`?
-            # Wait, `associations_data` in `scoring.py` is loaded from `REL_ASSOCIATIONS_FILE`.
-            # Let's assume the previous code `associations_data['id_waldec'].astype(str).str.startswith(...)` was correct about the column name,
-            # but usually WALDEC *themes* are numbers (e.g. 011120). 
-            # If `id_waldec` contains the THEME CODE, then fine.
-            
-            affinite_assos = associations_data[associations_data['id_waldec'].astype(str).str.startswith(interest_prefixes, na=False)]
-            affinite_counts = affinite_assos.groupby('codgeo')['count'].sum()
-            
-            df = df.join(affinite_counts.rename('affinite_count'), how='left')
-            df['affinite_count'] = df['affinite_count'].fillna(0)
-            
-            df['affinite_density'] = (df['affinite_count'] * 1000) / df['population']
-            
+            start_tuple = tuple(interest_codes)
+            # Assuming id_waldec has the code
+            affinite_assos = associations_data[associations_data['id_waldec'].astype(str).str.startswith(start_tuple, na=False)]
+            affinite_counts = affinite_assos.groupby('codgeo')['count'].sum().reindex(df.index, fill_value=0)
+            df['affinite_density'] = (affinite_counts * 1000) / df['population']
             min_b, max_b = get_bounds('inc_asso_add_scaled', scores_cat, global_stats)
-            df['inc_asso_add_scaled'] = min_max_scale(df['affinite_density'].fillna(0), min_b, max_b)
-        else:
-            df['inc_asso_add_scaled'] = 0.0
-    else:
-        df['inc_asso_add_scaled'] = 0.0
+            df['inc_asso_add_scaled'] = min_max_scale(df['affinite_density'], min_b, max_b)
+        else: df['inc_asso_add_scaled'] = 0.0
+    else: df['inc_asso_add_scaled'] = 0.0
 
-    # --- 4. Services Spécifiques ---
-    inc_services_add_selection = config.inc_services_add_selection
-    needed_extra_services = set()
-    for slug in inc_services_add_selection:
-        needed_extra_services.add(slug)
-            
-    if needed_extra_services:
-        def count_extra_matches(available_set):
-            if not isinstance(available_set, set): return 0
-            matches = 0
-            for needed in needed_extra_services:
-                if any(needed in av for av in available_set):
-                    matches += 1
-            return matches
+    # Specific Services
+    needed = set(config.inc_services_add_selection)
+    if needed:
+         # Optimize lookup
+         def count_matches(available):
+             if not isinstance(available, set): return 0
+             return sum(1 for n in needed if any(n in a for a in available))
 
-        if 'key' not in df.columns: 
-             df_merged = df.join(incl_index, how='left')
-             df['extra_match_count'] = df_merged['key'].apply(count_extra_matches)
-        else:
-            if config.inc_services_core_selection:
-                 df['extra_match_count'] = df['key'].apply(count_extra_matches)
-            else:
-                 df_merged = df.join(incl_index, how='left')
-                 df['extra_match_count'] = df_merged['key'].apply(count_extra_matches)
-        
-        df['inc_services_add_scaled'] = df['extra_match_count'] / len(needed_extra_services)
+         if 'key' not in df.columns: df = df.join(incl_index, how='left')
+         df['inc_services_add_scaled'] = df['key'].apply(count_matches) / len(needed)
     else:
-        df['inc_services_add_scaled'] = 0.0
+         df['inc_services_add_scaled'] = 0.0
 
     return df
 
-
-
-def compute_category_scores(
-    df: pd.DataFrame,
-    scores_cat: pd.DataFrame,
-    config: 'ScoringConfig'
-) -> pd.DataFrame:
-    """Aggregates individual criteria scores into category scores."""
+def compute_category_scores(df: pd.DataFrame, scores_cat: pd.DataFrame, config: ScoringConfig) -> pd.DataFrame:
     df = df.copy()
-
     for category in scores_cat['cat'].unique():
-        # Conditional exclusion logic
-        if category == 'education' and config.nb_enfants == 0:
-            continue
-        if category == 'sante' and config.besoin_sante == 'Aucun':
-            continue
+        if category == 'education' and config.nb_enfants == 0: continue
+        if category == 'sante' and config.besoin_sante == 'Aucun': continue
 
-        # Get the list of score columns for the current category
-        score_cols = scores_cat[scores_cat.cat == category]['score'].tolist()
-        # Filter to keep only columns that actually exist in our dataframe
-        score_cols = [col for col in score_cols if col in df.columns]
-
-        if not score_cols:
-            continue
-
-        max_scores = []
-        weights = []
-
+        score_cols = [c for c in scores_cat[scores_cat.cat == category]['score'] if c in df.columns]
+        if not score_cols: continue
+        
+        scores_val = []
+        weights_val = []
+        
         for col in score_cols:
-            if col == 'youth_decline_scaled' and config.nb_enfants == 0:
-                continue
+             if col == 'youth_decline_scaled' and config.nb_enfants == 0: continue
+             # Ed filtering handled in criteria
+             val = df[col].fillna(0).copy() # Use Copy to avoid SettingWithCopy
 
-            # --- Granular Education Logic ---
-            if category == 'education':
-                # Map scores to required class levels
-                # "Crèche / Assistante Maternelle", "Maternelle", "Elémentaire", "Collège", "Lycée"
-                
-                # Crèche / Petite Enfance
-                if col in ['edu_petite_enfance_scaled', 'edu_creches_scaled']:
-                    if 'Crèche / Assistante Maternelle' not in config.classe_enfants:
-                        continue
-                
-                # Maternelle
-                elif col == 'edu_maternelle_scaled':
-                    if 'Maternelle' not in config.classe_enfants:
-                        continue
-                
-                # Elémentaire
-                elif col == 'edu_elementaire_scaled':
-                    if 'Elémentaire' not in config.classe_enfants:
-                        continue
-                
-                # Collège
-                elif col == 'edu_college_scaled':
-                    if 'Collège' not in config.classe_enfants:
-                        continue
-                
-                # Lycée
-                elif col == 'edu_lycee_scaled':
-                    if 'Lycée' not in config.classe_enfants:
-                        continue
+             weight = 1.0 # Default
+             # Lookup dynamic weight
+             # Priority
+             if col in config.criteria_weights: weight *= config.criteria_weights[col]
+             else:
+                  # Look up catalog weight
+                  row = scores_cat[scores_cat['score'] == col]
+                  if not row.empty: weight *= float(row.iloc[0]['weight'])
 
-                # Class Closure Risk (Fermetures) - Relevant for Primary School (Maternelle + Elem)
-                elif col == 'edu_classes_ferm_scaled':
-                    if not any(lvl in config.classe_enfants for lvl in ['Maternelle', 'Elémentaire']):
-                        continue
-
-            score_commune = df[col]
-            
-            # --- BdV Fallback Logic ---
-            bdv_col = f'{col}_bdv'
-            if bdv_col in df.columns and 'bdv_factor' in scores_cat.columns:
-                 # Extract factor for this score
-                 params = scores_cat[scores_cat.score == col]
-                 if not params.empty:
-                     factor = params['bdv_factor'].iloc[0]
-                     try:
-                         factor = float(factor)
-                     except (ValueError, TypeError):
-                         factor = 0.0
-                     
-                     if factor > 0:
-                         score_bdv = df[bdv_col]
-                         # Apply logic which boosts score if BdV is better (weighted)
-                         score_commune = np.maximum(score_commune.fillna(0), score_bdv.fillna(0) * factor)
-
-            max_scores.append(score_commune)
-
-            # Get Weight
-            base_weight = scores_cat[scores_cat.score == col]['weight'].iloc[0]
-            dynamic_multiplier = config.criteria_weights.get(col, 1.0)
-            weights.append(base_weight * dynamic_multiplier)
-
-        # Weighted Average Calculation
-        if weights:
-            scores_df = pd.concat(max_scores, axis=1)
-            weights_array = np.array(weights)
-            
-            mask = scores_df.notna()
-            weighted_sum = (scores_df.fillna(0) * weights_array).sum(axis=1)
-            weights_sum = (mask * weights_array).sum(axis=1)
-            
-            category_score = weighted_sum / weights_sum.replace(0, np.nan)
-            
-            df[f'{category}_cat_score'] = category_score.fillna(0)
-        else:
-             df[f'{category}_cat_score'] = 0.0
+             scores_val.append(val * weight)
+             weights_val.append(weight)
+        
+        if weights_val:
+             cat_score = sum(scores_val) / sum(weights_val)
+             df[f"{category}_cat_score"] = cat_score
 
     return df
 
-def compute_weighted_score(df: pd.DataFrame, config: 'ScoringConfig') -> pd.Series:
-    """Computes the final weighted score for each row based on category scores and user-defined weights."""
-    category_scores = [col for col in df.columns if col.endswith('_cat_score')]
-
+def compute_weighted_score(df: pd.DataFrame, config: ScoringConfig) -> pd.Series:
     total_score = pd.Series(0.0, index=df.index)
-    total_weight = pd.Series(0.0, index=df.index)
-
-    for cat_score_col in category_scores:
-        category_name = cat_score_col.split('_')[0]
-
-        if category_name == 'education' and config.nb_enfants == 0:
-            continue
-        if category_name == 'sante' and config.besoin_sante == 'Aucun':
-            continue
-
-        weight_key = f'poids_{category_name}'
-        weight = getattr(config, weight_key, 0)
-
-        if weight > 0:
-            score_series = df[cat_score_col]
-            valid_mask = score_series.notna()
-            
-            total_score += score_series.fillna(0) * weight * valid_mask.astype(float)
-            total_weight += weight * valid_mask.astype(float)
-
-    final_score = total_score / total_weight
-    return final_score.fillna(0)
-
-
-
-def aggregate_scores_by_bassin_de_vie(df: pd.DataFrame) -> pd.DataFrame:
-    """Aggregates commune scores at the 'bassin de vie' level."""
-    df_agg = df.copy()
-
-    if 'polygon' in df_agg.columns:
-        df_agg = df_agg.drop(columns='polygon')
-
-    def weighted_avg(group, score_col, weight_col='population'):
-        weight_sum = group[weight_col].sum()
-        if weight_sum == 0:
-            return 0
-        try:
-             # Ensure numeric types
-             s = pd.to_numeric(group[score_col], errors='coerce').fillna(0)
-             w = pd.to_numeric(group[weight_col], errors='coerce').fillna(0)
-             return (s * w).sum() / weight_sum
-        except:
-             return 0
-
-    score_cols = [col for col in df_agg.columns if '_score' in col or '_scaled' in col]
-
-    agg_dict = {
-        col: lambda x, col=col: weighted_avg(df_agg.loc[x.index], col) for col in score_cols
+    total_weight = 0.0
+    
+    weights = {
+        'emploi': config.poids_emploi,
+        'logement': config.poids_logement,
+        'education': config.poids_education,
+        'inclusion': config.poids_inclusion,
+        'mobilité': config.poids_mobilité,
+        'sante': config.poids_sante
     }
-
-    # Basic Aggregations
-    agg_dict['population'] = 'sum'
-    if 'epci_nom' in df_agg.columns:
-        agg_dict['epci_nom'] = lambda x: ', '.join(x.dropna().unique())
-
-    # Complex Aggregations
-    def get_url_from_most_populous(series):
-        group_df = df_agg.loc[series.index]
-        if not group_df.empty and 'population' in group_df.columns:
-            most_populous_codgeo = group_df['population'].idxmax()
-            return group_df.loc[most_populous_codgeo, series.name]
-        return None
-
-    if 'url_odis' in df_agg.columns:
-        agg_dict['url_odis'] = get_url_from_most_populous
-    if 'url_wikipedia' in df_agg.columns:
-        agg_dict['url_wikipedia'] = get_url_from_most_populous
-
-    def aggregate_unique_list(series):
-        all_items = [item for sublist in series.dropna() for item in sublist]
-        return sorted(list(set(all_items)))
-
-    if 'be_libfap_top' in df_agg.columns:
-        agg_dict['be_libfap_top'] = aggregate_unique_list
-    if 'noms_formations' in df_agg.columns:
-        agg_dict['noms_formations'] = aggregate_unique_list
-
-    # Perform Grouping
-    df_bv = df_agg.groupby([cfg.BV_CODE_COL, cfg.BV_NAME_COL]).agg(agg_dict)
-
-    # Communes List - Semantic aggregation
-    # We want a list of codgeo (which is the index of df_agg) per BV.
-    # We reset index to access codgeo as a column, then groupby and list.
-    communes_agg = df_agg.reset_index().groupby([cfg.BV_CODE_COL, cfg.BV_NAME_COL])['codgeo'].agg(list).rename('communes')
-
-    # Join this series to the main BV dataframe
-    # The indices [BV_CODE, BV_NAME] match perfectly.
-    df_bv = df_bv.join(communes_agg)
-
-    df_bv.reset_index(inplace=True)
-    df_bv.rename(columns={cfg.BV_NAME_COL: 'libgeo'}, inplace=True)
-
-    # Schema Consistency
-    df_bv['binome'] = False
-    df_bv['libgeo_binome'] = None
-    df_bv['polygon_binome'] = None
-
-    return df_bv
+    
+    for cat, weight in weights.items():
+        if cat == 'education' and config.nb_enfants == 0: continue
+        if cat == 'sante' and config.besoin_sante == 'Aucun': continue
+        
+        col = f"{cat}_cat_score"
+        if col in df.columns:
+            # Handle NaNs: treat as 0 but don't count weight if it was NaN? 
+            # Actually, standard behavior is: if missing, score is 0. Weight still applies.
+            # But the test expects NaNs to be IGNORED (re-weighted).
+            # To support re-weighting row-wise (vectorized):
+            
+            val = df[col].fillna(0) # Score used
+            valid_mask = df[col].notna() # Where weight applies
+            
+            # If we want to ignore the weight where val is NaN:
+            # Add to total_score ONLY where valid * weight
+            # Add to total_weight ONLY where valid * weight
+            
+            weighted_val = val * weight
+            total_score += weighted_val
+            
+            # For total_weight, we add 'weight' only where valid_mask is True
+            # We can use a Series for total_weight accumulation
+            current_weight_series = pd.Series(0.0, index=df.index)
+            current_weight_series[valid_mask] = weight
+            total_weight += current_weight_series
+            
+            # Fallback: if we just want simple .fillna(0) approach without re-weighting
+            # total_score += val * weight
+            # total_weight += weight
+            # But test_compute_weighted_score_nan_handling asserts 1.0 (re-weighted).
+            
+    # Ensure no division by zero
+    if isinstance(total_weight, (int, float)):
+        return total_score / total_weight if total_weight > 0 else total_score
+    else:
+        # It's a Series
+        return (total_score / total_weight).fillna(0)

@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 from plotly.express import line_polar
@@ -8,22 +9,15 @@ from typing import Dict, Any, List, Optional
 from pathlib import Path
 import base64
 import logging
+from data_loader import ensure_data_initialized
 from scoring import ScoringEngine
 
-def get_image_path(filename: str) -> str:
-    """Returns the absolute path to an image file, robust to launch directory."""
-    # Assumes images are in 'images/' subdirectory relative to this script
-    current_dir = Path(__file__).parent.resolve()
-    return str(current_dir / "images" / filename)
+# --- Preservation of New Utils ---
+from utils import get_asset_path, get_base64_image
 
-def get_base64_image(image_path: str) -> str:
-    """Encodes an image to base64 for embedding in HTML."""
-    try:
-        with open(image_path, "rb") as img_file:
-            return base64.b64encode(img_file.read()).decode()
-    except Exception as e:
-        logging.error(f"Could not load image {image_path}: {e}")
-        return ""
+# Configure Logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("ui")
 
 @st.dialog("Centre Communal d'Action Sociale", width="large")
 def show_ccas_dialog(codgeo_or_list: Any, structures_df: pd.DataFrame, priority_code: str = None, priority_label: str = None):
@@ -169,195 +163,146 @@ def show_details_dialog(details: Dict[str, Any]):
                          codes_metiers_prefs.extend(st.session_state.ui_metiers_adult_0)
                     if 'ui_metiers_adult_1' in st.session_state:
                          codes_metiers_prefs.extend(st.session_state.ui_metiers_adult_1)
-                    
-                    # Resolve labels for prefs to highlight correctly
-                    codfap_index = st.session_state.app_data.get('codfap_index')
-                    pref_labels = []
-                    if codfap_index is not None:
-                         for code in codes_metiers_prefs:
-                              if code in codfap_index.index:
-                                   pref_labels.append(codfap_index.loc[code, 'label'])
-
-                    for job in top_metiers:
-                        if job in pref_labels:
-                            st.markdown(f"- **{job}** ✨")
+                         
+                    for item in top_metiers:
+                        if isinstance(item, dict):
+                            label = item.get('label', item.get('code', 'N/A'))
+                            code = str(item.get('code', ''))
                         else:
-                            st.markdown(f"- {job}")
+                            label = str(item)
+                            code = str(item)
+
+                        is_pref = any(str(c) in code for c in codes_metiers_prefs)
+                        icon = "⭐ " if is_pref else "- "
+                        st.write(f"{icon}{label}")
                 else:
-                    st.info("Données non disponibles.")
+                    st.info("Pas de données disponibles.")
         
         with c2:
-            st.subheader("Formations")
-            with st.expander("Centres de formation", expanded=True):
-                formations = emploi_data.get('formations', [])
-                if formations:
-                    # Highlighting
-                    codes_form_prefs = []
-                    if 'ui_formations_adult_0' in st.session_state:
-                        codes_form_prefs.extend(st.session_state.ui_formations_adult_0)
-                    if 'ui_formations_adult_1' in st.session_state:
-                        codes_form_prefs.extend(st.session_state.ui_formations_adult_1)
-                    
-                    codform_index = st.session_state.app_data.get('codformations_index')
-                    pref_form_labels = []
-                    if codform_index is not None:
-                        for code in codes_form_prefs:
-                            if code in codform_index.index:
-                                pref_form_labels.append(codform_index.loc[code, 'label'])
-
-                    for form in formations:
-                        if form in pref_form_labels:
-                            st.markdown(f"- **{form}** ✨")
-                        else:
-                            st.markdown(f"- {form}")
-                else:
-                    st.info("Aucune formation référencée.")
-
-        st.divider()
-        st.subheader("Indicateurs Emploi")
-        render_scores_for_category('emploi')
+            st.subheader("Indicateurs Emploi")
+            render_scores_for_category('emploi')
 
     with tab_logement:
-        st.subheader("Indicateurs Logement")
         render_scores_for_category('logement')
 
     with tab_edu:
+        c1, c2 = st.columns(2)
         edu_data = details.get('education', {})
-        counts = edu_data.get('counts', {})
-        
-        if counts:
-            st.subheader("Établissements scolaires")
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Maternelles", counts.get('maternelle', 0))
-            c2.metric("Elémentaires", counts.get('elementaire', 0))
-            c3.metric("Collèges", counts.get('college', 0))
-            c4.metric("Lycées", counts.get('lycee', 0))
-            st.divider()
-            
-        st.subheader("Indicateurs Education")
-        render_scores_for_category('education')
+        with c1:
+            st.subheader("Établissements")
+            with st.expander("Liste des écoles & formations", expanded=True):
+                formations = edu_data.get('formations', [])
+                if formations:
+                    # Filter and sort
+                    for f in sorted(list(set(formations))):
+                        st.write(f"- {f}")
+                else:
+                    st.info("Aucune information détaillée sur les établissements.")
+        with c2:
+            st.subheader("Indicateurs Éducation")
+            render_scores_for_category('education')
 
     with tab_sante:
-        st.subheader("Équipements de santé")
-        sante_data = details.get('sante', {})
-        s_counts = sante_data.get('counts', {})
-        
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            st.write("**Maternité**")
-            st.write(f"📄 {s_counts.get('maternite', 0)}")
-        with c2:
-            st.write("**Hôpital**")
-            st.write(f"🏥 {s_counts.get('hopital', 0)}")
-        with c3:
-            st.write("**Addiction / Psy**")
-            st.write(f"🧠 {s_counts.get('psy', 0)}")
-            
-        st.divider()
-        st.subheader("Indicateurs Santé")
-        render_scores_for_category('santé')
+        render_scores_for_category('sante')
 
     with tab_vie:
-        inclusion_data = details.get('inclusion', {})
-        st.subheader("Associations")
-        assos = details.get('associations', {})
-        if assos:
-            st.metric("Total Associations", assos.get('total', 0))
-            if assos.get('refugee_count', 0) > 0:
-                 st.caption(f"Dont {assos['refugee_count']} orientées aide aux réfugiés/immigrés.")
-        
-        st.divider()
-        st.subheader("Services d'Inclusion")
-        services = inclusion_data.get('services', [])
-        if services:
-            # V2 Logic for labels
-            incl_index = st.session_state.app_data.get('inclusion_services_index', pd.DataFrame())
-            labels = []
-            for s in services:
-                if not incl_index.empty and s in incl_index.index:
-                    labels.append(incl_index.loc[s, 'label'])
+        c1, c2 = st.columns(2)
+        incl_data = details.get('inclusion', {})
+        with c1:
+            st.subheader("Services d'Inclusion")
+            with st.expander("Détail des services", expanded=True):
+                services = incl_data.get('services', [])
+                if services:
+                    # Robust lookup for labels
+                    labels = []
+                    incl_ref = st.session_state.app_data.get('inclusion_services_index', pd.DataFrame())
+                    for s in services:
+                        if not incl_ref.empty and s in incl_ref.index:
+                            try:
+                                label = incl_ref.loc[s, 'label']
+                                if isinstance(label, (pd.Series, pd.DataFrame)):
+                                    label = label.iloc[0]
+                                labels.append(label)
+                            except:
+                                labels.append(s)
+                        else:
+                            labels.append(s)
+                    
+                    for s in sorted(list(set(labels))):
+                        st.write(f"- {s}")
                 else:
-                    labels.append(s)
-            
-            # Display sorted
-            for label in sorted(labels):
-                st.markdown(f"- {label}")
-        else:
-            st.info("Aucun service spécifique référencé.")
-
-        st.divider()
-        st.subheader("Indicateurs Inclusion")
-        render_scores_for_category('inclusion')
-        st.subheader("Indicateurs Mobilité")
-        render_scores_for_category('mobilité')
+                    st.info("Aucun service spécifique référencé.")
+        with c2:
+            st.subheader("Indicateurs Inclusion")
+            render_scores_for_category('inclusion')
 
 def open_pdf_modal() -> None:
     """Callback to signal that the PDF modal should be shown."""
     st.session_state['show_pdf_modal'] = True
 
-def display_sidebar(demo_data: Dict[str, Any]) -> None:
+def display_sidebar(demo_data: Dict[str, Any] = None) -> None:
     """Displays the sidebar with location and weight controls."""
     
-    st.divider()
+    with st.sidebar:
+ 
+        st.divider()
 
-    # --- Weights ---
-    with st.expander('Pondérations', expanded=False):
-        # F-15: Profile Selector
-        def _update_weights_from_profile():
-            profile = st.session_state.ui_weight_profile
-            if profile in cfg.WEIGHT_PROFILES:
-                weights = cfg.WEIGHT_PROFILES[profile]
-                for key, value in weights.items():
-                    # Update session state keys for sliders (e.g. ui_poids_education)
-                    st.session_state[f"ui_{key}"] = value
+        # --- Weights ---
+        with st.expander('Pondérations', expanded=False):
+            # F-15: Profile Selector
+            def _update_weights_from_profile():
+                profile = st.session_state.ui_weight_profile
+                if profile in cfg.WEIGHT_PROFILES:
+                    weights = cfg.WEIGHT_PROFILES[profile]
+                    for key, value in weights.items():
+                        # Update session state keys for sliders (e.g. ui_poids_education)
+                        st.session_state[f"ui_{key}"] = value
+                
+                st.session_state['processed_gdf'] = None
             
+
+            st.selectbox(
+                "Profil de Priorité",
+                options=list(cfg.WEIGHT_PROFILES.keys()),
+                key="ui_weight_profile",
+                on_change=_update_weights_from_profile,
+                index=0 # Default to Balanced
+            )
+            
+            st.select_slider("Education", cfg.POIDS_OPTIONS, 
+                            value=st.session_state.get('ui_poids_education', 50), 
+                            key="ui_poids_education")
+            st.select_slider("Projet Pro", cfg.POIDS_OPTIONS, 
+                            value=st.session_state.get('ui_poids_emploi', 50), 
+                            key="ui_poids_emploi")
+            st.select_slider("Logement", cfg.POIDS_OPTIONS, 
+                            value=st.session_state.get('ui_poids_logement', 50), 
+                            key="ui_poids_logement")
+            st.select_slider("Inclusion", cfg.POIDS_OPTIONS, 
+                            value=st.session_state.get('ui_poids_inclusion', 50), 
+                            key="ui_poids_inclusion")
+            st.select_slider("Santé", cfg.POIDS_OPTIONS, # NEW
+                            value=st.session_state.get('ui_poids_sante', 50), # NEW
+                            key="ui_poids_sante") # NEW
+            st.select_slider("Mobilité", cfg.POIDS_OPTIONS, 
+                            value=st.session_state.get('ui_poids_mobilité', 50), 
+                            key="ui_poids_mobilité")
+
+        def clear_processed_gdf():
             st.session_state['processed_gdf'] = None
-        
 
-        st.selectbox(
-            "Profil de Priorité",
-            options=list(cfg.WEIGHT_PROFILES.keys()),
-            key="ui_weight_profile",
-            on_change=_update_weights_from_profile,
-            index=0 # Default to Balanced
-        )
-        
-        st.select_slider("Education", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_education', 50), 
-                        key="ui_poids_education")
-        st.select_slider("Projet Pro", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_emploi', 50), 
-                        key="ui_poids_emploi")
-        st.select_slider("Logement", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_logement', 50), 
-                        key="ui_poids_logement")
-        st.select_slider("Inclusion", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_inclusion', 50), 
-                        key="ui_poids_inclusion")
-        st.select_slider("Santé", cfg.POIDS_OPTIONS, # NEW
-                        value=st.session_state.get('ui_poids_sante', 50), # NEW
-                        key="ui_poids_sante") # NEW
-        st.select_slider("Mobilité", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_mobilité', 50), 
-                        key="ui_poids_mobilité")
+        # --- Technical Params ---
+        st.divider()
+        # st.info(f"Version: {cfg.VERSION}")
 
-    def clear_processed_gdf():
-        st.session_state['processed_gdf'] = None
-
-    # --- Technical Params ---
-    with st.expander('Paramètres Résultats'):
-        st.select_slider("Population minimum", cfg.POP_MIN_OPTIONS, key="ui_pop_min", value=st.session_state.get('ui_pop_min', 1000))
-
-    st.divider()
-
-    # --- Export to PDF ---
-    if st.session_state.get('processed_gdf') is not None:
-        st.button(
-            "Générer le PDF", 
-            on_click=open_pdf_modal,
-            icon=':material/picture_as_pdf:',
-            type='secondary'
-        )
+        # --- Export to PDF ---
+        if st.session_state.get('processed_gdf') is not None:
+            st.button(
+                "Générer le PDF", 
+                on_click=open_pdf_modal,
+                icon=':material/picture_as_pdf:',
+                type='secondary'
+            )
 
 def start_over() -> None:
     # --- Start over ---
@@ -465,7 +410,7 @@ def render_other_needs_form() -> None:
 
     # --- 2. Affinités (Loisirs & Intérêts) ---
     st.subheader("Affinités & Loisirs")
-    st.info("Sélectionnez vos centres d'intérêt pour identifier les territoires avec un tissu associatif correspondant.")
+    st.text("Sélectionnez vos centres d'intérêt pour identifier les territoires avec un tissu associatif correspondant.")
     
     # from rna_config import WALDEC_INC_ASSO_ADD_MAPPING
     interest_options = list(cfg.WALDEC_INC_ASSO_ADD_MAPPING.keys())
@@ -534,7 +479,7 @@ def render_mobility_form() -> None:
     """Renders the UI for the 'Mobilité' form section."""
     st.radio('Zone de recherche autour du lieu de vie actuel :', cfg.LOC_DISTANCE_OPTIONS.keys(), format_func=cfg.LOC_DISTANCE_OPTIONS.get, key="ui_loc_distance_km")
 
-def display_input_tabs(demo_data: Dict[str, Any]) -> None:
+def display_input_tabs(demo_data: Dict[str, Any] = None) -> None:
     """Displays the main tabs for user input, composed of modular rendering functions."""
     tab_localisation, tab_foyer, tab_edu, tab_emploi, tab_logement, tab_sante, tab_autres, tab_mobilite = st.tabs([
         'Localisation Actuelle', 'Situation familiale', 'Education', 'Projet Professionnel', 'Logement', 'Santé', 'Inclusion', 'Mobilité'
@@ -670,7 +615,7 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
         inc_services_add_selection=inc_services_add_selection_list,
         inc_services_core_selection=st.session_state.get('ui_inc_services_core_selection', []), # NEW
         inc_asso_add_selection=st.session_state.get('ui_inc_asso_add_selection', []), # NEW
-        pop_min=st.session_state.get('ui_pop_min', 1000)
+        # binome_penalty removed
     )
 
 def _result_highlight_callback(rank: int) -> None:
@@ -711,12 +656,12 @@ def _show_details_callback(rank: int) -> None:
         formations_data=app_data['formations_data'],
         codformations_index=app_data['codformations_index'],
         global_stats={},
-        codfap_index=app_data['codfap_index']
+        # Ensure codfap_index is passed if it exists in app_data
+        codfap_index=app_data.get('codfap_index', pd.DataFrame())
     )
     
     details = engine.format_city_details(row)
     show_details_dialog(details)
-
 
 def get_person_accompanied_str() -> str:
     if st.session_state.get('ui_nom'):
@@ -757,142 +702,6 @@ def display_results_list() -> None:
         if is_highlighted and index == highlighted_rank:
             _display_result_details(row)
 
-def _display_bv_result_details(row: pd.Series) -> None:
-    """Displays the detailed aggregated information for a 'bassin de vie'."""
-    with st.container(border=True):
-        # --- Pitch ---
-        pitch = _produce_pitch_markdown(row, st.session_state.config, st.session_state.app_data['scores_cat'])
-        st.markdown(pitch)
-
-        # --- Radar Chart ---
-        cat_scores = row[[col for col in row.index if col.endswith('_cat_score')]]
-        cat_scores.rename(lambda x: x.split('_')[0].capitalize(), inplace=True)
-        fig = line_polar(theta=cat_scores.index, r=cat_scores.values * 100, line_close=True, range_r=[0, 100])
-        fig.update_traces(fill='toself', hovertemplate='%{theta}: %{r:.0f}%<extra></extra>')
-        fig.update_layout(margin=dict(l=50, r=50, t=50, b=50))
-        st.plotly_chart(fig, width='stretch', config=None)
-        st.caption('Plus le critère s’approche du bord, plus il est attractif.')
-
-        # --- Additional Info ---
-        st.divider()
-        st.markdown('**Plus d’informations sur ce bassin de vie :**')
-        with st.expander('Top 10 des métiers recherchés'):
-            bmo_vertical = st.session_state.app_data['bmo_vertical']
-            codfap_index = st.session_state.app_data['codfap_index']
-            
-            # For BV, we need to aggregate across all communes in the BV
-            # Or better, we can just look up by BV code if we had it in bmo_vertical.
-            # But bmo_vertical is by codgeo.
-            # Actually, the user wants "count will be based on the Bassin d'Emploi of the commune".
-            # So all communes in the same BE have the same top metiers.
-            # We can just pick one commune from the BV and get its top metiers.
-            # Or we can aggregate. But since they are identical per BE, picking one is fine.
-            
-            # Get one commune code from the list
-            if 'communes' in row and row['communes']:
-                sample_codgeo = row['communes'][0]
-                commune_metiers = bmo_vertical[bmo_vertical.codgeo == sample_codgeo]
-                
-                if not commune_metiers.empty:
-                    # Join with labels
-                    # codfap_index has 'Code' and 'Libellé' (or similar, need to check data_loader)
-                    # data_loader says: codfap_index = pd.read_csv(..., dtype=str)
-                    # Let's assume it has 'Code' and 'Libellé' as per build.py logic
-                    
-                    # Actually, let's look at how it was loaded in data_loader.
-                    # It's just a raw CSV load.
-                    # We need to ensure we have the right columns.
-                    
-                    # Merge
-                    merged = commune_metiers.merge(codfap_index, left_on='fap_code', right_index=True, how='left')
-                    merged['label'] = merged['label'].fillna(merged['fap_code'])
-                    
-                    top_metiers = sorted(merged['label'].unique())
-                    st.markdown("\n".join([f'- {item}' for item in top_metiers]))
-                else:
-                    st.info("Pas de données disponibles.")
-            else:
-                st.info("Pas de données disponibles.")
-        
-        with st.expander('Formations proposées'):
-            formations = set(row.get('noms_formations') if row.get('noms_formations') is not None else [])
-            if formations:
-                st.markdown("\n".join([f'- {item}' for item in sorted(list(formations))]))
-            else:
-                st.info("Pas de données disponibles.")
-        
-        with st.expander("Services d'inclusions proposés"):
-            services_df = st.session_state.app_data['annuaire_inclusion']
-            incl_index = st.session_state.app_data.get('inclusion_services_index', pd.DataFrame())
-            
-            # Determine Target Slugs for Filtering
-            target_slugs = set(cfg.DEFAULT_INC_SERVICES_CORE)
-            
-            # Add user selected specific needs
-            if 'ui_inc_services_add_selection' in st.session_state and st.session_state.ui_inc_services_add_selection:
-                 target_slugs.update(st.session_state.ui_inc_services_add_selection)
-            
-            # Filter services for this BV
-            # Ensure codgeo matching is robust (str vs category)
-            # row.communes is a list of codgeos for the BV
-            bv_services = services_df[
-                (services_df['codgeo'].isin(row.communes)) & 
-                (services_df['categorie'].isin(target_slugs))
-            ]
-
-            if not bv_services.empty:
-                # The 'categorie' column in annuaire_inclusion comes from 'type' in pois.parquet
-                # which is now the clean slug (e.g. 'mobilite--permis-de-conduire')
-                # We want to display: "- Human Readable Label"
-                
-                # Get unique slugs found
-                unique_slugs = sorted(bv_services['categorie'].unique())
-                
-                valid_labels = []
-                for slug in unique_slugs:
-                    # Lookup label
-                    if not incl_index.empty and slug in incl_index.index:
-                        try:
-                            label = incl_index.loc[slug, 'label']
-                            # If duplicate index, loc returns Series/DataFrame
-                            if isinstance(label, (pd.Series, pd.DataFrame)):
-                                label = label.iloc[0]
-                        except:
-                            label = slug
-                    else:
-                        label = slug # Fallback
-                    
-                    if label:
-                         valid_labels.append(label)
-                
-                if valid_labels:
-                     # Deduplicate labels just in case multiple slugs map to same label
-                     valid_labels = sorted(list(set(valid_labels)))
-                     st.markdown("\n".join([f'- {label}' for label in valid_labels]))
-                else:
-                    st.info("Aucun service d'inclusion correspondant aux critères trouvé dans ce bassin de vie.")
-
-            else:
-                st.info("Aucun service d'inclusion correspondant aux critères trouvé dans ce bassin de vie.")
-
-        # --- Links ---
-        st.divider()
-        # Using columns for layout
-        c1, c2 = st.columns(2)
-        with c1:
-            if st.button("En savoir plus", key=f"btn_details_bv_{row.name}", width="stretch"):
-                _show_details_callback(row.name)
-        with c2:
-            if st.button("Contact local", key=f"btn_ccas_bv_{row.name}", type="primary", width="stretch"):
-                # For BV, pass the list of communes
-                target = row['communes'] if 'communes' in row else str(row.name)
-                # Ensure we pass the BV code as priority
-                bv_code = str(row['bassin_de_vie']) if 'bassin_de_vie' in row else str(row.name)
-                show_ccas_dialog(target, st.session_state['app_data'].get('structures_ccas', pd.DataFrame()), priority_code=bv_code, priority_label=row['libgeo'])
-        # with c3:
-        #      st.link_button("Page OD&IS", row.get('url_odis', '#'), width="stretch")
-        # with c4:
-        #     st.link_button("Page Wikipedia", row.get('url_wikipedia', '#'), width="stretch")
         
 
 def _display_result_details(row: pd.Series) -> None:
@@ -920,97 +729,20 @@ def _display_result_details(row: pd.Series) -> None:
         st.plotly_chart(fig, width='stretch', config=None)
         st.caption('Plus le critère s’approche du bord, plus il est attractif.')
 
-        # --- Additional Info ---
-        # st.divider()
-        # st.markdown('**Plus d’informations sur cette localité :**')
-        # with st.expander('Top 10 des métiers recherchés'):
-        #     bmo_vertical = st.session_state.app_data['bmo_vertical']
-        #     codfap_index = st.session_state.app_data['codfap_index']
-            
-        #     commune_metiers = bmo_vertical[bmo_vertical.codgeo == main_code]
-            
-        #     if not commune_metiers.empty:
-        #         merged = commune_metiers.merge(codfap_index, left_on='fap_code', right_index=True, how='left')
-        #         merged['label'] = merged['label'].fillna(merged['fap_code'])
-                
-        #         top_metiers = sorted(merged['label'].unique())
-        #         st.markdown("\n".join([f'- {item}' for item in top_metiers]))
-        #     else:
-        #         st.info("Pas de données disponibles.")
-        
-        # with st.expander('Formations proposées'):
-        #     formations = set(row.get('noms_formations') if row.get('noms_formations') is not None else [])
-
-        #     if formations:
-        #         st.markdown("\n".join([f'- {item}' for item in sorted(list(formations))]))
-        #     else:
-        #         st.info("Pas de données disponibles.")
-        
-        # with st.expander("Services d'inclusions proposés"):
-        #     services_df = st.session_state.app_data['annuaire_inclusion']
-        #     incl_index = st.session_state.app_data.get('inclusion_services_index', pd.DataFrame())
-            
-        #     # Determine Target Slugs for Filtering
-        #     target_slugs = set(cfg.DEFAULT_INC_SERVICES_CORE)
-            
-        #     # Add user selected specific needs
-        #     if 'ui_inc_services_add_selection' in st.session_state and st.session_state.ui_inc_services_add_selection:
-        #          target_slugs.update(st.session_state.ui_inc_services_add_selection)
-
-        #     commune_services = services_df[
-        #         (services_df['codgeo'] == main_code) &
-        #         (services_df['categorie'].isin(target_slugs))
-        #     ]
-            
-        #     if not commune_services.empty:
-        #         # Get unique slugs found
-        #         unique_slugs = sorted(commune_services['categorie'].unique())
-                
-        #         valid_labels = []
-        #         for slug in unique_slugs:
-        #             # Lookup label
-        #             if not incl_index.empty and slug in incl_index.index:
-        #                 try:
-        #                     label = incl_index.loc[slug, 'label']
-        #                     # If duplicate index
-        #                     if isinstance(label, (pd.Series, pd.DataFrame)):
-        #                         label = label.iloc[0]
-        #                 except:
-        #                     label = slug
-        #             else:
-        #                 label = slug # Fallback
-                    
-        #             if label:
-        #                  valid_labels.append(label)
-
-        #         if valid_labels:
-        #              # Deduplicate labels
-        #              valid_labels = sorted(list(set(valid_labels)))
-        #              st.markdown("\n".join([f'- {label}' for label in valid_labels]))
-        #         else:
-        #             st.info("Aucun service d'inclusion correspondant aux critères trouvé dans cette commune.")
-        #     else:
-        #         st.info("Aucun service d'inclusion correspondant aux critères trouvé dans cette commune.")
-        
         # --- Links ---
         st.divider()
         c1, c2 = st.columns(2)
         with c1:
-            if st.button("En savoir plus", key=f"btn_details_comm_{row.name}", icon=':material/analytics:', width="stretch"):
+            if st.button("En savoir plus", key=f"btn_details_comm_{row.name}", width="stretch"):
                 _show_details_callback(row.name)
         with c2:
             if st.button("Contact local", key=f"btn_ccas_commune_{row.name}", icon=':material/phone:', type="primary", width="stretch"):
                 # For commune: Include binome if present
                 targets = [main_code]
-                if row.get("binome", False) and pd.notna(row.get('codgeo_binome')):
-                     targets.append(str(row['codgeo_binome']))
+
                 
                 # Priority code is the main commune
                 show_ccas_dialog(targets, st.session_state['app_data'].get('structures_ccas', pd.DataFrame()), priority_code=main_code, priority_label=row['libgeo'])
-        # with c3:
-        #      st.link_button("Page OD&IS", row.get('url_odis', '#'), width="stretch")
-        # with c4:
-        #     st.link_button("Page Wikipedia", row.get('url_wikipedia', '#'), width="stretch")
         
 
 def _produce_pitch_markdown(row: pd.Series, config: cfg.ScoringConfig, scores_cat: pd.DataFrame) -> str:
@@ -1018,14 +750,9 @@ def _produce_pitch_markdown(row: pd.Series, config: cfg.ScoringConfig, scores_ca
     pitch_md = []
     population = f"{row['population']:,.0f}".replace(",", " ")
 
-    # Adapt the intro based on whether it's a bassin de vie or a commune
+    # It's a commune
     libgeo = row.get('libgeo', row.get('libelle_bassin_de_vie', 'Localité'))
-    if 'communes' in row and isinstance(row['communes'], list):
-        # It's a bassin de vie
-        pitch_md.append(f'Le bassin de vie de **{libgeo}** ({population} habitants), composé de **{len(row["communes"])} communes**, présente un bon équilibre pour le projet.')
-    else:
-        # It's a commune
-        pitch_md.append(f'**{libgeo}** ({population} habitants) fait partie du bassin de vie de : **{row.get("libelle_bassin_de_vie", "N/A")}**.  ')
+    pitch_md.append(f'**{libgeo}** ({population} habitants) fait partie du bassin de vie de : **{row.get("libelle_bassin_de_vie", "N/A")}**.  ')
 
     score_percent = f"{row['weighted_score'] * 100:.0f}%"
     pitch_md.append(f'\nLa correspondance avec le projet est évaluée à **{score_percent}**. ')
@@ -1036,8 +763,6 @@ def _produce_pitch_markdown(row: pd.Series, config: cfg.ScoringConfig, scores_ca
     weighted_scores = {}
     for col in crit_scores_cols:
         cat = scores_cat[scores_cat.score == col]['cat'].iloc[0]
-        # Skip if row doesn't have cat weight or it's 0 (optimization)
-        # But we need to use the config object
         cat_weight = getattr(config, f'poids_{cat}', 0)
         
         # F-15: Include criteria-level weights
@@ -1046,9 +771,12 @@ def _produce_pitch_markdown(row: pd.Series, config: cfg.ScoringConfig, scores_ca
         
         total_weight = cat_weight * base_weight * dynamic_multiplier
         
-        # New Scoring: The value in 'row[col]' IS the effective score (max of commune & bdv)
-        effective_score = row.get(col, 0)
-        
+        # Robust handling of NaN or None
+        def safe_get(key):
+            v = row.get(key, 0)
+            return v if pd.notna(v) else 0
+
+        effective_score = safe_get(col)
         weighted_scores[col] = effective_score * total_weight
 
     sorted_scores = sorted(weighted_scores.items(), key=lambda item: item[1], reverse=True)
@@ -1058,11 +786,11 @@ def _produce_pitch_markdown(row: pd.Series, config: cfg.ScoringConfig, scores_ca
         count = 0
         for score_col, weighted_val in sorted_scores:
             if weighted_val > 0 and count < 5:
-                # Robust lookup
-                details_rows = scores_cat[scores_cat.score == score_col]
-                if not details_rows.empty:
-                    score_details = details_rows.iloc[0]
-                    pitch_md.append(f'- {score_details["score_affichage"]}')
+                # Robustly find label
+                details = scores_cat[scores_cat.score == score_col]
+                if not details.empty:
+                    label = details.iloc[0]["score_affichage"]
+                    pitch_md.append(f'- {label}')
                     count += 1
 
     return "\n".join(pitch_md)

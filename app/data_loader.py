@@ -1,12 +1,12 @@
+
 import streamlit as st
 import pandas as pd
 import geopandas as gpd
-import numpy as np
 import shapely.wkb as wkb
 import os
 import yaml
 import logging
-from typing import Dict, Any, Tuple
+from typing import Dict, Any
 import config as cfg
 import copy
 import gc
@@ -32,7 +32,6 @@ def load_scores_config_as_df(config_path: str) -> pd.DataFrame:
             'min_bound': item.get('min_bound'),
             'max_bound': item.get('max_bound'),
             'score_affichage': item.get('display', {}).get('strong_point_text', ''),
-            'score_affichage': item.get('display', {}).get('strong_point_text', ''),
             'bdv_factor': item.get('bdv_factor', 0.0),
             'metric': item.get('source_metric'),
             'computation': item.get('computation', 'live')
@@ -40,21 +39,15 @@ def load_scores_config_as_df(config_path: str) -> pd.DataFrame:
     return pd.DataFrame(data)
 
 def apply_demo_data_if_present(defaults: Dict[str, Any]) -> None:
-    """
-    Checks query params for 'demo' and updates defaults with demo scenario.
-    """
+    """Checks query params for 'demo' and updates defaults with demo scenario."""
     query_params = st.query_params
     if 'demo' in query_params:
         demo_id = query_params['demo']
-        # If demo_id is empty or 'true', use default demo profile (or scenario 1)
         if not demo_id or demo_id == 'true':
-            # Use defaults from config (already in defaults) or a specific scenario
-            # Let's assume scenario 1 is the default demo
             scenario = cfg.DEMO_SCENARIOS.get("1", {})
         else:
             scenario = cfg.DEMO_SCENARIOS.get(demo_id, {})
             
-        # Update defaults with scenario values
         for key, value in scenario.items():
             if key in defaults:
                 defaults[key] = value
@@ -62,73 +55,47 @@ def apply_demo_data_if_present(defaults: Dict[str, Any]) -> None:
         st.toast(f"Mode Démo activé (Scénario {demo_id if demo_id != 'true' else 'Défaut'})", icon="ℹ️")
 
 def session_states_init(defaults: Dict[str, Any]) -> None:
-    """
-    Initializes session state with defaults if not already set.
-    """
-    # Store the defaults dict itself as 'demo_data' for reference
+    """Initializes session state with defaults if not already set."""
     if 'demo_data' not in st.session_state:
         st.session_state['demo_data'] = defaults
 
-    # Key Mappings for UI widgets (Default Key -> UI Key)
     key_mapping = {
         'commune_actuelle': 'ui_commune',
         'departement_actuel': 'ui_departement'
     }
 
     for key, value in defaults.items():
-        # Determine the UI key
         ui_key = key_mapping.get(key, f"ui_{key}")
-        
         if ui_key not in st.session_state:
             st.session_state[ui_key] = value
-            
-        # Also set the raw key if used elsewhere
         if key not in st.session_state:
             st.session_state[key] = value
 
-    # Special handling for list-based inputs that map to indexed UI widgets
-    if 'classe_enfants' in defaults and isinstance(defaults['classe_enfants'], list):
-        for i, val in enumerate(defaults['classe_enfants']):
-            key = f"ui_classe_enfant_{i}"
-            if key not in st.session_state:
-                st.session_state[key] = val
-
-    if 'codes_metiers' in defaults and isinstance(defaults['codes_metiers'], list):
-        for i, val in enumerate(defaults['codes_metiers']):
-             key = f"ui_metiers_adult_{i}"
-             if key not in st.session_state:
-                 st.session_state[key] = val
-                 
-    if 'codes_formations' in defaults and isinstance(defaults['codes_formations'], list):
-        for i, val in enumerate(defaults['codes_formations']):
-             key = f"ui_formations_adult_{i}"
-             if key not in st.session_state:
-                 st.session_state[key] = val
+    # List inputs
+    for key_base, key_in_defaults in [('ui_classe_enfant', 'classe_enfants'), ('ui_metiers_adult', 'codes_metiers'), ('ui_formations_adult', 'codes_formations')]:
+        if key_in_defaults in defaults and isinstance(defaults[key_in_defaults], list):
+             for i, val in enumerate(defaults[key_in_defaults]):
+                 k = f"{key_base}_{i}"
+                 if k not in st.session_state: st.session_state[k] = val
 
 def ensure_data_initialized() -> None:
-    """
-    Ensures that the session state and datasets are initialized.
-    This is useful for pages other than the main entry point.
-    """
-    # 1. Initialize Session State Defaults (Demo Data)
+    """Ensures that the session state and datasets are initialized."""
     if 'demo_data' not in st.session_state:
         defaults = copy.deepcopy(cfg.DEMO_DATA_DEFAULT)
         apply_demo_data_if_present(defaults)
         session_states_init(defaults)
 
-    # 2. Initialize Datasets
     if 'app_data' not in st.session_state:
         st.session_state['app_data'] = init_datasets()
 
-    # 3. Force Reload of Scores Config (to pick up live edits)
-    # init_datasets is cached, so it might return old config. We overwrite it here.
     scores_path = os.path.join(cfg.APP_DIR, cfg.SCORES_CAT_FILE)
     st.session_state['app_data']['scores_cat'] = load_scores_config_as_df(scores_path)
 
-
-
 def _load_parquet(path: str, columns: list = None) -> pd.DataFrame:
     """Internal non-cached loader."""
+    if not os.path.exists(path):
+        logger.warning(f"File not found: {path}")
+        return pd.DataFrame()
     if columns:
         return pd.read_parquet(path, columns=columns)
     return pd.read_parquet(path)
@@ -159,7 +126,6 @@ def get_pois_by_category(pois_df: pd.DataFrame, category: str) -> pd.DataFrame:
 def load_all_data_raw() -> Dict[str, Any]:
     """
     Initializes and loads all necessary datasets for the application.
-    Returns a dictionary containing all loaded dataframes.
     (Non-cached version for MCP usage)
     """
     base_path = cfg.get_data_path()
@@ -169,63 +135,46 @@ def load_all_data_raw() -> Dict[str, Any]:
     odis_path = os.path.join(base_path, cfg.ODIS_FILE)
     
     try:
-        # Dynamic Column Loading
-        # FIX: Use pandas to get schema safely to avoid pyarrow 'file' scheme registration errors
-        # Reading the parquet file with pandas handles the underlying pyarrow context better
+        # Load all columns first to identify what we need
         temp_df = pd.read_parquet(odis_path)
         all_cols = temp_df.columns.tolist()
         del temp_df
         gc.collect()
         
-        # Essential columns
         essential_cols = {
             'codgeo', 'polygon', 'dep_code', 'reg_code', 'epci_code', 'epci_nom',
             'population', 'bassin_de_vie',
-            'youth_growth_rate', 'workclass_growth_rate', # Keep growth rates for tooltips
-            'count_hopital', 'count_maternite', 'count_psy', # Health counts for details
+            'youth_growth_rate', 'workclass_growth_rate',
+            'count_hopital', 'count_maternite', 'count_psy',
         }
         
-        # Select columns that are essential OR scores
         columns_to_load = [
             c for c in all_cols 
-            if c in essential_cols 
-            or c.endswith('_scaled') 
-            # or c.endswith('_score')
-            # or c.endswith('_density') # Keep densities if useful? No, user said save memory.
+            if c in essential_cols or c.endswith('_scaled')
         ]
 
-        # F-20: Load Raw Metrics defined in scores_config
-        # We need to know which columns are "source_metrics".
-        # We do a quick read of scores_config here because we haven't loaded it yet.
+        # Load metrics from config (Robustness)
         try:
-             app_dir = os.path.dirname(os.path.abspath(__file__))
-             sc_path = os.path.join(app_dir, cfg.SCORES_CAT_FILE)
-             if os.path.exists(sc_path):
-                 sc_df = load_scores_config_as_df(sc_path)
+             scores_path = os.path.join(cfg.APP_DIR, cfg.SCORES_CAT_FILE)
+             if os.path.exists(scores_path):
+                 sc_df = load_scores_config_as_df(scores_path)
                  raw_metrics = sc_df['metric'].dropna().unique().tolist()
-                 # Add them to columns_to_load if they exist in all_cols
                  for m in raw_metrics:
                      if m in all_cols and m not in columns_to_load:
                          columns_to_load.append(m)
         except Exception as e:
             logger.warning(f"Could not load raw metrics from config: {e}")
 
-        
-        logger.info(f"Loading {len(columns_to_load)} columns from ODIS.")
-
         odis = pd.read_parquet(odis_path, columns=columns_to_load)
         
         # Geometry processing
-        # Geometry processing
         if 'polygon' in odis.columns:
             odis['polygon'] = odis.polygon.apply(wkb.loads)
-            # The file is now in EPSG:2154 (Projected)
             odis = gpd.GeoDataFrame(odis, geometry='polygon', crs='EPSG:2154')
             odis.set_geometry('polygon', inplace=True)
-            # Fix invalid geometries
-            odis['polygon'] = odis.polygon.buffer(0)
+            # Try to believe ETL data is valid. Only minimal fix.
+            # odis['polygon'] = odis.polygon.buffer(0) 
             
-            # Centroid is already in the file in EPSG:2154
             if 'centroid' not in odis.columns:
                  odis['centroid'] = odis.geometry.centroid
         
@@ -239,220 +188,123 @@ def load_all_data_raw() -> Dict[str, Any]:
         for col in float_cols:
             if col in odis.columns:
                 odis[col] = odis[col].astype('float32')
-                
-        cat_cols = ['dep_code', 'reg_code', 'epci_code']
-        for col in cat_cols:
+        
+        for col in ['dep_code', 'reg_code', 'epci_code']:
             if col in odis.columns:
                 odis[col] = odis[col].astype('category')
 
     except Exception as e:
         logger.error(f"Failed to load ODIS data: {e}")
-        # Only show st.error if running continuously (not inside MCP)
-        # We check if st.session_state is accessible or similar, but simplified:
-        try:
-            st.error(f"Erreur critique: Impossible de charger les données principales. Détails: {e}")
-        except:
-            pass
-        raise e # Re-raise to see the error in Streamlit traceback
+        raise e 
 
     # 2. Load POIs
     pois_path = os.path.join(base_path, cfg.POIS_FILE)
-    logger.info(f"Loading POIs from: {pois_path}")
-    # Rename internal calls
     pois_df = _load_parquet(pois_path)
-    
-    # Split POIs
-    # Map to expected variable names for compatibility
-    # Note: We re-filter later after converting to GDF, so we skip detailed processing here
-    # to avoid duplication.
-    pass
-
-    # Optimize POI Geometries (if needed for map display)
-    # The app seems to use lat/lon columns directly for some maps, or geometry for others.
-    # pois.parquet has lat/lon.
-    
-    # Convert main pois_df to GeoDataFrame
     if not pois_df.empty and 'lat' in pois_df.columns and 'lon' in pois_df.columns:
         pois_df['geometry'] = gpd.points_from_xy(pois_df.lon, pois_df.lat)
         pois_df = gpd.GeoDataFrame(pois_df, geometry='geometry', crs='EPSG:4326')
 
-    # Clean Inclusion Slugs in main POIs DataFrame
-    # 'type' column for inclusion services often contains stringified lists e.g. "['slug']"
-    # Clean Inclusion Slugs in main POIs DataFrame - handled in pipeline/build.py now
-    # if not pois_df.empty and 'category' in pois_df.columns:
-    #     if isinstance(pois_df['type'].dtype, pd.CategoricalDtype):
-    #         pois_df['type'] = pois_df['type'].astype(str)
-            
-    #     mask_incl = pois_df['category'] == 'incl_services'
-    #     # if mask_incl.any():
-    #     #     pois_df.loc[mask_incl, 'type'] = pois_df.loc[mask_incl, 'type'].apply(clean_slug_global)
-
-    # Update subsets to be GeoDataFrames as well (slices of the GeoDataFrame)
-    # Note: get_pois_by_category returns a copy, so we need to convert them if we want them to be GDFs
-    # Or we can just re-filter from the now-GDF pois_df
     annuaire_ecoles = get_pois_by_category(pois_df, 'education')
     annuaire_sante = get_pois_by_category(pois_df, 'sante')
     annuaire_inclusion = get_pois_by_category(pois_df, 'incl_services') 
     
-    # Re-apply renaming for inclusion if needed (since we re-filtered)
     if not annuaire_inclusion.empty:
         annuaire_inclusion = annuaire_inclusion.rename(columns={
-            'type': 'categorie', 
-            'name': 'label',
-            'category': 'service'
+            'type': 'categorie', 'name': 'label', 'category': 'service'
         })
-        if 'thematiques' not in annuaire_inclusion.columns:
-             annuaire_inclusion['thematiques'] = annuaire_inclusion['categorie']
+        annuaire_inclusion['thematiques'] = annuaire_inclusion.get('categorie', '')
         if 'service' not in annuaire_inclusion.columns:
              annuaire_inclusion['service'] = 'Service d\'inclusion'
 
-    # 3. Load Referentiels (FAP, etc.)
+    # 3. Load Referentiels
     ref_path = os.path.join(base_path, cfg.REFERENTIELS_FILE)
-    logger.info(f"Loading Referentiels from: {ref_path}")
     refs_df = _load_parquet(ref_path)
 
-    # FIX: Re-hydrate Names (libgeo, libelle_bassin_de_vie) from Referentiels EARLY
-    # This must happen before depcom_df generation which uses libgeo
-    
     # Extract Lookups
     commune_names = {}
     bv_names = {}
-    
     if not refs_df.empty:
-         # Communes
          c_ref = refs_df[refs_df['key'] == 'communes']
-         if not c_ref.empty:
-             commune_names = c_ref.set_index('code')['label'].to_dict()
+         if not c_ref.empty: commune_names = c_ref.set_index('code')['label'].to_dict()
          
-         # Bassins de Vie
          bv_ref = refs_df[refs_df['key'] == 'bassins_de_vie']
-         if not bv_ref.empty:
-             bv_names = bv_ref.set_index('code')['label'].to_dict()
+         if not bv_ref.empty: bv_names = bv_ref.set_index('code')['label'].to_dict()
 
-    # Apply to ODIS (Communes)
     if 'libgeo' not in odis.columns:
         odis['libgeo'] = odis.index.map(commune_names)
-        # Fallback for missing
-        mask = odis['libgeo'].isna()
-        odis.loc[mask, 'libgeo'] = odis.index[mask]
+        odis['libgeo'] = odis['libgeo'].fillna(odis.index.to_series())
 
-    # Apply to ODIS (BV Labels)
     if 'bassin_de_vie' in odis.columns:
         odis['libelle_bassin_de_vie'] = odis['bassin_de_vie'].astype(str).map(bv_names)
-        # odis['libelle_bassin_de_vie'] = odis['libelle_bassin_de_vie'].fillna(odis['bassin_de_vie'])
-        mask = odis['libelle_bassin_de_vie'].isna()
-        odis.loc[mask, 'libelle_bassin_de_vie'] = odis.loc[mask, 'bassin_de_vie']
+        odis['libelle_bassin_de_vie'] = odis['libelle_bassin_de_vie'].fillna(odis['bassin_de_vie'])
 
-    
     codfap_index = pd.DataFrame()
+    codformations_index = pd.DataFrame(columns=['label']) 
+    inclusion_services_index = pd.DataFrame(columns=['label'])
+
     if not refs_df.empty:
         fap_df = refs_df[refs_df['key'] == 'fap_codes']
         if not fap_df.empty:
-            # Reconstruct expected format for FAP index
-            # Expected: index=code, columns=[libelle, ...]
-            # refs_df has 'code', 'label'
             codfap_index = fap_df[['code', 'label']].drop_duplicates(subset=['code']).set_index('code')
-
-    # 4. Load Vertical Data
-    bmo_vertical_path = os.path.join(base_path, cfg.AGG_METIERS_FILE) # Was BMO_VERTICAL_FILE
-    bmo_vertical = _load_parquet(bmo_vertical_path)
-    
-    associations_path = os.path.join(base_path, cfg.AGG_ASSOCIATIONS_FILE)
-    associations_data = _load_parquet(associations_path)
-
-    formations_path = os.path.join(base_path, cfg.AGG_FORMATIONS_FILE)
-    formations_data = _load_parquet(formations_path)
-    if not formations_data.empty and 'formation_code' in formations_data.columns:
-        # Hotfix: Ensure formation codes are clean strings (remove .0 suffix if present)
-        formations_data['formation_code'] = formations_data['formation_code'].astype(str).str.replace(r'\.0$', '', regex=True)
-
-    # 4b. Load Structures (CCAS)
-    structures_ccas = _load_ccas(base_path)
-
-    # 5. Load Configs
-    app_dir = os.path.dirname(os.path.abspath(__file__))
-    scores_cat = load_scores_config_as_df(os.path.join(app_dir, cfg.SCORES_CAT_FILE))
-    
-    # Placeholders for missing/removed files (to avoid breaking unpacking)
-    codformations_index = pd.DataFrame(columns=['label']) 
-    codformations_index = pd.DataFrame(columns=['label']) 
-    inclusion_services_index = pd.DataFrame(columns=['label'])
-    
-    if not refs_df.empty:
+            
         form_ref_df = refs_df[refs_df['key'] == 'formation_codes']
         if not form_ref_df.empty:
             codformations_index = form_ref_df[['code', 'label']].set_index('code')
             
-        # Load Inclusion Services Referentiel
         incl_ref_df = refs_df[refs_df['key'] == 'inclusion_services']
         if not incl_ref_df.empty:
             inclusion_services_index = incl_ref_df[['code', 'label']].set_index('code')
 
-    # Build incl_index from annuaire_inclusion
     incl_index = pd.DataFrame()
     if not annuaire_inclusion.empty:
-        # 'categorie' (mapped from 'type') is now already cleaned in pois_df
         annuaire_inclusion['slug'] = annuaire_inclusion['categorie']
-        
-        # Group by codgeo and aggregate slugs into a set
-        # We use 'key' as the column name to match scoring.py expectation
         incl_index = annuaire_inclusion.groupby('codgeo', observed=False)['slug'].apply(set).rename('key').to_frame()
 
-    # Generate helper structures for UI
     depcom_df = odis[['libgeo', 'dep_code']].copy()
     coddep_set = sorted(odis['dep_code'].dropna().unique().tolist())
 
-    # 6. Load Bassins de Vie Geometry
-    bv_path = os.path.join(base_path, cfg.BV_FILE)
-    logger.info(f"Loading BV Geo from: {bv_path}")
-    bv_geo = _load_parquet(bv_path)
+    # 4. Vertical Data
+    bmo_vertical = _load_parquet(os.path.join(base_path, cfg.AGG_METIERS_FILE))
+    associations_data = _load_parquet(os.path.join(base_path, cfg.AGG_ASSOCIATIONS_FILE))
+    formations_data = _load_parquet(os.path.join(base_path, cfg.AGG_FORMATIONS_FILE))
     
+    if not formations_data.empty and 'formation_code' in formations_data.columns:
+        formations_data['formation_code'] = formations_data['formation_code'].astype(str).str.replace(r'\.0$', '', regex=True)
+
+    structures_ccas = _load_ccas(base_path)
+    
+    scores_cat = load_scores_config_as_df(os.path.join(cfg.APP_DIR, cfg.SCORES_CAT_FILE))
+
+    # 5. Bassins de Vie Geo
+    bv_path = os.path.join(base_path, cfg.BV_FILE)
+    bv_geo = _load_parquet(bv_path)
     if not bv_geo.empty:
-        # Ensure geometry
         if 'polygon' in bv_geo.columns:
              if isinstance(bv_geo['polygon'].iloc[0], bytes):
                  bv_geo['polygon'] = bv_geo['polygon'].apply(wkb.loads)
-             # File should be in EPSG:2154 (Projected)
              bv_geo = gpd.GeoDataFrame(bv_geo, geometry='polygon', crs=cfg.PROJECTED_CRS)
-             
-             # Fix invalid geometries
-             bv_geo['polygon'] = bv_geo.polygon.buffer(0)
-             
-             # Centroid (already in file or calc in 2154)
+             # bv_geo['polygon'] = bv_geo.polygon.buffer(0)
              if 'centroid' not in bv_geo.columns:
                  bv_geo['centroid'] = bv_geo.geometry.centroid
-        
-        # Set index
-        # We prefer cfg.BV_CODE_COL, but fallback to 'bassin_de_vie'
-        if cfg.BV_CODE_COL in bv_geo.columns:
-            bv_geo.set_index(cfg.BV_CODE_COL, inplace=True)
-        elif 'bassin_de_vie' in bv_geo.columns:
-            bv_geo.set_index('bassin_de_vie', inplace=True)
-            # Ensure consistency if config expects a different name
-            if cfg.BV_CODE_COL != 'bassin_de_vie':
-                bv_geo.index.name = cfg.BV_CODE_COL
 
-    # 8. Optimization: Restore libelle_bassin_de_vie in ODIS from BV Geo
-    # (Avoids storing it in the main parquet file)
-    # Apply to BV Geo
-    if not bv_geo.empty and 'libgeo' not in bv_geo.columns:
-        # Index is code
-        bv_geo['libgeo'] = bv_geo.index.astype(str).map(bv_names)
-        # bv_geo['libgeo'] = bv_geo['libgeo'].fillna(bv_geo.index)
-        mask = bv_geo['libgeo'].isna()
-        bv_geo.loc[mask, 'libgeo'] = bv_geo.index[mask]
-            
-    # 7. Generate Area Geometries (Departments & Regions)
+        key_col = cfg.BV_CODE_COL if cfg.BV_CODE_COL in bv_geo.columns else 'bassin_de_vie'
+        if key_col in bv_geo.columns:
+            bv_geo.set_index(key_col, inplace=True)
+            if cfg.BV_CODE_COL != 'bassin_de_vie': bv_geo.index.name = cfg.BV_CODE_COL
+
+        if 'libgeo' not in bv_geo.columns:
+            bv_geo['libgeo'] = bv_geo.index.astype(str).map(bv_names)
+            bv_geo['libgeo'] = bv_geo['libgeo'].fillna(bv_geo.index.to_series())
+
+    # 6. Area Geo
     area_dfs = []
     if not odis.empty and isinstance(odis, gpd.GeoDataFrame):
         try:
-            # Departments
             deps = odis.dissolve(by='dep_code')[['polygon']]
             deps['type'] = 'departement'
             deps = deps.reset_index().rename(columns={'dep_code': 'code'})
             area_dfs.append(deps)
             
-            # Regions
             regs = odis.dissolve(by='reg_code')[['polygon']]
             regs['type'] = 'region'
             regs = regs.reset_index().rename(columns={'reg_code': 'code'})
@@ -460,24 +312,16 @@ def load_all_data_raw() -> Dict[str, Any]:
         except Exception as e:
             logger.error(f"Failed to generate area geometries: {e}")
 
-    if area_dfs:
-        area_geo = pd.concat(area_dfs)
-        # Set MultiIndex (type, code)
-        area_geo = area_geo.set_index(['type', 'code'])
-    else:
-        area_geo = gpd.GeoDataFrame()
-
-    # Clean up temporary geometry objects
-    del deps, regs, area_dfs
+    area_geo = pd.concat(area_dfs).set_index(['type', 'code']) if area_dfs else gpd.GeoDataFrame()
+    del area_dfs
     gc.collect()
-
 
     return {
         'odis': odis,
         'scores_cat': scores_cat,
         'codfap_index': codfap_index,
         'codformations_index': codformations_index,
-        'inclusion_services_index': inclusion_services_index, # NEW
+        'inclusion_services_index': inclusion_services_index,
         'annuaire_ecoles': annuaire_ecoles,
         'annuaire_sante': annuaire_sante,
         'annuaire_inclusion': annuaire_inclusion,
@@ -487,18 +331,15 @@ def load_all_data_raw() -> Dict[str, Any]:
         'depcom_df': depcom_df,
         'coddep_set': coddep_set,
         'bv_geo': bv_geo,
-        'bv_data': bv_geo, # For scoring lookup (it has the aggregated stats)
+        'bv_data': bv_geo,
         'area_geo': area_geo,
         'bmo_vertical': bmo_vertical,
         'structures_ccas': structures_ccas,
         'pois': pois_df,
-        'referentiels_raw': refs_df, # Exposed for search tool
+        'referentiels_raw': refs_df,
     }
+
 @st.cache_resource
 def init_datasets() -> Dict[str, Any]:
-    """
-    Initializes and loads all necessary datasets for the application.
-    Returns a dictionary containing all loaded dataframes.
-    (Cached wrapper for Streamlit)
-    """
+    """Cached wrapper for Streamlit."""
     return load_all_data_raw()

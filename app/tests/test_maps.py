@@ -65,21 +65,3 @@ def test_build_top_result_layer_creates_ranked_marker(sample_result_row):
     # Allow for small floating point differences
     assert div_icon_marker.location == pytest.approx(expected_location, abs=1e-6)
 
-def test_build_top_result_layer_handles_binome(sample_result_row):
-    """
-    Tests if the function correctly handles a result with a 'binome' (pair).
-    It should draw two GeoJson layers (main and binome).
-    """
-    # Arrange
-    rank = 0
-    row = sample_result_row.copy()
-    row['binome'] = True
-    # Valid 2154 coords for binome too
-    row['polygon_binome'] = Polygon([(620000, 6820000), (630000, 6830000), (630000, 6820000)])
-
-    # Act
-    feature_group = build_top_result_layer(row, rank)
-
-    # Assert
-    geojson_layers = [child for child in feature_group._children.values() if isinstance(child, folium.GeoJson)]
-    assert len(geojson_layers) == 2, "Expected two GeoJson layers for a binome result."

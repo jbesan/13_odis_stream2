@@ -17,6 +17,7 @@ load_dotenv(os.path.join(APP_DIR, '.env'))
 load_dotenv(os.path.join(PROJECT_ROOT, '.env'))
 
 LOCAL_CSV_PATH: str = os.path.join(PROJECT_ROOT, 'data/')
+ASSETS_DIR: str = os.path.join(APP_DIR, 'assets')
 
 def get_data_path() -> str:
     """
@@ -25,6 +26,9 @@ def get_data_path() -> str:
     """
 
     return LOCAL_CSV_PATH
+
+# --- Constants ---
+VERSION = "0.2.0"
 
 # --- File Paths ---
 # --- File Paths ---
@@ -43,7 +47,6 @@ BV_CODE_COL = 'bassin_de_vie'
 BV_NAME_COL = 'libelle_bassin_de_vie'
 
 # --- UI Options ---
-VIEW_LEVEL_OPTIONS = ['Communes']
 NOMBRE_ADULTES_OPTIONS = [1, 2]
 NOMBRE_ENFANTS_OPTIONS = [0, 1, 2, 3, 4, 5]
 CLASSES_SCOLAIRES = ['Crèche / Assistante Maternelle', 'Maternelle', 'Elémentaire', 'Collège', 'Lycée']
@@ -52,7 +55,6 @@ HEBERGEMENT_OPTIONS = ["Chez l'habitant", 'Location', 'Foyer']
 LOGEMENT_OPTIONS = ['Location', 'Logement Social']
 SANTE_OPTIONS = ["Aucun", "Hopital", 'Maternité', "Soutien Psychologique & Addictologie"]
 POIDS_OPTIONS = [0, 25, 50, 75, 100]
-POP_MIN_OPTIONS = [0, 500, 1000, 5000, 10000]
 
 # --- Weight Profiles (F-15) ---
 WEIGHT_PROFILES = {
@@ -78,7 +80,6 @@ WEIGHT_PROFILES = {
 DEFAULT_MAP_CENTER = [46.603354, 1.888334] # Center of France
 DEFAULT_MAP_ZOOM = 10
 DETAIL_MAP_ZOOM = 11
-DEFAULT_VIEW_LEVEL = 0
 
 # --- Constants ---
 PROJECTED_CRS = "EPSG:2154"  # RGF93 / Lambert-93, suitable for metropolitan France
@@ -122,8 +123,7 @@ class ScoringConfig:
     inc_services_core_selection: List[str]
     inc_asso_add_selection: List[str]
     
-    # Technical parameters
-    pop_min: int
+
 
 # --- Inclusion Defaults ---
 DEFAULT_INC_SERVICES_CORE = [

@@ -137,7 +137,6 @@ def default_config():
         inc_services_add_selection=[],
         inc_services_core_selection=[],
         inc_asso_add_selection=[],
-        pop_min=1000,
         criteria_weights={} # Added for F-15
     )
 

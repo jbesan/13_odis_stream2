@@ -51,6 +51,8 @@ def assert_results_match_snapshot(test_name: str, results: pd.DataFrame, request
                 record[key] = value.wkt
             elif isinstance(value, list) and len(value) > 0 and isinstance(value[0], (np.int64, np.int32)):
                 record[key] = [int(v) for v in value]
+            elif isinstance(value, set):
+                record[key] = list(value)
 
 
     if request.config.getoption("--update-snapshots"):
@@ -67,10 +69,10 @@ def assert_results_match_snapshot(test_name: str, results: pd.DataFrame, request
     
     # Compare the data, focusing on key fields
     for i, (actual, expected) in enumerate(zip(snapshot_data, expected_data)):
-        # For Bassins de vie, the identifier is BV2022, not codgeo
-        actual_id = actual.get('codgeo') or actual.get('BV2022')
-        expected_id = expected.get('codgeo') or expected.get('BV2022')
-        assert actual_id == expected_id, f"Row {i}: ID mismatch (codgeo or BV2022)"
+        # For Communes, the identifier is codgeo
+        actual_id = actual.get('codgeo')
+        expected_id = expected.get('codgeo')
+        assert actual_id == expected_id, f"Row {i}: ID mismatch (codgeo)"
         assert actual.get('codgeo_binome') == expected.get('codgeo_binome'), f"Row {i}: codgeo_binome mismatch"
         assert pytest.approx(actual['weighted_score'], rel=1e-4) == expected['weighted_score'], f"Row {i}: weighted_score mismatch"
 
@@ -83,7 +85,7 @@ def app_data():
     """
     return data_loader.init_datasets()
 
-def run_test_scenario(scenario_id, view_level, app_data):
+def run_test_scenario(scenario_id, app_data):
     """
     Helper function to run a search scenario by simulating session state
     and calling the app's own logic.
@@ -126,8 +128,6 @@ def run_test_scenario(scenario_id, view_level, app_data):
     # Ensure other necessary defaults are present
     if 'ui_inc_services_add_selection' not in mock_session_state:
         mock_session_state['ui_inc_services_add_selection'] = {}
-    if 'ui_pop_min' not in mock_session_state:
-        mock_session_state['ui_pop_min'] = 1000
 
     # Ensure dynamic keys for adults and children are present, even if empty,
     # to prevent KeyErrors in the list comprehensions in create_scoring_config_from_inputs.
@@ -138,6 +138,20 @@ def run_test_scenario(scenario_id, view_level, app_data):
     for i in range(default_data['nb_enfants']):
         mock_session_state.setdefault(f"ui_classe_enfant_{i}", cfg.CLASSES_SCOLAIRES[0])
 
+    # Handle ui_loc_type_display mapping logic which UI now expects
+    loc_val = default_data.get('loc_distance_km')
+    if loc_val == 'region':
+        mock_session_state['ui_loc_type_display'] = 'Région'
+    elif loc_val == 'france':
+        mock_session_state['ui_loc_type_display'] = 'France Métropolitaine'
+    elif loc_val == 'departement':
+        mock_session_state['ui_loc_type_display'] = 'Département'
+    elif isinstance(loc_val, int):
+        mock_session_state['ui_loc_type_display'] = 'Distance (km)'
+        mock_session_state['ui_distance_km'] = loc_val
+    else:
+        # Default fallback
+        mock_session_state['ui_loc_type_display'] = 'Département'
 
     # 4. Create the ScoringConfig by calling the app's own UI function.
     # We use unittest.mock.patch to temporarily replace streamlit's session_state
@@ -175,8 +189,8 @@ def run_test_scenario(scenario_id, view_level, app_data):
 
 @pytest.mark.e2e
 def test_scenario_1_communes(app_data, request):
-    """E2E test for demo scenario 1 at the Communes level."""
-    results = run_test_scenario('1', 'Communes', app_data)
+    """E2E test for demo scenario 1."""
+    results = run_test_scenario('1', app_data)
     assert not results.empty
     assert 'weighted_score' in results.columns
     assert results.shape[0] > 5
@@ -184,8 +198,8 @@ def test_scenario_1_communes(app_data, request):
 
 @pytest.mark.e2e
 def test_scenario_2_communes(app_data, request):
-    """E2E test for demo scenario 2 at the Communes level."""
-    results = run_test_scenario('2', 'Communes', app_data)
+    """E2E test for demo scenario 2."""
+    results = run_test_scenario('2', app_data)
     assert not results.empty
     assert 'weighted_score' in results.columns
     assert results.shape[0] > 5
@@ -193,8 +207,8 @@ def test_scenario_2_communes(app_data, request):
 
 @pytest.mark.e2e
 def test_scenario_3_communes(app_data, request):
-    """E2E test for demo scenario 3 at the Communes level."""
-    results = run_test_scenario('3', 'Communes', app_data)
+    """E2E test for demo scenario 3."""
+    results = run_test_scenario('3', app_data)
     assert not results.empty
     assert 'weighted_score' in results.columns
     assert results.shape[0] > 5
@@ -207,7 +221,7 @@ def test_result_details_display(app_data):
     Tests that the detail view for each of the top 5 results can be rendered without error.
     """
     # 1. Run a scenario to get some results
-    results_communes = run_test_scenario('1', 'Communes', app_data)
+    results_communes = run_test_scenario('1', app_data)
 
     # 2. Get the scoring config and app_data that the UI functions will need
     mock_config_state = {
@@ -221,7 +235,6 @@ def test_result_details_display(app_data):
         'ui_logement': 'Location',
         'ui_besoin_sante': 'Aucun',
         'ui_inc_services_add_selection': {},
-        'ui_pop_min': 1000,
         'ui_poids_emploi': 100,
         'ui_poids_logement': 100,
         'ui_poids_education': 100,
@@ -235,14 +248,20 @@ def test_result_details_display(app_data):
         scoring_config = ui.create_scoring_config_from_inputs()
 
     # 3. Set up a mock session state for the UI functions
-    mock_session_state = MagicMock()
-    mock_session_state.app_data = app_data
-    mock_session_state.config = scoring_config
-    mock_session_state.processed_gdf = results_communes
-    # mock_session_state.view_level = 'Communes' # Removed from UI state
+    class MockSessionState(dict):
+        def __getattr__(self, name):
+            return self[name]
+        def __setattr__(self, name, value):
+            self[name] = value
+
+    mock_session_state_details = MockSessionState({
+        'app_data': app_data,
+        'config': scoring_config,
+        'processed_gdf': results_communes,
+    })
 
     # 4. Test the commune details display
-    with patch('ui.st.session_state', mock_session_state):
+    with patch('ui.st.session_state', mock_session_state_details):
         for index, row in results_communes.head(5).iterrows():
             try:
                 ui._display_result_details(row)

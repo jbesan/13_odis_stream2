@@ -30,9 +30,7 @@ def sample_session_state():
         besoin_sante='Aucun',
         inc_services_add_selection={},
         inc_services_core_selection=[],
-        inc_asso_add_selection=[],
-        binome_penalty=0.5,
-        pop_min=1000
+        inc_asso_add_selection=[]
     )
     
     # Mock app_data with necessary dataframes
@@ -61,7 +59,6 @@ def sample_session_state():
     session_state_mock = {
         'config': config,
         'ui_commune': 'Bordeaux',
-        'view_level': 'Communes',
         'binome': False,
         'app_data': mock_app_data,
         # Add other necessary session state keys that generate_pdf_report might access

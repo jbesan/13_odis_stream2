@@ -37,7 +37,7 @@ def _setup_unicode_font(pdf: FPDF) -> None:
         pdf.set_font("Arial", size=12)
 
 
-def _generate_static_map_image(results_df: pd.DataFrame, view_level: str) -> bytes:
+def _generate_static_map_image(results_df: pd.DataFrame) -> bytes:
     """
     Generates a static map image using Matplotlib and Contextily.
     Highlights the top 5 results.
@@ -218,8 +218,7 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
 
     # Map Generation
     try:
-        view_level = st_session_state.get('view_level', 'Bassins de vie')
-        map_png = _generate_static_map_image(results_df, view_level)
+        map_png = _generate_static_map_image(results_df)
         if map_png:
             map_image_stream = io.BytesIO(map_png)
             # Center the image and limit width to avoid it being too big
@@ -237,10 +236,7 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
     pdf.set_font("DejaVu", '', 9)
     for rank, (index, row) in enumerate(results_df.head(5).iterrows(), start=1):
         score_percent = f"{row['weighted_score'] * 100:.0f}%"
-        if st_session_state.get('view_level') == 'Bassins de vie':
-            name = f"Bassin de vie de {row.libgeo}"
-        else:
-            name = row.libgeo + (f" (avec {row.libgeo_binome})" if row.binome else "")
+        name = row.libgeo
         pdf.cell(0, 5, f"  {rank}. {name} - {score_percent}", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(5)
 
@@ -248,10 +244,7 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
     for rank, (index, row) in enumerate(results_df.head(5).iterrows(), start=1):
         pdf.add_page()
         # Result Title
-        if st_session_state.get('view_level') == 'Bassins de vie':
-            title = f"Top {rank} | Bassin de vie de {row.libgeo}"
-        else:
-            title = f"Top {rank} | {row.libgeo}" + (f" (avec {row.libgeo_binome})" if row.binome else "")
+        title = f"Top {rank} | {row.libgeo}"
         pdf.set_font("DejaVu", 'B', 12)
         pdf.cell(0, 8, title, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(2)

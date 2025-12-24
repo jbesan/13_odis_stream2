@@ -3,6 +3,7 @@ from streamlit_folium import st_folium
 import scoring
 import config as cfg
 import ui
+import utils
 import maps
 from pdf_generator import generate_pdf_report
 import folium as flm
@@ -136,8 +137,9 @@ if st.session_state.get('processed_gdf') is None and st.session_state.get('form_
 
 # Sidebar
 with st.sidebar:
-    logo_path = ui.get_image_path('logo-jaccueille-singa.png')
-    logo_b64 = ui.get_base64_image(logo_path)
+    
+    logo_path = utils.get_asset_path('logo-jaccueille-singa.png')
+    logo_b64 = utils.get_base64_image(logo_path)
     if logo_b64:
         st.markdown(f'<img src="data:image/png;base64,{logo_b64}" width="150" style="margin-bottom: 20px;">', unsafe_allow_html=True)
     else:
