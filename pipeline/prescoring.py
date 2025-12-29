@@ -70,14 +70,16 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
     """Applies pre-scoring logic (ratios, densities, scaling) to odis_communes."""
     logger.log_step("apply_prescoring", "STARTED")
     try:
-        communes_path = OUTPUT_DIR / "odis_communes.parquet"
-        if not communes_path.exists():
-             logger.error(f"Input file not found: {communes_path}")
+        input_path = OUTPUT_DIR / "odis_communes_pre.parquet"
+        output_path = OUTPUT_DIR / "odis_communes.parquet"
+        
+        if not input_path.exists():
+             logger.error(f"Input file not found: {input_path}")
              logger.log_step("apply_prescoring", "FAILED", {"reason": "Input file not found"})
              return
 
         # Read as standard Parquet (WKB)
-        communes_df = pd.read_parquet(communes_path)
+        communes_df = pd.read_parquet(input_path)
         
         # Convert WKB to Geometry
         if 'polygon' in communes_df.columns:
@@ -416,7 +418,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         
         # --- Socle Administratif (Pre-calculated) ---
         # Load POIs to get inclusion services
-        pois_path = OUTPUT_DIR / "pois.parquet"
+        pois_path = OUTPUT_DIR / "odis_pois.parquet"
         if pois_path.exists():
             try:
                 default_socle_admin = cfg.DEFAULT_INC_SERVICES_CORE
@@ -499,14 +501,12 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         
         if 'inc_services_core_scaled' not in communes_gdf.columns:
             communes_gdf['inc_services_core_scaled'] = 0.0
-
         # Save
         if 'geometry' in communes_gdf.columns:
              communes_gdf['polygon'] = communes_gdf.geometry.to_wkb()
              communes_gdf.drop(columns=['geometry'], inplace=True)
-             
-        pd.DataFrame(communes_gdf).to_parquet(communes_path)
-        logger.log_step("apply_prescoring", "COMPLETED", {"columns": len(communes_gdf.columns), "path": str(communes_path), "rows": len(communes_gdf)})
+        pd.DataFrame(communes_gdf).to_parquet(output_path)
+        logger.log_step("apply_prescoring", "COMPLETED", {"columns": len(communes_gdf.columns), "path": str(output_path), "rows": len(communes_gdf)})
 
     except Exception as e:
         logger.log_step("apply_prescoring", "ERROR", {"error": str(e)})

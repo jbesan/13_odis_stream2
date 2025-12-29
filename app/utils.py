@@ -124,3 +124,12 @@ def get_base64_image(image_path: str) -> str:
     except Exception as e:
         logger.error(f"Error encoding image {image_path}: {e}")
         return ""
+from pyproj import Transformer
+
+def project_point(lon: float, lat: float, from_crs: str = "EPSG:4326", to_crs: str = "EPSG:2154") -> Tuple[float, float]:
+    """
+    Transforms a single coordinate point using scalars to avoid NumPy 1.25+ DeprecationWarning.
+    """
+    transformer = Transformer.from_crs(from_crs, to_crs, always_xy=True)
+    x, y = transformer.transform(lon, lat)
+    return x, y

@@ -2,6 +2,8 @@ import os
 import requests
 import logging
 import pandas as pd
+import json
+import time
 from typing import Optional, Dict, Any
 from pathlib import Path
 from pipeline.common import PipelineLogger, CACHE_DIR
@@ -21,7 +23,21 @@ class OdaceClient:
         }
 
     def _get_preview(self, table_name: str, limit: int = 50000) -> Optional[Dict[str, Any]]:
-        """Fetches table preview from Odace API."""
+        """Fetches table preview from Odace API with local caching (1 week TTL)."""
+        cache_file = CACHE_DIR / f"odace_{table_name}.json"
+        ttl_seconds = 7 * 24 * 60 * 60 # 1 week
+        
+        # Check cache
+        if cache_file.exists():
+            file_age = time.time() - cache_file.stat().st_mtime
+            if file_age < ttl_seconds:
+                try:
+                    logging.info(f"OdaceClient: Loading {table_name} from cache (age: {file_age/3600:.1f}h)")
+                    with open(cache_file, "r") as f:
+                        return json.load(f)
+                except Exception as e:
+                    logging.warning(f"OdaceClient: Failed to read cache for {table_name}: {e}")
+
         url = f"{self.api_url}/api/data/preview/silver/{table_name}"
         payload = {
             "limit": limit,
@@ -31,10 +47,21 @@ class OdaceClient:
         }
         
         try:
-            logging.info(f"OdaceClient: Fetching {table_name}...")
+            logging.info(f"OdaceClient: Fetching {table_name} from API...")
             response = requests.post(url, headers=self.headers, json=payload, timeout=60)
             response.raise_for_status()
-            return response.json()
+            data = response.json()
+            
+            # Save to cache
+            CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            try:
+                with open(cache_file, "w") as f:
+                    json.dump(data, f)
+                logging.info(f"OdaceClient: Cached {table_name} to {cache_file}")
+            except Exception as e:
+                logging.warning(f"OdaceClient: Failed to write cache for {table_name}: {e}")
+                
+            return data
         except Exception as e:
             error_msg = f"Failed to fetch {table_name}: {str(e)}"
             logging.error(error_msg)

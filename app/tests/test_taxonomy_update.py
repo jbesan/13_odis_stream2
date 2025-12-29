@@ -63,7 +63,6 @@ class TestTaxonomyUpdate:
             'reg_code': ['75', '11'],
             'epci_code': ['243300316', '200054781'],
             'epci_nom': ['Bordeaux Métropole', 'Métropole du Grand Paris'],
-            'codgeo_voisins': [[], []],
             'population': [1000, 2000],
             'pop_be': [1000, 2000],
             'met': [0, 0],

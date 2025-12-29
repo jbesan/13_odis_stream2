@@ -167,6 +167,9 @@ def log_search_results(
                 target_codgeos = [row['codgeo']]
                 if row.get('binome') and row.get('codgeo_binome'):
                     target_codgeos.append(row['codgeo_binome'])
+            else:
+                # Fallback to index if 'codgeo' column is not found (it's the index)
+                target_codgeos = [index]
             
             if unaggregated_df is not None:
                 for codgeo in target_codgeos:

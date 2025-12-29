@@ -11,6 +11,8 @@ from typing import Union, List, Tuple, Optional, Any, Set, Dict
 import config as cfg
 
 import logging
+import warnings
+import utils
 
 
 def get_map_zoom(search_area: str) -> int:
@@ -66,7 +68,9 @@ def build_scores_layer(df: pd.DataFrame) -> Tuple[flm.FeatureGroup, Optional[Any
     current_geo_df_serializable = current_geo_df[['libgeo', 'polygon']].copy()
     current_geo_df_serializable.set_geometry('polygon', inplace=True)
     if current_geo_df_serializable.crs != "EPSG:4326":
-        current_geo_df_serializable = current_geo_df_serializable.to_crs("EPSG:4326")
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*array with ndim > 0 to a scalar is deprecated.*")
+            current_geo_df_serializable = current_geo_df_serializable.to_crs("EPSG:4326")
 
     flm.GeoJson(
         current_geo_df_serializable,
@@ -83,7 +87,9 @@ def build_scores_layer(df: pd.DataFrame) -> Tuple[flm.FeatureGroup, Optional[Any
         df_serializable.crs = cfg.PROJECTED_CRS
     
     if df_serializable.crs != "EPSG:4326":
-        df_serializable = df_serializable.to_crs("EPSG:4326")
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*array with ndim > 0 to a scalar is deprecated.*")
+            df_serializable = df_serializable.to_crs("EPSG:4326")
 
     flm.GeoJson(
         df_serializable,
@@ -104,7 +110,9 @@ def build_top_result_layer(row: pd.Series, rank: int) -> flm.FeatureGroup:
 
     # Main commune outline
     # Project to 4326
-    poly_4326 = gpd.GeoSeries([row.polygon], crs=cfg.PROJECTED_CRS).to_crs("EPSG:4326").iloc[0]
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*array with ndim > 0 to a scalar is deprecated.*")
+        poly_4326 = gpd.GeoSeries([row.polygon], crs=cfg.PROJECTED_CRS).to_crs("EPSG:4326").iloc[0]
     
     flm.GeoJson(
         mapping(poly_4326),
@@ -114,11 +122,11 @@ def build_top_result_layer(row: pd.Series, rank: int) -> flm.FeatureGroup:
 
 
     # Add rank marker at the centroid of the main polygon
-    # Project centroid to 4326
-    centroid_4326 = gpd.GeoSeries([row.polygon.centroid], crs=cfg.PROJECTED_CRS).to_crs("EPSG:4326").iloc[0]
+    # Project centroid to 4326 using scalar-safe helper
+    cx, cy = utils.project_point(row.polygon.centroid.x, row.polygon.centroid.y, from_crs=cfg.PROJECTED_CRS, to_crs='EPSG:4326')
     
     flm.Marker(
-        location=[centroid_4326.y, centroid_4326.x],
+        location=[cy, cx],
         icon=flm.features.DivIcon(
             icon_size=(25, 25),
             icon_anchor=(12, 12),

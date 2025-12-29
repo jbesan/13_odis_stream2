@@ -248,10 +248,6 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
     if not specific_needs and 'codes_inclusion' in filters and filters.get('codes_inclusion') != socle_sel:
         specific_needs = filters.get('codes_inclusion')
 
-    # Binome Protection
-    if 'codgeo_voisins' not in DATA_CONTEXT['odis'].columns:
-        DATA_CONTEXT['odis']['codgeo_voisins'] = [np.array([], dtype=object) for _ in range(len(DATA_CONTEXT['odis']))]
-
     def get_weight(key_suffix, default=50):
         if key_suffix in weights: return int(weights[key_suffix])
         if f"poids_{key_suffix}" in weights: return int(weights[f"poids_{key_suffix}"])

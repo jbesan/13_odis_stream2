@@ -11,6 +11,7 @@ import data_loader
 import geopandas as gpd
 import logging
 import gc
+import warnings
 
 st.set_page_config(layout="wide")
 
@@ -118,16 +119,23 @@ def run_search():
         # Compute centroid of all results
         # Use EPSG:2154 for accurate centroid, then back to 4326
         # Optimization: use the mean of centroids if the dataset is large
-        projected_centroids = processed_gdf.to_crs('EPSG:2154').centroid
-        avg_centroid_projected = projected_centroids.unary_union.centroid
-        avg_centroid_geo = gpd.GeoSeries([avg_centroid_projected], crs='EPSG:2154').to_crs('EPSG:4326').iloc[0]
-        final_center_y, final_center_x = avg_centroid_geo.y, avg_centroid_geo.x
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*array with ndim > 0 to a scalar is deprecated.*")
+            projected_centroids = processed_gdf.to_crs('EPSG:2154').centroid
+            avg_centroid_projected = projected_centroids.union_all().centroid
+        
+        center_x, center_y = utils.project_point(avg_centroid_projected.x, avg_centroid_projected.y, from_crs='EPSG:2154', to_crs='EPSG:4326')
+        final_center_y, final_center_x = center_y, center_x
     else:
         # Fallback to current commune
-        start_commune_projected = start_commune.to_crs('EPSG:2154')
-        centroid_geo_series_geographic = start_commune_projected.centroid.to_crs('EPSG:4326')
-        final_center_x = centroid_geo_series_geographic.x.iloc[0]
-        final_center_y = centroid_geo_series_geographic.y.iloc[0]
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*array with ndim > 0 to a scalar is deprecated.*")
+            start_commune_projected = start_commune.to_crs('EPSG:2154')
+            start_centroid = start_commune_projected.centroid.iloc[0]
+            
+        center_x, center_y = utils.project_point(start_centroid.x, start_centroid.y, from_crs='EPSG:2154', to_crs='EPSG:4326')
+        final_center_x = center_x
+        final_center_y = center_y
 
     st.session_state['selected_geo'] = st.session_state.app_data['odis'].loc[[config.commune_actuelle]].copy()
     st.session_state['center'] = [final_center_y, final_center_x]

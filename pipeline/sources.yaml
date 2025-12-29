@@ -12,12 +12,6 @@ sources:
     sheet_name: 0 # Default sheet
     description: "Population municipale 2024"
 
-  voisins:
-    url: "https://www.data.gouv.fr/api/1/datasets/r/6ca4e113-271d-45bb-8995-5d9779f7b10d"
-    format: "csv"
-    local_name: "voisins.csv"
-    description: "Adjacence des communes"
-
   bassins_de_vie:
     url: "https://www.insee.fr/fr/statistiques/fichier/6676988/BV2022_au_01-01-2025.zip"
     format: "zip"

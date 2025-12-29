@@ -672,33 +672,6 @@ def clean_associations(config: Dict[str, Any], logger: PipelineLogger):
         df_out.to_parquet(output_path)
         logger.log_step("clean_associations", "COMPLETED", {"path": str(output_path)})
 
-def clean_voisins(config: Dict[str, Any], logger: PipelineLogger):
-    """Cleans Voisins and saves to parquet."""
-    logger.log_step("clean_voisins", "STARTED")
-    source = config['sources']['voisins']
-    path = CACHE_DIR / source['local_name']
-    if not path.exists(): return
-
-    df = load_dataset(path, source)
-    # Expected: insee_com, insee_voisins (list or string?)
-    # Actually the file usually has pairs or list.
-    # Let's assume standard format: 'insee_com', 'insee_voisins' (list of codes)
-    # If it's the adjacency file from data.gouv, it might be an adjacency list.
-    
-    # Assuming format: insee, insee_voisins (string separated by | or ,)
-    if 'insee' in df.columns and 'insee_voisins' in df.columns:
-         df['codgeo'] = df['insee'].astype(str).str.zfill(5)
-         # Voisins might be a string "12345|67890"
-         # We want a list.
-         df['codgeo_voisins'] = df['insee_voisins'].astype(str).apply(lambda x: x.split('|') if '|' in x else x.split(','))
-         
-         df_out = df[['codgeo', 'codgeo_voisins']]
-         output_path = CLEAN_DIR / "voisins.parquet"
-         df_out.to_parquet(output_path)
-         logger.log_step("clean_voisins", "COMPLETED", {"path": str(output_path)})
-    else:
-         logging.warning(f"Voisins: Columns not found. Found: {df.columns}")
-
 def clean_population(config: Dict[str, Any], logger: PipelineLogger):
     """Cleans Population and saves to parquet."""
     logger.log_step("clean_population", "STARTED")
@@ -896,7 +869,7 @@ def clean_school_effectifs(config: Dict[str, Any], logger: PipelineLogger):
          # Optional: Fallback to old method? 
          # User said "Mapping on the address is ugly", so we stick to UAI or fail/warn.
     
-    valid = merged.dropna(subset=['codgeo'])
+    valid = merged.dropna(subset=['codgeo']).copy()
     
     # 4. Compute Metrics
     effectif_col = 'nombre_total_eleves'
@@ -1327,9 +1300,9 @@ def clean_formations(config: Dict[str, Any], logger: PipelineLogger):
     if annuaire_path.exists():
         # Load CSV (semicolon likely)
         try:
-            df_annuaire = pd.read_csv(annuaire_path, sep=';', on_bad_lines='skip')
+            df_annuaire = pd.read_csv(annuaire_path, sep=';', on_bad_lines='skip', low_memory=False)
         except:
-            df_annuaire = pd.read_csv(annuaire_path, sep=',', on_bad_lines='skip')
+            df_annuaire = pd.read_csv(annuaire_path, sep=',', on_bad_lines='skip', low_memory=False)
         
         # Normalize columns
         df_annuaire.columns = [c.strip() for c in df_annuaire.columns]
@@ -1468,12 +1441,23 @@ def clean_odace_gares(config: Dict[str, Any], logger: PipelineLogger):
     stats['codgeo'] = stats['codgeo'].astype(str).str.zfill(5)
     stats['has_gare'] = (stats['gare_count'] > 0).astype(int)
     
-    # Save
+    # Save Gares Stats
     clean_dir = CLEAN_DIR
     clean_dir.mkdir(parents=True, exist_ok=True)
     output_path = clean_dir / "gares.parquet"
     stats.to_parquet(output_path)
     
+    # Save Commune SK Mapping
+    # We want to keep the link between codgeo and commune_sk
+    # df_commune columns: commune_sk, commune_insee_code, commune_label, departement_code, region_code
+    sk_mapping = df_commune[['commune_insee_code', 'commune_sk']].drop_duplicates()
+    sk_mapping.rename(columns={'commune_insee_code': 'codgeo'}, inplace=True)
+    sk_mapping['codgeo'] = sk_mapping['codgeo'].astype(str).str.zfill(5)
+    
+    sk_output_path = clean_dir / "odace_communes_sk.parquet"
+    sk_mapping.to_parquet(sk_output_path)
+    logging.info(f"Odace: Saved {len(sk_mapping)} SK mappings to {sk_output_path}")
+
     logger.log_step("clean_odace_gares", "COMPLETED", {"path": str(output_path), "rows": len(stats)})
 
 def clean_regions(config: Dict[str, Any], logger: PipelineLogger):

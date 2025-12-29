@@ -7,7 +7,24 @@ import logging
 import shutil
 import numpy as np
 from pathlib import Path
-from typing import Dict, Any
+import warnings
+from shapely.geometry import Polygon, MultiPolygon
+from typing import Dict, Any, List
+
+def extract_polygonal(geom):
+    """Keep only Polygon/MultiPolygon parts of a geometry."""
+    if geom is None:
+        return None
+    if geom.geom_type in ["Polygon", "MultiPolygon"]:
+        return geom
+    if geom.geom_type == "GeometryCollection":
+        polys = [g for g in geom.geoms if g.geom_type in ["Polygon", "MultiPolygon"]]
+        if not polys:
+            return None
+        if len(polys) == 1:
+            return polys[0]
+        return MultiPolygon(polys)
+    return None
 
 from pipeline.common import (
     PipelineLogger, load_config, load_dataset,
@@ -86,14 +103,14 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         # Merge School Effectifs
         merge_clean("school_effectifs", ['total_eleves', 'ecoles_count', 'risky_schools_count'])
         
-        # Merge Voisins
-        merge_clean("voisins", ['codgeo_voisins'])
-
         # Merge BPE Petite Enfance (Creches)
         merge_clean("bpe_petite_enfance_cols", ['bpe_creches_count'])
 
         # Merge Gares (Odace API)
         merge_clean("gares", ['gare_count', 'has_gare'])
+
+        # Merge Odace Commune SK
+        merge_clean("odace_communes_sk", ['commune_sk'])
 
         # Merge Loyers (Appartements)
         merge_clean("loyers", ['loyer_app_m2'])
@@ -172,7 +189,7 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
                 
                 # Fill NaNs for health counts
                 for col in ['count_hopital', 'count_psy', 'count_maternite']:
-                    communes_gdf['count_maternite'] = communes_gdf['count_maternite'].fillna(0)
+                    communes_gdf[col] = communes_gdf[col].fillna(0)
                 
                 logging.info(f"Health counts calculated.")
                     
@@ -231,9 +248,14 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         # This allows scoring.py to run without constantly re-projecting.
         
         if communes_gdf.crs != cfg.PROJECTED_CRS:
-            communes_gdf = communes_gdf.to_crs(cfg.PROJECTED_CRS)
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*array with ndim > 0 to a scalar is deprecated.*")
+                communes_gdf = communes_gdf.to_crs(cfg.PROJECTED_CRS)
             
         # Store centroids in projected CRS (for fast distance calc)
+        communes_gdf['geometry'] = communes_gdf.geometry.make_valid()
+        communes_gdf['geometry'] = communes_gdf.geometry.apply(extract_polygonal)
+        communes_gdf = communes_gdf[communes_gdf.geometry.notnull()].copy()
         communes_gdf['centroid'] = communes_gdf.geometry.centroid
                       
         # 4. Bassins de Vie Mapping (for pop_be)
@@ -314,7 +336,9 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         # and avoid any implicit conversion to EPSG:4326 by GeoParquet logic
         if communes_gdf.crs != cfg.PROJECTED_CRS:
              logger.log_step("build_communes", "WARNING", {"msg": "CRS mismatch before save, re-projecting"})
-             communes_gdf = communes_gdf.to_crs(cfg.PROJECTED_CRS)
+             with warnings.catch_warnings():
+                 warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*array with ndim > 0 to a scalar is deprecated.*")
+                 communes_gdf = communes_gdf.to_crs(cfg.PROJECTED_CRS)
              
         communes_gdf['polygon'] = communes_gdf.geometry.to_wkb()
         
@@ -324,9 +348,9 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         cols_to_drop = ['geometry', 'centroid', 'libgeo', 'libelle_bassin_de_vie']
         # Handle case where columns might not exist (e.g. if already dropped or renamed)
         cols_to_drop = [c for c in cols_to_drop if c in communes_gdf.columns]
-        df_to_save = pd.DataFrame(communes_gdf.drop(columns=cols_to_drop))
+        df_to_save = communes_gdf.drop(columns=cols_to_drop).copy()
         
-        output_path = OUTPUT_DIR / "odis_communes.parquet"
+        output_path = OUTPUT_DIR / "odis_communes_pre.parquet"
         df_to_save.to_parquet(output_path)
         logger.log_step("build_communes", "CREATED", {"path": str(output_path), "rows": len(df_to_save)})
         
@@ -358,7 +382,8 @@ def build_bassins_de_vie(communes_gdf: gpd.GeoDataFrame, config: Dict[str, Any],
             # AND if it seems to contain geometry objects (not bytes)
             if communes_gdf.geometry.name != 'polygon':
                 if not isinstance(communes_gdf['polygon'].iloc[0], bytes):
-                     communes_gdf = communes_gdf.set_geometry('polygon')
+                     communes_gdf['geometry'] = communes_gdf['polygon'].apply(lambda x: make_valid(wkb.loads(x)))
+        communes_gdf = communes_gdf.set_geometry('geometry')
                 # If bytes, we assume active geometry is already correct (from build_communes)
                 # or we would need to load it. Since build_communes returns valid GDF, we do nothing.
         # communes_gdf['geometry'] = communes_gdf.geometry.buffer(0)
@@ -388,9 +413,10 @@ def build_bassins_de_vie(communes_gdf: gpd.GeoDataFrame, config: Dict[str, Any],
         # 4. Dissolve by Bassin de Vie
         # Fix invalid geometries before dissolve
         # 1. Try buffer(0)
-        communes_gdf['geometry'] = communes_gdf['geometry'].buffer(0)
-        # 2. Filter invalid
-        communes_gdf = communes_gdf[communes_gdf.is_valid]
+        # 1. Clean geometries for dissolve
+        communes_gdf['geometry'] = communes_gdf.geometry.make_valid()
+        communes_gdf['geometry'] = communes_gdf.geometry.apply(extract_polygonal)
+        communes_gdf = communes_gdf[communes_gdf.geometry.notnull()].copy()
         
         bv_gdf = communes_gdf[communes_gdf['bassin_de_vie'].notnull()].dissolve(by='bassin_de_vie', aggfunc=agg_dict)
         
@@ -429,7 +455,9 @@ def build_bassins_de_vie(communes_gdf: gpd.GeoDataFrame, config: Dict[str, Any],
         
         # Explicitly convert to WKB to ensure we save the PROJECTED geometry (EPSG:2154)
         if bv_gdf.crs != cfg.PROJECTED_CRS:
-             bv_gdf = bv_gdf.to_crs(cfg.PROJECTED_CRS)
+             with warnings.catch_warnings():
+                 warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*array with ndim > 0 to a scalar is deprecated.*")
+                 bv_gdf = bv_gdf.to_crs(cfg.PROJECTED_CRS)
              
         bv_gdf['polygon'] = bv_gdf.geometry.to_wkb()
         
@@ -580,8 +608,11 @@ def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
             gdf_finess = gpd.GeoDataFrame(
                 finess_df,
                 geometry=gpd.points_from_xy(finess_df.coordxet, finess_df.coordyet),
-                crs="EPSG:2154"
-            ).to_crs("EPSG:4326")
+                crs=cfg.PROJECTED_CRS
+            )
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*array with ndim > 0 to a scalar is deprecated.*")
+                gdf_finess = gdf_finess.to_crs("EPSG:4326")
             
             # Merge Maternites
             mat_cfg = config['sources']['maternites']
