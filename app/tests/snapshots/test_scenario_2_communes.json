@@ -73,15 +73,15 @@
         "met_match_adult1": 1,
         "met_match_adult1_scaled": 1.0,
         "form_match_codes_adult2": [
-            "326",
             "331",
+            "326",
             "330"
         ],
         "form_match_adult2": 3,
         "form_match_adult2_scaled": 1.0,
         "noms_formations": [
-            "Informatique, traitement de l'information, réseaux de transmission des données",
             "Santé",
+            "Informatique, traitement de l'information, réseaux de transmission des données",
             "Spécialités plurivalentes sanitaires et sociales"
         ],
         "sante_structures_scaled": 1.0,
@@ -170,14 +170,14 @@
         "met_match_adult1": 1,
         "met_match_adult1_scaled": 1.0,
         "form_match_codes_adult2": [
-            "326",
-            "331"
+            "331",
+            "326"
         ],
         "form_match_adult2": 2,
         "form_match_adult2_scaled": 1.0,
         "noms_formations": [
-            "Informatique, traitement de l'information, réseaux de transmission des données",
-            "Santé"
+            "Santé",
+            "Informatique, traitement de l'information, réseaux de transmission des données"
         ],
         "sante_structures_scaled": 0.0,
         "mob_epci_scaled": 1,
@@ -358,14 +358,14 @@
         "met_match_adult1": 1,
         "met_match_adult1_scaled": 1.0,
         "form_match_codes_adult2": [
-            "326",
-            "331"
+            "331",
+            "326"
         ],
         "form_match_adult2": 2,
         "form_match_adult2_scaled": 1.0,
         "noms_formations": [
-            "Informatique, traitement de l'information, réseaux de transmission des données",
-            "Santé"
+            "Santé",
+            "Informatique, traitement de l'information, réseaux de transmission des données"
         ],
         "sante_structures_scaled": 1.0,
         "mob_epci_scaled": 1,
@@ -453,14 +453,14 @@
         "met_match_adult1": 1,
         "met_match_adult1_scaled": 1.0,
         "form_match_codes_adult2": [
-            "326",
-            "331"
+            "331",
+            "326"
         ],
         "form_match_adult2": 2,
         "form_match_adult2_scaled": 1.0,
         "noms_formations": [
-            "Informatique, traitement de l'information, réseaux de transmission des données",
-            "Santé"
+            "Santé",
+            "Informatique, traitement de l'information, réseaux de transmission des données"
         ],
         "sante_structures_scaled": 1.0,
         "mob_epci_scaled": 0,

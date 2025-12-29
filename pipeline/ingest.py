@@ -1231,7 +1231,9 @@ def main(argv=None):
         'gares': clean_odace_gares,
         'loyers': clean_loyers,
         'population_details': clean_population_details,
-        'nomenclature_waldec': clean_nomenclature_waldec
+        'nomenclature_waldec': clean_nomenclature_waldec,
+        'regions': clean_regions,
+        'departements': clean_departements
     }
 
     selected_steps = args.steps.split(',') if args.steps else steps_map.keys()
@@ -1473,6 +1475,52 @@ def clean_odace_gares(config: Dict[str, Any], logger: PipelineLogger):
     stats.to_parquet(output_path)
     
     logger.log_step("clean_odace_gares", "COMPLETED", {"path": str(output_path), "rows": len(stats)})
+
+def clean_regions(config: Dict[str, Any], logger: PipelineLogger):
+    """Cleans Regions referential and saves to parquet."""
+    logger.log_step("clean_regions", "STARTED")
+    source = config['sources']['regions_ref']
+    path = CACHE_DIR / source['local_name']
+    if not path.exists(): return
+
+    df = load_dataset(path, source)
+    
+    # Expected columns: REG, LIBELLE
+    if 'REG' in df.columns and 'LIBELLE' in df.columns:
+        df_out = df[['REG', 'LIBELLE']].rename(columns={'REG': 'code', 'LIBELLE': 'label'})
+        df_out['code'] = df_out['code'].astype(str).str.zfill(2)
+        
+        output_path = CLEAN_DIR / "regions.parquet"
+        df_out.to_parquet(output_path)
+        logger.log_step("clean_regions", "COMPLETED", {"path": str(output_path), "rows": len(df_out)})
+    else:
+        logging.warning(f"Regions: Columns not found. Found: {df.columns}")
+
+def clean_departements(config: Dict[str, Any], logger: PipelineLogger):
+    """Cleans Departements referential and saves to parquet."""
+    logger.log_step("clean_departements", "STARTED")
+    source = config['sources']['departements_ref']
+    path = CACHE_DIR / source['local_name']
+    if not path.exists(): return
+
+    df = load_dataset(path, source)
+    
+    # Expected columns: DEP, REG, LIBELLE
+    if 'DEP' in df.columns and 'LIBELLE' in df.columns:
+        cols_to_keep = ['DEP', 'LIBELLE']
+        if 'REG' in df.columns:
+            cols_to_keep.append('REG')
+            
+        df_out = df[cols_to_keep].rename(columns={'DEP': 'code', 'LIBELLE': 'label', 'REG': 'reg_code'})
+        df_out['code'] = df_out['code'].astype(str).str.zfill(2)
+        if 'reg_code' in df_out.columns:
+            df_out['reg_code'] = df_out['reg_code'].astype(str).str.zfill(2)
+        
+        output_path = CLEAN_DIR / "departements.parquet"
+        df_out.to_parquet(output_path)
+        logger.log_step("clean_departements", "COMPLETED", {"path": str(output_path), "rows": len(df_out)})
+    else:
+        logging.warning(f"Departements: Columns not found. Found: {df.columns}")
 
 if __name__ == "__main__":
     main()

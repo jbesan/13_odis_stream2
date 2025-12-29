@@ -6,7 +6,7 @@ class SearchCriterias(BaseModel):
     Criteria for searching and scoring cities based on user needs.
     """
     commune_actuelle: str = Field(..., description="INSEE code of the user's current city (e.g. '75056')")
-    loc_distance_km: str = Field(..., description="scope for search radius ('departement', 'region', 'france')")
+    loc_search_area: str = Field(..., description="scope for search area ('departement', 'region', 'france')")
     
     nb_adultes: int = Field(1, description="Number of adults in the household")
     nb_enfants: int = Field(0, description="Number of children in the household")
@@ -21,3 +21,6 @@ class SearchCriterias(BaseModel):
     hebergement: Optional[str] = Field(None, description="Preferred accommodation type (e.g. 'Location')")
     logement: Optional[str] = Field(None, description="Housing type (e.g. 'Logement Social')")
     sante: Optional[str] = Field(None, description="Specific health need (e.g. 'Maternité')")
+    
+    loc_custom_code: Optional[str] = Field(None, description="Explicit code for custom search area (Reg or Dep)")
+    loc_custom_type: Optional[str] = Field(None, description="Type of custom search area ('region' or 'departement')")

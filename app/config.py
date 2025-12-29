@@ -50,7 +50,7 @@ BV_NAME_COL = 'libelle_bassin_de_vie'
 NOMBRE_ADULTES_OPTIONS = [1, 2]
 NOMBRE_ENFANTS_OPTIONS = [0, 1, 2, 3, 4, 5]
 CLASSES_SCOLAIRES = ['Crèche / Assistante Maternelle', 'Maternelle', 'Elémentaire', 'Collège', 'Lycée']
-LOC_DISTANCE_OPTIONS = {20: '20 km', 50: '50 km', 'departement': 'Département', 'region': 'Région', 'france': 'France Métropolitaine'}
+LOC_SEARCH_AREA_OPTIONS = {'departement': 'Département', 'region': 'Région', 'france': 'France Métropolitaine', 'custom': 'Choisir une région ou département spécifique'}
 HEBERGEMENT_OPTIONS = ["Chez l'habitant", 'Location', 'Foyer']
 LOGEMENT_OPTIONS = ['Location', 'Logement Social']
 SANTE_OPTIONS = ["Aucun", "Hopital", 'Maternité', "Soutien Psychologique & Addictologie"]
@@ -104,7 +104,7 @@ class ScoringConfig:
 
     # Location
     commune_actuelle: str
-    loc_distance_km: Union[int, str]
+    loc_search_area: str
     
     # Household
     nb_adultes: int
@@ -122,6 +122,10 @@ class ScoringConfig:
     # Inclusion
     inc_services_core_selection: List[str]
     inc_asso_add_selection: List[str]
+
+    # Custom Geo
+    loc_custom_code: Optional[str] = None
+    loc_custom_type: Optional[str] = None # 'region' or 'departement'
     
 
 
@@ -143,7 +147,7 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     'poids_sante': 50, # Added default weight for sante
     'departement_actuel': '33',
     'commune_actuelle': 'Bordeaux',
-    'loc_distance_km': 50,
+    'loc_search_area': 'departement',
     'hebergement': 'Location',
     'logement': 'Location',
     'sante': "Aucun",
@@ -155,7 +159,9 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     'inc_services_add_selection': [],
     'inc_services_add_selection': [],
     'inc_services_core_selection': DEFAULT_INC_SERVICES_CORE,
-    'inc_asso_add_selection': []
+    'inc_asso_add_selection': [],
+    'loc_custom_code': None,
+    'loc_custom_type': None
 }
 
 DEMO_SCENARIOS = {
@@ -163,7 +169,7 @@ DEMO_SCENARIOS = {
         'nom': 'Zacharie',
         'departement_actuel': '33',
         'commune_actuelle': 'Bordeaux',
-        'loc_distance_km': 50,
+        'loc_search_area': 'departement',
         'hebergement': "Chez l'habitant",
         'nb_adultes': 1,
         'nb_enfants': 0,
@@ -173,7 +179,7 @@ DEMO_SCENARIOS = {
         'nom': 'Olga & Dimitri',
         'departement_actuel': '75',
         'commune_actuelle': 'Paris',
-        'loc_distance_km': 'region',
+        'loc_search_area': 'region',
         'hebergement': "Location",
         'logement': "Logement Social",
         'nb_adultes': 2,
@@ -188,7 +194,7 @@ DEMO_SCENARIOS = {
         'nom': 'Aïcha',
         'departement_actuel': '13',
         'commune_actuelle': 'Marseille',
-        'loc_distance_km': 50,
+        'loc_search_area': 'departement',
         'hebergement': "Location",
         'logement': "Logement Social",
         'nb_adultes': 1,

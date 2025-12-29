@@ -125,7 +125,7 @@ def default_config():
         poids_sante=100, # Added for tests
         poids_mobilité=100,
         commune_actuelle='33063', # Bordeaux
-        loc_distance_km=50,
+        loc_search_area='departement',
         nb_adultes=1,
         nb_enfants=0,
         hebergement='Location',

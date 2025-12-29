@@ -13,29 +13,20 @@ import config as cfg
 import logging
 
 
-def get_map_zoom(distance_km: Union[int, str]) -> int:
-    """Returns a map zoom level based on a search distance."""
-    if isinstance(distance_km, str):
-        if distance_km == 'departement':
-            return 9
-        if distance_km == 'region':
-            return 8
-        return 7 # Fallback for unknown string
-    
-    # At this point, mypy knows distance_km is int because of the Union and the check above
-    dist_int = int(distance_km)
-    if dist_int <= 10: return 11
-    if dist_int <= 25: return 10
-    if dist_int <= 50: return 9
-    if dist_int <= 100: return 8
-    return 7
+def get_map_zoom(search_area: str) -> int:
+    """Returns a map zoom level based on a search area scope."""
+    if search_area == 'departement':
+        return 9
+    if search_area == 'region':
+        return 8
+    return 7 # Fallback for 'france' or unknown
 
 
 
 def create_base_map(center: List[float], zoom: int) -> flm.Map:
     """Creates the base Folium map."""
     if center is None: center = cfg.DEFAULT_MAP_CENTER
-    if zoom is None: zoom = get_map_zoom(st.session_state.config.loc_distance_km)
+    if zoom is None: zoom = get_map_zoom(st.session_state.config.loc_search_area)
     return flm.Map(location=center, zoom_start=zoom, tiles="cartodbpositron")
 
 def build_scores_layer(df: pd.DataFrame) -> Tuple[flm.FeatureGroup, Optional[Any]]:

@@ -26,11 +26,23 @@
 - URL Stable: https://www.data.gouv.fr/api/1/datasets/r/6ca4e113-271d-45bb-8995-5d9779f7b10d
 - Typ de fichier: csv
 
-## COG
+## COG Communes
 
 - Données: https://www.data.gouv.fr/datasets/code-officiel-geographique-cog/#/resources/91a95bee-c7c8-45f9-a8aa-f14cc4697545
 - URL Stable: https://object.files.data.gouv.fr/hydra-parquet/hydra-parquet/b65c0022cfa4e00c71bee1af980652bf.parquet
 - Type de fichier: parquet
+
+## COG Régions
+
+- Données: https://www.data.gouv.fr/datasets/code-officiel-geographique-cog#/resources/2486b351-5d85-4e1a-8d12-5df082c75104
+- URL Stable: https://tabular-api.data.gouv.fr/api/resources/2486b351-5d85-4e1a-8d12-5df082c75104/data/json/
+- Type de fichier: json
+
+## COG Départements
+
+- Données: https://www.data.gouv.fr/datasets/code-officiel-geographique-cog#/resources/54a8263d-6e2d-48d5-b214-aa17cc13f7a0
+- URL Stable: https://tabular-api.data.gouv.fr/api/resources/54a8263d-6e2d-48d5-b214-aa17cc13f7a0/data/json/
+- Type de fichier: json
 
 ## Bassins de vie
 

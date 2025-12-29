@@ -174,8 +174,8 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
         # Dynamically build the full criteria list
         criteria = {
             "Lieu de départ": st_session_state.get('ui_commune'),
-            "Zone de recherche": cfg.LOC_DISTANCE_OPTIONS.get(config.loc_distance_km,
-                                                              str(config.loc_distance_km) + " km"),
+            "Zone de recherche": cfg.LOC_SEARCH_AREA_OPTIONS.get(config.loc_search_area,
+                                                               str(config.loc_search_area)),
             "Métiers recherchés": metiers_str,
             "Formations recherchées": formations_str,
             "Nb. adultes": config.nb_adultes,

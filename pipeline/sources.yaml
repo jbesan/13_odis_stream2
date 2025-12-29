@@ -187,6 +187,18 @@ sources:
     local_name: "population_details.zip"
     description: "Population détaillée 2022 (Historique 2011, 2016)"
 
+  regions_ref:
+    url: "https://tabular-api.data.gouv.fr/api/resources/2486b351-5d85-4e1a-8d12-5df082c75104/data/json/"
+    format: "json"
+    local_name: "referentiel_regions.json"
+    description: "Référentiel des Régions (COG)"
+
+  departements_ref:
+    url: "https://tabular-api.data.gouv.fr/api/resources/54a8263d-6e2d-48d5-b214-aa17cc13f7a0/data/json/"
+    format: "json"
+    local_name: "referentiel_departements.json"
+    description: "Référentiel des Départements (COG)"
+
 local_files:
   finess:
     path: "pipeline/local/annuaire_sante_finess.parquet"

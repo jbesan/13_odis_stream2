@@ -13,7 +13,6 @@ logger = logging.getLogger("gemini_client")
 
 # System Instructions (Social Worker Persona)
 from config import (
-    LOC_DISTANCE_OPTIONS, 
     WEIGHT_PROFILES, 
     DEFAULT_INC_SERVICES_CORE,
     WALDEC_CORE_INCLUSION,
@@ -120,7 +119,7 @@ class OdisAgent:
             Args:
                 query: The search term (e.g., 'Soudeur', 'Football').
                 domain: The target database. MUST be one of: 
-                        ['fap_codes' (Jobs), 'formation_codes', 'inclusion_services', 'waldec_codes' (Hobbies)].
+                        ['fap_codes' (Jobs), 'formation_codes', 'inclusion_services', 'waldec_codes' (Hobbies), 'regions', 'departements'].
             """
             # logger.debug(f"DEBUG: [SDK] search_referentiels called with query='{query}'")
             return _search_referentiels_logic(query, domain)

@@ -6,7 +6,7 @@ This document details how the scoring algorithm calculates the suitability of a 
 
 - **Name**: Aïcha
 - **Current Location**: Marseille (13)
-- **Search Radius**: 50 km
+- **Search Area**: Département (Bouches-du-Rhône)
 - **Family**: 1 Adult, 2 Children
 - **Housing**: Location, Logement Social
 - **Job**: Code `T2A60` (Technicien / Technicienne de laboratoire d'analyse industrielle)
@@ -84,12 +84,10 @@ The algorithm calculates a score between 0 and 1 for each category for every can
 
 ### F. Mobilité (Weight: 50)
 
-- **Distance (`mob_dist_scaled`)**:
-  - Linear score based on distance from Marseille (0km = 1.0, 50km = 0.0).
-- **EPCI (`mob_epci_scaled`)**:
-  - 1.0 if in the same EPCI (Métropole d'Aix-Marseille-Provence), 0.0 otherwise.
 - **Gare (`mob_gare_scaled`)**:
   - 1.0 if the commune has a train station (Source: Odace), 0.0 otherwise.
+- **EPCI (`mob_epci_scaled`)**:
+  - 1.0 if in the same EPCI (Métropole d'Aix-Marseille-Provence), 0.0 otherwise.
 
 ## 3. Aggregation (Bassin de Vie Level)
 
@@ -121,14 +119,10 @@ Let's assume Aubagne is a candidate commune.
 3.  **Education**: Has both schools -> Score **1.0**
 4.  **Santé**: Has a maternity -> Score **1.0**
 5.  **Inclusion**: Good services and associations -> Score **0.8**
-6.  **Mobilité**: ~15km from Marseille, same EPCI, has a **Gare** -> Score **0.90** (Avg of 0.7, 1.0, 1.0)
+6.  **Mobilité**: Same EPCI, has a **Gare** -> Score **1.0** (Avg of 1.0, 1.0)
 
 $$
-\text{Score} = \frac{100(0.9) + 100(0.6) + 100(1.0) + 100(1.0) + 50(0.8) + 50(0.90)}{500}
-$$
-
-$$
-\text{Score} = \frac{90 + 60 + 100 + 100 + 40 + 45}{500} = \frac{435.0}{500} = \mathbf{0.87}
+\text{Score} = \frac{90 + 60 + 100 + 100 + 40 + 50}{500} = \frac{440.0}{500} = \mathbf{0.88}
 $$
 
 Aubagne would likely be a top result.

@@ -114,16 +114,24 @@ def run_search():
     log_search_results(config, processed_gdf, unaggregated_gdf, st.session_state.app_data['scores_cat'])
     
     # Calculate center for map
-    selected_geo = st.session_state.app_data['odis'].loc[[config.commune_actuelle]].copy()
-    start_commune_projected = start_commune.to_crs('EPSG:2154')
-    centroid_geo_series_projected = start_commune_projected.centroid
-    centroid_geo_series_geographic = centroid_geo_series_projected.to_crs('EPSG:4326')
-    final_center_x = centroid_geo_series_geographic.x.iloc[0]
-    final_center_y = centroid_geo_series_geographic.y.iloc[0]
+    if not processed_gdf.empty:
+        # Compute centroid of all results
+        # Use EPSG:2154 for accurate centroid, then back to 4326
+        # Optimization: use the mean of centroids if the dataset is large
+        projected_centroids = processed_gdf.to_crs('EPSG:2154').centroid
+        avg_centroid_projected = projected_centroids.unary_union.centroid
+        avg_centroid_geo = gpd.GeoSeries([avg_centroid_projected], crs='EPSG:2154').to_crs('EPSG:4326').iloc[0]
+        final_center_y, final_center_x = avg_centroid_geo.y, avg_centroid_geo.x
+    else:
+        # Fallback to current commune
+        start_commune_projected = start_commune.to_crs('EPSG:2154')
+        centroid_geo_series_geographic = start_commune_projected.centroid.to_crs('EPSG:4326')
+        final_center_x = centroid_geo_series_geographic.x.iloc[0]
+        final_center_y = centroid_geo_series_geographic.y.iloc[0]
 
-    st.session_state['selected_geo'] = selected_geo
+    st.session_state['selected_geo'] = st.session_state.app_data['odis'].loc[[config.commune_actuelle]].copy()
     st.session_state['center'] = [final_center_y, final_center_x]
-    st.session_state['zoom'] = maps.get_map_zoom(config.loc_distance_km)
+    st.session_state['zoom'] = maps.get_map_zoom(config.loc_search_area)
     st.session_state['fg_dict_ref'] = {}
     st.session_state['fgs_to_show'] = set()
     st.session_state['highlighted_result'] = [False, None]

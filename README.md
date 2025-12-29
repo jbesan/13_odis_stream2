@@ -24,9 +24,9 @@ Ce prototype a un triple objectif :
 
 - **Profil Personnalisé :** Définissez un "projet de vie" détaillé incluant la composition du foyer, le niveau scolaire des enfants, les métiers visés, les besoins en formation, etc.
 - **Pondération Avancée :** Ajustez l'importance de chaque grande catégorie ou utilisez des profils prédéfinis (Famille, Santé, Emploi). Affinez la priorité de critères spécifiques (ex: "Logement Social" prioritaire).
-- **Vue par Bassin de Vie :** Agrégez les résultats à l'échelle des "bassins de vie" de l'INSEE pour une analyse plus macroscopique et pertinente des territoires fonctionnels.
-- **Scoring Intelligent :** Chaque commune de France est évaluée sur sa compatibilité avec le profil. La taille de la population n'est plus un filtre mais un critère de score, favorisant les localités de taille pertinente.
-- **Système de "Binômes" :** L'algorithme associe de manière unique des communes voisines (`binômes`) pour proposer des solutions conjointes qui répondent à l'ensemble des besoins, même si une seule commune ne le pourrait pas.
+- **Vue par Bassin de Vie ([DEPRECATED]) :** Permet d'agréger les résultats à l'échelle des "bassins de vie" de l'INSEE. Cette fonctionnalité est maintenue pour compatibilité mais le projet privilégie désormais la vue par commune.
+- **Scoring Intelligent :** Chaque commune de France est évaluée sur sa compatibilité avec le profil. La taille de la population n'est plus un filtre mais un critère de score.
+- **Système de "Binômes" ([DEPRECATED]) :** L'algorithme associait des communes voisines pour proposer des solutions conjointes. Cette logique est en cours de remplacement par l'enrichissement automatique via le bassin de vie.
 - **Carte Interactive :** Visualisez les localités les mieux notées, leur score, et superposez des couches d'informations additionnelles (écoles, établissements de santé, services d'inclusion).
 - **Résultats Détaillés & Export PDF :** Explorez les 5 meilleurs résultats avec une analyse de leurs points forts et exportez un rapport PDF complet pour la famille accompagnée.
 - **Assistant IA (Agent ODIS) :** Interagissez en langage naturel avec un agent intelligent (Gemini 2.5) capable de conduire l'entretien, de rechercher des codes métiers/formations et de lancer le calcul pour vous.
@@ -77,14 +77,13 @@ Ce prototype a un triple objectif :
 
 Le cœur de l'application est un pipeline de scoring qui évalue les communes (ou les bassins de vie) en fonction du profil utilisateur.
 
-1.  **Filtrage Géographique :** Le moteur délimite la zone de recherche. Plutôt qu'un simple rayon, il utilise une logique géospatiale :
-    - **Recherche par distance :** Sélectionne les communes/bassins de vie dont le centroïde est dans le rayon de recherche.
-    - **Recherche par zone :** Sélectionne les communes/bassins de vie qui intersectent un département ou une région.
-2.  **Calcul des Critères :** Il calcule ensuite des dizaines de scores individuels pour chaque commune (ex: adéquation des offres d'emploi, disponibilité de logements sociaux, score de population). Ces scores sont normalisés pour permettre une comparaison équitable.
-3.  **Logique de Binôme :** Le moteur identifie les communes voisines et les évalue par paires (`binôme`). Cela permet de recommander deux villes qui, ensemble, remplissent tous les critères (ex: l'une a les emplois, l'autre les logements). Une petite pénalité (`binome_penalty`) est appliquée pour privilégier les solutions au sein d'une même commune (`monôme`) lorsque c'est possible.
-4.  **Agrégation par Catégorie :** Les scores des critères individuels sont ensuite moyennés pour former des scores de catégories (Emploi, Logement, Éducation, etc.).
-5.  **Agrégation par Bassin de Vie (Optionnel) :** Si l'utilisateur choisit cette vue, **tous les scores** des communes (y compris Éducation, Santé, Inclusion) sont agrégés au niveau du bassin de vie par une **moyenne pondérée par la population**. Cela permet d'obtenir une vue d'ensemble cohérente où les services des grandes communes pèsent plus lourd.
-6.  **Score Pondéré Final :** Enfin, un `weighted_score` global est calculé pour chaque entité (commune, binôme ou bassin de vie) en appliquant les poids définis par l'utilisateur. Les résultats sont ensuite classés selon ce score final.
+1.  **Filtrage Géographique :** Le moteur délimite la zone de recherche selon le périmètre choisi (Département, Région, France Métropolitaine) ou une zone spécifique (Custom). Il n'utilise plus de rayon en km mais des limites administratives réelles.
+2.  **Calcul des Critères :** Il calcule des dizaines de scores individuels pour chaque commune (Emploi, Logement, Santé, etc.).
+3.  **Enrichissement par le Bassin de Vie :** Pour certains critères (ex: Éducation, Santé), le score d'une commune est **enrichi** par les services présents dans son bassin de vie. Si une commune n'a pas de lycée mais qu'il y en a un dans son bassin de vie, elle reçoit un score partiel (via le `bdv_factor` défini dans [scores_config.yaml](./app/scores_config.yaml)). Cela permet de valoriser les communes qui bénéficient des services de leur territoire proche.
+4.  **Logique de Binôme ([DEPRECATED]) :** Historiquement, le moteur créait des paires de communes. Cette approche est devenue secondaire face à l'enrichissement par le bassin de vie décrit ci-dessus.
+5.  **Agrégation par Catégorie :** Les scores des critères individuels sont moyennés pour former des scores de catégories. Pour un exemple concret du calcul, consultez le [SCORE_EXAMPLE.md](./SCORE_EXAMPLE.md).
+6.  **Agrégation par Bassin de Vie (Optionnel) :** Si l'utilisateur choisit cette vue, **tous les scores** des communes (y compris Éducation, Santé, Inclusion) sont agrégés au niveau du bassin de vie par une **moyenne pondérée par la population**. Cela permet d'obtenir une vue d'ensemble cohérente où les services des grandes communes pèsent plus lourd.
+7.  **Score Pondéré Final :** Enfin, un `weighted_score` global est calculé pour chaque entité (commune, binôme ou bassin de vie) en appliquant les poids définis par l'utilisateur. Les résultats sont ensuite classés selon ce score final.
 
 ![Explication de la logique de scoring](./images/Screenshot-4.png)
 
@@ -121,7 +120,6 @@ Le score est calculé à partir d'une multitude de critères, regroupés en gran
 
 **Catégorie : Mobilité**
 
-- **Distance depuis le lieu actuel** (`mob_dist_scaled`) : Score basé sur la proximité par rapport à la commune de départ de la personne.
 - **Appartenance à la même agglomération (EPCI)** (`mob_epci_scaled`) : Vérifie si la commune proposée est dans le même Établissement Public de Coopération Intercommunale (EPCI) que la commune de départ.
 - **Présence d'une Gare (`mob_gare_scaled`)** : Bonifie les communes disposant d'une gare ferroviaire (Source: Odace).
 

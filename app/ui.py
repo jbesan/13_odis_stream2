@@ -477,7 +477,46 @@ def render_other_needs_form() -> None:
 
 def render_mobility_form() -> None:
     """Renders the UI for the 'Mobilité' form section."""
-    st.radio('Zone de recherche autour du lieu de vie actuel :', cfg.LOC_DISTANCE_OPTIONS.keys(), format_func=cfg.LOC_DISTANCE_OPTIONS.get, key="ui_loc_distance_km")
+    st.radio('Zone de recherche :', cfg.LOC_SEARCH_AREA_OPTIONS.keys(), format_func=cfg.LOC_SEARCH_AREA_OPTIONS.get, key="ui_loc_search_area")
+
+    if st.session_state['ui_loc_search_area'] == 'custom':
+        st.markdown("---")
+        app_data = st.session_state['app_data']
+        
+        # Region Selector
+        regions_dict = app_data.get('regions_names', {})
+        region_codes = sorted(regions_dict.keys())
+        
+        if 'ui_custom_region' not in st.session_state and region_codes:
+            st.session_state['ui_custom_region'] = region_codes[0]
+            
+        selected_region_code = st.selectbox(
+            "Choisir une région", 
+            region_codes, 
+            format_func=lambda x: regions_dict.get(x, f"Code {x}"),
+            key="ui_custom_region"
+        )
+        
+        # Department Selector
+        dept_details = app_data.get('dept_details', {})
+        eligible_depts = {
+            code: details['label'] 
+            for code, details in dept_details.items() 
+            if str(details.get('reg_code')) == str(selected_region_code)
+        }
+        
+        dept_options = ["Toute la région"] + sorted(eligible_depts.keys())
+        
+        def format_dept(code):
+            if code == "Toute la région": return "Toute la région"
+            return f"{code} - {eligible_depts.get(code, code)}"
+
+        st.selectbox(
+            "Choisir un département spécifique (optionnel)",
+            dept_options,
+            format_func=format_dept,
+            key="ui_custom_dept"
+        )
 
 def display_input_tabs(demo_data: Dict[str, Any] = None) -> None:
     """Displays the main tabs for user input, composed of modular rendering functions."""
@@ -515,6 +554,21 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
             app_data['depcom_df'].libgeo == st.session_state['ui_commune']
         )
     ].index[0]
+
+    loc_search_area = st.session_state['ui_loc_search_area']
+    loc_custom_code = None
+    loc_custom_type = None
+
+    if loc_search_area == 'custom':
+        custom_dept = st.session_state.get('ui_custom_dept')
+        if custom_dept == "Toute la région":
+            loc_search_area = 'region'
+            loc_custom_code = st.session_state.get('ui_custom_region')
+            loc_custom_type = 'region'
+        else:
+            loc_search_area = 'departement'
+            loc_custom_code = custom_dept
+            loc_custom_type = 'departement'
 
     # Education
     classe_enfants = [st.session_state[f"ui_classe_enfant_{i}"] for i in range(st.session_state['ui_nb_enfants'])]
@@ -603,7 +657,9 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
         criteria_weights=criteria_weights, # F-15
         poids_mobilité=st.session_state['ui_poids_mobilité'],
         commune_actuelle=commune_codgeo,
-        loc_distance_km=st.session_state['ui_loc_distance_km'],
+        loc_search_area=loc_search_area,
+        loc_custom_code=loc_custom_code,
+        loc_custom_type=loc_custom_type,
         nb_adultes=st.session_state['ui_nb_adultes'],
         nb_enfants=st.session_state['ui_nb_enfants'],
         hebergement=st.session_state['ui_hebergement'],

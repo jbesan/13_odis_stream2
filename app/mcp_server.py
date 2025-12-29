@@ -266,7 +266,9 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
         poids_sante=get_weight('sante'),
         criteria_weights=filters.get('criteria_weights', {}),
         commune_actuelle=resolved_commune,
-        loc_distance_km=filters.get('loc_distance_km', 'departement'),
+        loc_search_area=filters.get('loc_search_area', 'departement'),
+        loc_custom_code=filters.get('loc_custom_code'),
+        loc_custom_type=filters.get('loc_custom_type'),
         nb_adultes=nb_adultes,
         nb_enfants=int(filters.get('nb_enfants', 0)),
         hebergement=filters.get('hebergement', 'Location'),
@@ -355,7 +357,7 @@ def compute_top_cities(weights: Dict[str, float], filters: Dict[str, Any]) -> Di
     
     Args:
         weights: Dictionary of weights (0-100) for categories (emploi, logement, education, inclusion, mobilité, sante).
-        filters: Dictionary of filter criteria (commune_actuelle, loc_distance_km, nb_adultes, etc.).
+        filters: Dictionary of filter criteria (commune_actuelle, loc_search_area, nb_adultes, etc.).
     """
     return _compute_top_cities_logic(weights, filters)
 

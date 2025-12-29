@@ -11,23 +11,6 @@ from app.config import ScoringConfig
 
 @pytest.mark.unit
 class TestFilterCommunes:
-    def test_filter_communes_distance(self, sample_data):
-        """Tests that filter_communes excludes communes outside the radius."""
-        start_commune = sample_data.loc[['33063']] # Bordeaux
-        max_dist_km = 200
-
-        filtered = scoring.filter_communes(
-            df=sample_data,
-            start_commune=start_commune,
-            loc_type='distance',
-            loc_code=None,
-            loc_distance_km=max_dist_km
-        )
-
-        assert '33063' in filtered.index # Bordeaux (0km)
-        assert '64445' in filtered.index # Pau (~170km)
-        assert '75056' not in filtered.index # Paris (>500km)
-
     def test_filter_communes_departement(self, sample_data):
         """Tests filtering by department."""
         start_commune = sample_data.loc[['33063']] # Bordeaux
@@ -37,7 +20,7 @@ class TestFilterCommunes:
             start_commune=start_commune,
             loc_type='departement',
             loc_code='33',
-            loc_distance_km=None
+            loc_search_area='departement'
         )
         
         assert len(filtered) == 1
@@ -53,7 +36,7 @@ class TestFilterCommunes:
             start_commune=start_commune,
             loc_type='region',
             loc_code='75',
-            loc_distance_km=None
+            loc_search_area='region'
         )
         
         # Should include Bordeaux (33) and Pau (64) which are both in Reg 75
@@ -82,21 +65,13 @@ class TestFilterCommunes:
             start_commune=start_commune,
             loc_type='france',
             loc_code=None,
-            loc_distance_km=0
+            loc_search_area='france'
         )
         
         assert '33063' in filtered.index # Bordeaux (Metro)
         assert '97411' not in filtered.index # Saint-Denis (DROM)
 
-@pytest.mark.unit
-class TestDistanceCalculation:
-    def test_add_distance_to_current_loc_correctness(self, sample_data):
-        """Tests that distance is calculated correctly (0 for self)."""
-        current_codgeo = '33063' # Bordeaux
-        df_with_dist = scoring.add_distance_to_current_loc(sample_data, current_codgeo)
-        
-        assert df_with_dist.loc[current_codgeo, 'dist_current_loc'] == 0
-        assert df_with_dist.loc['75056', 'dist_current_loc'] > 400 # Paris is far
+
 
 @pytest.mark.unit
 class TestScoringLogic:
@@ -313,7 +288,7 @@ class TestConditionalScoring:
             poids_inclusion=0,
             poids_mobilité=0,
             commune_actuelle='33063',
-            loc_distance_km=50,
+            loc_search_area='departement',
             nb_adultes=1,
             nb_enfants=0,        # Condition to ignore education
             hebergement='Location',
@@ -355,7 +330,7 @@ class TestConditionalScoring:
             poids_inclusion=0,
             poids_mobilité=0,
             commune_actuelle='33063',
-            loc_distance_km=50,
+            loc_search_area='departement',
             nb_adultes=1,
             nb_enfants=1,        # Condition to include education
             hebergement='Location',
@@ -449,7 +424,7 @@ class TestMCPScenario:
         # e.g. "I want to move to a place with good jobs and cheap rent near Bordeaux"
         config = ScoringConfig(
              commune_actuelle='33063', # Bordeaux
-             loc_distance_km=200, # Increased distance to include Pau (170km)
+             loc_search_area='region', # Increased scope to include Pau (170km)
              poids_emploi=100, # "Good jobs"
              poids_logement=100, # "Cheap rent" implies high weight on housing affordability
              poids_education=0,
@@ -662,7 +637,7 @@ class TestHousingScoresLogic:
                 codes_metiers=[[]],
                 codes_formations=[[]],
                 classe_enfants=[],
-                loc_distance_km=20,
+                loc_search_area='departement',
                 inc_asso_add_selection=[],
                 inc_services_add_selection=[],
                 inc_services_core_selection=[],

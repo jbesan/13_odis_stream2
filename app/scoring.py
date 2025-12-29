@@ -161,16 +161,21 @@ class ScoringEngine:
     def run(self, config: ScoringConfig) -> gpd.GeoDataFrame:
         """Orchestrates the full scoring pipeline."""
         start_commune = self.df_all_communes.loc[[config.commune_actuelle]]
-        loc_type = 'distance' if isinstance(config.loc_distance_km, int) else config.loc_distance_km
+        loc_type = config.loc_search_area
         
         # Filtering
-        loc_col = 'dep_code' if loc_type == 'departement' else 'reg_code'
+        if config.loc_custom_code:
+            loc_code = config.loc_custom_code
+        else:
+            loc_col = 'dep_code' if loc_type == 'departement' else 'reg_code'
+            loc_code = start_commune.iloc[0][loc_col] if loc_type != 'france' else None
+
         communes_to_score = filter_communes(
             df=self.df_all_communes,
             start_commune=start_commune,
             loc_type=loc_type,
-            loc_code=start_commune.iloc[0][loc_col] if loc_type != 'distance' else None,
-            loc_distance_km=config.loc_distance_km if loc_type == 'distance' else 0
+            loc_code=loc_code,
+            loc_search_area=config.loc_search_area
         )
         
         return self._compute_scores(communes_to_score, config)
@@ -266,9 +271,7 @@ class ScoringEngine:
             if target in df.columns: df['sante_structures_scaled'] = df[target]
             else: df['sante_structures_scaled'] = 0.0
 
-        # --- MOBILITE ---
-        if isinstance(config.loc_distance_km, int):
-            df['mob_dist_scaled'] = (1 - df['dist_current_loc'] / (config.loc_distance_km * 1000)).clip(0, 1)
+
 
         # EPCI Bonus
         current_epci = None
@@ -328,12 +331,8 @@ def add_distance_to_current_loc(df: gpd.GeoDataFrame, current_codgeo: str, df_al
          df.loc[:, 'dist_current_loc'] = centroids.distance(target_geom)
     return df
 
-def filter_communes(df: gpd.GeoDataFrame, start_commune: gpd.GeoSeries, loc_type: str, loc_code: str, loc_distance_km: int) -> gpd.GeoDataFrame:
-    if loc_type == 'distance':
-        start_pt = start_commune.geometry.centroid.iloc[0]
-        centroids = df['centroid'] if 'centroid' in df.columns else df.centroid
-        return df[centroids.distance(start_pt) <= loc_distance_km * 1000].copy()
-    elif loc_type == 'departement': return df[df['dep_code'] == loc_code].copy()
+def filter_communes(df: gpd.GeoDataFrame, start_commune: gpd.GeoSeries, loc_type: str, loc_code: str, loc_search_area: str) -> gpd.GeoDataFrame:
+    if loc_type == 'departement': return df[df['dep_code'] == loc_code].copy()
     elif loc_type == 'region': return df[df['reg_code'] == loc_code].copy()
     elif loc_type == 'france': return df[~df['dep_code'].astype(str).str.startswith(('97', '98'))].copy()
     return gpd.GeoDataFrame()

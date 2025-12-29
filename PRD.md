@@ -41,20 +41,20 @@
 
 Collecte des besoins via un formulaire multi-pages (basé sur `st.session_state['form_page']`).
 
-- **Localisation :** `ui_departement`, `ui_commune` (point de départ).
-- **Famille : :** `ui_nb_adultes`, `ui_nb_enfants`.
+- **Localisation :** `ui_commune` (point de départ), `ui_loc_search_area` (périmètre : Département, Région, France, Custom).
+- **Famille :** `ui_nb_adultes`, `ui_nb_enfants`.
 - **Éducation :** `ui_classe_enfant_{i}` (déclenche le scoring Éducation si `nb_enfants > 0`).
 - **Projet Pro :**
   - `ui_metiers_adult_{i}` (codes FAP, alimente `met_match_adult_scaled`).
   - `ui_formations_adult_{i}` (codes formations, alimente `form_match_adult_scaled`).
 - **Logement :**
-  - `ui_hebergement` (ex: "Chez l'habitant") : **Clarification (v1.1)** - Il s'agit de la solution _temporaire_ à l'arrivée. **Cette donnée n'est pas utilisée dans le scoring actuel** ; elle est contextuelle pour le travailleur social.
-  - `ui_logement` (ex: "Logement Social") : **Critère de scoring**. Active les scores pertinents (`log_soc_inoc_scaled`, `log_vac_scaled`, etc.).
+  - `ui_hebergement` (ex: "Chez l'habitant") : solution temporaire à l'arrivée.
+  - `ui_logement` (ex: "Logement Social") : Active les scores pertinents (`log_soc_inoc_scaled`, `log_vac_scaled`, etc.).
 - **Santé & Inclusion :**
   - `ui_besoin_sante` (ex: "Maternité").
-  - `ui_besoins_autres` (services d'inclusion).
-  - **Clarification (v1.1) :** Ces deux champs **ne sont pas utilisés dans le calcul du `weighted_score`**. Leur unique fonction actuelle est de déclencher l'affichage de couches d'information (overlays) sur la carte des résultats (`maps.py`) pour aider à la projection. L'inclusion dans le scoring est une _feature future_ potentielle.
-- **Mobilité :** `ui_loc_distance_km` (rayon de recherche max, filtre le `GeoDataFrame`).
+  - `ui_inc_services_add_selection` (services d'inclusion).
+  - `ui_inc_asso_add_selection` (affinités associatives).
+- **Mobilité :** `ui_loc_search_area` définit le périmètre de filtrage. Les scores de mobilité incluent la présence d'une gare (`mob_gare_scaled`) et l'appartenance à la même agglomération (`mob_epci_scaled`).
 
 ### Étape 3 : Interface de Résultats (`3_Resultats.py`)
 
@@ -69,15 +69,15 @@ Page principale interactive (layout `col_results`, `col_map`).
 Logique métier principale, orchestrée par `compute_odis_score()`.
 
 1.  **Pré-filtrage :** `df[df.population > config.pop_min]`.
-2.  **Distance :** Calcul `dist_current_loc` (via `sjoin_nearest`) depuis `config.commune_actuelle`.
-3.  **Filtrage Geo :** `filter_by_distance(df, max_distance_km=config.loc_distance_km)`.
-4.  **Scores Critères :** `compute_criteria_scores()` calcule les scores normalisés (QuantileTransformer) pour les critères activés (ex: `met_match_adult1_scaled`, `log_soc_inoc_scaled`).
+2.  **Filtrage Géo :** `filter_communes()` sélectionne les communes selon `loc_search_area` (Département, Région, France) ou un code spécifique (Region/Dep) fourni via `loc_custom_code`.
+3.  **Calcul Center :** Calcul du centroïde moyen des communes résultantes pour centrer la carte.
+4.  **Scores Critères :** `_compute_criteria_scores()` calcule les scores normalisés pour les critères activés (Emploi, Formation, Santé, Inclusion...).
 5.  **Logique "Binôme" :**
-    - `add_neighbor_scores()` "explode" le dataframe pour créer des paires (commune-A, commune-A) [monôme] et (commune-A, commune-B) [binôme].
-    - `compute_category_scores()` calcule le score de catégorie.
-    - **Point clé :** Le score d'un critère pour un binôme est le `max(score_A, score_B * (1 - binome_penalty))`.
-6.  **Score Pondéré :** `compute_weighted_score()` applique les poids (sliders) de l'UI (`config.poids_...`) aux scores de catégorie (`..._cat_score`).
-7.  **Sélection Finale :** `select_best_score_per_commune()` ne garde que la meilleure ligne (monôme OU binôme) pour chaque `codgeo`.
+    - `add_neighbor_scores()` crée des paires (monôme et binôme).
+    - `compute_category_scores()` calcule le score de catégorie (moyenne pondérée des critères).
+    - Le score d'un critère pour un binôme est le `max(score_A, score_B * (1 - binome_penalty))`.
+6.  **Score Pondéré :** `compute_weighted_score()` applique les poids des catégories (`config.poids_...`).
+7.  **Sélection Finale :** `select_best_score_per_commune()` ne garde que la meilleure ligne pour chaque `codgeo`.
 
 ### Étape 5 : Visualisation des Résultats (`3_Resultats.py`)
 
@@ -270,7 +270,7 @@ En tant que travailleur social, je veux voir les lieux recommandés sur une cart
 
 ### 📊 Status
 
-- Completed
+- Completed (Enhanced with Region/Department/France/Custom scopes in Dec 2025)
 
 ## 🚀 Feature [F-11]: Export des résultats en PDF
 
@@ -440,7 +440,7 @@ En tant que travailleur social, je veux voir les lieux recommandés sur une cart
 
 ### 📊 Status
 
-- Not Started
+- Completed (Implemented as `youth_decline_scaled` and `workclass_decline_scaled`)
 
 ## 🚀 Feature [F-19]: Odis AI Agent (Assistant Virtuel)
 

@@ -856,6 +856,34 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
     except Exception as e:
         logger.log_step("generate_referentiels", "ERROR_BASSINS_VIE", {"error": str(e)})
 
+    try:
+        # Regions
+        regions_path = CLEAN_DIR / "regions.parquet"
+        if regions_path.exists():
+            regions_df = pd.read_parquet(regions_path)
+            regions_ref = pd.DataFrame({
+                'key': 'regions',
+                'code': regions_df['code'],
+                'label': regions_df['label']
+            })
+            refs_list.append(regions_ref)
+            logger.log_step("generate_referentiels", "REGIONS", {"count": len(regions_ref)})
+
+        # Departements
+        deps_path = CLEAN_DIR / "departements.parquet"
+        if deps_path.exists():
+            deps_df = pd.read_parquet(deps_path)
+            deps_ref = pd.DataFrame({
+                'key': 'departements',
+                'code': deps_df['code'],
+                'label': deps_df['label'],
+                'reg_code': deps_df.get('reg_code', None)
+            })
+            refs_list.append(deps_ref)
+            logger.log_step("generate_referentiels", "DEPARTEMENTS", {"count": len(deps_ref)})
+    except Exception as e:
+        logger.log_step("generate_referentiels", "ERROR_REG_DEP", {"error": str(e)})
+
     # Final concatenation and save for all referentiels
     if refs_list:
         all_refs = pd.concat(refs_list, ignore_index=True)

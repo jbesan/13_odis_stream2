@@ -221,22 +221,6 @@ scores:
     weight: 2.0
     min_bound: 0.0
     max_bound: null
-  - id: mob_dist_scaled
-    category: mobilité
-    source_metric: dist_current_loc
-    bdv_factor: 0.0
-    computation: live
-    display:
-      name: Distance de la localisation actuelle
-      strong_point_text: La localité proposée est proche de la commune actuelle
-      high_value_adjective: réduite
-      show: false
-      unit: mètres
-      display_factor: 1
-      tooltip: Distance en m de la position actuelle
-    weight: 1.0
-    min_bound: 0.0
-    max_bound: 500000.0
   - id: mob_epci_scaled
     category: mobilité
     source_metric: null

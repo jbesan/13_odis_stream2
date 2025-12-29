@@ -138,20 +138,10 @@ def run_test_scenario(scenario_id, app_data):
     for i in range(default_data['nb_enfants']):
         mock_session_state.setdefault(f"ui_classe_enfant_{i}", cfg.CLASSES_SCOLAIRES[0])
 
-    # Handle ui_loc_type_display mapping logic which UI now expects
-    loc_val = default_data.get('loc_distance_km')
-    if loc_val == 'region':
-        mock_session_state['ui_loc_type_display'] = 'Région'
-    elif loc_val == 'france':
-        mock_session_state['ui_loc_type_display'] = 'France Métropolitaine'
-    elif loc_val == 'departement':
-        mock_session_state['ui_loc_type_display'] = 'Département'
-    elif isinstance(loc_val, int):
-        mock_session_state['ui_loc_type_display'] = 'Distance (km)'
-        mock_session_state['ui_distance_km'] = loc_val
-    else:
-        # Default fallback
-        mock_session_state['ui_loc_type_display'] = 'Département'
+    # Handle ui_loc_search_area
+    loc_val = default_data.get('loc_search_area')
+    mock_session_state['ui_loc_search_area'] = loc_val
+    mock_session_state['ui_loc_type_display'] = cfg.LOC_SEARCH_AREA_OPTIONS.get(loc_val, 'Département')
 
     # 4. Create the ScoringConfig by calling the app's own UI function.
     # We use unittest.mock.patch to temporarily replace streamlit's session_state
@@ -228,7 +218,7 @@ def test_result_details_display(app_data):
         'app_data': app_data,
         'ui_departement': '33',
         'ui_commune': 'Bordeaux',
-        'ui_loc_distance_km': 50,
+        'ui_loc_search_area': 'departement',
         'ui_nb_adultes': 1,
         'ui_nb_enfants': 0,
         'ui_hebergement': 'Location',

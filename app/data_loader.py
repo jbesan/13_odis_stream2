@@ -223,12 +223,24 @@ def load_all_data_raw() -> Dict[str, Any]:
     # Extract Lookups
     commune_names = {}
     bv_names = {}
+    regions_names = {}
+    departements_names = {}
+    dept_details = {}
+
     if not refs_df.empty:
          c_ref = refs_df[refs_df['key'] == 'communes']
          if not c_ref.empty: commune_names = c_ref.set_index('code')['label'].to_dict()
          
          bv_ref = refs_df[refs_df['key'] == 'bassins_de_vie']
          if not bv_ref.empty: bv_names = bv_ref.set_index('code')['label'].to_dict()
+
+         reg_ref = refs_df[refs_df['key'] == 'regions']
+         if not reg_ref.empty: regions_names = reg_ref.set_index('code')['label'].to_dict()
+
+         dep_ref = refs_df[refs_df['key'] == 'departements']
+         if not dep_ref.empty:
+             departements_names = dep_ref.set_index('code')['label'].to_dict()
+             dept_details = dep_ref.set_index('code')[['label', 'reg_code']].to_dict(orient='index')
 
     if 'libgeo' not in odis.columns:
         odis['libgeo'] = odis.index.map(commune_names)
@@ -337,6 +349,9 @@ def load_all_data_raw() -> Dict[str, Any]:
         'structures_ccas': structures_ccas,
         'pois': pois_df,
         'referentiels_raw': refs_df,
+        'regions_names': regions_names,
+        'departements_names': departements_names,
+        'dept_details': dept_details,
     }
 
 @st.cache_resource

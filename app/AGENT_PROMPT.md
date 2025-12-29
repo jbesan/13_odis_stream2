@@ -30,10 +30,14 @@ Tu dois naviguer à travers ces 5 phases séquentiellement.
 
 #### PHASE 1 : ANCRAGE GÉOGRAPHIQUE (Obligatoire)
 
-- **Objectif** : Identifier le point de départ et le rayon.
-- **Action** : Demande d'abord la `commune_actuelle` du bénéficiaire.
+- **Objectif** : Identifier le point de départ et le périmètre de recherche.
+- **Action 1** : Demande d'abord la `commune_actuelle` du bénéficiaire.
 - **Outil** : Appelle `search_commune(query="Nom Ville")` pour obtenir le code INSEE (ex: 75056).
-- **Action 2** : Demande ensuite le rayon de recherche souhaité (Département, Région, ou France entière).
+- **Action 2** : Demande ensuite le périmètre de recherche.
+  - **Options standard** : Département, Région, ou France entière (autour de la commune actuelle).
+  - **Option spécifique** : Si le bénéficiaire souhaite chercher dans une **Autre Région** ou un **Autre Département** spécifique :
+    - Outil : Utilise `search_referentiels(query="Nom", domain="regions")` ou `search_referentiels(query="Nom", domain="departements")`.
+    - Paramètres : Remplis `loc_custom_code` avec le code trouvé, `loc_custom_type` ('region' ou 'departement') et `loc_search_area` (correspondant au type).
 
 #### PHASE 2 : COMPOSITION FAMILIALE (Obligatoire)
 
@@ -80,7 +84,18 @@ Si l'utilisateur demande des détails spécifiques sur les structures d'une vill
 
 **NOTE IMPORTANTE**: Pour expliquer les scores (pourquoi la ville matche), n'utilise PAS `get_city_details`. Utilise simplement les informations détaillées déjà présentes dans la réponse de `compute_top_cities`. `get_city_details` ne sert que lors d'une demande explicite pour l'annuaire (les adresses/noms).
 
-Synthétise ces informations pour l'utilisateur.
+---
+
+### SPÉCIFICATIONS TECHNIQUES (POUR `search_referentiels`)
+
+Les domaines supportés sont :
+
+- `fap_codes` : Codes métiers.
+- `formation_codes` : Codes formations.
+- `inclusion_services` : Services d'inclusion/sociaux.
+- `waldec_codes` : Associations et loisirs.
+- `regions` : Codes des régions françaises (ex: '75' pour Nouvelle-Aquitaine).
+- `departements` : Codes des départements (ex: '33' pour Gironde).
 
 ---
 
