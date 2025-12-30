@@ -11,6 +11,8 @@ from config import ScoringConfig
 import config as cfg
 import logging
 from utils import normalize_text, calculate_fuzzy_match_score, sanitize_for_json
+import os
+import googlemaps
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO)
@@ -205,7 +207,7 @@ def _search_commune_logic(query: str) -> List[Dict[str, str]]:
 
 def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Computes the top 10 cities (communes) based on user criteria.
+    Computes scores for all communes in search area and returns the top 10 cities (communes) based on user criteria
     """
     logger.info(f"👉 [MCP] Request: compute_top_cities")
     logger.info(f"   Weights: {json.dumps(weights, indent=2, default=str)}")
@@ -349,7 +351,7 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
 @mcp.tool()
 def compute_top_cities(weights: Dict[str, float], filters: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Computes the top 10 cities (communes) based on user criteria.
+    Computes scores for all communes in search area and returns the top 10 cities (communes) based on user criteria
     
     Args:
         weights: Dictionary of weights (0-100) for categories (emploi, logement, education, inclusion, mobilité, sante).
@@ -357,27 +359,57 @@ def compute_top_cities(weights: Dict[str, float], filters: Dict[str, Any]) -> Di
     """
     return _compute_top_cities_logic(weights, filters)
 
-def _get_city_details_logic(codgeo: str) -> Dict[str, Any]:
-    logger.info(f"👉 [MCP] Request: get_city_details")
-    logger.info(f"   Codgeo: '{codgeo}'")
-    
-    engine = get_scoring_engine()
+
+def _search_places_logic(queries: List[str], location: str) -> Dict[str, Any]:
+    logger.info(f"🗺️ [MCP] Request: search_places '{queries}' in {location}")
     try:
-        details = engine.get_city_details(codgeo)
-    except Exception as e:
-        logger.error(f"❌ [MCP] Error in get_city_details: {e}")
-        return {"error": str(e)}
+        gmaps_key = os.environ.get("GOOGLE_MAPS_API_KEY")
+        if not gmaps_key:
+            return {"error": "Clé Maps manquante."}
         
-    logger.info(f"✅ [MCP] Response: Found details for {details.get('identity', {}).get('nom', 'Unknown')}")
-    return sanitize_for_json(details)
+        gmaps = googlemaps.Client(key=gmaps_key)
+        results = []
+        for q in queries:
+            res = gmaps.places(query=f"{q} near {location}, France", language="fr")
+            # Limit results to keep context small
+            results.extend(res.get('results', [])[:3])
+            
+        logger.info(f"✅ [MCP] Found {len(results)} places.")
+        return sanitize_for_json({"type": "places", "data": results})
+    except Exception as e:
+        logger.error(f"❌ [MCP] search_places failed: {e}")
+        return {"error": str(e)}
 
 @mcp.tool()
-def get_city_details(codgeo: str) -> Dict[str, Any]:
+def search_places(queries: List[str], location: str) -> Dict[str, Any]:
     """
-    Retrieves detailed information about a specific city.
-    Useful for "Learn More" or answering specific questions about a town.
+    Recherche des lieux (POIs), commerces, associations ou services dans un secteur donné.
+    Grounding Spatial (Ground 3).
     """
-    return _get_city_details_logic(codgeo)
+    return _search_places_logic(queries, location)
+
+def _compute_routes_logic(origin: str, destination: str, mode: str = "transit") -> Dict[str, Any]:
+    logger.info(f"🚗 [MCP] Request: compute_routes from {origin} to {destination}") 
+    try:
+         gmaps_key = os.environ.get("GOOGLE_MAPS_API_KEY")
+         if not gmaps_key: return {"error": "Clé Maps manquante."}
+         
+         gmaps = googlemaps.Client(key=gmaps_key)
+         directions = gmaps.directions(origin=origin, destination=destination, mode=mode, language="fr")
+         
+         logger.info(f"✅ [MCP] Route computed.")
+         return sanitize_for_json({"type": "directions", "data": directions})
+    except Exception as e:
+         logger.error(f"❌ [MCP] compute_routes failed: {e}")
+         return {"error": str(e)}
+
+@mcp.tool()
+def compute_routes(origin: str, destination: str, mode: str = "transit") -> Dict[str, Any]:
+    """
+    Calcule des itinéraires et temps de trajet entre deux points.
+    Grounding Spatial (Ground 3) pour valider l'accessibilité.
+    """
+    return _compute_routes_logic(origin, destination, mode)
 
 if __name__ == "__main__":
     mcp.run()

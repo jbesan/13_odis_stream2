@@ -39,7 +39,32 @@ with st.sidebar:
     if not api_key:
         st.error("Clé API Google non trouvée en variable d'environnement.")
     
-    st.info("Cet assistant utilise Gemini 2.0 et vos données ODIS locales.")
+    st.info("Cet assistant utilise Gemini et vos données ODIS locales.")
+    
+    # Model Selection
+    model_options = {
+        "gemini-2.5-flash-lite": "Gemini 2.5 Flash Lite",
+        "gemini-3-flash-preview": "Gemini 3.0 Flash"
+    }
+    
+    selected_model_id = st.selectbox(
+        "Modèle Gemini",
+        options=list(model_options.keys()),
+        format_func=lambda x: model_options[x],
+        index=0,
+        help="Choisissez le modèle de langage pour l'assistant."
+    )
+    
+    # Handle model change: Reset agent if model ID changes
+    if "current_model_id" not in st.session_state:
+        st.session_state.current_model_id = selected_model_id
+        
+    if st.session_state.current_model_id != selected_model_id:
+        st.session_state.current_model_id = selected_model_id
+        st.session_state.chat_history = []
+        st.session_state.agent = None
+        st.rerun()
+
     if st.button("Réinitialiser la conversation"):
         st.session_state.chat_history = []
         st.session_state.agent = None
@@ -55,7 +80,7 @@ if "agent" not in st.session_state:
 # Try to initialize if not done yet and key is available
 if st.session_state.agent is None and api_key:
     try:
-        st.session_state.agent = OdisAgent(api_key=api_key)
+        st.session_state.agent = OdisAgent(api_key=api_key, model_id=selected_model_id)
         st.session_state.agent.start_chat()
     except Exception as e:
         st.error(f"Erreur d'initialisation de l'agent: {e}")
@@ -82,6 +107,10 @@ for msg in st.session_state.chat_history:
     elif msg["role"] == "tool_result":
         with st.chat_message("assistant"):
             st.success(f"✅ Calcul terminé ({len(json.loads(msg['content']))} résultats)")
+    elif msg["role"] == "sources":
+        with st.chat_message("assistant"):
+            with st.expander("🌐 Sources & Vérifications", expanded=False):
+                st.markdown(msg["content"])
 
 # Input
 if prompt := st.chat_input("Bonjour, qui accompagnez-vous aujourd'hui ?"):
@@ -108,22 +137,45 @@ if prompt := st.chat_input("Bonjour, qui accompagnez-vous aujourd'hui ?"):
             
             if response.parts:
                 for part in response.parts:
-                    # Log Function Calls if present (for transparency)
+                    # 1. Handle Function Calls (Maps / ODIS)
                     if part.function_call:
                         fc = part.function_call
                         fn_name = fc.name
-                        fn_args = dict(fc.args)
+                        
+                        emoji = "🛠️"
+                        if "place" in fn_name.lower() or "route" in fn_name.lower(): emoji = "🗺️"
+                        st.toast(f"{emoji} Appel Google Maps : `{fn_name}`", icon=emoji)
                         
                         st.session_state.chat_history.append({
                             "role": "tool_call",
-                            "content": json.dumps(fn_args, indent=2, ensure_ascii=False)
+                            "name": fn_name,
+                            "content": json.dumps(dict(fc.args), indent=2, ensure_ascii=False)
                         })
-                        # Optional: Show a small toast/status that tool was called
-                        st.caption(f"🔧 Utilisation de l'outil: `{fn_name}`")
-                            
+                    
+                    # 2. Handle Text Response
                     if part.text:
                         st.session_state.chat_history.append({"role": "assistant", "content": part.text})
                         display_message("assistant", part.text)
+                
+                # 3. Handle Grounding Metadata (Native Search)
+                if response.candidates and response.candidates[0].grounding_metadata:
+                    meta = response.candidates[0].grounding_metadata
+                    if meta.search_entry_point:
+                        st.toast("🔍 Grounding Google Search actif", icon="🔍")
+                        sources_md = f"🔎 **Sources Google Search** :\n\n{meta.search_entry_point.rendered_content}"
+                        st.session_state.chat_history.append({"role": "sources", "content": sources_md})
+                        display_message("sources", sources_md)
+                    
+                    if meta.grounding_chunks:
+                        sources_text = "#### Sources consultées :\n"
+                        for i, chunk in enumerate(meta.grounding_chunks):
+                            if chunk.web:
+                                sources_text += f"- [{chunk.web.title}]({chunk.web.uri})\n"
+                        
+                        st.session_state.chat_history.append({"role": "sources", "content": sources_text})
+                        with st.chat_message("assistant"):
+                            with st.expander("🌐 Sources & Vérifications", expanded=False):
+                                st.markdown(sources_text)
                         
         except Exception as e:
             st.error(f"Erreur de génération: {e}")

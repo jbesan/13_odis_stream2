@@ -6,6 +6,9 @@ from google import genai
 from google.genai import types
 from mcp_server import _compute_top_cities_logic
 import json
+import time
+import googlemaps
+import streamlit as st
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO)
@@ -23,20 +26,17 @@ from config import (
 )
 from models import SearchCriterias
 
-# Ensure implicit imports work
 try:
     from app.mcp_server import _compute_top_cities_logic, _search_referentiels_logic, _search_commune_logic
+    from app.mcp_server import _search_places_logic, _compute_routes_logic
     logger.info("Successfully imported tools from app.mcp_server")
 except ImportError:
     try:
         from mcp_server import _compute_top_cities_logic, _search_referentiels_logic, _search_commune_logic
+        from mcp_server import _search_places_logic, _compute_routes_logic
         logger.info("Successfully imported tools from mcp_server")
     except ImportError as e:
          logger.error(f"CRITICAL: Could not import mcp_server: {e}")
-         # Dummies
-        #  def _compute_top_cities_logic(*args, **kwargs): raise ImportError("mcp_server error")
-        #  def _search_referentiels_logic(*args, **kwargs): raise ImportError("mcp_server error")
-        #  def _search_commune_logic(*args, **kwargs): raise ImportError("mcp_server error")
 
 # Format lists for Prompt
 WEIGHT_PROFILES_STR = "\n".join([f"- **{k}**: {v}" for k, v in WEIGHT_PROFILES.items()])
@@ -68,15 +68,12 @@ except Exception as e:
     raise e
 
 class OdisAgent:
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, model_id: str = "gemini-2.5-flash-lite"):
         if not api_key:
             raise ValueError("API Key is required for Gemini Client.")
         
         self.client = genai.Client(api_key=api_key)
-        # User requested 2.5-flash-lite
-        self.client = genai.Client(api_key=api_key)
-        # Upgrade to 2.5 Flash for better Tool Use
-        self.model_id = "gemini-2.5-flash-lite"
+        self.model_id = model_id
         
         # Tools Configuration
         # We define wrappers to ensure the names match what the Model expects (and what is in the Prompt)
@@ -107,6 +104,7 @@ class OdisAgent:
             filters_dict = criterias.model_dump()
             
             try:
+                st.toast("🛠️ Calcul des villes...", icon="🛠️")
                 return _compute_top_cities_logic(weights, filters_dict)
             except Exception as e:
                 logger.error(f"DEBUG: [SDK] compute_top_cities FAILED: {e}")
@@ -122,19 +120,53 @@ class OdisAgent:
                         ['fap_codes' (Jobs), 'formation_codes', 'inclusion_services', 'waldec_codes' (Hobbies), 'regions', 'departements'].
             """
             # logger.debug(f"DEBUG: [SDK] search_referentiels called with query='{query}'")
+            st.toast(f"🔎 Recherche référentiel : {query}", icon="🔍")
             return _search_referentiels_logic(query, domain)
 
-        def search_commune(query: str) -> List[Dict[str, str]]:
+        def search_commune(query: str) -> List[Dict[str, Any]]:
             """
             Searches for a French city to get its INSEE code.
             
             Args:
                 query: City name provided by the user (e.g. 'Bordeaux').
             """
-            # logger.debug(f"DEBUG: [SDK] search_commune called with query='{query}'")
+            logger.info(f"📍 [GEMINI_CLIENT] Calling _search_commune_logic for '{query}'...")
+            st.toast(f"📍 Recherche ville : {query}", icon="📍")
             return _search_commune_logic(query)
 
-        self.tools = [compute_top_cities, search_referentiels, search_commune]
+        def search_places(queries: List[str], location: str) -> Dict[str, Any]:
+            """
+            Recherche des lieux (POIs), commerces, associations ou services dans un secteur donné.
+            Grounding Spatial (Ground 3).
+            """
+            st.toast(f"🗺️ Recherche de lieux à {location}", icon="🗺️")
+            return _search_places_logic(queries, location)
+
+        def compute_routes(origin: str, destination: str, mode: str = "transit") -> Dict[str, Any]:
+            """
+            Calcule des itinéraires et temps de trajet entre deux points.
+            Grounding Spatial (Ground 3) pour valider l'accessibilité.
+            """
+            st.toast(f"🚗 Itinéraire vers {destination}", icon="🚗")
+            return _compute_routes_logic(origin, destination, mode)
+
+        # Phase 1 (Mode A): SELECTION & SPATIAL DATA (All Functions)
+        # ODIS + Maps Functions are compatible (Function Calling)
+        self.select_tools = [
+            compute_top_cities, 
+            search_referentiels, 
+            search_commune, 
+            search_places,  # From mcp_server
+            compute_routes  # From mcp_server
+        ]
+        
+        # Phase 2 (Mode B): WEB ANALYSIS (Native Search Only)
+        # Strictly isolated to avoid Mixed Mode error (400)
+        self.analyse_tools = [
+            types.Tool(google_search=types.GoogleSearch())
+        ]
+        
+        self.current_tools = self.select_tools
         self.tool_config = types.ToolConfig(
              function_calling_config=types.FunctionCallingConfig(
                  mode='AUTO' 
@@ -143,13 +175,14 @@ class OdisAgent:
         
         self.chat = None
 
-    def start_chat(self, history: List[types.Content] = None):
-        """Starts a new chat session."""
+    def start_chat(self, history: List[types.Content] = None, tools: List = None):
+        """Starts a new chat session with specified tools."""
+        target_tools = tools if tools is not None else self.current_tools
         self.chat = self.client.chats.create(
             model=self.model_id,
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_INSTRUCTION,
-                tools=self.tools,
+                tools=target_tools,
                 tool_config=self.tool_config,
                 temperature=0.7,
             ),
@@ -158,11 +191,32 @@ class OdisAgent:
         return self.chat
 
     def send_message(self, message: str) -> types.GenerateContentResponse:
-        """Sends a message to the agent."""
+        """Sends a message and handles tool calls with phase-aware logic."""
         if not self.chat:
             self.start_chat()
-            
+
+        # Trigger Web Mode ONLY for specific "Soft Data" keywords
+        # We exclude generic "recherche" to allow "Recherche un itinéraire" (Maps) to stay in Functions Mode
+        is_web_search = any(kw in message.lower() for kw in ["actu", "news", "climat", "vibe", "avis", "vivre", "ambiance", "presse", "article", "web", "google"])
+        
+        # Determine target toolset
+        if is_web_search:
+            target_tools = self.analyse_tools
+            mode_name = "ANALYSIS (Native Search)"
+        else:
+            target_tools = self.select_tools
+            mode_name = "SELECTION (ODIS/Maps Functions)"
+
+        # Switch tools if necessary
+        if self.current_tools != target_tools:
+            logger.info(f"🔄 [GEMINI_CLIENT] Switching mode to {mode_name}")
+            self.current_tools = target_tools
+            # Use _curated_history to preserve context between tool swaps
+            history = list(getattr(self.chat, '_curated_history', []))
+            self.start_chat(history=history, tools=target_tools)
+
         try:
+            logger.info(f"🚀 [GEMINI_CLIENT] Sending message in {mode_name} mode.")
             response = self.chat.send_message(message)
             return response
         except Exception as e:
@@ -237,6 +291,36 @@ class OdisAgent:
              except Exception as e:
                  logger.error(f"❌ [GEMINI_CLIENT] Commune Search Failed: {e}", exc_info=True)
                  raise e
+
+        if name == "search_places":
+             try:
+                 queries = args.get('queries', [])
+                 location = args.get('location', '')
+                 logger.info(f"🗺️ [GEMINI_CLIENT] Grounding Spatial: search_places '{queries}' in {location}")
+                 st.toast(f"🗺️ Recherche de lieux à {location}", icon="🗺️")
+                 # Call imported function directly
+                 return search_places(queries, location)
+             except Exception as e:
+                 logger.error(f"❌ search_places failed: {e}")
+                 return {"error": str(e)}
+
+
+
+        if name == "compute_routes":
+             try:
+                 origin = args.get('origin')
+                 dest = args.get('destination')
+                 mode = args.get('mode', 'transit')
+                 logger.info(f"🚗 [GEMINI_CLIENT] Grounding Spatial: compute_routes from {origin} to {dest}")
+                 st.toast(f"🚗 Calcul d'itinéraire vers {dest}", icon="🚗")
+                 # Call imported function directly
+                 return compute_routes(origin, dest, mode)
+             except Exception as e:
+                 logger.error(f"❌ compute_routes failed: {e}")
+                 return {"error": str(e)}
+
+        # Custom google_search logic removed. 
+        # Native Google Search tools are handled by the SDK.
 
         error_msg = f"Unknown tool: {name}"
         logger.error(error_msg)
