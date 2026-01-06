@@ -24,3 +24,7 @@ class SearchCriterias(BaseModel):
     
     loc_custom_code: Optional[str] = Field(None, description="Explicit code for custom search area (Reg or Dep)")
     loc_custom_type: Optional[str] = Field(None, description="Type of custom search area ('region' or 'departement')")
+
+    # Final scoring priority
+    weight_profile: str = Field("", description="Weight profile for scoring (Famille, Santé, Économique, Équilibré)")
+

@@ -147,8 +147,8 @@ scores:
       display_factor: 1
       tooltip: Population totale de la commune
     weight: 3.0
-    min_bound: null
-    max_bound: null
+    min_bound: 1000 #Une commune de moins de 1000 habitants est peu pertinente
+    max_bound: 25000 #Eviter le skew par les tres grandes métropoles
   - id: met_match_adult1_scaled
     category: emploi
     source_metric: met_match_adult1

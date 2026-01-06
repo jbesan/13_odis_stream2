@@ -30,10 +30,8 @@ def set_data_context(context: Dict[str, Any]) -> None:
     DATA_CONTEXT = context
     logger.info("Data Context injected externally.")
 
-def get_scoring_engine() -> ScoringEngine:
-    """
-    Lazy loads the data and returns the ScoringEngine instance.
-    """
+def ensure_data_context() -> None:
+    """Ensures data context is loaded if missing."""
     global DATA_CONTEXT
     if not DATA_CONTEXT:
         logger.info("Initializing Data Context for MCP...")
@@ -43,6 +41,12 @@ def get_scoring_engine() -> ScoringEngine:
         except Exception as e:
             logger.error(f"Failed to load data context: {e}")
             raise RuntimeError(f"Failed to load ODIS data: {e}")
+
+def get_scoring_engine() -> ScoringEngine:
+    """
+    Lazy loads the data and returns the ScoringEngine instance.
+    """
+    ensure_data_context()
             
     return ScoringEngine(
         df_all_communes=DATA_CONTEXT['odis'],
@@ -62,6 +66,7 @@ def _search_referentiels_logic(query: str, domain: Optional[str] = None) -> List
     """
     Searches for codes in the ODIS referentials (Jobs, Formations, Inclusion).
     """
+    ensure_data_context()
     logger.info(f"👉 [MCP] Request: search_referentiels")
     logger.info(f"   Query: '{query}', Domain: '{domain}'")
     
@@ -138,10 +143,27 @@ def _search_referentiels_logic(query: str, domain: Optional[str] = None) -> List
     return results
 
 
+    return results
+
+
+@mcp.tool()
+def search_referentiels(query: str, domain: Optional[str] = None) -> List[Dict[str, Any]]:
+    """
+    Searches for official French administrative codes.
+
+    Args:
+        query: The search term (e.g., 'Soudeur', 'Football').
+        domain: The target database. MUST be one of:
+                ['fap_codes' (Jobs), 'formation_codes', 'inclusion_services', 'waldec_codes' (Hobbies), 'regions', 'departements'].
+    """
+    return _search_referentiels_logic(query, domain)
+
+
 def _search_commune_logic(query: str) -> List[Dict[str, str]]:
     """
     Searches for French cities using Referentiels first, then ODIS for details.
     """
+    ensure_data_context()
     logger.info(f"👉 [MCP] Request: search_commune")
     logger.info(f"   Query: '{query}'")
     
@@ -204,6 +226,18 @@ def _search_commune_logic(query: str) -> List[Dict[str, str]]:
     
     logger.info(f"✅ [MCP] Response: Found {len(results)} cities. Top: {[r['libgeo'] for r in results[:3]]}")
     return results
+
+
+@mcp.tool()
+def search_commune(query: str) -> List[Dict[str, str]]:
+    """
+    Searches for a French city to get its INSEE code.
+
+    Args:
+        query: City name provided by the user (e.g. 'Bordeaux').
+    """
+    return _search_commune_logic(query)
+
 
 def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -361,6 +395,7 @@ def compute_top_cities(weights: Dict[str, float], filters: Dict[str, Any]) -> Di
 
 
 def _search_places_logic(queries: List[str], location: str) -> Dict[str, Any]:
+    ensure_data_context()
     logger.info(f"🗺️ [MCP] Request: search_places '{queries}' in {location}")
     try:
         gmaps_key = os.environ.get("GOOGLE_MAPS_API_KEY")
@@ -389,6 +424,7 @@ def search_places(queries: List[str], location: str) -> Dict[str, Any]:
     return _search_places_logic(queries, location)
 
 def _compute_routes_logic(origin: str, destination: str, mode: str = "transit") -> Dict[str, Any]:
+    ensure_data_context()
     logger.info(f"🚗 [MCP] Request: compute_routes from {origin} to {destination}") 
     try:
          gmaps_key = os.environ.get("GOOGLE_MAPS_API_KEY")

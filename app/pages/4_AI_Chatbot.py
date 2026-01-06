@@ -41,30 +41,14 @@ with st.sidebar:
     
     st.info("Cet assistant utilise Gemini et vos données ODIS locales.")
     
-    # Model Selection
-    model_options = {
-        "gemini-2.5-flash-lite": "Gemini 2.5 Flash Lite",
-        "gemini-2.5-flash": "Gemini 2.5 Flash",
-        "gemini-3-flash-preview": "Gemini 3.0 Flash"
-    }
+    # Model selection removed as it's now handled per-agent inside gemini_client
+    if st.session_state.get("agent"):
+        st.info(f"Agents actifs : \n- Interviewer: {st.session_state.agent.orchestrator.models['interviewer']}\n- Scorer: {st.session_state.agent.orchestrator.models['scorer']}")
     
-    selected_model_id = st.selectbox(
-        "Modèle Gemini",
-        options=list(model_options.keys()),
-        format_func=lambda x: model_options[x],
-        index=0,
-        help="Choisissez le modèle de langage pour l'assistant."
-    )
-    
-    # Handle model change: Reset agent if model ID changes
-    if "current_model_id" not in st.session_state:
-        st.session_state.current_model_id = selected_model_id
-        
-    if st.session_state.current_model_id != selected_model_id:
-        st.session_state.current_model_id = selected_model_id
-        st.session_state.chat_history = []
-        st.session_state.agent = None
-        st.rerun()
+    # Debug Criteria
+    if st.session_state.get("agent"):
+        with st.expander("📊 État des critères", expanded=True):
+            st.json(st.session_state.agent.context.search_criteria)
 
     if st.button("Réinitialiser la conversation"):
         st.session_state.chat_history = []
@@ -81,7 +65,7 @@ if "agent" not in st.session_state:
 # Try to initialize if not done yet and key is available
 if st.session_state.agent is None and api_key:
     try:
-        st.session_state.agent = OdisAgent(api_key=api_key, model_id=selected_model_id)
+        st.session_state.agent = OdisAgent(api_key=api_key)
         st.session_state.agent.start_chat()
     except Exception as e:
         st.error(f"Erreur d'initialisation de l'agent: {e}")
@@ -155,8 +139,10 @@ if prompt := st.chat_input("Bonjour, qui accompagnez-vous aujourd'hui ?"):
                     
                     # 2. Handle Text Response
                     if part.text:
-                        st.session_state.chat_history.append({"role": "assistant", "content": part.text})
-                        display_message("assistant", part.text)
+                        # Add agent badge to the response if it changed or for clarity
+                        agent_badge = f"🏷️ **Agent: {response.active_agent.upper()}**\n\n"
+                        st.session_state.chat_history.append({"role": "assistant", "content": f"{agent_badge}{part.text}"})
+                        display_message("assistant", f"{agent_badge}{part.text}")
                 
                 # 3. Handle Grounding Metadata (Native Search)
                 if response.candidates and response.candidates[0].grounding_metadata:
