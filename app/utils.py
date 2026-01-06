@@ -43,7 +43,7 @@ def calculate_fuzzy_match_score(
     query_tokens: Set[str],
     target_tokens: Set[str],
     stop_words: Optional[Set[str]] = None,
-    weights: dict = None
+    weights: Optional[dict] = None
 ) -> int:
     """
     Generic fuzzy match scoring helper.

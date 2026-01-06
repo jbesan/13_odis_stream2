@@ -1,10 +1,9 @@
 
 import os
 import logging
-from typing import List, Dict, Any, Optional, Generator
+from typing import List, Dict, Any, Optional, Generator, Sequence
 from google import genai
 from google.genai import types
-from mcp_server import _compute_top_cities_logic
 import json
 import time
 import googlemaps
@@ -26,17 +25,22 @@ from config import (
 )
 from models import SearchCriterias
 
-try:
-    from app.mcp_server import _compute_top_cities_logic, _search_referentiels_logic, _search_commune_logic
-    from app.mcp_server import _search_places_logic, _compute_routes_logic
-    logger.info("Successfully imported tools from app.mcp_server")
-except ImportError:
-    try:
-        from mcp_server import _compute_top_cities_logic, _search_referentiels_logic, _search_commune_logic
-        from mcp_server import _search_places_logic, _compute_routes_logic
-        logger.info("Successfully imported tools from mcp_server")
-    except ImportError as e:
-         logger.error(f"CRITICAL: Could not import mcp_server: {e}")
+import sys
+from pathlib import Path
+
+# Ensure project root is in PYTHONPATH for consistent absolute imports
+root_path = str(Path(__file__).resolve().parents[1])
+if root_path not in sys.path:
+    sys.path.insert(0, root_path)
+
+from app.mcp_server import (
+    _compute_top_cities_logic, 
+    _search_referentiels_logic, 
+    _search_commune_logic,
+    _search_places_logic, 
+    _compute_routes_logic
+)
+
 
 # Format lists for Prompt
 WEIGHT_PROFILES_STR = "\n".join([f"- **{k}**: {v}" for k, v in WEIGHT_PROFILES.items()])
@@ -68,7 +72,7 @@ except Exception as e:
     raise e
 
 class OdisAgent:
-    def __init__(self, api_key: str, model_id: str = "gemini-2.5-flash-lite"):
+    def __init__(self, api_key: str, model_id: str = "gemini-2.5-flash"):
         if not api_key:
             raise ValueError("API Key is required for Gemini Client.")
         
@@ -110,7 +114,7 @@ class OdisAgent:
                 logger.error(f"DEBUG: [SDK] compute_top_cities FAILED: {e}")
                 raise e
 
-        def search_referentiels(query: str, domain: str = None) -> List[Dict[str, str]]:
+        def search_referentiels(query: str, domain: Optional[str] = None) -> List[Dict[str, Any]]:
             """
             Searches for official French administrative codes.
             
@@ -152,7 +156,7 @@ class OdisAgent:
 
         # Phase 1 (Mode A): SELECTION & SPATIAL DATA (All Functions)
         # ODIS + Maps Functions are compatible (Function Calling)
-        self.select_tools = [
+        self.select_tools: List[Any] = [
             compute_top_cities, 
             search_referentiels, 
             search_commune, 
@@ -162,31 +166,31 @@ class OdisAgent:
         
         # Phase 2 (Mode B): WEB ANALYSIS (Native Search Only)
         # Strictly isolated to avoid Mixed Mode error (400)
-        self.analyse_tools = [
+        self.analyse_tools: List[Any] = [
             types.Tool(google_search=types.GoogleSearch())
         ]
         
-        self.current_tools = self.select_tools
+        self.current_tools: List[Any] = self.select_tools
         self.tool_config = types.ToolConfig(
              function_calling_config=types.FunctionCallingConfig(
-                 mode='AUTO' 
+                 mode=types.FunctionCallingConfigMode.AUTO
              )
         )
         
-        self.chat = None
+        self.chat: Optional[Any] = None
 
-    def start_chat(self, history: List[types.Content] = None, tools: List = None):
+    def start_chat(self, history: Optional[Sequence[Any]] = None, tools: Optional[Sequence[Any]] = None) -> Any:
         """Starts a new chat session with specified tools."""
         target_tools = tools if tools is not None else self.current_tools
         self.chat = self.client.chats.create(
             model=self.model_id,
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_INSTRUCTION,
-                tools=target_tools,
+                tools=list(target_tools) if target_tools is not None else [],
                 tool_config=self.tool_config,
                 temperature=0.7,
             ),
-            history=history or []
+            history=list(history) if history is not None else []
         )
         return self.chat
 
@@ -217,6 +221,7 @@ class OdisAgent:
 
         try:
             logger.info(f"🚀 [GEMINI_CLIENT] Sending message in {mode_name} mode.")
+            assert self.chat is not None
             response = self.chat.send_message(message)
             return response
         except Exception as e:
@@ -229,6 +234,9 @@ class OdisAgent:
         """
         
         pass
+        
+        if not self.chat:
+            return types.GenerateContentResponse()
         
         return self.chat.send_message(
             types.Content(
@@ -261,10 +269,7 @@ class OdisAgent:
                 
                 # logger.info("   Calling _compute_top_cities_logic...")
                 start_time = time.time()
-                result = _compute_top_cities_logic(**args)
-                duration = time.time() - start_time
-                # logger.info(f"✅ [GEMINI_CLIENT] Tool Execution Success ({duration:.2f}s). Result count: {len(result)}")
-                return result
+                return _compute_top_cities_logic(**args)
             except Exception as e:
                 logger.error(f"❌ [GEMINI_CLIENT] Tool Execution Failed: {e}", exc_info=True)
                 raise e
@@ -275,9 +280,7 @@ class OdisAgent:
              # Usually SDK uses the function name.
              try:
                 # logger.info("   Calling _search_referentiels_logic...")
-                result = _search_referentiels_logic(**args)
-                # logger.info(f"✅ [GEMINI_CLIENT] Search Success. Result count: {len(result)}")
-                return result
+                return _search_referentiels_logic(**args)
              except Exception as e:
                  logger.error(f"❌ [GEMINI_CLIENT] Search Failed: {e}", exc_info=True)
                  raise e
@@ -285,9 +288,7 @@ class OdisAgent:
         if name == "search_commune":
              try:
                 # logger.info("   Calling _search_commune_logic...")
-                result = _search_commune_logic(**args)
-                # logger.info(f"✅ [GEMINI_CLIENT] Commune Search Success. Result count: {len(result)}")
-                return result
+                return _search_commune_logic(**args)
              except Exception as e:
                  logger.error(f"❌ [GEMINI_CLIENT] Commune Search Failed: {e}", exc_info=True)
                  raise e
@@ -299,7 +300,7 @@ class OdisAgent:
                  logger.info(f"🗺️ [GEMINI_CLIENT] Grounding Spatial: search_places '{queries}' in {location}")
                  st.toast(f"🗺️ Recherche de lieux à {location}", icon="🗺️")
                  # Call imported function directly
-                 return search_places(queries, location)
+                 return _search_places_logic(queries, location)
              except Exception as e:
                  logger.error(f"❌ search_places failed: {e}")
                  return {"error": str(e)}
@@ -308,13 +309,13 @@ class OdisAgent:
 
         if name == "compute_routes":
              try:
-                 origin = args.get('origin')
-                 dest = args.get('destination')
-                 mode = args.get('mode', 'transit')
+                 origin = str(args.get('origin', ''))
+                 dest = str(args.get('destination', ''))
+                 mode = str(args.get('mode', 'transit'))
                  logger.info(f"🚗 [GEMINI_CLIENT] Grounding Spatial: compute_routes from {origin} to {dest}")
                  st.toast(f"🚗 Calcul d'itinéraire vers {dest}", icon="🚗")
                  # Call imported function directly
-                 return compute_routes(origin, dest, mode)
+                 return _compute_routes_logic(origin, dest, mode)
              except Exception as e:
                  logger.error(f"❌ compute_routes failed: {e}")
                  return {"error": str(e)}

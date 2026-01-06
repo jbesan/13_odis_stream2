@@ -6,7 +6,7 @@ import shapely.wkb as wkb
 import os
 import yaml
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 import config as cfg
 import copy
 import gc
@@ -91,7 +91,7 @@ def ensure_data_initialized() -> None:
     scores_path = os.path.join(cfg.APP_DIR, cfg.SCORES_CAT_FILE)
     st.session_state['app_data']['scores_cat'] = load_scores_config_as_df(scores_path)
 
-def _load_parquet(path: str, columns: list = None) -> pd.DataFrame:
+def _load_parquet(path: str, columns: Optional[list] = None) -> pd.DataFrame:
     """Internal non-cached loader."""
     if not os.path.exists(path):
         logger.warning(f"File not found: {path}")
@@ -101,7 +101,7 @@ def _load_parquet(path: str, columns: list = None) -> pd.DataFrame:
     return pd.read_parquet(path)
 
 @st.cache_resource
-def load_parquet_dataset(path: str, columns: list = None) -> pd.DataFrame:
+def load_parquet_dataset(path: str, columns: Optional[list] = None) -> pd.DataFrame:
     """Generic loader for parquet datasets with caching."""
     return _load_parquet(path, columns)
 

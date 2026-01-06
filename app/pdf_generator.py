@@ -277,7 +277,7 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
                 plt.xticks(angles[:-1], categories, size=8)
                 
                 # Draw ylabels
-                ax.set_rlabel_position(0)
+                ax.set_rlabel_position(0) # type: ignore
                 plt.yticks([25, 50, 75], ["25", "50", "75"], color="grey", size=7)
                 plt.ylim(0, 100)
                 

@@ -183,7 +183,7 @@ def log_search_results(
                         md_lines.append("* **Criteria Scores**:")
                         
                         # Extract and group scores
-                        criteria_by_cat = {}
+                        criteria_by_cat: Dict[str, Dict[str, float]] = {}
                         if score_to_cat:
                             for score_col, category in score_to_cat.items():
                                 if score_col in commune_data:

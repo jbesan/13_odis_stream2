@@ -1,6 +1,6 @@
 # /home/jacques/odis/13_odis/eda/streamlit/config.py
 from dataclasses import dataclass
-from typing import List, Dict, Any, Union
+from typing import List, Dict, Any, Union, Optional
 import os
 
 
@@ -278,7 +278,7 @@ WALDEC_INC_ASSO_ADD_MAPPING = {
     ]
 }
 
-def get_relevant_rna_codes():
+def get_relevant_rna_codes() -> List[str]:
     """Retourne une liste plate unique de tous les codes utiles pour l'extraction SQL/Pandas"""
     all_codes = set(WALDEC_CORE_INCLUSION)
     for code_list in WALDEC_INC_ASSO_ADD_MAPPING.values():

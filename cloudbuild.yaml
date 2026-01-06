@@ -1,23 +1,53 @@
 steps:
-- name: 'gcr.io/cloud-builders/docker'
-  args: ['build', '-t', 'europe-west1-docker.pkg.dev/odis-stream2/odis-stream2-repo/odis-app', '-f', 'app/Dockerfile', '.']
-- name: 'gcr.io/cloud-builders/docker'
-  args: ['push', 'europe-west1-docker.pkg.dev/odis-stream2/odis-stream2-repo/odis-app']
-- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-  entrypoint: gcloud
-  args:
-  - 'run'
-  - 'deploy'
-  - 'odis-app'
-  - '--image'
-  - 'europe-west1-docker.pkg.dev/odis-stream2/odis-stream2-repo/odis-app'
-  - '--region'
-  - 'europe-west1'
-  - '--platform'
-  - 'managed'
-  - '--allow-unauthenticated'
-images:
-- 'europe-west1-docker.pkg.dev/odis-stream2/odis-stream2-repo/odis-app'
+  # 1. Quality Gates (Install + Mypy + Pytest)
+  - name: "python:3.11"
+    entrypoint: /bin/bash
+    args:
+      - "-c"
+      - |
+        pip install --upgrade pip
+        pip install -r app/requirements.txt -r requirements-dev.txt
+        export MYPYPATH=.
+        python3 -m mypy --explicit-package-bases app
+        python3 -m pytest app/tests
 
+  # 4. Build Docker Image
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      [
+        "build",
+        "-t",
+        "europe-west1-docker.pkg.dev/odis-stream2/odis-stream2-repo/odis-app",
+        "-f",
+        "app/Dockerfile",
+        ".",
+      ]
+
+  # 5. Push to Registry
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      [
+        "push",
+        "europe-west1-docker.pkg.dev/odis-stream2/odis-stream2-repo/odis-app",
+      ]
+
+  # 6. Deploy to Cloud Run
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: gcloud
+    args:
+      - "run"
+      - "deploy"
+      - "odis-app"
+      - "--image"
+      - "europe-west1-docker.pkg.dev/odis-stream2/odis-stream2-repo/odis-app"
+      - "--region"
+      - "europe-west1"
+      - "--platform"
+      - "managed"
+      - "--allow-unauthenticated"
+      - "--set-env-vars"
+      - "STREAMLIT_CLIENT_TOOLBAR_MODE=minimal"
+images:
+  - "europe-west1-docker.pkg.dev/odis-stream2/odis-stream2-repo/odis-app"
 # Jacques note: To re-deploy use
 # gcloud builds submit --config cloudbuild.yaml .

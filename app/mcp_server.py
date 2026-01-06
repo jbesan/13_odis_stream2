@@ -24,7 +24,7 @@ mcp = FastMCP("ODIS-Core")
 # Global State for Data (Loaded on startup)
 DATA_CONTEXT = {}
 
-def set_data_context(context: Dict[str, Any]):
+def set_data_context(context: Dict[str, Any]) -> None:
     """Allows external injection of data context (e.g. from Streamlit cache)"""
     global DATA_CONTEXT
     DATA_CONTEXT = context
@@ -58,7 +58,7 @@ def get_scoring_engine() -> ScoringEngine:
         codfap_index=DATA_CONTEXT.get('codfap_index')
     )
 
-def _search_referentiels_logic(query: str, domain: str = None) -> List[Dict[str, str]]:
+def _search_referentiels_logic(query: str, domain: Optional[str] = None) -> List[Dict[str, Any]]:
     """
     Searches for codes in the ODIS referentials (Jobs, Formations, Inclusion).
     """
@@ -285,7 +285,7 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
         processed_gdf = engine.run(config)
     except Exception as e:
         logger.error(f"❌ [MCP] Error: {e}")
-        return [{"error": str(e)}]
+        return {"error": str(e)}
     
     if processed_gdf.empty:
         logger.info("   [MCP] No results found.")
@@ -294,7 +294,7 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
     top_10 = processed_gdf.head(10).copy()
     
     # 4. Criteria Definitions
-    criteria_definitions = {}
+    criteria_definitions: Dict[str, Any] = {}
     if 'scores_cat' in DATA_CONTEXT:
         scores_cat = DATA_CONTEXT['scores_cat']
         for idx, row in scores_cat.iterrows():
@@ -311,7 +311,7 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
     # 5. Build Results
     results = []
     for codgeo, row in top_10.iterrows():
-        detailed_scores = {}
+        detailed_scores: Dict[str, Any] = {}
         for col in row.index:
             if col.endswith('_cat_score'):
                  cat_name = col.replace('_cat_score', '')

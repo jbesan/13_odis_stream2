@@ -19,7 +19,9 @@ def sample_session_state():
         poids_mobilité=100,
         criteria_weights={}, # Added for F-15
         commune_actuelle='33063',
-        loc_distance_km=50,
+        loc_search_area='departement',
+        loc_custom_code=None,
+        loc_custom_type=None,
         nb_adultes=1,
         nb_enfants=1,
         hebergement='Location',
@@ -28,7 +30,7 @@ def sample_session_state():
         codes_formations=[[]],
         classe_enfants=['Maternelle'],
         besoin_sante='Aucun',
-        inc_services_add_selection={},
+        inc_services_add_selection=[],
         inc_services_core_selection=[],
         inc_asso_add_selection=[]
     )
