@@ -486,6 +486,20 @@ En tant que travailleur social, je veux voir les lieux recommandés sur une cart
 - **Intégration UI :** Bouton "En savoir plus" dans la liste des résultats ouvrant une vue détaillée.
 - **Intégration Agent :** Le chatbot peut appeler cet outil pour répondre à des questions spécifiques comme "Quelles sont les associations sportives à X ?" ou "Y a-t-il un hôpital à Y ?".
 
+## 🚀 Feature [F-21]: Sélecteur de Modèle (Chatbot)
+
+### 📝 User Story
+
+En tant que travailleur social, je veux pouvoir choisir entre différents modèles de langage (Gemini 2.5 Flash Lite ou Gemini 3.0 Flash) pour adapter la performance et le coût de l'assistant à mes besoins.
+
+### 🔑 Key Features
+
+- **Interface de Sélection :** Ajout d'un menu déroulant (selectbox) dans la barre latérale de la page chatbot.
+- **Options de Modèles :**
+  - Gemini 2.5 Flash Lite (Défaut)
+  - Gemini 3.0 Flash
+- **Persistance :** Le choix du modèle est conservé pendant la session.
+
 ### 📊 Status
 
-- Not Started
+- In Progress

@@ -11,6 +11,8 @@ from config import ScoringConfig
 import config as cfg
 import logging
 from utils import normalize_text, calculate_fuzzy_match_score, sanitize_for_json
+import os
+import googlemaps
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO)
@@ -22,16 +24,14 @@ mcp = FastMCP("ODIS-Core")
 # Global State for Data (Loaded on startup)
 DATA_CONTEXT = {}
 
-def set_data_context(context: Dict[str, Any]):
+def set_data_context(context: Dict[str, Any]) -> None:
     """Allows external injection of data context (e.g. from Streamlit cache)"""
     global DATA_CONTEXT
     DATA_CONTEXT = context
     logger.info("Data Context injected externally.")
 
-def get_scoring_engine() -> ScoringEngine:
-    """
-    Lazy loads the data and returns the ScoringEngine instance.
-    """
+def ensure_data_context() -> None:
+    """Ensures data context is loaded if missing."""
     global DATA_CONTEXT
     if not DATA_CONTEXT:
         logger.info("Initializing Data Context for MCP...")
@@ -41,6 +41,12 @@ def get_scoring_engine() -> ScoringEngine:
         except Exception as e:
             logger.error(f"Failed to load data context: {e}")
             raise RuntimeError(f"Failed to load ODIS data: {e}")
+
+def get_scoring_engine() -> ScoringEngine:
+    """
+    Lazy loads the data and returns the ScoringEngine instance.
+    """
+    ensure_data_context()
             
     return ScoringEngine(
         df_all_communes=DATA_CONTEXT['odis'],
@@ -56,10 +62,11 @@ def get_scoring_engine() -> ScoringEngine:
         codfap_index=DATA_CONTEXT.get('codfap_index')
     )
 
-def _search_referentiels_logic(query: str, domain: str = None) -> List[Dict[str, str]]:
+def _search_referentiels_logic(query: str, domain: Optional[str] = None) -> List[Dict[str, Any]]:
     """
     Searches for codes in the ODIS referentials (Jobs, Formations, Inclusion).
     """
+    ensure_data_context()
     logger.info(f"👉 [MCP] Request: search_referentiels")
     logger.info(f"   Query: '{query}', Domain: '{domain}'")
     
@@ -136,10 +143,27 @@ def _search_referentiels_logic(query: str, domain: str = None) -> List[Dict[str,
     return results
 
 
+    return results
+
+
+@mcp.tool()
+def search_referentiels(query: str, domain: Optional[str] = None) -> List[Dict[str, Any]]:
+    """
+    Searches for official French administrative codes.
+
+    Args:
+        query: The search term (e.g., 'Soudeur', 'Football').
+        domain: The target database. MUST be one of:
+                ['fap_codes' (Jobs), 'formation_codes', 'inclusion_services', 'waldec_codes' (Hobbies), 'regions', 'departements'].
+    """
+    return _search_referentiels_logic(query, domain)
+
+
 def _search_commune_logic(query: str) -> List[Dict[str, str]]:
     """
     Searches for French cities using Referentiels first, then ODIS for details.
     """
+    ensure_data_context()
     logger.info(f"👉 [MCP] Request: search_commune")
     logger.info(f"   Query: '{query}'")
     
@@ -203,9 +227,21 @@ def _search_commune_logic(query: str) -> List[Dict[str, str]]:
     logger.info(f"✅ [MCP] Response: Found {len(results)} cities. Top: {[r['libgeo'] for r in results[:3]]}")
     return results
 
+
+@mcp.tool()
+def search_commune(query: str) -> List[Dict[str, str]]:
+    """
+    Searches for a French city to get its INSEE code.
+
+    Args:
+        query: City name provided by the user (e.g. 'Bordeaux').
+    """
+    return _search_commune_logic(query)
+
+
 def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Computes the top 10 cities (communes) based on user criteria.
+    Computes scores for all communes in search area and returns the top 10 cities (communes) based on user criteria
     """
     logger.info(f"👉 [MCP] Request: compute_top_cities")
     logger.info(f"   Weights: {json.dumps(weights, indent=2, default=str)}")
@@ -283,7 +319,7 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
         processed_gdf = engine.run(config)
     except Exception as e:
         logger.error(f"❌ [MCP] Error: {e}")
-        return [{"error": str(e)}]
+        return {"error": str(e)}
     
     if processed_gdf.empty:
         logger.info("   [MCP] No results found.")
@@ -292,7 +328,7 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
     top_10 = processed_gdf.head(10).copy()
     
     # 4. Criteria Definitions
-    criteria_definitions = {}
+    criteria_definitions: Dict[str, Any] = {}
     if 'scores_cat' in DATA_CONTEXT:
         scores_cat = DATA_CONTEXT['scores_cat']
         for idx, row in scores_cat.iterrows():
@@ -309,7 +345,7 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
     # 5. Build Results
     results = []
     for codgeo, row in top_10.iterrows():
-        detailed_scores = {}
+        detailed_scores: Dict[str, Any] = {}
         for col in row.index:
             if col.endswith('_cat_score'):
                  cat_name = col.replace('_cat_score', '')
@@ -349,7 +385,7 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
 @mcp.tool()
 def compute_top_cities(weights: Dict[str, float], filters: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Computes the top 10 cities (communes) based on user criteria.
+    Computes scores for all communes in search area and returns the top 10 cities (communes) based on user criteria
     
     Args:
         weights: Dictionary of weights (0-100) for categories (emploi, logement, education, inclusion, mobilité, sante).
@@ -357,27 +393,59 @@ def compute_top_cities(weights: Dict[str, float], filters: Dict[str, Any]) -> Di
     """
     return _compute_top_cities_logic(weights, filters)
 
-def _get_city_details_logic(codgeo: str) -> Dict[str, Any]:
-    logger.info(f"👉 [MCP] Request: get_city_details")
-    logger.info(f"   Codgeo: '{codgeo}'")
-    
-    engine = get_scoring_engine()
+
+def _search_places_logic(queries: List[str], location: str) -> Dict[str, Any]:
+    ensure_data_context()
+    logger.info(f"🗺️ [MCP] Request: search_places '{queries}' in {location}")
     try:
-        details = engine.get_city_details(codgeo)
-    except Exception as e:
-        logger.error(f"❌ [MCP] Error in get_city_details: {e}")
-        return {"error": str(e)}
+        gmaps_key = os.environ.get("GOOGLE_MAPS_API_KEY")
+        if not gmaps_key:
+            return {"error": "Clé Maps manquante."}
         
-    logger.info(f"✅ [MCP] Response: Found details for {details.get('identity', {}).get('nom', 'Unknown')}")
-    return sanitize_for_json(details)
+        gmaps = googlemaps.Client(key=gmaps_key)
+        results = []
+        for q in queries:
+            res = gmaps.places(query=f"{q} near {location}, France", language="fr")
+            # Limit results to keep context small
+            results.extend(res.get('results', [])[:3])
+            
+        logger.info(f"✅ [MCP] Found {len(results)} places.")
+        return sanitize_for_json({"type": "places", "data": results})
+    except Exception as e:
+        logger.error(f"❌ [MCP] search_places failed: {e}")
+        return {"error": str(e)}
 
 @mcp.tool()
-def get_city_details(codgeo: str) -> Dict[str, Any]:
+def search_places(queries: List[str], location: str) -> Dict[str, Any]:
     """
-    Retrieves detailed information about a specific city.
-    Useful for "Learn More" or answering specific questions about a town.
+    Recherche des lieux (POIs), commerces, associations ou services dans un secteur donné.
+    Grounding Spatial (Ground 3).
     """
-    return _get_city_details_logic(codgeo)
+    return _search_places_logic(queries, location)
+
+def _compute_routes_logic(origin: str, destination: str, mode: str = "transit") -> Dict[str, Any]:
+    ensure_data_context()
+    logger.info(f"🚗 [MCP] Request: compute_routes from {origin} to {destination}") 
+    try:
+         gmaps_key = os.environ.get("GOOGLE_MAPS_API_KEY")
+         if not gmaps_key: return {"error": "Clé Maps manquante."}
+         
+         gmaps = googlemaps.Client(key=gmaps_key)
+         directions = gmaps.directions(origin=origin, destination=destination, mode=mode, language="fr")
+         
+         logger.info(f"✅ [MCP] Route computed.")
+         return sanitize_for_json({"type": "directions", "data": directions})
+    except Exception as e:
+         logger.error(f"❌ [MCP] compute_routes failed: {e}")
+         return {"error": str(e)}
+
+@mcp.tool()
+def compute_routes(origin: str, destination: str, mode: str = "transit") -> Dict[str, Any]:
+    """
+    Calcule des itinéraires et temps de trajet entre deux points.
+    Grounding Spatial (Ground 3) pour valider l'accessibilité.
+    """
+    return _compute_routes_logic(origin, destination, mode)
 
 if __name__ == "__main__":
     mcp.run()

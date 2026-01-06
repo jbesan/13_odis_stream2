@@ -9,6 +9,10 @@ import numpy as np
 import pandas as pd
 from config import ScoringConfig
 import config as cfg
+import logging
+# Configure Logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Paris, Lyon, Marseille Global Codes -> Arrondissement Prefix
 PLM_MAPPING = {
@@ -199,8 +203,11 @@ class ScoringEngine:
              )
 
         # Compute scores
+        logger.info(f"⚙️ [ENGINE] Computing criteria scores...")
         odis_scored = self._compute_criteria_scores(odis_search, config)
+        logger.info(f"⚙️ [ENGINE] Computing category scores...")
         odis_exploded = compute_category_scores(odis_scored, self.scores_cat, config)
+        logger.info(f"⚙️ [ENGINE] Computing final weighted scores...")
         odis_exploded['weighted_score'] = compute_weighted_score(odis_exploded, config)
 
         # Exclusion
@@ -285,7 +292,8 @@ class ScoringEngine:
 
         # --- INCLUSION ---
         df = compute_inclusion_score(df, config, self.incl_index, self.associations_data, self.scores_cat, self.global_stats)
-
+        
+        logger.info(f"📈 [ENGINE] Scored columns: {[c for c in df.columns if 'scaled' in c]}")
         return df
 
     def _score_matching(self, df: pd.DataFrame, score_key: str, prefs: set, data_map: dict):
@@ -318,7 +326,7 @@ def min_max_scale(series: pd.Series, min_val: float, max_val: float) -> pd.Serie
     if max_val == min_val: return pd.Series(0.0, index=series.index)
     return ((series - min_val) / (max_val - min_val)).clip(0, 1)
 
-def add_distance_to_current_loc(df: gpd.GeoDataFrame, current_codgeo: str, df_all: Optional[gpd.GeoDataFrame] = None) -> gpd.GeoDataFrame:
+def add_distance_to_current_loc(df: gpd.GeoDataFrame, current_codgeo: Optional[str], df_all: Optional[gpd.GeoDataFrame] = None) -> gpd.GeoDataFrame:
     target_geom = None
     if current_codgeo in df.index:
          target_geom = df.loc[current_codgeo, 'centroid'] if 'centroid' in df.columns else df.loc[current_codgeo].geometry.centroid
@@ -331,7 +339,7 @@ def add_distance_to_current_loc(df: gpd.GeoDataFrame, current_codgeo: str, df_al
          df.loc[:, 'dist_current_loc'] = centroids.distance(target_geom)
     return df
 
-def filter_communes(df: gpd.GeoDataFrame, start_commune: gpd.GeoSeries, loc_type: str, loc_code: str, loc_search_area: str) -> gpd.GeoDataFrame:
+def filter_communes(df: gpd.GeoDataFrame, start_commune: pd.DataFrame, loc_type: str, loc_code: Optional[str], loc_search_area: str) -> gpd.GeoDataFrame:
     if loc_type == 'departement': return df[df['dep_code'] == loc_code].copy()
     elif loc_type == 'region': return df[df['reg_code'] == loc_code].copy()
     elif loc_type == 'france': return df[~df['dep_code'].astype(str).str.startswith(('97', '98'))].copy()

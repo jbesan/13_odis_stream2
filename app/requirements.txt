@@ -17,3 +17,4 @@ fastmcp
 google-genai
 pydantic
 python-dotenv
+googlemaps

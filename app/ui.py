@@ -20,7 +20,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ui")
 
 @st.dialog("Centre Communal d'Action Sociale", width="large")
-def show_ccas_dialog(codgeo_or_list: Any, structures_df: pd.DataFrame, priority_code: str = None, priority_label: str = None):
+def show_ccas_dialog(codgeo_or_list: Any, structures_df: pd.DataFrame, priority_code: Optional[str] = None, priority_label: Optional[str] = None):
      target_codes = []
      if isinstance(codgeo_or_list, list):
          target_codes = [str(c).strip() for c in codgeo_or_list]
@@ -240,7 +240,7 @@ def open_pdf_modal() -> None:
     """Callback to signal that the PDF modal should be shown."""
     st.session_state['show_pdf_modal'] = True
 
-def display_sidebar(demo_data: Dict[str, Any] = None) -> None:
+def display_sidebar(demo_data: Optional[Dict[str, Any]] = None) -> None:
     """Displays the sidebar with location and weight controls."""
     
     with st.sidebar:
@@ -518,7 +518,7 @@ def render_mobility_form() -> None:
             key="ui_custom_dept"
         )
 
-def display_input_tabs(demo_data: Dict[str, Any] = None) -> None:
+def display_input_tabs(demo_data: Optional[Dict[str, Any]] = None) -> None:
     """Displays the main tabs for user input, composed of modular rendering functions."""
     tab_localisation, tab_foyer, tab_edu, tab_emploi, tab_logement, tab_sante, tab_autres, tab_mobilite = st.tabs([
         'Localisation Actuelle', 'Situation familiale', 'Education', 'Projet Professionnel', 'Logement', 'Santé', 'Inclusion', 'Mobilité'

@@ -64,17 +64,17 @@ def test_compute_top_cities_execution_complex(mcp_data_context):
     print("\nExecuting Complex Scenario (Aïcha)...")
     
     weights = {
-        'emploi': 100,
-        'logement': 100,
-        'education': 100,
-        'sante': 100,
-        'inclusion': 100,
-        'mobilité': 50
+        'emploi': 100.0,
+        'logement': 100.0,
+        'education': 100.0,
+        'sante': 100.0,
+        'inclusion': 100.0,
+        'mobilité': 50.0
     }
     
     filters = {
         'commune_actuelle': 'Marseille', # Should be resolved to 13055
-        'loc_distance_km': 50,
+        'loc_search_area': 'departement',
         'nb_adultes': 1,
         'nb_enfants': 2,
         'hebergement': 'Location',

@@ -297,7 +297,7 @@ class TestConditionalScoring:
             codes_formations=[],
             classe_enfants=[],
             besoin_sante='Aucun', # Condition to ignore sante
-            inc_services_add_selection={},
+            inc_services_add_selection=[],
             inc_services_core_selection=[],
             inc_asso_add_selection=[],
             criteria_weights={}
@@ -339,7 +339,7 @@ class TestConditionalScoring:
             codes_formations=[],
             classe_enfants=['Maternelle'],
             besoin_sante='Hopital', # Condition to include sante
-            inc_services_add_selection={},
+            inc_services_add_selection=[],
             inc_services_core_selection=[],
             inc_asso_add_selection=[],
             criteria_weights={}
@@ -439,7 +439,7 @@ class TestMCPScenario:
              codes_formations=[[]],
              classe_enfants=[],
              besoin_sante='Aucun',
-             inc_services_add_selection={},
+             inc_services_add_selection=[],
              inc_services_core_selection=[],
              inc_asso_add_selection=[],
              criteria_weights={}

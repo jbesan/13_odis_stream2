@@ -4,6 +4,9 @@
 # Allow app directory
 !app/
 !data/
+!requirements-dev.txt
+!mypy.ini
+!cloudbuild.yaml
 
 # Explicitly ignore hidden files/folders in root (since * misses them)
 .git
@@ -22,6 +25,6 @@ __pycache__
 app/__pycache__
 app/.pytest_cache
 app/.logs
-app/tests
+# app/tests
 app/*.pyc
 app/.DS_Store

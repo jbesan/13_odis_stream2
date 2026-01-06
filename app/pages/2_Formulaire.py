@@ -9,7 +9,7 @@ data_loader.ensure_data_initialized()
 
 # DO NOT REMOVE: This makes sure the ui_ form state persists as expected
 for k, v in st.session_state.items():
-    if k.startswith('ui_'):
+    if str(k).startswith('ui_'):
         st.session_state[k] = v
 app_data = st.session_state.app_data
 
