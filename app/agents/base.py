@@ -38,6 +38,7 @@ class BaseAgent(abc.ABC):
         )
 
         try:
+            logger.info(f"🤖 [BASE_AGENT] Calling LLM ({self.model_id})...")
             # APPEL UNIQUE - Pas de variable 'contents' avec historique
             response = self.client.models.generate_content(
                 model=self.model_id,
@@ -46,10 +47,12 @@ class BaseAgent(abc.ABC):
             )
             
             if response.text:
+                logger.info(f"💾 [BASE_AGENT] LLM Answer: {response.text[:100]}...")
                 return response.text.strip()
             
             # Si le texte est vide, on vérifie si des outils ont été appelés 
             # (normalement géré par le SDK en mode auto)
+            logger.info("💾 [BASE_AGENT] LLM returned no text (likely tool call auto-executed).")
             return "J'ai bien reçu votre message. Je continue mes recherches pour vous."
 
         except Exception as e:

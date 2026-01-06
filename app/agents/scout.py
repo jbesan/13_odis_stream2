@@ -14,9 +14,9 @@ SCOUT_PROMPT = """
 **VILLE ACTIVE (FOCUS)** : {FOCUS_CITY}
 
 **Instructions** :
-1. **Gestion du Focus** :
-    - Si l'utilisateur mentionne une NOUVELLE ville spécifique, appelle TOUT DE SUITE `set_focus_city`.
-    - Si l'utilisateur pose une question de contexte (ex: "temps de trajet", "écoles ici") SANS préciser la ville, utilise **VILLE ACTIVE**.
+1. **Gestion du Focus (PRIORITÉ ABSOLUE)** :
+    - Si l'utilisateur mentionne une ville (ex: "Bordeaux", "Carcassonne"), appelle **IMMÉDIATEMENT** `set_focus_city` avec ce nom.
+    - Ceci est crucial pour que les autres experts (Job Hunter) puissent travailler sur la bonne ville.
     - Si VILLE ACTIVE est vide et que la ville n'est pas claire, demande de préciser.
 
 2. **Recherche de Terrain** :
@@ -52,8 +52,9 @@ class ScoutAgent(BaseAgent):
              prompt += f"\n\n**Historique Recent** :\n{history_summary}"
 
         try:
-            # Added set_focus_city to the tools list
-            return self._execute_tool_loop(prompt, message, [search_places, compute_routes, set_focus_city])
+            # Added search_commune to help Scout resolve cities if needed
+            from .tools import search_commune
+            return self._execute_tool_loop(prompt, message, [search_places, compute_routes, set_focus_city, search_commune])
         except Exception as e:
             logger.error(f"Scout error: {e}")
             return "Une erreur est survenue lors de la vérification terrain."

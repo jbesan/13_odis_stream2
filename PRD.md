@@ -512,3 +512,22 @@ En tant que travailleur social, je veux pouvoir choisir entre différents modèl
 ### 📊 Status
 
 - In Progress
+
+## 🚀 Feature [F-22]: Interface MCP France Travail (Job Hunter)
+
+### 📝 User Story
+
+En tant qu'Agent Job Hunter, je veux accéder aux offres d'emploi en temps réel via l'API publique de France Travail à travers une interface MCP, afin de proposer des opportunités concrètes et actualisées aux candidats.
+
+### 🔑 Key Features
+
+- **Nouveau Serveur MCP :** `app/mcp_france_travail.py` (ou extension de `mcp_server.py`) interfaçant avec l'API Partenaires de France Travail.
+- **Outils MCP dédiés :**
+  - `search_job_offers(query, location, radius, ...)`: Recherche d'offres d'emploi filtrées.
+  - `get_job_details(job_id)`: Récupération des détails complets d'une offre.
+- **Authentification :** Gestion sécurisée des credentials (OAuth2) pour l'accès à l'API France Travail.
+- **Intégration Agent :** Permet à l'agent Job Hunter d'enrichir ses recommandations avec des offres réelles.
+
+### 📊 Status
+
+- In Progress
