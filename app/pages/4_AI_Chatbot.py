@@ -47,7 +47,7 @@ with st.sidebar:
     
     # Debug Criteria
     if st.session_state.get("agent"):
-        with st.expander("📊 État des critères", expanded=True):
+        with st.expander("[DEBUG] État des critères", expanded=False):
             st.json(st.session_state.agent.context.search_criteria)
 
     if st.button("Réinitialiser la conversation"):

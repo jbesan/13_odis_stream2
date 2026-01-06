@@ -24,6 +24,7 @@ class AgentContext(BaseModel):
     active_agent: str = "interviewer"
     last_action: Optional[str] = None
     workflow_phase: str = "DISCOVERY" # 'DISCOVERY', 'SCORING', 'DECORATION'
+    focus_city: Optional[str] = None # The city currently being investigated (e.g. for Scout)
     
     def get_search_criterias_model(self) -> Optional[SearchCriterias]:
         """Convert dict to Pydantic model once mandatory fields are present."""

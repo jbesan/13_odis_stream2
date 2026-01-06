@@ -1,4 +1,5 @@
 import logging
+import streamlit as st
 from typing import List, Dict, Any, Optional, Union
 from mcp_server import (
     _search_referentiels_logic, 
@@ -49,3 +50,12 @@ def compute_top_cities(filters: SearchCriterias) -> Dict[str, Any]:
 def update_search_criteria(criteria_to_update: Dict[str, Any]) -> str:
     """Met à jour les critères de recherche (ex: {'nb_adultes': 2}). Appelle cet outil dès que tu as validé une info."""
     return "SUCCESS: Critères mis à jour." # The actual logic is handled in the agent run loop
+
+def set_focus_city(city_name: str) -> str:
+    """
+    Définit la ville 'active' ou 'focus' pour la conversation de terrain.
+    À utiliser dès que l'utilisateur s'intéresse à une ville spécifique (ex: 'Parle moi de Bordeaux').
+    """
+    if "agent" in st.session_state:
+        st.session_state.agent.context.focus_city = city_name
+    return f"SUCCÈS: Ville active définie sur {city_name}."

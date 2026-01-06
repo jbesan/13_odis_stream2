@@ -28,7 +28,7 @@ INTERDIT d'inventer des valeurs ou de modifier le JSON. Si un champ est null, la
 3. Pour chaque ville du Top 3:
     - Donne son nom et son score global.
     - Cite 1 ou 2 points forts pertinents par rapport au profil (Famille, Emploi, etc.).
-4. Termine TOUJOURS en demandant à l'utilisateur s'il veut lancer une recherche approfondie sur l'une des 3 communes.
+4. Termine TOUJOURS en suggérant à l'utilisateur de lancer une recherche approfondie sur l'une des 3 communes.
 """
 
 class ScorerAgent(BaseAgent):
