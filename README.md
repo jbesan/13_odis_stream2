@@ -29,7 +29,7 @@ Ce prototype a un triple objectif :
 - **Système de "Binômes" ([DEPRECATED]) :** L'algorithme associait des communes voisines pour proposer des solutions conjointes. Cette logique est en cours de remplacement par l'enrichissement automatique via le bassin de vie.
 - **Carte Interactive :** Visualisez les localités les mieux notées, leur score, et superposez des couches d'informations additionnelles (écoles, établissements de santé, services d'inclusion).
 - **Résultats Détaillés & Export PDF :** Explorez les 5 meilleurs résultats avec une analyse de leurs points forts et exportez un rapport PDF complet pour la famille accompagnée.
-- **Assistant IA (Agent ODIS) :** Interagissez en langage naturel avec un agent intelligent (Gemini 2.5) capable de conduire l'entretien, de rechercher des codes métiers/formations et de lancer le calcul pour vous.
+- **Assistant IA (Multi-Agent ODIS) :** Interagissez en langage naturel avec un système multi-agent (Gemini 2.5/3.0) capable de conduire l'entretien (Interviewer), de calculer les scores (Scorer) et de rechercher des détails sur le terrain (Scout/JobHunter).
 - **Scénarios de Démonstration :** Chargez rapidement des profils pré-configurés pour découvrir le potentiel de l'outil.
 
 ## 📸 Aperçu de l'Application

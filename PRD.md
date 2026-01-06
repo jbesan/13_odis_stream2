@@ -464,7 +464,16 @@ En tant que travailleur social, je veux voir les lieux recommandés sur une cart
 
 ### 📊 Status
 
-- Completed
+- Completed (Migrated to Multi-Agent Orchestration in Jan 2026)
+
+### ⚙️ Multi-Agent Architecture
+
+L'assistant est désormais composé de plusieurs agents spécialisés pilotés par un `Orchestrator` :
+
+- **Interviewer** : Phase de découverte et collecte de critères.
+- **Scorer** : Calcul et explication du Top villes.
+- **Scout** : Recherche Google Maps/Places pour la "décoration" des résultats.
+- **JobHunter** : Recherche d'offres d'emploi ciblées.
 
 ## 🚀 Feature [F-20]: Détails Territoire (Learn More)
 
