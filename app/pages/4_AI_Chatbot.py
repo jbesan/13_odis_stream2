@@ -35,54 +35,67 @@ st.markdown("**Assistant pour travailleurs sociaux** - Aide à la décision et r
 
 # --- Sidebar ---
 with st.sidebar:
-    st.header("Configuration")
+    # st.header("Configuration")
     api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
     if not api_key:
         st.error("Clé API Google non trouvée en variable d'environnement.")
     
-    st.info("Cet assistant utilise Gemini et vos données ODIS locales.")
+    # st.info("Cet assistant utilise Gemini et vos données ODIS locales.")
     
-    # Model selection removed as it's now handled per-agent inside gemini_client
-    if st.session_state.get("agent"):
-        st.info(f"Agents actifs : \n- Interviewer: {st.session_state.agent.orchestrator.models['interviewer']}\n- Scorer: {st.session_state.agent.orchestrator.models['scorer']}")
+    
     
     # --- Token Counter Widget ---
     if st.session_state.get("agent"):
-        st.divider()
-        st.subheader("📊 Consommation (Tokens)")
-        ctx = st.session_state.agent.context
+        st.subheader("AI Agent")
         
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Envoyés", f"{ctx.total_tokens_sent:,}")
-        with col2:
-            st.metric("Reçus", f"{ctx.total_tokens_received:,}")
+        # Model selection removed as it's now handled per-agent inside gemini_client
+        with st.expander("Agents actifs", expanded=False):
+            # st.session_state.agent.orchestrator
+            for ragent,model in st.session_state.agent.orchestrator.models.items():
+                st.text(f"{ragent}: {model}")
         
-        # Granular Cost Calculation
-        # Gemini 3: $0.50/M in, $3.00/M out
-        # Gemini 2.5: $0.10/M in, $0.40/M out
-        cost_g3 = (ctx.tokens_g3_input * 0.50 / 1_000_000) + (ctx.tokens_g3_output * 3.00 / 1_000_000)
-        cost_g25 = (ctx.tokens_g25_input * 0.10 / 1_000_000) + (ctx.tokens_g25_output * 0.40 / 1_000_000)
-        total_cost = cost_g3 + cost_g25
-        
-        st.metric("Coût estimé", f"{total_cost:.4f} $")
-        
-        with st.expander("Détail par modèle", expanded=False):
-            st.write(f"**Gemini 3** (Orchestration): {cost_g3:.4f}$")
-            st.caption(f"Tokens: {ctx.tokens_g3_input:,} in / {ctx.tokens_g3_output:,} out")
-            st.write(f"**Gemini 2.5** (Spécialistes): {cost_g25:.4f}$")
-            st.caption(f"Tokens: {ctx.tokens_g25_input:,} in / {ctx.tokens_g25_output:,} out")
+        with st.expander("📊 Consommation", expanded=False):
+            ctx = st.session_state.agent.context
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Envoyés", f"{ctx.total_tokens_sent:,}")
+            with col2:
+                st.metric("Reçus", f"{ctx.total_tokens_received:,}")
+            
+            # Granular Cost Calculation
+            # Gemini 3: $0.50/M in, $3.00/M out
+            # Gemini 2.5: $0.10/M in, $0.40/M out
+            cost_g3 = (ctx.tokens_g3_input * 0.50 / 1_000_000) + (ctx.tokens_g3_output * 3.00 / 1_000_000)
+            cost_g25 = (ctx.tokens_g25_input * 0.10 / 1_000_000) + (ctx.tokens_g25_output * 0.40 / 1_000_000)
+            total_cost = cost_g3 + cost_g25
+            
+            st.metric("Coût estimé", f"{total_cost:.4f} $")
+            
+            st.text("Détails par modèle:")
+            st.write(f"**Gemini 3**: {cost_g3:.4f}$")
+            st.text(f"{ctx.tokens_g3_input:,} in / {ctx.tokens_g3_output:,} out")
+            st.write(f"**Gemini 2.5**: {cost_g25:.4f}$")
+            st.text(f"{ctx.tokens_g25_input:,} in / {ctx.tokens_g25_output:,} out")
     
-    # Debug Criteria
-    if st.session_state.get("agent"):
-        with st.expander("[DEBUG] État des critères", expanded=False):
-            st.json(st.session_state.agent.context.search_criteria)
+        # Debug Criteria
+        if st.session_state.get("agent"):
+            with st.expander("Critères identifiés", expanded=False):
+                st.json(st.session_state.agent.context.search_criteria)
 
-    if st.button("Réinitialiser la conversation"):
-        st.session_state.chat_history = []
-        st.session_state.agent = None
-        print("################################## NEW CONVERSATION ##################################")
-        st.rerun()
+        st.divider()
+        st.markdown("""
+        <style>
+            .st-key-btn_recommencer .stButton p {color: #1B4429;}
+        </style>
+        """,
+        unsafe_allow_html=True
+        )
+        if st.button("Recommencer",type="primary", key="btn_recommencer"):
+            st.session_state.chat_history = []
+            st.session_state.agent = None
+            print("################################## NEW CONVERSATION ##################################")
+            st.rerun()
 
 # --- Core logic classes (Inlined) ---
 class OdisAgent:
