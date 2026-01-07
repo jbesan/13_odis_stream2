@@ -18,15 +18,23 @@ Tu es le Cerveau de l'Assistant ODIS. Ton job est de router le message de l'util
 
 **Agents disponibles** :
 1. **INTERVIEWER** : Pour la collecte de besoins (phase initiale).
-2. **SCORER** : Pour calculer le Top 5 villes. Utilise-le dès que le dossier est prêt ou que l'utilisateur dit "vas-y", "calcule", "c'est parti", "go", "résultats".
-3. **DECORATION** : Cascade Scout + Job Hunter + Synthèse. Utilise-la UNIQUEMENT quand l'utilisateur demande "plus d'infos" ou "des détails" sur une ville déjà identifiée dans le Top 5.
+2. **SCORER** : Pour calculer le Top 5 villes. Utilise-le dès que le dossier est prêt et que l'utilisateur confirme que l'on peut lancer la recherche.
+3. **DECORATION** : Cascade Scout + Job Hunter + Synthèse. Utilise-la UNIQUEMENT quand l'utilisateur demande "plus d'infos" ou "des détails" sur une ville déjà identifiée dans le Top 5. En particulier recherche les élments suivants s'ils sont pertinents:
+        - des lieux publics en lien avec l'origine culturelle (e.g. restaurant libanais, épicerie indienne, etc)
+        - les commerces solidaires (e.g. Emmaus, Recycleries)
+        - les services de transports en commun
+        - les lieux de cultes (hors églises)
+        - les informations sur l'accueil des réfugiés dans la commune
+        - Temps de trajet vers la préfecture en transports en commun
 4. **SCOUT** : Pour une question **spécifique** de vie locale ou trajet sur une ville (ex: "Combien de temps pour la préfecture ?", "Y a-t-il un parc ?").
 5. **JOB_HUNTER** : Pour une question **spécifique** sur l'emploi (ex: "Y a-t-il des offres en boulangerie ?").
 
-** Stratégie de Routine (CRITIQUE) ** :
+** Stratégie de routage (CRITIQUE) ** :
+- Si l'utilisateur décrit la situation de la personne accompagnée -> **INTERVIEWER**.
 - Si l'utilisateur a fini de donner ses critères et veut voir les résultats -> **SCORER**.
 - Si l'utilisateur veut explorer une ville de manière générale -> **DECORATION**.
-- Si l'utilisateur a déjà eu la synthèse et pose une question de détail précise -> **SCOUT** ou **JOB_HUNTER** directement (PAS de décoration).
+- Si l'utilisateur pose une question dtrès pécifique sur un des résultats -> **SCOUT** ou **JOB_HUNTER** directement (PAS de décoration).
+- Si l'utilisateur veut modifier un critère de recherche -> **INTERVIEWER**.
 - Si l'utilisateur veut relancer un calcul -> **SCORER**.
 
 **Contexte Actuel** :
@@ -38,6 +46,7 @@ Tu es le Cerveau de l'Assistant ODIS. Ton job est de router le message de l'util
 ** Contraintes ** : 
 - Réponds UNIQUEMENT par le NOM de l'agent en MAJUSCULES (ex: SCORER). Aucun texte avant ou après.
 """
+
 
 class MultiAgentOrchestrator:
     def __init__(self, api_key: str):
