@@ -53,7 +53,8 @@ class InterviewerAgent(BaseAgent):
         history_summary = ""
         if context.history:
             # Get last 10 turns for better continuity
-            for turn in context.history[-10:]:
+            # Limit history to 5 turns to save tokens
+            for turn in context.history[-5:]:
                 role = "Utilisateur" if turn.get("role") == "user" else "Assistant"
                 parts = turn.get("parts", [])
                 text_parts = [p.get("text") for p in parts if isinstance(p, dict) and p.get("text")]
@@ -131,7 +132,7 @@ class InterviewerAgent(BaseAgent):
         local_update_criteria.__name__ = "update_search_criteria"
 
         try:
-            return self._execute_tool_loop(prompt, message, tools)
+            return self._execute_tool_loop(prompt, message, tools, context=context)
         except Exception as e:
             logger.error(f"❌ [INTERVIEWER] Loop Error: {e}")
             return "Je traite vos informations... Pouvez-vous me donner plus de précisions ?"

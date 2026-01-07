@@ -2,7 +2,8 @@
 import streamlit as st
 import os
 import time
-from gemini_client import OdisAgent
+from agents.orchestrator import MultiAgentOrchestrator
+from agents.state import AgentContext
 # from ui import inject_custom_css
 import json
 import logging
@@ -45,6 +46,33 @@ with st.sidebar:
     if st.session_state.get("agent"):
         st.info(f"Agents actifs : \n- Interviewer: {st.session_state.agent.orchestrator.models['interviewer']}\n- Scorer: {st.session_state.agent.orchestrator.models['scorer']}")
     
+    # --- Token Counter Widget ---
+    if st.session_state.get("agent"):
+        st.divider()
+        st.subheader("📊 Consommation (Tokens)")
+        ctx = st.session_state.agent.context
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Envoyés", f"{ctx.total_tokens_sent:,}")
+        with col2:
+            st.metric("Reçus", f"{ctx.total_tokens_received:,}")
+        
+        # Granular Cost Calculation
+        # Gemini 3: $0.50/M in, $3.00/M out
+        # Gemini 2.5: $0.10/M in, $0.40/M out
+        cost_g3 = (ctx.tokens_g3_input * 0.50 / 1_000_000) + (ctx.tokens_g3_output * 3.00 / 1_000_000)
+        cost_g25 = (ctx.tokens_g25_input * 0.10 / 1_000_000) + (ctx.tokens_g25_output * 0.40 / 1_000_000)
+        total_cost = cost_g3 + cost_g25
+        
+        st.metric("Coût estimé", f"{total_cost:.4f} $")
+        
+        with st.expander("Détail par modèle", expanded=False):
+            st.write(f"**Gemini 3** (Orchestration): {cost_g3:.4f}$")
+            st.caption(f"Tokens: {ctx.tokens_g3_input:,} in / {ctx.tokens_g3_output:,} out")
+            st.write(f"**Gemini 2.5** (Spécialistes): {cost_g25:.4f}$")
+            st.caption(f"Tokens: {ctx.tokens_g25_input:,} in / {ctx.tokens_g25_output:,} out")
+    
     # Debug Criteria
     if st.session_state.get("agent"):
         with st.expander("[DEBUG] État des critères", expanded=False):
@@ -53,7 +81,46 @@ with st.sidebar:
     if st.button("Réinitialiser la conversation"):
         st.session_state.chat_history = []
         st.session_state.agent = None
+        print("################################## NEW CONVERSATION ##################################")
         st.rerun()
+
+# --- Core logic classes (Inlined) ---
+class OdisAgent:
+    def __init__(self, api_key: str, model_id: str = "gemini-2.5-flash"):
+        self.orchestrator = MultiAgentOrchestrator(api_key)
+        self.context = AgentContext()
+        self.model_id = model_id
+
+    def start_chat(self, history=None):
+        self.context = AgentContext()
+        if history:
+            self.context.history = list(history)
+        return self
+
+    def send_message(self, message: str) -> Any:
+        try:
+            logger.info(f"🚀 [ODIS_AGENT] Passing message to Orchestrator...")
+            response_text = self.orchestrator.process_message(message, self.context)
+            
+            class MockPart:
+                def __init__(self, text): 
+                    self.text = text
+                    self.function_call = None
+            
+            class MockCandidate:
+                def __init__(self):
+                    self.grounding_metadata = None
+
+            class MockResponse:
+                def __init__(self, text, active_agent):
+                    self.parts = [MockPart(text)]
+                    self.candidates = [MockCandidate()]
+                    self.active_agent = active_agent
+            
+            return MockResponse(response_text, self.context.active_agent)
+        except Exception as e:
+            logger.error(f"Orchestrator Error: {e}")
+            raise e
 
 # --- Session State ---
 if "chat_history" not in st.session_state:

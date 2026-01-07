@@ -1,4 +1,6 @@
 import logging
+import copy
+import json
 from typing import Dict, Any, List, Optional
 from google import genai
 from google.genai import types
@@ -15,33 +17,26 @@ ROUTING_PROMPT = """
 Tu es le Cerveau de l'Assistant ODIS. Ton job est de router le message de l'utilisateur vers le bon agent spécialisé pour éffectuer une recherche multi-étapes et de retourner la synthèse finale.
 
 **Agents disponibles** :
-1. **INTERVIEWER** : Pour la collecte de besoins, questions sur la famille, les métiers, la ville de départ. (Par défaut au début).
-2. **SCORER** : Pour lancer le calcul du Top villes, expliquer les scores, ou quand l'utilisateur dit "Calcule" / "Quelles sont les meilleures villes ?".
-3. **SCOUT** : Pour les questions sur les itinéraires (Gmaps), la recherche de lieux précis (écoles, commerces) dans une ville donnée.
-4. **JOB_HUNTER** : Pour les questions sur la recherche d'emploi concrète, les offres d'emploi, le marché du travail.
+1. **INTERVIEWER** : Pour la collecte de besoins (phase initiale).
+2. **SCORER** : Pour calculer le Top 5 villes. Utilise-le dès que le dossier est prêt ou que l'utilisateur dit "vas-y", "calcule", "c'est parti", "go", "résultats".
+3. **DECORATION** : Cascade Scout + Job Hunter + Synthèse. Utilise-la UNIQUEMENT quand l'utilisateur demande "plus d'infos" ou "des détails" sur une ville déjà identifiée dans le Top 5.
+4. **SCOUT** : Pour une question **spécifique** de vie locale ou trajet sur une ville (ex: "Combien de temps pour la préfecture ?", "Y a-t-il un parc ?").
+5. **JOB_HUNTER** : Pour une question **spécifique** sur l'emploi (ex: "Y a-t-il des offres en boulangerie ?").
 
-** Déroulé de la recherche ** : Un déroulé typique serait ces 4 phases dans cet ordre:
-1. INTERVIEWER: récupérer les critères de base et obligatoires ainsi qu'un maximum de préférences du projet de vie
-2. SCORER: calculer le top communes et retourner le Top 3 selon les critères de base et les préférences et demander à l'utilisateur s'il veut en savoir plus sur l'une d'entre elle
-3. DECORATION: Si l'utilisateur demande des informations sur une commune, on lance:
-    - SCOUT: rechercher des informations complémentaires sur la commune demandée
-    - JOB_HUNTER: rechercher des emplois dans la commune demandée
-4. SYNTHÈSE: Formule un pitch qui présente les points forts et faibles de la commune demandée selon le contexte obtenu lors des étapes SCORER (scores numériques) et DECORATION (informations complémentaires)
-
-**Règles de décision** :
-1. Si l'utilisateur pose une question de détail (écoles, trajet, vie locale) sur une des villes identifiées -> SCOUT.
-2. Si l'utilisateur parle de trouver un job précis, de CV ou d'offres concrètes -> JOB_HUNTER.
-3. Si l'utilisateur veut changer ses critères de base -> INTERVIEWER.
+** Stratégie de Routine (CRITIQUE) ** :
+- Si l'utilisateur a fini de donner ses critères et veut voir les résultats -> **SCORER**.
+- Si l'utilisateur veut explorer une ville de manière générale -> **DECORATION**.
+- Si l'utilisateur a déjà eu la synthèse et pose une question de détail précise -> **SCOUT** ou **JOB_HUNTER** directement (PAS de décoration).
+- Si l'utilisateur veut relancer un calcul -> **SCORER**.
 
 **Contexte Actuel** :
 - Agent Actif : {ACTIVE_AGENT}
-- Critères récoltés : {HAS_CRITERIA} (True/False)
-- Villes identifiées** : {CITIES_LIST}
-- Phase Actuelle** : {PHASE}
+- Villes identifiées : {CITIES_LIST}
+- Phase Actuelle : {PHASE}
+- Critères récoltés : {CRITERIA_JSON}
 
 ** Contraintes ** : 
-- Commence toujours la réponse avec le NOM de l'agent en MAJUSCULES (Exemple: SCORER).
-- Ne retourne jamais le score numérique 'scaled' mais uniquement l'interprétation de ce score.
+- Réponds UNIQUEMENT par le NOM de l'agent en MAJUSCULES (ex: SCORER). Aucun texte avant ou après.
 """
 
 class MultiAgentOrchestrator:
@@ -66,52 +61,120 @@ class MultiAgentOrchestrator:
         }
 
     def _route(self, message: str, context: AgentContext) -> str:
-        """Détermine quel agent doit répondre en fonction de la phase et du message."""
-        low_msg = message.lower()
+        """Détermine quel agent doit répondre en utilisant le LLM."""
+        cities_list = ", ".join([c['name'] for c in context.top_cities]) if context.top_cities else "Aucune"
+        criteria_json = json.dumps(context.search_criteria, ensure_ascii=False, indent=2)
         
-        # --- PHASE 1: DISCOVERY (INTERVIEWER) ---
-        if context.workflow_phase == "DISCOVERY":
-            has_commune = bool(context.search_criteria.get("commune_actuelle"))
-            has_adults = bool(context.search_criteria.get("nb_adultes"))
-            has_profile = bool(context.search_criteria.get("weight_profile"))
-            has_area = bool(context.search_criteria.get("loc_search_area"))
-            
-            has_min_data = has_commune and has_adults and has_profile and has_area
-            
-            logger.info(f"🔎 [ORCHESTRATOR] DISCOVERY Check: commune={has_commune}, adults={has_adults}, profile={has_profile}, area={has_area}")
-            
-            calc_keywords = ["calcule", "score", "résultat", "top", "meilleur", "lancer", "vas-y", "go", "oui", "ok"]
-            
-            if has_min_data and any(kw in low_msg for kw in calc_keywords):
-                context.workflow_phase = "SCORING"
-                logger.info("🚀 [ORCHESTRATOR] Transitioning DISCOVERY -> SCORING")
-                return "scorer"
-            
+        prompt = ROUTING_PROMPT
+        prompt = prompt.replace("{ACTIVE_AGENT}", context.active_agent or "Aucun")
+        prompt = prompt.replace("{CITIES_LIST}", cities_list)
+        prompt = prompt.replace("{PHASE}", context.workflow_phase)
+        prompt = prompt.replace("{CRITERIA_JSON}", criteria_json)
+        
+        # Nudge transition heuristics (to help LLM if conservative)
+        low_msg = message.lower()
+        go_keywords = ["calcule", "résultat", "top", "vas-y", "c'est parti", "go", "ok", "d'accord", "oui", "lancer", "liste"]
+        
+        logger.info(f"🧠 [ORCHESTRATOR] Routing message: '{message[:50]}...'")
+        
+        response = self.client.models.generate_content(
+            model=self.models["orchestrator"],
+            contents=message,
+            config=types.GenerateContentConfig(
+                system_instruction=prompt,
+                temperature=0.1
+            )
+        )
+        
+        # Track Tokens for Routing
+        if response.usage_metadata:
+            in_t = response.usage_metadata.prompt_token_count or 0
+            out_t = response.usage_metadata.candidates_token_count or 0
+            context.total_tokens_sent += in_t
+            context.total_tokens_received += out_t
+            context.tokens_g3_input += in_t
+            context.tokens_g3_output += out_t
+
+        res = response.text.strip().upper() if response.text else "INTERVIEWER"
+        
+        # Extract last word or the clean name
+        target = res.replace(":", "").replace("**", "").split()[-1]
+        
+        # Transition nudge: If we have basic data and user says "go/ok", override to SCORER if router is too cautious
+        basic_fields = ["commune_actuelle", "nb_adultes", "loc_search_area", "weight_profile"]
+        has_basic = all(context.search_criteria.get(f) for f in basic_fields)
+        
+        if target == "INTERVIEWER" and has_basic and any(kw in low_msg for kw in go_keywords):
+             logger.info("⚡ [ORCHESTRATOR] Nudging INTERVIEWER -> SCORER based on message and criteria completeness.")
+             target = "SCORER"
+
+        logger.info(f"🎯 [ORCHESTRATOR] Router choice: {target}")
+        
+        # Mapping choice back to internal names and updating phase
+        target = target.upper()
+        
+        # Security: Force Interviewer if basic data is missing and user didn't ask for calculation
+        basic_fields = ["commune_actuelle", "nb_adultes", "loc_search_area", "weight_profile"]
+        missing_basic = [f for f in basic_fields if not context.search_criteria.get(f)]
+        
+        if "SCORER" in target and missing_basic:
+            logger.warning(f"⚠️ [ORCHESTRATOR] Router chose SCORER but fields {missing_basic} are missing. Forcing INTERVIEWER.")
+            context.workflow_phase = "DISCOVERY"
             return "interviewer"
 
-        # --- PHASE 2: SCORING (SCORER) ---
-        if context.workflow_phase == "SCORING":
-            if any(kw in low_msg for kw in ["changer", "modifier", "nouveau", "recommence", "critère"]):
-                 context.workflow_phase = "DISCOVERY"
-                 return "interviewer"
-
-            # Transition automatique vers DECORATION après le premier scoring réussi (ou sur demande de détail)
-            context.workflow_phase = "DECORATION" 
-            return "scout" # Scout par défaut pour la transition, mais process_message gérera le duo
-
-        # --- PHASE 3: DECORATION / SYNTHESE ---
-        if context.workflow_phase == "DECORATION":
-            if any(kw in low_msg for kw in ["changer", "modifier", "nouveau", "recommence", "critère"]):
-                 context.workflow_phase = "DISCOVERY"
-                 return "interviewer"
-            
-            # Si l'utilisateur pose une question très spécifique à l'emploi
-            if any(kw in low_msg for kw in ["job", "emploi", "travail", "poste", "recrutement", "salaire", "offres"]):
-                return "job_hunter"
-            
+        if "INTERVIEWER" in target:
+            context.workflow_phase = "DISCOVERY"
+            return "interviewer"
+        elif "SCORER" in target:
+            context.workflow_phase = "SCORING"
+            return "scorer"
+        elif "DECORATION" in target:
+            context.workflow_phase = "DECORATION"
+            return "DECORATION"
+        elif "SCOUT" in target:
+            context.workflow_phase = "DECORATION"
             return "scout"
-
+        elif "JOB_HUNTER" in target:
+            context.workflow_phase = "DECORATION"
+            return "job_hunter"
+        
         return "interviewer"
+
+    def _get_specialized_context(self, agent_name: str, context: AgentContext) -> AgentContext:
+        """Crée une vue limitée du contexte pour un agent spécifique afin d'économiser des tokens."""
+        # Deep copy the context to avoid mutating the master one
+        pruned_context = copy.deepcopy(context)
+        
+        full_criteria = context.search_criteria
+        slim_criteria = {}
+        
+        if agent_name == "scout":
+            # Scout a besoin de la ville, de la famille et des intérêts (assos/services)
+            keys = ["nb_adultes", "nb_enfants", "classe_enfants", "inc_services_add_selection", "inc_asso_add_selection", "sante"]
+            for k in keys:
+                if k in full_criteria: slim_criteria[k] = full_criteria[k]
+            # Pas besoin des codes métiers ou formations complexes
+            
+        elif agent_name == "job_hunter":
+            # Job Hunter a besoin des métiers et formations
+            keys = ["nb_adultes", "codes_metiers", "codes_formations"]
+            for k in keys:
+                if k in full_criteria: slim_criteria[k] = full_criteria[k]
+        
+        elif agent_name == "interviewer":
+            # Interviewer a besoin de tout pour savoir ce qu'il reste à remplir
+            slim_criteria = full_criteria
+            
+        elif agent_name == "scorer":
+            # Scorer a besoin de tout pour le calcul
+            slim_criteria = full_criteria
+            
+        pruned_context.search_criteria = slim_criteria
+        
+        # On limite aussi l'historique dans le contexte passé (déjà fait dans les agents, mais ici c'est plus propre)
+        pruned_context.history = context.history[-5:]
+        
+        return pruned_context
 
     def _synthesize(self, message: str, context: AgentContext, scout_res: str, job_res: str) -> str:
         """Fusionne les résultats de Scout et Job Hunter dans un pitch final."""
@@ -136,6 +199,22 @@ class MultiAgentOrchestrator:
             contents=message,
             config=types.GenerateContentConfig(system_instruction=synth_prompt, temperature=0.3)
         )
+        
+        # Track Tokens
+        if response.usage_metadata:
+            in_tokens = response.usage_metadata.prompt_token_count or 0
+            out_tokens = response.usage_metadata.candidates_token_count or 0
+            
+            # Global totals
+            context.total_tokens_sent += in_tokens
+            context.total_tokens_received += out_tokens
+            
+            # Model-specific tracking (Orchestrator uses G3)
+            context.tokens_g3_input += in_tokens
+            context.tokens_g3_output += out_tokens
+            
+            logger.info(f"📊 [ORCHESTRATOR_SYNTH] Usage: +{in_tokens} in / +{out_tokens} out")
+
         return response.text.strip() if response.text else "J'ai collecté les informations, comment puis-je vous aider davantage ?"
 
     def process_message(self, message: str, context: AgentContext) -> str:
@@ -149,7 +228,8 @@ class MultiAgentOrchestrator:
         context.active_agent = target_agent_name
         
         # 3. Special Case: DECORATION (Scout + Job Hunter Cascade)
-        if context.workflow_phase == "DECORATION" and target_agent_name in ["scout", "job_hunter"]:
+        # On ne déclenche la cascade QUE si le router demande spécifiquement "DECORATION"
+        if target_agent_name == "DECORATION":
             logger.info(f"⛓️ [ORCHESTRATOR] Starting Decoration Cascade (Initial City: {context.focus_city})")
             
             # --- AUTO-DETECTION SAFETY ---
@@ -161,8 +241,15 @@ class MultiAgentOrchestrator:
                         logger.info(f"✨ [ORCHESTRATOR] Auto-detected city in message: {context.focus_city}")
                         break
             
+            # Preparation des contextes spécialisés
+            scout_ctx = self._get_specialized_context("scout", context)
+            job_ctx = self._get_specialized_context("job_hunter", context)
+
             logger.info("📡 [ORCHESTRATOR] Calling SCOUT...")
-            scout_res = self.agents["scout"].run(message, context)
+            scout_res = self.agents["scout"].run(message, scout_ctx)
+            # Sync tokens only. focus_city is updated directly by the tool in st.session_state
+            self._sync_tokens(context, scout_ctx)
+            
             logger.info(f"✅ [ORCHESTRATOR] SCOUT finished. Current City: {context.focus_city}")
             
             # RE-CHECK after Scout as Scout might have set it
@@ -170,7 +257,9 @@ class MultiAgentOrchestrator:
                  logger.warning("⚠️ [ORCHESTRATOR] Focus city still empty after Scout. Job Hunter might fail/be broad.")
             
             logger.info("📡 [ORCHESTRATOR] Calling JOB_HUNTER...")
-            job_res = self.agents["job_hunter"].run(message, context)
+            job_res = self.agents["job_hunter"].run(message, job_ctx)
+            self._sync_tokens(context, job_ctx)
+            
             logger.info(f"✅ [ORCHESTRATOR] JOB_HUNTER finished. Current City: {context.focus_city}")
             
             final_response = self._synthesize(message, context, scout_res, job_res)
@@ -187,7 +276,18 @@ class MultiAgentOrchestrator:
             return "Désolé, j'ai rencontré une erreur de routing."
             
         try:
-            response_text = agent.run(message, context)
+            pruned_ctx = self._get_specialized_context(target_agent_name, context)
+            response_text = agent.run(message, pruned_ctx)
+            
+            # Sync back tokens and critical updates
+            self._sync_tokens(context, pruned_ctx)
+            
+            # CRITICAL: Only sync back criteria if the agent is the Interviewer
+            # (to avoid overwriting full criteria with pruned ones from other agents)
+            if target_agent_name == "interviewer":
+                context.search_criteria = pruned_ctx.search_criteria
+            
+            # Note: focus_city sync removed. Trust tools updating st.session_state and sync tokens.
             
             context.history.append({"role": "user", "parts": [{"text": message}]})
             valid_res = response_text if response_text and response_text.strip() else "..."
@@ -197,3 +297,13 @@ class MultiAgentOrchestrator:
         except Exception as e:
             logger.error(f"❌ [ORCHESTRATOR] Process Message Error: {e}")
             return "Une erreur technique est survenue. Peux-tu reformuler ta demande ?"
+
+    def _sync_tokens(self, master: AgentContext, sub: AgentContext):
+        """Met à jour les compteurs de tokens du contexte maître à partir d'un sous-contexte."""
+        # This is a bit manual but robust
+        master.total_tokens_sent = sub.total_tokens_sent
+        master.total_tokens_received = sub.total_tokens_received
+        master.tokens_g3_input = sub.tokens_g3_input
+        master.tokens_g3_output = sub.tokens_g3_output
+        master.tokens_g25_input = sub.tokens_g25_input
+        master.tokens_g25_output = sub.tokens_g25_output

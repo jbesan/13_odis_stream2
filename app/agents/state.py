@@ -26,6 +26,16 @@ class AgentContext(BaseModel):
     workflow_phase: str = "DISCOVERY" # 'DISCOVERY', 'SCORING', 'DECORATION'
     focus_city: Optional[str] = None # The city currently being investigated (e.g. for Scout)
     
+    # Token Tracking (Total)
+    total_tokens_sent: int = 0
+    total_tokens_received: int = 0
+    
+    # Granular Tracking for Cost Estimation
+    tokens_g3_input: int = 0
+    tokens_g3_output: int = 0
+    tokens_g25_input: int = 0
+    tokens_g25_output: int = 0
+    
     def get_search_criterias_model(self) -> Optional[SearchCriterias]:
         """Convert dict to Pydantic model once mandatory fields are present."""
         try:

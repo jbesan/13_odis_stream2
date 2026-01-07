@@ -511,23 +511,39 @@ En tant que travailleur social, je veux pouvoir choisir entre différents modèl
 
 ### 📊 Status
 
-- In Progress
+- Completed (Integrated Dec 2025, Enhanced Jan 2026)
 
-## 🚀 Feature [F-22]: Interface MCP France Travail (Job Hunter)
+## 🚀 Feature [F-23]: Cartographie Administrative (DARES FAP-ROME)
 
 ### 📝 User Story
 
-En tant qu'Agent Job Hunter, je veux accéder aux offres d'emploi en temps réel via l'API publique de France Travail à travers une interface MCP, afin de proposer des opportunités concrètes et actualisées aux candidats.
+En tant qu'Agent Job Hunter, je veux utiliser une table de passage officielle pour traduire les profils ODIS (codes FAP) en codes métiers France Travail (codes ROME), afin de garantir une recherche d'emploi administrativement exacte et sans erreurs de "fuzzy matching".
 
 ### 🔑 Key Features
 
-- **Nouveau Serveur MCP :** `app/mcp_france_travail.py` (ou extension de `mcp_server.py`) interfaçant avec l'API Partenaires de France Travail.
-- **Outils MCP dédiés :**
-  - `search_job_offers(query, location, radius, ...)`: Recherche d'offres d'emploi filtrées.
-  - `get_job_details(job_id)`: Récupération des détails complets d'une offre.
-- **Authentification :** Gestion sécurisée des credentials (OAuth2) pour l'accès à l'API France Travail.
-- **Intégration Agent :** Permet à l'agent Job Hunter d'enrichir ses recommandations avec des offres réelles.
+- **Pipeline ETL DARES :** Intégration de la table de passage officielle DARES (`Dares_Table_passage_ROME_Qualif_to_FAP2021_pour_programme.csv`) dans le processus de build.
+- **Support Multi-Profils :** Le `JobHunterAgent` traite désormais séparément et exhaustivement chaque adulte du foyer (Adulte 1, Adulte 2).
+- **Exactitude ROME :** Traduction directe FAP -> ROME via l'outil `get_rome_for_fap`, évitant les confusions de libellés.
+- **Recherche V2 :** Utilisation du paramètre `codeRome` de l'API France Travail V2 pour des résultats plus ciblés.
 
 ### 📊 Status
 
-- In Progress
+- Completed (Jan 2026)
+
+## 🚀 Feature [F-24]: Orchestration Multi-Agents & Optimisation Token
+
+### 📝 User Story
+
+En tant qu'utilisateur, je veux un assistant fluide qui comprend quand lancer une recherche globale et quand répondre directement à des questions de détail, tout en restant rapide et économique en termes de tokens.
+
+### 🔑 Key Features
+
+- **Routage LLM Intelligent :** Transition du routage par mots-clés vers un routage basé sur un modèle (Gemini 3) capable de distinguer l'exploration globale d'une ville (Cascade DECORATION) des questions subsidiaires.
+- **Spécialisation du Contexte (Context Pruning) :** Chaque agent reçoit désormais une vue élaguée et spécialisée du contexte (critères pertinents uniquement) pour réduire drastiquement la consommation de tokens.
+- **Optimisation France Travail :** Réduction du payload des offres d'emploi (tronquage des descriptions, suppression des champs lourds) et réduction du nombre de résultats par défaut (Top 20).
+- **Robustesse du Focus :** Amélioration de la gestion de la "Ville Active" avec synchronisation protégée et auto-complétion des recherches Gmaps (ex: "Préfecture" -> "Préfecture near Beaucaire").
+- **Top 5 Interactif :** Présentation resserrée sur les 5 meilleures villes avec scores en pourcentage pour une meilleure lisibilité.
+
+### 📊 Status
+
+- Completed (Jan 2026)

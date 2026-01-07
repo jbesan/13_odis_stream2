@@ -17,7 +17,7 @@ class BaseAgent(abc.ABC):
         """Process a message within the given context and return agent's response."""
         pass
 
-    def _execute_tool_loop(self, prompt: str, message: str, tools: list) -> str:
+    def _execute_tool_loop(self, prompt: str, message: str, tools: list, context: Optional[AgentContext] = None) -> str:
         """
         Exécute l'agent en mode 'Stateless Single-Turn'.
         On n'envoie JAMAIS d'historique au SDK pour éviter les erreurs de validation.
@@ -46,6 +46,25 @@ class BaseAgent(abc.ABC):
                 config=config
             )
             
+            # Track Tokens
+            if response.usage_metadata:
+                in_tokens = response.usage_metadata.prompt_token_count or 0
+                out_tokens = response.usage_metadata.candidates_token_count or 0
+                
+                # Global totals
+                context.total_tokens_sent += in_tokens
+                context.total_tokens_received += out_tokens
+                
+                # Model-specific tracking
+                if "gemini-3" in self.model_id:
+                    context.tokens_g3_input += in_tokens
+                    context.tokens_g3_output += out_tokens
+                elif "gemini-2.5" in self.model_id:
+                    context.tokens_g25_input += in_tokens
+                    context.tokens_g25_output += out_tokens
+                
+                logger.info(f"📊 [BASE_AGENT] {self.model_id} Usage: +{in_tokens} in / +{out_tokens} out")
+
             if response.text:
                 logger.info(f"💾 [BASE_AGENT] LLM Answer: {response.text[:100]}...")
                 return response.text.strip()

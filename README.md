@@ -29,7 +29,8 @@ Ce prototype a un triple objectif :
 - **Système de "Binômes" ([DEPRECATED]) :** L'algorithme associait des communes voisines pour proposer des solutions conjointes. Cette logique est en cours de remplacement par l'enrichissement automatique via le bassin de vie.
 - **Carte Interactive :** Visualisez les localités les mieux notées, leur score, et superposez des couches d'informations additionnelles (écoles, établissements de santé, services d'inclusion).
 - **Résultats Détaillés & Export PDF :** Explorez les 5 meilleurs résultats avec une analyse de leurs points forts et exportez un rapport PDF complet pour la famille accompagnée.
-- **Assistant IA (Multi-Agent ODIS) :** Interagissez en langage naturel avec un système multi-agent (Gemini 2.5/3.0) capable de conduire l'entretien (Interviewer), de calculer les scores (Scorer) et de rechercher des détails sur le terrain (Scout/JobHunter).
+- **Assistant IA (Multi-Agent ODIS) :** Interagissez en langage naturel avec un système multi-agent (Gemini 3.0) capable de conduire l'entretien (`Interviewer`), de calculer les scores (`Scorer`), de rechercher des détails sur le terrain (`Scout`) et de trouver des offres d'emploi réelles (`JobHunter`).
+- **Expertise Emploi (Mapping DARES) :** Traduction automatique et officielle des profils métiers (FAP) en codes ROME grâce à l'intégration de la table de passage de la DARES, garantissant une recherche d'emploi ultra-précise sur France Travail.
 - **Scénarios de Démonstration :** Chargez rapidement des profils pré-configurés pour découvrir le potentiel de l'outil.
 
 ## 📸 Aperçu de l'Application

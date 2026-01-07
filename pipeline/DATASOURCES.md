@@ -165,6 +165,12 @@
 - Type de fichier: csv
 - colonnes utiles: Code FAP 228, Intitulé FAP 228
 
+## Correspondance ROME <-> FAP 2021
+
+- Page: https://dares.travail-emploi.gouv.fr/donnees/la-nomenclature-des-familles-professionnelles-2021
+- Lien direct: https://dares.travail-emploi.gouv.fr/sites/default/files/9166deb9ba1f03faf0097beb7e449915/Dares_Table_passage_ROME_Qualif_to_FAP2021_pour_programme.csv
+- Type de fichier: csv
+
 ## Population Active & Chomage
 
 - Données: https://www.data.gouv.fr/datasets/population-active-et-chomage/

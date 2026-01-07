@@ -24,11 +24,11 @@ INTERDIT d'inventer des valeurs ou de modifier le JSON. Si un champ est null, la
 
 **Instructions** :
 1. Lance `compute_top_cities` avec les arguments stricts.
-2. Une fois les résultats reçus, présente le Top 3 des meilleures communes.
-3. Pour chaque ville du Top 3:
-    - Donne son nom et son score global.
+2. Une fois les résultats reçus, présente le **Top 5** des meilleures communes.
+3. Pour chaque ville du Top 5:
+    - Donne son nom et son score global comme un pourcentage.
     - Cite 1 ou 2 points forts pertinents par rapport au profil (Famille, Emploi, etc.).
-4. Termine TOUJOURS en suggérant à l'utilisateur de lancer une recherche approfondie sur l'une des 3 communes.
+4. Termine TOUJOURS en suggérant à l'utilisateur de lancer une recherche approfondie sur l'une des communes.
 """
 
 class ScorerAgent(BaseAgent):
@@ -51,6 +51,7 @@ class ScorerAgent(BaseAgent):
         # Prepare Prompt-based Memory (Short)
         history_summary = ""
         if context.history:
+            # Limit history to 3 turns for Scorer focus
             for turn in context.history[-3:]:
                 role = "Utilisateur" if turn.get("role") == "user" else "Assistant"
                 parts = turn.get("parts", [])
@@ -64,7 +65,7 @@ class ScorerAgent(BaseAgent):
              prompt += f"\n\n**Historique Recent** :\n{history_summary}"
 
         try:
-            return self._execute_tool_loop(prompt, message, [compute_top_cities])
+            return self._execute_tool_loop(prompt, message, [compute_top_cities], context=context)
         except Exception as e:
             logger.error(f"Scorer error: {e}")
             return "Une erreur est survenue lors du calcul."
