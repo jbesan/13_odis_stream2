@@ -1,9 +1,9 @@
 import pytest
 import pandas as pd
 from unittest.mock import patch, MagicMock
-from app.mcp_france_travail import (
+from mcp_france_travail import (
     _get_access_token, 
-    _search_job_offers_logic, 
+    search_job_offers_logic, 
     _get_job_details_logic, 
     _resolve_fap_label,
     TOKEN_CACHE
@@ -56,7 +56,7 @@ def test_search_job_offers_success():
         mock_response.headers = {"Content-Range": "offres 0-49/150"}
         mock_get.return_value = mock_response
         
-        results = _search_job_offers_logic(query="Dev", location="33063")
+        results = search_job_offers_logic(query="Dev", location="33063")
         assert len(results["offres"]) == 1
         assert results["total"] == 150
         assert results["offres"][0]["intitule"] == "Dev"
@@ -70,7 +70,7 @@ def test_search_job_offers_no_results():
         mock_response.status_code = 204
         mock_get.return_value = mock_response
         
-        results = _search_job_offers_logic(query="Unknown")
+        results = search_job_offers_logic(query="Unknown")
         assert results["offres"] == []
         assert results["total"] == 0
 
@@ -122,7 +122,7 @@ def test_search_job_offers_with_fap():
             mock_response.json.return_value = {"resultats": []}
             mock_get.return_value = mock_response
             
-            _search_job_offers_logic(fap_code="D1X33", location="33063")
+            search_job_offers_logic(fap_code="D1X33", location="33063")
             
             # Check if motsCles contains the resolved label
             args, kwargs = mock_get.call_args
