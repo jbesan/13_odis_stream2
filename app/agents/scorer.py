@@ -26,7 +26,7 @@ INTERDIT d'inventer des valeurs ou de modifier le JSON. Si un champ est null, la
 1. Lance `compute_top_cities` avec les arguments stricts.
 2. Une fois les résultats reçus, présente le **Top 5** des meilleures communes.
 3. Pour chaque ville du Top 5:
-    - Donne son nom et son score global comme un pourcentage.
+    - Donne son nom, sa population et son score global comme un pourcentage.
     - Cite 1 ou 2 points forts pertinents par rapport au profil (Famille, Emploi, etc.).
 4. Termine TOUJOURS en suggérant à l'utilisateur de lancer une recherche approfondie sur l'une des communes.
 """

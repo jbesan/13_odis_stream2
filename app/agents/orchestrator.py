@@ -109,13 +109,13 @@ class MultiAgentOrchestrator:
         # Extract last word or the clean name
         target = res.replace(":", "").replace("**", "").split()[-1]
         
-        # Transition nudge: If we have basic data and user says "go/ok", override to SCORER if router is too cautious
-        basic_fields = ["commune_actuelle", "nb_adultes", "loc_search_area", "weight_profile"]
-        has_basic = all(context.search_criteria.get(f) for f in basic_fields)
+        # # Transition nudge: If we have basic data and user says "go/ok", override to SCORER if router is too cautious
+        # basic_fields = ["commune_actuelle", "nb_adultes", "loc_search_area", "weight_profile"]
+        # has_basic = all(context.search_criteria.get(f) for f in basic_fields)
         
-        if target == "INTERVIEWER" and has_basic and any(kw in low_msg for kw in go_keywords):
-             logger.info("⚡ [ORCHESTRATOR] Nudging INTERVIEWER -> SCORER based on message and criteria completeness.")
-             target = "SCORER"
+        # if target == "INTERVIEWER" and has_basic and any(kw in low_msg for kw in go_keywords):
+        #      logger.info("⚡ [ORCHESTRATOR] Nudging INTERVIEWER -> SCORER based on message and criteria completeness.")
+        #      target = "SCORER"
 
         logger.info(f"🎯 [ORCHESTRATOR] Router choice: {target}")
         
@@ -126,8 +126,9 @@ class MultiAgentOrchestrator:
         basic_fields = ["commune_actuelle", "nb_adultes", "loc_search_area", "weight_profile"]
         missing_basic = [f for f in basic_fields if not context.search_criteria.get(f)]
         
-        if "SCORER" in target and missing_basic:
-            logger.warning(f"⚠️ [ORCHESTRATOR] Router chose SCORER but fields {missing_basic} are missing. Forcing INTERVIEWER.")
+        # Until we get at least the basic fields, we force INTERVIEWER
+        if missing_basic:
+            logger.warning(f"⚠️ [ORCHESTRATOR] Fields {missing_basic} are missing. Forcing INTERVIEWER.")
             context.workflow_phase = "DISCOVERY"
             return "interviewer"
 
