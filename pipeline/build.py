@@ -912,8 +912,22 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
             })
             refs_list.append(deps_ref)
             logger.log_step("generate_referentiels", "DEPARTEMENTS", {"count": len(deps_ref)})
+
+        # FAP-ROME Mapping
+        mapping_path = CLEAN_DIR / "fap_rome_mapping.parquet"
+        if mapping_path.exists():
+            mapping_df = pd.read_parquet(mapping_path)
+            # Store as key=fap_rome_mapping, code=FAP, label=ROME
+            mapping_ref = pd.DataFrame({
+                'key': 'fap_rome_mapping',
+                'code': mapping_df['fap_code'].astype(str),
+                'label': mapping_df['rome_code'].astype(str)
+            })
+            refs_list.append(mapping_ref)
+            logger.log_step("generate_referentiels", "FAP_ROME", {"count": len(mapping_ref)})
+
     except Exception as e:
-        logger.log_step("generate_referentiels", "ERROR_REG_DEP", {"error": str(e)})
+        logger.log_step("generate_referentiels", "ERROR_REG_DEP_MAPPING", {"error": str(e)})
 
     # Final concatenation and save for all referentiels
     if refs_list:

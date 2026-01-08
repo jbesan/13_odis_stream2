@@ -28,7 +28,7 @@ def set_data_context(context: Dict[str, Any]) -> None:
     """Allows external injection of data context (e.g. from Streamlit cache)"""
     global DATA_CONTEXT
     DATA_CONTEXT = context
-    logger.info("Data Context injected externally.")
+    # logger.info("Data Context injected externally.")
 
 def ensure_data_context() -> None:
     """Ensures data context is loaded if missing."""
@@ -142,8 +142,18 @@ def _search_referentiels_logic(query: str, domain: Optional[str] = None) -> List
          
     return results
 
-
-    return results
+def _get_labels_for_codes_logic(codes: List[str]) -> Dict[str, str]:
+    """
+    Returns a mapping of code -> label for a list of codes (any referential).
+    """
+    ensure_data_context()
+    if 'referentiels_raw' not in DATA_CONTEXT:
+        return {}
+    
+    df = DATA_CONTEXT['referentiels_raw']
+    # Filter by code AND exclude internal mapping keys that use codes as labels
+    subset = df[(df['code'].isin(codes)) & (df['key'] != 'fap_rome_mapping')]
+    return dict(zip(subset['code'].astype(str), subset['label'].astype(str)))
 
 
 @mcp.tool()
@@ -157,6 +167,41 @@ def search_referentiels(query: str, domain: Optional[str] = None) -> List[Dict[s
                 ['fap_codes' (Jobs), 'formation_codes', 'inclusion_services', 'waldec_codes' (Hobbies), 'regions', 'departements'].
     """
     return _search_referentiels_logic(query, domain)
+
+
+def _get_rome_for_fap_logic(fap_codes: List[str]) -> Dict[str, List[str]]:
+    """
+    Lookups official ROME codes for a list of FAP codes using the DARES mapping.
+    """
+    ensure_data_context()
+    if 'referentiels_raw' not in DATA_CONTEXT:
+        return {}
+    
+    df = DATA_CONTEXT['referentiels_raw']
+    # Filter mapping entries
+    mapping_df = df[df['key'] == 'fap_rome_mapping']
+    
+    # Filter for target codes
+    subset = mapping_df[mapping_df['code'].isin(fap_codes)]
+    
+    # Group by FAP code to get list of ROME codes
+    mapping = {}
+    for fap, group in subset.groupby('code'):
+        mapping[str(fap)] = group['label'].astype(str).unique().tolist()
+        
+    return mapping
+
+
+@mcp.tool()
+def get_rome_for_fap(fap_codes: List[str]) -> Dict[str, List[str]]:
+    """
+    Traduit des codes FAP (Familles Professionnelles) en codes ROME (Répertoire Opérationnel des Métiers et des Emplois).
+    Utilise la table de correspondance officielle de la DARES.
+    
+    Args:
+        fap_codes: Liste de codes FAP (ex: ['A0X41', 'B0X32']).
+    """
+    return _get_rome_for_fap_logic(fap_codes)
 
 
 def _search_commune_logic(query: str) -> List[Dict[str, str]]:
@@ -241,11 +286,11 @@ def search_commune(query: str) -> List[Dict[str, str]]:
 
 def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Computes scores for all communes in search area and returns the top 10 cities (communes) based on user criteria
+    Computes scores for all communes in search area and returns the top 5 cities (communes) based on user criteria
     """
     logger.info(f"👉 [MCP] Request: compute_top_cities")
-    logger.info(f"   Weights: {json.dumps(weights, indent=2, default=str)}")
-    logger.info(f"   Filters: {json.dumps(filters, indent=2, default=str)}")
+    logger.debug(f"   Weights: {json.dumps(weights, indent=2, default=str)}")
+    logger.debug(f"   Filters: {json.dumps(filters, indent=2, default=str)}")
     
     engine = get_scoring_engine()
     
@@ -325,13 +370,12 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
         logger.info("   [MCP] No results found.")
         return {"cities": [], "criteria_definitions": {}}
         
-    top_10 = processed_gdf.head(10).copy()
+    top_5 = processed_gdf.head(5).copy()
     
     # 4. Criteria Definitions
     criteria_definitions: Dict[str, Any] = {}
-    if 'scores_cat' in DATA_CONTEXT:
-        scores_cat = DATA_CONTEXT['scores_cat']
-        for idx, row in scores_cat.iterrows():
+    if not engine.scores_cat.empty:
+        for idx, row in engine.scores_cat.iterrows():
             score_id = row['score']
             cat = row['cat']
             if cat not in criteria_definitions: criteria_definitions[cat] = {}
@@ -344,7 +388,7 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
 
     # 5. Build Results
     results = []
-    for codgeo, row in top_10.iterrows():
+    for codgeo, row in top_5.iterrows():
         detailed_scores: Dict[str, Any] = {}
         for col in row.index:
             if col.endswith('_cat_score'):
@@ -365,6 +409,16 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
         bdv = row.get('libelle_bassin_de_vie', "N/A")
         details_full = engine.format_city_details(row)
         
+        # AI Pruning: Reduce data size for LLM context without affecting the main UI
+        if 'emploi' in details_full:
+            details_full['emploi']['top_metiers'] = details_full['emploi'].get('top_metiers', [])[:10]
+            details_full['emploi']['formations'] = details_full['emploi'].get('formations', [])[:5]
+        if 'inclusion' in details_full and 'services' in details_full['inclusion']:
+            details_full['inclusion']['services'] = details_full['inclusion']['services'][:10]
+        if 'associations' in details_full and 'all' in details_full['associations']:
+            # Associations list is often very long
+            details_full['associations']['all'] = details_full['associations'].get('all', [])[:10]
+        
         results.append({
             "codgeo": str(codgeo),
             "name": row['libgeo'],
@@ -375,7 +429,7 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
             "details": details_full
         })
         
-    logger.info(f"✅ [MCP] Response: Found {len(results)} cities. Top: {[r['name'] for r in results[:3]]}")
+    logger.debug(f"✅ [MCP] Response: Found {len(results)} cities. Top: {[r['name'] for r in results[:3]]}")
     
     return sanitize_for_json({
         "cities": results,
@@ -404,12 +458,23 @@ def _search_places_logic(queries: List[str], location: str) -> Dict[str, Any]:
         
         gmaps = googlemaps.Client(key=gmaps_key)
         results = []
-        for q in queries:
+        # Limit to 3 queries to avoid long wait times
+        for q in queries[:3]:
+            logger.info(f"   🔎 [MCP] Google Maps Query: '{q}' near {location}")
             res = gmaps.places(query=f"{q} near {location}, France", language="fr")
-            # Limit results to keep context small
-            results.extend(res.get('results', [])[:3])
+            count = 0
+            for p in res.get('results', [])[:3]:
+                results.append({
+                    "name": p.get("name"),
+                    "address": p.get("formatted_address"),
+                    "rating": p.get("rating"),
+                    "types": p.get("types"),
+                    "business_status": p.get("business_status")
+                })
+                count += 1
+            logger.info(f"   ✅ [MCP] Found {count} results for '{q}'")
             
-        logger.info(f"✅ [MCP] Found {len(results)} places.")
+        logger.info(f"✅ [MCP] search_places finished. Total pruned results: {len(results)}")
         return sanitize_for_json({"type": "places", "data": results})
     except Exception as e:
         logger.error(f"❌ [MCP] search_places failed: {e}")
@@ -425,16 +490,38 @@ def search_places(queries: List[str], location: str) -> Dict[str, Any]:
 
 def _compute_routes_logic(origin: str, destination: str, mode: str = "transit") -> Dict[str, Any]:
     ensure_data_context()
-    logger.info(f"🚗 [MCP] Request: compute_routes from {origin} to {destination}") 
+    logger.info(f"🚗 [MCP] Request: compute_routes from '{origin}' to '{destination}' (mode={mode})") 
     try:
          gmaps_key = os.environ.get("GOOGLE_MAPS_API_KEY")
          if not gmaps_key: return {"error": "Clé Maps manquante."}
          
          gmaps = googlemaps.Client(key=gmaps_key)
-         directions = gmaps.directions(origin=origin, destination=destination, mode=mode, language="fr")
          
-         logger.info(f"✅ [MCP] Route computed.")
-         return sanitize_for_json({"type": "directions", "data": directions})
+         # Attempt 1: Raw names
+         try:
+             directions = gmaps.directions(origin=origin, destination=destination, mode=mode, language="fr")
+             if directions:
+                 logger.info(f"✅ [MCP] Route found (Attempt 1).")
+                 return sanitize_for_json({"type": "directions", "data": directions})
+         except Exception as e:
+             if "NOT_FOUND" not in str(e): raise e
+             logger.warning(f"⚠️ [MCP] Route NOT_FOUND for '{origin}' -> '{destination}'. Retrying with context...")
+
+         # Attempt 2: If destination is the city, and origin is generic (or vice-versa), 
+         # Google often fails. We try to help it.
+         # This is heuristic but powerful for "Préfecture" or "Gare"
+         if len(origin) < 15 and "," not in origin:
+             alt_origin = f"{origin} near {destination}"
+             try:
+                 directions = gmaps.directions(origin=alt_origin, destination=destination, mode=mode, language="fr")
+                 if directions:
+                     logger.info(f"✅ [MCP] Route found (Attempt 2: {alt_origin}).")
+                     return sanitize_for_json({"type": "directions", "data": directions})
+             except:
+                 pass
+
+         return {"error": "Aucun itinéraire trouvé. Essayez d'être plus précis (ex: 'Préfecture de Nîmes')."}
+
     except Exception as e:
          logger.error(f"❌ [MCP] compute_routes failed: {e}")
          return {"error": str(e)}
@@ -443,7 +530,7 @@ def _compute_routes_logic(origin: str, destination: str, mode: str = "transit") 
 def compute_routes(origin: str, destination: str, mode: str = "transit") -> Dict[str, Any]:
     """
     Calcule des itinéraires et temps de trajet entre deux points.
-    Grounding Spatial (Ground 3) pour valider l'accessibilité.
+    Si un lieu est vague (ex: 'Préfecture'), précise la ville si possible.
     """
     return _compute_routes_logic(origin, destination, mode)
 

@@ -25,6 +25,9 @@ class SearchCriterias(BaseModel):
     loc_custom_code: Optional[str] = Field(None, description="Explicit code for custom search area (Reg or Dep)")
     loc_custom_type: Optional[str] = Field(None, description="Type of custom search area ('region' or 'departement')")
 
+    # Qualitative notes (free text indices for Scout and Synthesis)
+    notes_qualitatives: List[str] = Field(default_factory=list, description="List of qualitative notes (e.g. ['Famille libanaise', 'Passions: échecs'])")
+
     # Final scoring priority
     weight_profile: str = Field("", description="Weight profile for scoring (Famille, Santé, Économique, Équilibré)")
 

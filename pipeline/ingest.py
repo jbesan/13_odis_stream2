@@ -1206,7 +1206,8 @@ def main(argv=None):
         'population_details': clean_population_details,
         'nomenclature_waldec': clean_nomenclature_waldec,
         'regions': clean_regions,
-        'departements': clean_departements
+        'departements': clean_departements,
+        'fap_rome_mapping': clean_fap_rome_mapping
     }
 
     selected_steps = args.steps.split(',') if args.steps else steps_map.keys()
@@ -1505,6 +1506,33 @@ def clean_departements(config: Dict[str, Any], logger: PipelineLogger):
         logger.log_step("clean_departements", "COMPLETED", {"path": str(output_path), "rows": len(df_out)})
     else:
         logging.warning(f"Departements: Columns not found. Found: {df.columns}")
+
+def clean_fap_rome_mapping(config: Dict[str, Any], logger: PipelineLogger):
+    """Cleans FAP-ROME mapping and saves to parquet."""
+    logger.log_step("clean_fap_rome_mapping", "STARTED")
+    source = config['sources']['fap_rome_mapping']
+    path = CACHE_DIR / source['local_name']
+    if not path.exists():
+        logging.warning("FAP-ROME Mapping file not found.")
+        return
+
+    try:
+        # Load with semicolon separator as seen in head
+        df = pd.read_csv(path, sep=';', encoding='latin-1')
+        # Columns: ROME;Intitule_ROME;Qualif;FAP341;Intitule_FAP341
+        
+        if 'ROME' in df.columns and 'FAP341' in df.columns:
+            df_out = df[['FAP341', 'ROME']].drop_duplicates()
+            df_out.columns = ['fap_code', 'rome_code']
+            
+            output_path = CLEAN_DIR / "fap_rome_mapping.parquet"
+            df_out.to_parquet(output_path)
+            logger.log_step("clean_fap_rome_mapping", "COMPLETED", {"path": str(output_path), "rows": len(df_out)})
+        else:
+            logging.warning(f"FAP-ROME Mapping: Columns not found. Found: {df.columns}")
+    except Exception as e:
+        logger.log_step("clean_fap_rome_mapping", "ERROR", {"error": str(e)})
+        logging.error(f"FAP-ROME Mapping failed: {e}")
 
 if __name__ == "__main__":
     main()

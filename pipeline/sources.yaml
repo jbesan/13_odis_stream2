@@ -193,6 +193,12 @@ sources:
     local_name: "referentiel_departements.json"
     description: "Référentiel des Départements (COG)"
 
+  fap_rome_mapping:
+    url: "https://dares.travail-emploi.gouv.fr/sites/default/files/9166deb9ba1f03faf0097beb7e449915/Dares_Table_passage_ROME_Qualif_to_FAP2021_pour_programme.csv"
+    format: "csv"
+    local_name: "Dares_Table_passage_ROME_Qualif_to_FAP2021_pour_programme.csv"
+    description: "Table de passage ROME -> FAP 2021 (DARES)"
+
 local_files:
   finess:
     path: "pipeline/local/annuaire_sante_finess.parquet"
