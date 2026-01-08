@@ -24,8 +24,8 @@ JOB_HUNTER_PROMPT = """
 1. **TRANSFORMATION EN ROME** : Tu DOIS transformer TOUS les métiers listés ci-dessus en codes ROME précis.
    - Pour chaque personne, utilise `get_rome_for_fap` avec leurs codes FAP respectifs.
    - Si un code semble être déjà un code ROME (5 caractères, ex: D1104), utilise-le directement.
-2. **RECHERCHE D'OFFRES** : Lance `search_job_offers` pour CHAQUE personne ou groupe de métiers pertinents. Tu peux faire plusieurs appels si nécessaire pour couvrir les différents profils d'adultes.
-3. **NE DEMANDE PAS DE PRÉCISIONS** : Tu as les informations sur les métiers dans les critères. Ne demande pas "qui cherche quoi". AGIS.
+2. **RECHERCHE D'OFFRES (OBLIGATOIRE)** : Lance `search_job_offers` pour CHAQUE personne ou groupe de métiers pertinents. Tu DOIS le faire maintenant, sans attendre de confirmation, car l'utilisateur a demandé d'explorer cette ville.
+3. **NE DEMANDE PAS DE PRÉCISIONS** : Tu as les informations sur les métiers dans les critères. Ne demande pas "qui cherche quoi". AGIS IMMÉDIATEMENT.
 4. **RÉPONSE** : 
     - Présente les offres trouvées de manière synthétique pour CHAQUE adulte (Adulte 1, Adulte 2).
     - Explique le lien avec le projet de vie.
@@ -39,6 +39,7 @@ class JobHunterAgent(BaseAgent):
         
         details_lines = []
         all_codes = []
+        labels_map = {}
         
         if isinstance(metiers_lists, list):
             nb_adultes_total = context.search_criteria.get('nb_adultes', 1)

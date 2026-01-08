@@ -29,7 +29,8 @@ Ce prototype a un triple objectif :
 - **Système de "Binômes" ([DEPRECATED]) :** L'algorithme associait des communes voisines pour proposer des solutions conjointes. Cette logique est en cours de remplacement par l'enrichissement automatique via le bassin de vie.
 - **Carte Interactive :** Visualisez les localités les mieux notées, leur score, et superposez des couches d'informations additionnelles (écoles, établissements de santé, services d'inclusion).
 - **Résultats Détaillés & Export PDF :** Explorez les 5 meilleurs résultats avec une analyse de leurs points forts et exportez un rapport PDF complet pour la famille accompagnée.
-- **Assistant IA (Multi-Agent ODIS) :** Interagissez en langage naturel avec un système multi-agent (Gemini 3.0) capable de conduire l'entretien (`Interviewer`), de calculer les scores (`Scorer`), de rechercher des détails sur le terrain (`Scout`) et de trouver des offres d'emploi réelles (`JobHunter`).
+- **Assistant IA (Multi-Agent ODIS) :** Interagissez en langage naturel avec un système multi-agent capable de conduire l'entretien, de calculer les scores, et de décorer les résultats avec des infos terrain et web. Voir la [documentation détaillée de l'architecture](app/agents/README.md).
+- **Grounding Google Search :** Grâce à l'agent spécialisé WEB, accédez aux dernières actualités locales et au contexte social des communes visées.
 - **Expertise Emploi (Mapping DARES) :** Traduction automatique et officielle des profils métiers (FAP) en codes ROME grâce à l'intégration de la table de passage de la DARES, garantissant une recherche d'emploi ultra-précise sur France Travail.
 - **Scénarios de Démonstration :** Chargez rapidement des profils pré-configurés pour découvrir le potentiel de l'outil.
 
@@ -133,9 +134,6 @@ Le score est calculé à partir d'une multitude de critères, regroupés en gran
 - **Graphiques :** [Plotly Express](https://plotly.com/python/plotly-express/)
 - **Sources de Données :** Les données sont agrégées depuis de nombreuses sources ouvertes, notamment l'INSEE, Data.gouv.fr, France Travail (Pôle Emploi), Odace (Gares), etc.
 
-> Note
-> Le jeu de données principal qui se trouve dans `odis_june_2025_jacques.parquet` est une compilation de plusieurs autres jeux de données. La logique de cette compilation se trouve dans le Notebook `odis_stream2_data_gathering.ipynb`
-
 ## 📂 Structure du Projet
 
 Le code de l'application Streamlit est organisé de manière modulaire au sein du répertoire app/ pour séparer les différentes logiques :
@@ -162,6 +160,35 @@ app/
 - maps.py : Regroupe toutes les fonctions liées à la génération des cartes interactives avec Folium.
 - config.py : Un fichier central pour la configuration.
 - data_loader.py : Contient la logique pour charger les données.
+- app/agents/ : Répertoire contenant l'intelligence artificielle du projet.
+  - orchestrator.py : Cerveau central gérant le routing et la collaboration entre experts.
+  - interviewer.py : Agent spécialisé dans la collecte et le diagnostic des besoins.
+  - scorer.py : Expert en calcul de pertinence basé sur le moteur ODIS.
+  - scout.py : Expert terrain utilisant l'API Google Maps (POIs, itinéraires).
+  - web.py : Expert news utilisant Google Search pour le contexte social et l'actualité.
+  - job_hunter.py : Expert emploi connecté en temps réel aux API France Travail.
+
+## 🤖 Interface AI Agent (Assistant ODIS 2.0)
+
+L'Assistant ODIS 2.0 est une interface de conversation en langage naturel conçue pour simplifier le travail de diagnostic social. Il repose sur une architecture multi-agent innovante :
+
+### Architecture Multi-Agent
+
+Contrairement à un chatbot classique, l'Assistant ODIS utilise plusieurs "experts" spécialisés qui collaborent pour répondre à l'utilisateur :
+
+1.  **L'Orchestrateur (Cerberus) :** Analyse votre demande et décide quel expert appeler. Il gère la mémoire de la conversation et synthétise les réponses finales.
+2.  **L'Interviewer :** Conduit l'entretien. Il est capable de détecter vos besoins (nombre d'enfants, métiers, ville de départ) et de les enregistrer automatiquement dans vos critères de recherche.
+3.  **Le Scorer :** Dès que le profil est prêt, il lance le moteur de calcul ODIS sur des milliers de communes et explique pourquoi certaines villes ressortent en tête.
+4.  **La Cascade de Décoration :** Lorsque vous explorez une ville, l'Orchestrateur lance trois experts en parallèle :
+    - **Scout** : Trouve les infrastructures locales (écoles, parcs, préfecture) et calcule les temps de trajets réels.
+    - **WEB** : Effectue une recherche web en temps réel pour vous donner le climat social et l'actualité de la ville.
+    - **Job Hunter** : Recherche les offres d'emploi réelles sur France Travail correspondant précisement aux profils des adultes du foyer.
+
+### Points Forts de l'Agent
+
+- **Raisonnement Métier :** Il comprend les codes ROME, les types de logement et les besoins spécifiques (santé, inclusion).
+- **Transparence :** Chaque affirmation est sourcée, que ce soit via les données ODIS, Google Maps ou des recherches Web citées.
+- **Proactivité :** L'agent cherche à compléter votre dossier sans que vous ayez besoin de remplir des dizaines de champs manuellement.
 
 ## 🔮 Feuille de Route et Améliorations Futures
 

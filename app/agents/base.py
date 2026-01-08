@@ -17,15 +17,23 @@ class BaseAgent(abc.ABC):
         """Process a message within the given context and return agent's response."""
         pass
 
-    def _execute_tool_loop(self, prompt: str, message: str, tools: list, context: Optional[AgentContext] = None) -> str:
+    def _execute_tool_loop(self, prompt: str, message: str, tools: list, context: Optional[AgentContext] = None, include_google_search: bool = False) -> str:
         """
         Exécute l'agent en mode 'Stateless Single-Turn'.
         On n'envoie JAMAIS d'historique au SDK pour éviter les erreurs de validation.
         Tout le contexte est dans 'prompt'.
         """
+        merged_tools = []
+        if tools:
+            # On passe les fonctions directement pour que le SDK les gère
+            merged_tools.extend(tools)
+        
+        if include_google_search:
+            merged_tools.append(types.Tool(google_search=types.GoogleSearch()))
+
         config = types.GenerateContentConfig(
             system_instruction=prompt + "\n\nIMPORTANT: Tu DOIS répondre en FRANÇAIS. Tu DOIS toujours produire du texte explicatif à la fin.",
-            tools=tools,
+            tools=merged_tools,
             # On utilise le mode automatique car sans historique, il est stable
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=False),
             temperature=0.3,

@@ -47,14 +47,37 @@ def setup_logging() -> None:
     root_logger.addHandler(handler)
 
     # --- Reduce verbosity of third-party libraries ---
-    logging.getLogger("FPDF").level = logging.ERROR
-    logging.getLogger("fpdf.svg").propagate = False
-    logging.getLogger('fontTools.subset').level = logging.WARN
+    loggers_to_silence = [
+        "google_genai",
+        "httpx",
+        "google",
+        "FPDF",
+        "fpdf.svg",
+        "fontTools.subset",
+        "fontTools",
+        "urllib3",
+        "httpcore"
+    ]
+    
+    for logger_name in loggers_to_silence:
+        l = logging.getLogger(logger_name)
+        l.setLevel(logging.WARNING)
+        l.propagate = False # Prevent leaking to root/streamlit handlers
+        if l.hasHandlers():
+            l.handlers.clear()
+        
+    # Specifically for google_genai.models which is very chatty
+    m_logger = logging.getLogger("google_genai.models")
+    m_logger.setLevel(logging.WARNING)
+    m_logger.propagate = False
+    if m_logger.hasHandlers():
+        m_logger.handlers.clear()
 
-    # logging.getLogger("fontTools").setLevel(logging.ERROR)
-    # logging.getLogger("_tmpfile").setLevel(logging.ERROR)
-    # logging.getLogger("kaleido").setLevel(logging.ERROR)
-    # logging.getLogger("svg").setLevel(logging.ERROR)
+    try:
+        from absl import logging as absl_logging
+        absl_logging.set_verbosity(absl_logging.ERROR)
+    except ImportError:
+        pass
 
 # Initialize logging when module is imported
 setup_logging()

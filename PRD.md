@@ -54,6 +54,8 @@ Collecte des besoins via un formulaire multi-pages (basé sur `st.session_state[
   - `ui_besoin_sante` (ex: "Maternité").
   - `ui_inc_services_add_selection` (services d'inclusion).
   - `ui_inc_asso_add_selection` (affinités associatives).
+- **Données Qualitatives (Agent uniquement) :**
+  - `notes_qualitatives`: "Champ libre" (liste de notes) collectant des indices comme l'origine culturelle, la religion, les passions ou les capacités de mobilité (permis, vélo). Ces données enrichissent la recherche de l'agent SCOUT sans impacter le score numérique global.
 - **Mobilité :** `ui_loc_search_area` définit le périmètre de filtrage. Les scores de mobilité incluent la présence d'une gare (`mob_gare_scaled`) et l'appartenance à la même agglomération (`mob_epci_scaled`).
 
 ### Étape 3 : Interface de Résultats (`3_Resultats.py`)
@@ -472,8 +474,9 @@ L'assistant est désormais composé de plusieurs agents spécialisés pilotés p
 
 - **Interviewer** : Phase de découverte et collecte de critères.
 - **Scorer** : Calcul et explication du Top villes.
-- **Scout** : Recherche Google Maps/Places pour la "décoration" des résultats.
-- **JobHunter** : Recherche d'offres d'emploi ciblées.
+- **Scout** : Recherche Google Maps/Places pour la "décoration" des résultats (infrastructures, trajets).
+- **Web** : Expert News et Grounding Web via Google Search pour le contexte social.
+- **JobHunter** : Recherche d'offres d'emploi ciblées via France Travail.
 
 ## 🚀 Feature [F-20]: Détails Territoire (Learn More)
 
@@ -543,6 +546,7 @@ En tant qu'utilisateur, je veux un assistant fluide qui comprend quand lancer un
 - **Optimisation France Travail :** Réduction du payload des offres d'emploi (tronquage des descriptions, suppression des champs lourds) et réduction du nombre de résultats par défaut (Top 20).
 - **Robustesse du Focus :** Amélioration de la gestion de la "Ville Active" avec synchronisation protégée et auto-complétion des recherches Gmaps (ex: "Préfecture" -> "Préfecture near Beaucaire").
 - **Top 5 Interactif :** Présentation resserrée sur les 5 meilleures villes avec scores en pourcentage pour une meilleure lisibilité.
+- **Enrichissement Qualitatif (Jan 2026) :** Extension du contexte de l'agent SCOUT pour inclure des `notes_qualitatives` (champ libre) afin de personnaliser les recommandations de terrain (ex: recherche de lieux de culte, restaurants spécifiques, ou clubs de loisirs en fonction des mentions identifiées par l'Interviewer).
 
 ### 📊 Status
 

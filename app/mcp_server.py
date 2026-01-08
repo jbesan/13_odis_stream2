@@ -28,7 +28,7 @@ def set_data_context(context: Dict[str, Any]) -> None:
     """Allows external injection of data context (e.g. from Streamlit cache)"""
     global DATA_CONTEXT
     DATA_CONTEXT = context
-    logger.info("Data Context injected externally.")
+    # logger.info("Data Context injected externally.")
 
 def ensure_data_context() -> None:
     """Ensures data context is loaded if missing."""

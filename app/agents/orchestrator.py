@@ -10,6 +10,7 @@ from .interviewer import InterviewerAgent
 from .scorer import ScorerAgent
 from .scout import ScoutAgent
 from .job_hunter import JobHunterAgent
+from .web import WebAgent
 
 logger = logging.getLogger("orchestrator")
 
@@ -19,15 +20,10 @@ Tu es le Cerveau de l'Assistant ODIS. Ton job est de router le message de l'util
 **Agents disponibles** :
 1. **INTERVIEWER** : Pour la collecte de besoins (phase initiale).
 2. **SCORER** : Pour calculer le Top 5 villes. Utilise-le dès que le dossier est prêt et que l'utilisateur confirme que l'on peut lancer la recherche.
-3. **DECORATION** : Cascade Scout + Job Hunter + Synthèse. Utilise-la UNIQUEMENT quand l'utilisateur demande "plus d'infos" ou "des détails" sur une ville déjà identifiée dans le Top 5. En particulier recherche les élments suivants s'ils sont pertinents:
-        - des lieux publics en lien avec l'origine culturelle (e.g. restaurant libanais, épicerie indienne, etc)
-        - les commerces solidaires (e.g. Emmaus, Recycleries)
-        - les services de transports en commun
-        - les lieux de cultes (hors églises)
-        - les informations sur l'accueil des réfugiés dans la commune
-        - Temps de trajet vers la préfecture en transports en commun
+3. **DECORATION** : Cascade Scout + Web + Job Hunter + Synthèse. Utilise-la UNIQUEMENT quand l'utilisateur demande "plus d'infos" ou "des détails" sur une ville déjà identifiée dans le Top 5.
 4. **SCOUT** : Pour une question **spécifique** de vie locale ou trajet sur une ville (ex: "Combien de temps pour la préfecture ?", "Y a-t-il un parc ?").
-5. **JOB_HUNTER** : Pour une question **spécifique** sur l'emploi (ex: "Y a-t-il des offres en boulangerie ?").
+5. **WEB** : Pour des recherches d'actualités, news ou contexte social sur le web (ex: "Quelles sont les news à Bordeaux ?", "Comment est l'accueil des réfugiés ?").
+6. **JOB_HUNTER** : Pour une question **spécifique** sur l'emploi (ex: "Y a-t-il des offres en boulangerie ?").
 
 ** Stratégie de routage (CRITIQUE) ** :
 - Si l'utilisateur décrit la situation de la personne accompagnée -> **INTERVIEWER**.
@@ -57,7 +53,8 @@ class MultiAgentOrchestrator:
             "orchestrator": "gemini-3-flash-preview", 
             "interviewer": "gemini-3-flash-preview",
             "scorer": "gemini-2.5-flash-lite", 
-            "scout": "gemini-2.5-flash-lite",
+            "scout": "gemini-3-flash-preview",
+            "web": "gemini-3-flash-preview",
             "job_hunter": "gemini-2.5-flash-lite"
         }
         
@@ -66,6 +63,7 @@ class MultiAgentOrchestrator:
             "interviewer": InterviewerAgent(self.models["interviewer"], self.client),
             "scorer": ScorerAgent(self.models["scorer"], self.client),
             "scout": ScoutAgent(self.models["scout"], self.client),
+            "web": WebAgent(self.models["web"], self.client),
             "job_hunter": JobHunterAgent(self.models["job_hunter"], self.client)
         }
 
@@ -159,11 +157,8 @@ class MultiAgentOrchestrator:
         slim_criteria = {}
         
         if agent_name == "scout":
-            # Scout a besoin de la ville, de la famille et des intérêts (assos/services)
-            keys = ["nb_adultes", "nb_enfants", "classe_enfants", "inc_services_add_selection", "inc_asso_add_selection", "sante"]
-            for k in keys:
-                if k in full_criteria: slim_criteria[k] = full_criteria[k]
-            # Pas besoin des codes métiers ou formations complexes
+            # Scout a maintenant accès à l'intégralité du contexte pour une personnalisation maximale
+            slim_criteria = full_criteria
             
         elif agent_name == "job_hunter":
             # Job Hunter a besoin des métiers et formations
@@ -186,22 +181,39 @@ class MultiAgentOrchestrator:
         
         return pruned_context
 
-    def _synthesize(self, message: str, context: AgentContext, scout_res: str, job_res: str) -> str:
-        """Fusionne les résultats de Scout et Job Hunter dans un pitch final."""
-        logger.info("🧠 [ORCHESTRATOR] Synthesizing Scout + Job Hunter results...")
+    def _synthesize(self, message: str, context: AgentContext, scout_res: str, job_res: str, web_res: str = "") -> str:
+        """Fusionne les résultats de Scout, Web et Job Hunter dans un pitch final."""
+        logger.info("🧠 [ORCHESTRATOR] Synthesizing Scout + Web + Job Hunter results...")
+        
+        # Extraction des données chiffrées (Scorer/ODIS) pour la ville focus
+        city_details = {}
+        for city in context.top_cities:
+            if city['name'] == context.focus_city:
+                city_details = city.get('details', {})
+                break
         
         synth_prompt = f"""
-        Tu es le Synthétiseur ODIS. Ta mission est de fusionner les retours de deux experts pour donner une réponse unique, fluide et ultra-convaincante au travailleur social.
+        Tu es le Synthétiseur ODIS. Ta mission est de fusionner les retours des experts pour donner une réponse unique, fluide et ultra-convaincante au travailleur social.
         
-        **Expert Terrain (Scout)** : {scout_res}
+        **DONNÉES CHIFFRÉES (SCORER ODIS)** :
+        - Ville : {context.focus_city}
+        - Détails ODIS : {json.dumps(city_details, indent=2, ensure_ascii=False)}
+        
+        **Expert Terrain (Maps)** : {scout_res}
+        
+        **Expert News (Web)** : {web_res}
         
         **Expert Emploi (Job Hunter)** : {job_res}
         
+        **Notes Qualitatives (indices de vie)** : {context.search_criteria.get('notes_qualitatives', [])}
+        
         **Instructions** :
-        1. Fais une synthèse élégante en FRANÇAIS.
-        2. Ne répète pas les titres. Structure la réponse par thématiques (Vie Quotidienne, Opportunités Emploi).
-        3. Fais le lien avec le projet de vie de l'utilisateur ({context.search_criteria.get('weight_profile', 'Standard')}).
-        4. Termine par une question ouverte pour valider l'intérêt pour cette ville.
+        1. Fais une synthèse argumentée, factuelle et convaincante en FRANÇAIS.
+        2. Utilise les **DONNÉES CHIFFRÉES** (scores, points forts ODIS) pour asseoir ta démonstration.
+        3. S'il y a des points noirs dis-le clairement.
+        4. Ne répète pas les titres. Structure la réponse par thématiques (Vie Quotidienne, Opportunités Emploi, etc).
+        5. Fais le lien avec le projet de vie (Profil: {context.search_criteria.get('weight_profile', 'Standard')}) et les indices de vie.
+        6. Termine par une question ouverte pour analyser une autre ville du top 5 ou approfondir l'analyse.
         """
         
         response = self.client.models.generate_content(
@@ -251,20 +263,26 @@ class MultiAgentOrchestrator:
                         logger.info(f"✨ [ORCHESTRATOR] Auto-detected city in message: {context.focus_city}")
                         break
             
-            # Preparation des contextes spécialisés
+            # Preparation des contextes spécialisés (On le fait séquentiellement car focus_city peut changer)
             scout_ctx = self._get_specialized_context("scout", context)
-            job_ctx = self._get_specialized_context("job_hunter", context)
-
+            
             logger.info("📡 [ORCHESTRATOR] Calling SCOUT...")
             scout_res = self.agents["scout"].run(message, scout_ctx)
             # Sync tokens only. focus_city is updated directly by the tool in st.session_state
             self._sync_tokens(context, scout_ctx)
             
             logger.info(f"✅ [ORCHESTRATOR] SCOUT finished. Current City: {context.focus_city}")
+
+            logger.info("📡 [ORCHESTRATOR] Calling WEB...")
+            web_res = self.agents["web"].run(message, context) # Web doesn't need pruning
+            self._sync_tokens(context, context) # Simple sync
             
-            # RE-CHECK after Scout as Scout might have set it
+            # NOW prepare Job Hunter context, AFTER Scout may have updated focus_city
+            job_ctx = self._get_specialized_context("job_hunter", context)
+            
+            # RE-CHECK after Scout/Web as they might have set it
             if not context.focus_city:
-                 logger.warning("⚠️ [ORCHESTRATOR] Focus city still empty after Scout. Job Hunter might fail/be broad.")
+                 logger.warning("⚠️ [ORCHESTRATOR] Focus city still empty. Job Hunter might fail/be broad.")
             
             logger.info("📡 [ORCHESTRATOR] Calling JOB_HUNTER...")
             job_res = self.agents["job_hunter"].run(message, job_ctx)
@@ -272,7 +290,7 @@ class MultiAgentOrchestrator:
             
             logger.info(f"✅ [ORCHESTRATOR] JOB_HUNTER finished. Current City: {context.focus_city}")
             
-            final_response = self._synthesize(message, context, scout_res, job_res)
+            final_response = self._synthesize(message, context, scout_res, job_res, web_res)
             logger.info("🏁 [ORCHESTRATOR] Synthesis complete.")
             
             # Record in history

@@ -25,25 +25,24 @@ INTERVIEWER_PROMPT = """
 **DIRECTIVE CRITIQUE** :
 - **RÉPONSE FRANÇAISE** : Tu DOIS toujours répondre en Français, même après des appels d'outils.
 - **PROTOCOLE SEARCH-THEN-SAVE** : Chaque fois que tu identifies une nouvel donnée de `CURRENT_CRITERIA`, tu DOIS IMMÉDIATEMENT appeler `update_search_criteria` pour l'enregistrer. Si tu ne l'appelles pas, la donnée est PERDUE pour le tour suivant.
-- **ANTI-REDONDANCE** : Consulte proactivement `CURRENT_CRITERIA`. 
-  - Si `commune_actuelle` a déjà un code, NE RELANCE PAS `search_commune`.
-  - Si `codes_metiers` contient déjà des codes, NE RELANCE PAS `search_referentiels` pour les mêmes métiers.
-- **CIBLAGE DES VIDES** : Ton but unique est de remplir les cases vides de `CURRENT_CRITERIA`.
+- **ANTI-REDONDANCE** : Consulte proactivement `CURRENT_CRITERIA` pour éviter de relancer les outils lorsque les données sont déjà disponibles.
+- **CIBLAGE DES VIDES** : Ton but unique est de remplir les cases vides de `CURRENT_CRITERIA` ou d'ajouter des données dans les listes.
 
 **Instructions de Collecte (Ordre Prioritaire)** :
 1. **Commune Actuelle** : Cherche le code INSEE avec `search_commune`.
 2. **Composition Familiale** : Demande le nombre d'adultes et d'enfants.
-3. **Profil de Pondération (Priorité Haute)** : Si `weight_profile` est vide (""), fais choisir entre : 'Famille', 'Santé', 'Économique', 'Équilibré'.
-4. **Périmètre de Recherche** : France entière, Région, ou Département.
-5. **Projet Pro & Formations** : Pour chaque compétence ou métiers tu DOIS chercher les codes FAP ou Formation correspondants via `search_referentiels(domain='fap_codes' ou 'formation_codes')` et enregistre les codes.
-6. **Logement & Hébergement** : 
+3. **Périmètre de Recherche** : France entière, Région, ou Département.
+4. **Projet Pro & Formations** : Pour chaque compétence ou métiers tu DOIS chercher les codes FAP ou Formation correspondants via `search_referentiels(domain='fap_codes' ou 'formation_codes')` et enregistre les codes.
+5. **Logement & Hébergement** : 
    - **Hébergement souhaité (court terme à l'arrivée)** : Choisi dans ["Chez l'habitant", "Location", "Foyer"].
    - **Type de Logement (long terme)** : Choisi dans ["Location", "Logement Social"].
-7. **Éducation des Enfants** : Si `nb_enfants` > 0, choisis EXCLUSIVEMENT dans : ['Crèche / Assistante Maternelle', 'Maternelle', 'Elémentaire', 'Collège', 'Lycée']. Enregistre une LISTE (une valeur par enfant, ex: `['Maternelle', 'Collège']`) dans `classe_enfants`.
-8. **Santé Spécifique** : Choisi dans ["Aucun", "Hopital", "Maternité", "Soutien Psychologique & Addictologie"].
+6. **Éducation des Enfants** : Si `nb_enfants` > 0, choisis EXCLUSIVEMENT dans : ['Crèche / Assistante Maternelle', 'Maternelle', 'Elémentaire', 'Collège', 'Lycée']. Enregistre une LISTE (une valeur par enfant, ex: `['Maternelle', 'Collège']`) dans `classe_enfants`.
+7. **Santé Spécifique** : Choisi dans ["Aucun", "Hopital", "Maternité", "Soutien Psychologique & Addictologie"].
+8. **Notes Qualitatives (indices de vie)** : Identifie tout indice sur l'origine culturelle (ex: libanais), la religion (ex: halal), les passions (ex: échecs), ou la mobilité (ex: vélo, pas de permis). Enregistre-les dans `notes_qualitatives` (liste de chaînes).
 9. **Services d'Inclusion** : Cherche via `search_referentiels(domain='inclusion_services')` (ex: FLE, aide juridique) et enregistre le `code`.
-10. **Associations** : Tu DOIS chercher des catégories d'associations correspondantes via `search_referentiels(domain='waldec_codes')` (ex: Football, Yoga) et enregistre le `code`.
+10. **Associations** : Cherche via `search_referentiels(domain='waldec_codes')` (ex: Football, Yoga) et enregistre le `code`.
 
+**Profil de Pondération (Priorité Haute)** : Si `weight_profile` est vide (""), suggère et demande confirmation pour le profile de pondération des critères entre : 'Famille', 'Santé', 'Économique', 'Équilibré'.
 
 **DIRECTIVE DE TRANSITION** :
 Tant que tu n'as pas au moins : **Commune Actuelle**, **Nb Adultes**, **Profil de Pondération** et **Périmètre**, reste en phase de collecte et essaye d'obtenir un maximum d'informations.
@@ -85,7 +84,8 @@ class InterviewerAgent(BaseAgent):
             inc_asso_add_selection: Optional[List[str]] = None,
             hebergement: Optional[str] = None,
             logement: Optional[str] = None,
-            sante: Optional[str] = None
+            sante: Optional[str] = None,
+            notes_qualitatives: Optional[List[str]] = None
         ) -> str:
             """
             Enregistre les données validées dans le dossier du bénéficiaire. 
@@ -106,6 +106,7 @@ class InterviewerAgent(BaseAgent):
                 hebergement: Type d'hébergement souhaité ("Chez l'habitant", "Location", "Foyer")
                 logement: Type de logement ("Location", "Logement Social")
                 sante: Besoin santé spécifique ("Aucun", "Hopital", "Maternité", "Soutien Psychologique & Addictologie")
+                notes_qualitatives: Indices de vie (ex: ["Passionné d'échecs", "Libanais"])
             """
             updates = {}
             if commune_actuelle: updates['commune_actuelle'] = commune_actuelle
@@ -123,6 +124,7 @@ class InterviewerAgent(BaseAgent):
             if hebergement: updates['hebergement'] = hebergement
             if logement: updates['logement'] = logement
             if sante: updates['sante'] = sante
+            if notes_qualitatives: updates['notes_qualitatives'] = notes_qualitatives
             
             if updates:
                 context.search_criteria.update(updates)
