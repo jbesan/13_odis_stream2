@@ -1522,12 +1522,29 @@ def clean_fap_rome_mapping(config: Dict[str, Any], logger: PipelineLogger):
         # Columns: ROME;Intitule_ROME;Qualif;FAP341;Intitule_FAP341
         
         if 'ROME' in df.columns and 'FAP341' in df.columns:
+            # 1. ROME Mapping
             df_out = df[['FAP341', 'ROME']].drop_duplicates()
             df_out.columns = ['fap_code', 'rome_code']
+            # Normalize G0B41e -> G0B41 for lookup consistency
+            df_out['fap_code'] = df_out['fap_code'].astype(str).str[:5]
+            df_out = df_out.drop_duplicates()
             
             output_path = CLEAN_DIR / "fap_rome_mapping.parquet"
             df_out.to_parquet(output_path)
             logger.log_step("clean_fap_rome_mapping", "COMPLETED", {"path": str(output_path), "rows": len(df_out)})
+
+            # 2. Enriched FAP Labels (Granular)
+            # Extract FAP codes and labels, normalize codes to 5 chars (racines)
+            if 'Intitule_FAP341' in df.columns:
+                fap_ref_enriched = df[['FAP341', 'Intitule_FAP341']].drop_duplicates()
+                fap_ref_enriched.columns = ['code', 'label']
+                # Normalize G0B41e -> G0B41
+                fap_ref_enriched['code'] = fap_ref_enriched['code'].astype(str).str[:5]
+                fap_ref_enriched = fap_ref_enriched.drop_duplicates()
+                
+                enriched_path = CLEAN_DIR / "fap_labels_enriched.parquet"
+                fap_ref_enriched.to_parquet(enriched_path)
+                logger.log_step("clean_fap_rome_mapping", "ENRICHED_LABELS", {"path": str(enriched_path), "rows": len(fap_ref_enriched)})
         else:
             logging.warning(f"FAP-ROME Mapping: Columns not found. Found: {df.columns}")
     except Exception as e:

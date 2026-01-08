@@ -76,6 +76,32 @@ def _get_access_token() -> str:
     
     return TOKEN_CACHE["access_token"]
 
+def _resolve_rome_clusters(fap_code: str) -> List[str]:
+    """Resolves a FAP code to its unique 3-char ROME clusters using the ODIS referentials."""
+    try:
+        if not os.path.exists(REFERENTIELS_PATH):
+            return []
+        
+        df = pd.read_parquet(REFERENTIELS_PATH)
+        # Search in fap_rome_mapping
+        mapping_df = df[(df['key'] == 'fap_rome_mapping') & (df['code'] == fap_code)]
+        if mapping_df.empty:
+            # Try truncated search just in case
+            mapping_df = df[(df['key'] == 'fap_rome_mapping') & (df['code'].str.startswith(fap_code[:5], na=False))]
+            
+        if not mapping_df.empty:
+            # Extract ROME codes (label column in the mapping), take first 3 chars
+            romes_series = mapping_df['label'].astype(str)
+            clusters_series = romes_series.str[:3]
+            # Count occurrences to pick the most frequent cluster
+            counts = clusters_series.value_counts()
+            # Sort by count desc, then alphabetically
+            sorted_clusters = sorted(counts.index.tolist(), key=lambda c: (-counts[c], c))
+            return sorted_clusters
+    except Exception as e:
+        logger.error(f"Error resolving ROME clusters: {e}")
+    return []
+
 def _resolve_fap_label(fap_code: str) -> Optional[str]:
     """Resolves a FAP code to its label using the ODIS referentials."""
     try:
@@ -230,39 +256,38 @@ def search_job_offers_logic(
         else:
             logger.warning(f"⚠️ [FranceTravail] Could not resolve '{location}' to an INSEE code.")
 
-    # 2. Resolve FAP label
-    fap_label = None
+    # 3. Resolve ROME Cluster if FAP provided
+    domaine = None
     if fap_code:
-        fap_label = _resolve_fap_label(fap_code)
-        if fap_label:
-            logger.info(f"✅ [FranceTravail] FAP {fap_code} -> '{fap_label}'")
+        clusters = _resolve_rome_clusters(fap_code)
+        if clusters:
+            # Picking the first one as 'domaine' accepts a single value
+            domaine = clusters[0]
+            logger.info(f"✅ [FranceTravail] FAP {fap_code} resolved to domaine: {domaine}")
         else:
-            logger.warning(f"Could not resolve FAP {fap_code}")
+            logger.warning(f"⚠️ [FranceTravail] FAP {fap_code} could not be resolved to a ROME domaine.")
 
-    # Combine query and FAP label for motsCles
-    keywords = []
-    if fap_label:
-        keywords.append(fap_label)
-    if query:
-        keywords.append(query)
-    
-    mots_cles = ",".join(keywords) if keywords else None
-
+    # 4. Prepare API parameters
     params = {
         "range": f"{range_start}-{range_end}",
         "sort": sort
     }
-    if mots_cles:
-        params["motsCles"] = mots_cles
+    
+    # Use user query as motsCles
+    if query:
+        params["motsCles"] = query
+        
     if location:
         params["commune"] = location
         params["distance"] = distance
     
-    # 3. Add ROME codes if provided
+    if domaine:
+        params["domaine"] = domaine
+    
+    # Still allow explicit appellation codes if provided (but API might ignore if domaine is set? 
+    # Usually codeRome is separate. Let's see.)
     if appellation_codes:
-        # The France Travail API expects 'codeRome' (not 'appellation' for multiple codes in V2)
-        # and it should be a comma-separated string.
-        params["codeRome"] = ",".join(appellation_codes)
+        params["codeRome"] = ",".join(sorted(appellation_codes))
 
     headers = {
         "Authorization": f"Bearer {token}",

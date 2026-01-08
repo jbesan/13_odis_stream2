@@ -99,7 +99,10 @@ Liste en vrac d'idées d'amélioration
 - [ ] Ajouter la base J'accueille d'accueil chez l'habitant
 - [ ] Ajouter la base des transports publics ?
 - [ ] Critere 'Niveau de vie' de l'INSEE ?
-- [x] Enlever la couleur politique --> remplacer par y-a-t'il un CTAI (signe que la commune s'implique dans l'intégration) + Est-ce que la commune est adhérante ANVTA ? Ajouter un label ?
+- [ ] Enlever la couleur politique
+- [ ] Remplacer par y-a-t'il un CTAI/PTAI (signe que la commune s'implique dans l'intégration) + Est-ce que la commune est adhérante ANVITA ? Ajouter un label ?
+      90 territoires ANVITA ?
+      ["ALFORTVILLE", "ALLONNES", "ANNECY", "ANNEMASSE", "ARCUEIL", "ARGENTON-SUR-CREUSE", "BAGNOLET", "BARBERAZ", "BEGLES", "BESANÇON", "BESSANCOURT", "BLOIS", "BOBIGNY", "BORDEAUX", "BOURGES", "BOURGOGNE-FRANCHE-COMTE", "Buis-les-Baronnies", "CASTANET-TOLOSAN", "CENTRE - VAL DE LOIRE", "CHAMBÉRY", "CHERBOURG-EN-COTENTIN", "CLERMONT-FERRAND", "CLUNISOIS - COMMUNAUTÉ DE COMMUNES", "COGNIN", "COURNEUVE (LA)", "DIE", "DIEULEFIT", "DIOIS - COMMUNAUTÉ DE COMMUNES", "DULLIN", "Figeac", "FLECHE (LA)", "FONTENAY-SOUS-BOIS", "FORGES", "FOURNEAUX", "FRANOIS", "GIRONDE (DEPARTEMENT)", "GRABELS", "GRANVILLE", "GRENOBLE", "GRENOBLE-ALPES METROPOLE", "GUILLESTRE", "HENDAYE", "JARCIEU", "LA TALAUDIÈRE", "Lambersart", "Le Percy", "LOOS-EN-GOHELLE", "LOUVIGNY", "LYON", "LYON METROPOLE", "MALAKOFF", "MANDAGOUT", "MARSEILLE", "MARTIGUES", "MELLE", "MÉRIGNAC", "METZ", "Mirabel et Blacons", "MONTPELLIER", "MONTREUIL", "NANCY", "NANTES", "NOTRE DAME DE L'OSIER", "OCCITANIE", "ORNANS", "PARIS", "PAYS BASQUE - COMMUNAUTÉ D'AGGLOMÉRATION", "PÉRIGUEUX", "POITIERS", "PONT-PÉAN", "PRADES-LE-LEZ", "PYRÉNÉES VALLÉES DES GAVES - COMMUNAUTÉ DE COMMUNES", "RAMONVILLE-SAINT-AGNE", "RELECQ-KERHUON (LE)", "RENNES METROPOLE", "ROUEN", "ROUEN-NORMANDIE", "SAINT-BALDOPH", "SAINT-DENIS", "SAINT-ERBLON", "SAINT-JEAN-D'ANGÉLY", "SALIÈS", "SCHILTIGHEIM", "SEINE-SAINT-DENIS", "STRASBOURG", "TOURS", "VIGAN (LE)", "VILLEURBANNE", "VIZILLE", "YQUELON"]
 - [x] Rechercher au niveau national ou viser une région/ département en particulier?
 - [x] Ajouter un 'en savoir plus' pour comprendre le scoring
 - [ ] Gare --> a conditionner avec une question mobilité (besoin de revenir regulierement)
@@ -534,21 +537,18 @@ En tant qu'Agent Job Hunter, je veux utiliser une table de passage officielle po
 
 - Completed (Jan 2026)
 
-## 🚀 Feature [F-24]: Orchestration Multi-Agents & Optimisation Token
+## 🚀 Feature [F-25]: Feedback Visuel de l'Agent (Toasts Humorisés)
 
 ### 📝 User Story
 
-En tant qu'utilisateur, je veux un assistant fluide qui comprend quand lancer une recherche globale et quand répondre directement à des questions de détail, tout en restant rapide et économique en termes de tokens.
+En tant que travailleur social, je veux être informé des actions en cours des différents agents (Scorer, Scout, Job Hunter, etc.) via des messages courts et humoristiques ("toasts"), afin de patienter agréablement pendant les temps de réflexion de l'IA.
 
 ### 🔑 Key Features
 
-- **Routage LLM Intelligent :** Transition du routage par mots-clés vers un routage basé sur un modèle (Gemini 3) capable de distinguer l'exploration globale d'une ville (Cascade DECORATION) des questions subsidiaires.
-- **Spécialisation du Contexte (Context Pruning) :** Chaque agent reçoit désormais une vue élaguée et spécialisée du contexte (critères pertinents uniquement) pour réduire drastiquement la consommation de tokens.
-- **Optimisation France Travail :** Réduction du payload des offres d'emploi (tronquage des descriptions, suppression des champs lourds) et réduction du nombre de résultats par défaut (Top 20).
-- **Robustesse du Focus :** Amélioration de la gestion de la "Ville Active" avec synchronisation protégée et auto-complétion des recherches Gmaps (ex: "Préfecture" -> "Préfecture near Beaucaire").
-- **Top 5 Interactif :** Présentation resserrée sur les 5 meilleures villes avec scores en pourcentage pour une meilleure lisibilité.
-- **Enrichissement Qualitatif (Jan 2026) :** Extension du contexte de l'agent SCOUT pour inclure des `notes_qualitatives` (champ libre) afin de personnaliser les recommandations de terrain (ex: recherche de lieux de culte, restaurants spécifiques, ou clubs de loisirs en fonction des mentions identifiées par l'Interviewer).
+- **Notifications Dynamiques :** Utilisation de `st.toast` pour afficher les étapes clés de l'orchestration multi-agents.
+- **Messages Humorisés :** Intégration de messages variés et drôles pour chaque expert (ex: "Interrogatoire des pigeons locaux" pour l'expert terrain).
+- **Visibilité du Travail de l'Ombre :** Permet de comprendre quel agent est actif à quel moment dans la cascade de recherche.
 
 ### 📊 Status
 
-- Completed (Jan 2026)
+- In Progress (Jan 2026)

@@ -2,6 +2,8 @@ import logging
 import copy
 import json
 from typing import Dict, Any, List, Optional
+import random
+import streamlit as st
 from google import genai
 from google.genai import types
 
@@ -263,17 +265,32 @@ class MultiAgentOrchestrator:
                         logger.info(f"✨ [ORCHESTRATOR] Auto-detected city in message: {context.focus_city}")
                         break
             
+            city_name = context.focus_city or "votre ville"
+            
             # Preparation des contextes spécialisés (On le fait séquentiellement car focus_city peut changer)
             scout_ctx = self._get_specialized_context("scout", context)
             
             logger.info("📡 [ORCHESTRATOR] Calling SCOUT...")
+            st.toast(random.choice([
+                "Interrogatoire des pigeons locaux...",
+                "Déploiement de nos drones diplomatiques...",
+                "Analyse des passages secrets..."
+            ]), icon="🕵️")
             scout_res = self.agents["scout"].run(message, scout_ctx)
             # Sync tokens only. focus_city is updated directly by the tool in st.session_state
             self._sync_tokens(context, scout_ctx)
             
+            # Refresh city name if scout updated it
+            city_name = context.focus_city or city_name
+
             logger.info(f"✅ [ORCHESTRATOR] SCOUT finished. Current City: {context.focus_city}")
 
             logger.info("📡 [ORCHESTRATOR] Calling WEB...")
+            st.toast(random.choice([
+                "Lecture rapide de la gazette locale...",
+                "On écoute les derniers potins du web...",
+                "Scan des gros titres pour prendre la température..."
+            ]), icon="🌐")
             web_res = self.agents["web"].run(message, context) # Web doesn't need pruning
             self._sync_tokens(context, context) # Simple sync
             
@@ -285,11 +302,21 @@ class MultiAgentOrchestrator:
                  logger.warning("⚠️ [ORCHESTRATOR] Focus city still empty. Job Hunter might fail/be broad.")
             
             logger.info("📡 [ORCHESTRATOR] Calling JOB_HUNTER...")
+            st.toast(random.choice([
+                "Chasse aux offres d'emploi (sans fusil, promis)...",
+                "Pêche miraculeuse dans les filets de France Travail...",
+                "Infiltration discrète du marché du travail..."
+            ]), icon="💼")
             job_res = self.agents["job_hunter"].run(message, job_ctx)
             self._sync_tokens(context, job_ctx)
             
             logger.info(f"✅ [ORCHESTRATOR] JOB_HUNTER finished. Current City: {context.focus_city}")
             
+            st.toast(random.choice([
+                "Mixage de la potion magique ODIS...",
+                "Assemblage du puzzle de votre future vie...",
+                "Rédaction de la synthèse finale..."
+            ]), icon="🧪")
             final_response = self._synthesize(message, context, scout_res, job_res, web_res)
             logger.info("🏁 [ORCHESTRATOR] Synthesis complete.")
             
@@ -304,6 +331,27 @@ class MultiAgentOrchestrator:
             return "Désolé, j'ai rencontré une erreur de routing."
             
         try:
+            # Add Humor Based on Agent
+            if target_agent_name == "interviewer":
+                st.toast(random.choice([
+                    "Ouverture du dossier d'accompagnement...",
+                    "Écoute active du récit de vie...",
+                    "Analyse des besoins et des rêves...",
+                    "Enregistrement de votre histoire..."
+                ]), icon="📝")
+            elif target_agent_name == "scorer":
+                st.toast(random.choice([
+                    "Grand brassage des statistiques ODIS...",
+                    "Calcul des coordonnées du bonheur...",
+                    "Extraction du quinté gagnant des villes...",
+                    "Propulsion des algorithmes de scoring..."
+                ]), icon="📊")
+            elif target_agent_name == "scout":
+                city_name = context.focus_city or "la ville"
+                st.toast(f"🕵️ Inspection du terrain à {city_name}...", icon="🕵️")
+            elif target_agent_name == "job_hunter":
+                st.toast("💼 Consultation du catalogue des opportunités...", icon="💼")
+
             pruned_ctx = self._get_specialized_context(target_agent_name, context)
             response_text = agent.run(message, pruned_ctx)
             

@@ -798,6 +798,18 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
                     'label': fap_df[label_col]
                     #'metadata': fap_df.drop(columns=[code_col, label_col]).to_json(orient='records') # Removed
                 })
+                # --- Enriched FAP Labels (from DARES) ---
+                fap_enriched_path = CLEAN_DIR / "fap_labels_enriched.parquet"
+                if fap_enriched_path.exists():
+                    fap_enriched_df = pd.read_parquet(fap_enriched_path)
+                    fap_enriched_ref = pd.DataFrame({
+                        'key': 'fap_codes',
+                        'code': fap_enriched_df['code'],
+                        'label': fap_enriched_df['label']
+                    })
+                    fap_ref = pd.concat([fap_ref, fap_enriched_ref], ignore_index=True).drop_duplicates()
+                    logger.log_step("generate_referentiels", "FAP_ENRICHED", {"count": len(fap_enriched_ref)})
+
                 refs_list.append(fap_ref)
             
         if refs_list:
@@ -968,15 +980,43 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
         logger.log_step("generate_referentiels", "CREATED", {"path": str(output_path)})
 
 def main(argv=None):
+    parser = argparse.ArgumentParser(description="ODIS Build Pipeline")
+    parser.add_argument('--steps', type=str, help="Comma-separated list of steps to run (e.g. communes,pois)")
+    args = parser.parse_args(argv)
+
     logger = PipelineLogger(STATUS_FILE)
     config = load_config(CONFIG_FILE)
     
-    communes_gdf = build_communes(config, logger)
-    build_bassins_de_vie(communes_gdf, config, logger)
-    build_vertical_tables(config, logger)
-    generate_pois(config, logger)
-    generate_referentiels(config, logger)
+    steps_map = {
+        'communes': build_communes,
+        'bassins_de_vie': lambda cfg, log: build_bassins_de_vie(communes_gdf, cfg, log),
+        'vertical_tables': build_vertical_tables,
+        'pois': generate_pois,
+        'referentiels': generate_referentiels
+    }
+
+    selected_steps = args.steps.split(',') if args.steps else ['communes', 'bassins_de_vie', 'vertical_tables', 'pois', 'referentiels']
     
+    communes_gdf = None
+    if 'communes' in selected_steps or 'bassins_de_vie' in selected_steps:
+        # We need communes for BV
+        communes_gdf = build_communes(config, logger)
+    
+    for step_name in selected_steps:
+        if step_name == 'communes': continue # Already run
+        if step_name in steps_map:
+            try:
+                if step_name == 'bassins_de_vie':
+                    build_bassins_de_vie(communes_gdf, config, logger)
+                else:
+                    steps_map[step_name](config, logger)
+            except Exception as e:
+                print(f"ERROR running build step {step_name}: {e}")
+                import traceback
+                traceback.print_exc()
+        else:
+            logging.warning(f"Unknown build step: {step_name}")
+
     logger.log_step("build_all", "COMPLETED")
 
 if __name__ == "__main__":
