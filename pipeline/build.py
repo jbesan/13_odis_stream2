@@ -573,26 +573,57 @@ def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
                                            edu_df['nature_uai_libe'].str.contains('primaire', case=False, na=False)
 
             # Standardize Types
-            def map_edu_type(row):
-                t = row['nature_uai_libe']
-                if t == 'ECOLE MATERNELLE': return 'Maternelle'
-                if t == 'ECOLE DE NIVEAU ELEMENTAIRE': return 'Elémentaire'
-                if t == 'COLLEGE': return 'Collège'
-                if t in ['LYCEE PROFESSIONNEL', 'LYCEE ENSEIGNT GENERAL ET TECHNOLOGIQUE', 'LYCEE D ENSEIGNEMENT GENERAL', 'LYCEE D ENSEIGNEMENT TECHNOLOGIQUE']: return 'Lycée'
-                return t
+            edu_pois_list = []
+            
+            # 1. Maternelles
+            mat_mask = edu_df['ecole_maternelle']
+            if mat_mask.any():
+                mat_df_pois = edu_df[mat_mask].copy()
+                edu_pois_list.append(pd.DataFrame({
+                    'id': mat_df_pois['numero_uai'].astype(str) + "_mat",
+                    'name': mat_df_pois['appellation_officielle'],
+                    'type': 'Maternelle',
+                    'category': 'education',
+                    'lat': mat_df_pois['lat'],
+                    'lon': mat_df_pois['lon'],
+                    'codgeo': mat_df_pois['code_commune']
+                }))
+            
+            # 2. Elementaires
+            elem_mask = edu_df['ecole_elementaire']
+            if elem_mask.any():
+                elem_df_pois = edu_df[elem_mask].copy()
+                edu_pois_list.append(pd.DataFrame({
+                    'id': elem_df_pois['numero_uai'].astype(str) + "_elem",
+                    'name': elem_df_pois['appellation_officielle'],
+                    'type': 'Elémentaire',
+                    'category': 'education',
+                    'lat': elem_df_pois['lat'],
+                    'lon': elem_df_pois['lon'],
+                    'codgeo': elem_df_pois['code_commune']
+                }))
+            
+            # 3. Colleges & Lycees (remaining types)
+            other_types = ['COLLEGE', 'LYCEE PROFESSIONNEL', 'LYCEE ENSEIGNT GENERAL ET TECHNOLOGIQUE', 'LYCEE D ENSEIGNEMENT GENERAL', 'LYCEE D ENSEIGNEMENT TECHNOLOGIQUE']
+            other_mask = edu_df['nature_uai_libe'].isin(other_types)
+            if other_mask.any():
+                other_df = edu_df[other_mask].copy()
+                def map_other_type(t):
+                    if t == 'COLLEGE': return 'Collège'
+                    return 'Lycée'
+                
+                edu_pois_list.append(pd.DataFrame({
+                    'id': other_df['numero_uai'],
+                    'name': other_df['appellation_officielle'],
+                    'type': other_df['nature_uai_libe'].apply(map_other_type),
+                    'category': 'education',
+                    'lat': other_df['lat'],
+                    'lon': other_df['lon'],
+                    'codgeo': other_df['code_commune']
+                }))
 
-            edu_df['standard_type'] = edu_df.apply(map_edu_type, axis=1)
-
-            edu_pois = pd.DataFrame({
-                'id': edu_df['numero_uai'],
-                'name': edu_df['appellation_officielle'],
-                'type': edu_df['standard_type'],
-                'category': 'education',
-                'lat': edu_df['lat'],
-                'lon': edu_df['lon'],
-                'codgeo': edu_df['code_commune']
-            })
-            pois_list.append(edu_pois)
+            if edu_pois_list:
+                pois_list.append(pd.concat(edu_pois_list, ignore_index=True))
             
         # Health (FINESS)
         finess_cfg = config['sources']['finess_national']
@@ -659,8 +690,8 @@ def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
 
             # Standardize Types
             def map_sante_type(row):
-                if row['is_maternite']: return 'Maternité'
                 if row['is_hopital']: return 'Hopital'
+                if row['is_maternite']: return 'Maternité'
                 if row['is_psy']: return 'Soutien Psychologique & Addictologie'
                 return row['LibelleCategorieAgregat']
 

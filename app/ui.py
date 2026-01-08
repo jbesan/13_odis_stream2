@@ -81,7 +81,7 @@ def show_ccas_dialog(codgeo_or_list: Any, structures_df: pd.DataFrame, priority_
      else:
          st.warning("Données structures non disponibles.")
 
-@st.dialog("Détails du Territoire", width="large")
+@st.dialog(title="Détails du Territoire", width="large")
 def show_details_dialog(details: Dict[str, Any]):
     """Displays thematic details for a city in a large modal."""
     if not details:
@@ -90,19 +90,21 @@ def show_details_dialog(details: Dict[str, Any]):
 
     # --- Header ---
     identity = details.get('identity', {})
-    st.title(f"📍 {identity.get('nom', 'Inconnu')}")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        pop = identity.get('population', 0)
-        if pd.isna(pop) or pop is None:
-            pop = 0
-        st.metric("Population", f"{int(pop):,}".replace(",", " "))
-    with col2:
-        st.metric("Bassin de Vie", identity.get('bassin_de_vie', 'N/A'))
-    with col3:
-        score_gl = identity.get('score_global')
-        if pd.notna(score_gl) and score_gl is not None:
-            st.metric("Score Global", f"{float(score_gl)*100:.0f}%")
+    st.markdown(f"## 📍 {identity.get('nom', 'Inconnu')}")
+    
+    with st.container(border=False):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            pop = identity.get('population', 0)
+            if pd.isna(pop) or pop is None:
+                pop = 0
+            st.metric("Population", f"{int(pop):,}".replace(",", " "), help="Population totale de la commune")
+        with col2:
+            st.metric("Bassin de Vie", identity.get('bassin_de_vie', 'N/A'), help="Territoire d'influence économique et sociale")
+        with col3:
+            score_gl = identity.get('score_global')
+            if pd.notna(score_gl) and score_gl is not None:
+                st.metric("Score Global", f"{float(score_gl)*100:.0f}%", help="Adéquation globale avec votre projet de vie")
 
     # --- Helper to render scores table ---
     def render_scores_for_category(category_key: str):
@@ -125,18 +127,21 @@ def show_details_dialog(details: Dict[str, Any]):
         df_scores = df_scores.sort_values(by='score_normalise', ascending=False)
         
         for _, s in df_scores.iterrows():
-            c_label, c_val = st.columns([3, 1])
-            with c_label:
-                st.write(f"**{s['label']}**")
-                # Progress bar for the normalized score
-                # Handle NaN values safely (prevent StreamlitAPIException)
-                p_val = s['score_normalise']
-                if pd.isna(p_val):
-                    p_val = 0.0
-                st.progress(float(max(0.0, min(1.0, p_val))))
-            with c_val:
-                st.write(f" `{s['valeur_kpi']}`")
-                st.caption(s['unit'])
+            with st.container():
+                c_label, c_val = st.columns([3, 1])
+                with c_label:
+                    st.markdown(f"**{s['label']}**")
+                    p_val = s['score_normalise']
+                    if pd.isna(p_val):
+                        p_val = 0.0
+                    st.progress(float(max(0.0, min(1.0, p_val))))
+                    # Add description/tooltip as caption for better readability
+                    if s.get('tooltip'):
+                        st.caption(f"_{s['tooltip']}_")
+                with c_val:
+                    st.markdown(f"### {s['valeur_kpi']}")
+                    st.caption(s['unit'] if pd.notna(s['unit']) and s['unit'] != 'None' else "")
+            st.markdown("<br>", unsafe_allow_html=True) # Minor spacing
 
     # --- Tabs ---
     tab_emploi, tab_logement, tab_edu, tab_sante, tab_vie = st.tabs([
@@ -148,92 +153,135 @@ def show_details_dialog(details: Dict[str, Any]):
     ])
 
     with tab_emploi:
-        c1, c2 = st.columns(2)
         emploi_data = details.get('emploi', {})
+        c1, c2 = st.columns([1, 1.5], gap="medium")
         
         with c1:
-            st.subheader("Marché de l'emploi")
-            with st.expander("Top 10 des métiers recherchés", expanded=True):
-                top_metiers = emploi_data.get('top_metiers', [])
-                if top_metiers:
-                    # Highlighting (F-15 / V2)
-                    codes_metiers_prefs = []
-                    # Flatten user preferences to highlight labels
-                    if 'ui_metiers_adult_0' in st.session_state:
-                         codes_metiers_prefs.extend(st.session_state.ui_metiers_adult_0)
-                    if 'ui_metiers_adult_1' in st.session_state:
-                         codes_metiers_prefs.extend(st.session_state.ui_metiers_adult_1)
-                         
-                    for item in top_metiers:
-                        if isinstance(item, dict):
-                            label = item.get('label', item.get('code', 'N/A'))
-                            code = str(item.get('code', ''))
-                        else:
-                            label = str(item)
-                            code = str(item)
-
-                        is_pref = any(str(c) in code for c in codes_metiers_prefs)
-                        icon = "⭐ " if is_pref else "- "
-                        st.write(f"{icon}{label}")
-                else:
-                    st.info("Pas de données disponibles.")
+            with st.container(border=False):
+                st.markdown("#### :material/work: Marché de l'emploi")
+                with st.expander("Top 10 des métiers recherchés", expanded=True):
+                    top_metiers = emploi_data.get('top_metiers', [])
+                    if top_metiers:
+                        pref_metiers = []
+                        # Support both single and list-based session state keys
+                        for k in st.session_state:
+                            if k.startswith('ui_metiers_adult'):
+                                val = st.session_state[k]
+                                if isinstance(val, list): pref_metiers.extend(val)
+                                elif isinstance(val, str) and val: pref_metiers.append(val)
+                        
+                        unique_prefs = set(str(p).lower() for p in pref_metiers)
+                        for label in top_metiers:
+                            is_pref = any(p in label.lower() for p in unique_prefs)
+                            icon = "⭐ " if is_pref else ""
+                            st.write(f"• {icon}{label}")
+                    else:
+                        st.info("Pas de données disponibles.")
+                
+                with st.expander("Formations proposées", expanded=False):
+                    formations = emploi_data.get('formations', [])
+                    if formations:
+                        pref_forms = []
+                        # Support both single and list-based session state keys
+                        for k in st.session_state:
+                            if k.startswith('ui_formations_adult'):
+                                val = st.session_state[k]
+                                if isinstance(val, list): pref_forms.extend(val)
+                                elif isinstance(val, str) and val: pref_forms.append(val)
+                                
+                        unique_prefs = set(str(p).lower() for p in pref_forms)
+                        for label in formations:
+                            is_pref = any(p in label.lower() for p in unique_prefs)
+                            icon = "⭐ " if is_pref else ""
+                            st.write(f"• {icon}{label}")
+                    else:
+                        st.info("Aucune formation spécifique listée pour ce territoire.")
         
         with c2:
-            st.subheader("Indicateurs Emploi")
+            st.markdown("#### :material/monitoring: Indicateurs Emploi")
             render_scores_for_category('emploi')
 
     with tab_logement:
+        st.markdown("#### :material/home: Indicateurs Logement")
         render_scores_for_category('logement')
 
     with tab_edu:
-        c1, c2 = st.columns(2)
         edu_data = details.get('education', {})
+        c1, c2 = st.columns([1, 1], gap="medium")
         with c1:
-            st.subheader("Établissements")
-            with st.expander("Liste des écoles & formations", expanded=True):
-                formations = edu_data.get('formations', [])
-                if formations:
-                    # Filter and sort
-                    for f in sorted(list(set(formations))):
-                        st.write(f"- {f}")
+            with st.container(border=False):
+                st.markdown("#### :material/school: Établissements")
+                
+                etablissements = edu_data.get('etablissements', {})
+                if etablissements:
+                    for cat, names in sorted(etablissements.items()):
+                        # Deduplicate, remove NaN, and sort
+                        items = sorted(list(set([n for n in names if pd.notna(n)])))
+                        if items:
+                            with st.expander(f"{cat} ({len(items)})", expanded=False):
+                                for name in items:
+                                    st.write(f"• {name}")
                 else:
-                    st.info("Aucune information détaillée sur les établissements.")
+                    # Fallback to old formations list if any
+                    formations = edu_data.get('formations', [])
+                    if formations:
+                        with st.expander("Liste des établissements", expanded=True):
+                            for f in sorted(list(set(formations))):
+                                st.write(f"• {f}")
+                    else:
+                        st.info("Aucune information détaillée sur les établissements.")
         with c2:
-            st.subheader("Indicateurs Éducation")
+            st.markdown("#### :material/analytics: Indicateurs Éducation")
             render_scores_for_category('education')
 
     with tab_sante:
-        render_scores_for_category('sante')
+        sante_data = details.get('sante', {})
+        c1, c2 = st.columns([1, 1], gap="medium")
+        with c1:
+            with st.container(border=False):
+                st.markdown("#### :material/medical_services: Établissements de Santé")
+                etablissements = sante_data.get('etablissements', {})
+                if etablissements:
+                    for cat, names in sorted(etablissements.items()):
+                        # Deduplicate, remove NaN, and sort
+                        items = sorted(list(set([n for n in names if pd.notna(n)])))
+                        if items:
+                            with st.expander(f"{cat} ({len(items)})", expanded=False):
+                                for name in items:
+                                    st.write(f"• {name}")
+                else:
+                    st.info("Aucune information détaillée sur les structures de santé.")
+        with c2:
+            st.markdown("#### :material/medical_services: Indicateurs Santé")
+            render_scores_for_category('sante')
 
     with tab_vie:
-        c1, c2 = st.columns(2)
         incl_data = details.get('inclusion', {})
+        c1, c2 = st.columns([1, 1], gap="medium")
         with c1:
-            st.subheader("Services d'Inclusion")
-            with st.expander("Détail des services", expanded=True):
-                services = incl_data.get('services', [])
-                if services:
-                    # Robust lookup for labels
-                    labels = []
-                    incl_ref = st.session_state.app_data.get('inclusion_services_index', pd.DataFrame())
-                    for s in services:
-                        if not incl_ref.empty and s in incl_ref.index:
-                            try:
-                                label = incl_ref.loc[s, 'label']
-                                if isinstance(label, (pd.Series, pd.DataFrame)):
-                                    label = label.iloc[0]
-                                labels.append(label)
-                            except:
-                                labels.append(s)
-                        else:
-                            labels.append(s)
-                    
-                    for s in sorted(list(set(labels))):
-                        st.write(f"- {s}")
+            with st.container(border=False):
+                st.markdown("#### :material/volunteer_activism: Services d'Inclusion")
+                
+                services_grouped = incl_data.get('services_grouped', {})
+                if services_grouped:
+                    for thematique, names in sorted(services_grouped.items()):
+                        # Deduplicate, remove NaN, and sort
+                        items = sorted(list(set([n for n in names if pd.notna(n)])))
+                        if items:
+                            with st.expander(f"{thematique} ({len(items)})", expanded=False):
+                                for name in items:
+                                    st.write(f"• {name}")
                 else:
-                    st.info("Aucun service spécifique référencé.")
+                    # Fallback to old flat services display if needed
+                    services = incl_data.get('services', [])
+                    if services:
+                        with st.expander("Détail des services", expanded=True):
+                            for s in sorted(list(set(services))):
+                                st.write(f"• {s}")
+                    else:
+                        st.info("Aucun service spécifique référencé.")
         with c2:
-            st.subheader("Indicateurs Inclusion")
+            st.markdown("#### :material/diversity_3: Indicateurs Inclusion")
             render_scores_for_category('inclusion')
 
 def open_pdf_modal() -> None:
@@ -711,9 +759,13 @@ def _show_details_callback(rank: int) -> None:
         bmo_vertical=app_data['bmo_vertical'],
         formations_data=app_data['formations_data'],
         codformations_index=app_data['codformations_index'],
+        codfap_index=app_data.get('codfap_index', pd.DataFrame()),
         global_stats={},
-        # Ensure codfap_index is passed if it exists in app_data
-        codfap_index=app_data.get('codfap_index', pd.DataFrame())
+        # Ensure all indices and annuaires are passed
+        annuaire_ecoles=app_data.get('annuaire_ecoles', pd.DataFrame()),
+        annuaire_sante=app_data.get('annuaire_sante', pd.DataFrame()),
+        annuaire_inclusion=app_data.get('annuaire_inclusion', pd.DataFrame()),
+        inclusion_services_index=app_data.get('inclusion_services_index', pd.DataFrame())
     )
     
     details = engine.format_city_details(row)
@@ -746,12 +798,11 @@ def display_results_list() -> None:
         st.button(
             title,
             on_click=_result_highlight_callback,
-            # We pass the index (label) to the callback so .loc[index] works
             args=(index,),
             width='stretch',
-            # Key uses relative rank i
             key=f'button_top{i+1}',
-            type='primary'
+            type='primary',
+            icon=f":material/filter_{i+1}:"
         )
 
         # Check if this row's index matches the highlighted index

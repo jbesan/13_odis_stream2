@@ -38,7 +38,11 @@ class ScoringEngine:
         codformations_index: pd.DataFrame,
         global_stats: Dict[str, Dict[str, float]],
         bv_data: gpd.GeoDataFrame = None,
-        codfap_index: Optional[pd.DataFrame] = None
+        codfap_index: Optional[pd.DataFrame] = None,
+        annuaire_ecoles: pd.DataFrame = pd.DataFrame(),
+        annuaire_sante: pd.DataFrame = pd.DataFrame(),
+        annuaire_inclusion: pd.DataFrame = pd.DataFrame(),
+        inclusion_services_index: pd.DataFrame = pd.DataFrame()
     ):
         self.df_all_communes = df_all_communes
         self.df_bv_geo = df_bv_geo
@@ -52,6 +56,10 @@ class ScoringEngine:
         self.global_stats = global_stats
         self.bv_data = bv_data if bv_data is not None else df_bv_geo
         self.codfap_index = codfap_index
+        self.annuaire_ecoles = annuaire_ecoles
+        self.annuaire_sante = annuaire_sante
+        self.annuaire_inclusion = annuaire_inclusion
+        self.inclusion_services_index = inclusion_services_index
     
     def format_city_details(self, row: pd.Series) -> Dict[str, Any]:
         """Formats a row into a detailed dictionary."""
@@ -70,9 +78,9 @@ class ScoringEngine:
             },
             "scores": {},
             "emploi": {"top_metiers": [], "formations": []},
-            "education": {"counts": {}},
-            "sante": {"counts": {}},
-            "inclusion": {},
+            "education": {"counts": {}, "etablissements": {}},
+            "sante": {"counts": {}, "etablissements": {}},
+            "inclusion": {"services_grouped": {}},
             "associations": {}
         }
 
@@ -113,32 +121,71 @@ class ScoringEngine:
         # 3. Emploi (Top 10 & Formations)
         if codgeo:
             if not self.bmo_vertical.empty:
-                bmo_city = self.bmo_vertical[self.bmo_vertical['codgeo'] == codgeo]
+                bmo_city = self.bmo_vertical[self.bmo_vertical['codgeo'] == codgeo].copy()
                 if not bmo_city.empty and self.codfap_index is not None:
+                    # Robust type conversion for merge keys
+                    bmo_city['fap_code'] = bmo_city['fap_code'].astype(str)
                     merged = bmo_city.merge(self.codfap_index, left_on='fap_code', right_index=True, how='left')
                     merged['label'] = merged['label'].fillna(merged['fap_code'])
                     details['emploi']['top_metiers'] = sorted(merged['label'].unique().tolist())
 
             if not self.formations_data.empty:
-                 city_forms = self.formations_data[self.formations_data['codgeo'] == codgeo]
+                 city_forms = self.formations_data[self.formations_data['codgeo'] == codgeo].copy()
                  if not city_forms.empty:
                      if self.codformations_index is not None and not self.codformations_index.empty:
+                         # Robust type conversion for merge keys
+                         city_forms['formation_code'] = city_forms['formation_code'].astype(str)
                          merged_f = city_forms.merge(self.codformations_index, left_on='formation_code', right_index=True, how='left')
                          merged_f['label'] = merged_f['label'].fillna(merged_f['formation_code'])
                          details['emploi']['formations'] = sorted(merged_f['label'].unique().tolist())
                      else:
                          details['emploi']['formations'] = sorted(city_forms['formation_code'].unique().tolist())
 
-        # 4. Education & Sante Counts
-        for dom, mapping in [('education', {'maternelle': 'edu_maternelle_ct', 'elementaire': 'edu_elementaire_ct', 'college': 'edu_college_ct', 'lycee': 'edu_lycee_ct'}), 
-                             ('sante', {'hopital': 'count_hopital', 'maternite': 'count_maternite', 'psy': 'count_psy'})]:
+        # 4. Education & Sante Counts & Grouped Etablissements
+        for dom, mapping, annuaire in [
+            ('education', {'maternelle': 'edu_maternelle_ct', 'elementaire': 'edu_elementaire_ct', 'college': 'edu_college_ct', 'lycee': 'edu_lycee_ct'}, self.annuaire_ecoles), 
+            ('sante', {'hopital': 'count_hopital', 'maternite': 'count_maternite', 'psy': 'count_psy'}, self.annuaire_sante)
+        ]:
             for key, col in mapping.items():
                 if col in row: details[dom]['counts'][key] = int(row[col])
+            
+            if codgeo and not annuaire.empty:
+                # Extra safety: filter by codgeo and category to avoid leaks
+                city_pois = annuaire[(annuaire['codgeo'] == codgeo) & (annuaire['category'] == dom)]
+                if not city_pois.empty:
+                    # Group by 'type' or fallback to 'categorie'
+                    type_col = 'type' if 'type' in city_pois.columns else ('categorie' if 'categorie' in city_pois.columns else None)
+                    # Safely find a label column
+                    label_col = 'label' if 'label' in city_pois.columns else ('name' if 'name' in city_pois.columns else None)
+                    
+                    if type_col and label_col:
+                        grouped = city_pois.groupby(type_col)[label_col].apply(lambda x: sorted(list(set(x)))).to_dict()
+                        details[dom]['etablissements'] = grouped
 
-        # 6. Inclusion
-        if codgeo and codgeo in self.incl_index.index:
-            slugs = self.incl_index.loc[codgeo, 'key']
-            if isinstance(slugs, set): details['inclusion']['services'] = list(slugs)
+        # 6. Inclusion (Grouped by Thematic)
+        if codgeo and not self.annuaire_inclusion.empty:
+            city_incl = self.annuaire_inclusion[self.annuaire_inclusion['codgeo'] == codgeo]
+            if not city_incl.empty:
+                # Group by 'thematiques'
+                if 'thematiques' in city_incl.columns:
+                    label_col = 'label' if 'label' in city_incl.columns else ('name' if 'name' in city_incl.columns else None)
+                    if label_col:
+                        # Group by thematic codes first
+                        grouped_incl_raw = city_incl.groupby('thematiques')[label_col].apply(list).to_dict()
+                        
+                        # Map codes to labels using inclusion_services_index (safely)
+                        grouped_incl = {}
+                        for code, names in grouped_incl_raw.items():
+                            label = code
+                            try:
+                                if hasattr(self, 'inclusion_services_index') and self.inclusion_services_index is not None and code in self.inclusion_services_index.index:
+                                    val = self.inclusion_services_index.loc[code, 'label']
+                                    label = val if isinstance(val, str) else val.iloc[0]
+                            except:
+                                pass
+                            grouped_incl[label] = sorted(list(set(names)))
+                        
+                        details['inclusion']['services_grouped'] = grouped_incl
 
         # 7. Associations
         if codgeo and not self.associations_data.empty:

@@ -92,20 +92,21 @@ Logique métier principale, orchestrée par `compute_odis_score()`.
 
 Liste en vrac d'idées d'amélioration
 
-- Ajouter un call-to-action dans les fiches du top 5 (e.g. appeler TS local)
-  - Annuaire TS local
-- Génerer un prompt pour une Deep Research sur un des territoires recommandés
-- Normaliser les scores de catégorie pour éviter une surévaluation de certains critères
-- Ajouter des profils de pondération (famille vs célibataire)
-- Ajouter la base J'accueille d'accueil chez l'habitant
-- Ajouter la base des transports publics ?
-- Critere 'Niveau de vie' de l'INSEE ?
-- Enlever la couleur politique --> remplacer par y-a-t'il un CTAI (signe que la commune s'implique dans l'intégration) + Est-ce que la commune est adhérante ANVTA ? Ajouter un label ?
-- Rechercher au niveau national ou viser une région/ département en particulier?
-- Ajouter un 'en savoir plus' pour comprendre le scoring
-- Gare --> a conditionner avec une question mobilité (besoin de revenir regulierement)
-- FLE doit être un critere à part entiere et il faut trouver une base spécifique
-- Les multiselects sont frustrants car il faut trouver la terminologie exacte
+- [x] Ajouter un call-to-action dans les fiches du top 5 (e.g. appeler TS local)
+- [x] Génerer un prompt pour une Deep Research sur un des territoires recommandés
+- [x] Normaliser les scores de catégorie pour éviter une surévaluation de certains critères
+- [x] Ajouter des profils de pondération (famille vs célibataire)
+- [ ] Ajouter la base J'accueille d'accueil chez l'habitant
+- [ ] Ajouter la base des transports publics ?
+- [ ] Critere 'Niveau de vie' de l'INSEE ?
+- [x] Enlever la couleur politique --> remplacer par y-a-t'il un CTAI (signe que la commune s'implique dans l'intégration) + Est-ce que la commune est adhérante ANVTA ? Ajouter un label ?
+- [x] Rechercher au niveau national ou viser une région/ département en particulier?
+- [x] Ajouter un 'en savoir plus' pour comprendre le scoring
+- [ ] Gare --> a conditionner avec une question mobilité (besoin de revenir regulierement)
+- [ ] FLE doit être un critere à part entiere et il faut trouver une base spécifique
+- [ ] Les multiselects sont frustrants car il faut trouver la terminologie exacte
+- [ ] Créer et exploiter un dataset des associations dédiés aux réfugiés / demandeurs d'asile
+- [ ] AI Bot: ajouter le contact CCAS (passer dans get_city_details? )
 
 ## 5. Features
 
