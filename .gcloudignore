@@ -3,6 +3,7 @@
 
 # Allow app directory
 !app/
+!tests/
 !data/
 !requirements-dev.txt
 !mypy.ini

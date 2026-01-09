@@ -4,7 +4,7 @@ import os
 import time
 from agents.orchestrator import MultiAgentOrchestrator
 from agents.state import AgentContext
-# from ui import inject_custom_css
+from typing import List, Dict, Any
 import json
 import logging
 logger = logging.getLogger(__name__)
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 st.set_page_config(page_title="Assistant ODIS", page_icon="🤖", layout="wide")
 
 # --- Authentication ---
-import auth
+from utils import auth
 if not auth.check_password():
     st.stop()
 
@@ -21,10 +21,9 @@ if not auth.check_password():
 
 st.title("🤖 Assistant ODIS 2.0")
 
-# --- Data Loading (Shared with App) ---
 # Ensure datasets are loaded (cached) to prevent mcp_server from reloading them in isolation
-from data_loader import init_datasets
-import mcp_server
+from utils.data_loader import init_datasets
+from services import mcp_server
 
 with st.spinner("Chargement des données ODIS..."):
     # This uses st.cache_resource, so it's fast if already loaded in Home

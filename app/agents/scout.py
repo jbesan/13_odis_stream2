@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional
 from .base import BaseAgent
 from .state import AgentContext
 from google.genai import types
-from models import SearchCriterias
+from core.models import SearchCriterias
 from .tools import search_places, compute_routes, set_focus_city
 
 logger = logging.getLogger("scout_agent")

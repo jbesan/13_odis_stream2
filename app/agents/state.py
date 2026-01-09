@@ -1,6 +1,6 @@
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
-from models import SearchCriterias
+from core.models import SearchCriterias
 
 class UserProfile(BaseModel):
     """Basic extraction of user identity and raw initial request."""

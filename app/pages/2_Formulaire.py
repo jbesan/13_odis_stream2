@@ -1,8 +1,7 @@
 import streamlit as st
 import config as cfg
-import ui
-import logging
-import data_loader
+from ui import components as ui
+from utils import data_loader
 
 # Ensure app data and session state are initialized
 data_loader.ensure_data_initialized()
@@ -13,7 +12,8 @@ for k, v in st.session_state.items():
         st.session_state[k] = v
 app_data = st.session_state.app_data
 
-import utils
+import logging
+from utils import common as utils
 
 # Sidebar
 with st.sidebar:

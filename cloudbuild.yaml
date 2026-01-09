@@ -9,7 +9,7 @@ steps:
         pip install -r app/requirements.txt -r requirements-dev.txt
         export MYPYPATH=.
         python3 -m mypy --explicit-package-bases app
-        python3 -m pytest app/tests
+        python3 -m pytest --tb=line tests
 
   # 4. Build Docker Image
   - name: "gcr.io/cloud-builders/docker"

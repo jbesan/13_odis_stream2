@@ -1,106 +1,83 @@
 import pytest
 import pandas as pd
 import numpy as np
-from app.data_loader import load_all_datasets
-from app.scoring import compute_criteria_scores
-import app.config as cfg
+import geopandas as gpd
+from utils import data_loader
+from core.scoring import ScoringEngine
+from core.models import ScoringConfig
+import config as cfg
 
 @pytest.mark.unit
 def test_vacant_housing_criterion():
     """
     Verifies that the vacant housing criterion uses the new structural vacancy data.
     """
-    # 1. Load Data (Mocking file paths if necessary, but here we might want to test actual loading if fast enough, 
-    # or mock the file reading. Given the instructions, we'll try to load actual data to verify the CSV integration)
-    
-    # We need to mock the file paths to point to the real files if we are running from root
-    # But load_all_datasets uses cfg constants. 
-    # Let's assume the environment is set up correctly for the test to find the files.
-    
-    # However, loading ALL datasets might be slow. 
-    # Let's try to mock the return of load_all_datasets or just test the logic if we can isolate it.
-    # But the goal is to verify the CSV loading too.
-    
-    # Let's try to load just the necessary parts if possible, or just call load_all_datasets and check the columns.
-    
+    # 1. Load Data
     try:
-        odis, scores_cat, _, _, _, _, _, incl_index, associations_data, global_stats = load_all_datasets(
-            cfg.ODIS_FILE,
-            cfg.BV_FILENAME,
-            cfg.SCORES_CAT_FILE,
-            cfg.METIERS_FILE,
-            cfg.FORMATIONS_FILE,
-            cfg.ECOLES_FILE,
-            cfg.MATERNITE_FILE,
-            cfg.SANTE_FILE,
-            cfg.INCLUSION_FILE,
-            cfg.CAF_FILE,
-            cfg.LOVAC_FILE
-        )
+        app_data = data_loader.init_datasets()
     except Exception as e:
         pytest.fail(f"Data loading failed: {e}")
 
-    # 2. Verify Columns
-    assert 'pp_vacant_plus_2ans_25' in odis.columns, "LOVAC column 'pp_vacant_plus_2ans_25' missing in ODIS dataframe"
-    assert 'log_vac_struct_ratio' in odis.columns, "Calculated ratio 'log_vac_struct_ratio' missing in ODIS dataframe"
+    odis = app_data['odis']
+    scores_cat = app_data['scores_cat']
+    incl_index = app_data['incl_index']
+    associations_data = app_data['associations_data']
 
-    # 3. Verify Data Integrity (Check a known sample if possible, or general properties)
-    # Ambérieu-en-Bugey (01004) from head: pp_vacant_plus_2ans_25 = 207
-    # We need to find its index. ODIS is indexed by codgeo.
+    # 2. Verify Columns
+    assert 'log_priv_vacant_plus_2ans' in odis.columns, "LOVAC column 'log_priv_vacant_plus_2ans' missing"
+    assert 'log_vac_struct_ratio' in odis.columns, "Calculated ratio 'log_vac_struct_ratio' missing"
+
+    # 3. Verify Data Integrity (Check a known sample: Ambérieu-en-Bugey 01004)
     if '01004' in odis.index:
         sample = odis.loc['01004']
-        # Check raw value
-        # Note: We cast to float32 in data_loader
-        assert sample['pp_vacant_plus_2ans_25'] == 207.0, f"Expected 207.0 for 01004, got {sample['pp_vacant_plus_2ans_25']}"
-        
-        # Check ratio calculation
-        # log_total is from ODIS. We don't know it exactly without looking at ODIS file, 
-        # but we can check consistency: ratio = val / log_total
-        expected_ratio = sample['pp_vacant_plus_2ans_25'] / sample['log_total']
-        # Handle potential float precision issues
-        np.testing.assert_almost_equal(sample['log_vac_struct_ratio'], expected_ratio, decimal=5)
+        assert sample['log_priv_vacant_plus_2ans'] == 207.0
+        # Ensure log_total exists for ratio check
+        if 'log_total' in sample:
+            expected_ratio = sample['log_priv_vacant_plus_2ans'] / sample['log_total']
+            np.testing.assert_almost_equal(sample['log_vac_struct_ratio'], expected_ratio, decimal=5)
 
     # 4. Verify Scoring Logic
-    # Create a dummy prefs dict
-    prefs = cfg.DEMO_DATA_DEFAULT.copy()
-    prefs['commune_actuelle'] = '01004' # Ambérieu-en-Bugey (valid codgeo)
-    prefs['logement'] = "Location"
-    # Fix potential IndexError if default has mismatch
-    prefs['nb_adultes'] = 1
-    prefs['codes_metiers'] = [[]]
-    prefs['codes_formations'] = [[]]
-    
-    # Run scoring (just criteria)
-    # We need a dummy df_all_communes (can be same as odis for this test)
-    # Add dummy dist_current_loc to avoid KeyError
-    odis['dist_current_loc'] = 0.0
-
-    odis_scored = compute_criteria_scores(
-        odis,
-        prefs,
-        incl_index,
-        odis, # df_all_communes
-        associations_data,
-        scores_cat,
-        global_stats
+    config = ScoringConfig(
+        poids_emploi=100, poids_logement=100, poids_education=0,
+        poids_inclusion=0, poids_sante=0, poids_mobilité=0,
+        commune_actuelle='01004', loc_search_area='departement',
+        nb_adultes=1, nb_enfants=0,
+        hebergement='Location', logement='Location',
+        codes_metiers=[[]], codes_formations=[[]], classe_enfants=[],
+        besoin_sante='Aucun', inc_services_add_selection=[],
+        inc_services_core_selection=[], inc_asso_add_selection=[],
+        criteria_weights={}
     )
     
+    # Instantiate Engine
+    engine = ScoringEngine(
+        df_all_communes=odis,
+        df_bv_geo=app_data['bv_geo'],
+        df_area_geo=app_data['area_geo'],
+        scores_cat=scores_cat,
+        incl_index=incl_index,
+        associations_data=associations_data,
+        bmo_vertical=app_data['bmo_vertical'],
+        formations_data=app_data['formations_data'],
+        codformations_index=app_data.get('codformations_index'),
+        global_stats=app_data.get('global_stats', {})
+    )
+
+    # Add dummy dist_current_loc to avoid KeyError if needed (Engine.run normally adds it)
+    # But here we test the internal _compute_criteria_scores
+    odis_copy = odis.copy()
+    odis_copy['dist_current_loc'] = 0.0
+
+    odis_scored = engine._compute_criteria_scores(odis_copy, config)
+    
     assert 'log_vac_scaled' in odis_scored.columns
-    assert odis_scored['log_vac_scaled'].notna().all(), "Scores should not be NaN (unless input was NaN)"
+    assert odis_scored['log_vac_scaled'].notna().all()
     
-    # Check that the score follows the ratio (higher ratio -> higher score, as it is 'vacant' housing availability?)
-    # Wait, the config says:
-    # strong_point_text: Nombre élevé de logements vacants depuis plus de 2 ans
-    # high_value_adjective: élevé
-    # This implies higher is "better" or at least "higher score".
-    # Let's check correlation.
-    
-    # Filter out NaNs for correlation check
+    # Check correlation
     valid_data = odis_scored[['log_vac_struct_ratio', 'log_vac_scaled']].dropna()
     if not valid_data.empty:
         correlation = valid_data['log_vac_struct_ratio'].corr(valid_data['log_vac_scaled'])
-        assert correlation > 0.9, f"Score should be highly correlated with the ratio, got {correlation}"
+        assert correlation > 0.9
 
 if __name__ == "__main__":
-    # Manually run if executed as script
     test_vacant_housing_criterion()

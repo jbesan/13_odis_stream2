@@ -4,14 +4,7 @@ from .base import BaseAgent
 from .state import AgentContext
 from google.genai import types
 from .tools import search_referentiels, search_commune
-from config import (
-    CLASSES_SCOLAIRES,
-    HEBERGEMENT_OPTIONS,
-    LOGEMENT_OPTIONS,
-    SANTE_OPTIONS,
-    WEIGHT_PROFILES,
-    LOC_SEARCH_AREA_OPTIONS
-)
+import config as cfg
 
 logger = logging.getLogger("interviewer_agent")
 
@@ -66,14 +59,14 @@ class InterviewerAgent(BaseAgent):
         
         # Inject config values
         # Filter 'custom' from the options presented to the LLM (internal logic handled by Orchestrator/Engine)
-        filtered_areas_keys = [k for k in LOC_SEARCH_AREA_OPTIONS.keys() if k != 'custom']
-        filtered_areas_values = [v for k, v in LOC_SEARCH_AREA_OPTIONS.items() if k != 'custom']
+        filtered_areas_keys = [k for k in cfg.LOC_SEARCH_AREA_OPTIONS.keys() if k != 'custom']
+        filtered_areas_values = [v for k, v in cfg.LOC_SEARCH_AREA_OPTIONS.items() if k != 'custom']
 
-        prompt = prompt.replace("{CLASSES_SCOLAIRES}", str(CLASSES_SCOLAIRES))
-        prompt = prompt.replace("{HEBERGEMENT_OPTIONS}", str(HEBERGEMENT_OPTIONS))
-        prompt = prompt.replace("{LOGEMENT_OPTIONS}", str(LOGEMENT_OPTIONS))
-        prompt = prompt.replace("{SANTE_OPTIONS}", str(SANTE_OPTIONS))
-        prompt = prompt.replace("{WEIGHT_PROFILES}", str(list(WEIGHT_PROFILES.keys())))
+        prompt = prompt.replace("{CLASSES_SCOLAIRES}", str(cfg.CLASSES_SCOLAIRES))
+        prompt = prompt.replace("{HEBERGEMENT_OPTIONS}", str(cfg.HEBERGEMENT_OPTIONS))
+        prompt = prompt.replace("{LOGEMENT_OPTIONS}", str(cfg.LOGEMENT_OPTIONS))
+        prompt = prompt.replace("{SANTE_OPTIONS}", str(cfg.SANTE_OPTIONS))
+        prompt = prompt.replace("{WEIGHT_PROFILES}", str(list(cfg.WEIGHT_PROFILES.keys())))
         prompt = prompt.replace("{LOC_SEARCH_AREAS}", ", ".join(filtered_areas_values))
         
         # 2. Local Criteria Interceptor
@@ -123,7 +116,7 @@ class InterviewerAgent(BaseAgent):
             # OR better: use placeholders and replace them in the agent loop if the framework allows.
             # Actually, the simplest is to update this docstring during runtime.
 
-            updates = {}
+            updates: Dict[str, Any] = {}
             if commune_actuelle: updates['commune_actuelle'] = commune_actuelle
             if nb_adultes is not None: updates['nb_adultes'] = nb_adultes
             if nb_enfants is not None: updates['nb_enfants'] = nb_enfants
@@ -153,12 +146,13 @@ class InterviewerAgent(BaseAgent):
         local_update_criteria.__name__ = "update_search_criteria"
         
         # Update docstring dynamically to reflect config values for the LLM
-        local_update_criteria.__doc__ = local_update_criteria.__doc__.replace("{WEIGHT_PROFILES_LIST}", str(list(WEIGHT_PROFILES.keys())))
+        doc = local_update_criteria.__doc__ or ""
+        local_update_criteria.__doc__ = doc.replace("{WEIGHT_PROFILES_LIST}", str(list(cfg.WEIGHT_PROFILES.keys())))
         local_update_criteria.__doc__ = local_update_criteria.__doc__.replace("{LOC_SEARCH_AREAS_LIST}", str(filtered_areas_keys))
-        local_update_criteria.__doc__ = local_update_criteria.__doc__.replace("{CLASSES_SCOLAIRES_LIST}", str(CLASSES_SCOLAIRES))
-        local_update_criteria.__doc__ = local_update_criteria.__doc__.replace("{HEBERGEMENT_OPTIONS_LIST}", str(HEBERGEMENT_OPTIONS))
-        local_update_criteria.__doc__ = local_update_criteria.__doc__.replace("{LOGEMENT_OPTIONS_LIST}", str(LOGEMENT_OPTIONS))
-        local_update_criteria.__doc__ = local_update_criteria.__doc__.replace("{SANTE_OPTIONS_LIST}", str(SANTE_OPTIONS))
+        local_update_criteria.__doc__ = local_update_criteria.__doc__.replace("{CLASSES_SCOLAIRES_LIST}", str(cfg.CLASSES_SCOLAIRES))
+        local_update_criteria.__doc__ = local_update_criteria.__doc__.replace("{HEBERGEMENT_OPTIONS_LIST}", str(cfg.HEBERGEMENT_OPTIONS))
+        local_update_criteria.__doc__ = local_update_criteria.__doc__.replace("{LOGEMENT_OPTIONS_LIST}", str(cfg.LOGEMENT_OPTIONS))
+        local_update_criteria.__doc__ = local_update_criteria.__doc__.replace("{SANTE_OPTIONS_LIST}", str(cfg.SANTE_OPTIONS))
 
 
         try:

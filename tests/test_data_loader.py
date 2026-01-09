@@ -2,8 +2,8 @@ import pytest
 import pandas as pd
 import geopandas as gpd
 from unittest.mock import MagicMock, patch
-import app.data_loader as data_loader
-import app.config as cfg
+from utils import data_loader
+import config as cfg
 
 @pytest.fixture
 def mock_parquet_data():
@@ -13,6 +13,8 @@ def mock_parquet_data():
         'codgeo': ['01001', '01002'],
         'libgeo': ['Commune A', 'Commune B'],
         'population': [1000, 2000],
+        'dep_code': ['01', '01'],
+        'reg_code': ['84', '84'],
         'bassin_de_vie': ['BV1', 'BV1'],
         'met_scaled': [0.5, 0.6],
         'polygon': [
@@ -25,9 +27,11 @@ def mock_parquet_data():
     pois_df = pd.DataFrame({
         'id': ['1', '2', '3'],
         'category': ['education', 'sante', 'incl_services'],
+        'type': ['Ecole', 'Hopital', 'CAF'],
         'name': ['Ecole A', 'Hopital B', 'CAF C'],
         'lat': [45.0, 45.1, 45.2],
-        'lon': [5.0, 5.1, 5.2]
+        'lon': [5.0, 5.1, 5.2],
+        'codgeo': ['01001', '01001', '01002']
     })
     
     # Mock Referentiels
@@ -39,10 +43,12 @@ def mock_parquet_data():
     
     return odis_df, pois_df, ref_df
 
-@patch('app.data_loader.pd.read_parquet')
-@patch('app.data_loader.cfg.get_data_path')
-def test_init_datasets(mock_get_data_path, mock_read_parquet, mock_parquet_data):
+@patch('utils.data_loader.os.path.exists')
+@patch('utils.data_loader.pd.read_parquet')
+@patch('config.get_data_path')
+def test_init_datasets(mock_get_data_path, mock_read_parquet, mock_exists, mock_parquet_data):
     """Tests the initialization of datasets."""
+    mock_exists.return_value = True
     mock_get_data_path.return_value = '/mock/path'
     odis_df, pois_df, ref_df = mock_parquet_data
     
@@ -56,12 +62,14 @@ def test_init_datasets(mock_get_data_path, mock_read_parquet, mock_parquet_data)
             return ref_df
         elif 'vertical' in path or 'associations' in path:
             return pd.DataFrame()
+        elif 'global_stats' in path: # Added fallback for global_stats
+            return pd.DataFrame() # Return an empty DataFrame as a fallback
         return pd.DataFrame()
         
     mock_read_parquet.side_effect = side_effect
     
     # Run init_datasets
-    data = data_loader.init_datasets()
+    data = data_loader.load_all_data_raw()
     
     # Assertions
     assert 'odis' in data
@@ -83,4 +91,4 @@ def test_init_datasets(mock_get_data_path, mock_read_parquet, mock_parquet_data)
     # Check Referentiels
     assert 'codfap_index' in data
     assert not data['codfap_index'].empty
-    assert 'Label A' in data['codfap_index']['libelle'].values
+    assert 'Label A' in data['codfap_index']['label'].values

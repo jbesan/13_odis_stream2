@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional
 from .base import BaseAgent
 from .state import AgentContext
 from google.genai import types
-from models import SearchCriterias
+from core.models import SearchCriterias
 from .tools import compute_top_cities
 
 logger = logging.getLogger("scorer_agent")
@@ -55,7 +55,7 @@ class ScorerAgent(BaseAgent):
             for turn in context.history[-3:]:
                 role = "Utilisateur" if turn.get("role") == "user" else "Assistant"
                 parts = turn.get("parts", [])
-                text_parts = [p.get("text") for p in parts if isinstance(p, dict) and p.get("text")]
+                text_parts = [str(p.get("text")) for p in parts if isinstance(p, dict) and p.get("text")]
                 text = " ".join(text_parts) if text_parts else ""
                 history_summary += f"- {role}: {text}\n"
 

@@ -4,7 +4,7 @@ import re
 from .state import AgentContext
 from google import genai
 from google.genai import types
-from mcp_server import _get_labels_for_codes_logic
+from services.mcp_server import _get_labels_for_codes_logic
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,8 @@ class ContextRefiner:
             parts = turn.get("parts", [])
             for p in parts:
                 if isinstance(p, dict) and p.get("text"):
-                    matches = re.findall(r'\b([A-Z0-9]*[0-9][A-Z0-9]*)\b', p.get("text").upper())
+                    text = p.get("text") or ""
+                    matches = re.findall(r'\b([A-Z0-9]*[0-9][A-Z0-9]*)\b', text.upper())
                     for match in matches:
                         if 7 <= len(match) <= 8:
                             # Avoid duplicates from context

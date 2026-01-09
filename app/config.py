@@ -17,7 +17,7 @@ load_dotenv(os.path.join(APP_DIR, '.env'))
 load_dotenv(os.path.join(PROJECT_ROOT, '.env'))
 
 LOCAL_CSV_PATH: str = os.path.join(PROJECT_ROOT, 'data/')
-ASSETS_DIR: str = os.path.join(APP_DIR, 'assets')
+ASSETS_DIR: str = os.path.join(APP_DIR, 'ui', 'assets')
 
 def get_data_path() -> str:
     """
@@ -84,50 +84,7 @@ DETAIL_MAP_ZOOM = 11
 # --- Constants ---
 PROJECTED_CRS = "EPSG:2154"  # RGF93 / Lambert-93, suitable for metropolitan France
 
-# --- Scoring Configuration ---
-@dataclass
-class ScoringConfig:
-    """
-    A dataclass to hold all user preferences and scoring parameters.
-    This provides type safety and autocompletion in IDEs.
-    """
-    # Weights
-    poids_emploi: int
-    poids_logement: int
-    poids_education: int
-    poids_inclusion: int
-    poids_mobilité: int
-    poids_sante: int # Added new weight for sante
-    
-    # Criteria Weights (F-15)
-    criteria_weights: Dict[str, float]
-
-    # Location
-    commune_actuelle: str
-    loc_search_area: str
-    
-    # Household
-    nb_adultes: int
-    nb_enfants: int
-    
-    # Preferences
-    hebergement: str
-    logement: str
-    codes_metiers: List[List[str]]
-    codes_formations: List[List[str]]
-    classe_enfants: List[str]
-    besoin_sante: str
-    inc_services_add_selection: List[str]
-    
-    # Inclusion
-    inc_services_core_selection: List[str]
-    inc_asso_add_selection: List[str]
-
-    # Custom Geo
-    loc_custom_code: Optional[str] = None
-    loc_custom_type: Optional[str] = None # 'region' or 'departement'
-    
-
+from core.models import ScoringConfig
 
 # --- Inclusion Defaults ---
 DEFAULT_INC_SERVICES_CORE = [

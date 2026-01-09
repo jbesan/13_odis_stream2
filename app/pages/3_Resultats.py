@@ -1,13 +1,13 @@
 import streamlit as st
 from streamlit_folium import st_folium
-import scoring
+from core import scoring
 import config as cfg
-import ui
-import utils
-import maps
-from pdf_generator import generate_pdf_report
+from ui import components as ui
+from utils import common as utils
+from core import maps
+from core.pdf_generator import generate_pdf_report
 import folium as flm
-import data_loader
+from utils import data_loader
 import geopandas as gpd
 import logging
 import gc
@@ -111,7 +111,7 @@ def run_search():
     st.session_state['unaggregated_gdf'] = unaggregated_gdf
     
     # --- Logging ---
-    from logger import log_search_results
+    from utils.logger import log_search_results
     log_search_results(config, processed_gdf, unaggregated_gdf, st.session_state.app_data['scores_cat'])
     
     # Calculate center for map

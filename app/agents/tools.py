@@ -1,7 +1,7 @@
 import logging
 import streamlit as st
 from typing import List, Dict, Any, Optional, Union
-from mcp_server import (
+from services.mcp_server import (
     _search_referentiels_logic, 
     _search_commune_logic,
     _compute_top_cities_logic,
@@ -10,13 +10,13 @@ from mcp_server import (
     _get_labels_for_codes_logic,
     _get_rome_for_fap_logic
 )
-from mcp_france_travail import (
+from services.mcp_france_travail import (
     search_job_offers_logic as _search_job_offers_logic,
     _get_job_details_logic,
     _search_rome_appellations_logic
 )
-from config import WEIGHT_PROFILES
-from models import SearchCriterias
+import config as cfg
+from core.models import SearchCriterias
 
 logger = logging.getLogger("agent_tools")
 
@@ -46,15 +46,15 @@ def compute_top_cities(filters: SearchCriterias) -> Dict[str, Any]:
         
         # Extract profile from the filters (it's the source of truth)
         weight_profile = filters.weight_profile or "Équilibré"
-        logger.info(f"🚀 [TOOL] compute_top_cities called (extracted profile: {weight_profile})")
+        logger.info(f"⚒️ [TOOL] compute_top_cities called (extracted profile: {weight_profile})")
 
-        weights = WEIGHT_PROFILES.get(weight_profile, WEIGHT_PROFILES["Équilibré"])
+        weights = cfg.WEIGHT_PROFILES.get(weight_profile, cfg.WEIGHT_PROFILES["Équilibré"])
         res = _compute_top_cities_logic(weights, filters_dict)
         
         # Save results to context if possible
         if "cities" in res and "agent" in st.session_state:
             st.session_state.agent.context.top_cities = res["cities"]
-            logger.info(f"✅ [TOOL] Saved {len(res['cities'])} cities to AgentContext.")
+            logger.info(f"⚒️ [TOOL] Saved {len(res['cities'])} cities to AgentContext.")
             
         return res
     except Exception as e:
@@ -70,10 +70,10 @@ def set_focus_city(city_name: str) -> str:
     Définit la ville 'active' ou 'focus' pour la conversation de terrain.
     À utiliser dès que l'utilisateur s'intéresse à une ville spécifique (ex: 'Parle moi de Bordeaux').
     """
-    logger.info(f"📍 [TOOL] set_focus_city: '{city_name}'")
+    logger.info(f"⚒️ [TOOL] set_focus_city: '{city_name}'")
     if "agent" in st.session_state:
         st.session_state.agent.context.focus_city = city_name
-        logger.info(f"✅ [TOOL] context.focus_city updated to: {city_name}")
+        logger.info(f"⚒️ [TOOL] context.focus_city updated to: {city_name}")
     else:
         logger.warning("⚠️ [TOOL] set_focus_city: st.session_state.agent not found!")
     return f"SUCCÈS: Ville active définie sur {city_name}."
@@ -96,7 +96,7 @@ def search_job_offers(
         appellation_codes: Liste de codes métiers précis (ROME Appellations).
         distance: Rayon de recherche en km autour de la commune.
     """
-    logger.info(f"🚀 [TOOL] search_job_offers: query={query}, location={location}, fap={fap_code}, apps={appellation_codes}")
+    logger.info(f"⚒️ [TOOL] search_job_offers: query={query}, location={location}, fap={fap_code}, apps={appellation_codes}")
     res = _search_job_offers_logic(
         query=query, 
         location=location, 
@@ -108,7 +108,7 @@ def search_job_offers(
     # Save results to context if possible
     if "offres" in res and "agent" in st.session_state:
         st.session_state.agent.context.found_jobs = res["offres"]
-        logger.info(f"✅ [TOOL] Saved {len(res['offres'])} job offers to AgentContext.")
+        logger.info(f"⚒️ [TOOL] Saved {len(res['offres'])} job offers to AgentContext.") 
         
     return res
 
@@ -117,7 +117,7 @@ def search_rome_appellations(query: str) -> List[Dict[str, str]]:
     Recherche des intitulés de métiers précis (appellations ROME) à partir d'un mot-clé.
     Utile pour traduire un code FAP (ex: 'Boulanger') en codes précis pour la recherche d'offres.
     """
-    logger.info(f"🚀 [TOOL] search_rome_appellations: '{query}'")
+    logger.info(f"⚒️ [TOOL] search_rome_appellations: '{query}'")
     return _search_rome_appellations_logic(query)
 
 def get_job_details(job_id: str) -> Dict[str, Any]:
@@ -127,7 +127,7 @@ def get_job_details(job_id: str) -> Dict[str, Any]:
     Args:
         job_id: ID de l'offre d'emploi (ex: '048KLTP').
     """
-    logger.info(f"🚀 [TOOL] get_job_details: {job_id}")
+    logger.info(f"⚒️ [TOOL] get_job_details: {job_id}")
     return _get_job_details_logic(job_id)
 
 def get_labels_for_codes(codes: List[str]) -> Dict[str, str]:

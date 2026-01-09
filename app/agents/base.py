@@ -51,10 +51,10 @@ class BaseAgent(abc.ABC):
             response_json_schema=response_json_schema,
             response_mime_type=response_mime_type,
             safety_settings=[
-                types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_NONE"),
-                types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="BLOCK_NONE"),
-                types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="BLOCK_NONE"),
-                types.SafetySetting(category="HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold="BLOCK_NONE"),
+                types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold=types.HarmBlockThreshold.BLOCK_NONE),
+                types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
+                types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HARASSMENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
+                types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
             ]
         )
 
@@ -81,7 +81,7 @@ class BaseAgent(abc.ABC):
                         context.tokens_g25_input += in_tokens
                         context.tokens_g25_output += out_tokens
                 
-                logger.info(f"📊 [{self.model_id}] Usage: +{in_tokens} in / +{out_tokens} out")
+                logger.debug(f"🏁 [BASE_AGENT] {self.model_id} Usage: +{in_tokens} in / +{out_tokens} out") 
 
             if response.text:
                 return response.text.strip()

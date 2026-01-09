@@ -138,7 +138,7 @@ class MultiAgentOrchestrator:
         
         # # Transition nudge: If we have basic data and user says "go/ok", override to SCORER
 
-        logger.info(f"🎯 [ORCHESTRATOR] Router choice: {target}")
+        logger.info(f"🧠 [ORCHESTRATOR] Router choice: {target}")
         
         # Mapping choice back to internal names and updating phase
         target = target.upper()
@@ -261,7 +261,7 @@ class MultiAgentOrchestrator:
             context.tokens_g3_input += in_tokens
             context.tokens_g3_output += out_tokens
             
-            logger.info(f"📊 [ORCHESTRATOR_SYNTH] Usage: +{in_tokens} in / +{out_tokens} out")
+            logger.info(f"🧠 [ORCHESTRATOR] Synthesis Usage: +{in_tokens} in / +{out_tokens} out")
 
         return response.text.strip() if response.text else "J'ai collecté les informations, comment puis-je vous aider davantage ?"
 
@@ -270,7 +270,7 @@ class MultiAgentOrchestrator:
         
         # 1. Routing
         target_agent_name = self._route(message, context)
-        logger.info(f"🎯 [ORCHESTRATOR] Routing to: {target_agent_name} | Phase: {context.workflow_phase}")
+        logger.info(f"🧠 [ORCHESTRATOR] Routing to: {target_agent_name} | Phase: {context.workflow_phase}")
         
         # 2. Update context active agent
         context.active_agent = target_agent_name
@@ -286,7 +286,7 @@ class MultiAgentOrchestrator:
         # 3. Special Case: DECORATION (Scout + Job Hunter Cascade)
         # On ne déclenche la cascade QUE si le router demande spécifiquement "DECORATION"
         if target_agent_name == "DECORATION":
-            logger.info(f"⛓️ [ORCHESTRATOR] Starting Decoration Cascade (Initial City: {context.focus_city})")
+            logger.info(f"🧠 [ORCHESTRATOR] Starting Decoration Cascade (Initial City: {context.focus_city})")
             
             # --- AUTO-DETECTION SAFETY ---
             # If focus_city is empty, check if message mentions one of the top cities
@@ -294,7 +294,7 @@ class MultiAgentOrchestrator:
                 for city in context.top_cities:
                     if city['name'].lower() in message.lower():
                         context.focus_city = city['name']
-                        logger.info(f"✨ [ORCHESTRATOR] Auto-detected city in message: {context.focus_city}")
+                        logger.info(f"🧠 [ORCHESTRATOR] Auto-detected city in message: {context.focus_city}")
                         break
             
             city_name = context.focus_city or "votre ville"
@@ -302,7 +302,7 @@ class MultiAgentOrchestrator:
             # Preparation des contextes spécialisés (On le fait séquentiellement car focus_city peut changer)
             scout_ctx = self._get_specialized_context("scout", context)
             
-            logger.info("📡 [ORCHESTRATOR] Calling SCOUT...")
+            logger.info("🧠 [ORCHESTRATOR] Calling SCOUT...")
             st.toast(random.choice([
                 "Interrogatoire des pigeons locaux...",
                 "Déploiement de nos drones diplomatiques...",
@@ -315,9 +315,9 @@ class MultiAgentOrchestrator:
             # Refresh city name if scout updated it
             city_name = context.focus_city or city_name
 
-            logger.info(f"✅ [ORCHESTRATOR] SCOUT finished. Current City: {context.focus_city}")
+            # logger.info(f"🧠 [ORCHESTRATOR] SCOUT finished. Current City: {context.focus_city}")
 
-            logger.info("📡 [ORCHESTRATOR] Calling WEB...")
+            logger.info("🧠 [ORCHESTRATOR] Calling WEB...")
             st.toast(random.choice([
                 "Lecture rapide de la gazette locale...",
                 "On écoute les derniers potins du web...",
@@ -333,7 +333,7 @@ class MultiAgentOrchestrator:
             if not context.focus_city:
                  logger.warning("⚠️ [ORCHESTRATOR] Focus city still empty. Job Hunter might fail/be broad.")
             
-            logger.info("📡 [ORCHESTRATOR] Calling JOB_HUNTER...")
+            logger.info("🧠 [ORCHESTRATOR] Calling JOB_HUNTER...")
             st.toast(random.choice([
                 "Chasse aux offres d'emploi (sans fusil, promis)...",
                 "Pêche miraculeuse dans les filets de France Travail...",
@@ -342,7 +342,7 @@ class MultiAgentOrchestrator:
             job_res = self.agents["job_hunter"].run(enhanced_message, job_ctx)
             self._sync_tokens(context, job_ctx)
             
-            logger.info(f"✅ [ORCHESTRATOR] JOB_HUNTER finished. Current City: {context.focus_city}")
+            logger.info(f"🧠 [ORCHESTRATOR] JOB_HUNTER finished. Current City: {context.focus_city}")
             
             st.toast(random.choice([
                 "Mixage de la potion magique ODIS...",
@@ -350,7 +350,7 @@ class MultiAgentOrchestrator:
                 "Rédaction de la synthèse finale..."
             ]), icon="🧪")
             final_response = self._synthesize(enhanced_message, context, scout_res, job_res, web_res)
-            logger.info("🏁 [ORCHESTRATOR] Synthesis complete.")
+            logger.info("🧠 [ORCHESTRATOR] Synthesis complete.")
             
             # Record in history
             context.history.append({"role": "user", "parts": [{"text": message}]})
