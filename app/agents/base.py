@@ -17,7 +17,18 @@ class BaseAgent(abc.ABC):
         """Process a message within the given context and return agent's response."""
         pass
 
-    def _execute_tool_loop(self, prompt: str, message: str, tools: list, context: Optional[AgentContext] = None, include_google_search: bool = False) -> str:
+    def _get_briefing_and_user_msg(self, message: str) -> tuple[str, str]:
+        """Extracts briefing data and the actual user message from the input."""
+        briefing_data = ""
+        user_msg = message
+        if "### 📋 RÉSUMÉ DU DOSSIER (BRIEFING)" in message:
+            parts = message.split("---")
+            if len(parts) >= 3:
+                briefing_data = parts[1].strip()
+                user_msg = "---".join(parts[2:]).strip()
+        return briefing_data, user_msg
+
+    def _execute_tool_loop(self, prompt: str, message: str, tools: list, context: Optional[AgentContext] = None, include_google_search: bool = False, response_json_schema: Optional[Any] = None, response_mime_type: Optional[str] = None) -> str:
         """
         Exécute l'agent en mode 'Stateless Single-Turn'.
         On n'envoie JAMAIS d'historique au SDK pour éviter les erreurs de validation.
@@ -37,6 +48,8 @@ class BaseAgent(abc.ABC):
             # On utilise le mode automatique car sans historique, il est stable
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=False),
             temperature=0.3,
+            response_json_schema=response_json_schema,
+            response_mime_type=response_mime_type,
             safety_settings=[
                 types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_NONE"),
                 types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="BLOCK_NONE"),
@@ -68,7 +81,7 @@ class BaseAgent(abc.ABC):
                         context.tokens_g25_input += in_tokens
                         context.tokens_g25_output += out_tokens
                 
-                logger.debug(f"📊 [BASE_AGENT] {self.model_id} Usage: +{in_tokens} in / +{out_tokens} out")
+                logger.info(f"📊 [{self.model_id}] Usage: +{in_tokens} in / +{out_tokens} out")
 
             if response.text:
                 return response.text.strip()

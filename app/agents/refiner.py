@@ -85,9 +85,7 @@ class ContextRefiner:
 **CIBLE ACTUELLE** : {focus_info}
 """
         briefing = briefing.strip()
-        logger.info(f"\n{'='*50}\n🧠 [REFINER] Synthesized Briefing:\n{briefing}\n{'='*50}")
-        # Fail-safe dump to stdout
-        print(f"\n[ORCHESTRATOR_REFINER] New Briefing Generated:\n{briefing}\n")
+        logger.debug(f"\n{'='*50}\n🧠 [REFINER] Synthesized Briefing:\n{briefing}\n{'='*50}")
         return briefing
 
     def _summarize_criteria(self, criteria: dict) -> str:

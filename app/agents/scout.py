@@ -42,14 +42,7 @@ Suggestions de recherches complémentaires sur la `VILLE ACTIVE` demandée :
 
 class ScoutAgent(BaseAgent):
     def run(self, message: str, context: AgentContext) -> str:
-        # 1. Context Extraction (2026 Pattern)
-        briefing_data = ""
-        user_msg = message
-        if "### 📋 RÉSUMÉ DU DOSSIER (BRIEFING)" in message:
-            parts = message.split("---")
-            if len(parts) >= 3:
-                briefing_data = parts[1].strip()
-                user_msg = "---".join(parts[2:]).strip()
+        briefing_data, user_msg = self._get_briefing_and_user_msg(message)
         
         prompt = SCOUT_PROMPT.replace("{BRIEFING}", briefing_data)
 

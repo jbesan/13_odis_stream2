@@ -56,7 +56,9 @@ def setup_logging() -> None:
         "fontTools.subset",
         "fontTools",
         "urllib3",
-        "httpcore"
+        "httpcore",
+        "streamlit",
+        "watchdog"
     ]
     
     for logger_name in loggers_to_silence:
@@ -244,6 +246,5 @@ def log_search_results(
     try:
         with open(log_file, 'w', encoding='utf-8') as f:
             f.write('\n'.join(md_lines))
-        print(f"Log written to: {log_file}") # Helpful for debugging/user
     except Exception as e:
-        print(f"Failed to write log file: {e}")
+        logger.error(f"Failed to write log file: {e}")

@@ -261,9 +261,9 @@ class ScoringEngine:
         # Compute scores
         logger.info(f"⚙️ [ENGINE] Computing criteria scores...")
         odis_scored = self._compute_criteria_scores(odis_search, config)
-        logger.info(f"⚙️ [ENGINE] Computing category scores...")
+        # logger.info(f"⚙️ [ENGINE] Computing category scores...")
         odis_exploded = compute_category_scores(odis_scored, self.scores_cat, config)
-        logger.info(f"⚙️ [ENGINE] Computing final weighted scores...")
+        # logger.info(f"⚙️ [ENGINE] Computing final weighted scores...")
         odis_exploded['weighted_score'] = compute_weighted_score(odis_exploded, config)
 
         # Exclusion
@@ -349,7 +349,7 @@ class ScoringEngine:
         # --- INCLUSION ---
         df = compute_inclusion_score(df, config, self.incl_index, self.associations_data, self.scores_cat, self.global_stats)
         
-        logger.info(f"📈 [ENGINE] Scored columns: {[c for c in df.columns if 'scaled' in c]}")
+        # logger.info(f"📈 [ENGINE] Scored columns: {[c for c in df.columns if 'scaled' in c]}")
         return df
 
     def _score_matching(self, df: pd.DataFrame, score_key: str, prefs: set, data_map: dict):

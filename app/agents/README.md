@@ -6,14 +6,14 @@ Cette architecture remplace l'ancien prompt monolithique par un système d'agent
 
 Les agents sont situés dans `app/agents/` :
 
-- **`orchestrator.py`** : Le "cerveau" du système. Gère le routing, la mémoire et la synthèse finale.
+- **`orchestrator.py`** : Le "cerveau" du système. Gère le **Routing structuré (JSON)**, la mémoire et la synthèse finale.
 - **`interviewer.py`** : Gère la phase `DISCOVERY`. Collecte les données pour remplir le diagnostic (SearchCriterias).
 - **`scorer.py`** : Gère la phase `SCORING`. Calcule le Top villes et explique le match ODIS.
 - **`scout.py`** : Expert **Maps**. Trouve les infrastructures locales (POIs) et calcule les trajets.
 - **`web.py` [NEW]** : Expert **News/Web**. Utilise Google Search pour le contexte social et les actualités.
 - **`job_hunter.py`** : Expert **Emploi**. Recherche proactive d'offres réelles sur France Travail.
 - **`state.py`** : Objet `AgentContext` (Golden Record) partagé.
-- **`base.py`** : Classe de base `BaseAgent` avec gestion unifiée du Tool Use et Grounding.
+- **`base.py`** : Classe de base `BaseAgent` avec gestion unifiée du Tool Use, Grounding et support **Native JSON Schema**.
 
 ## 🔄 Workflow & Phases
 

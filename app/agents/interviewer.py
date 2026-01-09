@@ -59,16 +59,7 @@ Demande TOUJOURS la confirmation de l'utilisateur avant de terminer ton travail.
 class InterviewerAgent(BaseAgent):
     def run(self, message: str, context: AgentContext) -> str:
         
-        # The message now starts with the briefing prepended by the orchestrator
-        # We can extract it or just rely on the LLM seeing it. 
-        # But for the system prompt, we extract it if present to keep the 'current criteria' updated.
-        briefing_data = ""
-        user_msg = message
-        if "### 📋 RÉSUMÉ DU DOSSIER (BRIEFING)" in message:
-            parts = message.split("---")
-            if len(parts) >= 3:
-                briefing_data = parts[1].strip()
-                user_msg = "---".join(parts[2:]).strip()
+        briefing_data, user_msg = self._get_briefing_and_user_msg(message)
         
         # Use .replace instead of .format to avoid KeyError with braces in criteria dict
         prompt = INTERVIEWER_PROMPT.replace("{BRIEFING}", briefing_data)

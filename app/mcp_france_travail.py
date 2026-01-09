@@ -247,15 +247,15 @@ def search_job_offers_logic(
     range_end: int = 19
 ) -> Dict[str, Any]:
     """Publicly exported logic for searching job offers."""
-    logger.info(f"👉 [FranceTravail] ENTERING search_job_offers_logic (loc={location}, fap={fap_code}, apps={appellation_codes})")
+    # logger.info(f"👉 [FranceTravail] ENTERING search_job_offers_logic (loc={location}, fap={fap_code}, apps={appellation_codes})")
     token = _get_access_token()
     
     # 1. Resolve Location if it's a Name
     if location and not (location.isdigit() and len(location) == 5):
-        logger.info(f"🔍 [FranceTravail] Resolving location name: '{location}'")
+        # logger.info(f"🔍 [FranceTravail] Resolving location name: '{location}'")
         resolved = _resolve_insee(location)
         if resolved:
-            logger.info(f"✅ [FranceTravail] Resolved '{location}' -> {resolved}")
+            # logger.info(f"✅ [FranceTravail] Resolved '{location}' -> {resolved}")
             location = resolved
         else:
             logger.warning(f"⚠️ [FranceTravail] Could not resolve '{location}' to an INSEE code.")
@@ -267,7 +267,7 @@ def search_job_offers_logic(
         if clusters:
             # Picking the first one as 'domaine' accepts a single value
             domaine = clusters[0]
-            logger.info(f"✅ [FranceTravail] FAP {fap_code} resolved to domaine: {domaine}")
+            # logger.info(f"✅ [FranceTravail] FAP {fap_code} resolved to domaine: {domaine}")
         else:
             logger.warning(f"⚠️ [FranceTravail] FAP {fap_code} could not be resolved to a ROME domaine.")
 
@@ -370,7 +370,7 @@ def search_job_offers(
 
 def _get_job_details_logic(job_id: str) -> Dict[str, Any]:
     """Internal logic for getting job details with PII filtering and pruning."""
-    print(f"----------------------------------------------- I AM HERE !!!!! job_id: {job_id}")
+
     token = _get_access_token()
     
     headers = {
@@ -415,7 +415,7 @@ def _get_job_details_logic(job_id: str) -> Dict[str, Any]:
     elif data.get("origineOffre", {}).get("urlOrigine"):
         pruned["url_postulation"] = data.get("origineOffre", {}).get("urlOrigine")
 
-    logger.info(f"🔍 [FranceTravail] Final Tool Output for {job_id}: {json.dumps(pruned, ensure_ascii=False)}")
+    # logger.info(f"🔍 [FranceTravail] Final Tool Output for {job_id}: {json.dumps(pruned, ensure_ascii=False)}")
     return pruned
 
 @mcp.tool()

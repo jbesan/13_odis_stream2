@@ -4,6 +4,7 @@ import json
 from typing import Dict, Any, List, Optional
 import random
 import streamlit as st
+from pydantic import BaseModel, Field
 from google import genai
 from google.genai import types
 
@@ -43,8 +44,15 @@ Tu es le Cerveau de l'Assistant ODIS. Ton job est de router le message de l'util
 - Critères récoltés : {CRITERIA_JSON}
 
 ** Contraintes ** : 
-- Réponds UNIQUEMENT par le NOM de l'agent en MAJUSCULES (ex: SCORER). Aucun texte avant ou après.
+- Réponds UNIQUEMENT par un objet JSON respectant le schéma demandé.
 """
+
+class RoutingResponse(BaseModel):
+    """
+    Réponse structurée du routeur ODIS.
+    """
+    target_agent: str = Field(..., description="Le nom de l'agent cible (INTERVIEWER, SCORER, DECORATION, SCOUT, WEB, JOB_HUNTER)")
+    reasoning: str = Field(..., description="Brève justification du choix de cet agent basée sur le message et le contexte.")
 
 
 class MultiAgentOrchestrator:
@@ -95,7 +103,9 @@ class MultiAgentOrchestrator:
             contents=message,
             config=types.GenerateContentConfig(
                 system_instruction=prompt,
-                temperature=0.1
+                temperature=0.1,
+                response_mime_type="application/json",
+                response_json_schema=RoutingResponse.model_json_schema()
             )
         )
         
@@ -108,18 +118,25 @@ class MultiAgentOrchestrator:
             context.tokens_g3_input += in_t
             context.tokens_g3_output += out_t
 
-        res = response.text.strip().upper() if response.text else "INTERVIEWER"
+        routing_obj = response.parsed if response.parsed else None
+        if not routing_obj:
+             logger.warning("⚠️ [ORCHESTRATOR] Failed to parse routing JSON. Fallback to INTERVIEWER.")
+             target = "INTERVIEWER"
+        else:
+             # If response.parsed is a dict, we extract fields safely
+             if isinstance(routing_obj, dict):
+                 target = routing_obj.get("target_agent", "INTERVIEWER").upper()
+                 reasoning = routing_obj.get("reasoning", "No reasoning provided.")
+                 logger.info(f"🧠 [ORCHESTRATOR] Routing reasoning: {reasoning}")
+             else:
+                 # Fallback if it's already an object (depends on SDK version/behavior)
+                 target = getattr(routing_obj, "target_agent", "INTERVIEWER").upper()
+                 logger.info(f"🧠 [ORCHESTRATOR] Routing reasoning: {getattr(routing_obj, 'reasoning', '...')}")
         
-        # Extract last word or the clean name
-        target = res.replace(":", "").replace("**", "").split()[-1]
+        # Extract last word (safeguard)
+        target = target.split()[-1]
         
-        # # Transition nudge: If we have basic data and user says "go/ok", override to SCORER if router is too cautious
-        # basic_fields = ["commune_actuelle", "nb_adultes", "loc_search_area", "weight_profile"]
-        # has_basic = all(context.search_criteria.get(f) for f in basic_fields)
-        
-        # if target == "INTERVIEWER" and has_basic and any(kw in low_msg for kw in go_keywords):
-        #      logger.info("⚡ [ORCHESTRATOR] Nudging INTERVIEWER -> SCORER based on message and criteria completeness.")
-        #      target = "SCORER"
+        # # Transition nudge: If we have basic data and user says "go/ok", override to SCORER
 
         logger.info(f"🎯 [ORCHESTRATOR] Router choice: {target}")
         
@@ -151,6 +168,9 @@ class MultiAgentOrchestrator:
         elif "JOB_HUNTER" in target:
             context.workflow_phase = "DECORATION"
             return "job_hunter"
+        elif "WEB" in target:
+            context.workflow_phase = "DECORATION"
+            return "web"
         
         return "interviewer"
 
