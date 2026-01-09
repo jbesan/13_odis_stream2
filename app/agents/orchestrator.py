@@ -13,6 +13,7 @@ from .scorer import ScorerAgent
 from .scout import ScoutAgent
 from .job_hunter import JobHunterAgent
 from .web import WebAgent
+from .refiner import ContextRefiner
 
 logger = logging.getLogger("orchestrator")
 
@@ -25,7 +26,7 @@ Tu es le Cerveau de l'Assistant ODIS. Ton job est de router le message de l'util
 3. **DECORATION** : Cascade Scout + Web + Job Hunter + Synthèse. Utilise-la UNIQUEMENT quand l'utilisateur demande "plus d'infos" ou "des détails" sur une ville déjà identifiée dans le Top 5.
 4. **SCOUT** : Pour une question **spécifique** de vie locale ou trajet sur une ville (ex: "Combien de temps pour la préfecture ?", "Y a-t-il un parc ?").
 5. **WEB** : Pour des recherches d'actualités, news ou contexte social sur le web (ex: "Quelles sont les news à Bordeaux ?", "Comment est l'accueil des réfugiés ?").
-6. **JOB_HUNTER** : Pour une question **spécifique** sur l'emploi (ex: "Y a-t-il des offres en boulangerie ?").
+6. **JOB_HUNTER** : Pour une question **spécifique** sur l'emploi (ex: "Y a-t-il des offres en boulangerie ?", "Donne moi plus d'infos sur l'offre 123XYZ").
 
 ** Stratégie de routage (CRITIQUE) ** :
 - Si l'utilisateur décrit la situation de la personne accompagnée -> **INTERVIEWER**.
@@ -68,6 +69,9 @@ class MultiAgentOrchestrator:
             "web": WebAgent(self.models["web"], self.client),
             "job_hunter": JobHunterAgent(self.models["job_hunter"], self.client)
         }
+        
+        # Initialisation du Refiner (2026 Pattern)
+        self.refiner = ContextRefiner(self.models["orchestrator"], self.client)
 
     def _route(self, message: str, context: AgentContext) -> str:
         """Détermine quel agent doit répondre en utilisant le LLM."""
@@ -251,6 +255,14 @@ class MultiAgentOrchestrator:
         # 2. Update context active agent
         context.active_agent = target_agent_name
         
+        # 2.5 Generate Briefing (Smart Context)
+        briefing = self.refiner.get_briefing(context)
+        # We append the briefing to the system instruction/prompt of the target agent
+        # by passing it through the message or a context field.
+        # For simplicity in this iteration, we'll prepend it to the user message
+        # as a "Contextual Briefing" block.
+        enhanced_message = f"---\n{briefing}\n---\n{message}"
+        
         # 3. Special Case: DECORATION (Scout + Job Hunter Cascade)
         # On ne déclenche la cascade QUE si le router demande spécifiquement "DECORATION"
         if target_agent_name == "DECORATION":
@@ -276,7 +288,7 @@ class MultiAgentOrchestrator:
                 "Déploiement de nos drones diplomatiques...",
                 "Analyse des passages secrets..."
             ]), icon="🕵️")
-            scout_res = self.agents["scout"].run(message, scout_ctx)
+            scout_res = self.agents["scout"].run(enhanced_message, scout_ctx)
             # Sync tokens only. focus_city is updated directly by the tool in st.session_state
             self._sync_tokens(context, scout_ctx)
             
@@ -291,7 +303,7 @@ class MultiAgentOrchestrator:
                 "On écoute les derniers potins du web...",
                 "Scan des gros titres pour prendre la température..."
             ]), icon="🌐")
-            web_res = self.agents["web"].run(message, context) # Web doesn't need pruning
+            web_res = self.agents["web"].run(enhanced_message, context) # Web doesn't need pruning
             self._sync_tokens(context, context) # Simple sync
             
             # NOW prepare Job Hunter context, AFTER Scout may have updated focus_city
@@ -307,7 +319,7 @@ class MultiAgentOrchestrator:
                 "Pêche miraculeuse dans les filets de France Travail...",
                 "Infiltration discrète du marché du travail..."
             ]), icon="💼")
-            job_res = self.agents["job_hunter"].run(message, job_ctx)
+            job_res = self.agents["job_hunter"].run(enhanced_message, job_ctx)
             self._sync_tokens(context, job_ctx)
             
             logger.info(f"✅ [ORCHESTRATOR] JOB_HUNTER finished. Current City: {context.focus_city}")
@@ -317,7 +329,7 @@ class MultiAgentOrchestrator:
                 "Assemblage du puzzle de votre future vie...",
                 "Rédaction de la synthèse finale..."
             ]), icon="🧪")
-            final_response = self._synthesize(message, context, scout_res, job_res, web_res)
+            final_response = self._synthesize(enhanced_message, context, scout_res, job_res, web_res)
             logger.info("🏁 [ORCHESTRATOR] Synthesis complete.")
             
             # Record in history
@@ -353,7 +365,7 @@ class MultiAgentOrchestrator:
                 st.toast("💼 Consultation du catalogue des opportunités...", icon="💼")
 
             pruned_ctx = self._get_specialized_context(target_agent_name, context)
-            response_text = agent.run(message, pruned_ctx)
+            response_text = agent.run(enhanced_message, pruned_ctx)
             
             # Sync back tokens and critical updates
             self._sync_tokens(context, pruned_ctx)

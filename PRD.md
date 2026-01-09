@@ -480,7 +480,7 @@ L'assistant est désormais composé de plusieurs agents spécialisés pilotés p
 - **Scorer** : Calcul et explication du Top villes.
 - **Scout** : Recherche Google Maps/Places pour la "décoration" des résultats (infrastructures, trajets).
 - **Web** : Expert News et Grounding Web via Google Search pour le contexte social.
-- **JobHunter** : Recherche d'offres d'emploi ciblées via France Travail.
+- **JobHunter** : Recherche d'offres d'emploi ciblées via France Travail et consultation des détails d'une offre spécifique.
 
 ## 🚀 Feature [F-20]: Détails Territoire (Learn More)
 

@@ -46,46 +46,41 @@ class BaseAgent(abc.ABC):
         )
 
         try:
-            # logger.info(f"🤖 [BASE_AGENT] Calling LLM ({self.model_id})...")
-            # APPEL UNIQUE - Pas de variable 'contents' avec historique
-            response = self.client.models.generate_content(
+            # Simple direct chat with tools
+            chat = self.client.chats.create(
                 model=self.model_id,
-                contents=message, # Juste le dernier message
                 config=config
             )
+            
+            response = chat.send_message(message)
             
             # Track Tokens
             if response.usage_metadata:
                 in_tokens = response.usage_metadata.prompt_token_count or 0
                 out_tokens = response.usage_metadata.candidates_token_count or 0
+                if context:
+                    context.total_tokens_sent += in_tokens
+                    context.total_tokens_received += out_tokens
+                    if "gemini-3" in self.model_id:
+                        context.tokens_g3_input += in_tokens
+                        context.tokens_g3_output += out_tokens
+                    elif "gemini-2.5" in self.model_id:
+                        context.tokens_g25_input += in_tokens
+                        context.tokens_g25_output += out_tokens
                 
-                # Global totals
-                context.total_tokens_sent += in_tokens
-                context.total_tokens_received += out_tokens
-                
-                # Model-specific tracking
-                if "gemini-3" in self.model_id:
-                    context.tokens_g3_input += in_tokens
-                    context.tokens_g3_output += out_tokens
-                elif "gemini-2.5" in self.model_id:
-                    context.tokens_g25_input += in_tokens
-                    context.tokens_g25_output += out_tokens
-                
-                logger.info(f"📊 [BASE_AGENT] {self.model_id} Usage: +{in_tokens} in / +{out_tokens} out")
+                logger.debug(f"📊 [BASE_AGENT] {self.model_id} Usage: +{in_tokens} in / +{out_tokens} out")
 
             if response.text:
-                # logger.info(f"💾 [BASE_AGENT] LLM Answer: {response.text[:100]}...")
                 return response.text.strip()
             
-            # Si le texte est vide, on vérifie si des outils ont été appelés 
-            # (normalement géré par le SDK en mode auto)
-            logger.info("💾 [BASE_AGENT] LLM returned no text (likely tool call auto-executed).")
-            return "J'ai bien reçu votre message. Je continue mes recherches pour vous."
+            # If no text returned, it's either tools called (but AFC should handle it) or safety/empty
+            logger.warning(f"⚠️ [BASE_AGENT] No text in response. Finish reason: {response.candidates[0].finish_reason if response.candidates else 'UNKNOWN'}")
+            return "Désolé, je n'ai pas pu générer de synthèse pour cette demande."
 
         except Exception as e:
-            logger.error(f"❌ [SDK_BYPASS] Error: {e}")
+            logger.error(f"❌ [BASE_AGENT] Error: {e}")
             if "must contain either" in str(e).lower():
-                return "Je suis prêt. Pose-moi une question sur une ville ou un métier."
+                 return "Erreur technique (Réponse vide du modèle). Veuillez réessayer ou être plus précis."
             raise e
 
 

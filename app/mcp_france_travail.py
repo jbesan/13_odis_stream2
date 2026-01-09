@@ -154,15 +154,8 @@ def _get_all_appellations() -> List[Dict[str, str]]:
         logger.error(f"❌ [FranceTravail] Failed to fetch ROME referential: {e}")
         return []
 
-@mcp.tool()
-def search_rome_appellations(query: str) -> List[Dict[str, str]]:
-    """
-    Recherche des intitulés de métiers précis (appellations ROME) à partir d'un mot-clé.
-    Utile pour traduire un code FAP ou un métier générique en codes précis pour l'API.
-    
-    Args:
-        query: Mot-clé à rechercher (ex: 'Boulanger', 'Social').
-    """
+def _search_rome_appellations_logic(query: str) -> List[Dict[str, str]]:
+    """Internal logic for searching ROME appellations."""
     all_apps = _get_all_appellations()
     if not all_apps:
         logger.warning("⚠️ [FranceTravail] ROME appellations list is empty.")
@@ -214,6 +207,17 @@ def search_rome_appellations(query: str) -> List[Dict[str, str]]:
         logger.warning(f"⚠️ [FranceTravail] No ROME matches found for query: '{query}'")
     # Return top 20 matches
     return [{"code": m['code'], "libelle": m['libelle']} for m in matches[:20]]
+
+@mcp.tool()
+def search_rome_appellations(query: str) -> List[Dict[str, str]]:
+    """
+    Recherche des intitulés de métiers précis (appellations ROME) à partir d'un mot-clé.
+    Utile pour traduire un code FAP ou un métier générique en codes précis pour l'API.
+    
+    Args:
+        query: Mot-clé à rechercher (ex: 'Boulanger', 'Social').
+    """
+    return _search_rome_appellations_logic(query)
 
 def _prune_job_offer(offer: Dict[str, Any]) -> Dict[str, Any]:
     """Prunes a job offer payload to keep only the essentials for the agent context."""
@@ -365,7 +369,8 @@ def search_job_offers(
         return {"offres": [], "total": 0, "error": str(e)}
 
 def _get_job_details_logic(job_id: str) -> Dict[str, Any]:
-    """Internal logic for getting job details."""
+    """Internal logic for getting job details with PII filtering and pruning."""
+    print(f"----------------------------------------------- I AM HERE !!!!! job_id: {job_id}")
     token = _get_access_token()
     
     headers = {
@@ -381,15 +386,36 @@ def _get_job_details_logic(job_id: str) -> Dict[str, Any]:
         
     response.raise_for_status()
     data = response.json()
-    logger.debug(f"🎁 [FranceTravail] Raw Details Response received (id={job_id})")
-    # We prune even the details but with a bit more info
-    pruned = _prune_job_offer(data)
-    # Add a bit more for details
-    if data.get("description"):
-        pruned["description_full"] = data.get("description")
-    pruned["competences"] = data.get("competences", [])
-    pruned["qualitesProfessionnelles"] = data.get("qualitesProfessionnelles", [])
+    logger.info(f"🎁 [FranceTravail] Raw Details Response received (id={job_id})")
     
+    # 1. Base Pruning
+    pruned = _prune_job_offer(data)
+    # Remove the short description as we'll provide the full one
+    if "description_sh" in pruned:
+        del pruned["description_sh"]
+    
+    # 2. Description with PII filtering (Emails and Phones)
+    desc = data.get("description", "")
+    if desc:
+        import re
+        # Simple email mask
+        desc = re.sub(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', '[EMAIL]', desc)
+        # Simple phone mask (French pattern)
+        desc = re.sub(r'(?:(?:\+|00)33|0)\s*[1-9](?:[\s.-]*\d{2}){4}', '[TELEPHONE]', desc)
+        pruned["description"] = desc
+
+    # 3. Rich metadata
+    pruned["competences"] = [c.get("libelle") for c in data.get("competences", []) if c.get("libelle")]
+    pruned["qualites"] = [q.get("libelle") for q in data.get("qualitesProfessionnelles", []) if q.get("libelle")]
+    
+    # Application link if available
+    contact = data.get("contact", {})
+    if contact.get("urlPostulation"):
+        pruned["url_postulation"] = contact.get("urlPostulation")
+    elif data.get("origineOffre", {}).get("urlOrigine"):
+        pruned["url_postulation"] = data.get("origineOffre", {}).get("urlOrigine")
+
+    logger.info(f"🔍 [FranceTravail] Final Tool Output for {job_id}: {json.dumps(pruned, ensure_ascii=False)}")
     return pruned
 
 @mcp.tool()
@@ -400,6 +426,7 @@ def get_job_details(job_id: str) -> Dict[str, Any]:
     Args:
         job_id: L'identifiant unique de l'offre (ex: '123ABCD').
     """
+    logger.info(f"🚀 [TOOL_CALL] get_job_details invoked with ID: {job_id}")
     return _get_job_details_logic(job_id)
 
 if __name__ == "__main__":

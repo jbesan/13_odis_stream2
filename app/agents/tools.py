@@ -12,8 +12,8 @@ from mcp_server import (
 )
 from mcp_france_travail import (
     search_job_offers_logic as _search_job_offers_logic,
-    get_job_details as _get_job_details_logic,
-    search_rome_appellations as _search_rome_appellations_logic
+    _get_job_details_logic,
+    _search_rome_appellations_logic
 )
 from config import WEIGHT_PROFILES
 from models import SearchCriterias
@@ -97,13 +97,20 @@ def search_job_offers(
         distance: Rayon de recherche en km autour de la commune.
     """
     logger.info(f"🚀 [TOOL] search_job_offers: query={query}, location={location}, fap={fap_code}, apps={appellation_codes}")
-    return _search_job_offers_logic(
+    res = _search_job_offers_logic(
         query=query, 
         location=location, 
         fap_code=fap_code, 
         appellation_codes=appellation_codes,
         distance=distance
     )
+    
+    # Save results to context if possible
+    if "offres" in res and "agent" in st.session_state:
+        st.session_state.agent.context.found_jobs = res["offres"]
+        logger.info(f"✅ [TOOL] Saved {len(res['offres'])} job offers to AgentContext.")
+        
+    return res
 
 def search_rome_appellations(query: str) -> List[Dict[str, str]]:
     """
@@ -116,6 +123,9 @@ def search_rome_appellations(query: str) -> List[Dict[str, str]]:
 def get_job_details(job_id: str) -> Dict[str, Any]:
     """
     Récupère les détails complets d'une offre d’emploi spécifique.
+
+    Args:
+        job_id: ID de l'offre d'emploi (ex: '048KLTP').
     """
     logger.info(f"🚀 [TOOL] get_job_details: {job_id}")
     return _get_job_details_logic(job_id)

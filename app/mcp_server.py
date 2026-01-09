@@ -67,8 +67,8 @@ def _search_referentiels_logic(query: str, domain: Optional[str] = None) -> List
     Searches for codes in the ODIS referentials (Jobs, Formations, Inclusion).
     """
     ensure_data_context()
-    logger.info(f"👉 [MCP] Request: search_referentiels")
-    logger.info(f"   Query: '{query}', Domain: '{domain}'")
+    # logger.info(f"👉 [MCP] Request: search_referentiels")
+    # logger.info(f"   Query: '{query}', Domain: '{domain}'")
     
     if 'referentiels_raw' not in DATA_CONTEXT:
         logger.warning("   ⚠️ Referentiels data not available.")
@@ -135,10 +135,10 @@ def _search_referentiels_logic(query: str, domain: Optional[str] = None) -> List
             "relevance": row['score'] # Debug info
         })
         
-    logger.info(f"✅ [MCP] Response: Found {len(results)} matches.")
+    # logger.info(f"✅ [MCP] Response: Found {len(results)} matches.")
     if results:
          top_summary = [f"{r['label']} ({r['relevance']})" for r in results[:3]]
-         logger.info(f"   Top matches: {top_summary}")
+        #  logger.info(f"   Top matches: {top_summary}")
          
     return results
 
@@ -209,8 +209,8 @@ def _search_commune_logic(query: str) -> List[Dict[str, str]]:
     Searches for French cities using Referentiels first, then ODIS for details.
     """
     ensure_data_context()
-    logger.info(f"👉 [MCP] Request: search_commune")
-    logger.info(f"   Query: '{query}'")
+    # logger.info(f"👉 [MCP] Request: search_commune")
+    # logger.info(f"   Query: '{query}'")
     
     if 'referentiels_raw' not in DATA_CONTEXT or 'odis' not in DATA_CONTEXT:
          logger.warning("   ⚠️ Data context missing (referentiels or odis).")
@@ -250,7 +250,7 @@ def _search_commune_logic(query: str) -> List[Dict[str, str]]:
     results_df = work_df[work_df['score'] > 0].sort_values(by='score', ascending=False).head(15)
 
     if results_df.empty:
-        logger.info("   [MCP] No cities found.")
+        logger.warning("   [MCP] No cities found.")
         return []
 
     # 3. Lookup Details
@@ -269,7 +269,7 @@ def _search_commune_logic(query: str) -> List[Dict[str, str]]:
                 "population": int(row['population']) if 'population' in row else 0
             })
     
-    logger.info(f"✅ [MCP] Response: Found {len(results)} cities. Top: {[r['libgeo'] for r in results[:3]]}")
+    # logger.info(f"✅ [MCP] Response: Found {len(results)} cities. Top: {[r['libgeo'] for r in results[:3]]}")
     return results
 
 
@@ -288,9 +288,9 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
     """
     Computes scores for all communes in search area and returns the top 5 cities (communes) based on user criteria
     """
-    logger.info(f"👉 [MCP] Request: compute_top_cities")
-    logger.debug(f"   Weights: {json.dumps(weights, indent=2, default=str)}")
-    logger.debug(f"   Filters: {json.dumps(filters, indent=2, default=str)}")
+    # logger.info(f"👉 [MCP] Request: compute_top_cities")
+    # logger.debug(f"   Weights: {json.dumps(weights, indent=2, default=str)}")
+    # logger.debug(f"   Filters: {json.dumps(filters, indent=2, default=str)}")
     
     engine = get_scoring_engine()
     
@@ -304,7 +304,7 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
              matches = engine.df_all_communes[engine.df_all_communes['libgeo'].str.lower() == commune_input.lower()]
              if not matches.empty:
                  resolved_commune = matches.index[0]
-                 logger.info(f"   Resolved city '{commune_input}' -> '{resolved_commune}'")
+                #  logger.info(f"   Resolved city '{commune_input}' -> '{resolved_commune}'")
              else:
                  logger.warning(f"   ⚠️ City '{commune_input}' not found.")
 
@@ -450,7 +450,7 @@ def compute_top_cities(weights: Dict[str, float], filters: Dict[str, Any]) -> Di
 
 def _search_places_logic(queries: List[str], location: str) -> Dict[str, Any]:
     ensure_data_context()
-    logger.info(f"🗺️ [MCP] Request: search_places '{queries}' in {location}")
+    # logger.info(f"🗺️ [MCP] Request: search_places '{queries}' in {location}")
     try:
         gmaps_key = os.environ.get("GOOGLE_MAPS_API_KEY")
         if not gmaps_key:
@@ -460,7 +460,7 @@ def _search_places_logic(queries: List[str], location: str) -> Dict[str, Any]:
         results = []
         # Limit to 3 queries to avoid long wait times
         for q in queries[:3]:
-            logger.info(f"   🔎 [MCP] Google Maps Query: '{q}' near {location}")
+            # logger.info(f"   🔎 [MCP] Google Maps Query: '{q}' near {location}")
             res = gmaps.places(query=f"{q} near {location}, France", language="fr")
             count = 0
             for p in res.get('results', [])[:3]:
@@ -472,9 +472,9 @@ def _search_places_logic(queries: List[str], location: str) -> Dict[str, Any]:
                     "business_status": p.get("business_status")
                 })
                 count += 1
-            logger.info(f"   ✅ [MCP] Found {count} results for '{q}'")
+            # logger.info(f"   ✅ [MCP] Found {count} results for '{q}'")
             
-        logger.info(f"✅ [MCP] search_places finished. Total pruned results: {len(results)}")
+        # logger.info(f"✅ [MCP] search_places finished. Total pruned results: {len(results)}")
         return sanitize_for_json({"type": "places", "data": results})
     except Exception as e:
         logger.error(f"❌ [MCP] search_places failed: {e}")
@@ -490,7 +490,7 @@ def search_places(queries: List[str], location: str) -> Dict[str, Any]:
 
 def _compute_routes_logic(origin: str, destination: str, mode: str = "transit") -> Dict[str, Any]:
     ensure_data_context()
-    logger.info(f"🚗 [MCP] Request: compute_routes from '{origin}' to '{destination}' (mode={mode})") 
+    # logger.info(f"🚗 [MCP] Request: compute_routes from '{origin}' to '{destination}' (mode={mode})") 
     try:
          gmaps_key = os.environ.get("GOOGLE_MAPS_API_KEY")
          if not gmaps_key: return {"error": "Clé Maps manquante."}
@@ -501,7 +501,7 @@ def _compute_routes_logic(origin: str, destination: str, mode: str = "transit") 
          try:
              directions = gmaps.directions(origin=origin, destination=destination, mode=mode, language="fr")
              if directions:
-                 logger.info(f"✅ [MCP] Route found (Attempt 1).")
+                #  logger.info(f"✅ [MCP] Route found (Attempt 1).")
                  return sanitize_for_json({"type": "directions", "data": directions})
          except Exception as e:
              if "NOT_FOUND" not in str(e): raise e
@@ -515,7 +515,7 @@ def _compute_routes_logic(origin: str, destination: str, mode: str = "transit") 
              try:
                  directions = gmaps.directions(origin=alt_origin, destination=destination, mode=mode, language="fr")
                  if directions:
-                     logger.info(f"✅ [MCP] Route found (Attempt 2: {alt_origin}).")
+                    #  logger.info(f"✅ [MCP] Route found (Attempt 2: {alt_origin}).")
                      return sanitize_for_json({"type": "directions", "data": directions})
              except:
                  pass

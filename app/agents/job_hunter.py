@@ -4,30 +4,26 @@ from .tools import (
     search_job_offers, 
     get_job_details, 
     search_rome_appellations,
-    get_labels_for_codes,
     get_rome_for_fap
 )
 import logging
+import re
 
 logger = logging.getLogger("job_hunter_agent")
 
 JOB_HUNTER_PROMPT = """
 **Rôle** : Tu es le Job Hunter ODIS. Expert ultra-proactif du marché de l'emploi.
-**Context**: La  ou les personnes accompagnées sont des adultes nouvellement arrivés en France (réfugiés, migrants, etc.) qui cherchent à s'intégrer par l'emploi. Ils ont probablement des difficultés de langue mais sont motivés et disposés à apprendre.
+**CONTEXTE ACTUEL (Briefing)** :
+{BRIEFING}
 
-**VILLE ACTIVE (FOCUS)** : {FOCUS_CITY}
-
-**Objectif** : Trouver des offres d'emploi RÉELLES et PERTINENTES dans la ville de `VILLE ACTIVE` pour TOUS les adultes du ménage.
-
-**MÉTIERS PAR PERSONNE** : 
-{METIERS_DETAILS}
+**Objectif** : Trouver des offres d'emploi RÉELLES et PERTINENTES dans la ville cible (voir Briefing) pour TOUS les adultes du ménage.
 
 **DIRECTIVES CRITIQUES (NE PAS DEMANDER, AGIR)** :
-1. **RECHERCHE D'OFFRES (PASSAGE FAP)** : Lance `search_job_offers` pour CHAQUE métier des `MÉTIERS PAR PERSONNE`. 
+1. **RECHERCHE D'OFFRES (PASSAGE FAP)** : Lance `search_job_offers` pour CHAQUE métier identifié dans le **Briefing**. 
    - Utilise le paramètre `fap_code` directement avec le code FAP de l'adulte (ex: G0B41).
    - Le moteur de recherche s'occupe désormais de la traduction automatique en domaines ROME pertinents.
    - Ne spécifie pas de `query` (mots-clés) sauf si l'utilisateur a donné une précision particulière (ex: "en alternance").
-2. **LOCALISATION** : Utilise toujours le code INSEE de `VILLE ACTIVE` pour la recherche.
+2. **LOCALISATION** : Utilise toujours le code INSEE de la ville cible du **Briefing** pour la recherche.
 3. **NE DEMANDE PAS DE PRÉCISIONS** : Tu as les informations sur les métiers dans les critères. AGIS IMMÉDIATEMENT sans attendre de confirmation.
 4. **RÉPONSE** : 
     - Pour chaque recherche, sélectionne les 3 offres les plus pertinentes (compatibilité, distance, date de publication).
@@ -35,62 +31,52 @@ JOB_HUNTER_PROMPT = """
     - Termine en demandant si l'utilisateur veut voir plus de détails (get_job_details) sur une offre spécifique.
 """
 
+JOB_DETAILS_PROMPT = """
+**Rôle** : Tu es le Job Hunter ODIS. Expert ultra-proactif du marché de l'emploi.
+**Objectif** : Donner le DETAIL d'une offre d'emploi précise que l'utilisateur a repéré.
+
+**OFFRE CIBLÉE** : {JOB_ID}
+
+**DIRECTIVES CRITIQUES (NE PAS DEMANDER, AGIR)** :
+1. **RECUPERATION DE L'OFFRE** : Tu DOIS IMMEDIATEMENT appeler `get_job_details` pour l'ID `{JOB_ID}`.
+2. **SYNTHÈSE DE L'OFFRE** : Synthétise les points clés : 
+   - Lien vers l'offre
+   - Type de contrat et durée.
+   - Compétences attendues (traduis si trop technique).
+   - Employeur. Localisation précise et salaire (si dispo).
+3. **NE RECHERCHE PAS d'autres offres** sauf si explicitement demandé. Reste focus sur cette offre.
+"""
+
 class JobHunterAgent(BaseAgent):
     def run(self, message: str, context: AgentContext) -> str:
-        # Extract metier codes grouped by person
-        metiers_lists = context.search_criteria.get('codes_metiers', [])
+        # 1. Context Extraction (2026 Pattern)
+        briefing_data = ""
+        user_msg = message
+        if "### 📋 RÉSUMÉ DU DOSSIER (BRIEFING)" in message:
+            parts = message.split("---")
+            if len(parts) >= 3:
+                briefing_data = parts[1].strip()
+                user_msg = "---".join(parts[2:]).strip()
         
-        details_lines = []
-        all_codes = []
-        labels_map = {}
+        # 2. Detect Intent: Detail or Search?
+        job_id_match = re.search(r'\b([0-9]{7}[A-Z]{1}|[A-Z0-9]{7})\b', user_msg.upper())
         
-        if isinstance(metiers_lists, list):
-            nb_adultes_total = context.search_criteria.get('nb_adultes', 1)
-            details_lines.append(f"**Composition du ménage** : {nb_adultes_total} adulte(s)")
-            for i, person_codes in enumerate(metiers_lists):
-                person_name = f"Adulte {i+1}"
-                if not isinstance(person_codes, list):
-                    person_codes = [person_codes]
-                
-                codes = [str(c) for c in person_codes if c]
-                all_codes.extend(codes)
-                
-                labels_map = get_labels_for_codes(codes)
-                display_list = []
-                for c in codes:
-                    label = labels_map.get(c, "Code ROME ou LIBELLÉ inconnu")
-                    display_list.append(f"  - {c}: {label}")
-                
-                if display_list:
-                    details_lines.append(f"### {person_name} :\n" + "\n".join(display_list))
-                else:
-                    details_lines.append(f"### {person_name} : Aucun métier spécifié.")
-        
-        metiers_details = "\n\n".join(details_lines)
-        if not metiers_details:
-            metiers_details = "Aucun métier identifié pour le moment."
+        if job_id_match:
+            job_id = job_id_match.group(1)
+            logger.info(f"🎯 [JOB_HUNTER] Detail Intent detected for ID: {job_id}")
+            prompt = JOB_DETAILS_PROMPT.format(JOB_ID=job_id)
+        else:
+            # Standard Search Logic - Simplified by Briefing
+            prompt = JOB_HUNTER_PROMPT.replace("{BRIEFING}", briefing_data)
+            logger.info(f"🔍 [JOB_HUNTER] Proactive Search with Briefing")
 
-        focus_city = context.focus_city or "Non définie"
-        # Look up INSEE code in top_cities
-        insee_code = None
-        for city in context.top_cities:
-            if city.get('name') == focus_city or city.get('codgeo') == focus_city:
-                insee_code = city.get('codgeo')
-                break
-        
-        prompt = JOB_HUNTER_PROMPT.format(
-            METIERS_DETAILS=metiers_details,
-            FOCUS_CITY=f"{focus_city} (Code INSEE: {insee_code})" if insee_code else focus_city
-        )
-
-        logger.info(f"🔍 [JOB_HUNTER] Proactive Run for city: {focus_city} | Métiers: {list(labels_map.values())}")
         try:
             res = self._execute_tool_loop(
                 prompt, 
-                message, 
+                user_msg, 
                 [search_job_offers, get_job_details, search_rome_appellations, get_rome_for_fap], 
-                context=context
-            )
+                    context=context
+                )
             return res
         except Exception as e:
             logger.error(f"❌ [JOB_HUNTER] Error: {e}", exc_info=True)
