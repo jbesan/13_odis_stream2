@@ -100,9 +100,11 @@ Liste en vrac d'idées d'amélioration
 - [ ] Ajouter la base des transports publics ?
 - [ ] Critere 'Niveau de vie' de l'INSEE ?
 - [ ] Enlever la couleur politique
+- [ ] Ajouter le salaire moyen + comparaison avec loyer moyen
+- [ ] Regarder pourquoi les grandes villes ressortent plus
+- [ ] Ajouter le critère insse d'acces aux instratuctures (mobilité): https://www.insee.fr/fr/statistiques/1908098
+- [ ] Ajouter le critère insse d'affordabilité
 - [ ] Remplacer par y-a-t'il un CTAI/PTAI (signe que la commune s'implique dans l'intégration) + Est-ce que la commune est adhérante ANVITA ? Ajouter un label ?
-      90 territoires ANVITA ?
-      ["ALFORTVILLE", "ALLONNES", "ANNECY", "ANNEMASSE", "ARCUEIL", "ARGENTON-SUR-CREUSE", "BAGNOLET", "BARBERAZ", "BEGLES", "BESANÇON", "BESSANCOURT", "BLOIS", "BOBIGNY", "BORDEAUX", "BOURGES", "BOURGOGNE-FRANCHE-COMTE", "Buis-les-Baronnies", "CASTANET-TOLOSAN", "CENTRE - VAL DE LOIRE", "CHAMBÉRY", "CHERBOURG-EN-COTENTIN", "CLERMONT-FERRAND", "CLUNISOIS - COMMUNAUTÉ DE COMMUNES", "COGNIN", "COURNEUVE (LA)", "DIE", "DIEULEFIT", "DIOIS - COMMUNAUTÉ DE COMMUNES", "DULLIN", "Figeac", "FLECHE (LA)", "FONTENAY-SOUS-BOIS", "FORGES", "FOURNEAUX", "FRANOIS", "GIRONDE (DEPARTEMENT)", "GRABELS", "GRANVILLE", "GRENOBLE", "GRENOBLE-ALPES METROPOLE", "GUILLESTRE", "HENDAYE", "JARCIEU", "LA TALAUDIÈRE", "Lambersart", "Le Percy", "LOOS-EN-GOHELLE", "LOUVIGNY", "LYON", "LYON METROPOLE", "MALAKOFF", "MANDAGOUT", "MARSEILLE", "MARTIGUES", "MELLE", "MÉRIGNAC", "METZ", "Mirabel et Blacons", "MONTPELLIER", "MONTREUIL", "NANCY", "NANTES", "NOTRE DAME DE L'OSIER", "OCCITANIE", "ORNANS", "PARIS", "PAYS BASQUE - COMMUNAUTÉ D'AGGLOMÉRATION", "PÉRIGUEUX", "POITIERS", "PONT-PÉAN", "PRADES-LE-LEZ", "PYRÉNÉES VALLÉES DES GAVES - COMMUNAUTÉ DE COMMUNES", "RAMONVILLE-SAINT-AGNE", "RELECQ-KERHUON (LE)", "RENNES METROPOLE", "ROUEN", "ROUEN-NORMANDIE", "SAINT-BALDOPH", "SAINT-DENIS", "SAINT-ERBLON", "SAINT-JEAN-D'ANGÉLY", "SALIÈS", "SCHILTIGHEIM", "SEINE-SAINT-DENIS", "STRASBOURG", "TOURS", "VIGAN (LE)", "VILLEURBANNE", "VIZILLE", "YQUELON"]
 - [x] Rechercher au niveau national ou viser une région/ département en particulier?
 - [x] Ajouter un 'en savoir plus' pour comprendre le scoring
 - [ ] Gare --> a conditionner avec une question mobilité (besoin de revenir regulierement)
@@ -110,6 +112,9 @@ Liste en vrac d'idées d'amélioration
 - [ ] Les multiselects sont frustrants car il faut trouver la terminologie exacte
 - [ ] Créer et exploiter un dataset des associations dédiés aux réfugiés / demandeurs d'asile
 - [ ] AI Bot: ajouter le contact CCAS (passer dans get_city_details? )
+
+Territoires ANVITA
+["ALFORTVILLE", "ALLONNES", "ANNECY", "ANNEMASSE", "ARCUEIL", "ARGENTON-SUR-CREUSE", "BAGNOLET", "BARBERAZ", "BEGLES", "BESANÇON", "BESSANCOURT", "BLOIS", "BOBIGNY", "BORDEAUX", "BOURGES", "BOURGOGNE-FRANCHE-COMTE", "Buis-les-Baronnies", "CASTANET-TOLOSAN", "CENTRE - VAL DE LOIRE", "CHAMBÉRY", "CHERBOURG-EN-COTENTIN", "CLERMONT-FERRAND", "CLUNISOIS - COMMUNAUTÉ DE COMMUNES", "COGNIN", "COURNEUVE (LA)", "DIE", "DIEULEFIT", "DIOIS - COMMUNAUTÉ DE COMMUNES", "DULLIN", "Figeac", "FLECHE (LA)", "FONTENAY-SOUS-BOIS", "FORGES", "FOURNEAUX", "FRANOIS", "GIRONDE (DEPARTEMENT)", "GRABELS", "GRANVILLE", "GRENOBLE", "GRENOBLE-ALPES METROPOLE", "GUILLESTRE", "HENDAYE", "JARCIEU", "LA TALAUDIÈRE", "Lambersart", "Le Percy", "LOOS-EN-GOHELLE", "LOUVIGNY", "LYON", "LYON METROPOLE", "MALAKOFF", "MANDAGOUT", "MARSEILLE", "MARTIGUES", "MELLE", "MÉRIGNAC", "METZ", "Mirabel et Blacons", "MONTPELLIER", "MONTREUIL", "NANCY", "NANTES", "NOTRE DAME DE L'OSIER", "OCCITANIE", "ORNANS", "PARIS", "PAYS BASQUE - COMMUNAUTÉ D'AGGLOMÉRATION", "PÉRIGUEUX", "POITIERS", "PONT-PÉAN", "PRADES-LE-LEZ", "PYRÉNÉES VALLÉES DES GAVES - COMMUNAUTÉ DE COMMUNES", "RAMONVILLE-SAINT-AGNE", "RELECQ-KERHUON (LE)", "RENNES METROPOLE", "ROUEN", "ROUEN-NORMANDIE", "SAINT-BALDOPH", "SAINT-DENIS", "SAINT-ERBLON", "SAINT-JEAN-D'ANGÉLY", "SALIÈS", "SCHILTIGHEIM", "SEINE-SAINT-DENIS", "STRASBOURG", "TOURS", "VIGAN (LE)", "VILLEURBANNE", "VIZILLE", "YQUELON"]
 
 ## 5. Features
 
@@ -548,6 +553,41 @@ En tant que travailleur social, je veux être informé des actions en cours des 
 - **Notifications Dynamiques :** Utilisation de `st.toast` pour afficher les étapes clés de l'orchestration multi-agents.
 - **Messages Humorisés :** Intégration de messages variés et drôles pour chaque expert (ex: "Interrogatoire des pigeons locaux" pour l'expert terrain).
 - **Visibilité du Travail de l'Ombre :** Permet de comprendre quel agent est actif à quel moment dans la cascade de recherche.
+
+### 📊 Status
+
+- In Progress (Jan 2026)
+
+## 🚀 Feature [F-26]: Référentiel des Associations Spécialisées Réfugiés
+
+### 📝 User Story
+
+- En tant que travailleur social, je veux pouvoir identifier et visualiser les associations spécialisées dans l'accueil des réfugiés (asile, migration, nouveaux arrivants) pour orienter au mieux les familles et valoriser les territoires qui disposent de ce soutien spécifique.
+
+### 🔑 Key Features
+
+- **DataSet Spécifique :** Création d'un dataset "Refugee Asso" filtré à partir du RNA (Codes WALDEC '003', '019', '020', '014' et mots-clés sémantiques 'asil', 'refug', 'migra', 'nouveaux arrivants').
+- **Scoring Inclusion :** Intégration d'un nouveau score `inc_asso_refug_scaled` calculé par la densité d'associations spécialisées pour 1000 habitants.
+- **UI WebForm (Results) :**
+  - Affichage de ce critère dans la catégorie "Inclusion".
+  - Dialogue "En savoir plus" enrichi avec la liste exhaustive des associations du territoire (nom, objet tronqué, lien vers assoce.fr).
+- **Agent SCOUT (Chatbot) :** Capacité pour l'agent de recherche terrain d'interroger directement cette base pour identifier les acteurs locaux les plus pertinents.
+
+### 📊 Status
+
+- In Progress (Jan 2026)
+
+## 🚀 Feature [F-27]: Unified Markdown Search Logging
+
+### 📝 User Story
+
+- En tant que développeur, je veux que les recherches effectuées via l'interface classique ET via le chatbot soient logguées dans un format Markdown lisible, afin de faciliter le débogage et l'analyse des recommandations de l'IA.
+
+### 🔑 Key Features
+
+- **Déplacement de la Logique :** La génération du log Markdown est déplacée de `app/pages/3_Resultats.py` vers le `ScoringEngine` (`app/core/scoring.py`).
+- **Préfixes de Fichiers :** Utilisation de préfixes distincts (`classic_` vs `chatbot_`) pour identifier la source de la recherche dans le nom du fichier log.
+- **Accessibilité :** Les logs sont stockés dans `.logs/` à la racine de `app/` pour une centralisation aisée.
 
 ### 📊 Status
 

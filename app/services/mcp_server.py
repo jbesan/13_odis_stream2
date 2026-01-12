@@ -59,7 +59,8 @@ def get_scoring_engine() -> ScoringEngine:
         formations_data=DATA_CONTEXT['formations_data'],
         codformations_index=DATA_CONTEXT['codformations_index'],
         global_stats={}, # TODO: Compute or load global stats if needed for scaling
-        codfap_index=DATA_CONTEXT.get('codfap_index')
+        codfap_index=DATA_CONTEXT.get('codfap_index'),
+        refugee_associations_data=DATA_CONTEXT.get('refugee_associations_data', pd.DataFrame())
     )
 
 def _search_referentiels_logic(query: str, domain: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -361,7 +362,7 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
     
     # 3. Run Engine
     try:
-        processed_gdf = engine.run(config)
+        processed_gdf = engine.run(config, log_prefix="chatbot")
     except Exception as e:
         logger.error(f"❌ [MCP] Error: {e}")
         return {"error": str(e)}
@@ -487,6 +488,63 @@ def search_places(queries: List[str], location: str) -> Dict[str, Any]:
     Grounding Spatial (Ground 3).
     """
     return _search_places_logic(queries, location)
+
+
+def _search_refugee_associations_logic(codgeo: str) -> List[Dict[str, Any]]:
+    """
+    Internal logic for looking up refugee associations.
+    Accepts INSEE code.
+    """
+    ensure_data_context()
+    if 'refugee_associations_data' not in DATA_CONTEXT or DATA_CONTEXT['refugee_associations_data'].empty:
+        logger.warning(f"⚠️ [MCP] refugee_associations_data not available or empty in DATA_CONTEXT.")
+        return []
+    
+    df = DATA_CONTEXT['refugee_associations_data']
+    odis = DATA_CONTEXT['odis']
+    
+    logger.info(f"🔍 [MCP] Searching associations for codgeo='{codgeo}' (Total data rows: {len(df)})")
+
+    # 2. Filter by Bassin de Vie (Requirement F-26)
+    # Get the BV for the target commune
+    mask = pd.Series(False, index=df.index)
+    if codgeo in odis.index:
+        bv = odis.loc[codgeo, 'bassin_de_vie']
+        if pd.notna(bv):
+             bv_str = str(bv).replace('.0', '')
+             # Return all associations in the same Bassin de Vie
+             logger.info(f"📍 [MCP] Filter by Bassin de Vie: {bv_str}")
+             # Robust comparison: handle potential float/string mixture in df
+             mask = (df['bassin_de_vie'].astype(str).str.replace(r'\.0$', '', regex=True) == bv_str)
+        else:
+             # Fallback to city-only if BV is unknown
+             logger.info(f"📍 [MCP] Filter by single city (BV Unknown): {codgeo}")
+             mask = (df['codgeo'].astype(str) == str(codgeo))
+    else:
+        # Last fallback: direct match on code in the vertical table
+        logger.info(f"📍 [MCP] Filter by single city (INSEE code match): {codgeo}")
+        mask = (df['codgeo'].astype(str) == str(codgeo))
+    
+    results = df[mask].copy()
+    logger.info(f"✅ [MCP] Found {len(results)} refugee associations.")
+    
+    if results.empty:
+        return []
+    
+    # Format for agent
+    return results.to_dict(orient='records')
+
+@mcp.tool()
+def search_refugee_associations(codgeo: str) -> List[Dict[str, Any]]:
+    """
+    Recherche les associations spécialisées dans l'accueil des réfugiés (RNA).
+    L'outil identifie le Bassin de Vie de la commune et retourne TOUTES les associations de cette zone.
+    
+    Args:
+        codgeo: Code INSEE de la commune (ex: '33063').
+    """
+    return _search_refugee_associations_logic(codgeo)
+
 
 def _compute_routes_logic(origin: str, destination: str, mode: str = "transit") -> Dict[str, Any]:
     ensure_data_context()

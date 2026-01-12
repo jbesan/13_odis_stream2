@@ -141,6 +141,15 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
                  # Assuming standard structure from previous tasks.
                  pass
 
+        # Merge Refugee Associations Count
+        refug_path = CLEAN_DIR / "refugee_associations.parquet"
+        if refug_path.exists():
+            refug_df = pd.read_parquet(refug_path)
+            refug_agg = refug_df.groupby('codgeo').size().rename('inc_asso_refug_count').reset_index()
+            communes_gdf = communes_gdf.merge(refug_agg, on='codgeo', how='left')
+            communes_gdf['inc_asso_refug_count'] = communes_gdf['inc_asso_refug_count'].fillna(0)
+            logging.info(f"Refugee associations counts merged.")
+
         # --- Calculate Health Counts (On-the-fly) ---
         # Since we don't have a clean health file with counts, we calculate them here from raw/cache.
         try:
@@ -522,6 +531,13 @@ def build_vertical_tables(config: Dict[str, Any], logger: PipelineLogger):
             out = OUTPUT_DIR / "odis_formations_agg.parquet"
             df_agg.to_parquet(out)
             logger.log_step("build_vertical_tables", "FORMATIONS", {"path": str(out)})
+
+        # 5. Refugee Associations (Detailed List)
+        refug_path = CLEAN_DIR / "refugee_associations.parquet"
+        if refug_path.exists():
+             out = OUTPUT_DIR / "odis_refugee_associations.parquet"
+             shutil.copy2(refug_path, out)
+             logger.log_step("build_vertical_tables", "REFUGEE_ASSOCIATIONS", {"path": str(out)})
             
     except Exception as e:
         logger.log_step("build_vertical_tables", "ERROR", {"error": str(e)})

@@ -32,6 +32,7 @@ Ce prototype a un triple objectif :
 - **Assistant IA (Multi-Agent ODIS) :** Interagissez en langage naturel avec un système multi-agent capable de conduire l'entretien, de calculer les scores, et de décorer les résultats avec des infos terrain et web. Voir la [documentation détaillée de l'architecture](app/agents/README.md).
 - **Grounding Google Search :** Grâce à l'agent spécialisé WEB, accédez aux dernières actualités locales et au contexte social des communes visées.
 - **Expertise Emploi (Mapping DARES) :** Traduction automatique et officielle des profils métiers (FAP) en codes ROME grâce à l'intégration de la table de passage de la DARES, garantissant une recherche d'emploi ultra-précise sur France Travail.
+- **Référentiel des Associations Réfugiés ([F-26]):** Accédez à une base de données qualifiée d'associations spécialisées dans l'accueil des nouveaux arrivants, accessible via l'interface et l'assistant IA.
 - **Scénarios de Démonstration :** Chargez rapidement des profils pré-configurés pour découvrir le potentiel de l'outil.
 
 ## 📸 Aperçu de l'Application
@@ -116,6 +117,7 @@ Le score est calculé à partir d'une multitude de critères, regroupés en gran
 **Catégorie : Inclusion & Vie Locale**
 
 - **Taux de Services d'Inclusion** : Mesure la densité de services dédiés à l'inclusion (apprentissage du français, aide juridique, etc.) pour 1000 habitants.
+- **Accompagnement Réfugiés** : Évalue la présence d'associations spécialisées dans l'accueil des personnes réfugiées (Source: RNA filtré).
 - **Présence de Soutien Spécifique** : Vérifie la présence de services répondant aux besoins spécifiques exprimés dans le formulaire (santé, handicap, etc.).
 - **Taille de la Population** : La population de la commune est utilisée comme un critère, favorisant les communes de taille intermédiaire pour un meilleur équilibre accueil/intégration.
 - **Couleur Politique** : Prend en compte l'affiliation politique de la municipalité, en valorisant celles jugées plus favorables à l'accueil.

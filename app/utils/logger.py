@@ -94,7 +94,8 @@ def log_search_results(
     config: ScoringConfig, 
     results_df: pd.DataFrame, 
     unaggregated_df: Optional[pd.DataFrame] = None,
-    scores_cat: Optional[pd.DataFrame] = None
+    scores_cat: Optional[pd.DataFrame] = None,
+    prefix: str = "search_results"
 ) -> None:
     """
     Logs the search configuration and the top 5 results using the standard logger.
@@ -115,9 +116,10 @@ def log_search_results(
             score_to_cat = dict(zip(scores_cat['score'], scores_cat['cat']))
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_dir = os.path.join(os.path.dirname(__file__), '.logs')
+    # Log directory is now in app/.logs (one level up from utils)
+    log_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.logs'))
     os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, f"search_results_{timestamp}.md")
+    log_file = os.path.join(log_dir, f"{prefix}_{timestamp}.md")
 
     md_lines = []
     md_lines.append(f"# Search Results - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")

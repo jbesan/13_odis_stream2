@@ -1,5 +1,11 @@
 import argparse
 import logging
+import sys
+import os
+
+# Add app directory to sys.path to allow imports from app/
+sys.path.append(os.path.join(os.getcwd(), 'app'))
+
 from pipeline import ingest, build, prescoring
 import shutil
 import os
@@ -16,7 +22,8 @@ FILES_TO_COPY = [
     'odis_associations_agg.parquet',
     'odis_referentiels.parquet',
     'odis_formations_agg.parquet',
-    'odis_ccas.parquet'
+    'odis_ccas.parquet',
+    'odis_refugee_associations.parquet'
 ]
 
 # Configure logging

@@ -349,6 +349,22 @@ scores:
     weight: 1.0
     min_bound: null
     max_bound: null
+  - id: inc_asso_refug_scaled
+    category: inclusion
+    source_metric: inc_asso_refug_density
+    bdv_factor: 0.8
+    computation: precomputed
+    display:
+      name: Accompagnement Réfugiés
+      strong_point_text: Présence d'associations spécialisées dans l'accueil
+      high_value_adjective: dense
+      show: true
+      unit: assos/1000 hab.
+      display_factor: 1
+      tooltip: Densité d'associations spécialisées réfugiés (Source RNA)
+    weight: 1.0
+    min_bound: null
+    max_bound: null
   - id: inc_asso_add_scaled
     category: inclusion
     source_metric: affinite_density

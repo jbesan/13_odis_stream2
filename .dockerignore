@@ -24,7 +24,8 @@ __pycache__
 # Ignore specific files/folders within app/
 app/__pycache__
 app/.pytest_cache
-app/.logs
+app/.logs/
+app/.logs/*
 app/tests
 app/*.pyc
 app/.DS_Store

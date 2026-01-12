@@ -260,26 +260,44 @@ def show_details_dialog(details: Dict[str, Any]):
         c1, c2 = st.columns([1, 1], gap="medium")
         with c1:
             with st.container(border=False):
-                st.markdown("#### :material/volunteer_activism: Services d'Inclusion")
+                # 1. Specialized Associations (Refugees) - AT THE TOP
+                refugee_assos = incl_data.get('refugee_associations', [])
+                if refugee_assos:
+                    st.markdown("#### :material/diversity_1: Associations spécialisées Réfugiés")
+                    with st.expander("Consulter les associations spécialisées", expanded=False):
+                        refugee_df = pd.DataFrame(refugee_assos)
+                        # Group by waldec_label for categorization
+                        for label, group in refugee_df.groupby('waldec_label'):
+                             with st.expander(f"{label} ({len(group)})", expanded=False):
+                                    for _, asso in group.iterrows():
+                                        st.write(f"**{asso['name']}**")
+                                        if pd.notna(asso['description']):
+                                            st.caption(asso['description'])
+                                        # Link to assoce.fr
+                                        url = f"https://www.assoce.fr/waldec/{asso['id']}"
+                                        st.markdown(f"🔗 [Voir sur assoce.fr]({url})")
+                                        st.markdown("---")
                 
-                services_grouped = incl_data.get('services_grouped', {})
-                if services_grouped:
-                    for thematique, names in sorted(services_grouped.items()):
-                        # Deduplicate, remove NaN, and sort
-                        items = sorted(list(set([n for n in names if pd.notna(n)])))
-                        if items:
-                            with st.expander(f"{thematique} ({len(items)})", expanded=False):
-                                for name in items:
-                                    st.write(f"• {name}")
-                else:
-                    # Fallback to old flat services display if needed
-                    services = incl_data.get('services', [])
-                    if services:
-                        with st.expander("Détail des services", expanded=True):
+                # 2. Services d'Inclusion - NESTED IN EXPANDER
+                st.markdown("#### :material/volunteer_activism: Services d'Inclusion")
+                with st.expander("Consulter les services disponibles", expanded=False):
+                    services_grouped = incl_data.get('services_grouped', {})
+                    if services_grouped:
+                        for thematique, names in sorted(services_grouped.items()):
+                            # Deduplicate, remove NaN, and sort
+                            items = sorted(list(set([n for n in names if pd.notna(n)])))
+                            if items:
+                                with st.expander(f"{thematique} ({len(items)})", expanded=False):
+                                    for name in items:
+                                        st.write(f"• {name}")
+                    else:
+                        # Fallback to old flat services display if needed
+                        services = incl_data.get('services', [])
+                        if services:
                             for s in sorted(list(set(services))):
                                 st.write(f"• {s}")
-                    else:
-                        st.info("Aucun service spécifique référencé.")
+                        else:
+                            st.info("Aucun service spécifique référencé.")
         with c2:
             st.markdown("#### :material/diversity_3: Indicateurs Inclusion")
             render_scores_for_category('inclusion')
@@ -759,13 +777,15 @@ def _show_details_callback(rank: int) -> None:
         bmo_vertical=app_data['bmo_vertical'],
         formations_data=app_data['formations_data'],
         codformations_index=app_data['codformations_index'],
+        waldec_index=app_data.get('waldec_index'),
         codfap_index=app_data.get('codfap_index', pd.DataFrame()),
         global_stats={},
         # Ensure all indices and annuaires are passed
         annuaire_ecoles=app_data.get('annuaire_ecoles', pd.DataFrame()),
         annuaire_sante=app_data.get('annuaire_sante', pd.DataFrame()),
         annuaire_inclusion=app_data.get('annuaire_inclusion', pd.DataFrame()),
-        inclusion_services_index=app_data.get('inclusion_services_index', pd.DataFrame())
+        inclusion_services_index=app_data.get('inclusion_services_index', pd.DataFrame()),
+        refugee_associations_data=app_data['refugee_associations_data']
     )
     
     details = engine.format_city_details(row)

@@ -30,7 +30,7 @@ def aggregate_plm(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         'population', 'pop_active', 'pop_chomeurs', 'pop_employes',
         'edu_maternelle_ct', 'edu_elementaire_ct', 'edu_college_ct', 'edu_lycee_ct',
         'count_hopital', 'count_maternite', 'count_psy',
-        'lien_social_count', 'bpe_creches_count', 'risky_schools_count',
+        'lien_social_count', 'inc_asso_refug_count', 'bpe_creches_count', 'risky_schools_count',
         'log_priv_total', 'log_priv_vacant_plus_2ans',
         'metiers_offres_diff', 'total_eleves', 'ecoles_count',
         'socle_match_count' # Also sum this? No, socle is presence.
@@ -100,7 +100,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         raw_metrics_to_fill = [
             'edu_maternelle_ct', 'edu_elementaire_ct', 'edu_college_ct', 'edu_lycee_ct',
             'count_hopital', 'count_maternite', 'count_psy',
-            'risky_schools_count', 'lien_social_count', 'bpe_creches_count',
+            'risky_schools_count', 'lien_social_count', 'inc_asso_refug_count', 'bpe_creches_count',
             'edu_pe_tx_couverture', 'metiers_offres_diff', 'pop_chomeurs', 'log_priv_vacant_plus_2ans',
             'met_ratio', 'pol_num', 'log_vac_struct_ratio'
         ]
@@ -199,11 +199,17 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
                 0.0
             )
         
-        # 3. Lien Social Density (Associations per 1000 hab)
-        if 'population' in communes_gdf.columns and 'lien_social_count' in communes_gdf.columns:
             communes_gdf['lien_social_density'] = np.where(
                 communes_gdf['population'] > 0,
                 (communes_gdf['lien_social_count'] * 1000) / communes_gdf['population'],
+                0.0
+            )
+
+        # Refugee Associations Density
+        if 'population' in communes_gdf.columns and 'inc_asso_refug_count' in communes_gdf.columns:
+            communes_gdf['inc_asso_refug_density'] = np.where(
+                communes_gdf['population'] > 0,
+                (communes_gdf['inc_asso_refug_count'] * 1000) / communes_gdf['population'],
                 0.0
             )
 
@@ -311,6 +317,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
 
         process_scaling(communes_gdf, 'log_vac_struct_ratio', 'log_vac_scaled')
         process_scaling(communes_gdf, 'lien_social_density', 'inc_asso_core_scaled')
+        process_scaling(communes_gdf, 'inc_asso_refug_density', 'inc_asso_refug_scaled')
         process_scaling(communes_gdf, 'population', 'inc_population_scaled')
         
         # inc_pol_scaled (already 0-1)
@@ -553,10 +560,17 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
              )
         
         # Lien Social
-        if 'lien_social_count' in bv_gdf.columns and 'population_bv' in bv_gdf.columns:
-             bv_gdf['lien_social_density'] = np.where(
+        bv_gdf['lien_social_density'] = np.where(
+            bv_gdf['population_bv'] > 0,
+            bv_gdf['lien_social_count'] / bv_gdf['population_bv'] * 1000,
+            0.0
+        )
+        
+        # Refugee Associations
+        if 'inc_asso_refug_count' in bv_gdf.columns and 'population_bv' in bv_gdf.columns:
+             bv_gdf['inc_asso_refug_density'] = np.where(
                  bv_gdf['population_bv'] > 0,
-                 bv_gdf['lien_social_count'] / bv_gdf['population_bv'] * 1000,
+                 bv_gdf['inc_asso_refug_count'] / bv_gdf['population_bv'] * 1000,
                  0.0
              )
 
@@ -584,6 +598,10 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
         if 'lien_social_density' in bv_gdf.columns:
             min_b, max_b = get_min_max(bv_gdf['lien_social_density'])
             bv_gdf['inc_asso_core_scaled'] = scale_series(bv_gdf['lien_social_density'], min_b, max_b)
+
+        if 'inc_asso_refug_density' in bv_gdf.columns:
+            min_b, max_b = get_min_max(bv_gdf['inc_asso_refug_density'])
+            bv_gdf['inc_asso_refug_scaled'] = scale_series(bv_gdf['inc_asso_refug_density'], min_b, max_b)
             
         if 'bpe_creches_density' in bv_gdf.columns:
             min_b, max_b = get_min_max(bv_gdf['bpe_creches_density'])
@@ -592,6 +610,7 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
         # --- 3. Weighted Averages from Communes ---
         metrics_to_avg = [
             'inc_services_core_scaled', 
+            'inc_asso_refug_scaled',
             'edu_classes_ferm_scaled', 
             'log_vac_scaled', 
             'log_occup_scaled',

@@ -9,3 +9,11 @@ Ils visent le logement social et vont probablement devoir louer dans le parc pri
 Amir et Nour vont avoir besoin de renforcer leur francais et Ali adore le foot. Ils sont tres fiers de leur culture syrienne et aimerait la partager et si possible rejoindre une communauté de syriens sur place.
 
 Le profil Famille est le plus adapté et ils n'ont pas de problème de santé particulier.
+
+Profil et Localisation : C'est un couple d'origine vénézuélienne actuellement basé à Bordeaux. Ils souhaitent rester en Nouvelle-Aquitaine et ont identifié la ville de Pessac comme cible prioritaire.
+Composition Familiale : 2 adultes. Maria est enceinte de 4 mois, ce qui place le projet sous le profil de pondération "Famille".
+Projet Professionnel : Diego est pharmacien (identifié sous le code FAP Biologistes médicaux). Maria n'a pas encore de projet professionnel défini.
+Besoins Prioritaires :
+Santé : Accès impératif à une maternité.
+Inclusion : Besoin de cours de Français Langue Étrangère (FLE).
+Logement : Ils acceptent un hébergement en foyer à leur arrivée, avec l'objectif d'obtenir un logement social à plus long terme.

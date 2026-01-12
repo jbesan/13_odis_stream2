@@ -30,6 +30,7 @@ L'orchestrateur pilote la conversation à travers trois phases :
 - `search_places` / `compute_routes` (Google Maps) : Expertise terrain.
 - `google_search` (Native Capability) : Grounding web en temps réel (utilisé par l'agent WEB).
 - `search_job_offers` (France Travail) : Offres d'emploi en direct.
+- `search_refugee_associations` (RNA) : Associations spécialisées dans l'accueil des réfugiés.
 
 ## 📝 Configuration des Modèles (Janv 2026)
 
