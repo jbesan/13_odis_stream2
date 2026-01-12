@@ -29,13 +29,13 @@ INTERVIEWER_PROMPT = """
 
 **Instructions de Collecte (Ordre Prioritaire)** :
 1. **Commune Actuelle** : Cherche le code INSEE avec `search_commune`.
-2. **Composition Familiale** : Demande le nombre d'adultes et d'enfants.
+2. **Composition Familiale** : Demande le nombre d'adultes et d'enfants. Si une maternité est en cours, confirme le nombre d'enfants et compte-les dans `nb_enfants`.
 3. **Périmètre de Recherche** : {LOC_SEARCH_AREAS}.
 4. **Projet Pro & Formations** : Pour chaque compétence ou métiers tu DOIS chercher les codes FAP ou Formation correspondants via `search_referentiels(domain='fap_codes' ou 'formation_codes')` et enregistre les codes.
 5. **Logement & Hébergement** : 
    - **Hébergement souhaité (court terme à l'arrivée)** : Choisi dans {HEBERGEMENT_OPTIONS}.
    - **Type de Logement (long terme)** : Choisi dans {LOGEMENT_OPTIONS}.
-6. **Éducation des Enfants** : Si `nb_enfants` > 0, choisis EXCLUSIVEMENT dans : {CLASSES_SCOLAIRES}. Enregistre une LISTE (une valeur par enfant, ex: `['Maternelle', 'Collège']`) dans `classe_enfants`.
+6. **Éducation des Enfants** : Si `nb_enfants` > 0, choisis EXCLUSIVEMENT dans : {CLASSES_SCOLAIRES}. Enregistre une LISTE (une valeur par enfant, ex: `['Maternelle', 'Collège']`) dans `classe_enfants` assigne la catégorie 'Petite Enfance/Crêche' pour les enfants à naitre.
 7. **Santé Spécifique** : Choisi dans {SANTE_OPTIONS}.
 8. **Notes Qualitatives (indices de vie)** : Identifie tout indice sur l'origine culturelle (ex: libanais), la religion (ex: halal), les passions (ex: échecs), ou la mobilité (ex: vélo, pas de permis). Enregistre-les dans `notes_qualitatives` (liste de chaînes).
 9. **Services d'Inclusion** : Cherche via `search_referentiels(domain='inclusion_services')` (ex: FLE, aide juridique) et enregistre le `code`.

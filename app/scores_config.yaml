@@ -24,11 +24,11 @@ scores:
       name: Taux Besoin Emploi en Tension
       strong_point_text: De nombreux emplois en tension non pourvus
       high_value_adjective: élevé
-      show: false
+      show: true
       unit: offres/1000 hab.
       display_factor: 1
       tooltip: "Emplois en tension non pourvus pour 1000 habitants (Source: France Travail)"
-    weight: 0.0
+    weight: 1.0
     min_bound: null
     max_bound: null
   - id: log_vac_scaled
@@ -64,7 +64,7 @@ scores:
         logements sociaux
     weight: 1.0
     min_bound: 0.0
-    max_bound: 1.0
+    max_bound: 0.10
   - id: log_occup_scaled
     category: logement
     source_metric: log_pp_occup
@@ -82,22 +82,6 @@ scores:
     min_bound: null
     max_bound: null
 
-  - id: log_occupation_scaled
-    category: logement
-    source_metric: log_occupation_rate
-    bdv_factor: 0.0
-    computation: precomputed
-    display:
-      name: Taux d'Occupation Standard
-      strong_point_text: Logements avec un taux d'occupation standard ou sous-occupés
-      high_value_adjective: élevé
-      show: true
-      unit: "%"
-      display_factor: 100
-      tooltip: "Part des résidences principales avec un taux d'occupation standard ou sous-occupé"
-    weight: 0.5
-    min_bound: null
-    max_bound: null
   - id: loyer_abordable_scaled
     category: logement
     source_metric: loyer_app_m2
@@ -115,8 +99,6 @@ scores:
     min_bound: null
     max_bound: null
 
-    min_bound: null
-    max_bound: null
   - id: inc_pol_scaled
     category: inclusion
     source_metric: pol_num

@@ -30,9 +30,12 @@ The algorithm calculates a score between 0 and 1 for each category for every can
 
 ### A. Emploi (Weight: 100)
 
-- **Job Market Tension (`met_scaled`)**:
-  - Calculates the ratio of job offers (`met`) to the working-age population (`pop_be`) in the Bassin de Vie.
-  - Normalized using `QuantileTransformer` (0-1 scale).
+- **Global Job Market Demand (`met_scaled`)**:
+  - Calculates the ratio of total job offers (`met`) to the working-age population (`pop_be`) in the Bassins d'Emploi.
+  - Normalized on a 0-1 scale.
+- **Hard-to-fill Job Demand (`met_tension_scaled`)**:
+  - Specifically looks at the `xmet` column (tension offers) from BMO data.
+  - Helps identify zones where recruitment is particularly urgent.
 - **Job Match (`met_match_adult1_scaled`)**:
   - Checks if the commune's top job families (`be_codfap_top`) include `T2A60`.
   - If present, score is high; otherwise 0.

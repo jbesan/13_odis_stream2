@@ -371,15 +371,41 @@ class ScoringEngine:
         self._prune_irrelevant_scores(df, config)
 
         # --- EDUCATION ---
-        if config.nb_enfants > 0 and config.classe_enfants:
-             min_b, max_b = get_bounds('edu_classes_ferm_scaled', self.scores_cat, self.global_stats)
-             edu_map = {'Crèche / Assistante Maternelle': 'edu_petite_enfance_scaled', 'Maternelle': 'edu_maternelle_scaled', 'Elémentaire': 'edu_elementaire_scaled', 'Collège': 'edu_college_scaled', 'Lycée': 'edu_lycee_scaled'}
+        if config.nb_enfants > 0:
+             # Map school levels to their corresponding score columns
+             edu_map = {
+                 'Crèche / Assistante Maternelle': 'edu_petite_enfance_scaled',
+                 'Petite Enfance/Crêche': 'edu_petite_enfance_scaled', # Alias from interviewer agent
+                 'Maternelle': 'edu_maternelle_scaled',
+                 'Elémentaire': 'edu_elementaire_scaled',
+                 'Collège': 'edu_college_scaled',
+                 'Lycée': 'edu_lycee_scaled'
+             }
              
-             cols_to_drop = [sco for opt, sco in edu_map.items() if opt not in config.classe_enfants and sco in df.columns]
-             if cols_to_drop: df.drop(columns=cols_to_drop, inplace=True)
-             if 'edu_structures_scaled' in df.columns: df.drop(columns=['edu_structures_scaled'], inplace=True)
+             # If specific levels are requested, drop those that are NOT requested
+             if config.classe_enfants:
+                 # Identify which score columns should stay
+                 cols_to_keep = {edu_map[opt] for opt in config.classe_enfants if opt in edu_map}
+                 # Identify which score columns should be dropped from the potential set
+                 all_edu_cols = set(edu_map.values())
+                 cols_to_drop = [c for c in all_edu_cols if c not in cols_to_keep and c in df.columns]
+                 if cols_to_drop:
+                     df.drop(columns=cols_to_drop, inplace=True)
+             else:
+                 # No specific levels requested, but children exist -> Drop all specific school levels
+                 # but keep general indicators like youth_decline and classes_ferm
+                 all_edu_cols = set(edu_map.values())
+                 cols_to_drop = [c for c in all_edu_cols if c in df.columns]
+                 if cols_to_drop:
+                     df.drop(columns=cols_to_drop, inplace=True)
         else:
-             df['edu_classes_ferm_scaled'] = 0.0
+             # No children -> Remove all education related criteria
+             edu_cols = [
+                 'edu_petite_enfance_scaled', 'edu_maternelle_scaled', 'edu_elementaire_scaled', 
+                 'edu_college_scaled', 'edu_lycee_scaled', 'edu_classes_ferm_scaled', 
+                 'youth_decline_scaled'
+             ]
+             df.drop(columns=[c for c in edu_cols if c in df.columns], inplace=True)
 
         # --- SANTE ---
         if config.besoin_sante != 'Aucun':
@@ -481,8 +507,10 @@ def compute_inclusion_score(df: gpd.GeoDataFrame, config: ScoringConfig, incl_in
             df['affinite_density'] = (affinite_counts * 1000) / df['population']
             min_b, max_b = get_bounds('inc_asso_add_scaled', scores_cat, global_stats)
             df['inc_asso_add_scaled'] = min_max_scale(df['affinite_density'], min_b, max_b)
-        else: df['inc_asso_add_scaled'] = 0.0
-    else: df['inc_asso_add_scaled'] = 0.0
+        else: 
+            if 'inc_asso_add_scaled' in df.columns: df.drop(columns=['inc_asso_add_scaled'], inplace=True)
+    else: 
+        if 'inc_asso_add_scaled' in df.columns: df.drop(columns=['inc_asso_add_scaled'], inplace=True)
 
     # Specific Services
     needed = set(config.inc_services_add_selection)
@@ -495,7 +523,7 @@ def compute_inclusion_score(df: gpd.GeoDataFrame, config: ScoringConfig, incl_in
          if 'key' not in df.columns: df = df.join(incl_index, how='left')
          df['inc_services_add_scaled'] = df['key'].apply(count_matches) / len(needed)
     else:
-         df['inc_services_add_scaled'] = 0.0
+         if 'inc_services_add_scaled' in df.columns: df.drop(columns=['inc_services_add_scaled'], inplace=True)
 
     return df
 

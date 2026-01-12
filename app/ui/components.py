@@ -263,7 +263,7 @@ def show_details_dialog(details: Dict[str, Any]):
                 # 1. Specialized Associations (Refugees) - AT THE TOP
                 refugee_assos = incl_data.get('refugee_associations', [])
                 if refugee_assos:
-                    st.markdown("#### :material/diversity_1: Associations spécialisées Réfugiés")
+                    st.markdown("#### :material/diversity_1: Associations spécialisée nouveaux arrivants")
                     with st.expander("Consulter les associations spécialisées", expanded=False):
                         refugee_df = pd.DataFrame(refugee_assos)
                         # Group by waldec_label for categorization

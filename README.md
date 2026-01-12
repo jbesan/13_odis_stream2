@@ -97,6 +97,7 @@ Le score est calculé à partir d'une multitude de critères, regroupés en gran
 **Catégorie : Emploi**
 
 - **Taux Besoin Emploi** : Mesure le nombre d'emplois non pourvus pour 1000 habitants, indiquant la demande de main-d'œuvre locale.
+- **Taux Besoin Emploi en Tension** : Identifie spécifiquement les métiers "en tension" (difficiles à recruter) pour 1000 habitants, signalant les zones où l'insertion professionnelle est potentiellement plus rapide.
 - **Adéquation Compétences/Emploi** : Évalue la correspondance entre les métiers recherchés par les adultes du foyer et les familles de métiers les plus demandées dans la zone.
 - **Adéquation Besoins/Formations** : Mesure la présence de centres de formation proposant les cursus recherchés par les adultes du foyer.
 - **Déclin Démographique Actif** : Valorise les communes perdant leur population active (25-54 ans), signalant un besoin de main-d'œuvre.

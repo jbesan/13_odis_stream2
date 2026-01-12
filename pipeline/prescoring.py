@@ -32,6 +32,7 @@ def aggregate_plm(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         'count_hopital', 'count_maternite', 'count_psy',
         'lien_social_count', 'inc_asso_refug_count', 'bpe_creches_count', 'risky_schools_count',
         'log_priv_total', 'log_priv_vacant_plus_2ans',
+        'log_soc_total', 'log_soc_inoccupes',
         'metiers_offres_diff', 'total_eleves', 'ecoles_count',
         'socle_match_count' # Also sum this? No, socle is presence.
         # Ideally calculate socle for 75056 based on POIs.
@@ -158,11 +159,11 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
              logging.info("DEBUG: Found bassin_emploi and pop_active.")
              pop_active_be = communes_gdf.groupby('bassin_emploi', observed=True)['pop_active'].transform('sum')
              
-             # metiers_tension_ratio
+             # met_tension_ratio
              if 'metiers_tension_diff' in communes_gdf.columns:
-                 communes_gdf['metiers_tension_ratio'] = np.where(
+                 communes_gdf['met_tension_ratio'] = np.where(
                      pop_active_be > 0,
-                     communes_gdf['metiers_tension_diff'] / pop_active_be,
+                     (communes_gdf['metiers_tension_diff'] / pop_active_be) * 1000,
                      0.0
                  )
                  communes_gdf.drop(columns=['metiers_tension_diff'], inplace=True)

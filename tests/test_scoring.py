@@ -85,6 +85,8 @@ class TestScoringLogic:
         config.codes_metiers[0] = ['F1'] # Provide at least one code for adult 1 (list nesting fix if needed based on config structure)
         config.nb_enfants = 1 # Enable education scoring
         config.classe_enfants = ['Crèche / Assistante Maternelle', 'Maternelle', 'Elémentaire', 'Collège', 'Lycée'] # Select all for full coverage
+        config.inc_asso_add_selection = ['Sport (Général)'] # Enable association scoring
+        config.inc_services_add_selection = ['social_aide'] # Enable specific services scoring
         
         # Add mock data for pre-requisites
         df_with_dist['taux_couverture'] = 50.0

@@ -65,7 +65,7 @@ WEIGHT_PROFILES = {
     },
     "Famille": {
         "poids_emploi": 25, "poids_logement": 100, "poids_education": 100,
-        "poids_inclusion": 50, "poids_sante": 25, "poids_mobilité": 25
+        "poids_inclusion": 50, "poids_sante": 50, "poids_mobilité": 25
     },
     "Santé": {
         "poids_emploi": 25, "poids_logement": 50, "poids_education": 25,
