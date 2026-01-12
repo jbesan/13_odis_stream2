@@ -10,7 +10,7 @@ Amir et Nour vont avoir besoin de renforcer leur francais et Ali adore le foot. 
 
 Le profil Famille est le plus adapté et ils n'ont pas de problème de santé particulier.
 
-Profil et Localisation : C'est un couple d'origine vénézuélienne actuellement basé à Bordeaux. Ils souhaitent rester en Nouvelle-Aquitaine et ont identifié la ville de Pessac comme cible prioritaire.
+Profil et Localisation : C'est un couple d'origine vénézuélienne actuellement basé à Bordeaux. Ils souhaitent rester en Nouvelle-Aquitaine.
 Composition Familiale : 2 adultes. Maria est enceinte de 4 mois, ce qui place le projet sous le profil de pondération "Famille".
 Projet Professionnel : Diego est pharmacien (identifié sous le code FAP Biologistes médicaux). Maria n'a pas encore de projet professionnel défini.
 Besoins Prioritaires :
