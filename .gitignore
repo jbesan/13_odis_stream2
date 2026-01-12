@@ -9,6 +9,7 @@ app/__pycache__
 app/cached_df
 app/cached_df.parquet
 app/cached_df.csv
+app/.logs/*
 app/.logs/
 pipeline/cache/
 .venv/

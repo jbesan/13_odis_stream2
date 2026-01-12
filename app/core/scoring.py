@@ -10,6 +10,7 @@ import pandas as pd
 from core.models import ScoringConfig
 import config as cfg
 import logging
+from utils.logger import log_search_results
 # Configure Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -35,14 +36,16 @@ class ScoringEngine:
         associations_data: pd.DataFrame,
         bmo_vertical: pd.DataFrame,
         formations_data: pd.DataFrame,
-        codformations_index: pd.DataFrame,
-        global_stats: Dict[str, Dict[str, float]],
+        codformations_index: Optional[pd.DataFrame] = None,
+        waldec_index: Optional[pd.DataFrame] = None,
+        global_stats: Optional[Dict[str, Any]] = None,
         bv_data: gpd.GeoDataFrame = None,
         codfap_index: Optional[pd.DataFrame] = None,
         annuaire_ecoles: pd.DataFrame = pd.DataFrame(),
         annuaire_sante: pd.DataFrame = pd.DataFrame(),
         annuaire_inclusion: pd.DataFrame = pd.DataFrame(),
-        inclusion_services_index: pd.DataFrame = pd.DataFrame()
+        inclusion_services_index: pd.DataFrame = pd.DataFrame(),
+        refugee_associations_data: pd.DataFrame = pd.DataFrame()
     ):
         self.df_all_communes = df_all_communes
         self.df_bv_geo = df_bv_geo
@@ -52,7 +55,6 @@ class ScoringEngine:
         self.associations_data = associations_data
         self.bmo_vertical = bmo_vertical
         self.formations_data = formations_data
-        self.codformations_index = codformations_index
         self.global_stats = global_stats
         self.bv_data = bv_data if bv_data is not None else df_bv_geo
         self.codfap_index = codfap_index
@@ -60,6 +62,9 @@ class ScoringEngine:
         self.annuaire_sante = annuaire_sante
         self.annuaire_inclusion = annuaire_inclusion
         self.inclusion_services_index = inclusion_services_index
+        self.codformations_index = codformations_index
+        self.waldec_index = waldec_index
+        self.refugee_associations_data = refugee_associations_data
     
     def format_city_details(self, row: pd.Series) -> Dict[str, Any]:
         """Formats a row into a detailed dictionary."""
@@ -187,6 +192,50 @@ class ScoringEngine:
                         
                         details['inclusion']['services_grouped'] = grouped_incl
 
+        # 6b. Refugee Associations (Detailed List for Inclusion Tab)
+        if codgeo and not self.refugee_associations_data.empty:
+            # Filter by codgeo or bassin_de_vie
+            # Note: refugee_associations_data has 'codgeo' and 'bassin_de_vie' (code)
+            mask = (self.refugee_associations_data['codgeo'] == codgeo)
+            if 'bassin_de_vie' in row and row['bassin_de_vie']:
+                mask |= (self.refugee_associations_data['bassin_de_vie'] == row['bassin_de_vie'])
+            
+            refug_city = self.refugee_associations_data[mask].copy()
+            if not refug_city.empty:
+                # Group by waldec_code and map to labels
+                refugee_list = []
+                for _, asso in refug_city.iterrows():
+                    raw_code = str(asso['waldec_code']).strip()
+                    # Normalize: strip leading zero if present for index lookup
+                    code_norm = raw_code.lstrip('0') if raw_code.startswith('0') else raw_code
+                    label = raw_code
+                    
+                    try:
+                        if self.waldec_index is not None:
+                            # Try exact match (original and normalized)
+                            possible_codes = [raw_code, code_norm]
+                            # Add prefixes (first 3 and 2 digits, normalized)
+                            if len(raw_code) >= 3:
+                                possible_codes.append(raw_code[:3])
+                                possible_codes.append(raw_code[:3].lstrip('0'))
+                            if len(raw_code) >= 2:
+                                possible_codes.append(raw_code[:2])
+                                possible_codes.append(raw_code[:2].lstrip('0'))
+                                
+                            for pc in possible_codes:
+                                if pc and pc in self.waldec_index.index:
+                                    val = self.waldec_index.loc[pc, 'label']
+                                    label = val if isinstance(val, str) else val.iloc[0]
+                                    break
+                    except:
+                        pass
+                    
+                    asso_dict = asso.to_dict()
+                    asso_dict['waldec_label'] = label
+                    refugee_list.append(asso_dict)
+                
+                details['inclusion']['refugee_associations'] = refugee_list
+
         # 7. Associations
         if codgeo and not self.associations_data.empty:
             asso_city = self.associations_data[self.associations_data['codgeo'] == codgeo]
@@ -209,7 +258,7 @@ class ScoringEngine:
             return {"error": f"City code {codgeo} not found."}
         return self.format_city_details(self.df_all_communes.loc[codgeo])
 
-    def run(self, config: ScoringConfig) -> gpd.GeoDataFrame:
+    def run(self, config: ScoringConfig, log_prefix: Optional[str] = None) -> gpd.GeoDataFrame:
         """Orchestrates the full scoring pipeline."""
         start_commune = self.df_all_communes.loc[[config.commune_actuelle]]
         loc_type = config.loc_search_area
@@ -238,7 +287,12 @@ class ScoringEngine:
             loc_search_area=config.loc_search_area
         )
         
-        return self._compute_scores(communes_to_score, config)
+        results = self._compute_scores(communes_to_score, config)
+
+        if log_prefix:
+            log_search_results(config, results, results, self.scores_cat, prefix=log_prefix)
+
+        return results
 
     def _compute_scores(self, df_search: gpd.GeoDataFrame, config: ScoringConfig) -> pd.DataFrame:
         if df_search.empty: return df_search.copy()

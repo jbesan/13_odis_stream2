@@ -40,6 +40,7 @@ AGG_METIERS_FILE = 'odis_metiers_agg.parquet'
 AGG_ASSOCIATIONS_FILE = 'odis_associations_agg.parquet'
 AGG_FORMATIONS_FILE = 'odis_formations_agg.parquet'
 CCAS_FILE = 'odis_ccas.parquet'
+REFUGEE_ASSOCIATIONS_FILE = 'odis_refugee_associations.parquet'
 SCORES_CAT_FILE = 'scores_config.yaml'
 
 # --- Data Columns ---
@@ -241,3 +242,10 @@ def get_relevant_rna_codes() -> List[str]:
     for code_list in WALDEC_INC_ASSO_ADD_MAPPING.values():
         all_codes.update(code_list)
     return list(all_codes)
+# 3. WALDEC labels for refugee associations
+WALDEC_REFUGEE_LABELS = {
+    "003": "Action socio-culturelle",
+    "014": "Enseignement, éducation",
+    "019": "Action sociale",
+    "020": "Associations caritatives, humanitaires"
+}

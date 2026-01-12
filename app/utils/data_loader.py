@@ -88,13 +88,27 @@ def ensure_data_initialized() -> None:
     if 'app_data' not in st.session_state:
         st.session_state['app_data'] = init_datasets()
 
+    # Show warning if some data failed to load
+    load_errors = st.session_state['app_data'].get('_load_errors', [])
+    if load_errors:
+        st.toast(
+            f"⚠️ Attention: Certains jeux de données ({len(load_errors)}) n'ont pas pu être chargés. "
+            f"Les résultats peuvent être incomplets.",
+            icon="⚠️"
+        )
+        for err in load_errors:
+            logger.error(f"Missing required data file: {err}")
+
     scores_path = os.path.join(cfg.APP_DIR, cfg.SCORES_CAT_FILE)
     st.session_state['app_data']['scores_cat'] = load_scores_config_as_df(scores_path)
 
-def _load_parquet(path: str, columns: Optional[list] = None) -> pd.DataFrame:
-    """Internal non-cached loader."""
+def _load_parquet(path: str, columns: Optional[list] = None, error_list: Optional[list] = None) -> pd.DataFrame:
+    """Internal non-cached loader with error tracking."""
     if not os.path.exists(path):
-        logger.warning(f"File not found: {path}")
+        fname = os.path.basename(path)
+        logger.error(f"File not found: {path} (Critical for this feature)")
+        if error_list is not None:
+            error_list.append(fname)
         return pd.DataFrame()
     if columns:
         return pd.read_parquet(path, columns=columns)
@@ -271,6 +285,14 @@ def load_all_data_raw() -> Dict[str, Any]:
         incl_ref_df = refs_df[refs_df['key'] == 'inclusion_services']
         if not incl_ref_df.empty:
             inclusion_services_index = incl_ref_df[['code', 'label']].set_index('code')
+            
+        waldec_ref_df = refs_df[refs_df['key'] == 'waldec_codes']
+        if not waldec_ref_df.empty:
+            waldec_index = waldec_ref_df[['code', 'label']].set_index('code')
+        else:
+            waldec_index = pd.DataFrame(columns=['label'])
+    else:
+        waldec_index = pd.DataFrame(columns=['label'])
 
     incl_index = pd.DataFrame()
     if not annuaire_inclusion.empty:
@@ -284,9 +306,13 @@ def load_all_data_raw() -> Dict[str, Any]:
     coddep_set = sorted(odis['dep_code'].dropna().unique().tolist()) if 'dep_code' in odis.columns else []
 
     # 4. Vertical Data
-    bmo_vertical = _load_parquet(os.path.join(base_path, cfg.AGG_METIERS_FILE))
-    associations_data = _load_parquet(os.path.join(base_path, cfg.AGG_ASSOCIATIONS_FILE))
-    formations_data = _load_parquet(os.path.join(base_path, cfg.AGG_FORMATIONS_FILE))
+    # List to track all loading errors in this session
+    load_errors = []
+
+    bmo_vertical = _load_parquet(os.path.join(base_path, cfg.AGG_METIERS_FILE), error_list=load_errors)
+    associations_data = _load_parquet(os.path.join(base_path, cfg.AGG_ASSOCIATIONS_FILE), error_list=load_errors)
+    refugee_associations_data = _load_parquet(os.path.join(base_path, cfg.REFUGEE_ASSOCIATIONS_FILE), error_list=load_errors)
+    formations_data = _load_parquet(os.path.join(base_path, cfg.AGG_FORMATIONS_FILE), error_list=load_errors)
     
     if not formations_data.empty and 'formation_code' in formations_data.columns:
         formations_data['formation_code'] = formations_data['formation_code'].astype(str).str.replace(r'\.0$', '', regex=True)
@@ -297,7 +323,7 @@ def load_all_data_raw() -> Dict[str, Any]:
 
     # 5. Bassins de Vie Geo
     bv_path = os.path.join(base_path, cfg.BV_FILE)
-    bv_geo = _load_parquet(bv_path)
+    bv_geo = _load_parquet(bv_path, error_list=load_errors)
     if not bv_geo.empty:
         if 'polygon' in bv_geo.columns:
              if isinstance(bv_geo['polygon'].iloc[0], bytes):
@@ -360,6 +386,9 @@ def load_all_data_raw() -> Dict[str, Any]:
         'regions_names': regions_names,
         'departements_names': departements_names,
         'dept_details': dept_details,
+        'refugee_associations_data': refugee_associations_data,
+        'waldec_index': waldec_index,
+        '_load_errors': load_errors
     }
 
 @st.cache_resource

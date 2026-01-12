@@ -672,6 +672,80 @@ def clean_associations(config: Dict[str, Any], logger: PipelineLogger):
         df_out.to_parquet(output_path)
         logger.log_step("clean_associations", "COMPLETED", {"path": str(output_path)})
 
+def clean_refugee_associations(config: Dict[str, Any], logger: PipelineLogger):
+    """Filters RNA for refugee associations and augments data."""
+    logger.log_step("clean_refugee_associations", "STARTED")
+    source = config['sources']['associations']
+    path = CACHE_DIR / source['local_name']
+    if not path.exists():
+        logging.warning("RNA file not found.")
+        return
+
+    # Load RNA
+    df = load_dataset(path, source)
+    df.columns = [c.strip() for c in df.columns]
+
+    # Filter Position 'A' (Active)
+    if 'position' in df.columns:
+        df = df[df['position'] == 'A'].copy()
+
+    # Filtering Logic
+    filter_codes = ('003', '019', '020', '014')
+    filter_keywords = ('asil', 'refug', 'nouveaux arrivants', 'migrant')
+
+    # Ensure columns exist
+    if 'objet_social1' not in df.columns or 'objet' not in df.columns:
+        logging.warning("RNA missing required columns for filtering.")
+        return
+
+    mask_code = df['objet_social1'].astype(str).str.startswith(filter_codes, na=False)
+    mask_keyword = df['objet'].astype(str).str.contains('|'.join(filter_keywords), case=False, na=False)
+    
+    df_refug = df[mask_code & mask_keyword].copy()
+    
+    if df_refug.empty:
+        logging.warning("No refugee associations found after filtering.")
+        return
+
+    # Renaming and Preparing
+    df_refug.rename(columns={
+        'adrs_codeinsee': 'codgeo',
+        'objet_social1': 'waldec_code',
+        'objet': 'description',
+        'titre': 'name'
+    }, inplace=True)
+
+    # Normalize codgeo
+    df_refug['codgeo'] = df_refug['codgeo'].astype(str).str.zfill(5)
+    
+    # Truncate description
+    df_refug['description'] = df_refug['description'].astype(str).str[:300]
+
+    # Add Bassin de Vie mapping (INSEE Source)
+    mapping_source = config['sources']['bassins_de_vie']
+    mapping_path = CACHE_DIR / mapping_source['archive_file']
+    if mapping_path.exists():
+        df_mapping = load_dataset(mapping_path, mapping_source) # Already handles sheet_name/header from yaml
+        # Rename columns to match odis_communes standard
+        df_mapping = df_mapping.rename(columns={
+            'Code géographique': 'codgeo', 
+            'Bassin de vie 2022': 'bassin_de_vie'
+        })
+        if 'codgeo' in df_mapping.columns and 'bassin_de_vie' in df_mapping.columns:
+            df_mapping['codgeo'] = df_mapping['codgeo'].astype(str).str.zfill(5)
+            # Ensure bassin_de_vie is string and not float-string "12345.0"
+            df_mapping['bassin_de_vie'] = df_mapping['bassin_de_vie'].astype(str).str.replace(r'\.0$', '', regex=True)
+            df_refug = df_refug.merge(df_mapping[['codgeo', 'bassin_de_vie']], on='codgeo', how='left')
+
+    # Save detailed associations for list display
+    # Keep: id, codgeo, bassin_de_vie, name, description, waldec_code
+    useful_cols = ['id', 'codgeo', 'bassin_de_vie', 'name', 'description', 'waldec_code']
+    df_out = df_refug[[c for c in useful_cols if c in df_refug.columns]].copy()
+    
+    output_path = CLEAN_DIR / "refugee_associations.parquet"
+    df_out.to_parquet(output_path)
+    logger.log_step("clean_refugee_associations", "COMPLETED", {"path": str(output_path), "rows": len(df_out)})
+
 def clean_population(config: Dict[str, Any], logger: PipelineLogger):
     """Cleans Population and saves to parquet."""
     logger.log_step("clean_population", "STARTED")
@@ -1195,6 +1269,7 @@ def main(argv=None):
         'caf': clean_caf,
         'education': clean_education,
         'associations': clean_associations,
+        'refugee_associations': clean_refugee_associations,
         'political': clean_political,
         'housing_occupation': clean_housing_occupation,
         'school_effectifs': clean_school_effectifs,

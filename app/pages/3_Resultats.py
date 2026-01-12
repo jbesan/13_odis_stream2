@@ -98,11 +98,14 @@ def run_search():
         bmo_vertical=st.session_state.app_data['bmo_vertical'],
         formations_data=st.session_state.app_data['formations_data'],
         codformations_index=st.session_state.app_data['codformations_index'],
-        global_stats={}  # Removed global_score_stats from data_loader if not present
+        waldec_index=st.session_state.app_data['waldec_index'],
+        global_stats={},
+        refugee_associations_data=st.session_state.app_data['refugee_associations_data']
     )
 
     processed_gdf = engine.run(
-        config=config
+        config=config,
+        log_prefix="classic"
     )
     unaggregated_gdf = processed_gdf # Single view now, they are identical
 
@@ -111,8 +114,7 @@ def run_search():
     st.session_state['unaggregated_gdf'] = unaggregated_gdf
     
     # --- Logging ---
-    from utils.logger import log_search_results
-    log_search_results(config, processed_gdf, unaggregated_gdf, st.session_state.app_data['scores_cat'])
+    # Logging is now handled inside engine.run(log_prefix="classic")
     
     # Calculate center for map
     if not processed_gdf.empty:

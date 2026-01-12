@@ -4,7 +4,7 @@ from .base import BaseAgent
 from .state import AgentContext
 from google.genai import types
 from core.models import SearchCriterias
-from .tools import search_places, compute_routes, set_focus_city
+from .tools import search_places, compute_routes, set_focus_city, search_refugee_associations
 
 logger = logging.getLogger("scout_agent")
 
@@ -21,9 +21,10 @@ SCOUT_PROMPT = """
     - Ceci est crucial pour que les autres experts (Job Hunter) puissent travailler sur la bonne ville.
     - Si `VILLE ACTIVE` est vide et que la ville n'est pas claire, demande de préciser.
 
-
 2. **Recherche de Terrain** :
     - Utilise `search_places` pour trouver des POIs (écoles, parcs, commerces).
+    - **Utilisation du Code INSEE (codgeo)** : Récupère le Code INSEE de la ville dans le **BRIEFING** (CIBLE ACTUELLE). Si tu ne l'as pas, utilise `search_commune` pour le trouver.
+    - **Utilise systématiquement** `search_refugee_associations(codgeo=...)` pour identifier les structures spécialisées. C'est CRUCIAL pour l'argumentaire inclusion.
     - Utilise `compute_routes` pour les temps de trajet. Utilise `VILLE ACTIVE` comme origine si non spécifié.
 
 3. **Réponse** :
@@ -42,6 +43,7 @@ Suggestions de recherches complémentaires sur la `VILLE ACTIVE` demandée :
 
 class ScoutAgent(BaseAgent):
     def run(self, message: str, context: AgentContext) -> str:
+        logger.info(f"🕵️ [SCOUT] Agent starting. Focus city: {context.focus_city}")
         briefing_data, user_msg = self._get_briefing_and_user_msg(message)
         
         prompt = SCOUT_PROMPT.replace("{BRIEFING}", briefing_data)
@@ -52,7 +54,7 @@ class ScoutAgent(BaseAgent):
             return self._execute_tool_loop(
                 prompt, 
                 user_msg, 
-                [search_places, compute_routes, set_focus_city, search_commune], 
+                [search_places, compute_routes, set_focus_city, search_commune, search_refugee_associations], 
                 context=context
             )
         except Exception as e:

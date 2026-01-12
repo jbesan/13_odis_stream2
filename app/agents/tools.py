@@ -8,7 +8,8 @@ from services.mcp_server import (
     _search_places_logic,
     _compute_routes_logic,
     _get_labels_for_codes_logic,
-    _get_rome_for_fap_logic
+    _get_rome_for_fap_logic,
+    _search_refugee_associations_logic
 )
 from services.mcp_france_travail import (
     search_job_offers_logic as _search_job_offers_logic,
@@ -143,3 +144,22 @@ def get_rome_for_fap(fap_codes: List[str]) -> Dict[str, List[str]]:
     C'est la méthode la plus fiable pour trouver des offres d'emploi pour un profil ODIS.
     """
     return _get_rome_for_fap_logic(fap_codes)
+
+def search_refugee_associations(codgeo: str) -> List[Dict[str, Any]]:
+    """
+    Recherche des associations spécialisées dans l'accueil des réfugiés (RNA).
+    Identifie le Bassin de Vie et retourne TOUTES les associations de la zone.
+    
+    Args:
+        codgeo: Code INSEE de la commune (ex: '33063').
+    """
+    logger.info(f"⚒️ [TOOL] search_refugee_associations called with codgeo='{codgeo}'")
+    import random
+    st.toast(random.choice([
+        "Consultation du registre des mains tendues...",
+        "Décollage pour le QG des associations solidaires...",
+        "Infiltration de la base secrète des bénévoles...",
+        "Scan des initiatives du cœur dans la zone...",
+        "Extraction de la liste des anges gardiens locaux..."
+    ]), icon="🤝")
+    return _search_refugee_associations_logic(codgeo)
