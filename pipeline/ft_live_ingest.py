@@ -34,6 +34,11 @@ METRICS = {
     "start_time": 0,
 }
 
+# Session management for token persistence and refresh
+SESSION = {
+    "token": None
+}
+
 def get_token():
     METRICS["total_calls"] += 1
     payload = {
@@ -45,24 +50,33 @@ def get_token():
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
     response = requests.post(AUTH_URL, data=payload, headers=headers)
     response.raise_for_status()
-    return response.json()["access_token"]
+    token = response.json()["access_token"]
+    SESSION["token"] = token
+    return token
 
-def fetch_chunk(token, params) -> List[Dict]:
+def fetch_chunk(params) -> List[Dict]:
     offers = []
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json"
-    }
+    
+    def get_headers():
+        return {
+            "Authorization": f"Bearer {SESSION['token']}",
+            "Accept": "application/json"
+        }
     
     # Call to get total count
     METRICS["total_calls"] += 1
     params["range"] = "0-0"
-    resp = requests.get(SEARCH_URL, params=params, headers=headers)
+    resp = requests.get(SEARCH_URL, params=params, headers=get_headers())
     
+    if resp.status_code == 401:
+        print("\n  [401] Token expired. Refreshing...")
+        get_token()
+        return fetch_chunk(params) # Recurse with new token
+
     if resp.status_code == 429:
         METRICS["rate_limit_errors"] += 1
         time.sleep(2)
-        return fetch_chunk(token, params) # Retry once for the total check
+        return fetch_chunk(params) # Retry once for the total check
         
     if resp.status_code == 204:
         return []
@@ -88,12 +102,16 @@ def fetch_chunk(token, params) -> List[Dict]:
         # Retry logic for rate limiting
         for attempt in range(5):
             METRICS["total_calls"] += 1
-            r = requests.get(SEARCH_URL, params=params, headers=headers)
+            r = requests.get(SEARCH_URL, params=params, headers=get_headers())
             
             if r.status_code == 200 or r.status_code == 206:
                 batch = r.json().get("resultats", [])
                 offers.extend(batch)
                 break
+            elif r.status_code == 401:
+                print("\n  [401] Token expired during batch. Refreshing...")
+                get_token()
+                # Headers will be updated on next retry of this batch
             elif r.status_code == 429:
                 METRICS["rate_limit_errors"] += 1
                 wait = (2 ** attempt) + 0.5 
@@ -115,7 +133,7 @@ def run_etl():
         return
 
     METRICS["start_time"] = time.time()
-    token = get_token()
+    get_token() # Initial token
     all_data = []
     
     print(f"=== Starting France Travail Live ETL ===")
@@ -125,12 +143,12 @@ def run_etl():
     try:
         for dept in DEPARTEMENTS:
             print(f"Processing Dept {dept}...", end=" ", flush=True)
-            offers = fetch_chunk(token, {"departement": dept})
+            offers = fetch_chunk({"departement": dept})
             
             if offers is None: # Too many results, split by domain
                 print("\n  > 3150 results. Splitting by Domain:")
                 for domain in GRAND_DOMAINES:
-                    domain_offers = fetch_chunk(token, {"departement": dept, "grandDomaine": domain})
+                    domain_offers = fetch_chunk({"departement": dept, "grandDomaine": domain})
                     if isinstance(domain_offers, list):
                         all_data.extend(domain_offers)
                         print(f"    - Domain {domain}: {len(domain_offers)} offers")
@@ -144,7 +162,7 @@ def run_etl():
                         # This shouldn't happen with the current logic unless we add LEVEL 3
                         print(f"    - Domain {domain}: Still too many results (> 3150). Truncated to 3150.")
                         # Fallback fetch the first 3150 anyway
-                        truncated_fetch = fetch_chunk(token, {"departement": dept, "grandDomaine": domain, "range": "0-3149"})
+                        truncated_fetch = fetch_chunk({"departement": dept, "grandDomaine": domain, "range": "0-3149"})
                         if truncated_fetch:
                             all_data.extend(truncated_fetch)
             elif offers:
