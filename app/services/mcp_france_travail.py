@@ -241,6 +241,7 @@ def _prune_job_offer(offer: Dict[str, Any]) -> Dict[str, Any]:
 def search_job_offers_logic(
     query: Optional[str] = None,
     location: Optional[str] = None,
+    fap_code: Optional[str] = None,
     rome_code: Optional[str] = None,
     appellation_codes: Optional[List[str]] = None,
     distance: int = 10,

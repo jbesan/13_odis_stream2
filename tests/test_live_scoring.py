@@ -34,15 +34,20 @@ def test_live_jobs_scoring():
     ])
 
     scores_cat = pd.DataFrame([
-        {'score': 'met_live_commune_scaled', 'min_bound': 0, 'max_bound': 10, 'cat': 'emploi', 'weight': 2.0},
-        {'score': 'met_live_bdv_scaled', 'min_bound': 0, 'max_bound': 50, 'cat': 'emploi', 'weight': 1.0},
-        {'score': 'met_live_tension_scaled', 'min_bound': 0, 'max_bound': 5, 'cat': 'emploi', 'weight': 1.0}
+        {'score': 'met_live_commune_scaled', 'min_bound': 0, 'max_bound': 10, 'cat': 'emploi', 'weight': 2.0, 'metric': 'met_live_commune'},
+        {'score': 'met_live_bdv_scaled', 'min_bound': 0, 'max_bound': 50, 'cat': 'emploi', 'weight': 1.0, 'metric': 'met_live_bdv'},
+        {'score': 'met_live_tension_scaled', 'min_bound': 0, 'max_bound': 5, 'cat': 'emploi', 'weight': 1.0, 'metric': 'met_live_tension'}
     ])
+
+    df_bv_geo = gpd.GeoDataFrame({
+        'codgeo': ['33301', '99301'],
+        'geometry': [Point(0,0), Point(1,1)]
+    }).set_index('codgeo')
 
     # 2. Instantiate Engine
     engine = scoring.ScoringEngine(
         df_all_communes=df_all_communes,
-        df_bv_geo=None,
+        df_bv_geo=df_bv_geo,
         df_area_geo=None,
         scores_cat=scores_cat,
         incl_index=pd.DataFrame(),
@@ -50,7 +55,6 @@ def test_live_jobs_scoring():
         bmo_vertical=pd.DataFrame(columns=['codgeo', 'fap_code']),
         formations_data=pd.DataFrame(columns=['codgeo', 'formation_code']),
         live_jobs_data=live_jobs_data,
-        fap_rome_mapping=fap_rome_mapping,
         global_stats={}
     )
 
@@ -69,7 +73,7 @@ def test_live_jobs_scoring():
         nb_enfants=0,
         hebergement='Location',
         logement='Location',
-        codes_metiers=[['T2A60']], 
+        codes_metiers=[['M1805']], 
         codes_formations=[[]],
         classe_enfants=[],
         besoin_sante='Aucun',
@@ -83,7 +87,11 @@ def test_live_jobs_scoring():
 
     # 5. Assertions
     print("\n--- Results ---")
-    print(scored[['met_live_commune', 'met_live_commune_scaled', 'met_live_bdv', 'met_live_bdv_scaled', 'met_live_tension', 'met_live_tension_scaled']])
+    print(f"Columns available: {scored.columns.tolist()}")
+    try:
+        print(scored[['met_live_commune', 'met_live_commune_scaled', 'met_live_bdv', 'met_live_bdv_scaled', 'met_live_tension', 'met_live_tension_scaled']])
+    except KeyError as e:
+        print(f"KeyError: {e}")
     
     # Commune 33063 should have 5 jobs
     assert scored.loc['33063', 'met_live_commune'] == 5

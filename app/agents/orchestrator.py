@@ -45,6 +45,7 @@ Tu es le Cerveau de l'Assistant ODIS. Ton job est de router le message de l'util
 
 ** Contraintes ** : 
 - Réponds UNIQUEMENT par un objet JSON respectant le schéma demandé.
+- Ne réponds JAMAIS tout en majuscule (CAPSLOCK)
 """
 
 class RoutingResponse(BaseModel):

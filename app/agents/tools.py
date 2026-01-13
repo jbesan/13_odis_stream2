@@ -70,7 +70,7 @@ def set_focus_city(city_name: str) -> str:
     Définit la ville 'active' ou 'focus' pour la conversation de terrain.
     À utiliser dès que l'utilisateur s'intéresse à une ville spécifique (ex: 'Parle moi de Bordeaux').
     """
-    logger.info(f"⚒️ [TOOL] set_focus_city: '{city_name}'")
+    # logger.info(f"⚒️ [TOOL] set_focus_city: '{city_name}'")
     if "agent" in st.session_state:
         st.session_state.agent.context.focus_city = city_name
         logger.info(f"⚒️ [TOOL] context.focus_city updated to: {city_name}")

@@ -611,3 +611,18 @@ En tant que travailleur social, je veux être informé des actions en cours des 
 ### 📊 Status
 
 - In Progress (Jan 2026) - Branch `feat-ft-live-jobs`
+
+## 🚀 Feature [F-29]: AI Agent Token Usage Logging
+
+### 📝 User Story
+
+- En tant que développeur, je veux voir l'utilisation des jetons (tokens) par modèle dans la console, afin de suivre la consommation et les coûts des différents agents IA.
+
+### 🔑 Key Features
+
+- **Logging INFO :** Restauration des logs de consommation de tokens (`in_tokens`, `out_tokens`) au niveau `INFO` pour qu'ils soient visibles par défaut dans la console.
+- **Détail par Modèle :** Affichage explicite du `model_id` associé à chaque consommation.
+
+### 📊 Status
+
+- In Progress (Jan 2026)
