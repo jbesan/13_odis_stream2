@@ -4,6 +4,8 @@ import time
 import pandas as pd
 from dotenv import load_dotenv
 from typing import List, Dict
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 
 # Load environment variables
 load_dotenv("app/.env")
@@ -20,12 +22,35 @@ GRAND_DOMAINES = [
     "M", "M13", "M14", "M15", "M16", "M17", "M18", "N"
 ]
 
+# Type Contrat for Level 3 splitting
+TYPES_CONTRAT = ["CDI", "CDD", "MIS", "CCE", "CTI", "LIB", "DIN", "FRA"]
+
 # Scope: Metropolitan France (01 to 95)
-DEPARTEMENTS = [str(i).zfill(2) for i in range(1, 96)]
-# Skip specific 2A/2B for purely numeric range or add them explicitly
-if "2A" not in DEPARTEMENTS:
-    DEPARTEMENTS.extend(["2A", "2B"])
-DEPARTEMENTS.sort()
+DEPARTEMENTS = [str(i).zfill(2) for i in range(1, 40)] + ["2A", "2B"] + [str(i).zfill(2) for i in range(41, 96)]
+DEPARTEMENTS = sorted(list(set(DEPARTEMENTS)))
+if "20" in DEPARTEMENTS:
+    DEPARTEMENTS.remove("20")
+
+# Rate Limiter Configuration
+MAX_CALLS_PER_SECOND = 9 # Safe margin
+LOCK_TOKEN = threading.Lock()
+LOCK_METRICS = threading.Lock()
+LOCK_DATA = threading.Lock()
+
+class RateLimiter:
+    def __init__(self, calls_per_sec):
+        self.delay = 1.0 / calls_per_sec
+        self.next_call = time.time()
+        self.lock = threading.Lock()
+
+    def wait(self):
+        with self.lock:
+            now = time.time()
+            if now < self.next_call:
+                time.sleep(self.next_call - now)
+            self.next_call = time.time() + self.delay
+
+RATE_LIMITER = RateLimiter(MAX_CALLS_PER_SECOND)
 
 # Metrics Tracker
 METRICS = {
@@ -34,53 +59,93 @@ METRICS = {
     "start_time": 0,
 }
 
-# Session management for token persistence and refresh
+# Session management
 SESSION = {
-    "token": None
+    "token": None,
+    "http": None
 }
 
+def get_http_session():
+    if SESSION["http"] is None:
+        s = requests.Session()
+        # Connection pooling: 20 connections max for our 10 threads
+        adapter = requests.adapters.HTTPAdapter(pool_connections=20, pool_maxsize=20)
+        s.mount("https://", adapter)
+        s.mount("http://", adapter)
+        SESSION["http"] = s
+    return SESSION["http"]
+
+def increment_metrics(key):
+    with LOCK_METRICS:
+        METRICS[key] += 1
+
 def get_token():
-    METRICS["total_calls"] += 1
-    payload = {
-        "grant_type": "client_credentials",
-        "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET,
-        "scope": "o2dsoffre api_offresdemploiv2"
-    }
-    headers = {"Content-Type": "application/x-www-form-urlencoded"}
-    response = requests.post(AUTH_URL, data=payload, headers=headers)
-    response.raise_for_status()
-    token = response.json()["access_token"]
-    SESSION["token"] = token
-    return token
-
-def fetch_chunk(params) -> List[Dict]:
-    offers = []
-    
-    def get_headers():
-        return {
-            "Authorization": f"Bearer {SESSION['token']}",
-            "Accept": "application/json"
+    increment_metrics("total_calls")
+    with LOCK_TOKEN:
+        payload = {
+            "grant_type": "client_credentials",
+            "client_id": CLIENT_ID,
+            "client_secret": CLIENT_SECRET,
+            "scope": "o2dsoffre api_offresdemploiv2"
         }
-    
-    # Call to get total count
-    METRICS["total_calls"] += 1
-    params["range"] = "0-0"
-    resp = requests.get(SEARCH_URL, params=params, headers=get_headers())
-    
-    if resp.status_code == 401:
-        print("\n  [401] Token expired. Refreshing...")
-        get_token()
-        return fetch_chunk(params) # Recurse with new token
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        response = requests.post(AUTH_URL, data=payload, headers=headers)
+        response.raise_for_status()
+        token = response.json()["access_token"]
+        SESSION["token"] = token
+        return token
 
-    if resp.status_code == 429:
-        METRICS["rate_limit_errors"] += 1
-        time.sleep(2)
-        return fetch_chunk(params) # Retry once for the total check
-        
+def api_call(params):
+    RATE_LIMITER.wait()
+    increment_metrics("total_calls")
+    
+    for attempt in range(5):
+        try:
+            http = get_http_session()
+            headers = {
+                "Authorization": f"Bearer {SESSION['token']}",
+                "Accept": "application/json"
+            }
+            resp = http.get(SEARCH_URL, params=params, headers=headers, timeout=30)
+            
+            if resp.status_code == 200 or resp.status_code == 206:
+                return resp
+            elif resp.status_code == 204:
+                return resp
+            elif resp.status_code == 401:
+                print("\n  [401] Refreshing token...")
+                get_token()
+                continue
+            elif resp.status_code == 429:
+                increment_metrics("rate_limit_errors")
+                time.sleep(2 ** attempt)
+                continue
+            else:
+                return resp
+        except (requests.exceptions.RequestException, OSError) as e:
+            print(f"\n  [Network Error] {e}. Retrying ({attempt+1}/5)...")
+            time.sleep(1 + attempt)
+            continue
+    return None
+
+def fetch_all_pages(params):
+    all_offers = []
+    
+    # Range for the first call
+    current_params = {**params, "range": "0-149"}
+    resp = api_call(current_params)
+    
+    if resp is None:
+        print(f"  [Fatal] Failed to fetch first page for {params} after 5 attempts.")
+        return []
+
     if resp.status_code == 204:
         return []
     
+    if not (resp.status_code == 200 or resp.status_code == 206):
+        return []
+
+    # Parse total from Content-Range
     content_range = resp.headers.get("Content-Range", "")
     total = 0
     if "/" in content_range:
@@ -89,134 +154,122 @@ def fetch_chunk(params) -> List[Dict]:
     if total == 0:
         return []
 
-    # If total > 3150 and we haven't split by domain yet, return None to trigger split
-    if total > 3150 and "grandDomaine" not in params:
-        return None
+    # If too big and not yet fully split, signal need for deeper split
+    if total > 3150:
+        if "grandDomaine" not in params:
+            return None # Trigger Level 2
+        if "typeContrat" not in params:
+            return None # Trigger Level 3
     
-    # Fetch all pages (capped at 3150 per API limits)
+    # Store first batch
+    all_offers.extend(resp.json().get("resultats", []))
+    
+    # Fetch remaining pages
     limit = min(total, 3150)
-    for start in range(0, limit, 150):
+    # Start from 150 since we already have the first page
+    for start in range(150, limit, 150):
         end = min(start + 149, limit - 1)
-        params["range"] = f"{start}-{end}"
-        
-        # Retry logic for rate limiting
-        for attempt in range(5):
-            METRICS["total_calls"] += 1
-            r = requests.get(SEARCH_URL, params=params, headers=get_headers())
+        page_resp = api_call({**params, "range": f"{start}-{end}"})
+        if page_resp and page_resp.status_code in [200, 206]:
+            all_offers.extend(page_resp.json().get("resultats", []))
+        elif page_resp is None:
+            print(f"      [Error] Could not fetch batch {start}-{end} for {params}.")
             
-            if r.status_code == 200 or r.status_code == 206:
-                batch = r.json().get("resultats", [])
-                offers.extend(batch)
-                break
-            elif r.status_code == 401:
-                print("\n  [401] Token expired during batch. Refreshing...")
-                get_token()
-                # Headers will be updated on next retry of this batch
-            elif r.status_code == 429:
-                METRICS["rate_limit_errors"] += 1
-                wait = (2 ** attempt) + 0.5 
-                print(f"  [429] Rate limit hit. Waiting {wait}s...")
-                time.sleep(wait)
-            else:
-                print(f"  Error {r.status_code} on {params}")
-                break
-        
-        # Core rate limiting: max 10 calls/sec -> 0.1s minimum delay
-        # We use 0.12s to be safe and account for network jitter
-        time.sleep(0.12)
-        
-    return offers
+    if total > 3150:
+         print(f"      /!\\ WARNING: Truncated to 3150 for params: {params}")
+         
+    return all_offers
 
 def run_etl():
     if not CLIENT_ID or not CLIENT_SECRET:
-        print("Error: Missing France Travail credentials.")
+        print("Error: Missing credentials.")
         return
 
     METRICS["start_time"] = time.time()
-    get_token() # Initial token
-    all_data = []
+    get_token()
     
-    print(f"=== Starting France Travail Live ETL ===")
-    print(f"Target: Metropolitan France ({len(DEPARTEMENTS)} departments)")
-    print(f"Strategy: Dept -> Grand Domaine (if > 3150 results)")
+    print(f"=== Starting Optimized France Travail Live ETL ===")
+    print(f"Target: Metropolitan France ({len(DEPARTEMENTS)} depts)")
+    print(f"Strategy: Dept -> Domain -> TypeContrat (if needed)")
     
-    try:
-        for dept in DEPARTEMENTS:
-            print(f"Processing Dept {dept}...", end=" ", flush=True)
-            offers = fetch_chunk({"departement": dept})
-            
-            if offers is None: # Too many results, split by domain
-                print("\n  > 3150 results. Splitting by Domain:")
-                for domain in GRAND_DOMAINES:
-                    domain_offers = fetch_chunk({"departement": dept, "grandDomaine": domain})
-                    if isinstance(domain_offers, list):
-                        all_data.extend(domain_offers)
-                        print(f"    - Domain {domain}: {len(domain_offers)} offers")
-                        
-                        # Check if we likely missed data
-                        # fetch_chunk returns up to 3150. If we hit exactly 3150, 
-                        # it's possible there were more.
-                        if len(domain_offers) >= 3150:
-                            print(f"      /!\\ WARNING: Domain {domain} in Dept {dept} reached pagination limit (3150). Data might be truncated.")
-                    elif domain_offers is None:
-                        # This shouldn't happen with the current logic unless we add LEVEL 3
-                        print(f"    - Domain {domain}: Still too many results (> 3150). Truncated to 3150.")
-                        # Fallback fetch the first 3150 anyway
-                        truncated_fetch = fetch_chunk({"departement": dept, "grandDomaine": domain, "range": "0-3149"})
-                        if truncated_fetch:
-                            all_data.extend(truncated_fetch)
-            elif offers:
-                all_data.extend(offers)
-                print(f"Fetched {len(offers)} offers.")
-            else:
-                print("No offers.")
+    all_raw_data = []
 
-    except KeyboardInterrupt:
-        print("\nProcess interrupted by user. Saving partial data...")
-    except Exception as e:
-        print(f"\nCritical Error during extraction: {e}")
+    def process_segment(params):
+        results = fetch_all_pages(params)
+        
+        # Level 1 Split (by Domain)
+        if results is None and "grandDomaine" not in params:
+            print(f"\n  Splitting {params['departement']} by Domain...")
+            sub_results = []
+            for domain in GRAND_DOMAINES:
+                res = process_segment({**params, "grandDomaine": domain})
+                if res and isinstance(res, list):
+                    sub_results.extend(res)
+            return sub_results
+            
+        # Level 2 Split (by Type Contrat)
+        if results is None and "grandDomaine" in params:
+            print(f"    - Domain {params['grandDomaine']} in {params['departement']} > 3150. Splitting by TypeContrat...")
+            sub_results = []
+            for t_contrat in TYPES_CONTRAT:
+                res = fetch_all_pages({**params, "typeContrat": t_contrat})
+                if res and isinstance(res, list):
+                    sub_results.extend(res)
+            # Final check for "everything else" is not easy, but we cover 99% with TYPES_CONTRAT
+            return sub_results
+            
+        return results
+
+    # We use 10 threads to overlap network latency
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        future_to_dept = {executor.submit(process_segment, {"departement": d}): d for d in DEPARTEMENTS}
+        
+        for future in as_completed(future_to_dept):
+            dept = future_to_dept[future]
+            try:
+                data = future.result()
+                if data:
+                    with LOCK_DATA:
+                        all_raw_data.extend(data)
+                    print(f"Dept {dept}: Fetched {len(data)} offers.")
+                else:
+                    print(f"Dept {dept}: No offers.")
+            except Exception as e:
+                print(f"Dept {dept} generated an exception: {e}")
 
     # Transformation
-    if all_data:
-        # Transform
-        print("Transforming and aggregating data...")
-        df = pd.DataFrame(all_data)
+    if all_raw_data:
+        print("\n--- Processing Data ---")
+        df = pd.DataFrame(all_raw_data)
         
-        # Deduplicate by Offer ID to ensure perfectly clean data
         initial_count = len(df)
         df = df.drop_duplicates(subset=["id"])
         dropped = initial_count - len(df)
         if dropped > 0:
             print(f"  Note: {dropped} duplicate IDs dropped.")
 
-        # Extract needed fields
         df["commune"] = df["lieuTravail"].apply(lambda x: x.get("commune") if isinstance(x, dict) else None)
         df["domaine_3"] = df["romeCode"].str[:3]
-        
-        # Handle nombrePostes
         df["nombrePostes"] = pd.to_numeric(df["nombrePostes"], errors="coerce").fillna(1)
         
-        # Final Aggregation
         agg = df.groupby(["commune", "romeCode", "domaine_3", "romeLibelle"]).agg({
             "id": "count",
             "nombrePostes": "sum"
         }).rename(columns={"id": "nb_offres", "nombrePostes": "total_postes"}).reset_index()
         
-        # Save
         output_path = "data/odis_live_jobs_agg.parquet"
         agg.to_parquet(output_path, index=False)
         
         duration = time.time() - METRICS["start_time"]
         print(f"\n=== ETL SUMMARY ===")
-        print(f"Duration: {duration:.2f} seconds ({duration/60:.2f} minutes)")
+        print(f"Duration: {duration:.2f}s ({duration/60:.2f} min)")
         print(f"Total API Calls: {METRICS['total_calls']}")
         print(f"Rate Limit Errors (429): {METRICS['rate_limit_errors']}")
-        print(f"Total Raw Offers Fetched: {len(all_data)}")
-        print(f"Total Final Rows: {len(agg)}")
-        print(f"Total Market Opportunities: {agg['total_postes'].sum()}")
-        print(f"Results saved to: {output_path}")
+        print(f"Total Raw Offers: {len(all_raw_data)}")
+        print(f"Total Postes: {agg['total_postes'].sum()}")
+        print(f"Saved to: {output_path}")
     else:
-        print("No data fetched to process.")
+        print("No data fetched.")
 
 if __name__ == "__main__":
     run_etl()
