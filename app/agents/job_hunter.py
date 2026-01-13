@@ -25,9 +25,9 @@ JOB_HUNTER_PROMPT = """
    - Ne spécifie pas de `query` (mots-clés) sauf si l'utilisateur a donné une précision particulière (ex: "en alternance").
 2. **LOCALISATION** : Utilise toujours le code INSEE de la ville cible du **Briefing** pour la recherche.
 3. **NE DEMANDE PAS DE PRÉCISIONS** : Tu as les informations sur les métiers dans les critères. AGIS IMMÉDIATEMENT sans attendre de confirmation.
-4. **RÉPONSE** : 
-    - Pour chaque recherche, sélectionne les 3 offres les plus pertinentes (compatibilité, distance, date de publication).
-    - Présente chaque offre trouvée avec son code de référence (ex: 048KLTP) de manière synthétique pour CHAQUE adulte.
+4. **RÉPONSE** : Pour chaque recherche
+    - Dénombre et retourne le nombre d'offres trouvées par domaine métier.
+    - Sélectionne les 3 offres les plus pertinentes selon le {BRIEFING} (compatibilité, distance, date de publication). Présente chaque offre trouvée avec son code de référence (ex: 048KLTP) de manière synthétique et précise en une phrase pourquoi elle te semble pertinente.
     - Termine en demandant si l'utilisateur veut voir plus de détails (get_job_details) sur une offre spécifique.
 """
 
@@ -52,7 +52,8 @@ class JobHunterAgent(BaseAgent):
         briefing_data, user_msg = self._get_briefing_and_user_msg(message)
         
         # 2. Detect Intent: Detail or Search?
-        job_id_match = re.search(r'\b([0-9]{7}[A-Z]{1}|[A-Z0-9]{7})\b', user_msg.upper())
+        # Matches 6-12 alphanumeric chars WITH at least 3 digits (to avoid words like "QUELLES")
+        job_id_match = re.search(r'\b((?=(?:\D*\d){3,})[A-Z0-9]{6,12})\b', user_msg.upper())
         
         if job_id_match:
             job_id = job_id_match.group(1)

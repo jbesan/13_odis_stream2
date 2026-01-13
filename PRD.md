@@ -592,3 +592,21 @@ En tant que travailleur social, je veux être informé des actions en cours des 
 ### 📊 Status
 
 - In Progress (Jan 2026)
+
+## 🚀 Feature [F-28]: Live Jobs Integration (BMO Alternative)
+
+### 📝 User Story
+
+- En tant que travailleur social, je veux des données sur l'emploi mises à jour plus fréquemment que le BMO annuel, afin de refléter la réalité du marché du travail local en temps réel.
+- En tant que développeur, je veux agréger les offres d'emploi live de France Travail pour créer des indicateurs de tension et de volume par commune plutôt que de dépendre uniquement des tendances déclaratives annuelles par bassin d'emploi.
+
+### 🔑 Key Features
+
+- **Collecte Live :** Script de récupération massive des offres via l'API France Travail V2.
+- **Agrégation Fine :** Consolidation des offres par code ROME et par commune (INSEE).
+- **Mise à jour régulière :** Capacité à rafraîchir le fichier `odis_metiers_agg.parquet` de manière hebdomadaire ou mensuelle.
+- **Indicateur de tension hybride :** Combinaison possible entre BMO (prévisionnel) et Offres Live (réel).
+
+### 📊 Status
+
+- In Research (Jan 2026)

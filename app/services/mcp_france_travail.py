@@ -178,7 +178,7 @@ def _search_rome_appellations_logic(query: str) -> List[Dict[str, str]]:
         
     logger.debug(f"🔍 [FranceTravail] Searching ROME for '{query}' -> Terms: {terms}")
         
-    matches = []
+    matches: List[Dict[str, Any]] = []
     for app in all_apps:
         libelle_raw = app['libelle']
         lib_norm = normalize_text(libelle_raw)
@@ -197,11 +197,10 @@ def _search_rome_appellations_logic(query: str) -> List[Dict[str, str]]:
             if terms and terms[0] in lib_tokens:
                 score += 5
 
-            matches: List[Dict[str, Any]] = []
             matches.append({"code": str(app['code']), "libelle": libelle_raw, "_score": score})
             
     # Sort by score (desc) and then alphabetically
-    matches.sort(key=lambda x: (-x['_score'], x['libelle']))
+    matches.sort(key=lambda x: (-int(x['_score']), str(x['libelle'])))
     
     # Trace top result for debugging
     if matches:
@@ -275,7 +274,7 @@ def search_job_offers_logic(
             logger.warning(f"⚠️ [FranceTravail] FAP {fap_code} could not be resolved to a ROME domaine.")
 
     # 4. Prepare API parameters
-    params = {
+    params: Dict[str, Any] = {
         "range": f"{range_start}-{range_end}",
         "sort": sort
     }
