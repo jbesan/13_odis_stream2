@@ -47,7 +47,8 @@ The pipeline is split into four main stages:
 1.  **Ingest (`ingest.py`)**: Fetches raw data and cleans it into intermediate Parquet files.
 2.  **Build (`build.py`)**: Aggregates cleaned data into final ODIS artifacts (joins, geometry operations).
 3.  **Prescoring (`prescoring.py`)**: Calculates ratios, densities, and pre-scales scores for performance.
-4.  **Deploy (`etl.py`)**: Copies final artifacts to the application's data directory.
+4.  **Live Ingest (`ft_live_ingest.py`)**: Fetches real-time job offers from France Travail API and aggregates them.
+5.  **Deploy (`etl.py`)**: Copies final artifacts to the application's data directory.
 
 ### File Structure
 
@@ -90,6 +91,7 @@ The pipeline generates the following Parquet files in `pipeline/cache/output/` a
 | **`loyers.parquet`**                    | Average Rent data (Appartements).          | `codgeo`, `loyer_app_m2`                                                                                                                   |
 | **`population_details.parquet`**        | Age-specific population counts (2016-2022) | `codgeo`, `pop_jeune_2016`, `pop_jeune_2022`, `pop_active_2016`, `pop_active_2022`                                                         |
 | **`odis_refugee_associations.parquet`** | Detailed Refugee Associations List.        | `id`, `codgeo`, `bassin_de_vie`, `name`, `description`, `waldec_code`                                                                      |
+| **`odis_live_jobs_agg.parquet`**        | Live Employment counts (France Travail).   | `commune`, `romeCode`, `romeLibelle`, `total_postes`, `nb_offres_tension`                                                                  |
 
 ## 🔄 Data Flow
 

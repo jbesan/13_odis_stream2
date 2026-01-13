@@ -100,7 +100,8 @@ def run_search():
         codformations_index=st.session_state.app_data['codformations_index'],
         waldec_index=st.session_state.app_data['waldec_index'],
         global_stats={},
-        refugee_associations_data=st.session_state.app_data['refugee_associations_data']
+        refugee_associations_data=st.session_state.app_data['refugee_associations_data'],
+        live_jobs_data=st.session_state.app_data['live_jobs_data']
     )
 
     processed_gdf = engine.run(

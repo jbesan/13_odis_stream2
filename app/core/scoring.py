@@ -45,7 +45,9 @@ class ScoringEngine:
         annuaire_sante: pd.DataFrame = pd.DataFrame(),
         annuaire_inclusion: pd.DataFrame = pd.DataFrame(),
         inclusion_services_index: pd.DataFrame = pd.DataFrame(),
-        refugee_associations_data: pd.DataFrame = pd.DataFrame()
+        regio_referentiel: Optional[pd.DataFrame] = None,
+        refugee_associations_data: pd.DataFrame = pd.DataFrame(),
+        live_jobs_data: pd.DataFrame = pd.DataFrame()
     ):
         self.df_all_communes = df_all_communes
         self.df_bv_geo = df_bv_geo
@@ -65,6 +67,7 @@ class ScoringEngine:
         self.codformations_index = codformations_index
         self.waldec_index = waldec_index
         self.refugee_associations_data = refugee_associations_data
+        self.live_jobs_data = live_jobs_data
     
     def format_city_details(self, row: pd.Series) -> Dict[str, Any]:
         """Formats a row into a detailed dictionary."""
@@ -133,6 +136,17 @@ class ScoringEngine:
                     merged = bmo_city.merge(self.codfap_index, left_on='fap_code', right_index=True, how='left')
                     merged['label'] = merged['label'].fillna(merged['fap_code'])
                     details['emploi']['top_metiers'] = sorted(merged['label'].unique().tolist())
+            
+            # --- Live Jobs Match (ROME) ---
+            if not self.live_jobs_data.empty:
+                live_city = self.live_jobs_data[self.live_jobs_data['commune'] == codgeo].copy()
+                if not live_city.empty:
+                    # Count per ROME libelle
+                    live_summary = live_city.groupby('romeLibelle')['total_postes'].sum().to_dict()
+                    details['emploi']['live_jobs_summary'] = live_summary
+                    details['emploi']['live_total'] = int(live_city['total_postes'].sum())
+                else:
+                    details['emploi']['live_total'] = 0
 
             if not self.formations_data.empty:
                  city_forms = self.formations_data[self.formations_data['codgeo'] == codgeo].copy()
@@ -330,16 +344,84 @@ class ScoringEngine:
 
         return odis_exploded.sort_values(by='weighted_score', ascending=False)
 
+    def _compute_met_live_scores(self, df: gpd.GeoDataFrame, config: ScoringConfig):
+        """Calculates employment scores based on France Travail Live Data."""
+        if self.live_jobs_data.empty:
+            return
+
+        # 1. Identify Target ROME codes (flattened from all adults)
+        # We now assume all codes in codes_metiers are ROME codes (from InterviewerAgent)
+        all_romes = set()
+        for adult_codes in config.codes_metiers:
+            for c in adult_codes:
+                if len(c) == 5 and c[0].isalpha() and c[1:].isdigit():
+                    all_romes.add(c)
+        
+        if not all_romes:
+            return # No ROME codes searched
+
+        # 2. Filter live data for these ROME codes
+        target_live = self.live_jobs_data[self.live_jobs_data['romeCode'].isin(all_romes)]
+        
+        # 3. Sum opportunities (total_postes) per commune
+        commune_live_counts = target_live.groupby('commune')['total_postes'].sum()
+        df['met_live_commune'] = df.index.map(commune_live_counts).fillna(0)
+        
+        # 4. Sum tension (nb_offres_tension) per commune
+        if 'nb_offres_tension' in target_live.columns:
+            commune_tension_counts = target_live.groupby('commune')['nb_offres_tension'].sum()
+            df['met_live_tension'] = df.index.map(commune_tension_counts).fillna(0)
+        else:
+            df['met_live_tension'] = 0.0
+
+        # 5. Bassin de Vie Aggregation
+        # We want the total opportunities in the BdV for the searched codes
+        if 'bassin_de_vie' in df.columns:
+            # First, aggregate live data by BdV for these ROMEs
+            # We need to map 'commune' to 'bdv' in target_live
+            # odis (self.df_all_communes) has this mapping
+            commune_to_bdv = self.df_all_communes['bassin_de_vie'].dropna().to_dict()
+            target_live = target_live.copy()
+            target_live['bdv'] = target_live['commune'].map(commune_to_bdv)
+            
+            bdv_live_counts = target_live.groupby('bdv')['total_postes'].sum()
+            df['met_live_bdv'] = df['bassin_de_vie'].map(bdv_live_counts).fillna(0)
+        else:
+            df['met_live_bdv'] = 0.0
+
+        # 6. Scaling
+        # Commune level
+        min_c, max_c = get_bounds('met_live_commune_scaled', self.scores_cat, self.global_stats)
+        if pd.isna(max_c): max_c = 10.0 # Default if not in config yet
+        df['met_live_commune_scaled'] = min_max_scale(df['met_live_commune'], min_c, max_c)
+        
+        # BdV level
+        min_b, max_b = get_bounds('met_live_bdv_scaled', self.scores_cat, self.global_stats)
+        if pd.isna(max_b): max_b = 50.0 # Default
+        df['met_live_bdv_scaled'] = min_max_scale(df['met_live_bdv'], min_b, max_b)
+        
+        # Tension
+        min_t, max_t = get_bounds('met_live_tension_scaled', self.scores_cat, self.global_stats)
+        if pd.isna(max_t): max_t = 5.0 # Default
+        df['met_live_tension_scaled'] = min_max_scale(df['met_live_tension'], min_t, max_t)
+
     def _compute_criteria_scores(self, df: gpd.GeoDataFrame, config: ScoringConfig) -> gpd.GeoDataFrame:
         df = df.copy()
 
-        # --- EMPLOI (Generic Matching Helper) ---
+        # --- EMPLOI ---
+        # 1. Live Jobs (ROME-based) - NEW SOURCE OF TRUTH
+        self._compute_met_live_scores(df, config)
+
+        # 2. Legacy BMO (FAP-based) - Keep for now as fallback/debug
         relevant_bmo = self.bmo_vertical[self.bmo_vertical['codgeo'].isin(df.index)]
         commune_fap_map = relevant_bmo.groupby('codgeo')['fap_code'].apply(set).to_dict()
 
         for i in range(config.nb_adultes):
             if config.codes_metiers[i]:
-                 self._score_matching(df, f'met_match_adult{i+1}', set(config.codes_metiers[i]), commune_fap_map)
+                 # Filter only FAP-looking codes if we want to avoid mixing
+                 fap_codes = {c for c in config.codes_metiers[i] if not (len(c) == 5 and c[1:].isdigit())}
+                 if fap_codes:
+                    self._score_matching(df, f'met_match_adult{i+1}', fap_codes, commune_fap_map)
 
         # Formations
         relevant_formations = self.formations_data[self.formations_data['codgeo'].isin(df.index)]

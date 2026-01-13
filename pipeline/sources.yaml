@@ -206,3 +206,8 @@ local_files:
     description: "Fichier FINESS local (nettoyé)"
 
     description: "Fichier FINESS local (nettoyé)"
+
+  france_travail_live:
+    url: "https://api.francetravail.io/partenaire/offresemploi/v2/offres/emploi/search"
+    format: "api"
+    description: "API France Travail - Recherche d'offres d'emploi en direct (F-28)"

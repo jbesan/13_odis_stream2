@@ -60,7 +60,8 @@ def get_scoring_engine() -> ScoringEngine:
         codformations_index=DATA_CONTEXT['codformations_index'],
         global_stats={}, # TODO: Compute or load global stats if needed for scaling
         codfap_index=DATA_CONTEXT.get('codfap_index'),
-        refugee_associations_data=DATA_CONTEXT.get('refugee_associations_data', pd.DataFrame())
+        refugee_associations_data=DATA_CONTEXT.get('refugee_associations_data', pd.DataFrame()),
+        live_jobs_data=DATA_CONTEXT.get('live_jobs_data', pd.DataFrame())
     )
 
 def _search_referentiels_logic(query: str, domain: Optional[str] = None) -> List[Dict[str, Any]]:

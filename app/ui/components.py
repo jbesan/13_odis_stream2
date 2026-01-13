@@ -159,7 +159,15 @@ def show_details_dialog(details: Dict[str, Any]):
         with c1:
             with st.container(border=False):
                 st.markdown("#### :material/work: Marché de l'emploi")
-                with st.expander("Top 10 des métiers recherchés", expanded=True):
+                
+                live_total = emploi_data.get('live_total', 0)
+                if live_total > 0:
+                    st.success(f"**{live_total} offres en direct** correspondent à votre recherche actuelle.")
+                    with st.expander("Détail par métier (Live)", expanded=True):
+                        for rome, count in emploi_data.get('live_jobs_summary', {}).items():
+                            st.write(f"• **{rome}** : {count} offre{'s' if count > 1 else ''}")
+                
+                with st.expander("Top 10 des métiers recherchés (Historique BMO)", expanded=False):
                     top_metiers = emploi_data.get('top_metiers', [])
                     if top_metiers:
                         pref_metiers = []
@@ -424,12 +432,12 @@ def render_employment_form() -> None:
     """Renders the UI for the 'Projet Professionnel' form section."""
     app_data = st.session_state.app_data
     col1, col2 = st.columns(2)
-    codfap_select = app_data['codfap_index']
+    rome_select = app_data['rome_index']
     codform_select = app_data['codformations_index']
     
     for i in range(st.session_state.ui_nb_adultes):
         with col1:
-            st.multiselect(f"Métiers ciblés Adulte {i+1}", codfap_select.index, format_func=lambda x: codfap_select.loc[x, 'label'], key=f"ui_metiers_adult_{i}")
+            st.multiselect(f"Métiers ciblés Adulte {i+1}", rome_select.index, format_func=lambda x: rome_select.loc[x, 'label'], key=f"ui_metiers_adult_{i}", help="Recherchez par nom de métier (Référentiel ROME)")
         with col2:
             st.multiselect(f"Formations recherchées Adulte {i+1}", codform_select.index, format_func=lambda x: codform_select.loc[x, 'label'], key=f"ui_formations_adult_{i}")
             
@@ -785,7 +793,8 @@ def _show_details_callback(rank: int) -> None:
         annuaire_sante=app_data.get('annuaire_sante', pd.DataFrame()),
         annuaire_inclusion=app_data.get('annuaire_inclusion', pd.DataFrame()),
         inclusion_services_index=app_data.get('inclusion_services_index', pd.DataFrame()),
-        refugee_associations_data=app_data['refugee_associations_data']
+        refugee_associations_data=app_data['refugee_associations_data'],
+        live_jobs_data=app_data['live_jobs_data']
     )
     
     details = engine.format_city_details(row)

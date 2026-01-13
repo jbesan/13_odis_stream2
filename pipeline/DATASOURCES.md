@@ -187,6 +187,13 @@
 - Données: https://www.data.gouv.fr/datasets/repertoire-operationnel-des-metiers-et-des-emplois-rome/
   NE MARCHE PAS
 
+## Offres d'emploi en direct (Live Jobs)
+
+- Source: France Travail API (Partenaire)
+- Endpoint: https://api.francetravail.io/partenaire/offresemploi/v2/offres/emploi/search
+- Type: API (JSON)
+- Description: Récupération des offres d'emploi en temps réel filtrées par code ROME et commune. Utilisé pour le calcul de tension et le scoring "Live".
+
 ## Formations Annuaire
 
 - Données: https://www.data.gouv.fr/datasets/liste-publique-des-organismes-de-formation-l-6351-7-1-du-code-du-travail/#/resources/ac59a0f5-fa83-4b82-bf12-3c5806d4f19f

@@ -3,8 +3,7 @@ from .state import AgentContext
 from .tools import (
     search_job_offers, 
     get_job_details, 
-    search_rome_appellations,
-    get_rome_for_fap
+    search_rome_appellations
 )
 import logging
 import re
@@ -19,13 +18,13 @@ JOB_HUNTER_PROMPT = """
 **Objectif** : Trouver des offres d'emploi RÉELLES et PERTINENTES dans la ville cible (voir Briefing) pour TOUS les adultes du ménage.
 
 **DIRECTIVES CRITIQUES (NE PAS DEMANDER, AGIR)** :
-1. **RECHERCHE D'OFFRES (PASSAGE FAP)** : Lance `search_job_offers` pour CHAQUE métier identifié dans le **Briefing**. 
-   - Utilise le paramètre `fap_code` directement avec le code FAP de l'adulte (ex: G0B41).
-   - Le moteur de recherche s'occupe désormais de la traduction automatique en domaines ROME pertinents.
+1. **RECHERCHE D'OFFRES (ROME ONLY)** : Lance `search_job_offers` pour CHAQUE code ROME identifié dans le **Briefing**. 
+   - Utilise le paramètre `rome_code`.
    - Ne spécifie pas de `query` (mots-clés) sauf si l'utilisateur a donné une précision particulière (ex: "en alternance").
-2. **LOCALISATION** : Utilise toujours le code INSEE de la ville cible du **Briefing** pour la recherche.
-3. **NE DEMANDE PAS DE PRÉCISIONS** : Tu as les informations sur les métiers dans les critères. AGIS IMMÉDIATEMENT sans attendre de confirmation.
-4. **RÉPONSE** : Pour chaque recherche
+2. **CONTEXTE LIVE** : Le système a déjà calculé le nombre d'offres en direct (Live) pour la ville cible dans le briefing. Utilise ces chiffres pour valoriser les opportunités réelles.
+3. **LOCALISATION** : Utilise toujours le code INSEE de la ville cible du **Briefing** pour la recherche.
+4. **NE DEMANDE PAS DE PRÉCISIONS** : Tu as les informations sur les métiers dans les critères. AGIS IMMÉDIATEMENT sans attendre de confirmation.
+5. **RÉPONSE** : Pour chaque recherche
     - Dénombre et retourne le nombre d'offres trouvées par domaine métier.
     - Sélectionne les 3 offres les plus pertinentes selon le {BRIEFING} (compatibilité, distance, date de publication). Présente chaque offre trouvée avec son code de référence (ex: 048KLTP) de manière synthétique et précise en une phrase pourquoi elle te semble pertinente.
     - Termine en demandant si l'utilisateur veut voir plus de détails (get_job_details) sur une offre spécifique.
@@ -68,7 +67,7 @@ class JobHunterAgent(BaseAgent):
             res = self._execute_tool_loop(
                 prompt, 
                 user_msg, 
-                [search_job_offers, get_job_details, search_rome_appellations, get_rome_for_fap], 
+                [search_job_offers, get_job_details, search_rome_appellations], 
                     context=context
                 )
             return res

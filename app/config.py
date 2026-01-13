@@ -41,6 +41,7 @@ AGG_ASSOCIATIONS_FILE = 'odis_associations_agg.parquet'
 AGG_FORMATIONS_FILE = 'odis_formations_agg.parquet'
 CCAS_FILE = 'odis_ccas.parquet'
 REFUGEE_ASSOCIATIONS_FILE = 'odis_refugee_associations.parquet'
+LIVE_JOBS_FILE = 'odis_live_jobs_agg.parquet'
 SCORES_CAT_FILE = 'scores_config.yaml'
 
 # --- Data Columns ---
@@ -142,7 +143,7 @@ DEMO_SCENARIOS = {
         'logement': "Logement Social",
         'nb_adultes': 2,
         'nb_enfants': 2,
-        'codes_metiers': [['B2X37', 'B2X38'], []],
+        'codes_metiers': [['H2206'], []],
         'codes_formations': [[], ['331', '330', '326']],
         'classe_enfants': ['Maternelle', 'Elémentaire'],
         'sante': "Maternité",
@@ -157,7 +158,7 @@ DEMO_SCENARIOS = {
         'logement': "Logement Social",
         'nb_adultes': 1,
         'nb_enfants': 2,
-        'codes_metiers': [['T2A60']],
+        'codes_metiers': [['K1302']],
         'classe_enfants': ['Crèche / Assistante Maternelle', 'Collège'],
         'inc_services_add_selection': ['lecture-ecriture-calcul--maitriser-le-francais'],
         'poids_mobilité': 50,

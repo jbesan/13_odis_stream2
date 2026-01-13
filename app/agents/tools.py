@@ -8,7 +8,6 @@ from services.mcp_server import (
     _search_places_logic,
     _compute_routes_logic,
     _get_labels_for_codes_logic,
-    _get_rome_for_fap_logic,
     _search_refugee_associations_logic
 )
 from services.mcp_france_travail import (
@@ -82,7 +81,7 @@ def set_focus_city(city_name: str) -> str:
 def search_job_offers(
     query: Optional[str] = None, 
     location: Optional[str] = None, 
-    fap_code: Optional[str] = None, 
+    rome_code: Optional[str] = None, 
     appellation_codes: Optional[List[str]] = None,
     distance: int = 10
 ) -> Dict[str, Any]:
@@ -93,15 +92,15 @@ def search_job_offers(
     Args:
         query: Mots clés supplémentaires (ex: 'Alternance').
         location: Code INSEE de la commune (ex: '33063').
-        fap_code: Code FAP (Famille Professionnelle) de métier.
+        rome_code: Code ROME (Métier) de 5 caractères (ex: 'M1805').
         appellation_codes: Liste de codes métiers précis (ROME Appellations).
         distance: Rayon de recherche en km autour de la commune.
     """
-    logger.info(f"⚒️ [TOOL] search_job_offers: query={query}, location={location}, fap={fap_code}, apps={appellation_codes}")
+    logger.info(f"⚒️ [TOOL] search_job_offers: query={query}, location={location}, rome={rome_code}, apps={appellation_codes}")
     res = _search_job_offers_logic(
         query=query, 
         location=location, 
-        fap_code=fap_code, 
+        rome_code=rome_code, 
         appellation_codes=appellation_codes,
         distance=distance
     )
@@ -138,12 +137,6 @@ def get_labels_for_codes(codes: List[str]) -> Dict[str, str]:
     """
     return _get_labels_for_codes_logic(codes)
 
-def get_rome_for_fap(fap_codes: List[str]) -> Dict[str, List[str]]:
-    """
-    Traduit des codes FAP (Ex: 'A0X41') en codes ROME correspondants.
-    C'est la méthode la plus fiable pour trouver des offres d'emploi pour un profil ODIS.
-    """
-    return _get_rome_for_fap_logic(fap_codes)
 
 def search_refugee_associations(codgeo: str) -> List[Dict[str, Any]]:
     """

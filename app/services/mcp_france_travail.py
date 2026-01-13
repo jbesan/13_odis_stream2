@@ -241,7 +241,7 @@ def _prune_job_offer(offer: Dict[str, Any]) -> Dict[str, Any]:
 def search_job_offers_logic(
     query: Optional[str] = None,
     location: Optional[str] = None,
-    fap_code: Optional[str] = None,
+    rome_code: Optional[str] = None,
     appellation_codes: Optional[List[str]] = None,
     distance: int = 10,
     sort: int = 1,
@@ -249,7 +249,7 @@ def search_job_offers_logic(
     range_end: int = 19
 ) -> Dict[str, Any]:
     """Publicly exported logic for searching job offers."""
-    # logger.info(f"👉 [FranceTravail] ENTERING search_job_offers_logic (loc={location}, fap={fap_code}, apps={appellation_codes})")
+    # logger.info(f"👉 [FranceTravail] ENTERING search_job_offers_logic (loc={location}, rome={rome_code}, apps={appellation_codes})")
     token = _get_access_token()
     
     # 1. Resolve Location if it's a Name
@@ -262,16 +262,13 @@ def search_job_offers_logic(
         else:
             logger.warning(f"⚠️ [FranceTravail] Could not resolve '{location}' to an INSEE code.")
 
-    # 3. Resolve ROME Cluster if FAP provided
-    domaine = None
-    if fap_code:
-        clusters = _resolve_rome_clusters(fap_code)
-        if clusters:
-            # Picking the first one as 'domaine' accepts a single value
-            domaine = clusters[0]
-            # logger.info(f"✅ [FranceTravail] FAP {fap_code} resolved to domaine: {domaine}")
-        else:
-            logger.warning(f"⚠️ [FranceTravail] FAP {fap_code} could not be resolved to a ROME domaine.")
+    # 3. Handle ROME code
+    if rome_code:
+        # If we have a 5-char ROME code, it goes to codeRome
+        if appellation_codes is None:
+            appellation_codes = []
+        if rome_code not in appellation_codes:
+            appellation_codes.append(rome_code)
 
     # 4. Prepare API parameters
     params: Dict[str, Any] = {
@@ -287,8 +284,7 @@ def search_job_offers_logic(
         params["commune"] = location
         params["distance"] = distance
     
-    if domaine:
-        params["domaine"] = domaine
+    # Remove domaine logic as we now use ROME everywhere
     
     # Still allow explicit appellation codes if provided (but API might ignore if domaine is set? 
     # Usually codeRome is separate. Let's see.)

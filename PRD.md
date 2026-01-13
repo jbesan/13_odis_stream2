@@ -602,11 +602,12 @@ En tant que travailleur social, je veux être informé des actions en cours des 
 
 ### 🔑 Key Features
 
-- **Collecte Live :** Script de récupération massive des offres via l'API France Travail V2.
-- **Agrégation Fine :** Consolidation des offres par code ROME et par commune (INSEE).
-- **Mise à jour régulière :** Capacité à rafraîchir le fichier `odis_metiers_agg.parquet` de manière hebdomadaire ou mensuelle.
-- **Indicateur de tension hybride :** Combinaison possible entre BMO (prévisionnel) et Offres Live (réel).
+- **Automated ETL :** Pipeline robuste (`pipeline/ft_live_ingest.py`) capable de collecter ~500k offres en < 10 min.
+- **Agrégation Multi-Niveaux :** Regroupement par Commune (INSEE), Code ROME et Domaine (3 digits).
+- **Indicateurs Enrichis :** Calcul du nombre d'offres ET du nombre total de postes (`nombrePostes`).
+- **Scoring Hybride :** Intégration dans le moteur de scoring pour utiliser ces données "live" en complément ou remplacement du BMO.
+- **Décoration Temps Réel :** Utilisation de cette base pour guider les agents (JobHunter) vers les gisements d'emploi réels.
 
 ### 📊 Status
 
-- In Research (Jan 2026)
+- In Progress (Jan 2026) - Branch `feat-ft-live-jobs`

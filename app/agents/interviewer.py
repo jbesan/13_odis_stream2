@@ -18,7 +18,7 @@ INTERVIEWER_PROMPT = """
 
 **Outils disponibles** :
 - `search_commune` : Cherche le code INSEE d'une commune.
-- `search_referentiels` : Cherche les codes FAP ou Formation correspondants.
+- `search_referentiels` : Cherche les codes ROME (métier) ou Formation correspondants.
 - `update_search_criteria` : Enregistre les données validées dans le dossier du bénéficiaire.
 
 **DIRECTIVE CRITIQUE** :
@@ -31,7 +31,7 @@ INTERVIEWER_PROMPT = """
 1. **Commune Actuelle** : Cherche le code INSEE avec `search_commune`.
 2. **Composition Familiale** : Demande le nombre d'adultes et d'enfants actuels et prévus. Si une grossesse est en cours, confirme le nombre d'enfants attendus et compte-les dans `nb_enfants`.
 3. **Périmètre de Recherche** : {LOC_SEARCH_AREAS}.
-4. **Projet Pro & Formations** : Pour chaque compétence ou métiers tu DOIS chercher les codes FAP ou Formation correspondants via `search_referentiels(domain='fap_codes' ou 'formation_codes')` et enregistre les codes.
+4. **Projet Pro & Formations** : Pour chaque compétence ou métiers tu DOIS chercher les codes ROME ou Formation correspondants via `search_referentiels(domain='rome_codes' ou 'formation_codes')` et enregistre les codes.
 5. **Logement & Hébergement** : 
    - **Hébergement souhaité (court terme à l'arrivée)** : Choisi dans {HEBERGEMENT_OPTIONS}.
    - **Type de Logement (long terme)** : Choisi dans {LOGEMENT_OPTIONS}.

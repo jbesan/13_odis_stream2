@@ -985,6 +985,20 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
             refs_list.append(mapping_ref)
             logger.log_step("generate_referentiels", "FAP_ROME", {"count": len(mapping_ref)})
 
+        # ROME Codes (Referential from API)
+        rome_path = CACHE_DIR / "rome_referential_api.parquet"
+        if rome_path.exists():
+            rome_df = pd.read_parquet(rome_path)
+            # Expected: code, label
+            if 'code' in rome_df.columns and 'label' in rome_df.columns:
+                rome_ref = pd.DataFrame({
+                    'key': 'rome_codes',
+                    'code': rome_df['code'].astype(str),
+                    'label': rome_df['label']
+                })
+                refs_list.append(rome_ref)
+                logger.log_step("generate_referentiels", "ROME_CODES", {"count": len(rome_ref)})
+
     except Exception as e:
         logger.log_step("generate_referentiels", "ERROR_REG_DEP_MAPPING", {"error": str(e)})
 
