@@ -81,7 +81,7 @@ class BaseAgent(abc.ABC):
                         context.tokens_g25_input += in_tokens
                         context.tokens_g25_output += out_tokens
                 
-                logger.debug(f"🏁 [BASE_AGENT] {self.model_id} Usage: +{in_tokens} in / +{out_tokens} out") 
+                logger.info(f"🏁 [TOKEN_USAGE] {self.model_id}: +{in_tokens} in / +{out_tokens} out") 
 
             if response.text:
                 return response.text.strip()

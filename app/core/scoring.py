@@ -34,18 +34,20 @@ class ScoringEngine:
         scores_cat: pd.DataFrame,
         incl_index: pd.DataFrame,
         associations_data: pd.DataFrame,
-        bmo_vertical: pd.DataFrame,
         formations_data: pd.DataFrame,
         codformations_index: Optional[pd.DataFrame] = None,
         waldec_index: Optional[pd.DataFrame] = None,
         global_stats: Optional[Dict[str, Any]] = None,
         bv_data: gpd.GeoDataFrame = None,
-        codfap_index: Optional[pd.DataFrame] = None,
         annuaire_ecoles: pd.DataFrame = pd.DataFrame(),
         annuaire_sante: pd.DataFrame = pd.DataFrame(),
         annuaire_inclusion: pd.DataFrame = pd.DataFrame(),
         inclusion_services_index: pd.DataFrame = pd.DataFrame(),
-        refugee_associations_data: pd.DataFrame = pd.DataFrame()
+        regio_referentiel: Optional[pd.DataFrame] = None,
+        rome_index: pd.DataFrame = pd.DataFrame(),
+        refugee_associations_data: pd.DataFrame = pd.DataFrame(),
+        live_jobs_data: pd.DataFrame = pd.DataFrame(),
+        bmo_vertical: pd.DataFrame = pd.DataFrame() # Deprecated
     ):
         self.df_all_communes = df_all_communes
         self.df_bv_geo = df_bv_geo
@@ -53,87 +55,125 @@ class ScoringEngine:
         self.scores_cat = scores_cat
         self.incl_index = incl_index
         self.associations_data = associations_data
-        self.bmo_vertical = bmo_vertical
         self.formations_data = formations_data
         self.global_stats = global_stats
         self.bv_data = bv_data if bv_data is not None else df_bv_geo
-        self.codfap_index = codfap_index
         self.annuaire_ecoles = annuaire_ecoles
         self.annuaire_sante = annuaire_sante
         self.annuaire_inclusion = annuaire_inclusion
         self.inclusion_services_index = inclusion_services_index
         self.codformations_index = codformations_index
         self.waldec_index = waldec_index
+        self.rome_index = rome_index
         self.refugee_associations_data = refugee_associations_data
+        self.live_jobs_data = live_jobs_data
+        self.bmo_vertical = bmo_vertical
+
     
-    def format_city_details(self, row: pd.Series) -> Dict[str, Any]:
-        """Formats a row into a detailed dictionary."""
-        codgeo = row.name if isinstance(row.name, str) else row.get('codgeo')
-        # Fallback if codgeo is not found
-        if not codgeo and 'codgeo' in row: codgeo = row['codgeo']
-        
+    def format_city_details(self, row: pd.Series, config: Optional[ScoringConfig] = None) -> Dict[str, Any]:
+        """
+        Formats detailed information for a city to be displayed in the UI.
+        """
+        codgeo = str(row['codgeo']) if 'codgeo' in row else str(row.name)
         details = {
             "identity": {
                 "codgeo": codgeo,
-                "nom": row.get('libgeo', 'Unknown'),
-                "population": int(row['population']) if 'population' in row else 0,
+                "nom": row.get('libgeo', 'Inconnu'),
+                "population": row.get('population', 0),
                 "bassin_de_vie": row.get('libelle_bassin_de_vie', 'N/A'),
-                "departement": str(row.get('dep_code', 'N/A')),
                 "score_global": float(row.get('weighted_score', 0.0)) if 'weighted_score' in row else None
             },
+            "name": row.get('libgeo', 'N/A'),
+            "codgeo": codgeo,
+            "population": row.get('population', 0),
+            "bassin_de_vie": row.get('libelle_bassin_de_vie', 'N/A'),
             "scores": {},
-            "emploi": {"top_metiers": [], "formations": []},
+
+            "emploi": {
+                "live_total": 0,
+                "matching_total": 0,
+                "live_jobs_summary": {},
+                "matching_jobs_summary": {},
+                "top_metiers": [],
+                "formations": []
+            },
             "education": {"counts": {}, "etablissements": {}},
             "sante": {"counts": {}, "etablissements": {}},
             "inclusion": {"services_grouped": {}},
             "associations": {}
         }
 
-        # 2. Detailed Scores (Raw & Scaled)
-        if not self.scores_cat.empty:
-            for _, score_row in self.scores_cat.iterrows():
-                cat = score_row['cat']
-                score_id = score_row['score']
-                raw_metric_col = score_row['metric']
-                
-                if cat not in details['scores']: details['scores'][cat] = []
-                
-                val_scaled = float(row[score_id]) if score_id in row else None
-                val_raw = "N/A"
-                
-                if raw_metric_col and raw_metric_col in row:
-                    val = row[raw_metric_col]
-                    if pd.api.types.is_number(val):
-                        unit = score_row.get('description', '')
-                        label = score_row.get('label', '')
-                        if ('%' in unit or 'Taux' in label) and -1.5 <= val <= 1.5:
-                             val_raw = f"{val * 100:.1f}"
-                        else:
-                             val_raw = str(int(val)) if float(val).is_integer() else f"{val:.2f}"
+
+        # 1. Scores per Category
+        for _, score_row in self.scores_cat.iterrows():
+            cat = score_row['cat']
+            score_id = score_row['score']
+            raw_metric_col = score_row['metric']
+            
+            if cat not in details['scores']: details['scores'][cat] = []
+            
+            val_scaled = float(row[score_id]) if score_id in row else None
+            val_raw = "N/A"
+            
+            if raw_metric_col and raw_metric_col in row:
+                val = row[raw_metric_col]
+                if pd.api.types.is_number(val):
+                    unit = score_row.get('description', '')
+                    label = score_row.get('label', '')
+                    if ('%' in unit or 'Taux' in label) and -1.5 <= val <= 1.5:
+                         val_raw = f"{val * 100:.1f}"
                     else:
-                        val_raw = str(val)
-                elif val_scaled is None:
-                     continue # Hide if no data at all
+                         val_raw = str(int(val)) if float(val).is_integer() else f"{val:.2f}"
+                else:
+                    val_raw = str(val)
+            elif val_scaled is None:
+                 continue # Hide if no data at all
 
-                details['scores'][cat].append({
-                    "label": score_row.get('label', score_id),
-                    "score_id": score_id,
-                    "valeur_kpi": val_raw,
-                    "score_normalise": val_scaled,
-                    "unit": score_row.get('description', '')
-                })
+            details['scores'][cat].append({
+                "label": score_row.get('label', score_id),
+                "score_id": score_id,
+                "valeur_kpi": val_raw,
+                "score_normalise": val_scaled,
+                "unit": score_row.get('description', '')
+            })
 
-        # 3. Emploi (Top 10 & Formations)
+        # 3. Emploi (Top 10 from Live Jobs & Formations)
         if codgeo:
-            if not self.bmo_vertical.empty:
-                bmo_city = self.bmo_vertical[self.bmo_vertical['codgeo'] == codgeo].copy()
-                if not bmo_city.empty and self.codfap_index is not None:
-                    # Robust type conversion for merge keys
-                    bmo_city['fap_code'] = bmo_city['fap_code'].astype(str)
-                    merged = bmo_city.merge(self.codfap_index, left_on='fap_code', right_index=True, how='left')
-                    merged['label'] = merged['label'].fillna(merged['fap_code'])
-                    details['emploi']['top_metiers'] = sorted(merged['label'].unique().tolist())
+            # --- Live Jobs Match (ROME) ---
+            if not self.live_jobs_data.empty:
+                live_city = self.live_jobs_data[self.live_jobs_data['commune'] == codgeo].copy()
+                if not live_city.empty:
+                    # Global Summary
+                    live_summary = live_city.groupby('romeLibelle')['total_postes'].sum().to_dict()
+                    details['emploi']['live_jobs_summary'] = live_summary
+                    details['emploi']['live_total'] = int(live_city['total_postes'].sum())
+                    
+                    # Matching Summary (filtered by config)
+                    if config and config.codes_metiers:
+                        # Flatten the list of lists of ROME codes
+                        target_romes = set()
+                        for codes in config.codes_metiers:
+                            if isinstance(codes, list):
+                                for c in codes:
+                                    if len(c) == 5: target_romes.add(c)
+                            elif isinstance(codes, str) and len(codes) == 5:
+                                target_romes.add(codes)
+                        
+                        if target_romes:
+                            matching_city = live_city[live_city['romeCode'].isin(target_romes)]
+                            details['emploi']['matching_jobs_summary'] = matching_city.groupby('romeLibelle')['total_postes'].sum().to_dict()
+                            details['emploi']['matching_total'] = int(matching_city['total_postes'].sum())
 
+                    # Top 10 unique labels by volume with postes count
+                    top_live = live_city.groupby('romeLibelle')['total_postes'].sum().sort_values(ascending=False).head(10)
+                    details['emploi']['top_metiers'] = [f"{label} ({int(vol)} postes)" for label, vol in top_live.items()]
+                else:
+                    details['emploi']['live_total'] = 0
+                    details['emploi']['matching_total'] = 0
+                    details['emploi']['top_metiers'] = []
+
+            
+            # Formations logic remains
             if not self.formations_data.empty:
                  city_forms = self.formations_data[self.formations_data['codgeo'] == codgeo].copy()
                  if not city_forms.empty:
@@ -330,16 +370,78 @@ class ScoringEngine:
 
         return odis_exploded.sort_values(by='weighted_score', ascending=False)
 
+    def _compute_met_live_scores(self, df: gpd.GeoDataFrame, config: ScoringConfig):
+        """Calculates employment scores based on France Travail Live Data."""
+        if self.live_jobs_data.empty:
+            return
+
+        # 1. Identify Target ROME codes (flattened from all adults)
+        # We now assume all codes in codes_metiers are ROME codes (from InterviewerAgent)
+        all_romes = set()
+        for adult_codes in config.codes_metiers:
+            for c in adult_codes:
+                if len(c) == 5 and c[0].isalpha() and c[1:].isdigit():
+                    all_romes.add(c)
+        
+        if not all_romes:
+            return # No ROME codes searched
+
+        # 2. Filter live data for these ROME codes
+        target_live = self.live_jobs_data[self.live_jobs_data['romeCode'].isin(all_romes)]
+        
+        # 3. Sum opportunities (total_postes) per commune
+        commune_live_counts = target_live.groupby('commune')['total_postes'].sum()
+        df['met_live_commune'] = df.index.map(commune_live_counts).fillna(0)
+        
+        # 4. Sum tension (nb_offres_tension) per commune
+        if 'nb_offres_tension' in target_live.columns:
+            commune_tension_counts = target_live.groupby('commune')['nb_offres_tension'].sum()
+            df['met_live_tension'] = df.index.map(commune_tension_counts).fillna(0)
+        else:
+            df['met_live_tension'] = 0.0
+
+        # 5. Bassin de Vie Aggregation
+        # We want the total opportunities in the BdV for the searched codes
+        if 'bassin_de_vie' in df.columns:
+            # First, aggregate live data by BdV for these ROMEs
+            # We need to map 'commune' to 'bdv' in target_live
+            # odis (self.df_all_communes) has this mapping
+            commune_to_bdv = self.df_all_communes['bassin_de_vie'].dropna().to_dict()
+            target_live = target_live.copy()
+            target_live['bdv'] = target_live['commune'].map(commune_to_bdv)
+            
+            bdv_live_counts = target_live.groupby('bdv')['total_postes'].sum()
+            df['met_live_bdv'] = df['bassin_de_vie'].map(bdv_live_counts).fillna(0)
+        else:
+            df['met_live_bdv'] = 0.0
+
+        # 6. Scaling
+        # Commune level
+        min_c, max_c = get_bounds('met_live_commune_scaled', self.scores_cat, self.global_stats)
+        if pd.isna(max_c): max_c = 10.0 # Default if not in config yet
+        df['met_live_commune_scaled'] = min_max_scale(df['met_live_commune'], min_c, max_c)
+        
+        # BdV level
+        min_b, max_b = get_bounds('met_live_bdv_scaled', self.scores_cat, self.global_stats)
+        if pd.isna(max_b): max_b = 50.0 # Default
+        df['met_live_bdv_scaled'] = min_max_scale(df['met_live_bdv'], min_b, max_b)
+        
+        # Tension
+        min_t, max_t = get_bounds('met_live_tension_scaled', self.scores_cat, self.global_stats)
+        if pd.isna(max_t): max_t = 5.0 # Default
+        df['met_live_tension_scaled'] = min_max_scale(df['met_live_tension'], min_t, max_t)
+
     def _compute_criteria_scores(self, df: gpd.GeoDataFrame, config: ScoringConfig) -> gpd.GeoDataFrame:
         df = df.copy()
 
-        # --- EMPLOI (Generic Matching Helper) ---
-        relevant_bmo = self.bmo_vertical[self.bmo_vertical['codgeo'].isin(df.index)]
-        commune_fap_map = relevant_bmo.groupby('codgeo')['fap_code'].apply(set).to_dict()
+        # --- EMPLOI ---
+        # 1. Live Jobs (ROME-based) - NEW SOURCE OF TRUTH
+        self._compute_met_live_scores(df, config)
 
-        for i in range(config.nb_adultes):
-            if config.codes_metiers[i]:
-                 self._score_matching(df, f'met_match_adult{i+1}', set(config.codes_metiers[i]), commune_fap_map)
+        # 2. BMO Data (ROME-based)
+        # relevant_bmo = self.bmo_vertical[self.bmo_vertical['codgeo'].isin(df.index)]
+        # ... ROME-based BMO scoring could be added here if needed, 
+        # but we prioritize live jobs for now.
 
         # Formations
         relevant_formations = self.formations_data[self.formations_data['codgeo'].isin(df.index)]

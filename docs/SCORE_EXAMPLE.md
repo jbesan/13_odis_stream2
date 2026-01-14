@@ -30,17 +30,14 @@ The algorithm calculates a score between 0 and 1 for each category for every can
 
 ### A. Emploi (Weight: 100)
 
-- **Global Job Market Demand (`met_scaled`)**:
-  - Calculates the ratio of total job offers (`met`) to the working-age population (`pop_be`) in the Bassins d'Emploi.
-  - Normalized on a 0-1 scale.
-- **Hard-to-fill Job Demand (`met_tension_scaled`)**:
-  - Specifically looks at the `xmet` column (tension offers) from BMO data.
-  - Helps identify zones where recruitment is particularly urgent.
-- **Job Match (`met_match_adult1_scaled`)**:
-  - Checks if the commune's top job families (`be_codfap_top`) include `T2A60`.
-  - If present, score is high; otherwise 0.
-- **Training Match (`form_match_adult1_scaled`)**:
-  - Checks for training centers offering relevant formations. (None specified in demo 3, so likely 0 or irrelevant).
+- **Job Match (Direct) (`met_live_commune_scaled`)**:
+  - Checks if there are live job offers in the commune matching the searched **ROME codes** (e.g., `H1503` for laboratory technicians).
+  - Higher volume = Higher score.
+- **Job Dynamic (Live BdV) (`met_live_bdv_scaled`)**:
+  - Considers job volume within the **Bassin de Vie** to account for commuting possibilities.
+- **Recruitment Tension (Live) (`met_live_tension_scaled`)**:
+  - Specifically looks at job offers flagged as "under tension" (difficult to fill) in the France Travail API.
+  - Helps identify zones with urgent labor needs.
 - **Workclass Decline (`workclass_decline_scaled`)**:
   - Scores the decline in active population (25-54) between 2016 and 2022. High decline = High score (opportunity).
 

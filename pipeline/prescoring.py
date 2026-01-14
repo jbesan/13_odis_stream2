@@ -33,8 +33,9 @@ def aggregate_plm(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         'lien_social_count', 'inc_asso_refug_count', 'bpe_creches_count', 'risky_schools_count',
         'log_priv_total', 'log_priv_vacant_plus_2ans',
         'log_soc_total', 'log_soc_inoccupes',
-        'metiers_offres_diff', 'total_eleves', 'ecoles_count',
-        'socle_match_count' # Also sum this? No, socle is presence.
+        'total_eleves', 'ecoles_count',
+        'socle_match_count'
+ # Also sum this? No, socle is presence.
         # Ideally calculate socle for 75056 based on POIs.
         # But summing match_count is weird if max is different.
         # Let's skip socle for now or re-calculate it later.
@@ -102,8 +103,9 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             'edu_maternelle_ct', 'edu_elementaire_ct', 'edu_college_ct', 'edu_lycee_ct',
             'count_hopital', 'count_maternite', 'count_psy',
             'risky_schools_count', 'lien_social_count', 'inc_asso_refug_count', 'bpe_creches_count',
-            'edu_pe_tx_couverture', 'metiers_offres_diff', 'pop_chomeurs', 'log_priv_vacant_plus_2ans',
-            'met_ratio', 'pol_num', 'log_vac_struct_ratio'
+            'edu_pe_tx_couverture', 'pop_chomeurs', 'log_priv_vacant_plus_2ans',
+            'pol_num', 'log_vac_struct_ratio'
+
         ]
         for col in raw_metrics_to_fill:
             if col in communes_gdf.columns:
@@ -154,29 +156,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
 
         # metiers_offres_ratio and pop_chomage_ratio
         # Requires pop_active_be
-        if 'bassin_emploi' in communes_gdf.columns and 'pop_active' in communes_gdf.columns:
-             # DEBUG dependencies
-             logging.info("DEBUG: Found bassin_emploi and pop_active.")
-             pop_active_be = communes_gdf.groupby('bassin_emploi', observed=True)['pop_active'].transform('sum')
-             
-             # met_tension_ratio
-             if 'metiers_tension_diff' in communes_gdf.columns:
-                 communes_gdf['met_tension_ratio'] = np.where(
-                     pop_active_be > 0,
-                     (communes_gdf['metiers_tension_diff'] / pop_active_be) * 1000,
-                     0.0
-                 )
-                 communes_gdf.drop(columns=['metiers_tension_diff'], inplace=True)
-             
-             # metiers_offres_ratio
-             if 'metiers_offres_diff' in communes_gdf.columns:
-                 logging.info("DEBUG: Found metiers_offres_diff. Calculating metiers_offres_ratio.")
-                 communes_gdf['metiers_offres_ratio'] = np.where(
-                     pop_active_be > 0,
-                     communes_gdf['metiers_offres_diff'] / pop_active_be,
-                     0.0
-                 )
-                 communes_gdf.drop(columns=['metiers_offres_diff'], inplace=True)
+        # pop_chomage_ratio (Still useful as a general indicator of local economy)
         
         if 'pop_active' in communes_gdf.columns and 'pop_chomeurs' in communes_gdf.columns:
             communes_gdf['pop_chomage_ratio'] = np.where(
@@ -187,9 +167,6 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
 
         # --- Pre-calculate Ratios and Scaled Scores (Optimization) ---
         
-        # 1. Metiers Ratio (Offers per 1000 active)
-        if 'metiers_offres_ratio' in communes_gdf.columns:
-            communes_gdf['met_ratio'] = communes_gdf['metiers_offres_ratio'] * 1000
         
         # 2. Logement Vacant Structurel Ratio
         # 2. Logement Vacant Structurel Ratio
@@ -307,9 +284,6 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             df[output_col] = scale_series(df[col_name], min_b, max_b, inverted)
 
         
-        process_scaling(communes_gdf, 'met_ratio', 'met_scaled')
-        if 'met_tension_ratio' in communes_gdf.columns:
-             process_scaling(communes_gdf, 'met_tension_ratio', 'met_tension_scaled')
         
         # loyer_abordable_scaled (Lower is Better)
         # Custom logic for this one? Or standard inverted?
@@ -550,15 +524,6 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
         
         # --- 1. Ratios & Densities ---
         
-        # Metiers Ratio (Active Pop / Offers)
-        # Note: 'metiers_offres_diff' might be missing if we dropped it in build?
-        # build.py aggregates 'metiers_offres_diff'.
-        if 'metiers_offres_diff' in bv_gdf.columns and 'pop_active' in bv_gdf.columns:
-             bv_gdf['met_ratio'] = np.where(
-                 bv_gdf['pop_active'] > 0,
-                 bv_gdf['metiers_offres_diff'] / bv_gdf['pop_active'] * 1000,
-                 0.0
-             )
         
         # Lien Social
         bv_gdf['lien_social_density'] = np.where(
@@ -592,9 +557,6 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
              if max_val == min_val: return 0.0
              return ((series - min_val) / (max_val - min_val)).clip(0, 1)
 
-        if 'met_ratio' in bv_gdf.columns:
-            min_b, max_b = get_min_max(bv_gdf['met_ratio'])
-            bv_gdf['met_scaled'] = scale_series(bv_gdf['met_ratio'], min_b, max_b)
 
         if 'lien_social_density' in bv_gdf.columns:
             min_b, max_b = get_min_max(bv_gdf['lien_social_density'])

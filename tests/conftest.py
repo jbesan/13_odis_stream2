@@ -67,10 +67,9 @@ def sample_scores_cat():
     """Creates a sample scores_cat DataFrame for testing."""
     data = {
         'score': [
-            'met_scaled', 'met_tension_scaled', 'inc_services_core_scaled', 'inc_asso_core_scaled', 'inc_asso_add_scaled',
+            'met_live_commune_scaled', 'met_live_tension_scaled', 'inc_services_core_scaled', 'inc_asso_core_scaled', 'inc_asso_add_scaled',
             'log_vac_scaled', 'log_soc_inoc_scaled', 'log_5p_scaled',
             'edu_classes_ferm_scaled', 'inc_pol_scaled', 'inc_population_scaled',
-            'met_match_adult1_scaled', 'met_match_adult2_scaled',
             'form_match_adult1_scaled', 'form_match_adult2_scaled',
             'mob_dist_scaled', 'mob_epci_scaled',
             'edu_structures_scaled', 'sante_structures_scaled',
@@ -81,16 +80,14 @@ def sample_scores_cat():
             'logement', 'logement', 'logement',
             'education', 'inclusion', 'inclusion',
             'emploi', 'emploi',
-            'emploi', 'emploi',
             'mobilité', 'mobilité',
             'education', 'santé',
             'inclusion'
         ],
         'metric': [
-            'met_ratio', 'met_tension_ratio', 'socle_match_count', 'lien_social_density', 'affinite_density',
+            'met_live_commune', 'met_live_tension', 'socle_match_count', 'lien_social_density', 'affinite_density',
             'log_vac_ratio', 'log_soc_inoc_ratio', 'log_5p_ratio',
             'risque_fermeture_ratio', 'pol_num', 'population',
-            'met_match_adult1', 'met_match_adult2',
             'form_match_adult1', 'form_match_adult2',
             'dist_current_loc', 'epci_code',
             'edu_structures_count', 'sante_structures_scaled',
@@ -101,14 +98,13 @@ def sample_scores_cat():
             True, True, True,
             True, False, False,
             True, True,
-            True, True,
             False, False,
             True, True,
             False
         ],
-        'weight': [1.0] * 20,
-        'min_bound': [0.0] * 20,
-        'max_bound': [1.0] * 20
+        'weight': [1.0] * 18,
+        'min_bound': [0.0] * 18,
+        'max_bound': [1.0] * 18
     }
     return pd.DataFrame(data).copy()
 

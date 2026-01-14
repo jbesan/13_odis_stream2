@@ -55,12 +55,13 @@ def get_scoring_engine() -> ScoringEngine:
         scores_cat=DATA_CONTEXT['scores_cat'],
         incl_index=DATA_CONTEXT['incl_index'],
         associations_data=DATA_CONTEXT['associations_data'],
-        bmo_vertical=DATA_CONTEXT['bmo_vertical'],
         formations_data=DATA_CONTEXT['formations_data'],
         codformations_index=DATA_CONTEXT['codformations_index'],
+        rome_index=DATA_CONTEXT.get('rome_index', pd.DataFrame()),
+
         global_stats={}, # TODO: Compute or load global stats if needed for scaling
-        codfap_index=DATA_CONTEXT.get('codfap_index'),
-        refugee_associations_data=DATA_CONTEXT.get('refugee_associations_data', pd.DataFrame())
+        refugee_associations_data=DATA_CONTEXT.get('refugee_associations_data', pd.DataFrame()),
+        live_jobs_data=DATA_CONTEXT.get('live_jobs_data', pd.DataFrame())
     )
 
 def _search_referentiels_logic(query: str, domain: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -68,8 +69,8 @@ def _search_referentiels_logic(query: str, domain: Optional[str] = None) -> List
     Searches for codes in the ODIS referentials (Jobs, Formations, Inclusion).
     """
     ensure_data_context()
-    # logger.info(f"👉 [MCP] Request: search_referentiels")
-    # logger.info(f"   Query: '{query}', Domain: '{domain}'")
+    logger.info(f"👉 [MCP] Request: search_referentiels")
+    logger.info(f"   Query: '{query}', Domain: '{domain}'")
     
     if 'referentiels_raw' not in DATA_CONTEXT:
         logger.warning("   ⚠️ Referentiels data not available.")
@@ -125,20 +126,19 @@ def _search_referentiels_logic(query: str, domain: Optional[str] = None) -> List
     results_df = work_df[work_df['score'] > 0].sort_values(by='score', ascending=False)
     
     # 3. Format Output
-    results_df = results_df.head(20)
+    results_df = results_df.head(10)
     
     results = []
     for _, row in results_df.iterrows():
         results.append({
             "code": row['code'],
             "label": row['label'],
-            "type": row['key'],
-            "relevance": row['score'] # Debug info
+            "type": row['key']
         })
         
     # logger.info(f"✅ [MCP] Response: Found {len(results)} matches.")
     if results:
-         top_summary = [f"{r['label']} ({r['relevance']})" for r in results[:3]]
+         top_summary = [f"{r['label']}" for r in results[:3]]
         #  logger.info(f"   Top matches: {top_summary}")
          
     return results
@@ -165,44 +165,11 @@ def search_referentiels(query: str, domain: Optional[str] = None) -> List[Dict[s
     Args:
         query: The search term (e.g., 'Soudeur', 'Football').
         domain: The target database. MUST be one of:
-                ['fap_codes' (Jobs), 'formation_codes', 'inclusion_services', 'waldec_codes' (Hobbies), 'regions', 'departements'].
+                ['rome_codes' (Jobs), 'formation_codes', 'inclusion_services', 'waldec_codes' (Hobbies), 'regions', 'departements'].
     """
     return _search_referentiels_logic(query, domain)
 
 
-def _get_rome_for_fap_logic(fap_codes: List[str]) -> Dict[str, List[str]]:
-    """
-    Lookups official ROME codes for a list of FAP codes using the DARES mapping.
-    """
-    ensure_data_context()
-    if 'referentiels_raw' not in DATA_CONTEXT:
-        return {}
-    
-    df = DATA_CONTEXT['referentiels_raw']
-    # Filter mapping entries
-    mapping_df = df[df['key'] == 'fap_rome_mapping']
-    
-    # Filter for target codes
-    subset = mapping_df[mapping_df['code'].isin(fap_codes)]
-    
-    # Group by FAP code to get list of ROME codes
-    mapping = {}
-    for fap, group in subset.groupby('code'):
-        mapping[str(fap)] = group['label'].astype(str).unique().tolist()
-        
-    return mapping
-
-
-@mcp.tool()
-def get_rome_for_fap(fap_codes: List[str]) -> Dict[str, List[str]]:
-    """
-    Traduit des codes FAP (Familles Professionnelles) en codes ROME (Répertoire Opérationnel des Métiers et des Emplois).
-    Utilise la table de correspondance officielle de la DARES.
-    
-    Args:
-        fap_codes: Liste de codes FAP (ex: ['A0X41', 'B0X32']).
-    """
-    return _get_rome_for_fap_logic(fap_codes)
 
 
 def _search_commune_logic(query: str) -> List[Dict[str, str]]:
@@ -275,7 +242,7 @@ def _search_commune_logic(query: str) -> List[Dict[str, str]]:
 
 
 @mcp.tool()
-def search_commune(query: str) -> List[Dict[str, str]]:
+def search_commune(query: str) -> List[Dict[str, Any]]:
     """
     Searches for a French city to get its INSEE code.
 

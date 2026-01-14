@@ -47,7 +47,8 @@ The pipeline is split into four main stages:
 1.  **Ingest (`ingest.py`)**: Fetches raw data and cleans it into intermediate Parquet files.
 2.  **Build (`build.py`)**: Aggregates cleaned data into final ODIS artifacts (joins, geometry operations).
 3.  **Prescoring (`prescoring.py`)**: Calculates ratios, densities, and pre-scales scores for performance.
-4.  **Deploy (`etl.py`)**: Copies final artifacts to the application's data directory.
+4.  **Live Ingest (`ft_live_ingest.py`)**: Fetches real-time job offers from France Travail API and aggregates them.
+5.  **Deploy (`etl.py`)**: Copies final artifacts to the application's data directory.
 
 ### File Structure
 
@@ -78,18 +79,19 @@ Data sources are defined in `pipeline/sources.yaml`. Each entry specifies:
 
 The pipeline generates the following Parquet files in `pipeline/cache/output/` and deploys them to `data/`:
 
-| File                                    | Description                                | Key Columns                                                                                                                                |
-| --------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| **`odis_communes.parquet`**             | Main dataset at Commune level.             | `codgeo`, `population`, `pop_active`, `met_ratio`, `met_tension_ratio`, `pop_chomage_ratio`, `bassin_de_vie`, `polygon`, `*_scaled` scores |
-| **`odis_bassins_de_vie.parquet`**       | Aggregated dataset at Bassin de Vie level. | `bassin_de_vie`, `libelle_bassin_de_vie`, `population_bv`, `pop_active`, `pop_chomage_ratio`, `geometry` (dissolved)                       |
-| **`bmo_vertical.parquet`**              | Vertical table for Jobs (BMO).             | `codgeo`, `fap_code`, `count`                                                                                                              |
-| **`associations_vertical.parquet`**     | Vertical table for Associations.           | `codgeo`, `id_waldec`, `count`                                                                                                             |
-| **`gares.parquet`**                     | Train Stations presence (Odace).           | `codgeo`, `gare_count`, `has_gare`                                                                                                         |
-| **`pois.parquet`**                      | Points of Interest for map layers.         | `id`, `type`, `lat`, `lon`, `metadata`                                                                                                     |
-| **`referentiels.parquet`**              | Reference tables for UI dropdowns.         | `type`, `code`, `label`                                                                                                                    |
-| **`loyers.parquet`**                    | Average Rent data (Appartements).          | `codgeo`, `loyer_app_m2`                                                                                                                   |
-| **`population_details.parquet`**        | Age-specific population counts (2016-2022) | `codgeo`, `pop_jeune_2016`, `pop_jeune_2022`, `pop_active_2016`, `pop_active_2022`                                                         |
-| **`odis_refugee_associations.parquet`** | Detailed Refugee Associations List.        | `id`, `codgeo`, `bassin_de_vie`, `name`, `description`, `waldec_code`                                                                      |
+| File                                    | Description                                 | Key Columns                                                                                                                                |
+| --------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| **`odis_communes.parquet`**             | Main dataset at Commune level.              | `codgeo`, `population`, `pop_active`, `met_ratio`, `met_tension_ratio`, `pop_chomage_ratio`, `bassin_de_vie`, `polygon`, `*_scaled` scores |
+| **`odis_bassins_de_vie.parquet`**       | Aggregated dataset at Bassin de Vie level.  | `bassin_de_vie`, `libelle_bassin_de_vie`, `population_bv`, `pop_active`, `pop_chomage_ratio`, `geometry` (dissolved)                       |
+| **`bmo_vertical.parquet`**              | [DEPRECATED] Vertical table for Jobs (BMO). | `codgeo`, `fap_code`, `count`                                                                                                              |
+| **`associations_vertical.parquet`**     | Vertical table for Associations.            | `codgeo`, `id_waldec`, `count`                                                                                                             |
+| **`gares.parquet`**                     | Train Stations presence (Odace).            | `codgeo`, `gare_count`, `has_gare`                                                                                                         |
+| **`pois.parquet`**                      | Points of Interest for map layers.          | `id`, `type`, `lat`, `lon`, `metadata`                                                                                                     |
+| **`referentiels.parquet`**              | Reference tables for UI dropdowns.          | `type`, `code`, `label`                                                                                                                    |
+| **`loyers.parquet`**                    | Average Rent data (Appartements).           | `codgeo`, `loyer_app_m2`                                                                                                                   |
+| **`population_details.parquet`**        | Age-specific population counts (2016-2022)  | `codgeo`, `pop_jeune_2016`, `pop_jeune_2022`, `pop_active_2016`, `pop_active_2022`                                                         |
+| **`odis_refugee_associations.parquet`** | Detailed Refugee Associations List.         | `id`, `codgeo`, `bassin_de_vie`, `name`, `description`, `waldec_code`                                                                      |
+| **`odis_live_jobs_agg.parquet`**        | Live Employment counts (France Travail).    | `commune`, `romeCode`, `romeLibelle`, `total_postes`, `nb_offres_tension`                                                                  |
 
 ## 🔄 Data Flow
 

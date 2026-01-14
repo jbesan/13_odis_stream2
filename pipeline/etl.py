@@ -18,12 +18,13 @@ FILES_TO_COPY = [
     'odis_communes_pre.parquet',
     'odis_bassins_de_vie.parquet',
     'odis_pois.parquet',
-    'odis_metiers_agg.parquet',
     'odis_associations_agg.parquet',
+
     'odis_referentiels.parquet',
     'odis_formations_agg.parquet',
     'odis_ccas.parquet',
-    'odis_refugee_associations.parquet'
+    'odis_refugee_associations.parquet',
+    'odis_live_jobs_agg.parquet'
 ]
 
 # Configure logging

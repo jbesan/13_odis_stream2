@@ -45,8 +45,11 @@ Collecte des besoins via un formulaire multi-pages (basé sur `st.session_state[
 - **Famille :** `ui_nb_adultes`, `ui_nb_enfants`.
 - **Éducation :** `ui_classe_enfant_{i}` (déclenche le scoring Éducation si `nb_enfants > 0`).
 - **Projet Pro :**
-  - `ui_metiers_adult_{i}` (codes FAP, alimente `met_match_adult_scaled`).
+
+  - `ui_metiers_adult_{i}` ([DEPRECATED] codes FAP, now using ROME).
+
   - `ui_formations_adult_{i}` (codes formations, alimente `form_match_adult_scaled`).
+
 - **Logement :**
   - `ui_hebergement` (ex: "Chez l'habitant") : solution temporaire à l'arrivée.
   - `ui_logement` (ex: "Logement Social") : Active les scores pertinents (`log_soc_inoc_scaled`, `log_vac_scaled`, etc.).
@@ -467,9 +470,12 @@ En tant que travailleur social, je veux voir les lieux recommandés sur une cart
   - Serveur MCP (`app/mcp_server.py`) exposant les données ODIS (Référentiels, Communes, Scoring) comme des outils standardisés.
   - Client Gemini (`app/gemini_client.py`) consommant ces outils.
 - **Outils Intelligents :**
+
   - `search_commune(query)`: Trouve le code INSEE exact d'une ville.
-  - `search_referentiels(query, domain)`: Recherche sémantique robuste (tolérance aux fautes, mots vides) dans les référentiels Métiers (FAP), Formations et Associations (WALDEC).
+  - `search_referentiels(query, domain)`: Recherche sémantique robuste in Referentials (Inclusion, Formations, ROME). [DEPRECATED] FAP search is no longer active.
+
   - `compute_top_cities(weight_profile, criterias)`: Lance le moteur de scoring ODIS avec des critères structurés.
+
 - **Robustesse & Typage :** Utilisation de modèles **Pydantic** (`app/models.py`) pour garantir que l'IA génère des paramètres de recherche valides (schéma strict).
 - **Prompt Engineering :** "System Instruction" externalisée (`AGENT_PROMPT.md`) définissant un persona "Assistant Expert" avec un protocole d'entretien strict en 4 phases (Ancrage, Famille, Besoins, Validation).
 
@@ -497,13 +503,16 @@ L'assistant est désormais composé de plusieurs agents spécialisés pilotés p
 
 - **Nouveau Outil MCP :** `get_city_details(codgeo)` qui agrège les données de toutes les sources disponibles (ODIS, Annuaire Education/Santé/Inclusion, Associations, BMO).
 - **Structure des Données :** Retourne un objet JSON structuré avec :
+
   - **Identité :** Nom, Code, Population, Bassin de Vie.
   - **Scores :** Détail des scores bruts et normalisés.
-  - **Emploi :** Top secteurs recruteurs (BMO).
+  - **Emploi :** Top secteurs recruteurs ([DEPRECATED] BMO, replaced by Live Jobs).
+
   - **Education :** Nombre d'établissements par niveau.
   - **Santé :** Dénombrement des services clés.
   - **Inclusion :** Liste des services disponibles.
   - **Associations :** Thématiques principales et volumétrie.
+
 - **Intégration UI :** Bouton "En savoir plus" dans la liste des résultats ouvrant une vue détaillée.
 - **Intégration Agent :** Le chatbot peut appeler cet outil pour répondre à des questions spécifiques comme "Quelles sont les associations sportives à X ?" ou "Y a-t-il un hôpital à Y ?".
 
@@ -602,11 +611,27 @@ En tant que travailleur social, je veux être informé des actions en cours des 
 
 ### 🔑 Key Features
 
-- **Collecte Live :** Script de récupération massive des offres via l'API France Travail V2.
-- **Agrégation Fine :** Consolidation des offres par code ROME et par commune (INSEE).
-- **Mise à jour régulière :** Capacité à rafraîchir le fichier `odis_metiers_agg.parquet` de manière hebdomadaire ou mensuelle.
-- **Indicateur de tension hybride :** Combinaison possible entre BMO (prévisionnel) et Offres Live (réel).
+- **Automated ETL :** Pipeline robuste (`pipeline/ft_live_ingest.py`) capable de collecter ~500k offres en < 10 min.
+- **Agrégation Multi-Niveaux :** Regroupement par Commune (INSEE), Code ROME et Domaine (3 digits).
+- **Indicateurs Enrichis :** Calcul du nombre d'offres ET du nombre total de postes (`nombrePostes`).
+- **Scoring Hybride :** Intégration dans le moteur de scoring pour utiliser ces données "live" en complément ou remplacement du BMO.
+- **Décoration Temps Réel :** Utilisation de cette base pour guider les agents (JobHunter) vers les gisements d'emploi réels.
 
 ### 📊 Status
 
-- In Research (Jan 2026)
+- In Progress (Jan 2026) - Branch `feat-ft-live-jobs`
+
+## 🚀 Feature [F-29]: AI Agent Token Usage Logging
+
+### 📝 User Story
+
+- En tant que développeur, je veux voir l'utilisation des jetons (tokens) par modèle dans la console, afin de suivre la consommation et les coûts des différents agents IA.
+
+### 🔑 Key Features
+
+- **Logging INFO :** Restauration des logs de consommation de tokens (`in_tokens`, `out_tokens`) au niveau `INFO` pour qu'ils soient visibles par défaut dans la console.
+- **Détail par Modèle :** Affichage explicite du `model_id` associé à chaque consommation.
+
+### 📊 Status
+
+- In Progress (Jan 2026)

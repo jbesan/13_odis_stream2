@@ -8,7 +8,6 @@ from services.mcp_server import (
     _search_places_logic,
     _compute_routes_logic,
     _get_labels_for_codes_logic,
-    _get_rome_for_fap_logic,
     _search_refugee_associations_logic
 )
 from services.mcp_france_travail import (
@@ -22,7 +21,7 @@ from core.models import SearchCriterias
 logger = logging.getLogger("agent_tools")
 
 def search_referentiels(query: str, domain: Optional[str] = None) -> List[Dict[str, Any]]:
-    """Recherche des codes officiels (FAP, ROME, etc.) dans les référentiels."""
+    """Recherche des codes officiels (Formations, ROME, Services d'inclusion, WALDEC, etc.) dans les référentiels."""
     return _search_referentiels_logic(query, domain)
 
 def search_commune(query: str) -> List[Dict[str, Any]]:
@@ -71,7 +70,7 @@ def set_focus_city(city_name: str) -> str:
     Définit la ville 'active' ou 'focus' pour la conversation de terrain.
     À utiliser dès que l'utilisateur s'intéresse à une ville spécifique (ex: 'Parle moi de Bordeaux').
     """
-    logger.info(f"⚒️ [TOOL] set_focus_city: '{city_name}'")
+    # logger.info(f"⚒️ [TOOL] set_focus_city: '{city_name}'")
     if "agent" in st.session_state:
         st.session_state.agent.context.focus_city = city_name
         logger.info(f"⚒️ [TOOL] context.focus_city updated to: {city_name}")
@@ -82,7 +81,7 @@ def set_focus_city(city_name: str) -> str:
 def search_job_offers(
     query: Optional[str] = None, 
     location: Optional[str] = None, 
-    fap_code: Optional[str] = None, 
+    rome_code: Optional[str] = None, 
     appellation_codes: Optional[List[str]] = None,
     distance: int = 10
 ) -> Dict[str, Any]:
@@ -93,15 +92,15 @@ def search_job_offers(
     Args:
         query: Mots clés supplémentaires (ex: 'Alternance').
         location: Code INSEE de la commune (ex: '33063').
-        fap_code: Code FAP (Famille Professionnelle) de métier.
-        appellation_codes: Liste de codes métiers précis (ROME Appellations).
+        rome_code: Code ROME (Métier) de 5 caractères (ex: 'M1805').
+        # appellation_codes: Liste de codes métiers précis (ROME Appellations).
         distance: Rayon de recherche en km autour de la commune.
     """
-    logger.info(f"⚒️ [TOOL] search_job_offers: query={query}, location={location}, fap={fap_code}, apps={appellation_codes}")
+    logger.info(f"⚒️ [TOOL] search_job_offers: query={query}, location={location}, rome={rome_code}, apps={appellation_codes}")
     res = _search_job_offers_logic(
         query=query, 
         location=location, 
-        fap_code=fap_code, 
+        rome_code=rome_code, 
         appellation_codes=appellation_codes,
         distance=distance
     )
@@ -115,9 +114,10 @@ def search_job_offers(
 
 def search_rome_appellations(query: str) -> List[Dict[str, str]]:
     """
-    Recherche des intitulés de métiers précis (appellations ROME) à partir d'un mot-clé.
-    Utile pour traduire un code FAP (ex: 'Boulanger') en codes précis pour la recherche d'offres.
+    Recherche des catégories de métiers (codes ROME) à partir d'un mot-clé.
+    Utile pour trouver des codes officiels pour la recherche d'offres.
     """
+
     logger.info(f"⚒️ [TOOL] search_rome_appellations: '{query}'")
     return _search_rome_appellations_logic(query)
 
@@ -133,17 +133,11 @@ def get_job_details(job_id: str) -> Dict[str, Any]:
 
 def get_labels_for_codes(codes: List[str]) -> Dict[str, str]:
     """
-    Récupère les libellés en français pour une liste de codes (FAP, INSEE, etc.).
+    Récupère les libellés en français pour une liste de codes (ROME, INSEE, etc.).
     Utile pour savoir à quoi correspond un code avant de l'utiliser.
     """
     return _get_labels_for_codes_logic(codes)
 
-def get_rome_for_fap(fap_codes: List[str]) -> Dict[str, List[str]]:
-    """
-    Traduit des codes FAP (Ex: 'A0X41') en codes ROME correspondants.
-    C'est la méthode la plus fiable pour trouver des offres d'emploi pour un profil ODIS.
-    """
-    return _get_rome_for_fap_logic(fap_codes)
 
 def search_refugee_associations(codgeo: str) -> List[Dict[str, Any]]:
     """

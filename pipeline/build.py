@@ -70,8 +70,9 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
                 # Optional: Detailed log if impactful?
                 # logger.log_step("build_communes_merge", "WARNING", {"missing": name})
 
-        # Merge BMO (Stats only + code_be)
-        merge_clean("bmo_stats", ['metiers_offres_diff', 'metiers_tension_diff', 'code_be'])
+        # Merge BMO (Stats only + code_be) - DEPRECATED
+        # merge_clean("bmo_stats", ['metiers_offres_diff', 'metiers_tension_diff', 'code_be'])
+
         
         # Merge Population
         merge_clean("population", ['population'])
@@ -489,13 +490,14 @@ def build_vertical_tables(config: Dict[str, Any], logger: PipelineLogger):
     """Generates vertical lookup tables."""
     logger.log_step("build_vertical_tables", "STARTED")
     try:
-        # 1. Metiers
-        bmo_path = CLEAN_DIR / "bmo_vertical.parquet"
-        if bmo_path.exists():
-            df = pd.read_parquet(bmo_path)
-            out = OUTPUT_DIR / "odis_metiers_agg.parquet"
-            df.to_parquet(out)
-            logger.log_step("build_vertical_tables", "METIERS", {"path": str(out)})
+        # 1. Metiers - DEPRECATED (Moved to Live Jobs)
+        # bmo_path = CLEAN_DIR / "bmo_vertical.parquet"
+        # if bmo_path.exists():
+        #     df = pd.read_parquet(bmo_path)
+        #     out = OUTPUT_DIR / "odis_metiers_agg.parquet"
+        #     df.to_parquet(out)
+        #     logger.log_step("build_vertical_tables", "METIERS", {"path": str(out)})
+
             
         # 2. Associations
         assoc_path = CLEAN_DIR / "associations_vertical.parquet"
@@ -795,38 +797,39 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
     logger.log_step("generate_referentiels", "STARTED")
     try:
         refs_list = []
-        # FAP (Familles Professionnelles)
-        fap_cfg = config['sources']['referentiel_fap']
-        fap_path = CACHE_DIR / fap_cfg['local_name']
-        if fap_path.exists():
-            # Expected cols: 'Code FAP 228', 'Intitulé FAP 228'
-            # Note: CSV might have BOM or encoding issues, so we use 'Code FAP 228' substring search
-            fap_df = load_dataset(fap_path, fap_cfg)
-            fap_df.columns = [c.strip().replace('\ufeff', '') for c in fap_df.columns] # Remove BOM if present
-            
-            code_col = next((c for c in fap_df.columns if 'Code FAP 228' in c), None)
-            label_col = next((c for c in fap_df.columns if 'Intitulé FAP 228' in c), None)
-            
-            if code_col and label_col:
-                fap_ref = pd.DataFrame({
-                    'key': 'fap_codes',
-                    'code': fap_df[code_col],
-                    'label': fap_df[label_col]
-                    #'metadata': fap_df.drop(columns=[code_col, label_col]).to_json(orient='records') # Removed
-                })
-                # --- Enriched FAP Labels (from DARES) ---
-                fap_enriched_path = CLEAN_DIR / "fap_labels_enriched.parquet"
-                if fap_enriched_path.exists():
-                    fap_enriched_df = pd.read_parquet(fap_enriched_path)
-                    fap_enriched_ref = pd.DataFrame({
-                        'key': 'fap_codes',
-                        'code': fap_enriched_df['code'],
-                        'label': fap_enriched_df['label']
-                    })
-                    fap_ref = pd.concat([fap_ref, fap_enriched_ref], ignore_index=True).drop_duplicates()
-                    logger.log_step("generate_referentiels", "FAP_ENRICHED", {"count": len(fap_enriched_ref)})
+        # [DEPRECATED] FAP (Familles Professionnelles)
+        # fap_cfg = config['sources']['referentiel_fap']
+        # fap_path = CACHE_DIR / fap_cfg['local_name']
+        # if fap_path.exists():
+        #     # Expected cols: 'Code FAP 228', 'Intitulé FAP 228'
+        #     # Note: CSV might have BOM or encoding issues, so we use 'Code FAP 228' substring search
+        #     fap_df = load_dataset(fap_path, fap_cfg)
+        #     fap_df.columns = [c.strip().replace('\ufeff', '') for c in fap_df.columns] # Remove BOM if present
+        #     
+        #     code_col = next((c for c in fap_df.columns if 'Code FAP 228' in c), None)
+        #     label_col = next((c for c in fap_df.columns if 'Intitulé FAP 228' in c), None)
+        #     
+        #     if code_col and label_col:
+        #         fap_ref = pd.DataFrame({
+        #             'key': 'fap_codes',
+        #             'code': fap_df[code_col],
+        #             'label': fap_df[label_col]
+        #             #'metadata': fap_df.drop(columns=[code_col, label_col]).to_json(orient='records') # Removed
+        #         })
+        #         # --- Enriched FAP Labels (from DARES) ---
+        #         fap_enriched_path = CLEAN_DIR / "fap_labels_enriched.parquet"
+        #         if fap_enriched_path.exists():
+        #             fap_enriched_df = pd.read_parquet(fap_enriched_path)
+        #             fap_enriched_ref = pd.DataFrame({
+        #                 'key': 'fap_codes',
+        #                 'code': fap_enriched_df['code'],
+        #                 'label': fap_enriched_df['label']
+        #             })
+        #             fap_ref = pd.concat([fap_ref, fap_enriched_ref], ignore_index=True).drop_duplicates()
+        #             logger.log_step("generate_referentiels", "FAP_ENRICHED", {"count": len(fap_enriched_ref)})
+        # 
+        #         refs_list.append(fap_ref)
 
-                refs_list.append(fap_ref)
             
         if refs_list:
             all_refs = pd.concat(refs_list, ignore_index=True)
@@ -972,18 +975,33 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
             refs_list.append(deps_ref)
             logger.log_step("generate_referentiels", "DEPARTEMENTS", {"count": len(deps_ref)})
 
-        # FAP-ROME Mapping
-        mapping_path = CLEAN_DIR / "fap_rome_mapping.parquet"
-        if mapping_path.exists():
-            mapping_df = pd.read_parquet(mapping_path)
-            # Store as key=fap_rome_mapping, code=FAP, label=ROME
-            mapping_ref = pd.DataFrame({
-                'key': 'fap_rome_mapping',
-                'code': mapping_df['fap_code'].astype(str),
-                'label': mapping_df['rome_code'].astype(str)
-            })
-            refs_list.append(mapping_ref)
-            logger.log_step("generate_referentiels", "FAP_ROME", {"count": len(mapping_ref)})
+        # [DEPRECATED] FAP-ROME Mapping
+        # mapping_path = CLEAN_DIR / "fap_rome_mapping.parquet"
+        # if mapping_path.exists():
+        #     mapping_df = pd.read_parquet(mapping_path)
+        #     # Store as key=fap_rome_mapping, code=FAP, label=ROME
+        #     mapping_ref = pd.DataFrame({
+        #         'key': 'fap_rome_mapping',
+        #         'code': mapping_df['fap_code'].astype(str),
+        #         'label': mapping_df['rome_code'].astype(str)
+        #     })
+        #     refs_list.append(mapping_ref)
+        #     logger.log_step("generate_referentiels", "FAP_ROME", {"count": len(mapping_ref)})
+
+
+        # ROME Codes (Referential from API)
+        rome_path = CACHE_DIR / "rome_referential_api.parquet"
+        if rome_path.exists():
+            rome_df = pd.read_parquet(rome_path)
+            # Expected: code, label
+            if 'code' in rome_df.columns and 'label' in rome_df.columns:
+                rome_ref = pd.DataFrame({
+                    'key': 'rome_codes',
+                    'code': rome_df['code'].astype(str),
+                    'label': rome_df['label']
+                })
+                refs_list.append(rome_ref)
+                logger.log_step("generate_referentiels", "ROME_CODES", {"count": len(rome_ref)})
 
     except Exception as e:
         logger.log_step("generate_referentiels", "ERROR_REG_DEP_MAPPING", {"error": str(e)})

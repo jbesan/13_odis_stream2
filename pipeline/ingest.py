@@ -1,18 +1,21 @@
 import argparse
 import logging
 import requests
+from datetime import datetime
 import pandas as pd
 import geopandas as gpd
 import numpy as np
 import json
+import time
 from pathlib import Path
 from typing import Dict, Any, Optional
 
 from pipeline.common import (
     PipelineLogger, load_config, load_dataset, extract_zip,
-    CONFIG_FILE, CACHE_DIR, CLEAN_DIR, STATUS_FILE
+    CONFIG_FILE, CACHE_DIR, CLEAN_DIR, OUTPUT_DIR, STATUS_FILE
 )
 from pipeline.odace_client import get_odace_client
+from pipeline.ft_live_ingest import run_etl, get_token as get_ft_token
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -64,15 +67,58 @@ def fetch_source(name: str, source_cfg: Dict[str, Any], logger: PipelineLogger) 
             return extracted_path
             
         return local_path
-
     except Exception as e:
         logging.error(f"[{name}] Failed: {e}")
         logger.log_source(name, "ERROR", str(e))
         return None
 
+def fetch_rome_referential(logger: PipelineLogger) -> Optional[Path]:
+    """Fetches ROME referential from France Travail API with 1-year TTL."""
+    local_path = CACHE_DIR / "rome_referential_api.parquet"
+    
+    # 1. 1-Year TTL Check
+    if local_path.exists():
+        mtime = datetime.fromtimestamp(local_path.stat().st_mtime)
+        age_days = (datetime.now() - mtime).days
+        if age_days < 365:
+            logging.info(f"[ROME] Referential is {age_days} days old. Using cache (TTL=1 year).")
+            return local_path
+        logging.info(f"[ROME] Referential is {age_days} days old. Refreshing...")
+    
+    # 2. Fetch from API
+    try:
+        token = get_ft_token()
+        url = "https://api.francetravail.io/partenaire/offresdemploi/v2/referentiel/metiers"
+        headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+        
+        logging.info(f"📡 [ROME] Fetching referential from France Travail API...")
+        response = requests.get(url, headers=headers, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        
+        # 3. Process and Save
+        # Expected list of {code, libelle}
+        df = pd.DataFrame(data)
+        if 'code' in df.columns and 'libelle' in df.columns:
+            df = df[['code', 'libelle']].rename(columns={'libelle': 'label'})
+            df.to_parquet(local_path)
+            logging.info(f"✅ [ROME] Saved {len(df)} métiers to {local_path}")
+            logger.log_source("rome_referential", "FETCHED", str(local_path))
+            return local_path
+        else:
+            logging.error(f"[ROME] Unexpected data format: {df.columns}")
+            return None
+            
+    except Exception as e:
+        logging.error(f"❌ [ROME] Failed to fetch referential: {e}")
+        logger.log_source("rome_referential", "ERROR", str(e))
+        return None
+
 def clean_bmo_fap(config: Dict[str, Any], logger: PipelineLogger):
-    """Cleans BMO data (Bassins d'Emploi + FAP) and saves to parquet."""
-    logger.log_step("clean_bmo_fap", "STARTED")
+    """[DEPRECATED] Cleans BMO data (Bassins d'Emploi + FAP) and saves to parquet."""
+    logger.log_step("clean_bmo_fap", "DEPRECATED")
+    return # Skip
+
     bmo_source = config['sources']['bmo']
     bmo_path = CACHE_DIR / bmo_source['local_name']
     
@@ -1237,6 +1283,39 @@ def clean_nomenclature_waldec(config: Dict[str, Any], logger: PipelineLogger):
         logger.log_step("clean_nomenclature_waldec", "ERROR", {"error": str(e)})
         logging.error(f"WALDEC clean failed: {e}")
 
+def clean_live_jobs(config: Dict[str, Any], logger: PipelineLogger):
+    """Fetches and aggregates Live Job offers from France Travail."""
+    logger.log_step("clean_live_jobs", "STARTED")
+    
+    output_path = OUTPUT_DIR / "odis_live_jobs_agg.parquet"
+    ttl_days = 7
+    
+    should_run = True
+    if output_path.exists():
+        mtime = output_path.stat().st_mtime
+        age_days = (time.time() - mtime) / (24 * 3600)
+        
+        if age_days < ttl_days:
+            logging.info(f"Live Jobs: Data is {age_days:.1f} days old (TTL={ttl_days}). Skipping.")
+            should_run = False
+        else:
+            # TTL Expired - Prompt User
+            print(f"\n[?] Live Jobs data is {age_days:.1f} days old (TTL={ttl_days}).")
+            choice = input(f"    Do you want to refresh the metadata? (y/N): ").lower().strip()
+            if choice != 'y':
+                logging.info("Live Jobs: Refresh canceled by user.")
+                should_run = False
+
+    if should_run:
+        logging.info("Live Jobs: Running France Travail ingest...")
+        path = run_etl()
+        if path:
+            logger.log_step("clean_live_jobs", "COMPLETED", {"path": path})
+        else:
+            logger.log_step("clean_live_jobs", "FAILED")
+    else:
+        logger.log_step("clean_live_jobs", "SKIPPED")
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="ODIS Ingest Pipeline")
     parser.add_argument('--steps', type=str, help="Comma-separated list of steps to run (e.g. communes,inclusion)")
@@ -1249,10 +1328,10 @@ def main(argv=None):
     
     logger.log_step("ingest_all", "STARTED")
     
-    # 1. Fetch
-    # If steps provided, only fetch sources related to those steps? 
-    # For now, just fetch all or maybe skip fetch if not needed.
-    # Generally fetch checks for existence so it's fast.
+    # --- 1. Fetch ROME Referential (New) ---
+    fetch_rome_referential(logger)
+
+    # 2. Fetch others
     for name, source_cfg in config['sources'].items():
         fetch_source(name, source_cfg, logger)
         
@@ -1282,7 +1361,8 @@ def main(argv=None):
         'nomenclature_waldec': clean_nomenclature_waldec,
         'regions': clean_regions,
         'departements': clean_departements,
-        'fap_rome_mapping': clean_fap_rome_mapping
+        'fap_rome_mapping': clean_fap_rome_mapping,
+        'live_jobs': clean_live_jobs
     }
 
     selected_steps = args.steps.split(',') if args.steps else steps_map.keys()
@@ -1583,8 +1663,10 @@ def clean_departements(config: Dict[str, Any], logger: PipelineLogger):
         logging.warning(f"Departements: Columns not found. Found: {df.columns}")
 
 def clean_fap_rome_mapping(config: Dict[str, Any], logger: PipelineLogger):
-    """Cleans FAP-ROME mapping and saves to parquet."""
-    logger.log_step("clean_fap_rome_mapping", "STARTED")
+    """[DEPRECATED] Cleans FAP-ROME mapping and saves to parquet."""
+    logger.log_step("clean_fap_rome_mapping", "DEPRECATED")
+    return # Skip
+
     source = config['sources']['fap_rome_mapping']
     path = CACHE_DIR / source['local_name']
     if not path.exists():

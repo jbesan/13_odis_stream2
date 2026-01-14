@@ -95,13 +95,14 @@ def run_search():
         scores_cat=st.session_state.app_data['scores_cat'],
         incl_index=st.session_state.app_data['incl_index'],
         associations_data=st.session_state.app_data['associations_data'],
-        bmo_vertical=st.session_state.app_data['bmo_vertical'],
         formations_data=st.session_state.app_data['formations_data'],
         codformations_index=st.session_state.app_data['codformations_index'],
         waldec_index=st.session_state.app_data['waldec_index'],
         global_stats={},
-        refugee_associations_data=st.session_state.app_data['refugee_associations_data']
+        refugee_associations_data=st.session_state.app_data['refugee_associations_data'],
+        live_jobs_data=st.session_state.app_data['live_jobs_data']
     )
+
 
     processed_gdf = engine.run(
         config=config,

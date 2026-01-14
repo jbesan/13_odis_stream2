@@ -33,9 +33,10 @@ Tu es le Cerveau de l'Assistant ODIS. Ton job est de router le message de l'util
 - Si l'utilisateur décrit la situation de la personne accompagnée -> **INTERVIEWER**.
 - Si l'utilisateur a fini de donner ses critères et veut voir les résultats -> **SCORER**.
 - Si l'utilisateur veut explorer une ville de manière générale -> **DECORATION**.
-- Si l'utilisateur pose une question dtrès pécifique sur un des résultats -> **SCOUT** ou **JOB_HUNTER** directement (PAS de décoration).
+- Si l'utilisateur pose une question très pécifique sur un des résultats -> **SCOUT** ou **JOB_HUNTER** directement (PAS de décoration).
 - Si l'utilisateur veut modifier un critère de recherche -> **INTERVIEWER**.
 - Si l'utilisateur veut relancer un calcul -> **SCORER**.
+- Sinon (pour toute autre question) utilise ton accès natif à Google Search pour y répondre
 
 **Contexte Actuel** :
 - Agent Actif : {ACTIVE_AGENT}
@@ -239,7 +240,7 @@ class MultiAgentOrchestrator:
         3. S'il y a des points noirs dis-le clairement.
         4. Ne répète pas les titres. Structure la réponse par thématiques (Vie Quotidienne, Opportunités Emploi, etc).
         5. Fais le lien avec le projet de vie (Profil: {context.search_criteria.get('weight_profile', 'Standard')}) et les indices de vie.
-        6. Termine par une question ouverte pour analyser une autre ville du top 5 ou approfondir l'analyse.
+        6. Termine par une question ouverte pour analyser une autre ville du top 5 ou approfondir l'analyse. Ne réponds JAMAIS tout en majuscule (CAPSLOCK)
         """
         
         response = self.client.models.generate_content(

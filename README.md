@@ -31,7 +31,7 @@ Ce prototype a un triple objectif :
 - **Résultats Détaillés & Export PDF :** Explorez les 5 meilleurs résultats avec une analyse de leurs points forts et exportez un rapport PDF complet pour la famille accompagnée.
 - **Assistant IA (Multi-Agent ODIS) :** Interagissez en langage naturel avec un système multi-agent capable de conduire l'entretien, de calculer les scores, et de décorer les résultats avec des infos terrain et web. Voir la [documentation détaillée de l'architecture](app/agents/README.md).
 - **Grounding Google Search :** Grâce à l'agent spécialisé WEB, accédez aux dernières actualités locales et au contexte social des communes visées.
-- **Expertise Emploi (Mapping DARES) :** Traduction automatique et officielle des profils métiers (FAP) en codes ROME grâce à l'intégration de la table de passage de la DARES, garantissant une recherche d'emploi ultra-précise sur France Travail.
+- **Expertise Emploi (France Travail Live) :** Intégration en temps réel des offres d'emploi via l'API France Travail (Search API V2). Le moteur utilise exclusivement les codes ROME pour un scoring "Live" ultra-précis tenant compte de la tension de recrutement et du volume réel d'offres par commune. [DEPRECATED] L'usage des profils FAP et du BMO annuel a été retiré.
 - **Référentiel des Associations Réfugiés ([F-26]):** Accédez à une base de données qualifiée d'associations spécialisées dans l'accueil des nouveaux arrivants, accessible via l'interface et l'assistant IA.
 - **Scénarios de Démonstration :** Chargez rapidement des profils pré-configurés pour découvrir le potentiel de l'outil.
 
@@ -101,6 +101,8 @@ Le score est calculé à partir d'une multitude de critères, regroupés en gran
 - **Adéquation Compétences/Emploi** : Évalue la correspondance entre les métiers recherchés par les adultes du foyer et les familles de métiers les plus demandées dans la zone.
 - **Adéquation Besoins/Formations** : Mesure la présence de centres de formation proposant les cursus recherchés par les adultes du foyer.
 - **Déclin Démographique Actif** : Valorise les communes perdant leur population active (25-54 ans), signalant un besoin de main-d'œuvre.
+- **Opportunités Emploi (Live)** : Mesure le nombre réel d'offres d'emploi disponibles dans la commune pour les métiers recherchés (Source: API France Travail).
+- **Tension de recrutement (Live)** : Identifie les offres signalées comme difficiles à pourvoir, signalant un fort besoin de main-d'œuvre immédiat.
 
 **Catégorie : Logement**
 

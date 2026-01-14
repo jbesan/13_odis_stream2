@@ -1,36 +1,4 @@
 scores:
-  - id: met_scaled
-    category: emploi
-    source_metric: met_ratio
-    bdv_factor: 0.9
-    computation: precomputed
-    display:
-      name: Taux Besoin Emploi
-      strong_point_text: De nombreux emplois non pourvus
-      high_value_adjective: élevé
-      show: true
-      unit: offres/1000 hab.
-      display_factor: 1
-      tooltip: "Emplois non pourvus pour 1000 habitants (Source: France Travail)"
-    weight: 1.0
-    min_bound: null
-    max_bound: null
-  - id: met_tension_scaled
-    category: emploi
-    source_metric: met_tension_ratio
-    bdv_factor: 0.9
-    computation: precomputed
-    display:
-      name: Taux Besoin Emploi en Tension
-      strong_point_text: De nombreux emplois en tension non pourvus
-      high_value_adjective: élevé
-      show: true
-      unit: offres/1000 hab.
-      display_factor: 1
-      tooltip: "Emplois en tension non pourvus pour 1000 habitants (Source: France Travail)"
-    weight: 1.0
-    min_bound: null
-    max_bound: null
   - id: log_vac_scaled
     category: logement
     source_metric: log_vac_struct_ratio
@@ -131,42 +99,6 @@ scores:
     weight: 3.0
     min_bound: 1000 #Une commune de moins de 1000 habitants est peu pertinente
     max_bound: 25000 #Eviter le skew par les tres grandes métropoles
-  - id: met_match_adult1_scaled
-    category: emploi
-    source_metric: met_match_adult1
-    bdv_factor: 0.9
-    computation: live
-    display:
-      name: Match compétences et Besoin Emploi Adult 1
-      strong_point_text:
-        Une forte demande dans le domaine de compétences de l'adulte
-        1
-      high_value_adjective: présent
-      show: true
-      unit: famille(s) d'emplois
-      display_factor: 1
-      tooltip: Nombre de familles d'emplois dans le top 10
-    weight: 2.0
-    min_bound: 0.0
-    max_bound: null
-  - id: met_match_adult2_scaled
-    category: emploi
-    source_metric: met_match_adult2
-    bdv_factor: 0.9
-    computation: live
-    display:
-      name: Match compétences et Besoin Emploi Adult 2
-      strong_point_text:
-        Une forte demande dans le domaine de compétences de l'adulte
-        2
-      high_value_adjective: présent
-      show: true
-      unit: famille(s) d'emplois
-      display_factor: 1
-      tooltip: Nombre de familles d'emplois dans le top 10
-    weight: 2.0
-    min_bound: 0.0
-    max_bound: null
   - id: form_match_adult1_scaled
     category: emploi
     source_metric: form_match_adult1
@@ -540,3 +472,51 @@ scores:
     weight: 1.0
     min_bound: -0.1
     max_bound: 0.1
+  - id: met_live_commune_scaled
+    category: emploi
+    source_metric: met_live_commune
+    bdv_factor: 0.0
+    computation: live
+    display:
+      name: Opportunités Emploi (Ville)
+      strong_point_text: De nombreuses offres d'emploi correspondent à votre recherche dans la ville
+      high_value_adjective: nombreuses
+      show: true
+      unit: offres
+      display_factor: 1
+      tooltip: "Nombre d'offres d'emploi en direct pour les codes ROME recherchés (Source: France Travail)"
+    weight: 2.0
+    min_bound: 0
+    max_bound: 10
+  - id: met_live_bdv_scaled
+    category: emploi
+    source_metric: met_live_bdv
+    bdv_factor: 0.0
+    computation: live
+    display:
+      name: Opportunités Emploi (Bassin de Vie)
+      strong_point_text: Le bassin de vie est très dynamique pour votre recherche
+      high_value_adjective: dynamique
+      show: true
+      unit: offres
+      display_factor: 1
+      tooltip: "Nombre d'offres d'emploi dans le bassin de vie pour les codes ROME recherchés (Source: France Travail)"
+    weight: 1.0
+    min_bound: 0
+    max_bound: 50
+  - id: met_live_tension_scaled
+    category: emploi
+    source_metric: met_live_tension
+    bdv_factor: 0.5
+    computation: live
+    display:
+      name: Tension de recrutement (Live)
+      strong_point_text: Recrutements difficiles (Fort besoin de main d'oeuvre)
+      high_value_adjective: forte
+      show: true
+      unit: offres en tension
+      display_factor: 1
+      tooltip: "Nombre d'offres signalées avec 'Manque de candidats' (Source: France Travail)"
+    weight: 1.0
+    min_bound: 0
+    max_bound: 5

@@ -146,7 +146,8 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
     if config:
         # --- Correctly look up names for Jobs & Formations ---
         app_data = st_session_state.get('app_data', {})
-        metiers_df = app_data.get('codfap_index')
+        metiers_df = app_data.get('rome_index')
+
         formations_df = app_data.get('codformations_index')
 
         # Get job names from codes
@@ -304,12 +305,24 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
         pdf.set_font("DejaVu", 'B', 9)
         pdf.cell(0, 6, "Top métiers recherchés", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.set_font("DejaVu", '', 9)
-        top_metiers = set(row.get('be_libfap_top', []) or [])
+        
+        live_jobs = st_session_state['app_data'].get('live_jobs_data', pd.DataFrame())
+        codgeo = str(row.get('codgeo', row.name))
+        
+        top_metiers = []
+        if not live_jobs.empty:
+            city_live = live_jobs[live_jobs['commune'] == codgeo]
+            if not city_live.empty:
+                # Group by label and sort by volume
+                top_live = city_live.groupby('romeLibelle')['total_postes'].sum().sort_values(ascending=False).head(10)
+                top_metiers = top_live.index.tolist()
+        
         if top_metiers:
-            pdf.multi_cell(0, 5, "\n".join([f'- {item}' for item in sorted(list(top_metiers))]))
+            pdf.multi_cell(0, 5, "\n".join([f'- {item}' for item in top_metiers]))
         else:
             pdf.multi_cell(0, 5, "Pas de données disponibles.")
         pdf.ln(3)
+
 
         # Formations
         pdf.set_font("DejaVu", 'B', 9)

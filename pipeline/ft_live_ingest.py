@@ -3,7 +3,7 @@ import requests
 import time
 import pandas as pd
 from dotenv import load_dotenv
-from typing import List, Dict
+from typing import List, Dict, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 
@@ -127,6 +127,22 @@ def api_call(params):
             time.sleep(1 + attempt)
             continue
     return None
+def prune_offer(offer: Dict[str, Any]) -> Dict[str, Any]:
+    """Keeps only essential fields to reduce memory usage during ETL."""
+    # Note: Extracting commune here avoids using .apply() later
+    lt = offer.get("lieuTravail")
+    commune = None
+    if isinstance(lt, dict):
+        commune = lt.get("commune")
+        
+    return {
+        "id": offer.get("id"),
+        "commune": commune,
+        "romeCode": offer.get("romeCode"),
+        "romeLibelle": offer.get("romeLibelle"),
+        "nombrePostes": offer.get("nombrePostes"),
+        "offresManqueCandidats": offer.get("offresManqueCandidats", False)
+    }
 
 def fetch_all_pages(params):
     all_offers = []
@@ -161,8 +177,9 @@ def fetch_all_pages(params):
         if "typeContrat" not in params:
             return None # Trigger Level 3
     
-    # Store first batch
-    all_offers.extend(resp.json().get("resultats", []))
+    # Store first batch (pruned)
+    results = resp.json().get("resultats", [])
+    all_offers.extend([prune_offer(o) for o in results])
     
     # Fetch remaining pages
     limit = min(total, 3150)
@@ -171,7 +188,8 @@ def fetch_all_pages(params):
         end = min(start + 149, limit - 1)
         page_resp = api_call({**params, "range": f"{start}-{end}"})
         if page_resp and page_resp.status_code in [200, 206]:
-            all_offers.extend(page_resp.json().get("resultats", []))
+            results = page_resp.json().get("resultats", [])
+            all_offers.extend([prune_offer(o) for o in results])
         elif page_resp is None:
             print(f"      [Error] Could not fetch batch {start}-{end} for {params}.")
             
@@ -241,35 +259,43 @@ def run_etl():
     if all_raw_data:
         print("\n--- Processing Data ---")
         df = pd.DataFrame(all_raw_data)
-        
         initial_count = len(df)
         df = df.drop_duplicates(subset=["id"])
         dropped = initial_count - len(df)
         if dropped > 0:
             print(f"  Note: {dropped} duplicate IDs dropped.")
 
-        df["commune"] = df["lieuTravail"].apply(lambda x: x.get("commune") if isinstance(x, dict) else None)
-        df["domaine_3"] = df["romeCode"].str[:3]
-        df["nombrePostes"] = pd.to_numeric(df["nombrePostes"], errors="coerce").fillna(1)
+        # Fields are already pruned. Just ensure types.
+        df["offresManqueCandidats"] = df["offresManqueCandidats"].fillna(False).astype(bool)
+        df["nombrePostes"] = pd.to_numeric(df["nombrePostes"], errors="coerce").fillna(1).astype(int)
         
-        agg = df.groupby(["commune", "romeCode", "domaine_3", "romeLibelle"]).agg({
+        agg = df.groupby(["commune", "romeCode", "romeLibelle"]).agg({
             "id": "count",
-            "nombrePostes": "sum"
-        }).rename(columns={"id": "nb_offres", "nombrePostes": "total_postes"}).reset_index()
+            "nombrePostes": "sum",
+            "offresManqueCandidats": "sum" # Count how many offers in this group are in tension
+        }).rename(columns={
+            "id": "nb_offres", 
+            "nombrePostes": "total_postes",
+            "offresManqueCandidats": "nb_offres_tension"
+        }).reset_index()
         
-        output_path = "data/odis_live_jobs_agg.parquet"
+        output_path = "pipeline/cache/output/odis_live_jobs_agg.parquet"
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
         agg.to_parquet(output_path, index=False)
         
-        duration = time.time() - METRICS["start_time"]
+        duration = (time.time() - METRICS["start_time"]) / 60
         print(f"\n=== ETL SUMMARY ===")
-        print(f"Duration: {duration:.2f}s ({duration/60:.2f} min)")
+        print(f"Duration: {duration:.2f} minutes")
         print(f"Total API Calls: {METRICS['total_calls']}")
         print(f"Rate Limit Errors (429): {METRICS['rate_limit_errors']}")
-        print(f"Total Raw Offers: {len(all_raw_data)}")
-        print(f"Total Postes: {agg['total_postes'].sum()}")
+        print(f"Raw Offers Fetched: {initial_count}")
+        print(f"Final Aggregated Rows: {len(agg)}")
+        print(f"Total Postes (Market Opportunity): {int(agg['total_postes'].sum())}")
         print(f"Saved to: {output_path}")
+        return output_path
     else:
         print("No data fetched.")
+        return None
 
 if __name__ == "__main__":
     run_etl()

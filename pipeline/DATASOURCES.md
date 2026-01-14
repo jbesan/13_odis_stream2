@@ -145,7 +145,7 @@
 
 # Emploi
 
-## Besoin en main d'oeuvre (BMO)
+## [DEPRECATED] Besoin en main d'oeuvre (BMO)
 
 - Données: https://www.data.gouv.fr/datasets/enquete-besoins-en-main-doeuvre-bmo/#/resources/54478315-aafd-4070-b8df-a5647297e0c0
 - Lien direct: https://www.data.gouv.fr/api/1/datasets/r/54478315-aafd-4070-b8df-a5647297e0c0
@@ -158,14 +158,14 @@
 - Type de fichier: xlsx
 - Onglet utiles: Feuil1
 
-## Référentiel métiers FAP 2021
+## [DEPRECATED] Référentiel métiers FAP 2021
 
 - Page: https://www.data.gouv.fr/datasets/la-nomenclature-des-familles-professionnelles-2021/#/resources/f1be98eb-0414-4648-a683-7dbed3ebaca7
 - Lien direct: https://www.data.gouv.fr/api/1/datasets/r/f1be98eb-0414-4648-a683-7dbed3ebaca7
 - Type de fichier: csv
 - colonnes utiles: Code FAP 228, Intitulé FAP 228
 
-## Correspondance ROME <-> FAP 2021
+## [DEPRECATED] Correspondance ROME <-> FAP 2021
 
 - Page: https://dares.travail-emploi.gouv.fr/donnees/la-nomenclature-des-familles-professionnelles-2021
 - Lien direct: https://dares.travail-emploi.gouv.fr/sites/default/files/9166deb9ba1f03faf0097beb7e449915/Dares_Table_passage_ROME_Qualif_to_FAP2021_pour_programme.csv
@@ -186,6 +186,13 @@
 
 - Données: https://www.data.gouv.fr/datasets/repertoire-operationnel-des-metiers-et-des-emplois-rome/
   NE MARCHE PAS
+
+## Offres d'emploi en direct (Live Jobs)
+
+- Source: France Travail API (Partenaire)
+- Endpoint: https://api.francetravail.io/partenaire/offresemploi/v2/offres/emploi/search
+- Type: API (JSON)
+- Description: Récupération des offres d'emploi en temps réel filtrées par code ROME et commune. Utilisé pour le calcul de tension et le scoring "Live".
 
 ## Formations Annuaire
 

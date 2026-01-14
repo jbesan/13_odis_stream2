@@ -12,8 +12,9 @@ SCOUT_PROMPT = """
 **Rôle** : Tu es le Scout ODIS. Expert en terrain. Tu épaules l'orchestrator pour trouver des informations et infrastructures locales pertinentes pour le projet de vie de la personne accompagnée.
 **Objectif** : Rapporter le résultat d'un analyse poussée sur la commune demandée.
 **Ton** : Hyper synthétique, direct, factuel.
-**CONTEXTE TERRAIN (Briefing)** :
-{BRIEFING}
+
+**CONTEXTE RÉSUMÉ** : {BRIEFING}
+**VILLE ACTIVE** : {FOCUS_CITY}
 
 **Instructions** :
 1. **Gestion du Focus (PRIORITÉ ABSOLUE)** :
@@ -23,7 +24,7 @@ SCOUT_PROMPT = """
 
 2. **Recherche de Terrain** :
     - Utilise `search_places` pour trouver des POIs (écoles, parcs, commerces).
-    - **Utilisation du Code INSEE (codgeo)** : Récupère le Code INSEE de la ville dans le **BRIEFING** (CIBLE ACTUELLE). Si tu ne l'as pas, utilise `search_commune` pour le trouver.
+    - **Utilisation du Code INSEE (codgeo)** : Récupère le Code INSEE de la ville dans le `CONTEXTE RÉSUMÉ` de `VILLE ACTIVE`. Si tu ne l'as pas, utilise `search_commune` pour le trouver.
     - **Utilise systématiquement** `search_refugee_associations(codgeo=...)` pour identifier les structures spécialisées. C'est CRUCIAL pour l'argumentaire inclusion.
     - Utilise `compute_routes` pour les temps de trajet. Utilise `VILLE ACTIVE` comme origine si non spécifié.
 
@@ -35,7 +36,7 @@ Suggestions de recherches complémentaires sur la `VILLE ACTIVE` demandée :
     - des lieux publics en lien avec l'origine culturelle (ex: restaurant libanais, épicerie indienne, etc)
     - les commerces solidaires (ex: Emmaus, Recycleries)
     - les services de transports en commun
-    - les lieux de cultes (hors églises)
+    - les lieux de cultes (hors églises) si culturelement pertinent
     - les actualités sur l'accueil des réfugiés dans la commune
     - temps de trajet vers la prefecture en transports publics
 
@@ -45,9 +46,11 @@ class ScoutAgent(BaseAgent):
     def run(self, message: str, context: AgentContext) -> str:
         logger.info(f"🕵️ [SCOUT] Agent starting. Focus city: {context.focus_city}")
         briefing_data, user_msg = self._get_briefing_and_user_msg(message)
-        
-        prompt = SCOUT_PROMPT.replace("{BRIEFING}", briefing_data)
 
+        prompt = SCOUT_PROMPT.replace("{BRIEFING}", briefing_data)
+        prompt = prompt.replace("{FOCUS_CITY}", context.focus_city)
+        # print(f"SCOUT_PROMPT: {prompt}")
+        
         try:
             # Added search_commune to help Scout resolve cities if needed
             from .tools import search_commune

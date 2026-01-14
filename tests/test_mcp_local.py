@@ -35,8 +35,8 @@ def test_search_commune(mcp_data_context):
     assert top['libgeo'] == 'Nantes'
 
 def test_search_referentiels_jobs(mcp_data_context):
-    """Verify FAP search finds jobs."""
-    results = _search_referentiels_logic("Boulanger", domain="fap_codes")
+    """Verify ROME search finds jobs."""
+    results = _search_referentiels_logic("Boulanger", domain="rome_codes")
     assert len(results) > 0
     # Check if any result has expected label
     found = any("Boulanger" in r['label'] for r in results)
@@ -79,7 +79,7 @@ def test_compute_top_cities_execution_complex(mcp_data_context):
         'nb_enfants': 2,
         'hebergement': 'Location',
         'logement': 'Logement Social',
-        'codes_metiers': [['T2A60']], 
+        'codes_metiers': [['M1805']], 
         'classe_enfants': ['Maternelle', 'Collège'], # Adjusted from original 'Crèche/Assistante Maternelle' to match standardized keys if possible, or robust logic handles it.
         # Note: 'Crèche / Assistante Maternelle' is the text used in prompt, scoring might map it.
         # But let's stick to what original test had:

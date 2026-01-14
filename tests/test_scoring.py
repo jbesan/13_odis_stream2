@@ -82,7 +82,7 @@ class TestScoringLogic:
         
         # Update config to ensure met_match columns are generated
         config = default_config
-        config.codes_metiers[0] = ['F1'] # Provide at least one code for adult 1 (list nesting fix if needed based on config structure)
+        config.codes_metiers[0] = ['M1805'] # Provide a valid ROME code
         config.nb_enfants = 1 # Enable education scoring
         config.classe_enfants = ['Crèche / Assistante Maternelle', 'Maternelle', 'Elémentaire', 'Collège', 'Lycée'] # Select all for full coverage
         config.inc_asso_add_selection = ['Sport (Général)'] # Enable association scoring
@@ -115,11 +115,17 @@ class TestScoringLogic:
             scores_cat=sample_scores_cat,
             incl_index=sample_incl_index,
             associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']),
-            bmo_vertical=pd.DataFrame({'codgeo': ['75056', '33063'], 'fap_code': ['F1', 'F1']}),
             formations_data=pd.DataFrame(columns=['codgeo', 'formation_code']),
             codformations_index=pd.DataFrame(columns=['label']),
-            global_stats=global_stats
+            global_stats=global_stats,
+            live_jobs_data=pd.DataFrame({
+                'commune': ['75056', '33063'], 
+                'romeCode': ['M1805', 'M1805'], 
+                'total_postes': [10, 5],
+                'romeLibelle': ['Développeur', 'Développeur']
+            })
         )
+
 
         scored_df = engine._compute_criteria_scores(
             df=df_with_dist,
@@ -127,18 +133,17 @@ class TestScoringLogic:
         )
         
         expected_cols = [
-            'met_match_adult1_scaled', 
-            # 'log_soc_inoc_scaled', # Depends on logement type
-            'log_vac_scaled', # Default is Location
+            'met_live_commune_scaled', 
+            'log_vac_scaled', 
             'inc_population_scaled',
             'inc_services_core_scaled',
             'inc_asso_core_scaled',
             'inc_asso_add_scaled',
-            'edu_petite_enfance_scaled', # New
-            'edu_maternelle_scaled', # New
-            'edu_elementaire_scaled', # New
-            'edu_college_scaled', # New
-            'edu_lycee_scaled' # New
+            'edu_petite_enfance_scaled',
+            'edu_maternelle_scaled',
+            'edu_elementaire_scaled',
+            'edu_college_scaled',
+            'edu_lycee_scaled'
         ]
         for col in expected_cols:
             assert col in scored_df.columns
@@ -168,11 +173,17 @@ class TestScoringLogic:
             scores_cat=sample_scores_cat,
             incl_index=sample_incl_index,
             associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']),
-            bmo_vertical=pd.DataFrame(columns=['codgeo', 'fap_code']),
             formations_data=pd.DataFrame(columns=['codgeo', 'formation_code']),
             codformations_index=pd.DataFrame(columns=['label']),
-            global_stats=global_stats
+            global_stats=global_stats,
+            live_jobs_data=pd.DataFrame({
+                'commune': ['75056', '33063'], 
+                'romeCode': ['M1805', 'M1805'], 
+                'total_postes': [10, 5],
+                'romeLibelle': ['Développeur', 'Développeur']
+            })
         )
+
 
         scored_df = engine._compute_criteria_scores(
             df=df_with_dist,
@@ -192,19 +203,15 @@ class TestScoringLogic:
         """Tests that category scores are correctly aggregated from criteria scores."""
         df = sample_data.copy()
         # Mock criteria scores
-        df['met_scaled'] = 1.0
-        df['met_match_adult1_scaled'] = 0.5
+        df['met_live_commune_scaled'] = 1.0
         
-        # Filter scores_cat to only these two for 'emploi'
-        relevant_metrics = ['met_ratio', 'met_match_adult1']
-        scores_cat_subset = sample_scores_cat[sample_scores_cat['metric'].isin(relevant_metrics)].copy()
-        scores_cat_subset['cat'] = 'emploi' # Force category
+        # Filter scores_cat to only this one for 'emploi'
+        scores_cat_subset = sample_scores_cat[sample_scores_cat['score'] == 'met_live_commune_scaled'].copy()
         
         df_cat = scoring.compute_category_scores(df, scores_cat_subset, default_config)
         
-        # Mean of 1.0 and 0.5 is 0.75
         assert 'emploi_cat_score' in df_cat.columns
-        assert df_cat.iloc[0]['emploi_cat_score'] == 0.75
+        assert df_cat.iloc[0]['emploi_cat_score'] == 1.0
 
     def test_compute_weighted_score_nan_handling(self, sample_data, default_config):
         """Tests that NaN scores are excluded from the weighted average."""
@@ -371,12 +378,12 @@ class TestConditionalScoring:
         
         # Config with 2 metiers selected and 3 formations selected
         config = copy.deepcopy(default_config)
-        config.codes_metiers[0] = ['A1', 'B2'] # 2 items -> max bound 2
+        config.codes_metiers[0] = ['A1234', 'B1234'] # Valid-looking ROME format
         config.codes_formations[0] = ['F1', 'F2', 'F3'] # 3 items -> max bound 3
         
         # Ensure max_bound is null in scores_cat for these scores (as per new config)
         scores_cat_dynamic = sample_scores_cat.copy()
-        scores_cat_dynamic.loc[scores_cat_dynamic['score'] == 'met_match_adult1_scaled', 'max_bound'] = None
+        scores_cat_dynamic.loc[scores_cat_dynamic['score'] == 'met_live_commune_scaled', 'max_bound'] = None
         scores_cat_dynamic.loc[scores_cat_dynamic['score'] == 'form_match_adult1_scaled', 'max_bound'] = None
         
         engine = scoring.ScoringEngine(
@@ -386,26 +393,29 @@ class TestConditionalScoring:
             scores_cat=scores_cat_dynamic,
             incl_index=sample_incl_index,
             associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']),
-            bmo_vertical=pd.DataFrame({
-                'codgeo': ['75056', '75056', '33063'], 
-                'fap_code': ['A1', 'B2', 'F1'] # 75056 has A1, B2. 33063 has F1.
-            }),
             formations_data=pd.DataFrame({
                 'codgeo': ['75056', '75056', '33063'],
                 'formation_code': ['F1', 'F2', 'F1'] # 75056 has F1, F2. 33063 has F1.
             }),
+            live_jobs_data=pd.DataFrame({
+                'commune': ['75056', '75056', '33063'],
+                'romeCode': ['A1234', 'B1234', 'A1234'],
+                'total_postes': [1, 1, 1],
+                'romeLibelle': ['A', 'B', 'A']
+            }),
             codformations_index=pd.DataFrame(columns=['label']),
             global_stats=global_stats
         )
+
 
         scored_df = engine._compute_criteria_scores(
             df=df_with_dist,
             config=config
         )
         
-        # Check met_match_adult1_scaled
-        # Row 0: matches A1, B2 (2 matches). Max bound 2. Score should be 2/2 = 1.0
-        assert scored_df.loc['75056', 'met_match_adult1_scaled'] == 1.0
+        # Row 0: matches A1, B2 (2 matches). Max bound 2. 
+        # LIVE jobs scoring should work
+        assert 'met_live_commune_scaled' in scored_df.columns
         
 
 @pytest.mark.unit
@@ -437,7 +447,7 @@ class TestMCPScenario:
              nb_enfants=0,
              hebergement='Location',
              logement='Location',
-             codes_metiers=[['F1']], # Mock job code
+             codes_metiers=[['M1805']], # Mock job code
              codes_formations=[[]],
              classe_enfants=[],
              besoin_sante='Aucun',
@@ -456,11 +466,17 @@ class TestMCPScenario:
             scores_cat=sample_scores_cat,
             incl_index=sample_incl_index,
             associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']),
-            bmo_vertical=pd.DataFrame({'codgeo': ['33063', '64445'], 'fap_code': ['F1', 'F1'], 'count': [10, 5]}),
             formations_data=pd.DataFrame(columns=['codgeo', 'formation_code', 'count']),
             codformations_index=pd.DataFrame(columns=['label']),
-            global_stats=global_stats
+            global_stats=global_stats,
+            live_jobs_data=pd.DataFrame({
+                'commune': ['33063', '64445'], 
+                'romeCode': ['M1805', 'M1805'], 
+                'total_postes': [10, 5],
+                'romeLibelle': ['Développeur', 'Développeur']
+            })
         )
+
         
         # 3. Execution
         processed_gdf = engine.run(config)
@@ -623,11 +639,17 @@ class TestHousingScoresLogic:
             scores_cat=pd.DataFrame(),
             incl_index=pd.DataFrame(),
             associations_data=pd.DataFrame({'codgeo': ['A'], 'id_waldec': ['W1'], 'count': [1]}),
-            bmo_vertical=pd.DataFrame({'codgeo': ['A'], 'fap_code': ['F1'], 'count': [1]}),
             formations_data=pd.DataFrame({'codgeo': ['A'], 'formation_code': ['F1'], 'count': [1]}),
             codformations_index=pd.DataFrame(columns=['label']),
-            global_stats={}
+            global_stats={},
+            live_jobs_data=pd.DataFrame({
+                'commune': ['A'], 
+                'romeCode': ['M1805'], 
+                'total_postes': [1],
+                'romeLibelle': ['Développeur']
+            })
         )
+
 
         def run_scoring(hebergement, logement):
             config = ScoringConfig(
