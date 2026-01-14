@@ -30,6 +30,7 @@ class WebAgent(BaseAgent):
         briefing_data, user_msg = self._get_briefing_and_user_msg(message)
         prompt = WEB_PROMPT.replace("{FOCUS_CITY}", context.focus_city)
         prompt = prompt.replace("{BRIEFING}", briefing_data)
+        # print(f"WEB_PROMPT: {prompt}")
         
         try:
             # L'agent WEB n'a AUCUNE fonction personnalisée, seulement Google Search

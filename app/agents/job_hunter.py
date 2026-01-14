@@ -19,9 +19,11 @@ JOB_HUNTER_PROMPT = """
 **Objectif** : Trouver des offres d'emploi RÉELLES et PERTINENTES selon le `CONTEXTE RÉSUMÉ` dans `VILLE ACTIVE` pour TOUS les adultes du ménage.
 
 **DIRECTIVES CRITIQUES (NE PAS DEMANDER, AGIR)** :
-1. **RECHERCHE D'OFFRES (ROME ONLY)** : Lance `search_job_offers` pour CHAQUE code ROME identifié dans le `CONTEXTE RÉSUMÉ`. 
+1. **RECHERCHE D'OFFRES (ROME ONLY)** : Lance `search_job_offers` pour CHAQUE code ROME identifié dans le `CONTEXTE RÉSUMÉ`.
    - Utilise le paramètre `rome_code`.
+   - Si tu as un doute sur le code ROME, utilise `search_rome_appellations` pour trouver la catégorie correspondante.
    - Ne spécifie pas de `query` (mots-clés) sauf si l'utilisateur a donné une précision particulière (ex: "en alternance").
+
 2. **CONTEXTE LIVE** : Le système a déjà calculé le nombre d'offres en direct (Live) pour la ville cible dans le briefing. Utilise ces chiffres pour valoriser les opportunités réelles.
 3. **LOCALISATION** : Utilise toujours le code INSEE de la ville cible du `CONTEXTE RÉSUMÉ` pour la recherche.
 4. **NE DEMANDE PAS DE PRÉCISIONS** : Tu as les informations sur les métiers dans les critères. AGIS IMMÉDIATEMENT sans attendre de confirmation.
@@ -70,6 +72,8 @@ class JobHunterAgent(BaseAgent):
             prompt = prompt.replace("{FOCUS_CITY}", str(context.focus_city or "Non définie"))
             logger.info(f"🔍 [JOB_HUNTER] Proactive Search with Briefing")
 
+        # print(f"JOB_HUNTER_PROMPT: {prompt}")
+        
         try:
             res = self._execute_tool_loop(
                 prompt, 

@@ -46,10 +46,11 @@ class ScoutAgent(BaseAgent):
     def run(self, message: str, context: AgentContext) -> str:
         logger.info(f"🕵️ [SCOUT] Agent starting. Focus city: {context.focus_city}")
         briefing_data, user_msg = self._get_briefing_and_user_msg(message)
-        
-        prompt = SCOUT_PROMPT.replace("{BRIEFING}", briefing_data)
-        prompt = SCOUT_PROMPT.replace("{FOCUS_CITY}", context.focus_city)
 
+        prompt = SCOUT_PROMPT.replace("{BRIEFING}", briefing_data)
+        prompt = prompt.replace("{FOCUS_CITY}", context.focus_city)
+        # print(f"SCOUT_PROMPT: {prompt}")
+        
         try:
             # Added search_commune to help Scout resolve cities if needed
             from .tools import search_commune

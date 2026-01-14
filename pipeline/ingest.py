@@ -115,8 +115,10 @@ def fetch_rome_referential(logger: PipelineLogger) -> Optional[Path]:
         return None
 
 def clean_bmo_fap(config: Dict[str, Any], logger: PipelineLogger):
-    """Cleans BMO data (Bassins d'Emploi + FAP) and saves to parquet."""
-    logger.log_step("clean_bmo_fap", "STARTED")
+    """[DEPRECATED] Cleans BMO data (Bassins d'Emploi + FAP) and saves to parquet."""
+    logger.log_step("clean_bmo_fap", "DEPRECATED")
+    return # Skip
+
     bmo_source = config['sources']['bmo']
     bmo_path = CACHE_DIR / bmo_source['local_name']
     
@@ -1661,8 +1663,10 @@ def clean_departements(config: Dict[str, Any], logger: PipelineLogger):
         logging.warning(f"Departements: Columns not found. Found: {df.columns}")
 
 def clean_fap_rome_mapping(config: Dict[str, Any], logger: PipelineLogger):
-    """Cleans FAP-ROME mapping and saves to parquet."""
-    logger.log_step("clean_fap_rome_mapping", "STARTED")
+    """[DEPRECATED] Cleans FAP-ROME mapping and saves to parquet."""
+    logger.log_step("clean_fap_rome_mapping", "DEPRECATED")
+    return # Skip
+
     source = config['sources']['fap_rome_mapping']
     path = CACHE_DIR / source['local_name']
     if not path.exists():

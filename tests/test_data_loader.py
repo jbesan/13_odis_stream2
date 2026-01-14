@@ -36,9 +36,9 @@ def mock_parquet_data():
     
     # Mock Referentiels
     ref_df = pd.DataFrame({
-        'key': ['fap_codes', 'fap_codes'],
-        'code': ['A', 'B'],
-        'label': ['Label A', 'Label B']
+        'key': ['rome_codes', 'rome_codes'],
+        'code': ['M1805', 'M1801'],
+        'label': ['Dev', 'Test']
     })
     
     return odis_df, pois_df, ref_df
@@ -89,6 +89,6 @@ def test_init_datasets(mock_get_data_path, mock_read_parquet, mock_exists, mock_
     assert data['annuaire_sante'].iloc[0]['name'] == 'Hopital B'
 
     # Check Referentiels
-    assert 'codfap_index' in data
-    assert not data['codfap_index'].empty
-    assert 'Label A' in data['codfap_index']['label'].values
+    assert 'rome_index' in data
+    assert not data['rome_index'].empty
+    assert 'Dev' in data['rome_index']['label'].values

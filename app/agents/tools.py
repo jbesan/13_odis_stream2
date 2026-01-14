@@ -21,7 +21,7 @@ from core.models import SearchCriterias
 logger = logging.getLogger("agent_tools")
 
 def search_referentiels(query: str, domain: Optional[str] = None) -> List[Dict[str, Any]]:
-    """Recherche des codes officiels (FAP, ROME, etc.) dans les référentiels."""
+    """Recherche des codes officiels (Formations, ROME, Services d'inclusion, WALDEC, etc.) dans les référentiels."""
     return _search_referentiels_logic(query, domain)
 
 def search_commune(query: str) -> List[Dict[str, Any]]:
@@ -93,7 +93,7 @@ def search_job_offers(
         query: Mots clés supplémentaires (ex: 'Alternance').
         location: Code INSEE de la commune (ex: '33063').
         rome_code: Code ROME (Métier) de 5 caractères (ex: 'M1805').
-        appellation_codes: Liste de codes métiers précis (ROME Appellations).
+        # appellation_codes: Liste de codes métiers précis (ROME Appellations).
         distance: Rayon de recherche en km autour de la commune.
     """
     logger.info(f"⚒️ [TOOL] search_job_offers: query={query}, location={location}, rome={rome_code}, apps={appellation_codes}")
@@ -114,9 +114,10 @@ def search_job_offers(
 
 def search_rome_appellations(query: str) -> List[Dict[str, str]]:
     """
-    Recherche des intitulés de métiers précis (appellations ROME) à partir d'un mot-clé.
-    Utile pour traduire un code FAP (ex: 'Boulanger') en codes précis pour la recherche d'offres.
+    Recherche des catégories de métiers (codes ROME) à partir d'un mot-clé.
+    Utile pour trouver des codes officiels pour la recherche d'offres.
     """
+
     logger.info(f"⚒️ [TOOL] search_rome_appellations: '{query}'")
     return _search_rome_appellations_logic(query)
 
@@ -132,7 +133,7 @@ def get_job_details(job_id: str) -> Dict[str, Any]:
 
 def get_labels_for_codes(codes: List[str]) -> Dict[str, str]:
     """
-    Récupère les libellés en français pour une liste de codes (FAP, INSEE, etc.).
+    Récupère les libellés en français pour une liste de codes (ROME, INSEE, etc.).
     Utile pour savoir à quoi correspond un code avant de l'utiliser.
     """
     return _get_labels_for_codes_logic(codes)

@@ -10,6 +10,7 @@ logger = logging.getLogger("scorer_agent")
 
 SCORER_PROMPT = """
 **Rôle** : Tu es le Scorer ODIS. Ton job est de calculer et expliquer le Top Villes.
+**CONTEXTE RÉSUMÉ** : {BRIEFING}
 **PROFILE** : {PROFILE}
 **CRITÈRES VALIDÉS** : 
 ```json
@@ -45,8 +46,10 @@ class ScorerAgent(BaseAgent):
             return f"Je ne peux pas encore lancer le calcul, il manque des informations dans vos critères ({e})."
 
         # 2. Construction du prompt
+        briefing_data, user_msg = self._get_briefing_and_user_msg(message)
         prompt = SCORER_PROMPT.replace("{CRITERIA_JSON}", criteria_json)
         prompt = prompt.replace("{PROFILE}", profile)
+        prompt = prompt.replace("{BRIEFING}", briefing_data)
         
         # Prepare Prompt-based Memory (Short)
         history_summary = ""

@@ -18,35 +18,31 @@ INTERVIEWER_PROMPT = """
 
 **Outils disponibles** :
 - `search_commune` : Cherche le code INSEE d'une commune.
-- `search_referentiels` : Cherche les codes ROME (métier) ou Formation correspondants.
+- `search_referentiels` : Cherche les codes ROME (métier), Formation, Services d'inclusion ou catégorie associative (WALDEC) correspondants.
 - `update_search_criteria` : Enregistre les données validées dans le dossier du bénéficiaire.
 
-**DIRECTIVE CRITIQUE** :
-- **RÉPONSE FRANÇAISE** : Tu DOIS toujours répondre en Français, même après des appels d'outils.
-- **PROTOCOLE SEARCH-THEN-SAVE** : Chaque fois que tu identifies une nouvel donnée de `CURRENT_CRITERIA`, tu DOIS IMMÉDIATEMENT appeler `update_search_criteria` pour l'enregistrer. Si tu ne l'appelles pas, la donnée est PERDUE pour le tour suivant.
-- **ANTI-REDONDANCE** : Consulte proactivement le **Briefing** pour éviter de relancer les outils lorsque les données sont déjà disponibles.
-- **CIBLAGE DES VIDES** : Ton but unique est de remplir les cases vides identifiées dans le **Briefing** ou d'ajouter des données dans les listes.
+**DIRECTIVE DE COLLECTE (CRITIQUE)** :
+- **GROUPEMENT DES APPELS** : Ne fais JAMAIS plusieurs appels à `update_search_criteria` à la suite. Collecte TOUTES les informations d'un message utilisateur (ex: nom, métier, ville) et fais UN SEUL appel à l'outil à la fin.
+- **PARCIMONIE DES OUTILS** : N'utilise `search_referentiels` ou `search_commune` que si l'information n'est pas déjà claire dans le **Briefing**.
+- **PAS DE DISCOURS INUTILE** : Ne commente pas tes appels d'outils ("Je vais chercher le code..."). Fais l'appel, et donne la réponse finale.
 
 **Instructions de Collecte (Ordre Prioritaire)** :
 1. **Commune Actuelle** : Cherche le code INSEE avec `search_commune`.
-2. **Composition Familiale** : Demande le nombre d'adultes et d'enfants actuels et prévus. Si une grossesse est en cours, confirme le nombre d'enfants attendus et compte-les dans `nb_enfants`.
+2. **Composition Familiale** : Demande le nombre d'adultes et d'enfants.
 3. **Périmètre de Recherche** : {LOC_SEARCH_AREAS}.
-4. **Projet Pro & Formations** : Pour chaque compétence ou métiers tu DOIS chercher les codes ROME ou Formation correspondants via `search_referentiels(domain='rome_codes' ou 'formation_codes')` et enregistre les codes.
-5. **Logement & Hébergement** : 
-   - **Hébergement souhaité (court terme à l'arrivée)** : Choisi dans {HEBERGEMENT_OPTIONS}.
-   - **Type de Logement (long terme)** : Choisi dans {LOGEMENT_OPTIONS}.
-6. **Éducation des Enfants** : Si `nb_enfants` > 0, choisis EXCLUSIVEMENT dans : {CLASSES_SCOLAIRES}. Enregistre une LISTE (une valeur par enfant, ex: `['Maternelle', 'Collège']`) dans `classe_enfants`. Assigne la catégorie 'Petite Enfance/Crêche' pour le ou les enfants à naitre.
+4. **Projet Pro & Formations** : Cherche IMMEDIATEMENT via `search_referentiels` les codes ROME (rome_codes) ou Formation (formation_codes) correspondant.
+5. **Logement & Hébergement** : Choisi dans {HEBERGEMENT_OPTIONS} et {LOGEMENT_OPTIONS}.
+6. **Éducation des Enfants** : Choisi dans {CLASSES_SCOLAIRES}.
 7. **Santé Spécifique** : Choisi dans {SANTE_OPTIONS}.
-8. **Notes Qualitatives (indices de vie)** : Identifie tout indice sur l'origine culturelle (ex: libanais), la religion (ex: halal), les passions (ex: échecs), ou la mobilité (ex: vélo, pas de permis). Enregistre-les dans `notes_qualitatives` (liste de chaînes).
-9. **Services d'Inclusion** : Cherche via `search_referentiels(domain='inclusion_services')` (ex: FLE, aide juridique) et enregistre le `code`.
-10. **Associations** : Cherche via `search_referentiels(domain='waldec_codes')` (ex: Football, Yoga) et enregistre le `code`.
+8. **Notes Qualitatives** : Passions, origine, besoins spécifiques (Religion, Velo, Halal, etc).
+9. **Inclusions & Assos** : Cherche IMMEDIATEMENT via `search_referentiels` (inclusion_services ou waldec_codes).
 
-**Profil de Pondération (Priorité Haute)** : Si `weight_profile` est vide (""), suggère et demande confirmation pour le profile de pondération des critères entre : {WEIGHT_PROFILES}.
+**Profil de Pondération** : Suggère un profil parmi : {WEIGHT_PROFILES}.
 
 **DIRECTIVE DE TRANSITION** :
-Tant que tu n'as pas au moins : **Commune Actuelle**, **Nb Adultes**, **Profil de Pondération** et **Périmètre**, reste en phase de collecte et essaye d'obtenir un maximum d'informations.
+Tant que tu n'as pas : **Commune Actuelle**, **Nb Adultes**, **Profil** et **Périmètre**, reste en collecte.
 Une fois acquis, dis : "J'ai bien noté vos critères (Profil: {weight_profile}, Zone: {loc_search_area}). Voulez-vous que je lance le calcul pour trouver vos meilleures villes ?"
-Demande TOUJOURS la confirmation de l'utilisateur avant de terminer ton travail.
+Demande la confirmation avant de terminer.
 """
 
 class InterviewerAgent(BaseAgent):
@@ -56,7 +52,8 @@ class InterviewerAgent(BaseAgent):
         
         # Use .replace instead of .format to avoid KeyError with braces in criteria dict
         prompt = INTERVIEWER_PROMPT.replace("{BRIEFING}", briefing_data)
-        
+        # print(f"INTERVIEWER_PROMPT: {prompt}")
+
         # Inject config values
         # Filter 'custom' from the options presented to the LLM (internal logic handled by Orchestrator/Engine)
         filtered_areas_keys = [k for k in cfg.LOC_SEARCH_AREA_OPTIONS.keys() if k != 'custom']
@@ -68,6 +65,12 @@ class InterviewerAgent(BaseAgent):
         prompt = prompt.replace("{SANTE_OPTIONS}", str(cfg.SANTE_OPTIONS))
         prompt = prompt.replace("{WEIGHT_PROFILES}", str(list(cfg.WEIGHT_PROFILES.keys())))
         prompt = prompt.replace("{LOC_SEARCH_AREAS}", ", ".join(filtered_areas_values))
+        
+        # Fill current values for the transition directive
+        wp = context.search_criteria.get('weight_profile', 'Non défini')
+        lsa = context.search_criteria.get('loc_search_area', 'Non définie')
+        prompt = prompt.replace("{weight_profile}", wp)
+        prompt = prompt.replace("{loc_search_area}", lsa)
         
         # 2. Local Criteria Interceptor
         def local_update_criteria(
@@ -99,7 +102,7 @@ class InterviewerAgent(BaseAgent):
                 loc_search_area: {LOC_SEARCH_AREAS_LIST}
                 loc_custom_code: Code de la région/département cible (ex: '75')
                 loc_custom_type: 'region' ou 'departement'
-                codes_metiers: Liste de liste de codes FAP (ex: [['T2A60']])
+                codes_metiers: Liste de liste de codes ROME (ex: [['M1805']])
                 codes_formations: Liste de liste de codes formation
                 classe_enfants: Liste des niveaux scolaires (ex: {CLASSES_SCOLAIRES_LIST})
                 inc_services_add_selection: Codes des services d'inclusion (ex: ['FLE'])

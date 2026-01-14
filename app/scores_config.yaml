@@ -1,36 +1,4 @@
 scores:
-  - id: met_scaled
-    category: emploi
-    source_metric: met_ratio
-    bdv_factor: 0.9
-    computation: precomputed
-    display:
-      name: Taux Besoin Emploi (Legacy)
-      strong_point_text: De nombreux emplois non pourvus
-      high_value_adjective: élevé
-      show: false
-      unit: offres/1000 hab.
-      display_factor: 1
-      tooltip: "Emplois non pourvus pour 1000 habitants (Source: France Travail BMO)"
-    weight: 0.0
-    min_bound: null
-    max_bound: null
-  - id: met_tension_scaled
-    category: emploi
-    source_metric: met_tension_ratio
-    bdv_factor: 0.9
-    computation: precomputed
-    display:
-      name: Taux Besoin Emploi en Tension (Legacy)
-      strong_point_text: De nombreux emplois en tension non pourvus
-      high_value_adjective: élevé
-      show: false
-      unit: offres/1000 hab.
-      display_factor: 1
-      tooltip: "Emplois en tension non pourvus pour 1000 habitants (Source: France Travail BMO)"
-    weight: 0.0
-    min_bound: null
-    max_bound: null
   - id: log_vac_scaled
     category: logement
     source_metric: log_vac_struct_ratio
@@ -131,38 +99,6 @@ scores:
     weight: 3.0
     min_bound: 1000 #Une commune de moins de 1000 habitants est peu pertinente
     max_bound: 25000 #Eviter le skew par les tres grandes métropoles
-  - id: met_match_adult1_scaled
-    category: emploi
-    source_metric: met_match_adult1
-    bdv_factor: 0.9
-    computation: live
-    display:
-      name: Match compétences Adult 1 (Legacy)
-      strong_point_text: Une forte demande dans le domaine de compétences (BMO)
-      high_value_adjective: présent
-      show: false
-      unit: famille(s) d'emplois
-      display_factor: 1
-      tooltip: Nombre de familles d'emplois dans le top 10 BMO
-    weight: 0.0
-    min_bound: 0.0
-    max_bound: null
-  - id: met_match_adult2_scaled
-    category: emploi
-    source_metric: met_match_adult2
-    bdv_factor: 0.9
-    computation: live
-    display:
-      name: Match compétences Adult 2 (Legacy)
-      strong_point_text: Une forte demande dans le domaine de compétences (BMO)
-      high_value_adjective: présent
-      show: false
-      unit: famille(s) d'emplois
-      display_factor: 1
-      tooltip: Nombre de familles d'emplois dans le top 10 BMO
-    weight: 0.0
-    min_bound: 0.0
-    max_bound: null
   - id: form_match_adult1_scaled
     category: emploi
     source_metric: form_match_adult1

@@ -269,16 +269,11 @@ def load_all_data_raw() -> Dict[str, Any]:
         odis['libelle_bassin_de_vie'] = odis['bassin_de_vie'].astype(str).map(bv_names)
         odis['libelle_bassin_de_vie'] = odis['libelle_bassin_de_vie'].fillna(odis['bassin_de_vie'])
 
-    codfap_index = pd.DataFrame()
     rome_index = pd.DataFrame()
     codformations_index = pd.DataFrame(columns=['label']) 
     inclusion_services_index = pd.DataFrame(columns=['label'])
 
     if not refs_df.empty:
-        fap_df = refs_df[refs_df['key'] == 'fap_codes']
-        if not fap_df.empty:
-            codfap_index = fap_df[['code', 'label']].drop_duplicates(subset=['code']).set_index('code')
-            
         rome_ref_df = refs_df[refs_df['key'] == 'rome_codes']
         if not rome_ref_df.empty:
             rome_index = rome_ref_df[['code', 'label']].drop_duplicates(subset=['code']).set_index('code')
@@ -316,7 +311,9 @@ def load_all_data_raw() -> Dict[str, Any]:
     # List to track all loading errors in this session
     load_errors = []
 
-    bmo_vertical = _load_parquet(os.path.join(base_path, cfg.AGG_METIERS_FILE), error_list=load_errors)
+    # bmo_vertical = _load_parquet(os.path.join(base_path, cfg.AGG_METIERS_FILE), error_list=load_errors) # Deprecated
+    bmo_vertical = pd.DataFrame()
+
     live_jobs_data = _load_parquet(os.path.join(base_path, cfg.LIVE_JOBS_FILE), error_list=load_errors)
     associations_data = _load_parquet(os.path.join(base_path, cfg.AGG_ASSOCIATIONS_FILE), error_list=load_errors)
     refugee_associations_data = _load_parquet(os.path.join(base_path, cfg.REFUGEE_ASSOCIATIONS_FILE), error_list=load_errors)
@@ -373,7 +370,6 @@ def load_all_data_raw() -> Dict[str, Any]:
     return {
         'odis': odis,
         'scores_cat': scores_cat,
-        'codfap_index': codfap_index,
         'rome_index': rome_index,
         'codformations_index': codformations_index,
         'inclusion_services_index': inclusion_services_index,

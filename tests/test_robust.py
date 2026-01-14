@@ -16,8 +16,8 @@ def test_robust_search():
     set_data_context(data)
     
     queries = [
-        ("Femme de ménage", "fap_codes"),
-        ("Agent entretien", "fap_codes"),
+        ("Femme de ménage", "rome_codes"),
+        ("Agent entretien", "rome_codes"),
         ("Club Cuisine", "waldec_codes")
     ]
     
@@ -25,7 +25,7 @@ def test_robust_search():
         print(f"\n--- Searching '{q}' ({domain}) ---")
         results = _search_referentiels_logic(q, domain=domain)
         for r in results:
-            print(f"[{r['code']}] {r['label']} (Score: {r['relevance']})")
+            print(f"[{r['code']}] {r['label']} (Domain: {r['type']})")
 
 if __name__ == "__main__":
     test_robust_search()

@@ -78,148 +78,76 @@ def _get_access_token() -> str:
     
     return str(TOKEN_CACHE["access_token"])
 
-def _resolve_rome_clusters(fap_code: str) -> List[str]:
-    """Resolves a FAP code to its unique 3-char ROME clusters using the ODIS referentials."""
+
+def _get_all_rome_codes() -> List[Dict[str, str]]:
+    """Retrieves all standard ROME categories from referentiels."""
     try:
-        if not os.path.exists(REFERENTIELS_PATH):
-            return []
-        
-        df = pd.read_parquet(REFERENTIELS_PATH)
-        # Search in fap_rome_mapping
-        mapping_df = df[(df['key'] == 'fap_rome_mapping') & (df['code'] == fap_code)]
-        if mapping_df.empty:
-            # Try truncated search just in case
-            mapping_df = df[(df['key'] == 'fap_rome_mapping') & (df['code'].str.startswith(fap_code[:5], na=False))]
-            
-        if not mapping_df.empty:
-            # Extract ROME codes (label column in the mapping), take first 3 chars
-            romes_series = mapping_df['label'].astype(str)
-            clusters_series = romes_series.str[:3]
-            # Count occurrences to pick the most frequent cluster
-            counts = clusters_series.value_counts()
-            # Sort by count desc, then alphabetically
-            sorted_clusters = sorted(counts.index.tolist(), key=lambda c: (-counts[c], c))
-            return sorted_clusters
+        import pandas as pd
+        df = pd.read_parquet(os.path.join(cfg.get_data_path(), cfg.REFERENTIELS_FILE))
+        subset = df[df['key'] == 'rome_codes']
+        return [{"code": str(row['code']), "libelle": str(row['label'])} for _, row in subset.iterrows()]
     except Exception as e:
-        logger.error(f"Error resolving ROME clusters: {e}")
-    return []
-
-def _resolve_fap_label(fap_code: str) -> Optional[str]:
-    """Resolves a FAP code to its label using the ODIS referentials."""
-    try:
-        if not os.path.exists(REFERENTIELS_PATH):
-            logger.warning(f"Referentiels file not found at {REFERENTIELS_PATH}")
-            return None
-        
-        df = pd.read_parquet(REFERENTIELS_PATH)
-        fap_df = df[(df['key'] == 'fap_codes') & (df['code'] == fap_code)]
-        if not fap_df.empty:
-            return fap_df.iloc[0]['label']
-    except Exception as e:
-        logger.error(f"Error resolving FAP label: {e}")
-    return None
-
-# ROME Cache Configuration
-ROME_CACHE_PATH = os.path.join(cfg.get_data_path(), "rome_appellations.json")
-
-def _get_all_appellations() -> List[Dict[str, str]]:
-    """Retrieves all ROME appellations, from cache or API."""
-    if os.path.exists(ROME_CACHE_PATH):
-        # Cache for 7 days
-        if time.time() - os.path.getmtime(ROME_CACHE_PATH) < 7 * 24 * 3600:
-            try:
-                with open(ROME_CACHE_PATH, 'r') as f:
-                    return json.load(f)
-            except Exception as e:
-                logger.error(f"Error reading ROME cache: {e}")
-
-    token = _get_access_token()
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json"
-    }
-    url = f"{BASE_URL}/referentiel/appellations"
-    logger.debug(f"📡 [FranceTravail] Fetching ROME Appellations from API...")
-    try:
-        response = requests.get(url, headers=headers, timeout=30)
-        response.raise_for_status()
-        data = response.json()
-        
-        # Save to cache
-        os.makedirs(os.path.dirname(ROME_CACHE_PATH), exist_ok=True)
-        with open(ROME_CACHE_PATH, 'w') as f:
-            json.dump(data, f)
-        
-        logger.info(f"✅ [FranceTravail] ROME Appellations cached ({len(data)} items)")
-        return data
-    except Exception as e:
-        logger.error(f"❌ [FranceTravail] Failed to fetch ROME referential: {e}")
+        logger.error(f"❌ [FranceTravail] Failed to load ROME referencial: {e}")
         return []
 
 def _search_rome_appellations_logic(query: str) -> List[Dict[str, str]]:
-    """Internal logic for searching ROME appellations."""
-    all_apps = _get_all_appellations()
-    if not all_apps:
-        logger.warning("⚠️ [FranceTravail] ROME appellations list is empty.")
+    """Internal logic for searching ROME categories."""
+    all_codes = _get_all_rome_codes()
+    if not all_codes:
+        logger.warning("⚠️ [FranceTravail] ROME categories list is empty.")
         return []
     
     # 1. Normalize and clean query
     q_norm = normalize_text(query)
-    # Common noise words in FAP labels that don't help keyword matching
     stop_words = {"et", "des", "les", "chez", "pour", "dans", "par", "avec", "assimiles", "assimile", "personnels", "personnel"}
     
-    # Split, clean punctuation, and singularize (rough)
     raw_terms = q_norm.replace(',', ' ').replace('(', ' ').replace(')', ' ').replace('/', ' ').split()
     terms = [t.rstrip('s') for t in raw_terms if len(t) > 2 and t not in stop_words]
     
     if not terms:
-        # Fallback to literal query if everything was filtered
         terms = [q_norm]
         
     logger.debug(f"🔍 [FranceTravail] Searching ROME for '{query}' -> Terms: {terms}")
         
     matches: List[Dict[str, Any]] = []
-    for app in all_apps:
-        libelle_raw = app['libelle']
+    for item in all_codes:
+        libelle_raw = item['libelle']
         lib_norm = normalize_text(libelle_raw)
         
         # Scoring based on how many terms match
         score = sum(1 for term in terms if term in lib_norm)
         
         if score > 0:
-            # Bonus if terms found as whole words
             lib_tokens = set(lib_norm.replace('-', ' ').split())
             for term in terms:
                 if term in lib_tokens:
                     score += 2
                     
-            # Bonus if the first term matches exactly a part of the libelle
             if terms and terms[0] in lib_tokens:
                 score += 5
 
-            matches.append({"code": str(app['code']), "libelle": libelle_raw, "_score": score})
+            matches.append({"code": str(item['code']), "libelle": libelle_raw, "_score": score})
             
     # Sort by score (desc) and then alphabetically
     matches.sort(key=lambda x: (-int(x['_score']), str(x['libelle'])))
     
-    # Trace top result for debugging
     if matches:
-        logger.debug(f"✅ [FranceTravail] Found {len(matches)} matches. Top: {matches[0]['libelle']} ({matches[0]['code']})")
-    else:
-        logger.warning(f"⚠️ [FranceTravail] No ROME matches found for query: '{query}'")
+        logger.debug(f"✅ [FranceTravail] Found {len(matches)} ROME matches. Top: {matches[0]['libelle']} ({matches[0]['code']})")
+    
     # Return top 20 matches
     return [{"code": str(m['code']), "libelle": str(m['libelle'])} for m in matches[:20]]
 
 @mcp.tool()
 def search_rome_appellations(query: str) -> List[Dict[str, str]]:
     """
-    Recherche des intitulés de métiers précis (appellations ROME) à partir d'un mot-clé.
-    Utile pour traduire un code FAP ou un métier générique en codes précis pour l'API.
+    Recherche des catégories de métiers (codes ROME) à partir d'un mot-clé.
+    Utile pour identifier les codes métiers officiels pour la recherche d'offres.
     
     Args:
-        query: Mot-clé à rechercher (ex: 'Boulanger', 'Social').
+        query: Mot-clé à rechercher (ex: 'Boulanger', 'Informatique').
     """
     return _search_rome_appellations_logic(query)
+
 
 def _prune_job_offer(offer: Dict[str, Any]) -> Dict[str, Any]:
     """Prunes a job offer payload to keep only the essentials for the agent context."""
@@ -241,7 +169,6 @@ def _prune_job_offer(offer: Dict[str, Any]) -> Dict[str, Any]:
 def search_job_offers_logic(
     query: Optional[str] = None,
     location: Optional[str] = None,
-    fap_code: Optional[str] = None,
     rome_code: Optional[str] = None,
     appellation_codes: Optional[List[str]] = None,
     distance: int = 10,
@@ -332,7 +259,7 @@ def search_job_offers_logic(
 def search_job_offers(
     query: Optional[str] = None,
     location: Optional[str] = None,
-    fap_code: Optional[str] = None,
+    rome_code: Optional[str] = None,
     appellation_codes: Optional[List[str]] = None,
     distance: int = 10,
     sort: int = 1,
@@ -345,7 +272,7 @@ def search_job_offers(
     Args:
         query: Mots clés supplémentaires (ex: 'Alternance').
         location: Code INSEE de la commune (ex: '33063').
-        fap_code: Code FAP (Famille Professionnelle) de métier.
+        rome_code: Code ROME (ex: 'M1805').
         appellation_codes: Liste de codes métiers précis (ROME Appellations, ex: ['11573']).
         distance: Rayon de recherche en km autour de la commune.
         sort: Tri (0: Pertinence, 1: Date décr., 2: Distance).
@@ -356,7 +283,7 @@ def search_job_offers(
         return search_job_offers_logic(
             query=query, 
             location=location, 
-            fap_code=fap_code, 
+            rome_code=rome_code, 
             appellation_codes=appellation_codes,
             distance=distance,
             sort=sort, 

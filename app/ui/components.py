@@ -160,14 +160,17 @@ def show_details_dialog(details: Dict[str, Any]):
             with st.container(border=False):
                 st.markdown("#### :material/work: Marché de l'emploi")
                 
-                live_total = emploi_data.get('live_total', 0)
-                if live_total > 0:
-                    st.success(f"**{live_total} offres en direct** correspondent à votre recherche actuelle.")
+                matching_total = emploi_data.get('matching_total', 0)
+                if matching_total > 0:
+                    st.success(f"**{matching_total} offres en direct** correspondent à votre recherche actuelle.")
                     with st.expander("Détail par métier (Live)", expanded=True):
-                        for rome, count in emploi_data.get('live_jobs_summary', {}).items():
+                        for rome, count in emploi_data.get('matching_jobs_summary', {}).items():
                             st.write(f"• **{rome}** : {count} offre{'s' if count > 1 else ''}")
+                else:
+                    st.error("Aucune offre en direct ne correspond à votre recherche actuelle.")
                 
-                with st.expander("Top 10 des métiers recherchés (Historique BMO)", expanded=False):
+                with st.expander("Top 10 des métiers recherchés", expanded=False):
+
                     top_metiers = emploi_data.get('top_metiers', [])
                     if top_metiers:
                         pref_metiers = []
@@ -782,12 +785,11 @@ def _show_details_callback(rank: int) -> None:
         scores_cat=app_data['scores_cat'],
         incl_index=app_data['incl_index'],
         associations_data=app_data['associations_data'],
-        bmo_vertical=app_data['bmo_vertical'],
         formations_data=app_data['formations_data'],
         codformations_index=app_data['codformations_index'],
         waldec_index=app_data.get('waldec_index'),
-        codfap_index=app_data.get('codfap_index', pd.DataFrame()),
         global_stats={},
+
         # Ensure all indices and annuaires are passed
         annuaire_ecoles=app_data.get('annuaire_ecoles', pd.DataFrame()),
         annuaire_sante=app_data.get('annuaire_sante', pd.DataFrame()),
@@ -797,7 +799,8 @@ def _show_details_callback(rank: int) -> None:
         live_jobs_data=app_data['live_jobs_data']
     )
     
-    details = engine.format_city_details(row)
+    details = engine.format_city_details(row, config=st.session_state.get('config'))
+
     show_details_dialog(details)
 
 def get_person_accompanied_str() -> str:

@@ -33,8 +33,9 @@ def aggregate_plm(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         'lien_social_count', 'inc_asso_refug_count', 'bpe_creches_count', 'risky_schools_count',
         'log_priv_total', 'log_priv_vacant_plus_2ans',
         'log_soc_total', 'log_soc_inoccupes',
-        'metiers_offres_diff', 'total_eleves', 'ecoles_count',
-        'socle_match_count' # Also sum this? No, socle is presence.
+        'total_eleves', 'ecoles_count',
+        'socle_match_count'
+ # Also sum this? No, socle is presence.
         # Ideally calculate socle for 75056 based on POIs.
         # But summing match_count is weird if max is different.
         # Let's skip socle for now or re-calculate it later.
@@ -102,8 +103,9 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             'edu_maternelle_ct', 'edu_elementaire_ct', 'edu_college_ct', 'edu_lycee_ct',
             'count_hopital', 'count_maternite', 'count_psy',
             'risky_schools_count', 'lien_social_count', 'inc_asso_refug_count', 'bpe_creches_count',
-            'edu_pe_tx_couverture', 'metiers_offres_diff', 'pop_chomeurs', 'log_priv_vacant_plus_2ans',
-            'met_ratio', 'pol_num', 'log_vac_struct_ratio'
+            'edu_pe_tx_couverture', 'pop_chomeurs', 'log_priv_vacant_plus_2ans',
+            'pol_num', 'log_vac_struct_ratio'
+
         ]
         for col in raw_metrics_to_fill:
             if col in communes_gdf.columns:

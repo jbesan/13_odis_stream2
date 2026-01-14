@@ -83,7 +83,8 @@ sources:
     url: "https://www.data.gouv.fr/api/1/datasets/r/f1be98eb-0414-4648-a683-7dbed3ebaca7"
     format: "csv"
     local_name: "referentiel_fap_2021.csv"
-    description: "Nomenclature des Familles Professionnelles (FAP 2021)"
+    description: "[DEPRECATED] Nomenclature des Familles Professionnelles (FAP 2021)"
+
 
   nomenclature_waldec:
     url: "https://www.data.gouv.fr/api/1/datasets/r/d65d5cae-399f-4150-804f-493026645fd5"
@@ -197,7 +198,8 @@ sources:
     url: "https://dares.travail-emploi.gouv.fr/sites/default/files/9166deb9ba1f03faf0097beb7e449915/Dares_Table_passage_ROME_Qualif_to_FAP2021_pour_programme.csv"
     format: "csv"
     local_name: "Dares_Table_passage_ROME_Qualif_to_FAP2021_pour_programme.csv"
-    description: "Table de passage ROME -> FAP 2021 (DARES)"
+    description: "[DEPRECATED] Table de passage ROME -> FAP 2021 (DARES)"
+
 
 local_files:
   finess:

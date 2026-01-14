@@ -13,7 +13,7 @@ class SearchCriterias(BaseModel):
     nb_enfants: int = Field(0, description="Number of children in the household")
     
     classe_enfants: List[str] = Field(default_factory=list, description="School levels needed (e.g. ['Maternelle', 'Collège'])")
-    codes_metiers: List[List[str]] = Field(default_factory=list, description="List of list of FAP codes for jobs (e.g. [['T2A60']]")
+    codes_metiers: List[List[str]] = Field(default_factory=list, description="List of list of ROME codes for jobs (e.g. [['M1805']]")
     codes_formations: List[List[str]] = Field(default_factory=list, description="List of list of training codes")
     
     inc_services_add_selection: List[str] = Field(default_factory=list, description="List of additional inclusion need codes")
