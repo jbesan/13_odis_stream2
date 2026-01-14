@@ -114,125 +114,6 @@ def fetch_rome_referential(logger: PipelineLogger) -> Optional[Path]:
         logger.log_source("rome_referential", "ERROR", str(e))
         return None
 
-def clean_bmo_fap(config: Dict[str, Any], logger: PipelineLogger):
-    """[DEPRECATED] Cleans BMO data (Bassins d'Emploi + FAP) and saves to parquet."""
-    logger.log_step("clean_bmo_fap", "DEPRECATED")
-    return # Skip
-
-    bmo_source = config['sources']['bmo']
-    bmo_path = CACHE_DIR / bmo_source['local_name']
-    
-    mapping_source = config['sources']['communes_bassins_emploi']
-    mapping_path = CACHE_DIR / mapping_source['local_name']
-    
-    if not bmo_path.exists() or not mapping_path.exists():
-            logging.warning("BMO or Mapping file not found.")
-            return
-
-    # 1. Load Mapping (Commune -> Bassin d'Emploi)
-    # Expected cols: 'Code commune', 'Code Bassin d'emploi 2021'
-    df_mapping = load_dataset(mapping_path, mapping_source, sheet_name=0)
-    df_mapping.columns = [c.strip() for c in df_mapping.columns]
-    
-    # Identify columns
-    com_col = next((c for c in df_mapping.columns if 'code_commune' in c), None)
-    be_col = next((c for c in df_mapping.columns if 'code_bassin' in c), None)
-    
-    if not com_col or not be_col:
-        logging.warning(f"BMO Mapping: Missing columns. Found: {df_mapping.columns}")
-        return
-        
-    df_mapping = df_mapping[[com_col, be_col]].rename(columns={com_col: 'codgeo', be_col: 'code_be'})
-    df_mapping['codgeo'] = df_mapping['codgeo'].astype(str).str.zfill(5)
-    df_mapping['code_be'] = df_mapping['code_be'].astype(str)
-    
-    # 2. Load BMO Data (Bassins d'Emploi)
-    # Dynamic Sheet Detection
-    import re
-    bmo_xl = pd.ExcelFile(bmo_path, engine='calamine')
-    sheet_pattern = re.compile(r'BMO_(\d+)_open_data', re.IGNORECASE)
-    
-    target_sheet = None
-    for sheet in bmo_xl.sheet_names:
-        if sheet_pattern.search(sheet) or sheet == "BMO_2025_open_data": # Fallback/Priority
-            target_sheet = sheet
-            break
-    
-    if not target_sheet:
-            # Fallback to first sheet or specific default?
-            logging.warning(f"BMO: No matching sheet found in {bmo_xl.sheet_names}. Using default 'BMO_2025_open_data'")
-            target_sheet = "BMO_2025_open_data"
-
-    logging.info(f"BMO: Using sheet {target_sheet}")
-    
-    df_bmo = pd.read_excel(bmo_path, sheet_name=target_sheet, engine='calamine')
-    df_bmo.columns = [c.strip() for c in df_bmo.columns]
-    
-    # Identify columns
-    # BE column usually "BE25", "BE24", etc.
-    be_pattern = re.compile(r'^BE(\d+)$')
-    bmo_be_col = next((c for c in df_bmo.columns if be_pattern.match(c)), None)
-    
-    fap_col = next((c for c in df_bmo.columns if 'Code métier BMO' in c), None)
-    count_col = next((c for c in df_bmo.columns if 'met' == c or 'met ' in c), None) # 'met' is exact match usually
-    
-    if not count_col and 'met' in df_bmo.columns: count_col = 'met'
-    
-    tension_col = next((c for c in df_bmo.columns if 'xmet' == c), None) # 'xmet' is diff part
-    if not tension_col and 'xmet' in df_bmo.columns: tension_col = 'xmet'
-
-    if not bmo_be_col or not fap_col or not count_col:
-            logging.warning(f"BMO Data: Missing columns. Found: {df_bmo.columns}")
-            return
-            
-    cols_to_keep = [bmo_be_col, fap_col, count_col]
-    if tension_col: cols_to_keep.append(tension_col)
-    
-    df_bmo = df_bmo[cols_to_keep].rename(columns={
-        bmo_be_col: 'code_be', 
-        fap_col: 'fap_code', 
-        count_col: 'count',
-        tension_col: 'difficile' if tension_col else 'difficile'
-    })
-    if 'difficile' not in df_bmo.columns: df_bmo['difficile'] = 0
-
-    df_bmo['code_be'] = df_bmo['code_be'].astype(str)
-    df_bmo['count'] = pd.to_numeric(df_bmo['count'], errors='coerce').fillna(0).astype(int)
-    df_bmo['difficile'] = pd.to_numeric(df_bmo['difficile'], errors='coerce').fillna(0).astype(int)
-    
-    # 3. Join Mapping + BMO
-    # We want to attribute the BMO data of the Bassin to EACH commune in that Bassin.
-    # This is what the user requested: "count will be based on the Bassin d'Emploi of the commune"
-    merged = df_mapping.merge(df_bmo, on='code_be', how='inner')
-    
-    # 4. Extract Top 5 FAP per Commune
-    # Sort by count desc
-    merged = merged.sort_values(['codgeo', 'count'], ascending=[True, False])
-    
-    # Take top 10
-    top_5 = merged.groupby('codgeo').head(10)
-    
-    # Save Vertical Table
-    bmo_vertical = top_5[['codgeo', 'fap_code', 'count']]
-    output_vertical = CLEAN_DIR / "bmo_vertical.parquet"
-    bmo_vertical.to_parquet(output_vertical)
-    
-    # 5. Stats (Total offers per commune = Total offers in its Bassin)
-    # 5. Stats (Total offers per commune = Total offers in its Bassin)
-    # Sum of all offers in the Bassin
-    # Aggregating both count and difficile
-    bmo_agg = df_bmo.groupby('code_be')[['count', 'difficile']].sum().reset_index()
-    bmo_agg.rename(columns={'count': 'metiers_offres_diff', 'difficile': 'metiers_tension_diff'}, inplace=True)
-    
-    stats = df_mapping.merge(bmo_agg, on='code_be', how='left')
-    stats = stats[['codgeo', 'metiers_offres_diff', 'metiers_tension_diff', 'code_be']]
-    stats['metiers_offres_diff'] = stats['metiers_offres_diff'].fillna(0).astype(int)
-    stats['metiers_tension_diff'] = stats['metiers_tension_diff'].fillna(0).astype(int)
-    
-    output_stats = CLEAN_DIR / "bmo_stats.parquet"
-    stats.to_parquet(output_stats)
-    
-    logger.log_step("clean_bmo_fap", "COMPLETED", {"vertical": str(output_vertical), "stats": str(output_stats)})
 
 def clean_population_active(config: Dict[str, Any], logger: PipelineLogger):
     """Cleans Population Active and saves to parquet."""
@@ -1340,7 +1221,6 @@ def main(argv=None):
         'communes': clean_communes,
         'services_inclusion': clean_services_inclusion,
         'structures_inclusion': clean_structures_inclusion,
-        'bmo_fap': clean_bmo_fap,
         'population': clean_population,
         'population_active': clean_population_active,
         'lovac': clean_lovac,
@@ -1361,7 +1241,6 @@ def main(argv=None):
         'nomenclature_waldec': clean_nomenclature_waldec,
         'regions': clean_regions,
         'departements': clean_departements,
-        'fap_rome_mapping': clean_fap_rome_mapping,
         'live_jobs': clean_live_jobs
     }
 
@@ -1662,51 +1541,6 @@ def clean_departements(config: Dict[str, Any], logger: PipelineLogger):
     else:
         logging.warning(f"Departements: Columns not found. Found: {df.columns}")
 
-def clean_fap_rome_mapping(config: Dict[str, Any], logger: PipelineLogger):
-    """[DEPRECATED] Cleans FAP-ROME mapping and saves to parquet."""
-    logger.log_step("clean_fap_rome_mapping", "DEPRECATED")
-    return # Skip
-
-    source = config['sources']['fap_rome_mapping']
-    path = CACHE_DIR / source['local_name']
-    if not path.exists():
-        logging.warning("FAP-ROME Mapping file not found.")
-        return
-
-    try:
-        # Load with semicolon separator as seen in head
-        df = pd.read_csv(path, sep=';', encoding='latin-1')
-        # Columns: ROME;Intitule_ROME;Qualif;FAP341;Intitule_FAP341
-        
-        if 'ROME' in df.columns and 'FAP341' in df.columns:
-            # 1. ROME Mapping
-            df_out = df[['FAP341', 'ROME']].drop_duplicates()
-            df_out.columns = ['fap_code', 'rome_code']
-            # Normalize G0B41e -> G0B41 for lookup consistency
-            df_out['fap_code'] = df_out['fap_code'].astype(str).str[:5]
-            df_out = df_out.drop_duplicates()
-            
-            output_path = CLEAN_DIR / "fap_rome_mapping.parquet"
-            df_out.to_parquet(output_path)
-            logger.log_step("clean_fap_rome_mapping", "COMPLETED", {"path": str(output_path), "rows": len(df_out)})
-
-            # 2. Enriched FAP Labels (Granular)
-            # Extract FAP codes and labels, normalize codes to 5 chars (racines)
-            if 'Intitule_FAP341' in df.columns:
-                fap_ref_enriched = df[['FAP341', 'Intitule_FAP341']].drop_duplicates()
-                fap_ref_enriched.columns = ['code', 'label']
-                # Normalize G0B41e -> G0B41
-                fap_ref_enriched['code'] = fap_ref_enriched['code'].astype(str).str[:5]
-                fap_ref_enriched = fap_ref_enriched.drop_duplicates()
-                
-                enriched_path = CLEAN_DIR / "fap_labels_enriched.parquet"
-                fap_ref_enriched.to_parquet(enriched_path)
-                logger.log_step("clean_fap_rome_mapping", "ENRICHED_LABELS", {"path": str(enriched_path), "rows": len(fap_ref_enriched)})
-        else:
-            logging.warning(f"FAP-ROME Mapping: Columns not found. Found: {df.columns}")
-    except Exception as e:
-        logger.log_step("clean_fap_rome_mapping", "ERROR", {"error": str(e)})
-        logging.error(f"FAP-ROME Mapping failed: {e}")
 
 if __name__ == "__main__":
     main()

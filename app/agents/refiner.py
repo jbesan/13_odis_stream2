@@ -135,7 +135,7 @@ class ContextRefiner:
             lines.append(f"- Zone de recherche : {criteria['loc_search_area']}")
             
         if faps:
-            lines.append(f"- Métiers (FAP) : {', '.join([fmt(c) for c in faps])}")
+            lines.append(f"- Métiers (ROME) : {', '.join([fmt(c) for c in faps])}")
             
         if formations:
             lines.append(f"- Formations : {', '.join([fmt(c) for c in formations])}")

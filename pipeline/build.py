@@ -797,38 +797,6 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
     logger.log_step("generate_referentiels", "STARTED")
     try:
         refs_list = []
-        # [DEPRECATED] FAP (Familles Professionnelles)
-        # fap_cfg = config['sources']['referentiel_fap']
-        # fap_path = CACHE_DIR / fap_cfg['local_name']
-        # if fap_path.exists():
-        #     # Expected cols: 'Code FAP 228', 'Intitulé FAP 228'
-        #     # Note: CSV might have BOM or encoding issues, so we use 'Code FAP 228' substring search
-        #     fap_df = load_dataset(fap_path, fap_cfg)
-        #     fap_df.columns = [c.strip().replace('\ufeff', '') for c in fap_df.columns] # Remove BOM if present
-        #     
-        #     code_col = next((c for c in fap_df.columns if 'Code FAP 228' in c), None)
-        #     label_col = next((c for c in fap_df.columns if 'Intitulé FAP 228' in c), None)
-        #     
-        #     if code_col and label_col:
-        #         fap_ref = pd.DataFrame({
-        #             'key': 'fap_codes',
-        #             'code': fap_df[code_col],
-        #             'label': fap_df[label_col]
-        #             #'metadata': fap_df.drop(columns=[code_col, label_col]).to_json(orient='records') # Removed
-        #         })
-        #         # --- Enriched FAP Labels (from DARES) ---
-        #         fap_enriched_path = CLEAN_DIR / "fap_labels_enriched.parquet"
-        #         if fap_enriched_path.exists():
-        #             fap_enriched_df = pd.read_parquet(fap_enriched_path)
-        #             fap_enriched_ref = pd.DataFrame({
-        #                 'key': 'fap_codes',
-        #                 'code': fap_enriched_df['code'],
-        #                 'label': fap_enriched_df['label']
-        #             })
-        #             fap_ref = pd.concat([fap_ref, fap_enriched_ref], ignore_index=True).drop_duplicates()
-        #             logger.log_step("generate_referentiels", "FAP_ENRICHED", {"count": len(fap_enriched_ref)})
-        # 
-        #         refs_list.append(fap_ref)
 
             
         if refs_list:
@@ -975,18 +943,6 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
             refs_list.append(deps_ref)
             logger.log_step("generate_referentiels", "DEPARTEMENTS", {"count": len(deps_ref)})
 
-        # [DEPRECATED] FAP-ROME Mapping
-        # mapping_path = CLEAN_DIR / "fap_rome_mapping.parquet"
-        # if mapping_path.exists():
-        #     mapping_df = pd.read_parquet(mapping_path)
-        #     # Store as key=fap_rome_mapping, code=FAP, label=ROME
-        #     mapping_ref = pd.DataFrame({
-        #         'key': 'fap_rome_mapping',
-        #         'code': mapping_df['fap_code'].astype(str),
-        #         'label': mapping_df['rome_code'].astype(str)
-        #     })
-        #     refs_list.append(mapping_ref)
-        #     logger.log_step("generate_referentiels", "FAP_ROME", {"count": len(mapping_ref)})
 
 
         # ROME Codes (Referential from API)

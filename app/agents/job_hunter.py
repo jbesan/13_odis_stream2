@@ -3,7 +3,7 @@ from .state import AgentContext
 from .tools import (
     search_job_offers, 
     get_job_details, 
-    search_rome_appellations
+    search_referentiels
 )
 import logging
 import re
@@ -21,7 +21,7 @@ JOB_HUNTER_PROMPT = """
 **DIRECTIVES CRITIQUES (NE PAS DEMANDER, AGIR)** :
 1. **RECHERCHE D'OFFRES (ROME ONLY)** : Lance `search_job_offers` pour CHAQUE code ROME identifié dans le `CONTEXTE RÉSUMÉ`.
    - Utilise le paramètre `rome_code`.
-   - Si tu as un doute sur le code ROME, utilise `search_rome_appellations` pour trouver la catégorie correspondante.
+   - Si tu as un doute sur le code ROME, utilise `search_referentiels` avec le domaine `rome_codes` pour trouver la catégorie correspondante.
    - Ne spécifie pas de `query` (mots-clés) sauf si l'utilisateur a donné une précision particulière (ex: "en alternance").
 
 2. **CONTEXTE LIVE** : Le briefing contient un nombre d'offres global (Live) pour la ville. Utilise ce chiffre UNIQUEMENT pour donner une tendance générale.
@@ -80,7 +80,7 @@ class JobHunterAgent(BaseAgent):
             res = self._execute_tool_loop(
                 prompt, 
                 user_msg, 
-                [search_job_offers, get_job_details, search_rome_appellations], 
+                [search_job_offers, get_job_details, search_referentiels], 
                     context=context
                 )
             return res

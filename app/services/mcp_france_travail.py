@@ -79,74 +79,6 @@ def _get_access_token() -> str:
     return str(TOKEN_CACHE["access_token"])
 
 
-def _get_all_rome_codes() -> List[Dict[str, str]]:
-    """Retrieves all standard ROME categories from referentiels."""
-    try:
-        import pandas as pd
-        df = pd.read_parquet(os.path.join(cfg.get_data_path(), cfg.REFERENTIELS_FILE))
-        subset = df[df['key'] == 'rome_codes']
-        return [{"code": str(row['code']), "libelle": str(row['label'])} for _, row in subset.iterrows()]
-    except Exception as e:
-        logger.error(f"❌ [FranceTravail] Failed to load ROME referencial: {e}")
-        return []
-
-def _search_rome_appellations_logic(query: str) -> List[Dict[str, str]]:
-    """Internal logic for searching ROME categories."""
-    all_codes = _get_all_rome_codes()
-    if not all_codes:
-        logger.warning("⚠️ [FranceTravail] ROME categories list is empty.")
-        return []
-    
-    # 1. Normalize and clean query
-    q_norm = normalize_text(query)
-    stop_words = {"et", "des", "les", "chez", "pour", "dans", "par", "avec", "assimiles", "assimile", "personnels", "personnel"}
-    
-    raw_terms = q_norm.replace(',', ' ').replace('(', ' ').replace(')', ' ').replace('/', ' ').split()
-    terms = [t.rstrip('s') for t in raw_terms if len(t) > 2 and t not in stop_words]
-    
-    if not terms:
-        terms = [q_norm]
-        
-    logger.debug(f"🔍 [FranceTravail] Searching ROME for '{query}' -> Terms: {terms}")
-        
-    matches: List[Dict[str, Any]] = []
-    for item in all_codes:
-        libelle_raw = item['libelle']
-        lib_norm = normalize_text(libelle_raw)
-        
-        # Scoring based on how many terms match
-        score = sum(1 for term in terms if term in lib_norm)
-        
-        if score > 0:
-            lib_tokens = set(lib_norm.replace('-', ' ').split())
-            for term in terms:
-                if term in lib_tokens:
-                    score += 2
-                    
-            if terms and terms[0] in lib_tokens:
-                score += 5
-
-            matches.append({"code": str(item['code']), "libelle": libelle_raw, "_score": score})
-            
-    # Sort by score (desc) and then alphabetically
-    matches.sort(key=lambda x: (-int(x['_score']), str(x['libelle'])))
-    
-    if matches:
-        logger.debug(f"✅ [FranceTravail] Found {len(matches)} ROME matches. Top: {matches[0]['libelle']} ({matches[0]['code']})")
-    
-    # Return top 20 matches
-    return [{"code": str(m['code']), "libelle": str(m['libelle'])} for m in matches[:20]]
-
-@mcp.tool()
-def search_rome_appellations(query: str) -> List[Dict[str, str]]:
-    """
-    Recherche des catégories de métiers (codes ROME) à partir d'un mot-clé.
-    Utile pour identifier les codes métiers officiels pour la recherche d'offres.
-    
-    Args:
-        query: Mot-clé à rechercher (ex: 'Boulanger', 'Informatique').
-    """
-    return _search_rome_appellations_logic(query)
 
 
 def _prune_job_offer(offer: Dict[str, Any]) -> Dict[str, Any]:
@@ -170,14 +102,13 @@ def search_job_offers_logic(
     query: Optional[str] = None,
     location: Optional[str] = None,
     rome_code: Optional[str] = None,
-    appellation_codes: Optional[List[str]] = None,
     distance: int = 10,
     sort: int = 1,
     range_start: int = 0,
     range_end: int = 19
 ) -> Dict[str, Any]:
     """Publicly exported logic for searching job offers."""
-    # logger.info(f"👉 [FranceTravail] ENTERING search_job_offers_logic (loc={location}, rome={rome_code}, apps={appellation_codes})")
+    # logger.info(f"👉 [FranceTravail] ENTERING search_job_offers_logic (loc={location}, rome={rome_code})")
     token = _get_access_token()
     
     # 1. Resolve Location if it's a Name
@@ -190,19 +121,16 @@ def search_job_offers_logic(
         else:
             logger.warning(f"⚠️ [FranceTravail] Could not resolve '{location}' to an INSEE code.")
 
-    # 3. Handle ROME and Appellation codes
-    if rome_code:
-        # If we have a 5-char ROME code, it goes to codeROME
-        if appellation_codes is None:
-            appellation_codes = []
-        if rome_code not in appellation_codes:
-            appellation_codes.append(rome_code)
-
-    # 4. Prepare API parameters
+    # 3. Prepare API parameters
     params: Dict[str, Any] = {
         "range": f"{range_start}-{range_end}",
         "sort": sort
     }
+
+    # 4. Handle ROME code
+    if rome_code:
+        # If we have a 5-char ROME code, it goes to codeROME
+        params["codeROME"] = rome_code
     
     # Use user query as motsCles
     if query:
@@ -211,18 +139,6 @@ def search_job_offers_logic(
     if location:
         params["commune"] = location
         params["distance"] = distance
-    
-    # ROME codes (codeROME) and Appellations
-    if appellation_codes:
-        # filter only 5-char ROME codes for codeROME (Format: A1234)
-        romes = [c for c in appellation_codes if len(c) == 5 and c[0].isalpha()]
-        if romes:
-            params["codeROME"] = ",".join(sorted(romes))
-        
-        # filters for precise appellations (usually 5 digits)
-        apps = [c for c in appellation_codes if c.isdigit()]
-        if apps:
-            params["appellation"] = ",".join(sorted(apps))
 
     headers = {
         "Authorization": f"Bearer {token}",
@@ -265,7 +181,6 @@ def search_job_offers(
     query: Optional[str] = None,
     location: Optional[str] = None,
     rome_code: Optional[str] = None,
-    appellation_codes: Optional[List[str]] = None,
     distance: int = 10,
     sort: int = 1,
     range_start: int = 0,
@@ -278,7 +193,6 @@ def search_job_offers(
         query: Mots clés supplémentaires (ex: 'Alternance').
         location: Code INSEE de la commune (ex: '33063').
         rome_code: Code ROME (ex: 'M1805').
-        appellation_codes: Liste de codes métiers précis (ROME Appellations, ex: ['11573']).
         distance: Rayon de recherche en km autour de la commune.
         sort: Tri (0: Pertinence, 1: Date décr., 2: Distance).
         range_start: Index de début (pagination).
@@ -289,7 +203,6 @@ def search_job_offers(
             query=query, 
             location=location, 
             rome_code=rome_code, 
-            appellation_codes=appellation_codes,
             distance=distance,
             sort=sort, 
             range_start=range_start, 

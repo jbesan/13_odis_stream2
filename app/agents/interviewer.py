@@ -30,7 +30,7 @@ INTERVIEWER_PROMPT = """
 1. **Commune Actuelle** : Cherche le code INSEE avec `search_commune`.
 2. **Composition Familiale** : Demande le nombre d'adultes et d'enfants.
 3. **Périmètre de Recherche** : {LOC_SEARCH_AREAS}.
-4. **Projet Pro & Formations** : Cherche IMMEDIATEMENT via `search_referentiels` les codes ROME (rome_codes) ou Formation (formation_codes) correspondant.
+4. **Projet Pro & Formations** : Cherche IMMEDIATEMENT via `search_referentiels` les codes ROME (`rome_codes`) ou Formation (`formation_codes`) correspondant. Si tu ne trouve aucune correspondance qui correspond demande 
 5. **Logement & Hébergement** : Choisi dans {HEBERGEMENT_OPTIONS} et {LOGEMENT_OPTIONS}.
 6. **Éducation des Enfants** : Choisi dans {CLASSES_SCOLAIRES}.
 7. **Santé Spécifique** : Choisi dans {SANTE_OPTIONS}.

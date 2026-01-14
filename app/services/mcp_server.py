@@ -83,6 +83,9 @@ def _search_referentiels_logic(query: str, domain: Optional[str] = None) -> List
     # 1. Filter by Domain
     if domain:
         df = df[df['key'] == domain]
+    else:
+        # Exclude deprecated domains if no specific domain requested
+        df = df[df['key'] != 'fap_codes']
     
     # 2. Robust Search Logic
     STOP_WORDS = {
@@ -152,8 +155,8 @@ def _get_labels_for_codes_logic(codes: List[str]) -> Dict[str, str]:
         return {}
     
     df = DATA_CONTEXT['referentiels_raw']
-    # Filter by code AND exclude internal mapping keys that use codes as labels
-    subset = df[(df['code'].isin(codes)) & (df['key'] != 'fap_rome_mapping')]
+    # Filter by code
+    subset = df[df['code'].isin(codes)]
     return dict(zip(subset['code'].astype(str), subset['label'].astype(str)))
 
 
@@ -165,7 +168,7 @@ def search_referentiels(query: str, domain: Optional[str] = None) -> List[Dict[s
     Args:
         query: The search term (e.g., 'Soudeur', 'Football').
         domain: The target database. MUST be one of:
-                ['rome_codes' (Jobs), 'formation_codes', 'inclusion_services', 'waldec_codes' (Hobbies), 'regions', 'departements'].
+                ['rome_codes', 'formation_codes', 'inclusion_services', 'waldec_codes', 'regions', 'departements'].
     """
     return _search_referentiels_logic(query, domain)
 

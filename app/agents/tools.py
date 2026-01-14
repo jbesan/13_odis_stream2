@@ -11,9 +11,7 @@ from services.mcp_server import (
     _search_refugee_associations_logic
 )
 from services.mcp_france_travail import (
-    search_job_offers_logic as _search_job_offers_logic,
-    _get_job_details_logic,
-    _search_rome_appellations_logic
+    _get_job_details_logic
 )
 import config as cfg
 from core.models import SearchCriterias
@@ -112,14 +110,6 @@ def search_job_offers(
         
     return res
 
-def search_rome_appellations(query: str) -> List[Dict[str, str]]:
-    """
-    Recherche des catégories de métiers (codes ROME) à partir d'un mot-clé.
-    Utile pour trouver des codes officiels pour la recherche d'offres.
-    """
-
-    logger.info(f"⚒️ [TOOL] search_rome_appellations: '{query}'")
-    return _search_rome_appellations_logic(query)
 
 def get_job_details(job_id: str) -> Dict[str, Any]:
     """
