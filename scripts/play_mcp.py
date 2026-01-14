@@ -76,16 +76,22 @@ async def interactive_loop(session: ClientSession):
 
 async def main():
     parser = argparse.ArgumentParser(description="ODIS MCP Play Script")
+    parser.add_argument("--server", choices=["core", "ft"], default="core", help="MCP server to connect to (core or ft)")
     parser.add_argument("--tool", help="Name of the tool to run")
     parser.add_argument("--args", help="JSON string of arguments for the tool")
     parser.add_argument("--list", action="store_true", help="Just list tools and exit")
     args = parser.parse_args()
 
-    # Define server parameters
-    # We use the absolute path to the venv python and the mcp_server.py script
+    # Server configuration mapping
     root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     python_path = os.path.join(root_dir, ".venv", "bin", "python")
-    server_script = os.path.join(root_dir, "app", "services", "mcp_server.py")
+    
+    server_mapping = {
+        "core": os.path.join(root_dir, "app", "services", "mcp_server.py"),
+        "ft": os.path.join(root_dir, "app", "services", "mcp_france_travail.py")
+    }
+    
+    server_script = server_mapping[args.server]
 
     server_env = {**os.environ, "PYTHONPATH": f"{os.environ.get('PYTHONPATH', '')}:{os.path.join(root_dir, 'app')}"}
     server_env["MCP_SIMPLE_LOGS"] = "true"
@@ -96,7 +102,7 @@ async def main():
         env=server_env
     )
 
-    print(f"Connecting to MCP server: {server_script} ...")
+    print(f"Connecting to {args.server.upper()} MCP server: {server_script} ...")
     
     async with stdio_client(server_params) as (read, write):
         async with ClientSession(read, write) as session:

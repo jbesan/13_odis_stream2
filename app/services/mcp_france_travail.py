@@ -190,9 +190,9 @@ def search_job_offers_logic(
         else:
             logger.warning(f"⚠️ [FranceTravail] Could not resolve '{location}' to an INSEE code.")
 
-    # 3. Handle ROME code
+    # 3. Handle ROME and Appellation codes
     if rome_code:
-        # If we have a 5-char ROME code, it goes to codeRome
+        # If we have a 5-char ROME code, it goes to codeROME
         if appellation_codes is None:
             appellation_codes = []
         if rome_code not in appellation_codes:
@@ -212,12 +212,17 @@ def search_job_offers_logic(
         params["commune"] = location
         params["distance"] = distance
     
-    # Remove domaine logic as we now use ROME everywhere
-    
-    # Still allow explicit appellation codes if provided (but API might ignore if domaine is set? 
-    # Usually codeRome is separate. Let's see.)
+    # ROME codes (codeROME) and Appellations
     if appellation_codes:
-        params["codeRome"] = ",".join(sorted(appellation_codes))
+        # filter only 5-char ROME codes for codeROME (Format: A1234)
+        romes = [c for c in appellation_codes if len(c) == 5 and c[0].isalpha()]
+        if romes:
+            params["codeROME"] = ",".join(sorted(romes))
+        
+        # filters for precise appellations (usually 5 digits)
+        apps = [c for c in appellation_codes if c.isdigit()]
+        if apps:
+            params["appellation"] = ",".join(sorted(apps))
 
     headers = {
         "Authorization": f"Bearer {token}",
