@@ -47,7 +47,7 @@ def test_refiner_briefing_generation(refiner):
     assert "Localisation : Bordeaux (33063)" in briefing
     assert "Composition : 2 adulte(s)" in briefing
     assert "Priorité : Famille" in briefing
-    assert "Métiers (FAP) : Boulangerie (D1102), Agriculture (A1203)" in briefing
+    assert "Métiers (ROME) : Boulangerie (D1102), Agriculture (A1203)" in briefing
     assert "Formations : Formation 123 (F123)" in briefing
     
     # Check LLM content (mocked)

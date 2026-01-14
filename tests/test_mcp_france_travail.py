@@ -4,7 +4,6 @@ from unittest.mock import patch, MagicMock
 from services.mcp_france_travail import (
     search_job_offers_logic,
     _get_job_details_logic,
-    _search_rome_appellations_logic,
     TOKEN_CACHE
 )
 import config as cfg
