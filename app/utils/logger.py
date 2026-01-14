@@ -34,10 +34,15 @@ class JsonFormatter(logging.Formatter):
 
 def setup_logging() -> None:
     """
-    Configures the root logger to output JSON to stdout.
+    Configures the root logger to output JSON to stderr.
     """
-    handler = logging.StreamHandler(sys.stdout)
-    formatter = JsonFormatter()
+    handler = logging.StreamHandler(sys.stderr)
+    
+    if os.environ.get("MCP_SIMPLE_LOGS") == "true":
+        formatter = logging.Formatter("[%(levelname)s] %(message)s")
+    else:
+        formatter = JsonFormatter()
+        
     handler.setFormatter(formatter)
     
     root_logger = logging.getLogger()

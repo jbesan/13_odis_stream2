@@ -242,7 +242,7 @@ def _search_commune_logic(query: str) -> List[Dict[str, str]]:
 
 
 @mcp.tool()
-def search_commune(query: str) -> List[Dict[str, str]]:
+def search_commune(query: str) -> List[Dict[str, Any]]:
     """
     Searches for a French city to get its INSEE code.
 
