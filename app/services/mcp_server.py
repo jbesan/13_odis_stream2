@@ -276,7 +276,17 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
              else:
                  logger.warning(f"   ⚠️ City '{commune_input}' not found.")
 
-    # 2. Map Inputs
+    # 2. Map Inputs (Robust handling of geography)
+    loc_search_area = filters.get('loc_search_area', filters.get('périmètre', 'departement'))
+    loc_custom_code = filters.get('loc_custom_code')
+    loc_custom_type = filters.get('loc_custom_type')
+
+    # Heuristic: If we have a custom code but type is missing, infer it from loc_search_area
+    if loc_custom_code and not loc_custom_type:
+        if loc_search_area in ['region', 'departement']:
+            loc_custom_type = loc_search_area
+            # logger.info(f"   [MCP] Inferred loc_custom_type='{loc_custom_type}' from loc_search_area")
+
     socle_sel = filters.get('inc_services_core_selection', filters.get('codes_inclusion', []))
     if not socle_sel: socle_sel = cfg.DEFAULT_INC_SERVICES_CORE
 
@@ -311,9 +321,9 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
         poids_sante=get_weight('sante'),
         criteria_weights=filters.get('criteria_weights', {}),
         commune_actuelle=resolved_commune,
-        loc_search_area=filters.get('loc_search_area', 'departement'),
-        loc_custom_code=filters.get('loc_custom_code'),
-        loc_custom_type=filters.get('loc_custom_type'),
+        loc_search_area=loc_search_area,
+        loc_custom_code=loc_custom_code,
+        loc_custom_type=loc_custom_type,
         nb_adultes=nb_adultes,
         nb_enfants=int(filters.get('nb_enfants', 0)),
         hebergement=filters.get('hebergement', 'Location'),
