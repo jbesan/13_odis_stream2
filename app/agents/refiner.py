@@ -84,8 +84,8 @@ class ContextRefiner:
 {history_summary}{jobs_part}
 
 
+**CIBLE ACTUELLE** : {focus_info}
 """
-# **CIBLE ACTUELLE** : {focus_info}
         briefing = briefing.strip()
         context.briefing = briefing
         logger.debug(f"\n{'='*50}\n🧠 [REFINER] Synthesized Briefing:\n{briefing}\n{'='*50}")

@@ -22,7 +22,7 @@ JOB_HUNTER_PROMPT = """
 **DIRECTIVES CRITIQUES (NE PAS DEMANDER, AGIR)** :
 1. **Utilisation du Code INSEE (codgeo)** : Récupère le Code INSEE (codgeo) de la ville de `VILLE ACTIVE` avec l'outil `search_commune`.
 2. **RECHERCHE D'OFFRES (ROME ONLY)** : Lance `search_job_offers` pour CHAQUE code ROME identifié dans le `CONTEXTE RÉSUMÉ`.
-   - Utilise le paramètre `rome_code`.
+   - Utilise le paramètre `rome`.
    - Si tu as un doute sur le code ROME, utilise `search_referentiels` avec le domaine `rome_codes` pour trouver la catégorie correspondante.
    - Ne spécifie pas de `query` (mots-clés) sauf si l'utilisateur a donné une précision particulière (ex: "en alternance").
 3. **CONTEXTE LIVE** : Le briefing contient un nombre d'offres global (Live) pour la ville. Utilise ce chiffre UNIQUEMENT pour donner une tendance générale.
@@ -65,7 +65,6 @@ class JobHunterAgent(BaseAgent):
         
         if job_id_match:
             job_id = job_id_match.group(1)
-            logger.info(f"🎯 [JOB_HUNTER] Detail Intent detected for ID: {job_id}")
             prompt = JOB_DETAILS_PROMPT.replace("{JOB_ID}", job_id)
             prompt = prompt.replace("{BRIEFING}", briefing_data)
             prompt = prompt.replace("{FOCUS_CITY}", str(context.focus_city or "Non définie"))
@@ -73,7 +72,6 @@ class JobHunterAgent(BaseAgent):
             # Standard Search Logic - Simplified by Briefing
             prompt = JOB_HUNTER_PROMPT.replace("{BRIEFING}", briefing_data)
             prompt = prompt.replace("{FOCUS_CITY}", str(context.focus_city or "Non définie"))
-            logger.info(f"🔍 [JOB_HUNTER] Proactive Search with Briefing")
 
         # print(f"JOB_HUNTER_PROMPT: {prompt}")
         

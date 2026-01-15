@@ -42,11 +42,10 @@ SCOUT_PROMPT = """
 
 class ScoutAgent(BaseAgent):
     def run(self, message: str, context: AgentContext) -> str:
-        logger.info(f"🕵️ [SCOUT] Agent starting. Focus city: {context.focus_city}")
         briefing_data, user_msg = self._get_briefing_and_user_msg(message)
 
         prompt = SCOUT_PROMPT.replace("{BRIEFING}", briefing_data)
-        prompt = prompt.replace("{FOCUS_CITY}", context.focus_city)
+        prompt = prompt.replace("{FOCUS_CITY}", str(context.focus_city or "Non définie"))
         # print(f"SCOUT_PROMPT: {prompt}")
         
         try:

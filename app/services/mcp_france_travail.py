@@ -98,17 +98,29 @@ def _prune_job_offer(offer: Dict[str, Any]) -> Dict[str, Any]:
         "origineOffre": {"urlOrigine": offer.get("origineOffre", {}).get("urlOrigine")}
     }
 
-def search_job_offers_logic(
+def _search_job_offers_logic(
     query: Optional[str] = None,
     location: Optional[str] = None,
-    rome_code: Optional[str] = None,
+    rome: Optional[str] = None,
     distance: int = 10,
     sort: int = 1,
     range_start: int = 0,
-    range_end: int = 19
+    range_end: int = 19,
+    rome_code: Optional[str] = None,   # Alias 1
+    rome_codes: Optional[str] = None   # Alias 2
 ) -> Dict[str, Any]:
     """Publicly exported logic for searching job offers."""
-    # logger.info(f"👉 [FranceTravail] ENTERING search_job_offers_logic (loc={location}, rome={rome_code})")
+    
+    
+    # 0. Robustness: Handle parameter aliases
+    if not rome:
+        rome = rome_code or rome_codes
+    
+    # Validation
+    if rome and not (isinstance(rome, str) and len(rome) == 5):
+         return {"offres": [], "total": 0, "error": f"Invalid ROME code format: {rome}. Must be 5 chars."}
+
+    # logger.info(f"👉 [FranceTravail] ENTERING search_job_offers_logic (loc={location}, rome={rome})")
     token = _get_access_token()
     
     # 1. Resolve Location if it's a Name
@@ -128,9 +140,9 @@ def search_job_offers_logic(
     }
 
     # 4. Handle ROME code
-    if rome_code:
+    if rome:
         # If we have a 5-char ROME code, it goes to codeROME
-        params["codeROME"] = rome_code
+        params["codeROME"] = rome
     
     # Use user query as motsCles
     if query:
@@ -149,7 +161,6 @@ def search_job_offers_logic(
     response = requests.get(f"{BASE_URL}/offres/search", params=params, headers=headers, timeout=10)
     
     if response.status_code == 204:
-        logger.info("⚠️ [FranceTravail] No results (204 No Content)")
         return {"offres": [], "total": 0}
     
     if response.status_code not in [200, 206]:
@@ -170,7 +181,7 @@ def search_job_offers_logic(
             pass
             
     pruned_offres = [_prune_job_offer(o) for o in data.get("resultats", [])]
-            
+
     return {
         "offres": pruned_offres,
         "total": total
@@ -180,11 +191,13 @@ def search_job_offers_logic(
 def search_job_offers(
     query: Optional[str] = None,
     location: Optional[str] = None,
-    rome_code: Optional[str] = None,
+    rome: Optional[str] = None,
     distance: int = 10,
     sort: int = 1,
     range_start: int = 0,
-    range_end: int = 19
+    range_end: int = 19,
+    rome_code: Optional[str] = None,
+    rome_codes: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Rechercher des offres d'emploi sur France Travail.
@@ -192,21 +205,23 @@ def search_job_offers(
     Args:
         query: Mots clés supplémentaires (ex: 'Alternance').
         location: Code INSEE de la commune (ex: '33063').
-        rome_code: Code ROME (ex: 'M1805').
+        rome: Code ROME (ex: 'M1805').
         distance: Rayon de recherche en km autour de la commune.
         sort: Tri (0: Pertinence, 1: Date décr., 2: Distance).
         range_start: Index de début (pagination).
         range_end: Index de fin (pagination).
     """
     try:
-        return search_job_offers_logic(
+        return _search_job_offers_logic(
             query=query, 
             location=location, 
-            rome_code=rome_code, 
+            rome=rome, 
             distance=distance,
             sort=sort, 
             range_start=range_start, 
-            range_end=range_end
+            range_end=range_end,
+            rome_code=rome_code,
+            rome_codes=rome_codes
         )
     except Exception as e:
         logger.exception(f"❌ [FranceTravail] Critical error in search_job_offers wrapper: {e}")
@@ -222,7 +237,6 @@ def _get_job_details_logic(job_id: str) -> Dict[str, Any]:
         "Accept": "application/json"
     }
 
-    logger.info(f"👉 [FranceTravail] Getting job details: {job_id}")
     response = requests.get(f"{BASE_URL}/offres/{job_id}", headers=headers)
     
     if response.status_code == 204:
@@ -230,7 +244,6 @@ def _get_job_details_logic(job_id: str) -> Dict[str, Any]:
         
     response.raise_for_status()
     data = response.json()
-    logger.info(f"🎁 [FranceTravail] Raw Details Response received (id={job_id})")
     
     # 1. Base Pruning
     pruned = _prune_job_offer(data)
@@ -270,8 +283,13 @@ def get_job_details(job_id: str) -> Dict[str, Any]:
     Args:
         job_id: L'identifiant unique de l'offre (ex: '123ABCD').
     """
-    logger.info(f"🚀 [TOOL_CALL] get_job_details invoked with ID: {job_id}")
-    return _get_job_details_logic(job_id)
+    try:
+        if not job_id:
+            return {"error": "Missing 'job_id' parameter."}
+        return _get_job_details_logic(job_id)
+    except Exception as e:
+        logger.exception(f"❌ [FranceTravail] get_job_details failed: {e}")
+        return {"error": str(e)}
 
 if __name__ == "__main__":
     mcp.run()

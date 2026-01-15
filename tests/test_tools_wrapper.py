@@ -21,11 +21,11 @@ def test_compute_top_cities_wrapper():
         
         result = compute_top_cities(criteria_equilibre)
         
-        # Check that logic was called with correct weights and dict filters
-        mock_logic.assert_called_with(
-            {"mock": "weights"}, 
-            criteria_equilibre.model_dump()
-        )
+        # Check that logic was called with correct criteria
+        args, _ = mock_logic.call_args
+        called_criteria = args[0]
+        assert called_criteria.nb_adultes == 1
+        assert called_criteria.weight_profile == "Équilibré"
         assert result == {"status": "success"}
 
         # 2. Test with specific profile (Famille)
@@ -38,10 +38,10 @@ def test_compute_top_cities_wrapper():
         
         compute_top_cities(criteria_famille)
         
-        mock_logic.assert_called_with(
-            {"mock": "famille_weights"}, 
-            criteria_famille.model_dump()
-        )
+        args, _ = mock_logic.call_args
+        called_criteria = args[0]
+        assert called_criteria.nb_adultes == 2
+        assert called_criteria.weight_profile == "Famille"
 
         # 3. Test extraction with empty profile -> Defaults to Equilibre
         criteria_empty = SearchCriterias(
@@ -52,7 +52,6 @@ def test_compute_top_cities_wrapper():
         
         compute_top_cities(criteria_empty)
         
-        mock_logic.assert_called_with(
-            {"mock": "weights"}, # Should use Equilibre
-            criteria_empty.model_dump()
-        )
+        args, _ = mock_logic.call_args
+        called_criteria = args[0]
+        assert called_criteria.weight_profile == ""

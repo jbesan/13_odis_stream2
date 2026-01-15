@@ -28,7 +28,7 @@ WEB_PROMPT = """
 class WebAgent(BaseAgent):
     def run(self, message: str, context: AgentContext) -> str:
         briefing_data, user_msg = self._get_briefing_and_user_msg(message)
-        prompt = WEB_PROMPT.replace("{FOCUS_CITY}", context.focus_city)
+        prompt = WEB_PROMPT.replace("{FOCUS_CITY}", str(context.focus_city or "Non définie"))
         prompt = prompt.replace("{BRIEFING}", briefing_data)
         # print(f"WEB_PROMPT: {prompt}")
         

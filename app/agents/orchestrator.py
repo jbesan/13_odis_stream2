@@ -258,12 +258,12 @@ class MultiAgentOrchestrator:
         prompt = prompt.replace("{FOCUS_CITY}", context.focus_city or "Inconnu")
         prompt = prompt.replace("{CITY_DETAILS}", json.dumps(city_details, indent=2, ensure_ascii=False))
         prompt = prompt.replace("{SCOUT_RES}", scout_res)
-        prompt = prompt.replace("{WEB_RES}", web_res)
-        prompt = prompt.replace("{JOB_RES}", job_res)
+        prompt = prompt.replace("{WEB_RES}", str(web_res or ""))
+        prompt = prompt.replace("{JOB_RES}", str(job_res or ""))
         prompt = prompt.replace("{NOTES_QUALITATIVES}", str(context.search_criteria.get('notes_qualitatives', [])))
-        prompt = prompt.replace("{WEIGHT_PROFILE}", context.search_criteria.get('weight_profile', 'Standard'))
-        prompt = prompt.replace("{BRIEFING}", context.briefing)
-        # logger.info(f"🧠 [ORCHESTRATOR] Synthesis Prompt: {prompt}")
+        prompt = prompt.replace("{WEIGHT_PROFILE}", str(context.search_criteria.get('weight_profile', 'Standard')))
+        prompt = prompt.replace("{BRIEFING}", str(context.briefing or ""))
+        # logger.info(f"🧠 [ORCHESTRATOR] Synthesis Prompt:{prompt}")
 
         response = self.client.models.generate_content(
             model=self.models["orchestrator"],
@@ -309,76 +309,80 @@ class MultiAgentOrchestrator:
         # 3. Special Case: DECORATION (Scout + Job Hunter Cascade)
         # On ne déclenche la cascade QUE si le router demande spécifiquement "DECORATION"
         if target_agent_name == "DECORATION":
-            logger.info(f"🧠 [ORCHESTRATOR] Starting Decoration Cascade (Initial City: {context.focus_city})")
-            
-            # --- AUTO-DETECTION SAFETY ---
-            # If focus_city is empty, check if message mentions one of the top cities
-            if not context.focus_city:
-                for city in context.top_cities:
-                    if city['name'].lower() in message.lower():
-                        context.focus_city = city['name']
-                        logger.info(f"🧠 [ORCHESTRATOR] Auto-detected city in message: {context.focus_city}")
-                        break
-            
-            city_name = context.focus_city or "votre ville"
-            
-            # Preparation des contextes spécialisés (On le fait séquentiellement car focus_city peut changer)
-            scout_ctx = self._get_specialized_context("scout", context)
-            
-            logger.info("🧠 [ORCHESTRATOR] Calling SCOUT...")
-            st.toast(random.choice([
-                "Interrogatoire des pigeons locaux...",
-                "Déploiement de nos drones diplomatiques...",
-                "Analyse des passages secrets..."
-            ]), icon="🕵️")
-            scout_res = self.agents["scout"].run(enhanced_message, scout_ctx)
-            # Sync tokens only. focus_city is updated directly by the tool in st.session_state
-            self._sync_tokens(context, scout_ctx)
-            
-            # Refresh city name if scout updated it
-            city_name = context.focus_city or city_name
-
-            # logger.info(f"🧠 [ORCHESTRATOR] SCOUT finished. Current City: {context.focus_city}")
-
-            logger.info("🧠 [ORCHESTRATOR] Calling WEB...")
-            st.toast(random.choice([
-                "Lecture rapide de la gazette locale...",
-                "On écoute les derniers potins du web...",
-                "Scan des gros titres pour prendre la température..."
-            ]), icon="🌐")
-            web_res = self.agents["web"].run(enhanced_message, context) # Web doesn't need pruning
-            self._sync_tokens(context, context) # Simple sync
-            
-            # NOW prepare Job Hunter context, AFTER Scout may have updated focus_city
-            job_ctx = self._get_specialized_context("job_hunter", context)
-            
-            # RE-CHECK after Scout/Web as they might have set it
-            if not context.focus_city:
-                 logger.warning("⚠️ [ORCHESTRATOR] Focus city still empty. Job Hunter might fail/be broad.")
-            
-            logger.info("🧠 [ORCHESTRATOR] Calling JOB_HUNTER...")
-            st.toast(random.choice([
-                "Chasse aux offres d'emploi (sans fusil, promis)...",
-                "Pêche miraculeuse dans les filets de France Travail...",
-                "Infiltration discrète du marché du travail..."
-            ]), icon="💼")
-            job_res = self.agents["job_hunter"].run(enhanced_message, job_ctx)
-            self._sync_tokens(context, job_ctx)
-            
-            logger.info(f"🧠 [ORCHESTRATOR] JOB_HUNTER finished. Current City: {context.focus_city}")
-            
-            st.toast(random.choice([
-                "Mixage de la potion magique ODIS...",
-                "Assemblage du puzzle de votre future vie...",
-                "Rédaction de la synthèse finale..."
-            ]), icon="🧪")
-            final_response = self._synthesize(enhanced_message, context, scout_res, job_res, web_res)
-            logger.info("🧠 [ORCHESTRATOR] Synthesis complete.")
-            
-            # Record in history
-            context.history.append({"role": "user", "parts": [{"text": message}]})
-            context.history.append({"role": "model", "parts": [{"text": final_response}]})
-            return final_response
+            try:
+                logger.info(f"🧠 [ORCHESTRATOR] Starting Decoration Cascade (Initial City: {context.focus_city})")
+                
+                # --- AUTO-DETECTION SAFETY ---
+                # If focus_city is empty, check if message mentions one of the top cities
+                if not context.focus_city:
+                    for city in context.top_cities:
+                        if city['name'].lower() in message.lower():
+                            context.focus_city = city['name']
+                            logger.info(f"🧠 [ORCHESTRATOR] Auto-detected city in message: {context.focus_city}")
+                            break
+                
+                city_name = context.focus_city or "votre ville"
+                
+                # Preparation des contextes spécialisés (On le fait séquentiellement car focus_city peut changer)
+                scout_ctx = self._get_specialized_context("scout", context)
+                
+                logger.info("🧠 [ORCHESTRATOR] Calling SCOUT...")
+                st.toast(random.choice([
+                    "Interrogatoire des pigeons locaux...",
+                    "Déploiement de nos drones diplomatiques...",
+                    "Analyse des passages secrets..."
+                ]), icon="🕵️")
+                scout_res = self.agents["scout"].run(enhanced_message, scout_ctx)
+                # Sync tokens only. focus_city is updated directly by the tool in st.session_state
+                self._sync_tokens(context, scout_ctx)
+                
+                # Refresh city name if scout updated it
+                city_name = context.focus_city or city_name
+    
+                # logger.info(f"🧠 [ORCHESTRATOR] SCOUT finished. Current City: {context.focus_city}")
+    
+                logger.info("🧠 [ORCHESTRATOR] Calling WEB...")
+                st.toast(random.choice([
+                    "Lecture rapide de la gazette locale...",
+                    "On écoute les derniers potins du web...",
+                    "Scan des gros titres pour prendre la température..."
+                ]), icon="🌐")
+                web_res = self.agents["web"].run(enhanced_message, context) # Web doesn't need pruning
+                self._sync_tokens(context, context) # Simple sync
+                
+                # NOW prepare Job Hunter context, AFTER Scout may have updated focus_city
+                job_ctx = self._get_specialized_context("job_hunter", context)
+                
+                # RE-CHECK after Scout/Web as they might have set it
+                if not context.focus_city:
+                     logger.warning("⚠️ [ORCHESTRATOR] Focus city still empty. Job Hunter might fail/be broad.")
+                
+                logger.info("🧠 [ORCHESTRATOR] Calling JOB_HUNTER...")
+                st.toast(random.choice([
+                    "Chasse aux offres d'emploi (sans fusil, promis)...",
+                    "Pêche miraculeuse dans les filets de France Travail...",
+                    "Infiltration discrète du marché du travail..."
+                ]), icon="💼")
+                job_res = self.agents["job_hunter"].run(enhanced_message, job_ctx)
+                self._sync_tokens(context, job_ctx)
+                
+                logger.info(f"🧠 [ORCHESTRATOR] JOB_HUNTER finished. Current City: {context.focus_city}")
+                
+                st.toast(random.choice([
+                    "Mixage de la potion magique ODIS...",
+                    "Assemblage du puzzle de votre future vie...",
+                    "Rédaction de la synthèse finale..."
+                ]), icon="🧪")
+                final_response = self._synthesize(enhanced_message, context, scout_res, job_res, web_res)
+                logger.info("🧠 [ORCHESTRATOR] Synthesis complete.")
+                
+                # Record in history
+                context.history.append({"role": "user", "parts": [{"text": message}]})
+                context.history.append({"role": "model", "parts": [{"text": final_response}]})
+                return final_response
+            except Exception as e:
+                logger.error(f"❌ [ORCHESTRATOR] Decoration Cascade Failed: {e}", exc_info=True)
+                return "Désolé, j'ai rencontré une erreur lors de l'analyse approfondie de cette ville."
 
         # 4. Standard Case (Single Agent)
         agent = self.agents.get(target_agent_name)

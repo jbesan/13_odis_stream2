@@ -1,6 +1,6 @@
 
 from fastmcp import FastMCP
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Union
 import json
 import pandas as pd
 import geopandas as gpd
@@ -34,10 +34,8 @@ def ensure_data_context() -> None:
     """Ensures data context is loaded if missing."""
     global DATA_CONTEXT
     if not DATA_CONTEXT:
-        logger.info("Initializing Data Context for MCP...")
         try:
             DATA_CONTEXT = load_all_data_raw()
-            logger.info("Data Context Loaded Successfully.")
         except Exception as e:
             logger.error(f"Failed to load data context: {e}")
             raise RuntimeError(f"Failed to load ODIS data: {e}")
@@ -70,8 +68,6 @@ def _search_referentiels_logic(query: str, domain: Optional[str] = None) -> List
     Searches for codes in the ODIS referentials (Jobs, Formations, Inclusion).
     """
     ensure_data_context()
-    logger.info(f"👉 [MCP] Request: search_referentiels")
-    logger.info(f"   Query: '{query}', Domain: '{domain}'")
     
     if 'referentiels_raw' not in DATA_CONTEXT:
         logger.warning("   ⚠️ Referentiels data not available.")
@@ -162,7 +158,7 @@ def _get_labels_for_codes_logic(codes: List[str]) -> Dict[str, str]:
 
 
 @mcp.tool()
-def search_referentiels(query: str, domain: Optional[str] = None) -> List[Dict[str, Any]]:
+def search_referentiels(query: str, domain: Optional[str] = None) -> Dict[str, Any]:
     """
     Searches for official French administrative codes.
 
@@ -171,7 +167,19 @@ def search_referentiels(query: str, domain: Optional[str] = None) -> List[Dict[s
         domain: The target database. MUST be one of:
                 ['rome_codes', 'formation_codes', 'inclusion_services', 'waldec_codes', 'regions', 'departements'].
     """
-    return _search_referentiels_logic(query, domain)
+    try:
+        if not query:
+            return {"error": "Missing 'query' parameter."}
+        
+        valid_domains = ['rome_codes', 'formation_codes', 'inclusion_services', 'waldec_codes', 'regions', 'departements']
+        if domain and domain not in valid_domains:
+            return {"error": f"Invalid domain: {domain}. Must be one of {valid_domains}"}
+
+        results = _search_referentiels_logic(query, domain)
+        return {"results": results}
+    except Exception as e:
+        logger.exception(f"❌ [MCP] search_referentiels failed: {e}")
+        return {"error": str(e)}
 
 
 
@@ -246,14 +254,20 @@ def _search_commune_logic(query: str) -> List[Dict[str, str]]:
 
 
 @mcp.tool()
-def search_commune(query: str) -> List[Dict[str, Any]]:
+def search_commune(query: str) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """
     Searches for a French city to get its INSEE code.
 
     Args:
         query: City name provided by the user (e.g. 'Bordeaux').
     """
-    return _search_commune_logic(query)
+    try:
+        if not query:
+            return {"error": "Missing 'query' parameter."}
+        return _search_commune_logic(query)
+    except Exception as e:
+        logger.exception(f"❌ [MCP] search_commune failed: {e}")
+        return {"error": str(e)}
 
 
 def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) -> Dict[str, Any]:
@@ -272,12 +286,6 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
     weights = cfg.WEIGHT_PROFILES.get(profile_name, cfg.WEIGHT_PROFILES["Équilibré"])
     
     # User-requested LOUD logging
-    print(f"\n\n🚨 [DEBUG] _compute_top_cities_logic triggered", flush=True)
-    print(f"👉 [MCP] Profile: {profile_name}", flush=True)
-    print(f"👉 [MCP] Criteria Dict: {criteria_obj.model_dump()}", flush=True)
-    
-    logger.info(f"👉 [MCP] Request: compute_top_cities (Profile: {profile_name})")
-    logger.debug(f"   Resolved Weights: {weights}")
     
     # filters is the dictionary representation of criteria_obj for internal engine mapping
     filters = criteria_obj.model_dump()
@@ -341,7 +349,7 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
         poids_inclusion=get_weight('inclusion'),
         poids_mobilité=get_weight('mobilité'),
         poids_sante=get_weight('sante'),
-        criteria_weights=criteria.criteria_weights,
+        criteria_weights=criteria_obj.criteria_weights,
         weight_profile=profile_name,
         commune_actuelle=resolved_commune,
         loc_search_area=loc_search_area,
@@ -448,8 +456,6 @@ def compute_top_cities(criteria: SearchCriterias) -> Dict[str, Any]:
         criteria: Search criteria including location, weights profile (Famille, Santé, Economique, Équilibré), 
                  and specific needs (metiers, formations, etc.).
     """
-    logger.info(f"👉 [MCP] Request: compute_top_cities")
-    logger.info(f"   Criteria: {criteria.model_dump_json(indent=2)}")
 
     return _compute_top_cities_logic(criteria)
 
@@ -492,7 +498,13 @@ def search_places(queries: List[str], location: str) -> Dict[str, Any]:
     Recherche des lieux (POIs), commerces, associations ou services dans un secteur donné.
     Grounding Spatial (Ground 3).
     """
-    return _search_places_logic(queries, location)
+    try:
+        if not queries or not location:
+            return {"error": "Both 'queries' (list) and 'location' (string) must be provided."}
+        return _search_places_logic(queries, location)
+    except Exception as e:
+        logger.exception(f"❌ [MCP] search_places failed: {e}")
+        return {"error": str(e)}
 
 
 def _search_refugee_associations_logic(codgeo: str) -> List[Dict[str, Any]]:
@@ -508,7 +520,6 @@ def _search_refugee_associations_logic(codgeo: str) -> List[Dict[str, Any]]:
     df = DATA_CONTEXT['refugee_associations_data']
     odis = DATA_CONTEXT['odis']
     
-    logger.info(f"🔍 [MCP] Searching associations for codgeo='{codgeo}' (Total data rows: {len(df)})")
 
     # 2. Filter by Bassin de Vie (Requirement F-26)
     # Get the BV for the target commune
@@ -518,20 +529,16 @@ def _search_refugee_associations_logic(codgeo: str) -> List[Dict[str, Any]]:
         if pd.notna(bv):
              bv_str = str(bv).replace('.0', '')
              # Return all associations in the same Bassin de Vie
-             logger.info(f"📍 [MCP] Filter by Bassin de Vie: {bv_str}")
              # Robust comparison: handle potential float/string mixture in df
              mask = (df['bassin_de_vie'].astype(str).str.replace(r'\.0$', '', regex=True) == bv_str)
         else:
              # Fallback to city-only if BV is unknown
-             logger.info(f"📍 [MCP] Filter by single city (BV Unknown): {codgeo}")
              mask = (df['codgeo'].astype(str) == str(codgeo))
     else:
         # Last fallback: direct match on code in the vertical table
-        logger.info(f"📍 [MCP] Filter by single city (INSEE code match): {codgeo}")
         mask = (df['codgeo'].astype(str) == str(codgeo))
     
     results = df[mask].copy()
-    logger.info(f"✅ [MCP] Found {len(results)} refugee associations.")
     
     if results.empty:
         return []
@@ -540,7 +547,7 @@ def _search_refugee_associations_logic(codgeo: str) -> List[Dict[str, Any]]:
     return results.to_dict(orient='records')
 
 @mcp.tool()
-def search_refugee_associations(codgeo: str) -> List[Dict[str, Any]]:
+def search_refugee_associations(codgeo: str) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """
     Recherche les associations spécialisées dans l'accueil des réfugiés (RNA).
     L'outil identifie le Bassin de Vie de la commune et retourne TOUTES les associations de cette zone.
@@ -548,7 +555,13 @@ def search_refugee_associations(codgeo: str) -> List[Dict[str, Any]]:
     Args:
         codgeo: Code INSEE de la commune (ex: '33063').
     """
-    return _search_refugee_associations_logic(codgeo)
+    try:
+        if not codgeo or not (isinstance(codgeo, str) and len(codgeo) == 5):
+            return {"error": f"Invalid INSEE code (codgeo): {codgeo}. Must be 5 characters."}
+        return _search_refugee_associations_logic(codgeo)
+    except Exception as e:
+        logger.exception(f"❌ [MCP] search_refugee_associations failed: {e}")
+        return {"error": str(e)}
 
 
 def _search_odis_associations_logic(codgeo: str) -> List[Dict[str, Any]]:
@@ -564,29 +577,24 @@ def _search_odis_associations_logic(codgeo: str) -> List[Dict[str, Any]]:
     df = DATA_CONTEXT['odis_asso_mini_data']
     odis = DATA_CONTEXT['odis']
     
-    logger.info(f"🔍 [MCP] Searching ODIS associations for codgeo='{codgeo}' (Total data rows: {len(df)})")
 
     mask = pd.Series(False, index=df.index)
     if codgeo in odis.index:
         bv = odis.loc[codgeo, 'bassin_de_vie']
         if pd.notna(bv):
              bv_str = str(bv).replace('.0', '')
-             logger.info(f"📍 [MCP] Filter by Bassin de Vie: {bv_str}")
              mask = (df['codgeo'].isin(odis[odis['bassin_de_vie'] == bv].index))
         else:
-             logger.info(f"📍 [MCP] Filter by single city (BV Unknown): {codgeo}")
              mask = (df['codgeo'].astype(str) == str(codgeo))
     else:
-        logger.info(f"📍 [MCP] Filter by single city (INSEE code match): {codgeo}")
         mask = (df['codgeo'].astype(str) == str(codgeo))
     
     results = df[mask].copy()
-    logger.info(f"✅ [MCP] Found {len(results)} ODIS associations.")
     
     return results.to_dict(orient='records')
 
 @mcp.tool()
-def search_odis_associations(codgeo: str) -> List[Dict[str, Any]]:
+def search_odis_associations(codgeo: str) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """
     Recherche les associations locales (Sports, Culture, Loisirs, Social) issues de l'annuaire ODIS.
     L'outil retourne les associations de la commune ou de son Bassin de Vie.
@@ -594,7 +602,13 @@ def search_odis_associations(codgeo: str) -> List[Dict[str, Any]]:
     Args:
         codgeo: Code INSEE de la commune (ex: '33063').
     """
-    return _search_odis_associations_logic(codgeo)
+    try:
+        if not codgeo or not (isinstance(codgeo, str) and len(codgeo) == 5):
+            return {"error": f"Invalid INSEE code (codgeo): {codgeo}. Must be 5 characters."}
+        return _search_odis_associations_logic(codgeo)
+    except Exception as e:
+        logger.exception(f"❌ [MCP] search_odis_associations failed: {e}")
+        return {"error": str(e)}
 
 
 def _compute_routes_logic(origin: str, destination: str, mode: str = "transit") -> Dict[str, Any]:
@@ -641,7 +655,13 @@ def compute_routes(origin: str, destination: str, mode: str = "transit") -> Dict
     Calcule des itinéraires et temps de trajet entre deux points.
     Si un lieu est vague (ex: 'Préfecture'), précise la ville si possible.
     """
-    return _compute_routes_logic(origin, destination, mode)
+    try:
+        if not origin or not destination:
+             return {"error": "Both 'origin' and 'destination' must be provided."}
+        return _compute_routes_logic(origin, destination, mode)
+    except Exception as e:
+        logger.exception(f"❌ [MCP] compute_routes failed: {e}")
+        return {"error": str(e)}
 
 if __name__ == "__main__":
     mcp.run()
