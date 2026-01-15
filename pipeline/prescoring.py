@@ -469,7 +469,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         # Additional drop request from user
         more_cols_to_drop = [
             'pop_jeune_2016', 'pop_jeune_2022', 'pop_active_2016', 'pop_active_2022',
-            'libelle_bassin_de_vie', 'loyer_app_m2', 'has_gare', #'gare_count', # KEEP
+            'libelle_bassin_de_vie', 'has_gare', #'gare_count', # KEEP
             #'risky_schools_count', # KEEP
             'log_priv_total'
         ]

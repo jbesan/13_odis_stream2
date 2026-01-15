@@ -35,9 +35,34 @@ def main():
     parser.add_argument("--step", choices=["ingest", "build", "prescoring", "deploy", "all"], default="all", help="Step to run")
     args = parser.parse_args()
 
+    skip_live_jobs = False
+    
+    # Early check for France Travail fetch if ingest/all is selected
+    if args.step in ["ingest", "all"]:
+        from pipeline.ingest import get_live_jobs_status
+        status = get_live_jobs_status()
+        
+        if not status["within_ttl"]:
+            print("\n" + "="*50)
+            if not status["exists"]:
+                print("[?] France Travail Live Jobs data is MISSING.")
+            else:
+                print(f"[?] France Travail Live Jobs data is {status['age_days']:.1f} days old (TTL={status['ttl_days']}).")
+            
+            choice = input("    Do you want to refresh the metadata? (y/N): ").lower().strip()
+            if choice != 'y':
+                print("    >> Skipping Live Jobs fetch.")
+                skip_live_jobs = True
+            else:
+                print("    >> Live Jobs fetch will run during ingestion.")
+            print("="*50 + "\n")
+
     if args.step in ["ingest", "all"]:
         logging.info("=== Starting Ingestion Phase ===")
-        ingest.main([])
+        ingest_args = []
+        if skip_live_jobs:
+            ingest_args = ["--skip-live-jobs"]
+        ingest.main(ingest_args)
         logging.info("=== Ingestion Phase Completed ===")
 
     if args.step in ["build", "all"]:

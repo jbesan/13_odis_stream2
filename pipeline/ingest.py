@@ -1164,28 +1164,46 @@ def clean_nomenclature_waldec(config: Dict[str, Any], logger: PipelineLogger):
         logger.log_step("clean_nomenclature_waldec", "ERROR", {"error": str(e)})
         logging.error(f"WALDEC clean failed: {e}")
 
-def clean_live_jobs(config: Dict[str, Any], logger: PipelineLogger):
+def get_live_jobs_status() -> Dict[str, Any]:
+    """Checks the age of Live Jobs data in cache and deployed data."""
+    cache_path = OUTPUT_DIR / "odis_live_jobs_agg.parquet"
+    data_path = Path("data/odis_live_jobs_agg.parquet")
+    ttl_days = 7
+    
+    files = [cache_path, data_path]
+    mtimes = []
+    for f in files:
+        if f.exists():
+            mtimes.append(f.stat().st_mtime)
+    
+    if not mtimes:
+        return {"age_days": None, "within_ttl": False, "exists": False}
+    
+    newest_mtime = max(mtimes)
+    age_days = (time.time() - newest_mtime) / (24 * 3600)
+    
+    return {
+        "age_days": age_days,
+        "within_ttl": age_days < ttl_days,
+        "exists": True,
+        "ttl_days": ttl_days
+    }
+
+def clean_live_jobs(config: Dict[str, Any], logger: PipelineLogger, skip: bool = False):
     """Fetches and aggregates Live Job offers from France Travail."""
     logger.log_step("clean_live_jobs", "STARTED")
     
-    output_path = OUTPUT_DIR / "odis_live_jobs_agg.parquet"
-    ttl_days = 7
+    status = get_live_jobs_status()
+    should_run = not skip
     
-    should_run = True
-    if output_path.exists():
-        mtime = output_path.stat().st_mtime
-        age_days = (time.time() - mtime) / (24 * 3600)
-        
-        if age_days < ttl_days:
-            logging.info(f"Live Jobs: Data is {age_days:.1f} days old (TTL={ttl_days}). Skipping.")
+    if should_run:
+        if status["within_ttl"]:
+            logging.info(f"Live Jobs: Data is {status['age_days']:.1f} days old (TTL={status['ttl_days']}). Skipping fetch.")
             should_run = False
+        elif not status["exists"]:
+            logging.info("Live Jobs: No existing data found.")
         else:
-            # TTL Expired - Prompt User
-            print(f"\n[?] Live Jobs data is {age_days:.1f} days old (TTL={ttl_days}).")
-            choice = input(f"    Do you want to refresh the metadata? (y/N): ").lower().strip()
-            if choice != 'y':
-                logging.info("Live Jobs: Refresh canceled by user.")
-                should_run = False
+            logging.info(f"Live Jobs: Data is {status['age_days']:.1f} days old (TTL expired).")
 
     if should_run:
         logging.info("Live Jobs: Running France Travail ingest...")
@@ -1200,6 +1218,7 @@ def clean_live_jobs(config: Dict[str, Any], logger: PipelineLogger):
 def main(argv=None):
     parser = argparse.ArgumentParser(description="ODIS Ingest Pipeline")
     parser.add_argument('--steps', type=str, help="Comma-separated list of steps to run (e.g. communes,inclusion)")
+    parser.add_argument('--skip-live-jobs', action='store_true', help="Skip France Travail Live Jobs fetch")
     args = parser.parse_args(argv)
 
     logger = PipelineLogger(STATUS_FILE)
@@ -1249,7 +1268,11 @@ def main(argv=None):
     for step_name in selected_steps:
         if step_name in steps_map:
             try:
-                steps_map[step_name](config, logger)
+                if step_name == 'live_jobs':
+                    skip_live = getattr(args, 'skip_live_jobs', False)
+                    steps_map[step_name](config, logger, skip=skip_live)
+                else:
+                    steps_map[step_name](config, logger)
             except Exception as e:
                 print(f"ERROR running step {step_name}: {e}")
                 import traceback

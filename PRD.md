@@ -107,6 +107,7 @@ Liste en vrac d'idées d'amélioration
 - [ ] Regarder pourquoi les grandes villes ressortent plus
 - [ ] Ajouter le critère insse d'acces aux instratuctures (mobilité): https://www.insee.fr/fr/statistiques/1908098
 - [ ] Ajouter le critère insse d'affordabilité
+- [ ] Temps d'accès à un médecin / Déserts médicaux
 - [ ] Remplacer par y-a-t'il un CTAI/PTAI (signe que la commune s'implique dans l'intégration) + Est-ce que la commune est adhérante ANVITA ? Ajouter un label ?
 - [x] Rechercher au niveau national ou viser une région/ département en particulier?
 - [x] Ajouter un 'en savoir plus' pour comprendre le scoring
