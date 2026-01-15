@@ -11,7 +11,7 @@ ODIS Stream 2 is a "reverse search" tool designed for social workers. It identif
 - **Scoring Engine (`app/scoring.py`)**: The brain of the application. Calculates relevance scores.
 - **Data Ingestion (`app/data_loader.py`)**: Loads optimized Parquet files from `data/`.
 - **MCP Server (`app/mcp_server.py`)**: Exposes project data and scoring as tools for the AI Agent.
-- **ETL Pipeline (`pipeline/`)**: Handles data gathering, building, and pre-scoring.
+- **ETL Pipeline (`pipeline/`)**: Handles data gathering, building, and pre-scoring (now with Brotli compression for production files).
 - **UI (`app/`)**: Streamlit-based interface for social workers.
 
 ## ⚙️ Development Workflows (CRITICAL)

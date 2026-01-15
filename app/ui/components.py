@@ -274,7 +274,7 @@ def show_details_dialog(details: Dict[str, Any]):
                 # 1. Specialized Associations (Refugees) - AT THE TOP
                 refugee_assos = incl_data.get('refugee_associations', [])
                 if refugee_assos:
-                    st.markdown("#### :material/diversity_1: Associations spécialisée nouveaux arrivants")
+                    st.markdown("#### :material/diversity_1: Associations spécialisées nouveaux arrivants")
                     with st.expander("Consulter les associations spécialisées", expanded=False):
                         refugee_df = pd.DataFrame(refugee_assos)
                         # Group by waldec_label for categorization
@@ -302,13 +302,24 @@ def show_details_dialog(details: Dict[str, Any]):
                                     for name in items:
                                         st.write(f"• {name}")
                     else:
-                        # Fallback to old flat services display if needed
-                        services = incl_data.get('services', [])
-                        if services:
-                            for s in sorted(list(set(services))):
-                                st.write(f"• {s}")
-                        else:
-                            st.info("Aucun service spécifique référencé.")
+                        st.info("Aucun service spécifique référencé.")
+                
+                # 3. ODIS Associations Directory
+                odis_grouped = incl_data.get('odis_associations_grouped', {})
+                if odis_grouped:
+                    st.markdown("#### :material/groups: Annuaire des Associations ODIS")
+                    with st.expander("Consulter l'annuaire complet", expanded=False):
+                        for label, assos in sorted(odis_grouped.items()):
+                            with st.expander(f"{label} ({len(assos)})", expanded=False):
+                                for asso in assos:
+                                    st.write(f"**{asso['name']}**")
+                                    if asso.get('description'):
+                                        # Description is already lowercased in pipeline, good.
+                                        st.caption(asso['description'])
+                                    # Link to assoce.fr
+                                    url = f"https://www.assoce.fr/waldec/{asso['id']}"
+                                    st.markdown(f"🔗 [Voir sur assoce.fr]({url})")
+                                    st.markdown("---")
         with c2:
             st.markdown("#### :material/diversity_3: Indicateurs Inclusion")
             render_scores_for_category('inclusion')
@@ -796,7 +807,8 @@ def _show_details_callback(rank: int) -> None:
         annuaire_inclusion=app_data.get('annuaire_inclusion', pd.DataFrame()),
         inclusion_services_index=app_data.get('inclusion_services_index', pd.DataFrame()),
         refugee_associations_data=app_data['refugee_associations_data'],
-        live_jobs_data=app_data['live_jobs_data']
+        live_jobs_data=app_data['live_jobs_data'],
+        odis_asso_mini_data=app_data.get('odis_asso_mini_data', pd.DataFrame())
     )
     
     details = engine.format_city_details(row, config=st.session_state.get('config'))

@@ -4,7 +4,7 @@ from .base import BaseAgent
 from .state import AgentContext
 from google.genai import types
 from core.models import SearchCriterias
-from .tools import search_places, compute_routes, set_focus_city, search_refugee_associations
+from .tools import search_places, compute_routes, set_focus_city, search_refugee_associations, search_odis_associations
 
 logger = logging.getLogger("scout_agent")
 
@@ -26,6 +26,7 @@ SCOUT_PROMPT = """
     - Utilise `search_places` pour trouver des POIs (écoles, parcs, commerces).
     - **Utilisation du Code INSEE (codgeo)** : Récupère le Code INSEE de la ville dans le `CONTEXTE RÉSUMÉ` de `VILLE ACTIVE`. Si tu ne l'as pas, utilise `search_commune` pour le trouver.
     - **Utilise systématiquement** `search_refugee_associations(codgeo=...)` pour identifier les structures spécialisées. C'est CRUCIAL pour l'argumentaire inclusion.
+    - **Utilise également** `search_odis_associations(codgeo=...)` pour enrichir la vision de la vie locale (Clubs, Culture, Sport, Social).
     - Utilise `compute_routes` pour les temps de trajet. Utilise `VILLE ACTIVE` comme origine si non spécifié.
 
 3. **Réponse** :
@@ -57,7 +58,7 @@ class ScoutAgent(BaseAgent):
             return self._execute_tool_loop(
                 prompt, 
                 user_msg, 
-                [search_places, compute_routes, set_focus_city, search_commune, search_refugee_associations], 
+                [search_places, compute_routes, set_focus_city, search_commune, search_refugee_associations, search_odis_associations], 
                 context=context
             )
         except Exception as e:

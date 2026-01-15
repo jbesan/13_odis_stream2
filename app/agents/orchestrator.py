@@ -65,7 +65,7 @@ class MultiAgentOrchestrator:
             "orchestrator": "gemini-3-flash-preview", 
             "interviewer": "gemini-3-flash-preview",
             "scorer": "gemini-2.5-flash-lite", 
-            "scout": "gemini-3-flash-preview",
+            "scout": "gemini-2.5-flash-lite",
             "web": "gemini-3-flash-preview",
             "job_hunter": "gemini-2.5-flash-lite"
         }

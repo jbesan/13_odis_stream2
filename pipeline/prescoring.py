@@ -487,7 +487,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         if 'geometry' in communes_gdf.columns:
              communes_gdf['polygon'] = communes_gdf.geometry.to_wkb()
              communes_gdf.drop(columns=['geometry'], inplace=True)
-        pd.DataFrame(communes_gdf).to_parquet(output_path)
+        pd.DataFrame(communes_gdf).to_parquet(output_path, compression='brotli', index=False)
         logger.log_step("apply_prescoring", "COMPLETED", {"columns": len(communes_gdf.columns), "path": str(output_path), "rows": len(communes_gdf)})
 
     except Exception as e:
@@ -632,7 +632,7 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
              bv_gdf['polygon'] = bv_gdf.geometry.to_wkb()
              bv_gdf.drop(columns=['geometry'], inplace=True)
 
-        pd.DataFrame(bv_gdf).to_parquet(bv_path)
+        pd.DataFrame(bv_gdf).reset_index().to_parquet(bv_path, compression='brotli', index=False)
         logger.log_step("score_bassins_de_vie", "COMPLETED", {"rows": len(bv_gdf)})
 
     except Exception as e:

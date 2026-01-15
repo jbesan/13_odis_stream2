@@ -361,7 +361,7 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         df_to_save = communes_gdf.drop(columns=cols_to_drop).copy()
         
         output_path = OUTPUT_DIR / "odis_communes_pre.parquet"
-        df_to_save.to_parquet(output_path)
+        df_to_save.to_parquet(output_path, compression='brotli', index=False)
         logger.log_step("build_communes", "CREATED", {"path": str(output_path), "rows": len(df_to_save)})
         
         # Copy bmo_vertical to output -> Handled in build_vertical_tables as odis_metiers_agg.parquet
@@ -479,7 +479,7 @@ def build_bassins_de_vie(communes_gdf: gpd.GeoDataFrame, config: Dict[str, Any],
         df_to_save = pd.DataFrame(bv_gdf.drop(columns=cols_to_drop))
         
         output_path = OUTPUT_DIR / "odis_bassins_de_vie.parquet"
-        df_to_save.to_parquet(output_path)
+        df_to_save.reset_index().to_parquet(output_path, compression='brotli', index=False)
         logger.log_step("build_bassins_de_vie", "CREATED", {"path": str(output_path), "rows": len(df_to_save)})
 
     except Exception as e:
@@ -504,7 +504,7 @@ def build_vertical_tables(config: Dict[str, Any], logger: PipelineLogger):
         if assoc_path.exists():
             df = pd.read_parquet(assoc_path)
             out = OUTPUT_DIR / "odis_associations_agg.parquet"
-            df.to_parquet(out)
+            df.to_parquet(out, compression='brotli', index=False)
             logger.log_step("build_vertical_tables", "ASSOCIATIONS", {"path": str(out)})
             
             # Copy raw vertical file to output as well if requested -> Replaced by odis_associations_agg
@@ -531,7 +531,7 @@ def build_vertical_tables(config: Dict[str, Any], logger: PipelineLogger):
             df_agg = df.groupby(['codgeo', 'formation_code']).size().rename('count').reset_index()
             
             out = OUTPUT_DIR / "odis_formations_agg.parquet"
-            df_agg.to_parquet(out)
+            df_agg.to_parquet(out, compression='brotli', index=False)
             logger.log_step("build_vertical_tables", "FORMATIONS", {"path": str(out)})
 
         # 5. Refugee Associations (Detailed List)
@@ -786,7 +786,7 @@ def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
                  all_pois['codgeo'] = all_pois['codgeo'].astype('category')
             
             output_path = OUTPUT_DIR / "odis_pois.parquet"
-            all_pois.to_parquet(output_path)
+            all_pois.to_parquet(output_path, compression='brotli', index=False)
             logger.log_step("generate_pois", "CREATED", {"path": str(output_path)})
 
     except Exception as e:

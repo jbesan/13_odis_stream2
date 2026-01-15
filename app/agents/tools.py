@@ -8,7 +8,8 @@ from services.mcp_server import (
     _search_places_logic,
     _compute_routes_logic,
     _get_labels_for_codes_logic,
-    _search_refugee_associations_logic
+    _search_refugee_associations_logic,
+    _search_odis_associations_logic
 )
 from services.mcp_france_travail import (
     _get_job_details_logic
@@ -147,3 +148,14 @@ def search_refugee_associations(codgeo: str) -> List[Dict[str, Any]]:
         "Extraction de la liste des anges gardiens locaux..."
     ]), icon="🤝")
     return _search_refugee_associations_logic(codgeo)
+
+def search_odis_associations(codgeo: str) -> List[Dict[str, Any]]:
+    """
+    Recherche les associations locales (Sports, Culture, Loisirs, Social) dans l'annuaire ODIS.
+    Retourne les associations de la commune ou du Bassin de Vie.
+    
+    Args:
+        codgeo: Code INSEE de la commune (ex: '33063').
+    """
+    logger.info(f"⚒️ [TOOL] search_odis_associations called with codgeo='{codgeo}'")
+    return _search_odis_associations_logic(codgeo)

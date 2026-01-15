@@ -61,6 +61,7 @@ def get_scoring_engine() -> ScoringEngine:
 
         global_stats={}, # TODO: Compute or load global stats if needed for scaling
         refugee_associations_data=DATA_CONTEXT.get('refugee_associations_data', pd.DataFrame()),
+        odis_asso_mini_data=DATA_CONTEXT.get('odis_asso_mini_data', pd.DataFrame()),
         live_jobs_data=DATA_CONTEXT.get('live_jobs_data', pd.DataFrame())
     )
 
@@ -524,6 +525,52 @@ def search_refugee_associations(codgeo: str) -> List[Dict[str, Any]]:
         codgeo: Code INSEE de la commune (ex: '33063').
     """
     return _search_refugee_associations_logic(codgeo)
+
+
+def _search_odis_associations_logic(codgeo: str) -> List[Dict[str, Any]]:
+    """
+    Internal logic for looking up ODIS associations.
+    Accepts INSEE code.
+    """
+    ensure_data_context()
+    if 'odis_asso_mini_data' not in DATA_CONTEXT or DATA_CONTEXT['odis_asso_mini_data'].empty:
+        logger.warning(f"⚠️ [MCP] odis_asso_mini_data not available or empty in DATA_CONTEXT.")
+        return []
+    
+    df = DATA_CONTEXT['odis_asso_mini_data']
+    odis = DATA_CONTEXT['odis']
+    
+    logger.info(f"🔍 [MCP] Searching ODIS associations for codgeo='{codgeo}' (Total data rows: {len(df)})")
+
+    mask = pd.Series(False, index=df.index)
+    if codgeo in odis.index:
+        bv = odis.loc[codgeo, 'bassin_de_vie']
+        if pd.notna(bv):
+             bv_str = str(bv).replace('.0', '')
+             logger.info(f"📍 [MCP] Filter by Bassin de Vie: {bv_str}")
+             mask = (df['codgeo'].isin(odis[odis['bassin_de_vie'] == bv].index))
+        else:
+             logger.info(f"📍 [MCP] Filter by single city (BV Unknown): {codgeo}")
+             mask = (df['codgeo'].astype(str) == str(codgeo))
+    else:
+        logger.info(f"📍 [MCP] Filter by single city (INSEE code match): {codgeo}")
+        mask = (df['codgeo'].astype(str) == str(codgeo))
+    
+    results = df[mask].copy()
+    logger.info(f"✅ [MCP] Found {len(results)} ODIS associations.")
+    
+    return results.to_dict(orient='records')
+
+@mcp.tool()
+def search_odis_associations(codgeo: str) -> List[Dict[str, Any]]:
+    """
+    Recherche les associations locales (Sports, Culture, Loisirs, Social) issues de l'annuaire ODIS.
+    L'outil retourne les associations de la commune ou de son Bassin de Vie.
+    
+    Args:
+        codgeo: Code INSEE de la commune (ex: '33063').
+    """
+    return _search_odis_associations_logic(codgeo)
 
 
 def _compute_routes_logic(origin: str, destination: str, mode: str = "transit") -> Dict[str, Any]:
