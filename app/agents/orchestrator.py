@@ -18,8 +18,9 @@ from .refiner import ContextRefiner
 
 logger = logging.getLogger("orchestrator")
 
+# This ROUTING_PROMPT is used by the Orchestrator Agent to determine which agent to use for a given user message.
 ROUTING_PROMPT = """
-Tu es le Cerveau de l'Assistant ODIS. Ton job est de router le message de l'utilisateur vers le bon agent spécialisé pour éffectuer une recherche multi-étapes et de retourner la synthèse finale.
+**Rôle** : Tu es le Cerveau de l'Assistant ODIS. Ton job est de router le message de l'utilisateur vers le bon agent spécialisé pour éffectuer une recherche multi-étapes et de retourner la synthèse finale.
 
 **Agents disponibles** :
 1. **INTERVIEWER** : Pour la collecte de besoins (phase initiale).
@@ -48,7 +49,40 @@ Tu es le Cerveau de l'Assistant ODIS. Ton job est de router le message de l'util
 - Réponds UNIQUEMENT par un objet JSON respectant le schéma demandé.
 """
 
+# This SYNTH_PROMPT is used by the Orchestrator Agent to synthesize the results of the other agents.    
+SYNTH_PROMPT = """
+**Rôle** : Tu es le Synthétiseur ODIS. Ta mission est de fusionner les retours des experts pour donner une réponse unique, fluide et ultra-convaincante au travailleur social.
+
+# CONTEXTE RÉSUMÉ : 
+{BRIEFING}
+
+Ville Analysée : {FOCUS_CITY}
+
+# DONNÉES CHIFFRÉES (SCORER ODIS) :
+```json
+{CITY_DETAILS}
+```
+# Expert Terrain (Scout) : 
+{SCOUT_RES}
+
+# Expert News (Web) : 
+{WEB_RES}
+
+# Expert Emploi (Job Hunter) : 
+{JOB_RES}
+
+# Instructions :
+1. Fais une synthèse argumentée des éléments ci-dessus qui soit factuelle et convaincante en FRANÇAIS.
+2. Utilise les **DONNÉES CHIFFRÉES** (scores, points forts ODIS) pour asseoir ta démonstration. Lorsque pertinent présente les scores sous forme de pourcentage (63%) plutot que décimal (0.63).
+3. S'il y a des points noirs dis-le clairement.
+4. Ne répète pas les titres. Structure la réponse par thématiques (Vie Quotidienne, Opportunités Emploi, etc).
+5. Fais le lien avec le projet de vie (Profil: {WEIGHT_PROFILE}) et les indices de vie.
+6. Termine par une question ouverte pour analyser une autre ville du top 5 ou approfondir l'analyse. N'écris JAMAIS tout en majuscule (CAPSLOCK)
+"""
+
+
 class RoutingResponse(BaseModel):
+
     """
     Réponse structurée du routeur ODIS.
     """
@@ -218,35 +252,23 @@ class MultiAgentOrchestrator:
             if city['name'] == context.focus_city:
                 city_details = city.get('details', {})
                 break
-        
-        synth_prompt = f"""
-        Tu es le Synthétiseur ODIS. Ta mission est de fusionner les retours des experts pour donner une réponse unique, fluide et ultra-convaincante au travailleur social.
-        
-        **DONNÉES CHIFFRÉES (SCORER ODIS)** :
-        - Ville : {context.focus_city}
-        - Détails ODIS : {json.dumps(city_details, indent=2, ensure_ascii=False)}
-        
-        **Expert Terrain (Maps)** : {scout_res}
-        
-        **Expert News (Web)** : {web_res}
-        
-        **Expert Emploi (Job Hunter)** : {job_res}
-        
-        **Notes Qualitatives (indices de vie)** : {context.search_criteria.get('notes_qualitatives', [])}
-        
-        **Instructions** :
-        1. Fais une synthèse argumentée, factuelle et convaincante en FRANÇAIS.
-        2. Utilise les **DONNÉES CHIFFRÉES** (scores, points forts ODIS) pour asseoir ta démonstration.
-        3. S'il y a des points noirs dis-le clairement.
-        4. Ne répète pas les titres. Structure la réponse par thématiques (Vie Quotidienne, Opportunités Emploi, etc).
-        5. Fais le lien avec le projet de vie (Profil: {context.search_criteria.get('weight_profile', 'Standard')}) et les indices de vie.
-        6. Termine par une question ouverte pour analyser une autre ville du top 5 ou approfondir l'analyse. Ne réponds JAMAIS tout en majuscule (CAPSLOCK)
-        """
-        
+
+        # Injection des variables dans le template SYNTH_PROMPT par remplacement
+        prompt = SYNTH_PROMPT
+        prompt = prompt.replace("{FOCUS_CITY}", context.focus_city or "Inconnu")
+        prompt = prompt.replace("{CITY_DETAILS}", json.dumps(city_details, indent=2, ensure_ascii=False))
+        prompt = prompt.replace("{SCOUT_RES}", scout_res)
+        prompt = prompt.replace("{WEB_RES}", web_res)
+        prompt = prompt.replace("{JOB_RES}", job_res)
+        prompt = prompt.replace("{NOTES_QUALITATIVES}", str(context.search_criteria.get('notes_qualitatives', [])))
+        prompt = prompt.replace("{WEIGHT_PROFILE}", context.search_criteria.get('weight_profile', 'Standard'))
+        prompt = prompt.replace("{BRIEFING}", context.briefing)
+        # logger.info(f"🧠 [ORCHESTRATOR] Synthesis Prompt: {prompt}")
+
         response = self.client.models.generate_content(
             model=self.models["orchestrator"],
             contents=message,
-            config=types.GenerateContentConfig(system_instruction=synth_prompt, temperature=0.3)
+            config=types.GenerateContentConfig(system_instruction=prompt, temperature=0.3)
         )
         
         # Track Tokens

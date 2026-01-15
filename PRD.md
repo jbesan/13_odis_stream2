@@ -654,3 +654,18 @@ En tant que travailleur social, je veux être informé des actions en cours des 
 ### 📊 Status
 
 - Planned (Jan 2026)
+
+## 🚀 Feature [F-34]: Orchestrator Prompt Refactoring
+
+### 📝 User Story
+
+- En tant que développeur, je veux que les prompts de synthèse de l'orchestrateur soient faciles à tuner en les plaçant en début de fichier et en utilisant des injections par remplacement de chaînes plutôt que des f-strings complexes.
+
+### 🔑 Key Features
+
+- **Centralisation :** Déplacement de `SYNTH_PROMPT` au début du fichier `app/agents/orchestrator.py`.
+- **Templating :** Passage d'un format f-string à un format template (string statique) avec injection via `.replace()`.
+
+### 📊 Status
+
+- In Progress (Jan 2026)

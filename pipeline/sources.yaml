@@ -4,6 +4,10 @@ sources:
     format: "geojson"
     local_name: "communes.geojson"
     description: "Contours administratifs des communes (simplifiés)"
+    used_columns:
+      - INSEE_COM
+      - code
+      - geometry
 
   population:
     url: "https://www.data.gouv.fr/api/1/datasets/r/630e7917-02db-4838-8856-09235719551c"
@@ -11,6 +15,10 @@ sources:
     local_name: "population.xlsx"
     sheet_name: 0 # Default sheet
     description: "Population municipale 2024"
+    used_columns:
+      - population
+      - codgeo
+      - com
 
   bassins_de_vie:
     url: "https://www.insee.fr/fr/statistiques/fichier/6676988/BV2022_au_01-01-2025.zip"
@@ -20,24 +28,48 @@ sources:
     sheet_name: "Composition_communale"
     header: 4 # Skip metadata rows
     description: "Bassins de vie 2022 (INSEE)"
+    used_columns:
+      - Code géographique
+      - Bassin de vie 2022
+      - Libellé géographique du bassin de vie 2022
 
   services_inclusion:
     url: "https://www.data.gouv.fr/api/1/datasets/r/de4856b8-bb67-4b79-83bd-038e846a1774"
     format: "parquet"
     local_name: "services_inclusion.parquet"
     description: "Services de l'inclusion (Data Inclusion)"
+    used_columns:
+      - id
+      - nom
+      - thematiques
+      - latitude
+      - longitude
+      - code_insee
 
   political_nuance:
     url: "https://www.data.gouv.fr/api/1/datasets/r/ea5d6bc3-37d0-4884-a437-155a90c3e05f"
     format: "csv"
     local_name: "political_nuance.csv"
     description: "Nuance politique des communes (France)"
+    used_columns:
+      - Code Insee Commune
+      - cog_commune
+      - Nuance
+      - nuance_politique
 
   associations:
     url: "https://www.data.gouv.fr/api/1/datasets/r/cc7b8f0c-45ea-4444-8b55-55d30bc34ac5"
     format: "parquet"
     local_name: "associations.parquet"
     description: "RNA agrégé (Associations)"
+    used_columns:
+      - adrs_codeinsee
+      - objet_social1
+      - position
+      - titre
+      - objet
+      - titre_court
+      - adrs_libcommune
 
   logement_vacant:
     url: "https://www.data.gouv.fr/api/1/datasets/r/2e0417b4-902d-4c60-90e7-bf5df148cb87"
@@ -45,6 +77,10 @@ sources:
     local_name: "logement_vacant.csv"
     encoding: "iso-8859-1"
     description: "Logements vacants du parc privé (LOVAC)"
+    used_columns:
+      - CODGEO
+      - pp_vacant_plus_2ans_25
+      - pp_total_24
 
   housing_occupation:
     url: "https://www.data.gouv.fr/api/1/datasets/r/cae4e8a4-15e0-40ff-88fe-087b9e206514"
@@ -52,6 +88,12 @@ sources:
     archive_file: "DS_RP_LOGEMENT_COMPL_2022_data.csv"
     local_name: "housing_occupation.zip"
     description: "Logements : Taux d'occupation (INSEE)"
+    used_columns:
+      - TIME_PERIOD
+      - GEO_OBJECT
+      - GEO
+      - OCC_IND
+      - OBS_VALUE
 
   logement_social:
     url: "https://www.statistiques.developpement-durable.gouv.fr/media/7970/download?inline"
@@ -60,56 +102,108 @@ sources:
     sheet_name: "COMMUNES"
     header: 5
     description: "Parc locatif social (RPLS)"
+    used_columns:
+      - CODGEO
+      - DEPCOM_ARM
+      - DEP
+      - COM
+      - PARC_SOCIAL_NB
+      - NB_LOG_TOT
+      - nb_lgt_tot
 
   maternites:
     url: "https://www.data.gouv.fr/api/1/datasets/r/a822f7ae-7c46-42c0-86e1-ad7d381c1ad2"
     format: "json"
     local_name: "maternites_drees.json"
     description: "Liste des maternités (DREES)"
+    used_columns:
+      - FI_ET
+      - fi_et
 
   bmo:
     url: "https://www.data.gouv.fr/api/1/datasets/r/54478315-aafd-4070-b8df-a5647297e0c0"
     format: "xlsx"
     local_name: "bmo_2025.xlsx"
     description: "Enquête Besoins en Main d'Oeuvre 2025"
+    used_columns:
+      - Code
+      - Famillon
+      - Métier
+      - xmet
 
   communes_bassins_emploi:
     url: "https://statistiques.pole-emploi.org/bmo/Handlers/HTFile.ashx?MEDIAID=156688&SITEKEY=620c8132-d522-44fa-8efa-27a62c26702c"
     format: "xlsx"
     local_name: "communes_bassins_emploi_2021.xlsx"
     description: "Référentiel Communes -> Bassins d'Emploi 2021"
-
-
+    used_columns:
+      - Code Insee
+      - Libellé commune
+      - BE21
+      - LIBBE21
 
   nomenclature_waldec:
     url: "https://www.data.gouv.fr/api/1/datasets/r/d65d5cae-399f-4150-804f-493026645fd5"
     format: "json"
     local_name: "nomenclature_waldec.json"
     description: "Nomenclature WALDEC (Associations)"
+    used_columns:
+      - code
+      - id
+      - id_waldec
+      - objet_social_id
+      - libelle
+      - label
+      - titre
+      - lib
+      - objet_social_lib
 
   caf:
     url: "https://www.data.gouv.fr/api/1/datasets/r/6d3b1cf8-cbef-4f30-96c3-0b63a2b0502c"
     format: "json"
     local_name: "caf_taux_couverture.json"
     description: "Taux de couverture petite enfance (CAF)"
+    used_columns:
+      - codgeo
+      - insee
+      - numcom
+      - annee
+      - taux_accueil_total
+      - txcouv_com
 
   education_effectifs:
     url: "https://www.data.gouv.fr/api/1/datasets/r/b4642552-6777-4265-a263-f190621ec40f"
     format: "parquet"
     local_name: "education_effectifs.parquet"
     description: "Effectifs d'élèves par niveau"
+    used_columns:
+      - rentree_scolaire
+      - numero_ecole
+      - nombre_total_eleves
+      - nombre_total_classes
 
   education_annuaire:
     url: "https://www.data.gouv.fr/api/1/datasets/r/9af76efc-51a6-4659-87ba-82c02652613a"
     format: "parquet"
     local_name: "education_annuaire.parquet"
     description: "Annuaire de l'éducation (Premier et Second degré)"
+    used_columns:
+      - numero_uai
+      - code_commune
+      - nature_uai_libe
+      - appellation_officielle
+      - latitude
+      - longitude
+      - code_postal
 
   codes_postaux:
     url: "https://object.files.data.gouv.fr/hydra-parquet/hydra-parquet/008a2dda-2c60-4b63-b910-998f6f818089.parquet"
     format: "parquet"
     local_name: "codes_postaux.parquet"
     description: "Base officielle des codes postaux"
+    used_columns:
+      - Code_postal
+      - Code_commune_INSEE
 
   formations_annuaire:
     url: "https://www.data.gouv.fr/api/1/datasets/r/ac59a0f5-fa83-4b82-bf12-3c5806d4f19f"
@@ -117,18 +211,36 @@ sources:
     local_name: "formations_annuaire.csv"
     description: "Annuaire des organismes de formation"
     verify_ssl: false
+    used_columns:
+      - adressePhysiqueOrganismeFormation.codePostal
+      - code_postal
+      - informationsDeclarees.specialitesDeFormation.codeSpecialite1
+      - informationsDeclarees.specialitesDeFormation.codeSpecialite2
+      - informationsDeclarees.specialitesDeFormation.codeSpecialite3
 
   formations_referentiel:
     url: "https://www.data.gouv.fr/api/1/datasets/r/803121dd-1acf-423d-b7d8-8511f1c607c1"
     format: "xlsx"
     local_name: "formations_referentiel.xlsx"
     description: "Référentiel des organismes de formation"
+    used_columns:
+      - code
+      - label
 
   finess_national:
     url: "file:///Users/jacques/dev/13_odis_stream2/csv/annuaire_sante_finess.parquet"
     format: "parquet"
     local_name: "finess_national.parquet"
     description: "FINESS National (Local Clean Copy)"
+    used_columns:
+      - Departement
+      - Commune
+      - LibelleCategorieAgregat
+      - nofinesset
+      - LibelleSph
+      - coordxet
+      - coordyet
+      - RaisonSociale
 
   rome:
     url: "https://www.data.gouv.fr/api/1/datasets/r/1c893376-8476-4262-9a0e-8df519883e1e"
@@ -136,12 +248,23 @@ sources:
     archive_file: "unix_referentiel_code_rome_v460.json"
     local_name: "rome.zip"
     description: "Référentiel ROME v4.60 (JSON)"
+    used_columns:
+      - code
+      - libelle
 
   bpe:
     url: "https://www.insee.fr/fr/statistiques/fichier/8217525/BPE24.parquet"
     format: "parquet"
     local_name: "BPE24.parquet"
     description: "Base Permanente des Équipements 2024"
+    used_columns:
+      - DEPCOM
+      - DEP
+      - COM
+      - TYPEQU
+      - LAMBERT_X
+      - LAMBERT_Y
+      - NOMRS
 
   population_active:
     url: "https://www.data.gouv.fr/api/1/datasets/r/f43b668d-251e-472a-9385-3d006d1ca6b8"
@@ -149,12 +272,23 @@ sources:
     archive_file: "DS_RP_EMPLOI_LR_COMP_2022_data.csv"
     local_name: "population_active.zip"
     description: "Population active et chômage (INSEE)"
+    used_columns:
+      - TIME_PERIOD
+      - GEO_OBJECT
+      - PCS
+      - EMPSTA_ENQ
+      - GEO
+      - OBS_VALUE
 
   referentiel_services_inclusion:
     url: "file:///Users/jacques/dev/13_odis_stream2/pipeline/local/referentiel_services_inclusion.csv"
     format: "csv"
     local_name: "referentiel_services_inclusion.csv"
     description: "Référentiel des services d'inclusion (Local)"
+    used_columns:
+      - code
+      - libelle
+      - thematique
 
   loyers_apparts:
     url: "https://www.data.gouv.fr/api/1/datasets/r/43618998-3b37-4a69-bb25-f321f1a93ed1"
@@ -163,12 +297,25 @@ sources:
     encoding: "iso-8859-1"
     sep: ";"
     description: "Carte des loyers 2023 - Appartements (Ensemble)"
+    used_columns:
+      - INSEE_C
+      - loypredm2
 
   structures_inclusion:
     url: "https://www.data.gouv.fr/api/1/datasets/r/915c05e8-77ea-44f6-9837-0f1eff897a54"
     format: "parquet"
     local_name: "structures_inclusion.parquet"
     description: "Annuaire des structures de l'inclusion (Data Inclusion)"
+    used_columns:
+      - reseaux_porteurs
+      - code_insee
+      - id
+      - nom
+      - courriel
+      - telephone
+      - site_web
+      - adresse
+      - commune
 
   population_details:
     url: "https://www.data.gouv.fr/api/1/datasets/r/7e3937bb-e815-4e58-92d4-d7ef478abcc0"
@@ -176,30 +323,56 @@ sources:
     archive_file: "DS_RP_POPULATION_PRINC_2022_data.csv"
     local_name: "population_details.zip"
     description: "Population détaillée 2022 (Historique 2011, 2016)"
+    used_columns:
+      - AGE
+      - GEO
+      - GEO_OBJECT
+      - SEX
+      - TIME_PERIOD
+      - OBS_VALUE
 
   regions_ref:
     url: "https://tabular-api.data.gouv.fr/api/resources/2486b351-5d85-4e1a-8d12-5df082c75104/data/json/"
     format: "json"
     local_name: "referentiel_regions.json"
     description: "Référentiel des Régions (COG)"
+    used_columns:
+      - REG
+      - LIBELLE
 
   departements_ref:
     url: "https://tabular-api.data.gouv.fr/api/resources/54a8263d-6e2d-48d5-b214-aa17cc13f7a0/data/json/"
     format: "json"
     local_name: "referentiel_departements.json"
     description: "Référentiel des Départements (COG)"
-
-
+    used_columns:
+      - DEP
+      - LIBELLE
+      - REG
 
 local_files:
   finess:
     path: "pipeline/local/annuaire_sante_finess.parquet"
     format: "parquet"
     description: "Fichier FINESS local (nettoyé)"
-
-    description: "Fichier FINESS local (nettoyé)"
+    used_columns:
+      - Departement
+      - Commune
+      - LibelleCategorieAgregat
+      - nofinesset
+      - LibelleSph
+      - coordxet
+      - coordyet
+      - RaisonSociale
 
   france_travail_live:
     url: "https://api.francetravail.io/partenaire/offresemploi/v2/offres/emploi/search"
     format: "api"
     description: "API France Travail - Recherche d'offres d'emploi en direct (F-28)"
+    used_columns:
+      - id
+      - lieuTravail
+      - romeCode
+      - romeLibelle
+      - nombrePostes
+      - offresManqueCandidats

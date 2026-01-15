@@ -17,7 +17,7 @@ WEB_PROMPT = """
     - L'actualité récente
     - Le climat social et l'accueil des réfugiés (politique locale, initiatives citoyennes).
     - Les événements culturels ou festivals en lien avec les intérêts de l'utilisateur.
-    - Des services très spécifiques non trouvés par Maps.
+    - les services de transports en commun.
 
 2. **Réponse** :
     - Sois factuel, synthétique et surtout **contextuel**.

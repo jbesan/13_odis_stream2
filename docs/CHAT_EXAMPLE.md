@@ -6,9 +6,11 @@ Ils n'ont pas d'emploi mais Amir était mécanicien auto et Nour est d'accord po
 Ali doit reprendre l'ecole primaire.
 
 Ils visent le logement social et vont probablement devoir louer dans le parc privé les premiers mois.
-Amir et Nour vont avoir besoin de renforcer leur francais et Ali adore le foot. Ils sont tres fiers de leur culture syrienne et aimerait la partager et si possible rejoindre une communauté de syriens sur place.
+Amir et Nour vont avoir besoin de renforcer leur francais et Ali adore le foot. Ils sont tres fiers de leur culture syrienne et aimeraient la partager et si possible rejoindre une communauté de syriens sur place.
 
 Le profil Famille est le plus adapté et ils n'ont pas de problème de santé particulier.
+
+#########################
 
 Profil et Localisation : C'est un couple d'origine vénézuélienne actuellement basé à Bordeaux. Ils souhaitent rester en Nouvelle-Aquitaine.
 Composition Familiale : 2 adultes. Maria est enceinte de 4 mois, ce qui place le projet sous le profil de pondération "Famille".

@@ -206,7 +206,7 @@ class ScoringEngine:
                     label_col = 'label' if 'label' in city_pois.columns else ('name' if 'name' in city_pois.columns else None)
                     
                     if type_col and label_col:
-                        grouped = city_pois.groupby(type_col)[label_col].apply(lambda x: sorted(list(set(x)))).to_dict()
+                        grouped = city_pois.groupby(type_col, observed=True)[label_col].apply(lambda x: sorted(list(set(x)))).to_dict()
                         details[dom]['etablissements'] = grouped
 
         # 6. Inclusion (Grouped by Thematic)
@@ -218,7 +218,7 @@ class ScoringEngine:
                     label_col = 'label' if 'label' in city_incl.columns else ('name' if 'name' in city_incl.columns else None)
                     if label_col:
                         # Group by thematic codes first
-                        grouped_incl_raw = city_incl.groupby('thematiques')[label_col].apply(list).to_dict()
+                        grouped_incl_raw = city_incl.groupby('thematiques', observed=True)[label_col].apply(list).to_dict()
                         
                         # Map codes to labels using inclusion_services_index (safely)
                         grouped_incl = {}
@@ -356,6 +356,9 @@ class ScoringEngine:
 
     def run(self, config: ScoringConfig, log_prefix: Optional[str] = None) -> gpd.GeoDataFrame:
         """Orchestrates the full scoring pipeline."""
+        logger.info(f"⚙️ [ENGINE] Starting run with Profile: {config.weight_profile}")
+        logger.debug(f"⚙️ [ENGINE] Config: {config}")
+        
         start_commune = self.df_all_communes.loc[[config.commune_actuelle]]
         loc_type = config.loc_search_area
         

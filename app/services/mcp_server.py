@@ -7,7 +7,7 @@ import geopandas as gpd
 import numpy as np
 from utils.data_loader import load_all_data_raw
 from core.scoring import ScoringEngine
-from core.models import ScoringConfig
+from core.models import ScoringConfig, SearchCriterias
 import config as cfg
 import logging
 from utils.common import normalize_text, calculate_fuzzy_match_score, sanitize_for_json
@@ -256,13 +256,31 @@ def search_commune(query: str) -> List[Dict[str, Any]]:
     return _search_commune_logic(query)
 
 
-def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]) -> Dict[str, Any]:
+def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) -> Dict[str, Any]:
     """
-    Computes scores for all communes in search area and returns the top 5 cities (communes) based on user criteria
+    Computes scores for all communes in search area and returns the top 5 cities (communes) based on user criteria.
+    Weights are resolved internally based on the weight_profile.
     """
-    # logger.info(f"👉 [MCP] Request: compute_top_cities")
-    # logger.debug(f"   Weights: {json.dumps(weights, indent=2, default=str)}")
-    # logger.debug(f"   Filters: {json.dumps(filters, indent=2, default=str)}")
+    # Robustness: Handle both Pydantic model and raw dict (from LLM tools)
+    if isinstance(criteria, dict):
+        criteria_obj = SearchCriterias(**criteria)
+    else:
+        criteria_obj = criteria
+
+    # 0. Resolve Weights from Profile
+    profile_name = criteria_obj.weight_profile or "Équilibré"
+    weights = cfg.WEIGHT_PROFILES.get(profile_name, cfg.WEIGHT_PROFILES["Équilibré"])
+    
+    # User-requested LOUD logging
+    print(f"\n\n🚨 [DEBUG] _compute_top_cities_logic triggered", flush=True)
+    print(f"👉 [MCP] Profile: {profile_name}", flush=True)
+    print(f"👉 [MCP] Criteria Dict: {criteria_obj.model_dump()}", flush=True)
+    
+    logger.info(f"👉 [MCP] Request: compute_top_cities (Profile: {profile_name})")
+    logger.debug(f"   Resolved Weights: {weights}")
+    
+    # filters is the dictionary representation of criteria_obj for internal engine mapping
+    filters = criteria_obj.model_dump()
     
     engine = get_scoring_engine()
     
@@ -323,7 +341,8 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
         poids_inclusion=get_weight('inclusion'),
         poids_mobilité=get_weight('mobilité'),
         poids_sante=get_weight('sante'),
-        criteria_weights=filters.get('criteria_weights', {}),
+        criteria_weights=criteria.criteria_weights,
+        weight_profile=profile_name,
         commune_actuelle=resolved_commune,
         loc_search_area=loc_search_area,
         loc_custom_code=loc_custom_code,
@@ -391,15 +410,17 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
         bdv = row.get('libelle_bassin_de_vie', "N/A")
         details_full = engine.format_city_details(row)
         
-        # AI Pruning: Reduce data size for LLM context without affecting the main UI
-        if 'emploi' in details_full:
-            details_full['emploi']['top_metiers'] = details_full['emploi'].get('top_metiers', [])[:10]
-            details_full['emploi']['formations'] = details_full['emploi'].get('formations', [])[:5]
-        if 'inclusion' in details_full and 'services' in details_full['inclusion']:
-            details_full['inclusion']['services'] = details_full['inclusion']['services'][:10]
-        if 'associations' in details_full and 'all' in details_full['associations']:
-            # Associations list is often very long
-            details_full['associations']['all'] = details_full['associations'].get('all', [])[:10]
+        # AI Pruning: Streamline details but keep data not yet handled by other tools
+        # Education and Formations stay here for now. Associations are handled by SCOUT.
+        details_streamlined = {
+            "identity": details_full.get("identity", {}),
+            "scores": details_full.get("scores", {}),
+            "education": details_full.get("education", {}),
+            "emploi": {
+                "top_metiers": details_full.get("emploi", {}).get("top_metiers", []),
+                "formations": details_full.get("emploi", {}).get("formations", [])
+            }
+        }
         
         results.append({
             "codgeo": str(codgeo),
@@ -408,7 +429,7 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
             "population": int(row.get('population', 0)),
             "score": float(row.get('weighted_score', 0)),
             "detailed_scores": detailed_scores, 
-            "details": details_full
+            "details": details_streamlined
         })
         
     logger.debug(f"✅ [MCP] Response: Found {len(results)} cities. Top: {[r['name'] for r in results[:3]]}")
@@ -419,15 +440,18 @@ def _compute_top_cities_logic(weights: Dict[str, float], filters: Dict[str, Any]
     })
 
 @mcp.tool()
-def compute_top_cities(weights: Dict[str, float], filters: Dict[str, Any]) -> Dict[str, Any]:
+def compute_top_cities(criteria: SearchCriterias) -> Dict[str, Any]:
     """
-    Computes scores for all communes in search area and returns the top 10 cities (communes) based on user criteria
+    Computes scores for all communes in search area and returns the top 10 cities (communes) based on user criteria.
     
     Args:
-        weights: Dictionary of weights (0-100) for categories (emploi, logement, education, inclusion, mobilité, sante).
-        filters: Dictionary of filter criteria (commune_actuelle, loc_search_area, nb_adultes, etc.).
+        criteria: Search criteria including location, weights profile (Famille, Santé, Economique, Équilibré), 
+                 and specific needs (metiers, formations, etc.).
     """
-    return _compute_top_cities_logic(weights, filters)
+    logger.info(f"👉 [MCP] Request: compute_top_cities")
+    logger.info(f"   Criteria: {criteria.model_dump_json(indent=2)}")
+
+    return _compute_top_cities_logic(criteria)
 
 
 def _search_places_logic(queries: List[str], location: str) -> Dict[str, Any]:

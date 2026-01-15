@@ -3,7 +3,8 @@ from .state import AgentContext
 from .tools import (
     search_job_offers, 
     get_job_details, 
-    search_referentiels
+    search_referentiels,
+    search_commune
 )
 import logging
 import re
@@ -19,16 +20,16 @@ JOB_HUNTER_PROMPT = """
 **Objectif** : Trouver des offres d'emploi RÉELLES et PERTINENTES selon le `CONTEXTE RÉSUMÉ` dans `VILLE ACTIVE` pour TOUS les adultes du ménage.
 
 **DIRECTIVES CRITIQUES (NE PAS DEMANDER, AGIR)** :
-1. **RECHERCHE D'OFFRES (ROME ONLY)** : Lance `search_job_offers` pour CHAQUE code ROME identifié dans le `CONTEXTE RÉSUMÉ`.
+1. **Utilisation du Code INSEE (codgeo)** : Récupère le Code INSEE (codgeo) de la ville de `VILLE ACTIVE` avec l'outil `search_commune`.
+2. **RECHERCHE D'OFFRES (ROME ONLY)** : Lance `search_job_offers` pour CHAQUE code ROME identifié dans le `CONTEXTE RÉSUMÉ`.
    - Utilise le paramètre `rome_code`.
    - Si tu as un doute sur le code ROME, utilise `search_referentiels` avec le domaine `rome_codes` pour trouver la catégorie correspondante.
    - Ne spécifie pas de `query` (mots-clés) sauf si l'utilisateur a donné une précision particulière (ex: "en alternance").
-
-2. **CONTEXTE LIVE** : Le briefing contient un nombre d'offres global (Live) pour la ville. Utilise ce chiffre UNIQUEMENT pour donner une tendance générale.
-3. **COMPTAGE PRÉCIS** : Pour CHAQUE métier recherché, utilise la valeur `total` retournée par l'outil `search_job_offers`. C'est le SEUL chiffre précis pour le métier en question.
-4. **LOCALISATION** : Utilise toujours le code INSEE de la ville cible du `CONTEXTE RÉSUMÉ` pour la recherche.
-5. **NE DEMANDE PAS DE PRÉCISIONS** : Tu as les informations sur les métiers dans les critères. AGIS IMMÉDIATEMENT sans attendre de confirmation.
-6. **SÉLECTION ET RÉPONSE (CRITIQUE)** : 
+3. **CONTEXTE LIVE** : Le briefing contient un nombre d'offres global (Live) pour la ville. Utilise ce chiffre UNIQUEMENT pour donner une tendance générale.
+4. **COMPTAGE PRÉCIS** : Pour CHAQUE métier recherché, utilise la valeur `total` retournée par l'outil `search_job_offers`. C'est le SEUL chiffre précis pour le métier en question.
+5. **LOCALISATION** : Utilise toujours le code INSEE de la ville cible du `CONTEXTE RÉSUMÉ` pour la recherche.
+6. **NE DEMANDE PAS DE PRÉCISIONS** : Tu as les informations sur les métiers dans les critères. AGIS IMMÉDIATEMENT sans attendre de confirmation.
+7. **SÉLECTION ET RÉPONSE (CRITIQUE)** : 
     - Pour chaque recherche réussie, tu DOIS sélectionner et présenter les **3 offres les plus pertinentes** (ou toutes si moins de 3 sont disponibles).
     - Pour chaque offre, indique : Intitulé, ID (ex: 7874186) et une phrase expliquant pourquoi elle correspond bien au profil (distance, contrat, expérience).
     - Ne te contente JAMAIS d'une seule offre si l'outil en retourne plusieurs.
@@ -80,7 +81,7 @@ class JobHunterAgent(BaseAgent):
             res = self._execute_tool_loop(
                 prompt, 
                 user_msg, 
-                [search_job_offers, get_job_details, search_referentiels], 
+                [search_job_offers, get_job_details, search_referentiels, search_commune], 
                     context=context
                 )
             return res

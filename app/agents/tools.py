@@ -35,20 +35,15 @@ def compute_routes(origin: str, destination: str, mode: str = "transit") -> Dict
     """Calcule des itinéraires et temps de trajet."""
     return _compute_routes_logic(origin, destination, mode)
 
-def compute_top_cities(filters: SearchCriterias) -> Dict[str, Any]:
+def compute_top_cities(criteria: SearchCriterias) -> Dict[str, Any]:
     """
     Calcule le top des villes de réinstallation selon les critères complets de l'utilisateur.
     """
     try:
-        # Convert Pydantic object to dict for the engine
-        filters_dict = filters.model_dump() if hasattr(filters, 'model_dump') else filters
+        # User requested this specific logging:
+        # logger.info(f"   Criteria: {criteria.model_dump_json(indent=2)}")
         
-        # Extract profile from the filters (it's the source of truth)
-        weight_profile = filters.weight_profile or "Équilibré"
-        logger.info(f"⚒️ [TOOL] compute_top_cities called (extracted profile: {weight_profile})")
-
-        weights = cfg.WEIGHT_PROFILES.get(weight_profile, cfg.WEIGHT_PROFILES["Équilibré"])
-        res = _compute_top_cities_logic(weights, filters_dict)
+        res = _compute_top_cities_logic(criteria)
         
         # Save results to context if possible
         if "cities" in res and "agent" in st.session_state:
@@ -57,7 +52,7 @@ def compute_top_cities(filters: SearchCriterias) -> Dict[str, Any]:
             
         return res
     except Exception as e:
-        logger.error(f"❌ [TOOL] compute_top_cities_logic failed: {e}", exc_info=True)
+        logger.error(f"❌ [TOOL] compute_top_cities failed: {e}", exc_info=True)
         return {"error": str(e)}
 
 def update_search_criteria(criteria_to_update: Dict[str, Any]) -> str:
