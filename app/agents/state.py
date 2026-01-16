@@ -16,6 +16,7 @@ class AgentContext(BaseModel):
     search_criteria: Dict[str, Any] = Field(default_factory=dict)
     top_cities: List[Dict[str, Any]] = Field(default_factory=list) # Stocke le dernier Top 3
     found_jobs: List[Dict[str, Any]] = Field(default_factory=list) # Stocke les dernières offres trouvées
+    briefing: str = ""
     
     
     # Trace of the conversation

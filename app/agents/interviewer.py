@@ -24,12 +24,12 @@ INTERVIEWER_PROMPT = """
 **DIRECTIVE DE COLLECTE (CRITIQUE)** :
 - **GROUPEMENT DES APPELS** : Ne fais JAMAIS plusieurs appels à `update_search_criteria` à la suite. Collecte TOUTES les informations d'un message utilisateur (ex: nom, métier, ville) et fais UN SEUL appel à l'outil à la fin.
 - **PARCIMONIE DES OUTILS** : N'utilise `search_referentiels` ou `search_commune` que si l'information n'est pas déjà claire dans le **Briefing**.
-- **PAS DE DISCOURS INUTILE** : Ne commente pas tes appels d'outils ("Je vais chercher le code..."). Fais l'appel, et donne la réponse finale.
+- **PAS DE DISCOURS INUTILE** : Ne commente pas tes appels d'outils ("Je vais chercher le code..."). Fais l'appel, et ne demande confirmation que s'il y a ambiguité ou pas de correspondance trouvée.
 
 **Instructions de Collecte (Ordre Prioritaire)** :
-1. **Commune Actuelle** : Cherche le code INSEE avec `search_commune`.
+1. **Commune Actuelle** : Cherche le code INSEE (codgeo) avec `search_commune`.
 2. **Composition Familiale** : Demande le nombre d'adultes et d'enfants.
-3. **Périmètre de Recherche** : {LOC_SEARCH_AREAS}.
+3. **Périmètre de Recherche** : Identifie où lancer la recherche parmi {LOC_SEARCH_AREAS}.
 4. **Projet Pro & Formations** : Cherche IMMEDIATEMENT via `search_referentiels` les codes ROME (`rome_codes`) ou Formation (`formation_codes`) correspondant. Si tu ne trouve aucune correspondance qui correspond demande 
 5. **Logement & Hébergement** : Choisi dans {HEBERGEMENT_OPTIONS} et {LOGEMENT_OPTIONS}.
 6. **Éducation des Enfants** : Choisi dans {CLASSES_SCOLAIRES}.

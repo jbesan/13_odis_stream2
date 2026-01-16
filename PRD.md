@@ -636,3 +636,36 @@ En tant que travailleur social, je veux être informé des actions en cours des 
 ### 📊 Status
 
 - In Progress (Jan 2026)
+
+## 🚀 Feature [F-32]: Mini Annuaire Associatif ODIS
+
+### 📝 User Story
+
+- En tant que travailleur social, je veux accéder à un annuaire simplifié des associations locales (nom, objet) directement dans l'application et via le chatbot, afin de proposer des solutions d'accompagnement concrètes à la famille.
+- En tant que développeur, je veux une version "lite" du RNA intégrée au pipeline pour ne pas alourdir l'application tout en offrant des données qualitatives sur le tissu associatif.
+
+### 🔑 Key Features
+
+- **Pipeline "Lite" :** Filtrage intelligent du RNA (Répertoire National des Associations) pour ne garder que les associations actives et pertinentes pour l'intégration (Codes 003, 018, 019, 020, 032).
+- **DataSet ODIS :** Création d'un fichier `odis_asso_mini.parquet` contenant l'ID, le code INSEE, le code Waldec, le titre court et l'objet (tronqué).
+- **Micro-Annuaire MCP :** Nouvel outil `search_odis_associations` permettant aux agents (Scout notamment) de lister les acteurs locaux par thématique.
+- **Décoration "En savoir plus" :** Intégration de cet annuaire dans les fiches détaillées des territoires.
+
+### 📊 Status
+
+- Planned (Jan 2026)
+
+## 🚀 Feature [F-34]: Orchestrator Prompt Refactoring
+
+### 📝 User Story
+
+- En tant que développeur, je veux que les prompts de synthèse de l'orchestrateur soient faciles à tuner en les plaçant en début de fichier et en utilisant des injections par remplacement de chaînes plutôt que des f-strings complexes.
+
+### 🔑 Key Features
+
+- **Centralisation :** Déplacement de `SYNTH_PROMPT` au début du fichier `app/agents/orchestrator.py`.
+- **Templating :** Passage d'un format f-string à un format template (string statique) avec injection via `.replace()`.
+
+### 📊 Status
+
+- In Progress (Jan 2026)

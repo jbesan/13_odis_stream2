@@ -1258,9 +1258,9 @@ def main(argv=None):
         'loyers': clean_loyers,
         'population_details': clean_population_details,
         'nomenclature_waldec': clean_nomenclature_waldec,
-        'regions': clean_regions,
         'departements': clean_departements,
-        'live_jobs': clean_live_jobs
+        'live_jobs': clean_live_jobs,
+        'odis_associations': clean_odis_associations
     }
 
     selected_steps = args.steps.split(',') if args.steps else steps_map.keys()
@@ -1564,6 +1564,53 @@ def clean_departements(config: Dict[str, Any], logger: PipelineLogger):
     else:
         logging.warning(f"Departements: Columns not found. Found: {df.columns}")
 
+
+def clean_odis_associations(config: Dict[str, Any], logger: PipelineLogger):
+    """Filters RNA for ODIS Mini Association Directory."""
+    logger.log_step("clean_odis_associations", "STARTED")
+    try:
+        source = config['sources']['associations']
+        path = CACHE_DIR / source['local_name']
+        if not path.exists():
+            logging.warning("RNA file not found.")
+            return
+
+        df = load_dataset(path, source)
+        df.columns = [c.strip() for c in df.columns]
+
+        # User's filtering logic
+        waldec_prefixes = ["003", "018", "019", "020", "032"]
+        cols_to_keep = ['id', 'adrs_codeinsee', 'objet_social1', 'titre_court', 'objet']
+        
+        # Ensure columns exist
+        existing_cols = [c for c in cols_to_keep if c in df.columns]
+        
+        mask = (df['objet_social1'].astype(str).str[:3].isin(waldec_prefixes)) & (df['position'] == 'A')
+        df_mini = df[mask][existing_cols].copy()
+        
+        if 'objet' in df_mini.columns:
+            df_mini['objet'] = df_mini['objet'].astype(str).str[:250].str.lower()
+            
+        # Re-mapping to standard ODIS names as requested
+        rename_map = {
+            'adrs_codeinsee': 'codgeo',
+            'objet_social1': 'waldec_code',
+            'titre_court': 'name',
+            'objet': 'description'
+        }
+        df_mini.rename(columns={k: v for k, v in rename_map.items() if k in df_mini.columns}, inplace=True)
+        
+        if 'codgeo' in df_mini.columns:
+            df_mini['codgeo'] = df_mini['codgeo'].astype(str).str.zfill(5)
+
+        output_path = CLEAN_DIR / "odis_asso_mini.parquet"
+        # Using brotli as requested
+        df_mini.to_parquet(output_path, compression='brotli', index=False)
+        logger.log_step("clean_odis_associations", "COMPLETED", {"path": str(output_path), "rows": len(df_mini)})
+
+    except Exception as e:
+        logger.log_step("clean_odis_associations", "ERROR", {"error": str(e)})
+        logging.error(f"Clean ODIS associations failed: {e}")
 
 if __name__ == "__main__":
     main()

@@ -2,7 +2,7 @@ import pytest
 import pandas as pd
 from unittest.mock import patch, MagicMock
 from services.mcp_france_travail import (
-    search_job_offers_logic,
+    _search_job_offers_logic,
     _get_job_details_logic,
     TOKEN_CACHE
 )
@@ -57,7 +57,7 @@ def test_search_job_offers_success():
         mock_response.headers = {"Content-Range": "offres 0-49/150"}
         mock_get.return_value = mock_response
 
-        results = search_job_offers_logic(query="Dev", location="33063")
+        results = _search_job_offers_logic(query="Dev", location="33063")
         assert len(results["offres"]) == 1
         assert results["total"] == 150
         assert results["offres"][0]["intitule"] == "Dev"
@@ -71,7 +71,7 @@ def test_search_job_offers_no_results():
         mock_response.status_code = 204
         mock_get.return_value = mock_response
 
-        results = search_job_offers_logic(query="Unknown")
+        results = _search_job_offers_logic(query="Unknown")
         assert results["offres"] == []
         assert results["total"] == 0
 

@@ -19,7 +19,7 @@ SCORER_PROMPT = """
 
 **DIRECTIVE CRITIQUE** :
 Tu DOIS utiliser l'outil `compute_top_cities`.
-Pour l'argument `filters`, tu DOIS COPIER EXACTEMENT le JSON ci-dessus.
+Passe l'objet JSON ci-dessus directement à l'argument `criteria`.
 
 INTERDIT d'inventer des valeurs ou de modifier le JSON. Si un champ est null, laisse-le null.
 
@@ -50,7 +50,7 @@ class ScorerAgent(BaseAgent):
         prompt = SCORER_PROMPT.replace("{CRITERIA_JSON}", criteria_json)
         prompt = prompt.replace("{PROFILE}", profile)
         prompt = prompt.replace("{BRIEFING}", briefing_data)
-        
+
         # Prepare Prompt-based Memory (Short)
         history_summary = ""
         if context.history:

@@ -46,6 +46,7 @@ class ScoringEngine:
         regio_referentiel: Optional[pd.DataFrame] = None,
         rome_index: pd.DataFrame = pd.DataFrame(),
         refugee_associations_data: pd.DataFrame = pd.DataFrame(),
+        odis_asso_mini_data: pd.DataFrame = pd.DataFrame(),
         live_jobs_data: pd.DataFrame = pd.DataFrame(),
         bmo_vertical: pd.DataFrame = pd.DataFrame() # Deprecated
     ):
@@ -66,6 +67,7 @@ class ScoringEngine:
         self.waldec_index = waldec_index
         self.rome_index = rome_index
         self.refugee_associations_data = refugee_associations_data
+        self.odis_asso_mini_data = odis_asso_mini_data
         self.live_jobs_data = live_jobs_data
         self.bmo_vertical = bmo_vertical
 
@@ -204,7 +206,7 @@ class ScoringEngine:
                     label_col = 'label' if 'label' in city_pois.columns else ('name' if 'name' in city_pois.columns else None)
                     
                     if type_col and label_col:
-                        grouped = city_pois.groupby(type_col)[label_col].apply(lambda x: sorted(list(set(x)))).to_dict()
+                        grouped = city_pois.groupby(type_col, observed=True)[label_col].apply(lambda x: sorted(list(set(x)))).to_dict()
                         details[dom]['etablissements'] = grouped
 
         # 6. Inclusion (Grouped by Thematic)
@@ -216,7 +218,7 @@ class ScoringEngine:
                     label_col = 'label' if 'label' in city_incl.columns else ('name' if 'name' in city_incl.columns else None)
                     if label_col:
                         # Group by thematic codes first
-                        grouped_incl_raw = city_incl.groupby('thematiques')[label_col].apply(list).to_dict()
+                        grouped_incl_raw = city_incl.groupby('thematiques', observed=True)[label_col].apply(list).to_dict()
                         
                         # Map codes to labels using inclusion_services_index (safely)
                         grouped_incl = {}
@@ -271,7 +273,8 @@ class ScoringEngine:
                         pass
                     
                     asso_dict = asso.to_dict()
-                    asso_dict['waldec_label'] = label
+                    # Format label: Capital on first letter, then lower
+                    asso_dict['waldec_label'] = str(label).capitalize()
                     refugee_list.append(asso_dict)
                 
                 details['inclusion']['refugee_associations'] = refugee_list
@@ -290,6 +293,59 @@ class ScoringEngine:
                     refugee_assos = asso_city[asso_city[waldec_col].astype(str).str.startswith('019025', na=False)]
                     details['associations']['refugee_count'] = int(refugee_assos['count'].sum()) if 'count' in refugee_assos.columns else len(refugee_assos)
 
+            # 7b. ODIS Mini Associations
+            if self.odis_asso_mini_data is not None and not self.odis_asso_mini_data.empty:
+                odis_assos = self.odis_asso_mini_data[self.odis_asso_mini_data['codgeo'] == codgeo].copy()
+                if not odis_assos.empty:
+                    # Provide counts and grouped data
+                    details['associations']['odis_mini_count'] = len(odis_assos)
+                    
+                    # Group by WALDEC label
+                    grouped_odis = {}
+                    for _, asso in odis_assos.iterrows():
+                        raw_code = str(asso['waldec_code']).strip()
+                        code_norm = raw_code.lstrip('0') if raw_code.startswith('0') else raw_code
+                        label = "Autres associations"
+                        
+                        try:
+                            if self.waldec_index is not None:
+                                # Logic similar to refugee associations for label lookup
+                                possible_codes = [raw_code, code_norm]
+                                if len(raw_code) >= 3:
+                                    possible_codes.append(raw_code[:3])
+                                    possible_codes.append(raw_code[:3].lstrip('0'))
+                                
+                                for pc in possible_codes:
+                                    if pc and pc in self.waldec_index.index:
+                                        val = self.waldec_index.loc[pc, 'label']
+                                        label = val if isinstance(val, str) else val.iloc[0]
+                                        break
+                        except:
+                            pass
+                        
+                        # Format label: Capital on first letter, then lower
+                        label = str(label).capitalize()
+                        
+                        if label not in grouped_odis:
+                            grouped_odis[label] = []
+                        
+                        # Format name: Capital on first letter, then lower
+                        name = str(asso['name']).capitalize()
+                        
+                        grouped_odis[label].append({
+                            'id': asso['id'],
+                            'name': name,
+                            'description': asso['description']
+                        })
+                    
+                    # Sort names within groups
+                    for label in grouped_odis:
+                        grouped_odis[label] = sorted(grouped_odis[label], key=lambda x: x['name'])
+                             
+                    details['inclusion']['odis_associations_grouped'] = grouped_odis
+                    # Keep a small extract for compatibility if needed, but the user wants the grouped version
+                    details['associations']['odis_mini'] = odis_assos.head(5).to_dict(orient='records')
+
         return details
 
     def get_city_details(self, codgeo: str) -> Dict[str, Any]:
@@ -300,6 +356,9 @@ class ScoringEngine:
 
     def run(self, config: ScoringConfig, log_prefix: Optional[str] = None) -> gpd.GeoDataFrame:
         """Orchestrates the full scoring pipeline."""
+        logger.info(f"⚙️ [ENGINE] Starting run with Profile: {config.weight_profile}")
+        logger.debug(f"⚙️ [ENGINE] Config: {config}")
+        
         start_commune = self.df_all_communes.loc[[config.commune_actuelle]]
         loc_type = config.loc_search_area
         
@@ -344,9 +403,14 @@ class ScoringEngine:
 
         # Merge BdV Data
         if self.bv_data is not None and not self.bv_data.empty and 'bassin_de_vie' in odis_search.columns:
+             # Ensure type consistency for merge
+             odis_search['bassin_de_vie'] = odis_search['bassin_de_vie'].astype(str)
+             bv_data_scoped = self.bv_data.copy()
+             bv_data_scoped.index = bv_data_scoped.index.astype(str)
+             
              odis_search = pd.merge(
                  odis_search, 
-                 self.bv_data.add_suffix('_bdv'), 
+                 bv_data_scoped.add_suffix('_bdv'), 
                  left_on='bassin_de_vie', 
                  right_index=True, 
                  how='left'

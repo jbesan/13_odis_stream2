@@ -31,6 +31,7 @@ class SearchCriterias(BaseModel):
 
     # Final scoring priority
     weight_profile: str = Field("", description="Weight profile for scoring (Famille, Santé, Économique, Équilibré)")
+    criteria_weights: Dict[str, float] = Field(default_factory=dict, description="Custom weights for specific criteria")
 
 
 @dataclass
@@ -74,3 +75,6 @@ class ScoringConfig:
     # Custom Geo
     loc_custom_code: Optional[str] = None
     loc_custom_type: Optional[str] = None # 'region' or 'departement'
+    
+    # Profile Name (for logging)
+    weight_profile: str = ""

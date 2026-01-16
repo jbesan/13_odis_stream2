@@ -99,7 +99,8 @@ def test_compute_top_cities_execution_complex(mcp_data_context):
     # And 'classe_enfants' values need to match mapping.
     # We'll use the exact values from original test and assume app handles them or they are correct keys.
     
-    results_dict = _compute_top_cities_logic(weights, filters)
+    filters['criteria_weights'] = weights
+    results_dict = _compute_top_cities_logic(filters)
     results = results_dict.get('cities', [])
     
     assert len(results) > 0, "Should return results for complex scenario"

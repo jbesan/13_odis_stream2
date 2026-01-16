@@ -204,9 +204,9 @@ def load_all_data_raw() -> Dict[str, Any]:
             if col in odis.columns:
                 odis[col] = odis[col].astype('float32')
         
-        for col in ['dep_code', 'reg_code', 'epci_code']:
+        for col in ['dep_code', 'reg_code', 'epci_code', 'bassin_de_vie']:
             if col in odis.columns:
-                odis[col] = odis[col].astype('category')
+                odis[col] = odis[col].astype(str)
 
     except Exception as e:
         logger.error(f"Failed to load ODIS data: {e}")
@@ -316,6 +316,7 @@ def load_all_data_raw() -> Dict[str, Any]:
 
     live_jobs_data = _load_parquet(os.path.join(base_path, cfg.LIVE_JOBS_FILE), error_list=load_errors)
     associations_data = _load_parquet(os.path.join(base_path, cfg.AGG_ASSOCIATIONS_FILE), error_list=load_errors)
+    odis_asso_mini_data = _load_parquet(os.path.join(base_path, cfg.ODIS_ASSO_MINI_FILE), error_list=load_errors)
     refugee_associations_data = _load_parquet(os.path.join(base_path, cfg.REFUGEE_ASSOCIATIONS_FILE), error_list=load_errors)
     formations_data = _load_parquet(os.path.join(base_path, cfg.AGG_FORMATIONS_FILE), error_list=load_errors)
     
@@ -378,6 +379,7 @@ def load_all_data_raw() -> Dict[str, Any]:
         'annuaire_inclusion': annuaire_inclusion,
         'incl_index': incl_index,
         'associations_data': associations_data,
+        'odis_asso_mini_data': odis_asso_mini_data,
         'formations_data': formations_data,
         'depcom_df': depcom_df,
         'coddep_set': coddep_set,

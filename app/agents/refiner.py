@@ -9,7 +9,7 @@ from services.mcp_server import _get_labels_for_codes_logic
 logger = logging.getLogger(__name__)
 
 REFINER_PROMPT = """
-Tu es l'Expert en Synthèse de Contexte ODIS. Ta mission est de condenser l'historique d'une conversation entre un travailleur social et un assistant IA en quelques points clés percutants.
+**Rôle** : Tu es l'Expert en Synthèse de Contexte ODIS. Ta mission est de condenser l'historique d'une conversation entre un travailleur social et un assistant IA en quelques points clés percutants.
 
 **Historique Brut** :
 {HISTORY}
@@ -18,7 +18,7 @@ Tu es l'Expert en Synthèse de Contexte ODIS. Ta mission est de condenser l'hist
 1. Extrais UNIQUEMENT les faits validés, les décisions prises et les préférences exprimées par l'utilisateur.
 2. **CONSERVATION DES IDENTIFIANTS** : Tu DOIS conserver les identifiants techniques mentionnés (ex: IDs d'offres '202GPKJ', codes métiers) car ils sont cruciaux pour les outils.
 3. Ignore les salutations, les erreurs techniques ou les hésitations qui ont été résolues.
-4. Produis une liste à puces (max 4-5 points) ultra-concise en FRANÇAIS.
+4. Produis une note structurée et ultra-concise en FRANÇAIS.
 5. Si l'historique est vide, réponds par "Début de la conversation."
 """
 
@@ -83,9 +83,11 @@ class ContextRefiner:
 **MÉMOIRE DE L'ÉCHANGE** :
 {history_summary}{jobs_part}
 
+
 **CIBLE ACTUELLE** : {focus_info}
 """
         briefing = briefing.strip()
+        context.briefing = briefing
         logger.debug(f"\n{'='*50}\n🧠 [REFINER] Synthesized Briefing:\n{briefing}\n{'='*50}")
         return briefing
 
@@ -101,12 +103,12 @@ class ContextRefiner:
             raw = criteria.get(source_key, [])
             return [str(code) for sublist in raw for code in (sublist if isinstance(sublist, list) else [sublist])]
         
-        faps = extract_flat_codes('codes_metiers')
+        codes_rome = extract_flat_codes('codes_metiers')
         formations = extract_flat_codes('codes_formations')
         assos = criteria.get('inc_asso_add_selection', [])
         incl = criteria.get('inc_services_add_selection', [])
         
-        all_codes.extend(faps)
+        all_codes.extend(codes_rome)
         all_codes.extend(formations)
         all_codes.extend(assos)
         all_codes.extend(incl)
@@ -134,8 +136,8 @@ class ContextRefiner:
         if 'loc_search_area' in criteria:
             lines.append(f"- Zone de recherche : {criteria['loc_search_area']}")
             
-        if faps:
-            lines.append(f"- Métiers (ROME) : {', '.join([fmt(c) for c in faps])}")
+        if codes_rome:
+            lines.append(f"- Métiers (ROME) : {', '.join([fmt(c) for c in codes_rome])}")
             
         if formations:
             lines.append(f"- Formations : {', '.join([fmt(c) for c in formations])}")
@@ -157,7 +159,7 @@ class ContextRefiner:
         
         # Limit the history we send to the refiner to save tokens
         raw_history = ""
-        for turn in history[-10:]:
+        for turn in history[-3:]:
             role = "User" if turn.get("role") == "user" else "Assistant"
             parts = turn.get("parts", [])
             text = " ".join([p.get("text", "") for p in parts if isinstance(p, dict)])
