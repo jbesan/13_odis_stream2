@@ -55,6 +55,7 @@ def setup_logging() -> None:
     root_logger.addHandler(handler)
     
     # --- Ignore specific deprecation warnings from libraries ---
+    warnings.filterwarnings("ignore", category=DeprecationWarning, module="google.genai")
     warnings.filterwarnings("ignore", category=DeprecationWarning, module="google.genai.types")
 
     # --- Reduce verbosity of third-party libraries ---

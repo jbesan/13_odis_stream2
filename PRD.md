@@ -41,7 +41,7 @@
 
 Collecte des besoins via un formulaire multi-pages (basé sur `st.session_state['form_page']`).
 
-- **Localisation :** `ui_commune` (point de départ), `ui_loc_search_area` (périmètre : Département, Région, France, Custom).
+- **Localisation :** `ui_commune` (point de départ).
 - **Famille :** `ui_nb_adultes`, `ui_nb_enfants`.
 - **Éducation :** `ui_classe_enfant_{i}` (déclenche le scoring Éducation si `nb_enfants > 0`).
 - **Projet Pro :**
@@ -58,7 +58,7 @@ Collecte des besoins via un formulaire multi-pages (basé sur `st.session_state[
   - `ui_inc_asso_add_selection` (affinités associatives).
 - **Données Qualitatives (Agent uniquement) :**
   - `notes_qualitatives`: "Champ libre" (liste de notes) collectant des indices comme l'origine culturelle, la religion, les passions ou les capacités de mobilité (permis, vélo). Ces données enrichissent la recherche de l'agent SCOUT sans impacter le score numérique global.
-- **Mobilité :** `ui_loc_search_area` définit le périmètre de filtrage. Les scores de mobilité incluent la présence d'une gare (`mob_gare_scaled`) et l'appartenance à la même agglomération (`mob_epci_scaled`).
+- **Mobilité :** Sélection consolidée (`ui_mobility_region`, `ui_mobility_dept`, `ui_mobility_france`). `loc_search_area` définit le périmètre de filtrage ('france', 'region', 'departement'). Les scores de mobilité incluent la présence d'une gare (`mob_gare_scaled`) et l'appartenance à la même agglomération (`mob_epci_scaled`).
 
 ### Étape 3 : Interface de Résultats (`3_Resultats.py`)
 

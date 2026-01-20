@@ -564,38 +564,64 @@ def render_other_needs_form() -> None:
     st.session_state['ui_inc_services_add_selection_map'] = options_map
 
 def render_mobility_form() -> None:
-    """Renders the UI for the 'Mobilité' form section."""
-    st.radio('Zone de recherche :', cfg.LOC_SEARCH_AREA_OPTIONS.keys(), format_func=cfg.LOC_SEARCH_AREA_OPTIONS.get, key="ui_loc_search_area")
+    """Renders the UI for the 'Mobilité' form section (Consolidated)."""
+    app_data = st.session_state['app_data']
+    dept_details = app_data.get('dept_details', {})
+    regions_dict = app_data.get('regions_names', {})
+    
+    # 1. France Métropolitaine Override
+    is_france = st.checkbox("France Métropolitaine", key="ui_mobility_france")
+    
+    st.text("ou")
 
-    if st.session_state['ui_loc_search_area'] != 'france':
-        st.markdown("---")
-        allow_specific = st.checkbox("Rechercher dans une zone spécifique (si différente de ma zone actuelle)", key="ui_allow_specific_loc")
+    # 2. Region & Department Selectors
+    col1, col2 = st.columns(2)
+    
+    # Defaults based on current localization
+    current_dept_code = st.session_state.get('ui_departement')
+    current_reg_code = dept_details.get(current_dept_code, {}).get('reg_code')
+    
+    with col1:
+        region_codes = sorted(regions_dict.keys())
+        try:
+            default_reg_idx = region_codes.index(current_reg_code) if current_reg_code in region_codes else 0
+        except ValueError:
+            default_reg_idx = 0
+            
+        selected_region_code = st.selectbox(
+            "Région",
+            region_codes,
+            format_func=lambda x: regions_dict.get(x, f"Code {x}"),
+            key="ui_mobility_region",
+            disabled=is_france,
+            index=default_reg_idx
+        )
         
-        if allow_specific:
-            app_data = st.session_state['app_data']
-            
-            # Region Selector
-            regions_dict = app_data.get('regions_names', {})
-            region_codes = sorted(regions_dict.keys())
-            
-            # Department Selector
-            dept_details = app_data.get('dept_details', {})
+    with col2:
+        # Filter departments by selected region
+        depts_in_region = [
+            code for code, details in dept_details.items() 
+            if details.get('reg_code') == selected_region_code
+        ]
+        depts_in_region.sort()
+        
+        # Options: "Toute la région" + departments
+        dept_options = ["Toute la région"] + depts_in_region
+        
+        # Try to default to current department if it's in the region
+        try:
+            default_dept_idx = dept_options.index(current_dept_code) if current_dept_code in dept_options else 0
+        except ValueError:
+            default_dept_idx = 0
 
-            if st.session_state['ui_loc_search_area'] == 'region':
-                st.selectbox(
-                    "Choisir la région cible", 
-                    region_codes, 
-                    format_func=lambda x: regions_dict.get(x, f"Code {x}"),
-                    key="ui_custom_region"
-                )
-            else: # departement
-                # We show all departments for simplicity when selecting specifically
-                st.selectbox(
-                    "Choisir le département cible",
-                    sorted(dept_details.keys()),
-                    format_func=lambda x: f"{x} - {dept_details.get(x, {}).get('label', x)}",
-                    key="ui_custom_dept"
-                )
+        st.selectbox(
+            "Département",
+            dept_options,
+            format_func=lambda x: f"{x} - {dept_details.get(x, {}).get('label', x)}" if x != "Toute la région" else x,
+            key="ui_mobility_dept",
+            disabled=is_france,
+            index=default_dept_idx
+        )
 
 def display_input_tabs(demo_data: Optional[Dict[str, Any]] = None) -> None:
     """Displays the main tabs for user input, composed of modular rendering functions."""
@@ -634,14 +660,18 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
         )
     ].index[0]
 
-    loc_search_area = st.session_state['ui_loc_search_area']
-    loc_search_code = None
-
-    if st.session_state.get('ui_allow_specific_loc'):
-        if loc_search_area == 'region':
-            loc_search_code = st.session_state.get('ui_custom_region')
-        elif loc_search_area == 'departement':
-            loc_search_code = st.session_state.get('ui_custom_dept')
+    # New Mobility Logic
+    if st.session_state.get('ui_mobility_france'):
+        loc_search_area = 'france'
+        loc_search_code = None
+    else:
+        selected_dept = st.session_state.get('ui_mobility_dept')
+        if selected_dept == "Toute la région":
+            loc_search_area = 'region'
+            loc_search_code = st.session_state.get('ui_mobility_region')
+        else:
+            loc_search_area = 'departement'
+            loc_search_code = selected_dept
 
     # Education
     classe_enfants = [st.session_state[f"ui_classe_enfant_{i}"] for i in range(st.session_state['ui_nb_enfants'])]

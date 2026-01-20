@@ -10,6 +10,7 @@ import pandas as pd
 import geopandas as gpd
 
 # Suppress annoying third-party deprecation warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="google.genai")
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="google.genai.types")
 from shapely.geometry import Polygon
 import config as cfg
