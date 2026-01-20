@@ -356,7 +356,7 @@ class ScoringEngine:
 
     def run(self, config: ScoringConfig, log_prefix: Optional[str] = None) -> gpd.GeoDataFrame:
         """Orchestrates the full scoring pipeline."""
-        logger.info(f"⚙️ [ENGINE] Starting run with Profile: {config.weight_profile}")
+        logger.debug(f"⚙️ [ENGINE] Starting run with Profile: {config.weight_profile}")
         logger.debug(f"⚙️ [ENGINE] Config: {config}")
         
         start_commune = self.df_all_communes.loc[[config.commune_actuelle]]

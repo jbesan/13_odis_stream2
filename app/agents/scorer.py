@@ -1,6 +1,7 @@
 
 import logging
 from typing import List, Dict, Any, Optional
+from pydantic import BaseModel, Field, ConfigDict
 from pydantic_ai import Agent, RunContext
 import json
 from .state import ODISGraphState, ODISDeps
@@ -10,6 +11,12 @@ from .tools import compute_top_cities
 from core.models import SearchCriterias
 
 logger = logging.getLogger("scorer_agent_v2")
+
+# --- Structured Output ---
+class ScorerResult(BaseModel):
+    response: str
+    top_cities: List[Dict[str, Any]] = Field(default_factory=list)
+    model_config = ConfigDict(populate_by_name=True)
 
 # --- System Prompt ---
 SCORER_SYSTEM_PROMPT = """
@@ -22,18 +29,21 @@ Tu DOIS utiliser l'outil `compute_top_cities`.
 Les critères de recherche sont injectés automatiquement dans le contexte, utilise-les tels quels.
 
 **Instructions** :
-1. Lance `compute_top_cities` (pas besoin de passer d'arguments, je les injecterai via le contexte).
-2. Une fois les résultats reçus, présente le **Top 5** des meilleures communes.
-3. Pour chaque ville du Top 5:
-    - Donne son nom, sa population et son score global comme un pourcentage.
-    - Cite 1 ou 2 points forts pertinents par rapport au profil (Famille, Emploi, etc.).
-4. Termine TOUJOURS en suggérant à l'utilisateur de lancer une recherche approfondie sur l'une des communes.
+1. Lance `compute_top_cities` (pas besoin de passer d'arguments).
+2. Une fois les résultats reçus, présente le **Top 5** des meilleures communes dans ton message de réponse.
+    a. Pour chaque ville du Top 5:
+        - Donne son nom, sa population et son score global comme un pourcentage.
+        - Cite 1 ou 2 points forts pertinents par rapport au profil (Famille, Emploi, etc.).
+    b. Termine TOUJOURS en suggérant à l'utilisateur de lancer une recherche approfondie sur l'une des communes.
+3. **SORTIE STRUCTUREE** : Remplis l'objet `top_cities` avec la liste EXACTE retournée par l'outil (le champ `cities`). Ton message va dans `response`.
+
 """
 
 # --- Agent Definition ---
 scorer_agent = Agent(
     get_model("scorer"),
-    deps_type=ODISDeps
+    deps_type=ODISDeps,
+    output_type=ScorerResult
 )
 
 @scorer_agent.system_prompt

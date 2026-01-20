@@ -50,7 +50,7 @@ async def synth_instructions(ctx: RunContext[ODISDeps]) -> str:
                 city_details = str(c.get("details", {}))
                 break
     
-    return SYNTH_SYSTEM_PROMPT.format(
+    SYNTH_SYSTEM_PROMPT.format(
         BRIEFING=ctx.deps.state.briefing or "",
         FOCUS_CITY=str(ctx.deps.state.focus_city or "Non définie"),
         CITY_DETAILS=city_details,
@@ -58,3 +58,5 @@ async def synth_instructions(ctx: RunContext[ODISDeps]) -> str:
         WEB_RES=ctx.deps.state.experts_results.get("web", "Non disponible"),
         JOB_RES=ctx.deps.state.experts_results.get("job_hunter", "Non disponible")
     )
+    print(SYNTH_SYSTEM_PROMPT)
+    return SYNTH_SYSTEM_PROMPT

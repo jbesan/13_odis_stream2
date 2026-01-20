@@ -53,7 +53,6 @@ def merge_search_criteria(left: SearchCriterias, right: Any) -> SearchCriterias:
         current_data.update(update_data)
         
     return SearchCriterias(**current_data)
-SyncSearchCriterias = SearchCriterias # Alias for easier ref if needed
 
 class UserProfile(BaseModel):
     """Basic extraction of user identity and raw initial request."""
@@ -74,19 +73,18 @@ class ODISGraphState(BaseModel):
     search_criteria: Annotated[SearchCriterias, merge_search_criteria] = Field(default_factory=SearchCriterias)
     
     # Results & Decisions
+    experts_results: Annotated[Dict[str, Any], operator.ior] = Field(default_factory=dict)
     top_cities: List[Dict[str, Any]] = Field(default_factory=list)
     found_jobs: List[Dict[str, Any]] = Field(default_factory=list)
     focus_city: Optional[str] = None
     
-    # Logic / Meta
+    # Memory
     briefing: str = "" # The "Brain" summary of what happened
     last_summarized_idx: int = 0 # Pointer to the last message summarized
     next_node: Optional[str] = None # Routing decision
     
-    
     # Token Tracking (Optional for graph, but good for reporting)
     usage: Annotated[UsageStats, add_usage] = Field(default_factory=UsageStats)
-    experts_results: Annotated[Dict[str, Any], operator.ior] = Field(default_factory=dict)
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
@@ -104,8 +102,3 @@ class ODISDeps:
     class Meta:
         arbitrary_types_allowed = True
 
-
-# Legacy Context (Kept for transition if needed, or we can deprecate)
-class AgentContext(BaseModel):
-    """Legacy Context - To be removed after full migration."""
-    pass

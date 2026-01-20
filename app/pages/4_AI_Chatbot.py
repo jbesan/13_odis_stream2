@@ -20,7 +20,7 @@ from utils import auth
 if not auth.check_password():
     st.stop()
 
-st.title("🤖 Assistant ODIS 2.0 (LangGraph)")
+st.title("🤖 Assistant ODIS 2.1")
 
 # Ensure datasets are loaded
 from utils.data_loader import init_datasets

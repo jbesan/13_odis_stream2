@@ -6,6 +6,15 @@ from langgraph.graph import StateGraph, END
 from google import genai
 from dotenv import load_dotenv
 
+# Ensure environment is loaded BEFORE importing agents
+# The .env is in the parent directory of 'agents' (app/)
+base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+env_path = os.path.join(base_dir, ".env")
+load_dotenv(env_path)
+
+if "GEMINI_API_KEY" in os.environ and "GOOGLE_API_KEY" not in os.environ:
+    os.environ["GOOGLE_API_KEY"] = os.environ["GEMINI_API_KEY"]
+
 # Agents & Logic
 from agents.state import ODISDeps, ODISGraphState, UsageStats
 # from agents.refiner import ContextRefiner
@@ -18,7 +27,7 @@ from agents.job_hunter import job_hunter_agent
 from agents.synthesizer import synthesizer_agent
 from agents.agent_config import get_model
 
-load_dotenv()
+
 logger = logging.getLogger("odis_graph")
 
 
@@ -169,8 +178,11 @@ async def scorer_node(state: ODISGraphState, config: RunnableConfig):
     mod_id = get_model("scorer")
     model = _get_p_model("scorer", client=deps.client)
     result = await scorer_agent.run("Start Scoring", deps=deps, model=model) 
+    # We update top_cities from structured output
     return {
-        "messages": [{"role": "assistant", "content": str(result.output)}],
+        "messages": [{"role": "assistant", "content": result.output.response}],
+        "top_cities": result.output.top_cities,
+        "experts_results": {"scorer": result.output.response}, # For synthesizer/refiner to see the text
         "next_node": END,
         "usage": capture_usage(result, "scorer", mod_id)
     }
