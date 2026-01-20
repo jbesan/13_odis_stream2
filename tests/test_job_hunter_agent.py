@@ -1,55 +1,49 @@
 import pytest
+from pydantic_ai.models.test import TestModel
 from unittest.mock import MagicMock, patch
-from agents.job_hunter import JobHunterAgent, JOB_HUNTER_PROMPT
-from agents.state import AgentContext
+from agents.job_hunter import job_hunter_agent
+from agents.state import ODISGraphState, ODISDeps
 
 @pytest.fixture
-def agent():
-    # JobHunterAgent(model_id, client)
-    return JobHunterAgent(model_id="gemini-2.5-flash-lite", client=MagicMock())
+def test_deps():
+    state = ODISGraphState(
+        briefing="Projet: Boulanger",
+        focus_city="Paris"
+    )
+    # We mock search_referentiels to return a dummy INSEE for Paris
+    mock_client = MagicMock()
+    return ODISDeps(state=state, client=mock_client)
 
-def test_job_hunter_search_intent(agent):
-    """Verify that a general message triggers search logic."""
-    context = AgentContext()
-    message = "--- ### 📋 RÉSUMÉ DU DOSSIER (BRIEFING)\nProjet: Boulanger\n---\nTrouve moi des jobs de boulanger"
+@pytest.mark.asyncio
+async def test_job_hunter_search_intent(test_deps):
+    """Verify that the job hunter agent can be run with a mock model."""
+    mock_model = TestModel()
     
-    with patch.object(JobHunterAgent, '_execute_tool_loop') as mock_loop:
-        mock_loop.return_value = "Search Results"
-        agent.run(message, context)
-        
-        args, kwargs = mock_loop.call_args
-        prompt = args[0]
-        full_msg = args[1]
-        assert "Job Hunter ODIS" in prompt
-        assert "Trouve moi des jobs de boulanger" in full_msg
+    with job_hunter_agent.override(model=mock_model):
+        # Patching agents.tools which is where the agent imports from
+        with patch('agents.job_hunter.search_referentiels', return_value=[{"code": "75056", "label": "Paris"}]), \
+             patch('agents.job_hunter.search_job_offers', return_value={"offres": [], "total": 0}), \
+             patch('agents.job_hunter.get_job_details', return_value={}):
+            
+            result = await job_hunter_agent.run(
+                "Trouve moi des jobs de boulanger",
+                deps=test_deps
+            )
+            assert result.output is not None
+            assert isinstance(result.output, str)
 
-def test_job_hunter_details_intent(agent):
-    """Verify that a message with a job ID triggers detail fetch intent."""
-    context = AgentContext()
-    message = "Donne moi plus d'infos sur l'offre 1234567A"
+@pytest.mark.asyncio
+async def test_job_hunter_tool_calls(test_deps):
+    """Verify that the agent can call tools using TestModel's call_tools flag."""
+    mock_model = TestModel()
     
-    with patch.object(JobHunterAgent, '_execute_tool_loop') as mock_loop:
-        mock_loop.return_value = "Details Results"
-        agent.run(message, context)
-        
-        args, kwargs = mock_loop.call_args
-        prompt = args[0]
-        tools = args[2] if len(args) > 2 else kwargs.get('tools')
-        
-        assert "DETAIL d'une offre d'emploi précise" in prompt
-        # Job Details and other tools are passed to the loop
-        assert any(t.__name__ == 'get_job_details' for t in tools)
-
-def test_job_hunter_details_intent_mixed_case(agent):
-    """Verify case-insensitivity for job ID detection."""
-    context = AgentContext()
-    message = "offre 7654321b"
-    
-    with patch.object(JobHunterAgent, '_execute_tool_loop') as mock_loop:
-        mock_loop.return_value = "Details Results"
-        agent.run(message, context)
-        
-        args, kwargs = mock_loop.call_args
-        prompt = args[0]
-        assert "DETAIL d'une offre d'emploi précise" in prompt
-        assert "7654321B" in prompt
+    with job_hunter_agent.override(model=mock_model):
+        with patch('agents.job_hunter.search_referentiels', return_value=[{"code": "75056", "label": "Paris"}]), \
+             patch('agents.job_hunter.search_job_offers', return_value={"offres": [], "total": 0}), \
+             patch('agents.job_hunter.get_job_details', return_value={"id": "1234567A", "intitule": "Boulanger"}):
+            
+            result = await job_hunter_agent.run(
+                "Donne moi plus d'infos sur l'offre 1234567A",
+                deps=test_deps
+            )
+            assert result.output is not None

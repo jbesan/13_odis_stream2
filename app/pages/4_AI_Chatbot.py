@@ -101,7 +101,7 @@ def run_async_in_thread(coro):
         future = executor.submit(asyncio.run, coro)
         return future.result()
 
-
+@st.cache_resource
 def get_shared_client():
     """Retourne un nouveau client genai."""
     return genai.Client(api_key=os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY"))
@@ -124,7 +124,7 @@ for msg in st.session_state.chat_history:
     display_message(msg["role"], msg["content"])
 
 # Input
-if prompt := st.chat_input("Bonjour, qui accompagnez-vous aujourd'hui ?"):
+if prompt := st.chat_input("Bonjour, qui accompagnez-vous aujourd'hui ?" if not st.session_state.chat_history else "Répondez-ici"):
     # 1. User Message
     st.session_state.chat_history.append({"role": "user", "content": prompt})
     display_message("user", prompt)
