@@ -45,7 +45,6 @@ Collecte des besoins via un formulaire multi-pages (basé sur `st.session_state[
 - **Famille :** `ui_nb_adultes`, `ui_nb_enfants`.
 - **Éducation :** `ui_classe_enfant_{i}` (déclenche le scoring Éducation si `nb_enfants > 0`).
 - **Projet Pro :**
-
   - `ui_metiers_adult_{i}` ([DEPRECATED] codes FAP, now using ROME).
 
   - `ui_formations_adult_{i}` (codes formations, alimente `form_match_adult_scaled`).
@@ -74,7 +73,7 @@ Page principale interactive (layout `col_results`, `col_map`).
 Logique métier principale, orchestrée par `compute_odis_score()`.
 
 1.  **Pré-filtrage :** `df[df.population > config.pop_min]`.
-2.  **Filtrage Géo :** `filter_communes()` sélectionne les communes selon `loc_search_area` (Département, Région, France) ou un code spécifique (Region/Dep) fourni via `loc_custom_code`.
+2.  **Filtrage Géo :** `filter_communes()` sélectionne les communes selon `loc_search_area` (Département, Région, France) ou un code spécifique (Region/Dep) fourni via `loc_search_code`.
 3.  **Calcul Center :** Calcul du centroïde moyen des communes résultantes pour centrer la carte.
 4.  **Scores Critères :** `_compute_criteria_scores()` calcule les scores normalisés pour les critères activés (Emploi, Formation, Santé, Inclusion...).
 5.  **Logique "Binôme" :**
@@ -387,7 +386,6 @@ En tant que travailleur social, je veux voir les lieux recommandés sur une cart
 ### 🔑 Key Features
 
 - **Sélecteur de Profils (Presets) :**
-
   - Ajout d'un menu déroulant "Profil de Priorité" dans la barre latérale (au-dessus des sliders).
   - **Options proposées :**
     - _Équilibré_ (Défaut) : Tous les poids à 100.
@@ -471,7 +469,6 @@ En tant que travailleur social, je veux voir les lieux recommandés sur une cart
   - Serveur MCP (`app/mcp_server.py`) exposant les données ODIS (Référentiels, Communes, Scoring) comme des outils standardisés.
   - Client Gemini (`app/gemini_client.py`) consommant ces outils.
 - **Outils Intelligents :**
-
   - `search_commune(query)`: Trouve le code INSEE exact d'une ville.
   - `search_referentiels(query, domain)`: Recherche sémantique robuste in Referentials (Inclusion, Formations, ROME). [DEPRECATED] FAP search is no longer active.
 
@@ -504,7 +501,6 @@ L'assistant est désormais composé de plusieurs agents spécialisés pilotés p
 
 - **Nouveau Outil MCP :** `get_city_details(codgeo)` qui agrège les données de toutes les sources disponibles (ODIS, Annuaire Education/Santé/Inclusion, Associations, BMO).
 - **Structure des Données :** Retourne un objet JSON structuré avec :
-
   - **Identité :** Nom, Code, Population, Bassin de Vie.
   - **Scores :** Détail des scores bruts et normalisés.
   - **Emploi :** Top secteurs recruteurs ([DEPRECATED] BMO, replaced by Live Jobs).

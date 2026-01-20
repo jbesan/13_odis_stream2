@@ -53,7 +53,7 @@ BV_NAME_COL = 'libelle_bassin_de_vie'
 NOMBRE_ADULTES_OPTIONS = [1, 2]
 NOMBRE_ENFANTS_OPTIONS = [0, 1, 2, 3, 4, 5]
 CLASSES_SCOLAIRES = ['Crèche / Assistante Maternelle', 'Maternelle', 'Elémentaire', 'Collège', 'Lycée']
-LOC_SEARCH_AREA_OPTIONS = {'departement': 'Département', 'region': 'Région', 'france': 'France Métropolitaine', 'custom': 'Choisir une région ou département spécifique'}
+LOC_SEARCH_AREA_OPTIONS = {'departement': 'Département', 'region': 'Région', 'france': 'France Métropolitaine'}
 HEBERGEMENT_OPTIONS = ["Chez l'habitant", 'Location', 'Foyer']
 LOGEMENT_OPTIONS = ['Location', 'Logement Social']
 SANTE_OPTIONS = ["Aucun", "Hopital", 'Maternité', "Soutien Psychologique & Addictologie"]
@@ -120,8 +120,7 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     'inc_services_add_selection': [],
     'inc_services_core_selection': DEFAULT_INC_SERVICES_CORE,
     'inc_asso_add_selection': [],
-    'loc_custom_code': None,
-    'loc_custom_type': None
+    'loc_search_code': None
 }
 
 DEMO_SCENARIOS = {
@@ -166,7 +165,8 @@ DEMO_SCENARIOS = {
         'poids_inclusion': 100,
         'poids_emploi': 100,
         'sante': "Maternité",
-        'inc_asso_add_selection': ['Entraide / Bénévolat']
+        'inc_asso_add_selection': ['Entraide / Bénévolat'],
+        'loc_search_code': None
     }
 }
 

@@ -177,17 +177,18 @@ app/
 
 L'Assistant ODIS 2.0 est une interface de conversation en langage naturel conçue pour simplifier le travail de diagnostic social. Il repose sur une architecture multi-agent innovante :
 
-### Architecture Multi-Agent
+### Architecture Multi-Agent (LangGraph)
 
-Contrairement à un chatbot classique, l'Assistant ODIS utilise plusieurs "experts" spécialisés qui collaborent pour répondre à l'utilisateur :
+Contrairement à un chatbot classique, l'Assistant ODIS est orchestré par un graphe d'états (LangGraph) qui coordonne plusieurs experts spécialisés (PydanticAI) :
 
-1.  **L'Orchestrateur (Cerberus) :** Analyse votre demande et décide quel expert appeler. Il gère la mémoire de la conversation et synthétise les réponses finales.
-2.  **L'Interviewer :** Conduit l'entretien. Il est capable de détecter vos besoins (nombre d'enfants, métiers, ville de départ) et de les enregistrer automatiquement dans vos critères de recherche.
-3.  **Le Scorer :** Dès que le profil est prêt, il lance le moteur de calcul ODIS sur des milliers de communes et explique pourquoi certaines villes ressortent en tête.
-4.  **La Cascade de Décoration :** Lorsque vous explorez une ville, l'Orchestrateur lance trois experts en parallèle :
-    - **Scout** : Trouve les infrastructures locales (écoles, parcs, préfecture) et calcule les temps de trajets réels.
-    - **WEB** : Effectue une recherche web en temps réel pour vous donner le climat social et l'actualité de la ville.
-    - **Job Hunter** : Recherche les offres d'emploi réelles sur France Travail correspondant précisement aux profils des adultes du foyer.
+1.  **Le Routeur :** Analyse votre demande et décide de l'action à entreprendre (Interview, Scoring, ou Décoration).
+2.  **L'Interviewer :** Conduit l'entretien. Il détecte vos besoins et met à jour le diagnostic partagé.
+3.  **Le Scorer :** Calcule les scores ODIS sur des milliers de communes et explique les résultats.
+4.  **La Cascade de Décoration :** Lorsque vous explorez une ville, une chaîne d'experts se déclenche :
+    - **Scout** : Analyse le terrain (Google Maps).
+    - **WEB** : Recherche l'actualité et le contexte social (Google Search).
+    - **Job Hunter** : Trouve les offres d'emploi réelles (France Travail).
+    - **Synthétiseur** : Fusionne toutes ces informations en une réponse unique et cohérente.
 
 ### Points Forts de l'Agent
 
@@ -200,13 +201,11 @@ Contrairement à un chatbot classique, l'Assistant ODIS utilise plusieurs "exper
 Ce prototype est une base solide qui peut être grandement améliorée :
 
 - **⭐ Fonctionnalités :**
-
   - **Comptes Utilisateurs :** Permettre de sauvegarder, nommer et gérer plusieurs scénarios de "projets de vie".
   - **Filtres Avancés :** Ajouter des filtres plus fins (ex: exclure certaines régions, filtrer par couleur politique).
   - **Comparaison des Résultats :** Ajouter une fonction pour comparer 2 ou 3 des meilleurs résultats côte à côte.
 
 - **📊 Données & Scoring :**
-
   - **Intégrer le Loyer Moyen :** Ajouter le loyer moyen comme critère de score pour mieux évaluer l'accessibilité financière.
   - **Étendre les Sources de Données :** Intégrer plus de jeux de données (transports en commun, services de santé spécifiques, activités culturelles).
   - **Fraîcheur des Données :** Mettre en place un pipeline pour mettre à jour automatiquement les données sous-jacentes.

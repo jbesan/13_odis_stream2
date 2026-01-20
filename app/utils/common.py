@@ -37,6 +37,48 @@ def calculate_token_overlap(
 
     return len(q_tokens.intersection(target_tokens))
 
+# def calculate_fuzzy_match_score(
+#     query_norm: str,
+#     target_norm: str,
+#     query_tokens: Set[str],
+#     target_tokens: Set[str],
+#     stop_words: Optional[Set[str]] = None,
+#     weights: Optional[dict] = None
+# ) -> int:
+#     """
+#     Generic fuzzy match scoring helper.
+#     Default weights can be overridden.
+#     """
+#     if weights is None:
+#         weights = {
+#             'exact': 100,
+#             'starts_with': 50,
+#             'contains': 20,
+#             'token_overlap': 10,
+#             'substring_match': 0
+#         }
+
+#     if not query_norm or not query_norm.strip():
+#         return 0
+
+#     score = 0
+    
+#     # A. Exact Match
+#     if query_norm == target_norm:
+#         score += weights.get('exact', 0)
+#     # B. Starts With
+#     elif target_norm.startswith(query_norm):
+#         score += weights.get('starts_with', 0)
+#     # C. Contains
+#     elif query_norm in target_norm:
+#         score += weights.get('contains', 0)
+        
+#     # D. Token Overlap
+#     overlap = calculate_token_overlap(query_tokens, target_tokens, stop_words)
+#     score += overlap * weights.get('token_overlap', 0)
+    
+#     return score
+
 def calculate_fuzzy_match_score(
     query_norm: str,
     target_norm: str,

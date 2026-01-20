@@ -1,30 +1,28 @@
+
 import logging
 from typing import List, Dict, Any, Optional
-from .base import BaseAgent
-from .state import AgentContext
-from google.genai import types
-from core.models import SearchCriterias
+from pydantic_ai import Agent, RunContext
+import json
+from .state import ODISGraphState, ODISDeps
+from .agent_config import get_model
+# Import the pure tools
 from .tools import compute_top_cities
+from core.models import SearchCriterias
 
-logger = logging.getLogger("scorer_agent")
+logger = logging.getLogger("scorer_agent_v2")
 
-SCORER_PROMPT = """
+# --- System Prompt ---
+SCORER_SYSTEM_PROMPT = """
 **Rôle** : Tu es le Scorer ODIS. Ton job est de calculer et expliquer le Top Villes.
 **CONTEXTE RÉSUMÉ** : {BRIEFING}
 **PROFILE** : {PROFILE}
-**CRITÈRES VALIDÉS** : 
-```json
-{CRITERIA_JSON}
-```
 
 **DIRECTIVE CRITIQUE** :
 Tu DOIS utiliser l'outil `compute_top_cities`.
-Passe l'objet JSON ci-dessus directement à l'argument `criteria`.
-
-INTERDIT d'inventer des valeurs ou de modifier le JSON. Si un champ est null, laisse-le null.
+Les critères de recherche sont injectés automatiquement dans le contexte, utilise-les tels quels.
 
 **Instructions** :
-1. Lance `compute_top_cities` avec les arguments stricts.
+1. Lance `compute_top_cities` (pas besoin de passer d'arguments, je les injecterai via le contexte).
 2. Une fois les résultats reçus, présente le **Top 5** des meilleures communes.
 3. Pour chaque ville du Top 5:
     - Donne son nom, sa population et son score global comme un pourcentage.
@@ -32,43 +30,47 @@ INTERDIT d'inventer des valeurs ou de modifier le JSON. Si un champ est null, la
 4. Termine TOUJOURS en suggérant à l'utilisateur de lancer une recherche approfondie sur l'une des communes.
 """
 
-class ScorerAgent(BaseAgent):
-    def run(self, message: str, context: AgentContext) -> str:
-        # 1. Validation des critères via Pydantic
-        try:
-            # On essaie de construire le modèle pour valider et nettoyer
-            criteria_model = SearchCriterias(**context.search_criteria)
-            # On utilise le dump json pour le prompt pour être propre
-            criteria_json = criteria_model.model_dump_json(indent=2)
-            profile = criteria_model.weight_profile or "Équilibré"
-        except Exception as e:
-            logger.error(f"Scorer validation error: {e}")
-            return f"Je ne peux pas encore lancer le calcul, il manque des informations dans vos critères ({e})."
+# --- Agent Definition ---
+scorer_agent = Agent(
+    get_model("scorer"),
+    deps_type=ODISDeps
+)
 
-        # 2. Construction du prompt
-        briefing_data, user_msg = self._get_briefing_and_user_msg(message)
-        prompt = SCORER_PROMPT.replace("{CRITERIA_JSON}", criteria_json)
-        prompt = prompt.replace("{PROFILE}", profile)
-        prompt = prompt.replace("{BRIEFING}", briefing_data)
+@scorer_agent.system_prompt
+async def scorer_instructions(ctx: RunContext[ODISDeps]) -> str:
+    # Validation / Pre-processing
+    try:
+        # criteria is already a SearchCriterias model in ODISGraphState
+        criteria_model = ctx.deps.state.search_criteria
+        profile = criteria_model.weight_profile or "Équilibré"
+    except Exception as e:
+        return f"ATTENTION: Les critères sont invalides ({e}). Demande à l'utilisateur de compléter."
+        
+    briefing = ctx.deps.state.briefing
+    
+    prompt = SCORER_SYSTEM_PROMPT.replace("{PROFILE}", profile)
+    prompt = prompt.replace("{BRIEFING}", briefing)
+    
+    return prompt
 
-        # Prepare Prompt-based Memory (Short)
-        history_summary = ""
-        if context.history:
-            # Limit history to 3 turns for Scorer focus
-            for turn in context.history[-3:]:
-                role = "Utilisateur" if turn.get("role") == "user" else "Assistant"
-                parts = turn.get("parts", [])
-                text_parts = [str(p.get("text")) for p in parts if isinstance(p, dict) and p.get("text")]
-                text = " ".join(text_parts) if text_parts else ""
-                history_summary += f"- {role}: {text}\n"
+# --- Tool Wrapper ---
 
-        if "{HISTORY_SUMMARY}" in prompt:
-             prompt = prompt.replace("{HISTORY_SUMMARY}", history_summary)
-        else:
-             prompt += f"\n\n**Historique Recent** :\n{history_summary}"
+@scorer_agent.tool
+def compute_top_cities_tool(ctx: RunContext[ODISDeps]) -> Dict[str, Any]:
+    """
+    Calcule le top des villes de réinstallation selon les critères du contexte.
 
-        try:
-            return self._execute_tool_loop(prompt, message, [compute_top_cities], context=context)
-        except Exception as e:
-            logger.error(f"Scorer error: {e}")
-            return "Une erreur est survenue lors du calcul."
+    Args:
+        ctx (RunContext[ODISDeps]): Contexte de l'agent.
+    
+    Returns:
+        Dict[str, Any]: Dictionnaire des villes correspondantes.
+    """
+    try:
+        # We use the criteria model directly from the state (deps)
+        criteria = ctx.deps.state.search_criteria
+        return compute_top_cities(criteria)
+    except Exception as e:
+        logger.error(f"❌ [TOOL] compute_top_cities failed: {e}")
+        return {"error": str(e)}
+

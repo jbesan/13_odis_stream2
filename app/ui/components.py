@@ -567,44 +567,35 @@ def render_mobility_form() -> None:
     """Renders the UI for the 'Mobilité' form section."""
     st.radio('Zone de recherche :', cfg.LOC_SEARCH_AREA_OPTIONS.keys(), format_func=cfg.LOC_SEARCH_AREA_OPTIONS.get, key="ui_loc_search_area")
 
-    if st.session_state['ui_loc_search_area'] == 'custom':
+    if st.session_state['ui_loc_search_area'] != 'france':
         st.markdown("---")
-        app_data = st.session_state['app_data']
+        allow_specific = st.checkbox("Rechercher dans une zone spécifique (si différente de ma zone actuelle)", key="ui_allow_specific_loc")
         
-        # Region Selector
-        regions_dict = app_data.get('regions_names', {})
-        region_codes = sorted(regions_dict.keys())
-        
-        if 'ui_custom_region' not in st.session_state and region_codes:
-            st.session_state['ui_custom_region'] = region_codes[0]
+        if allow_specific:
+            app_data = st.session_state['app_data']
             
-        selected_region_code = st.selectbox(
-            "Choisir une région", 
-            region_codes, 
-            format_func=lambda x: regions_dict.get(x, f"Code {x}"),
-            key="ui_custom_region"
-        )
-        
-        # Department Selector
-        dept_details = app_data.get('dept_details', {})
-        eligible_depts = {
-            code: details['label'] 
-            for code, details in dept_details.items() 
-            if str(details.get('reg_code')) == str(selected_region_code)
-        }
-        
-        dept_options = ["Toute la région"] + sorted(eligible_depts.keys())
-        
-        def format_dept(code):
-            if code == "Toute la région": return "Toute la région"
-            return f"{code} - {eligible_depts.get(code, code)}"
+            # Region Selector
+            regions_dict = app_data.get('regions_names', {})
+            region_codes = sorted(regions_dict.keys())
+            
+            # Department Selector
+            dept_details = app_data.get('dept_details', {})
 
-        st.selectbox(
-            "Choisir un département spécifique (optionnel)",
-            dept_options,
-            format_func=format_dept,
-            key="ui_custom_dept"
-        )
+            if st.session_state['ui_loc_search_area'] == 'region':
+                st.selectbox(
+                    "Choisir la région cible", 
+                    region_codes, 
+                    format_func=lambda x: regions_dict.get(x, f"Code {x}"),
+                    key="ui_custom_region"
+                )
+            else: # departement
+                # We show all departments for simplicity when selecting specifically
+                st.selectbox(
+                    "Choisir le département cible",
+                    sorted(dept_details.keys()),
+                    format_func=lambda x: f"{x} - {dept_details.get(x, {}).get('label', x)}",
+                    key="ui_custom_dept"
+                )
 
 def display_input_tabs(demo_data: Optional[Dict[str, Any]] = None) -> None:
     """Displays the main tabs for user input, composed of modular rendering functions."""
@@ -644,19 +635,13 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
     ].index[0]
 
     loc_search_area = st.session_state['ui_loc_search_area']
-    loc_custom_code = None
-    loc_custom_type = None
+    loc_search_code = None
 
-    if loc_search_area == 'custom':
-        custom_dept = st.session_state.get('ui_custom_dept')
-        if custom_dept == "Toute la région":
-            loc_search_area = 'region'
-            loc_custom_code = st.session_state.get('ui_custom_region')
-            loc_custom_type = 'region'
-        else:
-            loc_search_area = 'departement'
-            loc_custom_code = custom_dept
-            loc_custom_type = 'departement'
+    if st.session_state.get('ui_allow_specific_loc'):
+        if loc_search_area == 'region':
+            loc_search_code = st.session_state.get('ui_custom_region')
+        elif loc_search_area == 'departement':
+            loc_search_code = st.session_state.get('ui_custom_dept')
 
     # Education
     classe_enfants = [st.session_state[f"ui_classe_enfant_{i}"] for i in range(st.session_state['ui_nb_enfants'])]
@@ -746,8 +731,7 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
         poids_mobilité=st.session_state['ui_poids_mobilité'],
         commune_actuelle=commune_codgeo,
         loc_search_area=loc_search_area,
-        loc_custom_code=loc_custom_code,
-        loc_custom_type=loc_custom_type,
+        loc_search_code=loc_search_code,
         nb_adultes=st.session_state['ui_nb_adultes'],
         nb_enfants=st.session_state['ui_nb_enfants'],
         hebergement=st.session_state['ui_hebergement'],

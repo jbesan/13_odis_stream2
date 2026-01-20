@@ -1,13 +1,14 @@
 from dataclasses import dataclass
 from typing import List, Dict, Any, Union, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 class SearchCriterias(BaseModel):
     """
     Criteria for searching and scoring cities based on user needs.
     """
-    commune_actuelle: str = Field(..., description="INSEE code of the user's current city (e.g. '75056')")
-    loc_search_area: str = Field(..., description="scope for search area ('departement', 'region', 'france')")
+    commune_actuelle: str = Field("", description="INSEE code of the user's current city (e.g. '75056')")
+    loc_search_area: str = Field("", description="scope for search area ('departement', 'region', 'france')")
+    loc_search_code: Optional[str] = Field(None, description="Explicit code for targeted search area (Reg or Dep)")
     
     nb_adultes: int = Field(1, description="Number of adults in the household")
     nb_enfants: int = Field(0, description="Number of children in the household")
@@ -23,15 +24,14 @@ class SearchCriterias(BaseModel):
     logement: Optional[str] = Field(None, description="Housing type (e.g. 'Logement Social')")
     sante: Optional[str] = Field(None, description="Specific health need (e.g. 'Maternité')")
     
-    loc_custom_code: Optional[str] = Field(None, description="Explicit code for custom search area (Reg or Dep)")
-    loc_custom_type: Optional[str] = Field(None, description="Type of custom search area ('region' or 'departement')")
-
     # Qualitative notes (free text indices for Scout and Synthesis)
     notes_qualitatives: List[str] = Field(default_factory=list, description="List of qualitative notes (e.g. ['Famille libanaise', 'Passions: échecs'])")
 
     # Final scoring priority
     weight_profile: str = Field("", description="Weight profile for scoring (Famille, Santé, Économique, Équilibré)")
     criteria_weights: Dict[str, float] = Field(default_factory=dict, description="Custom weights for specific criteria")
+
+    model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 
 
 @dataclass
@@ -46,7 +46,7 @@ class ScoringConfig:
     poids_education: int
     poids_inclusion: int
     poids_mobilité: int
-    poids_sante: int # Added new weight for sante
+    poids_sante: int
     
     # Criteria Weights (F-15)
     criteria_weights: Dict[str, float]
@@ -71,10 +71,7 @@ class ScoringConfig:
     # Inclusion
     inc_services_core_selection: List[str]
     inc_asso_add_selection: List[str]
-
-    # Custom Geo
-    loc_custom_code: Optional[str] = None
-    loc_custom_type: Optional[str] = None # 'region' or 'departement'
     
-    # Profile Name (for logging)
+    # Optional / Defaulted
+    loc_search_code: Optional[str] = None
     weight_profile: str = ""
