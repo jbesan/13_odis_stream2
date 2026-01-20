@@ -10,6 +10,7 @@ import pandas as pd
 import geopandas as gpd
 
 # Suppress annoying third-party deprecation warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="google.genai")
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="google.genai.types")
 from shapely.geometry import Polygon
 import config as cfg
@@ -129,8 +130,11 @@ def default_config():
         poids_inclusion=25,
         poids_sante=100, # Added for tests
         poids_mobilité=100,
+        criteria_weights={}, # Added for F-15
+        weight_profile="Équilibré",
         commune_actuelle='33063', # Bordeaux
         loc_search_area='departement',
+        loc_search_code=None,
         nb_adultes=1,
         nb_enfants=0,
         hebergement='Location',
@@ -141,8 +145,7 @@ def default_config():
         besoin_sante='Aucun',
         inc_services_add_selection=[],
         inc_services_core_selection=[],
-        inc_asso_add_selection=[],
-        criteria_weights={} # Added for F-15
+        inc_asso_add_selection=[]
     )
 
 @pytest.fixture

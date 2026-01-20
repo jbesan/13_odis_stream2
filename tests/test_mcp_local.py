@@ -8,7 +8,7 @@ import logging
 # Add project root to path (parent of 'app')
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
-from services.mcp_server import _compute_top_cities_logic, _search_commune_logic, _search_referentiels_logic, set_data_context
+from services.mcp_server import _compute_top_cities_logic, _search_referentiels_logic, set_data_context
 from utils.data_loader import load_all_data_raw
 
 # Configure logging
@@ -25,14 +25,15 @@ def mcp_data_context():
 
 def test_search_commune(mcp_data_context):
     """Verify city search finds Nantes."""
-    print("Testing search_commune('Nantes')...")
-    results = _search_commune_logic("Nantes")
+    print("Testing search_referentiels('Nantes', domain='communes')...")
+    results = _search_referentiels_logic("Nantes", domain="communes")
     assert len(results) > 0, "Should find at least one city"
     
     # Check top match
     top = results[0]
-    assert top['codgeo'] == '44109', "Nantes codgeo should be 44109"
-    assert top['libgeo'] == 'Nantes'
+    assert top['code'] == '44109', "Nantes code should be 44109"
+    assert top['label'] == 'Nantes'
+    assert 'type' not in top, "Output should be trimmed"
 
 def test_search_referentiels_jobs(mcp_data_context):
     """Verify ROME search finds jobs."""
@@ -73,25 +74,17 @@ def test_compute_top_cities_execution_complex(mcp_data_context):
     }
     
     filters = {
-        'commune_actuelle': 'Marseille', # Should be resolved to 13055
+        'commune_actuelle': {'code': '13055', 'label': 'Marseille'}, 
         'loc_search_area': 'departement',
         'nb_adultes': 1,
         'nb_enfants': 2,
         'hebergement': 'Location',
         'logement': 'Logement Social',
-        'codes_metiers': [['M1805']], 
-        'classe_enfants': ['Maternelle', 'Collège'], # Adjusted from original 'Crèche/Assistante Maternelle' to match standardized keys if possible, or robust logic handles it.
-        # Note: 'Crèche / Assistante Maternelle' is the text used in prompt, scoring might map it.
-        # But let's stick to what original test had:
-        # 'classe_enfants': ['Crèche / Assistante Maternelle', 'Collège'],
-        # Wait, usually scoring expects keys like 'Maternelle', 'Elémentaire'.
-        # Let's trust the original test inputs?
-        # Actually, let's use standard keys to be safe:
-        # 'Maternelle' covers <6. 'Collège' covers 11-15.
-        
-        'inc_services_add_selection': ['lecture-ecriture-calcul--maitriser-le-francais'],
-        'besoin_sante': 'Maternité', # Key in config is 'besoin_sante'
-        'inc_asso_add_selection': ['Entraide / Bénévolat']
+        'codes_metiers': [[{'code': 'M1805', 'label': 'Informatique'}]], 
+        'classe_enfants': ['Maternelle', 'Collège'],
+        'inc_services_add_selection': [{'code': 'lecture-ecriture-calcul--maitriser-le-francais', 'label': 'Français'}],
+        'besoin_sante': 'Maternité',
+        'inc_asso_add_selection': [{'code': '123', 'label': 'Entraide / Bénévolat'}]
     }
     
     # Try with robust inputs

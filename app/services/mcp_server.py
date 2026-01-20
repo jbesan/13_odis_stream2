@@ -63,12 +63,12 @@ def get_scoring_engine() -> ScoringEngine:
         live_jobs_data=DATA_CONTEXT.get('live_jobs_data', pd.DataFrame())
     )
 
-def _search_referentiels_logic(query: str, domain: Optional[str] = None) -> List[Dict[str, Any]]:
-    """
-    Searches for codes in the ODIS referentials (Jobs, Formations, Inclusion).
-    """
+def _search_referentiels_logic(query: str, domain: str) -> List[Dict[str, Any]]:
+    """Recherche des codes officiels (Formations, ROME, Services d'inclusion, WALDEC, etc.) dans les référentiels."""
+
     ensure_data_context()
-    
+    # print(f"Search Referentiels for Query: {query}, Domain: {domain}")
+
     if 'referentiels_raw' not in DATA_CONTEXT:
         logger.warning("   ⚠️ Referentiels data not available.")
         return []
@@ -81,8 +81,7 @@ def _search_referentiels_logic(query: str, domain: Optional[str] = None) -> List
     if domain:
         df = df[df['key'] == domain]
     else:
-        # Exclude deprecated domains if no specific domain requested
-        df = df[df['key'] != 'fap_codes']
+        logger.error("   ⚠️ No domain specified.")
     
     # 2. Robust Search Logic
     STOP_WORDS = {
@@ -120,58 +119,49 @@ def _search_referentiels_logic(query: str, domain: Optional[str] = None) -> List
         
         return score
 
+    # 1. Calculate relevance score
     work_df['score'] = work_df.apply(calculate_relevance, axis=1)
     
-    # Sort by score descending
+    # 2. Sort by relevance score descending
     results_df = work_df[work_df['score'] > 0].sort_values(by='score', ascending=False)
     
     # 3. Format Output
-    results_df = results_df.head(10)
-    
+    results_df = results_df.head(5) # Returns the top 5
     results = []
     for _, row in results_df.iterrows():
         results.append({
             "code": row['code'],
-            "label": row['label'],
-            "type": row['key']
+            "label": row['label']
         })
         
-    # logger.info(f"✅ [MCP] Response: Found {len(results)} matches.")
     if results:
          top_summary = [f"{r['label']}" for r in results[:3]]
         #  logger.info(f"   Top matches: {top_summary}")
-         
-    return results
-
-def _get_labels_for_codes_logic(codes: List[str]) -> Dict[str, str]:
-    """
-    Returns a mapping of code -> label for a list of codes (any referential).
-    """
-    ensure_data_context()
-    if 'referentiels_raw' not in DATA_CONTEXT:
-        return {}
     
-    df = DATA_CONTEXT['referentiels_raw']
-    # Filter by code
-    subset = df[df['code'].isin(codes)]
-    return dict(zip(subset['code'].astype(str), subset['label'].astype(str)))
+    # print(f"✅ [MCP] Response: Found {len(results)} matches.")
+    # print(results)
+
+    return results
 
 
 @mcp.tool()
 def search_referentiels(query: str, domain: Optional[str] = None) -> Dict[str, Any]:
     """
-    Searches for official French administrative codes.
-
+    Recherche des codes officiels (Communes, Formations, ROME, Services d'inclusion, WALDEC, etc.) dans les référentiels.
+    
     Args:
-        query: The search term (e.g., 'Soudeur', 'Football').
-        domain: The target database. MUST be one of:
-                ['rome_codes', 'formation_codes', 'inclusion_services', 'waldec_codes', 'regions', 'departements'].
+        query (str): Mot clé de recherche.
+        domain (str): Domaine de recherche possibles:['formation_codes', 'inclusion_services', 'waldec_codes', 'rome_codes', 'regions', 'departements', 'communes'].
+    
+    Returns:
+        List[Dict[str, Any]]: Liste des codes + labels officiels correspondants.
     """
+
     try:
         if not query:
             return {"error": "Missing 'query' parameter."}
         
-        valid_domains = ['rome_codes', 'formation_codes', 'inclusion_services', 'waldec_codes', 'regions', 'departements']
+        valid_domains = ['rome_codes', 'formation_codes', 'inclusion_services', 'waldec_codes', 'regions', 'departements', 'communes']
         if domain and domain not in valid_domains:
             return {"error": f"Invalid domain: {domain}. Must be one of {valid_domains}"}
 
@@ -179,94 +169,6 @@ def search_referentiels(query: str, domain: Optional[str] = None) -> Dict[str, A
         return {"results": results}
     except Exception as e:
         logger.exception(f"❌ [MCP] search_referentiels failed: {e}")
-        return {"error": str(e)}
-
-
-
-
-def _search_commune_logic(query: str) -> List[Dict[str, str]]:
-    """
-    Searches for French cities using Referentiels first, then ODIS for details.
-    """
-    ensure_data_context()
-    # logger.info(f"👉 [MCP] Request: search_commune")
-    # logger.info(f"   Query: '{query}'")
-    
-    if 'referentiels_raw' not in DATA_CONTEXT or 'odis' not in DATA_CONTEXT:
-         logger.warning("   ⚠️ Data context missing (referentiels or odis).")
-         return []
-         
-    refs_df = DATA_CONTEXT['referentiels_raw']
-    odis_df = DATA_CONTEXT['odis']
-    
-    # 1. Filter for Communes
-    communes_ref = refs_df[refs_df['key'] == 'communes']
-    if communes_ref.empty:
-        logger.warning("   ⚠️ No communes found in referentiels.")
-        return []
-
-    # 2. Search Logic
-    q_norm = normalize_text(query)
-    STOP_WORDS_CITIES = {"le", "la", "les", "l", "d", "de", "du", "des", "en", "sur", "aux"}
-
-    work_df = communes_ref.copy()
-    work_df['label_norm'] = work_df['label'].apply(normalize_text)
-    
-    query_tokens = set(q_norm.split())
-    
-    weights = {'exact': 1000, 'starts_with': 200, 'contains': 100, 'token_overlap': 50}
-
-    def calculate_city_score(row):
-        return calculate_fuzzy_match_score(
-            q_norm,
-            row['label_norm'],
-            query_tokens,
-            set(row['label_norm'].split()),
-            STOP_WORDS_CITIES,
-            weights
-        )
-
-    work_df['score'] = work_df.apply(calculate_city_score, axis=1)
-    results_df = work_df[work_df['score'] > 0].sort_values(by='score', ascending=False).head(15)
-
-    if results_df.empty:
-        logger.warning("   [MCP] No cities found.")
-        return []
-
-    # 3. Lookup Details
-    found_codes = results_df['code'].unique()
-    details = odis_df.loc[odis_df.index.intersection(found_codes)]
-    
-    results = []
-    for _, ref_row in results_df.iterrows():
-        codgeo = ref_row['code']
-        if codgeo in details.index:
-            row = details.loc[codgeo]
-            results.append({
-                "codgeo": str(codgeo),
-                "libgeo": ref_row['label'],
-                "bassin_de_vie": str(row['bassin_de_vie']) if 'bassin_de_vie' in row else "N/A",
-                "population": int(row['population']) if 'population' in row else 0
-            })
-    
-    # logger.info(f"✅ [MCP] Response: Found {len(results)} cities. Top: {[r['libgeo'] for r in results[:3]]}")
-    return results
-
-
-@mcp.tool()
-def search_commune(query: str) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
-    """
-    Searches for a French city to get its INSEE code.
-
-    Args:
-        query: City name provided by the user (e.g. 'Bordeaux').
-    """
-    try:
-        if not query:
-            return {"error": "Missing 'query' parameter."}
-        return _search_commune_logic(query)
-    except Exception as e:
-        logger.exception(f"❌ [MCP] search_commune failed: {e}")
         return {"error": str(e)}
 
 
@@ -290,6 +192,18 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
     # filters is the dictionary representation of criteria_obj for internal engine mapping
     filters = criteria_obj.model_dump()
     
+    # Robustness: Extract codes if they are enriched objects (dict with 'code')
+    def get_code(v):
+        if isinstance(v, dict) and 'code' in v: return v['code']
+        if isinstance(v, list): return [get_code(i) for i in v]
+        return v
+    
+    # Normalize filters for the engine
+    for k in ['commune_actuelle', 'codes_metiers', 'codes_formations', 
+              'inc_services_add_selection', 'inc_asso_add_selection']:
+        if k in filters:
+            filters[k] = get_code(filters[k])
+
     engine = get_scoring_engine()
     
     # 1. Resolve Commune
@@ -302,20 +216,12 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
              matches = engine.df_all_communes[engine.df_all_communes['libgeo'].str.lower() == commune_input.lower()]
              if not matches.empty:
                  resolved_commune = matches.index[0]
-                #  logger.info(f"   Resolved city '{commune_input}' -> '{resolved_commune}'")
              else:
                  logger.warning(f"   ⚠️ City '{commune_input}' not found.")
 
-    # 2. Map Inputs (Robust handling of geography)
-    loc_search_area = filters.get('loc_search_area', filters.get('périmètre', 'departement'))
-    loc_custom_code = filters.get('loc_custom_code')
-    loc_custom_type = filters.get('loc_custom_type')
-
-    # Heuristic: If we have a custom code but type is missing, infer it from loc_search_area
-    if loc_custom_code and not loc_custom_type:
-        if loc_search_area in ['region', 'departement']:
-            loc_custom_type = loc_search_area
-            # logger.info(f"   [MCP] Inferred loc_custom_type='{loc_custom_type}' from loc_search_area")
+    # 2. Map Inputs (Geography)
+    loc_search_area = filters.get('loc_search_area', 'departement')
+    loc_search_code = filters.get('loc_search_code')
 
     socle_sel = filters.get('inc_services_core_selection', filters.get('codes_inclusion', []))
     if not socle_sel: socle_sel = cfg.DEFAULT_INC_SERVICES_CORE
@@ -353,8 +259,7 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
         weight_profile=profile_name,
         commune_actuelle=resolved_commune,
         loc_search_area=loc_search_area,
-        loc_custom_code=loc_custom_code,
-        loc_custom_type=loc_custom_type,
+        loc_search_code=loc_search_code,
         nb_adultes=nb_adultes,
         nb_enfants=int(filters.get('nb_enfants', 0)),
         hebergement=filters.get('hebergement', 'Location'),

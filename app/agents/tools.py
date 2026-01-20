@@ -1,13 +1,10 @@
 import logging
-import streamlit as st
 from typing import List, Dict, Any, Optional, Union
 from services.mcp_server import (
     _search_referentiels_logic, 
-    _search_commune_logic,
     _compute_top_cities_logic,
     _search_places_logic,
     _compute_routes_logic,
-    _get_labels_for_codes_logic,
     _search_refugee_associations_logic,
     _search_odis_associations_logic
 )
@@ -20,13 +17,10 @@ from core.models import SearchCriterias
 
 logger = logging.getLogger("agent_tools")
 
-def search_referentiels(query: str, domain: Optional[str] = None) -> List[Dict[str, Any]]:
+def search_referentiels(query: str, domain: str) -> List[Dict[str, Any]]:
     """Recherche des codes officiels (Formations, ROME, Services d'inclusion, WALDEC, etc.) dans les référentiels."""
     return _search_referentiels_logic(query, domain)
 
-def search_commune(query: str) -> List[Dict[str, Any]]:
-    """Recherche une ville française pour obtenir son code INSEE."""
-    return _search_commune_logic(query)
 
 def search_places(queries: List[str], location: str) -> Dict[str, Any]:
     """Recherche des lieux (POIs), commerces ou services dans une ville."""
@@ -41,15 +35,24 @@ def compute_top_cities(criteria: SearchCriterias) -> Dict[str, Any]:
     Calcule le top des villes de réinstallation selon les critères complets de l'utilisateur.
     """
     try:
-        # User requested this specific logging:
-        # logger.info(f"   Criteria: {criteria.model_dump_json(indent=2)}")
+        from core.models import CriteriaItem
         
-        res = _compute_top_cities_logic(criteria)
+        def _strip_labels(obj: Any) -> Any:
+            """Recursively extract 'code' from CriteriaItem or dict-equivalent."""
+            if isinstance(obj, CriteriaItem):
+                return obj.code
+            if isinstance(obj, dict) and "code" in obj:
+                return obj["code"]
+            if isinstance(obj, list):
+                return [_strip_labels(i) for i in obj]
+            return obj
+
+        # Create a raw version of criteria for the scoring engine
+        # We reuse the same model class but populate it with strings
+        raw_data = {k: _strip_labels(v) for k, v in criteria.model_dump().items()}
+        raw_criteria = SearchCriterias(**raw_data)
         
-        # Save results to context if possible
-        if "cities" in res and "agent" in st.session_state:
-            st.session_state.agent.context.top_cities = res["cities"]
-            
+        res = _compute_top_cities_logic(raw_criteria)
         return res
     except Exception as e:
         logger.error(f"❌ [TOOL] compute_top_cities failed: {e}", exc_info=True)
@@ -57,18 +60,14 @@ def compute_top_cities(criteria: SearchCriterias) -> Dict[str, Any]:
 
 def update_search_criteria(criteria_to_update: Dict[str, Any]) -> str:
     """Met à jour les critères de recherche (ex: {'nb_adultes': 2}). Appelle cet outil dès que tu as validé une info."""
-    return "SUCCESS: Critères mis à jour." # The actual logic is handled in the agent run loop
+    return "SUCCESS: Critères mis à jour." 
 
 def set_focus_city(city_name: str) -> str:
     """
     Définit la ville 'active' ou 'focus' pour la conversation de terrain.
     À utiliser dès que l'utilisateur s'intéresse à une ville spécifique (ex: 'Parle moi de Bordeaux').
     """
-    # logger.info(f"⚒️ [TOOL] set_focus_city: '{city_name}'")
-    if "agent" in st.session_state:
-        st.session_state.agent.context.focus_city = city_name
-    else:
-        logger.warning("⚠️ [TOOL] set_focus_city: st.session_state.agent not found!")
+    # Simply return the city name; the Agent/Graph will handle the state update.
     return f"SUCCÈS: Ville active définie sur {city_name}."
 
 def search_job_offers(
@@ -100,11 +99,6 @@ def search_job_offers(
             rome_code=rome_code,
             rome_codes=rome_codes
         )
-        
-        # Save results to context if possible
-        if "offres" in res and "agent" in st.session_state:
-            st.session_state.agent.context.found_jobs = res["offres"]
-            
         return res
     except Exception as e:
         logger.error(f"❌ [TOOL] search_job_offers failed: {e}", exc_info=True)
@@ -119,13 +113,6 @@ def get_job_details(job_id: str) -> Dict[str, Any]:
     """
     return _get_job_details_logic(job_id)
 
-def get_labels_for_codes(codes: List[str]) -> Dict[str, str]:
-    """
-    Récupère les libellés en français pour une liste de codes (ROME, INSEE, etc.).
-    Utile pour savoir à quoi correspond un code avant de l'utiliser.
-    """
-    return _get_labels_for_codes_logic(codes)
-
 
 def search_refugee_associations(codgeo: str) -> List[Dict[str, Any]]:
     """
@@ -135,14 +122,6 @@ def search_refugee_associations(codgeo: str) -> List[Dict[str, Any]]:
     Args:
         codgeo: Code INSEE de la commune (ex: '33063').
     """
-    import random
-    st.toast(random.choice([
-        "Consultation du registre des mains tendues...",
-        "Décollage pour le QG des associations solidaires...",
-        "Infiltration de la base secrète des bénévoles...",
-        "Scan des initiatives du cœur dans la zone...",
-        "Extraction de la liste des anges gardiens locaux..."
-    ]), icon="🤝")
     return _search_refugee_associations_logic(codgeo)
 
 def search_odis_associations(codgeo: str) -> List[Dict[str, Any]]:

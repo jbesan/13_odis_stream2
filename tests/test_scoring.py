@@ -19,8 +19,7 @@ class TestFilterCommunes:
             df=sample_data,
             start_commune=start_commune,
             loc_type='departement',
-            loc_code='33',
-            loc_search_area='departement'
+            loc_code='33'
         )
         
         assert len(filtered) == 1
@@ -35,8 +34,7 @@ class TestFilterCommunes:
             df=sample_data,
             start_commune=start_commune,
             loc_type='region',
-            loc_code='75',
-            loc_search_area='region'
+            loc_code='75'
         )
         
         # Should include Bordeaux (33) and Pau (64) which are both in Reg 75
@@ -64,8 +62,7 @@ class TestFilterCommunes:
             df=df_extended,
             start_commune=start_commune,
             loc_type='france',
-            loc_code=None,
-            loc_search_area='france'
+            loc_code=None
         )
         
         assert '33063' in filtered.index # Bordeaux (Metro)
@@ -298,6 +295,7 @@ class TestConditionalScoring:
             poids_mobilité=0,
             commune_actuelle='33063',
             loc_search_area='departement',
+            loc_search_code=None,
             nb_adultes=1,
             nb_enfants=0,        # Condition to ignore education
             hebergement='Location',
@@ -340,6 +338,7 @@ class TestConditionalScoring:
             poids_mobilité=0,
             commune_actuelle='33063',
             loc_search_area='departement',
+            loc_search_code=None,
             nb_adultes=1,
             nb_enfants=1,        # Condition to include education
             hebergement='Location',
@@ -653,20 +652,23 @@ class TestHousingScoresLogic:
 
         def run_scoring(hebergement, logement):
             config = ScoringConfig(
-                hebergement=hebergement,
-                logement=logement,
+                poids_emploi=0, poids_logement=100, poids_education=0, poids_inclusion=0, poids_sante=0, poids_mobilité=0,
+                criteria_weights={}, 
+                weight_profile="",
+                commune_actuelle='A',
+                loc_search_area='departement',
+                loc_search_code=None,
                 nb_adultes=1,
                 nb_enfants=0,
-                commune_actuelle='A',
+                hebergement=hebergement,
+                logement=logement,
                 codes_metiers=[[]],
                 codes_formations=[[]],
                 classe_enfants=[],
-                loc_search_area='departement',
-                inc_asso_add_selection=[],
+                besoin_sante="Aucun",
                 inc_services_add_selection=[],
                 inc_services_core_selection=[],
-                poids_emploi=0, poids_logement=100, poids_education=0, poids_inclusion=0, poids_sante=0, poids_mobilité=0,
-                criteria_weights={}, besoin_sante="Aucun"
+                inc_asso_add_selection=[]
             )
             df_copy = df.copy()
             return engine._compute_criteria_scores(df_copy, config)

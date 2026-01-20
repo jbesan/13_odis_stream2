@@ -356,34 +356,23 @@ class ScoringEngine:
 
     def run(self, config: ScoringConfig, log_prefix: Optional[str] = None) -> gpd.GeoDataFrame:
         """Orchestrates the full scoring pipeline."""
-        logger.info(f"⚙️ [ENGINE] Starting run with Profile: {config.weight_profile}")
+        logger.debug(f"⚙️ [ENGINE] Starting run with Profile: {config.weight_profile}")
         logger.debug(f"⚙️ [ENGINE] Config: {config}")
         
         start_commune = self.df_all_communes.loc[[config.commune_actuelle]]
-        loc_type = config.loc_search_area
+        loc_type = config.loc_search_area # 'departement', 'region', 'france'
+        loc_code = config.loc_search_code
         
-        # Filtering
-        if config.loc_custom_code:
-            loc_code = config.loc_custom_code
-            # If custom code is provided, the effective type is either loc_custom_type 
-            # or we infer it (default to departement)
-            if loc_type == 'custom':
-                loc_type = config.loc_custom_type or 'departement'
-        else:
+        if not loc_code and loc_type != 'france':
             # Fallback to current location's area
-            # If loc_type is 'custom' but no code is provided, we default to region
-            temp_type = 'region' if loc_type == 'custom' else loc_type
-            loc_col = 'dep_code' if temp_type == 'departement' else 'reg_code'
-            loc_code = start_commune.iloc[0][loc_col] if loc_type != 'france' else None
-            if loc_type == 'custom':
-                 loc_type = 'region' # Default behavior for undefined custom
+            loc_col = 'dep_code' if loc_type == 'departement' else 'reg_code'
+            loc_code = start_commune.iloc[0][loc_col]
 
         communes_to_score = filter_communes(
             df=self.df_all_communes,
             start_commune=start_commune,
             loc_type=loc_type,
-            loc_code=loc_code,
-            loc_search_area=config.loc_search_area
+            loc_code=loc_code
         )
         
         results = self._compute_scores(communes_to_score, config)
@@ -641,13 +630,7 @@ def add_distance_to_current_loc(df: gpd.GeoDataFrame, current_codgeo: Optional[s
          df.loc[:, 'dist_current_loc'] = centroids.distance(target_geom)
     return df
 
-def filter_communes(df: gpd.GeoDataFrame, start_commune: pd.DataFrame, loc_type: str, loc_code: Optional[str], loc_search_area: str) -> gpd.GeoDataFrame:
-    # Normalize loc_type in case 'custom' leaked through
-    if loc_type == 'custom':
-         # Attempt to guess from code length (Dept=2-3, Reg=2) - flawed but better than nothing
-         # Better to rely on the caller resolving it
-         loc_type = 'departement' if loc_code and len(str(loc_code)) >= 2 else 'region'
-
+def filter_communes(df: gpd.GeoDataFrame, start_commune: pd.DataFrame, loc_type: str, loc_code: Optional[str]) -> gpd.GeoDataFrame:
     if loc_type == 'departement': return df[df['dep_code'] == loc_code].copy()
     elif loc_type == 'region': return df[df['reg_code'] == loc_code].copy()
     elif loc_type == 'france': return df[~df['dep_code'].astype(str).str.startswith(('97', '98'))].copy()

@@ -163,10 +163,10 @@ def load_all_data_raw() -> Dict[str, Any]:
             'log_priv_vacant_plus_2ans', 'log_total', # For vacancy tests
         }
         
-        columns_to_load = [
+        columns_to_load = {
             c for c in all_cols 
             if c in essential_cols or c.endswith('_scaled')
-        ]
+        }
 
         # Load metrics from config (Robustness)
         try:
@@ -175,12 +175,12 @@ def load_all_data_raw() -> Dict[str, Any]:
                  sc_df = load_scores_config_as_df(scores_path)
                  raw_metrics = sc_df['metric'].dropna().unique().tolist()
                  for m in raw_metrics:
-                     if m in all_cols and m not in columns_to_load:
-                         columns_to_load.append(m)
+                     if m in all_cols:
+                         columns_to_load.add(m)
         except Exception as e:
             logger.warning(f"Could not load raw metrics from config: {e}")
 
-        odis = pd.read_parquet(odis_path, columns=columns_to_load)
+        odis = pd.read_parquet(odis_path, columns=list(columns_to_load))
         
         # Geometry processing
         if 'polygon' in odis.columns:
