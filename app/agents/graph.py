@@ -3,6 +3,7 @@ import logging
 import os
 from typing import Literal, Dict, Any
 from langgraph.graph import StateGraph, END
+from langchain_core.runnables import RunnableConfig
 from google import genai
 from dotenv import load_dotenv
 
@@ -11,9 +12,6 @@ from dotenv import load_dotenv
 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 env_path = os.path.join(base_dir, ".env")
 load_dotenv(env_path)
-
-if "GEMINI_API_KEY" in os.environ and "GOOGLE_API_KEY" not in os.environ:
-    os.environ["GOOGLE_API_KEY"] = os.environ["GEMINI_API_KEY"]
 
 # Agents & Logic
 from agents.state import ODISDeps, ODISGraphState, UsageStats
@@ -26,12 +24,10 @@ from agents.web import web_agent
 from agents.job_hunter import job_hunter_agent
 from agents.synthesizer import synthesizer_agent
 from agents.agent_config import get_model
+from pydantic_ai.messages import ToolReturnPart
 
 
 logger = logging.getLogger("odis_graph")
-
-
-from langchain_core.runnables import RunnableConfig
 
 # --- Helpers ---
 
@@ -138,8 +134,8 @@ async def refiner_node(state: ODISGraphState, config: RunnableConfig):
         result = await refiner_agent.run("Mise à jour du briefing", deps=deps, model=model)
         
         briefing = result.output.briefing.strip()
-        logger.info(f"📝 [REFINER] Briefing updated.")
-        logger.info(briefing)
+        logger.debug(f"📝 [REFINER] Briefing updated.")
+        logger.debug(briefing)
         
         return {
             "briefing": briefing,
@@ -178,10 +174,24 @@ async def scorer_node(state: ODISGraphState, config: RunnableConfig):
     mod_id = get_model("scorer")
     model = _get_p_model("scorer", client=deps.client)
     result = await scorer_agent.run("Start Scoring", deps=deps, model=model) 
+
+    top_cities = result.output.top_cities
+    logger.info(f"top_cities: {top_cities}")
+    
+    for msg in reversed(result.all_messages()):
+        if hasattr(msg, 'parts'):
+            for part in msg.parts:
+                # In pydantic-ai, tool results are specifically in ToolReturnPart
+                if isinstance(part, ToolReturnPart) and part.tool_name == 'compute_top_cities_tool':
+                    if isinstance(part.content, dict) and "cities" in part.content:
+                        logger.debug("✅ [GRAPH] Recovered full top_cities from tool output")
+                        top_cities = part.content["cities"]
+                        break
+
     # We update top_cities from structured output
     return {
         "messages": [{"role": "assistant", "content": result.output.response}],
-        "top_cities": result.output.top_cities,
+        "top_cities": top_cities,
         "experts_results": {"scorer": result.output.response}, # For synthesizer/refiner to see the text
         "next_node": END,
         "usage": capture_usage(result, "scorer", mod_id)
@@ -288,7 +298,7 @@ async def job_standalone_node(state: ODISGraphState, config: RunnableConfig):
     return {
         "messages": [{"role": "assistant", "content": str(result.output)}],
         "next_node": END,
-        "usage": capture_usage(result, "job_solo", mod_id)
+        "usage": capture_usage(result, "job_hunter_solo", mod_id)
     }
 
 # --- Graph Definition ---
@@ -306,7 +316,7 @@ def create_odis_graph():
     # Standalone
     builder.add_node("scout_solo", scout_standalone_node)
     builder.add_node("web_solo", web_standalone_node)
-    builder.add_node("job_solo", job_standalone_node)
+    builder.add_node("job_hunter_solo", job_standalone_node)
     
     # Expert Parallel Nodes
     builder.add_node("scout", scout_node)
@@ -330,7 +340,7 @@ def create_odis_graph():
         elif decision == "web":
             return "web_solo"
         elif decision == "job_hunter":
-            return "job_solo"
+            return "job_hunter_solo"
         else:
             return decision # interviewer, scorer
             
@@ -342,7 +352,7 @@ def create_odis_graph():
             "scorer": "scorer",
             "scout_solo": "scout_solo",
             "web_solo": "web_solo",
-            "job_solo": "job_solo",
+            "job_hunter_solo": "job_hunter_solo",
             "scout": "scout",
             "web": "web",
             "job_hunter": "job_hunter"
@@ -362,6 +372,6 @@ def create_odis_graph():
     builder.add_edge("scorer", END)
     builder.add_edge("scout_solo", END)
     builder.add_edge("web_solo", END)
-    builder.add_edge("job_solo", END)
+    builder.add_edge("job_hunter_solo", END)
     
     return builder.compile()

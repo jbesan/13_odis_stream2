@@ -9,7 +9,14 @@ class CriteriaItem(BaseModel):
     code: str = Field(..., description="Technical code (e.g. INSEE, ROME, WALDEC)")
     label: str = Field(..., description="Human-readable label (e.g. 'Bordeaux', 'Boulangerie')")
 
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, revalidate_instances='never')
+
+    @model_validator(mode='before')
+    @classmethod
+    def handle_redefinition(cls, data: Any) -> Any:
+        if data.__class__.__name__ == cls.__name__ and not isinstance(data, cls):
+            return data.model_dump() if hasattr(data, 'model_dump') else data.__dict__
+        return data
 
 class SearchCriterias(BaseModel):
     """
@@ -43,7 +50,14 @@ class SearchCriterias(BaseModel):
     weight_profile: str = Field("", description="Weight profile for scoring (Famille, Santé, Économique, Équilibré)")
     criteria_weights: Dict[str, float] = Field(default_factory=dict, description="Custom weights for specific criteria")
 
-    model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
+    model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True, revalidate_instances='never')
+
+    @model_validator(mode='before')
+    @classmethod
+    def handle_redefinition(cls, data: Any) -> Any:
+        if data.__class__.__name__ == cls.__name__ and not isinstance(data, cls):
+            return data.model_dump() if hasattr(data, 'model_dump') else data.__dict__
+        return data
 
     @model_validator(mode='before')
     @classmethod

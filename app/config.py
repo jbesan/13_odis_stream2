@@ -1,7 +1,11 @@
-# /home/jacques/odis/13_odis/eda/streamlit/config.py
+import warnings
+import os
 from dataclasses import dataclass
 from typing import List, Dict, Any, Union, Optional
-import os
+
+# Suppress annoying warnings from third-party libraries (especially in Python 3.14+)
+warnings.filterwarnings("ignore", module="langchain_core.*")
+
 
 
 # Get the directory of the current file (app/)

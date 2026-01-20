@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional, Annotated
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 from google import genai
 import operator
 from core.models import SearchCriterias
@@ -12,6 +12,15 @@ class UsageStats(BaseModel):
     total_tokens: int = 0
     cost_usd: float = 0.0
     breakdown: Dict[str, Dict[str, Any]] = Field(default_factory=dict) # {node_name: {model_id, in_tokens, out_tokens, cost, ...}}
+
+    model_config = ConfigDict(revalidate_instances='never')
+
+    @model_validator(mode='before')
+    @classmethod
+    def handle_redefinition(cls, data: Any) -> Any:
+        if data.__class__.__name__ == cls.__name__ and not isinstance(data, cls):
+            return data.model_dump() if hasattr(data, 'model_dump') else data.__dict__
+        return data
 
 def add_usage(left: UsageStats, right: Any) -> UsageStats:
     """Reducer to sum usage stats. Handles both UsageStats objects and dicts."""
@@ -59,6 +68,15 @@ class UserProfile(BaseModel):
     name: Optional[str] = None
     raw_request: str = ""
 
+    model_config = ConfigDict(revalidate_instances='never')
+
+    @model_validator(mode='before')
+    @classmethod
+    def handle_redefinition(cls, data: Any) -> Any:
+        if data.__class__.__name__ == cls.__name__ and not isinstance(data, cls):
+            return data.model_dump() if hasattr(data, 'model_dump') else data.__dict__
+        return data
+
 # LangGraph State Definition
 class ODISGraphState(BaseModel):
     """
@@ -92,6 +110,13 @@ class ODISGraphState(BaseModel):
         revalidate_instances='never', # Crucial for Streamlit class redefinition issues
         from_attributes=True
     )
+
+    @model_validator(mode='before')
+    @classmethod
+    def handle_redefinition(cls, data: Any) -> Any:
+        if data.__class__.__name__ == cls.__name__ and not isinstance(data, cls):
+            return data.model_dump() if hasattr(data, 'model_dump') else data.__dict__
+        return data
 
 @dataclass
 class ODISDeps:

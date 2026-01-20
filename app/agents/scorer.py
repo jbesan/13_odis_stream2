@@ -30,12 +30,12 @@ Les critères de recherche sont injectés automatiquement dans le contexte, util
 
 **Instructions** :
 1. Lance `compute_top_cities` (pas besoin de passer d'arguments).
-2. Une fois les résultats reçus, présente le **Top 5** des meilleures communes dans ton message de réponse.
+2. Une fois les résultats reçus, analyse le **Top 5** des meilleures communes dans ton message de réponse.
     a. Pour chaque ville du Top 5:
         - Donne son nom, sa population et son score global comme un pourcentage.
         - Cite 1 ou 2 points forts pertinents par rapport au profil (Famille, Emploi, etc.).
     b. Termine TOUJOURS en suggérant à l'utilisateur de lancer une recherche approfondie sur l'une des communes.
-3. **SORTIE STRUCTUREE** : Remplis l'objet `top_cities` avec la liste EXACTE retournée par l'outil (le champ `cities`). Ton message va dans `response`.
+3. **SORTIE STRUCTUREE** : Retourne l'objet `top_cities` avec le résultat exact de `compute_top_cities` et l'objet `response` avec ton analyse.
 
 """
 
