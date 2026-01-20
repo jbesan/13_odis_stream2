@@ -1,6 +1,6 @@
 
 import logging
-from typing import Literal
+from typing import Literal, Optional
 from pydantic import BaseModel, Field, ConfigDict
 from pydantic_ai import Agent, RunContext
 from .state import ODISGraphState, ODISDeps
@@ -12,7 +12,7 @@ ROUTING_SYSTEM_PROMPT = """
 **Rôle** : Tu es le Cerveau de l'Assistant ODIS. Ton job est de router le message de l'utilisateur vers le bon agent spécialisé.
 
 **Agents disponibles** :
-1. **INTERVIEWER** : Pour la collecte de besoins (phase initiale).
+1. **INTERVIEWER** : Pour la collecte de besoins (phase initiale puis si besoin pour l'ajout des information supplémentaires).
 2. **SCORER** : Pour calculer le Top 5 villes (quand l'utilisateur confirme ou demande le résultat).
 3. **DECORATION** : Cascade Scout + Web + Job Hunter. Utilise-la UNIQUEMENT quand l'utilisateur demande "plus d'infos" ou "des détails" sur une ville DÉJÀ identifiée ou affichée dans le Top 5.
 4. **SCOUT** : Pour une question spécifique de vie locale (ex: "Temps trajet prefecture").
@@ -24,7 +24,7 @@ ROUTING_SYSTEM_PROMPT = """
 - Si validation finale -> **SCORER**.
 - Si "plus d'infos" sur une ville -> **DECORATION**.
 - Si question précise sur un résultat -> **SCOUT** ou **JOB_HUNTER**.
-- Si modif de critère -> **INTERVIEWER**.
+- Si modif ou ajout de critère -> **INTERVIEWER**.
 
 **Contexte Actuel** :
 - Phase Actuelle : {PHASE}
@@ -34,20 +34,23 @@ ROUTING_SYSTEM_PROMPT = """
 **Dossier (Briefing)** :
 {BRIEFING}
 
-**DIRECTIVE DE SORTIE** : Réponds toujours de manière structurée selon le schéma RoutingResult fourni.
+** Extraction du Contexte (CRITIQUE) ** :
+- Si l'utilisateur mentionne une ville cible (ex: "Bordeaux", "Carcassonne") ou y fait référence ("Celle-ci", "La première"), identifie-la et remplis `focus_city`.
+- **Note** : Ne confonds pas avec `commune_actuelle` (où l'utilisateur vit actuellement). `focus_city` est la ville sur laquelle il veut des détails.
+
+**DIRECTIVE DE SORTIE** : Réponds toujours de manière hyper concise et structurée selon le schéma RoutingResult fourni.
 """
 
 class RoutingResult(BaseModel):
     target_agent: Literal['interviewer', 'scorer', 'decoration', 'scout', 'web', 'job_hunter']
-    reasoning: str
-
+    focus_city: Optional[str] = Field(None, description="The name of the city the user is currently interested in (if mentioned).")
+    reasoning: str = Field(..., description="Why this agent was selected in a few words.")
     model_config = ConfigDict(populate_by_name=True)
 
 router_agent = Agent(
     get_model("router"),
     deps_type=ODISDeps,
-    output_type=RoutingResult,
-    system_prompt=ROUTING_SYSTEM_PROMPT
+    output_type=RoutingResult
 )
 
 @router_agent.system_prompt
@@ -56,12 +59,23 @@ async def router_instructions(ctx: RunContext[ODISDeps]) -> str:
     phase = "DISCOVERY" # Default, or we track it in state
     
     cities_count = len(ctx.deps.state.top_cities)
-    # We dump ONLY set fields to show what we have
-    criteria_keys = list(ctx.deps.state.search_criteria.model_dump(exclude_unset=True).keys())
+    # Summary for the router
+    criteria = ctx.deps.state.search_criteria
+    city = criteria.commune_actuelle
+    if hasattr(city, 'label'): city = city.label
     
-    prompt = ROUTING_SYSTEM_PROMPT.replace("{PHASE}", "N/A") 
-    prompt = prompt.replace("{CITIES_COUNT}", str(cities_count))
-    prompt = prompt.replace("{CRITERIA_KEYS}", ", ".join(criteria_keys))
-    prompt = prompt.replace("{BRIEFING}", ctx.deps.state.briefing or "(Pas encore de briefing)")
+    metiers_count = sum(len(m) for m in criteria.codes_metiers)
     
-    return prompt
+    criteria_summary = (
+        f"- Commune: {city or 'Non renseignée'}\n"
+        f"- Métiers: {metiers_count}\n"
+        f"- Profil: {criteria.weight_profile or 'Non défini'}\n"
+        f"- Zone: {criteria.loc_search_area or 'Non définie'}"
+    )
+
+    return ROUTING_SYSTEM_PROMPT.format(
+        PHASE="N/A",
+        CITIES_COUNT=str(cities_count),
+        CRITERIA_KEYS=criteria_summary,
+        BRIEFING=ctx.deps.state.briefing or "(Pas encore de briefing)"
+    )

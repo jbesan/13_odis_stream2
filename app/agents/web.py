@@ -57,6 +57,7 @@ web_agent = Agent(
 
 @web_agent.system_prompt
 async def web_instructions(ctx: RunContext[ODISDeps]) -> str:
-    prompt = WEB_SYSTEM_PROMPT.replace("{BRIEFING}", ctx.deps.state.briefing or "")
-    prompt = prompt.replace("{FOCUS_CITY}", str(ctx.deps.state.focus_city or "Non définie"))
-    return prompt
+    return WEB_SYSTEM_PROMPT.format(
+        BRIEFING=ctx.deps.state.briefing or "",
+        FOCUS_CITY=str(ctx.deps.state.focus_city or "Non définie")
+    )

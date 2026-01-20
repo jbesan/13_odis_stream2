@@ -1,64 +1,74 @@
 import pytest
 from unittest.mock import MagicMock, patch
-from agents.refiner import ContextRefiner
-from agents.state import AgentContext
+from agents.graph import refiner_node
+from agents.state import ODISGraphState, ODISDeps, SearchCriterias
+from core.models import CriteriaItem
 
 @pytest.fixture
-def refiner():
-    client = MagicMock()
-    # Mock the LLM response
-    mock_response = MagicMock()
-    mock_response.text = "- Point 1\n- Point 2"
-    client.models.generate_content.return_value = mock_response
-    return ContextRefiner(model_id="gemini-2.5-flash-lite", client=client)
-
-def test_refiner_briefing_generation(refiner):
-    """Verify that the refiner generates a structured briefing."""
-    context = AgentContext()
-    context.search_criteria = {
-        'commune_actuelle': '33063',
-        'nb_adultes': 2,
-        'weight_profile': 'Famille',
-        'codes_metiers': [['D1102'], ['A1203']],
-        'codes_formations': [['F123']]
-    }
-    context.history = [
-        {"role": "user", "parts": [{"text": "Je cherche une ville pour ma famille."}]},
-        {"role": "model", "parts": [{"text": "D'accord, je vais vous aider."}]}
+def state():
+    s = ODISGraphState()
+    s.search_criteria = SearchCriterias(
+        commune_actuelle=CriteriaItem(code='33063', label='Bordeaux'),
+        codes_metiers=[[CriteriaItem(code='D1102', label='Boulangerie')]]
+    )
+    s.messages = [
+        {"role": "user", "content": "Je cherche une ville pour ma famille."},
+        {"role": "assistant", "content": "D'accord, je vais vous aider."}
     ]
-    context.focus_city = "Bordeaux"
-    context.top_cities = [{'name': 'Bordeaux', 'codgeo': '33063'}]
-    
-    with patch('agents.refiner._get_labels_for_codes_logic') as mock_labels:
-        mock_labels.return_value = {
-            '33063': 'Bordeaux',
-            'D1102': 'Boulangerie',
-            'A1203': 'Agriculture',
-            'F123': 'Formation 123'
-        }
-        briefing = refiner.get_briefing(context)
-    
-    # Check sections
-    assert "### 📋 RÉSUMÉ DU DOSSIER (BRIEFING)" in briefing
-    assert "PROJET DE VIE" in briefing
-    assert "MÉMOIRE DE L'ÉCHANGE" in briefing
-    
-    # Check heuristic content
-    assert "Localisation : Bordeaux (33063)" in briefing
-    assert "Composition : 2 adulte(s)" in briefing
-    assert "Priorité : Famille" in briefing
-    assert "Métiers (ROME) : Boulangerie (D1102), Agriculture (A1203)" in briefing
-    assert "Formations : Formation 123 (F123)" in briefing
-    
-    # Check LLM content (mocked)
-    assert "- Point 1" in briefing
-    
-    # Check Focus
-    assert "**CIBLE ACTUELLE** : Bordeaux (Code INSEE: 33063)" in briefing
+    return s
 
-def test_refiner_empty_context(refiner):
-    """Verify behavior with empty context."""
-    context = AgentContext()
-    briefing = refiner.get_briefing(context)
-    assert "Aucun critère enregistré" in briefing
-    assert "Aucun échange préalable" in briefing
+@pytest.fixture
+def config(state):
+    return {"configurable": {"deps": ODISDeps(state=state, client=MagicMock())}}
+
+@pytest.mark.asyncio
+async def test_refiner_node_updates_state(state, config):
+    """Verify that refiner_node calls the agent and returns state updates."""
+    from agents.refiner import RefinerResult
+    
+    mock_result = MagicMock()
+    mock_result.output = RefinerResult(briefing="Nouveau briefing.")
+    
+    with patch('agents.refiner.refiner_agent.run') as mock_run, \
+         patch('agents.graph._get_p_model') as mock_model:
+        mock_run.return_value = mock_result
+        mock_model.return_value = MagicMock()
+        
+        output = await refiner_node(state, config)
+        
+        assert output["briefing"] == "Nouveau briefing."
+        assert output["last_summarized_idx"] == 2
+        mock_run.assert_called_once()
+
+@pytest.mark.asyncio
+async def test_refiner_node_skips_if_nothing_new(state, config):
+    """Verify that refiner_node skips if no new developments."""
+    state.briefing = "Existing briefing"
+    state.last_summarized_idx = 2
+    
+    with patch('agents.refiner.refiner_agent.run') as mock_run:
+        output = await refiner_node(state, config)
+        
+        assert output == {} # Skipped
+        mock_run.assert_not_called()
+
+@pytest.mark.asyncio
+async def test_refiner_node_with_experts(state, config):
+    """Verify that expert results trigger an update even if no new messages."""
+    from agents.refiner import RefinerResult
+    state.briefing = "Existing briefing"
+    state.last_summarized_idx = 2
+    state.experts_results = {"scout": "Infos sur Bordeaux"}
+    
+    mock_result = MagicMock()
+    mock_result.output = RefinerResult(briefing="Briefing mis à jour.")
+    
+    with patch('agents.refiner.refiner_agent.run') as mock_run, \
+         patch('agents.graph._get_p_model') as mock_model:
+        mock_run.return_value = mock_result
+        mock_model.return_value = MagicMock()
+        
+        output = await refiner_node(state, config)
+        
+        assert output["briefing"] == "Briefing mis à jour."
+        mock_run.assert_called_once()

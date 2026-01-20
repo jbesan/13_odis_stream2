@@ -40,20 +40,34 @@ with st.sidebar:
     # API Usage Tracking
     if st.session_state.get("agent_state"):
         state = st.session_state.agent_state
-        st.subheader("📊 Consommation API")
+        st.subheader("📊 Consommation LLM")
         u = state.usage
         
-        st.metric("Jetons Totaux", f"{u.total_tokens:,}".replace(",", " "))
+        # Simple summary
+        m1, m2 = st.columns(2)
+        m1.metric("Tokens", f"{u.total_tokens:,}".replace(",", " "))
+        m2.metric("Coût", f"${u.cost_usd:.4f}")
         
-        c1, c2 = st.columns(2)
-        with c1:
-            st.caption(f"📥 In: {u.input_tokens:,}".replace(",", " "))
-        with c2:
-            st.caption(f"📤 Out: {u.output_tokens:,}".replace(",", " "))
-        
-        st.info(f"Coût estimé: **${u.cost_usd:.4f}**")
-        
-        with st.expander("Détails État", expanded=False):
+        # Detailed breakdown
+        breakdown = getattr(u, 'breakdown', {})
+        if breakdown:
+            with st.expander("💸 Détails par Modèle & Agent", expanded=False):
+                # Grouping by model for a better view
+                by_model = {}
+                for node, data in breakdown.items():
+                    mid = data['model']
+                    if mid not in by_model:
+                        by_model[mid] = {"cost": 0.0, "nodes": []}
+                    by_model[mid]["cost"] += data['cost']
+                    by_model[mid]["nodes"].append((node, data))
+
+                for mid, info in by_model.items():
+                    st.markdown(f"📦 **{mid}** : `${info['cost']:.4f}`")
+                    for node, data in info["nodes"]:
+                        st.caption(f"└ {node} : {data['total']} t ({data['input']} / {data['output']}) - ${data['cost']:.4f}")
+                    st.divider()
+
+        with st.expander("⚙️ État Interne", expanded=False):
             st.json(state.search_criteria)
 
     st.divider()
@@ -142,7 +156,7 @@ if prompt := st.chat_input("Bonjour, qui accompagnez-vous aujourd'hui ?"):
             final_output = run_async_in_thread(run_logic(state_to_send))
             
             # Mise à jour de l'état (Main Thread)
-            st.session_state.agent_state = ODISGraphState(**final_output)
+            st.session_state.agent_state = ODISGraphState.model_validate(final_output)
             
             # Récupération de la dernière réponse assistant
             response_text = None

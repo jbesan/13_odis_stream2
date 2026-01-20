@@ -11,10 +11,10 @@ from utils.common import normalize_text
 # Late import to avoid circular dependency
 def _resolve_insee(city_name: str) -> Optional[str]:
     try:
-        from services.mcp_server import _search_commune_logic
-        results = _search_commune_logic(city_name)
+        from services.mcp_server import _search_referentiels_logic
+        results = _search_referentiels_logic(city_name, domain="communes")
         if results:
-             return results[0].get('codgeo') # In ODIS results, codgeo is the INSEE
+             return results[0].get('code') # Standardized ODIS field
     except Exception as e:
         logger.error(f"Error in _resolve_insee: {e}")
     return None

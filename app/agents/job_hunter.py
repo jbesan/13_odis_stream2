@@ -9,8 +9,7 @@ from .agent_config import get_model
 from .tools import (
     search_job_offers, 
     get_job_details, 
-    search_referentiels,
-    search_commune
+    search_referentiels
 )
 
 logger = logging.getLogger("job_hunter_agent_v2")
@@ -24,7 +23,7 @@ JOB_HUNTER_SYSTEM_PROMPT = """
 **Objectif** : Trouver des offres d'emploi RÉELLES et PERTINENTES selon le `CONTEXTE RÉSUMÉ` dans `VILLE ACTIVE` pour TOUS les adultes du ménage.
 
 **DIRECTIVES CRITIQUES (NE PAS DEMANDER, AGIR)** :
-1. **Utilisation du Code INSEE (codgeo)** : Récupère le Code INSEE (codgeo) de la ville de `VILLE ACTIVE` avec l'outil `search_commune`.
+1. **Utilisation du Code INSEE (code)** : Récupère le Code INSEE (code) de la ville de `VILLE ACTIVE` avec l'outil `search_referentiels` (domain='communes').
 2. **RECHERCHE D'OFFRES (ROME ONLY)** : Lance `search_job_offers` pour CHAQUE code ROME identifié dans le `CONTEXTE RÉSUMÉ`.
    - Utilise le paramètre `rome`.
    - Si tu as un doute sur le code ROME, utilise `search_referentiels` avec le domaine `rome_codes` pour trouver la catégorie correspondante.
@@ -66,38 +65,26 @@ job_hunter_agent = Agent(
 
 @job_hunter_agent.system_prompt
 async def job_hunter_instructions(ctx: RunContext[ODISDeps]) -> str:
-    # Logic to switch prompt based on intent (Search vs Detail)
-    # We can inspect the last message from user in ctx.deps.state.messages or similar if we had it.
-    # But here we only have the 'message' argument passed to .run(). 
-    # Wait, system_prompt doesn't receive the user message directly?
-    # PydanticAI system prompt is static or dynamic based on deps.
-    # The user message is processed AFTER system prompt.
-    # To switch context based on user message content (id regex), we might need to do it 
-    # BEFORE calling run(), or use a Router Node in the Graph to decide intent "Job Search" vs "Job Detail".
-    # BUT, to keep it self-contained like before:
-    # Implementation detail: The 'run' method of the old agent checked regex.
-    # Here, we can't easily change the PROMPT based on the current user message content inside `system_prompt` 
-    # unless we pass the message into `deps` properly in the Graph before calling the agent.
-    #
-    # STRATEGY: The Orchestrator/Graph node for 'job_hunter' should detect the ID and update `briefing` or a `job_focus_id` in state.
-    # However, let's try to assume the Graph passes the message to the agent, and the agent decides what tools to use.
-    # The prompts are instructions. We can merge them!
-    
-    # Combined Prompt
     briefing = ctx.deps.state.briefing or ""
     city = str(ctx.deps.state.focus_city or "Non définie")
     
-    combined = f"""
+    # We combine the prompts and format them using the base variables
+    # Note: JOB_DETAILS_SYSTEM_PROMPT also has {JOB_ID} placeholder which is NOT in context yet,
+    # but that's fine as it's an instruction for the agent to look for it or we can leave it as {JOB_ID}.
+    # However, to avoid KeyError with .format(), we need to be careful.
+    # Let's use a double brace {{JOB_ID}} or just handle it.
+    
+    # Refined approach: use f-string for the wrapper and format the internal prompts properly.
+    return f"""
     **Rôle** : Tu es le Job Hunter ODIS.
     **CONTEXTE** : {briefing}
     **VILLE ACTIVE** : {city}
     
-    {JOB_HUNTER_SYSTEM_PROMPT}
+    {JOB_HUNTER_SYSTEM_PROMPT.format(BRIEFING=briefing, FOCUS_CITY=city)}
 
     **IMPORTANT** : Si tu dois répondre sur une offre précise, utilise ces directives :
-    {JOB_DETAILS_SYSTEM_PROMPT}
+    {JOB_DETAILS_SYSTEM_PROMPT.format(BRIEFING=briefing, FOCUS_CITY=city, JOB_ID='{JOB_ID}')}
     """
-    return combined
 
 # We wrap tools
 @job_hunter_agent.tool
@@ -149,14 +136,3 @@ def search_referentiels_tool(ctx: RunContext[ODISDeps], query: str, domain: str)
     """
     return search_referentiels(query, domain)
 
-@job_hunter_agent.tool
-def search_commune_tool(ctx: RunContext[ODISDeps], query: str) -> List[Dict[str, Any]]:
-    """Recherche une ville française pour obtenir son code INSEE.
-    
-    Args:
-        query (str): Nom de la commune à rechercher.
-    
-    Returns:
-        List[Dict[str, Any]]: Liste des codes INSEE correspondants.
-    """
-    return search_commune(query)

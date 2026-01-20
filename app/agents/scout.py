@@ -9,7 +9,7 @@ from .tools import (
     search_places, 
     compute_routes, 
     set_focus_city, 
-    search_commune, 
+    search_referentiels, 
     search_refugee_associations, 
     search_odis_associations
 )
@@ -25,15 +25,12 @@ SCOUT_SYSTEM_PROMPT = """
 **VILLE ACTIVE** : {FOCUS_CITY}
 
 **Instructions** :
-1. **Gestion du Focus (PRIORITÉ ABSOLUE)** :
-    - Si l'utilisateur mentionne une ville (ex: "Bordeaux", "Carcassonne"), appelle **IMMÉDIATEMENT** `set_focus_city` avec ce nom.
-    - Ceci est crucial pour que les autres experts (Job Hunter) puissent travailler sur la bonne ville.
-    - Si `VILLE ACTIVE` est vide et que la ville n'est pas claire, demande de préciser.
+1. **Gestion du Focus** : Utilise la `VILLE ACTIVE` fournie. Si elle est vide, demande à l'utilisateur de préciser sur quelle ville il souhaite des informations.
 
 2. **Recherche de Terrain** : Dans cet ordre de priorité
-    - **Utilisation du Code INSEE (codgeo)** : Récupère le Code INSEE de la ville de `VILLE ACTIVE` avec l'outil `search_commune`.
-    - **Utilise systématiquement** `search_refugee_associations(codgeo=...)` pour identifier les structures spécialisées. C'est CRUCIAL pour l'argumentaire inclusion.
-    - **Utilise systématiquement** `search_odis_associations(codgeo=...)` pour enrichir la vision de la vie locale pertinente (Clubs, Culture, Sport, Social).
+    - **Utilisation du Code INSEE (code)** : Récupère le Code INSEE de la ville de `VILLE ACTIVE` avec l'outil `search_referentiels` (domain='communes').
+    - **Utilise systématiquement** `search_refugee_associations(codgeo=code)` pour identifier les structures spécialisées. C'est CRUCIAL pour l'argumentaire inclusion.
+    - **Utilise systématiquement** `search_odis_associations(codgeo=code)` pour enrichir la vision de la vie locale pertinente (Clubs, Culture, Sport, Social).
     - Utilise `search_places` pour trouver des POIs (écoles, parcs, commerces, lieux de culte) **dans un rayon de 50km de `VILLE ACTIVE`**. Exemples de recherches:
         - des lieux publics en lien avec l'origine culturelle (ex: restaurant libanais, épicerie indienne, etc)
         - les commerces solidaires (ex: Emmaus, Recycleries)
@@ -52,9 +49,10 @@ scout_agent = Agent(
 
 @scout_agent.system_prompt
 async def scout_instructions(ctx: RunContext[ODISDeps]) -> str:
-    prompt = SCOUT_SYSTEM_PROMPT.replace("{BRIEFING}", ctx.deps.state.briefing or "")
-    prompt = prompt.replace("{FOCUS_CITY}", str(ctx.deps.state.focus_city or "Non définie"))
-    return prompt
+    return SCOUT_SYSTEM_PROMPT.format(
+        BRIEFING=ctx.deps.state.briefing or "",
+        FOCUS_CITY=str(ctx.deps.state.focus_city or "Non définie")
+    )
 
 # --- Tools ---
 
@@ -72,17 +70,6 @@ def set_focus_city_tool(ctx: RunContext[ODISDeps], city_name: str) -> str:
     ctx.deps.state.focus_city = city_name
     return set_focus_city(city_name)
 
-@scout_agent.tool
-def search_commune_tool(ctx: RunContext[ODISDeps], query: str) -> List[Dict[str, Any]]:
-    """Recherche une ville française pour obtenir son code INSEE.
-    
-    Args:
-        query (str): Nom de la commune à rechercher.
-    
-    Returns:
-        List[Dict[str, Any]]: Liste des codes INSEE correspondants.
-    """
-    return search_commune(query)
 
 @scout_agent.tool
 def search_places_tool(ctx: RunContext[ODISDeps], queries: List[str], location: str) -> Dict[str, Any]:
@@ -137,3 +124,12 @@ def search_odis_associations_tool(ctx: RunContext[ODISDeps], codgeo: str) -> Lis
         List[Dict[str, Any]]: Liste des associations ODIS correspondantes.
     """
     return search_odis_associations(codgeo)
+@scout_agent.tool
+def search_referentiels_tool(ctx: RunContext[ODISDeps], query: str, domain: str) -> List[Dict[str, Any]]:
+    """Recherche des codes ROME, Formations, Communes, etc.
+    
+    Args:
+        query (str): Recherche à effectuer.
+        domain (str): Domaine (ex: 'communes', 'rome_codes').
+    """
+    return search_referentiels(query, domain)

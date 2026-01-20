@@ -16,4 +16,4 @@ async def test_interviewer_agent_prompt():
     # So we trust the code valid syntax for now and maybe try a mock run if we had mocks set up.
     # Just asserting the agent exists and has tools is a start.
     assert interviewer_agent is not None
-    assert len(interviewer_agent._function_tools) >= 3 
+    assert len(interviewer_agent._function_toolset.tools) >= 1

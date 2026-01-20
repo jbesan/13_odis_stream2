@@ -2,11 +2,9 @@ import logging
 from typing import List, Dict, Any, Optional, Union
 from services.mcp_server import (
     _search_referentiels_logic, 
-    _search_commune_logic,
     _compute_top_cities_logic,
     _search_places_logic,
     _compute_routes_logic,
-    _get_labels_for_codes_logic,
     _search_refugee_associations_logic,
     _search_odis_associations_logic
 )
@@ -23,9 +21,6 @@ def search_referentiels(query: str, domain: str) -> List[Dict[str, Any]]:
     """Recherche des codes officiels (Formations, ROME, Services d'inclusion, WALDEC, etc.) dans les référentiels."""
     return _search_referentiels_logic(query, domain)
 
-def search_commune(query: str) -> List[Dict[str, Any]]:
-    """Recherche une ville française pour obtenir son code INSEE."""
-    return _search_commune_logic(query)
 
 def search_places(queries: List[str], location: str) -> Dict[str, Any]:
     """Recherche des lieux (POIs), commerces ou services dans une ville."""
@@ -40,7 +35,24 @@ def compute_top_cities(criteria: SearchCriterias) -> Dict[str, Any]:
     Calcule le top des villes de réinstallation selon les critères complets de l'utilisateur.
     """
     try:
-        res = _compute_top_cities_logic(criteria)
+        from core.models import CriteriaItem
+        
+        def _strip_labels(obj: Any) -> Any:
+            """Recursively extract 'code' from CriteriaItem or dict-equivalent."""
+            if isinstance(obj, CriteriaItem):
+                return obj.code
+            if isinstance(obj, dict) and "code" in obj:
+                return obj["code"]
+            if isinstance(obj, list):
+                return [_strip_labels(i) for i in obj]
+            return obj
+
+        # Create a raw version of criteria for the scoring engine
+        # We reuse the same model class but populate it with strings
+        raw_data = {k: _strip_labels(v) for k, v in criteria.model_dump().items()}
+        raw_criteria = SearchCriterias(**raw_data)
+        
+        res = _compute_top_cities_logic(raw_criteria)
         return res
     except Exception as e:
         logger.error(f"❌ [TOOL] compute_top_cities failed: {e}", exc_info=True)
@@ -100,13 +112,6 @@ def get_job_details(job_id: str) -> Dict[str, Any]:
         job_id: ID de l'offre d'emploi (ex: '048KLTP').
     """
     return _get_job_details_logic(job_id)
-
-def get_labels_for_codes(codes: List[str]) -> Dict[str, str]:
-    """
-    Récupère les libellés en français pour une liste de codes (ROME, INSEE, etc.).
-    Utile pour savoir à quoi correspond un code avant de l'utiliser.
-    """
-    return _get_labels_for_codes_logic(codes)
 
 
 def search_refugee_associations(codgeo: str) -> List[Dict[str, Any]]:

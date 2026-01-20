@@ -11,6 +11,7 @@ class UsageStats(BaseModel):
     output_tokens: int = 0
     total_tokens: int = 0
     cost_usd: float = 0.0
+    breakdown: Dict[str, Dict[str, Any]] = Field(default_factory=dict) # {node_name: {model_id, in_tokens, out_tokens, cost, ...}}
 
 def add_usage(left: UsageStats, right: Any) -> UsageStats:
     """Reducer to sum usage stats. Handles both UsageStats objects and dicts."""
@@ -21,11 +22,18 @@ def add_usage(left: UsageStats, right: Any) -> UsageStats:
     if isinstance(right, dict):
         right = UsageStats(**right)
         
+    # Merge breakdowns
+    new_breakdown = getattr(left, 'breakdown', {}).copy()
+    right_breakdown = getattr(right, 'breakdown', {})
+    if right_breakdown:
+        new_breakdown.update(right_breakdown)
+
     return UsageStats(
         input_tokens=left.input_tokens + (right.input_tokens or 0),
         output_tokens=left.output_tokens + (right.output_tokens or 0),
         total_tokens=left.total_tokens + (right.total_tokens or 0),
-        cost_usd=left.cost_usd + (right.cost_usd or 0.0)
+        cost_usd=left.cost_usd + (right.cost_usd or 0.0),
+        breakdown=new_breakdown
     )
 
 def merge_search_criteria(left: SearchCriterias, right: Any) -> SearchCriterias:
@@ -72,14 +80,20 @@ class ODISGraphState(BaseModel):
     
     # Logic / Meta
     briefing: str = "" # The "Brain" summary of what happened
+    last_summarized_idx: int = 0 # Pointer to the last message summarized
     next_node: Optional[str] = None # Routing decision
     
     
     # Token Tracking (Optional for graph, but good for reporting)
     usage: Annotated[UsageStats, add_usage] = Field(default_factory=UsageStats)
-    experts_results: Annotated[Dict[str, str], operator.ior] = Field(default_factory=dict)
+    experts_results: Annotated[Dict[str, Any], operator.ior] = Field(default_factory=dict)
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        populate_by_name=True,
+        revalidate_instances='never', # Crucial for Streamlit class redefinition issues
+        from_attributes=True
+    )
 
 @dataclass
 class ODISDeps:

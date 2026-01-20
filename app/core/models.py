@@ -1,12 +1,22 @@
 from dataclasses import dataclass
 from typing import List, Dict, Any, Union, Optional
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
+
+class CriteriaItem(BaseModel):
+    """
+    Representation of a criteria item with both code and label.
+    """
+    code: str = Field(..., description="Technical code (e.g. INSEE, ROME, WALDEC)")
+    label: str = Field(..., description="Human-readable label (e.g. 'Bordeaux', 'Boulangerie')")
+
+    model_config = ConfigDict(populate_by_name=True)
 
 class SearchCriterias(BaseModel):
     """
     Criteria for searching and scoring cities based on user needs.
+    This model forces the use of enriched items (CriteriaItem) for key fields.
     """
-    commune_actuelle: str = Field("", description="INSEE code of the user's current city (e.g. '75056')")
+    commune_actuelle: Optional[CriteriaItem] = Field(None, description="Enriched current city (code + label)")
     loc_search_area: str = Field("", description="scope for search area ('departement', 'region', 'france')")
     loc_search_code: Optional[str] = Field(None, description="Explicit code for targeted search area (Reg or Dep)")
     
@@ -14,11 +24,13 @@ class SearchCriterias(BaseModel):
     nb_enfants: int = Field(0, description="Number of children in the household")
     
     classe_enfants: List[str] = Field(default_factory=list, description="School levels needed (e.g. ['Maternelle', 'Collège'])")
-    codes_metiers: List[List[str]] = Field(default_factory=list, description="List of list of ROME codes for jobs (e.g. [['M1805']]")
-    codes_formations: List[List[str]] = Field(default_factory=list, description="List of list of training codes")
     
-    inc_services_add_selection: List[str] = Field(default_factory=list, description="List of additional inclusion need codes")
-    inc_asso_add_selection: List[str] = Field(default_factory=list, description="List of additional hobby/association codes (WALDEC)")
+    # Force CriteriaItem for enriched fields
+    codes_metiers: List[List[CriteriaItem]] = Field(default_factory=list, description="List of list of enriched ROME codes")
+    codes_formations: List[List[CriteriaItem]] = Field(default_factory=list, description="List of list of enriched training codes")
+    
+    inc_services_add_selection: List[CriteriaItem] = Field(default_factory=list, description="List of enriched inclusion need codes")
+    inc_asso_add_selection: List[CriteriaItem] = Field(default_factory=list, description="List of enriched hobby/association codes")
     
     hebergement: Optional[str] = Field(None, description="Preferred accommodation type (e.g. 'Location')")
     logement: Optional[str] = Field(None, description="Housing type (e.g. 'Logement Social')")
@@ -33,14 +45,48 @@ class SearchCriterias(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 
+    @model_validator(mode='before')
+    @classmethod
+    def fix_stringified_items(cls, data: Any) -> Any:
+        """
+        Fail-safe: detect and fix "CriteriaItem(code='...', label='...')" strings 
+        that might have been produced by the LLM or serialization glitches.
+        """
+        if not isinstance(data, dict):
+            return data
+            
+        import re
+        # Pattern to catch CriteriaItem(code='...', label='...')
+        pattern = r"CriteriaItem\(code=['\"]([^'\"]+)['\"],\s*label=['\"]([^'\"]+)['\"]\)"
+        
+        def _fix_value(v):
+            if isinstance(v, str):
+                match = re.search(pattern, v)
+                if match:
+                    return {"code": match.group(1), "label": match.group(2)}
+                # Optimization: if it's a raw string, wrap it to match CriteriaItem schema
+                return {"code": v, "label": v}
+            if isinstance(v, list):
+                return [_fix_value(i) for i in v]
+            return v
+            
+        fields_to_fix = [
+            'commune_actuelle', 'codes_metiers', 'codes_formations', 
+            'inc_services_add_selection', 'inc_asso_add_selection'
+        ]
+        
+        for f in fields_to_fix:
+            if f in data and data[f]:
+                data[f] = _fix_value(data[f])
+                
+        return data
 
 @dataclass
 class ScoringConfig:
     """
     A dataclass to hold all user preferences and scoring parameters.
-    This provides type safety and autocompletion in IDEs.
+    Used by the internal scoring engine.
     """
-    # Weights
     poids_emploi: int
     poids_logement: int
     poids_education: int
@@ -48,18 +94,11 @@ class ScoringConfig:
     poids_mobilité: int
     poids_sante: int
     
-    # Criteria Weights (F-15)
     criteria_weights: Dict[str, float]
-
-    # Location
     commune_actuelle: str
     loc_search_area: str
-    
-    # Household
     nb_adultes: int
     nb_enfants: int
-    
-    # Preferences
     hebergement: str
     logement: str
     codes_metiers: List[List[str]]
@@ -67,11 +106,8 @@ class ScoringConfig:
     classe_enfants: List[str]
     besoin_sante: str
     inc_services_add_selection: List[str]
-    
-    # Inclusion
     inc_services_core_selection: List[str]
     inc_asso_add_selection: List[str]
     
-    # Optional / Defaulted
     loc_search_code: Optional[str] = None
     weight_profile: str = ""

@@ -1,8 +1,8 @@
-
 import pytest
 import os
 import sys
 import logging
+from dotenv import load_dotenv
 
 # Ensure 'app' directory is in python path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'app'))
@@ -10,9 +10,10 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'app'))
 from agents.graph import create_odis_graph
 from agents.state import ODISGraphState, ODISDeps
 from google import genai
-from dotenv import load_dotenv
 
-load_dotenv()
+# Path to the .env file in the app directory
+env_path = os.path.join(os.path.dirname(__file__), '..', 'app', '.env')
+load_dotenv(dotenv_path=env_path)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -35,9 +36,9 @@ async def test_graph_execution_end_to_end():
     
     logger.info("▶️ Running Graph (ainvoke)...")
     
-    api_key = os.getenv("GOOGLE_API_KEY")
+    api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
     if not api_key:
-        pytest.skip("GOOGLE_API_KEY not set")
+        pytest.skip("Neither GOOGLE_API_KEY nor GEMINI_API_KEY set")
 
     client = genai.Client(api_key=api_key)
     deps = ODISDeps(state=state, client=client)

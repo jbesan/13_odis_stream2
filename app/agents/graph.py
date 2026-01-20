@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 # Agents & Logic
 from agents.state import ODISDeps, ODISGraphState, UsageStats
-from agents.refiner import ContextRefiner
+# from agents.refiner import ContextRefiner
 from agents.router import router_agent, RoutingResult
 from agents.interviewer import interviewer_agent
 from agents.scorer import scorer_agent
@@ -19,14 +19,7 @@ from agents.synthesizer import synthesizer_agent
 from agents.agent_config import get_model
 
 load_dotenv()
-
 logger = logging.getLogger("odis_graph")
-
-
-load_dotenv()
-
-logger = logging.getLogger("odis_graph")
-
 
 
 from langchain_core.runnables import RunnableConfig
@@ -40,24 +33,50 @@ def get_deps(config: RunnableConfig) -> ODISDeps:
         raise ValueError("ODISDeps missing in graph config['configurable']['deps']")
     return deps
 
-def capture_usage(result) -> UsageStats:
-    """Extracts usage from PydanticAI result and calculates cost (Gemini 2.5 Flash Lite and Gemini 3 Flash)."""
+def capture_usage(result, node_name: str, model_id: str) -> UsageStats:
+    """Extracts usage from PydanticAI result and calculates cost based on model type."""
     u = result.usage()
-    # Rates for Gemini 2.5 Flash Lite : $0.010/1M in, $0.40/1M out
-    # Rates for Gemini 3 Flash : $0.050/1M in, $3.00/1M out
-    cost = (u.input_tokens * 0.050 / 1_000_000) + (u.output_tokens * 3.00 / 1_000_000)
+    
+    # Pricing per 1M tokens
+    # Gemini 3 Flash: $0.05 / $3.00
+    # Gemini 2.5 Flash Lite: $0.01 / $0.40
+    
+    if "gemini-3" in model_id.lower():
+        rate_in = 0.05
+        rate_out = 3.00
+    else:  # Assume gemini-2.5-flash-lite or similar low-cost model
+        rate_in = 0.01
+        rate_out = 0.40
+        
+    cost = (u.input_tokens * rate_in / 1_000_000) + (u.output_tokens * rate_out / 1_000_000)
+    
+    breakdown = {
+        node_name: {
+            "model": model_id,
+            "input": u.input_tokens,
+            "output": u.output_tokens,
+            "total": u.total_tokens,
+            "cost": cost
+        }
+    }
+    
     return UsageStats(
         input_tokens=u.input_tokens,
         output_tokens=u.output_tokens,
         total_tokens=u.total_tokens,
-        cost_usd=cost
+        cost_usd=cost,
+        breakdown=breakdown
     )
 
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.providers.google import GoogleProvider
 
 def _get_p_model(agent_name: str, client: genai.Client) -> GoogleModel:
-    model_name = get_model(agent_name)
+    mod_id = get_model(agent_name)
+    if ":" in mod_id:
+        _, model_name = mod_id.split(":", 1)
+    else:
+        model_name = mod_id
     
     # Explicitly inject the fresh client for this thread/loop
     provider = GoogleProvider(client=client)
@@ -76,6 +95,7 @@ async def router_node(state: ODISGraphState, config: RunnableConfig):
     # Run Router Agent with bound model
     try:
         # Inject client!
+        mod_id = get_model("router")
         model = _get_p_model("router", client=deps.client)
         result = await router_agent.run(user_msg, deps=deps, model=model)
         decision = result.output
@@ -83,7 +103,8 @@ async def router_node(state: ODISGraphState, config: RunnableConfig):
         
         return {
             "next_node": decision.target_agent,
-            "usage": capture_usage(result)
+            "focus_city": decision.focus_city or state.focus_city,
+            "usage": capture_usage(result, "router", mod_id)
         }
     except Exception as e:
         logger.error(f"❌ [ROUTER] Failed: {e}", exc_info=True)
@@ -92,14 +113,32 @@ async def router_node(state: ODISGraphState, config: RunnableConfig):
 async def refiner_node(state: ODISGraphState, config: RunnableConfig):
     """Updates the briefing in the state."""
     deps = get_deps(config)
-    from agents.refiner import generate_briefing
+    deps.state = state
+    from agents.refiner import refiner_agent
     
     try:
-        briefing = await generate_briefing(state, deps)
-        logger.info(f"🧠 [REFINER] Briefing updated.")
-        return {"briefing": briefing}
+        # 1. Skip if no new info to summarize
+        new_msgs_count = len(state.messages) - state.last_summarized_idx
+        if new_msgs_count <= 0 and not state.experts_results and state.briefing:
+            logger.info("⏩ [REFINER] No new info, skipping synthesis.")
+            return {}
+
+        mod_id = get_model("refiner")
+        model = _get_p_model("refiner", client=deps.client)
+        
+        result = await refiner_agent.run("Mise à jour du briefing", deps=deps, model=model)
+        
+        briefing = result.output.briefing.strip()
+        logger.info(f"📝 [REFINER] Briefing updated.")
+        logger.info(briefing)
+        
+        return {
+            "briefing": briefing,
+            "last_summarized_idx": len(state.messages),
+            "usage": capture_usage(result, "refiner", mod_id)
+        }
     except Exception as e:
-        logger.error(f"❌ [REFINER] Failed: {e}", exc_info=True)
+        logger.error(f"❌ [REFINER] Node failed: {e}", exc_info=True)
         raise e
 
 async def interviewer_node(state: ODISGraphState, config: RunnableConfig):
@@ -108,15 +147,16 @@ async def interviewer_node(state: ODISGraphState, config: RunnableConfig):
     user_msg = state.messages[-1]["content"] if state.messages else ""
     
     try:
+        mod_id = get_model("interviewer")
         model = _get_p_model("interviewer", client=deps.client)
         result = await interviewer_agent.run(user_msg, deps=deps, model=model)
         
-        # We return the NEW messages and the updated search_criteria
+        # We return the NEW messages and the updated search_criteria from structured output
         return {
             "messages": [{"role": "assistant", "content": result.output.response}],
-            "search_criteria": deps.state.search_criteria, # Return the mutated Pydantic model
+            "search_criteria": result.output.search_criteria or deps.state.search_criteria,
             "next_node": END,
-            "usage": capture_usage(result)
+            "usage": capture_usage(result, "interviewer", mod_id)
         }
     except Exception as e:
         logger.error(f"❌ [INTERVIEWER] Failed: {e}", exc_info=True)
@@ -126,12 +166,13 @@ async def scorer_node(state: ODISGraphState, config: RunnableConfig):
     deps = get_deps(config)
     deps.state = state
     
+    mod_id = get_model("scorer")
     model = _get_p_model("scorer", client=deps.client)
     result = await scorer_agent.run("Start Scoring", deps=deps, model=model) 
     return {
         "messages": [{"role": "assistant", "content": str(result.output)}],
         "next_node": END,
-        "usage": capture_usage(result)
+        "usage": capture_usage(result, "scorer", mod_id)
     }
 
 # -- Decoration Cascade Nodes --
@@ -141,12 +182,13 @@ async def scout_node(state: ODISGraphState, config: RunnableConfig):
     deps.state = state
     user_msg = state.messages[-1]["content"] 
     
+    mod_id = get_model("scout")
     model = _get_p_model("scout", client=deps.client)
     result = await scout_agent.run(user_msg, deps=deps, model=model)
     
     return {
         "experts_results": {"scout": str(result.output)},
-        "usage": capture_usage(result)
+        "usage": capture_usage(result, "scout", mod_id)
     }
 
 async def web_node(state: ODISGraphState, config: RunnableConfig):
@@ -154,11 +196,12 @@ async def web_node(state: ODISGraphState, config: RunnableConfig):
     deps.state = state
     user_msg = state.messages[-1]["content"]
     
+    mod_id = get_model("web")
     model = _get_p_model("web", client=deps.client)
     result = await web_agent.run(user_msg, deps=deps, model=model)
     return {
         "experts_results": {"web": str(result.output)},
-        "usage": capture_usage(result)
+        "usage": capture_usage(result, "web", mod_id)
     }
 
 async def job_hunter_node(state: ODISGraphState, config: RunnableConfig):
@@ -166,11 +209,12 @@ async def job_hunter_node(state: ODISGraphState, config: RunnableConfig):
     deps.state = state
     user_msg = state.messages[-1]["content"]
     
+    mod_id = get_model("job_hunter")
     model = _get_p_model("job_hunter", client=deps.client)
     result = await job_hunter_agent.run(user_msg, deps=deps, model=model)
     return {
         "experts_results": {"job_hunter": str(result.output)},
-        "usage": capture_usage(result)
+        "usage": capture_usage(result, "job_hunter", mod_id)
     }
 
 async def synthesizer_node(state: ODISGraphState, config: RunnableConfig):
@@ -180,20 +224,15 @@ async def synthesizer_node(state: ODISGraphState, config: RunnableConfig):
     web_res = state.experts_results.get("web", "N/A")
     job_res = state.experts_results.get("job_hunter", "N/A")
     
-    input_msg = f"""
-    Synthèse demandée pour {state.focus_city}.
+    input_msg = f"Synthèse demandée pour {state.focus_city}."
     
-    [SCOUT]: {scout_res}
-    [WEB]: {web_res}
-    [JOB]: {job_res}
-    """
-    
+    mod_id = get_model("synthesizer")
     model = _get_p_model("synthesizer", client=deps.client)
     result = await synthesizer_agent.run(input_msg, deps=deps, model=model)
     return {
         "messages": [{"role": "assistant", "content": str(result.output)}],
         "next_node": END,
-        "usage": capture_usage(result)
+        "usage": capture_usage(result, "synthesizer", mod_id)
     }
 
 # -- Standalone Tool Nodes --
@@ -203,12 +242,13 @@ async def scout_standalone_node(state: ODISGraphState, config: RunnableConfig):
     deps.state = state
     user_msg = state.messages[-1]["content"]
     
+    mod_id = get_model("scout")
     model = _get_p_model("scout", client=deps.client)
     result = await scout_agent.run(user_msg, deps=deps, model=model)
     return {
         "messages": [{"role": "assistant", "content": str(result.output)}],
         "next_node": END,
-        "usage": capture_usage(result)
+        "usage": capture_usage(result, "scout_solo", mod_id)
     }
 
 async def web_standalone_node(state: ODISGraphState, config: RunnableConfig):
@@ -216,12 +256,13 @@ async def web_standalone_node(state: ODISGraphState, config: RunnableConfig):
     deps.state = state
     user_msg = state.messages[-1]["content"]
     
+    mod_id = get_model("web")
     model = _get_p_model("web", client=deps.client)
     result = await web_agent.run(user_msg, deps=deps, model=model)
     return {
         "messages": [{"role": "assistant", "content": str(result.output)}],
         "next_node": END,
-        "usage": capture_usage(result)
+        "usage": capture_usage(result, "web_solo", mod_id)
     }
 
 async def job_standalone_node(state: ODISGraphState, config: RunnableConfig):
@@ -229,12 +270,13 @@ async def job_standalone_node(state: ODISGraphState, config: RunnableConfig):
     deps.state = state
     user_msg = state.messages[-1]["content"]
     
+    mod_id = get_model("job_hunter")
     model = _get_p_model("job_hunter", client=deps.client)
     result = await job_hunter_agent.run(user_msg, deps=deps, model=model)
     return {
         "messages": [{"role": "assistant", "content": str(result.output)}],
         "next_node": END,
-        "usage": capture_usage(result)
+        "usage": capture_usage(result, "job_solo", mod_id)
     }
 
 # --- Graph Definition ---

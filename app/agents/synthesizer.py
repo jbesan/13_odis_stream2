@@ -50,30 +50,11 @@ async def synth_instructions(ctx: RunContext[ODISDeps]) -> str:
                 city_details = str(c.get("details", {}))
                 break
     
-    # Extract experts results from state
-    # Logic in graph.py injects them into message, but here we can also read from stats if needed.
-    # However, the user prompt in graph.py overrides this structure partially or appends to it?
-    # Actually, graph.py calls `synthesizer_agent.run(input_msg, ...)`
-    # The `input_msg` already contains the [SCOUT], [WEB] blocks constructed in `graph.py`.
-    # BUT, the Agent System Prompt is prepended/mixed.
-    # If the Input Msg has the content, do we need it in System Prompt?
-    # Redundancy is fine. Or we can cleaner:
-    # Let the Graph construct the prompt payload in User Message, and System Prompt only contains Role/Instructions.
-    # 
-    # Current SYNTH_SYSTEM_PROMPT has placeholders.
-    # If graph.py passes the text in `input_msg`, the agent treats it as User Message.
-    # We should populate the System Prompt with available info from State too.
-    
-    scout_res = ctx.deps.state.experts_results.get("scout", "Non disponible")
-    web_res = ctx.deps.state.experts_results.get("web", "Non disponible")
-    job_res = ctx.deps.state.experts_results.get("job_hunter", "Non disponible")
-    
-    prompt = SYNTH_SYSTEM_PROMPT.replace("{BRIEFING}", ctx.deps.state.briefing or "")
-    prompt = prompt.replace("{FOCUS_CITY}", str(ctx.deps.state.focus_city or "Non définie"))
-    prompt = prompt.replace("{CITY_DETAILS}", city_details)
-    
-    prompt = prompt.replace("{SCOUT_RES}", scout_res)
-    prompt = prompt.replace("{WEB_RES}", web_res)
-    prompt = prompt.replace("{JOB_RES}", job_res)
-    
-    return prompt
+    return SYNTH_SYSTEM_PROMPT.format(
+        BRIEFING=ctx.deps.state.briefing or "",
+        FOCUS_CITY=str(ctx.deps.state.focus_city or "Non définie"),
+        CITY_DETAILS=city_details,
+        SCOUT_RES=ctx.deps.state.experts_results.get("scout", "Non disponible"),
+        WEB_RES=ctx.deps.state.experts_results.get("web", "Non disponible"),
+        JOB_RES=ctx.deps.state.experts_results.get("job_hunter", "Non disponible")
+    )
