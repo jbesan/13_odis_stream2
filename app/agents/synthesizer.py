@@ -65,6 +65,6 @@ async def synth_instructions(ctx: RunContext[ODISDeps]) -> str:
         JOB_RES=ctx.deps.state.experts_results.get("job_hunter", "Non disponible")
     )
 
-    print(prompt)
+    logger.debug(f"SYNTH PROMPT: {prompt}")
 
     return prompt

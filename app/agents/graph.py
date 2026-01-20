@@ -176,7 +176,7 @@ async def scorer_node(state: ODISGraphState, config: RunnableConfig):
     result = await scorer_agent.run("Start Scoring", deps=deps, model=model) 
 
     top_cities = result.output.top_cities
-    logger.info(f"top_cities: {top_cities}")
+    logger.debug(f"top_cities: {top_cities}")
     
     for msg in reversed(result.all_messages()):
         if hasattr(msg, 'parts'):
