@@ -41,6 +41,7 @@ class SearchCriterias(BaseModel):
     
     hebergement: Optional[str] = Field(None, description="Preferred accommodation type (e.g. 'Location')")
     logement: Optional[str] = Field(None, description="Housing type (e.g. 'Logement Social')")
+    type_logement: Optional[CriteriaItem] = Field(None, description="Enriched housing type (e.g., 'Appartement', 'Maison')")
     sante: Optional[str] = Field(None, description="Specific health need (e.g. 'Maternité')")
     
     # Qualitative notes (free text indices for Scout and Synthesis)
@@ -86,7 +87,7 @@ class SearchCriterias(BaseModel):
             
         fields_to_fix = [
             'commune_actuelle', 'codes_metiers', 'codes_formations', 
-            'inc_services_add_selection', 'inc_asso_add_selection'
+            'inc_services_add_selection', 'inc_asso_add_selection', 'type_logement'
         ]
         
         for f in fields_to_fix:
@@ -122,6 +123,7 @@ class ScoringConfig:
     inc_services_add_selection: List[str]
     inc_services_core_selection: List[str]
     inc_asso_add_selection: List[str]
+    type_logement: str = "appartement_toutes"
     
     loc_search_code: Optional[str] = None
     weight_profile: str = ""

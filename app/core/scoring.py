@@ -102,7 +102,12 @@ class ScoringEngine:
             "education": {"counts": {}, "etablissements": {}},
             "sante": {"counts": {}, "etablissements": {}},
             "inclusion": {"services_grouped": {}},
-            "associations": {}
+            "associations": {},
+            "logement": {
+                "selected_type": config.type_logement if config else 'appt_all',
+                "raw_euro_m2": None,
+                "odace_all_variants": {}
+            }
         }
 
 
@@ -138,6 +143,24 @@ class ScoringEngine:
                 "score_normalise": val_scaled,
                 "unit": score_row.get('description', '')
             })
+
+        # 2. Housing Details (ODACE Specifics)
+        housing_types = ['appt_all', 'appt_t1_t2', 'appt_t3_p', 'house_all']
+        for ht in housing_types:
+            raw_col = f"loyer_m2_moy_{ht}"
+            scaled_col = f"log_loyer_moyen_{ht}_scaled"
+            
+            variant_data = {
+                "raw": float(row[raw_col]) if raw_col in row and pd.notna(row[raw_col]) else None,
+                "scaled": float(row[scaled_col]) if scaled_col in row and pd.notna(row[scaled_col]) else None
+            }
+            details['logement']['odace_all_variants'][ht] = variant_data
+            
+            # Set top-level raw value if it's the selected type
+            if config and config.type_logement == ht:
+                details['logement']['raw_euro_m2'] = variant_data['raw']
+            elif not config and ht == 'appt_all':
+                details['logement']['raw_euro_m2'] = variant_data['raw']
 
         # 3. Emploi (Top 10 from Live Jobs & Formations)
         if codgeo:
@@ -633,8 +656,29 @@ class ScoringEngine:
 
     def _prune_irrelevant_scores(self, df: pd.DataFrame, config: ScoringConfig):
         """Removes scores not relevant to the current user selection."""
+        rent_cols = [
+            'log_loyer_moyen_appt_all_scaled',
+            'log_loyer_moyen_appt_t1_t2_scaled',
+            'log_loyer_moyen_appt_t3_p_scaled',
+            'log_loyer_moyen_house_all_scaled'
+        ]
+        
+        # If not Location, drop all rent-related scores
         if config.hebergement != 'Location' and config.logement != 'Location':
-            df.drop(columns=[c for c in ['log_vac_scaled', 'loyer_abordable_scaled'] if c in df.columns], inplace=True)
+            cols_to_drop = ['log_vac_scaled', 'loyer_abordable_scaled'] + rent_cols
+            df.drop(columns=[c for c in cols_to_drop if c in df.columns], inplace=True)
+        else:
+            # If Location, keep ONLY the selected housing type
+            # config.type_logement is expected to be one of the keys: appt_all, appt_t1_t2...
+            selected_col = f"log_loyer_moyen_{config.type_logement}_scaled"
+            to_drop = [c for c in rent_cols if c != selected_col and c in df.columns]
+            if to_drop:
+                df.drop(columns=to_drop, inplace=True)
+            
+            # Also drop legacy column if still present
+            if 'loyer_abordable_scaled' in df.columns:
+                df.drop(columns=['loyer_abordable_scaled'], inplace=True)
+
         if config.logement != 'Logement Social':
              if 'log_soc_inoc_scaled' in df.columns: df.drop(columns=['log_soc_inoc_scaled'], inplace=True)
         if config.hebergement != "Chez l'habitant":

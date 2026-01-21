@@ -22,8 +22,15 @@ class InterviewerResult(BaseModel):
 # --- Prompt ---
 # We keep the core prompt but adapt it for PydanticAI (system_prompt)
 INTERVIEWER_SYSTEM_PROMPT = """
-**Rôle** : Tu es l'Interviewer ODIS. Ta mission est de collecter les besoins d'un réfugié (et éventuellement sa famille) pour sa mobilité en France.
-**Ton** : Empathique, professionnel, direct (tutoiement).
+**Rôle** : Tu es l'Interviewer ODIS. Ta mission est de collecter les besoins d'un réfugié (et éventuellement sa famille) pour sa mobilité en France. Tu n'interragis pas directement avec le bénéficiaire mais avec un Travailleur Social qui te transmet les informations.
+**Ton** : Empathique, professionnel, direct (tutoiement). 
+
+** Directives d'entretien ** :
+- Ne pose JAMAIS toutes les questions d'un coup, mais thème par thème.
+- Vérifie TOUJOURS les données déjà collectées ci-dessous avant de poser une question et ne redemande JAMAIS la même information.
+
+** Données déjà collectées (À NE PAS REDEMANDER) ** :
+{SEARCH_CRITERIAS}
 
 **Directives de Collecte (Ordre Prioritaire)** :
 1. **Commune Actuelle** [OBLIGATOIRE] : Utilise `search_referentiels` (domain='communes').
@@ -33,13 +40,13 @@ INTERVIEWER_SYSTEM_PROMPT = """
 5. **Logement** : {HEBERGEMENT_OPTIONS} et {LOGEMENT_OPTIONS}.
 6. **Éducation** : {CLASSES_SCOLAIRES}.
 7. **Besoins Spécifiques** : {SANTE_OPTIONS}, Passions, Religion, etc.
-8. **Support à l'inclusion** : Utilise `search_referentiels` (domain='inclusion_services' ou 'waldec_codes').
+8. **Support à l'inclusion** : Utilise `search_referentiels` (domain='inclusion_services' ou 'waldec_codes'). Si pas déjà mentionné demande toujours s'ils on besoin de renforcer leur Français (FLE).
 9. **Profil de pondération** [OBLIGATOIRE] : Fais une proposition parmis {WEIGHT_PROFILES} selon les informations collectées et demande confirmation en expliquant ton choix.
 
 **Directives Techniques** :
-- **ENRICHISSEMENT** : Remplis toujours les champs de `search_criteria` avec des objets JSON `{{"code": "...", "label": "..."}}` complets (pas de texte comme "CriteriaItem(...)").
+- **ENRICHISSEMENT** : Remplis TOUJOURS les champs de `search_criteria` avec des objets JSON `{{"code": "...", "label": "..."}}` complets (pas de texte comme "CriteriaItem(...)").
 - Ne t'arrête pas tant que tu n'as pas toutes les informations [OBLIGATOIRES] et pose des questions pour obtenir les autres éléments facultatifs.
-- **TRANSITION** : Une fois les données [OBLIGATOIRES] acquises, demande confirmation : "J'ai suffisamment de critères, on lance la recherche ou voulez-vous ajouter d'autres besoins ?"
+- **TRANSITION** : Une fois l'entretien fini et les données [OBLIGATOIRES] acquises, synthétise tes trouvailles et demande confirmation : "J'ai suffisamment de critères, on lance la recherche ou voulez-vous ajouter d'autres besoins ?"
 - **SORTIE** : Remplis `InterviewerResult`. Tes messages texte vont dans `response`.
 """
 
@@ -56,9 +63,9 @@ async def main_instructions(ctx: RunContext[ODISDeps]) -> str:
     """Injects dynamic values directly into the prompt using Python's string formatting."""
     filtered_areas_values = [v for k, v in cfg.LOC_SEARCH_AREA_OPTIONS.items() if k != 'custom']
     
-    # We use a mapping for the format call
-    # This avoids multiple .replace() calls and is more PydanticAI-idiomatic if we were using template strings,
-    # but here we just return the formatted string.
+    # Serialize search criteria for the prompt
+    search_criteria_json = ctx.deps.state.search_criteria.model_dump_json(indent=2, exclude_none=True)
+
     return INTERVIEWER_SYSTEM_PROMPT.format(
         BRIEFING=ctx.deps.state.briefing or "(Pas de briefing)",
         CLASSES_SCOLAIRES=str(cfg.CLASSES_SCOLAIRES),
@@ -67,8 +74,7 @@ async def main_instructions(ctx: RunContext[ODISDeps]) -> str:
         SANTE_OPTIONS=str(cfg.SANTE_OPTIONS),
         WEIGHT_PROFILES=str(list(cfg.WEIGHT_PROFILES.keys())),
         LOC_SEARCH_AREAS=", ".join(filtered_areas_values),
-        WEIGHT_PROFILE=ctx.deps.state.search_criteria.weight_profile or 'Non défini',
-        LOC_SEARCH_AREA=ctx.deps.state.search_criteria.loc_search_area or 'Non définie'
+        SEARCH_CRITERIAS=search_criteria_json
     )
 
 # --- Tools ---
@@ -84,7 +90,7 @@ def search_referentiels_tool(ctx: RunContext[ODISDeps], query: str, domain: str)
     
     Args:
         query (str): Mot clé de recherche.
-        domain (str): Domaine de recherche possibles:['formation_codes', 'inclusion_services', 'waldec_codes', 'rome_codes', 'regions', 'departements', 'communes'].
+        domain (str): Domaine de recherche possibles:['formation_codes', 'inclusion_services', 'waldec_codes', 'rome_codes', 'regions', 'departements', 'communes', 'housing_types'].
     
     Returns:
         List[Dict[str, Any]]: Liste des codes + labels officiels correspondants.

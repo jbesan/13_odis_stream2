@@ -52,6 +52,15 @@ def sample_data():
         # New inclusion metrics
         'lien_social_count': [10, 5, 8, 6, 4],
         'lien_social_density': [5.0, 2.5, 4.0, 3.0, 2.0],
+        # New housing rent metrics
+        'loyer_m2_moy_appartement_toutes': [15.0, 20.0, 18.0, 16.0, 12.0],
+        'loyer_m2_moy_appartement_t1_t2': [16.0, 21.0, 19.0, 17.0, 13.0],
+        'loyer_m2_moy_appartement_t3_plus': [14.0, 19.0, 17.0, 15.0, 11.0],
+        'loyer_m2_moy_maison_toutes': [12.0, 15.0, 14.0, 13.0, 10.0],
+        'log_loyer_moyen_scaled_appartement_toutes': [0.5, 0.2, 0.3, 0.4, 0.8],
+        'log_loyer_moyen_scaled_appartement_t1_t2': [0.5, 0.2, 0.3, 0.4, 0.8],
+        'log_loyer_moyen_scaled_appartement_t3_plus': [0.5, 0.2, 0.3, 0.4, 0.8],
+        'log_loyer_moyen_scaled_maison_toutes': [0.5, 0.2, 0.3, 0.4, 0.8],
     }
     gdf = gpd.GeoDataFrame(data, crs="EPSG:4326")
     
@@ -78,7 +87,11 @@ def sample_scores_cat():
             'form_match_adult2_scaled', 'form_match_adult2_bdv_scaled',
             'mob_dist_scaled', 'mob_epci_scaled',
             'edu_structures_scaled', 'sante_structures_scaled',
-            'besoins_match_scaled'
+            'besoins_match_scaled',
+            'log_loyer_moyen_scaled_appartement_toutes',
+            'log_loyer_moyen_scaled_appartement_t1_t2',
+            'log_loyer_moyen_scaled_appartement_t3_plus',
+            'log_loyer_moyen_scaled_maison_toutes'
         ],
         'cat': [
             'emploi', 'emploi', 'emploi',
@@ -90,7 +103,8 @@ def sample_scores_cat():
             'emploi', 'emploi',
             'mobilité', 'mobilité',
             'education', 'santé',
-            'inclusion'
+            'inclusion',
+            'logement', 'logement', 'logement', 'logement'
         ],
         'metric': [
             'met_match_adult1', 'met_match_adult1_bdv', 'met_match_adult1_tension',
@@ -102,12 +116,16 @@ def sample_scores_cat():
             'form_match_adult2', 'form_match_adult2_bdv',
             'dist_current_loc', 'epci_code',
             'edu_structures_count', 'sante_structures_scaled',
-            'besoins_match'
+            'besoins_match',
+            'loyer_m2_moy_appartement_toutes',
+            'loyer_m2_moy_appartement_t1_t2',
+            'loyer_m2_moy_appartement_t3_plus',
+            'loyer_m2_moy_maison_toutes'
         ],
-        'incl_binome': [True] * 24, # Simplify for tests
-        'weight': [1.0] * 24,
-        'min_bound': [0.0] * 24,
-        'max_bound': [1.0] * 24
+        'incl_binome': [True] * 28, # Simplify for tests
+        'weight': [1.0] * 28,
+        'min_bound': [0.0] * 28,
+        'max_bound': [1.0] * 28
     }
     return pd.DataFrame(data).copy()
 
@@ -147,7 +165,8 @@ def default_config():
         besoin_sante='Aucun',
         inc_services_add_selection=[],
         inc_services_core_selection=[],
-        inc_asso_add_selection=[]
+        inc_asso_add_selection=[],
+        type_logement="appartement_toutes"
     )
 
 @pytest.fixture

@@ -113,7 +113,58 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         # Merge Odace Commune SK
         merge_clean("odace_communes_sk", ['commune_sk'])
 
-        # Merge Loyers (Appartements)
+        # Merge Odace Rent Data
+        # We pivot the ODACE rent data by housing type and join it using commune_sk
+        try:
+            rent_path = CLEAN_DIR / "odace_loyer_annonce.parquet"
+            profil_path = CLEAN_DIR / "odace_logement_profil.parquet"
+            if rent_path.exists() and profil_path.exists():
+                df_rent = pd.read_parquet(rent_path)
+                df_profil = pd.read_parquet(profil_path)
+                
+                # Merge profile info to get human labels
+                df_merged = df_rent.merge(df_profil, on='logement_profil_sk', how='inner')
+                
+                # Create a standardized column name for each profile
+                def get_col_name(row):
+                    type_bien = str(row['logement_type']).lower()
+                    typologie = str(row['typologie']).lower()
+                    
+                    # Target: appt_all, appt_t1_t2, appt_t3_p, house_all
+                    tb = 'appt' if 'appartement' in type_bien else 'house'
+                    
+                    if 'toutes' in typologie:
+                        suffix = 'all'
+                    elif 't1' in typologie:
+                        suffix = 't1_t2'
+                    elif 't3' in typologie:
+                        suffix = 't3_p'
+                    else:
+                        suffix = 'unknown'
+                    
+                    return f"loyer_m2_moy_{tb}_{suffix}"
+
+                df_merged['odace_col'] = df_merged.apply(get_col_name, axis=1)
+                
+                # Pivot: 1 row per commune_sk, columns are the 4 housing types
+                df_pivot = df_merged.pivot_table(
+                    index='commune_sk', 
+                    columns='odace_col', 
+                    values='loyer_m2_moy',
+                    aggfunc='mean' # Should be unique per sk/col anyway
+                ).reset_index()
+                
+                # Merge into main GDF on commune_sk
+                if 'commune_sk' in communes_gdf.columns:
+                    communes_gdf = communes_gdf.merge(df_pivot, on='commune_sk', how='left')
+                    logging.info(f"Odace Rent: Merged pivoted data. Columns added: {list(df_pivot.columns[1:])}")
+                    logging.info(f"DEBUG: communes_gdf cols after merge: {[c for c in communes_gdf.columns if 'loyer' in c]}")
+            else:
+                logging.warning("Odace Rent clean files missing.")
+        except Exception as e:
+            logging.error(f"Failed to merge Odace Rent: {e}")
+
+        # Merge Loyers (Appartements - Legacy source)
         merge_clean("loyers", ['loyer_app_m2'])
 
         # Merge Associations (Lien Social) - Moved from prescoring
@@ -339,8 +390,7 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         
         # LOGGING CRS STATE
-        logger.log_step("build_communes", "DEBUG", {"crs": str(communes_gdf.crs)})
-        print(f"DEBUG: communes_gdf.crs = {communes_gdf.crs}")
+        # logger.log_step("build_communes", "DEBUG", {"crs": str(communes_gdf.crs)})
         
         # Explicitly convert to WKB to ensure we save the PROJECTED geometry (EPSG:2154)
         # and avoid any implicit conversion to EPSG:4326 by GeoParquet logic
@@ -361,6 +411,7 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         df_to_save = communes_gdf.drop(columns=cols_to_drop).copy()
         
         output_path = OUTPUT_DIR / "odis_communes_pre.parquet"
+        logging.info(f"DEBUG: Saving to {output_path}. Columns: {[c for c in df_to_save.columns if 'loyer' in c]}")
         df_to_save.to_parquet(output_path, compression='brotli', index=False)
         logger.log_step("build_communes", "CREATED", {"path": str(output_path), "rows": len(df_to_save)})
         

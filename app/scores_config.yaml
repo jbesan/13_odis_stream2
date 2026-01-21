@@ -50,19 +50,70 @@ scores:
     min_bound: null
     max_bound: null
 
-  - id: loyer_abordable_scaled
+  - id: log_loyer_moyen_appt_all_scaled
     category: logement
-    source_metric: loyer_app_m2
+    source_metric: loyer_m2_moy_appt_all
     bdv_factor: 0.0
     computation: precomputed
     display:
-      name: Loyer Abordable
+      name: Loyer Moyen - Appartement (Ensemble)
       strong_point_text: Loyer moyen au m² attractif
       high_value_adjective: attractif
       show: true
       unit: "€/m²"
       display_factor: 1
-      tooltip: "Loyer moyen d'annonce par m² pour les appartements (Source: Carte des Loyers 2023)"
+      tooltip: "Loyer moyen d'annonce par m² pour tous les appartements (Source: ODACE 2024)"
+    weight: 1.0
+    min_bound: null
+    max_bound: null
+
+  - id: log_loyer_moyen_appt_t1_t2_scaled
+    category: logement
+    source_metric: loyer_m2_moy_appt_t1_t2
+    bdv_factor: 0.0
+    computation: precomputed
+    display:
+      name: Loyer Moyen - Appartement (T1 & T2)
+      strong_point_text: Loyer moyen au m² attractif pour petits appartements
+      high_value_adjective: attractif
+      show: true
+      unit: "€/m²"
+      display_factor: 1
+      tooltip: "Loyer moyen d'annonce par m² pour les appartements T1 et T2 (Source: ODACE 2024)"
+    weight: 1.0
+    min_bound: null
+    max_bound: null
+
+  - id: log_loyer_moyen_appt_t3_p_scaled
+    category: logement
+    source_metric: loyer_m2_moy_appt_t3_p
+    bdv_factor: 0.0
+    computation: precomputed
+    display:
+      name: Loyer Moyen - Appartement (T3+)
+      strong_point_text: Loyer moyen au m² attractif pour grands appartements
+      high_value_adjective: attractif
+      show: true
+      unit: "€/m²"
+      display_factor: 1
+      tooltip: "Loyer moyen d'annonce par m² pour les appartements T3 et plus (Source: ODACE 2024)"
+    weight: 1.0
+    min_bound: null
+    max_bound: null
+
+  - id: log_loyer_moyen_house_all_scaled
+    category: logement
+    source_metric: loyer_m2_moy_house_all
+    bdv_factor: 0.0
+    computation: precomputed
+    display:
+      name: Loyer Moyen - Maison
+      strong_point_text: Loyer moyen au m² attractif pour les maisons
+      high_value_adjective: attractif
+      show: true
+      unit: "€/m²"
+      display_factor: 1
+      tooltip: "Loyer moyen d'annonce par m² pour les maisons (Source: ODACE 2024)"
     weight: 1.0
     min_bound: null
     max_bound: null

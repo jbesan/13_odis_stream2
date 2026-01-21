@@ -38,30 +38,61 @@ class OdaceClient:
                 except Exception as e:
                     logging.warning(f"OdaceClient: Failed to read cache for {table_name}: {e}")
 
+        # Implementation of chunked fetching to avoid 500 errors on large datasets
         url = f"{self.api_url}/api/data/preview/silver/{table_name}"
-        payload = {
-            "limit": limit,
-            "filters": None,
-            "sort_by": None,
-            "sort_order": "asc"
-        }
+        all_data = []
+        chunk_size = 50000
+        offset = 0
+        total_rows = None
         
         try:
-            logging.info(f"OdaceClient: Fetching {table_name} from API...")
-            response = requests.post(url, headers=self.headers, json=payload, timeout=60)
-            response.raise_for_status()
-            data = response.json()
+            logging.info(f"OdaceClient: Starting chunked fetch for {table_name}...")
+            
+            while True:
+                payload = {
+                    "limit": min(chunk_size, limit - len(all_data)) if limit else chunk_size,
+                    "offset": offset,
+                    "filters": None,
+                    "sort_by": None,
+                    "sort_order": "asc"
+                }
+                
+                response = requests.post(url, headers=self.headers, json=payload, timeout=60)
+                response.raise_for_status()
+                chunk_resp = response.json()
+                
+                chunk_data = chunk_resp.get("data", [])
+                all_data.extend(chunk_data)
+                
+                if total_rows is None:
+                    total_rows = chunk_resp.get("total_rows", 0)
+                    logging.info(f"OdaceClient: {table_name} total rows: {total_rows}")
+                
+                logging.info(f"OdaceClient: Fetched {len(all_data)}/{min(limit, total_rows) if limit else total_rows} rows...")
+                
+                if not chunk_data or (limit and len(all_data) >= limit) or (total_rows and len(all_data) >= total_rows):
+                    break
+                    
+                offset += chunk_size
+                time.sleep(0.5) # Subtle throttling
+
+            full_resp = {
+                "data": all_data,
+                "columns": chunk_resp.get("columns", []),
+                "total_rows": total_rows
+            }
             
             # Save to cache
             CACHE_DIR.mkdir(parents=True, exist_ok=True)
             try:
                 with open(cache_file, "w") as f:
-                    json.dump(data, f)
-                logging.info(f"OdaceClient: Cached {table_name} to {cache_file}")
+                    json.dump(full_resp, f)
+                logging.info(f"OdaceClient: Cached {table_name} to {cache_file} ({len(all_data)} rows)")
             except Exception as e:
                 logging.warning(f"OdaceClient: Failed to write cache for {table_name}: {e}")
                 
-            return data
+            return full_resp
+            
         except Exception as e:
             error_msg = f"Failed to fetch {table_name}: {str(e)}"
             logging.error(error_msg)
@@ -87,6 +118,26 @@ class OdaceClient:
             
         df = pd.DataFrame(resp["data"])
         # Columns: gare_sk, commune_sk, gare_code, gare_label...
+        return df
+
+    def fetch_fact_loyer_annonce(self, limit: int = 200000) -> pd.DataFrame:
+        """Fetches fact_loyer_annonce and returns as DataFrame."""
+        resp = self._get_preview("fact_loyer_annonce", limit=limit)
+        if not resp or not resp.get("data"):
+            return pd.DataFrame()
+            
+        df = pd.DataFrame(resp["data"])
+        # Columns: commune_sk, logement_profil_sk, loyer_m2_moy, score_qualite, maille_observation...
+        return df
+
+    def fetch_ref_logement_profil(self) -> pd.DataFrame:
+        """Fetches ref_logement_profil and returns as DataFrame."""
+        resp = self._get_preview("ref_logement_profil")
+        if not resp or not resp.get("data"):
+            return pd.DataFrame()
+            
+        df = pd.DataFrame(resp["data"])
+        # Columns: logement_profil_sk, logement_type, typologie, annee...
         return df
 
 

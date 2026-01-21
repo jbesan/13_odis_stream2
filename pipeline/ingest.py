@@ -1255,6 +1255,7 @@ def main(argv=None):
         'codes_postaux': clean_codes_postaux,
         'formations': clean_formations,
         'gares': clean_odace_gares,
+        'odace_rent': clean_odace_rent,
         'loyers': clean_loyers,
         'population_details': clean_population_details,
         'nomenclature_waldec': clean_nomenclature_waldec,
@@ -1517,6 +1518,31 @@ def clean_odace_gares(config: Dict[str, Any], logger: PipelineLogger):
     logging.info(f"Odace: Saved {len(sk_mapping)} SK mappings to {sk_output_path}")
 
     logger.log_step("clean_odace_gares", "COMPLETED", {"path": str(output_path), "rows": len(stats)})
+
+def clean_odace_rent(config: Dict[str, Any], logger: PipelineLogger):
+    """Fetches and cleans Rent data from Odace API."""
+    logger.log_step("clean_odace_rent", "STARTED")
+
+    client = get_odace_client(logger)
+    
+    # Fetch Data
+    df_rent = client.fetch_fact_loyer_annonce()
+    df_profil = client.fetch_ref_logement_profil()
+    
+    if df_rent.empty or df_profil.empty:
+        logging.warning("Odace API returned empty data for rent facts or housing profiles.")
+        return
+
+    # Filter for relevant data (as per user instructions: maille_observation == 'commune')
+    if 'maille_observation' in df_rent.columns:
+        df_rent = df_rent[df_rent['maille_observation'] == 'commune'].copy()
+        logging.info(f"Odace Rent: Filtered for maille='commune'. {len(df_rent)} rows remaining.")
+
+    # Save to Clean Dir
+    df_rent.to_parquet(CLEAN_DIR / "odace_loyer_annonce.parquet", index=False)
+    df_profil.to_parquet(CLEAN_DIR / "odace_logement_profil.parquet", index=False)
+
+    logger.log_step("clean_odace_rent", "COMPLETED", {"rent_rows": len(df_rent), "profil_rows": len(df_profil)})
 
 def clean_regions(config: Dict[str, Any], logger: PipelineLogger):
     """Cleans Regions referential and saves to parquet."""

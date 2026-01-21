@@ -468,6 +468,18 @@ def render_housing_form() -> None:
         st.radio('Logement cible à long terme', cfg.LOGEMENT_OPTIONS, key="ui_logement")
         st.toggle("Prioritaire", key="ui_priority_logement", help="Donne plus de poids à ce critère")
         
+    # F-41: Only show housing type selector if 'Location' is selected in either short-term or long-term options
+    if st.session_state.get('ui_hebergement') == 'Location' or st.session_state.get('ui_logement') == 'Location':
+        
+        st.selectbox(
+            "Type de logement (affine les loyers)",
+            options=list(cfg.HOUSING_TYPE_OPTIONS.keys()),
+            format_func=lambda x: cfg.HOUSING_TYPE_OPTIONS[x],
+            index=list(cfg.HOUSING_TYPE_OPTIONS.keys()).index("appt_all"),
+            key="ui_type_logement",
+            help="Permet d'utiliser les loyers spécifiques au type de logement choisi (Source ODACE 2024)"
+        )
+        
     # F-15: Priority Toggle (Removed global toggle)
 
 def render_health_form() -> None:
@@ -513,12 +525,22 @@ def render_other_needs_form() -> None:
     )
 
     # --- 3. Autres Besoins (Refactored) ---
-    st.subheader("Autres Besoins Spécifiques")
+    st.subheader("Autres Besoins")
+    
+    # F-35: FLE Checkbox (Most important need)
+    # Initialize from session state or demo data
+    if 'ui_inc_service_fle' not in st.session_state:
+        current_list = st.session_state.get('ui_inc_services_add_selection', st.session_state['demo_data'].get('inc_services_add_selection', []))
+        st.session_state.ui_inc_service_fle = cfg.INC_SERVICE_FLE_SLUG in current_list
+
+    st.checkbox("Apprentissage du Français (FLE)", key="ui_inc_service_fle", help="Recherche de structures FLE (Français Langue Étrangère)")
+
     st.text("Sélectionnez d'autres services d'inclusion spécifiques.")
     
     # Prepare options: Use the Referentiel loaded in app_data
     inclusion_index = app_data.get('inclusion_services_index', pd.DataFrame())
     socle_keys = set(default_socle)
+    socle_keys.add(cfg.INC_SERVICE_FLE_SLUG) # Hide FLE from the multiselect
     
     options_map = {} # Display String -> Slug (Nom)
     options_list = []
@@ -699,6 +721,14 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
         # Fallback to existing list if flat not present (e.g. tests or legacy)
         inc_services_add_selection_list = st.session_state.get('ui_inc_services_add_selection', [])
 
+    # F-35: Add FLE if checked
+    if st.session_state.get('ui_inc_service_fle'):
+        if cfg.INC_SERVICE_FLE_SLUG not in inc_services_add_selection_list:
+            inc_services_add_selection_list.append(cfg.INC_SERVICE_FLE_SLUG)
+    elif cfg.INC_SERVICE_FLE_SLUG in inc_services_add_selection_list:
+        # If unchecked but present (e.g. from demo), remove it
+        inc_services_add_selection_list = [s for s in inc_services_add_selection_list if s != cfg.INC_SERVICE_FLE_SLUG]
+
     # F-15: Compute Criteria Weights
     criteria_weights = {}
     
@@ -773,7 +803,7 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
         inc_services_add_selection=inc_services_add_selection_list,
         inc_services_core_selection=st.session_state.get('ui_inc_services_core_selection', []), # NEW
         inc_asso_add_selection=st.session_state.get('ui_inc_asso_add_selection', []), # NEW
-        # binome_penalty removed
+        type_logement=st.session_state.get('ui_type_logement', 'appartement_toutes')
     )
 
 def _result_highlight_callback(rank: int) -> None:

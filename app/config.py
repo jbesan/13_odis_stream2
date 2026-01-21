@@ -62,6 +62,12 @@ HEBERGEMENT_OPTIONS = ["Chez l'habitant", 'Location', 'Foyer']
 LOGEMENT_OPTIONS = ['Location', 'Logement Social']
 SANTE_OPTIONS = ["Aucun", "Hopital", 'Maternité', "Soutien Psychologique & Addictologie"]
 POIDS_OPTIONS = [0, 25, 50, 75, 100]
+HOUSING_TYPE_OPTIONS = {
+    "appt_all": "Appartement (Tous types)",
+    "appt_t1_t2": "Appartement (T1 & T2)",
+    "appt_t3_p": "Appartement (T3+)",
+    "house_all": "Maison"
+}
 
 # --- Weight Profiles (F-15) ---
 WEIGHT_PROFILES = {
@@ -99,6 +105,8 @@ DEFAULT_INC_SERVICES_CORE = [
     "difficultes-administratives-ou-juridiques--accompagnement-aux-demarches-administratives",
     "preparer-sa-candidature--organiser-ses-demarches-de-recherche-demploi"
 ]
+INC_SERVICE_FLE_SLUG = 'lecture-ecriture-calcul--maitriser-le-francais'
+
 
 # --- Demo Scenarios ---
 DEMO_DATA_DEFAULT: Dict[str, Any] = {
@@ -124,8 +132,11 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     'inc_services_add_selection': [],
     'inc_services_core_selection': DEFAULT_INC_SERVICES_CORE,
     'inc_asso_add_selection': [],
-    'loc_search_code': None
+    'loc_search_code': None,
+    'ui_inc_service_fle': False,
+    'type_logement': 'appt_all'
 }
+
 
 DEMO_SCENARIOS = {
     "1": {

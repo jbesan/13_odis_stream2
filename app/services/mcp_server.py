@@ -78,7 +78,15 @@ def _search_referentiels_logic(query: str, domain: str) -> List[Dict[str, Any]]:
         return []
 
     # 1. Filter by Domain
-    if domain:
+    if domain == 'housing_types':
+        # Synthetic domain for housing choice refinement
+        df = pd.DataFrame([
+            {"code": "appt_all", "label": "Appartement (Tous types)", "key": "housing_types"},
+            {"code": "appt_t1_t2", "label": "Appartement (T1 & T2)", "key": "housing_types"},
+            {"code": "appt_t3_p", "label": "Appartement (T3+)", "key": "housing_types"},
+            {"code": "house_all", "label": "Maison", "key": "housing_types"},
+        ])
+    elif domain:
         df = df[df['key'] == domain]
     else:
         logger.error("   ⚠️ No domain specified.")
@@ -161,7 +169,7 @@ def search_referentiels(query: str, domain: Optional[str] = None) -> Dict[str, A
         if not query:
             return {"error": "Missing 'query' parameter."}
         
-        valid_domains = ['rome_codes', 'formation_codes', 'inclusion_services', 'waldec_codes', 'regions', 'departements', 'communes']
+        valid_domains = ['rome_codes', 'formation_codes', 'inclusion_services', 'waldec_codes', 'regions', 'departements', 'communes', 'housing_types']
         if domain and domain not in valid_domains:
             return {"error": f"Invalid domain: {domain}. Must be one of {valid_domains}"}
 

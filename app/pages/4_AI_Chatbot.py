@@ -20,7 +20,7 @@ from utils import auth
 if not auth.check_password():
     st.stop()
 
-st.title("🤖 Assistant ODIS 2.1")
+st.markdown("## Assistant IA 🤖 ODIS 2.1")
 
 # Ensure datasets are loaded
 from utils.data_loader import init_datasets
@@ -29,7 +29,7 @@ from services import mcp_server
 with st.spinner("Chargement des données ODIS..."):
     app_data = init_datasets()
     mcp_server.set_data_context(app_data)
-st.markdown("**Assistant pour travailleurs sociaux** - Aide à la décision et recherche multicritères.")
+st.markdown("Identifions ensemble le projet de vie et les meilleures options de relocalisation.")
 
 # --- Sidebar ---
 with st.sidebar:

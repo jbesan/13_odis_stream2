@@ -687,3 +687,71 @@ class TestHousingScoresLogic:
         assert 'log_occup_scaled' in res2.columns
         assert 'log_soc_inoc_scaled' in res2.columns
 
+    def test_housing_rent_selection_logic(self):
+        """
+        Verifies that only the selected housing type rent column is kept.
+        """
+        data = {
+            'codgeo': ['A', 'B'],
+            'log_loyer_moyen_scaled_appartement_toutes': [0.5, 0.6],
+            'log_loyer_moyen_scaled_appartement_t1_t2': [0.4, 0.4],
+            'log_loyer_moyen_scaled_maison_toutes': [0.9, 0.2],
+            'log_vac_scaled': [0.5, 0.5],
+            'dist_current_loc': [1000, 1000],
+            'epci_code': ['1', '2']
+        }
+        df = gpd.GeoDataFrame(data, index=['A', 'B'])
+
+        engine = scoring.ScoringEngine(
+            df_all_communes=gpd.GeoDataFrame({'epci_code': ['1'], 'bassin_de_vie': ['1'], 'reg_code': ['75'], 'dep_code': ['75']}, index=['A']),
+            df_bv_geo=gpd.GeoDataFrame(),
+            df_area_geo=gpd.GeoDataFrame(),
+            scores_cat=pd.DataFrame(),
+            incl_index=pd.DataFrame(),
+            associations_data=pd.DataFrame({'codgeo': ['A'], 'id_waldec': ['W1'], 'count': [1]}),
+            formations_data=pd.DataFrame({'codgeo': ['A'], 'formation_code': ['F1'], 'count': [1]}),
+            codformations_index=pd.DataFrame(columns=['label']),
+            global_stats={},
+            live_jobs_data=pd.DataFrame({
+                'commune': ['A'], 
+                'romeCode': ['M1805'], 
+                'total_postes': [1],
+                'romeLibelle': ['Développeur']
+            })
+        )
+
+        def run_scoring(type_logement):
+            config = ScoringConfig(
+                poids_emploi=0, poids_logement=100, poids_education=0, poids_inclusion=0, poids_sante=0, poids_mobilité=0,
+                criteria_weights={}, 
+                weight_profile="",
+                commune_actuelle='A',
+                loc_search_area='departement',
+                loc_search_code=None,
+                nb_adultes=1,
+                nb_enfants=0,
+                hebergement='Location',
+                logement='Location',
+                codes_metiers=[[]],
+                codes_formations=[[]],
+                classe_enfants=[],
+                besoin_sante="Aucun",
+                inc_services_add_selection=[],
+                inc_services_core_selection=[],
+                inc_asso_add_selection=[],
+                type_logement=type_logement
+            )
+            return engine._compute_criteria_scores(df.copy(), config)
+
+        # 1. Test: Chọn appartement_toutes
+        res1 = run_scoring('appartement_toutes')
+        assert 'log_loyer_moyen_scaled_appartement_toutes' in res1.columns
+        assert 'log_loyer_moyen_scaled_appartement_t1_t2' not in res1.columns
+        assert 'log_loyer_moyen_scaled_maison_toutes' not in res1.columns
+
+        # 2. Test: Chọn maison_toutes
+        res2 = run_scoring('maison_toutes')
+        assert 'log_loyer_moyen_scaled_appartement_toutes' not in res2.columns
+        assert 'log_loyer_moyen_scaled_appartement_t1_t2' not in res2.columns
+        assert 'log_loyer_moyen_scaled_maison_toutes' in res2.columns
+

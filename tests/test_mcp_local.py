@@ -57,6 +57,15 @@ def test_search_referentiels_inclusion(mcp_data_context):
     top = results[0]
     assert "français" in top['label'].lower() or "fle" in top['label'].lower() or "langue" in top['label'].lower()
 
+def test_search_referentiels_housing(mcp_data_context):
+    """Verify synthetic Housing Types domain."""
+    results = _search_referentiels_logic("Appartement", domain="housing_types")
+    assert len(results) == 3 # Toutes, T1-T2, T3+
+    assert any("appartement_toutes" == r['code'] for r in results)
+    
+    results_all = _search_referentiels_logic("", domain="housing_types")
+    assert len(results_all) == 4 # All options
+
 def test_compute_top_cities_execution_complex(mcp_data_context):
     """
     Test a complete user scenario (Demo 3 - Aïcha).

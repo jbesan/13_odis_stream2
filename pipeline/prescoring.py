@@ -245,6 +245,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
 
 
         # --- Scaling ---
+        logging.info(f"DEBUG: communes_gdf cols before scaling: {[c for c in communes_gdf.columns if 'loyer' in c]}")
         def get_min_max(series):
             return series.quantile(0.01), series.quantile(0.99)
             
@@ -285,10 +286,20 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
 
         
         
-        # loyer_abordable_scaled (Lower is Better)
-        # Custom logic for this one? Or standard inverted?
-        # It was: ((max_b - val) / (max - min)). clip(0,1). This is exactly inverted MinMax.
-        process_scaling(communes_gdf, 'loyer_app_m2', 'loyer_abordable_scaled', inverted=True)
+        # Updated Housing Rent Scaling (ODACE source)
+        # Using concise names as per user request: appt_all, appt_t1_t2, appt_t3_p, house_all
+        # We KEEP the raw data (euros/m2) and add the _scaled suffix
+        logging.info(f"DEBUG: communes_gdf cols before scaling: {[c for c in communes_gdf.columns if 'loyer' in c]}")
+        for col, target in [
+            ('loyer_m2_moy_appt_all', 'log_loyer_moyen_appt_all_scaled'),
+            ('loyer_m2_moy_appt_t1_t2', 'log_loyer_moyen_appt_t1_t2_scaled'),
+            ('loyer_m2_moy_appt_t3_p', 'log_loyer_moyen_appt_t3_p_scaled'),
+            ('loyer_m2_moy_house_all', 'log_loyer_moyen_house_all_scaled')
+        ]:
+            if col in communes_gdf.columns:
+                process_scaling(communes_gdf, col, target, inverted=True)
+            else:
+                logging.warning(f"ODACE Rent column {col} missing for scaling.")
 
         process_scaling(communes_gdf, 'log_vac_struct_ratio', 'log_vac_scaled')
         process_scaling(communes_gdf, 'lien_social_density', 'inc_asso_core_scaled')
