@@ -30,6 +30,7 @@ def sample_data():
         'libgeo': ['Paris', 'Lyon', 'Marseille', 'Bordeaux', 'Pau'],
         'dep_code': ['75', '69', '13', '33', '64'],
         'reg_code': ['11', '84', '93', '75', '75'],
+        'bassin_de_vie': ['1', '2', '3', '4', '4'], # Added for BdV scoring tests
         'population': [2148271, 513275, 861635, 257068, 77130],
         'geometry': [
             Polygon([(2.224, 48.816), (2.469, 48.816), (2.469, 48.902), (2.224, 48.902)]),
@@ -68,44 +69,45 @@ def sample_scores_cat():
     """Creates a sample scores_cat DataFrame for testing."""
     data = {
         'score': [
-            'met_live_commune_scaled', 'met_live_tension_scaled', 'inc_services_core_scaled', 'inc_asso_core_scaled', 'inc_asso_add_scaled',
+            'met_match_adult1_scaled', 'met_match_adult1_bdv_scaled', 'met_match_adult1_tension_scaled',
+            'met_match_adult2_scaled', 'met_match_adult2_bdv_scaled', 'met_match_adult2_tension_scaled',
+            'inc_services_core_scaled', 'inc_asso_core_scaled', 'inc_asso_add_scaled',
             'log_vac_scaled', 'log_soc_inoc_scaled', 'log_5p_scaled',
             'edu_classes_ferm_scaled', 'inc_pol_scaled', 'inc_population_scaled',
-            'form_match_adult1_scaled', 'form_match_adult2_scaled',
+            'form_match_adult1_scaled', 'form_match_adult1_bdv_scaled',
+            'form_match_adult2_scaled', 'form_match_adult2_bdv_scaled',
             'mob_dist_scaled', 'mob_epci_scaled',
             'edu_structures_scaled', 'sante_structures_scaled',
             'besoins_match_scaled'
         ],
         'cat': [
-            'emploi', 'emploi', 'inclusion', 'inclusion', 'inclusion',
+            'emploi', 'emploi', 'emploi',
+            'emploi', 'emploi', 'emploi',
+            'inclusion', 'inclusion', 'inclusion',
             'logement', 'logement', 'logement',
             'education', 'inclusion', 'inclusion',
+            'emploi', 'emploi',
             'emploi', 'emploi',
             'mobilité', 'mobilité',
             'education', 'santé',
             'inclusion'
         ],
         'metric': [
-            'met_live_commune', 'met_live_tension', 'socle_match_count', 'lien_social_density', 'affinite_density',
+            'met_match_adult1', 'met_match_adult1_bdv', 'met_match_adult1_tension',
+            'met_match_adult2', 'met_match_adult2_bdv', 'met_match_adult2_tension',
+            'socle_match_count', 'lien_social_density', 'affinite_density',
             'log_vac_ratio', 'log_soc_inoc_ratio', 'log_5p_ratio',
             'risque_fermeture_ratio', 'pol_num', 'population',
-            'form_match_adult1', 'form_match_adult2',
+            'form_match_adult1', 'form_match_adult1_bdv',
+            'form_match_adult2', 'form_match_adult2_bdv',
             'dist_current_loc', 'epci_code',
             'edu_structures_count', 'sante_structures_scaled',
             'besoins_match'
         ],
-        'incl_binome': [
-            True, True, True, True, True,
-            True, True, True,
-            True, False, False,
-            True, True,
-            False, False,
-            True, True,
-            False
-        ],
-        'weight': [1.0] * 18,
-        'min_bound': [0.0] * 18,
-        'max_bound': [1.0] * 18
+        'incl_binome': [True] * 24, # Simplify for tests
+        'weight': [1.0] * 24,
+        'min_bound': [0.0] * 24,
+        'max_bound': [1.0] * 24
     }
     return pd.DataFrame(data).copy()
 

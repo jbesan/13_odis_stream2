@@ -130,7 +130,9 @@ class TestScoringLogic:
         )
         
         expected_cols = [
-            'met_live_commune_scaled', 
+            'met_match_adult1_scaled', 
+            'met_match_adult1_bdv_scaled',
+            'met_match_adult1_tension_scaled',
             'log_vac_scaled', 
             'inc_population_scaled',
             'inc_services_core_scaled',
@@ -200,10 +202,10 @@ class TestScoringLogic:
         """Tests that category scores are correctly aggregated from criteria scores."""
         df = sample_data.copy()
         # Mock criteria scores
-        df['met_live_commune_scaled'] = 1.0
+        df['met_match_adult1_scaled'] = 1.0
         
         # Filter scores_cat to only this one for 'emploi'
-        scores_cat_subset = sample_scores_cat[sample_scores_cat['score'] == 'met_live_commune_scaled'].copy()
+        scores_cat_subset = sample_scores_cat[sample_scores_cat['score'] == 'met_match_adult1_scaled'].copy()
         
         df_cat = scoring.compute_category_scores(df, scores_cat_subset, default_config)
         
@@ -382,7 +384,7 @@ class TestConditionalScoring:
         
         # Ensure max_bound is null in scores_cat for these scores (as per new config)
         scores_cat_dynamic = sample_scores_cat.copy()
-        scores_cat_dynamic.loc[scores_cat_dynamic['score'] == 'met_live_commune_scaled', 'max_bound'] = None
+        scores_cat_dynamic.loc[scores_cat_dynamic['score'] == 'met_match_adult1_scaled', 'max_bound'] = None
         scores_cat_dynamic.loc[scores_cat_dynamic['score'] == 'form_match_adult1_scaled', 'max_bound'] = None
         
         engine = scoring.ScoringEngine(
@@ -414,7 +416,7 @@ class TestConditionalScoring:
         
         # Row 0: matches A1, B2 (2 matches). Max bound 2. 
         # LIVE jobs scoring should work
-        assert 'met_live_commune_scaled' in scored_df.columns
+        assert 'met_match_adult1_scaled' in scored_df.columns
         
 
 @pytest.mark.unit
@@ -632,7 +634,7 @@ class TestHousingScoresLogic:
         df = gpd.GeoDataFrame(data, index=['A', 'B'])
 
         engine = scoring.ScoringEngine(
-            df_all_communes=gpd.GeoDataFrame({'epci_code': ['1']}, index=['A']),
+            df_all_communes=gpd.GeoDataFrame({'epci_code': ['1'], 'bassin_de_vie': ['1'], 'reg_code': ['75'], 'dep_code': ['75']}, index=['A']),
             df_bv_geo=gpd.GeoDataFrame(),
             df_area_geo=gpd.GeoDataFrame(),
             scores_cat=pd.DataFrame(),

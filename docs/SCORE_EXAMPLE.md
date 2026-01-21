@@ -51,11 +51,14 @@ The algorithm calculates a score between 0 and 1 for each category for every can
 
 ### C. Education (Weight: 100)
 
-- **School Structures (`edu_structures_scaled`)**:
-  - Checks for presence of **Elémentaire** and **Collège**.
-  - If both are present: Score = 1.0.
-  - If one is present: Score = 0.5.
-  - If neither: Score = 0.0.
+- **School Structures**:
+  - Scores are calculated individually for each requested school level:
+    - **Maternelle** (`edu_maternelle_scaled`)
+    - **Elémentaire** (`edu_elementaire_scaled`)
+    - **Collège** (`edu_college_scaled`)
+    - **Lycée** (`edu_lycee_scaled`)
+  - Presence = 1.0, Absence = 0.0.
+  - _Note: Only the specific levels requested by the user are included in the average._
 - **Closure Risk (`edu_classes_ferm_scaled`)**:
   - Considers the ratio of classes at risk of closure. Lower risk is better (but metric might be inverted or normalized such that "good" is 1).
 - **Youth Decline (`youth_decline_scaled`)**:
@@ -63,9 +66,12 @@ The algorithm calculates a score between 0 and 1 for each category for every can
 
 ### D. Santé (Weight: 100)
 
-- **Maternity Presence (`sante_structures_scaled`)**:
-  - Checks if a **Maternité** is present in the commune.
-  - Present = 1.0, Absent = 0.0.
+- **Health Structures (`sante_structures_scaled`)**:
+  - This is a dynamic metric that maps to the user's specific health selection:
+    - If "Maternité" -> `sante_maternite_scaled`
+    - If "Hopital" -> `sante_hopital_scaled`
+    - If "Soutien Psychologique & Addictologie" -> `sante_psy_scaled`
+  - Presence = 1.0, Absence = 0.0.
 
 ### E. Inclusion (Weight: 50)
 
@@ -116,8 +122,8 @@ Let's assume Aubagne is a candidate commune.
 
 1.  **Emploi**: High demand for lab techs -> Score **0.9**
 2.  **Logement**: Moderate social housing availability -> Score **0.6**
-3.  **Education**: Has both schools -> Score **1.0**
-4.  **Santé**: Has a maternity -> Score **1.0**
+3.  **Education**: Has requested levels (Elémentaire, Collège) -> Score **1.0** (Avg of 1.0, 1.0)
+4.  **Santé**: Requested Maternité is present -> Score **1.0**
 5.  **Inclusion**: Good services and associations -> Score **0.8**
 6.  **Mobilité**: Same EPCI, has a **Gare** -> Score **1.0** (Avg of 1.0, 1.0)
 

@@ -424,65 +424,70 @@ class ScoringEngine:
         return odis_exploded.sort_values(by='weighted_score', ascending=False)
 
     def _compute_met_live_scores(self, df: gpd.GeoDataFrame, config: ScoringConfig):
-        """Calculates employment scores based on France Travail Live Data."""
+        """Calculates employment scores based on France Travail Live Data for each adult."""
         if self.live_jobs_data.empty:
             return
 
-        # 1. Identify Target ROME codes (flattened from all adults)
-        # We now assume all codes in codes_metiers are ROME codes (from InterviewerAgent)
-        all_romes = set()
-        for adult_codes in config.codes_metiers:
-            for c in adult_codes:
-                if len(c) == 5 and c[0].isalpha() and c[1:].isdigit():
-                    all_romes.add(c)
-        
-        if not all_romes:
-            return # No ROME codes searched
+        commune_to_bdv = self.df_all_communes['bassin_de_vie'].dropna().to_dict()
 
-        # 2. Filter live data for these ROME codes
-        target_live = self.live_jobs_data[self.live_jobs_data['romeCode'].isin(all_romes)]
-        
-        # 3. Sum opportunities (total_postes) per commune
-        commune_live_counts = target_live.groupby('commune')['total_postes'].sum()
-        df['met_live_commune'] = df.index.map(commune_live_counts).fillna(0)
-        
-        # 4. Sum tension (nb_offres_tension) per commune
-        if 'nb_offres_tension' in target_live.columns:
-            commune_tension_counts = target_live.groupby('commune')['nb_offres_tension'].sum()
-            df['met_live_tension'] = df.index.map(commune_tension_counts).fillna(0)
-        else:
-            df['met_live_tension'] = 0.0
-
-        # 5. Bassin de Vie Aggregation
-        # We want the total opportunities in the BdV for the searched codes
-        if 'bassin_de_vie' in df.columns:
-            # First, aggregate live data by BdV for these ROMEs
-            # We need to map 'commune' to 'bdv' in target_live
-            # odis (self.df_all_communes) has this mapping
-            commune_to_bdv = self.df_all_communes['bassin_de_vie'].dropna().to_dict()
-            target_live = target_live.copy()
-            target_live['bdv'] = target_live['commune'].map(commune_to_bdv)
+        for i in range(config.nb_adultes):
+            adult_key = f'adult{i+1}'
+            adult_romes = set()
             
-            bdv_live_counts = target_live.groupby('bdv')['total_postes'].sum()
-            df['met_live_bdv'] = df['bassin_de_vie'].map(bdv_live_counts).fillna(0)
-        else:
-            df['met_live_bdv'] = 0.0
+            # Ensure index exists and extract ROME codes for this adult
+            if i < len(config.codes_metiers):
+                for c in config.codes_metiers[i]:
+                    if len(c) == 5 and c[0].isalpha() and c[1:].isdigit():
+                        adult_romes.add(c)
+            
+            if not adult_romes:
+                # Fill zeros for this adult
+                df[f'met_match_{adult_key}_scaled'] = 0.0
+                if 'bassin_de_vie' in df.columns:
+                    df[f'met_match_{adult_key}_bdv_scaled'] = 0.0
+                df[f'met_match_{adult_key}_tension_scaled'] = 0.0
+                continue
 
-        # 6. Scaling
-        # Commune level
-        min_c, max_c = get_bounds('met_live_commune_scaled', self.scores_cat, self.global_stats)
-        if pd.isna(max_c): max_c = 10.0 # Default if not in config yet
-        df['met_live_commune_scaled'] = min_max_scale(df['met_live_commune'], min_c, max_c)
-        
-        # BdV level
-        min_b, max_b = get_bounds('met_live_bdv_scaled', self.scores_cat, self.global_stats)
-        if pd.isna(max_b): max_b = 50.0 # Default
-        df['met_live_bdv_scaled'] = min_max_scale(df['met_live_bdv'], min_b, max_b)
-        
-        # Tension
-        min_t, max_t = get_bounds('met_live_tension_scaled', self.scores_cat, self.global_stats)
-        if pd.isna(max_t): max_t = 5.0 # Default
-        df['met_live_tension_scaled'] = min_max_scale(df['met_live_tension'], min_t, max_t)
+            # 2. Filter live data for this specific adult's ROME codes
+            target_live = self.live_jobs_data[self.live_jobs_data['romeCode'].isin(adult_romes)].copy()
+            
+            # 3. Sum opportunities (total_postes) per commune
+            commune_live_counts = target_live.groupby('commune')['total_postes'].sum()
+            col_raw = f'met_match_{adult_key}'
+            df[col_raw] = df.index.map(commune_live_counts).fillna(0)
+            
+            # 4. Sum tension (nb_offres_tension) per commune
+            col_tension_raw = f'met_match_{adult_key}_tension'
+            if 'nb_offres_tension' in target_live.columns:
+                commune_tension_counts = target_live.groupby('commune')['nb_offres_tension'].sum()
+                df[col_tension_raw] = df.index.map(commune_tension_counts).fillna(0)
+            else:
+                df[col_tension_raw] = 0.0
+
+            # 5. Bassin de Vie Aggregation
+            col_bdv_raw = f'met_match_{adult_key}_bdv'
+            if 'bassin_de_vie' in df.columns:
+                target_live['bdv'] = target_live['commune'].map(commune_to_bdv)
+                bdv_live_counts = target_live.groupby('bdv')['total_postes'].sum()
+                df[col_bdv_raw] = df['bassin_de_vie'].map(bdv_live_counts).fillna(0)
+            else:
+                df[col_bdv_raw] = 0.0
+
+            # 6. Scaling using bounds from config
+            # City level
+            min_c, max_c = get_bounds(f'{col_raw}_scaled', self.scores_cat, self.global_stats)
+            if pd.isna(max_c): max_c = 10.0 # Default
+            df[f'{col_raw}_scaled'] = min_max_scale(df[col_raw], min_c, max_c)
+            
+            # BdV level
+            min_b, max_b = get_bounds(f'{col_bdv_raw}_scaled', self.scores_cat, self.global_stats)
+            if pd.isna(max_b): max_b = 50.0 # Default
+            df[f'{col_bdv_raw}_scaled'] = min_max_scale(df[col_bdv_raw], min_b, max_b)
+            
+            # Tension level
+            min_t, max_t = get_bounds(f'{col_tension_raw}_scaled', self.scores_cat, self.global_stats)
+            if pd.isna(max_t): max_t = 5.0 # Default
+            df[f'{col_tension_raw}_scaled'] = min_max_scale(df[col_tension_raw], min_t, max_t)
 
     def _compute_criteria_scores(self, df: gpd.GeoDataFrame, config: ScoringConfig) -> gpd.GeoDataFrame:
         df = df.copy()
@@ -499,16 +504,28 @@ class ScoringEngine:
         # Formations
         relevant_formations = self.formations_data[self.formations_data['codgeo'].isin(df.index)]
         form_map = relevant_formations.groupby('codgeo')['formation_code'].apply(set).to_dict()
+        
+        # BdV map for formations
+        commune_to_bdv = self.df_all_communes['bassin_de_vie'].dropna().to_dict()
+        relevant_formations_bdv = relevant_formations.copy()
+        relevant_formations_bdv['bdv'] = relevant_formations_bdv['codgeo'].map(commune_to_bdv)
+        form_map_bdv = relevant_formations_bdv.groupby('bdv')['formation_code'].apply(set).to_dict()
 
         for i in range(config.nb_adultes):
-            if config.codes_formations[i]:
+            if i < len(config.codes_formations) and config.codes_formations[i]:
                  # For formations we also store the codes for display
                  adult_key = f'adult{i+1}'
                  prefs = set(config.codes_formations[i])
                  col_name = f'form_match_codes_{adult_key}'
                  df[col_name] = df.index.map(lambda c: list(form_map.get(c, set()).intersection(prefs)))
-                 # Then score count
+                 # Then score count (City)
                  self._score_matching(df, f'form_match_{adult_key}', prefs, form_map)
+                 # Then score count (BdV)
+                 if 'bassin_de_vie' in df.columns:
+                     df[f'form_match_{adult_key}_bdv'] = df['bassin_de_vie'].map(lambda b: len(form_map_bdv.get(b, set()).intersection(prefs)))
+                     min_b, max_b = get_bounds(f'form_match_{adult_key}_bdv_scaled', self.scores_cat, self.global_stats)
+                     if pd.isna(max_b): max_b = float(len(prefs))
+                     df[f'form_match_{adult_key}_bdv_scaled'] = min_max_scale(df[f'form_match_{adult_key}_bdv'].fillna(0), min_b, max_b)
 
         # Aggregate formation names
         if self.codformations_index is not None and not self.codformations_index.empty:
@@ -573,13 +590,33 @@ class ScoringEngine:
 
         # EPCI Bonus
         current_epci = None
+        current_reg = None
+        current_dep = None
+        
         if config.commune_actuelle:
              if isinstance(config.commune_actuelle, str) and config.commune_actuelle in self.df_all_communes.index:
-                 current_epci = self.df_all_communes.loc[config.commune_actuelle]['epci_code']
+                 cur_row = self.df_all_communes.loc[config.commune_actuelle]
+                 current_epci = cur_row['epci_code']
+                 current_reg = cur_row['reg_code']
+                 current_dep = cur_row['dep_code']
              elif isinstance(config.commune_actuelle, (pd.Series, pd.DataFrame)) and 'epci_code' in config.commune_actuelle:
                   current_epci = config.commune_actuelle['epci_code'].iloc[0]
+                  current_reg = config.commune_actuelle['reg_code'].iloc[0]
+                  current_dep = config.commune_actuelle['dep_code'].iloc[0]
 
-        df['mob_epci_scaled'] = np.where(df['epci_code'] == current_epci, 1, 0) if current_epci else 0.0
+        # Conditional EPCI Bonus: only apply if searching within same region or department
+        apply_epci_bonus = False
+        if config.loc_search_area in ['departement', 'region']:
+             if config.loc_search_code:
+                  if config.loc_search_area == 'departement' and config.loc_search_code == current_dep:
+                       apply_epci_bonus = True
+                  elif config.loc_search_area == 'region' and config.loc_search_code == current_reg:
+                       apply_epci_bonus = True
+        
+        if apply_epci_bonus and current_epci:
+             df['mob_epci_scaled'] = np.where(df['epci_code'] == current_epci, 1.0, 0.0)
+        else:
+             df['mob_epci_scaled'] = 0.0
 
         # --- INCLUSION ---
         df = compute_inclusion_score(df, config, self.incl_index, self.associations_data, self.scores_cat, self.global_stats)
@@ -649,9 +686,28 @@ def compute_inclusion_score(df: gpd.GeoDataFrame, config: ScoringConfig, incl_in
              elif isinstance(i, str) and len(i)>=3: interest_codes.add(i)
         
         if interest_codes:
-            start_tuple = tuple(interest_codes)
-            # Assuming id_waldec has the code
-            affinite_assos = associations_data[associations_data['id_waldec'].astype(str).str.startswith(start_tuple, na=False)]
+            start_tuple = tuple({c.lstrip('0') if c.startswith('0') else c for c in interest_codes})
+            # Normalize id_waldec too for comparison (stripping leading zero)
+            # Actually, id_waldec in associations_data might have zeros. 
+            # The filter .str.startswith(start_tuple) is sensitive.
+            # Let's normalize BOTH to be safe.
+            def normalize_waldec(s):
+                 s = str(s).strip()
+                 return s.lstrip('0') if s.startswith('0') else s
+
+            # Optimization: create a normalized version of interest_codes for startswith
+            normalized_interests = [c.lstrip('0') if c.startswith('0') else c for c in interest_codes]
+            # Since we use startswith, we need to match the data format. 
+            # If data is '011010', and search is '11010', startswith fails.
+            # Better approach: normalize the column or use a regex.
+            # But regex is slow. Let's use a mapping approach or expand interest_codes to include both.
+            expanded_interests = set()
+            for c in interest_codes:
+                 expanded_interests.add(c)
+                 if c.startswith('0'): expanded_interests.add(c.lstrip('0'))
+                 else: expanded_interests.add('0' + c)
+            
+            affinite_assos = associations_data[associations_data['id_waldec'].astype(str).str.startswith(tuple(expanded_interests), na=False)]
             affinite_counts = affinite_assos.groupby('codgeo')['count'].sum().reindex(df.index, fill_value=0)
             df['affinite_density'] = (affinite_counts * 1000) / df['population']
             min_b, max_b = get_bounds('inc_asso_add_scaled', scores_cat, global_stats)
