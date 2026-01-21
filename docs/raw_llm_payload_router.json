@@ -1,0 +1,82 @@
+[
+  {
+    "parts": [
+      {
+        "content": "\n**R\u00f4le** : Tu es le Cerveau de l'Assistant ODIS. Ton job est de router le message de l'utilisateur vers le bon agent sp\u00e9cialis\u00e9.\n\n**Agents disponibles** :\n1. **INTERVIEWER** : Pour la collecte de besoins (phase initiale puis si besoin pour l'ajout des information suppl\u00e9mentaires).\n2. **SCORER** : Pour calculer le Top 5 villes (quand l'utilisateur confirme ou demande le r\u00e9sultat).\n3. **DECORATION** : Cascade Scout + Web + Job Hunter. Utilise-la UNIQUEMENT quand l'utilisateur demande \"plus d'infos\" ou \"des d\u00e9tails\" sur une ville D\u00c9J\u00c0 identifi\u00e9e ou affich\u00e9e dans le Top 5.\n4. **SCOUT** : Pour une question sp\u00e9cifique de vie locale (ex: \"Temps trajet prefecture\").\n5. **WEB** : Pour des recherches d'actualit\u00e9s/contextuelles.\n6. **JOB_HUNTER** : Pour une question sp\u00e9cifique emploi (ex: \"Offres boulangerie\").\n\n** Strat\u00e9gie de routage (CRITIQUE) ** :\n- Si l'utilisateur d\u00e9crit sa situation -> **INTERVIEWER**.\n- Si validation finale -> **SCORER**.\n- Si \"plus d'infos\" sur une ville -> **DECORATION**.\n- Si question pr\u00e9cise sur un r\u00e9sultat -> **SCOUT** ou **JOB_HUNTER**.\n- Si modif ou ajout de crit\u00e8re -> **INTERVIEWER**.\n\n**Contexte Actuel** :\n- Phase Actuelle : N/A\n- Villes identifi\u00e9es : 0\n- Crit\u00e8res pr\u00e9sents : - Commune: Bordeaux\n- M\u00e9tiers: 2\n- Profil: Famille\n- Zone: region\n\n**Dossier (Briefing)** :\n(Pas encore de briefing)\n\n** Extraction du Contexte (CRITIQUE) ** :\n- Si l'utilisateur mentionne une ville cible (ex: \"Bordeaux\", \"Carcassonne\") ou y fait r\u00e9f\u00e9rence (\"Celle-ci\", \"La premi\u00e8re\"), identifie-la et remplis `focus_city`.\n- **Note** : Ne confonds pas avec `commune_actuelle` (o\u00f9 l'utilisateur vit actuellement). `focus_city` est la ville sur laquelle il veut des d\u00e9tails.\n\n**DIRECTIVE DE SORTIE** : R\u00e9ponds toujours de mani\u00e8re hyper concise et structur\u00e9e selon le sch\u00e9ma RoutingResult fourni.\n",
+        "timestamp": "2026-01-21 21:11:51.804021+00:00",
+        "dynamic_ref": null,
+        "part_kind": "system-prompt"
+      },
+      {
+        "content": "C'est entendu ! Je lance la recherche pour trouver les meilleures destinations pour Ahmed et Maria en Nouvelle-Aquitaine, en tenant compte de leur projet professionnel dans le b\u00e2timent, de l'arriv\u00e9e prochaine du b\u00e9b\u00e9 et de leurs besoins en mobilit\u00e9 et perfectionnement du fran\u00e7ais.\n\nJe te transmets les r\u00e9sultats tout de suite.",
+        "timestamp": "2026-01-21 21:11:51.804027+00:00",
+        "part_kind": "user-prompt"
+      }
+    ],
+    "timestamp": "2026-01-21 21:11:51.804174+00:00",
+    "instructions": null,
+    "kind": "request",
+    "run_id": "7f2ff89e-4a0e-4915-a9a7-0190dbfb14d4",
+    "metadata": null
+  },
+  {
+    "parts": [
+      {
+        "tool_name": "final_result",
+        "args": {
+          "reasoning": "L'utilisateur confirme le lancement de la recherche et attend les r\u00e9sultats. Passage au calcul du Top 5.",
+          "focus_city": null,
+          "target_agent": "scorer"
+        },
+        "tool_call_id": "pyd_ai_fb66da81cdb248b3baeb0ad7c81ca2cd",
+        "id": null,
+        "provider_details": {
+          "thought_signature": "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"
+        },
+        "part_kind": "tool-call"
+      }
+    ],
+    "usage": {
+      "input_tokens": 747,
+      "cache_write_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 497,
+      "input_audio_tokens": 0,
+      "cache_audio_read_tokens": 0,
+      "output_audio_tokens": 0,
+      "details": {
+        "thoughts_tokens": 445,
+        "text_prompt_tokens": 747
+      }
+    },
+    "model_name": "gemini-3-flash-preview",
+    "timestamp": "2026-01-21 21:11:56.830012+00:00",
+    "kind": "response",
+    "provider_name": "google-gla",
+    "provider_url": "https://generativelanguage.googleapis.com/",
+    "provider_details": {
+      "finish_reason": "STOP"
+    },
+    "provider_response_id": "HEFxaduOLKuVxN8P9sy4kA4",
+    "finish_reason": "stop",
+    "run_id": "7f2ff89e-4a0e-4915-a9a7-0190dbfb14d4",
+    "metadata": null
+  },
+  {
+    "parts": [
+      {
+        "tool_name": "final_result",
+        "content": "Final result processed.",
+        "tool_call_id": "pyd_ai_fb66da81cdb248b3baeb0ad7c81ca2cd",
+        "metadata": null,
+        "timestamp": "2026-01-21 21:11:56.840601+00:00",
+        "part_kind": "tool-return"
+      }
+    ],
+    "timestamp": "2026-01-21 21:11:56.840684+00:00",
+    "instructions": null,
+    "kind": "request",
+    "run_id": "7f2ff89e-4a0e-4915-a9a7-0190dbfb14d4",
+    "metadata": null
+  }
+]

@@ -24,9 +24,27 @@ L'orchestrateur pilote la conversation à travers trois phases :
 2. **SCORING** : Présentation argumentée des meilleurs territoires.
 3. **DECORATION** : Triple cascade automatique (**Scout + Web + JobHunter**) pour explorer une ville en détail.
 
+## ⚡ Optimisations de Performance
+
+### 🔀 Router Bypass Pattern (SOTA)
+
+Pour réduire la latence et la consommation de tokens, le graphe utilise un **point d'entrée intelligent** :
+
+- **Concept** : Si l'utilisateur est déjà en phase d'interview (`active_agent == "interviewer"`), le `START` du graphe redirige directement vers l'Interviewer sans passer par l'agent Router.
+- **Gain** : Économie de ~1000 tokens par tour et suppression du délai d'inférence du Router.
+- **Sortie** : L'Interviewer boucle sur lui-même tant que `is_interview_complete` est `False`.
+
+### 📦 Batch Referentiel Search
+
+L'agent Interviewer utilise souvent plusieurs appels d'outils pour normaliser des données (Ville, Métier, Formation). Chaque appel d'outil déclenche un cycle de re-calcul coûteux en tokens (car Gemini doit re-scanner tout le contexte).
+
+- **Solution** : `search_referentiels_batch_tool`.
+- **Fonctionnement** : Permet au modèle d'envoyer plusieurs requêtes de recherche en **un seul tour de parole**.
+- **Gain** : Réduit les "doubles facturations" de contexte et accélère la collecte de données multi-points.
+
 ## 🛠️ Outils & Capacités
 
-- `search_commune` / `search_referentiels` : Identification précise des données.
+- `search_referentiels` / `search_referentiels_batch` : Identification précise des données (Communes, ROME, Formations, etc.).
 - `compute_top_cities` : Moteur de scoring ODIS.
 - `search_places` / `compute_routes` (Google Maps) : Expertise terrain.
 - `google_search` (Native Capability) : Grounding web en temps réel (utilisé par l'agent WEB).

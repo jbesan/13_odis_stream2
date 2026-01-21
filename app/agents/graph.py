@@ -2,7 +2,7 @@
 import logging
 import os
 from typing import Literal, Dict, Any
-from langgraph.graph import StateGraph, END
+from langgraph.graph import StateGraph, END, START
 from langchain_core.runnables import RunnableConfig
 from google import genai
 from dotenv import load_dotenv
@@ -87,6 +87,35 @@ def _get_p_model(agent_name: str, client: genai.Client) -> GoogleModel:
     provider = GoogleProvider(client=client)
     return GoogleModel(model_name, provider=provider)
 
+# --- Routing Logic (Pure Python) ---
+
+def route_from_start(state: ODISGraphState):
+    """
+    SOTA Pattern: Router Bypass.
+    If we are in the middle of an interview, skip the Router entirely.
+    """
+    # If the last active agent was Interviewer and it's NOT done -> Go back to Interviewer
+    if state.active_agent == "interviewer" and not state.is_interview_complete:
+        logger.info("⏩ [ROUTER BYPASS] Continuing active interview session.")
+        return "interviewer"
+    
+    # Default entry point
+    return "router"
+
+def route_from_interviewer(state: ODISGraphState):
+    """
+    SOTA Pattern: Autonomous Loop.
+    Decides whether to loop back or release control to Router.
+    """
+    if state.is_interview_complete:
+        # Release control: Go to Router (or END if you want to stop)
+        logger.info("🚩 [INTERVIEWER] Session complete. Returning control to Router.")
+        # Usually, after interview, we might want the Router to check if we go to Scorer
+        return "router" 
+    
+    # Keep control: Loop back to handle user answer
+    return "interviewer"
+
 # --- Nodes ---
 
 async def router_node(state: ODISGraphState, config: RunnableConfig):
@@ -94,6 +123,13 @@ async def router_node(state: ODISGraphState, config: RunnableConfig):
     deps = get_deps(config)
     deps.state = state
     
+    from datetime import datetime
+    start_time = datetime.now()
+    logger.info(f"🚀 [RELAY] Entering router_node at {start_time.strftime('%H:%M:%S.%f')[:-3]}")
+
+    # LEGACY BYPASS REMOVED: Now handled by conditional entry point at START.
+    # If we are here, it means we NEED a routing decision.
+
     # Input is the last message
     user_msg = state.messages[-1]["content"] if state.messages else ""
     
@@ -104,11 +140,21 @@ async def router_node(state: ODISGraphState, config: RunnableConfig):
         model = _get_p_model("router", client=deps.client)
         result = await router_agent.run(user_msg, deps=deps, model=model)
         decision = result.output
-        logger.info(f"🧠 [ROUTER] Direction: {decision.target_agent} ({decision.reasoning})")
         
+        end_time = datetime.now()
+        logger.info(f"🧠 [ROUTER] Direction: {decision.target_agent} ({decision.reasoning}) - Duration: {(end_time - start_time).total_seconds():.3f}s")
+        
+        # Decide if we need Refiner (only for experts)
+        experts = ['scorer', 'decoration', 'scout', 'web', 'job_hunter']
+        next_step = decision.target_agent
+        if decision.target_agent in experts:
+            # We want to go to Refiner first, but store the FINAL target in next_node
+            pass
+
         return {
             "next_node": decision.target_agent,
             "focus_city": decision.focus_city or state.focus_city,
+            "active_agent": decision.target_agent, # Set the active agent
             "usage": capture_usage(result, "router", mod_id)
         }
     except Exception as e:
@@ -151,16 +197,25 @@ async def interviewer_node(state: ODISGraphState, config: RunnableConfig):
     deps.state = state
     user_msg = state.messages[-1]["content"] if state.messages else ""
     
+    from datetime import datetime
+    start_time = datetime.now()
+    logger.info(f"🚀 [RELAY] Entering interviewer_node at {start_time.strftime('%H:%M:%S.%f')[:-3]}")
+    
     try:
         mod_id = get_model("interviewer")
         model = _get_p_model("interviewer", client=deps.client)
         result = await interviewer_agent.run(user_msg, deps=deps, model=model)
         
-        # We return the NEW messages and the updated search_criteria from structured output
+        end_time = datetime.now()
+        logger.info(f"📊 [RELAY] Exiting interviewer_node at {end_time.strftime('%H:%M:%S.%f')[:-3]} - Duration: {(end_time - start_time).total_seconds():.3f}s")
+        
         return {
             "messages": [{"role": "assistant", "content": result.output.response}],
             "search_criteria": result.output.search_criteria or deps.state.search_criteria,
-            "next_node": END,
+            # CRITICAL: Lock the active agent
+            "active_agent": "interviewer",
+            # CRITICAL: Update completion status from Agent output
+            "is_interview_complete": result.output.is_complete,
             "usage": capture_usage(result, "interviewer", mod_id)
         }
     except Exception as e:
@@ -171,6 +226,10 @@ async def scorer_node(state: ODISGraphState, config: RunnableConfig):
     deps = get_deps(config)
     deps.state = state
     
+    from datetime import datetime
+    start_time = datetime.now()
+    logger.info(f"🚀 [RELAY] Entering scorer_node at {start_time.strftime('%H:%M:%S.%f')[:-3]}")
+
     mod_id = get_model("scorer")
     model = _get_p_model("scorer", client=deps.client)
     result = await scorer_agent.run("Start Scoring", deps=deps, model=model) 
@@ -187,6 +246,9 @@ async def scorer_node(state: ODISGraphState, config: RunnableConfig):
                         logger.debug("✅ [GRAPH] Recovered full top_cities from tool output")
                         top_cities = part.content["cities"]
                         break
+
+    end_time = datetime.now()
+    logger.info(f"📊 [RELAY] Exiting scorer_node at {end_time.strftime('%H:%M:%S.%f')[:-3]} - Duration: {(end_time - start_time).total_seconds():.3f}s")
 
     # We update top_cities from structured output
     return {
@@ -325,16 +387,45 @@ def create_odis_graph():
     builder.add_node("synthesizer", synthesizer_node)
     
     # 2. Edges
-    builder.set_entry_point("refiner")
+    # 2. Edges
+    # --- 1. OPTIMIZED ENTRY POINT (Router Bypass) ---
+    builder.add_conditional_edges(
+        START,
+        route_from_start,
+        {
+            "interviewer": "interviewer",
+            "router": "router"
+        }
+    )
     
-    # After Refiner, always Router
-    builder.add_edge("refiner", "router")
+    # --- 2. INTERVIEWER LOOP ---
+    builder.add_conditional_edges(
+        "interviewer",
+        route_from_interviewer,
+        {
+            "interviewer": END,           # The Loop (Stop and wait for user)
+            "router": "router"            # The Exit Strategy
+        }
+    )
     
-    # After Router, Branching
-    def route_decision(state: ODISGraphState):
-        decision = state.next_node # set by router
+    # After Router: decide whether to go to Refiner (experts) or direct (interviewer)
+    def router_branch(state: ODISGraphState):
+        decision = state.next_node
+        experts = ['scorer', 'decoration', 'scout', 'web', 'job_hunter']
+        if decision in experts:
+            return "refiner"
+        elif decision == "interviewer":
+            return "interviewer"
+        else:
+            return END
+            
+    builder.add_conditional_edges("router", router_branch)
+    
+    # After Refiner: go to the expert agent
+    def refiner_branch(state: ODISGraphState):
+        decision = state.next_node
         if decision == "decoration":
-            return ["scout", "web", "job_hunter"] # Return List for Parallel Fan-Out
+            return ["scout", "web", "job_hunter"]
         elif decision == "scout":
             return "scout_solo"
         elif decision == "web":
@@ -342,13 +433,12 @@ def create_odis_graph():
         elif decision == "job_hunter":
             return "job_hunter_solo"
         else:
-            return decision # interviewer, scorer
+            return decision # e.g. scorer
             
     builder.add_conditional_edges(
-        "router",
-        route_decision,
+        "refiner",
+        refiner_branch,
         {
-            "interviewer": "interviewer",
             "scorer": "scorer",
             "scout_solo": "scout_solo",
             "web_solo": "web_solo",
@@ -364,11 +454,9 @@ def create_odis_graph():
     builder.add_edge("web", "synthesizer")
     builder.add_edge("job_hunter", "synthesizer")
     
-    # Synthesizer End
+    # End Edges
     builder.add_edge("synthesizer", END)
-    
-    # Standalone End Edges
-    builder.add_edge("interviewer", END)
+    # builder.add_edge("interviewer", END) # Removed because INTERVIEWER loops or goes to ROUTER
     builder.add_edge("scorer", END)
     builder.add_edge("scout_solo", END)
     builder.add_edge("web_solo", END)

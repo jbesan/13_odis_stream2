@@ -212,6 +212,10 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
         if k in filters:
             filters[k] = get_code(filters[k])
 
+    from datetime import datetime
+    start_logic = datetime.now()
+    logger.info(f"⚙️  [MCP] Entering _compute_top_cities_logic at {start_logic.strftime('%H:%M:%S.%f')[:-3]}")
+
     engine = get_scoring_engine()
     
     # 1. Resolve Commune
@@ -283,7 +287,10 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
     
     # 3. Run Engine
     try:
+        start_engine = datetime.now()
         processed_gdf = engine.run(config, log_prefix="chatbot")
+        end_engine = datetime.now()
+        logger.info(f"⏱️  [ENGINE] run() took {(end_engine - start_engine).total_seconds():.3f}s")
     except Exception as e:
         logger.error(f"❌ [MCP] Error: {e}")
         return {"error": str(e)}
@@ -353,7 +360,8 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
             "details": details_streamlined
         })
         
-    logger.debug(f"✅ [MCP] Response: Found {len(results)} cities. Top: {[r['name'] for r in results[:3]]}")
+    end_logic = datetime.now()
+    logger.info(f"🏁 [MCP] Exiting _compute_top_cities_logic at {end_logic.strftime('%H:%M:%S.%f')[:-3]} - Full duration: {(end_logic - start_logic).total_seconds():.3f}s")
     
     return sanitize_for_json({
         "cities": results,

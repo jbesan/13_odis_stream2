@@ -21,6 +21,22 @@ def search_referentiels(query: str, domain: str) -> List[Dict[str, Any]]:
     """Recherche des codes officiels (Formations, ROME, Services d'inclusion, WALDEC, etc.) dans les référentiels."""
     return _search_referentiels_logic(query, domain)
 
+def search_referentiels_batch(queries: List[Dict[str, str]]) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Version optimisée pour effectuer plusieurs recherches de référentiels en un seul appel.
+    Args:
+        queries: Liste de dictionnaires {'query': '...', 'domain': '...'}
+    Returns:
+        Dictionnaire mappant chaque requête 'query' à ses résultats.
+    """
+    results = {}
+    for item in queries:
+        q = item.get('query')
+        d = item.get('domain')
+        if q and d:
+            results[f"{d}:{q}"] = _search_referentiels_logic(q, d)
+    return results
+
 
 def search_places(queries: List[str], location: str) -> Dict[str, Any]:
     """Recherche des lieux (POIs), commerces ou services dans une ville."""

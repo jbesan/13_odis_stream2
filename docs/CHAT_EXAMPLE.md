@@ -12,10 +12,17 @@ Le profil Famille est le plus adapté et ils n'ont pas de problème de santé pa
 
 #########################
 
-Profil et Localisation : C'est un couple d'origine vénézuélienne actuellement basé à Bordeaux. Ils souhaitent rester en Nouvelle-Aquitaine.
-Composition Familiale : 2 adultes. Maria est enceinte de 4 mois, ce qui place le projet sous le profil de pondération "Famille".
-Projet Professionnel : Diego est pharmacien (identifié sous le code FAP Biologistes médicaux). Maria n'a pas encore de projet professionnel défini.
-Besoins Prioritaires :
-Santé : Accès impératif à une maternité.
-Inclusion : Besoin de cours de Français Langue Étrangère (FLE).
-Logement : Ils acceptent un hébergement en foyer à leur arrivée, avec l'objectif d'obtenir un logement social à plus long terme.
+C'est un couple d'origine vénézuélienne actuellement basé à Bordeaux.
+
+Ils souhaitent rester en Nouvelle-Aquitaine
+
+2 adultes. Maria est enceinte de 4 mois
+
+Diego est charpentier/couvreur et veut vraiment trouver un travail ASAP. Maria n'a pas encore de projet professionnel défini.
+
+Besoin de cours de Français Langue Étrangère (FLE).
+
+Ils acceptent un hébergement en location dans le parc privé à leur arrivée, avec l'objectif d'obtenir un logement social à plus long terme.
+Un petit appartement suffit
+
+Besoin d'aide pour acquérir un véhicule

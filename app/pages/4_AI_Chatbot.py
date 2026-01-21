@@ -81,7 +81,9 @@ with st.sidebar:
     if st.button("Recommencer", type="primary", key="btn_recommencer"):
         st.session_state.chat_history = []
         st.session_state.agent_state = ODISGraphState()
+        print("#"*86)
         print("################################## NEW CONVERSATION ##################################")
+        print("#"*86)
         st.rerun()
 
 # --- Helpers ---
@@ -162,6 +164,10 @@ if prompt := st.chat_input("Répondez ici...", key="chat_input"):
 
                 # 4. Exécution du graphe via astream_events pour capturer le démarrage des noeuds
                 final_state = input_state
+                from datetime import datetime
+                g_start = datetime.now()
+                logger.info(f"🪐 [GRAPH] astream_events START at {g_start.strftime('%H:%M:%S.%f')[:-3]}")
+                
                 async for event in odis_graph.astream_events(input_state, config=config, version="v2"):
                     kind = event.get("event")
                     
@@ -181,6 +187,8 @@ if prompt := st.chat_input("Répondez ici...", key="chat_input"):
                     if kind == "on_chain_end" and event.get("name") == "LangGraph":
                         final_state = event.get("data", {}).get("output")
 
+                g_end = datetime.now()
+                logger.info(f"🪐 [GRAPH] astream_events END at {g_end.strftime('%H:%M:%S.%f')[:-3]} - Duration: {(g_end - g_start).total_seconds():.3f}s")
                 return final_state
             except Exception as e:
                 logger.error(f"❌ Graph Error: {e}", exc_info=True)

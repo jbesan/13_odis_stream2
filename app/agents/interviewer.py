@@ -8,15 +8,20 @@ from .state import ODISGraphState, ODISDeps
 from core.models import SearchCriterias
 from .agent_config import get_model
 # Import the pure tools
-from .tools import search_referentiels
+from .tools import search_referentiels, search_referentiels_batch
 
 logger = logging.getLogger("interviewer_agent_v2")
 
 # --- Structured Output ---
 # Though Interviewer mainly talks, defining a structure helps if we want to extract final data.
+class SearchQuery(BaseModel):
+    query: str = Field(..., description="Mot clé de recherche")
+    domain: str = Field(..., description="Domaine de recherche possibles:['formation_codes', 'inclusion_services', 'waldec_codes', 'rome_codes', 'regions', 'departements', 'communes', 'housing_types'].")
+
 class InterviewerResult(BaseModel):
     response: str
     search_criteria: Optional[SearchCriterias] = None
+    is_complete: bool = Field(False, description="Set to True ONLY when all metadata is collected and you are asking for final confirmation to search.")
     model_config = ConfigDict(populate_by_name=True)
 
 # --- Prompt ---
@@ -26,8 +31,10 @@ INTERVIEWER_SYSTEM_PROMPT = """
 **Ton** : Empathique, professionnel, direct (tutoiement). 
 
 ** Directives d'entretien ** :
-- Ne pose JAMAIS toutes les questions d'un coup, mais thème par thème.
+- Ne pose JAMAIS toutes les questions en un seul message, mais un message avec les questions par thème (composition du foyer, projet pro, logement, etc.).
 - Vérifie TOUJOURS les données déjà collectées ci-dessous avant de poser une question et ne redemande JAMAIS la même information.
+- Utilise PREFERENTIELLEMENT `search_referentiels_batch` pour normaliser PLUSIEURS inputs en un seul appel (ex: commune + métier). 
+- Utilise `search_referentiels` pour un input unique.
 
 ** Données déjà collectées (À NE PAS REDEMANDER) ** :
 {SEARCH_CRITERIAS}
@@ -46,8 +53,37 @@ INTERVIEWER_SYSTEM_PROMPT = """
 **Directives Techniques** :
 - **ENRICHISSEMENT** : Remplis TOUJOURS les champs de `search_criteria` avec des objets JSON `{{"code": "...", "label": "..."}}` complets (pas de texte comme "CriteriaItem(...)").
 - Ne t'arrête pas tant que tu n'as pas toutes les informations [OBLIGATOIRES] et pose des questions pour obtenir les autres éléments facultatifs.
-- **TRANSITION** : Une fois l'entretien fini et les données [OBLIGATOIRES] acquises, synthétise tes trouvailles et demande confirmation : "J'ai suffisamment de critères, on lance la recherche ou voulez-vous ajouter d'autres besoins ?"
-- **SORTIE** : Remplis `InterviewerResult`. Tes messages texte vont dans `response`.
+- **TRANSITION** : Une fois l'entretien fini et les données [OBLIGATOIRES] acquises, synthétise tes trouvailles et demande confirmation : "J'ai suffisamment de critères, on lance la recherche ou voulez-vous ajouter d'autres besoins ?".
+- **SORTIE** : Une la demande de recherche confirmée retourne IMMEDIATEMENT`InterviewerResult` avec `is_complete=True`
+"""
+
+# Version Compactée & Orientée Action
+INTERVIEWER_SYSTEM_PROMPT_2 = """
+**Rôle**: Interviewer ODIS (Assistant Travailleur Social).
+**Objectif**: Compléter les critères de réinstallation ({SEARCH_CRITERIAS}).
+**Style**: Direct, professionnel, itératif (1 thème/message).
+
+**RÈGLES D'OR**:
+1. Vérifie TOUJOURS les données existantes avant de questionner.
+2. Ne demande JAMAIS une info déjà présente dans le contexte.
+3. Utilise PREFERENTIELLEMENT `search_referentiels_batch` pour normaliser PLUSIEURS inputs en un seul appel (ex: commune + métier)
+4. Utilise `search_referentiels` pour un input unique.
+
+**CHECKLIST PRIORITAIRE** (Collecte dans l'ordre):
+1. [OBLIGATOIRE] **Départ**: `Commune Actuelle` (Code INSEE via tool).
+2. [OBLIGATOIRE] **Cible**: `Zone de Recherche` (Dép/Région/France).
+3. [OBLIGATOIRE] **Foyer**: Adultes, Enfants, Grossesse.
+4. **Projet**: Métiers (Codes ROME), Formations.
+5. **Logement**: Type ({HEBERGEMENT_OPTIONS} / {LOGEMENT_OPTIONS}).
+6. **Scolaire**: {CLASSES_SCOLAIRES}.
+7. **Spécifique**: Santé ({SANTE_OPTIONS}), Inclusion (FLE/Assos).
+8. [OBLIGATOIRE] **Profil**: Suggérer un profil parmi {WEIGHT_PROFILES}.
+
+**FIN DE MISSION**:
+- SI tous les champs [OBLIGATOIRE] sont remplis:
+  - Fais une synthèse ultra-courte.
+  - Demande confirmation pour lancer le scoring.
+  - SI confirmé -> `is_complete=True`.
 """
 
 # --- Agent Definition ---
@@ -61,23 +97,33 @@ interviewer_agent = Agent(
 @interviewer_agent.system_prompt
 async def main_instructions(ctx: RunContext[ODISDeps]) -> str:
     """Injects dynamic values directly into the prompt using Python's string formatting."""
-    filtered_areas_values = [v for k, v in cfg.LOC_SEARCH_AREA_OPTIONS.items() if k != 'custom']
     
     # Serialize search criteria for the prompt
     search_criteria_json = ctx.deps.state.search_criteria.model_dump_json(indent=2, exclude_none=True)
 
-    return INTERVIEWER_SYSTEM_PROMPT.format(
-        BRIEFING=ctx.deps.state.briefing or "(Pas de briefing)",
-        CLASSES_SCOLAIRES=str(cfg.CLASSES_SCOLAIRES),
+    prompt = INTERVIEWER_SYSTEM_PROMPT.format(
+        SEARCH_CRITERIAS=search_criteria_json,
         HEBERGEMENT_OPTIONS=str(cfg.HEBERGEMENT_OPTIONS),
         LOGEMENT_OPTIONS=str(cfg.LOGEMENT_OPTIONS),
+        CLASSES_SCOLAIRES=str(cfg.CLASSES_SCOLAIRES),
         SANTE_OPTIONS=str(cfg.SANTE_OPTIONS),
         WEIGHT_PROFILES=str(list(cfg.WEIGHT_PROFILES.keys())),
-        LOC_SEARCH_AREAS=", ".join(filtered_areas_values),
-        SEARCH_CRITERIAS=search_criteria_json
     )
+    
+    return prompt
 
 # --- Tools ---
+
+@interviewer_agent.tool
+def search_referentiels_batch_tool(ctx: RunContext[ODISDeps], searches: List[SearchQuery]) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Version optimisée pour effectuer plusieurs recherches de référentiels en UN SEUL tour.
+    Utilise cet outil si tu as plusieurs informations à normaliser (ex: ville + métier).
+    
+    Args:
+        searches (List[SearchQuery]): Liste d'objets {query, domain}
+    """
+    return search_referentiels_batch([s.model_dump() for s in searches])
 
 # We wrap the pure tools to make them PydanticAI compatible (inject context if needed)
 # search_commune and search_referentiels are pure lookups, so we can just register them directly?

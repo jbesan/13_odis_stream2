@@ -34,8 +34,21 @@ def add_usage(left: UsageStats, right: Any) -> UsageStats:
     # Merge breakdowns
     new_breakdown = getattr(left, 'breakdown', {}).copy()
     right_breakdown = getattr(right, 'breakdown', {})
+    
     if right_breakdown:
-        new_breakdown.update(right_breakdown)
+        for node, metrics in right_breakdown.items():
+            if node in new_breakdown:
+                # Accumulate values if node already exists
+                existing = new_breakdown[node]
+                new_breakdown[node] = {
+                    "model": metrics.get("model", existing.get("model")),
+                    "input": existing.get("input", 0) + metrics.get("input", 0),
+                    "output": existing.get("output", 0) + metrics.get("output", 0),
+                    "total": existing.get("total", 0) + metrics.get("total", 0),
+                    "cost": existing.get("cost", 0.0) + metrics.get("cost", 0.0)
+                }
+            else:
+                new_breakdown[node] = metrics
 
     return UsageStats(
         input_tokens=left.input_tokens + (right.input_tokens or 0),
@@ -101,6 +114,10 @@ class ODISGraphState(BaseModel):
     last_summarized_idx: int = 0 # Pointer to the last message summarized
     next_node: Optional[str] = None # Routing decision
     
+    # Session Management (SOTA Loop)
+    active_agent: Optional[str] = Field(None, description="The last active agent node name")
+    is_interview_complete: bool = Field(False, description="True if Interviewer has finished collection")
+
     # Token Tracking (Optional for graph, but good for reporting)
     usage: Annotated[UsageStats, add_usage] = Field(default_factory=UsageStats)
 

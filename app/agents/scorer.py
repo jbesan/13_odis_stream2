@@ -77,9 +77,17 @@ def compute_top_cities_tool(ctx: RunContext[ODISDeps]) -> Dict[str, Any]:
         Dict[str, Any]: Dictionnaire des villes correspondantes.
     """
     try:
+        from datetime import datetime
+        start_time = datetime.now()
+        logger.info(f"🛠️  [TOOL] Starting compute_top_cities_tool at {start_time.strftime('%H:%M:%S.%f')[:-3]}")
+        
         # We use the criteria model directly from the state (deps)
         criteria = ctx.deps.state.search_criteria
-        return compute_top_cities(criteria)
+        res = compute_top_cities(criteria)
+        
+        end_time = datetime.now()
+        logger.info(f"✅ [TOOL] compute_top_cities_tool finished at {end_time.strftime('%H:%M:%S.%f')[:-3]} - Duration: {(end_time - start_time).total_seconds():.3f}s")
+        return res
     except Exception as e:
         logger.error(f"❌ [TOOL] compute_top_cities failed: {e}")
         return {"error": str(e)}
