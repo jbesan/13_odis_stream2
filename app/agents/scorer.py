@@ -15,7 +15,6 @@ logger = logging.getLogger("scorer_agent_v2")
 # --- Structured Output ---
 class ScorerResult(BaseModel):
     response: str
-    top_cities: List[Dict[str, Any]] = Field(default_factory=list)
     model_config = ConfigDict(populate_by_name=True)
 
 # --- System Prompt ---
@@ -35,7 +34,8 @@ Les critères de recherche sont injectés automatiquement dans le contexte, util
         - Donne son nom, sa population et son score global comme un pourcentage.
         - Cite 1 ou 2 points forts pertinents par rapport au profil (Famille, Emploi, etc.).
     b. Termine TOUJOURS en suggérant à l'utilisateur de lancer une recherche approfondie sur l'une des communes.
-3. **SORTIE STRUCTUREE** : Retourne l'objet `top_cities` avec le résultat exact de `compute_top_cities` et l'objet `response` avec ton analyse.
+3. **IMPORTANT** : Ne retourne JAMAIS les données brutes des villes dans ta réponse. Contente-toi d'analyser le résultat de l'outil.
+4. **SORTIE STRUCTUREE** : Retourne l'objet `response` avec ton analyse textuelle uniquement.
 
 """
 
@@ -79,14 +79,14 @@ def compute_top_cities_tool(ctx: RunContext[ODISDeps]) -> Dict[str, Any]:
     try:
         from datetime import datetime
         start_time = datetime.now()
-        logger.info(f"🛠️  [TOOL] Starting compute_top_cities_tool at {start_time.strftime('%H:%M:%S.%f')[:-3]}")
+        logger.debug(f"🛠️  [TOOL] Starting compute_top_cities_tool at {start_time.strftime('%H:%M:%S.%f')[:-3]}")
         
         # We use the criteria model directly from the state (deps)
         criteria = ctx.deps.state.search_criteria
         res = compute_top_cities(criteria)
         
         end_time = datetime.now()
-        logger.info(f"✅ [TOOL] compute_top_cities_tool finished at {end_time.strftime('%H:%M:%S.%f')[:-3]} - Duration: {(end_time - start_time).total_seconds():.3f}s")
+        logger.debug(f"✅ [TOOL] compute_top_cities_tool finished at {end_time.strftime('%H:%M:%S.%f')[:-3]} - Duration: {(end_time - start_time).total_seconds():.3f}s")
         return res
     except Exception as e:
         logger.error(f"❌ [TOOL] compute_top_cities failed: {e}")

@@ -127,8 +127,8 @@ def _search_referentiels_logic(query: str, domain: str) -> List[Dict[str, Any]]:
         
         return score
 
-    # 1. Calculate relevance score
-    work_df['score'] = work_df.apply(calculate_relevance, axis=1)
+    # 1. Calculate relevance score - ensure scalar float
+    work_df['score'] = work_df.apply(lambda r: float(calculate_relevance(r)), axis=1)
     
     # 2. Sort by relevance score descending
     results_df = work_df[work_df['score'] > 0].sort_values(by='score', ascending=False)
@@ -280,6 +280,7 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
         codes_formations=c_formations,
         classe_enfants=filters.get('classe_enfants', []),
         besoin_sante=filters.get('besoin_sante', 'Aucun'),
+        type_logement=get_code(filters.get('type_logement')) or "appt_all",
         inc_services_add_selection=specific_needs,
         inc_services_core_selection=socle_sel,
         inc_asso_add_selection=filters.get('inc_asso_add_selection', [])
@@ -290,7 +291,7 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
         start_engine = datetime.now()
         processed_gdf = engine.run(config, log_prefix="chatbot")
         end_engine = datetime.now()
-        logger.info(f"⏱️  [ENGINE] run() took {(end_engine - start_engine).total_seconds():.3f}s")
+        logger.debug(f"⏱️  [ENGINE] run() took {(end_engine - start_engine).total_seconds():.3f}s")
     except Exception as e:
         logger.error(f"❌ [MCP] Error: {e}")
         return {"error": str(e)}

@@ -40,13 +40,13 @@ with st.sidebar:
     # API Usage Tracking
     if st.session_state.get("agent_state"):
         state = st.session_state.agent_state
-        st.subheader("📊 Consommation LLM")
-        u = state.usage
-        
-        # Simple summary
-        m1, m2 = st.columns(2)
-        m1.metric("Tokens", f"{u.total_tokens:,}".replace(",", " "))
-        m2.metric("Coût", f"${u.cost_usd:.4f}")
+        with st.expander("📊 Consommation LLM", expanded=False):
+            u = state.usage
+            
+            # Simple summary
+            m1, m2 = st.columns(2)
+            m1.metric("Tokens", f"{u.total_tokens:,}".replace(",", " "))
+            m2.metric("Coût", f"${u.cost_usd:.4f}")
         
         # Detailed breakdown
         breakdown = getattr(u, 'breakdown', {})
@@ -67,10 +67,11 @@ with st.sidebar:
                         st.caption(f"└ {node} : {data['total']} t ({data['input']} / {data['output']}) - ${data['cost']:.4f}")
                     st.divider()
 
-        with st.expander("⚙️ État Interne", expanded=False):
-            st.write(state.is_interview_complete)
+        with st.expander("⚙️ État Recherche", expanded=False):
             st.json(state.search_criteria)
 
+        with st.expander("⚙️ État Top 5", expanded=False):
+            st.write(state.top_cities)
 
     st.divider()
     st.markdown("""
@@ -168,7 +169,7 @@ if prompt := st.chat_input("Répondez ici...", key="chat_input"):
                 final_state = input_state
                 from datetime import datetime
                 g_start = datetime.now()
-                logger.info(f"🪐 [GRAPH] astream_events START at {g_start.strftime('%H:%M:%S.%f')[:-3]}")
+                logger.debug(f"🪐 [GRAPH] astream_events START at {g_start.strftime('%H:%M:%S.%f')[:-3]}")
                 
                 async for event in odis_graph.astream_events(input_state, config=config, version="v2"):
                     kind = event.get("event")
@@ -190,7 +191,7 @@ if prompt := st.chat_input("Répondez ici...", key="chat_input"):
                         final_state = event.get("data", {}).get("output")
 
                 g_end = datetime.now()
-                logger.info(f"🪐 [GRAPH] astream_events END at {g_end.strftime('%H:%M:%S.%f')[:-3]} - Duration: {(g_end - g_start).total_seconds():.3f}s")
+                logger.debug(f"🪐 [GRAPH] astream_events END at {g_end.strftime('%H:%M:%S.%f')[:-3]} - Duration: {(g_end - g_start).total_seconds():.3f}s")
                 return final_state
             except Exception as e:
                 logger.error(f"❌ Graph Error: {e}", exc_info=True)

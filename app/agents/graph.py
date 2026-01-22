@@ -125,7 +125,7 @@ async def router_node(state: ODISGraphState, config: RunnableConfig):
     
     from datetime import datetime
     start_time = datetime.now()
-    logger.info(f"🚀 [RELAY] Entering router_node at {start_time.strftime('%H:%M:%S.%f')[:-3]}")
+    logger.debug(f"🚀 [RELAY] Entering router_node at {start_time.strftime('%H:%M:%S.%f')[:-3]}")
 
     # Input is the last message
     user_msg = state.messages[-1]["content"] if state.messages else ""
@@ -196,7 +196,7 @@ async def interviewer_node(state: ODISGraphState, config: RunnableConfig):
     
     from datetime import datetime
     start_time = datetime.now()
-    logger.info(f"🚀 [RELAY] Entering interviewer_node at {start_time.strftime('%H:%M:%S.%f')[:-3]}")
+    logger.debug(f"🚀 [RELAY] Entering interviewer_node at {start_time.strftime('%H:%M:%S.%f')[:-3]}")
     
     try:
         mod_id = get_model("interviewer")
@@ -204,7 +204,7 @@ async def interviewer_node(state: ODISGraphState, config: RunnableConfig):
         result = await interviewer_agent.run(user_msg, deps=deps, model=model)
         
         end_time = datetime.now()
-        logger.info(f"📊 [RELAY] Exiting interviewer_node at {end_time.strftime('%H:%M:%S.%f')[:-3]} - Duration: {(end_time - start_time).total_seconds():.3f}s")
+        logger.debug(f"📊 [RELAY] Exiting interviewer_node at {end_time.strftime('%H:%M:%S.%f')[:-3]} - Duration: {(end_time - start_time).total_seconds():.3f}s")
         
         return {
             "messages": [{"role": "assistant", "content": result.output.response}],
@@ -225,14 +225,14 @@ async def scorer_node(state: ODISGraphState, config: RunnableConfig):
     
     from datetime import datetime
     start_time = datetime.now()
-    logger.info(f"🚀 [RELAY] Entering scorer_node at {start_time.strftime('%H:%M:%S.%f')[:-3]}")
+    logger.debug(f"🚀 [RELAY] Entering scorer_node at {start_time.strftime('%H:%M:%S.%f')[:-3]}")
 
     mod_id = get_model("scorer")
     model = _get_p_model("scorer", client=deps.client)
     result = await scorer_agent.run("Start Scoring", deps=deps, model=model) 
 
-    top_cities = result.output.top_cities
-    logger.debug(f"top_cities: {top_cities}")
+    # We extract top_cities EXCLUSIVELY from the tool history to avoid LLM parroting lag
+    top_cities = []
     
     for msg in reversed(result.all_messages()):
         if hasattr(msg, 'parts'):
@@ -240,14 +240,14 @@ async def scorer_node(state: ODISGraphState, config: RunnableConfig):
                 # In pydantic-ai, tool results are specifically in ToolReturnPart
                 if isinstance(part, ToolReturnPart) and part.tool_name == 'compute_top_cities_tool':
                     if isinstance(part.content, dict) and "cities" in part.content:
-                        logger.debug("✅ [GRAPH] Recovered full top_cities from tool output")
+                        logger.info("✅ [GRAPH] Recovered full top_cities from tool output history")
                         top_cities = part.content["cities"]
                         break
 
     end_time = datetime.now()
     logger.info(f"📊 [RELAY] Exiting scorer_node at {end_time.strftime('%H:%M:%S.%f')[:-3]} - Duration: {(end_time - start_time).total_seconds():.3f}s")
 
-    # We update top_cities from structured output
+    # We update top_cities from recovered data
     return {
         "messages": [{"role": "assistant", "content": result.output.response}],
         "top_cities": top_cities,
@@ -384,7 +384,6 @@ def create_odis_graph():
     builder.add_node("synthesizer", synthesizer_node)
     
     # 2. Edges
-    # 2. Edges
     # --- 1. OPTIMIZED ENTRY POINT (Router Bypass) ---
     builder.add_conditional_edges(
         START,
@@ -453,7 +452,6 @@ def create_odis_graph():
     
     # End Edges
     builder.add_edge("synthesizer", END)
-    # builder.add_edge("interviewer", END) # Removed because INTERVIEWER loops or goes to ROUTER
     builder.add_edge("scorer", END)
     builder.add_edge("scout_solo", END)
     builder.add_edge("web_solo", END)

@@ -11,28 +11,21 @@ logger = logging.getLogger("router_agent")
 ROUTING_SYSTEM_PROMPT = """
 **Rôle** : Tu es le Cerveau de l'Assistant ODIS. Ton job est de router le message de l'utilisateur vers le bon agent spécialisé.
 
+**Contexte Actuel** :
+- Villes identifiées : {CITIES_IDENTIFIED}
+- Ville active : {FOCUS_CITY}
+
+**Dossier (Briefing)** :
+{BRIEFING}
+
 **Agents disponibles** :
 1. **INTERVIEWER** : Pour la collecte de besoins (phase initiale puis si besoin pour l'ajout des information supplémentaires).
-2. **SCORER** : Pour calculer le Top 5 villes (quand l'utilisateur confirme ou demande le résultat).
-3. **DECORATION** : Cascade Scout + Web + Job Hunter. Utilise-la UNIQUEMENT quand l'utilisateur demande "plus d'infos" ou "des détails" sur une ville DÉJÀ identifiée ou affichée dans le Top 5.
+2. **SCORER** : Pour lancer la recherche et retourner le Top 5 villes selon les critères collectés.
+3. **DECORATION** : Cascade Scout + Web + Job Hunter pour approfondir l'analyse sur une ville de `Ville identifiées`
 4. **SCOUT** : Pour une question spécifique de vie locale (ex: "Temps trajet prefecture").
 5. **WEB** : Pour des recherches d'actualités/contextuelles.
 6. **JOB_HUNTER** : Pour une question spécifique emploi (ex: "Offres boulangerie").
 
-** Stratégie de routage (CRITIQUE) ** :
-- Si l'utilisateur décrit sa situation -> **INTERVIEWER**.
-- Si validation finale -> **SCORER**.
-- Si "plus d'infos" sur une ville -> **DECORATION**.
-- Si question précise sur un résultat -> **SCOUT** ou **JOB_HUNTER**.
-- Si modif ou ajout de critère -> **INTERVIEWER**.
-
-**Contexte Actuel** :
-- Phase Actuelle : {PHASE}
-- Villes identifiées : {CITIES_COUNT}
-- Critères présents : {CRITERIA_KEYS}
-
-**Dossier (Briefing)** :
-{BRIEFING}
 
 ** Extraction du Contexte (CRITIQUE) ** :
 - Si l'utilisateur mentionne une ville cible (ex: "Bordeaux", "Carcassonne") ou y fait référence ("Celle-ci", "La première"), identifie-la et remplis `focus_city`.
@@ -58,7 +51,8 @@ async def router_instructions(ctx: RunContext[ODISDeps]) -> str:
     # Prepare context variables
     phase = "DISCOVERY" # Default, or we track it in state
     
-    cities_count = len(ctx.deps.state.top_cities)
+    top_cities_names = [getattr(c, 'name', str(c)) for c in ctx.deps.state.top_cities]
+
     # Summary for the router
     criteria = ctx.deps.state.search_criteria
     city = criteria.commune_actuelle
@@ -74,8 +68,7 @@ async def router_instructions(ctx: RunContext[ODISDeps]) -> str:
     )
 
     return ROUTING_SYSTEM_PROMPT.format(
-        PHASE="N/A",
-        CITIES_COUNT=str(cities_count),
-        CRITERIA_KEYS=criteria_summary,
-        BRIEFING=ctx.deps.state.briefing or "(Pas encore de briefing)"
+        CITIES_IDENTIFIED=str(top_cities_names),
+        BRIEFING=ctx.deps.state.briefing or "(Pas encore de briefing)",
+        FOCUS_CITY=ctx.deps.state.focus_city or "Non définie"
     )

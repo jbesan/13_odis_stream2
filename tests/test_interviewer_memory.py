@@ -24,7 +24,8 @@ async def test_interviewer_memory_commune_actuelle(test_deps):
     mock_model = TestModel()
     
     with interviewer_agent.override(model=mock_model):
-        with patch('agents.interviewer.search_referentiels', return_value=[]):
+        with patch('agents.interviewer.search_referentiels', return_value=[]), \
+             patch('agents.interviewer.search_referentiels_batch', return_value={}):
             # Run the agent
             result = await interviewer_agent.run("Bonjour", deps=test_deps)
             

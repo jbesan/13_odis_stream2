@@ -1,6 +1,7 @@
 
 import logging
 from typing import List, Dict, Any, Optional
+from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 import config as cfg
 from .state import ODISGraphState, ODISDeps
@@ -10,11 +11,16 @@ from .tools import (
     compute_routes, 
     set_focus_city, 
     search_referentiels, 
+    search_referentiels_batch,
     search_refugee_associations, 
     search_odis_associations
 )
 
 logger = logging.getLogger("scout_agent_v2")
+
+class SearchQuery(BaseModel):
+    query: str = Field(..., description="Mot clé de recherche")
+    domain: str = Field(..., description="Domaine: ['rome_codes', 'communes', 'regions', 'departements'].")
 
 SCOUT_SYSTEM_PROMPT = """
 **Rôle** : Tu es le Scout ODIS. Expert en terrain. Tu épaules l'orchestrator pour trouver des informations et infrastructures locales pertinentes pour le projet de vie de la personne accompagnée.
@@ -28,7 +34,7 @@ SCOUT_SYSTEM_PROMPT = """
 1. **Gestion du Focus** : Utilise la `VILLE ACTIVE` fournie. Si elle est vide, demande à l'utilisateur de préciser sur quelle ville il souhaite des informations.
 
 2. **Recherche de Terrain** : Dans cet ordre de priorité
-    - **Utilisation du Code INSEE (code)** : Récupère le Code INSEE de la ville de `VILLE ACTIVE` avec l'outil `search_referentiels` (domain='communes').
+    - **Gestion du Code INSEE** : Récupère le Code INSEE de la ville de `VILLE ACTIVE` avec l'outil `search_referentiels_batch_tool` (domain='communes').
     - **Utilise systématiquement** `search_refugee_associations(codgeo=code)` pour identifier les structures spécialisées. C'est CRUCIAL pour l'argumentaire inclusion.
     - **Utilise systématiquement** `search_odis_associations(codgeo=code)` pour enrichir la vision de la vie locale pertinente (Clubs, Culture, Sport, Social).
     - Utilise `search_places` pour trouver des POIs (écoles, parcs, commerces, lieux de culte) **dans un rayon de 50km de `VILLE ACTIVE`**. Exemples de recherches:
@@ -125,11 +131,19 @@ def search_odis_associations_tool(ctx: RunContext[ODISDeps], codgeo: str) -> Lis
     """
     return search_odis_associations(codgeo)
 @scout_agent.tool
-def search_referentiels_tool(ctx: RunContext[ODISDeps], query: str, domain: str) -> List[Dict[str, Any]]:
-    """Recherche des codes ROME, Formations, Communes, etc.
+def search_referentiels_batch_tool(
+    ctx: RunContext[ODISDeps], 
+    searches: List[SearchQuery]
+) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Version optimisée pour effectuer plusieurs recherches de référentiels en UN SEUL tour.
     
     Args:
-        query (str): Recherche à effectuer.
-        domain (str): Domaine (ex: 'communes', 'rome_codes').
+        searches: Liste d'objets {query, domain}
     """
-    return search_referentiels(query, domain)
+    return search_referentiels_batch([s.model_dump() for s in searches])
+
+# Deprecated in favor of search_referentiels_batch_tool
+# @scout_agent.tool
+# def search_referentiels_tool(ctx: RunContext[ODISDeps], query: str, domain: str) -> List[Dict[str, Any]]:
+#     ...

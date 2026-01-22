@@ -665,3 +665,19 @@ En tant que travailleur social, je veux être informé des actions en cours des 
 ### 📊 Status
 
 - In Progress (Jan 2026)
+
+## 🚀 Feature [F-35]: Deployment Preparation & Snapshot Update
+
+### 📝 User Story
+
+- En tant que développeur, je veux m'assurer que tous les tests passent et que les snapshots de référence sont à jour avant de procéder à un nouveau déploiement, en tenant compte des modifications architecturales récentes.
+
+### 🔑 Key Features
+
+- Exécution de la suite de tests complète (hors `test_graph_verification.py`).
+- Mise à jour des snapshots de test pour refléter la nouvelle architecture.
+- Vérification de l'intégrité des données après les changements structurels.
+
+### 📊 Status
+
+- In Progress (Jan 2026)

@@ -70,7 +70,9 @@ def setup_logging() -> None:
         "urllib3",
         "httpcore",
         "streamlit",
-        "watchdog"
+        "watchdog",
+        "pydantic",
+        "pydantic_ai"
     ]
     
     for logger_name in loggers_to_silence:

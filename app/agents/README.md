@@ -34,21 +34,27 @@ Pour réduire la latence et la consommation de tokens, le graphe utilise un **po
 - **Gain** : Économie de ~1000 tokens par tour et suppression du délai d'inférence du Router.
 - **Sortie** : L'Interviewer boucle sur lui-même tant que `is_interview_complete` est `False`.
 
-### 📦 Batch Referentiel Search
-
-L'agent Interviewer utilise souvent plusieurs appels d'outils pour normaliser des données (Ville, Métier, Formation). Chaque appel d'outil déclenche un cycle de re-calcul coûteux en tokens (car Gemini doit re-scanner tout le contexte).
+### 📦 Batching Standardisé (Tous Agents)
 
 - **Solution** : `search_referentiels_batch_tool`.
-- **Fonctionnement** : Permet au modèle d'envoyer plusieurs requêtes de recherche en **un seul tour de parole**.
-- **Gain** : Réduit les "doubles facturations" de contexte et accélère la collecte de données multi-points.
+- **Fonctionnement** : Utilisé par **tous les agents** (Interviewer, Scout, JobHunter) pour envoyer plusieurs requêtes de recherche en **un seul tour de parole**.
+- **Gain** : Réduit les "doubles facturations" de contexte et accélère la collecte/normalisation de données.
+
+### 💼 Batch Job Search
+
+L'agent **JobHunter** doit souvent rechercher des offres pour plusieurs métiers (ROME) différents pour une même ville.
+
+- **Solution** : `search_job_offers_batch_tool`.
+- **Fonctionnement** : Permet de lancer plusieurs recherches France Travail en une seule interaction.
+- **Gain** : Optimise la latence et les tokens lors de l'exploration multi-métiers.
 
 ## 🛠️ Outils & Capacités
 
-- `search_referentiels` / `search_referentiels_batch` : Identification précise des données (Communes, ROME, Formations, etc.).
+- `search_referentiels_batch` : Identification précise des données (Communes, ROME, Formations, etc.) - Standardisé sur tous les agents.
 - `compute_top_cities` : Moteur de scoring ODIS.
 - `search_places` / `compute_routes` (Google Maps) : Expertise terrain.
 - `google_search` (Native Capability) : Grounding web en temps réel (utilisé par l'agent WEB).
-- `search_job_offers` (France Travail) : Offres d'emploi en direct.
+- `search_job_offers_batch` (France Travail) : Offres d'emploi en direct (optimisé).
 - `search_refugee_associations` (RNA) : Associations spécialisées dans l'accueil des réfugiés.
 
 ## 📝 Configuration des Modèles (Janv 2026)

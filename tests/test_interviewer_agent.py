@@ -15,7 +15,7 @@ async def test_interviewer_agent_prompt_construction(test_deps):
     """Verify that the system prompt constructs without errors."""
     mock_model = TestModel()
     with interviewer_agent.override(model=mock_model):
-        with patch('agents.interviewer.search_referentiels', return_value=[]):
+        with patch('agents.interviewer.search_referentiels_batch', return_value={}):
             # We just need to check if it runs, which triggers prompt construction
             await interviewer_agent.run("Bonjour", deps=test_deps)
 
@@ -25,7 +25,7 @@ async def test_interviewer_structured_output(test_deps):
     mock_model = TestModel()
     
     with interviewer_agent.override(model=mock_model):
-        with patch('agents.interviewer.search_referentiels', return_value=[]):
+        with patch('agents.interviewer.search_referentiels_batch', return_value={}):
             result = await interviewer_agent.run(
                 "Je cherche un job à Paris",
                 deps=test_deps

@@ -618,18 +618,20 @@ class TestHousingScoresLogic:
         data = {
             'codgeo': ['A', 'B'],
             'log_vac_scaled': [0.5, 0.6],
-            'log_vac_scaled_binome': [0.4, 0.4],
+            'log_loyer_moyen_appt_all_scaled': [0.4, 0.4],
             'log_soc_inoc_scaled': [0.7, 0.8],
-            'log_soc_inoc_scaled_binome': [0.1, 0.1],
+            'log_loyer_moyen_appt_t1_t2_scaled': [0.1, 0.1],
             'log_occup_scaled': [0.9, 0.2],
-            'log_occup_scaled_binome': [0.5, 0.5],
+            'log_loyer_moyen_house_all_scaled': [0.5, 0.5],
             'met_scaled': [0.5, 0.5], 
             'inc_services_core_scaled': [0.0, 0.0],
             'inc_asso_core_scaled': [0.0, 0.0],
             'inc_population_scaled': [0.0, 0.0],
             'inc_pol_scaled': [0.0, 0.0],
             'dist_current_loc': [1000, 1000],
-            'epci_code': ['1', '2']
+            'epci_code': ['1', '2'],
+            'reg_code': ['75', '75'],
+            'dep_code': ['75', '75']
         }
         df = gpd.GeoDataFrame(data, index=['A', 'B'])
 
@@ -693,12 +695,14 @@ class TestHousingScoresLogic:
         """
         data = {
             'codgeo': ['A', 'B'],
-            'log_loyer_moyen_scaled_appartement_toutes': [0.5, 0.6],
-            'log_loyer_moyen_scaled_appartement_t1_t2': [0.4, 0.4],
-            'log_loyer_moyen_scaled_maison_toutes': [0.9, 0.2],
+            'log_loyer_moyen_appt_all_scaled': [0.5, 0.6],
+            'log_loyer_moyen_appt_t1_t2_scaled': [0.4, 0.4],
+            'log_loyer_moyen_house_all_scaled': [0.9, 0.2],
             'log_vac_scaled': [0.5, 0.5],
             'dist_current_loc': [1000, 1000],
-            'epci_code': ['1', '2']
+            'epci_code': ['1', '2'],
+            'reg_code': ['75', '75'],
+            'dep_code': ['75', '75']
         }
         df = gpd.GeoDataFrame(data, index=['A', 'B'])
 
@@ -744,14 +748,14 @@ class TestHousingScoresLogic:
             return engine._compute_criteria_scores(df.copy(), config)
 
         # 1. Test: Chọn appartement_toutes
-        res1 = run_scoring('appartement_toutes')
-        assert 'log_loyer_moyen_scaled_appartement_toutes' in res1.columns
-        assert 'log_loyer_moyen_scaled_appartement_t1_t2' not in res1.columns
-        assert 'log_loyer_moyen_scaled_maison_toutes' not in res1.columns
+        res1 = run_scoring('appt_all')
+        assert 'log_loyer_moyen_appt_all_scaled' in res1.columns
+        assert 'log_loyer_moyen_appt_t1_t2_scaled' not in res1.columns
+        assert 'log_loyer_moyen_house_all_scaled' not in res1.columns
 
-        # 2. Test: Chọn maison_toutes
-        res2 = run_scoring('maison_toutes')
-        assert 'log_loyer_moyen_scaled_appartement_toutes' not in res2.columns
-        assert 'log_loyer_moyen_scaled_appartement_t1_t2' not in res2.columns
-        assert 'log_loyer_moyen_scaled_maison_toutes' in res2.columns
+        # 2. Test: Chọn house_all
+        res2 = run_scoring('house_all')
+        assert 'log_loyer_moyen_appt_all_scaled' not in res2.columns
+        assert 'log_loyer_moyen_appt_t1_t2_scaled' not in res2.columns
+        assert 'log_loyer_moyen_house_all_scaled' in res2.columns
 

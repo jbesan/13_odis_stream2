@@ -119,6 +119,35 @@ def search_job_offers(
     except Exception as e:
         logger.error(f"❌ [TOOL] search_job_offers failed: {e}", exc_info=True)
         return {"offres": [], "total": 0, "error": str(e)}
+
+def search_job_offers_batch(queries: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Version optimisée pour effectuer plusieurs recherches d'offres d'emploi en un seul appel.
+    Args:
+        queries: Liste de dictionnaires contenant les paramètres de recherche (rome, location)
+    Returns:
+        Dictionnaire mappant une clé unique (ex: "rome:location") aux résultats.
+    """
+    results = {}
+    
+    logger.debug(f"🔍 [TOOL] search_job_offers_batch: {queries}")
+    
+    for q_params in queries:
+        rome = q_params.get('rome') or q_params.get('rome_code') or q_params.get('rome_codes')
+        loc = q_params.get('location')
+        q_text = q_params.get('query')
+        
+        # Create a unique key for grouping results
+        key = f"{rome or ''}|{loc or ''}|{q_text or ''}"
+        
+        try:
+            results[key] = _search_job_offers_logic(**q_params)
+        except Exception as e:
+            logger.error(f"❌ [TOOL] search_job_offers_batch failed for {key}: {e}")
+            results[key] = {"error": str(e), "offres": [], "total": 0}
+            
+    return results
+
         
 def get_job_details(job_id: str) -> Dict[str, Any]:
     """

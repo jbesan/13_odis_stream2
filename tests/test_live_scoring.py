@@ -18,6 +18,7 @@ def test_live_jobs_scoring():
         'population': [5000, 250000, 1000],
         'epci_code': ['243300310', '243300310', '999999999'],
         'dep_code': ['33', '33', '99'],
+        'reg_code': ['75', '75', '99'],
         'geometry': [Point(0,0), Point(0.1, 0.1), Point(1,1)]
     }).set_index('codgeo')
 
@@ -34,9 +35,9 @@ def test_live_jobs_scoring():
     ])
 
     scores_cat = pd.DataFrame([
-        {'score': 'met_live_commune_scaled', 'min_bound': 0, 'max_bound': 10, 'cat': 'emploi', 'weight': 2.0, 'metric': 'met_live_commune'},
-        {'score': 'met_live_bdv_scaled', 'min_bound': 0, 'max_bound': 50, 'cat': 'emploi', 'weight': 1.0, 'metric': 'met_live_bdv'},
-        {'score': 'met_live_tension_scaled', 'min_bound': 0, 'max_bound': 5, 'cat': 'emploi', 'weight': 1.0, 'metric': 'met_live_tension'}
+        {'score': 'met_match_adult1_scaled', 'min_bound': 0, 'max_bound': 10, 'cat': 'emploi', 'weight': 2.0, 'metric': 'met_match_adult1'},
+        {'score': 'met_match_adult1_bdv_scaled', 'min_bound': 0, 'max_bound': 50, 'cat': 'emploi', 'weight': 1.0, 'metric': 'met_match_adult1_bdv'},
+        {'score': 'met_match_adult1_tension_scaled', 'min_bound': 0, 'max_bound': 5, 'cat': 'emploi', 'weight': 1.0, 'metric': 'met_match_adult1_tension'}
     ])
 
     df_bv_geo = gpd.GeoDataFrame({
@@ -89,25 +90,25 @@ def test_live_jobs_scoring():
     print("\n--- Results ---")
     print(f"Columns available: {scored.columns.tolist()}")
     try:
-        print(scored[['met_live_commune', 'met_live_commune_scaled', 'met_live_bdv', 'met_live_bdv_scaled', 'met_live_tension', 'met_live_tension_scaled']])
+        print(scored[['met_match_adult1', 'met_match_adult1_scaled', 'met_match_adult1_bdv', 'met_match_adult1_bdv_scaled', 'met_match_adult1_tension', 'met_match_adult1_tension_scaled']])
     except KeyError as e:
         print(f"KeyError: {e}")
     
     # Commune 33063 should have 5 jobs
-    assert scored.loc['33063', 'met_live_commune'] == 5
-    assert scored.loc['33063', 'met_live_commune_scaled'] == 0.5 # 5/10
+    assert scored.loc['33063', 'met_match_adult1'] == 5
+    assert scored.loc['33063', 'met_match_adult1_scaled'] == 0.5 # 5/10
     
     # Bassin de Vie 33301 contains both, so 15 jobs total
-    assert scored.loc['33063', 'met_live_bdv'] == 15
-    assert scored.loc['33063', 'met_live_bdv_scaled'] == 0.3 # 15/50
+    assert scored.loc['33063', 'met_match_adult1_bdv'] == 15
+    assert scored.loc['33063', 'met_match_adult1_bdv_scaled'] == 0.3 # 15/50
     
     # Tension for 33063 (1)
-    assert scored.loc['33063', 'met_live_tension'] == 1
-    assert scored.loc['33063', 'met_live_tension_scaled'] == 0.2 # 1/5
+    assert scored.loc['33063', 'met_match_adult1_tension'] == 1
+    assert scored.loc['33063', 'met_match_adult1_tension_scaled'] == 0.2 # 1/5
 
     # Check 33000 (10 jobs, 5 tension)
-    assert scored.loc['33000', 'met_live_commune'] == 10
-    assert scored.loc['33000', 'met_live_tension_scaled'] == 1.0
+    assert scored.loc['33000', 'met_match_adult1'] == 10
+    assert scored.loc['33000', 'met_match_adult1_tension_scaled'] == 1.0
     
     print("\n✅ Live jobs scoring logic verified!")
 

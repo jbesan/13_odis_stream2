@@ -123,7 +123,7 @@ class ScoringConfig:
     inc_services_add_selection: List[str]
     inc_services_core_selection: List[str]
     inc_asso_add_selection: List[str]
-    type_logement: str = "appartement_toutes"
+    type_logement: str = "appt_all"
     
     loc_search_code: Optional[str] = None
     weight_profile: str = ""

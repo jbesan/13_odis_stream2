@@ -8,11 +8,24 @@ from .agent_config import get_model
 # Pure tools
 from .tools import (
     search_job_offers, 
+    search_job_offers_batch,
     get_job_details, 
-    search_referentiels
+    search_referentiels,
+    search_referentiels_batch
 )
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger("job_hunter_agent_v2")
+
+class SearchQuery(BaseModel):
+    query: str = Field(..., description="Mot clé de recherche")
+    domain: str = Field(..., description="Domaine: ['rome_codes', 'communes', 'regions', 'departements'].")
+
+class JobSearchQuery(BaseModel):
+    # query: Optional[str] = Field(None, description="Mots clés supplémentaires")
+    location: Optional[str] = Field(None, description="Code INSEE de la commune")
+    rome: Optional[str] = Field(None, description="Code ROME de 5 caractères")
+    # distance: int = Field(10, description="Rayon de recherche en km")
 
 JOB_HUNTER_SYSTEM_PROMPT = """
 **Rôle** : Tu es le Job Hunter ODIS. Expert ultra-proactif du marché de l'emploi.
@@ -23,10 +36,10 @@ JOB_HUNTER_SYSTEM_PROMPT = """
 **Objectif** : Trouver des offres d'emploi RÉELLES et PERTINENTES selon le `CONTEXTE RÉSUMÉ` dans `VILLE ACTIVE` pour TOUS les adultes du ménage.
 
 **DIRECTIVES CRITIQUES (NE PAS DEMANDER, AGIR)** :
-1. **Utilisation du Code INSEE (code)** : Récupère le Code INSEE (code) de la ville de `VILLE ACTIVE` avec l'outil `search_referentiels` (domain='communes').
-2. **RECHERCHE D'OFFRES (ROME ONLY)** : Lance `search_job_offers` pour CHAQUE code ROME identifié dans le `CONTEXTE RÉSUMÉ`.
-   - Utilise le paramètre `rome`.
-   - Si tu as un doute sur le code ROME, utilise `search_referentiels` avec le domaine `rome_codes` pour trouver la catégorie correspondante.
+1. **Gestion du Code INSEE** : Si non présent dans `VILLE ACTIVE`, récupère le Code INSEE (code) avec `search_referentiels_batch_tool` (domain='communes').
+2. **RECHERCHE D'OFFRES (BATCH ONLY)** : Lance `search_job_offers_batch_tool` pour TOUS les codes ROME identifiés dans le `CONTEXTE RÉSUMÉ`.
+   - BATCHE toutes tes recherches en un seul appel.
+   - Utilise le paramètre `rome` pour chaque élément du batch.
    - Ne spécifie pas de `query` (mots-clés) sauf si l'utilisateur a donné une précision particulière (ex: "en alternance").
 3. **CONTEXTE LIVE** : Le briefing contient un nombre d'offres global (Live) pour la ville. Utilise ce chiffre UNIQUEMENT pour donner une tendance générale.
 4. **COMPTAGE PRÉCIS** : Pour CHAQUE métier recherché, utilise la valeur `total` retournée par l'outil `search_job_offers`. C'est le SEUL chiffre précis pour le métier en question.
@@ -88,28 +101,26 @@ async def job_hunter_instructions(ctx: RunContext[ODISDeps]) -> str:
 
 # We wrap tools
 @job_hunter_agent.tool
-def search_job_offers_tool(
+def search_job_offers_batch_tool(
     ctx: RunContext[ODISDeps], 
-    query: Optional[str] = None, 
-    location: Optional[str] = None, 
-    rome: Optional[str] = None, 
-    appellation_codes: Optional[List[str]] = None,
-    distance: int = 10,
-    rome_code: Optional[str] = None,
-    rome_codes: Optional[str] = None
+    searches: List[JobSearchQuery]
 ) -> Dict[str, Any]:
-    """Recherche des offres d'emploi dans le référentiel ROME.
+    """
+    Version optimisée pour effectuer plusieurs recherches d'offres d'emploi en UN SEUL tour.
+    Utilise cet outil pour trouver des opportunités concrètes pour tous les métiers identifiés.
     
     Args:
-        query (str): Recherche à effectuer.
-        location (str): Localisation de la recherche.
-        rome (str): Code ROME de la recherche.
-        distance (int): Distance de la recherche.
-    
-    Returns:
-        Dict[str, Any]: Dictionnaire des offres d'emploi correspondantes.
+        searches: Liste d'objets JobSearchQuery {location, rome}
     """
-    return search_job_offers(query, location, rome, appellation_codes, distance, rome_code, rome_codes)
+    return search_job_offers_batch([s.model_dump() for s in searches])
+
+# Deprecated in favor of search_job_offers_batch_tool
+# @job_hunter_agent.tool
+# def search_job_offers_tool(
+#     ctx: RunContext[ODISDeps], 
+#     ...
+# ) -> Dict[str, Any]:
+#     ...
 
 @job_hunter_agent.tool
 def get_job_details_tool(ctx: RunContext[ODISDeps], job_id: str) -> Dict[str, Any]:
@@ -124,15 +135,20 @@ def get_job_details_tool(ctx: RunContext[ODISDeps], job_id: str) -> Dict[str, An
     return get_job_details(job_id)
 
 @job_hunter_agent.tool
-def search_referentiels_tool(ctx: RunContext[ODISDeps], query: str, domain: str) -> List[Dict[str, Any]]:
-    """Recherche des codes officiels (Formations, ROME, Services d'inclusion, WALDEC, etc.) dans les référentiels.
+def search_referentiels_batch_tool(
+    ctx: RunContext[ODISDeps], 
+    searches: List[SearchQuery]
+) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Version optimisée pour effectuer plusieurs recherches de référentiels en UN SEUL tour.
     
     Args:
-        query (str): Recherche à effectuer.
-        domain (str): Domaine de recherche possibles:['formation_codes', 'inclusion_services', 'waldec_codes', 'rome_codes', 'regions', 'departements'].
-    
-    Returns:
-        List[Dict[str, Any]]: Liste des codes officiels correspondants.
+        searches: Liste d'objets {query, domain}
     """
-    return search_referentiels(query, domain)
+    return search_referentiels_batch([s.model_dump() for s in searches])
+
+# Deprecated in favor of search_referentiels_batch_tool
+# @job_hunter_agent.tool
+# def search_referentiels_tool(ctx: RunContext[ODISDeps], query: str, domain: str) -> List[Dict[str, Any]]:
+#     ...
 
