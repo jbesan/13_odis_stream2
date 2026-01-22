@@ -17,9 +17,6 @@ from core.models import SearchCriterias
 
 logger = logging.getLogger("agent_tools")
 
-def search_referentiels(query: str, domain: str) -> List[Dict[str, Any]]:
-    """Recherche des codes officiels (Formations, ROME, Services d'inclusion, WALDEC, etc.) dans les référentiels."""
-    return _search_referentiels_logic(query, domain)
 
 def search_referentiels_batch(queries: List[Dict[str, str]]) -> Dict[str, List[Dict[str, Any]]]:
     """
@@ -86,39 +83,6 @@ def set_focus_city(city_name: str) -> str:
     # Simply return the city name; the Agent/Graph will handle the state update.
     return f"SUCCÈS: Ville active définie sur {city_name}."
 
-def search_job_offers(
-    query: Optional[str] = None, 
-    location: Optional[str] = None, 
-    rome: Optional[str] = None, 
-    appellation_codes: Optional[List[str]] = None,
-    distance: int = 10,
-    rome_code: Optional[str] = None,
-    rome_codes: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Recherche des offres d'emploi réelles sur France Travail.
-    Utilise cet outil pour trouver des opportunités concrètes.
-    
-    Args:
-        query: Mots clés supplémentaires (ex: 'Alternance').
-        location: Code INSEE de la commune (ex: '33063').
-        rome: Code ROME (Métier) de 5 caractères (ex: 'M1805').
-        # appellation_codes: Liste de codes métiers précis (ROME Appellations).
-        distance: Rayon de recherche en km autour de la commune.
-    """
-    try:
-        res = _search_job_offers_logic(
-            query=query, 
-            location=location, 
-            rome=rome, 
-            distance=distance,
-            rome_code=rome_code,
-            rome_codes=rome_codes
-        )
-        return res
-    except Exception as e:
-        logger.error(f"❌ [TOOL] search_job_offers failed: {e}", exc_info=True)
-        return {"offres": [], "total": 0, "error": str(e)}
 
 def search_job_offers_batch(queries: List[Dict[str, Any]]) -> Dict[str, Any]:
     """

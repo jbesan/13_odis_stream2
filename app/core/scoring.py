@@ -103,6 +103,14 @@ class ScoringEngine:
             "sante": {"counts": {}, "etablissements": {}},
             "inclusion": {"services_grouped": {}},
             "associations": {},
+            "mobilité": {
+                "nb_stops_bus": int(row.get('nb_stops_bus', 0)),
+                "nb_stops_tram": int(row.get('nb_stops_tram', 0)),
+                "nb_stops_metro": int(row.get('nb_stops_metro', 0)),
+                "nb_stops_train": int(row.get('nb_stops_train', 0)),
+                "nb_stops_total": int(row.get('nb_stops_total', 0)),
+                "mob_trans_pub_stop_density": float(row.get('mob_trans_pub_stop_density', 0.0))
+            },
             "logement": {
                 "selected_type": config.type_logement if config else 'appt_all',
                 "raw_euro_m2": None,
@@ -641,6 +649,13 @@ class ScoringEngine:
         else:
              df['mob_epci_scaled'] = 0.0
 
+        # --- MOBILITE ---
+        if 'nb_stops_total' in df.columns:
+            df['mob_trans_pub_stop_density'] = (df['nb_stops_total'] / df['population'].replace(0, 1)) * 1000
+            min_b, max_b = get_bounds('mob_trans_pub_density_scaled', self.scores_cat, self.global_stats)
+            if pd.isna(max_b): max_b = 10.0 # Standard density upper bound
+            df['mob_trans_pub_density_scaled'] = min_max_scale(df['mob_trans_pub_stop_density'], min_b, max_b)
+
         # --- INCLUSION ---
         df = compute_inclusion_score(df, config, self.incl_index, self.associations_data, self.scores_cat, self.global_stats)
         
@@ -686,8 +701,8 @@ class ScoringEngine:
 
 # --- Stateless Helpers ---
 
-def get_bounds(score_id: str, scores_cat: pd.DataFrame, global_stats: Dict) -> Tuple[float, float]:
-    if score_id in global_stats: return global_stats[score_id]['min'], global_stats[score_id]['max']
+def get_bounds(score_id: str, scores_cat: pd.DataFrame, global_stats: Optional[Dict] = None) -> Tuple[float, float]:
+    if global_stats and score_id in global_stats: return global_stats[score_id]['min'], global_stats[score_id]['max']
     row = scores_cat[scores_cat['score'] == score_id]
     if not row.empty:
         return (float(row.iloc[0]['min_bound']) if pd.notna(row.iloc[0]['min_bound']) else 0.0,

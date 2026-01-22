@@ -1261,7 +1261,8 @@ def main(argv=None):
         'nomenclature_waldec': clean_nomenclature_waldec,
         'departements': clean_departements,
         'live_jobs': clean_live_jobs,
-        'odis_associations': clean_odis_associations
+        'odis_associations': clean_odis_associations,
+        'mob_transports_pub': clean_mob_transports_pub
     }
 
     selected_steps = args.steps.split(',') if args.steps else steps_map.keys()
@@ -1637,6 +1638,58 @@ def clean_odis_associations(config: Dict[str, Any], logger: PipelineLogger):
     except Exception as e:
         logger.log_step("clean_odis_associations", "ERROR", {"error": str(e)})
         logging.error(f"Clean ODIS associations failed: {e}")
+
+
+def clean_mob_transports_pub(config: Dict[str, Any], logger: PipelineLogger):
+    """Cleans Public Transport Stations data and saves to parquet."""
+    logger.log_step("clean_mob_transports_pub", "STARTED")
+    source = config['sources']['mob_transports_pub']
+    path = CACHE_DIR / source['local_name']
+    if not path.exists():
+        logging.warning("Public Transport Stations file not found.")
+        return
+
+    df = load_dataset(path, source)
+    
+    # Required columns: geocode_commune, type_transport_en_commun, valeur
+    required_cols = ['geocode_commune', 'type_transport_en_commun', 'valeur']
+    if not all(col in df.columns for col in required_cols):
+        logging.warning(f"Public Transport Stations: Missing columns. Found: {df.columns}")
+        return
+
+    # Pivot the data: 1 row per commune
+    # type_transport_en_commun values: 'Bus', 'Tramway', 'Métropolitain', 'Train' (assuming)
+    df_pivot = df.pivot_table(
+        index='geocode_commune',
+        columns='type_transport_en_commun',
+        values='valeur',
+        aggfunc='sum'
+    ).reset_index().fillna(0)
+
+    # Rename columns to standardized names
+    # The raw data has lowercase keys according to my earlier print: 'bus', 'tramway', 'métro', 'train'
+    col_mapping = {
+        'geocode_commune': 'codgeo',
+        'bus': 'nb_stops_bus',
+        'tramway': 'nb_stops_tram',
+        'métro': 'nb_stops_metro',
+        'train': 'nb_stops_train'
+    }
+    
+    # Apply mapping
+    df_pivot.rename(columns=col_mapping, inplace=True)
+    
+    # Ensure all columns exist (in case some types are missing in the data)
+    for col in ['nb_stops_bus', 'nb_stops_tram', 'nb_stops_metro', 'nb_stops_train']:
+        if col not in df_pivot.columns:
+            df_pivot[col] = 0.0
+
+    df_pivot['codgeo'] = df_pivot['codgeo'].astype(str).str.zfill(5)
+    df_pivot['nb_stops_total'] = df_pivot['nb_stops_bus'] + df_pivot['nb_stops_tram'] + df_pivot['nb_stops_metro'] + df_pivot['nb_stops_train']
+
+    output_path = CLEAN_DIR / "mob_transports_pub.parquet"
+    df_pivot.to_parquet(output_path)
+    logger.log_step("clean_mob_transports_pub", "COMPLETED", {"path": str(output_path), "rows": len(df_pivot)})
 
 if __name__ == "__main__":
     main()

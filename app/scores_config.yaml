@@ -525,6 +525,22 @@ scores:
       tooltip: "Présence d'une gare ferroviaire dans la commune (Source: Odace)"
     weight: 1.0
     max_bound: 1.0
+  - id: mob_trans_pub_density_scaled
+    category: mobilité
+    source_metric: mob_trans_pub_stop_density
+    bdv_factor: 0.0
+    computation: live
+    display:
+      name: Densité des transports en commun
+      strong_point_text: Excellente desserte transports
+      high_value_adjective: excellente
+      show: true
+      unit: "arrêts / 1000 hab."
+      display_factor: 1
+      tooltip: "Nombre d'arrêts de transports en commun (bus, tram, métro, train) pour 1000 habitants"
+    weight: 2.0
+    min_bound: 0.0
+    max_bound: 10.0
   - id: youth_decline_scaled
     category: education
     source_metric: youth_growth_rate

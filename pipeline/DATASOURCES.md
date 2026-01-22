@@ -219,3 +219,11 @@
 - Données: https://www.data.gouv.fr/datasets/liste-des-maternites-de-france-depuis-2000/#/resources/a822f7ae-7c46-42c0-86e1-ad7d381c1ad2
 - URL Stable: https://www.data.gouv.fr/api/1/datasets/r/a822f7ae-7c46-42c0-86e1-ad7d381c1ad2
 - Type de fichier: json
+
+# Mobilité
+
+## Nombre de stations de transports en commun
+
+- Données: https://www.data.gouv.fr/datasets/nombre-de-stations-de-transports-en-commun-selon-le-type-de-reseau?resource_id=501ac60d-246d-45bf-8dcf-ab43e1b1a736
+- URL Stable: https://object.files.data.gouv.fr/hydra-parquet/hydra-parquet/501ac60d-246d-45bf-8dcf-ab43e1b1a736.parquet
+- Type de fichier: parquet

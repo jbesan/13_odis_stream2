@@ -349,6 +349,15 @@ sources:
       - DEP
       - LIBELLE
       - REG
+  mob_transports_pub:
+    url: "https://object.files.data.gouv.fr/hydra-parquet/hydra-parquet/501ac60d-246d-45bf-8dcf-ab43e1b1a736.parquet"
+    format: "parquet"
+    local_name: "mob_transports_pub.parquet"
+    description: "Nombre de stations de transports en commun par commune (Data Gouv)"
+    used_columns:
+      - geocode_commune
+      - type_transport_en_commun
+      - valeur
 
 local_files:
   finess:

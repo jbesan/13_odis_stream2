@@ -8,7 +8,7 @@ from .state import ODISGraphState, ODISDeps
 from core.models import SearchCriterias
 from .agent_config import get_model
 # Import the pure tools
-from .tools import search_referentiels, search_referentiels_batch
+from .tools import search_referentiels_batch
 
 logger = logging.getLogger("interviewer_agent_v2")
 

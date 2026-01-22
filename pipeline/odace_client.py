@@ -22,10 +22,9 @@ class OdaceClient:
             "Content-Type": "application/json"
         }
 
-    def _get_preview(self, table_name: str, limit: int = 50000) -> Optional[Dict[str, Any]]:
-        """Fetches table preview from Odace API with local caching (1 week TTL)."""
+    def _get_preview(self, table_name: str, limit: int = 50000, ttl_seconds: int = 7 * 24 * 60 * 60) -> Optional[Dict[str, Any]]:
+        """Fetches table preview from Odace API with local caching (default 1 week TTL)."""
         cache_file = CACHE_DIR / f"odace_{table_name}.json"
-        ttl_seconds = 7 * 24 * 60 * 60 # 1 week
         
         # Check cache
         if cache_file.exists():
@@ -101,8 +100,8 @@ class OdaceClient:
             return None
 
     def fetch_dim_commune(self) -> pd.DataFrame:
-        """Fetches dim_commune and returns as DataFrame."""
-        resp = self._get_preview("dim_commune")
+        """Fetches dim_commune and returns as DataFrame (1 year TTL)."""
+        resp = self._get_preview("dim_commune", ttl_seconds=365 * 24 * 60 * 60)
         if not resp or not resp.get("data"):
             return pd.DataFrame()
         
@@ -111,8 +110,8 @@ class OdaceClient:
         return df
 
     def fetch_dim_gare(self) -> pd.DataFrame:
-        """Fetches dim_gare and returns as DataFrame."""
-        resp = self._get_preview("dim_gare")
+        """Fetches dim_gare and returns as DataFrame (1 year TTL)."""
+        resp = self._get_preview("dim_gare", ttl_seconds=365 * 24 * 60 * 60)
         if not resp or not resp.get("data"):
             return pd.DataFrame()
             
@@ -121,8 +120,8 @@ class OdaceClient:
         return df
 
     def fetch_fact_loyer_annonce(self, limit: int = 200000) -> pd.DataFrame:
-        """Fetches fact_loyer_annonce and returns as DataFrame."""
-        resp = self._get_preview("fact_loyer_annonce", limit=limit)
+        """Fetches fact_loyer_annonce and returns as DataFrame (1 month TTL)."""
+        resp = self._get_preview("fact_loyer_annonce", limit=limit, ttl_seconds=30 * 24 * 60 * 60)
         if not resp or not resp.get("data"):
             return pd.DataFrame()
             

@@ -10,14 +10,13 @@ from .tools import (
     search_job_offers, 
     search_job_offers_batch,
     get_job_details, 
-    search_referentiels,
     search_referentiels_batch
 )
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger("job_hunter_agent_v2")
 
-class SearchQuery(BaseModel):
+class RefSearchQuery(BaseModel):
     query: str = Field(..., description="Mot clé de recherche")
     domain: str = Field(..., description="Domaine: ['rome_codes', 'communes', 'regions', 'departements'].")
 
@@ -39,15 +38,14 @@ JOB_HUNTER_SYSTEM_PROMPT = """
 1. **Gestion du Code INSEE** : Si non présent dans `VILLE ACTIVE`, récupère le Code INSEE (code) avec `search_referentiels_batch_tool` (domain='communes').
 2. **RECHERCHE D'OFFRES (BATCH ONLY)** : Lance `search_job_offers_batch_tool` pour TOUS les codes ROME identifiés dans le `CONTEXTE RÉSUMÉ`.
    - BATCHE toutes tes recherches en un seul appel.
-   - Utilise le paramètre `rome` pour chaque élément du batch.
-   - Ne spécifie pas de `query` (mots-clés) sauf si l'utilisateur a donné une précision particulière (ex: "en alternance").
+   - Utilise le paramètre `rome` (ex: D1102) pour chaque élément du batch
 3. **CONTEXTE LIVE** : Le briefing contient un nombre d'offres global (Live) pour la ville. Utilise ce chiffre UNIQUEMENT pour donner une tendance générale.
 4. **COMPTAGE PRÉCIS** : Pour CHAQUE métier recherché, utilise la valeur `total` retournée par l'outil `search_job_offers`. C'est le SEUL chiffre précis pour le métier en question.
 5. **LOCALISATION** : Utilise toujours le code INSEE de la ville cible du `CONTEXTE RÉSUMÉ` pour la recherche.
 6. **NE DEMANDE PAS DE PRÉCISIONS** : Tu as les informations sur les métiers dans les critères. AGIS IMMÉDIATEMENT sans attendre de confirmation.
 7. **SÉLECTION ET RÉPONSE (CRITIQUE)** : 
-    - Pour chaque recherche réussie, tu DOIS sélectionner et présenter les **3 offres les plus pertinentes** (ou toutes si moins de 3 sont disponibles).
-    - Pour chaque offre, indique : Intitulé, ID (ex: 7874186) et une phrase expliquant pourquoi elle correspond bien au profil (distance, contrat, expérience).
+    - Pour chaque catégorie `rome`, tu DOIS sélectionner et présenter les **3 offres les plus pertinentes** selon le `CONTEXTE RÉSUMÉ`.
+    - Pour chaque offre, indique : Intitulé, ID (ex: 7874186), lieu, type de contrat, durée, salaire et une phrase expliquant pourquoi elle correspond bien au `CONTEXTE RÉSUMÉ`.
     - Ne te contente JAMAIS d'une seule offre si l'outil en retourne plusieurs.
     - Termine en demandant si l'utilisateur veut voir plus de détails (`get_job_details`) sur une offre spécifique.
 """
@@ -137,13 +135,13 @@ def get_job_details_tool(ctx: RunContext[ODISDeps], job_id: str) -> Dict[str, An
 @job_hunter_agent.tool
 def search_referentiels_batch_tool(
     ctx: RunContext[ODISDeps], 
-    searches: List[SearchQuery]
+    searches: List[RefSearchQuery]
 ) -> Dict[str, List[Dict[str, Any]]]:
     """
     Version optimisée pour effectuer plusieurs recherches de référentiels en UN SEUL tour.
     
     Args:
-        searches: Liste d'objets {query, domain}
+        searches: Liste d'objets RefSearchQuery{query, domain}
     """
     return search_referentiels_batch([s.model_dump() for s in searches])
 

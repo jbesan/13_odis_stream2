@@ -38,6 +38,20 @@ def test_search_job_offers_batch_logic():
         assert results["D1102|75056|"]["total"] == 10
         assert mock_logic.call_count == 2
 
+def test_search_job_offers_invalid_rome_regex():
+    """Verify that invalid ROME codes (like INSEE) return empty results without calling API."""
+    from services.mcp_france_travail import _search_job_offers_logic
+    
+    # Passing an INSEE code instead of ROME
+    results = _search_job_offers_logic(rome="45032", location="11069")
+    assert results == {"offres": [], "total": 0}
+    
+    # Passing a non-string
+    results = _search_job_offers_logic(rome=12345)
+    assert results == {"offres": [], "total": 0}
+    
+    # Valid ROME should still work (it will try to call API, so we mock it if we wanted to check positive case)
+
 @pytest.mark.asyncio
 async def test_job_hunter_tool_registration(test_deps):
     """Verify that JobHunter has the batch tool and NOT the unitary one."""

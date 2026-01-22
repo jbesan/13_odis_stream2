@@ -117,8 +117,16 @@ def _search_job_offers_logic(
         rome = rome_code or rome_codes
     
     # Validation
-    if rome and not (isinstance(rome, str) and len(rome) == 5):
-         return {"offres": [], "total": 0, "error": f"Invalid ROME code format: {rome}. Must be 5 chars."}
+    if rome:
+        if not isinstance(rome, str):
+            logger.warning(f"⚠️ [FranceTravail] Invalid ROME type: {type(rome)}. Returning empty.")
+            return {"offres": [], "total": 0}
+        
+        # Strict ROME pattern: One letter A-N followed by 4 digits
+        import re
+        if not re.match(r"^[A-N][0-9]{4}$", rome):
+            logger.warning(f"⚠️ [FranceTravail] Invalid ROME format: '{rome}'. (Possible confusing with INSEE/Postcode). Returning empty.")
+            return {"offres": [], "total": 0}
 
     # logger.info(f"👉 [FranceTravail] ENTERING search_job_offers_logic (loc={location}, rome={rome})")
     token = _get_access_token()

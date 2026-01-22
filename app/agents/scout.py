@@ -10,7 +10,6 @@ from .tools import (
     search_places, 
     compute_routes, 
     set_focus_city, 
-    search_referentiels, 
     search_referentiels_batch,
     search_refugee_associations, 
     search_odis_associations

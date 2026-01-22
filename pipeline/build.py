@@ -110,6 +110,9 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         # Merge Gares (Odace API)
         merge_clean("gares", ['gare_count', 'has_gare'])
 
+        # Merge mobility metrics
+        merge_clean("mob_transports_pub", ['nb_stops_bus', 'nb_stops_tram', 'nb_stops_metro', 'nb_stops_train', 'nb_stops_total'])
+
         # Merge Odace Commune SK
         merge_clean("odace_communes_sk", ['commune_sk'])
 
@@ -282,7 +285,8 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
             'pop_active', 'pop_employes', 'pop_chomeurs', 
             'metiers_offres_diff', 'log_priv_vacant_plus_2ans', 'log_priv_total', 'edu_pe_tx_couverture',
             'bpe_creches_count', 'lien_social_count',
-            'pop_jeune_2016', 'pop_jeune_2022', 'pop_active_2016', 'pop_active_2022'
+            'pop_jeune_2016', 'pop_jeune_2022', 'pop_active_2016', 'pop_active_2022',
+            'nb_stops_bus', 'nb_stops_tram', 'nb_stops_metro', 'nb_stops_train', 'nb_stops_total'
         ]
         for col in numeric_cols:
             if col in communes_gdf.columns:

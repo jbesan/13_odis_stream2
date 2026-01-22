@@ -99,7 +99,7 @@ Liste en vrac d'idées d'amélioration
 - [x] Normaliser les scores de catégorie pour éviter une surévaluation de certains critères
 - [x] Ajouter des profils de pondération (famille vs célibataire)
 - [ ] Ajouter la base J'accueille d'accueil chez l'habitant
-- [ ] Ajouter la base des transports publics ?
+- [x] Ajouter la base des transports publics ?
 - [ ] Critere 'Niveau de vie' de l'INSEE ?
 - [ ] Enlever la couleur politique
 - [ ] Ajouter le salaire moyen + comparaison avec loyer moyen
@@ -107,6 +107,8 @@ Liste en vrac d'idées d'amélioration
 - [ ] Ajouter le critère insse d'acces aux instratuctures (mobilité): https://www.insee.fr/fr/statistiques/1908098
 - [ ] Ajouter le critère insse d'affordabilité
 - [ ] Temps d'accès à un médecin / Déserts médicaux
+- [ ] Regarder les Entreprises de l'Insertion (et leur soffres d'emploi)
+  - champ 'est_siae' https://recherche-entreprises.api.gouv.fr/docs/ MCP ici:
 - [ ] Remplacer par y-a-t'il un CTAI/PTAI (signe que la commune s'implique dans l'intégration) + Est-ce que la commune est adhérante ANVITA ? Ajouter un label ?
 - [x] Rechercher au niveau national ou viser une région/ département en particulier?
 - [x] Ajouter un 'en savoir plus' pour comprendre le scoring
@@ -681,3 +683,20 @@ En tant que travailleur social, je veux être informé des actions en cours des 
 ### 📊 Status
 
 - In Progress (Jan 2026)
+
+## 🚀 Feature [F-36]: Critère de Mobilité - Transport Public
+
+### 📝 User Story
+
+- En tant que travailleur social, je veux évaluer la densité des transports en commun (bus, tram, métro, train) dans une commune pour m'assurer que la famille pourra se déplacer facilement sans voiture.
+
+### 🔑 Key Features
+
+- **Intégration de Données :** Source "Nombre de stations de transports en commun" (Data Gouv).
+- **Calcul de Densité :** Calcul du nombre d'arrêts par type (bus, tramway, métro, train) par commune.
+- **Scoring :** Nouveau critère `mob_density_scaled` dans la catégorie "Mobilité", valorisant les communes avec une haute densité d'arrêts.
+- **Affichage :** Mention de la desserte transports comme point fort (ex: "Excellente desserte transports").
+
+### 📊 Status
+
+- Planned (Jan 2026)

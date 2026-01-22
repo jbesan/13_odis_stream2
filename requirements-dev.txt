@@ -1,4 +1,5 @@
 pytest
+pytest-asyncio
 mypy
 types-requests
 types-PyYAML
