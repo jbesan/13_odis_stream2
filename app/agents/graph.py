@@ -127,9 +127,6 @@ async def router_node(state: ODISGraphState, config: RunnableConfig):
     start_time = datetime.now()
     logger.info(f"🚀 [RELAY] Entering router_node at {start_time.strftime('%H:%M:%S.%f')[:-3]}")
 
-    # LEGACY BYPASS REMOVED: Now handled by conditional entry point at START.
-    # If we are here, it means we NEED a routing decision.
-
     # Input is the last message
     user_msg = state.messages[-1]["content"] if state.messages else ""
     

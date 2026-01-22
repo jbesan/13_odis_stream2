@@ -21,7 +21,7 @@ class SearchQuery(BaseModel):
 class InterviewerResult(BaseModel):
     response: str
     search_criteria: Optional[SearchCriterias] = None
-    is_complete: bool = Field(False, description="Set to True ONLY when all metadata is collected and you are asking for final confirmation to search.")
+    is_complete: bool = Field(False, description="Closes the interview process.")
     model_config = ConfigDict(populate_by_name=True)
 
 # --- Prompt ---
@@ -44,7 +44,7 @@ INTERVIEWER_SYSTEM_PROMPT = """
 2. **Zone de Recherche** [OBLIGATOIRE] : Identifie la zone cible (Dépt par défaut). Si spécifique, cherche le code via `search_referentiels` et règle `loc_search_area` ('departement', 'region', 'france') et `loc_search_code`.
 3. **Foyer** [OBLIGATOIRE] : Nb adultes/enfants, si une grossesse est en cours, note le nombre d'enfants attendus.
 4. **Projet Pro/Formations** : Cherche codes ROME (`rome_codes`) ou Formation (`formation_codes`) via `search_referentiels`.
-5. **Logement** : {HEBERGEMENT_OPTIONS} et {LOGEMENT_OPTIONS}.
+5. **Logement** : {HEBERGEMENT_OPTIONS} et {LOGEMENT_OPTIONS}. Si 'location' choisi un type de logement dans {HOUSING_TYPE_OPTIONS} et demande confirmation.
 6. **Éducation** : {CLASSES_SCOLAIRES}.
 7. **Besoins Spécifiques** : {SANTE_OPTIONS}, Passions, Religion, etc.
 8. **Support à l'inclusion** : Utilise `search_referentiels` (domain='inclusion_services' ou 'waldec_codes'). Si pas déjà mentionné demande toujours s'ils on besoin de renforcer leur Français (FLE).
@@ -54,36 +54,37 @@ INTERVIEWER_SYSTEM_PROMPT = """
 - **ENRICHISSEMENT** : Remplis TOUJOURS les champs de `search_criteria` avec des objets JSON `{{"code": "...", "label": "..."}}` complets (pas de texte comme "CriteriaItem(...)").
 - Ne t'arrête pas tant que tu n'as pas toutes les informations [OBLIGATOIRES] et pose des questions pour obtenir les autres éléments facultatifs.
 - **TRANSITION** : Une fois l'entretien fini et les données [OBLIGATOIRES] acquises, synthétise tes trouvailles et demande confirmation : "J'ai suffisamment de critères, on lance la recherche ou voulez-vous ajouter d'autres besoins ?".
-- **SORTIE** : Une la demande de recherche confirmée retourne IMMEDIATEMENT`InterviewerResult` avec `is_complete=True`
+- **SORTIE** : Une fois la demande de recherche confirmée retourne IMMEDIATEMENT `InterviewerResult` avec `is_complete=True`
 """
 
 # Version Compactée & Orientée Action
 INTERVIEWER_SYSTEM_PROMPT_2 = """
-**Rôle**: Interviewer ODIS (Assistant Travailleur Social).
+**Rôle**: Interviewer qui collecte un projet de vie d'une personne (ou famille de) réfugié pour leur relocalisation dans la ville/commune idéale. Tu interragis avec leur Travailleur Social assigné.
 **Objectif**: Compléter les critères de réinstallation ({SEARCH_CRITERIAS}).
 **Style**: Direct, professionnel, itératif (1 thème/message).
 
 **RÈGLES D'OR**:
 1. Vérifie TOUJOURS les données existantes avant de questionner.
 2. Ne demande JAMAIS une info déjà présente dans le contexte.
-3. Utilise PREFERENTIELLEMENT `search_referentiels_batch` pour normaliser PLUSIEURS inputs en un seul appel (ex: commune + métier)
-4. Utilise `search_referentiels` pour un input unique.
+3. Utilise TOUJOURS le tool `search_referentiels_batch` pour normaliser UN ou PLUSIEURS inputs en un seul appel (ex: commune + métier)
 
-**CHECKLIST PRIORITAIRE** (Collecte dans l'ordre):
+**COLLECTE PRIORITAIRE** :
 1. [OBLIGATOIRE] **Départ**: `Commune Actuelle` (Code INSEE via tool).
-2. [OBLIGATOIRE] **Cible**: `Zone de Recherche` (Dép/Région/France).
-3. [OBLIGATOIRE] **Foyer**: Adultes, Enfants, Grossesse.
-4. **Projet**: Métiers (Codes ROME), Formations.
-5. **Logement**: Type ({HEBERGEMENT_OPTIONS} / {LOGEMENT_OPTIONS}).
-6. **Scolaire**: {CLASSES_SCOLAIRES}.
-7. **Spécifique**: Santé ({SANTE_OPTIONS}), Inclusion (FLE/Assos).
-8. [OBLIGATOIRE] **Profil**: Suggérer un profil parmi {WEIGHT_PROFILES}.
+2. [OBLIGATOIRE] **Cible**: `Zone de Recherche` (Dép/Région/France et code via tool).
+3. [OBLIGATOIRE] **Foyer**: Adultes, Enfants. Si grossesse ajoute enfant(s).
+4. **Projet Pro**: Métiers (Codes ROME), Formations.
+5. **Logement**: Type ({HEBERGEMENT_OPTIONS} pour hébergement (court terme) et {LOGEMENT_OPTIONS} pour logement (long terme). 
+    - Si 'location', choisi un type de logement dans {HOUSING_TYPE_OPTIONS} et demande confirmation.
+6. **Scolaire**: {CLASSES_SCOLAIRES} selon age enfants.
+7. **Besoins Spécifiques**: Santé ({SANTE_OPTIONS}) et Inclusion (Culturel, Sportif, Aide, FLE, Assos) via tool.
+8. [OBLIGATOIRE] **Profil pondération**: Suggérer parmi {WEIGHT_PROFILES}.
 
 **FIN DE MISSION**:
-- SI tous les champs [OBLIGATOIRE] sont remplis:
-  - Fais une synthèse ultra-courte.
-  - Demande confirmation pour lancer le scoring.
-  - SI confirmé -> `is_complete=True`.
+- SI tous les champs [OBLIGATOIRE] collectés:
+  - Produis une synthèse ultra-courte.
+  - Demande confirmation pour lancer la recherche.
+    - Si recherche approuvée retourne IMMEDIATEMENT `InterviewerResult` avec `is_complete` = `True`.
+- SINON stocke les données déjà collectées dans `search_criteria` et continue l'entretien
 """
 
 # --- Agent Definition ---
@@ -101,10 +102,11 @@ async def main_instructions(ctx: RunContext[ODISDeps]) -> str:
     # Serialize search criteria for the prompt
     search_criteria_json = ctx.deps.state.search_criteria.model_dump_json(indent=2, exclude_none=True)
 
-    prompt = INTERVIEWER_SYSTEM_PROMPT.format(
+    prompt = INTERVIEWER_SYSTEM_PROMPT_2.format(
         SEARCH_CRITERIAS=search_criteria_json,
         HEBERGEMENT_OPTIONS=str(cfg.HEBERGEMENT_OPTIONS),
         LOGEMENT_OPTIONS=str(cfg.LOGEMENT_OPTIONS),
+        HOUSING_TYPE_OPTIONS=str(list(cfg.HOUSING_TYPE_OPTIONS.keys())),
         CLASSES_SCOLAIRES=str(cfg.CLASSES_SCOLAIRES),
         SANTE_OPTIONS=str(cfg.SANTE_OPTIONS),
         WEIGHT_PROFILES=str(list(cfg.WEIGHT_PROFILES.keys())),
@@ -130,17 +132,17 @@ def search_referentiels_batch_tool(ctx: RunContext[ODISDeps], searches: List[Sea
 # PydanticAI tools receive `ctx: RunContext[Deps]` as first arg if typed.
 
 
-@interviewer_agent.tool
-def search_referentiels_tool(ctx: RunContext[ODISDeps], query: str, domain: str) -> List[Dict[str, Any]]:
-    """Recherche des codes officiels (Communes, Formations, ROME, Services d'inclusion, WALDEC, etc.) dans les référentiels.
+# @interviewer_agent.tool
+# def search_referentiels_tool(ctx: RunContext[ODISDeps], query: str, domain: str) -> List[Dict[str, Any]]:
+#     """Recherche des codes officiels (Communes, Formations, ROME, Services d'inclusion, WALDEC, etc.) dans les référentiels.
     
-    Args:
-        query (str): Mot clé de recherche.
-        domain (str): Domaine de recherche possibles:['formation_codes', 'inclusion_services', 'waldec_codes', 'rome_codes', 'regions', 'departements', 'communes', 'housing_types'].
+#     Args:
+#         query (str): Mot clé de recherche.
+#         domain (str): Domaine de recherche possibles:['formation_codes', 'inclusion_services', 'waldec_codes', 'rome_codes', 'regions', 'departements', 'communes', 'housing_types'].
     
-    Returns:
-        List[Dict[str, Any]]: Liste des codes + labels officiels correspondants.
-    """
-    return search_referentiels(query, domain)
+#     Returns:
+#         List[Dict[str, Any]]: Liste des codes + labels officiels correspondants.
+#     """
+#     return search_referentiels(query, domain)
 
 # Removed update_search_criteria_tool as it's now handled via InterviewerResult.search_criteria

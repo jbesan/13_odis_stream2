@@ -68,7 +68,9 @@ with st.sidebar:
                     st.divider()
 
         with st.expander("⚙️ État Interne", expanded=False):
+            st.write(state.is_interview_complete)
             st.json(state.search_criteria)
+
 
     st.divider()
     st.markdown("""
