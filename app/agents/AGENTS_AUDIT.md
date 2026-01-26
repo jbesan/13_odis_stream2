@@ -1,97 +1,125 @@
-# 🏗️ Technical Specification: ODIS Agents Refactoring (v2)
+# 🏗️ Technical Spec: Advanced ODIS Graph Architecture (v3)
 
-## 1. Context & Objective
+## 🎯 Objective
 
-The current ODIS architecture relies on a manual imperative orchestration (`MultiAgentOrchestrator`) and "vanilla" agent implementations. While functional, it suffers from strong coupling with the UI (Streamlit), rigid control flow, and fragile prompt engineering.
+Refactor the LangGraph architecture to eliminate redundancy (`_solo` nodes), ensure data consistency (prevent stale context), and implement strict execution control (Dispatcher/Joiner pattern).
 
-**Objective:** Refactor the system into a SOTA "Agentic" architecture using **LangGraph** for orchestration and **PydanticAI** for individual agent logic.
+## 1. State Management Upgrade (`state.py`)
 
-## 2. Current Architecture Audit (Pain Points)
+We need to correlate expert results with the specific version of search criteria used to generate them.
 
-### A. The "God Object" Orchestrator (`orchestrator.py`)
+### A. Criteria Versioning (Hashing)
 
-- **Issue:** `process_message` mixes routing logic (LLM decisions), execution logic (calling agents), and business logic (the "Decoration" cascade).
-- **Consequence:** Implementing parallel execution (Scout + Web) or complex feedback loops (Interviewer validation) requires messy nested `if/else` blocks. The workflow is imperative, not declarative.
+Introduce a hash mechanism to track changes in user criteria.
 
-### B. UI/Logic Coupling in Tools (`tools.py`)
+**Update `ODISGraphState`:**
 
-- **Issue:** Tool functions contain side effects like `st.toast()` and directly mutate `st.session_state.agent.context`.
-- **Consequence:** Tools are not testable outside Streamlit. They violate the "Pure Function" principle.
-- **Target:** Tools should accept inputs and return data. The Orchestrator manages the state; the UI layer manages the feedback.
+- **`criteria_hash`** (`str`): An MD5 hash of the `search_criteria` object.
+  - _Logic:_ Re-calculate this hash whenever criteria are updated (e.g., in `Interviewer` or `Scorer`).
+- **`city_memory`** (`Dict[str, Dict[str, Dict[str, Any]]]`): Structured storage for expert results.
+  - _Structure:_ `{ "CityName": { "CriteriaHash": { "scout": Result, "web": Result } } }`
+  - _Benefit:_ The Synthesizer can check if the available results match the _current_ criteria hash. If not, it knows the data is stale.
 
-### C. Fragile Prompt Injection (`base.py`)
+### B. Execution Control Flags
 
-- **Issue:** System prompts are constructed using `str.replace("{BRIEFING}", ...)`.
-- **Consequence:** High risk of prompt injection or formatting errors if the injected content contains curly braces.
-- **Target:** Use proper dependency injection and PydanticAI's robust prompt templating.
+Replace implicit logic with explicit control fields in the State.
 
----
+**Update `ODISGraphState`:**
 
-## 3. Target Architecture: Hybrid SOTA Stack
-
-We will adopt a hybrid approach combining the strengths of two frameworks:
-
-1.  **LangGraph:** To manage the global workflow, state persistence, and routing (The "Skeleton").
-2.  **PydanticAI:** To enforce type safety and validation within each agent node (The "Muscles").
-
-### 3.1 Global State (LangGraph)
-
-Replace the current `AgentContext` with a structured `TypedDict` or Pydantic model managed by LangGraph.
-
-- **State:** Holds `messages`, `user_profile`, `search_criteria`, `top_cities`, `briefing`.
-- **Persistence:** Enables "Time Travel" (debugging) and distinct conversational threads.
-
-### 3.2 Component Refactoring Plan
-
-#### Step 1: Decouple Tools (`tools.py`)
-
-- Refactor all tools to be **Pure Functions**.
-- **Input:** Typed arguments (Pydantic models or primitives).
-- **Output:** Structured data (Dict or Pydantic Model).
-- **REMOVE:** All `st.toast`, `st.write`, and `st.session_state` references.
-- **Action:** Move UI feedback to the Streamlit `main.py` loop (listening to graph events).
-
-#### Step 2: Agent Standardization (`agents/*.py`)
-
-- Convert `InterviewerAgent`, `ScorerAgent`, etc., to **PydanticAI Agents**.
-- **Dependency Injection:** Inject database connections or API clients via `deps`.
-- **Validation:** Use `result_type` to enforce structured outputs (e.g., `ScorerAgent` MUST return a `TopCities` object).
-
-#### Step 3: Graph Implementation (`orchestrator.py`)
-
-- Replace `MultiAgentOrchestrator` class with a `StateGraph`.
-- **Nodes:**
-  - `router_node`: Determines intent.
-  - `interviewer_node`: Handles discovery loop.
-  - `scorer_node`: Computes results.
-  - `refiner_node`: (New) Condenses history into the `briefing` field after each turn.
-- **The "Decoration" Sub-Graph:**
-  - Implement `scout_node` and `web_node` in **PARALLEL**.
-  - Wait for both to finish -> trigger `job_hunter_node`.
-  - Trigger `synthesizer_node` (Final answer).
+- **`pending_experts`** (`List[str]`): A list of expert node names that need to run (e.g., `['scout', 'web']` or `['job_hunter']`).
+- **`execution_mode`** (`Literal['full_decoration', 'solo_query']`):
+  - `'full_decoration'`: All experts run, then converge to `Synthesizer`.
+  - `'solo_query'`: Experts run, then go to `END`.
 
 ---
 
-## 4. Implementation Guidelines (Best Practices)
+## 2. Logic Refactoring: The "Dispatcher & Joiner" Pattern
 
-1.  **Separation of Concerns:**
-    - **Agent Layer:** Only logic and data processing. Returns objects.
-    - **Orchestration Layer:** Routing and State updates.
-    - **UI Layer (Streamlit):** Rendering and User Feedback. It observes the Graph execution.
+We are moving away from hardcoded edges to a dynamic routing system.
 
-2.  **State Management:**
-    - Do not mutate state inside Tools.
-    - Nodes return state updates (diffs), LangGraph merges them.
+### A. The Dispatcher (Logic Function)
 
-3.  **Parallelization:**
-    - Use `asyncio.gather` or LangGraph's parallel node execution for independent tasks (Scout + Web) to reduce latency.
+Located in `graph.py` (edges logic). This function replaces complex conditional edges from Router/Refiner.
 
-4.  **Prompt Engineering:**
-    - Move prompts to `prompts.py` or keep them inside the Agent definition using PydanticAI's `@agent.system_prompt` decorator for better readability.
+**Logic:**
 
-## 5. Next Steps for Antigravity
+1.  Read `state.pending_experts`.
+2.  If empty, return `END`.
+3.  Else, return the list of strings (e.g., `["scout", "web"]`).
+4.  **LangGraph Behavior:** This triggers parallel execution of all listed nodes.
 
-1.  Create `app/agents/graph.py` to define the LangGraph structure.
-2.  Refactor `tools.py` to remove Streamlit dependencies.
-3.  Migrate `interviewer.py` to PydanticAI as a POC.
-4.  Wire the new Graph into the Streamlit app.
+### B. The Unified Expert Nodes (Scout, Web, JobHunter)
+
+**Action:** Delete all `_solo` nodes. Keep only one generic node per expert.
+
+**Node Logic (`scout_node`, `web_node`, etc.):**
+
+1.  Execute the Agent logic (PydanticAI).
+2.  Calculate current `criteria_hash`.
+3.  **Return:**
+    - Update `city_memory` at path `[focus_city][criteria_hash][expert_name]`.
+    - Do **NOT** return `next_node`. The graph edge handles the flow.
+
+### C. The Joiner (Logic Function)
+
+Located in `graph.py` (edges logic). Connects all expert nodes to the next step.
+
+**Logic:**
+
+1.  Check `state.execution_mode`.
+2.  **If 'solo_query'**: Return `END`.
+3.  **If 'full_decoration'**:
+    - _Synchronization Check:_ Verify if ALL experts in `state.pending_experts` have data in `city_memory` for the current hash.
+    - _(Note: LangGraph's native parallel execution usually waits for all branches to finish before proceeding if they converge to a single node. If using explicit conditional edges from experts, simply direct them to 'synthesizer' if mode is full)._
+    - Return `"synthesizer"`.
+
+---
+
+## 3. Implementation Steps for Antigravity
+
+### Step 1: Modify `state.py`
+
+1.  Import `hashlib`.
+2.  Add `criteria_hash`, `city_memory`, `pending_experts`, `execution_mode` to `ODISGraphState`.
+3.  Implement a helper method `compute_hash(criteria)` to generate the fingerprint.
+
+### Step 2: Update `router.py` & `refiner.py` outputs
+
+1.  When Router decides to call an expert (or a group), it must **NOT** return a target node directly.
+2.  Instead, it updates the state:
+    - **Case Decoration:** `pending_experts=['scout', 'web', 'job_hunter']`, `execution_mode='full_decoration'`.
+    - **Case Solo:** `pending_experts=['scout']`, `execution_mode='solo_query'`.
+3.  The Router/Refiner returns `next_node="dispatcher"`.
+
+### Step 3: Refactor `graph.py` Nodes
+
+1.  **Delete** `scout_standalone_node`, `web_standalone_node`, `job_standalone_node`.
+2.  **Update** `scout_node`, `web_node`, `job_hunter_node` to write to `city_memory` using the current hash.
+
+### Step 4: Rewire `graph.py` Edges
+
+1.  **Remove** static edges like `builder.add_edge("scout", "synthesizer")`.
+2.  **Add Conditional Edge** from `router` and `refiner` using the **Dispatcher** logic.
+3.  **Add Conditional Edge** from `scout`, `web`, `job_hunter` using the **Joiner** logic.
+
+### Step 5: Update Synthesizer
+
+1.  Ensure `synthesizer_agent` reads from `city_memory[focus_city][current_hash]`.
+2.  If data is missing for the current hash (mismatch), it should either explicitly state it or fallback gracefully, but never use stale data from a previous hash.
+
+---
+
+## 4. Expected Behavior (Testing Scenarios)
+
+- **Scenario A (Full Search):**
+  - Router sets `mode='full'`, `pending=['scout', 'web']`.
+  - Dispatcher launches Scout + Web.
+  - Both finish.
+  - Joiner sees `mode='full'` -> sends both to Synthesizer.
+  - Synthesizer runs -> END.
+
+- **Scenario B (Specific Question):**
+  - Router sets `mode='solo'`, `pending=['scout']`.
+  - Dispatcher launches Scout.
+  - Scout finishes.
+  - Joiner sees `mode='solo'` -> sends to END. (Synthesizer is skipped).

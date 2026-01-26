@@ -13,31 +13,29 @@ ROUTING_SYSTEM_PROMPT = """
 
 **Contexte Actuel** :
 - Villes identifiées : {CITIES_IDENTIFIED}
-- Ville active : {FOCUS_CITY}
+- Ville cible : {FOCUS_CITY}
+- Interview terminée : {INTERVIEW_COMPLETED}
 
 **Dossier (Briefing)** :
 {BRIEFING}
 
 **Agents disponibles** :
-1. **INTERVIEWER** : Pour la collecte de besoins (phase initiale puis si besoin pour l'ajout des information supplémentaires).
-2. **SCORER** : Pour lancer la recherche et retourner le Top 5 villes selon les critères collectés.
-3. **DECORATION** : Cascade Scout + Web + Job Hunter pour approfondir l'analyse sur une ville de `Ville identifiées`
-4. **SCOUT** : Pour une question spécifique de vie locale (ex: "Temps trajet prefecture").
-5. **WEB** : Pour des recherches d'actualités/contextuelles.
-6. **JOB_HUNTER** : Pour une question spécifique emploi (ex: "Offres boulangerie").
-
-
-** Extraction du Contexte (CRITIQUE) ** :
-- Si l'utilisateur mentionne une ville cible (ex: "Bordeaux", "Carcassonne") ou y fait référence ("Celle-ci", "La première"), identifie-la et remplis `focus_city`.
-- **Note** : Ne confonds pas avec `commune_actuelle` (où l'utilisateur vit actuellement). `focus_city` est la ville sur laquelle il veut des détails.
-
-**DIRECTIVE DE SORTIE** : Réponds toujours de manière hyper concise et structurée selon le schéma RoutingResult fourni.
+    1. **SCORER** : Lancer un calcul de score pour retourner un premier Top 5 communes selon les critères collectés.
+    2. **ANALYSIS** : Analyse approfondie (Scout + Web + Job Hunter) pour explorer une commune de `Communes identifiées`.
+    3. **SCOUT** : Pour une question spécifique de vie locale (ex: "Temps trajet prefecture", "associations présentes").
+    4. **WEB** : Pour des recherches d'actualités/contextuelles.
+    5. **JOB_HUNTER** : Pour une question spécifique emploi (ex: "Offres boulangerie").
+    6. **SYNTHESIZER** : Pour formuler le pitch final argumenté avec toutes les données évaluées et collectées
+    7. **INTERVIEWER** : Pour modifier ou ajouter des critères de recherche.
 """
+# ** Extraction de la Commune cible (CRITIQUE) ** :
+# - Si l'utilisateur mentionne une commune cible (ex: "Bordeaux" ou y fait référence (ex: "La première"), identifie-la et retourne la valeur dans `focus_city`.
+# """
 
 class RoutingResult(BaseModel):
-    target_agent: Literal['interviewer', 'scorer', 'decoration', 'scout', 'web', 'job_hunter']
-    focus_city: Optional[str] = Field(None, description="The name of the city the user is currently interested in (if mentioned).")
-    reasoning: str = Field(..., description="Why this agent was selected in a few words.")
+    target_agent: Literal['interviewer', 'scorer', 'analysis', 'scout', 'web', 'job_hunter', 'synthesizer']
+    # focus_city: Optional[str] = Field(None, description="The name of the city the user is currently interested in (if mentioned).")
+    # reasoning: str = Field(..., description="Why this agent was selected in a few words.")
     model_config = ConfigDict(populate_by_name=True)
 
 router_agent = Agent(
@@ -70,5 +68,6 @@ async def router_instructions(ctx: RunContext[ODISDeps]) -> str:
     return ROUTING_SYSTEM_PROMPT.format(
         CITIES_IDENTIFIED=str(top_cities_names),
         BRIEFING=ctx.deps.state.briefing or "(Pas encore de briefing)",
-        FOCUS_CITY=ctx.deps.state.focus_city or "Non définie"
-    )
+        FOCUS_CITY=ctx.deps.state.focus_city or "Non définie",
+        INTERVIEW_COMPLETED=ctx.deps.state.is_interview_complete
+    ).replace("Communes identifiées", "Villes identifiées") # Guard against slight hallucination if needed, but the prompt is fixed above

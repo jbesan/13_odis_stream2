@@ -108,14 +108,15 @@ Liste en vrac d'idées d'amélioration
 - [ ] Ajouter le critère insse d'affordabilité
 - [ ] Temps d'accès à un médecin / Déserts médicaux
 - [ ] Regarder les Entreprises de l'Insertion (et leur soffres d'emploi)
-  - champ 'est_siae' https://recherche-entreprises.api.gouv.fr/docs/ MCP ici:
+  - champ 'est_siae' https://recherche-entreprises.api.gouv.fr/docs/
+  - Il y a aussi des tables structures + offres sur Odace
 - [ ] Remplacer par y-a-t'il un CTAI/PTAI (signe que la commune s'implique dans l'intégration) + Est-ce que la commune est adhérante ANVITA ? Ajouter un label ?
 - [x] Rechercher au niveau national ou viser une région/ département en particulier?
 - [x] Ajouter un 'en savoir plus' pour comprendre le scoring
 - [ ] Gare --> a conditionner avec une question mobilité (besoin de revenir regulierement)
-- [ ] FLE doit être un critere à part entiere et il faut trouver une base spécifique
+- [x] FLE doit être un critere à part entiere et il faut trouver une base spécifique
 - [ ] Les multiselects sont frustrants car il faut trouver la terminologie exacte
-- [ ] Créer et exploiter un dataset des associations dédiés aux réfugiés / demandeurs d'asile
+- [x] Créer et exploiter un dataset des associations dédiés aux réfugiés / demandeurs d'asile
 - [ ] AI Bot: ajouter le contact CCAS (passer dans get_city_details? )
 
 Territoires ANVITA
@@ -684,18 +685,19 @@ En tant que travailleur social, je veux être informé des actions en cours des 
 
 - In Progress (Jan 2026)
 
-## 🚀 Feature [F-36]: Critère de Mobilité - Transport Public
+## 🚀 Feature [F-37]: Advanced ODIS Graph Architecture (v3)
 
 ### 📝 User Story
 
-- En tant que travailleur social, je veux évaluer la densité des transports en commun (bus, tram, métro, train) dans une commune pour m'assurer que la famille pourra se déplacer facilement sans voiture.
+- En tant que développeur, je veux une architecture de graphe LangGraph plus robuste, déterministe et efficace pour éliminer la redondance des nœuds, garantir la fraîcheur des données via un système de hachage des critères, et centraliser le contrôle de l'exécution avec un pattern Dispatcher/Joiner.
 
 ### 🔑 Key Features
 
-- **Intégration de Données :** Source "Nombre de stations de transports en commun" (Data Gouv).
-- **Calcul de Densité :** Calcul du nombre d'arrêts par type (bus, tramway, métro, train) par commune.
-- **Scoring :** Nouveau critère `mob_density_scaled` dans la catégorie "Mobilité", valorisant les communes avec une haute densité d'arrêts.
-- **Affichage :** Mention de la desserte transports comme point fort (ex: "Excellente desserte transports").
+- **Versioning des Critères (Hashing) :** Implémentation d'un hachage MD5 des `search_criteria` pour détecter tout changement et invalider les données d'experts obsolètes.
+- **Gestionnaire d'Artéfacts (`commune_artifacts`) :** Stockage structuré des résultats des experts par commune et par hash de critères, évitant les recalculs inutiles et les incohérences.
+- **Pattern Dispatcher/Joiner :** Centralisation de la logique de routage parallèle et de convergence, supprimant le besoin de nœuds "\_solo" redondants.
+- **Contrôle d'Exécution Explicite :** Utilisation de flags `pending_experts` et `execution_mode` (e.g., `full_analysis`, `specific_ask`) dans l'état global pour un pilotage précis du graphe.
+- **Nettoyage Architectural :** Suppression des nœuds redondants (`scout_solo`, `web_solo`, etc.) au profit d'une logique unifiée.
 
 ### 📊 Status
 

@@ -214,7 +214,7 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
 
     from datetime import datetime
     start_logic = datetime.now()
-    logger.info(f"⚙️  [MCP] Entering _compute_top_cities_logic at {start_logic.strftime('%H:%M:%S.%f')[:-3]}")
+    logger.debug(f"⚙️  [MCP] Entering _compute_top_cities_logic at {start_logic.strftime('%H:%M:%S.%f')[:-3]}")
 
     engine = get_scoring_engine()
     
@@ -362,7 +362,7 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
         })
         
     end_logic = datetime.now()
-    logger.info(f"🏁 [MCP] Exiting _compute_top_cities_logic at {end_logic.strftime('%H:%M:%S.%f')[:-3]} - Full duration: {(end_logic - start_logic).total_seconds():.3f}s")
+    logger.debug(f"🏁 [MCP] Exiting _compute_top_cities_logic at {end_logic.strftime('%H:%M:%S.%f')[:-3]} - Full duration: {(end_logic - start_logic).total_seconds():.3f}s")
     
     return sanitize_for_json({
         "cities": results,
@@ -570,6 +570,52 @@ def _compute_routes_logic(origin: str, destination: str, mode: str = "transit") 
     except Exception as e:
          logger.error(f"❌ [MCP] compute_routes failed: {e}")
          return {"error": str(e)}
+
+def _search_ccas_logic(codgeo: str) -> List[Dict[str, Any]]:
+    """
+    Internal logic for looking up CCAS information.
+    Accepts INSEE code, falls back to Bassin de Vie if no local CCAS.
+    """
+    ensure_data_context()
+    if 'structures_ccas' not in DATA_CONTEXT or DATA_CONTEXT['structures_ccas'].empty:
+        logger.warning(f"⚠️ [MCP] structures_ccas not available or empty in DATA_CONTEXT.")
+        return []
+    
+    df = DATA_CONTEXT['structures_ccas']
+    odis = DATA_CONTEXT['odis']
+    
+    # 1. Direct match on Commune
+    mask = (df['codgeo'].astype(str) == str(codgeo))
+    results = df[mask].copy()
+    
+    # 2. Fallback to Bassin de Vie (Requirement F-26)
+    if results.empty and codgeo in odis.index:
+        bv = odis.loc[codgeo, 'bassin_de_vie']
+        if pd.notna(bv):
+             bv_str = str(bv).replace('.0', '')
+             # Get all communes in the same BV
+             bv_communes = odis[odis['bassin_de_vie'] == bv].index
+             mask = (df['codgeo'].isin(bv_communes))
+             results = df[mask].copy()
+    
+    return results.to_dict(orient='records')
+
+@mcp.tool()
+def search_ccas(codgeo: str) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    """
+    Recherche les informations du CCAS (Centre Communal d'Action Sociale) pour une commune.
+    Si aucun CCAS n'est trouvé dans la commune, l'outil retourne les CCAS du Bassin de Vie.
+    
+    Args:
+        codgeo: Code INSEE de la commune (ex: '33063').
+    """
+    try:
+        if not codgeo or not (isinstance(codgeo, str) and len(codgeo) == 5):
+            return {"error": f"Invalid INSEE code (codgeo): {codgeo}. Must be 5 characters."}
+        return _search_ccas_logic(codgeo)
+    except Exception as e:
+        logger.exception(f"❌ [MCP] search_ccas failed: {e}")
+        return {"error": str(e)}
 
 @mcp.tool()
 def compute_routes(origin: str, destination: str, mode: str = "transit") -> Dict[str, Any]:

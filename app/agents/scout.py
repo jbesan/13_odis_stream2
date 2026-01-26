@@ -4,15 +4,15 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 import config as cfg
-from .state import ODISGraphState, ODISDeps
+from .state import ODISGraphState, ODISDeps, FocusCity
 from .agent_config import get_model
 from .tools import (
     search_places, 
     compute_routes, 
-    set_focus_city, 
-    search_referentiels_batch,
+    # search_referentiels_batch,
     search_refugee_associations, 
-    search_odis_associations
+    search_odis_associations,
+    search_ccas,
 )
 
 logger = logging.getLogger("scout_agent_v2")
@@ -22,28 +22,25 @@ class SearchQuery(BaseModel):
     domain: str = Field(..., description="Domaine: ['rome_codes', 'communes', 'regions', 'departements'].")
 
 SCOUT_SYSTEM_PROMPT = """
-**Rôle** : Tu es le Scout ODIS. Expert en terrain. Tu épaules l'orchestrator pour trouver des informations et infrastructures locales pertinentes pour le projet de vie de la personne accompagnée.
+**Rôle** : Tu es le Scout ODIS. Tu épaules le travailleur social pour trouver les infrastructures locales pertinentes pour le projet de vie de la personne accompagnée.
 **Objectif** : Rapporter le résultat d'un analyse poussée sur la commune demandée.
 **Ton** : Hyper synthétique, direct, factuel.
 
 **CONTEXTE RÉSUMÉ** : {BRIEFING}
-**VILLE ACTIVE** : {FOCUS_CITY}
+**VILLE ACTIVE** : {FOCUS_CITY_NAME} (Code INSEE: {FOCUS_CITY_CODE})
 
 **Instructions** :
-1. **Gestion du Focus** : Utilise la `VILLE ACTIVE` fournie. Si elle est vide, demande à l'utilisateur de préciser sur quelle ville il souhaite des informations.
-
+1. **Gestion du Focus** : La localité d'intérêt est `{FOCUS_CITY_NAME}`.
 2. **Recherche de Terrain** : Dans cet ordre de priorité
-    - **Gestion du Code INSEE** : Récupère le Code INSEE de la ville de `VILLE ACTIVE` avec l'outil `search_referentiels_batch_tool` (domain='communes').
-    - **Utilise systématiquement** `search_refugee_associations(codgeo=code)` pour identifier les structures spécialisées. C'est CRUCIAL pour l'argumentaire inclusion.
-    - **Utilise systématiquement** `search_odis_associations(codgeo=code)` pour enrichir la vision de la vie locale pertinente (Clubs, Culture, Sport, Social).
-    - Utilise `search_places` pour trouver des POIs (écoles, parcs, commerces, lieux de culte) **dans un rayon de 50km de `VILLE ACTIVE`**. Exemples de recherches:
-        - des lieux publics en lien avec l'origine culturelle (ex: restaurant libanais, épicerie indienne, etc)
-        - les commerces solidaires (ex: Emmaus, Recycleries)
-        - les lieux de cultes (hors églises) si culturelement pertinent.
-    - Utilise `compute_routes` pour calculer les temps de trajet. Utilise `VILLE ACTIVE` comme origine si non spécifié.
+    - **Associations Réfugiés** : Utilise `search_refugee_associations_tool(codgeo='{FOCUS_CITY_CODE}')`.
+    - **Associations ODIS** : Utilise `search_odis_associations_tool(codgeo='{FOCUS_CITY_CODE}')`.
+    - Utilise `search_places` pour trouver des POIs (écoles, parcs, commerces, lieux de culte) **dans un rayon de 50km de `{FOCUS_CITY_NAME}`**.
+    - Utilise `compute_routes` pour calculer les temps de trajet. Utilise `{FOCUS_CITY_NAME}` comme origine si non spécifié.
+    - Utilise TOUJOURS `search_ccas` pour trouver le Centre Communal d'Action Social local.
 
 3. **Réponse** :
     - Tu DOIS préparer une synthèse factuelle, argumentative et concise de tes découvertes sur le terrain.
+    - Retourne TOUJOURS le `CCAS` trouvé.
     - Ne garde que ce qui est pertinent au regard du `CONTEXTE RÉSUMÉ`.
 """
 
@@ -54,26 +51,17 @@ scout_agent = Agent(
 
 @scout_agent.system_prompt
 async def scout_instructions(ctx: RunContext[ODISDeps]) -> str:
+    focus = ctx.deps.state.focus_city
+    city_name = focus.name if focus else "Non définie"
+    city_code = focus.codgeo if focus else "Inconnu"
+    
     return SCOUT_SYSTEM_PROMPT.format(
         BRIEFING=ctx.deps.state.briefing or "",
-        FOCUS_CITY=str(ctx.deps.state.focus_city or "Non définie")
+        FOCUS_CITY_NAME=city_name,
+        FOCUS_CITY_CODE=city_code
     )
 
 # --- Tools ---
-
-@scout_agent.tool
-def set_focus_city_tool(ctx: RunContext[ODISDeps], city_name: str) -> str:
-    """Définit la ville 'active' ou 'focus' pour la conversation.
-    
-    Args:
-        ctx (RunContext[ODISDeps]): Contexte de l'agent.
-        city_name (str): Nom de la ville à définir.
-    
-    Returns:
-        str: Message de confirmation.
-    """
-    ctx.deps.state.focus_city = city_name
-    return set_focus_city(city_name)
 
 
 @scout_agent.tool
@@ -129,6 +117,17 @@ def search_odis_associations_tool(ctx: RunContext[ODISDeps], codgeo: str) -> Lis
         List[Dict[str, Any]]: Liste des associations ODIS correspondantes.
     """
     return search_odis_associations(codgeo)
+
+@scout_agent.tool
+def search_ccas_tool(ctx: RunContext[ODISDeps], codgeo: str) -> List[Dict[str, Any]]:
+    """Recherche les informations du CCAS (Centre Communal d'Action Sociale) pour une commune.
+    
+    Args:
+        ctx (RunContext[ODISDeps]): Contexte de l'agent.
+        codgeo (str): Code INSEE de la commune (ex: '33063').
+    """
+    return search_ccas(codgeo)
+
 @scout_agent.tool
 def search_referentiels_batch_tool(
     ctx: RunContext[ODISDeps], 

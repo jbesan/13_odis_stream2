@@ -57,7 +57,11 @@ web_agent = Agent(
 
 @web_agent.system_prompt
 async def web_instructions(ctx: RunContext[ODISDeps]) -> str:
+    focus = ctx.deps.state.focus_city
+    city_name = focus.name if focus else "Non définie"
+    city_code = focus.codgeo if focus else "Inconnu"
+    
     return WEB_SYSTEM_PROMPT.format(
         BRIEFING=ctx.deps.state.briefing or "",
-        FOCUS_CITY=str(ctx.deps.state.focus_city or "Non définie")
+        FOCUS_CITY=f"{city_name} ({city_code})"
     )

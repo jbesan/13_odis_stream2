@@ -12,9 +12,9 @@ Les agents sont situés dans `app/agents/` :
 - **`tools.py`** : Fonctions pures utilisées par les agents.
 - **`interviewer.py`** : Agent PydanticAI (Phase DISCOVERY).
 - **`scorer.py`** : Agent PydanticAI (Phase SCORING).
-- **`scout.py`**, **`web.py`**, **`job_hunter.py`** : Agents de décoration (Phase DECORATION).
+- **`scout.py`**, **`web.py`**, **`job_hunter.py`** : Agents d'analyse (Phase ANALYSIS).
 - **`synthesizer.py`** : Agent de synthèse finale.
-- **`base.py`** : Classes utilitaires pour PydanticAI.
+- **`agent_config.py`** : Configuration des modèles par agent.
 
 ## 🔄 Workflow & Phases
 
@@ -22,7 +22,28 @@ L'orchestrateur pilote la conversation à travers trois phases :
 
 1. **DISCOVERY** : Collecte intelligente des besoins.
 2. **SCORING** : Présentation argumentée des meilleurs territoires.
-3. **DECORATION** : Triple cascade automatique (**Scout + Web + JobHunter**) pour explorer une ville en détail.
+3. **ANALYSIS** : Triple analyse automatique (**Scout + Web + JobHunter**) pour explorer une commune en détail.
+
+## 🏗️ Architecture Graduée (v3)
+
+L'architecture v3 introduit des mécanismes de contrôle rigoureux pour garantir la fiabilité des réponses.
+
+### 🧠 State Management & Data Consistency
+
+Pour éviter les "hallucinations de contexte" (mélange de données entre deux recherches), nous utilisons :
+
+- **Criteria Hashing** : Un hash MD5 unique est généré à chaque modification des critères.
+- **Commune Artifacts** : Les résultats des experts sont stockés de manière indexée : `{ "Commune": { "Hash": { "Expert": "Result" } } }`.
+- **Synthesizer Lock** : Le synthétiseur ne peut lire que les artéfacts correspondant au hash de critères _actuel_.
+
+### 🔀 Pattern Dispatcher & Joiner
+
+Nous avons supprimé la redondance des nœuds (nœuds "\_solo") au profit d'un système dynamique :
+
+1. **Dispatcher** : Un nœud logique qui lit `pending_experts` et lance les branches en parallèle.
+2. **Joiner** : Un nœud de convergence qui décide d'aller vers la synthèse (`full_analysis`) ou de s'arrêter (`specific_ask`).
+
+![ODIS Graph v3](./odis_graph_v3.png)
 
 ## ⚡ Optimisations de Performance
 

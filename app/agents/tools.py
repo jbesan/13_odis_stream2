@@ -6,7 +6,8 @@ from services.mcp_server import (
     _search_places_logic,
     _compute_routes_logic,
     _search_refugee_associations_logic,
-    _search_odis_associations_logic
+    _search_odis_associations_logic,
+    _search_ccas_logic
 )
 from services.mcp_france_travail import (
     _search_job_offers_logic,
@@ -26,6 +27,7 @@ def search_referentiels_batch(queries: List[Dict[str, str]]) -> Dict[str, List[D
     Returns:
         Dictionnaire mappant chaque requête 'query' à ses résultats.
     """
+    logger.info(f"🔍 [TOOL] search_referentiels_batch: {queries}")
     results = {}
     for item in queries:
         q = item.get('query')
@@ -81,6 +83,7 @@ def set_focus_city(city_name: str) -> str:
     À utiliser dès que l'utilisateur s'intéresse à une ville spécifique (ex: 'Parle moi de Bordeaux').
     """
     # Simply return the city name; the Agent/Graph will handle the state update.
+    logger.info(f"🔍 [TOOL] set_focus_city: {city_name}")
     return f"SUCCÈS: Ville active définie sur {city_name}."
 
 
@@ -94,7 +97,7 @@ def search_job_offers_batch(queries: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     results = {}
     
-    logger.debug(f"🔍 [TOOL] search_job_offers_batch: {queries}")
+    logger.info(f"🔍 [TOOL] search_job_offers_batch: {queries}")
     
     for q_params in queries:
         rome = q_params.get('rome') or q_params.get('rome_code') or q_params.get('rome_codes')
@@ -142,3 +145,13 @@ def search_odis_associations(codgeo: str) -> List[Dict[str, Any]]:
         codgeo: Code INSEE de la commune (ex: '33063').
     """
     return _search_odis_associations_logic(codgeo)
+
+def search_ccas(codgeo: str) -> List[Dict[str, Any]]:
+    """
+    Recherche les informations du CCAS (Centre Communal d'Action Sociale) pour une commune.
+    Si aucun CCAS n'est trouvé dans la commune, l'outil retourne les CCAS du Bassin de Vie.
+    
+    Args:
+        codgeo: Code INSEE de la commune (ex: '33063').
+    """
+    return _search_ccas_logic(codgeo)

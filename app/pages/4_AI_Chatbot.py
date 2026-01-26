@@ -67,11 +67,24 @@ with st.sidebar:
                         st.caption(f"└ {node} : {data['total']} t ({data['input']} / {data['output']}) - ${data['cost']:.4f}")
                     st.divider()
 
+        with st.expander("⚙️ État Agent", expanded=False):
+            st.json(state)
+
         with st.expander("⚙️ État Recherche", expanded=False):
             st.json(state.search_criteria)
 
-        with st.expander("⚙️ État Top 5", expanded=False):
-            st.write(state.top_cities)
+        with st.expander("⚙️ Briefing", expanded=False):
+            st.write(state.briefing)
+
+        criteria_hash = state.criteria_hash
+        
+        if state.focus_city and state.focus_city.name:
+            st.write(state.focus_city.name)
+            for agent in ['scout', 'web', 'job_hunter']:
+                with st.expander(f"⚙️ {agent.upper()} Results", expanded=False):
+                    st.write(state.commune_artifacts[state.focus_city.name][criteria_hash][agent])
+
+        
 
     st.divider()
     st.markdown("""
@@ -147,6 +160,7 @@ if prompt := st.chat_input("Répondez ici...", key="chat_input"):
     with st.spinner("L'Agent ODIS réfléchit... (et ça peut prendre un moment... 😴)"):
         # Pre-process state in main thread
         st.session_state.agent_state.messages.append({"role": "user", "content": prompt})
+        logger.info(f"💁 [USER] message: {prompt[:50]}")
         state_to_send = st.session_state.agent_state
 
         async def run_logic(input_data: dict):
@@ -217,11 +231,6 @@ if prompt := st.chat_input("Répondez ici...", key="chat_input"):
         if response_text:
             st.session_state.chat_history.append({"role": "assistant", "content": response_text})
             display_message("assistant", response_text)
-            
-            # Show expert details if available
-            if st.session_state.agent_state.experts_results:
-                with st.expander("🔍 Expertise ODIS (Détails)"):
-                    st.json(st.session_state.agent_state.experts_results)
         
         st.rerun()
 
@@ -242,4 +251,3 @@ components.html(
     height=0,
     width=0,
 )
-
