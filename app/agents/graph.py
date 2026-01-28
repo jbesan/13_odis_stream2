@@ -155,12 +155,14 @@ async def router_node(state: ODISGraphState, config: RunnableConfig):
         logger.info(f"🧠 [ROUTER] Direction: {decision.target_agent}")
         
         # Decide if we need Refiner (only for experts)
+        # SOTA: Always launch the full trio to ensure LangGraph fan-in condition is met.
+        # The cache-bypass logic in each node will prevent redundant LLM calls.
         experts_mapping = {
             'scorer': {'pending': [], 'mode': 'full_analysis'},
             'analysis': {'pending': ['scout', 'web', 'job_hunter'], 'mode': 'full_analysis'},
-            'scout': {'pending': ['scout'], 'mode': 'specific_ask'},
-            'web': {'pending': ['web'], 'mode': 'specific_ask'},
-            'job_hunter': {'pending': ['job_hunter'], 'mode': 'specific_ask'},
+            'scout': {'pending': ['scout', 'web', 'job_hunter'], 'mode': 'specific_ask'},
+            'web': {'pending': ['scout', 'web', 'job_hunter'], 'mode': 'specific_ask'},
+            'job_hunter': {'pending': ['scout', 'web', 'job_hunter'], 'mode': 'specific_ask'},
         }
 
         pending = []

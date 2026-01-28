@@ -6,7 +6,7 @@ from .agent_config import get_model
 
 logger = logging.getLogger("synthesizer_agent")
 
-SYNTH_SYSTEM_PROMPT = """
+SYNTH_SYSTEM_PROMPT_ANALYSIS = """
 **Rôle** : Tu es le Synthétiseur ODIS. Ta mission est de fusionner les retours du scorer et des experts pour donner une réponse au travailleur social qui accompagne la ou les pesonnes réfugiées.
 
 # Contexte résumé : 
@@ -30,7 +30,39 @@ SYNTH_SYSTEM_PROMPT = """
 {JOB_RES}
 
 # Instructions :
-{MODE_INSTRUCTIONS}
+1. Fais une synthèse argumentée pour le Travailleur Social des éléments ci-dessus qui soit factuelle, actionnable et ultra-convaincante en FRANÇAIS.
+    - Utilise les **DONNÉES CHIFFRÉES** (scores, points forts ODIS) pour asseoir ta démonstration.
+    - N'utilise JAMAIS les codes sans les intitulés.
+2. Structure ta synthèse comme suit :
+    - Description en trois phrases de la commune.
+    - Synthèses par thématiques (Vie Quotidienne, Inclusion, Opportunités Emploi, etc).
+    - Tableau des forces et faiblesses.
+    - Contact CCAS local.
+    - Question ouverte pour analyser une autre ville.
+"""
+
+SYNTH_SYSTEM_PROMPT_SPECIFIC = """
+**Rôle** : Tu es le Synthétiseur ODIS. Ta mission est de répondre à une question spécifique du Travailleur Social en utilisant les données des experts.
+
+# Contexte résumé : 
+{BRIEFING}
+
+# Ville Analysée : 
+{FOCUS_CITY}
+
+# Expert Terrain (Scout) : 
+{SCOUT_RES}
+
+# Expert News (Web) : 
+{WEB_RES}
+
+# Expert Emploi (Job Hunter) : 
+{JOB_RES}
+
+# Instructions :
+RÉPONSE DIRECTE : L'utilisateur a posé la question suivante : {DERNIER_ECHANGE}. 
+- Réponds spécifiquement  et de manière détaillée en utilisant les données ci-dessus.
+- Si pertinent utilise un tableau pour synthétiser les données.
 """
 
 synthesizer_agent = Agent(
@@ -61,26 +93,13 @@ async def synth_instructions(ctx: RunContext[ODISDeps]) -> str:
     
     # Dynamic mode logic
     mode = ctx.deps.state.execution_mode
+    print(f" ExecutionContext: {mode} ")
     if mode == 'specific_ask':
-        mode_instr = """
-RÉPONSE DIRECTE : L'utilisateur a posé la question suivante : {DERNIER_ECHANGE}. 
-- Réponds-y spécifiquement et de manière détaillée en utilisant les données ci-dessus.
-- Si pertinent utilise un tableau pour synthétiser les données.
-"""
+        prompt = SYNTH_SYSTEM_PROMPT_SPECIFIC
     else:
-        mode_instr = """
-1. Fais une synthèse argumentée pour le Travailleur Social des éléments ci-dessus qui soit factuelle, actionnable et ultra-convaincante en FRANÇAIS.
-    - Utilise les **DONNÉES CHIFFRÉES** (scores, points forts ODIS) pour asseoir ta démonstration.
-    - N'utilise JAMAIS les codes sans les intitulés.
-2. Structure ta synthèse comme suit :
-    - Description en trois phrases de la commune.
-    - Synthèses par thématiques (Vie Quotidienne, Inclusion, Opportunités Emploi, etc).
-    - Tableau des forces et faiblesses.
-    - Contact CCAS local.
-    - Question ouverte pour analyser une autre ville.
-"""
+        prompt = SYNTH_SYSTEM_PROMPT_ANALYSIS
 
-    prompt = SYNTH_SYSTEM_PROMPT.format(
+    prompt = prompt.format(
         BRIEFING=ctx.deps.state.briefing or "",
         FOCUS_CITY=str(ctx.deps.state.focus_city or "Non définie"),
         CITY_DETAILS=city_details,
@@ -88,7 +107,6 @@ RÉPONSE DIRECTE : L'utilisateur a posé la question suivante : {DERNIER_ECHANGE
         WEB_RES=artifacts.get("web", "Non disponible"),
         DERNIER_ECHANGE=ctx.deps.state.messages[-1].get("content", "Non disponible"),
         JOB_RES=artifacts.get("job_hunter", "Non disponible"),
-        MODE_INSTRUCTIONS=mode_instr
     )
 
     logger.info(f"🎤 [SYNTHESIZER] Prompt prepared for {ctx.deps.state.focus_city.name if ctx.deps.state.focus_city else 'Unknown'}")

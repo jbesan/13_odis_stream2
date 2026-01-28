@@ -32,11 +32,11 @@ REFINER_PROMPT = """
 **Instructions** :
 
 2. **IDENTIFICATION DE LA VILLE CIBLE** : 
-   - Essaye TOUJOURS d'identifier le nom de la commune/ville à analyser à partir des `Nouveaux Échanges` et récupère le code INSEE correspondant dans `top villes identifiées`.
-   - Retourne le résultat dans l'objet `focus_city` structuré
-   - Si pas de ville identifée retourne `focus_city` vide
-3. **NOUVEAU BRIEFING** : Produis un brief en français ultra-concis à partir des éléments suivants : les critères de recherches, les faits validés, les nouveaux échanges, les retours experts et le briefing précédent.
-    - **IDENTIFIANTS TECHNIQUES (CRITIQUE)** : Rapporte **IMPÉRATIVEMENT** les codes techniques à côté de chaque intitulé. Ne résume JAMAIS sans inclure ces codes INSEE, ROME ou Formation. N'invente et ne devine rien et utilise le format : `Intitulé (CODE)` (ex: "Bordeaux (33063)")
+   - Essaye TOUJOURS d'identifier le nom de la commune/ville à analyser à partir des `Nouveaux Échanges` et récupère le code INSEE correspondant dans `top villes identifiées`. Retourne le résultat dans l'objet `focus_city` structuré
+   - N'invente JAMAIS de ville. Si pas de ville identifée retourne `focus_city` vide.
+3. **NOUVEAU BRIEFING** : 
+   - Produis une synthèse en français en 5 à 10 bullet points maximum à partir des éléments suivants : les critères de recherches, les faits validés, les nouveaux échanges, les retours experts et le briefing précédent.
+   - Rapporte **SYSTÉMATIQUEMENT** les codes techniques (INSEE, ROME, Formation) à côté de chaque intitulé. N'invente et ne devine rien et utilise le format : `Intitulé (CODE)` (ex: "Bordeaux (33063)")
 """
 
 

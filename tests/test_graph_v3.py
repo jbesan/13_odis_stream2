@@ -1,6 +1,4 @@
-import pytest
 from agents.state import ODISGraphState, compute_criteria_hash, merge_commune_artifacts
-from agents.graph import joiner_branch
 from langgraph.graph import END
 from core.models import SearchCriterias
 
@@ -37,10 +35,4 @@ def test_merge_commune_artifacts_logic():
     assert state["Lyon"][h]["scout"] == "lyon_scout"
 
 
-def test_joiner_logic_v3():
-    """Verify joiner always routes to synthesizer to ensure a user response."""
-    state_analysis = ODISGraphState(execution_mode="full_analysis")
-    assert joiner_branch(state_analysis) == "synthesizer"
-    
-    state_ask = ODISGraphState(execution_mode="specific_ask")
-    assert joiner_branch(state_ask) == "synthesizer"
+

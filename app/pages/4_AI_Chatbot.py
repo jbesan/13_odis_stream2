@@ -82,7 +82,10 @@ with st.sidebar:
             st.write(state.focus_city.name)
             for agent in ['scout', 'web', 'job_hunter']:
                 with st.expander(f"⚙️ {agent.upper()} Results", expanded=False):
-                    st.write(state.commune_artifacts[state.focus_city.name][criteria_hash][agent])
+                    try:
+                        st.write(state.commune_artifacts[state.focus_city.name][criteria_hash][agent])
+                    except Exception as e:
+                        st.write(f"Erreur: ville incorrecte")
 
         
 
