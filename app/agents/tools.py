@@ -30,10 +30,8 @@ def search_referentiels_batch(queries: List[Dict[str, str]]) -> Dict[str, List[D
     logger.info(f"🔍 [TOOL] search_referentiels_batch: {queries}")
     results = {}
     for item in queries:
-        q = item.get('query')
-        d = item.get('domain')
-        if q and d:
-            results[f"{d}:{q}"] = _search_referentiels_logic(q, d)
+        q, d = item.get('query'), item.get('domain')
+        if q and d: results[f"{d}:{q}"] = _search_referentiels_logic(q, d)
     return results
 
 
@@ -96,23 +94,17 @@ def search_job_offers_batch(queries: List[Dict[str, Any]]) -> Dict[str, Any]:
         Dictionnaire mappant une clé unique (ex: "rome:location") aux résultats.
     """
     results = {}
-    
     logger.info(f"🔍 [TOOL] search_job_offers_batch: {queries}")
-    
     for q_params in queries:
         rome = q_params.get('rome') or q_params.get('rome_code') or q_params.get('rome_codes')
         loc = q_params.get('location')
         q_text = q_params.get('query')
-        
-        # Create a unique key for grouping results
         key = f"{rome or ''}|{loc or ''}|{q_text or ''}"
-        
         try:
             results[key] = _search_job_offers_logic(**q_params)
         except Exception as e:
             logger.error(f"❌ [TOOL] search_job_offers_batch failed for {key}: {e}")
             results[key] = {"error": str(e), "offres": [], "total": 0}
-            
     return results
 
         

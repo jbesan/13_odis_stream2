@@ -157,21 +157,25 @@ app/
 └── requirements.txt
 ```
 
-- 1_Accueil.py : C'est le point d'entrée principal de l'application multipage. Il affiche la page d'accueil.
-- pages/2_Formulaire.py : La deuxième page de l'application, qui contient le formulaire du projet de vie.
-- pages/3_Resultats.py : La troisième page qui affiche les résultats du scoring.
-- ui.py : Ce fichier est responsable de la création de tous les composants de l'interface utilisateur avec Streamlit.
-- scoring.py : Le cœur logique du prototype. Il contient l'ensemble du pipeline de traitement et de notation, optimisé pour la performance.
-- maps.py : Regroupe toutes les fonctions liées à la génération des cartes interactives avec Folium.
-- config.py : Un fichier central pour la configuration.
-- data_loader.py : Contient la logique pour charger les données.
-- app/agents/ : Répertoire contenant l'intelligence artificielle du projet.
-  - orchestrator.py : Cerveau central gérant le routing et la collaboration entre experts.
-  - interviewer.py : Agent spécialisé dans la collecte et le diagnostic des besoins.
-  - scorer.py : Expert en calcul de pertinence basé sur le moteur ODIS.
-  - scout.py : Expert terrain utilisant l'API Google Maps (POIs, itinéraires).
-  - web.py : Expert news utilisant Google Search pour le contexte social et l'actualité.
-  - job_hunter.py : Expert emploi connecté en temps réel aux API France Travail.
+- 1_Accueil.py : Point d'entrée principal.
+- pages/2_Formulaire.py : Formulaire du projet de vie.
+- pages/3_Resultats.py : Résultats du scoring.
+- ui.py : Composants UI Streamlit.
+- scoring.py : Moteur de scoring ODIS.
+- maps.py : Fonctions cartographiques Folium.
+- config.py : Configuration globale.
+- data_loader.py : Chargement des données.
+- app/agents/ : Intelligence Artificielle (Multi-Agent).
+  - graph.py : Graphe d'orchestration LangGraph.
+  - interviewer.py : Agent de collecte des besoins.
+  - scorer.py : Expert scoring ODIS.
+  - scout.py : Expert terrain (POIs, routes).
+  - web.py : Expert news et actualités locales.
+  - job_hunter.py : Expert emploi (France Travail).
+  - synthesizer.py : Expert en synthèse finale.
+  - refiner.py : Agent de synthèse de briefing.
+  - state.py : Définition de l'état partagé.
+  - tools.py : Outils de recherche et computationnels.
 
 ## 🤖 Interface AI Agent (Assistant ODIS 2.0)
 
@@ -181,14 +185,14 @@ L'Assistant ODIS 2.0 est une interface de conversation en langage naturel conçu
 
 Contrairement à un chatbot classique, l'Assistant ODIS est orchestré par un graphe d'états (LangGraph) qui coordonne plusieurs experts spécialisés (PydanticAI) :
 
-1.  **Le Routeur :** Analyse votre demande et décide de l'action à entreprendre (Interview, Scoring, ou Décoration).
-2.  **L'Interviewer :** Conduit l'entretien. Il détecte vos besoins et met à jour le diagnostic partagé.
-3.  **Le Scorer :** Calcule les scores ODIS sur des milliers de communes et explique les résultats.
-4.  **La Cascade de Décoration :** Lorsque vous explorez une ville, une chaîne d'experts se déclenche :
+1.  **Le Routeur :** Analyse la demande et décide de l'action à entreprendre.
+2.  **L'Interviewer :** Conduit l'entretien et affine le diagnostic.
+3.  **Le Scorer :** Calcule les scores ODIS et explique les résultats.
+4.  **Parallélisation des Experts (v3.1) :** Pour toute analyse de ville, le système lance simultanément :
     - **Scout** : Analyse le terrain (Google Maps).
     - **WEB** : Recherche l'actualité et le contexte social (Google Search).
     - **Job Hunter** : Trouve les offres d'emploi réelles (France Travail).
-    - **Synthétiseur** : Fusionne toutes ces informations en une réponse unique et cohérente.
+5.  **Synthétiseur** : Fusionne toutes les données en une réponse unique et adaptée au dernier échange utilisateur.
 
 ### Points Forts de l'Agent
 

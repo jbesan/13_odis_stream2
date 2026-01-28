@@ -12,8 +12,6 @@ from .tools import search_referentiels_batch
 
 logger = logging.getLogger("interviewer_agent_v2")
 
-# --- Structured Output ---
-# Though Interviewer mainly talks, defining a structure helps if we want to extract final data.
 class SearchQuery(BaseModel):
     query: str = Field(..., description="Mot clé de recherche")
     domain: str = Field(..., description="Domaine de recherche possibles:['formation_codes', 'inclusion_services', 'waldec_codes', 'rome_codes', 'regions', 'departements', 'communes', 'housing_types'].")
@@ -31,9 +29,9 @@ INTERVIEWER_SYSTEM_PROMPT = """
 **Style**: Direct, professionnel, itératif (1 thème/message).
 
 **RÈGLES D'OR**:
-1. Vérifie TOUJOURS les données existantes avant de questionner.
-2. Ne demande JAMAIS une info déjà présente dans le contexte.
-3. Utilise TOUJOURS le tool `search_referentiels_batch` pour normaliser UN ou PLUSIEURS inputs en un seul appel (ex: commune + métier)
+1. Vérifie TOUJOURS les données existantes avant de questionner et ne demande JAMAIS une info déjà présente dans le contexte.
+2. Utilise TOUJOURS le tool `search_referentiels_batch` pour normaliser UN ou PLUSIEURS inputs en un seul appel (ex: commune + métier)
+3. Ne présente JAMAIS les codes techniques (INSEE, ROME, Formation) à l'utilisateur.
 
 **COLLECTE PRIORITAIRE** :
 1. [OBLIGATOIRE] **Départ**: `Commune Actuelle` (Code INSEE via tool).
@@ -55,8 +53,6 @@ INTERVIEWER_SYSTEM_PROMPT = """
 - SINON stocke les données déjà collectées dans `search_criteria` et continue l'entretien
 """
 
-# --- Agent Definition ---
-# We redefine the agent slightly to use dynamic instructions fully
 interviewer_agent = Agent(
     get_model("interviewer"), 
     deps_type=ODISDeps,
@@ -82,8 +78,6 @@ async def main_instructions(ctx: RunContext[ODISDeps]) -> str:
     
     return prompt
 
-# --- Tools ---
-
 @interviewer_agent.tool
 def search_referentiels_batch_tool(ctx: RunContext[ODISDeps], searches: List[SearchQuery]) -> Dict[str, List[Dict[str, Any]]]:
     """
@@ -94,23 +88,3 @@ def search_referentiels_batch_tool(ctx: RunContext[ODISDeps], searches: List[Sea
         searches (List[SearchQuery]): Liste d'objets {query, domain}
     """
     return search_referentiels_batch([s.model_dump() for s in searches])
-
-# We wrap the pure tools to make them PydanticAI compatible (inject context if needed)
-# search_commune and search_referentiels are pure lookups, so we can just register them directly?
-# PydanticAI tools receive `ctx: RunContext[Deps]` as first arg if typed.
-
-
-# @interviewer_agent.tool
-# def search_referentiels_tool(ctx: RunContext[ODISDeps], query: str, domain: str) -> List[Dict[str, Any]]:
-#     """Recherche des codes officiels (Communes, Formations, ROME, Services d'inclusion, WALDEC, etc.) dans les référentiels.
-    
-#     Args:
-#         query (str): Mot clé de recherche.
-#         domain (str): Domaine de recherche possibles:['formation_codes', 'inclusion_services', 'waldec_codes', 'rome_codes', 'regions', 'departements', 'communes', 'housing_types'].
-    
-#     Returns:
-#         List[Dict[str, Any]]: Liste des codes + labels officiels correspondants.
-#     """
-#     return search_referentiels(query, domain)
-
-# Removed update_search_criteria_tool as it's now handled via InterviewerResult.search_criteria

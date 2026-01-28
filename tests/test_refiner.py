@@ -24,10 +24,13 @@ def config(state):
 @pytest.mark.asyncio
 async def test_refiner_node_updates_state(state, config):
     """Verify that refiner_node calls the agent and returns state updates."""
-    from agents.refiner import RefinerResult
+    from agents.refiner import RefinerResult, FocusCity
     
     mock_result = MagicMock()
-    mock_result.output = RefinerResult(briefing="Nouveau briefing.")
+    mock_result.output = RefinerResult(
+        briefing="Nouveau briefing.",
+        focus_city=FocusCity(name="Bordeaux", codgeo="33063")
+    )
     
     with patch('agents.refiner.refiner_agent.run') as mock_run, \
          patch('agents.graph._get_p_model') as mock_model:
@@ -55,13 +58,16 @@ async def test_refiner_node_skips_if_nothing_new(state, config):
 @pytest.mark.asyncio
 async def test_refiner_node_with_experts(state, config):
     """Verify that expert results trigger an update even if no new messages."""
-    from agents.refiner import RefinerResult
+    from agents.refiner import RefinerResult, FocusCity
     state.briefing = "Existing briefing"
     state.last_summarized_idx = 2
-    state.experts_results = {"scout": "Infos sur Bordeaux"}
+    state.scoring_results = {"scout": "Infos sur Bordeaux"}
     
     mock_result = MagicMock()
-    mock_result.output = RefinerResult(briefing="Briefing mis à jour.")
+    mock_result.output = RefinerResult(
+        briefing="Briefing mis à jour.",
+        focus_city=FocusCity(name="Bordeaux", codgeo="33063")
+    )
     
     with patch('agents.refiner.refiner_agent.run') as mock_run, \
          patch('agents.graph._get_p_model') as mock_model:

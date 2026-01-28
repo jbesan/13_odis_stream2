@@ -24,22 +24,17 @@ class UsageStats(BaseModel):
         return data
 
 def add_usage(left: UsageStats, right: Any) -> UsageStats:
-    """Reducer to sum usage stats. Handles both UsageStats objects and dicts."""
     if right is None:
         return left
-    
-    # Convert dict to UsageStats if needed
     if isinstance(right, dict):
         right = UsageStats(**right)
         
-    # Merge breakdowns
     new_breakdown = getattr(left, 'breakdown', {}).copy()
     right_breakdown = getattr(right, 'breakdown', {})
     
     if right_breakdown:
         for node, metrics in right_breakdown.items():
             if node in new_breakdown:
-                # Accumulate values if node already exists
                 existing = new_breakdown[node]
                 new_breakdown[node] = {
                     "model": metrics.get("model", existing.get("model")),
@@ -92,28 +87,20 @@ def take_first_hash(left: Optional[str], right: Any) -> Optional[str]:
     return left or right
 
 def merge_commune_artifacts(left: Dict[str, Any], right: Any) -> Dict[str, Any]:
-    """
-    Reducer to merge commune artifacts.
-    Structure: { "CommuneName": { "Hash": { "agent": Result } } }
-    We use a deep merge approach to avoid overwriting unrelated cities or hashes.
-    """
+    """Structure: { "CommuneName": { "Hash": { "agent": Result } } }"""
     if not right or not isinstance(right, dict):
         return left
     
-    # Create a deep-ish copy of left
     new_state = left.copy()
-    
     for commune, hashes in right.items():
         if commune not in new_state:
             new_state[commune] = hashes
         else:
-            # Merge hashes for this commune
             commune_state = new_state[commune].copy()
             for h, agents in hashes.items():
                 if h not in commune_state:
                     commune_state[h] = agents
                 else:
-                    # Merge agent results for this hash
                     hash_state = commune_state[h].copy()
                     hash_state.update(agents)
                     commune_state[h] = hash_state
@@ -149,40 +136,23 @@ class UserProfile(BaseModel):
             return data.model_dump() if hasattr(data, 'model_dump') else data.__dict__
         return data
 
-# LangGraph State Definition
 class ODISGraphState(BaseModel):
-    """
-    The Global State passed around the LangGraph.
-    It replaces the legacy AgentContext.
-    """
-    # client: genai.Client = Field(default_factory=genai.Client) # Moved to ODISDeps
-    messages: Annotated[List[Dict[str, Any]], operator.add] = Field(default_factory=list) # Chat History
-    
-    # Context Data
+    """Global Graph State."""
+    messages: Annotated[List[Dict[str, Any]], operator.add] = Field(default_factory=list)
     user_profile: UserProfile = Field(default_factory=UserProfile)
     search_criteria: Annotated[SearchCriterias, merge_search_criteria] = Field(default_factory=SearchCriterias)
-    
-    # Results & Decisions
     scoring_results: Annotated[Dict[str, Any], operator.ior] = Field(default_factory=dict)
     commune_artifacts: Annotated[Dict[str, Any], merge_commune_artifacts] = Field(default_factory=dict)
     top_cities: List[Dict[str, Any]] = Field(default_factory=list)
     focus_city: Optional[FocusCity] = None
-    
-    # Execution Control (v3)
     criteria_hash: Annotated[Optional[str], take_first_hash] = None
     pending_experts: List[str] = Field(default_factory=list)
     execution_mode: Literal['full_analysis', 'specific_ask'] = 'full_analysis'
-    
-    # Memory
-    briefing: str = "" # The "Brain" summary of what happened
-    last_summarized_idx: int = 0 # Pointer to the last message summarized
-    next_node: Optional[str] = None # Routing decision
-    
-    # Session Management (SOTA Loop)
+    briefing: str = ""
+    last_summarized_idx: int = 0
+    next_node: Optional[str] = None
     active_agent: Optional[str] = Field(None, description="The last active agent node name")
     is_interview_complete: bool = Field(False, description="True if Interviewer has finished collection")
-    
-    # Token Tracking (Optional for graph, but good for reporting)
     usage: Annotated[UsageStats, add_usage] = Field(default_factory=UsageStats)
 
     model_config = ConfigDict(

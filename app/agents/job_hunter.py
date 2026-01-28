@@ -1,17 +1,15 @@
-
 import logging
 import re
 from typing import List, Dict, Any, Optional
 from pydantic_ai import Agent, RunContext
+from pydantic import BaseModel, Field
 from .state import ODISGraphState, ODISDeps
 from .agent_config import get_model
-# Pure tools
 from .tools import (
     search_job_offers_batch,
     get_job_details, 
     search_referentiels_batch
 )
-from pydantic import BaseModel, Field
 
 logger = logging.getLogger("job_hunter_agent_v2")
 
@@ -102,7 +100,7 @@ async def job_hunter_instructions(ctx: RunContext[ODISDeps]) -> str:
     {JOB_DETAILS_SYSTEM_PROMPT.format(BRIEFING=briefing, FOCUS_CITY=city_name, JOB_ID='{JOB_ID}')}
     """
 
-# We wrap tools
+# Tools wrapped for PydanticAI
 @job_hunter_agent.tool
 def search_job_offers_batch_tool(
     ctx: RunContext[ODISDeps], 
@@ -116,14 +114,6 @@ def search_job_offers_batch_tool(
         searches: Liste d'objets JobSearchQuery {location, rome}
     """
     return search_job_offers_batch([s.model_dump() for s in searches])
-
-# Deprecated in favor of search_job_offers_batch_tool
-# @job_hunter_agent.tool
-# def search_job_offers_tool(
-#     ctx: RunContext[ODISDeps], 
-#     ...
-# ) -> Dict[str, Any]:
-#     ...
 
 @job_hunter_agent.tool
 def get_job_details_tool(ctx: RunContext[ODISDeps], job_id: str) -> Dict[str, Any]:
@@ -149,9 +139,4 @@ def search_referentiels_batch_tool(
         searches: Liste d'objets RefSearchQuery{query, domain}
     """
     return search_referentiels_batch([s.model_dump() for s in searches])
-
-# Deprecated in favor of search_referentiels_batch_tool
-# @job_hunter_agent.tool
-# def search_referentiels_tool(ctx: RunContext[ODISDeps], query: str, domain: str) -> List[Dict[str, Any]]:
-#     ...
 

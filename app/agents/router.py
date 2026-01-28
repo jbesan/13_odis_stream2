@@ -46,28 +46,10 @@ router_agent = Agent(
 
 @router_agent.system_prompt
 async def router_instructions(ctx: RunContext[ODISDeps]) -> str:
-    # Prepare context variables
-    phase = "DISCOVERY" # Default, or we track it in state
-    
     top_cities_names = [getattr(c, 'name', str(c)) for c in ctx.deps.state.top_cities]
-
-    # Summary for the router
-    criteria = ctx.deps.state.search_criteria
-    city = criteria.commune_actuelle
-    if hasattr(city, 'label'): city = city.label
-    
-    metiers_count = sum(len(m) for m in criteria.codes_metiers)
-    
-    criteria_summary = (
-        f"- Commune: {city or 'Non renseignée'}\n"
-        f"- Métiers: {metiers_count}\n"
-        f"- Profil: {criteria.weight_profile or 'Non défini'}\n"
-        f"- Zone: {criteria.loc_search_area or 'Non définie'}"
-    )
-
     return ROUTING_SYSTEM_PROMPT.format(
         CITIES_IDENTIFIED=str(top_cities_names),
         BRIEFING=ctx.deps.state.briefing or "(Pas encore de briefing)",
         FOCUS_CITY=ctx.deps.state.focus_city or "Non définie",
         INTERVIEW_COMPLETED=ctx.deps.state.is_interview_complete
-    ).replace("Communes identifiées", "Villes identifiées") # Guard against slight hallucination if needed, but the prompt is fixed above
+    ).replace("Communes identifiées", "Villes identifiées")

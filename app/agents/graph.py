@@ -1,82 +1,53 @@
-
 import logging
 import os
-from typing import Literal, Dict, Any
+import operator
+from datetime import datetime
+from typing import Literal, Dict, Any, List, Optional, Annotated
+
 from langgraph.graph import StateGraph, END, START
 from langchain_core.runnables import RunnableConfig
 from google import genai
 from dotenv import load_dotenv
+from pydantic_ai import Agent, RunContext, ModelSettings
+from pydantic_ai.messages import ToolReturnPart
+from pydantic_ai.models.google import GoogleModel
+from pydantic_ai.providers.google import GoogleProvider
 
-# Ensure environment is loaded BEFORE importing agents
-# The .env is in the parent directory of 'agents' (app/)
-base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-env_path = os.path.join(base_dir, ".env")
-load_dotenv(env_path)
-
-# Agents & Logic
-from agents.state import ODISDeps, ODISGraphState, UsageStats, FocusCity
-# from agents.refiner import ContextRefiner
+from agents.state import ODISDeps, ODISGraphState, UsageStats, FocusCity, compute_criteria_hash
 from agents.router import router_agent, RoutingResult
 from agents.interviewer import interviewer_agent
+from agents.refiner import refiner_agent
 from agents.scorer import scorer_agent
 from agents.scout import scout_agent
 from agents.web import web_agent
 from agents.job_hunter import job_hunter_agent
 from agents.synthesizer import synthesizer_agent
 from agents.agent_config import get_model
-from agents.state import compute_criteria_hash
-from pydantic_ai import Agent, RunContext, ModelSettings
-from pydantic_ai.messages import ToolReturnPart
 
+
+# Ensure environment is loaded
+base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+env_path = os.path.join(base_dir, ".env")
+load_dotenv(env_path)
 
 logger = logging.getLogger("odis_graph")
 
-# --- Helpers ---
-
 def get_deps(config: RunnableConfig) -> ODISDeps:
-    """Helper to extract ODISDeps from LangGraph config."""
     deps = config.get("configurable", {}).get("deps")
-    if not deps:
-        raise ValueError("ODISDeps missing in graph config['configurable']['deps']")
+    if not deps: raise ValueError("ODISDeps missing")
     return deps
 
 def capture_usage(result, node_name: str, model_id: str) -> UsageStats:
-    """Extracts usage from PydanticAI result and calculates cost based on model type."""
     u = result.usage()
-    
-    # Pricing per 1M tokens
-    # Gemini 3 Flash: $0.05 / $3.00
-    # Gemini 2.5 Flash Lite: $0.01 / $0.40
-    
-    if "gemini-3" in model_id.lower():
-        rate_in = 0.05
-        rate_out = 3.00
-    else:  # Assume gemini-2.5-flash-lite or similar low-cost model
-        rate_in = 0.01
-        rate_out = 0.40
-        
+    rate_in, rate_out = (0.05, 3.00) if "gemini-3" in model_id.lower() else (0.01, 0.40)
     cost = (u.input_tokens * rate_in / 1_000_000) + (u.output_tokens * rate_out / 1_000_000)
-    
-    breakdown = {
-        node_name: {
-            "model": model_id,
-            "input": u.input_tokens,
-            "output": u.output_tokens,
-            "total": u.total_tokens,
-            "cost": cost
-        }
-    }
-    
     return UsageStats(
         input_tokens=u.input_tokens,
         output_tokens=u.output_tokens,
         total_tokens=u.total_tokens,
         cost_usd=cost,
-        breakdown=breakdown
+        breakdown={node_name: {"model": model_id, "input": u.input_tokens, "output": u.output_tokens, "total": u.total_tokens, "cost": cost}}
     )
-
-from pydantic_ai.models.google import GoogleModel
-from pydantic_ai.providers.google import GoogleProvider
 
 def _get_p_model(agent_name: str, client: genai.Client) -> GoogleModel:
     mod_id = get_model(agent_name)
@@ -232,31 +203,24 @@ async def interviewer_node(state: ODISGraphState, config: RunnableConfig):
     deps = get_deps(config)
     deps.state = state
     user_msg = state.messages[-1]["content"] if state.messages else ""
-    
-    from datetime import datetime
     start_time = datetime.now()
-    logger.info(f"🚀 [INTERVIEWER] Entering interviewer_node at {start_time.strftime('%H:%M:%S.%f')[:-3]}")
     
     try:
         mod_id = get_model("interviewer")
         model = _get_p_model("interviewer", client=deps.client)
         result = await interviewer_agent.run(
-            user_msg, 
-            deps=deps, 
-            model=model,
+            user_msg, deps=deps, model=model,
             model_settings=ModelSettings(max_output_tokens=4096)
         )
         
         end_time = datetime.now()
-        logger.info(f"📊 [INTERVIEWER] Exiting interviewer_node at {end_time.strftime('%H:%M:%S.%f')[:-3]} - Duration: {(end_time - start_time).total_seconds():.3f}s")
+        logger.info(f"📊 [INTERVIEWER] Done in {(end_time - start_time).total_seconds():.3f}s")
         
         return {
             "messages": [{"role": "assistant", "content": result.output.response}],
             "search_criteria": result.output.search_criteria or deps.state.search_criteria,
             "criteria_hash": compute_criteria_hash(result.output.search_criteria or deps.state.search_criteria),
-            # CRITICAL: Lock the active agent
             "active_agent": "interviewer",
-            # CRITICAL: Update completion status from Agent output
             "is_interview_complete": result.output.is_complete,
             "usage": capture_usage(result, "interviewer", mod_id)
         }

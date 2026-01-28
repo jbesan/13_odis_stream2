@@ -1,4 +1,3 @@
-
 import logging
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
@@ -9,7 +8,6 @@ from .agent_config import get_model
 from .tools import (
     search_places, 
     compute_routes, 
-    # search_referentiels_batch,
     search_refugee_associations, 
     search_odis_associations,
     search_ccas,
@@ -127,21 +125,3 @@ def search_ccas_tool(ctx: RunContext[ODISDeps], codgeo: str) -> List[Dict[str, A
         codgeo (str): Code INSEE de la commune (ex: '33063').
     """
     return search_ccas(codgeo)
-
-@scout_agent.tool
-def search_referentiels_batch_tool(
-    ctx: RunContext[ODISDeps], 
-    searches: List[SearchQuery]
-) -> Dict[str, List[Dict[str, Any]]]:
-    """
-    Version optimisée pour effectuer plusieurs recherches de référentiels en UN SEUL tour.
-    
-    Args:
-        searches: Liste d'objets {query, domain}
-    """
-    return search_referentiels_batch([s.model_dump() for s in searches])
-
-# Deprecated in favor of search_referentiels_batch_tool
-# @scout_agent.tool
-# def search_referentiels_tool(ctx: RunContext[ODISDeps], query: str, domain: str) -> List[Dict[str, Any]]:
-#     ...

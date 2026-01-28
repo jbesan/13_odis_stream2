@@ -93,7 +93,6 @@ async def synth_instructions(ctx: RunContext[ODISDeps]) -> str:
     
     # Dynamic mode logic
     mode = ctx.deps.state.execution_mode
-    print(f" ExecutionContext: {mode} ")
     if mode == 'specific_ask':
         prompt = SYNTH_SYSTEM_PROMPT_SPECIFIC
     else:

@@ -36,14 +36,48 @@ Pour éviter les "hallucinations de contexte" (mélange de données entre deux r
 - **Commune Artifacts** : Les résultats des experts sont stockés de manière indexée : `{ "Commune": { "Hash": { "Expert": "Result" } } }`.
 - **Synthesizer Lock** : Le synthétiseur ne peut lire que les artéfacts correspondant au hash de critères _actuel_.
 
-### 🔀 Pattern Dispatcher & Joiner
+### 🔀 Parallel Expert Strategy (v3.1)
 
-Nous avons supprimé la redondance des nœuds (nœuds "\_solo") au profit d'un système dynamique :
+Pour garantir une convergence fiable du graphe (éviter les attentes indéfinies sur les fan-in), nous utilisons une stratégie de **parallélisation systématique** :
 
-1. **Dispatcher** : Un nœud logique qui lit `pending_experts` et lance les branches en parallèle.
-2. **Joiner** : Un nœud de convergence qui décide d'aller vers la synthèse (`full_analysis`) ou de s'arrêter (`specific_ask`).
+1. **Trigger Global** : Pour toute demande d'analyse ou question d'expert, le Router active systématiquement le trio d'experts (**Scout + Web + JobHunter**).
+2. **Cache-First Execution** : Chaque expert vérifie le `criteria_hash` dans le `commune_artifacts` avant de s'exécuter.
+   - Si les données existent déjà pour la ville/critères actuels, l'appel LLM est **sauté** (quasi instantané).
+   - Sinon, l'expert effectue sa recherche normalement.
+3. **Fan-in Fiable** : Le nœud `SYNTHESIZER` reçoit systématiquement les signaux de fin des 3 experts, ce qui garantit que la réponse finale est toujours produite.
 
-![ODIS Graph v3](./odis_graph_v3.png)
+```mermaid
+graph TD
+    START((START)) --> RS{route_from_start}
+    RS -->|Discovery| Interviewer[INTERVIEWER]
+    RS -->|Post-Discovery| Router[ROUTER]
+
+    Interviewer --> RI{route_from_interviewer}
+    RI -->|Loop| END1((END))
+    RI -->|Exit| Router
+
+    Router --> RB{router_branch}
+    RB -->|Experts/Scorer| Refiner[REFINER]
+    RB -->|Modify Criteria| Interviewer
+    RB -->|Stop| END2((END))
+
+    Refiner --> RFB{refiner_branch}
+    RFB -->|Scoring| Scorer[SCORER]
+    RFB -->|Parallel Analysis| Scout[SCOUT]
+    RFB -->|Parallel Analysis| Web[WEB]
+    RFB -->|Parallel Analysis| JobHunter[JOB_HUNTER]
+
+    Scout --> Synth[SYNTHESIZER]
+    Web --> Synth
+    JobHunter --> Synth
+
+    Synth --> END3((END))
+    Scorer --> END4((END))
+
+    style START fill:#f9f,stroke:#333,stroke-width:2px
+    style Refiner fill:#bbf,stroke:#333,stroke-width:2px
+    style Synth fill:#bfb,stroke:#333,stroke-width:2px
+```
 
 ## ⚡ Optimisations de Performance
 
@@ -80,8 +114,8 @@ L'agent **JobHunter** doit souvent rechercher des offres pour plusieurs métiers
 
 ## 📝 Configuration des Modèles (Janv 2026)
 
-- Orchestrate/Interviewer/Scout/Web : `gemini-3-flash-preview`.
-- Scorer/JobHunter : `gemini-2.5-flash-lite`.
+- Router / Interviewer / Synthesizer : `gemini-3-flash-preview`.
+- Scorer / Refiner / Experts : `gemini-2.5-flash-lite`.
 
 ## ⚙️ Async Loop Management (Architecture Critique)
 

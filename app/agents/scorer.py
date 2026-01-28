@@ -1,12 +1,13 @@
-
 import logging
+import json
+from datetime import datetime
 from typing import List, Dict, Any, Optional
+
 from pydantic import BaseModel, Field, ConfigDict
 from pydantic_ai import Agent, RunContext
-import json
+
 from .state import ODISGraphState, ODISDeps
 from .agent_config import get_model
-# Import the pure tools
 from .tools import compute_top_cities
 from core.models import SearchCriterias
 
@@ -69,24 +70,16 @@ async def scorer_instructions(ctx: RunContext[ODISDeps]) -> str:
 def compute_top_cities_tool(ctx: RunContext[ODISDeps]) -> Dict[str, Any]:
     """
     Calcule le top des villes de réinstallation selon les critères du contexte.
-
     Args:
         ctx (RunContext[ODISDeps]): Contexte de l'agent.
-    
     Returns:
         Dict[str, Any]: Dictionnaire des villes correspondantes.
     """
     try:
-        from datetime import datetime
         start_time = datetime.now()
-        logger.debug(f"🛠️  [TOOL] Starting compute_top_cities_tool at {start_time.strftime('%H:%M:%S.%f')[:-3]}")
-        
-        # We use the criteria model directly from the state (deps)
-        criteria = ctx.deps.state.search_criteria
-        res = compute_top_cities(criteria)
-        
+        res = compute_top_cities(ctx.deps.state.search_criteria)
         end_time = datetime.now()
-        logger.debug(f"✅ [TOOL] compute_top_cities_tool finished at {end_time.strftime('%H:%M:%S.%f')[:-3]} - Duration: {(end_time - start_time).total_seconds():.3f}s")
+        logger.debug(f"✅ [TOOL] compute_top_cities_tool finished in {(end_time - start_time).total_seconds():.3f}s")
         return res
     except Exception as e:
         logger.error(f"❌ [TOOL] compute_top_cities failed: {e}")
