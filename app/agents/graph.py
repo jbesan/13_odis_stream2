@@ -50,14 +50,18 @@ def capture_usage(result, node_name: str, model_id: str) -> UsageStats:
     )
 
 def _get_p_model(agent_name: str, client: genai.Client) -> GoogleModel:
+    
     mod_id = get_model(agent_name)
     if ":" in mod_id:
         _, model_name = mod_id.split(":", 1)
     else:
         model_name = mod_id
     
+    api_key = os.getenv("GOOGLE_API_KEY")
+    
     # Explicitly inject the fresh client for this thread/loop
-    provider = GoogleProvider(client=client)
+    # provider = GoogleProvider(client=client)
+    provider = GoogleProvider(api_key=api_key)
     
     # Increase max_tokens for complex outputs (Refiner/Synthesizer)
     return GoogleModel(

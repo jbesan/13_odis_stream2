@@ -1,6 +1,3 @@
-# Centralized Model Configuration for ODIS Agents
-# Users can modify these values to switch models for specific agents.
-
 # Defaults
 DEFAULT_MODEL = "google-gla:gemini-2.5-flash-lite"
 
@@ -15,5 +12,9 @@ MODELS = {
     "refiner": "google-gla:gemini-2.5-flash-lite"
 }
 
+
 def get_model(agent_name: str) -> str:
-    return MODELS.get(agent_name, DEFAULT_MODEL)
+    return MODELS.get(
+        agent_name,
+        DEFAULT_MODEL
+        )

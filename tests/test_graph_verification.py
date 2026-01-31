@@ -37,9 +37,9 @@ async def test_graph_execution_end_to_end():
     
     logger.info("▶️ Running Graph (ainvoke)...")
     
-    api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+    api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
-        pytest.skip("Neither GOOGLE_API_KEY nor GEMINI_API_KEY set")
+        pytest.skip("GOOGLE_API_KEY not set")
 
     client = genai.Client(api_key=api_key)
     deps = ODISDeps(state=state, client=client)

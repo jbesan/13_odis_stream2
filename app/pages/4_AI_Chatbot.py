@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 st.set_page_config(page_title="Assistant ODIS", page_icon="🤖", layout="wide")
 
+
 # --- Authentication ---
 from utils import auth
 if not auth.check_password():
@@ -36,7 +37,7 @@ st.markdown("Identifions ensemble le projet de vie et les meilleures options de 
 
 # --- Sidebar ---
 with st.sidebar:
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
         st.error("Clé API GEMINI non trouvée.")
 
@@ -133,11 +134,6 @@ def run_async_in_thread(coro):
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(wrapper, coro)
         return future.result()
-
-# @st.cache_resource
-# def get_shared_client():
-#     """Retourne un nouveau client genai."""
-#     return genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 # --- Session State ---
 if "chat_history" not in st.session_state:
