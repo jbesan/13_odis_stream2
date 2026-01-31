@@ -10,6 +10,9 @@ from google import genai
 
 from agents.graph import create_odis_graph
 from agents.state import ODISDeps, ODISGraphState
+import nest_asyncio # Permet d'exécuter du code asynchrone dans un thread séparé
+
+nest_asyncio.apply()
 
 logger = logging.getLogger(__name__)
 
@@ -131,10 +134,10 @@ def run_async_in_thread(coro):
         future = executor.submit(wrapper, coro)
         return future.result()
 
-@st.cache_resource
-def get_shared_client():
-    """Retourne un nouveau client genai."""
-    return genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+# @st.cache_resource
+# def get_shared_client():
+#     """Retourne un nouveau client genai."""
+#     return genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 # --- Session State ---
 if "chat_history" not in st.session_state:
@@ -176,7 +179,7 @@ if prompt := st.chat_input("Répondez ici...", key="chat_input"):
                 input_state = ODISGraphState.model_validate(input_data)
 
                 # 2. Instantiate client inside the thread's loop
-                client = get_shared_client()
+                client = genai.Client(api_key=os.getenv("GEMINI_API_KEY")) 
                 
                 # 3. Pass deps via config
                 deps = ODISDeps(state=input_state, client=client)
