@@ -30,7 +30,15 @@ class JsonFormatter(logging.Formatter):
             log_record.update(record.extra_data) # type: ignore
             indent = 4
 
-        return json.dumps(log_record, ensure_ascii=False, default=str, indent=indent)
+        json_out = json.dumps(log_record, ensure_ascii=False, default=str, indent=indent)
+        
+        # Super ease developer trick: if multiline and local dev, append raw message
+        message = record.getMessage()
+        if "\n" in message and not os.environ.get("K_SERVICE"):
+            # We use a clear separator to distinguish from the JSON blob
+            return f"{json_out}\n\n[HUMAN READABLE MESSAGE]\n{message}\n"
+            
+        return json_out
 
 def setup_logging() -> None:
     """

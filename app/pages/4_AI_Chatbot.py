@@ -1,30 +1,36 @@
-
 import streamlit as st
 import os
 import time
 import asyncio
 import json
 import logging
+from dotenv import load_dotenv
 from typing import List, Dict, Any
 from google import genai
+from google.genai import types
+
+# Ensure environment is loaded
+base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+env_path = os.path.join(base_dir, ".env")
+load_dotenv(env_path)
+
+# Patch variable d'env pour PydanticAI
+if "GOOGLE_API_KEY" not in os.environ and "GEMINI_API_KEY" in os.environ:
+    os.environ["GOOGLE_API_KEY"] = os.getenv("GEMINI_API_KEY")
 
 from agents.graph import create_odis_graph
 from agents.state import ODISDeps, ODISGraphState
-import nest_asyncio # Permet d'exécuter du code asynchrone dans un thread séparé
-
-nest_asyncio.apply()
 
 logger = logging.getLogger(__name__)
 
 st.set_page_config(page_title="Assistant ODIS", page_icon="🤖", layout="wide")
-
 
 # --- Authentication ---
 from utils import auth
 if not auth.check_password():
     st.stop()
 
-st.markdown("## Assistant IA 🤖 ODIS 2.1")
+st.markdown("## Assistant IA 🤖 ODIS 2.2")
 
 # Ensure datasets are loaded
 from utils.data_loader import init_datasets
@@ -37,7 +43,7 @@ st.markdown("Identifions ensemble le projet de vie et les meilleures options de 
 
 # --- Sidebar ---
 with st.sidebar:
-    api_key = os.getenv("GOOGLE_API_KEY")
+    api_key = os.getenv("GOOGLE_API_KEY") # Utilisation cohérente de GEMINI_API_KEY
     if not api_key:
         st.error("Clé API GEMINI non trouvée.")
 
@@ -46,8 +52,6 @@ with st.sidebar:
         state = st.session_state.agent_state
         with st.expander("📊 Consommation LLM", expanded=False):
             u = state.usage
-            
-            # Simple summary
             m1, m2 = st.columns(2)
             m1.metric("Tokens", f"{u.total_tokens:,}".replace(",", " "))
             m2.metric("Coût", f"${u.cost_usd:.4f}")
@@ -56,7 +60,6 @@ with st.sidebar:
         breakdown = getattr(u, 'breakdown', {})
         if breakdown:
             with st.expander("💸 Détails par Modèle & Agent", expanded=False):
-                # Grouping by model for a better view
                 by_model = {}
                 for node, data in breakdown.items():
                     mid = data['model']
@@ -72,10 +75,7 @@ with st.sidebar:
                     st.divider()
 
         with st.expander("⚙️ État Agent", expanded=False):
-            st.json(state)
-
-        with st.expander("⚙️ État Recherche", expanded=False):
-            st.json(state.search_criteria)
+            st.json(state.model_dump(mode='json', exclude={'commune_artifacts'})) # Optimisation affichage
 
         with st.expander("⚙️ Briefing", expanded=False):
             st.write(state.briefing)
@@ -88,52 +88,86 @@ with st.sidebar:
                 with st.expander(f"⚙️ {agent.upper()} Results", expanded=False):
                     try:
                         st.write(state.commune_artifacts[state.focus_city.name][criteria_hash][agent])
-                    except Exception as e:
-                        st.write(f"Erreur: ville incorrecte")
-
-        
+                    except Exception:
+                        st.write("Pas de données.")
 
     st.divider()
     st.markdown("""
         <style>
             .st-key-btn_recommencer .stButton p {color: #1B4429;}
         </style>
-        """,
-        unsafe_allow_html=True
-    )
+    """, unsafe_allow_html=True)
     if st.button("Recommencer", type="primary", key="btn_recommencer"):
         st.session_state.chat_history = []
         st.session_state.agent_state = ODISGraphState()
-        print("#"*86)
-        print("################################## NEW CONVERSATION ##################################")
-        print("#"*86)
         st.rerun()
 
 # --- Helpers ---
 def display_message(role, content):
     with st.chat_message(role):
-        st.write(content)
+        st.markdown(content)
 
-def run_async_in_thread(coro):
+# --- 🛠️ ASYNC HANDLING (Cloud Run & Streamlit Safe) ---
+def run_async_safe(input_data: dict):
     """
-    Exécute une coroutine dans un thread séparé avec une boucle d'événement dédiée.
-    Cela permet d'isoler l'exécution asynchrone (PydanticAI/LangGraph) du thread Streamlit.
+    Exécute la logique asynchrone de manière sécurisée.
+    Stratégie: "Non-Destructive Loop Management".
+    On réutilise la loop du thread si elle existe, on en crée une si besoin,
+    MAIS on ne la ferme JAMAIS explicitement ici. C'est le thread/process
+    qui gérera son cycle de vie.
     """
-    import concurrent.futures
-    import asyncio
-    from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
+    try:
+        # 1. Check current loop
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        # 2. If no loop exists, create new
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
 
-    ctx = get_script_run_ctx()
+    if loop.is_closed():
+        # 3. If found loop is closed, replace it
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    # 4. Run without closing
+    return loop.run_until_complete(run_logic(input_data))
+
+async def run_logic(input_data: dict):
+    """Logique asynchrone pure."""
     
-    def wrapper(coro):
-        if ctx:
-            add_script_run_ctx(threading.current_thread(), ctx)
-        return asyncio.run(coro)
-
-    import threading
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(wrapper, coro)
-        return future.result()
+    # 1. Client Local (Critique: Fresh instance per request)
+    api_key = os.getenv("GOOGLE_API_KEY")
+    client = genai.Client(
+        api_key=api_key, 
+        http_options=types.HttpOptions(
+            api_version="v1beta",
+            retry_options=types.HttpRetryOptions(
+                attempts=3,
+                initial_delay=1.0,
+                max_delay=10.0,
+                http_status_codes=[429, 503]
+            )
+        )
+    )
+    
+    # 2. State & Deps
+    input_state = ODISGraphState.model_validate(input_data)
+    deps = ODISDeps(state=input_state, client=client)
+    
+    # 3. Graphe
+    app = create_odis_graph() 
+    
+    # 4. Config & Injection Deps
+    config = {
+        "configurable": {
+            "thread_id": "session_user",
+            "deps": deps 
+        }
+    }
+    
+    # 5. Appel
+    final_state = await app.ainvoke(input_state, config=config)
+    return final_state
 
 # --- Session State ---
 if "chat_history" not in st.session_state:
@@ -141,10 +175,6 @@ if "chat_history" not in st.session_state:
 
 if "agent_state" not in st.session_state:
     st.session_state.agent_state = ODISGraphState()
-
-# --- Graph Initialization ---
-# Module level initialization is safer and more standard
-odis_graph = create_odis_graph()
 
 # --- Chat Interface ---
 
@@ -159,81 +189,42 @@ if prompt := st.chat_input("Répondez ici...", key="chat_input"):
     display_message("user", prompt)
     
     # 2. Agent Response
-    with st.spinner("L'Agent ODIS réfléchit... (et ça peut prendre un moment... 😴)"):
-        # Pre-process state in main thread
-        st.session_state.agent_state.messages.append({"role": "user", "content": prompt})
-        logger.info(f"💁 [USER] message: {prompt[:50]}")
-        state_to_send = st.session_state.agent_state
-
-        async def run_logic(input_data: dict):
-            """Orchestration de l'exécution du graphe (Thread Worker)."""
-            import random
-            from agents.utils import AGENT_TOASTS
-            
-            try:
-                # 1. Re-validate to get a fresh model instance (handles redefinitions)
-                input_state = ODISGraphState.model_validate(input_data)
-
-                # 2. Instantiate client inside the thread's loop
-                client = genai.Client(api_key=os.getenv("GEMINI_API_KEY")) 
-                
-                # 3. Pass deps via config
-                deps = ODISDeps(state=input_state, client=client)
-                config = {"configurable": {"deps": deps}}
-
-                # 4. Exécution du graphe via astream_events pour capturer le démarrage des noeuds
-                final_state = input_state
-                from datetime import datetime
-                g_start = datetime.now()
-                logger.debug(f"🪐 [GRAPH] astream_events START at {g_start.strftime('%H:%M:%S.%f')[:-3]}")
-                
-                async for event in odis_graph.astream_events(input_state, config=config, version="v2"):
-                    kind = event.get("event")
-                    
-                    # Détection du démarrage d'un noeud (node)
-                    if kind == "on_chain_start":
-                        # Les noeuds LangGraph sont des chaines. Le nom est dans metadata.
-                        node_name = event.get("metadata", {}).get("langgraph_node")
-                        if node_name:
-                            # Normalisation pour gérer les noeuds "solo" (ex: scout_solo -> scout)
-                            base_node = node_name.replace("_solo", "")
-                            if base_node in AGENT_TOASTS:
-                                info = AGENT_TOASTS[base_node]
-                                msg = random.choice(info["messages"])
-                                st.toast(msg, icon=info["emoji"])
-                    
-                    # Mise à jour de l'état final à la fin de la chaine globale
-                    if kind == "on_chain_end" and event.get("name") == "LangGraph":
-                        final_state = event.get("data", {}).get("output")
-
-                g_end = datetime.now()
-                logger.debug(f"🪐 [GRAPH] astream_events END at {g_end.strftime('%H:%M:%S.%f')[:-3]} - Duration: {(g_end - g_start).total_seconds():.3f}s")
-                return final_state
-            except Exception as e:
-                logger.error(f"❌ Graph Error: {e}", exc_info=True)
-                raise e
-
+    with st.spinner("L'Agent ODIS réfléchit... (Patience 🧘)"):
+        response_text = None
         try:
-            # Exécution DANS UN THREAD SÉPARÉ - On passe l'état en argument sous forme de dict (Sanitization)
-            final_output = run_async_in_thread(run_logic(state_to_send.model_dump()))
+            # Préparation
+            current_state = st.session_state.agent_state
+            current_state.messages.append({"role": "user", "content": prompt})
             
-            # Mise à jour de l'état (Main Thread)
+            logger.info(f"💁 [USER] message: {prompt[:50]}")
+            
+            # 🚀 LANCEMENT ASYNC SECURISE
+            final_output = run_async_safe(current_state.model_dump())
+            
+            # Mise à jour Session
             st.session_state.agent_state = ODISGraphState.model_validate(final_output)
             
-            # Récupération de la dernière réponse assistant
-            response_text = None
+            # Extraction Réponse
             if st.session_state.agent_state.messages:
                 last_msg = st.session_state.agent_state.messages[-1]
                 if last_msg["role"] == "assistant":
                     response_text = last_msg["content"]
-        except Exception as e:
-            response_text = f"Désolé, une erreur technique est survenue : {e}"
+            
+            if not response_text:
+                response_text = "Je n'ai pas pu générer de réponse."
 
-        # 3. UI Update (Main Thread)
-        if response_text:
-            st.session_state.chat_history.append({"role": "assistant", "content": response_text})
-            display_message("assistant", response_text)
+        except Exception as e:
+            logger.exception(f"⚠️ Erreur technique : {str(e)}")
+            response_text = f"⚠️ Erreur technique : {str(e)}"
+            with st.expander("Détails de l'erreur"):
+                st.error(str(e))
+
+        # 3. Affichage Réponse
+        st.session_state.chat_history.append({"role": "assistant", "content": response_text})
+        display_message("assistant", response_text)
         
+        # Petit délai pour UI smooth
+        time.sleep(0.1)
         st.rerun()
 
 # --- Focus Retention (JS) ---
@@ -243,10 +234,7 @@ components.html(
     <script>
     const input = window.parent.document.querySelector('textarea[data-testid="stChatInputTextArea"]');
     if (input) {
-        // We use a small delay to ensure Streamlit has finished rendering
-        setTimeout(() => {
-            input.focus();
-        }, 100);
+        setTimeout(() => { input.focus(); }, 100);
     }
     </script>
     """,

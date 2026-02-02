@@ -42,10 +42,13 @@ SYNTH_SYSTEM_PROMPT_ANALYSIS = """
 """
 
 SYNTH_SYSTEM_PROMPT_SPECIFIC = """
-**Rôle** : Tu es le Synthétiseur ODIS. Ta mission est de répondre à une question spécifique du Travailleur Social en utilisant les données des experts.
+**Rôle** : Ta mission est de répondre à une question spécifique du Travailleur Social en utilisant les données des experts.
 
 # Contexte résumé : 
 {BRIEFING}
+
+# Question posée : 
+**QUESTION POSÉE** : {LAST_MESSAGE}
 
 # Ville Analysée : 
 {FOCUS_CITY}
@@ -60,9 +63,8 @@ SYNTH_SYSTEM_PROMPT_SPECIFIC = """
 {JOB_RES}
 
 # Instructions :
-RÉPONSE DIRECTE : L'utilisateur a posé la question suivante : {DERNIER_ECHANGE}. 
-- Réponds spécifiquement  et de manière détaillée en utilisant les données ci-dessus.
-- Si pertinent utilise un tableau pour synthétiser les données.
+- Réponds UNIQUEMENT et de manière détaillée à la question de l'utilisateur : {LAST_MESSAGE}
+- Si pertinent utilise un tableau pour structurer ta réponse.
 """
 
 synthesizer_agent = Agent(
@@ -104,7 +106,7 @@ async def synth_instructions(ctx: RunContext[ODISDeps]) -> str:
         CITY_DETAILS=city_details,
         SCOUT_RES=artifacts.get("scout", "Non disponible"),
         WEB_RES=artifacts.get("web", "Non disponible"),
-        DERNIER_ECHANGE=ctx.deps.state.messages[-1].get("content", "Non disponible"),
+        LAST_MESSAGE=ctx.deps.state.messages[-1].get("content", "Non disponible"),
         JOB_RES=artifacts.get("job_hunter", "Non disponible"),
     )
 

@@ -87,7 +87,10 @@ def take_first_hash(left: Optional[str], right: Any) -> Optional[str]:
     return left or right
 
 def merge_commune_artifacts(left: Dict[str, Any], right: Any) -> Dict[str, Any]:
-    """Structure: { "CommuneName": { "Hash": { "agent": Result } } }"""
+    """
+    Structure: { "CommuneName": { "Hash": { "agent": Result } } }
+    Makes results CUMULATIVE by concatenating new strings to existing ones.
+    """
     if not right or not isinstance(right, dict):
         return left
     
@@ -102,7 +105,17 @@ def merge_commune_artifacts(left: Dict[str, Any], right: Any) -> Dict[str, Any]:
                     commune_state[h] = agents
                 else:
                     hash_state = commune_state[h].copy()
-                    hash_state.update(agents)
+                    for agent_name, new_content in agents.items():
+                        if agent_name in hash_state:
+                            # Cumulative merge with separator
+                            old_content = hash_state[agent_name]
+                            if isinstance(old_content, str) and isinstance(new_content, str):
+                                hash_state[agent_name] = f"{old_content}\n\n--- ANNEXES ---\n\n{new_content}"
+                            else:
+                                # Fallback or just update if not strings
+                                hash_state[agent_name] = new_content
+                        else:
+                            hash_state[agent_name] = new_content
                     commune_state[h] = hash_state
             new_state[commune] = commune_state
             
@@ -173,9 +186,16 @@ class ODISGraphState(BaseModel):
             val = data.get("focus_city")
             if isinstance(val, str) and val.strip():
                 data["focus_city"] = {"name": val.strip(), "codgeo": ""}
-            elif isinstance(val, dict) and not val.get("name") and not val.get("codgeo"):
-                # Clean up empty dicts
-                data["focus_city"] = None
+            elif isinstance(val, dict):
+                # Clean up if TRULY empty dict
+                if not val.get("name") and not val.get("codgeo"):
+                    data["focus_city"] = None
+            elif val is not None:
+                # If it's an object, check its name attribute if possible
+                has_name = getattr(val, 'name', None)
+                has_codgeo = getattr(val, 'codgeo', None)
+                if not has_name and not has_codgeo:
+                    data["focus_city"] = None
         return data
 
 

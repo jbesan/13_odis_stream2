@@ -36,15 +36,13 @@ Pour éviter les "hallucinations de contexte" (mélange de données entre deux r
 - **Commune Artifacts** : Les résultats des experts sont stockés de manière indexée : `{ "Commune": { "Hash": { "Expert": "Result" } } }`.
 - **Synthesizer Lock** : Le synthétiseur ne peut lire que les artéfacts correspondant au hash de critères _actuel_.
 
-### 🔀 Parallel Expert Strategy (v3.1)
+### 🔀 Hybrid Expert Strategy (v3.2)
 
-Pour garantir une convergence fiable du graphe (éviter les attentes indéfinies sur les fan-in), nous utilisons une stratégie de **parallélisation systématique** :
+Pour garantir une convergence fiable et une réactivité optimale, le graphe gère deux modes d'exécution :
 
-1. **Trigger Global** : Pour toute demande d'analyse ou question d'expert, le Router active systématiquement le trio d'experts (**Scout + Web + JobHunter**).
-2. **Cache-First Execution** : Chaque expert vérifie le `criteria_hash` dans le `commune_artifacts` avant de s'exécuter.
-   - Si les données existent déjà pour la ville/critères actuels, l'appel LLM est **sauté** (quasi instantané).
-   - Sinon, l'expert effectue sa recherche normalement.
-3. **Fan-in Fiable** : Le nœud `SYNTHESIZER` reçoit systématiquement les signaux de fin des 3 experts, ce qui garantit que la réponse finale est toujours produite.
+1. **Mode Full Analysis** : Pour toute demande d'analyse d'une ville, le trio d'experts (**Scout + Web + JobHunter**) est lancé en parallèle. Ils convergent vers le `SYNTHESIZER` une fois terminés.
+2. **Mode Specific Ask** : Pour une question spécifique (ex: "Quelles sont les offres d'emploi ?"), le Router active uniquement l'expert concerné (**Solo**) qui répond directement via le `SYNTHESIZER` sans attendre les autres.
+3. **Cache-First** : En mode `full_analysis`, chaque expert utilise le cache (`commune_artifacts`) pour éviter les appels redondants.
 
 ```mermaid
 graph TD
@@ -63,13 +61,26 @@ graph TD
 
     Refiner --> RFB{refiner_branch}
     RFB -->|Scoring| Scorer[SCORER]
-    RFB -->|Parallel Analysis| Scout[SCOUT]
-    RFB -->|Parallel Analysis| Web[WEB]
-    RFB -->|Parallel Analysis| JobHunter[JOB_HUNTER]
+
+    subgraph Parallel Analysis
+        RFB --> Scout[SCOUT]
+        RFB --> Web[WEB]
+        RFB --> JobHunter[JOB_HUNTER]
+    end
+
+    subgraph Solo Experts
+        RFB --> ScoutSolo[SCOUT SOLO]
+        RFB --> WebSolo[WEB SOLO]
+        RFB --> JobHunterSolo[JOB_HUNTER SOLO]
+    end
 
     Scout --> Synth[SYNTHESIZER]
     Web --> Synth
     JobHunter --> Synth
+
+    ScoutSolo --> Synth
+    WebSolo --> Synth
+    JobHunterSolo --> Synth
 
     Synth --> END3((END))
     Scorer --> END4((END))

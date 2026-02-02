@@ -13,9 +13,9 @@ from .tools import (
 
 logger = logging.getLogger("job_hunter_agent_v2")
 
-class SearchQuery(BaseModel):
+class RefSearchQuery(BaseModel):
     query: str = Field(..., description="Mot clé de recherche")
-    domain: str = Field(..., description="Domaine de recherche possibles:['rome_codes', 'communes'].")
+    domain: str = Field(..., description="Domaine: ['rome_codes', 'communes'].")
 
 class JobSearchQuery(BaseModel):
     location: Optional[str] = Field(None, description="Code INSEE de la commune (ex: 33063)")
@@ -45,25 +45,22 @@ JOB_HUNTER_ANALYSIS_SYSTEM_PROMPT = """
 
 JOB_HUNTER_SPECIFIC_SYSTEM_PROMPT = """
 **Rôle** : Tu es le Job Hunter ODIS. Expert ultra-proactif du marché de l'emploi.
-**Objectif** : Faire d'éventuelles recherches supplémentaires pour répondre à une question spécifique de l'utilisateur.
+**Objectif** : Répondre à une question spécifique de l'utilisateur sur une ou des offres d'emploi.
 
 **CONTEXTE RÉSUMÉ** : {BRIEFING}
-**VILLE ACTIVE** : {FOCUS_CITY_NAME} (Code INSEE: {FOCUS_CITY_CODE})
+**VILLE ACTIVE** : {FOCUS_CITY}
 **QUESTION POSÉE** : {LAST_MESSAGE}
 **CONNAISSANCES ACTUELLES** : {COMMUNE_ARTIFACT}
 
 **DIRECTIVES CRITIQUES (NE PAS DEMANDER, AGIR)** :
-1. Si la `QUESTION POSÉE` peut-être répondue avec les `CONNAISSANCES ACTUELLES` ne fais rien.
-2. Si des données manquent:
-    - Pour récupérer le détail d'une offre appele IMMEDIATEMENT `get_job_details` pour l'ID du dans `QUESTION POSÉE` structure ta réponse avec les points suivants :
-        - Lien vers l'offre
-        - Type de contrat et durée.
-        - Compétences attendues (traduis si trop technique).
-        - Analyse d'adéquation avec le `CONTEXTE RÉSUMÉ`.
-        - Employeur. Localisation précise et salaire (si disponible).
-    - Pour récupérer de nouvelles offres:
-        - Utilise `search_referentiels_batch_tool` pour récupérer le/les code(s) ROME ou un code commune manquant (ne les invente JAMAIS)
-        - Utilise ensuite `search_job_offers_batch_tool` pour récupérer les offres correspondantes.
+1. Si tu peux répondre à la question posée par l'utilisateur avec `CONNAISSANCES ACTUELLES` donne IMMEDIATEMENT la réponse.
+2. Pour récupérer le détail d'une offre appele IMMEDIATEMENT `get_job_details` pour l'ID du dans `QUESTION POSÉE` structure ta réponse avec les points suivants :
+    - Lien vers l'offre
+    - Type de contrat et durée.
+    - Compétences attendues (traduis si trop technique).
+    - Analyse d'adéquation avec le `CONTEXTE RÉSUMÉ`.
+    - Employeur. Localisation précise et salaire (si disponible).
+3. Pour récupérer d'autres offres utilise IMMEDIATEMENT `search_referentiels_batch_tool` pour récupérer le code ROME ou un code Commune manquant puis `search_job_offers_batch_tool` pour récupérer les offres.
 """
 
 job_hunter_agent = Agent(
@@ -74,15 +71,18 @@ job_hunter_agent = Agent(
 @job_hunter_agent.system_prompt
 async def job_hunter_instructions(ctx: RunContext[ODISDeps]) -> str:
     briefing = ctx.deps.state.briefing or ""
+    city = str(ctx.deps.state.focus_city or "Non définie")
+    codes_metiers = ctx.deps.state.search_criteria.codes_metiers or []
+    criteria_hash = ctx.deps.state.criteria_hash
+    last_message = ctx.deps.state.messages[-1]["content"]
+    commune_artifact = ctx.deps.state.commune_artifacts.city.criteria_hash.job_hunter
+    
+    # Refined approach: use f-string for the wrapper and format the internal prompts properly.
     focus = ctx.deps.state.focus_city
     city_name = focus.name if focus else "Non définie"
     city_code = focus.codgeo if focus else "Inconnu"
-    codes_metiers = ctx.deps.state.search_criteria.codes_metiers or []
-    last_message = ctx.deps.state.messages[-1].get("content", "Non disponible")
-    h = ctx.deps.state.criteria_hash
-    artifacts = ctx.deps.state.commune_artifacts.get(city_name, {}).get(h, {})
 
-    # We select prompt according to mode: generic commune analysis or a specific question
+    # We check if this is a generic commune analysis or a specific question
     mode = ctx.deps.state.execution_mode
     if mode == 'specific_ask':
         prompt = JOB_HUNTER_SPECIFIC_SYSTEM_PROMPT
@@ -95,7 +95,7 @@ async def job_hunter_instructions(ctx: RunContext[ODISDeps]) -> str:
         FOCUS_CITY_CODE=city_code,
         ROME_CODES= codes_metiers,
         LAST_MESSAGE = last_message,
-        COMMUNE_ARTIFACT=artifacts.get("job_hunter", "Non disponible")
+        COMMUNE_ARTIFACT=commune_artifact
     )    
 
     logger.info(f"Job Hunter Prompt: {prompt}")
@@ -129,6 +129,18 @@ def get_job_details_tool(ctx: RunContext[ODISDeps], job_id: str) -> Dict[str, An
     """
     return get_job_details(job_id)
 
+@job_hunter_agent.tool
+def search_referentiels_batch_tool(
+    ctx: RunContext[ODISDeps], 
+    searches: List[RefSearchQuery]
+) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Version optimisée pour effectuer plusieurs recherches de référentiels en UN SEUL tour.
+    
+    Args:
+        searches: Liste d'objets RefSearchQuery{query, domain}
+    """
+    return search_referentiels_batch([s.model_dump() for s in searches])
 
 @job_hunter_agent.tool
 def search_referentiels_batch_tool(ctx: RunContext[ODISDeps], searches: List[SearchQuery]) -> Dict[str, List[Dict[str, Any]]]:

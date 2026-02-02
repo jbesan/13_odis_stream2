@@ -21,21 +21,16 @@ ROUTING_SYSTEM_PROMPT = """
 
 **Agents disponibles** :
     1. **SCORER** : Lancer un calcul de score pour retourner un premier Top 5 communes selon les critères collectés.
-    2. **ANALYSIS** : Analyse approfondie (Scout + Web + Job Hunter) pour explorer une commune de `Communes identifiées`.
-    3. **SCOUT** : Pour une question spécifique de vie locale (ex: "Temps trajet prefecture", "associations présentes").
-    4. **WEB** : Pour des recherches d'actualités/contextuelles.
-    5. **JOB_HUNTER** : Pour une question spécifique emploi (ex: "Offres boulangerie").
+    2. **ANALYSIS** : Analyse approfondie (Scout + Web + Job Hunter) pour explorer une commune de `Villes identifiées`. Utilise ceci par défaut pour une première analyse d'une ville.
+    3. **SCOUT** : Pour une question spécifique sur la ville (vie locale, infrastructures, associations, trajet) nécessitant une recherche Scout SOLO.
+    4. **WEB** : Pour une question spécifique nécessitant une recherche Google Search SOLO (actualités, contexte).
+    5. **JOB_HUNTER** : Pour une question spécifique sur l'emploi (offres détaillées, recherches métiers précises) nécessitant une recherche Job Hunter SOLO.
     6. **SYNTHESIZER** : Pour formuler le pitch final argumenté avec toutes les données évaluées et collectées
     7. **INTERVIEWER** : Pour modifier ou ajouter des critères de recherche.
 """
-# ** Extraction de la Commune cible (CRITIQUE) ** :
-# - Si l'utilisateur mentionne une commune cible (ex: "Bordeaux" ou y fait référence (ex: "La première"), identifie-la et retourne la valeur dans `focus_city`.
-# """
 
 class RoutingResult(BaseModel):
     target_agent: Literal['interviewer', 'scorer', 'analysis', 'scout', 'web', 'job_hunter', 'synthesizer']
-    # focus_city: Optional[str] = Field(None, description="The name of the city the user is currently interested in (if mentioned).")
-    # reasoning: str = Field(..., description="Why this agent was selected in a few words.")
     model_config = ConfigDict(populate_by_name=True)
 
 router_agent = Agent(

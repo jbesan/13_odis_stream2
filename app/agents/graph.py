@@ -3,16 +3,15 @@ import os
 import operator
 from datetime import datetime
 from typing import Literal, Dict, Any, List, Optional, Annotated
+from agents.agent_config import get_model, get_p_model
 
+# Loading LangGraph + Pydantic AI components
 from langgraph.graph import StateGraph, END, START
 from langchain_core.runnables import RunnableConfig
-from google import genai
-from dotenv import load_dotenv
 from pydantic_ai import Agent, RunContext, ModelSettings
 from pydantic_ai.messages import ToolReturnPart
-from pydantic_ai.models.google import GoogleModel
-from pydantic_ai.providers.google import GoogleProvider
 
+# Loading each ODIS agent
 from agents.state import ODISDeps, ODISGraphState, UsageStats, FocusCity, compute_criteria_hash
 from agents.router import router_agent, RoutingResult
 from agents.interviewer import interviewer_agent
@@ -22,13 +21,7 @@ from agents.scout import scout_agent
 from agents.web import web_agent
 from agents.job_hunter import job_hunter_agent
 from agents.synthesizer import synthesizer_agent
-from agents.agent_config import get_model
 
-
-# Ensure environment is loaded
-base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-env_path = os.path.join(base_dir, ".env")
-load_dotenv(env_path)
 
 logger = logging.getLogger("odis_graph")
 
@@ -49,25 +42,7 @@ def capture_usage(result, node_name: str, model_id: str) -> UsageStats:
         breakdown={node_name: {"model": model_id, "input": u.input_tokens, "output": u.output_tokens, "total": u.total_tokens, "cost": cost}}
     )
 
-def _get_p_model(agent_name: str, client: genai.Client) -> GoogleModel:
-    
-    mod_id = get_model(agent_name)
-    if ":" in mod_id:
-        _, model_name = mod_id.split(":", 1)
-    else:
-        model_name = mod_id
-    
-    api_key = os.getenv("GOOGLE_API_KEY")
-    
-    # Explicitly inject the fresh client for this thread/loop
-    # provider = GoogleProvider(client=client)
-    provider = GoogleProvider(api_key=api_key)
-    
-    # Increase max_tokens for complex outputs (Refiner/Synthesizer)
-    return GoogleModel(
-        model_name, 
-        provider=provider
-    )
+
 
 # --- Routing Logic (Pure Python) ---
 
@@ -98,7 +73,6 @@ def route_from_interviewer(state: ODISGraphState):
     return "interviewer"
 
 
-
 # --- Nodes ---
 
 async def router_node(state: ODISGraphState, config: RunnableConfig):
@@ -117,7 +91,7 @@ async def router_node(state: ODISGraphState, config: RunnableConfig):
     try:
         # Inject client!
         mod_id = get_model("router")
-        model = _get_p_model("router", client=deps.client)
+        model =  get_p_model("router", client=deps.client)
         result = await router_agent.run(
             user_msg, 
             deps=deps, 
@@ -135,9 +109,9 @@ async def router_node(state: ODISGraphState, config: RunnableConfig):
         experts_mapping = {
             'scorer': {'pending': [], 'mode': 'full_analysis'},
             'analysis': {'pending': ['scout', 'web', 'job_hunter'], 'mode': 'full_analysis'},
-            'scout': {'pending': ['scout', 'web', 'job_hunter'], 'mode': 'specific_ask'},
-            'web': {'pending': ['scout', 'web', 'job_hunter'], 'mode': 'specific_ask'},
-            'job_hunter': {'pending': ['scout', 'web', 'job_hunter'], 'mode': 'specific_ask'},
+            'scout': {'pending': ['scout_solo'], 'mode': 'specific_ask'},
+            'web': {'pending': ['web_solo'], 'mode': 'specific_ask'},
+            'job_hunter': {'pending': ['job_hunter_solo'], 'mode': 'specific_ask'},
         }
 
         pending = []
@@ -179,7 +153,7 @@ async def refiner_node(state: ODISGraphState, config: RunnableConfig):
             return {}
 
         mod_id = get_model("refiner")
-        model = _get_p_model("refiner", client=deps.client)
+        model =  get_p_model("refiner", client=deps.client)
         
         result = await refiner_agent.run(
             "Mise à jour du briefing", 
@@ -193,12 +167,15 @@ async def refiner_node(state: ODISGraphState, config: RunnableConfig):
         logger.info(f"📝 [REFINER] Focus City: {result.output.focus_city}")
         logger.debug(briefing)
         
-        return {
-            "briefing": briefing,
-            "focus_city": result.output.focus_city or state.focus_city,
-            "last_summarized_idx": len(state.messages),
-            "usage": capture_usage(result, "refiner", mod_id)
-        }
+        # Robust update: only override if not empty
+        updates = {"last_summarized_idx": len(state.messages)}
+        if briefing:
+            updates["briefing"] = briefing
+        if result.output.focus_city and result.output.focus_city.name:
+            updates["focus_city"] = result.output.focus_city
+        
+        updates["usage"] = capture_usage(result, "refiner", mod_id)
+        return updates
     except Exception as e:
         logger.error(f"❌ [REFINER] Node failed: {e}", exc_info=True)
         raise e
@@ -211,7 +188,7 @@ async def interviewer_node(state: ODISGraphState, config: RunnableConfig):
     
     try:
         mod_id = get_model("interviewer")
-        model = _get_p_model("interviewer", client=deps.client)
+        model =  get_p_model("interviewer", client=deps.client)
         result = await interviewer_agent.run(
             user_msg, deps=deps, model=model,
             model_settings=ModelSettings(max_output_tokens=4096)
@@ -241,7 +218,7 @@ async def scorer_node(state: ODISGraphState, config: RunnableConfig):
     logger.info(f"🚀 [SCORER] Entering scorer_node at {start_time.strftime('%H:%M:%S.%f')[:-3]}")
 
     mod_id = get_model("scorer")
-    model = _get_p_model("scorer", client=deps.client)
+    model =  get_p_model("scorer", client=deps.client)
     result = await scorer_agent.run(
         "Start Scoring", 
         deps=deps, 
@@ -286,14 +263,17 @@ async def scout_node(state: ODISGraphState, config: RunnableConfig):
     focus = state.focus_city.name if state.focus_city else "Unknown"
     
     # --- CACHE BYPASS ---
-    existing = state.commune_artifacts.get(focus, {}).get(h, {}).get("scout")
-    if existing:
-        logger.info(f"⏭️ [SCOUT] Artifact already exists for {focus}. Skipping LLM call.")
-        return {"criteria_hash": h} 
+    # Bypass cache ONLY if in full_analysis mode. 
+    # specific_ask ALWAYS triggers the LLM to answer the user's question.
+    if state.execution_mode == 'full_analysis':
+        existing = state.commune_artifacts.get(focus, {}).get(h, {}).get("scout")
+        if existing:
+            logger.info(f"⏭️ [SCOUT] Artifact already exists for {focus}. Skipping LLM call.")
+            return {"criteria_hash": h} 
 
     logger.info("🚀 [SCOUT] Node started.")
     mod_id = get_model("scout")
-    model = _get_p_model("scout", client=deps.client)
+    model =  get_p_model("scout", client=deps.client)
     result = await scout_agent.run(
         user_msg, 
         deps=deps, 
@@ -318,14 +298,15 @@ async def web_node(state: ODISGraphState, config: RunnableConfig):
     focus = state.focus_city.name if state.focus_city else "Unknown"
     
     # --- CACHE BYPASS ---
-    existing = state.commune_artifacts.get(focus, {}).get(h, {}).get("web")
-    if existing:
-        logger.info(f"⏭️ [WEB] Artifact already exists for {focus}. Skipping LLM call.")
-        return {"criteria_hash": h}
+    if state.execution_mode == 'full_analysis':
+        existing = state.commune_artifacts.get(focus, {}).get(h, {}).get("web")
+        if existing:
+            logger.info(f"⏭️ [WEB] Artifact already exists for {focus}. Skipping LLM call.")
+            return {"criteria_hash": h}
 
     logger.info("🚀 [WEB] Node started.")
     mod_id = get_model("web")
-    model = _get_p_model("web", client=deps.client)
+    model =  get_p_model("web", client=deps.client)
     result = await web_agent.run(
         user_msg, 
         deps=deps, 
@@ -350,14 +331,15 @@ async def job_hunter_node(state: ODISGraphState, config: RunnableConfig):
     focus = state.focus_city.name if state.focus_city else "Unknown"
     
     # --- CACHE BYPASS ---
-    existing = state.commune_artifacts.get(focus, {}).get(h, {}).get("job_hunter")
-    if existing:
-        logger.info(f"⏭️ [JOB_HUNTER] Artifact already exists for {focus}. Skipping LLM call.")
-        return {"criteria_hash": h}
+    if state.execution_mode == 'full_analysis':
+        existing = state.commune_artifacts.get(focus, {}).get(h, {}).get("job_hunter")
+        if existing:
+            logger.info(f"⏭️ [JOB_HUNTER] Artifact already exists for {focus}. Skipping LLM call.")
+            return {"criteria_hash": h}
 
     logger.info("🚀 [JOB_HUNTER] Node started.")
     mod_id = get_model("job_hunter")
-    model = _get_p_model("job_hunter", client=deps.client)
+    model =  get_p_model("job_hunter", client=deps.client)
     result = await job_hunter_agent.run(
         user_msg, 
         deps=deps, 
@@ -382,7 +364,7 @@ async def synthesizer_node(state: ODISGraphState, config: RunnableConfig):
     input_msg = f"Synthèse demandée pour {city_name}."
     
     mod_id = get_model("synthesizer")
-    model = _get_p_model("synthesizer", client=deps.client)
+    model =  get_p_model("synthesizer", client=deps.client)
     result = await synthesizer_agent.run(
         input_msg, 
         deps=deps, 
@@ -409,10 +391,16 @@ def create_odis_graph():
     builder.add_node("interviewer", interviewer_node)
     builder.add_node("scorer", scorer_node)
     
-    # Expert Nodes
+    # Expert Nodes (Parallel)
     builder.add_node("scout", scout_node)
     builder.add_node("web", web_node)
     builder.add_node("job_hunter", job_hunter_node)
+    
+    # Expert Nodes (Solo)
+    builder.add_node("scout_solo", scout_node)
+    builder.add_node("web_solo", web_node)
+    builder.add_node("job_hunter_solo", job_hunter_node)
+    
     builder.add_node("synthesizer", synthesizer_node)
     
     # Logic nodes (No-ops for wiring)
@@ -479,12 +467,20 @@ def create_odis_graph():
             "scout": "scout",
             "web": "web",
             "job_hunter": "job_hunter",
+            "scout_solo": "scout_solo",
+            "web_solo": "web_solo",
+            "job_hunter_solo": "job_hunter_solo",
             END: END
         }
     )
     
-    # Fan-in: Expert nodes converge to synthesizer
+    # Fan-in: Parallel Expert nodes converge to synthesizer
     builder.add_edge(["scout", "web", "job_hunter"], "synthesizer")
+    
+    # Direct edges: Solo experts go straight to synthesizer
+    builder.add_edge("scout_solo", "synthesizer")
+    builder.add_edge("web_solo", "synthesizer")
+    builder.add_edge("job_hunter_solo", "synthesizer")
     
     # End Edges
     builder.add_edge("synthesizer", END)

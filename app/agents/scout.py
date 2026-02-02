@@ -19,7 +19,7 @@ class SearchQuery(BaseModel):
     query: str = Field(..., description="Mot clé de recherche")
     domain: str = Field(..., description="Domaine: ['rome_codes', 'communes', 'regions', 'departements'].")
 
-SCOUT_SYSTEM_PROMPT = """
+SCOUT_ANALYSIS_SYSTEM_PROMPT = """
 **Rôle** : Tu es le Scout ODIS. Tu épaules le travailleur social pour trouver les infrastructures locales pertinentes pour le projet de vie de la personne accompagnée.
 **Objectif** : Rapporter le résultat d'un analyse poussée sur la commune demandée.
 **Ton** : Hyper synthétique, direct, factuel.
@@ -42,6 +42,24 @@ SCOUT_SYSTEM_PROMPT = """
     - Ne garde que ce qui est pertinent au regard du `CONTEXTE RÉSUMÉ`.
 """
 
+SCOUT_SPECIFIC_SYSTEM_PROMPT = """
+**Rôle** : Tu es le Scout ODIS. Ta mission est de compléter une analyse existante en effectuant des recherches additionnelles avec les outils disponibles.
+**Objectif** : Fournir des informations d'actualité, de contexte social et de veille sur la ville de réinstallation.
+
+**CONTEXTE RÉSUMÉ** : {BRIEFING}
+**VILLE ACTIVE** : {FOCUS_CITY_NAME} (Code INSEE: {FOCUS_CITY_CODE})
+**QUESTION POSÉE** : {LAST_MESSAGE}
+**CONNAISSANCES ACTUELLES** : {COMMUNE_ARTIFACT}
+
+**Instructions** :
+1. Si la `QUESTION POSÉE` peut-être répondue avec les `CONNAISSANCES ACTUELLES` ne fais rien.
+2. Si des données manquent pour répondre à la `QUESTION POSÉE` : 
+    - Utilise `search_refugee_associations_tool(codgeo='{FOCUS_CITY_CODE}')` pour trouver des associations de support aux réfugiés.
+    - Utilise `search_odis_associations_tool(codgeo='{FOCUS_CITY_CODE}')` pour trouver des associations d'aide à l'insertion sociale.
+    - Utilise `search_places` pour trouver des POIs (écoles, parcs, commerces, lieux de culte) **dans un rayon de 50km de `{FOCUS_CITY_NAME}`**.
+    - Utilise `compute_routes` pour calculer les temps de trajet. Utilise `{FOCUS_CITY_NAME}` comme origine si non spécifié.
+"""
+
 scout_agent = Agent(
     get_model("scout"),
     deps_type=ODISDeps
@@ -52,11 +70,25 @@ async def scout_instructions(ctx: RunContext[ODISDeps]) -> str:
     focus = ctx.deps.state.focus_city
     city_name = focus.name if focus else "Non définie"
     city_code = focus.codgeo if focus else "Inconnu"
+    last_message = ctx.deps.state.messages[-1].get("content", "Non disponible")
+    h = ctx.deps.state.criteria_hash
+    artifacts = ctx.deps.state.commune_artifacts.get(city_name, {}).get(h, {})
     
-    return SCOUT_SYSTEM_PROMPT.format(
+
+    # We select prompt according to mode: generic commune analysis or a specific question
+    mode = ctx.deps.state.execution_mode
+    if mode == 'specific_ask':
+        prompt = SCOUT_SPECIFIC_SYSTEM_PROMPT
+    else:
+        prompt = SCOUT_ANALYSIS_SYSTEM_PROMPT
+
+    
+    return prompt.format(
         BRIEFING=ctx.deps.state.briefing or "",
         FOCUS_CITY_NAME=city_name,
-        FOCUS_CITY_CODE=city_code
+        FOCUS_CITY_CODE=city_code,
+        LAST_MESSAGE = last_message,
+        COMMUNE_ARTIFACT=artifacts.get("scout", "Non disponible")
     )
 
 # --- Tools ---
