@@ -3,7 +3,7 @@ import re
 from typing import List, Dict, Any, Optional
 from pydantic_ai import Agent, RunContext
 from pydantic import BaseModel, Field
-from .state import ODISGraphState, ODISDeps
+from .state import ODISGraphState, ODISDeps, compute_criteria_hash
 from .agent_config import get_model
 from .tools import (
     search_job_offers_batch,
@@ -37,10 +37,10 @@ JOB_HUNTER_ANALYSIS_SYSTEM_PROMPT = """
 2. **RECHERCHE D'OFFRES (BATCH ONLY)** : Lance `search_job_offers_batch_tool` pour TOUS les codes ROME identifiés dans le `CONTEXTE RÉSUMÉ` en utilisant `location='{FOCUS_CITY_CODE}'`.
 6. **NE DEMANDE PAS DE PRÉCISIONS** : Tu as les informations sur les métiers dans les critères. AGIS IMMÉDIATEMENT sans attendre de confirmation.
 7. **SÉLECTION ET RÉPONSE (CRITIQUE)** : 
+    - Commence toujours ta réponse par rappeler en une phrase les métiers que tu as recherché.
     - Pour chaque catégorie `rome`, tu DOIS sélectionner et présenter les **3 offres les plus pertinentes** selon le `CONTEXTE RÉSUMÉ`.
     - Pour chaque offre, indique : Intitulé, ID (ex: 7874186), lieu, type de contrat, durée, salaire et une phrase expliquant pourquoi elle correspond bien au `CONTEXTE RÉSUMÉ`.
     - Ne te contente JAMAIS d'une seule offre si l'outil en retourne plusieurs.
-    - Termine en demandant si l'utilisateur veut voir plus de détails (`get_job_details`) sur une offre spécifique.
 """
 
 JOB_HUNTER_SPECIFIC_SYSTEM_PROMPT = """
@@ -78,9 +78,9 @@ async def job_hunter_instructions(ctx: RunContext[ODISDeps]) -> str:
     city_name = focus.name if focus else "Non définie"
     city_code = focus.codgeo if focus else "Inconnu"
     codes_metiers = ctx.deps.state.search_criteria.codes_metiers or []
-    last_message = ctx.deps.state.messages[-1].get("content", "Non disponible")
-    h = ctx.deps.state.criteria_hash
-    artifacts = ctx.deps.state.commune_artifacts.get(city_name, {}).get(h, {})
+    last_message = ctx.deps.state.messages[-1].get("content", "Non disponible") if ctx.deps.state.messages else "Non disponible"
+    h = compute_criteria_hash(ctx.deps.state.search_criteria)
+    artifacts = ctx.deps.state.commune_artifacts.get(city_name.lower().strip(), {}).get(h, {})
 
     # We select prompt according to mode: generic commune analysis or a specific question
     mode = ctx.deps.state.execution_mode
@@ -98,7 +98,7 @@ async def job_hunter_instructions(ctx: RunContext[ODISDeps]) -> str:
         COMMUNE_ARTIFACT=artifacts.get("job_hunter", "Non disponible")
     )    
 
-    logger.info(f"Job Hunter Prompt: {prompt}")
+    logger.debug(f"Job Hunter Prompt: {prompt}")
 
     return prompt
 

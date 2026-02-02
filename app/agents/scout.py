@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 import config as cfg
-from .state import ODISGraphState, ODISDeps, FocusCity
+from .state import ODISGraphState, ODISDeps, FocusCity, compute_criteria_hash
 from .agent_config import get_model
 from .tools import (
     search_places, 
@@ -30,13 +30,14 @@ SCOUT_ANALYSIS_SYSTEM_PROMPT = """
 **Instructions** :
 1. **Gestion du Focus** : La localité d'intérêt est `{FOCUS_CITY_NAME}`.
 2. **Recherche de Terrain** : Dans cet ordre de priorité
-    - **Associations Réfugiés** : Utilise `search_refugee_associations_tool(codgeo='{FOCUS_CITY_CODE}')`.
-    - **Associations ODIS** : Utilise `search_odis_associations_tool(codgeo='{FOCUS_CITY_CODE}')`.
+    - Utilise TOUJOURS `search_refugee_associations_tool(codgeo='{FOCUS_CITY_CODE}')` pour trouver des associations d'aide aux réugiés.
+    - Utilise `search_odis_associations_tool(codgeo='{FOCUS_CITY_CODE}')` pour trouver des associations d'aide à l'insertion sociale our de loisir (ex: sport, culture, etc)
     - Utilise `search_places` pour trouver des POIs (écoles, parcs, commerces, lieux de culte) **dans un rayon de 50km de `{FOCUS_CITY_NAME}`**.
     - Utilise `compute_routes` pour calculer les temps de trajet. Utilise `{FOCUS_CITY_NAME}` comme origine si non spécifié.
     - Utilise TOUJOURS `search_ccas` pour trouver le Centre Communal d'Action Social local.
 
 3. **Réponse** :
+    - Commence toujours ta réponse par rappeler en une phrase ce que tu as recherché.
     - Tu DOIS préparer une synthèse factuelle, argumentative et concise de tes découvertes sur le terrain.
     - Retourne TOUJOURS le `CCAS` trouvé.
     - Ne garde que ce qui est pertinent au regard du `CONTEXTE RÉSUMÉ`.
@@ -70,9 +71,9 @@ async def scout_instructions(ctx: RunContext[ODISDeps]) -> str:
     focus = ctx.deps.state.focus_city
     city_name = focus.name if focus else "Non définie"
     city_code = focus.codgeo if focus else "Inconnu"
-    last_message = ctx.deps.state.messages[-1].get("content", "Non disponible")
-    h = ctx.deps.state.criteria_hash
-    artifacts = ctx.deps.state.commune_artifacts.get(city_name, {}).get(h, {})
+    last_message = ctx.deps.state.messages[-1].get("content", "Non disponible") if ctx.deps.state.messages else "Non disponible"
+    h = compute_criteria_hash(ctx.deps.state.search_criteria)
+    artifacts = ctx.deps.state.commune_artifacts.get(city_name.lower().strip(), {}).get(h, {})
     
 
     # We select prompt according to mode: generic commune analysis or a specific question

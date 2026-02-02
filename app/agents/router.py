@@ -3,7 +3,7 @@ import logging
 from typing import Literal, Optional
 from pydantic import BaseModel, Field, ConfigDict
 from pydantic_ai import Agent, RunContext
-from .state import ODISGraphState, ODISDeps
+from .state import ODISGraphState, ODISDeps, FocusCity
 from .agent_config import get_model
 
 logger = logging.getLogger("router_agent")
@@ -27,10 +27,17 @@ ROUTING_SYSTEM_PROMPT = """
     5. **JOB_HUNTER** : Pour une question spécifique sur l'emploi (offres détaillées, recherches métiers précises) nécessitant une recherche Job Hunter SOLO.
     6. **SYNTHESIZER** : Pour formuler le pitch final argumenté avec toutes les données évaluées et collectées
     7. **INTERVIEWER** : Pour modifier ou ajouter des critères de recherche.
+
+**Extraction de la ville cible** :
+- Si l'utilisateur exprime l'intention d'analyser une ville spécifique ou pose une question sur une ville, identifie-la.
+- Recoupe-la avec les `Villes identifiées` si possible pour obtenir le code INSEE.
+- Retourne l'objet `FocusCity` correspondant.
+- Si le contexte contient déjà une `Ville cible` et que l'utilisateur n'en change pas explicitement, conserve la ville actuelle.
 """
 
 class RoutingResult(BaseModel):
     target_agent: Literal['interviewer', 'scorer', 'analysis', 'scout', 'web', 'job_hunter', 'synthesizer']
+    focus_city: Optional[FocusCity] = Field(None, description="La ville cible identifiée pour l'analyse")
     model_config = ConfigDict(populate_by_name=True)
 
 router_agent = Agent(

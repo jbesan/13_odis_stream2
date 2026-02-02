@@ -78,13 +78,13 @@ def compute_criteria_hash(criteria: SearchCriterias) -> str:
     criteria_json = criteria.model_dump_json()
     return hashlib.md5(criteria_json.encode()).hexdigest()
 
-def take_first_hash(left: Optional[str], right: Any) -> Optional[str]:
+def take_latest_hash(left: Optional[str], right: Any) -> Optional[str]:
     """
-    Reducer for criteria_hash.
-    In parallel branches, all experts will return the same hash.
-    This reducer simply takes the first non-null value to avoid LangGraph selection errors.
+    Ensures that the state always uses the LATEST hash provided.
+    Across turns, nodes compute a NEW hash if criteria have changed.
+    Within a turn, parallel nodes return the SAME next hash.
     """
-    return left or right
+    return right if right is not None else left
 
 def merge_commune_artifacts(left: Dict[str, Any], right: Any) -> Dict[str, Any]:
     """
@@ -96,10 +96,11 @@ def merge_commune_artifacts(left: Dict[str, Any], right: Any) -> Dict[str, Any]:
     
     new_state = left.copy()
     for commune, hashes in right.items():
-        if commune not in new_state:
-            new_state[commune] = hashes
+        norm_commune = commune.lower().strip()
+        if norm_commune not in new_state:
+            new_state[norm_commune] = hashes
         else:
-            commune_state = new_state[commune].copy()
+            commune_state = new_state[norm_commune].copy()
             for h, agents in hashes.items():
                 if h not in commune_state:
                     commune_state[h] = agents
@@ -117,7 +118,7 @@ def merge_commune_artifacts(left: Dict[str, Any], right: Any) -> Dict[str, Any]:
                         else:
                             hash_state[agent_name] = new_content
                     commune_state[h] = hash_state
-            new_state[commune] = commune_state
+            new_state[norm_commune] = commune_state
             
     return new_state
 
@@ -158,7 +159,7 @@ class ODISGraphState(BaseModel):
     commune_artifacts: Annotated[Dict[str, Any], merge_commune_artifacts] = Field(default_factory=dict)
     top_cities: List[Dict[str, Any]] = Field(default_factory=list)
     focus_city: Optional[FocusCity] = None
-    criteria_hash: Annotated[Optional[str], take_first_hash] = None
+    criteria_hash: Annotated[Optional[str], take_latest_hash] = None
     pending_experts: List[str] = Field(default_factory=list)
     execution_mode: Literal['full_analysis', 'specific_ask'] = 'full_analysis'
     briefing: str = ""

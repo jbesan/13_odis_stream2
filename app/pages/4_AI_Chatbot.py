@@ -87,7 +87,8 @@ with st.sidebar:
             for agent in ['scout', 'web', 'job_hunter']:
                 with st.expander(f"⚙️ {agent.upper()} Results", expanded=False):
                     try:
-                        st.write(state.commune_artifacts[state.focus_city.name][criteria_hash][agent])
+                        norm_name = state.focus_city.name.lower().strip()
+                        st.write(state.commune_artifacts[norm_name][criteria_hash][agent])
                     except Exception:
                         st.write("Pas de données.")
 
@@ -98,6 +99,7 @@ with st.sidebar:
         </style>
     """, unsafe_allow_html=True)
     if st.button("Recommencer", type="primary", key="btn_recommencer"):
+        print("="*150)
         st.session_state.chat_history = []
         st.session_state.agent_state = ODISGraphState()
         st.rerun()

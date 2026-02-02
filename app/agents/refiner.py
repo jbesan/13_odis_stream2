@@ -30,12 +30,8 @@ REFINER_PROMPT = """
 {SCORING_RESULTS}
 
 **Instructions** :
-
-2. **IDENTIFICATION DE LA VILLE CIBLE** : 
-   - Essaye TOUJOURS d'identifier le nom de la commune/ville à analyser à partir des `Nouveaux Échanges` et récupère le code INSEE correspondant dans `top villes identifiées`. Retourne le résultat dans l'objet `focus_city` structuré
-   - N'invente JAMAIS de ville. Si pas de ville identifée retourne `focus_city` vide.
-3. **NOUVEAU BRIEFING** : 
-   - Produis une synthèse hyper concise (5 à 10 bullet points maximum) à partir des éléments suivants : les critères de recherches, les faits validés, les nouveaux échanges, les retours experts et le briefing précédent.
+1. **RÉSUMÉ DU DOSSIER** : 
+   - Produis une synthèse hyper concise (5 à 10 bullet points maximum) à partir des critères de recherches, des faits validés, des nouveaux échanges, des retours experts et du briefing précédent.
    - Rapporte **SYSTÉMATIQUEMENT** les codes techniques (INSEE, ROME, Formation) à côté de chaque intitulé. N'invente et ne devine rien et utilise le format : `Intitulé (CODE)` (ex: "Bordeaux (33063)")
 """
 
@@ -43,7 +39,6 @@ REFINER_PROMPT = """
 
 class RefinerResult(BaseModel):
     """Synthesis of the conversation context."""
-    focus_city: FocusCity = Field(..., description="The city and INSEE code")
     briefing: str = Field(..., description="The complete synthesized briefing")
 
 RefinerResult.model_rebuild()

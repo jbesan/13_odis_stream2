@@ -19,8 +19,8 @@ def test_merge_commune_artifacts_logic():
     """Verify that merging commune artifacts works across parallel branches and cities."""
     h = "hash1"
     
-    # State with some initial data
-    state = {"Paris": {h: {"scout": "old_scout"}}}
+    # State with some initial data (normalized)
+    state = {"paris": {h: {"scout": "old_scout"}}}
     
     # Update from Web for Paris
     update1 = {"Paris": {h: {"web": "new_web"}}}
@@ -30,9 +30,9 @@ def test_merge_commune_artifacts_logic():
     update2 = {"Lyon": {h: {"scout": "lyon_scout"}}}
     state = merge_commune_artifacts(state, update2)
     
-    assert state["Paris"][h]["scout"] == "old_scout"
-    assert state["Paris"][h]["web"] == "new_web"
-    assert state["Lyon"][h]["scout"] == "lyon_scout"
+    assert state["paris"][h]["scout"] == "old_scout"
+    assert state["paris"][h]["web"] == "new_web"
+    assert state["lyon"][h]["scout"] == "lyon_scout"
 
 
 

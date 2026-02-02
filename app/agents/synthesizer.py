@@ -91,7 +91,7 @@ async def synth_instructions(ctx: RunContext[ODISDeps]) -> str:
     focus = ctx.deps.state.focus_city.name if ctx.deps.state.focus_city else "Unknown"
     
     # Structure: { focus: { hash: { scout: result, web: result, job_hunter: result } } }
-    artifacts = ctx.deps.state.commune_artifacts.get(focus, {}).get(h, {})
+    artifacts = ctx.deps.state.commune_artifacts.get(focus.lower().strip(), {}).get(h, {})
     
     # Dynamic mode logic
     mode = ctx.deps.state.execution_mode
@@ -102,7 +102,7 @@ async def synth_instructions(ctx: RunContext[ODISDeps]) -> str:
 
     prompt = prompt.format(
         BRIEFING=ctx.deps.state.briefing or "",
-        FOCUS_CITY=str(ctx.deps.state.focus_city or "Non définie"),
+        FOCUS_CITY=str(ctx.deps.state.focus_city.name or "Non définie"),
         CITY_DETAILS=city_details,
         SCOUT_RES=artifacts.get("scout", "Non disponible"),
         WEB_RES=artifacts.get("web", "Non disponible"),

@@ -35,7 +35,7 @@ Les critères de recherche sont injectés automatiquement dans le contexte, util
         - Donne son nom, sa population et son score global comme un pourcentage.
         - Cite 1 ou 2 points forts pertinents par rapport au profil (Famille, Emploi, etc.).
     b. Termine TOUJOURS en suggérant à l'utilisateur de lancer une recherche approfondie sur l'une des communes.
-3. **IMPORTANT** : Ne retourne JAMAIS les données brutes des villes dans ta réponse. Contente-toi d'analyser le résultat de l'outil.
+3. **IMPORTANT** : Ne retourne les données chiffrées (ex: +1,3%mais jamais les références des données (ex: %{{log_soc_inoc_scaled}})
 4. **SORTIE STRUCTUREE** : Retourne l'objet `response` avec ton analyse textuelle uniquement.
 
 """
@@ -59,8 +59,10 @@ async def scorer_instructions(ctx: RunContext[ODISDeps]) -> str:
         
     briefing = ctx.deps.state.briefing
     
-    prompt = SCORER_SYSTEM_PROMPT.replace("{PROFILE}", profile)
-    prompt = prompt.replace("{BRIEFING}", briefing)
+    prompt = SCORER_SYSTEM_PROMPT.format(
+        PROFILE=profile,
+        BRIEFING=briefing
+    )
     
     return prompt
 

@@ -24,25 +24,26 @@ L'orchestrateur pilote la conversation à travers trois phases :
 2. **SCORING** : Présentation argumentée des meilleurs territoires.
 3. **ANALYSIS** : Triple analyse automatique (**Scout + Web + JobHunter**) pour explorer une commune en détail.
 
-## 🏗️ Architecture Graduée (v3)
+## 🏗️ Architecture Graduée (v4.0)
 
-L'architecture v3 introduit des mécanismes de contrôle rigoureux pour garantir la fiabilité des réponses.
+L'architecture v4.0 introduit une séparation stricte des responsabilités (Authority Split) pour garantir la fiabilité des données.
 
-### 🧠 State Management & Data Consistency
+### 🧠 State Management & Authority Split
 
-Pour éviter les "hallucinations de contexte" (mélange de données entre deux recherches), nous utilisons :
+Pour éviter les conflits d'intentions et les "hallucinations de contexte", nous utilisons :
 
-- **Criteria Hashing** : Un hash MD5 unique est généré à chaque modification des critères.
+- **Router Authority** : Le `ROUTER` est la source de vérité pour l'identification de l'intention et de la ville cible (`focus_city`). S'il identifie une ville dans le message utilisateur, il l'extrait et met à jour l'état immédiatement.
+- **Refiner Context** : Le `REFINER` est déchargé de l'identification de ville. Son rôle unique est de maintenir un `briefing` (résumé du dossier) propre et actualisé pour les experts.
+- **Criteria Hashing** : Un hash MD5 unique est généré à chaque modification des critères pour indexer les recherches.
 - **Commune Artifacts** : Les résultats des experts sont stockés de manière indexée : `{ "Commune": { "Hash": { "Expert": "Result" } } }`.
-- **Synthesizer Lock** : Le synthétiseur ne peut lire que les artéfacts correspondant au hash de critères _actuel_.
 
-### 🔀 Hybrid Expert Strategy (v3.2)
+### 🔀 Hybrid Expert Strategy (v4.0)
 
-Pour garantir une convergence fiable et une réactivité optimale, le graphe gère deux modes d'exécution :
+Le graphe gère deux modes d'exécution basés sur l'intention détectée par le Router :
 
-1. **Mode Full Analysis** : Pour toute demande d'analyse d'une ville, le trio d'experts (**Scout + Web + JobHunter**) est lancé en parallèle. Ils convergent vers le `SYNTHESIZER` une fois terminés.
-2. **Mode Specific Ask** : Pour une question spécifique (ex: "Quelles sont les offres d'emploi ?"), le Router active uniquement l'expert concerné (**Solo**) qui répond directement via le `SYNTHESIZER` sans attendre les autres.
-3. **Cache-First** : En mode `full_analysis`, chaque expert utilise le cache (`commune_artifacts`) pour éviter les appels redondants.
+1. **Mode Full Analysis** : Pour toute demande d'analyse d'une ville, le trio d'experts (**Scout + Web + JobHunter**) est lancé en parallèle.
+2. **Mode Specific Ask** : Pour une question spécifique, le Router active uniquement l'expert concerné (**Solo**) qui répond directement via le `SYNTHESIZER`.
+3. **Cache-First** : En mode `full_analysis`, chaque expert utilise le cache (`commune_artifacts`) pour éviter les appels redondants si les critères n'ont pas changé.
 
 ```mermaid
 graph TD

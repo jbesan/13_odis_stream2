@@ -112,6 +112,7 @@ async def router_node(state: ODISGraphState, config: RunnableConfig):
             'scout': {'pending': ['scout_solo'], 'mode': 'specific_ask'},
             'web': {'pending': ['web_solo'], 'mode': 'specific_ask'},
             'job_hunter': {'pending': ['job_hunter_solo'], 'mode': 'specific_ask'},
+            'synthesizer': {'pending': ['synthesizer'], 'mode': 'specific_ask'},
         }
 
         pending = []
@@ -127,9 +128,11 @@ async def router_node(state: ODISGraphState, config: RunnableConfig):
         #     # If router found a city name, we wrap it. Refiner will refine it later.
         #     focus = FocusCity(name=decision.focus_city, codgeo="")
         
+        h = compute_criteria_hash(state.search_criteria)
         return {
             "next_node": decision.target_agent,
-            "focus_city": focus,
+            "focus_city": (decision.focus_city if decision.focus_city and decision.focus_city.name else state.focus_city),
+            "criteria_hash": h,
             "active_agent": decision.target_agent,
             "pending_experts": pending,
             "execution_mode": mode,
@@ -164,15 +167,12 @@ async def refiner_node(state: ODISGraphState, config: RunnableConfig):
         
         briefing = result.output.briefing.strip()
         logger.info(f"📝 [REFINER] Briefing updated.")
-        logger.info(f"📝 [REFINER] Focus City: {result.output.focus_city}")
         logger.debug(briefing)
         
         # Robust update: only override if not empty
         updates = {"last_summarized_idx": len(state.messages)}
         if briefing:
             updates["briefing"] = briefing
-        if result.output.focus_city and result.output.focus_city.name:
-            updates["focus_city"] = result.output.focus_city
         
         updates["usage"] = capture_usage(result, "refiner", mod_id)
         return updates
@@ -260,7 +260,7 @@ async def scout_node(state: ODISGraphState, config: RunnableConfig):
     user_msg = state.messages[-1]["content"] 
     
     h = compute_criteria_hash(state.search_criteria)
-    focus = state.focus_city.name if state.focus_city else "Unknown"
+    focus = state.focus_city.name.lower().strip() if state.focus_city else "unknown"
     
     # --- CACHE BYPASS ---
     # Bypass cache ONLY if in full_analysis mode. 
@@ -295,7 +295,7 @@ async def web_node(state: ODISGraphState, config: RunnableConfig):
     user_msg = state.messages[-1]["content"]
     
     h = compute_criteria_hash(state.search_criteria)
-    focus = state.focus_city.name if state.focus_city else "Unknown"
+    focus = state.focus_city.name.lower().strip() if state.focus_city else "unknown"
     
     # --- CACHE BYPASS ---
     if state.execution_mode == 'full_analysis':
@@ -328,7 +328,7 @@ async def job_hunter_node(state: ODISGraphState, config: RunnableConfig):
     user_msg = state.messages[-1]["content"]
     
     h = compute_criteria_hash(state.search_criteria)
-    focus = state.focus_city.name if state.focus_city else "Unknown"
+    focus = state.focus_city.name.lower().strip() if state.focus_city else "unknown"
     
     # --- CACHE BYPASS ---
     if state.execution_mode == 'full_analysis':
@@ -430,8 +430,8 @@ def create_odis_graph():
     # After Router: decide whether to go to Refiner (experts) or direct (interviewer)
     def router_branch(state: ODISGraphState):
         decision = state.next_node
-        # Analysis mode or solo experts go through Refiner
-        experts = ['scorer', 'analysis', 'scout', 'web', 'job_hunter']
+        # Analysis mode, solo experts or synthesizer go through Refiner
+        experts = ['scorer', 'analysis', 'scout', 'web', 'job_hunter', 'synthesizer']
         if decision in experts:
             return "refiner"
         elif decision == "interviewer":
@@ -470,6 +470,7 @@ def create_odis_graph():
             "scout_solo": "scout_solo",
             "web_solo": "web_solo",
             "job_hunter_solo": "job_hunter_solo",
+            "synthesizer": "synthesizer",
             END: END
         }
     )
