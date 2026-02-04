@@ -165,10 +165,7 @@ with st.sidebar:
         st.error("Logo not found")
     st.write("")
     st.markdown("Découvrez les lieux de vie correspondant le mieux au projet renseigné. Les scores vous permettent de comparer facilement leurs atouts.", unsafe_allow_html=True)
-    
-    with st.expander("City Details"):
-        st.write(st.session_state[''])
-    
+      
     with st.container(border=False, height='stretch', vertical_alignment="bottom"):
         ui.display_sidebar(st.session_state['demo_data'])
         ui.start_over()
