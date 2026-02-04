@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-from typing import List, Dict, Any, Union, Optional
+from typing import List, Dict, Any, Union, Optional, Set
+import hashlib
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 class CriteriaItem(BaseModel):
@@ -96,6 +97,11 @@ class SearchCriterias(BaseModel):
                 
         return data
 
+    def compute_hash(self) -> str:
+        """Computes a stable MD5 hash for search criteria to detect changes."""
+        criteria_json = self.model_dump_json()
+        return hashlib.md5(criteria_json.encode()).hexdigest()
+
 @dataclass
 class ScoringConfig:
     """
@@ -124,6 +130,6 @@ class ScoringConfig:
     inc_services_core_selection: List[str]
     inc_asso_add_selection: List[str]
     type_logement: str = "appt_all"
-    
     loc_search_code: Optional[str] = None
     weight_profile: str = ""
+    active_criteria: Optional[Set[str]] = None

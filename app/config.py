@@ -20,7 +20,7 @@ load_dotenv(os.path.join(APP_DIR, '.env'))
 # Try loading from root .env (Fallback/Override depending on behavior, but good to have both)
 load_dotenv(os.path.join(PROJECT_ROOT, '.env'))
 
-LOCAL_CSV_PATH: str = os.path.join(PROJECT_ROOT, 'data/')
+LOCAL_DATA_PATH: str = os.path.join(PROJECT_ROOT, 'data/')
 ASSETS_DIR: str = os.path.join(APP_DIR, 'ui', 'assets')
 
 def get_data_path() -> str:
@@ -29,12 +29,11 @@ def get_data_path() -> str:
     Since data is now included in the Docker image, we always use the local path.
     """
 
-    return LOCAL_CSV_PATH
+    return LOCAL_DATA_PATH
 
 # --- Constants ---
 VERSION = "0.2.0"
 
-# --- File Paths ---
 # --- File Paths ---
 ODIS_FILE = 'odis_communes.parquet'
 POIS_FILE = 'odis_pois.parquet'
@@ -49,6 +48,12 @@ REFUGEE_ASSOCIATIONS_FILE = 'odis_refugee_associations.parquet'
 LIVE_JOBS_FILE = 'odis_live_jobs_agg.parquet'
 SCORES_CAT_FILE = 'scores_config.yaml'
 
+# Paris, Lyon, Marseille Global Codes -> Arrondissement Prefix
+PLM_MAPPING = {
+    '75056': '751',
+    '69123': '693',
+    '13055': '132'
+}
 # --- Data Columns ---
 BV_CODE_COL = 'bassin_de_vie'
 BV_NAME_COL = 'libelle_bassin_de_vie'
@@ -97,7 +102,7 @@ DETAIL_MAP_ZOOM = 11
 # --- Constants ---
 PROJECTED_CRS = "EPSG:2154"  # RGF93 / Lambert-93, suitable for metropolitan France
 
-from core.models import ScoringConfig
+
 
 # --- Inclusion Defaults ---
 DEFAULT_INC_SERVICES_CORE = [

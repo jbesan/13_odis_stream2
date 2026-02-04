@@ -15,7 +15,7 @@ class TestFilterCommunes:
         """Tests filtering by department."""
         start_commune = sample_data.loc[['33063']] # Bordeaux
         
-        filtered = scoring.filter_communes(
+        filtered = scoring.ScoringEngine._filter_communes(
             df=sample_data,
             start_commune=start_commune,
             loc_type='departement',
@@ -30,7 +30,7 @@ class TestFilterCommunes:
         """Tests filtering by region."""
         start_commune = sample_data.loc[['33063']] # Bordeaux (Reg 75)
         
-        filtered = scoring.filter_communes(
+        filtered = scoring.ScoringEngine._filter_communes(
             df=sample_data,
             start_commune=start_commune,
             loc_type='region',
@@ -58,7 +58,7 @@ class TestFilterCommunes:
         df_extended.loc['97411', 'dep_code'] = '974'
         df_extended.loc['97411', 'reg_code'] = '04'
         
-        filtered = scoring.filter_communes(
+        filtered = scoring.ScoringEngine._filter_communes(
             df=df_extended,
             start_commune=start_commune,
             loc_type='france',
@@ -74,8 +74,7 @@ class TestFilterCommunes:
 class TestScoringLogic:
     def test_compute_criteria_scores_structure(self, sample_data, default_config, sample_incl_index, sample_scores_cat, global_stats):
         """Tests that criteria scores are added as columns."""
-        # Prerequisite: distance (Engine handles it usually, but here checking criteria scores specifically)
-        df_with_dist = scoring.add_distance_to_current_loc(sample_data, default_config.commune_actuelle)
+        # Prerequisite: distance (Engine checks it internally or we call it)
         
         # Update config to ensure met_match columns are generated
         config = default_config
@@ -84,6 +83,27 @@ class TestScoringLogic:
         config.classe_enfants = ['Crèche / Assistante Maternelle', 'Maternelle', 'Elémentaire', 'Collège', 'Lycée'] # Select all for full coverage
         config.inc_asso_add_selection = ['Sport (Général)'] # Enable association scoring
         config.inc_services_add_selection = ['social_aide'] # Enable specific services scoring
+        
+        engine = scoring.ScoringEngine(
+            df_all_communes=sample_data,
+            df_bv_geo=gpd.GeoDataFrame(),
+            df_area_geo=gpd.GeoDataFrame(),
+            scores_cat=sample_scores_cat,
+            incl_index=sample_incl_index,
+            associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']),
+            formations_data=pd.DataFrame(columns=['codgeo', 'formation_code']),
+            codformations_index=pd.DataFrame(columns=['label']),
+            global_stats=global_stats,
+            live_jobs_data=pd.DataFrame({
+                'commune': ['75056', '33063'], 
+                'romeCode': ['M1805', 'M1805'], 
+                'total_postes': [10, 5],
+                'romeLibelle': ['Développeur', 'Développeur']
+            })
+        )
+
+        # Add distance using engine
+        df_with_dist = engine._compute_distance_score(sample_data, config)
         
         # Add mock data for pre-requisites
         df_with_dist['taux_couverture'] = 50.0
@@ -104,25 +124,6 @@ class TestScoringLogic:
         df_with_dist['sante_maternite_scaled'] = 0.5
         df_with_dist['sante_psy_scaled'] = 0.5
         df_with_dist['inc_asso_core_scaled'] = 0.5 # Mock pre-calculated score
-
-        engine = scoring.ScoringEngine(
-            df_all_communes=sample_data,
-            df_bv_geo=gpd.GeoDataFrame(),
-            df_area_geo=gpd.GeoDataFrame(),
-            scores_cat=sample_scores_cat,
-            incl_index=sample_incl_index,
-            associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']),
-            formations_data=pd.DataFrame(columns=['codgeo', 'formation_code']),
-            codformations_index=pd.DataFrame(columns=['label']),
-            global_stats=global_stats,
-            live_jobs_data=pd.DataFrame({
-                'commune': ['75056', '33063'], 
-                'romeCode': ['M1805', 'M1805'], 
-                'total_postes': [10, 5],
-                'romeLibelle': ['Développeur', 'Développeur']
-            })
-        )
-
 
         scored_df = engine._compute_criteria_scores(
             df=df_with_dist,
@@ -149,17 +150,6 @@ class TestScoringLogic:
 
     def test_compute_criteria_scores_partial_selection(self, sample_data, default_config, sample_incl_index, sample_scores_cat, global_stats):
         """Tests that only selected education criteria are added."""
-        # Prerequisite: distance
-        df_with_dist = scoring.add_distance_to_current_loc(sample_data, default_config.commune_actuelle)
-        df_with_dist['met_scaled'] = 0.5
-        df_with_dist['log_vac_scaled'] = 0.5
-        df_with_dist['edu_maternelle_scaled'] = 0.5 # Needed for partial selection test
-        df_with_dist['edu_classes_ferm_scaled'] = 0.5
-        df_with_dist['inc_population_scaled'] = 0.5
-        df_with_dist['inc_population_scaled'] = 0.5
-        df_with_dist['inc_pol_scaled'] = 0.5
-        df_with_dist['inc_asso_core_scaled'] = 0.5
-        
         config = default_config
         config.nb_enfants = 1
         # Only select Maternelle
@@ -183,7 +173,18 @@ class TestScoringLogic:
             })
         )
 
-
+        # Add distance using engine
+        df_with_dist = engine._compute_distance_score(sample_data, config)
+        
+        df_with_dist['met_scaled'] = 0.5
+        df_with_dist['log_vac_scaled'] = 0.5
+        df_with_dist['edu_maternelle_scaled'] = 0.5 # Needed for partial selection test
+        df_with_dist['edu_classes_ferm_scaled'] = 0.5
+        df_with_dist['inc_population_scaled'] = 0.5
+        df_with_dist['inc_population_scaled'] = 0.5
+        df_with_dist['inc_pol_scaled'] = 0.5
+        df_with_dist['inc_asso_core_scaled'] = 0.5
+        default_config.codes_metiers = [['A1234']]
         scored_df = engine._compute_criteria_scores(
             df=df_with_dist,
             config=config
@@ -205,9 +206,21 @@ class TestScoringLogic:
         df['met_match_adult1_scaled'] = 1.0
         
         # Filter scores_cat to only this one for 'emploi'
+        # Filter scores_cat to only this one for 'emploi'
         scores_cat_subset = sample_scores_cat[sample_scores_cat['score'] == 'met_match_adult1_scaled'].copy()
         
-        df_cat = scoring.compute_category_scores(df, scores_cat_subset, default_config)
+        engine = scoring.ScoringEngine(
+            df_all_communes=pd.DataFrame(),
+            df_bv_geo=gpd.GeoDataFrame(),
+            df_area_geo=gpd.GeoDataFrame(),
+            scores_cat=scores_cat_subset,
+            associations_data=pd.DataFrame(),
+            formations_data=pd.DataFrame(),
+            incl_index=pd.DataFrame()
+        )
+        
+        default_config.active_criteria = {'met_match_adult1_scaled'}
+        df_cat = engine._compute_category_scores(df, default_config)
         
         assert 'emploi_cat_score' in df_cat.columns
         assert df_cat.iloc[0]['emploi_cat_score'] == 1.0
@@ -233,7 +246,17 @@ class TestScoringLogic:
         config.nb_enfants = 1 # Ensure education is not skipped by exclusion logic
         
         # Act
-        weighted_score = scoring.compute_weighted_score(df, config)
+        # Act
+        engine = scoring.ScoringEngine(
+            df_all_communes=pd.DataFrame(),
+            df_bv_geo=gpd.GeoDataFrame(),
+            df_area_geo=gpd.GeoDataFrame(),
+            scores_cat=pd.DataFrame(), # Not used for weighted_score directly
+            associations_data=pd.DataFrame(),
+            formations_data=pd.DataFrame(),
+            incl_index=pd.DataFrame()
+        )
+        weighted_score = engine._compute_weighted_score(df, config)
         
         # Assert
         # Should be (1.0*100 + 1.0*100) / 200 = 1.0
@@ -242,7 +265,7 @@ class TestScoringLogic:
         
         # Case 2: Education is 0.0 (Valid score)
         df['education_cat_score'] = 0.0
-        weighted_score_zero = scoring.compute_weighted_score(df, config)
+        weighted_score_zero = engine._compute_weighted_score(df, config)
         assert weighted_score_zero.iloc[0] == pytest.approx(0.6666, rel=1e-3)
 
     def test_compute_weighted_score(self, default_config):
@@ -265,7 +288,16 @@ class TestScoringLogic:
         config.poids_inclusion = 0
         config.poids_mobilité = 0
         
-        weighted_score = scoring.compute_weighted_score(df, config)
+        engine = scoring.ScoringEngine(
+            df_all_communes=pd.DataFrame(),
+            df_bv_geo=gpd.GeoDataFrame(),
+            df_area_geo=gpd.GeoDataFrame(),
+            scores_cat=pd.DataFrame(),
+            associations_data=pd.DataFrame(),
+            formations_data=pd.DataFrame(),
+            incl_index=pd.DataFrame()
+        )
+        weighted_score = engine._compute_weighted_score(df, config)
         
         # (1.0 * 100 + 0.0 * 100) / (100 + 100) = 0.5
         assert weighted_score.iloc[0] == 0.5
@@ -314,7 +346,18 @@ class TestConditionalScoring:
 
         # Act
         # Expected behavior (after fix): (1.0*100 + 1.0*100) / 200 = 1.0
-        weighted_score = scoring.compute_weighted_score(df, config)
+        # Act
+        # Expected behavior (after fix): (1.0*100 + 1.0*100) / 200 = 1.0
+        engine = scoring.ScoringEngine(
+            df_all_communes=pd.DataFrame(),
+            df_bv_geo=gpd.GeoDataFrame(),
+            df_area_geo=gpd.GeoDataFrame(),
+            scores_cat=pd.DataFrame(), # Not needed for weighted score
+            associations_data=pd.DataFrame(),
+            formations_data=pd.DataFrame(),
+            incl_index=pd.DataFrame()
+        )
+        weighted_score = engine._compute_weighted_score(df, config)
 
         # Assert
         assert weighted_score.iloc[0] == 1.0, f"Expected 1.0, got {weighted_score.iloc[0]}"
@@ -357,7 +400,17 @@ class TestConditionalScoring:
 
         # Act
         # (1.0*100 + 0.5*100 + 0.5*100) / 300 = 200 / 300 = 0.666...
-        weighted_score = scoring.compute_weighted_score(df, config)
+        engine = scoring.ScoringEngine(
+            df_all_communes=pd.DataFrame(),
+            df_bv_geo=gpd.GeoDataFrame(),
+            df_area_geo=gpd.GeoDataFrame(),
+            scores_cat=pd.DataFrame(),
+            incl_index=pd.DataFrame(),
+            associations_data=pd.DataFrame(),
+            formations_data=pd.DataFrame(),
+            global_stats={}
+        )
+        weighted_score = engine._compute_weighted_score(df, config)
 
         # Assert
         assert abs(weighted_score.iloc[0] - 0.666666) < 0.0001
@@ -365,33 +418,11 @@ class TestConditionalScoring:
     def test_compute_criteria_scores_dynamic_bounds(self, sample_data, default_config, sample_incl_index, sample_scores_cat, global_stats):
         """Tests that match scores use dynamic max bounds based on preference length."""
         # Prerequisite: distance
-        df_with_dist = scoring.add_distance_to_current_loc(sample_data, default_config.commune_actuelle)
-        df_with_dist['met_scaled'] = 0.5
-        df_with_dist['log_vac_scaled'] = 0.5
-        df_with_dist['inc_population_scaled'] = 0.5
-        df_with_dist['inc_population_scaled'] = 0.5
-        df_with_dist['inc_pol_scaled'] = 0.5
-        df_with_dist['inc_asso_core_scaled'] = 0.5
-        
-        # Mock data for matches
-        df_with_dist['be_codfap_top'] = [['A1', 'B2'], ['A1'], [], [], []]
-        df_with_dist['codes_formations'] = [['F1', 'F2'], ['F1'], [], [], []]
-        
-        # Config with 2 metiers selected and 3 formations selected
-        config = copy.deepcopy(default_config)
-        config.codes_metiers[0] = ['A1234', 'B1234'] # Valid-looking ROME format
-        config.codes_formations[0] = ['F1', 'F2', 'F3'] # 3 items -> max bound 3
-        
-        # Ensure max_bound is null in scores_cat for these scores (as per new config)
-        scores_cat_dynamic = sample_scores_cat.copy()
-        scores_cat_dynamic.loc[scores_cat_dynamic['score'] == 'met_match_adult1_scaled', 'max_bound'] = None
-        scores_cat_dynamic.loc[scores_cat_dynamic['score'] == 'form_match_adult1_scaled', 'max_bound'] = None
-        
         engine = scoring.ScoringEngine(
             df_all_communes=sample_data,
             df_bv_geo=gpd.GeoDataFrame(),
             df_area_geo=gpd.GeoDataFrame(),
-            scores_cat=scores_cat_dynamic,
+            scores_cat=sample_scores_cat,
             incl_index=sample_incl_index,
             associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']),
             formations_data=pd.DataFrame({
@@ -408,10 +439,21 @@ class TestConditionalScoring:
             global_stats=global_stats
         )
 
+        df_with_dist = engine._compute_distance_score(sample_data, default_config)
+        df_with_dist['met_scaled'] = 0.5
+        df_with_dist['log_vac_scaled'] = 0.5
+        df_with_dist['inc_population_scaled'] = 0.5
+        df_with_dist['inc_population_scaled'] = 0.5
+        df_with_dist['inc_pol_scaled'] = 0.5
+        df_with_dist['inc_asso_core_scaled'] = 0.5
+        df_with_dist['be_codfap_top'] = [['A1', 'B2'], ['A1'], [], [], []]
+        df_with_dist['codes_formations'] = [['F1', 'F2'], ['F1'], [], [], []]
 
+
+        default_config.codes_metiers = [['A1234']]
         scored_df = engine._compute_criteria_scores(
             df=df_with_dist,
-            config=config
+            config=default_config
         )
         
         # Row 0: matches A1, B2 (2 matches). Max bound 2. 
@@ -520,6 +562,7 @@ class TestMCPScenario:
 
 
 @pytest.mark.unit
+@pytest.mark.unit
 class TestInclusionScoringLogic:
     """Tests from test_inclusion_scoring.py focusing on specific inclusion components."""
 
@@ -560,8 +603,17 @@ class TestInclusionScoringLogic:
             inc_asso_add_selection=[],
             inc_services_add_selection=[]
         )
-        
-        scores = scoring.compute_inclusion_score(mock_geo_df, prefs, mock_incl_index, mock_associations_data, sample_scores_cat, global_stats)
+        engine = scoring.ScoringEngine(
+            df_all_communes=gpd.GeoDataFrame(), 
+            df_bv_geo=gpd.GeoDataFrame(), 
+            df_area_geo=gpd.GeoDataFrame(), 
+            scores_cat=sample_scores_cat, 
+            incl_index=mock_incl_index, 
+            associations_data=mock_associations_data, 
+            formations_data=pd.DataFrame(), 
+            global_stats=global_stats
+        )
+        scores = engine._compute_inclusion_scores(mock_geo_df, prefs)
         
         assert scores.loc['33063', 'inc_services_core_scaled'] == 1.0
         assert scores.loc['64445', 'inc_services_core_scaled'] == 0.5
@@ -574,8 +626,17 @@ class TestInclusionScoringLogic:
             inc_asso_add_selection=['Bricolage / Création'],
             inc_services_add_selection=[]
         )
-        
-        scores = scoring.compute_inclusion_score(mock_geo_df, prefs, mock_incl_index, mock_associations_data, sample_scores_cat, global_stats)
+        engine = scoring.ScoringEngine(
+            df_all_communes=gpd.GeoDataFrame(), 
+            df_bv_geo=gpd.GeoDataFrame(), 
+            df_area_geo=gpd.GeoDataFrame(), 
+            scores_cat=sample_scores_cat, 
+            incl_index=mock_incl_index, 
+            associations_data=mock_associations_data, 
+            formations_data=pd.DataFrame(), 
+            global_stats=global_stats
+        )
+        scores = engine._compute_inclusion_scores(mock_geo_df, prefs)
         
         assert 'inc_asso_add_scaled' in scores.columns
         assert scores.loc['33063', 'inc_asso_add_scaled'] >= 0
@@ -586,7 +647,17 @@ class TestInclusionScoringLogic:
             inc_asso_add_selection=['Sport (Général)'],
             inc_services_add_selection=[]
         )
-        scores_sport = scoring.compute_inclusion_score(mock_geo_df, prefs_sport, mock_incl_index, mock_associations_data, sample_scores_cat, global_stats)
+        engine_sport = scoring.ScoringEngine(
+            df_all_communes=gpd.GeoDataFrame(), 
+            df_bv_geo=gpd.GeoDataFrame(), 
+            df_area_geo=gpd.GeoDataFrame(), 
+            scores_cat=sample_scores_cat, 
+            incl_index=mock_incl_index, 
+            associations_data=mock_associations_data, 
+            formations_data=pd.DataFrame(), 
+            global_stats=global_stats
+        )
+        scores_sport = engine_sport._compute_inclusion_scores(mock_geo_df, prefs_sport)
         
         assert scores_sport.loc['33063', 'inc_asso_add_scaled'] > scores_sport.loc['64445', 'inc_asso_add_scaled']
 
@@ -598,8 +669,17 @@ class TestInclusionScoringLogic:
             inc_asso_add_selection=['Bricolage / Création'],
             inc_services_add_selection=[]
         )
-        
-        scores = scoring.compute_inclusion_score(mock_geo_df, prefs, mock_incl_index, mock_associations_data, sample_scores_cat, global_stats)
+        engine = scoring.ScoringEngine(
+            df_all_communes=gpd.GeoDataFrame(), 
+            df_bv_geo=gpd.GeoDataFrame(), 
+            df_area_geo=gpd.GeoDataFrame(), 
+            scores_cat=sample_scores_cat, 
+            incl_index=mock_incl_index, 
+            associations_data=mock_associations_data, 
+            formations_data=pd.DataFrame(), 
+            global_stats=global_stats
+        )
+        scores = engine._compute_inclusion_scores(mock_geo_df, prefs)
         
         assert 'inc_services_core_scaled' in scores.columns
         assert 'inc_asso_core_scaled' in scores.columns
@@ -612,9 +692,8 @@ class TestHousingScoresLogic:
 
     def test_housing_scores_exclusion_logic(self):
         """
-        Verifies that housing scores are actually DROPPED (not just NaNs) and thus excluded from category scoring.
+        Verifies that irrelevant housing scores are pruned.
         """
-        # Create a small dummy DF with both monome and binome columns
         data = {
             'codgeo': ['A', 'B'],
             'log_vac_scaled': [0.5, 0.6],
@@ -639,7 +718,14 @@ class TestHousingScoresLogic:
             df_all_communes=gpd.GeoDataFrame({'epci_code': ['1'], 'bassin_de_vie': ['1'], 'reg_code': ['75'], 'dep_code': ['75']}, index=['A']),
             df_bv_geo=gpd.GeoDataFrame(),
             df_area_geo=gpd.GeoDataFrame(),
-            scores_cat=pd.DataFrame(),
+            scores_cat=pd.DataFrame([
+                {'cat': 'logement', 'score': 'log_vac_scaled', 'metric': 'log_vac_ratio', 'weight': 1.0},
+                {'cat': 'logement', 'score': 'log_soc_inoc_scaled', 'metric': 'log_soc_inoc_ratio', 'weight': 1.0},
+                {'cat': 'logement', 'score': 'log_occup_scaled', 'metric': 'log_occup_ratio', 'weight': 1.0},
+                {'cat': 'logement', 'score': 'log_loyer_moyen_appt_all_scaled', 'metric': 'loyer_m2_moy_appartement_toutes', 'weight': 1.0},
+                {'cat': 'logement', 'score': 'log_loyer_moyen_appt_t1_t2_scaled', 'metric': 'loyer_m2_moy_appartement_t1_t2', 'weight': 1.0},
+                {'cat': 'logement', 'score': 'log_loyer_moyen_house_all_scaled', 'metric': 'loyer_m2_moy_maison_toutes', 'weight': 1.0},
+            ]),
             incl_index=pd.DataFrame(),
             associations_data=pd.DataFrame({'codgeo': ['A'], 'id_waldec': ['W1'], 'count': [1]}),
             formations_data=pd.DataFrame({'codgeo': ['A'], 'formation_code': ['F1'], 'count': [1]}),
@@ -710,7 +796,14 @@ class TestHousingScoresLogic:
             df_all_communes=gpd.GeoDataFrame({'epci_code': ['1'], 'bassin_de_vie': ['1'], 'reg_code': ['75'], 'dep_code': ['75']}, index=['A']),
             df_bv_geo=gpd.GeoDataFrame(),
             df_area_geo=gpd.GeoDataFrame(),
-            scores_cat=pd.DataFrame(),
+            scores_cat=pd.DataFrame([
+                {'cat': 'logement', 'score': 'log_vac_scaled', 'metric': 'log_vac_ratio', 'weight': 1.0},
+                {'cat': 'logement', 'score': 'log_soc_inoc_scaled', 'metric': 'log_soc_inoc_ratio', 'weight': 1.0},
+                {'cat': 'logement', 'score': 'log_occup_scaled', 'metric': 'log_occup_ratio', 'weight': 1.0},
+                {'cat': 'logement', 'score': 'log_loyer_moyen_appt_all_scaled', 'metric': 'loyer_m2_moy_appartement_toutes', 'weight': 1.0},
+                {'cat': 'logement', 'score': 'log_loyer_moyen_appt_t1_t2_scaled', 'metric': 'loyer_m2_moy_appartement_t1_t2', 'weight': 1.0},
+                {'cat': 'logement', 'score': 'log_loyer_moyen_house_all_scaled', 'metric': 'loyer_m2_moy_maison_toutes', 'weight': 1.0},
+            ]),
             incl_index=pd.DataFrame(),
             associations_data=pd.DataFrame({'codgeo': ['A'], 'id_waldec': ['W1'], 'count': [1]}),
             formations_data=pd.DataFrame({'codgeo': ['A'], 'formation_code': ['F1'], 'count': [1]}),

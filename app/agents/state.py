@@ -1,4 +1,3 @@
-import hashlib
 import json
 from typing import List, Dict, Any, Optional, Annotated, Literal
 from pydantic import BaseModel, Field, ConfigDict, model_validator
@@ -72,11 +71,6 @@ def merge_search_criteria(left: SearchCriterias, right: Any) -> SearchCriterias:
         
     return SearchCriterias(**current_data)
 
-def compute_criteria_hash(criteria: SearchCriterias) -> str:
-    """Computes a stable MD5 hash for search criteria to detect changes."""
-    # We dump to JSON with sorted keys for stability
-    criteria_json = criteria.model_dump_json()
-    return hashlib.md5(criteria_json.encode()).hexdigest()
 
 def take_latest_hash(left: Optional[str], right: Any) -> Optional[str]:
     """

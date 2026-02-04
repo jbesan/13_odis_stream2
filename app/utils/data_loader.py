@@ -34,7 +34,9 @@ def load_scores_config_as_df(config_path: str) -> pd.DataFrame:
             'score_affichage': item.get('display', {}).get('strong_point_text', ''),
             'bdv_factor': item.get('bdv_factor', 0.0),
             'metric': item.get('source_metric'),
-            'computation': item.get('computation', 'live')
+            'computation': item.get('computation', 'live'),
+            'display_factor': item.get('display', {}).get('display_factor', 1.0),
+            'unit': item.get('display', {}).get('unit', '')
         })
     return pd.DataFrame(data)
 
