@@ -35,12 +35,14 @@ def search_referentiels_batch(queries: List[Dict[str, str]]) -> Dict[str, List[D
     return results
 
 
-def search_places(queries: List[str], location: str) -> Dict[str, Any]:
-    """Recherche des lieux (POIs), commerces ou services dans une ville."""
+def search_places_batch(queries: List[str], location: str) -> Dict[str, Any]:
+    """Recherche des lieux (POIs), commerces ou services dans une ville (Mode Batch)."""
+    logger.info(f"🔍 [TOOL] search_places_batch: {queries} in {location}")
     return _search_places_logic(queries, location)
 
 def compute_routes(origin: str, destination: str, mode: str = "transit") -> Dict[str, Any]:
     """Calcule des itinéraires et temps de trajet."""
+    logger.info(f"🔍 [TOOL] compute_routes: {origin} to {destination} in {mode}")
     return _compute_routes_logic(origin, destination, mode)
 
 def compute_top_cities(criteria: SearchCriterias) -> Dict[str, Any]:

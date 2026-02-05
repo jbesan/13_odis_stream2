@@ -6,7 +6,7 @@ import config as cfg
 from .state import ODISGraphState, ODISDeps, FocusCity, compute_criteria_hash
 from .agent_config import get_model
 from .tools import (
-    search_places, 
+    search_places_batch, 
     compute_routes, 
     search_refugee_associations, 
     search_odis_associations,
@@ -25,16 +25,19 @@ SCOUT_ANALYSIS_SYSTEM_PROMPT = """
 **Ton** : Hyper synthétique, direct, factuel.
 
 **CONTEXTE RÉSUMÉ** : {BRIEFING}
-**VILLE ACTIVE** : {FOCUS_CITY_NAME} (Code INSEE: {FOCUS_CITY_CODE})
 
 **Instructions** :
 1. **Gestion du Focus** : La localité d'intérêt est `{FOCUS_CITY_NAME}`.
 2. **Recherche de Terrain** : Dans cet ordre de priorité
     - Utilise TOUJOURS `search_refugee_associations_tool(codgeo='{FOCUS_CITY_CODE}')` pour trouver des associations d'aide aux réugiés.
     - Utilise `search_odis_associations_tool(codgeo='{FOCUS_CITY_CODE}')` pour trouver des associations d'aide à l'insertion sociale our de loisir (ex: sport, culture, etc)
-    - Utilise `search_places` pour trouver des POIs (écoles, parcs, commerces, lieux de culte) **dans un rayon de 50km de `{FOCUS_CITY_NAME}`**.
-    - Utilise `compute_routes` pour calculer les temps de trajet. Utilise `{FOCUS_CITY_NAME}` comme origine si non spécifié.
-    - Utilise TOUJOURS `search_ccas` pour trouver le Centre Communal d'Action Social local.
+    - Utilise `search_places_batch_tool(queries=[...], location='{FOCUS_CITY_NAME}')` pour trouver des POIs pertinents **dans un rayon de 20km** comme:
+        - Des infastrctures de transports (ex: gares, gares routières)
+        - Des commerces spécialisés (ex: boucherie halal, épicerie asiatique)
+        - Des lieux de culte (ex: pagode, mosquée) 
+        - Lieux d'hébergement et d'insertion (ex: CPH, CHRS, CADA)
+    - Utilise `compute_routes_tool(origin='{FOCUS_CITY_NAME}', destination='...', mode='transit')` pour calculer les temps de trajet.
+    - Utilise TOUJOURS `search_ccas_tool(codgeo='{FOCUS_CITY_CODE}')` pour trouver le Centre Communal d'Action Social local.
 
 3. **Réponse** :
     - Commence toujours ta réponse par rappeler en une phrase ce que tu as recherché.
@@ -57,8 +60,8 @@ SCOUT_SPECIFIC_SYSTEM_PROMPT = """
 2. Si des données manquent pour répondre à la `QUESTION POSÉE` : 
     - Utilise `search_refugee_associations_tool(codgeo='{FOCUS_CITY_CODE}')` pour trouver des associations de support aux réfugiés.
     - Utilise `search_odis_associations_tool(codgeo='{FOCUS_CITY_CODE}')` pour trouver des associations d'aide à l'insertion sociale.
-    - Utilise `search_places` pour trouver des POIs (écoles, parcs, commerces, lieux de culte) **dans un rayon de 50km de `{FOCUS_CITY_NAME}`**.
-    - Utilise `compute_routes` pour calculer les temps de trajet. Utilise `{FOCUS_CITY_NAME}` comme origine si non spécifié.
+    - Utilise `search_places_batch_tool(queries=[...], location='{FOCUS_CITY_NAME}')` pour trouver des POIs (écoles, parcs, commerces, lieux de culte) **dans un rayon de 50km**.
+    - Utilise `compute_routes_tool(origin='{FOCUS_CITY_NAME}', destination='...')` pour calculer les temps de trajet.
 """
 
 scout_agent = Agent(
@@ -96,8 +99,8 @@ async def scout_instructions(ctx: RunContext[ODISDeps]) -> str:
 
 
 @scout_agent.tool
-def search_places_tool(ctx: RunContext[ODISDeps], queries: List[str], location: str) -> Dict[str, Any]:
-    """Recherche des lieux (POIs).
+def search_places_batch_tool(ctx: RunContext[ODISDeps], queries: List[str], location: str) -> Dict[str, Any]:
+    """Recherche des lieux (POIs) en mode batch.
     
     Args:
         ctx (RunContext[ODISDeps]): Contexte de l'agent.
@@ -107,7 +110,7 @@ def search_places_tool(ctx: RunContext[ODISDeps], queries: List[str], location: 
     Returns:
         Dict[str, Any]: Dictionnaire des lieux correspondants.
     """
-    return search_places(queries, location)
+    return search_places_batch(queries, location)
 
 @scout_agent.tool
 def compute_routes_tool(ctx: RunContext[ODISDeps], origin: str, destination: str, mode: str = "transit") -> Dict[str, Any]:

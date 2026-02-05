@@ -337,7 +337,7 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
                 detailed_scores[found_cat][col] = float(row[col])
 
         bdv = row.get('libelle_bassin_de_vie', "N/A")
-        details_full = engine.format_city_details(row)
+        details_full = engine.format_city_details(row, config=config)
         
         # AI Pruning: Streamline details but keep data not yet handled by other tools
         # Education and Formations stay here for now. Associations are handled by SCOUT.
@@ -408,7 +408,7 @@ def _search_places_logic(queries: List[str], location: str) -> Dict[str, Any]:
                 count += 1
             # logger.info(f"   ✅ [MCP] Found {count} results for '{q}'")
             
-        # logger.info(f"✅ [MCP] search_places finished. Total pruned results: {len(results)}")
+        logger.info(f"✅ [MCP] search_places finished. Total pruned results: {len(results)}")
         return sanitize_for_json({"type": "places", "data": results})
     except Exception as e:
         logger.error(f"❌ [MCP] search_places failed: {e}")

@@ -45,9 +45,17 @@ def get_p_model(agent_name: str, client: genai.Client) -> GoogleModel:
     
     # Explicitly inject the fresh client (configured with retries)
     provider = GoogleProvider(client=client)
+
+    # grounding_tool = genai.types.Tool(
+    #     google_search=genai.types.GoogleSearch()
+    # )
+
+    # config = genai.types.GenerateContentConfig(
+    #     tools=[grounding_tool]
+    # )
     
     # Increase max_tokens for complex outputs (Refiner/Synthesizer)
     return GoogleModel(
         model_name, 
-        provider=provider
+        provider=provider,
     )

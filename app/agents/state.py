@@ -80,6 +80,12 @@ def take_latest_hash(left: Optional[str], right: Any) -> Optional[str]:
     """
     return right if right is not None else left
 
+def compute_criteria_hash(criteria: SearchCriterias) -> str:
+    """Helper to compute a stable hash for search criteria."""
+    if not criteria:
+        return ""
+    return criteria.compute_hash()
+
 def merge_commune_artifacts(left: Dict[str, Any], right: Any) -> Dict[str, Any]:
     """
     Structure: { "CommuneName": { "Hash": { "agent": Result } } }

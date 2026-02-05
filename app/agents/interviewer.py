@@ -85,6 +85,6 @@ def search_referentiels_batch_tool(ctx: RunContext[ODISDeps], searches: List[Sea
     Utilise cet outil si tu as plusieurs informations à normaliser (ex: ville + métier).
     
     Args:
-        searches (List[SearchQuery]): Liste d'objets {query, domain}
+        searches (List[SearchQuery]): Liste d'objets {query, domain}. Domaine de recherche possibles:['formation_codes', 'inclusion_services', 'waldec_codes', 'rome_codes', 'regions', 'departements', 'communes', 'housing_types'].
     """
     return search_referentiels_batch([s.model_dump() for s in searches])

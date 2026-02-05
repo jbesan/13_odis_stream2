@@ -37,7 +37,7 @@ JOB_HUNTER_ANALYSIS_SYSTEM_PROMPT = """
 2. **RECHERCHE D'OFFRES (BATCH ONLY)** : Lance `search_job_offers_batch_tool` pour TOUS les codes ROME identifiés dans le `CONTEXTE RÉSUMÉ` en utilisant `location='{FOCUS_CITY_CODE}'`.
 6. **NE DEMANDE PAS DE PRÉCISIONS** : Tu as les informations sur les métiers dans les critères. AGIS IMMÉDIATEMENT sans attendre de confirmation.
 7. **SÉLECTION ET RÉPONSE (CRITIQUE)** : 
-    - Commence toujours ta réponse par rappeler en une phrase les métiers que tu as recherché.
+    - Commence toujours ta réponse par lister TOUS les codes ROME + libellés que tu as recherché.
     - Pour chaque catégorie `rome`, tu DOIS sélectionner et présenter les **3 offres les plus pertinentes** selon le `CONTEXTE RÉSUMÉ`.
     - Pour chaque offre, indique : Intitulé, ID (ex: 7874186), lieu, type de contrat, durée, salaire et une phrase expliquant pourquoi elle correspond bien au `CONTEXTE RÉSUMÉ`.
     - Ne te contente JAMAIS d'une seule offre si l'outil en retourne plusieurs.

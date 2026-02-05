@@ -1,6 +1,6 @@
 import logging
 from typing import Optional
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent, RunContext, WebSearchTool
 from .state import ODISGraphState, ODISDeps, compute_criteria_hash
 from .agent_config import get_model
 
@@ -14,16 +14,18 @@ WEB_ANALYSIS_SYSTEM_PROMPT = """
 **VILLE ACTIVE** : {FOCUS_CITY}
 
 **Directives** :
-1. **Recherche Google Search** : Utilise ton accès natif à Google Search et le `CONTEXTE RÉSUMÉ` pour répondre aux questions sur `VILLE ACTIVE`:
-    - L'actualité récente
-    - Le climat social et l'accueil des réfugiés (politique locale, initiatives citoyennes).
-    - Les événements culturels ou festivals en lien avec les intérêts de l'utilisateur.
-    - les services de transports en commun.
+1. **Recherche Google Search** : Utilise ton accès natif à Google Search et le `CONTEXTE RÉSUMÉ` pour {FOCUS_CITY}:
+    - Recherche TOUJOURS des informations locales liées à l'origine ethno-culturelle des personnes accompagnées (ex. 'Syrien' ou 'Moyen Orient').
+    - Recherche TOUJOURS l'actualité pour identifier le climat social et l'accueil des réfugiés (politique locale, initiatives citoyennes).
+    - Les événements culturels ou festivals en lien avec les intérêts de l'utilisateur (si exprimés).
+    - les services de transports en commun et leur possible gratuité.
 
-2. **Réponse** :
-    - Sois factuel, synthétique et surtout **contextuel**.
-    - Commence toujours ta réponse par rapperler en une phrase ce que tu as recherché.
-    - Cite tes sources si possible ou mentionne que l'info vient d'une recherche web récente.
+2. ** Hors Scope** : Ne recherche PAS les emplois, assocations et formations d'autres agents s'en occupent
+
+4. **Réponse** :
+    - N'invente RIEN. Garde SEULEMENT ce qui est **pertinent** au regard du `CONTEXTE RÉSUMÉ`.
+    - Commence TOUJOURS par une liste des mots-clés que tu as recherché (même s'il n'ont pas retourné de résultat pertinent)
+    - Sois factuel, hyper-concis (10 bullet-points max) et spécifique (donne les noms + description sans développer)
 """
 
 WEB_SPECIFIC_SYSTEM_PROMPT = """
@@ -42,7 +44,8 @@ WEB_SPECIFIC_SYSTEM_PROMPT = """
 
 web_agent = Agent(
     get_model("web"),
-    deps_type=ODISDeps
+    deps_type=ODISDeps,
+    builtin_tools=[WebSearchTool()]
 )
 
 @web_agent.system_prompt

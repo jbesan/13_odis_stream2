@@ -241,7 +241,6 @@ class ScoringEngine:
         if config.nb_enfants > 0:
             active.add('youth_decline_scaled')
             active.add('edu_classes_ferm_scaled')
-            active.add('edu_structures_scaled') # Mock indicator
             edu_map = {
                 'Crèche / Assistante Maternelle': 'edu_petite_enfance_scaled',
                 'Petite Enfance/Crêche': 'edu_petite_enfance_scaled',
@@ -318,8 +317,9 @@ class ScoringEngine:
             }
         }
 
-        active_ids = self._get_active_criteria(config) if config else set()
-        
+        # Use cached active criteria if available
+        active_ids = config.active_criteria if config and config.active_criteria is not None else self._get_active_criteria(config)
+
         # Calculate weights for relative_weight
         # We need to replicate compute_weighted_score logic to find the global impact
         cat_weights = {
@@ -339,64 +339,66 @@ class ScoringEngine:
                 cat_weights['sante'] = 0
                 cat_weights['santé'] = 0
             
-        total_cat_weight = sum({v for k,v in cat_weights.items() if k != 'santé'}) # Avoid double counting santé/sante
-        if config and config.besoin_sante == 'Aucun': total_cat_weight = sum([v for k,v in cat_weights.items() if k not in ['education', 'sante', 'santé']])
+        # Total Category Weight Sum (Effective for this city)
         total_cat_weight = 0.0
         for c, w in cat_weights.items():
             if c == 'santé': continue # Skip alias
-            # Engine re-weighting logic: only count if category score exists in row
-            if f"{c}_cat_score" in row:
-                total_cat_weight += w
-            elif c == 'sante' and 'santé_cat_score' in row:
+            
+            # Use 'cat_cat_score' existence and non-nullity to determine if cat is active for THIS city
+            # Check for both 'sante' and 'santé' variants
+            score_col = f"{c}_cat_score"
+            if c == 'sante' and 'santé_cat_score' in row:
+                score_col = 'santé_cat_score'
+                
+            if score_col in row and pd.notna(row[score_col]):
                 total_cat_weight += w
         
         if total_cat_weight == 0: total_cat_weight = 1.0
 
-        # Pre-compute category internal weight sums
+        # Pre-compute category internal weight sums (Effective for this city)
         cat_internal_weights = {}
         for cat in cat_weights:
             # Normalize cat for matching weights
             norm_cat = 'sante' if cat == 'santé' else cat
-            c_scores = self.scores_cat[self.scores_cat.cat == cat]
-            # Only count active scores
-            active_c_scores = c_scores[c_scores.score.isin(active_ids)]
+            c_scores_def = self.scores_cat[self.scores_cat.cat == norm_cat]
             
-            # Sum criteria weights
+            # Sum criteria weights ONLY for those that have data in THIS city row
             weight_sum = 0.0
-            for _, s_row in active_c_scores.iterrows():
+            for _, s_row in c_scores_def.iterrows():
                 sid = s_row['score']
-                # Check if it was actually in the row (might have been missing in data even if active)
-                if sid in row:
+                if sid in active_ids and sid in row and pd.notna(row[sid]):
                     w = float(s_row['weight'])
                     if config and sid in config.criteria_weights: w *= config.criteria_weights[sid]
                     weight_sum += w
-            cat_internal_weights[cat] = weight_sum or 1.0
+            cat_internal_weights[cat] = weight_sum if weight_sum > 0 else 1.0
 
         # 1. Scores per Category
         for _, score_row in self.scores_cat.iterrows():
             cat = score_row['cat']
             score_id = score_row['score']
             
-            # Central pruning: skip if not active
-            if config and score_id not in active_ids: continue
-            
             val_scaled = float(row[score_id]) if score_id in row and pd.notna(row[score_id]) else None
-            if val_scaled is None and config: continue # Hide if inactive/uncomputed
+            
+
+            # Central pruning: skip if not active or if value is missing (NaN)
+            if (config and score_id not in active_ids) or val_scaled is None:
+                continue
             
             if cat not in details['scores']: details['scores'][cat] = []
             
-            # Improved Valeur KPI
-            val_raw = "N/A"
+            # Improved Valeur KPI (Return Float as requested)
+            val_raw = None
             raw_metric_col = score_row['metric']
             if raw_metric_col and raw_metric_col in row and pd.notna(row[raw_metric_col]):
                 val = row[raw_metric_col]
                 d_factor = float(score_row.get('display_factor', 1.0))
                 if pd.api.types.is_number(val):
-                    val_conv = val * d_factor
-                    if val_conv.is_integer(): val_raw = str(int(val_conv))
-                    else: val_raw = f"{val_conv:.1f}" if d_factor > 1 else f"{val_conv:.2f}"
+                    val_raw = float(val * d_factor)
                 else:
-                    val_raw = str(val)
+                    try:
+                         val_raw = float(val) * d_factor
+                    except:
+                         val_raw = val
             
             # Relative Weight Calculation
             w_crit = float(score_row['weight'])
@@ -639,7 +641,7 @@ class ScoringEngine:
                     # Keep a small extract for compatibility if needed, but the user wants the grouped version
                     details['associations']['odis_mini'] = odis_assos.head(5).to_dict(orient='records')
 
-        logger.info(f"⚙️ [ENGINE] city_details {details}")
+        logger.debug(f"⚙️ [ENGINE] city_details {details}")
 
         return details
 
@@ -715,8 +717,8 @@ class ScoringEngine:
         if config.commune_actuelle in odis_exploded.index:
             odis_exploded = odis_exploded.drop(config.commune_actuelle)
         
-        if config.commune_actuelle in PLM_MAPPING:
-            prefix = PLM_MAPPING[config.commune_actuelle]
+        if config.commune_actuelle in cfg.PLM_MAPPING:
+            prefix = cfg.PLM_MAPPING[config.commune_actuelle]
             odis_exploded = odis_exploded[~odis_exploded.index.astype(str).str.startswith(prefix)]
 
         return odis_exploded.sort_values(by='weighted_score', ascending=False)
