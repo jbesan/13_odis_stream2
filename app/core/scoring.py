@@ -197,10 +197,14 @@ class ScoringEngine:
         self.live_jobs_data = live_jobs_data
         self.bmo_vertical = bmo_vertical
 
-    def _get_active_criteria(self, config: ScoringConfig) -> Set[str]:
+    def _get_active_criteria(self, config: Optional[ScoringConfig]) -> Set[str]:
         """Centralized logic to determine which criteria are active based on config."""
         active = set()
         
+        # If no config provided, we default to all present scores
+        if config is None:
+             return {c for c in self.scores_cat['score'] if c in self.df_all_communes.columns}
+
         # 1. Categories that are always active (even if partial)
         active.add('workclass_decline_scaled')
         active.add('mob_gare_scaled')
@@ -210,13 +214,13 @@ class ScoringEngine:
         active.add('mob_dist_scaled') # Alias used in some tests/configs
         
         # 2. Employment & Formations (Only if something was searched)
-        if any(config.codes_metiers):
+        if config.codes_metiers and any(config.codes_metiers):
             for i in range(config.nb_adultes):
                 active.add(f'met_match_adult{i+1}_scaled')
                 active.add(f'met_match_adult{i+1}_bdv_scaled')
                 active.add(f'met_match_adult{i+1}_tension_scaled')
         
-        if any(config.codes_formations):
+        if config.codes_formations and any(config.codes_formations):
             for i in range(config.nb_adultes):
                 active.add(f'form_match_adult{i+1}_scaled')
                 active.add(f'form_match_adult{i+1}_bdv_scaled')
@@ -233,6 +237,7 @@ class ScoringEngine:
 
         if config.logement == 'Logement Social':
             active.add('log_soc_inoc_scaled')
+            active.add('log_soc_dem_scaled')
         
         if config.hebergement == "Chez l'habitant":
             active.add('log_occup_scaled')

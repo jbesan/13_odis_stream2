@@ -4,6 +4,7 @@ import pandas as pd
 from plotly.express import line_polar
 import geopandas as gpd
 import config as cfg
+from core.models import ScoringConfig
 from core import maps
 from typing import Dict, Any, List, Optional
 from pathlib import Path
@@ -668,7 +669,7 @@ def display_input_tabs(demo_data: Optional[Dict[str, Any]] = None) -> None:
         render_mobility_form()
 
 
-def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
+def create_scoring_config_from_inputs() -> ScoringConfig:
     """Gathers all user inputs from session_state and creates a ScoringConfig object."""
     app_data = st.session_state['app_data']
     
@@ -781,7 +782,7 @@ def create_scoring_config_from_inputs() -> cfg.ScoringConfig:
         # Maps to the new Extra Services score
         criteria_weights['inc_services_add_scaled'] = 3.0
 
-    return cfg.ScoringConfig(
+    return ScoringConfig(
         poids_emploi=st.session_state['ui_poids_emploi'],
         poids_logement=st.session_state['ui_poids_logement'],
         poids_education=st.session_state['ui_poids_education'],
@@ -940,7 +941,7 @@ def _display_result_details(row: pd.Series) -> None:
                 show_ccas_dialog(targets, st.session_state['app_data'].get('structures_ccas', pd.DataFrame()), priority_code=main_code, priority_label=row['libgeo'])
         
 
-def _produce_pitch_markdown(row: pd.Series, config: cfg.ScoringConfig, scores_cat: pd.DataFrame) -> str:
+def _produce_pitch_markdown(row: pd.Series, config: ScoringConfig, scores_cat: pd.DataFrame) -> str:
     """Generates a summary "pitch" for a result, adapting to commune or bassin de vie."""
     pitch_md = []
     population = f"{row['population']:,.0f}".replace(",", " ")

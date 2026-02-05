@@ -9,6 +9,7 @@ from folium.plugins import FastMarkerCluster, MarkerCluster
 
 from typing import Union, List, Tuple, Optional, Any, Set, Dict
 import config as cfg
+from core.models import ScoringConfig
 
 import logging
 import warnings
@@ -197,7 +198,7 @@ def _build_generic_points_layer(df: gpd.GeoDataFrame, icon: str, color: str, too
 
     return cluster
 
-def build_ecoles_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config: cfg.ScoringConfig) -> flm.FeatureGroup:
+def build_ecoles_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config: ScoringConfig) -> flm.FeatureGroup:
     """Builds the map layer for schools using unified POIs."""
     fg = flm.FeatureGroup(name="Établissements Scolaires")
     
@@ -254,7 +255,7 @@ def build_ecoles_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config:
     cluster.add_to(fg)
     return fg
 
-def build_sante_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config: cfg.ScoringConfig) -> flm.FeatureGroup:
+def build_sante_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config: ScoringConfig) -> flm.FeatureGroup:
     """Builds the map layer for health facilities using unified POIs."""
     fg = flm.FeatureGroup(name="Établissements de Santé")
     
@@ -291,7 +292,7 @@ def build_sante_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config: 
     cluster.add_to(fg)
     return fg
 
-def build_services_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config: cfg.ScoringConfig) -> flm.FeatureGroup:
+def build_services_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config: ScoringConfig) -> flm.FeatureGroup:
     """Builds the map layer for inclusion services using unified POIs."""
     fg = flm.FeatureGroup(name="Services d'inclusion")
     

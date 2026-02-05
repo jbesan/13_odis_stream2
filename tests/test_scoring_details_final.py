@@ -112,7 +112,7 @@ def test_format_city_details_consistency(scoring_engine, base_df, base_config):
     # In sample_data, Bordeaux has log_vac = 6
     vac_item = next(item for item in details['scores']['logement'] if item['score_id'] == 'log_vac_scaled')
     # Since d_factor is 1.0 in mock, it should be "6"
-    assert vac_item['valeur_kpi'] == "6"
+    assert vac_item['valeur_kpi'] == 6.0
 
 def test_format_city_details_no_config(scoring_engine, base_df):
     """Verifies that format_city_details works without config (defaulting to include many things)."""
