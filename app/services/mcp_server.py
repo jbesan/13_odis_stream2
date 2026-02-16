@@ -8,6 +8,7 @@ import numpy as np
 from utils.data_loader import load_all_data_raw
 from core.scoring import ScoringEngine
 from core.models import ScoringConfig, SearchCriterias
+from services.rna_rag import RNARagService
 import config as cfg
 import logging
 from utils.common import normalize_text, calculate_fuzzy_match_score, sanitize_for_json
@@ -20,6 +21,13 @@ logger = logging.getLogger("mcp_server")
 
 # Initialize FastMCP Server
 mcp = FastMCP("ODIS-Core")
+
+# Initialize RNA RAG Service
+try:
+    rna_rag_service = RNARagService()
+except Exception as e:
+    logger.error(f"Failed to initialize RNARagService in MCP: {e}")
+    rna_rag_service = None
 
 # Global State for Data (Loaded on startup)
 DATA_CONTEXT = {}
@@ -59,7 +67,6 @@ def get_scoring_engine() -> ScoringEngine:
 
         global_stats={}, # TODO: Compute or load global stats if needed for scaling
         refugee_associations_data=DATA_CONTEXT.get('refugee_associations_data', pd.DataFrame()),
-        odis_asso_mini_data=DATA_CONTEXT.get('odis_asso_mini_data', pd.DataFrame()),
         live_jobs_data=DATA_CONTEXT.get('live_jobs_data', pd.DataFrame())
     )
 
@@ -486,51 +493,6 @@ def search_refugee_associations(codgeo: str) -> Union[List[Dict[str, Any]], Dict
         return {"error": str(e)}
 
 
-def _search_odis_associations_logic(codgeo: str) -> List[Dict[str, Any]]:
-    """
-    Internal logic for looking up ODIS associations.
-    Accepts INSEE code.
-    """
-    ensure_data_context()
-    if 'odis_asso_mini_data' not in DATA_CONTEXT or DATA_CONTEXT['odis_asso_mini_data'].empty:
-        logger.warning(f"⚠️ [MCP] odis_asso_mini_data not available or empty in DATA_CONTEXT.")
-        return []
-    
-    df = DATA_CONTEXT['odis_asso_mini_data']
-    odis = DATA_CONTEXT['odis']
-    
-
-    mask = pd.Series(False, index=df.index)
-    if codgeo in odis.index:
-        bv = odis.loc[codgeo, 'bassin_de_vie']
-        if pd.notna(bv):
-             bv_str = str(bv).replace('.0', '')
-             mask = (df['codgeo'].isin(odis[odis['bassin_de_vie'] == bv].index))
-        else:
-             mask = (df['codgeo'].astype(str) == str(codgeo))
-    else:
-        mask = (df['codgeo'].astype(str) == str(codgeo))
-    
-    results = df[mask].copy()
-    
-    return results.to_dict(orient='records')
-
-@mcp.tool()
-def search_odis_associations(codgeo: str) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
-    """
-    Recherche les associations locales (Sports, Culture, Loisirs, Social) issues de l'annuaire ODIS.
-    L'outil retourne les associations de la commune ou de son Bassin de Vie.
-    
-    Args:
-        codgeo: Code INSEE de la commune (ex: '33063').
-    """
-    try:
-        if not codgeo or not (isinstance(codgeo, str) and len(codgeo) == 5):
-            return {"error": f"Invalid INSEE code (codgeo): {codgeo}. Must be 5 characters."}
-        return _search_odis_associations_logic(codgeo)
-    except Exception as e:
-        logger.exception(f"❌ [MCP] search_odis_associations failed: {e}")
-        return {"error": str(e)}
 
 
 def _compute_routes_logic(origin: str, destination: str, mode: str = "transit") -> Dict[str, Any]:
@@ -629,6 +591,26 @@ def compute_routes(origin: str, destination: str, mode: str = "transit") -> Dict
         return _compute_routes_logic(origin, destination, mode)
     except Exception as e:
         logger.exception(f"❌ [MCP] compute_routes failed: {e}")
+        return {"error": str(e)}
+
+@mcp.tool()
+def search_rna_rag(query: str, codgeo: str, top_k: int = 10) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    """
+    Recherche sémantique d'associations dans une commune spécifique (RAG).
+    Retourne les associations les plus pertinentes (score > 0.8) triées par pertinence.
+    
+    Args:
+        query: Terme de recherche (ex: 'football', 'hébergement d'urgence').
+        codgeo: Code INSEE de la commune (5 chiffres).
+        top_k: Nombre maximum de résultats à retourner.
+    """
+    if not rna_rag_service:
+        return {"error": "RNARagService not initialized. Check BigQuery authentication (gcloud auth application-default login)."}
+    
+    try:
+        return rna_rag_service.get_associations_semantic(query, codgeo, top_k=top_k)
+    except Exception as e:
+        logger.exception(f"❌ [MCP] search_rna_rag failed: {e}")
         return {"error": str(e)}
 
 if __name__ == "__main__":

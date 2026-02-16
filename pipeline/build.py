@@ -113,6 +113,20 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         # Merge mobility metrics
         merge_clean("mob_transports_pub", ['nb_stops_bus', 'nb_stops_tram', 'nb_stops_metro', 'nb_stops_train', 'nb_stops_total'])
 
+        # Merge RNA RAG Inclusion Stats (New)
+        # This brings in inc_rna_{category}_count columns
+        merge_clean("rna_inclusion_agg")
+        
+        # Calculate lien_social_count from RAG categories
+        # 'lien_social_count' is used for inc_asso_core_scaled (Lien Social Density)
+        # Any association with is_inclusion_relevant=True in BQ contributes here.
+        rna_cols = [c for c in communes_gdf.columns if c.startswith("inc_rna_") and c.endswith("_count")]
+        if rna_cols:
+            communes_gdf['lien_social_count'] = communes_gdf[rna_cols].sum(axis=1)
+            logging.info(f"RNA RAG: Calculated lien_social_count from {len(rna_cols)} categories.")
+        else:
+            communes_gdf['lien_social_count'] = 0
+
         # Merge Odace Commune SK
         merge_clean("odace_communes_sk", ['commune_sk'])
 
@@ -170,31 +184,7 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         # Merge Loyers (Appartements - Legacy source)
         merge_clean("loyers", ['loyer_app_m2'])
 
-        # Merge Associations (Lien Social) - Moved from prescoring
-        # Need to aggregate it first? merge_clean expects a parquet with 'codgeo'.
-        # associations_vertical.parquet has 'codgeo'.
-        # But wait, is it already aggregated? 'associations_vertical.parquet' is vertical.
-        # prescoring.py did: assoc_df.groupby('codgeo')['count'].sum().rename('lien_social_count')
-        # So I need to do that aggregation here or ensure a cleaned file exists.
-        # ingest/clean_associations produces 'associations_vertical.parquet'.
-        # I should probably just do the aggregation on the fly here like prescoring did, OR logic in ingest to produce a 'clean' 1-row-per-commune file.
-        # Given constraints, I'll calculate it on flight here if possible or create a small helper.
-        # Actually merge_clean expects a file.
-        # Let's see if we can use a "associations_stats.parquet" if it exists, or just do raw load.
-        # prescoring did raw load. I'll do raw load here.
-        
-        assocs_path = CLEAN_DIR / "associations_vertical.parquet"
-        if assocs_path.exists():
-             assocs_df = pd.read_parquet(assocs_path)
-             if 'count' in assocs_df.columns:
-                 assocs_agg = assocs_df.groupby('codgeo')['count'].sum().rename('lien_social_count').reset_index()
-                 communes_gdf = communes_gdf.merge(assocs_agg, on='codgeo', how='left')
-                 communes_gdf['lien_social_count'] = communes_gdf['lien_social_count'].fillna(0)
-             else:
-                 # If just rows, count them? clean_associations returns vertical with 'count' usually?
-                 # Let's check 'associations_vertical.parquet' content if possible.
-                 # Assuming standard structure from previous tasks.
-                 pass
+        # Associations merge (Deprecated - Now handled via RNA RAG above)
 
         # Merge Refugee Associations Count
         refug_path = CLEAN_DIR / "refugee_associations.parquet"

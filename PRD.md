@@ -702,3 +702,22 @@ En tant que travailleur social, je veux être informé des actions en cours des 
 ### 📊 Status
 
 - Planned (Jan 2026)
+
+## 🚀 Feature [F-38]: RNA RAG Association Lookup
+
+### 📝 User Story
+
+- En tant que travailleur social, je veux effectuer une recherche sémantique (RAG) dans l'intégralité du Répertoire National des Associations (RNA) pour trouver les structures les plus pertinentes par rapport au projet de vie de la personne, même si les termes exacts ne correspondent pas aux catégories prédéfinies.
+
+### 🔑 Key Features
+
+- **Semantic Search & Vector Lookups (RAG):**
+  - **Use-case 1 (Deep Analysis):** In-app vector similarity (dot product) for a specific commune/bdv, filtered by `is_inclusion_relevant`. Fetch 128-dim embeddings from BigQuery on demand.
+  - **Use-case 2 (Scoring Aggregation):** BigQuery-side aggregation by `primary_category` for inclusion-relevant associations to replace/augment WALDEC-based scoring.
+  - **Use-case 3 (General Discovery):** Semantic lookup for a specific `codgeo` for any topic (e.g., 'football') to decorate results.
+- **Data Source:** BigQuery table `rna_rag.rna_rag_mini` (Project: `odis-stream2`, Region: `europe-west1`).
+- **Embeddings:** Vertex AI `text-multilingual-embedding-002` (v128).
+
+### 📊 Status
+
+- In Progress (Feb 2026)

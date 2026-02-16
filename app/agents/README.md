@@ -122,7 +122,8 @@ L'agent **JobHunter** doit souvent rechercher des offres pour plusieurs métiers
 - `search_places` / `compute_routes` (Google Maps) : Expertise terrain.
 - `google_search` (Native Capability) : Grounding web en temps réel (utilisé par l'agent WEB).
 - `search_job_offers_batch` (France Travail) : Offres d'emploi en direct (optimisé).
-- `search_refugee_associations` (RNA) : Associations spécialisées dans l'accueil des réfugiés.
+- `search_refugee_associations` (RNA) : Associations spécialisées dans l'accueil des réfugiés (Source: BigQuery).
+- `search_rna_rag` (RAG) : Recherche sémantique thématique (FLE, Hébergement, etc.) sur le RNA (Source: BigQuery + Vertex AI).
 
 ## 📝 Configuration des Modèles (Janv 2026)
 
