@@ -6,7 +6,7 @@ from services.mcp_server import (
     _search_places_logic,
     _compute_routes_logic,
     _search_refugee_associations_logic,
-    _search_odis_associations_logic,
+    _search_rna_rag_logic,
     _search_ccas_logic
 )
 from services.mcp_france_travail import (
@@ -130,15 +130,18 @@ def search_refugee_associations(codgeo: str) -> List[Dict[str, Any]]:
     """
     return _search_refugee_associations_logic(codgeo)
 
-def search_odis_associations(codgeo: str) -> List[Dict[str, Any]]:
+def search_rna_rag(query: str, codgeo: str, top_k: int = 10) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """
-    Recherche les associations locales (Sports, Culture, Loisirs, Social) dans l'annuaire ODIS.
-    Retourne les associations de la commune ou du Bassin de Vie.
+    Recherche sémantique d'associations dans une commune spécifique (RAG).
+    Retourne les associations les plus pertinentes (score > 0.8) triées par pertinence.
     
     Args:
-        codgeo: Code INSEE de la commune (ex: '33063').
+        query: Terme de recherche (ex: 'football', 'hébergement d'urgence').
+        codgeo: Code INSEE de la commune (5 chiffres).
+        top_k: Nombre maximum de résultats à retourner.
     """
-    return _search_odis_associations_logic(codgeo)
+    logger.info(f"🔍 [TOOL] search_rna_rag: {query} in {codgeo}")
+    return _search_rna_rag_logic(query, codgeo, top_k=top_k)
 
 def search_ccas(codgeo: str) -> List[Dict[str, Any]]:
     """

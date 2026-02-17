@@ -19,15 +19,39 @@ class RNARagService:
         try:
             # BigQuery Client (Explicit Project ID for local runs)
             self.bq_client = bigquery.Client(project="odis-stream2")
-            # GenAI Client (Uses GOOGLE_API_KEY)
-            api_key = os.getenv("GOOGLE_API_KEY")
-            if not api_key:
-                logger.warning("GOOGLE_API_KEY not found in environment. GenAI client may fail.")
-            self.genai_client = genai.Client(api_key=api_key)
+            # Vertex-based GenAI Client for embeddings
+            # (Ensures compatibility with text-multilingual-embedding-002)
+            self.genai_client = genai.Client(
+                vertexai=True, 
+                project="odis-stream2", 
+                location="europe-west1"
+            )
             self.embedding_model = "text-multilingual-embedding-002"
         except Exception as e:
             logger.error(f"Failed to initialize RNARagService: {e}")
             raise RuntimeError(f"RNARagService Initialization Error: {e}. Check GCP credentials and API Key.")
+
+    def _flatten_embedding(self, raw_embedding: Any) -> np.ndarray:
+        """
+        Normalizes various BigQuery embedding formats into a flat numpy array.
+        Handles:
+        - List of floats
+        - Numpy array of floats
+        - Dict with 'list' key containing list of dicts with 'element' key
+        """
+        if isinstance(raw_embedding, (list, np.ndarray)):
+            return np.array(raw_embedding, dtype=np.float64)
+        
+        if isinstance(raw_embedding, dict) and 'list' in raw_embedding:
+            # Handle nested format: {'list': [{'element': 0.1}, ...]}
+            try:
+                flat_list = [float(item['element']) for item in raw_embedding['list']]
+                return np.array(flat_list, dtype=np.float64)
+            except (KeyError, TypeError) as e:
+                logger.error(f"Failed to flatten nested embedding dict: {e}")
+                raise ValueError(f"Unexpected embedding dict structure: {raw_embedding}")
+        
+        raise ValueError(f"Unsupported embedding type: {type(raw_embedding)}")
 
     def _get_embedding(self, text: str) -> np.ndarray:
         """Generates 128-dim embedding for the given text."""
@@ -96,8 +120,8 @@ class RNARagService:
             
             scores = []
             for _, row in df.iterrows():
-                # BQ to_dataframe converts arrays to lists
-                vec = np.array(row['embedding'])
+                # BQ to_dataframe converts arrays to lists or nested dicts
+                vec = self._flatten_embedding(row['embedding'])
                 score = float(np.dot(query_vector, vec))
                 
                 # Apply 0.8 threshold

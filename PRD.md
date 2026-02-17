@@ -652,7 +652,7 @@ En tant que travailleur social, je veux être informé des actions en cours des 
 
 ### 📊 Status
 
-- Planned (Jan 2026)
+- **Deprecated** (Superseeded by [F-38] RAG Search in Feb 2026)
 
 ## 🚀 Feature [F-34]: Orchestrator Prompt Refactoring
 
@@ -720,4 +720,4 @@ En tant que travailleur social, je veux être informé des actions en cours des 
 
 ### 📊 Status
 
-- In Progress (Feb 2026)
+- Completed (Feb 2026)

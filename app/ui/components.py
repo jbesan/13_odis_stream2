@@ -91,7 +91,7 @@ def show_details_dialog(details: Dict[str, Any]):
 
     # --- Header ---
     identity = details.get('identity', {})
-    st.markdown(f"## 📍 {identity.get('nom', 'Inconnu')}")
+    st.markdown(f"## 📍 {identity.get('nom', 'Inconnu')} (code INSEE: {identity.get('codgeo', 'N/A')})")
     
     with st.container(border=False):
         col1, col2, col3 = st.columns(3)
@@ -122,12 +122,10 @@ def show_details_dialog(details: Dict[str, Any]):
         if category_key == 'education':
             scores = [s for s in scores if not s['label'].startswith('Présence')]
 
-        # Display directly (No Expanders as per V3 request)
-        df_scores = pd.DataFrame(scores)
-        # Sort by score_normalise desc to show strengths
-        df_scores = df_scores.sort_values(by='score_normalise', ascending=False)
+        # Sort by score_normalise desc to show strengths (Directly on the list to preserve types)
+        scores = sorted(scores, key=lambda x: x.get('score_normalise', 0.0), reverse=True)
         
-        for _, s in df_scores.iterrows():
+        for s in scores:
             with st.container():
                 c_label, c_val = st.columns([3, 1])
                 with c_label:
@@ -140,7 +138,17 @@ def show_details_dialog(details: Dict[str, Any]):
                     if s.get('tooltip'):
                         st.caption(f"_{s['tooltip']}_")
                 with c_val:
-                    st.markdown(f"### {s['valeur_kpi']}")
+                    # Format value as string to be safe, but keep it as-is if it's already an int
+                    val_display = s['valeur_kpi']
+                    if isinstance(val_display, (int, float)) and pd.notna(val_display):
+                         # If it's a large integer (like population), add spaces for readability
+                         if isinstance(val_display, int) and val_display > 1000:
+                             st.markdown(f"### {val_display:,}".replace(",", " "))
+                         else:
+                             st.markdown(f"### {val_display}")
+                    else:
+                         st.markdown(f"### {val_display}")
+                    
                     st.caption(s['unit'] if pd.notna(s['unit']) and s['unit'] != 'None' else "")
             st.markdown("<br>", unsafe_allow_html=True) # Minor spacing
 

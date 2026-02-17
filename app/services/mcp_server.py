@@ -400,22 +400,63 @@ def _search_places_logic(queries: List[str], location: str) -> Dict[str, Any]:
         gmaps = googlemaps.Client(key=gmaps_key)
         results = []
         # Limit to 3 queries to avoid long wait times
-        for q in queries[:3]:
+        for q in queries[:50]:
             # logger.info(f"   🔎 [MCP] Google Maps Query: '{q}' near {location}")
             res = gmaps.places(query=f"{q} near {location}, France", language="fr")
-            count = 0
-            for p in res.get('results', [])[:3]:
-                results.append({
-                    "name": p.get("name"),
-                    "address": p.get("formatted_address"),
-                    "rating": p.get("rating"),
-                    "types": p.get("types"),
-                    "business_status": p.get("business_status")
-                })
-                count += 1
-            # logger.info(f"   ✅ [MCP] Found {count} results for '{q}'")
             
-        logger.info(f"✅ [MCP] search_places finished. Total pruned results: {len(results)}")
+            # Process top 3 results for each query
+            places = res.get('results', [])[:30]
+
+            for p in places:
+                place_id = p.get("place_id")
+                
+                # Default data from search result
+                place_data = {
+                    "name": p.get("name"),
+                    "description": p.get("editorial_summary"),
+                    "types": p.get("types"),
+                    # "address": p.get("formatted_address"),
+                    # "rating": p.get("rating"),
+                    # "user_ratings_total": p.get("user_ratings_total"),
+                    # "price_level": p.get("price_level"),
+                    # "business_status": p.get("business_status"),
+                    # "editorial_summary": None, # Always include for consistency
+                    # "phone": None,
+                    # "website": None,
+                    # "open_now": None
+                }
+                
+                # Fetch deeper details (like editorial_summary, phone, website) for top results
+                if place_id:
+                    try:
+                        # Requesting fields in snake_case (Legacy API)
+                        fields = ["editorial_summary", "formatted_phone_number", "website", "opening_hours"]
+                        details_res = gmaps.place(
+                            place_id=place_id, 
+                            fields=fields,
+                            language="fr"
+                        )
+                        details = details_res.get("result", {})
+                        
+                        if details:
+                            # editorial_summary is a dict {'overview': '...', 'language': '...'}
+                            summary_obj = details.get("editorial_summary")
+                            if summary_obj and isinstance(summary_obj, dict):
+                                place_data["editorial_summary"] = summary_obj.get("overview")
+                            
+                            # place_data["phone"] = details.get("formatted_phone_number")
+                            # place_data["website"] = details.get("website")
+                            
+                            # # Opening hours status
+                            # oh = details.get("opening_hours")
+                            # if oh:
+                            #     place_data["open_now"] = oh.get("open_now")
+                    except Exception as de:
+                        logger.warning(f"   ⚠️ Could not fetch details for {place_id}: {de}")
+
+                results.append(place_data)
+            
+        logger.info(f"✅ [MCP] search_places finished. Total results: {len(results)}")
         return sanitize_for_json({"type": "places", "data": results})
     except Exception as e:
         logger.error(f"❌ [MCP] search_places failed: {e}")
@@ -504,26 +545,52 @@ def _compute_routes_logic(origin: str, destination: str, mode: str = "transit") 
          
          gmaps = googlemaps.Client(key=gmaps_key)
          
+         def prune_directions(directions):
+             if not directions: return None
+             leg = directions[0]['legs'][0]
+             
+             transit_summary = []
+             steps_summary = []
+             for s in leg.get('steps', []):
+                 step_info = {
+                     "mode": s.get('travel_mode'),
+                     "distance": s.get('distance', {}).get('text'),
+                     "duration": s.get('duration', {}).get('text'),
+                    #  "instruction": s.get('html_instructions')
+                 }
+                 if s.get('travel_mode') == 'TRANSIT':
+                     details = s.get('transit_details', {})
+                     line = details.get('line', {})
+                     line_name = line.get('short_name') or line.get('name')
+                     step_info["details"] = f"{line.get('vehicle', {}).get('name', 'Transit')} {line_name}"
+                     if line_name: transit_summary.append(line_name)
+                 steps_summary.append(step_info)
+                 
+             return {
+                 "origin": leg.get('start_address'),
+                 "destination": leg.get('end_address'),
+                 "distance": leg.get('distance', {}).get('text'),
+                 "duration": leg.get('duration', {}).get('text'),
+                 "transit_summary": ", ".join(transit_summary) if transit_summary else None,
+                 "steps": steps_summary
+             }
+
          # Attempt 1: Raw names
          try:
              directions = gmaps.directions(origin=origin, destination=destination, mode=mode, language="fr")
              if directions:
-                #  logger.info(f"✅ [MCP] Route found (Attempt 1).")
-                 return sanitize_for_json({"type": "directions", "data": directions})
+                 return sanitize_for_json({"type": "directions", "data": prune_directions(directions)})
          except Exception as e:
              if "NOT_FOUND" not in str(e): raise e
              logger.warning(f"⚠️ [MCP] Route NOT_FOUND for '{origin}' -> '{destination}'. Retrying with context...")
 
-         # Attempt 2: If destination is the city, and origin is generic (or vice-versa), 
-         # Google often fails. We try to help it.
-         # This is heuristic but powerful for "Préfecture" or "Gare"
+         # Attempt 2: Heuristic fallback
          if len(origin) < 15 and "," not in origin:
              alt_origin = f"{origin} near {destination}"
              try:
                  directions = gmaps.directions(origin=alt_origin, destination=destination, mode=mode, language="fr")
                  if directions:
-                    #  logger.info(f"✅ [MCP] Route found (Attempt 2: {alt_origin}).")
-                     return sanitize_for_json({"type": "directions", "data": directions})
+                     return sanitize_for_json({"type": "directions", "data": prune_directions(directions)})
              except:
                  pass
 
@@ -593,6 +660,19 @@ def compute_routes(origin: str, destination: str, mode: str = "transit") -> Dict
         logger.exception(f"❌ [MCP] compute_routes failed: {e}")
         return {"error": str(e)}
 
+def _search_rna_rag_logic(query: str, codgeo: str, top_k: int = 10) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    """
+    Internal logic for looking up associations via RAG.
+    """
+    if not rna_rag_service:
+        return {"error": "RNARagService not initialized. Check BigQuery authentication."}
+    
+    try:
+        return rna_rag_service.get_associations_semantic(query, codgeo, top_k=top_k)
+    except Exception as e:
+        logger.exception(f"❌ [MCP] _search_rna_rag_logic failed: {e}")
+        return {"error": str(e)}
+
 @mcp.tool()
 def search_rna_rag(query: str, codgeo: str, top_k: int = 10) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """
@@ -604,14 +684,7 @@ def search_rna_rag(query: str, codgeo: str, top_k: int = 10) -> Union[List[Dict[
         codgeo: Code INSEE de la commune (5 chiffres).
         top_k: Nombre maximum de résultats à retourner.
     """
-    if not rna_rag_service:
-        return {"error": "RNARagService not initialized. Check BigQuery authentication (gcloud auth application-default login)."}
-    
-    try:
-        return rna_rag_service.get_associations_semantic(query, codgeo, top_k=top_k)
-    except Exception as e:
-        logger.exception(f"❌ [MCP] search_rna_rag failed: {e}")
-        return {"error": str(e)}
+    return _search_rna_rag_logic(query, codgeo, top_k=top_k)
 
 if __name__ == "__main__":
     mcp.run()

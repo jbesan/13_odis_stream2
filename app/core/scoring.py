@@ -289,13 +289,13 @@ class ScoringEngine:
             "identity": {
                 "codgeo": codgeo,
                 "nom": row.get('libgeo', 'Inconnu'),
-                "population": row.get('population', 0),
+                "population": int(round(row.get('population', 0) / 1000) * 1000),
                 "bassin_de_vie": row.get('libelle_bassin_de_vie', 'N/A'),
                 "score_global": float(row.get('weighted_score', 0.0)) if 'weighted_score' in row else None
             },
             "name": row.get('libgeo', 'N/A'),
             "codgeo": codgeo,
-            "population": row.get('population', 0),
+            "population": int(round(row.get('population', 0) / 1000) * 1000),
             "bassin_de_vie": row.get('libelle_bassin_de_vie', 'N/A'),
             "scores": {},
             "emploi": {
@@ -402,6 +402,19 @@ class ScoringEngine:
                          val_raw = float(val) * d_factor
                     except:
                          val_raw = val
+            
+            # Format val_raw for display
+            unit = score_row.get('unit', score_row.get('description', ''))
+            if isinstance(val_raw, (int, float)):
+                if unit == "habitants":
+                    # Round to nearest 1000 and ensure it's an int
+                    val_raw = int(round(float(val_raw) / 1000) * 1000)
+                elif unit == "%" or unit == "assos/1000 hab.":
+                    val_raw = round(float(val_raw), 1)
+                elif float(val_raw).is_integer():
+                    val_raw = int(val_raw)
+                else:
+                    val_raw = round(float(val_raw), 1)
             
             # Relative Weight Calculation
             w_crit = float(score_row['weight'])
@@ -603,7 +616,7 @@ class ScoringEngine:
              # If we have a scaled score, we can assume some presence, but maybe not the count
              pass
 
-        logger.info(f"⚙️ [ENGINE] city_details {details}")
+        logger.debug(f"⚙️ [ENGINE] city_details {details}")
 
         return details
 

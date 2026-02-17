@@ -23,3 +23,4 @@ pydantic-ai
 polars
 google-cloud-bigquery
 pyarrow
+db-dtypes
