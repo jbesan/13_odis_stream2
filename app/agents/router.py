@@ -30,8 +30,7 @@ ROUTING_SYSTEM_PROMPT = """
 
 **Extraction de la ville cible** :
 - Si l'utilisateur exprime l'intention d'analyser une ville spécifique ou pose une question sur une ville, identifie-la.
-- Recoupe-la avec les `Villes identifiées` si possible pour obtenir le code INSEE.
-- Retourne l'objet `FocusCity` correspondant.
+- Recoupe-la avec les `Villes identifiées` pour obtenir le code INSEE et retourne l'objet `FocusCity` correspondant.
 - Si le contexte contient déjà une `Ville cible` et que l'utilisateur n'en change pas explicitement, conserve la ville actuelle.
 """
 

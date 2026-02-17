@@ -31,8 +31,8 @@ Ce prototype a un triple objectif :
 - **Résultats Détaillés & Export PDF :** Explorez les 5 meilleurs résultats avec une analyse de leurs points forts et exportez un rapport PDF complet pour la famille accompagnée.
 - **Assistant IA (Multi-Agent ODIS) :** Interagissez en langage naturel avec un système multi-agent capable de conduire l'entretien, de calculer les scores, et de décorer les résultats avec des infos terrain et web. Voir la [documentation détaillée de l'architecture](app/agents/README.md).
 - **Grounding Google Search :** Grâce à l'agent spécialisé WEB, accédez aux dernières actualités locales et au contexte social des communes visées.
-- **Expertise Emploi (France Travail Live) :** Intégration en temps réel des offres d'emploi via l'API France Travail (Search API V2). Le moteur utilise exclusivement les codes ROME pour un scoring "Live" ultra-précis tenant compte de la tension de recrutement et du volume réel d'offres par commune. [DEPRECATED] L'usage des profils FAP et du BMO annuel a été retiré.
-- **Référentiel des Associations Réfugiés ([F-26]):** Accédez à une base de données qualifiée d'associations spécialisées dans l'accueil des nouveaux arrivants, accessible via l'interface et l'assistant IA.
+- **Référentiel des Associations Réfugiés ([F-26]):** Accédez à une base de données qualifiée d'associations spécialisées dans l'accueil des nouveaux arrivants.
+- **Moteur de Recherche RAG (RNA) :** Recherche sémantique et thématique sur l'ensemble du Répertoire National des Associations (RNA) via BigQuery et Vertex AI, permettant de classer les associations par catégories d'inclusion (FLE, Logement, Emploi, etc.) avec une précision inégalée.
 - **Scénarios de Démonstration :** Chargez rapidement des profils pré-configurés pour découvrir le potentiel de l'outil.
 
 ## 📸 Aperçu de l'Application
@@ -137,7 +137,7 @@ Le score est calculé à partir d'une multitude de critères, regroupés en gran
 - **Scoring & Normalisation :** [Scikit-learn](https://scikit-learn.org/)
 - **Cartographie Interactive :** [Folium](https://python-visualization.github.io/folium/) & [streamlit-folium](https://github.com/randyzwitch/streamlit-folium)
 - **Graphiques :** [Plotly Express](https://plotly.com/python/plotly-express/)
-- **Sources de Données :** Les données sont agrégées depuis de nombreuses sources ouvertes, notamment l'INSEE, Data.gouv.fr, France Travail (Pôle Emploi), Odace (Gares), etc.
+- **Infrastructures Cloud :** [Google BigQuery](https://cloud.google.com/bigquery) (Stockage & Vector Search) et [Vertex AI](https://cloud.google.com/vertex-ai) (Embeddings Multimodal) pour le moteur de recherche d'associations (RAG).
 
 ## 📂 Structure du Projet
 

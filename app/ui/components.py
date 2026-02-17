@@ -91,7 +91,7 @@ def show_details_dialog(details: Dict[str, Any]):
 
     # --- Header ---
     identity = details.get('identity', {})
-    st.markdown(f"## 📍 {identity.get('nom', 'Inconnu')}")
+    st.markdown(f"## 📍 {identity.get('nom', 'Inconnu')} (code INSEE: {identity.get('codgeo', 'N/A')})")
     
     with st.container(border=False):
         col1, col2, col3 = st.columns(3)
@@ -122,12 +122,10 @@ def show_details_dialog(details: Dict[str, Any]):
         if category_key == 'education':
             scores = [s for s in scores if not s['label'].startswith('Présence')]
 
-        # Display directly (No Expanders as per V3 request)
-        df_scores = pd.DataFrame(scores)
-        # Sort by score_normalise desc to show strengths
-        df_scores = df_scores.sort_values(by='score_normalise', ascending=False)
+        # Sort by score_normalise desc to show strengths (Directly on the list to preserve types)
+        scores = sorted(scores, key=lambda x: x.get('score_normalise', 0.0), reverse=True)
         
-        for _, s in df_scores.iterrows():
+        for s in scores:
             with st.container():
                 c_label, c_val = st.columns([3, 1])
                 with c_label:
@@ -140,7 +138,17 @@ def show_details_dialog(details: Dict[str, Any]):
                     if s.get('tooltip'):
                         st.caption(f"_{s['tooltip']}_")
                 with c_val:
-                    st.markdown(f"### {s['valeur_kpi']}")
+                    # Format value as string to be safe, but keep it as-is if it's already an int
+                    val_display = s['valeur_kpi']
+                    if isinstance(val_display, (int, float)) and pd.notna(val_display):
+                         # If it's a large integer (like population), add spaces for readability
+                         if isinstance(val_display, int) and val_display > 1000:
+                             st.markdown(f"### {val_display:,}".replace(",", " "))
+                         else:
+                             st.markdown(f"### {val_display}")
+                    else:
+                         st.markdown(f"### {val_display}")
+                    
                     st.caption(s['unit'] if pd.notna(s['unit']) and s['unit'] != 'None' else "")
             st.markdown("<br>", unsafe_allow_html=True) # Minor spacing
 
@@ -305,22 +313,40 @@ def show_details_dialog(details: Dict[str, Any]):
                     else:
                         st.info("Aucun service spécifique référencé.")
                 
-                # 3. ODIS Associations Directory
-                odis_grouped = incl_data.get('odis_associations_grouped', {})
-                if odis_grouped:
-                    st.markdown("#### :material/groups: Annuaire des Associations ODIS")
-                    with st.expander("Consulter l'annuaire complet", expanded=False):
-                        for label, assos in sorted(odis_grouped.items()):
-                            with st.expander(f"{label} ({len(assos)})", expanded=False):
-                                for asso in assos:
-                                    st.write(f"**{asso['name']}**")
-                                    if asso.get('description'):
-                                        # Description is already lowercased in pipeline, good.
-                                        st.caption(asso['description'])
-                                    # Link to assoce.fr
-                                    url = f"https://www.assoce.fr/waldec/{asso['id']}"
-                                    st.markdown(f"🔗 [Voir sur assoce.fr]({url})")
-                                    st.markdown("---")
+                # 3. ODIS Associations Directory (Refactored to RAG Categories)
+                st.markdown("#### :material/groups: Annuaire des Associations ODIS")
+                
+                # Fetch associations from BQ via RNARagService
+                rna_service = st.session_state.get('rna_rag_service')
+                codgeo = identity.get('codgeo')
+                
+                if rna_service and codgeo:
+                    with st.spinner("Chargement des associations..."):
+                        try:
+                            assos_raw = rna_service.get_associations_by_codgeo(codgeo)
+                            if assos_raw:
+                                # Group by primary_category
+                                grouped_assos = {}
+                                for a in assos_raw:
+                                    cat = a.get('primary_category') or "Autres"
+                                    if cat not in grouped_assos:
+                                        grouped_assos[cat] = []
+                                    grouped_assos[cat].append(a)
+                                
+                                with st.expander("Consulter l'annuaire par catégories", expanded=False):
+                                    for cat, list_assos in sorted(grouped_assos.items()):
+                                        with st.expander(f"{cat} ({len(list_assos)})", expanded=False):
+                                            for asso in list_assos:
+                                                # Link to assoce.fr
+                                                url = f"https://www.assoce.fr/waldec/{asso['id']}"
+                                                st.markdown(f"**[{asso['name']}]({url})**")
+                                                # st.markdown("---")
+                            else:
+                                st.info("Aucune association répertoriée pour cette commune.")
+                        except Exception as e:
+                            st.warning(f"Impossible de charger les associations : {e}")
+                else:
+                    st.warning("Le service de recherche d'associations n'est pas disponible.")
         with c2:
             st.markdown("#### :material/diversity_3: Indicateurs Inclusion")
             render_scores_for_category('inclusion')
@@ -852,8 +878,7 @@ def _show_details_callback(rank: int) -> None:
         annuaire_inclusion=app_data.get('annuaire_inclusion', pd.DataFrame()),
         inclusion_services_index=app_data.get('inclusion_services_index', pd.DataFrame()),
         refugee_associations_data=app_data['refugee_associations_data'],
-        live_jobs_data=app_data['live_jobs_data'],
-        odis_asso_mini_data=app_data.get('odis_asso_mini_data', pd.DataFrame())
+        live_jobs_data=app_data['live_jobs_data']
     )
     
     details = engine.format_city_details(row, config=st.session_state.get('config'))

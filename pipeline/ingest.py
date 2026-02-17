@@ -9,6 +9,7 @@ import json
 import time
 from pathlib import Path
 from typing import Dict, Any, Optional
+from google.cloud import bigquery
 
 from pipeline.common import (
     PipelineLogger, load_config, load_dataset, extract_zip,
@@ -1230,6 +1231,9 @@ def main(argv=None):
     
     # --- 1. Fetch ROME Referential (New) ---
     fetch_rome_referential(logger)
+    
+    # --- 2. Fetch RNA RAG Stats from BigQuery (New) ---
+    fetch_rna_rag_stats(logger)
 
     # 2. Fetch others
     for name, source_cfg in config['sources'].items():
@@ -1261,7 +1265,6 @@ def main(argv=None):
         'nomenclature_waldec': clean_nomenclature_waldec,
         'departements': clean_departements,
         'live_jobs': clean_live_jobs,
-        'odis_associations': clean_odis_associations,
         'mob_transports_pub': clean_mob_transports_pub
     }
 
@@ -1592,53 +1595,53 @@ def clean_departements(config: Dict[str, Any], logger: PipelineLogger):
         logging.warning(f"Departements: Columns not found. Found: {df.columns}")
 
 
-def clean_odis_associations(config: Dict[str, Any], logger: PipelineLogger):
-    """Filters RNA for ODIS Mini Association Directory."""
-    logger.log_step("clean_odis_associations", "STARTED")
+def fetch_rna_rag_stats(logger: PipelineLogger) -> Optional[Path]:
+    """Fetches RNA category counts from BigQuery with 30-day TTL."""
+    local_path = CLEAN_DIR / "rna_inclusion_agg.parquet"
+    
+    # 1. 30-Day TTL Check
+    if local_path.exists():
+        mtime = datetime.fromtimestamp(local_path.stat().st_mtime)
+        age_days = (datetime.now() - mtime).days
+        if age_days < 30:
+            logging.info(f"[RNA RAG] Stats are {age_days} days old. Using cache (TTL=30 days).")
+            return local_path
+        logging.info(f"[RNA RAG] Stats are {age_days} days old. Refreshing...")
+
     try:
-        source = config['sources']['associations']
-        path = CACHE_DIR / source['local_name']
-        if not path.exists():
-            logging.warning("RNA file not found.")
-            return
+        client = bigquery.Client()
+        query = """
+        SELECT 
+            codgeo,
+            primary_category,
+            COUNT(*) as count
+        FROM `odis-stream2.rna_rag.rna_rag_mini`
+        WHERE is_inclusion_relevant = True
+        GROUP BY 1, 2
+        """
+        logging.info("📡 [RNA RAG] Fetching aggregated stats from BigQuery...")
+        df = client.query(query).to_dataframe()
+        
+        if df.empty:
+            logging.warning("[RNA RAG] No data returned from BigQuery.")
+            return None
 
-        df = load_dataset(path, source)
-        df.columns = [c.strip() for c in df.columns]
+        # Pivot to get one row per codgeo
+        df_pivot = df.pivot(index='codgeo', columns='primary_category', values='count').fillna(0).reset_index()
+        
+        # Rename columns to standardized names
+        df_pivot.columns = [f"inc_rna_{col}_count" if col != 'codgeo' else col for col in df_pivot.columns]
+        df_pivot['codgeo'] = df_pivot['codgeo'].astype(str).str.zfill(5)
 
-        # User's filtering logic
-        waldec_prefixes = ["003", "018", "019", "020", "032"]
-        cols_to_keep = ['id', 'adrs_codeinsee', 'objet_social1', 'titre_court', 'objet']
-        
-        # Ensure columns exist
-        existing_cols = [c for c in cols_to_keep if c in df.columns]
-        
-        mask = (df['objet_social1'].astype(str).str[:3].isin(waldec_prefixes)) & (df['position'] == 'A')
-        df_mini = df[mask][existing_cols].copy()
-        
-        if 'objet' in df_mini.columns:
-            df_mini['objet'] = df_mini['objet'].astype(str).str[:250].str.lower()
-            
-        # Re-mapping to standard ODIS names as requested
-        rename_map = {
-            'adrs_codeinsee': 'codgeo',
-            'objet_social1': 'waldec_code',
-            'titre_court': 'name',
-            'objet': 'description'
-        }
-        df_mini.rename(columns={k: v for k, v in rename_map.items() if k in df_mini.columns}, inplace=True)
-        
-        if 'codgeo' in df_mini.columns:
-            df_mini['codgeo'] = df_mini['codgeo'].astype(str).str.zfill(5)
-
-        output_path = CLEAN_DIR / "odis_asso_mini.parquet"
-        # Using brotli as requested
-        df_mini.to_parquet(output_path, compression='brotli', index=False)
-        logger.log_step("clean_odis_associations", "COMPLETED", {"path": str(output_path), "rows": len(df_mini)})
+        df_pivot.to_parquet(local_path)
+        logging.info(f"✅ [RNA RAG] Saved {len(df_pivot)} commune stats to {local_path}")
+        logger.log_step("fetch_rna_rag_stats", "COMPLETED", {"path": str(local_path), "rows": len(df_pivot)})
+        return local_path
 
     except Exception as e:
-        logger.log_step("clean_odis_associations", "ERROR", {"error": str(e)})
-        logging.error(f"Clean ODIS associations failed: {e}")
-
+        logging.error(f"❌ [RNA RAG] BigQuery fetch failed: {e}")
+        logger.log_step("fetch_rna_rag_stats", "ERROR", {"error": str(e)})
+        return None
 
 def clean_mob_transports_pub(config: Dict[str, Any], logger: PipelineLogger):
     """Cleans Public Transport Stations data and saves to parquet."""

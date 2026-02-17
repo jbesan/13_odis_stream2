@@ -24,8 +24,7 @@ FILES_TO_COPY = [
     'odis_formations_agg.parquet',
     'odis_ccas.parquet',
     'odis_refugee_associations.parquet',
-    'odis_live_jobs_agg.parquet',
-    'odis_asso_mini.parquet'
+    'odis_live_jobs_agg.parquet'
 ]
 
 # Configure logging

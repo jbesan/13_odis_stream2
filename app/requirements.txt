@@ -20,3 +20,7 @@ python-dotenv
 googlemaps
 langgraph
 pydantic-ai
+polars
+google-cloud-bigquery
+pyarrow
+db-dtypes

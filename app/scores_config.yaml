@@ -246,8 +246,8 @@ scores:
       strong_point_text: Services administratifs essentiels présents
       high_value_adjective: complet
       show: true
-      unit: "%"
-      display_factor: 100
+      unit: services
+      display_factor: 1
       tooltip: Présence des services administratifs sélectionnés
     weight: 1.0
     min_bound: 0.0
@@ -467,7 +467,7 @@ scores:
     bdv_factor: 0.0
     computation: precomputed
     display:
-      name: Déclin Démographique Jeune
+      name: Evolution Démographique Jeune
       strong_point_text: Baisse de la population jeune (Faible score = Opportunité d'accueil = positif)
       high_value_adjective: forte
       show: true

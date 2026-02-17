@@ -172,7 +172,6 @@ class ScoringEngine:
         regio_referentiel: Optional[pd.DataFrame] = None,
         rome_index: pd.DataFrame = pd.DataFrame(),
         refugee_associations_data: pd.DataFrame = pd.DataFrame(),
-        odis_asso_mini_data: pd.DataFrame = pd.DataFrame(),
         live_jobs_data: pd.DataFrame = pd.DataFrame(),
         bmo_vertical: pd.DataFrame = pd.DataFrame() # Deprecated
     ):
@@ -193,7 +192,6 @@ class ScoringEngine:
         self.waldec_index = waldec_index
         self.rome_index = rome_index
         self.refugee_associations_data = refugee_associations_data
-        self.odis_asso_mini_data = odis_asso_mini_data
         self.live_jobs_data = live_jobs_data
         self.bmo_vertical = bmo_vertical
 
@@ -291,13 +289,13 @@ class ScoringEngine:
             "identity": {
                 "codgeo": codgeo,
                 "nom": row.get('libgeo', 'Inconnu'),
-                "population": row.get('population', 0),
+                "population": int(round(row.get('population', 0) / 1000) * 1000),
                 "bassin_de_vie": row.get('libelle_bassin_de_vie', 'N/A'),
                 "score_global": float(row.get('weighted_score', 0.0)) if 'weighted_score' in row else None
             },
             "name": row.get('libgeo', 'N/A'),
             "codgeo": codgeo,
-            "population": row.get('population', 0),
+            "population": int(round(row.get('population', 0) / 1000) * 1000),
             "bassin_de_vie": row.get('libelle_bassin_de_vie', 'N/A'),
             "scores": {},
             "emploi": {
@@ -404,6 +402,19 @@ class ScoringEngine:
                          val_raw = float(val) * d_factor
                     except:
                          val_raw = val
+            
+            # Format val_raw for display
+            unit = score_row.get('unit', score_row.get('description', ''))
+            if isinstance(val_raw, (int, float)):
+                if unit == "habitants":
+                    # Round to nearest 1000 and ensure it's an int
+                    val_raw = int(round(float(val_raw) / 1000) * 1000)
+                elif unit == "%" or unit == "assos/1000 hab.":
+                    val_raw = round(float(val_raw), 1)
+                elif float(val_raw).is_integer():
+                    val_raw = int(val_raw)
+                else:
+                    val_raw = round(float(val_raw), 1)
             
             # Relative Weight Calculation
             w_crit = float(score_row['weight'])
@@ -579,72 +590,31 @@ class ScoringEngine:
                 
                 details['inclusion']['refugee_associations'] = refugee_list
 
-        # 7. Associations
-        if codgeo and not self.associations_data.empty:
+        # 7. Associations (Updated to use RNA RAG columns)
+        rna_cols = [c for c in row.index if c.startswith("inc_rna_") and c.endswith("_count")]
+        if rna_cols:
+            total_assos = row[rna_cols].sum()
+            details['associations']['total'] = int(total_assos)
+            # Grouped summary for the JSON blob
+            details['associations']['summary_by_category'] = {
+                c.replace("inc_rna_", "").replace("_count", ""): int(row[c]) 
+                for c in rna_cols if row[c] > 0
+            }
+        elif codgeo and not self.associations_data.empty:
+            # Fallback to legacy aggregated file if present
             asso_city = self.associations_data[self.associations_data['codgeo'] == codgeo]
             if not asso_city.empty:
                 total_assos = asso_city['count'].sum() if 'count' in asso_city.columns else len(asso_city)
                 details['associations']['total'] = int(total_assos)
-                
-                # Refugees
-                cols = asso_city.columns
-                waldec_col = 'id_waldec' if 'id_waldec' in cols else ('objet_social1' if 'objet_social1' in cols else None)
-                if waldec_col:
-                    refugee_assos = asso_city[asso_city[waldec_col].astype(str).str.startswith('019025', na=False)]
-                    details['associations']['refugee_count'] = int(refugee_assos['count'].sum()) if 'count' in refugee_assos.columns else len(refugee_assos)
-
-            # 7b. ODIS Mini Associations
-            if self.odis_asso_mini_data is not None and not self.odis_asso_mini_data.empty:
-                odis_assos = self.odis_asso_mini_data[self.odis_asso_mini_data['codgeo'] == codgeo].copy()
-                if not odis_assos.empty:
-                    # Provide counts and grouped data
-                    details['associations']['odis_mini_count'] = len(odis_assos)
-                    
-                    # Group by WALDEC label
-                    grouped_odis = {}
-                    for _, asso in odis_assos.iterrows():
-                        raw_code = str(asso['waldec_code']).strip()
-                        code_norm = raw_code.lstrip('0') if raw_code.startswith('0') else raw_code
-                        label = "Autres associations"
-                        
-                        try:
-                            if self.waldec_index is not None:
-                                # Logic similar to refugee associations for label lookup
-                                possible_codes = [raw_code, code_norm]
-                                if len(raw_code) >= 3:
-                                    possible_codes.append(raw_code[:3])
-                                    possible_codes.append(raw_code[:3].lstrip('0'))
-                                
-                                for pc in possible_codes:
-                                    if pc and pc in self.waldec_index.index:
-                                        val = self.waldec_index.loc[pc, 'label']
-                                        label = val if isinstance(val, str) else val.iloc[0]
-                                        break
-                        except:
-                            pass
-                        
-                        # Format label: Capital on first letter, then lower
-                        label = str(label).capitalize()
-                        
-                        if label not in grouped_odis:
-                            grouped_odis[label] = []
-                        
-                        # Format name: Capital on first letter, then lower
-                        name = str(asso['name']).capitalize()
-                        
-                        grouped_odis[label].append({
-                            'id': asso['id'],
-                            'name': name,
-                            'description': asso['description']
-                        })
-                    
-                    # Sort names within groups
-                    for label in grouped_odis:
-                        grouped_odis[label] = sorted(grouped_odis[label], key=lambda x: x['name'])
-                             
-                    details['inclusion']['odis_associations_grouped'] = grouped_odis
-                    # Keep a small extract for compatibility if needed, but the user wants the grouped version
-                    details['associations']['odis_mini'] = odis_assos.head(5).to_dict(orient='records')
+        
+        # 7b. Refugee Associations (Counts)
+        if codgeo and not self.associations_data.empty and 'id_waldec' in self.associations_data.columns:
+            asso_city = self.associations_data[self.associations_data['codgeo'] == codgeo]
+            refugee_assos = asso_city[asso_city['id_waldec'].astype(str).str.startswith('019025', na=False)]
+            details['associations']['refugee_count'] = int(refugee_assos['count'].sum()) if 'count' in refugee_assos.columns else len(refugee_assos)
+        elif 'inc_asso_refug_scaled' in row:
+             # If we have a scaled score, we can assume some presence, but maybe not the count
+             pass
 
         logger.debug(f"⚙️ [ENGINE] city_details {details}")
 
