@@ -17,7 +17,6 @@ fastmcp
 google-genai
 pydantic
 python-dotenv
-googlemaps
 langgraph
 pydantic-ai
 polars

@@ -13,7 +13,7 @@ import config as cfg
 import logging
 from utils.common import normalize_text, calculate_fuzzy_match_score, sanitize_for_json
 import os
-import googlemaps
+import requests
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO)
@@ -389,74 +389,64 @@ def compute_top_cities(criteria: SearchCriterias) -> Dict[str, Any]:
     return _compute_top_cities_logic(criteria)
 
 
+def _call_google_v1(endpoint: str, body: Dict[str, Any], field_mask: str) -> Dict[str, Any]:
+    """Helper for Google Maps Platform V1 REST calls."""
+    gmaps_key = os.environ.get("GOOGLE_MAPS_API_KEY")
+    if not gmaps_key:
+        return {"error": "Clé Maps manquante."}
+    
+    headers = {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": gmaps_key,
+        "X-Goog-FieldMask": field_mask
+    }
+    try:
+        response = requests.post(endpoint, json=body, headers=headers)
+        if response.status_code != 200:
+            logger.error(f"❌ [REST] Google V1 call failed ({response.status_code}): {response.text}")
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        logger.error(f"❌ [REST] Google V1 call failed: {e}")
+        return {"error": str(e)}
+
+
 def _search_places_logic(queries: List[str], location: str) -> Dict[str, Any]:
     ensure_data_context()
-    # logger.info(f"🗺️ [MCP] Request: search_places '{queries}' in {location}")
     try:
-        gmaps_key = os.environ.get("GOOGLE_MAPS_API_KEY")
-        if not gmaps_key:
-            return {"error": "Clé Maps manquante."}
-        
-        gmaps = googlemaps.Client(key=gmaps_key)
         results = []
-        # Limit to 3 queries to avoid long wait times
-        for q in queries[:50]:
-            # logger.info(f"   🔎 [MCP] Google Maps Query: '{q}' near {location}")
-            res = gmaps.places(query=f"{q} near {location}, France", language="fr")
+        # Google Places V1 - Text Search (New)
+        endpoint = "https://places.googleapis.com/v1/places:searchText"
+        # Only request necessary fields (removing ratings as requested)
+        field_mask = "places.displayName,places.types,places.editorialSummary,places.formattedAddress,places.id"
+        
+        for q in queries[:30]:
+            body = {
+                "textQuery": f"{q} near {location}, France",
+                "languageCode": "fr",
+                "maxResultCount": 5 # Limit to top 5 results per query for tokens
+            }
             
-            # Process top 3 results for each query
-            places = res.get('results', [])[:30]
-
+            res = _call_google_v1(endpoint, body, field_mask)
+            if "error" in res:
+                return res
+            
+            places = res.get('places', [])
             for p in places:
-                place_id = p.get("place_id")
+                # V1 structure: displayName is an object with 'text'
+                name = p.get("displayName", {}).get("text")
+                summary = p.get("editorialSummary", {}).get("text")
                 
-                # Default data from search result
                 place_data = {
-                    "name": p.get("name"),
-                    "description": p.get("editorial_summary"),
+                    "name": name,
+                    "description": summary,
                     "types": p.get("types"),
-                    # "address": p.get("formatted_address"),
-                    # "rating": p.get("rating"),
-                    # "user_ratings_total": p.get("user_ratings_total"),
-                    # "price_level": p.get("price_level"),
-                    # "business_status": p.get("business_status"),
-                    # "editorial_summary": None, # Always include for consistency
-                    # "phone": None,
-                    # "website": None,
-                    # "open_now": None
+                    "address": p.get("formattedAddress"),
+                    "place_id": p.get("id")
                 }
-                
-                # Fetch deeper details (like editorial_summary, phone, website) for top results
-                if place_id:
-                    try:
-                        # Requesting fields in snake_case (Legacy API)
-                        fields = ["editorial_summary", "formatted_phone_number", "website", "opening_hours"]
-                        details_res = gmaps.place(
-                            place_id=place_id, 
-                            fields=fields,
-                            language="fr"
-                        )
-                        details = details_res.get("result", {})
-                        
-                        if details:
-                            # editorial_summary is a dict {'overview': '...', 'language': '...'}
-                            summary_obj = details.get("editorial_summary")
-                            if summary_obj and isinstance(summary_obj, dict):
-                                place_data["editorial_summary"] = summary_obj.get("overview")
-                            
-                            # place_data["phone"] = details.get("formatted_phone_number")
-                            # place_data["website"] = details.get("website")
-                            
-                            # # Opening hours status
-                            # oh = details.get("opening_hours")
-                            # if oh:
-                            #     place_data["open_now"] = oh.get("open_now")
-                    except Exception as de:
-                        logger.warning(f"   ⚠️ Could not fetch details for {place_id}: {de}")
-
                 results.append(place_data)
             
-        logger.info(f"✅ [MCP] search_places finished. Total results: {len(results)}")
+        logger.info(f"✅ [MCP] search_places (V1) finished. Total results: {len(results)}")
         return sanitize_for_json({"type": "places", "data": results})
     except Exception as e:
         logger.error(f"❌ [MCP] search_places failed: {e}")
@@ -538,66 +528,94 @@ def search_refugee_associations(codgeo: str) -> Union[List[Dict[str, Any]], Dict
 
 def _compute_routes_logic(origin: str, destination: str, mode: str = "transit") -> Dict[str, Any]:
     ensure_data_context()
-    # logger.info(f"🚗 [MCP] Request: compute_routes from '{origin}' to '{destination}' (mode={mode})") 
     try:
-         gmaps_key = os.environ.get("GOOGLE_MAPS_API_KEY")
-         if not gmaps_key: return {"error": "Clé Maps manquante."}
+         # Routes V1 mapping
+         mode_map = {
+             "transit": "TRANSIT",
+             "walking": "WALK",
+             "driving": "DRIVE",
+             "bicycling": "BICYCLE"
+         }
+         v1_mode = mode_map.get(mode.lower(), "TRANSIT")
          
-         gmaps = googlemaps.Client(key=gmaps_key)
-         
-         def prune_directions(directions):
-             if not directions: return None
-             leg = directions[0]['legs'][0]
+         endpoint = "https://routes.googleapis.com/directions/v2:computeRoutes"
+         # Field mask: geocodingResults for addresses, routes for the rest.
+         field_mask = "routes.distanceMeters,routes.duration,routes.legs.steps.distanceMeters,routes.legs.steps.staticDuration,routes.legs.steps.transitDetails,routes.legs.steps.navigationInstruction,geocodingResults"
+
+         def prune_v1_routes(data):
+             if not data.get('routes'): return None
+             route = data['routes'][0]
+             leg = route['legs'][0]
              
              transit_summary = []
              steps_summary = []
+             
+             # Resolve addresses from geocodingResults if available
+             geo = data.get('geocodingResults', {})
+             origin_addr = geo.get('origin', {}).get('formattedAddress')
+             dest_addr = geo.get('destination', {}).get('formattedAddress')
+             
              for s in leg.get('steps', []):
-                 step_info = {
-                     "mode": s.get('travel_mode'),
-                     "distance": s.get('distance', {}).get('text'),
-                     "duration": s.get('duration', {}).get('text'),
-                    #  "instruction": s.get('html_instructions')
-                 }
-                 if s.get('travel_mode') == 'TRANSIT':
-                     details = s.get('transit_details', {})
-                     line = details.get('line', {})
-                     line_name = line.get('short_name') or line.get('name')
-                     step_info["details"] = f"{line.get('vehicle', {}).get('name', 'Transit')} {line_name}"
-                     if line_name: transit_summary.append(line_name)
-                 steps_summary.append(step_info)
+                 # V1 durations are strings like "120s"
+                 def parse_dur(d): return f"{int(d.replace('s', '')) // 60} min" if d else "0 min"
                  
+                 step_info = {
+                     "distance": f"{s.get('distanceMeters', 0)} m",
+                     "duration": parse_dur(s.get('staticDuration')),
+                     "instruction": s.get('navigationInstruction', {}).get('instructions')
+                 }
+                 
+                 td = s.get('transitDetails')
+                 if td:
+                     step_info["mode"] = "TRANSIT"
+                     line_info = td.get('transitLine', {})
+                     line_name = line_info.get('nameShort') or line_info.get('name')
+                     vehicle_name = line_info.get('vehicle', {}).get('name', {}).get('text', 'Transit')
+                     step_info["details"] = f"{vehicle_name} {line_name}"
+                     if line_name: transit_summary.append(line_name)
+                 else:
+                     step_info["mode"] = "WALK"
+                 
+                 steps_summary.append(step_info)
+             
+             # Main duration parsing
+             total_dur_s = int(route.get('duration', '0s').replace('s', ''))
+             total_dur_min = total_dur_s // 60
+             
              return {
-                 "origin": leg.get('start_address'),
-                 "destination": leg.get('end_address'),
-                 "distance": leg.get('distance', {}).get('text'),
-                 "duration": leg.get('duration', {}).get('text'),
+                 "origin": origin_addr,
+                 "destination": dest_addr,
+                 "distance": f"{route.get('distanceMeters', 0) / 1000:.1f} km",
+                 "duration": f"{total_dur_min} min",
                  "transit_summary": ", ".join(transit_summary) if transit_summary else None,
                  "steps": steps_summary
              }
 
-         # Attempt 1: Raw names
-         try:
-             directions = gmaps.directions(origin=origin, destination=destination, mode=mode, language="fr")
-             if directions:
-                 return sanitize_for_json({"type": "directions", "data": prune_directions(directions)})
-         except Exception as e:
-             if "NOT_FOUND" not in str(e): raise e
-             logger.warning(f"⚠️ [MCP] Route NOT_FOUND for '{origin}' -> '{destination}'. Retrying with context...")
+         body = {
+             "origin": {"address": origin},
+             "destination": {"address": destination},
+             "travelMode": v1_mode,
+             "computeAlternativeRoutes": False,
+             "languageCode": "fr",
+             "units": "METRIC"
+         }
 
-         # Attempt 2: Heuristic fallback
+         # Attempt 1
+         res = _call_google_v1(endpoint, body, field_mask)
+         if "routes" in res:
+             return sanitize_for_json({"type": "directions", "data": prune_v1_routes(res)})
+         
+         # Attempt 2: Heuristic fallback for generic origins
          if len(origin) < 15 and "," not in origin:
-             alt_origin = f"{origin} near {destination}"
-             try:
-                 directions = gmaps.directions(origin=alt_origin, destination=destination, mode=mode, language="fr")
-                 if directions:
-                     return sanitize_for_json({"type": "directions", "data": prune_directions(directions)})
-             except:
-                 pass
+             body["origin"]["address"] = f"{origin} near {destination}"
+             res = _call_google_v1(endpoint, body, field_mask)
+             if "routes" in res:
+                 return sanitize_for_json({"type": "directions", "data": prune_v1_routes(res)})
 
-         return {"error": "Aucun itinéraire trouvé. Essayez d'être plus précis (ex: 'Préfecture de Nîmes')."}
+         return {"error": "Aucun itinéraire trouvé (V1)."}
 
     except Exception as e:
-         logger.error(f"❌ [MCP] compute_routes failed: {e}")
+         logger.error(f"❌ [MCP] compute_routes (V1) failed: {e}")
          return {"error": str(e)}
 
 def _search_ccas_logic(codgeo: str) -> List[Dict[str, Any]]:
