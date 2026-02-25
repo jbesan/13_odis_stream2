@@ -8,7 +8,9 @@ from .agent_config import get_model
 from .tools import (
     search_job_offers_batch,
     get_job_details, 
-    search_referentiels_batch
+    search_referentiels_batch,
+    search_inclusion_jobs_batch,
+    get_inclusion_job_details
 )
 
 logger = logging.getLogger("job_hunter_agent_v2")
@@ -34,13 +36,15 @@ JOB_HUNTER_ANALYSIS_SYSTEM_PROMPT = """
 
 **DIRECTIVES CRITIQUES (NE PAS DEMANDER, AGIR)** :
 1. **UTILISATION DU CODE INSEE** : Ne cherche pas le code, utilise celui fourni : `{FOCUS_CITY_CODE}`.
-2. **RECHERCHE D'OFFRES (BATCH ONLY)** : Lance `search_job_offers_batch_tool` pour TOUS les codes ROME identifiés dans le `CONTEXTE RÉSUMÉ` en utilisant `location='{FOCUS_CITY_CODE}'`.
+2. **RECHERCHE D'OFFRES (FT & SIAE)** : 
+    - Lance `search_job_offers_batch_tool` (France Travail) pour TOUS les codes ROME identifiés.
+    - Lance `search_inclusion_jobs_batch_tool` (SIAE) avec `location='{FOCUS_CITY_CODE}'` pour les mêmes codes ROME.
 6. **NE DEMANDE PAS DE PRÉCISIONS** : Tu as les informations sur les métiers dans les critères. AGIS IMMÉDIATEMENT sans attendre de confirmation.
 7. **SÉLECTION ET RÉPONSE (CRITIQUE)** : 
     - Commence toujours ta réponse par lister TOUS les codes ROME + libellés que tu as recherché.
-    - Pour chaque catégorie `rome`, tu DOIS sélectionner et présenter les **3 offres les plus pertinentes** selon le `CONTEXTE RÉSUMÉ`.
-    - Pour chaque offre, indique : Intitulé, ID (ex: 7874186), lieu, type de contrat, durée, salaire et une phrase expliquant pourquoi elle correspond bien au `CONTEXTE RÉSUMÉ`.
-    - Ne te contente JAMAIS d'une seule offre si l'outil en retourne plusieurs.
+    - Pour chaque catégorie `rome`, présente les **3 offres les plus pertinentes** (mélange FT et SIAE).
+    - Pour les offres SIAE, précise EXPLICITEMENT qu'il s'agit d'offres d'insertion (SIAE).
+    - Pour chaque offre, indique : Intitulé, ID, lieu, type de contrat, et une phrase d'explication.
 """
 
 JOB_HUNTER_SPECIFIC_SYSTEM_PROMPT = """
@@ -63,7 +67,7 @@ JOB_HUNTER_SPECIFIC_SYSTEM_PROMPT = """
         - Employeur. Localisation précise et salaire (si disponible).
     - Pour récupérer de nouvelles offres:
         - Utilise `search_referentiels_batch_tool` pour récupérer le/les code(s) ROME ou un code commune manquant (ne les invente JAMAIS)
-        - Utilise ensuite `search_job_offers_batch_tool` pour récupérer les offres correspondantes.
+        - Utilise `search_job_offers_batch_tool` (France Travail) ou `search_inclusion_jobs_batch_tool` (SIAE) selon la demande.
 """
 
 job_hunter_agent = Agent(
@@ -117,17 +121,29 @@ def search_job_offers_batch_tool(
     """
     return search_job_offers_batch([s.model_dump() for s in searches])
 
-@job_hunter_agent.tool
 def get_job_details_tool(ctx: RunContext[ODISDeps], job_id: str) -> Dict[str, Any]:
-    """Recherche des détails d'une offre d'emploi.
-    
-    Args:
-        job_id (str): ID de l'offre d'emploi.
-    
-    Returns:
-        Dict[str, Any]: Dictionnaire des détails de l'offre d'emploi.
+    """Recherche des détails d'une offre d'emploi (utilise soit FT soit SIAE selon l'ID)."""
+    # Simple heuristic: if ID has letters it might be FT, if it's numeric/longer it might be SIAE
+    # Better: try both if unsure, or Job Hunter can decide based on previous results.
+    if len(job_id) < 10: # France Travail IDs are usually 7-8 chars
+        return get_job_details(job_id)
+    return get_inclusion_job_details(job_id)
+
+@job_hunter_agent.tool
+def search_inclusion_jobs_batch_tool(
+    ctx: RunContext[ODISDeps], 
+    searches: List[JobSearchQuery]
+) -> Dict[str, Any]:
     """
-    return get_job_details(job_id)
+    Recherche d'offres d'insertion (SIAE) en mode Batch.
+    À utiliser spécifiquement pour les publics en insertion.
+    """
+    return search_inclusion_jobs_batch([s.model_dump() for s in searches])
+
+@job_hunter_agent.tool
+def get_inclusion_job_details_tool(ctx: RunContext[ODISDeps], siae_id: str) -> Dict[str, Any]:
+    """Détails d'une structure SIAE et ses offres."""
+    return get_inclusion_job_details(siae_id)
 
 
 @job_hunter_agent.tool

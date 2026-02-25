@@ -279,7 +279,7 @@ def run_etl():
             "offresManqueCandidats": "nb_offres_tension"
         }).reset_index()
         
-        output_path = "pipeline/cache/output/odis_live_jobs_agg.parquet"
+        output_path = "pipeline/cache/output/odis_ft_jobs_agg.parquet"
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         agg.to_parquet(output_path, index=False)
         

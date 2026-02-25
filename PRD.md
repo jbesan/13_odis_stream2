@@ -721,3 +721,21 @@ En tant que travailleur social, je veux être informé des actions en cours des 
 ### 📊 Status
 
 - Completed (Feb 2026)
+
+## 🚀 Feature [F-39]: Job Openings from "Les emplois de l'inclusion"
+
+### 📝 User Story
+
+- En tant que travailleur social, je veux accéder aux offres d'emploi spécifiques des structures de l'insertion (SIAE) pour proposer des opportunités concrètes et adaptées aux personnes accompagnées.
+- En tant que développeur, je veux automatiser la collecte de ces offres via l'API des Emplois de l'Inclusion pour enrichir le dataset d'emploi "live".
+
+### 🔑 Key Features
+
+- **Ingestion Automatisée :** Un nouveau script d'ingestion (`pipeline/inclusion_ingest.py`) qui parcourt tous les départements français.
+- **Authentification Session :** Support de l'authentification par `sessionid` (via cookie browser) pour contourner les limitations d'accès API.
+- **Réconciliation Géographique :** Utilisation d'un annuaire local (`structures-inclusion.parquet`) pour retrouver le code INSEE des structures quand l'API ne le fournit pas.
+- **Agrégation :** Les données sont agrégées par commune, code ROME et nombre de postes ouverts.
+
+### 📊 Status
+
+- Planned (Feb 2026)

@@ -14,6 +14,7 @@ import logging
 from utils.common import normalize_text, calculate_fuzzy_match_score, sanitize_for_json
 import os
 import requests
+from services.mcp_inclusion import _search_inclusion_jobs_logic, _get_inclusion_job_details_logic
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO)
@@ -67,7 +68,8 @@ def get_scoring_engine() -> ScoringEngine:
 
         global_stats={}, # TODO: Compute or load global stats if needed for scaling
         refugee_associations_data=DATA_CONTEXT.get('refugee_associations_data', pd.DataFrame()),
-        live_jobs_data=DATA_CONTEXT.get('live_jobs_data', pd.DataFrame())
+        live_jobs_data=DATA_CONTEXT.get('live_jobs_data', pd.DataFrame()),
+        siae_jobs_data=DATA_CONTEXT.get('siae_jobs_data', pd.DataFrame())
     )
 
 def _search_referentiels_logic(query: str, domain: str) -> List[Dict[str, Any]]:
@@ -703,6 +705,36 @@ def search_rna_rag(query: str, codgeo: str, top_k: int = 10) -> Union[List[Dict[
         top_k: Nombre maximum de résultats à retourner.
     """
     return _search_rna_rag_logic(query, codgeo, top_k=top_k)
+
+@mcp.tool()
+def search_inclusion_jobs_batch(queries: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Recherche d'offres SIAE (Insertion par l'Activité Économique) en mode Batch.
+    
+    Args:
+        queries: Liste de dictionnaires {'location': '...', 'rome': '...', 'query': '...'}
+    """
+    results = {}
+    for q in queries:
+        loc = q.get('location')
+        rome = q.get('rome')
+        query_text = q.get('query')
+        key = f"{rome or ''}|{loc or ''}|{query_text or ''}"
+        try:
+            results[key] = _search_inclusion_jobs_logic(location=loc, rome=rome, query=query_text)
+        except Exception as e:
+            results[key] = {"error": str(e), "offres": [], "total": 0}
+    return results
+
+@mcp.tool()
+def get_inclusion_job_details(siae_id: str) -> Dict[str, Any]:
+    """
+    Récupère les détails d'une structure SIAE et ses offres.
+    
+    Args:
+        siae_id: L'identifiant (SIRET ou ID interne) de la structure.
+    """
+    return _get_inclusion_job_details_logic(siae_id)
 
 if __name__ == "__main__":
     mcp.run()

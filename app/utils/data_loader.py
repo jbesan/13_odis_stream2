@@ -342,6 +342,8 @@ def load_all_data_raw() -> Dict[str, Any]:
 
     structures_ccas = _load_ccas(base_path)
     
+    siae_jobs_data = _load_parquet(os.path.join(base_path, cfg.SIAE_JOBS_FILE), error_list=load_errors)
+    
     scores_cat = load_scores_config_as_df(os.path.join(cfg.APP_DIR, cfg.SCORES_CAT_FILE))
 
     # 5. Bassins de Vie Geo
@@ -412,6 +414,7 @@ def load_all_data_raw() -> Dict[str, Any]:
         'dept_details': dept_details,
         'refugee_associations_data': refugee_associations_data,
         'waldec_index': waldec_index,
+        'siae_jobs_data': siae_jobs_data,
         '_load_errors': load_errors
     }
 

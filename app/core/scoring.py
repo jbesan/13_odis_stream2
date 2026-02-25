@@ -173,6 +173,7 @@ class ScoringEngine:
         rome_index: pd.DataFrame = pd.DataFrame(),
         refugee_associations_data: pd.DataFrame = pd.DataFrame(),
         live_jobs_data: pd.DataFrame = pd.DataFrame(),
+        siae_jobs_data: pd.DataFrame = pd.DataFrame(),
         bmo_vertical: pd.DataFrame = pd.DataFrame() # Deprecated
     ):
         self.df_all_communes = df_all_communes
@@ -193,6 +194,7 @@ class ScoringEngine:
         self.rome_index = rome_index
         self.refugee_associations_data = refugee_associations_data
         self.live_jobs_data = live_jobs_data
+        self.siae_jobs_data = siae_jobs_data
         self.bmo_vertical = bmo_vertical
 
     def _get_active_criteria(self, config: Optional[ScoringConfig]) -> Set[str]:
@@ -217,6 +219,7 @@ class ScoringEngine:
                 active.add(f'met_match_adult{i+1}_scaled')
                 active.add(f'met_match_adult{i+1}_bdv_scaled')
                 active.add(f'met_match_adult{i+1}_tension_scaled')
+                active.add(f'met_siae_match_adult{i+1}_scaled') # New F-39: SIAE Job Match
         
         if config.codes_formations and any(config.codes_formations):
             for i in range(config.nb_adultes):
@@ -274,6 +277,7 @@ class ScoringEngine:
         active.add('inc_services_core_scaled')
         active.add('inc_asso_core_scaled')
         active.add('inc_asso_refug_scaled') 
+        active.add('inc_siae_density_scaled') # New F-39: SIAE Density
         if config.inc_services_add_selection: active.add('inc_services_add_scaled')
         if config.inc_asso_add_selection: active.add('inc_asso_add_scaled')
         
@@ -485,6 +489,38 @@ class ScoringEngine:
                     details['emploi']['matching_total'] = 0
                     details['emploi']['top_metiers'] = []
 
+            # --- SIAE Jobs Match (New F-39) ---
+            if not self.siae_jobs_data.empty:
+                siae_city = self.siae_jobs_data[self.siae_jobs_data['codgeo'] == codgeo].copy()
+                if not siae_city.empty:
+                    # Map rome to label using rome_index if rome_label is missing
+                    if 'rome_label' not in siae_city.columns and not self.rome_index.empty:
+                        siae_city['rome_label'] = siae_city['rome'].map(self.rome_index['label']).fillna(siae_city['rome'])
+                    
+                    # Fallback for display if no label at all
+                    label_col = 'rome_label' if 'rome_label' in siae_city.columns else 'rome'
+                    
+                    details['emploi']['siae'] = {
+                        "total": int(len(siae_city)),
+                        "summary": siae_city.groupby(label_col).size().to_dict(),
+                        "matching_summary": {}
+                    }
+                    
+                    if config and config.codes_metiers:
+                        siae_prefixes = set()
+                        for codes in config.codes_metiers:
+                            if isinstance(codes, list):
+                                for c in codes:
+                                    if len(c) >= 3: siae_prefixes.add(c[:3])
+                            elif isinstance(codes, str) and len(codes) >= 3:
+                                siae_prefixes.add(codes[:3])
+                        
+                        if siae_prefixes:
+                            # Use 'rome' column
+                            siae_matching = siae_city[siae_city['rome'].str[:3].isin(siae_prefixes)]
+                            details['emploi']['siae']['matching_summary'] = siae_matching.groupby(label_col).size().to_dict()
+                else:
+                    details['emploi']['siae'] = {"total": 0, "summary": {}, "matching_summary": {}}
             
             # Formations logic remains
             if not self.formations_data.empty:
@@ -800,6 +836,29 @@ class ScoringEngine:
                 min_t, max_t = self._get_bounds(f'{col_tension_raw}_scaled')
                 if pd.isna(max_t): max_t = 5.0
                 df[f'{col_tension_raw}_scaled'] = self._min_max_scale(df[col_tension_raw], min_t, max_t)
+
+                # --- SIAE Jobs Matching (New F-39) ---
+                col_siae_raw = f'met_siae_match_{adult_key}'
+                df[col_siae_raw] = 0.0
+                
+                if self.siae_jobs_data is not None and not self.siae_jobs_data.empty:
+                    # SIAE matching uses 3rd digit prefix
+                    siae_prefixes = {c[:3] for c in adult_romes if len(c) >= 3}
+                    
+                    # Filter SIAE jobs matching these prefixes
+                    # ROME column in siae_jobs_data is named 'rome'
+                    siae_match = self.siae_jobs_data[
+                        self.siae_jobs_data['rome'].str[:3].isin(siae_prefixes)
+                    ]
+                    
+                    if not siae_match.empty:
+                        siae_counts = siae_match.groupby('codgeo').size()
+                        df[col_siae_raw] = df.index.map(siae_counts).fillna(0)
+
+                # Scaling SIAE
+                min_s, max_s = self._get_bounds(f'{col_siae_raw}_scaled')
+                if pd.isna(max_s): max_s = 5.0
+                df[f'{col_siae_raw}_scaled'] = self._min_max_scale(df[col_siae_raw], min_s, max_s)
 
         # --- Formations ---
         if any(config.codes_formations):

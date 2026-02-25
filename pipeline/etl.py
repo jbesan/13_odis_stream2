@@ -24,7 +24,8 @@ FILES_TO_COPY = [
     'odis_formations_agg.parquet',
     'odis_ccas.parquet',
     'odis_refugee_associations.parquet',
-    'odis_live_jobs_agg.parquet'
+    'odis_ft_jobs_agg.parquet',
+    'odis_inclusion_jobs.parquet'
 ]
 
 # Configure logging
@@ -36,6 +37,7 @@ def main():
     args = parser.parse_args()
 
     skip_live_jobs = False
+    skip_inclusion_jobs = False
     
     # Early check for France Travail fetch if ingest/all is selected
     if args.step in ["ingest", "all"]:
@@ -57,11 +59,31 @@ def main():
                 print("    >> Live Jobs fetch will run during ingestion.")
             print("="*50 + "\n")
 
+        # Inclusion Jobs check
+        from pipeline.ingest import get_inclusion_jobs_status
+        status_inc = get_inclusion_jobs_status()
+        if not status_inc["within_ttl"]:
+            print("\n" + "="*50)
+            if not status_inc["exists"]:
+                print("[?] Inclusion Jobs data is MISSING.")
+            else:
+                print(f"[?] Inclusion Jobs data is {status_inc['age_days']:.1f} days old (TTL={status_inc['ttl_days']}).")
+            
+            choice = input("    Do you want to refresh the Inclusion Jobs? (y/N): ").lower().strip()
+            if choice != 'y':
+                print("    >> Skipping Inclusion Jobs fetch.")
+                skip_inclusion_jobs = True
+            else:
+                print("    >> Inclusion Jobs fetch will run during ingestion using credentials from .env.")
+            print("="*50 + "\n")
+
     if args.step in ["ingest", "all"]:
         logging.info("=== Starting Ingestion Phase ===")
         ingest_args = []
         if skip_live_jobs:
-            ingest_args = ["--skip-live-jobs"]
+            ingest_args.append("--skip-live-jobs")
+        if skip_inclusion_jobs:
+            ingest_args.append("--skip-inclusion-jobs")
         ingest.main(ingest_args)
         logging.info("=== Ingestion Phase Completed ===")
 

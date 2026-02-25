@@ -1,0 +1,3160 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "API - Les emplois de l'inclusion",
+    "version": "1.0.0 (v1)",
+    "description": "Documentation de l'API **emplois.inclusion.beta.gouv.fr**"
+  },
+  "paths": {
+    "/api/v1/candidats/": {
+      "get": {
+        "operationId": "candidats_list",
+        "description": "# Liste des candidats par structure\n\nCette API retourne la liste de tous les demandeurs d'emploi liés aux candidatures reçues par\nla ou les structure(s) sélectionnée(s).\n\nLes candidats sont triés par date de création dans la base des emplois de l'inclusion,\ndu plus récent au plus ancien.\n\n# Permissions\n\nL'utilisation de cette API nécessite un jeton d'autorisation (`token`) :\n\n1. se connecter en tant qu’administrateur de la structure\n2. dans « Mon espace », se rendre sur la page « Accès aux API »\n3. utiliser l’action « Créer un token d’API »\n\n\nLe compte administrateur utilisé doit être **administrateur de toutes les structures dont il est membre**.\nPar défaut, l'API renvoie les candidatures reçues par la première structure dont le compte est membre\ncar la première version avait été pensée ainsi.\n\n# Paramètres\n\n- mode_multi_structures : renvoie les candidats de toutes les structures.\n- uid_structures : renvoie les candidats des structures demandées.\n\nAttention, le compte doit être administrateur de toutes les structures dont il est membre.\n\n# Exemples de requêtes\n\n## Mode multistructures\n\n```bash\ncurl\n-L 'https://emplois.inclusion.beta.gouv.fr/api/v1/candidats/?mode_multi_structures=1' -H 'Authorization: Token [token]'\n```\n\n## Fitre par structure\n\nAfin de trouver l'identifiant unique d'une structure, connectez-vous à votre espace personnel\net cliquez sur « Mon espace » > « Accès aux APIs ».\n\n### Une structure\n\n```bash\ncurl\n'https://emplois.inclusion.beta.gouv.fr/api/v1/candidats/?uid_structures=<uid_1>' --header 'Authorization: Token [token]'\n```\n\n### Plusieurs structures\n\nSéparez les identifiants par des virgules.\n\n```bash\ncurl\n'https://emplois.inclusion.beta.gouv.fr/api/v1/candidats/?uid_structures=<uid_1>,<uid_2>' --header 'Authorization: Token [token]'\n```",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "A page number within the paginated result set.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page_size",
+            "required": false,
+            "in": "query",
+            "description": "Number of results to return per page.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "tags": [
+          "candidats"
+        ],
+        "security": [
+          {
+            "tokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedApplicantList"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/candidatures/recherche/": {
+      "post": {
+        "operationId": "candidatures_recherche",
+        "description": "\n# API de recherche de candidatures\n\nCette API retourne la liste de candidatures correspondant à une recherche selon les 4 critères suivants :\n\n- Numéro de sécurité sociale du candidat\n- Nom du candidat\n- Prénom du candidat\n- Date de naissance du candidat\n\nCette API est à l’usage exclusif des conseils départementaux.\n\n# Permissions\n\nL’utilisation de cette API nécessite un token d’autorisation spécifique à chaque conseil départemental.\n\n# Limitations\n\nL’interrogation de cette API est limitée à 120 appels par minute et par conseil départemental.\n\nElle ne retourne que les candidatures dont le dernier changement date de moins de 3 mois.\n",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "tags": [
+          "candidatures"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobApplicationSearchRequest"
+              },
+              "examples": {
+                "ExempleDeRechercheDeCandidatures(requête)": {
+                  "value": {
+                    "nir": "269054958815780",
+                    "nom": "DURAND",
+                    "prenom": "NATHALIE",
+                    "date_naissance": "1969-05-12"
+                  },
+                  "summary": "Exemple de recherche de candidatures (requête)"
+                }
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/JobApplicationSearchRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/JobApplicationSearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobApplicationSearchResponse"
+                },
+                "examples": {
+                  "ExempleDeRechercheDeCandidatures(réponse)": {
+                    "value": {
+                      "count": 2,
+                      "next": null,
+                      "previous": null,
+                      "results": [
+                        {
+                          "identifiant_unique": "e1b89c73-b064-4351-8e2d-b6e1a1359c27",
+                          "cree_le": "2025-02-06T14:48:06.595973+01:00",
+                          "mis_a_jour_le": "2025-02-06T17:15:22.654892+01:00",
+                          "dernier_changement_le": "2025-02-06T17:15:22.654892+01:00",
+                          "statut": "obsolete",
+                          "candidat_nir": "269054958815780",
+                          "candidat_nom": "Durand",
+                          "candidat_prenom": "Nathalie",
+                          "candidat_date_naissance": "1969-05-12",
+                          "candidat_email": "nathalie.durand@inclusion.gouv.fr",
+                          "candidat_telephone": "0123456789",
+                          "candidat_pass_iae_statut": null,
+                          "candidat_pass_iae_numero": null,
+                          "candidat_pass_iae_date_debut": null,
+                          "candidat_pass_iae_date_fin": null,
+                          "entreprise_type": "EI",
+                          "entreprise_nom": "Plateforme de l'Inclusion",
+                          "entreprise_siret": "13003013300016",
+                          "entreprise_adresse": "127 rue de Grenelle, 75007 Paris",
+                          "entreprise_employeur_email": "",
+                          "orientation_emetteur_type": "job_seeker",
+                          "orientation_emetteur_sous_type": null,
+                          "orientation_emetteur_nom": "Durand",
+                          "orientation_emetteur_prenom": "Nathalie",
+                          "orientation_emetteur_email": null,
+                          "orientation_emetteur_organisme": null,
+                          "orientation_emetteur_organisme_telephone": null,
+                          "orientation_postes_recherches": [],
+                          "orientation_candidat_message": "Message à l’employeur",
+                          "orientation_candidat_cv": "",
+                          "contrat_date_debut": null,
+                          "contrat_date_fin": null,
+                          "contrat_poste_retenu": null
+                        },
+                        {
+                          "identifiant_unique": "2a30f968-02c9-48c6-ac3f-d8611fdcc46b",
+                          "cree_le": "2025-02-06T10:52:25.678156+01:00",
+                          "mis_a_jour_le": "2025-02-06T17:25:33.458745+01:00",
+                          "dernier_changement_le": "2025-02-06T10:52:25.678156+01:00",
+                          "statut": "accepted",
+                          "candidat_nir": "269054958815780",
+                          "candidat_nom": "Durand",
+                          "candidat_prenom": "Nathalie",
+                          "candidat_date_naissance": "1969-05-12",
+                          "candidat_email": "nathalie.durand@inclusion.gouv.fr",
+                          "candidat_telephone": "0123456789",
+                          "candidat_pass_iae_statut": "VALID",
+                          "candidat_pass_iae_numero": "012345678901",
+                          "candidat_pass_iae_date_debut": "2022-02-02",
+                          "candidat_pass_iae_date_fin": "2027-08-09",
+                          "entreprise_type": "EI",
+                          "entreprise_nom": "Plateforme de l'Inclusion",
+                          "entreprise_siret": "13003013300016",
+                          "entreprise_adresse": "127 rue de Grenelle, 75007 Paris",
+                          "entreprise_employeur_email": "john.doe@inclusion.gouv.fr",
+                          "orientation_emetteur_type": "prescriber",
+                          "orientation_emetteur_sous_type": null,
+                          "orientation_emetteur_nom": "Dufour",
+                          "orientation_emetteur_prenom": "André",
+                          "orientation_emetteur_email": "",
+                          "orientation_emetteur_organisme": "POLE EMPLOI - PARIS",
+                          "orientation_emetteur_organisme_telephone": "+33 1 23 45 67 89",
+                          "orientation_postes_recherches": [
+                            {
+                              "rome": "I1103",
+                              "titre": "Supervision d'entretien et gestion de véhicules",
+                              "ville": "Paris"
+                            },
+                            {
+                              "rome": "I1604",
+                              "titre": "Mécanique automobile et entretien de véhicules",
+                              "ville": "Paris"
+                            }
+                          ],
+                          "orientation_candidat_message": "Bonjour je souhaite candidater à ce poste\nMerci.",
+                          "orientation_candidat_cv": "",
+                          "contrat_date_debut": "2025-02-06",
+                          "contrat_date_fin": "2027-02-05",
+                          "contrat_poste_retenu": {
+                            "rome": "I1604",
+                            "titre": "Mécanique automobile et entretien de véhicules",
+                            "ville": "Paris"
+                          }
+                        }
+                      ]
+                    },
+                    "summary": "Exemple de recherche de candidatures (réponse)"
+                  },
+                  "ExempleDeRechercheDeCandidaturesSansRésultats(réponse)": {
+                    "value": {
+                      "count": 0,
+                      "next": null,
+                      "previous": null,
+                      "results": []
+                    },
+                    "summary": "Exemple de recherche de candidatures sans résultats (réponse)"
+                  }
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobApplicationSearchRequestInvalidResponse"
+                },
+                "examples": {
+                  "ExempleDeRechercheDeCandidaturesInvalide(réponse)": {
+                    "value": {
+                      "nom": [
+                        "Ce champ est obligatoire."
+                      ],
+                      "prenom": [
+                        "Ce champ est obligatoire."
+                      ],
+                      "date_naissance": [
+                        "Ce champ est obligatoire."
+                      ]
+                    },
+                    "summary": "Exemple de recherche de candidatures invalide (réponse)"
+                  }
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/data-inclusion/": {
+      "get": {
+        "operationId": "data_inclusion_list",
+        "description": "# API au format data.inclusion\n\nSérialisation des données SIAEs et organisations dans le schéma data⋅inclusion.\n\nCf https://github.com/gip-inclusion/data-inclusion-schema\n\nLes données SIAEs et les données organisations (prescripteurs et orienteurs) sont\naccessibles via le même point d'entrée. Il est nécessaire de préciser le paramètre\n`type` dans la requête, pour obtenir soit les SIAEs (`type=siae`), soit les\norganisations (`type=orga`).",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "A page number within the paginated result set.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page_size",
+            "required": false,
+            "in": "query",
+            "description": "Number of results to return per page.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "tags": [
+          "data-inclusion"
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedDataInclusionStructureList"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/embauches-geiq/": {
+      "get": {
+        "operationId": "list",
+        "description": "# Liste des embauches réalisées en GEIQ\n\nRetourne la liste complète des embauches réalisées en GEIQ connues des Emplois de l'inclusion.\nCes embauches représentent des candidatures acceptées.\n\nElles ne seront plus listées par l'API une fois le contrat terminé.",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "A page number within the paginated result set.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page_size",
+            "required": false,
+            "in": "query",
+            "description": "Number of results to return per page.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "tags": [
+          "embauches-geiq"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedGeiqJobApplicationList"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/employee-record-notifications/": {
+      "get": {
+        "operationId": "employee_record_notifications_list",
+        "description": "L'utilisation externe de cette API nécessite un token d'autorisation :\n\n1. se connecter en tant qu’administrateur de la structure\n2. dans « Mon espace », se rendre sur la page « Accès aux API »\n3. utiliser l’action « Créer un token d’API »",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "A page number within the paginated result set.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page_size",
+            "required": false,
+            "in": "query",
+            "description": "Number of results to return per page.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "tags": [
+          "employee-record-notifications"
+        ],
+        "security": [
+          {
+            "tokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedEmployeeRecordUpdateNotificationAPIList"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/employee-record-notifications/{id}/": {
+      "get": {
+        "operationId": "employee_record_notifications_retrieve",
+        "description": "L'utilisation externe de cette API nécessite un token d'autorisation :\n\n1. se connecter en tant qu’administrateur de la structure\n2. dans « Mon espace », se rendre sur la page « Accès aux API »\n3. utiliser l’action « Créer un token d’API »",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "A unique integer value identifying this notification de changement de la fiche salarié.",
+            "required": true
+          }
+        ],
+        "tags": [
+          "employee-record-notifications"
+        ],
+        "security": [
+          {
+            "tokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmployeeRecordUpdateNotificationAPI"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/employee-records/": {
+      "get": {
+        "operationId": "employee_records_list",
+        "description": "# API fiches salarié\n\nCette API retourne la liste des fiches salarié saisies par les SIAE :\n\n- dans l'état `PROCESSED` (par défaut)\n- pour toutes les embauches / candidatures des SIAE liées au token d'identification\n- classées par date de création (plus récent au plus ancien)\n\nIl est également possible d'obtenir le détail d'une fiche salarié par son\nidentifiant (dans les mêmes conditions d'autorisation que pour la liste complète).\n\n# Permissions\n\nL'utilisation externe de cette API nécessite un token d'autorisation :\n\n1. se connecter en tant qu’administrateur de la structure\n2. dans « Mon espace », se rendre sur la page « Accès aux API »\n3. utiliser l’action « Créer un token d’API »\n\n\nL'API peut également être utilisée dans un navigateur :\n\n- seulement dans un environnement de développement\n- si l'utilisateur connecté est membre d'une ou plusieurs SIAE éligible aux fiches salarié\n\n# Paramètres\n\nLes paramètres suivants sont :\n- utilisables en paramètres de requête (query string),\n- chainables : il est possible de préciser un ou plusieurs de ces paramètres pour affiner la recherche.\n\nSans paramètre fourni, la liste de résultats contient les fiches salarié en l'état\n\n- `PROCESSED` (intégrées par l'ASP).\n\n## `status` : par statut des fiches salarié\nCe paramètre est un tableau permettant de filtrer les fiches retournées par leur statut\n\nLes valeurs possibles pour ce paramètre sont :\n\n- `NEW` : nouvelle fiche en cours de saisie,\n- `READY` : la fiche est prête à être transmise à l'ASP,\n- `SENT` : la fiche a été transmise et est en attente de traitement,\n- `PROCESSED` : la fiche a correctement été intégrée par l'ASP,\n- `REJECTED` : la fiche est retournée en erreur après transmission.\n\n### Exemples\n- ajouter `?status=NEW` à l'URL pour les nouvelles fiches.\n- ajouter `?status=NEW&status=READY` pour les nouvelles fiches et celles prêtes pour la transmission.\n\n## `created` : à date de création\nPermet de récupérer les fiches salarié créées à la date donnée en paramètre (au format `AAAA-MM-JJ`).\n\n## `since` : depuis une certaine date\nPermet de récupérer les fiches salarié créées depuis date donnée en paramètre (au format `AAAA-MM-JJ`).\n\n# Limitations\n\nL’interrogation de cette API est limitée à 60 appels par minute.",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "A page number within the paginated result set.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page_size",
+            "required": false,
+            "in": "query",
+            "description": "Number of results to return per page.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "tags": [
+          "employee-records"
+        ],
+        "security": [
+          {
+            "tokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedEmployeeRecordAPIList"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/employee-records/{id}/": {
+      "get": {
+        "operationId": "employee_records_retrieve",
+        "description": "# API fiches salarié\n\nCette API retourne la liste des fiches salarié saisies par les SIAE :\n\n- dans l'état `PROCESSED` (par défaut)\n- pour toutes les embauches / candidatures des SIAE liées au token d'identification\n- classées par date de création (plus récent au plus ancien)\n\nIl est également possible d'obtenir le détail d'une fiche salarié par son\nidentifiant (dans les mêmes conditions d'autorisation que pour la liste complète).\n\n# Permissions\n\nL'utilisation externe de cette API nécessite un token d'autorisation :\n\n1. se connecter en tant qu’administrateur de la structure\n2. dans « Mon espace », se rendre sur la page « Accès aux API »\n3. utiliser l’action « Créer un token d’API »\n\n\nL'API peut également être utilisée dans un navigateur :\n\n- seulement dans un environnement de développement\n- si l'utilisateur connecté est membre d'une ou plusieurs SIAE éligible aux fiches salarié\n\n# Paramètres\n\nLes paramètres suivants sont :\n- utilisables en paramètres de requête (query string),\n- chainables : il est possible de préciser un ou plusieurs de ces paramètres pour affiner la recherche.\n\nSans paramètre fourni, la liste de résultats contient les fiches salarié en l'état\n\n- `PROCESSED` (intégrées par l'ASP).\n\n## `status` : par statut des fiches salarié\nCe paramètre est un tableau permettant de filtrer les fiches retournées par leur statut\n\nLes valeurs possibles pour ce paramètre sont :\n\n- `NEW` : nouvelle fiche en cours de saisie,\n- `READY` : la fiche est prête à être transmise à l'ASP,\n- `SENT` : la fiche a été transmise et est en attente de traitement,\n- `PROCESSED` : la fiche a correctement été intégrée par l'ASP,\n- `REJECTED` : la fiche est retournée en erreur après transmission.\n\n### Exemples\n- ajouter `?status=NEW` à l'URL pour les nouvelles fiches.\n- ajouter `?status=NEW&status=READY` pour les nouvelles fiches et celles prêtes pour la transmission.\n\n## `created` : à date de création\nPermet de récupérer les fiches salarié créées à la date donnée en paramètre (au format `AAAA-MM-JJ`).\n\n## `since` : depuis une certaine date\nPermet de récupérer les fiches salarié créées depuis date donnée en paramètre (au format `AAAA-MM-JJ`).\n\n# Limitations\n\nL’interrogation de cette API est limitée à 60 appels par minute.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "A unique integer value identifying this fiche salarié.",
+            "required": true
+          }
+        ],
+        "tags": [
+          "employee-records"
+        ],
+        "security": [
+          {
+            "tokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmployeeRecordAPI"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/marche/": {
+      "get": {
+        "operationId": "marche_list",
+        "description": "API pour le Marché de l'inclusion",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "A page number within the paginated result set.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page_size",
+            "required": false,
+            "in": "query",
+            "description": "Number of results to return per page.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "tags": [
+          "marche"
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedMarcheCompanyList"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/oas3/": {
+      "get": {
+        "operationId": "oas3_retrieve",
+        "description": "OpenApi3 schema for this API. Format can be selected via content negotiation.\n\n- YAML: application/vnd.oai.openapi\n- JSON: application/vnd.oai.openapi+json",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "format",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "json",
+                "yaml"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "lang",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "af",
+                "ar",
+                "ar-dz",
+                "ast",
+                "az",
+                "be",
+                "bg",
+                "bn",
+                "br",
+                "bs",
+                "ca",
+                "ckb",
+                "cs",
+                "cy",
+                "da",
+                "de",
+                "dsb",
+                "el",
+                "en",
+                "en-au",
+                "en-gb",
+                "eo",
+                "es",
+                "es-ar",
+                "es-co",
+                "es-mx",
+                "es-ni",
+                "es-ve",
+                "et",
+                "eu",
+                "fa",
+                "fi",
+                "fr",
+                "fy",
+                "ga",
+                "gd",
+                "gl",
+                "he",
+                "hi",
+                "hr",
+                "hsb",
+                "ht",
+                "hu",
+                "hy",
+                "ia",
+                "id",
+                "ig",
+                "io",
+                "is",
+                "it",
+                "ja",
+                "ka",
+                "kab",
+                "kk",
+                "km",
+                "kn",
+                "ko",
+                "ky",
+                "lb",
+                "lt",
+                "lv",
+                "mk",
+                "ml",
+                "mn",
+                "mr",
+                "ms",
+                "my",
+                "nb",
+                "ne",
+                "nl",
+                "nn",
+                "os",
+                "pa",
+                "pl",
+                "pt",
+                "pt-br",
+                "ro",
+                "ru",
+                "sk",
+                "sl",
+                "sq",
+                "sr",
+                "sr-latn",
+                "sv",
+                "sw",
+                "ta",
+                "te",
+                "tg",
+                "th",
+                "tk",
+                "tr",
+                "tt",
+                "udm",
+                "ug",
+                "uk",
+                "ur",
+                "uz",
+                "vi",
+                "zh-hans",
+                "zh-hant"
+              ]
+            }
+          }
+        ],
+        "tags": [
+          "oas3"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {}
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/vnd.oai.openapi": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {}
+                }
+              },
+              "application/yaml": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {}
+                }
+              },
+              "application/vnd.oai.openapi+json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {}
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {}
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/siaes/": {
+      "get": {
+        "operationId": "siaes_list",
+        "description": "# Liste des SIAE\n\nLa plateforme renvoie une liste de SIAE à proximité d’une ville (déterminée par son code INSEE)\net dans un rayon de recherche en kilomètres autour du centre de cette ville.\n\nLes coordonnées des centres-villes sont issus de [https://geo.api.gouv.fr](https://geo.api.gouv.fr/)\n\nChaque SIAE est accompagnée d’un certain nombre de métadonnées, et peut proposer 0, 1 ou plusieurs postes.\nPour le détail des métadonnées des SIAE et de leur postes, voir plus bas dans la section Responses",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "code_insee",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filtre par code INSEE de la ville. À utiliser avec `distance_max_km`."
+          },
+          {
+            "in": "query",
+            "name": "departement",
+            "schema": {
+              "type": "string",
+              "title": "Département",
+              "enum": [
+                "01",
+                "02",
+                "03",
+                "04",
+                "05",
+                "06",
+                "07",
+                "08",
+                "09",
+                "10",
+                "11",
+                "12",
+                "13",
+                "14",
+                "15",
+                "16",
+                "17",
+                "18",
+                "19",
+                "21",
+                "22",
+                "23",
+                "24",
+                "25",
+                "26",
+                "27",
+                "28",
+                "29",
+                "2A",
+                "2B",
+                "30",
+                "31",
+                "32",
+                "33",
+                "34",
+                "35",
+                "36",
+                "37",
+                "38",
+                "39",
+                "40",
+                "41",
+                "42",
+                "43",
+                "44",
+                "45",
+                "46",
+                "47",
+                "48",
+                "49",
+                "50",
+                "51",
+                "52",
+                "53",
+                "54",
+                "55",
+                "56",
+                "57",
+                "58",
+                "59",
+                "60",
+                "61",
+                "62",
+                "63",
+                "64",
+                "65",
+                "66",
+                "67",
+                "68",
+                "69",
+                "70",
+                "71",
+                "72",
+                "73",
+                "74",
+                "75",
+                "76",
+                "77",
+                "78",
+                "79",
+                "80",
+                "81",
+                "82",
+                "83",
+                "84",
+                "85",
+                "86",
+                "87",
+                "88",
+                "89",
+                "90",
+                "91",
+                "92",
+                "93",
+                "94",
+                "95",
+                "971",
+                "972",
+                "973",
+                "974",
+                "975",
+                "976",
+                "977",
+                "978",
+                "984",
+                "986",
+                "987",
+                "988",
+                "989"
+              ]
+            },
+            "description": "Département de la structure\n\n* `01` - 01 - Ain\n* `02` - 02 - Aisne\n* `03` - 03 - Allier\n* `04` - 04 - Alpes-de-Haute-Provence\n* `05` - 05 - Hautes-Alpes\n* `06` - 06 - Alpes-Maritimes\n* `07` - 07 - Ardèche\n* `08` - 08 - Ardennes\n* `09` - 09 - Ariège\n* `10` - 10 - Aube\n* `11` - 11 - Aude\n* `12` - 12 - Aveyron\n* `13` - 13 - Bouches-du-Rhône\n* `14` - 14 - Calvados\n* `15` - 15 - Cantal\n* `16` - 16 - Charente\n* `17` - 17 - Charente-Maritime\n* `18` - 18 - Cher\n* `19` - 19 - Corrèze\n* `2A` - 2A - Corse-du-Sud\n* `2B` - 2B - Haute-Corse\n* `21` - 21 - Côte-d'Or\n* `22` - 22 - Côtes-d'Armor\n* `23` - 23 - Creuse\n* `24` - 24 - Dordogne\n* `25` - 25 - Doubs\n* `26` - 26 - Drôme\n* `27` - 27 - Eure\n* `28` - 28 - Eure-et-Loir\n* `29` - 29 - Finistère\n* `30` - 30 - Gard\n* `31` - 31 - Haute-Garonne\n* `32` - 32 - Gers\n* `33` - 33 - Gironde\n* `34` - 34 - Hérault\n* `35` - 35 - Ille-et-Vilaine\n* `36` - 36 - Indre\n* `37` - 37 - Indre-et-Loire\n* `38` - 38 - Isère\n* `39` - 39 - Jura\n* `40` - 40 - Landes\n* `41` - 41 - Loir-et-Cher\n* `42` - 42 - Loire\n* `43` - 43 - Haute-Loire\n* `44` - 44 - Loire-Atlantique\n* `45` - 45 - Loiret\n* `46` - 46 - Lot\n* `47` - 47 - Lot-et-Garonne\n* `48` - 48 - Lozère\n* `49` - 49 - Maine-et-Loire\n* `50` - 50 - Manche\n* `51` - 51 - Marne\n* `52` - 52 - Haute-Marne\n* `53` - 53 - Mayenne\n* `54` - 54 - Meurthe-et-Moselle\n* `55` - 55 - Meuse\n* `56` - 56 - Morbihan\n* `57` - 57 - Moselle\n* `58` - 58 - Nièvre\n* `59` - 59 - Nord\n* `60` - 60 - Oise\n* `61` - 61 - Orne\n* `62` - 62 - Pas-de-Calais\n* `63` - 63 - Puy-de-Dôme\n* `64` - 64 - Pyrénées-Atlantiques\n* `65` - 65 - Hautes-Pyrénées\n* `66` - 66 - Pyrénées-Orientales\n* `67` - 67 - Bas-Rhin\n* `68` - 68 - Haut-Rhin\n* `69` - 69 - Rhône\n* `70` - 70 - Haute-Saône\n* `71` - 71 - Saône-et-Loire\n* `72` - 72 - Sarthe\n* `73` - 73 - Savoie\n* `74` - 74 - Haute-Savoie\n* `75` - 75 - Paris\n* `76` - 76 - Seine-Maritime\n* `77` - 77 - Seine-et-Marne\n* `78` - 78 - Yvelines\n* `79` - 79 - Deux-Sèvres\n* `80` - 80 - Somme\n* `81` - 81 - Tarn\n* `82` - 82 - Tarn-et-Garonne\n* `83` - 83 - Var\n* `84` - 84 - Vaucluse\n* `85` - 85 - Vendée\n* `86` - 86 - Vienne\n* `87` - 87 - Haute-Vienne\n* `88` - 88 - Vosges\n* `89` - 89 - Yonne\n* `90` - 90 - Territoire de Belfort\n* `91` - 91 - Essonne\n* `92` - 92 - Hauts-de-Seine\n* `93` - 93 - Seine-Saint-Denis\n* `94` - 94 - Val-de-Marne\n* `95` - 95 - Val-d'Oise\n* `971` - 971 - Guadeloupe\n* `972` - 972 - Martinique\n* `973` - 973 - Guyane\n* `974` - 974 - La Réunion\n* `975` - 975 - Saint-Pierre-et-Miquelon\n* `976` - 976 - Mayotte\n* `977` - 977 - Saint-Barthélémy\n* `978` - 978 - Saint-Martin\n* `984` - 984 - Terres australes et antarctiques françaises\n* `986` - 986 - Wallis-et-Futuna\n* `987` - 987 - Polynésie française\n* `988` - 988 - Nouvelle-Calédonie\n* `989` - 989 - Île Clipperton"
+          },
+          {
+            "in": "query",
+            "name": "distance_max_km",
+            "schema": {
+              "type": "number"
+            },
+            "description": "Filtre par rayon de recherche autour de la ville, en kilomètres. Maximum 100 kilomètres. À utiliser avec `code_insee`."
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "api",
+                "json"
+              ]
+            },
+            "description": "Format de sortie"
+          },
+          {
+            "in": "query",
+            "name": "o",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "-bloque_candidatures",
+                  "-code_postal",
+                  "-departement",
+                  "-raison_sociale",
+                  "-siret",
+                  "-type",
+                  "-ville",
+                  "bloque_candidatures",
+                  "code_postal",
+                  "departement",
+                  "raison_sociale",
+                  "siret",
+                  "type",
+                  "ville"
+                ]
+              }
+            },
+            "description": "Critère de tri\n\n* `bloque_candidatures` - Bloque candidatures\n* `-bloque_candidatures` - Bloque candidatures (décroissant)\n* `type` - Type\n* `-type` - Type (décroissant)\n* `departement` - Departement\n* `-departement` - Departement (décroissant)\n* `code_postal` - Code postal\n* `-code_postal` - Code postal (décroissant)\n* `ville` - Ville\n* `-ville` - Ville (décroissant)\n* `siret` - Siret\n* `-siret` - Siret (décroissant)\n* `raison_sociale` - Raison sociale\n* `-raison_sociale` - Raison sociale (décroissant)",
+            "explode": false,
+            "style": "form"
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "A page number within the paginated result set.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page_size",
+            "required": false,
+            "in": "query",
+            "description": "Number of results to return per page.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "postes_dans_le_departement",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "01",
+                "02",
+                "03",
+                "04",
+                "05",
+                "06",
+                "07",
+                "08",
+                "09",
+                "10",
+                "11",
+                "12",
+                "13",
+                "14",
+                "15",
+                "16",
+                "17",
+                "18",
+                "19",
+                "21",
+                "22",
+                "23",
+                "24",
+                "25",
+                "26",
+                "27",
+                "28",
+                "29",
+                "2A",
+                "2B",
+                "30",
+                "31",
+                "32",
+                "33",
+                "34",
+                "35",
+                "36",
+                "37",
+                "38",
+                "39",
+                "40",
+                "41",
+                "42",
+                "43",
+                "44",
+                "45",
+                "46",
+                "47",
+                "48",
+                "49",
+                "50",
+                "51",
+                "52",
+                "53",
+                "54",
+                "55",
+                "56",
+                "57",
+                "58",
+                "59",
+                "60",
+                "61",
+                "62",
+                "63",
+                "64",
+                "65",
+                "66",
+                "67",
+                "68",
+                "69",
+                "70",
+                "71",
+                "72",
+                "73",
+                "74",
+                "75",
+                "76",
+                "77",
+                "78",
+                "79",
+                "80",
+                "81",
+                "82",
+                "83",
+                "84",
+                "85",
+                "86",
+                "87",
+                "88",
+                "89",
+                "90",
+                "91",
+                "92",
+                "93",
+                "94",
+                "95",
+                "971",
+                "972",
+                "973",
+                "974",
+                "975",
+                "976",
+                "977",
+                "978",
+                "984",
+                "986",
+                "987",
+                "988",
+                "989"
+              ]
+            },
+            "description": "Département d'un poste de la structure.\n\n* `01` - 01 - Ain\n* `02` - 02 - Aisne\n* `03` - 03 - Allier\n* `04` - 04 - Alpes-de-Haute-Provence\n* `05` - 05 - Hautes-Alpes\n* `06` - 06 - Alpes-Maritimes\n* `07` - 07 - Ardèche\n* `08` - 08 - Ardennes\n* `09` - 09 - Ariège\n* `10` - 10 - Aube\n* `11` - 11 - Aude\n* `12` - 12 - Aveyron\n* `13` - 13 - Bouches-du-Rhône\n* `14` - 14 - Calvados\n* `15` - 15 - Cantal\n* `16` - 16 - Charente\n* `17` - 17 - Charente-Maritime\n* `18` - 18 - Cher\n* `19` - 19 - Corrèze\n* `2A` - 2A - Corse-du-Sud\n* `2B` - 2B - Haute-Corse\n* `21` - 21 - Côte-d'Or\n* `22` - 22 - Côtes-d'Armor\n* `23` - 23 - Creuse\n* `24` - 24 - Dordogne\n* `25` - 25 - Doubs\n* `26` - 26 - Drôme\n* `27` - 27 - Eure\n* `28` - 28 - Eure-et-Loir\n* `29` - 29 - Finistère\n* `30` - 30 - Gard\n* `31` - 31 - Haute-Garonne\n* `32` - 32 - Gers\n* `33` - 33 - Gironde\n* `34` - 34 - Hérault\n* `35` - 35 - Ille-et-Vilaine\n* `36` - 36 - Indre\n* `37` - 37 - Indre-et-Loire\n* `38` - 38 - Isère\n* `39` - 39 - Jura\n* `40` - 40 - Landes\n* `41` - 41 - Loir-et-Cher\n* `42` - 42 - Loire\n* `43` - 43 - Haute-Loire\n* `44` - 44 - Loire-Atlantique\n* `45` - 45 - Loiret\n* `46` - 46 - Lot\n* `47` - 47 - Lot-et-Garonne\n* `48` - 48 - Lozère\n* `49` - 49 - Maine-et-Loire\n* `50` - 50 - Manche\n* `51` - 51 - Marne\n* `52` - 52 - Haute-Marne\n* `53` - 53 - Mayenne\n* `54` - 54 - Meurthe-et-Moselle\n* `55` - 55 - Meuse\n* `56` - 56 - Morbihan\n* `57` - 57 - Moselle\n* `58` - 58 - Nièvre\n* `59` - 59 - Nord\n* `60` - 60 - Oise\n* `61` - 61 - Orne\n* `62` - 62 - Pas-de-Calais\n* `63` - 63 - Puy-de-Dôme\n* `64` - 64 - Pyrénées-Atlantiques\n* `65` - 65 - Hautes-Pyrénées\n* `66` - 66 - Pyrénées-Orientales\n* `67` - 67 - Bas-Rhin\n* `68` - 68 - Haut-Rhin\n* `69` - 69 - Rhône\n* `70` - 70 - Haute-Saône\n* `71` - 71 - Saône-et-Loire\n* `72` - 72 - Sarthe\n* `73` - 73 - Savoie\n* `74` - 74 - Haute-Savoie\n* `75` - 75 - Paris\n* `76` - 76 - Seine-Maritime\n* `77` - 77 - Seine-et-Marne\n* `78` - 78 - Yvelines\n* `79` - 79 - Deux-Sèvres\n* `80` - 80 - Somme\n* `81` - 81 - Tarn\n* `82` - 82 - Tarn-et-Garonne\n* `83` - 83 - Var\n* `84` - 84 - Vaucluse\n* `85` - 85 - Vendée\n* `86` - 86 - Vienne\n* `87` - 87 - Haute-Vienne\n* `88` - 88 - Vosges\n* `89` - 89 - Yonne\n* `90` - 90 - Territoire de Belfort\n* `91` - 91 - Essonne\n* `92` - 92 - Hauts-de-Seine\n* `93` - 93 - Seine-Saint-Denis\n* `94` - 94 - Val-de-Marne\n* `95` - 95 - Val-d'Oise\n* `971` - 971 - Guadeloupe\n* `972` - 972 - Martinique\n* `973` - 973 - Guyane\n* `974` - 974 - La Réunion\n* `975` - 975 - Saint-Pierre-et-Miquelon\n* `976` - 976 - Mayotte\n* `977` - 977 - Saint-Barthélémy\n* `978` - 978 - Saint-Martin\n* `984` - 984 - Terres australes et antarctiques françaises\n* `986` - 986 - Wallis-et-Futuna\n* `987` - 987 - Polynésie française\n* `988` - 988 - Nouvelle-Calédonie\n* `989` - 989 - Île Clipperton"
+          }
+        ],
+        "tags": [
+          "siaes"
+        ],
+        "security": [
+          {
+            "tokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedSiaeList"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {}
+                },
+                "examples": {
+                  "NotFound": {
+                    "value": "Pas de ville avec pour code_insee 1234",
+                    "summary": "Not Found",
+                    "description": "Not Found"
+                  }
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/token-auth/": {
+      "post": {
+        "operationId": "token_auth_create",
+        "description": "**Route majoritairement utilisée pour les comptes n’ayant pas activé ProConnect.**\n\nSi vous avez activé ProConnect pour votre compte, vous pouvez obtenir un jeton d’accès aux\nAPIs depuis un **compte administrateur de la structure** de la manière suivante :\n\n1. se connecter en tant qu’administrateur de la structure\n2. dans « Mon espace », se rendre sur la page « Accès aux API »\n3. utiliser l’action « Créer un token d’API »",
+        "tags": [
+          "token-auth"
+        ],
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthToken"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthToken"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthToken"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthToken"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Applicant": {
+        "type": "object",
+        "description": "Applicant serializer: job seeker field of a job application",
+        "properties": {
+          "civilite": {
+            "type": "string",
+            "readOnly": true
+          },
+          "nom": {
+            "type": "string"
+          },
+          "prenom": {
+            "type": "string"
+          },
+          "courriel": {
+            "type": "string"
+          },
+          "telephone": {
+            "type": "string"
+          },
+          "adresse": {
+            "type": "string"
+          },
+          "complement_adresse": {
+            "type": "string"
+          },
+          "code_postal": {
+            "type": "string"
+          },
+          "ville": {
+            "type": "string"
+          },
+          "date_naissance": {
+            "type": "string",
+            "format": "date"
+          },
+          "lieu_naissance": {
+            "type": "string"
+          },
+          "pays_naissance": {
+            "type": "string"
+          },
+          "lien_cv": {
+            "type": "string"
+          },
+          "uid_structures": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "adresse",
+          "civilite",
+          "code_postal",
+          "complement_adresse",
+          "courriel",
+          "date_naissance",
+          "lieu_naissance",
+          "nom",
+          "pays_naissance",
+          "prenom",
+          "telephone",
+          "uid_structures",
+          "ville"
+        ]
+      },
+      "AuteurDiagnosticEnum": {
+        "enum": [
+          "EMPLOYEUR",
+          "GEIQ",
+          "PRESCRIPTEUR"
+        ],
+        "type": "string",
+        "description": "* `EMPLOYEUR` - Employeur\n* `GEIQ` - GEIQ\n* `PRESCRIPTEUR` - Prescripteur"
+      },
+      "AuthToken": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "writeOnly": true,
+            "title": "Nom de l'utilisateur"
+          },
+          "password": {
+            "type": "string",
+            "writeOnly": true,
+            "title": "Mot de passe"
+          },
+          "token": {
+            "type": "string",
+            "readOnly": true,
+            "title": "Jeton"
+          }
+        },
+        "required": [
+          "password",
+          "token",
+          "username"
+        ]
+      },
+      "CandidatPassIaeStatutEnum": {
+        "enum": [
+          "EXPIRED",
+          "VALID",
+          "FUTURE",
+          "SUSPENDED"
+        ],
+        "type": "string",
+        "description": "* `EXPIRED` - Expiré\n* `VALID` - Valide\n* `FUTURE` - Valide (non démarré)\n* `SUSPENDED` - Valide (suspendu)"
+      },
+      "City": {
+        "type": "object",
+        "properties": {
+          "nom": {
+            "type": "string"
+          },
+          "departement": {
+            "type": "string"
+          },
+          "code_postaux": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "code_insee": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code_insee",
+          "code_postaux",
+          "departement",
+          "nom"
+        ]
+      },
+      "Civilite": {
+        "enum": [
+          "M",
+          "MME"
+        ],
+        "type": "string",
+        "description": "* `M` - Monsieur\n* `MME` - Madame"
+      },
+      "Company": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "nom": {
+            "type": "string"
+          },
+          "siret": {
+            "type": "string",
+            "readOnly": true
+          },
+          "description": {
+            "type": "string"
+          },
+          "site_web": {
+            "type": "string"
+          },
+          "telephone": {
+            "type": "string"
+          },
+          "courriel": {
+            "type": "string"
+          },
+          "code_postal": {
+            "type": "string"
+          },
+          "commune": {
+            "type": "string"
+          },
+          "adresse": {
+            "type": "string"
+          },
+          "complement_adresse": {
+            "type": "string"
+          },
+          "longitude": {
+            "type": "number",
+            "format": "double"
+          },
+          "latitude": {
+            "type": "number",
+            "format": "double"
+          },
+          "date_maj": {
+            "type": "string",
+            "readOnly": true
+          },
+          "lien_source": {
+            "type": "string",
+            "readOnly": true
+          },
+          "kind": {
+            "$ref": "#/components/schemas/CompanyKindEnum"
+          }
+        },
+        "required": [
+          "adresse",
+          "code_postal",
+          "commune",
+          "complement_adresse",
+          "courriel",
+          "date_maj",
+          "description",
+          "id",
+          "kind",
+          "latitude",
+          "lien_source",
+          "longitude",
+          "nom",
+          "siret",
+          "site_web",
+          "telephone"
+        ]
+      },
+      "CompanyKindEnum": {
+        "enum": [
+          "ACI",
+          "AI",
+          "EA",
+          "EATT",
+          "EI",
+          "EITI",
+          "ETTI",
+          "GEIQ",
+          "OPCS"
+        ],
+        "type": "string",
+        "description": "* `ACI` - Atelier chantier d'insertion\n* `AI` - Association intermédiaire\n* `EA` - Entreprise adaptée\n* `EATT` - Entreprise adaptée de travail temporaire\n* `EI` - Entreprise d'insertion\n* `EITI` - Entreprise d'insertion par le travail indépendant\n* `ETTI` - Entreprise de travail temporaire d'insertion\n* `GEIQ` - Groupement d'employeurs pour l'insertion et la qualification\n* `OPCS` - Organisation porteuse de la clause sociale"
+      },
+      "CriteresEligibiliteEnum": {
+        "enum": [
+          "AAH",
+          "ASS",
+          "MINSOC",
+          "RSA",
+          "RS/PS/DA",
+          "+45",
+          "DELD12/24",
+          "DELD24+",
+          "-26",
+          "-26 SQ",
+          "FR non maitrisé",
+          "NE3I",
+          "PI",
+          "SIAE/CUI",
+          "DELD",
+          "Reconv.",
+          "PSH/PR",
+          "PM",
+          "Refug.|RS/PS/DA",
+          "QPV|QPV/ZRR",
+          "ZRR|QPV/ZRR",
+          "+50",
+          "Detention/MJ|Prison",
+          "ASE",
+          "Pers. SH|TH"
+        ],
+        "type": "string",
+        "description": "* `AAH` - Allocataire de l'Allocation aux Adultes Handicapés (AAH)\n* `ASS` - Allocataire de l'Allocation de Solidarité Spécifique (ASS)\n* `` - Personne inscrite à France Travail\n* `MINSOC` - Bénéficiaire des minima sociaux\n* `RSA` - Bénéficiaire du Revenu de Solidarité Active (RSA)\n* `RS/PS/DA` - Demandeur d'asile\n* `+45` - Demandeur d’emploi de 45 ans et plus\n* `DELD12/24` - Demandeur d'emploi de longue durée (DELD) (12 mois et plus)\n* `DELD24+` - Demandeur d'emploi de très longue durée (DETLD) (24 mois et plus)\n* `-26` - Jeune (-26 ans)\n* `-26 SQ` - Jeune de moins de 26 ans sans qualification (niveau 4 maximum)\n* `FR non maitrisé` - Maîtrise de la langue française inférieure au niveau A1\n* `NE3I` - Niveau d'étude 3 (CAP, BEP) ou infra\n* `PI` - Parent isolé\n* `SIAE/CUI` - Personne bénéficiant ou sortant d’un dispositif d’insertion\n* `DELD` - Personne éloignée du marché du travail (> 1 an)\n* `Reconv.` - Personne en reconversion professionnelle contrainte\n* `PSH/PR` - Personne sans hébergement ou hébergée ou ayant un parcours de rue\n* `PM` - Problème de mobilité\n* `Refug.|RS/PS/DA` - Réfugiés statutaire ou bénéficiaire de la protection subsidiaire\n* `QPV|QPV/ZRR` - Résident en quartier prioritaire de la politique de la ville (QPV)\n* `ZRR|QPV/ZRR` - Résident en zone de revitalisation rurale (ZRR)\n* `+50` - Senior (+50 ans)\n* `Detention/MJ|Prison` - Sortant de détention ou personne placée sous main de justice\n* `ASE` - Sortant de l'Aide Sociale à l'Enfance (ASE)\n* `Pers. SH|TH` - Travailleur handicapé"
+      },
+      "DataInclusionStructure": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/PrescriberOrgStructure"
+          },
+          {
+            "$ref": "#/components/schemas/Company"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "type",
+          "mapping": {
+            "orga": "#/components/schemas/PrescriberOrgStructure",
+            "siae": "#/components/schemas/Company"
+          }
+        }
+      },
+      "EmployeeRecordAPI": {
+        "type": "object",
+        "description": "This serializer is a version with the `numeroAnnexe` field added (financial annex number).\n\nThis field not needed by ASP was simply ignored in earlier versions of the\nmain SFTP serializer but was removed for RGPD concerns.",
+        "properties": {
+          "numLigne": {
+            "type": "integer"
+          },
+          "typeMouvement": {
+            "type": "string"
+          },
+          "siret": {
+            "type": "string"
+          },
+          "mesure": {
+            "type": "string"
+          },
+          "personnePhysique": {
+            "$ref": "#/components/schemas/_API_Person"
+          },
+          "adresse": {
+            "$ref": "#/components/schemas/_API_Address"
+          },
+          "situationSalarie": {
+            "$ref": "#/components/schemas/_API_Situation"
+          },
+          "codeTraitement": {
+            "type": "string"
+          },
+          "libelleTraitement": {
+            "type": "string"
+          },
+          "numeroAnnexe": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "adresse",
+          "codeTraitement",
+          "libelleTraitement",
+          "mesure",
+          "numLigne",
+          "numeroAnnexe",
+          "personnePhysique",
+          "siret",
+          "situationSalarie",
+          "typeMouvement"
+        ]
+      },
+      "EmployeeRecordUpdateNotificationAPI": {
+        "type": "object",
+        "properties": {
+          "numLigne": {
+            "type": "integer"
+          },
+          "typeMouvement": {
+            "type": "string"
+          },
+          "siret": {
+            "type": "string"
+          },
+          "mesure": {
+            "type": "string"
+          },
+          "personnePhysique": {
+            "$ref": "#/components/schemas/_API_Person"
+          },
+          "adresse": {
+            "$ref": "#/components/schemas/_API_Address"
+          },
+          "situationSalarie": {
+            "$ref": "#/components/schemas/_API_Situation"
+          },
+          "codeTraitement": {
+            "type": "string"
+          },
+          "libelleTraitement": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "adresse",
+          "codeTraitement",
+          "libelleTraitement",
+          "mesure",
+          "numLigne",
+          "personnePhysique",
+          "siret",
+          "situationSalarie",
+          "typeMouvement"
+        ]
+      },
+      "GeiqJobApplication": {
+        "type": "object",
+        "properties": {
+          "id_embauche": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "id_utilisateur": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "siret_employeur": {
+            "type": "string"
+          },
+          "nom": {
+            "type": "string"
+          },
+          "prenom": {
+            "type": "string"
+          },
+          "date_naissance": {
+            "type": "string",
+            "format": "date"
+          },
+          "civilite": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GeiqJobApplicationCiviliteEnum"
+              }
+            ],
+            "readOnly": true
+          },
+          "adresse_ligne_1": {
+            "type": "string"
+          },
+          "adresse_ligne_2": {
+            "type": "string"
+          },
+          "adresse_code_postal": {
+            "type": "string"
+          },
+          "adresse_ville": {
+            "type": "string"
+          },
+          "prescripteur_origine": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PrescripteurOrigineEnum"
+              }
+            ],
+            "readOnly": true
+          },
+          "precision_prescripteur": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PrecisionPrescripteurEnum"
+              }
+            ],
+            "readOnly": true
+          },
+          "criteres_eligibilite": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CriteresEligibiliteEnum"
+              }
+            ],
+            "readOnly": true
+          },
+          "auteur_diagnostic": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AuteurDiagnosticEnum"
+              }
+            ],
+            "readOnly": true
+          },
+          "niveau_formation": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NiveauQualificationEnum"
+              }
+            ],
+            "readOnly": true
+          },
+          "mises_en_situation_pro": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MSPPriorAction"
+            }
+          },
+          "prequalifications": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PrequalPriorAction"
+            }
+          },
+          "jours_accompagnement": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "type_contrat": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TypeContratEnum"
+              }
+            ],
+            "readOnly": true
+          },
+          "poste_occupe": {
+            "type": "string"
+          },
+          "duree_hebdo": {
+            "type": "integer",
+            "maximum": 48,
+            "minimum": 1
+          },
+          "date_debut_contrat": {
+            "type": "string",
+            "format": "date"
+          },
+          "date_fin_contrat": {
+            "type": "string",
+            "format": "date"
+          },
+          "type_qualification": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TypeQualificationEnum"
+              }
+            ],
+            "readOnly": true
+          },
+          "niveau_qualification": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NiveauQualificationEnum"
+              }
+            ],
+            "readOnly": true
+          },
+          "nb_heures_formation": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "est_vae_inversee": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "adresse_code_postal",
+          "adresse_ligne_1",
+          "adresse_ligne_2",
+          "adresse_ville",
+          "auteur_diagnostic",
+          "civilite",
+          "criteres_eligibilite",
+          "date_debut_contrat",
+          "date_fin_contrat",
+          "date_naissance",
+          "duree_hebdo",
+          "est_vae_inversee",
+          "id_embauche",
+          "id_utilisateur",
+          "jours_accompagnement",
+          "mises_en_situation_pro",
+          "nb_heures_formation",
+          "niveau_formation",
+          "niveau_qualification",
+          "nom",
+          "precision_prescripteur",
+          "prenom",
+          "prequalifications",
+          "prescripteur_origine",
+          "siret_employeur",
+          "type_contrat",
+          "type_qualification"
+        ]
+      },
+      "GeiqJobApplicationCiviliteEnum": {
+        "enum": [
+          "F",
+          "H"
+        ],
+        "type": "string",
+        "description": "* `F` - Femme\n* `H` - Homme"
+      },
+      "JobApplicationSearchRequest": {
+        "type": "object",
+        "properties": {
+          "nir": {
+            "type": "string",
+            "writeOnly": true,
+            "title": "Numéro de sécurité sociale du candidat"
+          },
+          "nom": {
+            "type": "string",
+            "writeOnly": true,
+            "title": "Nom de famille du candidat"
+          },
+          "prenom": {
+            "type": "string",
+            "writeOnly": true,
+            "title": "Prénom du candidat"
+          },
+          "date_naissance": {
+            "type": "string",
+            "format": "date",
+            "writeOnly": true,
+            "title": "Date de naissance du candidat (ISO 8601)"
+          }
+        },
+        "required": [
+          "date_naissance",
+          "nir",
+          "nom",
+          "prenom"
+        ]
+      },
+      "JobApplicationSearchRequestInvalidResponse": {
+        "type": "object",
+        "properties": {
+          "nir": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "title": "Erreur individuelle"
+            },
+            "title": "Erreurs liées au NIR"
+          },
+          "nom": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "title": "Erreur individuelle"
+            },
+            "title": "Erreurs liées au nom"
+          },
+          "prenom": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "title": "Erreur individuelle"
+            },
+            "title": "Erreurs liées au prénom"
+          },
+          "date_naissance": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "title": "Erreur individuelle"
+            },
+            "title": "Erreurs liées à la date de naissance"
+          }
+        }
+      },
+      "JobApplicationSearchResponse": {
+        "type": "object",
+        "properties": {
+          "identifiant_unique": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Identifiant unique de la candidature"
+          },
+          "cree_le": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Horodatage de création de la candidature (ISO 8601)"
+          },
+          "mis_a_jour_le": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Horodatage de dernière mise à jour de la candidature (ISO 8601)",
+            "description": "**Non destiné à l’affichage.**\n\nCorrespond à l’horodatage le plus récent lors duquel la candidature a été modifiée.\n\nCes modifications peuvent être des traitements automatisés.\n\nIdéal pour déterminer si une entrée doit être mise à jour sur une base externe."
+          },
+          "dernier_changement_le": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Horodatage du dernier changement de la candidature (ISO 8601)",
+            "description": "Correspond à l’horodatage le plus récent lors duquel la candidature a changé d’état."
+          },
+          "statut": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StatutEnum"
+              }
+            ],
+            "title": "État de la candidature"
+          },
+          "candidat_nir": {
+            "type": "string",
+            "title": "Numéro de sécurité sociale du candidat"
+          },
+          "candidat_nom": {
+            "type": "string",
+            "title": "Nom de famille du candidat"
+          },
+          "candidat_prenom": {
+            "type": "string",
+            "title": "Prénom du candidat"
+          },
+          "candidat_date_naissance": {
+            "type": "string",
+            "format": "date",
+            "title": "Date de naissance du candidat (ISO 8601)"
+          },
+          "candidat_email": {
+            "type": "string",
+            "title": "Adresse e-mail du candidat"
+          },
+          "candidat_telephone": {
+            "type": "string",
+            "title": "Téléphone du candidat"
+          },
+          "candidat_pass_iae_statut": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CandidatPassIaeStatutEnum"
+              }
+            ],
+            "nullable": true,
+            "title": "Statut du PASS IAE"
+          },
+          "candidat_pass_iae_numero": {
+            "type": "string",
+            "nullable": true,
+            "title": "Numéro de PASS IAE"
+          },
+          "candidat_pass_iae_date_debut": {
+            "type": "string",
+            "format": "date",
+            "nullable": true,
+            "title": "Date de début du PASS IAE (ISO 8601)"
+          },
+          "candidat_pass_iae_date_fin": {
+            "type": "string",
+            "format": "date",
+            "nullable": true,
+            "title": "Date de fin du PASS IAE (ISO 8601)"
+          },
+          "entreprise_type": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CompanyKindEnum"
+              }
+            ],
+            "title": "Type d’entreprise"
+          },
+          "entreprise_nom": {
+            "type": "string",
+            "title": "Nom de l’entreprise"
+          },
+          "entreprise_siret": {
+            "type": "string",
+            "readOnly": true,
+            "title": "SIRET de l’entreprise",
+            "description": "Le SIREN de l’organisation mère est susceptible d’être retourné pour des structures dont le SIRET est inconnu."
+          },
+          "entreprise_adresse": {
+            "type": "string",
+            "title": "Adresse postale de l’entreprise"
+          },
+          "entreprise_employeur_email": {
+            "type": "string",
+            "title": "Adresse e-mail de l’employeur"
+          },
+          "orientation_emetteur_type": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OrientationEmetteurTypeEnum"
+              }
+            ],
+            "title": "Type d’émetteur"
+          },
+          "orientation_emetteur_sous_type": {
+            "oneOf": [
+              {
+                "enum": [
+                  "ACI",
+                  "AI",
+                  "EA",
+                  "EATT",
+                  "EI",
+                  "EITI",
+                  "ETTI",
+                  "GEIQ",
+                  "OPCS"
+                ],
+                "type": "string"
+              },
+              {
+                "enum": [
+                  "AFPA",
+                  "ASE",
+                  "Orienteur",
+                  "CAARUD",
+                  "CADA",
+                  "CAF",
+                  "CAP_EMPLOI",
+                  "CAVA",
+                  "CCAS",
+                  "CHRS",
+                  "CHU",
+                  "CIDFF",
+                  "CPH",
+                  "CSAPA",
+                  "E2C",
+                  "EPIDE",
+                  "FT",
+                  "HUDA",
+                  "ML",
+                  "MSA",
+                  "OACAS",
+                  "OIL",
+                  "ODC",
+                  "OHPD",
+                  "OCASF",
+                  "PENSION",
+                  "PIJ_BIJ",
+                  "PJJ",
+                  "PLIE",
+                  "RS_FJT",
+                  "PREVENTION",
+                  "DEPT",
+                  "SPIP",
+                  "Autre"
+                ],
+                "type": "string"
+              }
+            ],
+            "nullable": true,
+            "readOnly": true,
+            "title": "Sous-type d’émetteur",
+            "description": "\n**Selon le type, les sous-types suivants sont applicables:**\n\n- **_Employeur :_** \n    - `ACI` : Atelier chantier d'insertion\n    - `AI` : Association intermédiaire\n    - `EA` : Entreprise adaptée\n    - `EATT` : Entreprise adaptée de travail temporaire\n    - `EI` : Entreprise d'insertion\n    - `EITI` : Entreprise d'insertion par le travail indépendant\n    - `ETTI` : Entreprise de travail temporaire d'insertion\n    - `GEIQ` : Groupement d'employeurs pour l'insertion et la qualification\n    - `OPCS` : Organisation porteuse de la clause sociale\n- **_Prescripteur :_** \n    - `AFPA` : AFPA - Agence nationale pour la formation professionnelle des adultes\n    - `ASE` : ASE - Aide sociale à l'enfance\n    - `Orienteur` : Autre organisation (orienteur)\n    - `CAARUD` : CAARUD - Centre d'accueil et d'accompagnement à la réduction de risques pour usagers de drogues\n    - `CADA` : CADA - Centre d'accueil de demandeurs d'asile\n    - `CAF` : CAF - Caisse d'allocations familiales\n    - `CAP_EMPLOI` : Cap emploi\n    - `CAVA` : CAVA - Centre d'adaptation à la vie active\n    - `CCAS` : CCAS - Centre communal d'action sociale ou centre intercommunal d'action sociale\n    - `CHRS` : CHRS - Centre d'hébergement et de réinsertion sociale\n    - `CHU` : CHU - Centre d'hébergement d'urgence\n    - `CIDFF` : CIDFF - Centre d'information sur les droits des femmes et des familles\n    - `CPH` : CPH - Centre provisoire d'hébergement\n    - `CSAPA` : CSAPA - Centre de soins, d'accompagnement et de prévention en addictologie\n    - `E2C` : E2C - École de la deuxième chance\n    - `EPIDE` : EPIDE - Établissement pour l'insertion dans l'emploi\n    - `FT` : France Travail\n    - `HUDA` : HUDA - Hébergement d'urgence pour demandeurs d'asile\n    - `ML` : Mission locale\n    - `MSA` : MSA - Mutualité Sociale Agricole\n    - `OACAS` : OACAS - Structure porteuse d'un agrément national organisme d'accueil communautaire et d'activité solidaire\n    - `OIL` : Opérateur d'intermédiation locative\n    - `ODC` : Organisation délégataire d'un Conseil Départemental (Orientation et suivi des BRSA)\n    - `OHPD` : Organisme habilité par le préfet de département\n    - `OCASF` : Organisme mentionné au 8° du I de l’article L. 312-1 du code de l’action sociale et des familles\n    - `PENSION` : Pension de famille / résidence accueil\n    - `PIJ_BIJ` : PIJ-BIJ - Point/Bureau information jeunesse\n    - `PJJ` : PJJ - Protection judiciaire de la jeunesse\n    - `PLIE` : PLIE - Plan local pour l'insertion et l'emploi\n    - `RS_FJT` : Résidence sociale / FJT - Foyer de Jeunes Travailleurs\n    - `PREVENTION` : Service ou club de prévention\n    - `DEPT` : Service social du conseil départemental\n    - `SPIP` : SPIP - Service pénitentiaire d'insertion et de probation\n    - `Autre` : Autre"
+          },
+          "orientation_emetteur_nom": {
+            "type": "string",
+            "nullable": true,
+            "title": "Nom de famille de l’émetteur"
+          },
+          "orientation_emetteur_prenom": {
+            "type": "string",
+            "nullable": true,
+            "title": "Prénom de l’émetteur"
+          },
+          "orientation_emetteur_email": {
+            "type": "string",
+            "nullable": true,
+            "title": "Adresse e-mail de l’émetteur"
+          },
+          "orientation_emetteur_organisme": {
+            "type": "string",
+            "nullable": true,
+            "readOnly": true,
+            "title": "Nom de la structure de l’émetteur"
+          },
+          "orientation_emetteur_organisme_telephone": {
+            "type": "string",
+            "nullable": true,
+            "readOnly": true,
+            "title": "Téléphone de la structure de l’émetteur"
+          },
+          "orientation_postes_recherches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JobDescription"
+            },
+            "title": "Postes recherchés par le candidat"
+          },
+          "orientation_candidat_message": {
+            "type": "string",
+            "title": "Message de candidature",
+            "description": "Le message est potentiellement rédigé sur plusieurs lignes.\n\nDes marqueurs de sauts de ligne tels que `\\n` ou `\\r\\n` peuvent être inclus dans le message.\n\n**Il conviendra de les échapper ou de les convertir au besoin.**"
+          },
+          "orientation_candidat_cv": {
+            "type": "string",
+            "title": "Lien vers le CV du candidat"
+          },
+          "contrat_date_debut": {
+            "type": "string",
+            "format": "date",
+            "title": "Date de début du contrat (ISO 8601)"
+          },
+          "contrat_date_fin": {
+            "type": "string",
+            "format": "date",
+            "title": "Date de fin du contrat (ISO 8601)"
+          },
+          "contrat_poste_retenu": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/JobDescription"
+              }
+            ],
+            "nullable": true,
+            "title": "Poste retenu"
+          }
+        },
+        "required": [
+          "candidat_date_naissance",
+          "candidat_email",
+          "candidat_nir",
+          "candidat_nom",
+          "candidat_pass_iae_date_debut",
+          "candidat_pass_iae_date_fin",
+          "candidat_pass_iae_numero",
+          "candidat_pass_iae_statut",
+          "candidat_prenom",
+          "candidat_telephone",
+          "contrat_date_debut",
+          "contrat_date_fin",
+          "contrat_poste_retenu",
+          "cree_le",
+          "dernier_changement_le",
+          "entreprise_adresse",
+          "entreprise_employeur_email",
+          "entreprise_nom",
+          "entreprise_siret",
+          "entreprise_type",
+          "identifiant_unique",
+          "mis_a_jour_le",
+          "orientation_candidat_cv",
+          "orientation_candidat_message",
+          "orientation_emetteur_email",
+          "orientation_emetteur_nom",
+          "orientation_emetteur_organisme",
+          "orientation_emetteur_organisme_telephone",
+          "orientation_emetteur_prenom",
+          "orientation_emetteur_sous_type",
+          "orientation_emetteur_type",
+          "orientation_postes_recherches",
+          "statut"
+        ]
+      },
+      "JobDescription": {
+        "type": "object",
+        "properties": {
+          "rome": {
+            "type": "string",
+            "nullable": true,
+            "title": "Code ROME"
+          },
+          "titre": {
+            "type": "string",
+            "nullable": true,
+            "title": "Intitulé du poste"
+          },
+          "ville": {
+            "type": "string",
+            "nullable": true,
+            "readOnly": true,
+            "title": "Ville du poste"
+          }
+        },
+        "required": [
+          "rome",
+          "titre",
+          "ville"
+        ]
+      },
+      "MSPPriorAction": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MSPPriorActionCodeEnum"
+              }
+            ],
+            "readOnly": true
+          },
+          "date_debut": {
+            "type": "string",
+            "format": "date"
+          },
+          "date_fin": {
+            "type": "string",
+            "format": "date"
+          }
+        },
+        "required": [
+          "code",
+          "date_debut",
+          "date_fin"
+        ]
+      },
+      "MSPPriorActionCodeEnum": {
+        "enum": [
+          "AUTRE",
+          "MRS",
+          "PMSMP",
+          "STAGE"
+        ],
+        "type": "string",
+        "description": "* `AUTRE` - Autre\n* `MRS` - Mise en relation sociale\n* `PMSMP` - Période de mise en situation en milieu professionnel\n* `STAGE` - Stage"
+      },
+      "MarcheCompany": {
+        "type": "object",
+        "description": "Serialize Company instance for the le marché\n\nFields are based on https://github.com/betagouv/itou-marche/blob/e3baa3486254ec54036f9de8f46ed6fcf267ca8f/lemarche/siaes/management/commands/sync_c1_c4.py",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "siret": {
+            "type": "string",
+            "readOnly": true
+          },
+          "naf": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/CompanyKindEnum"
+          },
+          "name": {
+            "type": "string"
+          },
+          "brand": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "website": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "address_line_1": {
+            "type": "string"
+          },
+          "address_line_2": {
+            "type": "string"
+          },
+          "post_code": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "department": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceEnum"
+          },
+          "latitude": {
+            "type": "number",
+            "format": "double"
+          },
+          "longitude": {
+            "type": "number",
+            "format": "double"
+          },
+          "convention_is_active": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "convention_asp_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "admin_name": {
+            "type": "string",
+            "nullable": true,
+            "readOnly": true
+          },
+          "admin_email": {
+            "type": "string",
+            "nullable": true,
+            "readOnly": true
+          }
+        },
+        "required": [
+          "address_line_1",
+          "address_line_2",
+          "admin_email",
+          "admin_name",
+          "brand",
+          "city",
+          "convention_asp_id",
+          "convention_is_active",
+          "department",
+          "description",
+          "email",
+          "id",
+          "kind",
+          "latitude",
+          "longitude",
+          "naf",
+          "name",
+          "phone",
+          "post_code",
+          "siret",
+          "source",
+          "website"
+        ]
+      },
+      "NiveauQualificationEnum": {
+        "enum": [
+          "N3",
+          "N4",
+          "N5",
+          "SQ"
+        ],
+        "type": "string",
+        "description": "* `N3` - Niveau 3 (CAP, BEP)\n* `N4` - Niveau 4 (BP, Bac Général, Techno ou Pro, BT)\n* `N5` - Niveau 5 ou + (Bac+2 ou +)\n* `SQ` - Sans qualification"
+      },
+      "OrientationEmetteurTypeEnum": {
+        "enum": [
+          "job_seeker",
+          "prescriber",
+          "employer"
+        ],
+        "type": "string",
+        "description": "* `job_seeker` - Demandeur d'emploi\n* `prescriber` - Prescripteur\n* `employer` - Employeur"
+      },
+      "PaginatedApplicantList": {
+        "type": "object",
+        "required": [
+          "count",
+          "results"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "example": 123
+          },
+          "next": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=4"
+          },
+          "previous": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=2"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Applicant"
+            }
+          }
+        }
+      },
+      "PaginatedDataInclusionStructureList": {
+        "type": "object",
+        "required": [
+          "count",
+          "results"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "example": 123
+          },
+          "next": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=4"
+          },
+          "previous": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=2"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DataInclusionStructure"
+            }
+          }
+        }
+      },
+      "PaginatedEmployeeRecordAPIList": {
+        "type": "object",
+        "required": [
+          "count",
+          "results"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "example": 123
+          },
+          "next": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=4"
+          },
+          "previous": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=2"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EmployeeRecordAPI"
+            }
+          }
+        }
+      },
+      "PaginatedEmployeeRecordUpdateNotificationAPIList": {
+        "type": "object",
+        "required": [
+          "count",
+          "results"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "example": 123
+          },
+          "next": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=4"
+          },
+          "previous": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=2"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EmployeeRecordUpdateNotificationAPI"
+            }
+          }
+        }
+      },
+      "PaginatedGeiqJobApplicationList": {
+        "type": "object",
+        "required": [
+          "count",
+          "results"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "example": 123
+          },
+          "next": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=4"
+          },
+          "previous": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=2"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GeiqJobApplication"
+            }
+          }
+        }
+      },
+      "PaginatedMarcheCompanyList": {
+        "type": "object",
+        "required": [
+          "count",
+          "results"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "example": 123
+          },
+          "next": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=4"
+          },
+          "previous": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=2"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MarcheCompany"
+            }
+          }
+        }
+      },
+      "PaginatedSiaeList": {
+        "type": "object",
+        "required": [
+          "count",
+          "results"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "example": 123
+          },
+          "next": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=4"
+          },
+          "previous": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "example": "http://api.example.org/accounts/?page=2"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Siae"
+            }
+          }
+        }
+      },
+      "PrecisionPrescripteurEnum": {
+        "enum": [
+          "AFPA - Agence nationale pour la formation professionnelle des adultes",
+          "ASE - Aide sociale à l'enfance",
+          "Autre",
+          "Autre organisation (orienteur)",
+          "CAARUD - Centre d'accueil et d'accompagnement à la réduction de risques pour usagers de drogues",
+          "CADA - Centre d'accueil de demandeurs d'asile",
+          "CAF - Caisse d'allocations familiales",
+          "CAVA - Centre d'adaptation à la vie active",
+          "CCAS - Centre communal d'action sociale ou centre intercommunal d'action sociale",
+          "CHRS - Centre d'hébergement et de réinsertion sociale",
+          "CHU - Centre d'hébergement d'urgence",
+          "CIDFF - Centre d'information sur les droits des femmes et des familles",
+          "CPH - Centre provisoire d'hébergement",
+          "CSAPA - Centre de soins, d'accompagnement et de prévention en addictologie",
+          "Cap emploi",
+          "Demandeur d'emploi",
+          "E2C - École de la deuxième chance",
+          "EPIDE - Établissement pour l'insertion dans l'emploi",
+          "Employeur",
+          "France Travail",
+          "HUDA - Hébergement d'urgence pour demandeurs d'asile",
+          "MSA - Mutualité Sociale Agricole",
+          "Mission locale",
+          "OACAS - Structure porteuse d'un agrément national organisme d'accueil communautaire et d'activité solidaire",
+          "Opérateur d'intermédiation locative",
+          "Organisation délégataire d'un Conseil Départemental (Orientation et suivi des BRSA)",
+          "Organisme habilité par le préfet de département",
+          "Organisme mentionné au 8° du I de l’article L. 312-1 du code de l’action sociale et des familles",
+          "PIJ-BIJ - Point/Bureau information jeunesse",
+          "PJJ - Protection judiciaire de la jeunesse",
+          "PLIE - Plan local pour l'insertion et l'emploi",
+          "Pension de famille / résidence accueil",
+          "Prescripteur",
+          "Résidence sociale / FJT - Foyer de Jeunes Travailleurs",
+          "SPIP - Service pénitentiaire d'insertion et de probation",
+          "Service ou club de prévention",
+          "Service social du conseil départemental"
+        ],
+        "type": "string",
+        "description": "* `AFPA - Agence nationale pour la formation professionnelle des adultes` - AFPA - Agence nationale pour la formation professionnelle des adultes\n* `ASE - Aide sociale à l'enfance` - ASE - Aide sociale à l'enfance\n* `Autre` - Autre\n* `Autre organisation (orienteur)` - Autre organisation (orienteur)\n* `CAARUD - Centre d'accueil et d'accompagnement à la réduction de risques pour usagers de drogues` - CAARUD - Centre d'accueil et d'accompagnement à la réduction de risques pour usagers de drogues\n* `CADA - Centre d'accueil de demandeurs d'asile` - CADA - Centre d'accueil de demandeurs d'asile\n* `CAF - Caisse d'allocations familiales` - CAF - Caisse d'allocations familiales\n* `CAVA - Centre d'adaptation à la vie active` - CAVA - Centre d'adaptation à la vie active\n* `CCAS - Centre communal d'action sociale ou centre intercommunal d'action sociale` - CCAS - Centre communal d'action sociale ou centre intercommunal d'action sociale\n* `CHRS - Centre d'hébergement et de réinsertion sociale` - CHRS - Centre d'hébergement et de réinsertion sociale\n* `CHU - Centre d'hébergement d'urgence` - CHU - Centre d'hébergement d'urgence\n* `CIDFF - Centre d'information sur les droits des femmes et des familles` - CIDFF - Centre d'information sur les droits des femmes et des familles\n* `CPH - Centre provisoire d'hébergement` - CPH - Centre provisoire d'hébergement\n* `CSAPA - Centre de soins, d'accompagnement et de prévention en addictologie` - CSAPA - Centre de soins, d'accompagnement et de prévention en addictologie\n* `Cap emploi` - Cap emploi\n* `Demandeur d'emploi` - Demandeur d'emploi\n* `E2C - École de la deuxième chance` - E2C - École de la deuxième chance\n* `EPIDE - Établissement pour l'insertion dans l'emploi` - EPIDE - Établissement pour l'insertion dans l'emploi\n* `Employeur` - Employeur\n* `France Travail` - France Travail\n* `HUDA - Hébergement d'urgence pour demandeurs d'asile` - HUDA - Hébergement d'urgence pour demandeurs d'asile\n* `MSA - Mutualité Sociale Agricole` - MSA - Mutualité Sociale Agricole\n* `Mission locale` - Mission locale\n* `OACAS - Structure porteuse d'un agrément national organisme d'accueil communautaire et d'activité solidaire` - OACAS - Structure porteuse d'un agrément national organisme d'accueil communautaire et d'activité solidaire\n* `Opérateur d'intermédiation locative` - Opérateur d'intermédiation locative\n* `Organisation délégataire d'un Conseil Départemental (Orientation et suivi des BRSA)` - Organisation délégataire d'un Conseil Départemental (Orientation et suivi des BRSA)\n* `Organisme habilité par le préfet de département` - Organisme habilité par le préfet de département\n* `Organisme mentionné au 8° du I de l’article L. 312-1 du code de l’action sociale et des familles` - Organisme mentionné au 8° du I de l’article L. 312-1 du code de l’action sociale et des familles\n* `PIJ-BIJ - Point/Bureau information jeunesse` - PIJ-BIJ - Point/Bureau information jeunesse\n* `PJJ - Protection judiciaire de la jeunesse` - PJJ - Protection judiciaire de la jeunesse\n* `PLIE - Plan local pour l'insertion et l'emploi` - PLIE - Plan local pour l'insertion et l'emploi\n* `Pension de famille / résidence accueil` - Pension de famille / résidence accueil\n* `Prescripteur` - Prescripteur\n* `Résidence sociale / FJT - Foyer de Jeunes Travailleurs` - Résidence sociale / FJT - Foyer de Jeunes Travailleurs\n* `SPIP - Service pénitentiaire d'insertion et de probation` - SPIP - Service pénitentiaire d'insertion et de probation\n* `Service ou club de prévention` - Service ou club de prévention\n* `Service social du conseil départemental` - Service social du conseil départemental"
+      },
+      "PrequalPriorAction": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PrequalPriorActionCodeEnum"
+              }
+            ],
+            "readOnly": true
+          },
+          "date_debut": {
+            "type": "string",
+            "format": "date"
+          },
+          "date_fin": {
+            "type": "string",
+            "format": "date"
+          }
+        },
+        "required": [
+          "code",
+          "date_debut",
+          "date_fin"
+        ]
+      },
+      "PrequalPriorActionCodeEnum": {
+        "enum": [
+          "AFPR",
+          "AUTRE",
+          "LOCAL_PLAN",
+          "POE"
+        ],
+        "type": "string",
+        "description": "* `AFPR` - AFPR\n* `AUTRE` - Autre\n* `LOCAL_PLAN` - Dispositif régional ou sectoriel\n* `POE` - POE"
+      },
+      "PrescriberOrgStructure": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "nom": {
+            "type": "string"
+          },
+          "siret": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "site_web": {
+            "type": "string"
+          },
+          "telephone": {
+            "type": "string"
+          },
+          "courriel": {
+            "type": "string"
+          },
+          "code_postal": {
+            "type": "string"
+          },
+          "commune": {
+            "type": "string"
+          },
+          "adresse": {
+            "type": "string"
+          },
+          "complement_adresse": {
+            "type": "string"
+          },
+          "longitude": {
+            "type": "number",
+            "format": "double"
+          },
+          "latitude": {
+            "type": "number",
+            "format": "double"
+          },
+          "date_maj": {
+            "type": "string",
+            "readOnly": true
+          },
+          "lien_source": {
+            "type": "string",
+            "readOnly": true
+          },
+          "kind": {
+            "$ref": "#/components/schemas/PrescriberOrganizationKindEnum"
+          }
+        },
+        "required": [
+          "adresse",
+          "code_postal",
+          "commune",
+          "complement_adresse",
+          "courriel",
+          "date_maj",
+          "description",
+          "id",
+          "kind",
+          "latitude",
+          "lien_source",
+          "longitude",
+          "nom",
+          "siret",
+          "site_web",
+          "telephone"
+        ]
+      },
+      "PrescriberOrganizationKindEnum": {
+        "enum": [
+          "AFPA",
+          "ASE",
+          "Orienteur",
+          "CAARUD",
+          "CADA",
+          "CAF",
+          "CAP_EMPLOI",
+          "CAVA",
+          "CCAS",
+          "CHRS",
+          "CHU",
+          "CIDFF",
+          "CPH",
+          "CSAPA",
+          "E2C",
+          "EPIDE",
+          "FT",
+          "HUDA",
+          "ML",
+          "MSA",
+          "OACAS",
+          "OIL",
+          "ODC",
+          "OHPD",
+          "OCASF",
+          "PENSION",
+          "PIJ_BIJ",
+          "PJJ",
+          "PLIE",
+          "RS_FJT",
+          "PREVENTION",
+          "DEPT",
+          "SPIP",
+          "Autre"
+        ],
+        "type": "string",
+        "description": "* `AFPA` - AFPA - Agence nationale pour la formation professionnelle des adultes\n* `ASE` - ASE - Aide sociale à l'enfance\n* `Orienteur` - Autre organisation (orienteur)\n* `CAARUD` - CAARUD - Centre d'accueil et d'accompagnement à la réduction de risques pour usagers de drogues\n* `CADA` - CADA - Centre d'accueil de demandeurs d'asile\n* `CAF` - CAF - Caisse d'allocations familiales\n* `CAP_EMPLOI` - Cap emploi\n* `CAVA` - CAVA - Centre d'adaptation à la vie active\n* `CCAS` - CCAS - Centre communal d'action sociale ou centre intercommunal d'action sociale\n* `CHRS` - CHRS - Centre d'hébergement et de réinsertion sociale\n* `CHU` - CHU - Centre d'hébergement d'urgence\n* `CIDFF` - CIDFF - Centre d'information sur les droits des femmes et des familles\n* `CPH` - CPH - Centre provisoire d'hébergement\n* `CSAPA` - CSAPA - Centre de soins, d'accompagnement et de prévention en addictologie\n* `E2C` - E2C - École de la deuxième chance\n* `EPIDE` - EPIDE - Établissement pour l'insertion dans l'emploi\n* `FT` - France Travail\n* `HUDA` - HUDA - Hébergement d'urgence pour demandeurs d'asile\n* `ML` - Mission locale\n* `MSA` - MSA - Mutualité Sociale Agricole\n* `OACAS` - OACAS - Structure porteuse d'un agrément national organisme d'accueil communautaire et d'activité solidaire\n* `OIL` - Opérateur d'intermédiation locative\n* `ODC` - Organisation délégataire d'un Conseil Départemental (Orientation et suivi des BRSA)\n* `OHPD` - Organisme habilité par le préfet de département\n* `OCASF` - Organisme mentionné au 8° du I de l’article L. 312-1 du code de l’action sociale et des familles\n* `PENSION` - Pension de famille / résidence accueil\n* `PIJ_BIJ` - PIJ-BIJ - Point/Bureau information jeunesse\n* `PJJ` - PJJ - Protection judiciaire de la jeunesse\n* `PLIE` - PLIE - Plan local pour l'insertion et l'emploi\n* `RS_FJT` - Résidence sociale / FJT - Foyer de Jeunes Travailleurs\n* `PREVENTION` - Service ou club de prévention\n* `DEPT` - Service social du conseil départemental\n* `SPIP` - SPIP - Service pénitentiaire d'insertion et de probation\n* `Autre` - Autre"
+      },
+      "PrescripteurOrigineEnum": {
+        "enum": [
+          "ANNONCES_PI",
+          "AUTRE",
+          "CAP_EMPLOI",
+          "CS",
+          "CT",
+          "EA",
+          "FORUM",
+          "FT",
+          "GP",
+          "ML",
+          "OF",
+          "PLIE",
+          "PS",
+          "SIAE_CONS"
+        ],
+        "type": "string",
+        "description": "* `ANNONCES_PI` - Annonces presse / internet\n* `AUTRE` - Autres\n* `CAP_EMPLOI` - Cap Emploi\n* `CS` - Candidature spontanée\n* `CT` - Collectivité territoriale (PDI…)\n* `EA` - Entreprises adhérentes\n* `FORUM` - Forum\n* `FT` - France Travail Emploi\n* `GP` - Groupement d'employeurs\n* `ML` - Missions locales\n* `OF` - Organisme de formation\n* `PLIE` - PLIE\n* `PS` - Parrainage de salariés\n* `SIAE_CONS` - SIAE et consors"
+      },
+      "Siae": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "cree_le": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Date de création"
+          },
+          "mis_a_jour_le": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Date de mise à jour"
+          },
+          "siret": {
+            "type": "string",
+            "readOnly": true
+          },
+          "type": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CompanyKindEnum"
+              }
+            ],
+            "title": "Type de SIAE"
+          },
+          "raison_sociale": {
+            "type": "string",
+            "title": "Raison sociale de la SIAE"
+          },
+          "enseigne": {
+            "type": "string",
+            "title": "Nom de la SIAE utilisé pour affichage"
+          },
+          "telephone": {
+            "type": "string"
+          },
+          "courriel": {
+            "type": "string"
+          },
+          "site_web": {
+            "type": "string",
+            "title": "URL du site web de la SIAE"
+          },
+          "description": {
+            "type": "string",
+            "readOnly": true
+          },
+          "bloque_candidatures": {
+            "type": "boolean",
+            "title": "Est-ce que cette SIAE bloque toute les candidatures ?"
+          },
+          "addresse_ligne_1": {
+            "type": "string",
+            "title": "1ère ligne d’adresse de la SIAE"
+          },
+          "addresse_ligne_2": {
+            "type": "string",
+            "title": "2nde ligne d’adresse de la SIAE"
+          },
+          "code_postal": {
+            "type": "string",
+            "title": "Code postal de la SIAE"
+          },
+          "ville": {
+            "type": "string",
+            "title": "Ville où se trouve la SIAE"
+          },
+          "departement": {
+            "type": "string",
+            "title": "Le département où se trouve la SIAE"
+          },
+          "postes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/_JobDescription"
+            },
+            "title": "Les postes disponibles"
+          }
+        },
+        "required": [
+          "addresse_ligne_1",
+          "addresse_ligne_2",
+          "bloque_candidatures",
+          "code_postal",
+          "courriel",
+          "cree_le",
+          "departement",
+          "description",
+          "enseigne",
+          "id",
+          "mis_a_jour_le",
+          "postes",
+          "raison_sociale",
+          "siret",
+          "site_web",
+          "telephone",
+          "type",
+          "ville"
+        ]
+      },
+      "SourceEnum": {
+        "enum": [
+          "ASP",
+          "GEIQ",
+          "EA_EATT",
+          "USER_CREATED",
+          "STAFF_CREATED"
+        ],
+        "type": "string",
+        "description": "* `ASP` - Export ASP\n* `GEIQ` - Export GEIQ\n* `EA_EATT` - Export EA+EATT\n* `USER_CREATED` - Utilisateur (Antenne)\n* `STAFF_CREATED` - Staff Itou"
+      },
+      "StatutEnum": {
+        "enum": [
+          "new",
+          "processing",
+          "postponed",
+          "prior_to_hire",
+          "accepted",
+          "refused",
+          "cancelled",
+          "obsolete",
+          "pool"
+        ],
+        "type": "string",
+        "description": "* `new` - Nouvelle candidature\n* `processing` - Candidature à l'étude\n* `postponed` - Candidature en attente\n* `prior_to_hire` - Action préalable à l’embauche\n* `accepted` - Candidature acceptée\n* `refused` - Candidature déclinée\n* `cancelled` - Embauche annulée\n* `obsolete` - Embauché ailleurs\n* `pool` - Vivier de candidatures"
+      },
+      "TypeContratEnum": {
+        "enum": [
+          "Autre SF",
+          "CAPP",
+          "CDD",
+          "CDI",
+          "CPRO"
+        ],
+        "type": "string",
+        "description": "* `Autre SF` - Autre SF\n* `CAPP` - Contrat d'apprentissage\n* `CDD` - CDD\n* `CDI` - CDI\n* `CPRO` - Contrat de professionnalisation"
+      },
+      "TypeQualificationEnum": {
+        "enum": [
+          "CCN",
+          "CQP",
+          "RNCP"
+        ],
+        "type": "string",
+        "description": "* `CCN` - Positionnement de CCN\n* `CQP` - CQP\n* `RNCP` - Diplôme d’État ou Titre homologué"
+      },
+      "_API_Address": {
+        "type": "object",
+        "description": "This class in only useful for compatibility.\nWe decided not to send phone and email (business concerns and bad ASP address filters).\nBut we make it available in the API for compatibility with original document\n(these fields should really be actual data, not fake, by implicit contract).",
+        "properties": {
+          "adrTelephone": {
+            "type": "string"
+          },
+          "adrMail": {
+            "type": "string"
+          },
+          "adrNumeroVoie": {
+            "type": "string"
+          },
+          "codeextensionvoie": {
+            "type": "string"
+          },
+          "codetypevoie": {
+            "type": "string"
+          },
+          "adrLibelleVoie": {
+            "type": "string",
+            "nullable": true,
+            "readOnly": true
+          },
+          "adrCpltDistribution": {
+            "type": "string",
+            "nullable": true,
+            "readOnly": true
+          },
+          "codeinseecom": {
+            "type": "string",
+            "nullable": true
+          },
+          "codepostalcedex": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "adrCpltDistribution",
+          "adrLibelleVoie",
+          "adrMail",
+          "adrNumeroVoie",
+          "adrTelephone",
+          "codeextensionvoie",
+          "codeinseecom",
+          "codepostalcedex",
+          "codetypevoie"
+        ]
+      },
+      "_API_Person": {
+        "type": "object",
+        "properties": {
+          "NIR": {
+            "type": "string",
+            "title": "Le NIR renseigné sur le profil du demandeur d'emploi"
+          },
+          "NTT": {
+            "type": "string",
+            "title": "Le NTT renseigné sur la fiche salarié",
+            "description": "Nécessaire pour les salariés sans NIR/NIA ou avec un NIA commençant par 7 ou 8."
+          },
+          "passIae": {
+            "type": "string"
+          },
+          "idItou": {
+            "type": "string"
+          },
+          "civilite": {
+            "$ref": "#/components/schemas/Civilite"
+          },
+          "nomUsage": {
+            "type": "string",
+            "readOnly": true
+          },
+          "prenom": {
+            "type": "string",
+            "readOnly": true
+          },
+          "dateNaissance": {
+            "type": "string",
+            "format": "date"
+          },
+          "codeDpt": {
+            "type": "string"
+          },
+          "codeInseePays": {
+            "type": "string",
+            "nullable": true
+          },
+          "codeGroupePays": {
+            "type": "string",
+            "nullable": true
+          },
+          "codeComInsee": {
+            "type": "object",
+            "properties": {
+              "codeComInsee": {
+                "type": "string",
+                "nullable": true
+              },
+              "codeDpt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "codeComInsee",
+              "codeDpt"
+            ],
+            "readOnly": true
+          },
+          "passDateDeb": {
+            "type": "string",
+            "format": "date"
+          },
+          "passDateFin": {
+            "type": "string",
+            "format": "date"
+          },
+          "salarieNIR": {
+            "type": "string",
+            "readOnly": true,
+            "title": "Le NIR/NIA/NTT qui serait transmis à l'ASP",
+            "description": "NTT pour les salariés sans NIR/NIA ou avec un NIA commençant par 7 ou 8, sinon NIR/NIA."
+          }
+        },
+        "required": [
+          "NIR",
+          "NTT",
+          "civilite",
+          "codeComInsee",
+          "codeGroupePays",
+          "codeInseePays",
+          "dateNaissance",
+          "idItou",
+          "nomUsage",
+          "passDateDeb",
+          "passDateFin",
+          "passIae",
+          "prenom",
+          "salarieNIR"
+        ]
+      },
+      "_API_Situation": {
+        "type": "object",
+        "properties": {
+          "niveauFormation": {
+            "type": "string"
+          },
+          "salarieEnEmploi": {
+            "type": "boolean"
+          },
+          "salarieSansEmploiDepuis": {
+            "type": "string"
+          },
+          "salarieSansRessource": {
+            "type": "boolean"
+          },
+          "inscritPoleEmploi": {
+            "type": "boolean"
+          },
+          "inscritPoleEmploiDepuis": {
+            "type": "string"
+          },
+          "numeroIDE": {
+            "type": "string"
+          },
+          "salarieRQTH": {
+            "type": "boolean"
+          },
+          "salarieOETH": {
+            "type": "boolean"
+          },
+          "salarieAideSociale": {
+            "type": "boolean"
+          },
+          "salarieBenefRSA": {
+            "type": "string"
+          },
+          "salarieBenefRSADepuis": {
+            "type": "string"
+          },
+          "salarieBenefASS": {
+            "type": "boolean"
+          },
+          "salarieBenefASSDepuis": {
+            "type": "string"
+          },
+          "salarieBenefAAH": {
+            "type": "boolean"
+          },
+          "salarieBenefAAHDepuis": {
+            "type": "string"
+          },
+          "salarieBenefATA": {
+            "type": "string",
+            "readOnly": true,
+            "default": "False"
+          },
+          "salarieBenefATADepuis": {
+            "type": "string",
+            "readOnly": true
+          },
+          "salarieTypeEmployeur": {
+            "type": "string"
+          },
+          "orienteur": {
+            "type": "string"
+          },
+          "salarieSortantASE": {
+            "type": "boolean"
+          },
+          "salarieParentIsole": {
+            "type": "boolean"
+          },
+          "salarieHebergement": {
+            "type": "boolean"
+          },
+          "salarieRefugie": {
+            "type": "boolean"
+          },
+          "salarieSortantDetention": {
+            "type": "boolean"
+          },
+          "salarieLangueFrancaise": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "salarieMobilite": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "inscritPoleEmploi",
+          "inscritPoleEmploiDepuis",
+          "niveauFormation",
+          "numeroIDE",
+          "salarieAideSociale",
+          "salarieBenefAAH",
+          "salarieBenefAAHDepuis",
+          "salarieBenefASS",
+          "salarieBenefASSDepuis",
+          "salarieBenefATA",
+          "salarieBenefATADepuis",
+          "salarieBenefRSA",
+          "salarieBenefRSADepuis",
+          "salarieEnEmploi",
+          "salarieHebergement",
+          "salarieLangueFrancaise",
+          "salarieMobilite",
+          "salarieOETH",
+          "salarieParentIsole",
+          "salarieRQTH",
+          "salarieRefugie",
+          "salarieSansEmploiDepuis",
+          "salarieSansRessource",
+          "salarieSortantASE",
+          "salarieSortantDetention"
+        ]
+      },
+      "_JobDescription": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "rome": {
+            "type": "string",
+            "title": "Code ROME du poste"
+          },
+          "cree_le": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Date de création"
+          },
+          "mis_a_jour_le": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Date de mise à jour"
+          },
+          "recrutement_ouvert": {
+            "type": "string",
+            "title": "Ce poste est-il encore ouvert ?"
+          },
+          "description": {
+            "type": "string",
+            "readOnly": true
+          },
+          "appellation_modifiee": {
+            "type": "string",
+            "title": "Nom personnalisé"
+          },
+          "type_contrat": {
+            "type": "string",
+            "title": "Type de contrat"
+          },
+          "nombre_postes_ouverts": {
+            "type": "integer",
+            "title": "Nombre de postes ouverts"
+          },
+          "lieu": {
+            "$ref": "#/components/schemas/City"
+          },
+          "profil_recherche": {
+            "type": "string",
+            "title": "Profil recherché"
+          }
+        },
+        "required": [
+          "appellation_modifiee",
+          "cree_le",
+          "description",
+          "id",
+          "lieu",
+          "mis_a_jour_le",
+          "nombre_postes_ouverts",
+          "profil_recherche",
+          "recrutement_ouvert",
+          "rome",
+          "type_contrat"
+        ]
+      }
+    },
+    "securitySchemes": {
+      "cookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "sessionid"
+      },
+      "tokenAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Authorization",
+        "description": "Token-based authentication with required prefix \"Token\""
+      }
+    }
+  }
+}

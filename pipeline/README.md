@@ -42,14 +42,15 @@ python -m pipeline.etl --step deploy
 
 ## 📂 Architecture
 
-The pipeline is split into four main stages:
+The pipeline is split into several main stages:
 
 1.  **Ingest (`ingest.py`)**: Fetches raw data and cleans it into intermediate Parquet files. Includes `fetch_rna_rag_stats` for BigQuery RAG metrics.
 2.  **Build (`build.py`)**: Aggregates cleaned data into final ODIS artifacts (joins, geometry operations).
 3.  **Prescoring (`prescoring.py`)**: Calculates ratios, densities, and pre-scales scores for performance.
 4.  **Live Ingest (`ft_live_ingest.py`)**: Fetches real-time job offers from France Travail API and aggregates them.
-5.  **RAG Enrichment**: The `fetch_rna_rag_stats` step queries BigQuery to find associations relevant to social inclusion (using the `is_inclusion_relevant` flag) and groups them by RAG categories.
-6.  **Deploy (`etl.py`)**: Copies final artifacts to the application's data directory.
+5.  **Inclusion Ingest (`emplois_inclusion_ingest.py`)**: Authenticates via API Token (using `EMPLOIS_INCLUSION_LOGIN` and `EMPLOIS_INCLUSION_PWD` in `.env`) to fetch granular job openings from Les emplois de l'inclusion API.
+6.  **RAG Enrichment**: The `fetch_rna_rag_stats` step queries BigQuery to find associations relevant to social inclusion (using the `is_inclusion_relevant` flag) and groups them by RAG categories.
+7.  **Deploy (`etl.py`)**: Copies final artifacts to the application's data directory.
 
 ### File Structure
 
@@ -91,7 +92,8 @@ The pipeline generates the following Parquet files in `pipeline/cache/output/` a
 | **`loyers.parquet`**                    | Average Rent data (Appartements).          | `codgeo`, `loyer_app_m2`                                                                                                                   |
 | **`population_details.parquet`**        | Age-specific population counts (2016-2022) | `codgeo`, `pop_jeune_2016`, `pop_jeune_2022`, `pop_active_2016`, `pop_active_2022`                                                         |
 | **`odis_refugee_associations.parquet`** | Detailed Refugee Associations List.        | `id`, `codgeo`, `bassin_de_vie`, `name`, `description`, `waldec_code`                                                                      |
-| **`odis_live_jobs_agg.parquet`**        | Live Employment counts (France Travail).   | `commune`, `romeCode`, `romeLibelle`, `total_postes`, `nb_offres_tension`                                                                  |
+| **`odis_ft_jobs_agg.parquet`**          | Live Employment counts (France Travail).   | `commune`, `romeCode`, `romeLibelle`, `total_postes`, `nb_offres_tension`                                                                  |
+| **`odis_inclusion_jobs.parquet`**       | Granular Inclusion Job offers.             | `codgeo`, `siae_siret`, `siae_name`, `siae_type`, `rome`, `postes`                                                                         |
 
 ## 🔄 Data Flow
 
@@ -109,4 +111,5 @@ The pipeline generates the following Parquet files in `pipeline/cache/output/` a
     - **Scale**: Min-max scales scores (e.g., `met_scaled`, `inc_lien_social_score`).
     - **Update**: Overwrites `odis_communes.parquet` with enriched data.
 4.  **Deploy (`etl.py`)**:
+    - **Check Freshness**: Interactively evaluates the TTL (7 days) for live data APIs like France Travail and Les emplois de l'inclusion, prompting to refresh if needed.
     - **Copy**: Moves generated files from `pipeline/cache/output/` to `data/` for the application to use.
