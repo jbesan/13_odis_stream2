@@ -916,7 +916,7 @@ def display_results_list() -> None:
     """Displays the list of top N results."""
     st.subheader("Meilleurs résultats")
     st.text("Cliquez sur un résultat pour comprendre le détail du score")
-    st.markdown('<style> [class*="st-key-button_top"] .stButton button div {text-align:left; width:100%;},</style>', unsafe_allow_html=True)
+    st.markdown('<style> [class*="st-key-button_top"] .stButton button div, [class*="st-key-button_top"] .stButton button p { justify-content: flex-start !important; text-align: left !important; width: 100%; } </style>', unsafe_allow_html=True)
 
     top_n = 5
     df = st.session_state.processed_gdf
