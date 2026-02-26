@@ -84,19 +84,19 @@ def _search_inclusion_jobs_logic(
     }
     
     if location:
-        # The API uses 'postes_dans_le_departement' (2 digits)
-        # Handle INSEE code (5 digits) by taking prefix
+        # The API uses 'code_insee' and 'distance_max_km' for radius search
         if len(location) == 5:
-            dept = location[:2]
-            params["postes_dans_le_departement"] = dept
+            params["code_insee"] = location
+            params["distance_max_km"] = 20 # 20km radius (similar to France Travail)
         else:
+            # Fallback if somehow just a department code is passed
             params["postes_dans_le_departement"] = location
 
     # The API doesn't have a direct 'rome' filter in the main SIAE list?
     # Actually, let's check the API documentation or previous script.
     # In emplois_inclusion_ingest.py, it fetches EVERYTHING for a dept and filters.
     
-    logger.info(f"🔍 [Inclusion] Searching for jobs in {location}...")
+    logger.info(f"🔍 [Inclusion] Searching for jobs near {location} (20km radius)...")
     
     try:
         response = requests.get(API_URL, headers=headers, params=params, timeout=15)

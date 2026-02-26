@@ -618,7 +618,7 @@ scores:
       unit: offres
       display_factor: 1
       tooltip: "Nombre d'offres en SIAE pour l'adulte 1 (Source: Les emplois de l'inclusion)"
-    weight: 2.0
+    weight: 3.0
     min_bound: 0
     max_bound: 5
   - id: met_siae_match_adult2_scaled
@@ -634,6 +634,6 @@ scores:
       unit: offres
       display_factor: 1
       tooltip: "Nombre d'offres en SIAE pour l'adulte 2 (Source: Les emplois de l'inclusion)"
-    weight: 2.0
+    weight: 3.0
     min_bound: 0
     max_bound: 5
