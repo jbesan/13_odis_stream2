@@ -106,6 +106,10 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         
         # Merge BPE Petite Enfance (Creches)
         merge_clean("bpe_petite_enfance_cols", ['bpe_creches_count'])
+        
+        # Merge Hebergement metrics (New F-42)
+        merge_clean("bpe_hebergement_cols", ['heb_centres_heb_cap', 'heb_foyers_count'])
+        merge_clean("hebergement_rna_cols", ['heb_loc_iml_count', 'heb_habitant_count'])
 
         # Merge Gares (Odace API)
         merge_clean("gares", ['gare_count', 'has_gare'])
@@ -286,8 +290,8 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
             'lien_social_count', 'svc_incl_count', 
             'pop_active', 'pop_employes', 'pop_chomeurs', 
             'metiers_offres_diff', 'log_priv_vacant_plus_2ans', 'log_priv_total', 'edu_pe_tx_couverture',
-            'bpe_creches_count', 'lien_social_count',
-            'pop_jeune_2016', 'pop_jeune_2022', 'pop_active_2016', 'pop_active_2022',
+            'bpe_creches_count', 'heb_centres_heb_cap', 'heb_foyers_count',
+            'heb_loc_iml_count', 'heb_habitant_count',
             'nb_stops_bus', 'nb_stops_tram', 'nb_stops_metro', 'nb_stops_train', 'nb_stops_total',
             'inc_siae_count'
         ]
@@ -467,7 +471,9 @@ def build_bassins_de_vie(communes_gdf: gpd.GeoDataFrame, config: Dict[str, Any],
             'pop_active', 'pop_employes', 'pop_chomeurs', 
             'log_priv_vacant_plus_2ans',
             'metiers_offres_diff', 'bpe_creches_count',
-            'inc_siae_count'
+            'inc_siae_count',
+            'heb_centres_heb_cap', 'heb_foyers_count',
+            'heb_loc_iml_count', 'heb_habitant_count'
         ]
         # metiers_offres_diff was dropped in build_communes, so we can't sum it here if we load from there.
         # But wait, build_bassins_de_vie takes the returned communes_gdf.
@@ -826,11 +832,11 @@ def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
         else:
              logging.warning("Clean services_inclusion.parquet not found. Run ingest.")
 
-        # BPE - Petite Enfance POIs
-        bpe_pois_path = CLEAN_DIR / "bpe_petite_enfance_pois.parquet"
+        # BPE - POIs (Creches + Hebergement)
+        bpe_pois_path = CLEAN_DIR / "bpe_pois.parquet"
         if bpe_pois_path.exists():
             bpe_pois_df = pd.read_parquet(bpe_pois_path)
-            # Schema should already match from ingest step
+            # Schema already matches from ingest step
             pois_list.append(bpe_pois_df)
 
         if pois_list:

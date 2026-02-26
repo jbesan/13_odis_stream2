@@ -57,7 +57,7 @@ def test_type_logement_propagation(mock_data_context):
         criteria = {
             'commune_actuelle': {'code': '33063', 'label': 'Bordeaux'},
             'type_logement': {'code': 'appt_t1_t2', 'label': 'Appartement (T1 & T2)'},
-            'hebergement': 'Location'
+            'hebergement_cible': []
         }
         
         _compute_top_cities_logic(criteria)
@@ -71,7 +71,7 @@ def test_type_logement_propagation(mock_data_context):
         mock_engine.run.reset_mock()
         criteria_no_type = {
             'commune_actuelle': {'code': '33063', 'label': 'Bordeaux'},
-            'hebergement': 'Location'
+            'hebergement_cible': []
         }
         _compute_top_cities_logic(criteria_no_type)
         config_default = mock_engine.run.call_args[0][0]

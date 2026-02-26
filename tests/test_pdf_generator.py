@@ -24,7 +24,7 @@ def sample_session_state():
         loc_search_code=None,
         nb_adultes=1,
         nb_enfants=1,
-        hebergement='Location',
+        hebergement_cible=[],
         logement='Location',
         codes_metiers=[[]],
         codes_formations=[[]],
@@ -98,6 +98,8 @@ def sample_results_df():
     return gdf.reset_index()
 
 
+from unittest.mock import patch
+
 def test_generate_pdf_report(sample_session_state, sample_results_df):
     """
     Tests that generate_pdf_report runs without errors and produces a valid PDF bytes object.
@@ -107,8 +109,9 @@ def test_generate_pdf_report(sample_session_state, sample_results_df):
     results_df = sample_results_df
 
     # Act
-    # This will raise an exception if something goes wrong with fpdf2, matplotlib, etc.
-    pdf_bytes = generate_pdf_report(session_state, results_df)
+    # Use patch to mock streamlit's session_state for the duration of the call
+    with patch('app.core.pdf_generator.ui.st.session_state', session_state):
+        pdf_bytes = generate_pdf_report(session_state, results_df)
 
     # Assert
     # 1. Check that the output is a bytes object

@@ -53,7 +53,7 @@ def base_config():
         loc_search_area='departement',
         nb_adultes=1,
         nb_enfants=0,
-        hebergement='Location',
+        hebergement_cible=[],
         logement='Location',
         codes_metiers=[[]],
         codes_formations=[[]],

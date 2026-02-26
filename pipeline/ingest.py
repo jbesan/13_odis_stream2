@@ -9,6 +9,7 @@ import json
 import time
 from pathlib import Path
 from typing import Dict, Any, Optional
+from google import genai
 from google.cloud import bigquery
 
 from pipeline.common import (
@@ -276,6 +277,33 @@ def clean_rpls(config: Dict[str, Any], logger: PipelineLogger):
         output_path = CLEAN_DIR / "rpls.parquet"
         df_out.to_parquet(output_path)
         logger.log_step("clean_rpls", "COMPLETED", {"path": str(output_path)})
+
+def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
+    """Extracts points of interest and aggregated counts from BPE."""
+    output_heb_cols = CLEAN_DIR / "bpe_hebergement_cols.parquet"
+    output_creches_cols = CLEAN_DIR / "bpe_petite_enfance_cols.parquet"
+    output_pois = CLEAN_DIR / "bpe_pois.parquet"
+
+    # 1-Year TTL Check for hebergement part
+    heb_needs_refresh = True
+    if output_heb_cols.exists():
+        mtime = datetime.fromtimestamp(output_heb_cols.stat().st_mtime)
+        age_days = (datetime.now() - mtime).days
+        if age_days < 365:
+            logging.info(f"[BPE] Hebergement stats are {age_days} days old. Cache is valid (TTL=1 year).")
+            heb_needs_refresh = False
+
+    if not heb_needs_refresh and output_creches_cols.exists() and output_pois.exists():
+        logging.info("[BPE] All BPE outputs are within TTL. Skipping.")
+        return
+
+    logger.log_step("clean_bpe", "STARTED")
+    source = config['sources']['bpe']
+    path = CACHE_DIR / source['local_name']
+    if not path.exists(): return
+
+    df = load_dataset(path, source)
+    df.columns = [c.strip() for c in df.columns]
 
 def clean_caf(config: Dict[str, Any], logger: PipelineLogger):
     """Cleans CAF and saves to parquet."""
@@ -914,23 +942,32 @@ def clean_school_effectifs(config: Dict[str, Any], logger: PipelineLogger):
         0.0
     )
     
-    output_path = CLEAN_DIR / "school_effectifs.parquet"
-    df_agg.to_parquet(output_path)
     logger.log_step("clean_school_effectifs", "COMPLETED", {"path": str(output_path), "rows": len(df_agg)})
 
 def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
-    """Cleans BPE data for Creches and Petite Enfance."""
+    """Extracts points of interest and aggregated counts from BPE."""
+    output_heb_cols = CLEAN_DIR / "bpe_hebergement_cols.parquet"
+    output_creches_cols = CLEAN_DIR / "bpe_petite_enfance_cols.parquet"
+    output_pois = CLEAN_DIR / "bpe_pois.parquet"
+
+    # 1-Year TTL Check (as requested by user)
+    needs_refresh = True
+    if output_heb_cols.exists() and output_creches_cols.exists() and output_pois.exists():
+        mtime = datetime.fromtimestamp(output_heb_cols.stat().st_mtime)
+        age_days = (datetime.now() - mtime).days
+        if age_days < 365:
+            logging.info(f"[BPE] BPE stats (hebergement) are {age_days} days old. Using cache (TTL=1 year).")
+            needs_refresh = False
+
+    if not needs_refresh:
+        return
+
     logger.log_step("clean_bpe", "STARTED")
     source = config['sources']['bpe']
     path = CACHE_DIR / source['local_name']
     if not path.exists(): return
 
     df = load_dataset(path, source)
-    
-    # Filter for relevant types
-    target_types = {
-        'D502': 'Creche'
-    }
     
     # Check columns: DEP, COM, TYPEQU, LAMBERT_X, LAMBERT_Y
     # Construct CODGEO
@@ -945,44 +982,137 @@ def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
             logging.warning("BPE: TYPEQU column not found.")
             return
 
-    df_filtered = df[df['TYPEQU'].isin(target_types.keys())].copy()
-    df_filtered['type_libelle'] = df_filtered['TYPEQU'].map(target_types)
+    # --- 1. Petite Enfance (Creches) ---
+    df_creches = df[df['TYPEQU'] == 'D502'].copy()
+    df_creches['type_libelle'] = 'Creche'
+    creches_counts = df_creches.groupby('codgeo').size().rename('bpe_creches_count').reset_index()
     
-    # 1. Output Counts (aggregated by commune)
-    counts = df_filtered.groupby('codgeo').size().rename('bpe_creches_count').reset_index()
+    output_creches_cols = CLEAN_DIR / "bpe_petite_enfance_cols.parquet"
+    creches_counts.to_parquet(output_creches_cols)
+
+    # --- 2. Hebergement (CHRS, CPH, FJT, Pensions) ---
+    # CHRS (D703), CPH (D704) -> sum(CAPACITE)
+    df_centres = df[df['TYPEQU'].isin(['D703', 'D704'])].copy()
+    df_centres['type_libelle'] = df_centres['TYPEQU'].map({'D703': 'CHRS', 'D704': 'CPH'})
+    df_centres['CAPACITE'] = pd.to_numeric(df_centres['CAPACITE'], errors='coerce').fillna(0)
+    centres_agg = df_centres.groupby('codgeo')['CAPACITE'].sum().rename('heb_centres_heb_cap').reset_index()
+
+    # FJT & Pensions & Migrants (D710 + name filter) -> Count
+    # Keyword 'pension' for Pensions de famille as per user
+    mask_fjt = (df['TYPEQU'] == 'D710') & (
+        df['NOMRS'].str.contains('fjt|foyer jeunes travailleurs|pension|migrant', case=False, na=False, regex=True)
+    )
+    df_foyers = df[mask_fjt].copy()
+    df_foyers['type_libelle'] = 'Foyer/Pension'
+    foyers_agg = df_foyers.groupby('codgeo').size().rename('heb_foyers_count').reset_index()
+
+    heb_metrics = centres_agg.merge(foyers_agg, on='codgeo', how='outer').fillna(0)
+    output_heb_cols = CLEAN_DIR / "bpe_hebergement_cols.parquet"
+    heb_metrics.to_parquet(output_heb_cols)
+
+    # --- 3. POIs Output ---
+    # Combine all for POIs
+    df_all_pois = pd.concat([df_creches, df_centres, df_foyers])
     
-    output_cols = CLEAN_DIR / "bpe_petite_enfance_cols.parquet"
-    counts.to_parquet(output_cols)
-    
-    # 2. Output POIs Details
-    # Rename columns to match POI schema
-    # id (generated), name (default?), type, category, lat, lon
-    # BPE parquet usually has LAMBERT_X, LAMBERT_Y in RGF93 (EPSG:2154)
-    if 'LAMBERT_X' in df_filtered.columns and 'LAMBERT_Y' in df_filtered.columns:
+    if 'LAMBERT_X' in df_all_pois.columns and 'LAMBERT_Y' in df_all_pois.columns:
             gdf = gpd.GeoDataFrame(
-                df_filtered, 
-                geometry=gpd.points_from_xy(df_filtered.LAMBERT_X, df_filtered.LAMBERT_Y),
+                df_all_pois, 
+                geometry=gpd.points_from_xy(df_all_pois.LAMBERT_X, df_all_pois.LAMBERT_Y),
                 crs="EPSG:2154"
             ).to_crs("EPSG:4326")
             
             pois = pd.DataFrame({
-                'id': gdf.index.astype(str), # Use index as partial ID
+                'id': gdf.index.astype(str),
                 'name': gdf['NOMRS'].astype(str),
                 'type': gdf['type_libelle'],
-                'category': 'education', # or 'petite_enfance'
+                'category': gdf['TYPEQU'].apply(lambda x: 'education' if x == 'D502' else 'hebergement'),
                 'lat': gdf.geometry.y,
                 'lon': gdf.geometry.x,
                 'codgeo': gdf['codgeo']
             })
             
-            output_pois = CLEAN_DIR / "bpe_petite_enfance_pois.parquet"
+            output_pois = CLEAN_DIR / "bpe_pois.parquet"
             pois.to_parquet(output_pois)
-            logger.log_step("clean_bpe", "COMPLETED", {"counts": str(output_cols), "pois": str(output_pois)})
-        
+            logger.log_step("clean_bpe", "COMPLETED", {
+                "creches_cols": str(output_creches_cols), 
+                "heb_cols": str(output_heb_cols),
+                "pois": str(output_pois)
+            })
     else:
             logging.warning("BPE: LAMBERT coordinates not found.")
-            # Still valid to save counts
-            logger.log_step("clean_bpe", "PARTIAL", {"counts": str(output_cols)})
+            logger.log_step("clean_bpe", "PARTIAL", {"counts": str(output_creches_cols)})
+
+def compute_rna_rag_counts(query_text: str, threshold: float = 0.65) -> pd.DataFrame:
+    """Computes semantic counts for a query using BigQuery Vector Search (ML.DISTANCE)."""
+    client = bigquery.Client(project="odis-stream2")
+    genai_client = genai.Client(vertexai=True, project="odis-stream2", location="europe-west1")
+    
+    # Generate Embedding
+    response = genai_client.models.embed_content(
+        model="text-multilingual-embedding-002",
+        contents=[query_text],
+        config={'output_dimensionality': 128}
+    )
+    query_vector = response.embeddings[0].values
+
+    # Query using ML.DISTANCE (Cosine distance = 1 - cosine similarity)
+    # Threshold 0.8 similarity => 0.2 distance
+    distance_threshold = 1.0 - threshold
+    
+    sql = """
+    SELECT 
+        codgeo,
+        COUNT(*) as count
+    FROM `odis-stream2.rna_rag.rna_rag_mini`
+    WHERE is_inclusion_relevant = True
+    AND ML.DISTANCE(ARRAY(SELECT element FROM UNNEST(embedding_128.list)), @query_vec, 'COSINE') < @dist_threshold
+    GROUP BY 1
+    """
+    
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ArrayQueryParameter("query_vec", "FLOAT64", query_vector),
+            bigquery.ScalarQueryParameter("dist_threshold", "FLOAT64", distance_threshold),
+        ]
+    )
+    
+    logging.info(f"📡 [RNA RAG] Computing semantic counts for: '{query_text}'")
+    df = client.query(sql, job_config=job_config).to_dataframe()
+    return df
+
+def clean_hebergement_rna(config: Dict[str, Any], logger: PipelineLogger):
+    """Extracts accommodation-related associations from RNA using RAG (IML & Citoyen)."""
+    output_agg = CLEAN_DIR / "hebergement_rna_cols.parquet"
+    
+    # 1. 1-Year TTL Check (as requested by user)
+    if output_agg.exists():
+        mtime = datetime.fromtimestamp(output_agg.stat().st_mtime)
+        age_days = (datetime.now() - mtime).days
+        if age_days < 365:
+            logging.info(f"[RNA RAG] Hebergement RNA stats are {age_days} days old. Using cache (TTL=1 year).")
+            return
+            
+    logger.log_step("clean_hebergement_rna", "STARTED")
+
+    try:
+        # A. IML Counts
+        df_iml = compute_rna_rag_counts("Bail solidaire et Intermediation Locative (IML)")
+        df_iml = df_iml.rename(columns={'count': 'heb_loc_iml_count'})
+
+        # B. Citoyen Counts
+        df_cit = compute_rna_rag_counts("hébergement citoyen chez l'habitant")
+        df_cit = df_cit.rename(columns={'count': 'heb_habitant_count'})
+
+        # Merge and finalize
+        agg = df_iml.merge(df_cit, on='codgeo', how='outer').fillna(0)
+        agg['codgeo'] = agg['codgeo'].astype(str).str.zfill(5)
+        
+        agg.to_parquet(output_agg)
+        logger.log_step("clean_hebergement_rna", "COMPLETED", {"path": str(output_agg), "rows": len(agg)})
+        
+    except Exception as e:
+        logging.error(f"❌ [RNA RAG] Pivot failed: {e}")
+        logger.log_step("clean_hebergement_rna", "ERROR", {"error": str(e)})
 
 
 def clean_loyers(config: Dict[str, Any], logger: PipelineLogger):
@@ -1315,7 +1445,8 @@ def main(argv=None):
         'departements': clean_departements,
         'live_jobs': clean_live_jobs,
         'inclusion_jobs': clean_inclusion_jobs,
-        'mob_transports_pub': clean_mob_transports_pub
+        'mob_transports_pub': clean_mob_transports_pub,
+        'hebergement_rna': clean_hebergement_rna
     }
 
     selected_steps = args.steps.split(',') if args.steps else steps_map.keys()

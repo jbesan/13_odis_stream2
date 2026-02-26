@@ -227,21 +227,35 @@ class ScoringEngine:
                 active.add(f'form_match_adult{i+1}_bdv_scaled')
 
         # 3. Logement
-        if config.hebergement == 'Location' or config.logement == 'Location':
+        # F-42: Hebergement Refinements
+        heb_sel = config.hebergement_cible
+        if "Location avec Intermédiation" in heb_sel:
+            active.add('heb_loc_iml_scaled')
             active.add('log_vac_scaled')
-            # Handle both formats: log_loyer_moyen_appt_all_scaled and log_loyer_moyen_scaled_appartement_toutes
-            active.add(f'log_loyer_moyen_{config.type_logement}_scaled')
-            if config.type_logement == 'appartement_toutes':
-                active.add('log_loyer_moyen_scaled_appartement_toutes')
-            elif config.type_logement == 'appt_all':
-                active.add('log_loyer_moyen_appt_all_scaled')
+        
+        if "Centres d'Hébergement (CHRS, CPH)" in heb_sel:
+            active.add('heb_centres_heb_scaled')
+            
+        if "Foyers & Pensions de Famille" in heb_sel:
+            active.add('heb_foyers_scaled')
+            
+        if "Chez l'habitant" in heb_sel:
+            active.add('heb_habitant_scaled')
+            active.add('log_occup_scaled')
+            
+        # Rent scaling activation (if Location or IML)
+        if config.logement == 'Location' or "Location avec Intermédiation" in heb_sel:
+             active.add('log_vac_scaled')
+             # Handle both formats: log_loyer_moyen_appt_all_scaled and log_loyer_moyen_scaled_appartement_toutes
+             active.add(f'log_loyer_moyen_{config.type_logement}_scaled')
+             if config.type_logement == 'appartement_toutes':
+                 active.add('log_loyer_moyen_scaled_appartement_toutes')
+             elif config.type_logement == 'appt_all':
+                 active.add('log_loyer_moyen_appt_all_scaled')
 
         if config.logement == 'Logement Social':
             active.add('log_soc_inoc_scaled')
             active.add('log_soc_dem_scaled')
-        
-        if config.hebergement == "Chez l'habitant":
-            active.add('log_occup_scaled')
 
         # 4. Education
         if config.nb_enfants > 0:

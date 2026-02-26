@@ -509,14 +509,15 @@ def render_housing_form() -> None:
     """Renders the UI for the 'Logement' form section."""
     col1, col2 = st.columns(2)
     with col1:
-        st.radio('Hébergement cible à court terme', cfg.HEBERGEMENT_OPTIONS, key="ui_hebergement")
+        st.multiselect('Hébergement cible à court terme', cfg.HEBERGEMENT_OPTIONS, key="ui_hebergement_cible")
         st.toggle("Prioritaire", key="ui_priority_hebergement", help="Donne plus de poids à ce critère")
     with col2:
         st.radio('Logement cible à long terme', cfg.LOGEMENT_OPTIONS, key="ui_logement")
         st.toggle("Prioritaire", key="ui_priority_logement", help="Donne plus de poids à ce critère")
         
-    # F-41: Only show housing type selector if 'Location' is selected in either short-term or long-term options
-    if st.session_state.get('ui_hebergement') == 'Location' or st.session_state.get('ui_logement') == 'Location':
+    # F-41: Only show housing type selector if 'Location' or 'Location avec Intermédiation' is selected
+    heb_sel = st.session_state.get('ui_hebergement_cible', [])
+    if "Location avec Intermédiation" in heb_sel or st.session_state.get('ui_logement') == 'Location':
         
         st.selectbox(
             "Type de logement (affine les loyers)",
@@ -802,14 +803,19 @@ def create_scoring_config_from_inputs() -> ScoringConfig:
             
     # Housing Priorities (F-15)
     # Housing Priorities (F-15)
-    # 1. Hebergement Priority
+    # 1. Hebergement Priority (F-42)
+    heb_sel = st.session_state.get('ui_hebergement_cible', [])
     if st.session_state.get("ui_priority_hebergement", False):
-        if st.session_state.get('ui_hebergement') == "Chez l'habitant":
-             criteria_weights['log_occup_scaled'] = 3.0
-        else:
-             # Default: Location -> Vacancy rate (or maybe we should boost general vacancy?)
-             # Let's stick to boosting vacancy as a proxy for availability
+        if "Location avec Intermédiation" in heb_sel:
+             criteria_weights['heb_loc_iml_scaled'] = 3.0
              criteria_weights['log_vac_scaled'] = 3.0
+        if "Centres d'Hébergement (CHRS, CPH)" in heb_sel:
+             criteria_weights['heb_centres_heb_scaled'] = 3.0
+        if "Foyers & Pensions de Famille" in heb_sel:
+             criteria_weights['heb_foyers_scaled'] = 3.0
+        if "Chez l'habitant" in heb_sel:
+             criteria_weights['heb_habitant_scaled'] = 3.0
+             criteria_weights['log_occup_scaled'] = 3.0
 
     # 2. Logement Priority
     if st.session_state.get("ui_priority_logement", False):
@@ -841,7 +847,7 @@ def create_scoring_config_from_inputs() -> ScoringConfig:
         loc_search_code=loc_search_code,
         nb_adultes=st.session_state['ui_nb_adultes'],
         nb_enfants=st.session_state['ui_nb_enfants'],
-        hebergement=st.session_state['ui_hebergement'],
+        hebergement_cible=heb_sel,
         logement=st.session_state['ui_logement'],
         codes_metiers=codes_metiers,
         codes_formations=codes_formations,
