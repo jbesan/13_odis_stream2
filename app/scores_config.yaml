@@ -284,6 +284,22 @@ scores:
     weight: 1.0
     min_bound: null
     max_bound: null
+  - id: inc_siae_density_scaled
+    category: inclusion
+    source_metric: inc_siae_density
+    bdv_factor: 0.8
+    computation: precomputed
+    display:
+      name: SIAE (Insertion par l'A.E)
+      strong_point_text: Présence de structures d'insertion par l'activité économique (SIAE)
+      high_value_adjective: dense
+      show: true
+      unit: SIAE/1000 hab.
+      display_factor: 1
+      tooltip: Densité de structures d'insertion (ACI, AI, EI, ETTI, EITI)
+    weight: 1.0
+    min_bound: null
+    max_bound: null
   - id: inc_asso_add_scaled
     category: inclusion
     source_metric: affinite_density
@@ -405,7 +421,7 @@ scores:
     computation: precomputed
     display:
       name: Nombre de classes à risque de fermeture
-      strong_point_text: Classes à petits effectifs (Opportunité d'intégration)
+      strong_point_text: Classes en manque d'élèves (risque de fermeture)
       high_value_adjective: forte
       show: true
       unit: écoles
@@ -587,5 +603,37 @@ scores:
       display_factor: 1
       tooltip: "Nombre d'offres signalées avec 'Manque de candidats' pour l'adulte 2 (Source: France Travail)"
     weight: 1.0
+    min_bound: 0
+    max_bound: 5
+  - id: met_siae_match_adult1_scaled
+    category: emploi
+    source_metric: met_siae_match_adult1
+    bdv_factor: 0.0
+    computation: live
+    display:
+      name: Offres SIAE - Adulte 1
+      strong_point_text: Des offres d'insertion (SIAE) correspondent à l'adulte 1
+      high_value_adjective: nombreuses
+      show: true
+      unit: offres
+      display_factor: 1
+      tooltip: "Nombre d'offres en SIAE pour l'adulte 1 (Source: Les emplois de l'inclusion)"
+    weight: 3.0
+    min_bound: 0
+    max_bound: 5
+  - id: met_siae_match_adult2_scaled
+    category: emploi
+    source_metric: met_siae_match_adult2
+    bdv_factor: 0.0
+    computation: live
+    display:
+      name: Offres SIAE - Adulte 2
+      strong_point_text: Des offres d'insertion (SIAE) correspondent à l'adulte 2
+      high_value_adjective: nombreuses
+      show: true
+      unit: offres
+      display_factor: 1
+      tooltip: "Nombre d'offres en SIAE pour l'adulte 2 (Source: Les emplois de l'inclusion)"
+    weight: 3.0
     min_bound: 0
     max_bound: 5

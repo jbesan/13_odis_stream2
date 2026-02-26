@@ -172,7 +172,7 @@ def show_details_dialog(details: Dict[str, Any]):
                 matching_total = emploi_data.get('matching_total', 0)
                 if matching_total > 0:
                     st.success(f"**{matching_total} offres en direct** correspondent à votre recherche actuelle.")
-                    with st.expander("Détail par métier (Live)", expanded=True):
+                    with st.expander(f"Offres correspondant au projet ({matching_total})", expanded=True):
                         for rome, count in emploi_data.get('matching_jobs_summary', {}).items():
                             st.write(f"• **{rome}** : {count} offre{'s' if count > 1 else ''}")
                 else:
@@ -197,6 +197,26 @@ def show_details_dialog(details: Dict[str, Any]):
                             st.write(f"• {icon}{label}")
                     else:
                         st.info("Pas de données disponibles.")
+                        
+                # --- New SIAE Jobs (F-39) ---
+                siae_data = emploi_data.get('siae', {})
+                if siae_data and siae_data.get('total', 0) > 0:
+                    # st.divider()
+                    # st.markdown("#### :material/volunteer_activism: Offres d'Inclusion (SIAE)")
+                    
+                    matching_siae = siae_data.get('matching_summary', {})
+                    if matching_siae:
+                        # st.info(f"**{sum(matching_siae.values())} offres d'insertion** correspondent à votre recherche.")
+                        with st.expander(f"Offres par les SIAE correspondant au projet ({sum(matching_siae.values())})", expanded=True):
+                            for label, count in matching_siae.items():
+                                st.write(f"• **{label}** : {count} offre{'s' if count > 1 else ''}")
+                    else:
+                        # st.write(f"{siae_data['total']} opportunités d'insertion identifiées dans d'autres domaines.")
+                        with st.expander(f"Toutes les offres par les SIAE locales ({siae_data['total']})", expanded=False):
+                            for label, count in siae_data.get('summary', {}).items():
+                                st.write(f"• **{label}** : {count} offre{'s' if count > 1 else ''}")
+                
+                
                 
                 with st.expander("Formations proposées", expanded=False):
                     formations = emploi_data.get('formations', [])
@@ -878,7 +898,9 @@ def _show_details_callback(rank: int) -> None:
         annuaire_inclusion=app_data.get('annuaire_inclusion', pd.DataFrame()),
         inclusion_services_index=app_data.get('inclusion_services_index', pd.DataFrame()),
         refugee_associations_data=app_data['refugee_associations_data'],
-        live_jobs_data=app_data['live_jobs_data']
+        live_jobs_data=app_data['live_jobs_data'],
+        siae_jobs_data=app_data.get('siae_jobs_data', pd.DataFrame()),
+        rome_index=app_data.get('rome_index', pd.DataFrame())
     )
     
     details = engine.format_city_details(row, config=st.session_state.get('config'))

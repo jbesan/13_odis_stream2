@@ -7,7 +7,9 @@ from services.mcp_server import (
     _compute_routes_logic,
     _search_refugee_associations_logic,
     _search_rna_rag_logic,
-    _search_ccas_logic
+    _search_ccas_logic,
+    _search_inclusion_jobs_logic,
+    _get_inclusion_job_details_logic
 )
 from services.mcp_france_travail import (
     _search_job_offers_logic,
@@ -152,3 +154,35 @@ def search_ccas(codgeo: str) -> List[Dict[str, Any]]:
         codgeo: Code INSEE de la commune (ex: '33063').
     """
     return _search_ccas_logic(codgeo)
+
+
+def search_inclusion_jobs_batch(queries: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Recherche d'offres SIAE (Insertion par l'Activité Économique) en mode Batch.
+    
+    Args:
+        queries: Liste de dictionnaires {'location': '...', 'rome': '...', 'query': '...'}
+    """
+    results = {}
+    logger.info(f"🔍 [TOOL] search_inclusion_jobs_batch: {queries}")
+    for q in queries:
+        loc = q.get('location')
+        rome = q.get('rome')
+        query_text = q.get('query')
+        key = f"{rome or ''}|{loc or ''}|{query_text or ''}"
+        try:
+            results[key] = _search_inclusion_jobs_logic(location=loc, rome=rome, query=query_text)
+        except Exception as e:
+            logger.error(f"❌ [TOOL] search_inclusion_jobs_batch failed for {key}: {e}")
+            results[key] = {"error": str(e), "offres": [], "total": 0}
+    return results
+
+
+def get_inclusion_job_details(siae_id: str) -> Dict[str, Any]:
+    """
+    Récupère les détails d'une structure SIAE et ses offres.
+    
+    Args:
+        siae_id: L'identifiant (SIRET ou ID interne) de la structure.
+    """
+    return _get_inclusion_job_details_logic(siae_id)

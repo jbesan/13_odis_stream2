@@ -116,6 +116,18 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         # Merge RNA RAG Inclusion Stats (New)
         # This brings in inc_rna_{category}_count columns
         merge_clean("rna_inclusion_agg")
+
+        # Merge SIAE Structures Count (New F-39)
+        siae_path = CLEAN_DIR.parent / "output" / "odis_inclusion_structures.parquet"
+        if siae_path.exists():
+            siae_df = pd.read_parquet(siae_path)
+            siae_agg = siae_df.groupby('codgeo').size().rename('inc_siae_count').reset_index()
+            communes_gdf = communes_gdf.merge(siae_agg, on='codgeo', how='left')
+            communes_gdf['inc_siae_count'] = communes_gdf['inc_siae_count'].fillna(0)
+            logging.info(f"SIAE structures counts merged from {siae_path}.")
+        else:
+            logging.warning(f"SIAE structures file not found at {siae_path}.")
+            communes_gdf['inc_siae_count'] = 0
         
         # Calculate lien_social_count from RAG categories
         # 'lien_social_count' is used for inc_asso_core_scaled (Lien Social Density)
@@ -276,7 +288,8 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
             'metiers_offres_diff', 'log_priv_vacant_plus_2ans', 'log_priv_total', 'edu_pe_tx_couverture',
             'bpe_creches_count', 'lien_social_count',
             'pop_jeune_2016', 'pop_jeune_2022', 'pop_active_2016', 'pop_active_2022',
-            'nb_stops_bus', 'nb_stops_tram', 'nb_stops_metro', 'nb_stops_train', 'nb_stops_total'
+            'nb_stops_bus', 'nb_stops_tram', 'nb_stops_metro', 'nb_stops_train', 'nb_stops_total',
+            'inc_siae_count'
         ]
         for col in numeric_cols:
             if col in communes_gdf.columns:
@@ -453,7 +466,8 @@ def build_bassins_de_vie(communes_gdf: gpd.GeoDataFrame, config: Dict[str, Any],
             'lien_social_count', 'svc_incl_count', 
             'pop_active', 'pop_employes', 'pop_chomeurs', 
             'log_priv_vacant_plus_2ans',
-            'metiers_offres_diff', 'bpe_creches_count'
+            'metiers_offres_diff', 'bpe_creches_count',
+            'inc_siae_count'
         ]
         # metiers_offres_diff was dropped in build_communes, so we can't sum it here if we load from there.
         # But wait, build_bassins_de_vie takes the returned communes_gdf.

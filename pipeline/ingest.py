@@ -17,6 +17,7 @@ from pipeline.common import (
 )
 from pipeline.odace_client import get_odace_client
 from pipeline.ft_live_ingest import run_etl, get_token as get_ft_token
+from pipeline.emplois_inclusion_ingest import run_ingestion as run_inclusion_ingest
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -1165,10 +1166,33 @@ def clean_nomenclature_waldec(config: Dict[str, Any], logger: PipelineLogger):
         logger.log_step("clean_nomenclature_waldec", "ERROR", {"error": str(e)})
         logging.error(f"WALDEC clean failed: {e}")
 
+def clean_inclusion_jobs(config: Dict[str, Any], logger: PipelineLogger, skip: bool = False):
+    """Fetches job openings from Les emplois de l'inclusion."""
+    logger.log_step("clean_inclusion_jobs", "STARTED")
+    
+    status = get_inclusion_jobs_status()
+    should_run = not skip
+    
+    if should_run:
+        if status["within_ttl"]:
+            logging.info(f"Inclusion Jobs: Data is {status['age_days']:.1f} days old (TTL={status['ttl_days']}). Skipping fetch.")
+            should_run = False
+        elif not status["exists"]:
+            logging.info("Inclusion Jobs: No existing data found.")
+        else:
+            logging.info(f"Inclusion Jobs: Data is {status['age_days']:.1f} days old (TTL expired).")
+
+    if should_run:
+        logging.info("Inclusion Jobs: Running Les emplois de l'inclusion ingest...")
+        run_inclusion_ingest()
+        logger.log_step("clean_inclusion_jobs", "COMPLETED")
+    else:
+        logger.log_step("clean_inclusion_jobs", "SKIPPED")
+
 def get_live_jobs_status() -> Dict[str, Any]:
     """Checks the age of Live Jobs data in cache and deployed data."""
-    cache_path = OUTPUT_DIR / "odis_live_jobs_agg.parquet"
-    data_path = Path("data/odis_live_jobs_agg.parquet")
+    cache_path = OUTPUT_DIR / "odis_ft_jobs_agg.parquet"
+    data_path = Path("data/odis_ft_jobs_agg.parquet")
     ttl_days = 7
     
     files = [cache_path, data_path]
@@ -1179,6 +1203,31 @@ def get_live_jobs_status() -> Dict[str, Any]:
     
     if not mtimes:
         return {"age_days": None, "within_ttl": False, "exists": False}
+    
+    newest_mtime = max(mtimes)
+    age_days = (time.time() - newest_mtime) / (24 * 3600)
+    
+    return {
+        "age_days": age_days,
+        "within_ttl": age_days < ttl_days,
+        "exists": True,
+        "ttl_days": ttl_days
+    }
+
+def get_inclusion_jobs_status() -> Dict[str, Any]:
+    """Checks the age of Inclusion Jobs data in cache and deployed data."""
+    cache_path = OUTPUT_DIR / "odis_inclusion_jobs.parquet"
+    data_path = Path("data/odis_inclusion_jobs.parquet")
+    ttl_days = 7
+    
+    files = [cache_path, data_path]
+    mtimes = []
+    for f in files:
+        if f.exists():
+            mtimes.append(f.stat().st_mtime)
+    
+    if not mtimes:
+        return {"age_days": None, "within_ttl": False, "exists": False, "ttl_days": ttl_days}
     
     newest_mtime = max(mtimes)
     age_days = (time.time() - newest_mtime) / (24 * 3600)
@@ -1265,6 +1314,7 @@ def main(argv=None):
         'nomenclature_waldec': clean_nomenclature_waldec,
         'departements': clean_departements,
         'live_jobs': clean_live_jobs,
+        'inclusion_jobs': clean_inclusion_jobs,
         'mob_transports_pub': clean_mob_transports_pub
     }
 

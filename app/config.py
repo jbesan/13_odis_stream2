@@ -45,7 +45,9 @@ AGG_FORMATIONS_FILE = 'odis_formations_agg.parquet'
 CCAS_FILE = 'odis_ccas.parquet'
 # ODIS_ASSO_MINI_FILE = 'odis_asso_mini.parquet' # Deprecated
 REFUGEE_ASSOCIATIONS_FILE = 'odis_refugee_associations.parquet'
-LIVE_JOBS_FILE = 'odis_live_jobs_agg.parquet'
+LIVE_JOBS_FILE = 'odis_ft_jobs_agg.parquet'
+SIAE_JOBS_FILE = 'odis_inclusion_jobs.parquet'
+SIAE_STRUCTURES_FILE = 'odis_inclusion_structures.parquet'
 SCORES_CAT_FILE = 'scores_config.yaml'
 
 # Paris, Lyon, Marseille Global Codes -> Arrondissement Prefix

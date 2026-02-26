@@ -183,11 +183,11 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
                 0.0
             )
 
-        # Refugee Associations Density
-        if 'population' in communes_gdf.columns and 'inc_asso_refug_count' in communes_gdf.columns:
-            communes_gdf['inc_asso_refug_density'] = np.where(
+        # SIAE Associations Density (New F-39)
+        if 'population' in communes_gdf.columns and 'inc_siae_count' in communes_gdf.columns:
+            communes_gdf['inc_siae_density'] = np.where(
                 communes_gdf['population'] > 0,
-                (communes_gdf['inc_asso_refug_count'] * 1000) / communes_gdf['population'],
+                (communes_gdf['inc_siae_count'] * 1000) / communes_gdf['population'],
                 0.0
             )
 
@@ -301,9 +301,12 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             else:
                 logging.warning(f"ODACE Rent column {col} missing for scaling.")
 
+        process_scaling(communes_gdf, 'log_vac_scaled', 'log_vac_scaled') # wait, log_vac_scaled vs log_vac_struct_ratio?
+        # Fixed logic:
         process_scaling(communes_gdf, 'log_vac_struct_ratio', 'log_vac_scaled')
         process_scaling(communes_gdf, 'lien_social_density', 'inc_asso_core_scaled')
         process_scaling(communes_gdf, 'inc_asso_refug_density', 'inc_asso_refug_scaled')
+        process_scaling(communes_gdf, 'inc_siae_density', 'inc_siae_density_scaled')
         process_scaling(communes_gdf, 'population', 'inc_population_scaled')
         
         # inc_pol_scaled (already 0-1)
@@ -452,6 +455,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
 
                         # Save Raw Count
                         communes_gdf['socle_match_count'] = communes_gdf['codgeo'].map(socle_presence).fillna(0).astype(int)
+                        communes_gdf['inc_siae_count'] = communes_gdf['inc_siae_count'].fillna(0) # Safety
                     else:
                          communes_gdf['inc_services_core_scaled'] = 0.0
                          communes_gdf['socle_match_count'] = 0
@@ -480,7 +484,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         # Additional drop request from user
         more_cols_to_drop = [
             'pop_jeune_2016', 'pop_jeune_2022', 'pop_active_2016', 'pop_active_2022',
-            'libelle_bassin_de_vie', 'has_gare', #'gare_count', # KEEP
+            'libelle_bassin_de_vie', 'has_gare', 'inc_siae_count', #'gare_count', # KEEP
             #'risky_schools_count', # KEEP
             'log_priv_total'
         ]
@@ -543,6 +547,14 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
             0.0
         )
         
+        # SIAE Density (New F-39)
+        if 'inc_siae_count' in bv_gdf.columns and 'population_bv' in bv_gdf.columns:
+             bv_gdf['inc_siae_density'] = np.where(
+                 bv_gdf['population_bv'] > 0,
+                 bv_gdf['inc_siae_count'] / bv_gdf['population_bv'] * 1000,
+                 0.0
+             )
+        
         # Refugee Associations
         if 'inc_asso_refug_count' in bv_gdf.columns and 'population_bv' in bv_gdf.columns:
              bv_gdf['inc_asso_refug_density'] = np.where(
@@ -576,6 +588,10 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
         if 'inc_asso_refug_density' in bv_gdf.columns:
             min_b, max_b = get_min_max(bv_gdf['inc_asso_refug_density'])
             bv_gdf['inc_asso_refug_scaled'] = scale_series(bv_gdf['inc_asso_refug_density'], min_b, max_b)
+        
+        if 'inc_siae_density' in bv_gdf.columns:
+            min_b, max_b = get_min_max(bv_gdf['inc_siae_density'])
+            bv_gdf['inc_siae_density_scaled'] = scale_series(bv_gdf['inc_siae_density'], min_b, max_b)
             
         if 'bpe_creches_density' in bv_gdf.columns:
             min_b, max_b = get_min_max(bv_gdf['bpe_creches_density'])
@@ -585,6 +601,7 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
         metrics_to_avg = [
             'inc_services_core_scaled', 
             'inc_asso_refug_scaled',
+            'inc_siae_density_scaled',
             'edu_classes_ferm_scaled', 
             'log_vac_scaled', 
             'log_occup_scaled',
