@@ -32,4 +32,4 @@ async def test_interviewer_structured_output(test_deps):
             )
             assert isinstance(result.output, InterviewerResult)
             assert result.output.response is not None
-            assert isinstance(result.output.search_criteria, (SearchCriterias, type(None)))
+            assert isinstance(result.output.search_criteria, SearchCriterias)

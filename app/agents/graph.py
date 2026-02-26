@@ -199,8 +199,8 @@ async def interviewer_node(state: ODISGraphState, config: RunnableConfig):
         
         return {
             "messages": [{"role": "assistant", "content": result.output.response}],
-            "search_criteria": result.output.search_criteria or deps.state.search_criteria,
-            "criteria_hash": compute_criteria_hash(result.output.search_criteria or deps.state.search_criteria),
+            "search_criteria": result.output.search_criteria,
+            "criteria_hash": compute_criteria_hash(result.output.search_criteria),
             "active_agent": "interviewer",
             "is_interview_complete": result.output.is_complete,
             "usage": capture_usage(result, "interviewer", mod_id)
