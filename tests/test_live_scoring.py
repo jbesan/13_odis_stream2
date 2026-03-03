@@ -72,7 +72,7 @@ def test_live_jobs_scoring():
         loc_search_area='france',
         nb_adultes=1,
         nb_enfants=0,
-        hebergement='Location',
+        hebergement_cible=[],
         logement='Location',
         codes_metiers=[['M1805']], 
         codes_formations=[[]],

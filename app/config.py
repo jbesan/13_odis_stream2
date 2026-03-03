@@ -65,7 +65,12 @@ NOMBRE_ADULTES_OPTIONS = [1, 2]
 NOMBRE_ENFANTS_OPTIONS = [0, 1, 2, 3, 4, 5]
 CLASSES_SCOLAIRES = ['Crèche / Assistante Maternelle', 'Maternelle', 'Elémentaire', 'Collège', 'Lycée']
 LOC_SEARCH_AREA_OPTIONS = {'departement': 'Département', 'region': 'Région', 'france': 'France Métropolitaine'}
-HEBERGEMENT_OPTIONS = ["Chez l'habitant", 'Location', 'Foyer']
+HEBERGEMENT_OPTIONS = [
+    "Location avec Intermédiation",
+    "Centres d'Hébergement (CHRS, CPH)",
+    "Foyers & Pensions de Famille",
+    "Chez l'habitant"
+]
 LOGEMENT_OPTIONS = ['Location', 'Logement Social']
 SANTE_OPTIONS = ["Aucun", "Hopital", 'Maternité', "Soutien Psychologique & Addictologie"]
 POIDS_OPTIONS = [0, 25, 50, 75, 100]
@@ -127,7 +132,7 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     'departement_actuel': '33',
     'commune_actuelle': 'Bordeaux',
     'loc_search_area': 'departement',
-    'hebergement': 'Location',
+    'hebergement_cible': ["Location avec Intermédiation"],
     'logement': 'Location',
     'sante': "Aucun",
     'nb_adultes': 1,
@@ -151,7 +156,7 @@ DEMO_SCENARIOS = {
         'departement_actuel': '33',
         'commune_actuelle': 'Bordeaux',
         'loc_search_area': 'departement',
-        'hebergement': "Chez l'habitant",
+        'hebergement_cible': ["Chez l'habitant"],
         'nb_adultes': 1,
         'nb_enfants': 0,
         'poids_mobilité': 50,
@@ -161,7 +166,7 @@ DEMO_SCENARIOS = {
         'departement_actuel': '75',
         'commune_actuelle': 'Paris',
         'loc_search_area': 'region',
-        'hebergement': "Location",
+        'hebergement_cible': ["Location avec Intermédiation"],
         'logement': "Logement Social",
         'nb_adultes': 2,
         'nb_enfants': 2,
@@ -176,7 +181,7 @@ DEMO_SCENARIOS = {
         'departement_actuel': '13',
         'commune_actuelle': 'Marseille',
         'loc_search_area': 'departement',
-        'hebergement': "Location",
+        'hebergement_cible': ["Location avec Intermédiation"],
         'logement': "Logement Social",
         'nb_adultes': 1,
         'nb_enfants': 2,

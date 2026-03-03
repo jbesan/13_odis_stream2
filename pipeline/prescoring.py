@@ -34,11 +34,9 @@ def aggregate_plm(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         'log_priv_total', 'log_priv_vacant_plus_2ans',
         'log_soc_total', 'log_soc_inoccupes',
         'total_eleves', 'ecoles_count',
-        'socle_match_count'
- # Also sum this? No, socle is presence.
-        # Ideally calculate socle for 75056 based on POIs.
-        # But summing match_count is weird if max is different.
-        # Let's skip socle for now or re-calculate it later.
+        'socle_match_count',
+        'heb_centres_heb_cap', 'heb_foyers_count', 
+        'heb_loc_iml_count', 'heb_habitant_count'
     ]
     
     # Socle calculation is done AFTER this function in apply_prescoring (lines 350+).
@@ -104,7 +102,9 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             'count_hopital', 'count_maternite', 'count_psy',
             'risky_schools_count', 'lien_social_count', 'inc_asso_refug_count', 'bpe_creches_count',
             'edu_pe_tx_couverture', 'pop_chomeurs', 'log_priv_vacant_plus_2ans',
-            'pol_num', 'log_vac_struct_ratio'
+            'pol_num', 'log_vac_struct_ratio',
+            'heb_centres_heb_cap', 'heb_foyers_count', 
+            'heb_loc_iml_count', 'heb_habitant_count'
 
         ]
         for col in raw_metrics_to_fill:
@@ -205,6 +205,33 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
                 (communes_gdf['bpe_creches_count'] * 1000) / communes_gdf['population'],
                 0.0
             )
+        
+        # Hebergement Densities (New F-42)
+        if 'population' in communes_gdf.columns:
+            if 'heb_centres_heb_cap' in communes_gdf.columns:
+                communes_gdf['heb_centres_heb_density'] = np.where(
+                    communes_gdf['population'] > 0,
+                    (communes_gdf['heb_centres_heb_cap'] * 1000) / communes_gdf['population'],
+                    0.0
+                )
+            if 'heb_foyers_count' in communes_gdf.columns:
+                communes_gdf['heb_foyers_density'] = np.where(
+                    communes_gdf['population'] > 0,
+                    (communes_gdf['heb_foyers_count'] * 1000) / communes_gdf['population'],
+                    0.0
+                )
+            if 'heb_loc_iml_count' in communes_gdf.columns:
+                communes_gdf['heb_loc_iml_density'] = np.where(
+                    communes_gdf['population'] > 0,
+                    (communes_gdf['heb_loc_iml_count'] * 1000) / communes_gdf['population'],
+                    0.0
+                )
+            if 'heb_habitant_count' in communes_gdf.columns:
+                communes_gdf['heb_habitant_density'] = np.where(
+                    communes_gdf['population'] > 0,
+                    (communes_gdf['heb_habitant_count'] * 1000) / communes_gdf['population'],
+                    0.0
+                )
         
         # --- Load Configuration ---
         import yaml
@@ -314,6 +341,12 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             communes_gdf['inc_pol_scaled'] = communes_gdf['pol_num']
 
         process_scaling(communes_gdf, 'log_pp_occup', 'log_occup_scaled')
+
+        # Hebergement Scaling (New F-42)
+        process_scaling(communes_gdf, 'heb_centres_heb_density', 'heb_centres_heb_scaled')
+        process_scaling(communes_gdf, 'heb_foyers_density', 'heb_foyers_scaled')
+        process_scaling(communes_gdf, 'heb_loc_iml_density', 'heb_loc_iml_scaled')
+        process_scaling(communes_gdf, 'heb_habitant_density', 'heb_habitant_scaled')
 
         # Population Decline (Inverted logic handled in process_scaling)
         if 'pop_jeune_2016' in communes_gdf.columns and 'pop_jeune_2022' in communes_gdf.columns:
@@ -610,7 +643,9 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
             'sante_hopital_scaled', 'sante_maternite_scaled', 'sante_psy_scaled',
             'edu_lycee_scaled', 'edu_college_scaled',
             'edu_maternelle_scaled', 'edu_elementaire_scaled',
-            'youth_decline_scaled', 'workclass_decline_scaled'
+            'youth_decline_scaled', 'workclass_decline_scaled',
+            'heb_centres_heb_scaled', 'heb_foyers_scaled', 
+            'heb_loc_iml_scaled', 'heb_habitant_scaled'
         ]
         
         # Idempotency: Drop existing metrics to prevent duplication during merge

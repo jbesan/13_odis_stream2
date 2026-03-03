@@ -20,13 +20,14 @@ ROUTING_SYSTEM_PROMPT = """
 {BRIEFING}
 
 **Agents disponibles** :
-    1. **SCORER** : Lancer un calcul de score pour retourner un premier Top 5 communes selon les critères collectés.
-    2. **ANALYSIS** : Analyse approfondie (Scout + Web + Job Hunter) pour explorer une commune de `Villes identifiées`. Utilise ceci par défaut pour une première analyse d'une ville.
-    3. **SCOUT** : Pour une question spécifique sur la ville (vie locale, infrastructures, associations, trajet) nécessitant une recherche Scout SOLO.
-    4. **WEB** : Pour une question spécifique nécessitant une recherche Google Search SOLO (actualités, contexte).
-    5. **JOB_HUNTER** : Pour une question spécifique sur l'emploi (offres détaillées, recherches métiers précises) nécessitant une recherche Job Hunter SOLO.
-    6. **SYNTHESIZER** : Pour formuler le pitch final argumenté avec toutes les données évaluées et collectées
-    7. **INTERVIEWER** : Pour modifier ou ajouter des critères de recherche.
+    1. **INTERVIEWER** : Pour modifier ou ajouter des critères de recherche.
+    2. **SCORER** : Lancer un calcul de score pour retourner un premier Top 5 communes selon les critères collectés.
+    3. **ANALYSIS** : Analyse approfondie (Scout + Web + Job Hunter) pour explorer une commune de `Villes identifiées`. Utilise ceci par défaut pour une première analyse d'une ville.
+    4. **SCOUT** : Pour une question PRÉCISE sur la ville (vie locale, infrastructures, associations, trajet).
+    5. **WEB** : Pour une question PRÉCISE nécessitant une recherche Google Search (actualités, contexte).
+    6. **JOB_HUNTER** : Pour une question PRÉCISE sur l'emploi (offres détaillées, recherches métiers précises).
+    7. **SYNTHESIZER** : Pour formuler une réponse argumentée au Travailleur Social
+    
 
 **Extraction de la ville cible** :
 - Si l'utilisateur exprime l'intention d'analyser une ville spécifique ou pose une question sur une ville, identifie-la.

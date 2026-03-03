@@ -637,3 +637,71 @@ scores:
     weight: 3.0
     min_bound: 0
     max_bound: 5
+
+  - id: heb_loc_iml_scaled
+    category: logement
+    source_metric: heb_loc_iml_density
+    bdv_factor: 0.8
+    computation: precomputed
+    display:
+      name: Location avec Intermédiation
+      strong_point_text: Présence d'associations IML/Solibail
+      high_value_adjective: forte
+      show: true
+      unit: assos/1000 hab.
+      display_factor: 1
+      tooltip: Densité d'associations proposant de l'intermédiation locative ou Solibail (Source RNA)
+    weight: 2.0
+    min_bound: 0.0
+    max_bound: 0.1
+
+  - id: heb_centres_heb_scaled
+    category: logement
+    source_metric: heb_centres_heb_density
+    bdv_factor: 0.8
+    computation: precomputed
+    display:
+      name: Centres d'Hébergement (CHRS, CPH)
+      strong_point_text: Capacité d'accueil importante en CHRS/CPH
+      high_value_adjective: importante
+      show: true
+      unit: places/1000 hab.
+      display_factor: 1
+      tooltip: Capacité d'accueil totale en CHRS et CPH pour 1000 habitants (Source BPE)
+    weight: 2.0
+    min_bound: 0.0
+    max_bound: 5.0
+
+  - id: heb_foyers_scaled
+    category: logement
+    source_metric: heb_foyers_density
+    bdv_factor: 0.8
+    computation: precomputed
+    display:
+      name: Foyers & Pensions de Famille
+      strong_point_text: Présence de foyers (FJT, migrants) et pensions de famille
+      high_value_adjective: forte
+      show: true
+      unit: structures/1000 hab.
+      display_factor: 1
+      tooltip: Densité de Foyers de Jeunes Travailleurs, Pensions de famille et Foyers de Migrants (Source BPE)
+    weight: 2.0
+    min_bound: 0.0
+    max_bound: 0.2
+
+  - id: heb_habitant_scaled
+    category: logement
+    source_metric: heb_habitant_density
+    bdv_factor: 0.8
+    computation: precomputed
+    display:
+      name: Chez l'habitant
+      strong_point_text: Présence d'associations d'hébergement citoyen
+      high_value_adjective: forte
+      show: true
+      unit: assos/1000 hab.
+      display_factor: 1
+      tooltip: Densité d'associations proposant de l'hébergement citoyen (Source RNA/RNAG)
+    weight: 2.0
+    min_bound: 0.0
+    max_bound: 0.1

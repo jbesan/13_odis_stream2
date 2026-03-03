@@ -40,7 +40,7 @@ class SearchCriterias(BaseModel):
     inc_services_add_selection: List[CriteriaItem] = Field(default_factory=list, description="List of enriched inclusion need codes")
     inc_asso_add_selection: List[CriteriaItem] = Field(default_factory=list, description="List of enriched hobby/association codes")
     
-    hebergement: Optional[str] = Field(None, description="Preferred accommodation type (e.g. 'Location')")
+    hebergement_cible: List[str] = Field(default_factory=list, description="Preferred accommodation types")
     logement: Optional[str] = Field(None, description="Housing type (e.g. 'Logement Social')")
     type_logement: Optional[CriteriaItem] = Field(None, description="Enriched housing type (e.g., 'Appartement', 'Maison')")
     sante: Optional[str] = Field(None, description="Specific health need (e.g. 'Maternité')")
@@ -120,7 +120,7 @@ class ScoringConfig:
     loc_search_area: str
     nb_adultes: int
     nb_enfants: int
-    hebergement: str
+    hebergement_cible: List[str]
     logement: str
     codes_metiers: List[List[str]]
     codes_formations: List[List[str]]

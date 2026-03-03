@@ -18,14 +18,14 @@ class SearchQuery(BaseModel):
 
 class InterviewerResult(BaseModel):
     response: str
-    search_criteria: Optional[SearchCriterias] = None
+    search_criteria: SearchCriterias
     is_complete: bool = Field(False, description="Closes the interview process.")
     model_config = ConfigDict(populate_by_name=True)
 
 # --- Prompt ---
 INTERVIEWER_SYSTEM_PROMPT = """
 **Rôle**: Interviewer qui collecte un projet de vie d'une personne (ou famille de) réfugié pour leur relocalisation dans la ville/commune idéale. Tu interragis avec leur Travailleur Social assigné.
-**Objectif**: Compléter les critères de réinstallation ({SEARCH_CRITERIAS}).
+**Objectif**: Compléter ou modifier les critères de réinstallation ({SEARCH_CRITERIAS}).
 **Style**: Direct, professionnel, itératif (1 thème/message).
 
 **RÈGLES D'OR**:

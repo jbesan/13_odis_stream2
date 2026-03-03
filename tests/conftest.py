@@ -157,7 +157,7 @@ def default_config():
         loc_search_code=None,
         nb_adultes=1,
         nb_enfants=0,
-        hebergement='Location',
+        hebergement_cible=[],
         logement='Location',
         codes_metiers=[[]], # Ensure at least one empty list for adult 1
         codes_formations=[[]], # Ensure at least one empty list for adult 1

@@ -283,7 +283,7 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
         loc_search_code=loc_search_code,
         nb_adultes=nb_adultes,
         nb_enfants=int(filters.get('nb_enfants', 0)),
-        hebergement=filters.get('hebergement', 'Location'),
+        hebergement_cible=filters.get('hebergement_cible', []),
         logement=filters.get('logement', 'Location'),
         codes_metiers=c_metiers,
         codes_formations=c_formations,

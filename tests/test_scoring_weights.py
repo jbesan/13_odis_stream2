@@ -13,7 +13,7 @@ def mock_config():
         commune_actuelle='33063',
         loc_search_area='departement',
         nb_adultes=1, nb_enfants=0,
-        hebergement='Location', logement='Location',
+        hebergement_cible=[], logement='Location',
         codes_metiers=[], codes_formations=[], classe_enfants=[],
         besoin_sante='Aucun',
         inc_services_add_selection=[],

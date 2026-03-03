@@ -332,7 +332,7 @@ class TestConditionalScoring:
             loc_search_code=None,
             nb_adultes=1,
             nb_enfants=0,        # Condition to ignore education
-            hebergement='Location',
+            hebergement_cible=[],
             logement='Location',
             codes_metiers=[],
             codes_formations=[],
@@ -386,7 +386,7 @@ class TestConditionalScoring:
             loc_search_code=None,
             nb_adultes=1,
             nb_enfants=1,        # Condition to include education
-            hebergement='Location',
+            hebergement_cible=[],
             logement='Location',
             codes_metiers=[],
             codes_formations=[],
@@ -488,7 +488,7 @@ class TestMCPScenario:
              poids_mobilité=0,
              nb_adultes=1,
              nb_enfants=0,
-             hebergement='Location',
+             hebergement_cible=[],
              logement='Location',
              codes_metiers=[['M1805']], # Mock job code
              codes_formations=[[]],
@@ -740,7 +740,7 @@ class TestHousingScoresLogic:
         )
 
 
-        def run_scoring(hebergement, logement):
+        def run_scoring(heb_list, logement):
             config = ScoringConfig(
                 poids_emploi=0, poids_logement=100, poids_education=0, poids_inclusion=0, poids_sante=0, poids_mobilité=0,
                 criteria_weights={}, 
@@ -750,7 +750,7 @@ class TestHousingScoresLogic:
                 loc_search_code=None,
                 nb_adultes=1,
                 nb_enfants=0,
-                hebergement=hebergement,
+                hebergement_cible=heb_list,
                 logement=logement,
                 codes_metiers=[[]],
                 codes_formations=[[]],
@@ -764,13 +764,13 @@ class TestHousingScoresLogic:
             return engine._compute_criteria_scores(df_copy, config)
 
         # 1. Test: Location + Location -> Keep log_vac, Drop others
-        res1 = run_scoring('Location', 'Location')
+        res1 = run_scoring([], 'Location')
         assert 'log_vac_scaled' in res1.columns
         assert 'log_soc_inoc_scaled' not in res1.columns
         assert 'log_occup_scaled' not in res1.columns
 
         # 2. Test: Chez l'habitant + Logement Social -> Keep occup & soc_inoc. Drop vac.
-        res2 = run_scoring("Chez l'habitant", 'Logement Social')
+        res2 = run_scoring(["Chez l'habitant"], 'Logement Social')
         assert 'log_vac_scaled' not in res2.columns
         assert 'log_occup_scaled' in res2.columns
         assert 'log_soc_inoc_scaled' in res2.columns
@@ -827,7 +827,7 @@ class TestHousingScoresLogic:
                 loc_search_code=None,
                 nb_adultes=1,
                 nb_enfants=0,
-                hebergement='Location',
+                hebergement_cible=[],
                 logement='Location',
                 codes_metiers=[[]],
                 codes_formations=[[]],

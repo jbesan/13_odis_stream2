@@ -32,16 +32,15 @@ JOB_HUNTER_ANALYSIS_SYSTEM_PROMPT = """
 ** CODES METIERS IDENTIFIES** : {ROME_CODES}
 **VILLE ACTIVE** : {FOCUS_CITY_NAME} (Code INSEE: {FOCUS_CITY_CODE})
 
-**Objectif** : Trouver des offres d'emploi RÉELLES et PERTINENTES selon le `CONTEXTE RÉSUMÉ` dans `{FOCUS_CITY_NAME}` pour TOUS les adultes du ménage.
+**Objectif** : Trouver des offres d'emploi RÉELLES et PERTINENTES selon le `CONTEXTE RÉSUMÉ` dans `{FOCUS_CITY_NAME}` pour TOUS les adultes du ménage. 
+**Note** : Les offres de Structures d'insertion par l'activité Economique (SIAE) sont particulièrement pertinentes même si les codes ROME ne correspondent pas exactement.
 
 **DIRECTIVES CRITIQUES (NE PAS DEMANDER, AGIR)** :
 1. **UTILISATION DU CODE INSEE** : Ne cherche pas le code, utilise celui fourni : `{FOCUS_CITY_CODE}`.
-2. **RECHERCHE D'OFFRES (FT & SIAE)** : 
-    - Lance `search_job_offers_batch_tool` (France Travail) pour TOUS les codes ROME identifiés.
-    - Lance `search_inclusion_jobs_batch_tool` (SIAE) avec `location='{FOCUS_CITY_CODE}'` pour les mêmes codes ROME.
-6. **NE DEMANDE PAS DE PRÉCISIONS** : Tu as les informations sur les métiers dans les critères. AGIS IMMÉDIATEMENT sans attendre de confirmation.
-7. **SÉLECTION ET RÉPONSE (CRITIQUE)** : 
-    - Commence toujours ta réponse par lister TOUS les codes ROME + libellés que tu as recherché.
+2. **RECHERCHE D'OFFRES (FT & SIAE)** :  Lance `search_job_offers_batch_tool` (France Travail) ET `search_inclusion_jobs_batch_tool` pour TOUS les codes ROME identifiés.
+3. **NE DEMANDE PAS DE PRÉCISIONS** : Tu as les informations sur les métiers dans les critères. AGIS IMMÉDIATEMENT sans attendre de confirmation.
+4. **SÉLECTION ET RÉPONSE (CRITIQUE)** : 
+    - Commence TOUJOURS ta réponse par lister TOUS les codes ROME + libellés que tu as recherché.
     - Pour chaque catégorie `rome`, présente les **3 offres les plus pertinentes** (mélange FT et SIAE).
     - Pour les offres SIAE, précise EXPLICITEMENT qu'il s'agit d'offres d'insertion (SIAE).
     - Pour chaque offre, indique : Intitulé, ID, lieu, type de contrat, et une phrase d'explication.
@@ -57,17 +56,15 @@ JOB_HUNTER_SPECIFIC_SYSTEM_PROMPT = """
 **CONNAISSANCES ACTUELLES** : {COMMUNE_ARTIFACT}
 
 **DIRECTIVES CRITIQUES (NE PAS DEMANDER, AGIR)** :
-1. Si la `QUESTION POSÉE` peut-être répondue avec les `CONNAISSANCES ACTUELLES` ne fais rien.
-2. Si des données manquent:
-    - Pour récupérer le détail d'une offre appele IMMEDIATEMENT `get_job_details` pour l'ID du dans `QUESTION POSÉE` structure ta réponse avec les points suivants :
-        - Lien vers l'offre
-        - Type de contrat et durée.
-        - Compétences attendues (traduis si trop technique).
-        - Analyse d'adéquation avec le `CONTEXTE RÉSUMÉ`.
-        - Employeur. Localisation précise et salaire (si disponible).
-    - Pour récupérer de nouvelles offres:
-        - Utilise `search_referentiels_batch_tool` pour récupérer le/les code(s) ROME ou un code commune manquant (ne les invente JAMAIS)
-        - Utilise `search_job_offers_batch_tool` (France Travail) ou `search_inclusion_jobs_batch_tool` (SIAE) selon la demande.
+- Pour récupérer le détail d'une offre appele IMMEDIATEMENT `get_job_details` pour l'ID du dans `QUESTION POSÉE` structure ta réponse avec les points suivants :
+    - Lien vers l'offre
+    - Type de contrat et durée.
+    - Compétences attendues (traduis si trop technique).
+    - Analyse d'adéquation avec le `CONTEXTE RÉSUMÉ`.
+    - Employeur. Localisation précise et salaire (si disponible).
+- Pour récupérer de nouvelles offres:
+    - Utilise `search_referentiels_batch_tool` pour récupérer le/les code(s) ROME ou un code commune manquant (ne les invente JAMAIS)
+    - Utilise `search_job_offers_batch_tool` (France Travail) ou `search_inclusion_jobs_batch_tool` (SIAE) selon la demande.
 """
 
 job_hunter_agent = Agent(

@@ -1,8 +1,8 @@
+import types
+import pytest
 import pandas as pd
 import geopandas as gpd
 from shapely.geometry import Polygon
-import pytest
-import types # Import types for SimpleNamespace
 
 from core.pdf_generator import generate_pdf_report
 import config as cfg
@@ -24,7 +24,7 @@ def sample_session_state():
         loc_search_code=None,
         nb_adultes=1,
         nb_enfants=1,
-        hebergement='Location',
+        hebergement_cible=[],
         logement='Location',
         codes_metiers=[[]],
         codes_formations=[[]],
@@ -57,18 +57,25 @@ def sample_session_state():
         })
     }
 
-    # Create a dictionary to mimic st.session_state
-    session_state_mock = {
+    # Define a class that supports dot access for mocking st.session_state
+    class MockSessionState(dict):
+        def __getattr__(self, name):
+            try:
+                return self[name]
+            except KeyError:
+                raise AttributeError(f"'MockSessionState' object has no attribute '{name}'")
+        def __setattr__(self, name, value):
+            self[name] = value
+
+    session_state_mock = MockSessionState({
         'config': config,
         'ui_commune': 'Bordeaux',
         'binome': False,
         'app_data': mock_app_data,
-        # Add other necessary session state keys that generate_pdf_report might access
-        'ui_nom': "Test User", # For get_person_accompanied_str()
-        'processed_gdf': None, # Will be set by the test itself
-        'map_object': None, # Will be set by the test itself
-        # Add any other keys that generate_pdf_report expects to find in st.session_state
-    }
+        'ui_nom': "Test User",
+        'processed_gdf': None,
+        'map_object': None,
+    })
     return session_state_mock
 
 @pytest.fixture
@@ -98,6 +105,8 @@ def sample_results_df():
     return gdf.reset_index()
 
 
+from unittest.mock import patch
+
 def test_generate_pdf_report(sample_session_state, sample_results_df):
     """
     Tests that generate_pdf_report runs without errors and produces a valid PDF bytes object.
@@ -107,8 +116,9 @@ def test_generate_pdf_report(sample_session_state, sample_results_df):
     results_df = sample_results_df
 
     # Act
-    # This will raise an exception if something goes wrong with fpdf2, matplotlib, etc.
-    pdf_bytes = generate_pdf_report(session_state, results_df)
+    # Use patch to mock streamlit's session_state for the duration of the call
+    with patch('app.core.pdf_generator.ui.st.session_state', session_state):
+        pdf_bytes = generate_pdf_report(session_state, results_df)
 
     # Assert
     # 1. Check that the output is a bytes object

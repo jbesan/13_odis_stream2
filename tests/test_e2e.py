@@ -84,7 +84,7 @@ def app_data():
     Loads the application data once for the entire test module.
     This is equivalent to st.session_state['app_data'] in the Streamlit app.
     """
-    return data_loader.init_datasets()
+    return data_loader.load_all_data_raw()
 
 def run_test_scenario(scenario_id, app_data):
     """

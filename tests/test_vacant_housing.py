@@ -14,7 +14,7 @@ def test_vacant_housing_criterion():
     """
     # 1. Load Data
     try:
-        app_data = data_loader.init_datasets()
+        app_data = data_loader.load_all_data_raw()
     except Exception as e:
         pytest.fail(f"Data loading failed: {e}")
 
@@ -42,7 +42,7 @@ def test_vacant_housing_criterion():
         poids_inclusion=0, poids_sante=0, poids_mobilité=0,
         commune_actuelle='01004', loc_search_area='departement',
         nb_adultes=1, nb_enfants=0,
-        hebergement='Location', logement='Location',
+        hebergement_cible=[], logement='Location',
         codes_metiers=[[]], codes_formations=[[]], classe_enfants=[],
         besoin_sante='Aucun', inc_services_add_selection=[],
         inc_services_core_selection=[], inc_asso_add_selection=[],

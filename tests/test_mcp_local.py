@@ -87,7 +87,7 @@ def test_compute_top_cities_execution_complex(mcp_data_context):
         'loc_search_area': 'departement',
         'nb_adultes': 1,
         'nb_enfants': 2,
-        'hebergement': 'Location',
+        'hebergement_cible': [],
         'logement': 'Logement Social',
         'codes_metiers': [[{'code': 'M1805', 'label': 'Informatique'}]], 
         'classe_enfants': ['Maternelle', 'Collège'],

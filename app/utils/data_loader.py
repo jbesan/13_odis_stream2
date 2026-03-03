@@ -87,8 +87,12 @@ def ensure_data_initialized() -> None:
         apply_demo_data_if_present(defaults)
         session_states_init(defaults)
 
-    if 'app_data' not in st.session_state:
-        st.session_state['app_data'] = init_datasets()
+    # Use mtime to invalidate cache if files changed
+    data_hash = get_data_mtime()
+    
+    if 'app_data' not in st.session_state or st.session_state.get('_data_hash') != data_hash:
+        st.session_state['app_data'] = init_datasets(data_hash)
+        st.session_state['_data_hash'] = data_hash
 
     # --- RNA RAG Initialization (New) ---
     if 'rna_rag_service' not in st.session_state:
@@ -418,7 +422,20 @@ def load_all_data_raw() -> Dict[str, Any]:
         '_load_errors': load_errors
     }
 
+def get_data_mtime() -> float:
+    """Returns the maximum mtime of critical data files to invalidate cache."""
+    base_path = cfg.get_data_path()
+    critical_files = [
+        os.path.join(base_path, cfg.ODIS_FILE),
+        os.path.join(cfg.APP_DIR, cfg.SCORES_CAT_FILE)
+    ]
+    mtimes = []
+    for f in critical_files:
+        if os.path.exists(f):
+            mtimes.append(os.path.getmtime(f))
+    return max(mtimes) if mtimes else 0.0
+
 @st.cache_resource
-def init_datasets() -> Dict[str, Any]:
-    """Cached wrapper for Streamlit."""
+def init_datasets(data_hash: float) -> Dict[str, Any]:
+    """Cached wrapper for Streamlit, invalidated by data_hash (mtime)."""
     return load_all_data_raw()
