@@ -31,13 +31,12 @@ if not auth.check_password():
     st.stop()
 
 st.markdown("## Assistant IA 🤖 ODIS 2.2")
-
-# Ensure datasets are loaded
-from utils.data_loader import init_datasets
+from utils import data_loader
 from services import mcp_server
 
 with st.spinner("Chargement des données ODIS..."):
-    app_data = init_datasets()
+    data_loader.ensure_data_initialized()
+    app_data = st.session_state.app_data
     mcp_server.set_data_context(app_data)
 st.markdown("Identifions ensemble le projet de vie et les meilleures options de relocalisation.")
 

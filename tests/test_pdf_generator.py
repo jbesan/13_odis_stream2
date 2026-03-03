@@ -1,8 +1,8 @@
+import types
+import pytest
 import pandas as pd
 import geopandas as gpd
 from shapely.geometry import Polygon
-import pytest
-import types # Import types for SimpleNamespace
 
 from core.pdf_generator import generate_pdf_report
 import config as cfg
@@ -57,18 +57,25 @@ def sample_session_state():
         })
     }
 
-    # Create a dictionary to mimic st.session_state
-    session_state_mock = {
+    # Define a class that supports dot access for mocking st.session_state
+    class MockSessionState(dict):
+        def __getattr__(self, name):
+            try:
+                return self[name]
+            except KeyError:
+                raise AttributeError(f"'MockSessionState' object has no attribute '{name}'")
+        def __setattr__(self, name, value):
+            self[name] = value
+
+    session_state_mock = MockSessionState({
         'config': config,
         'ui_commune': 'Bordeaux',
         'binome': False,
         'app_data': mock_app_data,
-        # Add other necessary session state keys that generate_pdf_report might access
-        'ui_nom': "Test User", # For get_person_accompanied_str()
-        'processed_gdf': None, # Will be set by the test itself
-        'map_object': None, # Will be set by the test itself
-        # Add any other keys that generate_pdf_report expects to find in st.session_state
-    }
+        'ui_nom': "Test User",
+        'processed_gdf': None,
+        'map_object': None,
+    })
     return session_state_mock
 
 @pytest.fixture

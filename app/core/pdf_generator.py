@@ -180,7 +180,7 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
             "Nb. adultes": config.nb_adultes,
             "Nb. enfants": config.nb_enfants,
             "Niveaux scolaires": ", ".join(config.classe_enfants) if config.classe_enfants else "N/A",
-            "Hébergement": config.hebergement,
+            "Hébergement": ", ".join(config.hebergement_cible) if config.hebergement_cible else "Non spécifié",
             "Logement à long terme": config.logement,
             "Besoin de santé": config.besoin_sante,
             "Autres besoins": (lambda: 
