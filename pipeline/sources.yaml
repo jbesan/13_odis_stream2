@@ -385,3 +385,12 @@ local_files:
       - romeLibelle
       - nombrePostes
       - offresManqueCandidats
+
+  jaccueille:
+    url: "file:///Users/jacques/dev/13_odis_stream2/pipeline/local/odis_accueillants_jaccueil_code_postal_clean_Mars2026.csv"
+    format: "csv"
+    local_name: "odis_accueillants_jaccueil_code_postal_clean_Mars2026.csv"
+    description: "Nombre d'accueillants J'Accueille par code postal"
+    used_columns:
+      - "Code postal"
+      - "Nombre d'enregistrements"

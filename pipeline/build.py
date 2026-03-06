@@ -206,9 +206,9 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         refug_path = CLEAN_DIR / "refugee_associations.parquet"
         if refug_path.exists():
             refug_df = pd.read_parquet(refug_path)
-            refug_agg = refug_df.groupby('codgeo').size().rename('inc_asso_refug_count').reset_index()
+            refug_agg = refug_df.groupby('codgeo').size().rename('heb_asso_refug_count').reset_index()
             communes_gdf = communes_gdf.merge(refug_agg, on='codgeo', how='left')
-            communes_gdf['inc_asso_refug_count'] = communes_gdf['inc_asso_refug_count'].fillna(0)
+            communes_gdf['heb_asso_refug_count'] = communes_gdf['heb_asso_refug_count'].fillna(0)
             logging.info(f"Refugee associations counts merged.")
 
         # --- Calculate Health Counts (On-the-fly) ---
@@ -520,6 +520,10 @@ def build_bassins_de_vie(communes_gdf: gpd.GeoDataFrame, config: Dict[str, Any],
                  bv_gdf['pop_chomeurs'] / bv_gdf['pop_active'],
                  0.0
              )
+        
+        # J'Accueille host counts have been moved to BigQuery for security.
+        # They are now dynamic fetched in the app.
+        bv_gdf['heb_jaccueille_count'] = 0.0
         
         # Add Label - REMOVED (Now in Referentiels)
         # bv_cfg = config['sources']['bassins_de_vie']

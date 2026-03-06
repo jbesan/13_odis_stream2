@@ -242,8 +242,17 @@ def show_details_dialog(details: Dict[str, Any]):
             render_scores_for_category('emploi')
 
     with tab_logement:
-        st.markdown("#### :material/home: Indicateurs Logement")
-        render_scores_for_category('logement')
+        logement_data = details.get('logement', {})
+        c1, c2 = st.columns([1, 1], gap="medium")
+        with c2:
+            st.markdown("#### :material/home: Indicateurs Logement")
+            render_scores_for_category('logement')
+        with c1:
+            st.markdown("#### :material/info: Données Complémentaires")
+            # Show J'Accueille host count if available
+            j_count = logement_data.get('jaccueille_count', 0)
+            if j_count > 0:
+                 st.info(f"**{int(j_count)} accueillants** J'Accueille identifiés dans le bassin de vie.")
 
     with tab_edu:
         edu_data = details.get('education', {})
@@ -814,7 +823,8 @@ def create_scoring_config_from_inputs() -> ScoringConfig:
         if "Foyers & Pensions de Famille" in heb_sel:
              criteria_weights['heb_foyers_scaled'] = 3.0
         if "Chez l'habitant" in heb_sel:
-             criteria_weights['heb_habitant_scaled'] = 3.0
+             criteria_weights['heb_asso_habitant_scaled'] = 3.0
+             criteria_weights['heb_jaccueille_score'] = 3.0
              criteria_weights['log_occup_scaled'] = 3.0
 
     # 2. Logement Priority

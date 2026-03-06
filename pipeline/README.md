@@ -50,7 +50,8 @@ The pipeline is split into several main stages:
 4.  **Live Ingest (`ft_live_ingest.py`)**: Fetches real-time job offers from France Travail API and aggregates them.
 5.  **Inclusion Ingest (`emplois_inclusion_ingest.py`)**: Authenticates via API Token (using `EMPLOIS_INCLUSION_LOGIN` and `EMPLOIS_INCLUSION_PWD` in `.env`) to fetch granular job openings from Les emplois de l'inclusion API.
 6.  **RAG Enrichment**: The `fetch_rna_rag_stats` step queries BigQuery to find associations relevant to social inclusion (using the `is_inclusion_relevant` flag) and groups them by RAG categories.
-7.  **Deploy (`etl.py`)**: Copies final artifacts to the application's data directory.
+7.  **J'Accueille Upload (`upload_jaccueille_bq.py`)**: A utility script to upload sensitive host counts to BigQuery (`odis-stream2.jaccueille.jaccueille_accueillants_bdv`). This data is then fetched dynamically by the app.
+8.  **Deploy (`etl.py`)**: Copies final artifacts to the application's data directory.
 
 ### File Structure
 
@@ -92,6 +93,7 @@ The pipeline generates the following Parquet files in `pipeline/cache/output/` a
 | **`loyers.parquet`**                    | Average Rent data (Appartements).          | `codgeo`, `loyer_app_m2`                                                                                                                   |
 | **`population_details.parquet`**        | Age-specific population counts (2016-2022) | `codgeo`, `pop_jeune_2016`, `pop_jeune_2022`, `pop_active_2016`, `pop_active_2022`                                                         |
 | **`odis_refugee_associations.parquet`** | Detailed Refugee Associations List.        | `id`, `codgeo`, `bassin_de_vie`, `name`, `description`, `waldec_code`                                                                      |
+| **`jaccueille_accueillants_bdv` (BQ)**  | Sensitive host counts (BQ only).           | `bassin_de_vie`, `heb_accueillants_count`                                                                                                  |
 | **`odis_ft_jobs_agg.parquet`**          | Live Employment counts (France Travail).   | `commune`, `romeCode`, `romeLibelle`, `total_postes`, `nb_offres_tension`                                                                  |
 | **`odis_inclusion_jobs.parquet`**       | Granular Inclusion Job offers.             | `codgeo`, `siae_siret`, `siae_name`, `siae_type`, `rome`, `postes`                                                                         |
 

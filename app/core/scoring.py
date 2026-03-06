@@ -78,33 +78,70 @@ class ScoringEngine:
         # Compute for all categories
         categories = ['emploi', 'logement', 'education', 'inclusion', 'mobilité', 'sante']
         for category in categories:
-            # Skip if category totally irrelevant (logic can be improved but sticking to previous pattern)
+            # Skip if category totally irrelevant
             if category == 'education' and config.nb_enfants == 0: continue
             if category == 'sante' and config.besoin_sante == 'Aucun': continue
 
-            # Find columns for this category that are active AND present
+            # Find columns for this category that are active
             cat_scores = self.scores_cat[self.scores_cat.cat == category]
-            score_cols = [s for s in cat_scores['score'] if s in df.columns and s in active]
             
-            if not score_cols: continue
+            # Filter only active scores
+            active_score_defs = cat_scores[cat_scores['score'].isin(active)]
+            
+            if active_score_defs.empty: continue
             
             scores_val = []
             weights_val = []
             
-            for col in score_cols:
-                 val = df[col]
-                 weight = 1.0 # Default
+            for _, s_row in active_score_defs.iterrows():
+                 sid = s_row['score']
+                 bdv_f = float(s_row.get('bdv_factor', 0.0))
                  
-                 # Priority: Config weight -> Catalog weight
-                 if col in config.criteria_weights: weight *= config.criteria_weights[col]
-                 else:
-                      row = self.scores_cat[self.scores_cat['score'] == col]
-                      if not row.empty: weight *= float(row.iloc[0]['weight'])
+                 # 1. Get Commune Value
+                 val_commune = df[sid] if sid in df.columns else None
+                 
+                 # 2. Get BDV Value
+                 sid_bdv = f"{sid}_bdv"
+                 val_bdv = df[sid_bdv] if sid_bdv in df.columns else None
+                 
+                 # 3. Parity Check: Log warning if an active criteria is missing from data
+                 if sid in config.active_criteria and val_commune is None and val_bdv is None:
+                      logger.warning(f"⚠️ [SCORING] Active criterion '{sid}' (or '{sid_bdv}') is MISSING from the input data. Score will be defaulted to 0.")
 
-                 # Track valid weights per row
-                 valid_weight = weight * val.notna().astype(float)
-                 scores_val.append(val.fillna(0) * weight)
+                 # 4. Combine using bdv_factor
+                 if val_commune is not None and val_bdv is not None:
+                      # Typical ODIS enrichment formula
+                      val = val_commune.fillna(0) * (1.0 - bdv_f) + val_bdv.fillna(0) * bdv_f
+                 elif val_commune is not None:
+                      val = val_commune.fillna(0)
+                 elif val_bdv is not None:
+                      val = val_bdv.fillna(0)
+                 else:
+                      continue # Skip if no data available for this criterion
+                 
+                 # Apply user or catalog weights
+                 weight = 1.0
+                 if sid in config.criteria_weights:
+                      weight *= config.criteria_weights[sid]
+                 else:
+                      weight *= float(s_row['weight'])
+
+                 # Track valid weights per row (using non-nullity of original sources)
+                 # If both are null, weight is 0
+                 if val_commune is not None and val_bdv is not None:
+                      has_data = val_commune.notna() | val_bdv.notna()
+                 elif val_commune is not None:
+                      has_data = val_commune.notna()
+                 else:
+                      has_data = val_bdv.notna()
+                      
+                 valid_weight = weight * has_data.astype(float)
+                 scores_val.append(val * weight)
                  weights_val.append(valid_weight)
+                 
+                 # IMPORTANT: save the combined value back to the dataframe 
+                 # so it can be picked up by format_city_details for the UI breakdown.
+                 df[sid] = val
             
             if weights_val:
                  denom = sum(weights_val)
@@ -151,6 +188,83 @@ class ScoringEngine:
             return total_score / total_weight if total_weight > 0 else total_score
         else:
             return (total_score / total_weight).fillna(0)
+
+    def _prune_irrelevant_metrics(self, df: pd.DataFrame, config: ScoringConfig) -> pd.DataFrame:
+        """Prunes columns that are not relevant based on active criteria."""
+        if config is None or config.active_criteria is None:
+            return df
+            
+        columns_to_keep = set()
+        
+        # 1. Base identity and essential columns
+        identity_cols = ['nom_commune', 'libgeo', 'codgeo', 'population', 'bassin_de_vie', 
+                         'libelle_bassin_de_vie', 'geometry', 'epci_code', 'epci_nom', 
+                         'dep_code', 'reg_code', 'centroid']
+        columns_to_keep.update([c for c in identity_cols if c in df.columns])
+        
+        # 2. Active criteria and their raw metrics
+        active_ids = config.active_criteria
+        for score_id in active_ids:
+            # The scaled score itself
+            if score_id in df.columns:
+                columns_to_keep.add(score_id)
+            else:
+                # Log if an active criteria is totally missing (Parity Check)
+                logger.warning(f"⚠️ [SCORING] Active criteria '{score_id}' is MISSING from DataFrame columns. PRUNING SKIPPED.")
+            
+            # The BDV variant if applicable
+            score_bdv = f"{score_id}_bdv"
+            if score_bdv in df.columns:
+                columns_to_keep.add(score_bdv)
+            
+            # The underlying raw metrics (from config)
+            # Find the row in scores_cat to get the metric name
+            mask = self.scores_cat['score'] == score_id
+            if mask.any():
+                metric_name = self.scores_cat.loc[mask, 'metric'].iloc[0]
+                if metric_name and metric_name in df.columns:
+                    columns_to_keep.add(metric_name)
+                    # Also keep the bdv variant of the metric
+                    metric_bdv = f"{metric_name}_bdv"
+                    if metric_bdv in df.columns:
+                        columns_to_keep.add(metric_bdv)
+                elif metric_name:
+                    # Log missing raw metrics only if they are for an active criteria
+                    logger.debug(f"ℹ️ [SCORING] Raw metric '{metric_name}' for active criteria '{score_id}' is missing from data.")
+        
+        # 3. Category scores and final weighted score
+        for cat in ['emploi', 'logement', 'education', 'inclusion', 'mobilité', 'sante']:
+            cat_score_col = f"{cat}_cat_score"
+            if cat_score_col in df.columns:
+                columns_to_keep.add(cat_score_col)
+        if 'weighted_score' in df.columns:
+            columns_to_keep.add('weighted_score')
+
+        # 4. Columns needed for format_city_details (if not already covered)
+        # This is a bit redundant with the above, but ensures specific columns are kept
+        # for UI display even if not directly part of a score calculation.
+        # Example: mob_trans_pub_stop_density, loyer_m2_moy_*, etc.
+        # It's safer to list them explicitly or ensure they are covered by active_ids/metrics.
+        # For now, rely on active_ids and their metrics to cover most.
+        # Add specific columns for format_city_details that might not be active criteria
+        details_specific_cols = [
+            'nb_stops_bus', 'nb_stops_tram', 'nb_stops_metro', 'nb_stops_train', 'nb_stops_total',
+            'mob_trans_pub_stop_density', 'heb_accueillants_count',
+            'loyer_m2_moy_appt_all', 'loyer_m2_moy_appt_t1_t2', 'loyer_m2_moy_appt_t3_p', 'loyer_m2_moy_house_all',
+            'edu_maternelle_ct', 'edu_elementaire_ct', 'edu_college_ct', 'edu_lycee_ct',
+            'count_hopital', 'count_maternite', 'count_psy'
+        ]
+        for col in details_specific_cols:
+            if col in df.columns:
+                columns_to_keep.add(col)
+        
+        # Add RNA RAG columns for associations
+        rna_rag_cols = [c for c in df.columns if c.startswith("inc_rna_") and c.endswith("_count")]
+        columns_to_keep.update(rna_rag_cols)
+
+        # Filter the DataFrame
+        final_columns = [c for c in columns_to_keep if c in df.columns]
+        return df[final_columns]
 
     def __init__(
         self,
@@ -240,7 +354,8 @@ class ScoringEngine:
             active.add('heb_foyers_scaled')
             
         if "Chez l'habitant" in heb_sel:
-            active.add('heb_habitant_scaled')
+            active.add('heb_asso_habitant_scaled')
+            active.add('heb_jaccueille_score')
             active.add('log_occup_scaled')
             
         # Rent scaling activation (if Location or IML)
@@ -290,7 +405,8 @@ class ScoringEngine:
         active.add('inc_population_scaled')
         active.add('inc_services_core_scaled')
         active.add('inc_asso_core_scaled')
-        active.add('inc_asso_refug_scaled') 
+        # F-26: Refugee Associations
+        active.add('heb_asso_refug_scaled') 
         active.add('inc_siae_density_scaled') # New F-39: SIAE Density
         if config.inc_services_add_selection: active.add('inc_services_add_scaled')
         if config.inc_asso_add_selection: active.add('inc_asso_add_scaled')
@@ -334,9 +450,21 @@ class ScoringEngine:
             },
             "logement": {
                 "selected_type": config.type_logement if config else 'appt_all',
-                "raw_euro_m2": None, "odace_all_variants": {}
+                "raw_euro_m2": None, "odace_all_variants": {},
+                "jaccueille_count": float(row.get('heb_accueillants_count', 0.0))
             }
         }
+
+        # F-26: Refugee Associations - If the score is active and present, update jaccueille_count
+        # This is a specific override/addition based on the presence of the refugee association score.
+        if 'heb_asso_refug_scaled' in row and pd.notna(row['heb_asso_refug_scaled']):
+            # The instruction implies that jaccueille_count might be related to this.
+            # Assuming the original line for jaccueille_count is kept, this might be an additional check
+            # or a way to ensure it's only shown if the refugee association score is relevant.
+            # For now, we'll keep the original jaccueille_count and add this check if it's meant to influence it.
+            # If the intent was to *replace* the default jaccueille_count, the instruction was ambiguous.
+            # Sticking to the most faithful interpretation of "rename" and "add this block".
+            pass # The original jaccueille_count is already set above. No change needed here based on the instruction.
 
         # Use cached active criteria if available
         active_ids = config.active_criteria if config and config.active_criteria is not None else self._get_active_criteria(config)
@@ -662,7 +790,7 @@ class ScoringEngine:
             asso_city = self.associations_data[self.associations_data['codgeo'] == codgeo]
             refugee_assos = asso_city[asso_city['id_waldec'].astype(str).str.startswith('019025', na=False)]
             details['associations']['refugee_count'] = int(refugee_assos['count'].sum()) if 'count' in refugee_assos.columns else len(refugee_assos)
-        elif 'inc_asso_refug_scaled' in row:
+        elif 'heb_asso_refug_scaled' in row:
              # If we have a scaled score, we can assume some presence, but maybe not the count
              pass
 

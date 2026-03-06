@@ -30,7 +30,7 @@ def aggregate_plm(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         'population', 'pop_active', 'pop_chomeurs', 'pop_employes',
         'edu_maternelle_ct', 'edu_elementaire_ct', 'edu_college_ct', 'edu_lycee_ct',
         'count_hopital', 'count_maternite', 'count_psy',
-        'lien_social_count', 'inc_asso_refug_count', 'bpe_creches_count', 'risky_schools_count',
+        'lien_social_count', 'heb_asso_refug_count', 'bpe_creches_count', 'risky_schools_count',
         'log_priv_total', 'log_priv_vacant_plus_2ans',
         'log_soc_total', 'log_soc_inoccupes',
         'total_eleves', 'ecoles_count',
@@ -214,6 +214,12 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
                     (communes_gdf['heb_centres_heb_cap'] * 1000) / communes_gdf['population'],
                     0.0
                 )
+            if 'heb_asso_refug_count' in communes_gdf.columns:
+                communes_gdf['heb_asso_refug_density'] = np.where(
+                    communes_gdf['population'] > 0,
+                    (communes_gdf['heb_asso_refug_count'] * 1000) / communes_gdf['population'],
+                    0.0
+                )
             if 'heb_foyers_count' in communes_gdf.columns:
                 communes_gdf['heb_foyers_density'] = np.where(
                     communes_gdf['population'] > 0,
@@ -332,7 +338,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         # Fixed logic:
         process_scaling(communes_gdf, 'log_vac_struct_ratio', 'log_vac_scaled')
         process_scaling(communes_gdf, 'lien_social_density', 'inc_asso_core_scaled')
-        process_scaling(communes_gdf, 'inc_asso_refug_density', 'inc_asso_refug_scaled')
+        process_scaling(communes_gdf, 'heb_asso_refug_density', 'heb_asso_refug_scaled')
         process_scaling(communes_gdf, 'inc_siae_density', 'inc_siae_density_scaled')
         process_scaling(communes_gdf, 'population', 'inc_population_scaled')
         
@@ -346,7 +352,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         process_scaling(communes_gdf, 'heb_centres_heb_density', 'heb_centres_heb_scaled')
         process_scaling(communes_gdf, 'heb_foyers_density', 'heb_foyers_scaled')
         process_scaling(communes_gdf, 'heb_loc_iml_density', 'heb_loc_iml_scaled')
-        process_scaling(communes_gdf, 'heb_habitant_density', 'heb_habitant_scaled')
+        process_scaling(communes_gdf, 'heb_habitant_density', 'heb_asso_habitant_scaled')
 
         # Population Decline (Inverted logic handled in process_scaling)
         if 'pop_jeune_2016' in communes_gdf.columns and 'pop_jeune_2022' in communes_gdf.columns:
@@ -589,10 +595,10 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
              )
         
         # Refugee Associations
-        if 'inc_asso_refug_count' in bv_gdf.columns and 'population_bv' in bv_gdf.columns:
-             bv_gdf['inc_asso_refug_density'] = np.where(
+        if 'heb_asso_refug_count' in bv_gdf.columns and 'population_bv' in bv_gdf.columns:
+             bv_gdf['heb_asso_refug_density'] = np.where(
                  bv_gdf['population_bv'] > 0,
-                 bv_gdf['inc_asso_refug_count'] / bv_gdf['population_bv'] * 1000,
+                 bv_gdf['heb_asso_refug_count'] / bv_gdf['population_bv'] * 1000,
                  0.0
              )
 
@@ -604,6 +610,9 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
                  bv_gdf['bpe_creches_count'] / bv_gdf['population_bv'] * 1000,
                  0.0
              )
+             
+        # J'Accueille (Binary Score) - MOVED TO DYNAMIC CALCULATION IN APP
+        # bv_gdf['heb_jaccueille_score'] = (bv_gdf['heb_jaccueille_count'] > 0).astype(float)
              
         # --- 2. Scaling ---
         def get_min_max(series):
@@ -618,9 +627,9 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
             min_b, max_b = get_min_max(bv_gdf['lien_social_density'])
             bv_gdf['inc_asso_core_scaled'] = scale_series(bv_gdf['lien_social_density'], min_b, max_b)
 
-        if 'inc_asso_refug_density' in bv_gdf.columns:
-            min_b, max_b = get_min_max(bv_gdf['inc_asso_refug_density'])
-            bv_gdf['inc_asso_refug_scaled'] = scale_series(bv_gdf['inc_asso_refug_density'], min_b, max_b)
+        if 'heb_asso_refug_density' in bv_gdf.columns:
+            min_b, max_b = get_min_max(bv_gdf['heb_asso_refug_density'])
+            bv_gdf['heb_asso_refug_scaled'] = scale_series(bv_gdf['heb_asso_refug_density'], min_b, max_b)
         
         if 'inc_siae_density' in bv_gdf.columns:
             min_b, max_b = get_min_max(bv_gdf['inc_siae_density'])
@@ -633,7 +642,7 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
         # --- 3. Weighted Averages from Communes ---
         metrics_to_avg = [
             'inc_services_core_scaled', 
-            'inc_asso_refug_scaled',
+            'heb_asso_refug_scaled',
             'inc_siae_density_scaled',
             'edu_classes_ferm_scaled', 
             'log_vac_scaled', 
@@ -645,7 +654,7 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
             'edu_maternelle_scaled', 'edu_elementaire_scaled',
             'youth_decline_scaled', 'workclass_decline_scaled',
             'heb_centres_heb_scaled', 'heb_foyers_scaled', 
-            'heb_loc_iml_scaled', 'heb_habitant_scaled'
+            'heb_loc_iml_scaled', 'heb_asso_habitant_scaled'
         ]
         
         # Idempotency: Drop existing metrics to prevent duplication during merge
@@ -695,7 +704,12 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
              bv_gdf['polygon'] = bv_gdf.geometry.to_wkb()
              bv_gdf.drop(columns=['geometry'], inplace=True)
 
-        pd.DataFrame(bv_gdf).reset_index().to_parquet(bv_path, compression='brotli', index=False)
+        # Robust index reset to avoid level_0 duplication
+        bv_export = pd.DataFrame(bv_gdf)
+        if 'level_0' in bv_export.columns:
+            bv_export.drop(columns=['level_0'], inplace=True)
+            
+        bv_export.reset_index().to_parquet(bv_path, compression='brotli', index=False)
         logger.log_step("score_bassins_de_vie", "COMPLETED", {"rows": len(bv_gdf)})
 
     except Exception as e:

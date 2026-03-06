@@ -33,6 +33,7 @@ Ce prototype a un triple objectif :
 - **Grounding Google Search :** Grâce à l'agent spécialisé WEB, accédez aux dernières actualités locales et au contexte social des communes visées.
 - **Référentiel des Associations Réfugiés ([F-26]):** Accédez à une base de données qualifiée d'associations spécialisées dans l'accueil des nouveaux arrivants.
 - **Moteur de Recherche RAG (RNA) :** Recherche sémantique et thématique sur l'ensemble du Répertoire National des Associations (RNA) via BigQuery et Vertex AI, permettant de classer les associations par catégories d'inclusion (FLE, Logement, Emploi, etc.) avec une précision inégalée.
+- **Accueils Citoyens (J'Accueille) :** Intégration de la base de données de l'association J'Accueille pour valoriser les bassins de vie disposant déjà d'un réseau d'hébergement citoyen actif. Pour des raisons de sécurité, ces données sensibles sont hébergées sur BigQuery et récupérées dynamiquement au lancement de l'application.
 - **Scénarios de Démonstration :** Chargez rapidement des profils pré-configurés pour découvrir le potentiel de l'outil.
 
 ## 📸 Aperçu de l'Application

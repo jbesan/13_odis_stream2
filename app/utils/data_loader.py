@@ -109,6 +109,27 @@ def ensure_data_initialized() -> None:
             )
             logger.error(f"RNARagService init failed: {e}")
 
+    # --- J'Accueille BigQuery Fetch (New) ---
+    if 'jaccueille_data' not in st.session_state:
+        st.session_state['jaccueille_data'] = fetch_jaccueille_data_bq()
+        if not st.session_state['jaccueille_data'].empty:
+            st.session_state['jaccueille_status'] = "connected"
+        else:
+            st.session_state['jaccueille_status'] = "failed"
+
+def fetch_jaccueille_data_bq() -> pd.DataFrame:
+    """Fetches J'Accueille host counts from BigQuery."""
+    try:
+        from google.cloud import bigquery
+        client = bigquery.Client(project="odis-stream2")
+        query = "SELECT bassin_de_vie, heb_accueillants_count FROM `odis-stream2.jaccueille.jaccueille_accueillants_bdv`"
+        logger.info("📡 [J'ACCUEILLE] Fetching host counts from BigQuery...")
+        df_jacc = client.query(query).to_dataframe()
+        return df_jacc
+    except Exception as e:
+        logger.error(f"J'Accueille BQ fetch failed: {e}")
+        return pd.DataFrame(columns=['bassin_de_vie', 'heb_accueillants_count'])
+
     # Show warning if some data failed to load
     load_errors = st.session_state['app_data'].get('_load_errors', [])
     if load_errors:
@@ -370,6 +391,31 @@ def load_all_data_raw() -> Dict[str, Any]:
         if 'libgeo' not in bv_geo.columns:
             bv_geo['libgeo'] = bv_geo.index.astype(str).map(bv_names)
             bv_geo['libgeo'] = bv_geo['libgeo'].fillna(bv_geo.index.to_series())
+
+    # --- 5b. Enrich with dynamic J'Accueille data ---
+    df_jacc = st.session_state.get('jaccueille_data')
+    if df_jacc is None or df_jacc.empty:
+        df_jacc = fetch_jaccueille_data_bq()
+
+    if df_jacc is not None and not df_jacc.empty:
+        # Join to BV
+        if not bv_geo.empty:
+            bv_geo = bv_geo.reset_index()
+            df_jacc['bassin_de_vie'] = df_jacc['bassin_de_vie'].astype(str)
+            bv_geo = bv_geo.merge(df_jacc, on='bassin_de_vie', how='left')
+            bv_geo['heb_accueillants_count'] = bv_geo['heb_accueillants_count'].fillna(0)
+            # Re-calculate heb_jaccueille_score dynamically
+            bv_geo['heb_jaccueille_score'] = (bv_geo['heb_accueillants_count'] > 0).astype(float)
+            bv_geo = bv_geo.set_index('bassin_de_vie')
+            
+        # Join to ODIS (for detailed city display)
+        if not odis.empty:
+            odis = odis.reset_index()
+            # We already have bassin_de_vie in odis
+            odis = odis.merge(df_jacc, on='bassin_de_vie', how='left')
+            odis['heb_accueillants_count'] = odis['heb_accueillants_count'].fillna(0)
+            odis['heb_jaccueille_score'] = (odis['heb_accueillants_count'] > 0).astype(float)
+            odis = odis.set_index('codgeo')
 
     # 6. Area Geo
     area_dfs = []

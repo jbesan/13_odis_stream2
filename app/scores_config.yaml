@@ -268,10 +268,10 @@ scores:
     weight: 1.0
     min_bound: null
     max_bound: null
-  - id: inc_asso_refug_scaled
+  - id: heb_asso_refug_scaled
     category: inclusion
-    source_metric: inc_asso_refug_density
-    bdv_factor: 0.8
+    source_metric: heb_asso_refug_count
+    bdv_factor: 1.0
     computation: precomputed
     display:
       name: Accompagnement Réfugiés
@@ -689,13 +689,13 @@ scores:
     min_bound: 0.0
     max_bound: 0.2
 
-  - id: heb_habitant_scaled
+  - id: heb_asso_habitant_scaled
     category: logement
-    source_metric: heb_habitant_density
+    source_metric: heb_habitant_count
     bdv_factor: 0.8
     computation: precomputed
     display:
-      name: Chez l'habitant
+      name: Associations d'Hébergement Citoyen
       strong_point_text: Présence d'associations d'hébergement citoyen
       high_value_adjective: forte
       show: true
@@ -705,3 +705,20 @@ scores:
     weight: 2.0
     min_bound: 0.0
     max_bound: 0.1
+
+  - id: heb_jaccueille_score
+    category: logement
+    source_metric: heb_accueillants_count
+    bdv_factor: 1.0
+    computation: precomputed
+    display:
+      name: Accueils J'Accueille
+      strong_point_text: Des particuliers accueillent déjà dans ce bassin de vie
+      high_value_adjective: présents
+      show: true
+      unit: ""
+      display_factor: 1
+      tooltip: Au moins un accueillant actif dans le bassin de vie (Source J'Accueille)
+    weight: 2.0
+    min_bound: 0.0
+    max_bound: 1.0

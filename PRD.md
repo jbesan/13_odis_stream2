@@ -42,7 +42,7 @@ Liste en vrac d'idées d'amélioration
 - [x] Génerer un prompt pour une Deep Research sur un des territoires recommandés
 - [x] Normaliser les scores de catégorie pour éviter une surévaluation de certains critères
 - [x] Ajouter des profils de pondération (famille vs célibataire)
-- [ ] Ajouter la base J'accueille d'accueil chez l'habitant
+- [x] Ajouter la base J'accueille d'accueil chez l'habitant
 - [x] Ajouter la base des transports publics ?
 - [ ] Critere 'Niveau de vie' de l'INSEE ?
 - [ ] Enlever la couleur politique
@@ -61,6 +61,8 @@ Liste en vrac d'idées d'amélioration
 - [x] FLE doit être un critere à part entiere et il faut trouver une base spécifique
 - [ ] Les multiselects sont frustrants car il faut trouver la terminologie exacte
 - [x] Créer et exploiter un dataset des associations dédiés aux réfugiés / demandeurs d'asile
+- [ ] [F-43] Upgrade to Gemini 3.1 Flash-Lite for all agents.
+- [ ] [F-44] Standardize all agents to return Pydantic structured outputs instead of raw strings.
 - [ ] AI Bot: ajouter le contact CCAS (passer dans get_city_details? )
 
 ## 5. Features
@@ -80,7 +82,7 @@ _(Most features omitted for brevity. Appending F-42)_
 - **Location avec Intermédiation :** Remplace l'option "Location" (dans Hébergement). Recherche via RNA des associations proposant des services IML/Solibail ("intermédiation locative", "solibail"). Active le score de vacance et de loyer moyen (`log_loyer_moyen_appt_all_scaled`).
 - **Centres d'Hébergement :** Remplace l'option "Foyers". Intègre les sources BPE pour D703 (CHRS) et D704 (CPH) et évalue les scores basé sur `sum(CAPACITE)` d'accueil par habitant de la commune.
 - **Foyers & Pensions de Famille :** Utilise la classification BPE D710 et le nom ("fjt", "pension", "migrant") pour le décompte de places dans les Foyers de Jeunes Travailleurs, Pensions de famille et Foyers de Travailleurs Migrants.
-- **Chez l'habitant :** Recherche enrichie via RNAG pour "hébergement citoyen". Ces nouveaux POIs seront ajoutés à `odis_pois.parquet`.
+- **Chez l'habitant :** Recherche enrichie via RNAG pour "hébergement citoyen". Intégration de la base "J'Accueille" pour identifier les bassins de vie disposant d'accueillants actifs, valorisé via le score binaire `heb_jaccueille_score`. **Note :** Les données d'accueillants sont considérées comme non-publiques et sont stockées sur BigQuery (`jaccueille_accueillants_bdv`), puis récupérées dynamiquement par l'application pour plus de sécurité.
 
 ### 📊 Status
 
