@@ -327,18 +327,20 @@ class ScoringEngine:
         active.add('dist_current_loc_scaled')
         active.add('mob_dist_scaled') # Alias used in some tests/configs
         
-        # 2. Employment & Formations (Only if something was searched)
-        if config.codes_metiers and any(config.codes_metiers):
-            for i in range(config.nb_adultes):
-                active.add(f'met_match_adult{i+1}_scaled')
-                active.add(f'met_match_adult{i+1}_bdv_scaled')
-                active.add(f'met_match_adult{i+1}_tension_scaled')
-                active.add(f'met_siae_match_adult{i+1}_scaled') # New F-39: SIAE Job Match
-        
-        if config.codes_formations and any(config.codes_formations):
-            for i in range(config.nb_adultes):
-                active.add(f'form_match_adult{i+1}_scaled')
-                active.add(f'form_match_adult{i+1}_bdv_scaled')
+        # 2. Employment & Formations (Only if specific adult was searched)
+        for i in range(config.nb_adultes):
+            adult_idx = i + 1
+            # Employment
+            if i < len(config.codes_metiers) and config.codes_metiers[i]:
+                active.add(f'met_match_adult{adult_idx}_scaled')
+                active.add(f'met_match_adult{adult_idx}_bdv_scaled')
+                active.add(f'met_match_adult{adult_idx}_tension_scaled')
+                active.add(f'met_siae_match_adult{adult_idx}_scaled') 
+
+            # Formations
+            if i < len(config.codes_formations) and config.codes_formations[i]:
+                active.add(f'form_match_adult{adult_idx}_scaled')
+                active.add(f'form_match_adult{adult_idx}_bdv_scaled')
 
         # 3. Logement
         # F-42: Hebergement Refinements

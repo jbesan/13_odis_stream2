@@ -37,8 +37,8 @@ class SearchCriterias(BaseModel):
     codes_metiers: List[List[CriteriaItem]] = Field(default_factory=list, description="List of list of enriched ROME codes")
     codes_formations: List[List[CriteriaItem]] = Field(default_factory=list, description="List of list of enriched training codes")
     
-    inc_services_add_selection: List[CriteriaItem] = Field(default_factory=list, description="List of enriched inclusion need codes")
-    inc_asso_add_selection: List[CriteriaItem] = Field(default_factory=list, description="List of enriched hobby/association codes")
+    inc_services_add_selection: List[CriteriaItem] = Field(default_factory=list, description="List of additional relevant inclusion services codes")
+    inc_asso_add_selection: List[CriteriaItem] = Field(default_factory=list, description="List of additional relevant association codes (hobbies, support, etc.)")
     
     hebergement_cible: List[str] = Field(default_factory=list, description="Preferred accommodation types")
     logement: Optional[str] = Field(None, description="Housing type (e.g. 'Logement Social')")
@@ -49,7 +49,7 @@ class SearchCriterias(BaseModel):
     notes_qualitatives: List[str] = Field(default_factory=list, description="List of qualitative notes (e.g. ['Famille libanaise', 'Passions: échecs'])")
 
     # Final scoring priority
-    weight_profile: str = Field("", description="Weight profile for scoring (Famille, Santé, Économique, Équilibré)")
+    weight_profile: str = Field("", description="Scoring weights profile from ['Famille', 'Santé', 'Économique', 'Équilibré']")
     criteria_weights: Dict[str, float] = Field(default_factory=dict, description="Custom weights for specific criteria")
 
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True, revalidate_instances='never')

@@ -1,10 +1,15 @@
 import logging
 from typing import Optional
 from pydantic_ai import Agent, RunContext, WebSearchTool
+from pydantic import BaseModel, Field
 from .state import ODISGraphState, ODISDeps, compute_criteria_hash
 from .agent_config import get_model
 
 logger = logging.getLogger("web_agent_v2")
+
+class WebResult(BaseModel):
+    searched: str = Field(..., description="Résumé des mots-clés et requêtes recherchés sur le web.")
+    result: str = Field(..., description="Synthèse des actualités et du contexte local.")
 
 WEB_ANALYSIS_SYSTEM_PROMPT = """
 **Rôle** : Tu es l'Expert Web ODIS (Agent WEB). Ta mission est de compléter l'analyse du Scout en effectuant des recherches sur le web.
@@ -22,10 +27,10 @@ WEB_ANALYSIS_SYSTEM_PROMPT = """
 
 2. ** Hors Scope** : Ne recherche PAS les emplois, assocations et formations d'autres agents s'en occupent
 
-4. **Réponse** :
-    - N'invente RIEN. Garde SEULEMENT ce qui est **pertinent** au regard du `CONTEXTE RÉSUMÉ`.
-    - Commence TOUJOURS par une liste des mots-clés que tu as recherché (même s'il n'ont pas retourné de résultat pertinent)
-    - Sois factuel, hyper-concis (10 bullet-points max) et spécifique (donne les noms + description sans développer)
+4. **Réponse (STRUCTURED)** :
+    - Tu DOIS retourner un objet `WebResult`.
+    - `searched` : Une liste concise des mots-clés recherchés (même sans résultat).
+    - `result` : Ton analyse factuelle et hyper-concise (10 bullet-points max). N'invente RIEN. Vise 200 mots et ne garde que ce qui est pertinent au regard du `CONTEXTE RÉSUMÉ`.
 """
 
 WEB_SPECIFIC_SYSTEM_PROMPT = """
@@ -40,12 +45,18 @@ WEB_SPECIFIC_SYSTEM_PROMPT = """
 **Directives** :
 1. Si la `QUESTION POSÉE` peut-être répondue avec les `CONNAISSANCES ACTUELLES` ne fais rien.
 2. Si des données manquent, utilise ton accès natif à Google Search et le `CONTEXTE RÉSUMÉ` pour répondre `QUESTION POSÉE` sur `VILLE ACTIVE`
+
+4. **Réponse (STRUCTURED)** :
+    - Tu DOIS retourner un objet `WebResult`.
+    - `searched` : Les termes de recherche utilisés pour répondre à la question.
+    - `result` : La réponse détaillée à la `QUESTION POSÉE`.
 """
 
 web_agent = Agent(
     get_model("web"),
     deps_type=ODISDeps,
-    builtin_tools=[WebSearchTool()]
+    builtin_tools=[WebSearchTool()],
+    output_type=WebResult
 )
 
 @web_agent.system_prompt

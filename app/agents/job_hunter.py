@@ -15,15 +15,17 @@ from .tools import (
 
 logger = logging.getLogger("job_hunter_agent_v2")
 
+class JobHunterResult(BaseModel):
+    searched: str = Field(..., description="Liste des codes ROME et lieux recherchés.")
+    result: str = Field(..., description="Synthèse des offres d'emploi pertinentes trouvées.")
+
 class SearchQuery(BaseModel):
     query: str = Field(..., description="Mot clé de recherche")
     domain: str = Field(..., description="Domaine de recherche possibles:['rome_codes', 'communes'].")
 
 class JobSearchQuery(BaseModel):
-    location: Optional[str] = Field(None, description="Code INSEE de la commune (ex: 33063)")
+    location: str = Field(None, description="Code INSEE de la commune (ex: 33063)")
     rome: Optional[str] = Field(None, description="Code métier ROME de 5 caractères (ex: D1102)")
-    # query: Optional[str] = Field(None, description="Mots clés supplémentaires")
-    # distance: int = Field(10, description="Rayon de recherche en km")
 
 JOB_HUNTER_ANALYSIS_SYSTEM_PROMPT = """
 **Rôle** : Tu es le Job Hunter ODIS. Expert ultra-proactif du marché de l'emploi.
@@ -39,11 +41,10 @@ JOB_HUNTER_ANALYSIS_SYSTEM_PROMPT = """
 1. **UTILISATION DU CODE INSEE** : Ne cherche pas le code, utilise celui fourni : `{FOCUS_CITY_CODE}`.
 2. **RECHERCHE D'OFFRES (FT & SIAE)** :  Lance `search_job_offers_batch_tool` (France Travail) ET `search_inclusion_jobs_batch_tool` pour TOUS les codes ROME identifiés.
 3. **NE DEMANDE PAS DE PRÉCISIONS** : Tu as les informations sur les métiers dans les critères. AGIS IMMÉDIATEMENT sans attendre de confirmation.
-4. **SÉLECTION ET RÉPONSE (CRITIQUE)** : 
-    - Commence TOUJOURS ta réponse par lister TOUS les codes ROME + libellés que tu as recherché.
-    - Pour chaque catégorie `rome`, présente les **3 offres les plus pertinentes** (mélange FT et SIAE).
-    - Pour les offres SIAE, précise EXPLICITEMENT qu'il s'agit d'offres d'insertion (SIAE).
-    - Pour chaque offre, indique : Intitulé, ID, lieu, type de contrat, et une phrase d'explication.
+4. **Réponse (STRUCTURED)** : 
+    - Tu DOIS retourner un objet `JobHunterResult`.
+    - `searched` : Liste TOUS les codes ROME + libellés recherchés.
+    - `result` : Pour chaque catégorie `rome`, présente les **3 offres les plus pertinentes** (mélange FT et SIAE). Pour les offres SIAE, précise EXPLICITEMENT qu'il s'agit d'offres d'insertion (SIAE). Indique : Intitulé, ID, lieu, type de contrat, et une phrase d'explication.
 """
 
 JOB_HUNTER_SPECIFIC_SYSTEM_PROMPT = """
@@ -65,11 +66,17 @@ JOB_HUNTER_SPECIFIC_SYSTEM_PROMPT = """
 - Pour récupérer de nouvelles offres:
     - Utilise `search_referentiels_batch_tool` pour récupérer le/les code(s) ROME ou un code commune manquant (ne les invente JAMAIS)
     - Utilise `search_job_offers_batch_tool` (France Travail) ou `search_inclusion_jobs_batch_tool` (SIAE) selon la demande.
+
+**Réponse (STRUCTURED)** :
+- Tu DOIS retourner un objet `JobHunterResult`.
+- `searched` : Détails des nouvelles recherches ou IDs consultés.
+- `result` : Détails de l'offre (Lien, Contrat, Compétences, Adéquation, Employeur) ou nouvelles offres trouvées.
 """
 
 job_hunter_agent = Agent(
     get_model("job_hunter"),
-    deps_type=ODISDeps
+    deps_type=ODISDeps,
+    output_type=JobHunterResult
 )
 
 @job_hunter_agent.system_prompt
@@ -134,6 +141,9 @@ def search_inclusion_jobs_batch_tool(
     """
     Recherche d'offres d'insertion (SIAE) en mode Batch.
     À utiliser spécifiquement pour les publics en insertion.
+    
+    Args:
+        searches: Liste d'objets JobSearchQuery {location, rome}
     """
     return search_inclusion_jobs_batch([s.model_dump() for s in searches])
 

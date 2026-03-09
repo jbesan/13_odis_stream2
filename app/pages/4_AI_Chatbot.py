@@ -215,7 +215,7 @@ if prompt := st.chat_input("Répondez ici...", key="chat_input"):
                 response_text = "Je n'ai pas pu générer de réponse."
 
         except Exception as e:
-            logger.exception(f"⚠️ Erreur technique : {str(e)}")
+            logging.getLogger(__name__).exception(f"⚠️ Erreur technique : {str(e)}")
             response_text = f"⚠️ Erreur technique : {str(e)}"
             with st.expander("Détails de l'erreur"):
                 st.error(str(e))

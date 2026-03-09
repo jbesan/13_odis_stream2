@@ -131,8 +131,13 @@ def _search_job_offers_logic(
     # logger.info(f"👉 [FranceTravail] ENTERING search_job_offers_logic (loc={location}, rome={rome})")
     token = _get_access_token()
     
-    # 1. Resolve Location if it's a Name
-    if location and not (location.isdigit() and len(location) == 5):
+    # 1. Resolve Location if it's a Name or Malformed
+    loc_str = str(location or "")
+    insee_match = re.search(r'\b(\d{5})\b', loc_str)
+    
+    if insee_match:
+        location = insee_match.group(1)
+    elif location and not (location.isdigit() and len(location) == 5):
         # logger.info(f"🔍 [FranceTravail] Resolving location name: '{location}'")
         resolved = _resolve_insee(location)
         if resolved:

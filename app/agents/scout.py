@@ -5,6 +5,8 @@ from pydantic_ai import Agent, RunContext
 import config as cfg
 from .state import ODISGraphState, ODISDeps, FocusCity, compute_criteria_hash
 from .agent_config import get_model
+
+logger = logging.getLogger(__name__)
 from .tools import (
     search_places_batch, 
     compute_routes, 
@@ -13,11 +15,9 @@ from .tools import (
     search_ccas,
 )
 
-logger = logging.getLogger("scout_agent_v2")
-
-class SearchQuery(BaseModel):
-    query: str = Field(..., description="Mot clé de recherche")
-    domain: str = Field(..., description="Domaine: ['rome_codes', 'communes', 'regions', 'departements'].")
+class ScoutResult(BaseModel):
+    searched: str = Field(..., description="Résumé des outils et termes recherchés.")
+    result: str = Field(..., description="Analyse détaillée des découvertes sur le terrain.")
 
 SCOUT_ANALYSIS_SYSTEM_PROMPT = """
 **Rôle** : Tu es le Scout ODIS. Tu épaules le travailleur social pour trouver les infrastructures locales pertinentes pour le projet de vie de la personne accompagnée.
@@ -30,21 +30,21 @@ SCOUT_ANALYSIS_SYSTEM_PROMPT = """
 1. **Gestion du Focus** : La localité d'intérêt est `{FOCUS_CITY_NAME}`.
 2. Sois efficace et ne cherche JAMAIS deux fois la même chose
 3. **Recherche de Terrain** : Effectue TOUTES les recherches suivantes en choisissant le bon outil :
-    - Utilise `search_refugee_associations_tool(codgeo='{FOCUS_CITY_CODE}')` UNIQUEMENT pour trouver des associations d'aide aux réugiés.
-    - Utilise `search_rna_rag_tool(query='...', codgeo='{FOCUS_CITY_CODE}')` UNIQUEMENT pour trouver des associations d'aide à l'insertion ou de loisir (ex: sport, culture, etc)
-    - Utilise `search_places_batch_tool(queries=[...], location='{FOCUS_CITY_NAME}')` UNIQUEMENT pour trouver des POIs pertinents au regard du contexte:
+    - Utilise SYSTEMATQIEUEMENT `search_refugee_associations_tool` pour trouver des associations spécialisées dans l'aide aux réugiés.
+    - Utilise SYSTEMATIQUEMENT `search_ccas_tool` pour trouver le Centre Communal d'Action Social local.
+    - Utilise SYSTEMATIQUEMENT `search_places_batch_tool` UNIQUEMENT pour trouver des POIs pertinents au regard du contexte:
         - Des infastrctures de transports (ex: gares, gares routières)
         - Des commerces spécialisés (ex: boucherie halal, épicerie asiatique)
-        - Des lieux de culte hors églises (ex: pagode, mosquée) 
+        - Des lieux de culte **pertinents** hors églises (ex: pagode, mosquée, temple) 
         - Lieux d'hébergement et d'insertion (ex: CPH, CHRS, CADA)
-    - Utilise `compute_routes_tool(origin='{FOCUS_CITY_NAME}', destination='...', mode='transit')` pour calculer les temps de trajet (ex: vers prefecture).
-    - Utilise `search_ccas_tool(codgeo='{FOCUS_CITY_CODE}')` pour trouver le Centre Communal d'Action Social local.
+    - Utilise `search_rna_rag_tool` UNIQUEMENT pour trouver des associations pertinentes pour leur insertion (loisirs, affinités culturelles, solidarité)
+    - Utilise `compute_routes_tool` pour calculer les temps de trajet (ex: vers prefecture).
+    
 
-3. **Réponse** :
-    - Commence toujours ta réponse par rappeler en une phrase ce que tu as recherché.
-    - Tu DOIS préparer une synthèse factuelle, argumentative et concise de tes découvertes sur le terrain.
-    - Retourne TOUJOURS le `CCAS` trouvé.
-    - Ne garde que ce qui est pertinent au regard du `CONTEXTE RÉSUMÉ`.
+3. **Réponse (STRUCTURED)** :
+    - Tu DOIS retourner un objet `ScoutResult`.
+    - `searched` : Une phrase courte listant les outils/recherches effectués.
+    - `result` : Ton analyse factuelle, argumentative et concise (incluant systématiquement le CCAS trouvé). Vise 250 mots minimum et ne garde que ce qui est pertinent au regard du `CONTEXTE RÉSUMÉ`.
 """
 
 SCOUT_SPECIFIC_SYSTEM_PROMPT = """
@@ -59,15 +59,21 @@ SCOUT_SPECIFIC_SYSTEM_PROMPT = """
 **Instructions** :
 1. Si la `QUESTION POSÉE` peut-être répondue avec les `CONNAISSANCES ACTUELLES` ne fais rien.
 2. Si des données manquent pour répondre à la `QUESTION POSÉE` : 
-    - Utilise `search_refugee_associations_tool(codgeo='{FOCUS_CITY_CODE}')` pour trouver des associations de support aux réfugiés.
-    - Utilise `search_rna_rag_tool(query='...', codgeo='{FOCUS_CITY_CODE}')` pour trouver des associations d'aide à l'insertion sociale.
-    - Utilise `search_places_batch_tool(queries=[...], location='{FOCUS_CITY_NAME}')` pour trouver des POIs (écoles, parcs, commerces, lieux de culte).
-    - Utilise `compute_routes_tool(origin='{FOCUS_CITY_NAME}', destination='...')` pour calculer les temps de trajet.
+    - Utilise `search_refugee_associations_tool` pour trouver des associations de support aux réfugiés.
+    - Utilise `search_rna_rag_tool` pour trouver des associations pertinentes pour leur insertion (loisirs, affinités culturelles, solidarité).
+    - Utilise `search_places_batch_tool` pour trouver des POIs (écoles, parcs, commerces, lieux de culte).
+    - Utilise `compute_routes_tool` pour calculer les temps de trajet.
+
+3. **Réponse (STRUCTURED)** :
+    - Tu DOIS retourner un objet `ScoutResult`.
+    - `searched` : Résumé des recherches additionnelles effectuées.
+    - `result` : Réponse à la `QUESTION POSÉE` basée sur les nouvelles recherches ou les `CONNAISSANCES ACTUELLES`.
 """
 
 scout_agent = Agent(
     get_model("scout"),
-    deps_type=ODISDeps
+    deps_type=ODISDeps,
+    output_type=ScoutResult
 )
 
 @scout_agent.system_prompt
@@ -143,7 +149,7 @@ def search_refugee_associations_tool(ctx: RunContext[ODISDeps], codgeo: str) -> 
 
 @scout_agent.tool
 def search_rna_rag_tool(ctx: RunContext[ODISDeps], query: str, codgeo: str, top_k: int = 10) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
-    """Recherche sémantique d'associations (RAG).
+    """Recherche sémantique d'associations. Un appel par terme de recherche.
     
     Args:
         ctx (RunContext[ODISDeps]): Contexte de l'agent.

@@ -137,7 +137,14 @@ def _search_referentiels_logic(query: str, domain: str) -> List[Dict[str, Any]]:
         return score
 
     # 1. Calculate relevance score - ensure scalar float
-    work_df['score'] = work_df.apply(lambda r: float(calculate_relevance(r)), axis=1)
+    def _safe_score(row):
+        try:
+            val = calculate_relevance(row)
+            return float(val) if not isinstance(val, (pd.Series, pd.DataFrame)) else 0.0
+        except:
+            return 0.0
+
+    work_df['score'] = work_df.apply(_safe_score, axis=1)
     
     # 2. Sort by relevance score descending
     results_df = work_df[work_df['score'] > 0].sort_values(by='score', ascending=False)

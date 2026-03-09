@@ -84,12 +84,21 @@ def _search_inclusion_jobs_logic(
     }
     
     if location:
-        # The API uses 'code_insee' and 'distance_max_km' for radius search
-        if len(location) == 5:
-            params["code_insee"] = location
-            params["distance_max_km"] = 20 # 20km radius (similar to France Travail)
+        # Robust search for INSEE (5 digits) or Dept (2-3 digits)
+        # LLMs sometimes pass "communes:87085" or "87085,rome:"
+        loc_str = str(location)
+        insee_match = re.search(r'\b(\d{5})\b', loc_str)
+        dept_match = re.search(r'\b(\d{2,3})\b', loc_str)
+        
+        if insee_match:
+            params["code_insee"] = insee_match.group(1)
+            params["distance_max_km"] = 20 # 20km radius
+            logger.info(f"🔍 [Inclusion] Searching near INSEE {params['code_insee']}")
+        elif dept_match:
+            params["postes_dans_le_departement"] = dept_match.group(1)
+            logger.info(f"🔍 [Inclusion] Searching in Dept {params['postes_dans_le_departement']}")
         else:
-            # Fallback if somehow just a department code is passed
+            # Fallback to original but it will likely 400 if garbage
             params["postes_dans_le_departement"] = location
 
     # The API doesn't have a direct 'rome' filter in the main SIAE list?

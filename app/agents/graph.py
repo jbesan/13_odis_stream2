@@ -31,16 +31,32 @@ def get_deps(config: RunnableConfig) -> ODISDeps:
     return deps
 
 def capture_usage(result, node_name: str, model_id: str) -> UsageStats:
-    u = result.usage()
-    rate_in, rate_out = (0.05, 3.00) if "gemini-3" in model_id.lower() else (0.01, 0.40)
-    cost = (u.input_tokens * rate_in / 1_000_000) + (u.output_tokens * rate_out / 1_000_000)
-    return UsageStats(
-        input_tokens=u.input_tokens,
-        output_tokens=u.output_tokens,
-        total_tokens=u.total_tokens,
-        cost_usd=cost,
-        breakdown={node_name: {"model": model_id, "input": u.input_tokens, "output": u.output_tokens, "total": u.total_tokens, "cost": cost}}
-    )
+    try:
+        u = result.usage()
+        # Pricing for Gemini 3 line (Flash Lite Preview approx)
+        rate_in, rate_out = (0.05, 3.00) if any(x in model_id.lower() for x in ["gemini-3", "gemini-4"]) else (0.10, 0.40)
+        cost = (u.input_tokens * rate_in / 1_000_000) + (u.output_tokens * rate_out / 1_000_000)
+        
+        breakdown_entry = {
+            "model": model_id, 
+            "input": u.input_tokens, 
+            "output": u.output_tokens, 
+            "total": u.total_tokens, 
+            "cost": float(cost)
+        }
+        
+        logger.info(f"📊 [USAGE] {node_name}: {u.total_tokens} t (${cost:.4f})")
+        
+        return UsageStats(
+            input_tokens=u.input_tokens,
+            output_tokens=u.output_tokens,
+            total_tokens=u.total_tokens,
+            cost_usd=cost,
+            breakdown={node_name: breakdown_entry}
+        )
+    except Exception as e:
+        logger.warning(f"⚠️ [USAGE] capture_usage failed for {node_name}: {e}")
+        return UsageStats()
 
 
 
@@ -284,7 +300,7 @@ async def scout_node(state: ODISGraphState, config: RunnableConfig):
     logger.info(f"✅ [SCOUT] Node finished for {focus}.")
     
     return {
-        "commune_artifacts": {focus: {h: {"scout": str(result.output)}}},
+        "commune_artifacts": {focus: {h: {"scout": f"### Recherches effectuees\n{result.output.searched}\n\n### Resultats\n{result.output.result}"}}},
         "criteria_hash": h,
         "usage": capture_usage(result, "scout", mod_id)
     }
@@ -317,7 +333,7 @@ async def web_node(state: ODISGraphState, config: RunnableConfig):
     logger.info(f"✅ [WEB] Node finished for {focus}.")
     
     return {
-        "commune_artifacts": {focus: {h: {"web": str(result.output)}}},
+        "commune_artifacts": {focus: {h: {"web": f"### Recherches effectuees\n{result.output.searched}\n\n### Resultats\n{result.output.result}"}}},
         "criteria_hash": h,
         "usage": capture_usage(result, "web", mod_id)
     }
@@ -350,7 +366,7 @@ async def job_hunter_node(state: ODISGraphState, config: RunnableConfig):
     logger.info(f"✅ [JOB_HUNTER] Node finished for {focus}.")
     
     return {
-        "commune_artifacts": {focus: {h: {"job_hunter": str(result.output)}}},
+        "commune_artifacts": {focus: {h: {"job_hunter": f"### Recherches effectuees\n{result.output.searched}\n\n### Resultats\n{result.output.result}"}}},
         "criteria_hash": h,
         "usage": capture_usage(result, "job_hunter", mod_id)
     }
@@ -374,7 +390,7 @@ async def synthesizer_node(state: ODISGraphState, config: RunnableConfig):
     logger.info(f"✅ [SYNTHESIZER] Synthesis complete for {city_name}.")
     
     return {
-        "messages": [{"role": "assistant", "content": str(result.output)}],
+        "messages": [{"role": "assistant", "content": result.output.response}],
         "next_node": END,
         "pending_experts": [], # Clear the pending list here now
         "usage": capture_usage(result, "synthesizer", mod_id)
