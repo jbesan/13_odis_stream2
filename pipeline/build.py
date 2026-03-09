@@ -643,21 +643,26 @@ def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
             allowed_types = [
                 'ECOLE MATERNELLE',
                 'ECOLE DE NIVEAU ELEMENTAIRE',
+                'ECOLE ELEMENTAIRE D APPLICATION',
+                'ECOLE ELEMENTAIRE',
+                'ECOLE PRIMAIRE',
                 'COLLEGE',
                 'LYCEE PROFESSIONNEL', 
                 'LYCEE ENSEIGNT GENERAL ET TECHNOLOGIQUE', 
                 'LYCEE D ENSEIGNEMENT GENERAL', 
-                'LYCEE D ENSEIGNEMENT TECHNOLOGIQUE'
+                'LYCEE D ENSEIGNEMENT TECHNOLOGIQUE',
+                'LYCEE POLYVALENT',
+                'SECTION D ENSEIGNEMENT PROFESSIONNEL'
             ]
             
             if 'nature_uai_libe' in edu_df.columns:
                 edu_df = edu_df[edu_df['nature_uai_libe'].isin(allowed_types)]
 
             # Calculate flags (logic from data_loader.py)
-            edu_df['ecole_maternelle'] = edu_df['nature_uai_libe'].str.contains('maternelle', case=False, na=False) | \
-                                          edu_df['nature_uai_libe'].str.contains('primaire', case=False, na=False)
-            edu_df['ecole_elementaire'] = edu_df['nature_uai_libe'].str.contains('élémentaire', case=False, na=False) | \
-                                           edu_df['nature_uai_libe'].str.contains('primaire', case=False, na=False)
+            edu_df['ecole_maternelle'] = edu_df['nature_uai_libe'].str.contains('MATERNELLE', case=False, na=False) | \
+                                          edu_df['nature_uai_libe'].str.contains('PRIMAIRE', case=False, na=False)
+            edu_df['ecole_elementaire'] = edu_df['nature_uai_libe'].str.contains('ELEMENTAIRE', case=False, na=False) | \
+                                           edu_df['nature_uai_libe'].str.contains('PRIMAIRE', case=False, na=False)
 
             # Standardize Types
             edu_pois_list = []
@@ -691,7 +696,11 @@ def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
                 }))
             
             # 3. Colleges & Lycees (remaining types)
-            other_types = ['COLLEGE', 'LYCEE PROFESSIONNEL', 'LYCEE ENSEIGNT GENERAL ET TECHNOLOGIQUE', 'LYCEE D ENSEIGNEMENT GENERAL', 'LYCEE D ENSEIGNEMENT TECHNOLOGIQUE']
+            other_types = [
+                'COLLEGE', 'LYCEE PROFESSIONNEL', 'LYCEE ENSEIGNT GENERAL ET TECHNOLOGIQUE', 
+                'LYCEE D ENSEIGNEMENT GENERAL', 'LYCEE D ENSEIGNEMENT TECHNOLOGIQUE',
+                'LYCEE POLYVALENT', 'SECTION D ENSEIGNEMENT PROFESSIONNEL'
+            ]
             other_mask = edu_df['nature_uai_libe'].isin(other_types)
             if other_mask.any():
                 other_df = edu_df[other_mask].copy()

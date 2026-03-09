@@ -72,10 +72,18 @@ Ce prototype a un triple objectif :
     ```
 
 4.  **Lancez l'application Streamlit :**
+
     ```bash
     streamlit run app/1_Accueil.py
     ```
+
     L'application devrait s'ouvrir dans votre navigateur web.
+
+5.  **Exécuter les tests (Avant déploiement) :**
+    ```bash
+    source .venv/bin/activate
+    python3 -m pytest tests
+    ```
 
 ## ⚙️ Fonctionnement : Le Moteur de Scoring
 

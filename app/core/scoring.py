@@ -105,7 +105,7 @@ class ScoringEngine:
                  val_bdv = df[sid_bdv] if sid_bdv in df.columns else None
                  
                  # 3. Parity Check: Log warning if an active criteria is missing from data
-                 if sid in config.active_criteria and val_commune is None and val_bdv is None:
+                 if config.active_criteria is not None and sid in config.active_criteria and val_commune is None and val_bdv is None:
                       logger.warning(f"⚠️ [SCORING] Active criterion '{sid}' (or '{sid_bdv}') is MISSING from the input data. Score will be defaulted to 0.")
 
                  # 4. Combine using bdv_factor

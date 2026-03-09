@@ -30,7 +30,9 @@ async def test_job_hunter_search_intent(test_deps):
                 deps=test_deps
             )
             assert result.output is not None
-            assert isinstance(result.output, str)
+            # The result is now a structured JobHunterResult, not just string output
+            from agents.job_hunter import JobHunterResult
+            assert isinstance(result.output, JobHunterResult)
 
 @pytest.mark.asyncio
 async def test_job_hunter_tool_calls(test_deps):

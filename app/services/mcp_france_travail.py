@@ -7,6 +7,7 @@ import logging
 import json
 from typing import List, Dict, Any, Optional
 from utils.common import normalize_text
+import re
 
 # Late import to avoid circular dependency
 def _resolve_insee(city_name: str) -> Optional[str]:
@@ -123,7 +124,6 @@ def _search_job_offers_logic(
             return {"offres": [], "total": 0}
         
         # Strict ROME pattern: One letter A-N followed by 4 digits
-        import re
         if not re.match(r"^[A-N][0-9]{4}$", rome):
             logger.warning(f"⚠️ [FranceTravail] Invalid ROME format: '{rome}'. (Possible confusing with INSEE/Postcode). Returning empty.")
             return {"offres": [], "total": 0}

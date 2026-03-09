@@ -34,17 +34,19 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 def main():
     parser = argparse.ArgumentParser(description="ODIS Data Pipeline ETL")
     parser.add_argument("--step", choices=["ingest", "build", "prescoring", "deploy", "all"], default="all", help="Step to run")
+    parser.add_argument("--skip-live-jobs", action="store_true", help="Skip France Travail Live Jobs fetch")
+    parser.add_argument("--skip-inclusion-jobs", action="store_true", help="Skip Inclusion Jobs fetch")
     args = parser.parse_args()
 
-    skip_live_jobs = False
-    skip_inclusion_jobs = False
+    skip_live_jobs = args.skip_live_jobs
+    skip_inclusion_jobs = args.skip_inclusion_jobs
     
-    # Early check for France Travail fetch if ingest/all is selected
+    # Early check for France Travail fetch if ingest/all is selected and not explicitly skipped
     if args.step in ["ingest", "all"]:
         from pipeline.ingest import get_live_jobs_status
         status = get_live_jobs_status()
         
-        if not status["within_ttl"]:
+        if not status["within_ttl"] and not skip_live_jobs:
             print("\n" + "="*50)
             if not status["exists"]:
                 print("[?] France Travail Live Jobs data is MISSING.")
@@ -62,7 +64,7 @@ def main():
         # Inclusion Jobs check
         from pipeline.ingest import get_inclusion_jobs_status
         status_inc = get_inclusion_jobs_status()
-        if not status_inc["within_ttl"]:
+        if not status_inc["within_ttl"] and not skip_inclusion_jobs:
             print("\n" + "="*50)
             if not status_inc["exists"]:
                 print("[?] Inclusion Jobs data is MISSING.")

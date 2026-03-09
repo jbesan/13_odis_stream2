@@ -86,4 +86,7 @@ _(Most features omitted for brevity. Appending F-42)_
 
 ### 📊 Status
 
-- Planned (Feb 2026)
+- **March 2026**: CI/CD pipeline stabilized. Tests and snapshots updated for Cloud Run deployment.
+- **March 2026 (Fix)**: Resolved "Ecoles Elémentaires" visibility issue through enhanced data ingestion (expanded matching logic) and updated POI categorization.
+- **March 2026 (Pipeline)**: Robustness improvements to `pipeline/etl.py` and `pipeline/ingest.py` (CLI arguments fix and non-interactive support).
+- Planned (Feb 2026) - Initial refinements planned.

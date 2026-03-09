@@ -372,15 +372,13 @@ def clean_education(config: Dict[str, Any], logger: PipelineLogger):
          return
 
     # Create flags
-    df['is_maternelle'] = df['nature_uai_libe'].isin(['ECOLE MATERNELLE']).astype(int)
-    df['is_elementaire'] = df['nature_uai_libe'].isin(['ECOLE DE NIVEAU ELEMENTAIRE']).astype(int)
-    df['is_college'] = df['nature_uai_libe'].isin(['COLLEGE']).astype(int)
-    df['is_lycee'] = df['nature_uai_libe'].isin([
-        'LYCEE PROFESSIONNEL', 
-        'LYCEE ENSEIGNT GENERAL ET TECHNOLOGIQUE', 
-        'LYCEE D ENSEIGNEMENT GENERAL', 
-        'LYCEE D ENSEIGNEMENT TECHNOLOGIQUE'
-    ]).astype(int)
+    df['is_maternelle'] = (df['nature_uai_libe'].str.contains('MATERNELLE', case=False, na=False) | \
+                           df['nature_uai_libe'].str.contains('PRIMAIRE', case=False, na=False)).astype(int)
+    df['is_elementaire'] = (df['nature_uai_libe'].str.contains('ELEMENTAIRE', case=False, na=False) | \
+                            df['nature_uai_libe'].str.contains('PRIMAIRE', case=False, na=False)).astype(int)
+    df['is_college'] = (df['nature_uai_libe'] == 'COLLEGE').astype(int)
+    df['is_lycee'] = (df['nature_uai_libe'].str.contains('LYCEE', case=False, na=False) | \
+                      df['nature_uai_libe'].str.contains('SECTION D ENSEIGNEMENT PROFESSIONNEL', case=False, na=False)).astype(int)
     
     df_agg = df.groupby('codgeo').agg({
         'is_maternelle': 'sum',
@@ -1399,6 +1397,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="ODIS Ingest Pipeline")
     parser.add_argument('--steps', type=str, help="Comma-separated list of steps to run (e.g. communes,inclusion)")
     parser.add_argument('--skip-live-jobs', action='store_true', help="Skip France Travail Live Jobs fetch")
+    parser.add_argument('--skip-inclusion-jobs', action='store_true', help="Skip Inclusion Jobs fetch")
     args = parser.parse_args(argv)
 
     logger = PipelineLogger(STATUS_FILE)

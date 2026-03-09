@@ -218,13 +218,14 @@ def build_ecoles_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config:
     # Replicate logic from data_loader.py using 'type' column
     # Data is now standardized in ETL (pipeline/build.py)
     
-    is_maternelle = filtered['type'] == 'Maternelle'
-    is_elementaire = filtered['type'] == 'Elémentaire'
-    is_college = filtered['type'] == 'Collège'
-    is_lycee = filtered['type'] == 'Lycée'
+    # Robust type matching: check for variations and standardize
+    is_maternelle = filtered['type'].isin(['Maternelle', 'Maternelle D Application', 'Maternelle d\'Application'])
+    is_elementaire = filtered['type'].isin(['Elémentaire', 'Élémentaire', 'Elémentaire D Application', 'Élémentaire d\'Application', 'Elementaire'])
+    is_college = filtered['type'].isin(['Collège', 'College'])
+    is_lycee = filtered['type'].isin(['Lycée', 'Lycee'])
     
     # Map "Crèche / Assistante Maternelle" to available Crèche types
-    creche_types = ['Crèche', 'Micro crèche', "Halte-garderie", "Crèche familiale", "Crèche collective", "Crèche parentale"]
+    creche_types = ['Crèche', 'Micro crèche', "Halte-garderie", "Crèche familiale", "Crèche collective", "Crèche parentale", "Creche"]
     # Ensure 'type_standardized' exists for the new logic, if not, fallback to 'type'
     if 'type_standardized' not in filtered.columns:
         filtered['type_standardized'] = filtered['type']
