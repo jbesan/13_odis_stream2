@@ -12,6 +12,11 @@ st.set_page_config(
     layout="wide"
 )
 
+# --- Authentication ---
+from utils import auth
+if not auth.check_password():
+    st.stop()
+
 logging.info(f"--- App re-run at {time.ctime(time.time())} ---")
 
 # --- Main App Execution ---
@@ -65,6 +70,11 @@ st.markdown("""
         font-weight: 300;
     }
 
+    /* Specificity fix: force dark green for everything inside white cards */
+    .step-card, .step-card * {
+        color: #1B4429 !important;
+    }
+
     /* Step Cards Styling */
     .step-card {
         background-color: #FFFFFF; /* White card against Green BG */
@@ -77,7 +87,6 @@ st.markdown("""
         display: flex;
         flex-direction: column;
         align-items: center;
-        /* justify-content: center; */
     }
     .step-number {
         background-color: #FFD700; /* Yellow accent */
@@ -158,37 +167,66 @@ st.markdown(header_html, unsafe_allow_html=True)
 
 
 # --- Input & Navigation Section ---
-st.markdown("### Pour commencer")
-col_input, col_go, col_skip = st.columns([2, 1, 1], gap="medium")
+st.subheader("Un outil, deux ambiances (votre choix)", divider="yellow",  width="stretch")
 
-with col_input:
-    # Need to style label since global override handles most but verify
-    person_name_input = st.text_input(
-        "Nom de la personne accompagnée (optionnel)", 
-        placeholder="Ex: Jean",
-        value=st.session_state.get('ui_nom', ''),
-        help="Saisissez le nom pour personnaliser le rapport"
-    )
+col_form, col_ia = st.columns(2, gap="large")
 
-with col_go:
-    st.write("") # Alignment spacer
-    st.write("")
-    if st.button(":speaking_head:    Commencer l'entretien", type="primary", use_container_width=True):
-        st.session_state.ui_nom = person_name_input
-        st.switch_page("pages/2_Formulaire.py")
+with col_form:
+    st.markdown("""
+        <div class="step-card" style="min-height: 250px; justify-content: space-between; padding: 30px;">
+            <div>
+                <div style="font-size: 3rem; margin-bottom: 15px;">📋</div>
+                <h3 style="font-weight: bold; font-size: 1.5rem; margin-bottom: 10px;">Entretien Classique</h3>
+                <div style="font-size: 1.1rem; margin-bottom: 20px;">
+                    Remplissez un formulaire détaillé étape par étape pour construire le profil et affiner le projet de vie avec la personne.
+                </div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # We place the inputs and buttons outside the custom HTML card to use Streamlit's native interactivity easily,
+    # but we can wrap it in a container to visually attach it if needed, or simply place it right below.
+    with st.container(border=True):
+        # person_name_input = st.text_input(
+        #     "Nom (optionnel)", 
+        #     placeholder="Ex: Jean",
+        #     value=st.session_state.get('ui_nom', ''),
+        #     label_visibility="collapsed"
+        # )
+        if st.button("Démarrer l'entretien", type="primary", use_container_width=True, key="btn_classic"):
+            # st.session_state.ui_nom = person_name_input
+            st.switch_page("pages/2_Formulaire.py")
 
-with col_skip:
-    st.write("") # Alignment spacer
-    st.write("")
-    if st.button(":next_track_button: Passer à la page résultats", type="secondary", use_container_width=True):
-        st.switch_page("pages/3_Resultats.py")
+with col_ia:
+    st.markdown("""
+        <div class="step-card" style="min-height: 250px; justify-content: space-between; padding: 30px;">
+            <div>
+                <div style="font-size: 3rem; margin-bottom: 15px;">🤖</div>
+                <h3 style="font-weight: bold; font-size: 1.5rem; margin-bottom: 10px;">Assistant IA (Beta)</h3>
+                <div style="font-size: 1.1rem; margin-bottom: 20px;">
+                    Discutez naturellement et librement avec notre agent intelligent pour identifier les besoins et trouver les bassins de vie adéquats.
+                </div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    with st.container(border=True):
+        #  st.write("") # Alignment spacer to match the input height on the left
+         if st.button("Lancer l'Assistant IA", type="primary", use_container_width=True, key="btn_ia"):
+             st.switch_page("pages/4_AI_Chatbot.py")
+
+# st.markdown("<br><br>", unsafe_allow_html=True)
+# col_skip1, col_skip2, col_skip3 = st.columns([1,2,1])
+# with col_skip2:
+#     if st.button("Passer directement aux résultats ➞", type="secondary", use_container_width=True):
+#         st.switch_page("pages/3_Resultats.py")
 
 
 
 st.markdown("---")
 
 # --- "How it works" Steps ---
-st.subheader("Comment ça marche ?")
+st.subheader("Comment ça marche ?", divider="yellow", width="stretch")
 
 step_cols = st.columns(3, gap="medium")
 
@@ -227,9 +265,6 @@ for col, step in zip(step_cols, steps):
 st.divider()
 
 # --- Footer ---
-if st.button("[New] Let's chat 🤖", type="secondary", use_container_width=False):
-    st.switch_page("pages/4_AI_Chatbot.py")
-    
 st.markdown(
     """
     <div style='text-align: center; color: #a0c0a0; font-size: 0.8em; margin-top: 20px;'>

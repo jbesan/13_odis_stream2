@@ -1,5 +1,11 @@
 import streamlit as st
 import config as cfg
+
+# --- Authentication ---
+from utils import auth
+if not auth.check_password():
+    st.stop()
+
 from ui import components as ui
 from utils import data_loader
 
@@ -33,7 +39,8 @@ with st.sidebar:
         st.switch_page("pages/3_Resultats.py") 
 
     ui.start_over()
-
+    from ui import feedback
+    feedback.render_feedback_button()
 
 PAGES = {
     "localisation": "Localisation",

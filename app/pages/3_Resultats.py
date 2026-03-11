@@ -15,6 +15,11 @@ import warnings
 
 st.set_page_config(layout="wide")
 
+# --- Authentication ---
+from utils import auth
+if not auth.check_password():
+    st.stop()
+
 # --- PDF Modal Logic ---
 if st.session_state.get('show_pdf_modal'):
     
@@ -77,8 +82,12 @@ def run_search():
     st.session_state['pdf_data'] = None
     st.session_state['map_object'] = None
 
+    from services import telemetry
+    telemetry.reset_interaction_id()
+    
     config = ui.create_scoring_config_from_inputs()
     st.session_state['config'] = config
+    telemetry.log_event("RUN_SEARCH", payload=config.model_dump() if hasattr(config, 'model_dump') else config.__dict__)
 
     # Get required dataframes from session state
     df_all_communes = st.session_state.app_data['odis']
@@ -115,8 +124,16 @@ def run_search():
     st.session_state['processed_gdf'] = processed_gdf
     st.session_state['unaggregated_gdf'] = unaggregated_gdf
     
-    # --- Logging ---
-    # Logging is now handled inside engine.run(log_prefix="classic")
+    # --- Logging Resultats ---
+    if not processed_gdf.empty:
+        top_5 = processed_gdf.head(5)
+        results_payload = [
+            {"codgeo": str(idx), "libgeo": str(row.get('libgeo', '')), "score": float(row.get('weighted_score', 0))} 
+            for idx, row in top_5.iterrows()
+        ]
+        telemetry.log_event("SEARCH_RESULTS_RETURNED", payload={"count": len(processed_gdf), "top_5": results_payload})
+    else:
+        telemetry.log_event("SEARCH_RESULTS_RETURNED", payload={"count": 0, "top_5": []})
     
     # Calculate center for map
     if not processed_gdf.empty:
@@ -168,8 +185,12 @@ with st.sidebar:
     st.markdown("Découvrez les lieux de vie correspondant le mieux au projet renseigné. Les scores vous permettent de comparer facilement leurs atouts.", unsafe_allow_html=True)
       
     with st.container(border=False, height='stretch', vertical_alignment="bottom"):
-        ui.display_sidebar(st.session_state['demo_data'])
+        ui.display_sidebar(st.session_state.get('demo_data', None))
         ui.start_over()
+        
+    st.divider()
+    from ui import feedback
+    feedback.render_feedback_button()
 
 # Top filter Form
 with st.container(border=False, key='top_menu'):
