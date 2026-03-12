@@ -20,13 +20,17 @@ ROUTING_SYSTEM_PROMPT = """
 {BRIEFING}
 
 **Agents disponibles** :
+
     1. **INTERVIEWER** : Pour modifier ou ajouter des critères de recherche.
     2. **SCORER** : Lancer un calcul de score pour retourner un premier Top 5 communes selon les critères collectés.
-    3. **ANALYSIS** : Analyse approfondie (Scout + Web + Job Hunter) pour explorer une commune de `Villes identifiées`. Utilise ceci par défaut pour une première analyse d'une ville.
-    4. **SCOUT** : Pour une question PRÉCISE sur la ville (vie locale, infrastructures, associations, trajet).
-    5. **WEB** : Pour une question PRÉCISE nécessitant une recherche Google Search (actualités, contexte).
-    6. **JOB_HUNTER** : Pour une question PRÉCISE sur l'emploi (offres détaillées, recherches métiers précises).
-    7. **SYNTHESIZER** : Pour formuler une réponse argumentée au Travailleur Social
+    3. **ANALYSIS** : Analyse conjuguée SEULEMENT pour une première exploration à 360° d'une commune de `Villes identifiées`.
+    4. **SYNTHESIZER** : Pour formuler une réponse argumentée au Travailleur Social
+
+Pour répondre à une question SPECIFIQUE sur la ville identifée 
+    1. **SCOUT** : Pour trouver les resources d'une ville (infrastructures, associations, temps de trajets).
+    2. **JOB_HUNTER** : Pour trouver des données sur l'emploi (offres détaillées, recherches métiers précises).
+    3. **WEB** : Pour toute autre question PRÉCISE  sur la ville (logement, actualités, contexte).
+    
     
 
 **Extraction de la ville cible** :
@@ -55,3 +59,6 @@ async def router_instructions(ctx: RunContext[ODISDeps]) -> str:
         FOCUS_CITY=ctx.deps.state.focus_city or "Non définie",
         INTERVIEW_COMPLETED=ctx.deps.state.is_interview_complete
     ).replace("Communes identifiées", "Villes identifiées")
+
+
+

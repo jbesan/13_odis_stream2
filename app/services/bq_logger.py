@@ -28,23 +28,29 @@ def log_agent_state_to_bq(user_input: str, agent_state: dict):
         table_ref = f"{client.project}.{DATASET_ID}.{TABLE_ID}"
         
         messages = agent_state.get('messages', [])
-        focus_city = agent_state.get('focus_city', {})
+        # Extract last agent response
+        last_response = ""
+        if messages:
+             for msg in reversed(messages):
+                  if msg.get('role') == 'assistant':
+                       last_response = msg.get('content', '')
+                       break
+
         usage = agent_state.get('usage', {})
-        
-        # Safely extract
-        city_name = focus_city.get('name', '') if isinstance(focus_city, dict) else getattr(focus_city, 'name', '')
         cost = usage.get('cost_usd', 0.0) if isinstance(usage, dict) else getattr(usage, 'cost_usd', 0.0)
         
         row = {
             "interaction_id": interaction_id,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "username": username,
-            "user_input": user_input[:1000] if user_input else "",
-            "criteria_hash": str(agent_state.get('criteria_hash', '')),
-            "focus_city": str(city_name),
-            "cost_usd": float(cost),
-            "agent_messages_json": json.dumps(messages),
-            "full_state_json": json.dumps(agent_state, default=str)
+            "last_user_message": user_input[:2000] if user_input else "",
+            "last_agent_response": last_response[:10000] if last_response else "",
+            "search_criteria": json.dumps(agent_state.get('search_criteria', {}), default=str, ensure_ascii=False),
+            "briefing": str(agent_state.get('briefing', '')),
+            "top_cities": json.dumps(agent_state.get('top_cities', []), default=str, ensure_ascii=False),
+            "artifacts": json.dumps(agent_state.get('commune_artifacts', {}), default=str, ensure_ascii=False),
+            "execution_mode": str(agent_state.get('execution_mode', 'full_analysis')),
+            "cost_usd": float(cost)
         }
         
         # Fire to BigQuery
@@ -52,7 +58,7 @@ def log_agent_state_to_bq(user_input: str, agent_state: dict):
         if errors:
             logger.error(f"BQ Agent State Insert Errors: {errors}")
         else:
-            logger.info("Successfully logged Agent State to BigQuery.")
+            logger.info("Successfully logged Agent State to BigQuery with granular fields.")
             
     except Exception as e:
         logger.error(f"Failed to log agent state to BQ: {str(e)}")

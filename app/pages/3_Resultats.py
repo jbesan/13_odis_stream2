@@ -3,12 +3,14 @@ from streamlit_folium import st_folium
 from core import scoring
 import config as cfg
 from ui import components as ui
+from ui import feedback
 from utils import common as utils
 from core import maps
 from core.pdf_generator import generate_pdf_report
 import folium as flm
 from utils import data_loader
 import geopandas as gpd
+import pandas as pd
 import logging
 import gc
 import warnings
@@ -87,7 +89,6 @@ def run_search():
     
     config = ui.create_scoring_config_from_inputs()
     st.session_state['config'] = config
-    telemetry.log_event("RUN_SEARCH", payload=config.model_dump() if hasattr(config, 'model_dump') else config.__dict__)
 
     # Get required dataframes from session state
     df_all_communes = st.session_state.app_data['odis']
@@ -110,9 +111,14 @@ def run_search():
         global_stats={},
         refugee_associations_data=st.session_state.app_data['refugee_associations_data'],
         live_jobs_data=st.session_state.app_data['live_jobs_data'],
-        siae_jobs_data=st.session_state.app_data['siae_jobs_data']
+        siae_jobs_data=st.session_state.app_data['siae_jobs_data'],
+        annuaire_ecoles=st.session_state.app_data.get('annuaire_ecoles', pd.DataFrame()),
+        annuaire_sante=st.session_state.app_data.get('annuaire_sante', pd.DataFrame()),
+        annuaire_inclusion=st.session_state.app_data.get('annuaire_inclusion', pd.DataFrame()),
+        inclusion_services_index=st.session_state.app_data.get('inclusion_services_index', pd.DataFrame()),
+        rome_index=st.session_state.app_data.get('rome_index', pd.DataFrame()),
+        bv_data=st.session_state.app_data.get('bv_data')
     )
-
 
     processed_gdf = engine.run(
         config=config,
@@ -124,16 +130,41 @@ def run_search():
     st.session_state['processed_gdf'] = processed_gdf
     st.session_state['unaggregated_gdf'] = unaggregated_gdf
     
-    # --- Logging Resultats ---
-    if not processed_gdf.empty:
-        top_5 = processed_gdf.head(5)
-        results_payload = [
-            {"codgeo": str(idx), "libgeo": str(row.get('libgeo', '')), "score": float(row.get('weighted_score', 0))} 
-            for idx, row in top_5.iterrows()
-        ]
-        telemetry.log_event("SEARCH_RESULTS_RETURNED", payload={"count": len(processed_gdf), "top_5": results_payload})
-    else:
-        telemetry.log_event("SEARCH_RESULTS_RETURNED", payload={"count": 0, "top_5": []})
+    # --- Unified Telemetry Logging (BigQuery) ---
+    try:
+        # Extract criteria vs weights from the ScoringConfig
+        criteria_keys = ['commune_actuelle', 'loc_search_area', 'situation_famille', 'nb_enfants', 'besoin_emploi', 'besoin_sante', 'inc_services_add_selection']
+        full_config = config.model_dump() if hasattr(config, 'model_dump') else config.__dict__
+        
+        search_criteria = {k: full_config.get(k) for k in criteria_keys if k in full_config}
+        weights = {k: v for k, v in full_config.items() if k.startswith('poids_')}
+        
+        top_5_results = []
+        top_5_breakdown = {}
+        if not processed_gdf.empty:
+            top_5 = processed_gdf.head(5)
+            top_5_results = [
+                {"codgeo": str(idx), "libgeo": str(row.get('libgeo', '')), "score": float(row.get('weighted_score', 0))} 
+                for idx, row in top_5.iterrows()
+            ]
+            
+            # Granular Breakdown (mirroring markdown logs logic)
+            for idx, row in top_5.iterrows():
+                city_details = engine.format_city_details(row, config=config)
+                top_5_breakdown[str(idx)] = {
+                    "libgeo": row.get('libgeo', ''),
+                    "scores": city_details.get('scores', {})
+                }
+        
+        telemetry.log_search_complete(
+            criteria=search_criteria,
+            weights=weights,
+            results=top_5_results,
+            breakdown=top_5_breakdown,
+            source_flow='classic'
+        )
+    except Exception as tel_e:
+        logging.warning(f"Failed to log search telemetry: {str(tel_e)}")
     
     # Calculate center for map
     if not processed_gdf.empty:
@@ -165,6 +196,10 @@ def run_search():
     st.session_state['fgs_to_show'] = set()
     st.session_state['highlighted_result'] = [False, None]
 
+def open_pdf_modal() -> None:
+    """Callback to signal that the PDF modal should be shown."""
+    st.session_state['show_pdf_modal'] = True
+
 # Automatically run the search if not already processed and form is completed
 if st.session_state.get('processed_gdf') is None and st.session_state.get('form_completed'):
     run_search()
@@ -183,14 +218,70 @@ with st.sidebar:
         st.error("Logo not found")
     st.write("")
     st.markdown("Découvrez les lieux de vie correspondant le mieux au projet renseigné. Les scores vous permettent de comparer facilement leurs atouts.", unsafe_allow_html=True)
-      
-    with st.container(border=False, height='stretch', vertical_alignment="bottom"):
-        ui.display_sidebar(st.session_state.get('demo_data', None))
-        ui.start_over()
-        
-    st.divider()
-    from ui import feedback
+
+    # --- Retour à l'Accueil ---    
+    ui.start_over()
+
+    # --- Bouton Feedback ---
     feedback.render_feedback_button()
+
+    # --- Export to PDF ---
+    if st.session_state.get('processed_gdf') is not None:
+        st.button(
+            "Exporter résultats", 
+            on_click=open_pdf_modal,
+            icon=':material/picture_as_pdf:',
+            type='secondary',
+            width="stretch"
+        )
+    
+    st.divider()
+
+    # --- Weights ---
+    with st.expander('Pondérations', expanded=False):
+        # F-15: Profile Selector
+        def _update_weights_from_profile():
+            profile = st.session_state.ui_weight_profile
+            if profile in cfg.WEIGHT_PROFILES:
+                weights = cfg.WEIGHT_PROFILES[profile]
+                for key, value in weights.items():
+                    # Update session state keys for sliders (e.g. ui_poids_education)
+                    st.session_state[f"ui_{key}"] = value
+            
+            st.session_state['processed_gdf'] = None
+        
+
+        st.selectbox(
+            "Profil de Priorité",
+            options=list(cfg.WEIGHT_PROFILES.keys()),
+            key="ui_weight_profile",
+            on_change=_update_weights_from_profile,
+            index=0 # Default to Balanced
+        )
+        
+        st.select_slider("Education", cfg.POIDS_OPTIONS, 
+                        value=st.session_state.get('ui_poids_education', 50), 
+                        key="ui_poids_education")
+        st.select_slider("Projet Pro", cfg.POIDS_OPTIONS, 
+                        value=st.session_state.get('ui_poids_emploi', 50), 
+                        key="ui_poids_emploi")
+        st.select_slider("Logement", cfg.POIDS_OPTIONS, 
+                        value=st.session_state.get('ui_poids_logement', 50), 
+                        key="ui_poids_logement")
+        st.select_slider("Inclusion", cfg.POIDS_OPTIONS, 
+                        value=st.session_state.get('ui_poids_inclusion', 50), 
+                        key="ui_poids_inclusion")
+        st.select_slider("Santé", cfg.POIDS_OPTIONS, # NEW
+                        value=st.session_state.get('ui_poids_sante', 50), # NEW
+                        key="ui_poids_sante") # NEW
+        st.select_slider("Mobilité", cfg.POIDS_OPTIONS, 
+                        value=st.session_state.get('ui_poids_mobilité', 50), 
+                        key="ui_poids_mobilité")
+
+        # def clear_processed_gdf():
+        #     st.session_state['processed_gdf'] = None
+    
+    
 
 # Top filter Form
 with st.container(border=False, key='top_menu'):

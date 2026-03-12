@@ -46,5 +46,5 @@ def check_password():
         return False
     else:
         # Password correct.
-        st.warning("Mode Feedback activé : L'application est en phase de test. Vos interactions sont collectées pour améliorer l'outil. Merci d'anonymiser au maximum vos saisies libres.", icon="⚠️")
+        st.warning("L'application est en phase de test. Vos interactions sont collectées pour améliorer l'outil. Merci d'anonymiser au maximum vos saisies libres.", icon="⚠️")
         return True

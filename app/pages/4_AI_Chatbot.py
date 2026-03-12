@@ -207,7 +207,7 @@ if prompt := st.chat_input("Répondez ici...", key="chat_input"):
     display_message("user", prompt)
     
     # 2. Agent Response
-    with st.spinner("L'Agent ODIS réfléchit... (Patience 🧘)"):
+    with st.spinner("L'Agent ODIS réfléchit..."):
         response_text = None
         try:
             # Préparation

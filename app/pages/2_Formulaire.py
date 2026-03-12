@@ -35,12 +35,16 @@ with st.sidebar:
 
     st.divider()
 
-    if st.button("Passer aux résultats", type='secondary'):
-        st.switch_page("pages/3_Resultats.py") 
+
 
     ui.start_over()
     from ui import feedback
     feedback.render_feedback_button()
+
+    st.divider()
+    
+    if st.button("Passer aux résultats", type='secondary', width="stretch"):
+        st.switch_page("pages/3_Resultats.py") 
 
 PAGES = {
     "localisation": "Localisation",

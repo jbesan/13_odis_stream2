@@ -380,73 +380,73 @@ def show_details_dialog(details: Dict[str, Any]):
             st.markdown("#### :material/diversity_3: Indicateurs Inclusion")
             render_scores_for_category('inclusion')
 
-def open_pdf_modal() -> None:
-    """Callback to signal that the PDF modal should be shown."""
-    st.session_state['show_pdf_modal'] = True
+# def open_pdf_modal() -> None:
+#     """Callback to signal that the PDF modal should be shown."""
+#     st.session_state['show_pdf_modal'] = True
 
-def display_sidebar(demo_data: Optional[Dict[str, Any]] = None) -> None:
-    """Displays the sidebar with location and weight controls."""
+# def display_sidebar(demo_data: Optional[Dict[str, Any]] = None) -> None:
+#     """Displays the sidebar with location and weight controls."""
     
-    with st.sidebar:
+#     with st.sidebar:
  
-        st.divider()
 
-        # --- Weights ---
-        with st.expander('Pondérations', expanded=False):
-            # F-15: Profile Selector
-            def _update_weights_from_profile():
-                profile = st.session_state.ui_weight_profile
-                if profile in cfg.WEIGHT_PROFILES:
-                    weights = cfg.WEIGHT_PROFILES[profile]
-                    for key, value in weights.items():
-                        # Update session state keys for sliders (e.g. ui_poids_education)
-                        st.session_state[f"ui_{key}"] = value
+
+
+#         # --- Export to PDF ---
+#         if st.session_state.get('processed_gdf') is not None:
+#             st.button(
+#                 "Générer le PDF", 
+#                 on_click=open_pdf_modal,
+#                 icon=':material/picture_as_pdf:',
+#                 type='secondary',
+#                 width="stretch"
+#             )
+
+#         st.divider()
+
+#         # --- Weights ---
+#         with st.expander('Pondérations', expanded=False):
+#             # F-15: Profile Selector
+#             def _update_weights_from_profile():
+#                 profile = st.session_state.ui_weight_profile
+#                 if profile in cfg.WEIGHT_PROFILES:
+#                     weights = cfg.WEIGHT_PROFILES[profile]
+#                     for key, value in weights.items():
+#                         # Update session state keys for sliders (e.g. ui_poids_education)
+#                         st.session_state[f"ui_{key}"] = value
                 
-                st.session_state['processed_gdf'] = None
+#                 st.session_state['processed_gdf'] = None
             
 
-            st.selectbox(
-                "Profil de Priorité",
-                options=list(cfg.WEIGHT_PROFILES.keys()),
-                key="ui_weight_profile",
-                on_change=_update_weights_from_profile,
-                index=0 # Default to Balanced
-            )
+#             st.selectbox(
+#                 "Profil de Priorité",
+#                 options=list(cfg.WEIGHT_PROFILES.keys()),
+#                 key="ui_weight_profile",
+#                 on_change=_update_weights_from_profile,
+#                 index=0 # Default to Balanced
+#             )
             
-            st.select_slider("Education", cfg.POIDS_OPTIONS, 
-                            value=st.session_state.get('ui_poids_education', 50), 
-                            key="ui_poids_education")
-            st.select_slider("Projet Pro", cfg.POIDS_OPTIONS, 
-                            value=st.session_state.get('ui_poids_emploi', 50), 
-                            key="ui_poids_emploi")
-            st.select_slider("Logement", cfg.POIDS_OPTIONS, 
-                            value=st.session_state.get('ui_poids_logement', 50), 
-                            key="ui_poids_logement")
-            st.select_slider("Inclusion", cfg.POIDS_OPTIONS, 
-                            value=st.session_state.get('ui_poids_inclusion', 50), 
-                            key="ui_poids_inclusion")
-            st.select_slider("Santé", cfg.POIDS_OPTIONS, # NEW
-                            value=st.session_state.get('ui_poids_sante', 50), # NEW
-                            key="ui_poids_sante") # NEW
-            st.select_slider("Mobilité", cfg.POIDS_OPTIONS, 
-                            value=st.session_state.get('ui_poids_mobilité', 50), 
-                            key="ui_poids_mobilité")
+#             st.select_slider("Education", cfg.POIDS_OPTIONS, 
+#                             value=st.session_state.get('ui_poids_education', 50), 
+#                             key="ui_poids_education")
+#             st.select_slider("Projet Pro", cfg.POIDS_OPTIONS, 
+#                             value=st.session_state.get('ui_poids_emploi', 50), 
+#                             key="ui_poids_emploi")
+#             st.select_slider("Logement", cfg.POIDS_OPTIONS, 
+#                             value=st.session_state.get('ui_poids_logement', 50), 
+#                             key="ui_poids_logement")
+#             st.select_slider("Inclusion", cfg.POIDS_OPTIONS, 
+#                             value=st.session_state.get('ui_poids_inclusion', 50), 
+#                             key="ui_poids_inclusion")
+#             st.select_slider("Santé", cfg.POIDS_OPTIONS, # NEW
+#                             value=st.session_state.get('ui_poids_sante', 50), # NEW
+#                             key="ui_poids_sante") # NEW
+#             st.select_slider("Mobilité", cfg.POIDS_OPTIONS, 
+#                             value=st.session_state.get('ui_poids_mobilité', 50), 
+#                             key="ui_poids_mobilité")
 
-        def clear_processed_gdf():
-            st.session_state['processed_gdf'] = None
-
-        # --- Technical Params ---
-        st.divider()
-        # st.info(f"Version: {cfg.VERSION}")
-
-        # --- Export to PDF ---
-        if st.session_state.get('processed_gdf') is not None:
-            st.button(
-                "Générer le PDF", 
-                on_click=open_pdf_modal,
-                icon=':material/picture_as_pdf:',
-                type='secondary'
-            )
+        # def clear_processed_gdf():
+        #     st.session_state['processed_gdf'] = None
 
 def start_over() -> None:
     # --- Start over ---
@@ -456,7 +456,7 @@ def start_over() -> None:
         </style>
         """
     , unsafe_allow_html=True)
-    if st.sidebar.button('Recommencer', type='primary', key='btn_recommencer'):
+    if st.button("🏠 Retour à l'Accueil", use_container_width=True):
         st.session_state['processed_gdf'] = None
         st.session_state['form_completed'] = False
         st.switch_page("pages/1_Accueil.py")
