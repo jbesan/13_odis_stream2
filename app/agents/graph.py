@@ -295,9 +295,19 @@ async def scorer_node(state: ODISGraphState, config: RunnableConfig):
     except Exception as tel_e:
         logger.warning(f"⚠️ [SCORER] Telemetry failed: {tel_e}")
 
-    # We update top_cities from recovered data
+    # --- Message Construction ---
+    # We combine the global response and individual pitches into a clean markdown message for the chat.
+    final_content = result.output.response or ""
+    
+    if result.output.pitches_per_city:
+        final_content += "\n\n### 📍 Top des communes recommandées\n"
+        for city in result.output.pitches_per_city:
+            final_content += f"\n- **{city.name}** ({city.codgeo})\n  {city.pitch}\n"
+    
+    logger.info(f"📤 [SCORER] Final message constructed (length: {len(final_content)})")
+
     return {
-        "messages": [{"role": "assistant", "content": result.output.response}],
+        "messages": [{"role": "assistant", "content": final_content}],
         "top_cities": top_cities,
         "criteria_hash": compute_criteria_hash(state.search_criteria),
         "scoring_results": {"scorer": result.output.model_dump()}, # Now it contains response and pitches_per_city 

@@ -249,63 +249,80 @@ with st.sidebar:
 
     # --- Export to PDF ---
     if st.session_state.get('processed_gdf') is not None:
-        st.button(
-            "Exporter résultats", 
-            on_click=open_pdf_modal,
-            icon=':material/picture_as_pdf:',
-            type='secondary',
-            width="stretch"
-        )
+        config = st.session_state.get('config')
+        h = config.compute_hash() if config else None
+        
+        @st.fragment(run_every=(3.0 if st.session_state.get('async_scorer_results', {}).get(h) is None else None))
+        def export_pdf_container():
+            scorer_done = st.session_state.get('async_scorer_results', {}).get(h) is not None
+            if scorer_done:
+                st.button(
+                    "Exporter résultats", 
+                    on_click=open_pdf_modal,
+                    icon=':material/picture_as_pdf:',
+                    type='secondary',
+                    width="stretch"
+                )
+            else:
+                st.button(
+                    "IA en cours...", 
+                    disabled=True,
+                    icon=':material/hourglass_empty:',
+                    type='secondary',
+                    width="stretch"
+                )
+        
+        export_pdf_container()
     
     st.divider()
 
     # --- Weights ---
-    with st.expander('Pondérations', expanded=False):
+    # with st.expander('Pondérations', expanded=False):
         # F-15: Profile Selector
-        def _update_weights_from_profile():
-            profile = st.session_state.ui_weight_profile
-            if profile in cfg.WEIGHT_PROFILES:
-                weights = cfg.WEIGHT_PROFILES[profile]
-                for key, value in weights.items():
-                    # Update session state keys for sliders (e.g. ui_poids_education)
-                    st.session_state[f"ui_{key}"] = value
-            
-            st.session_state['processed_gdf'] = None
+    def _update_weights_from_profile():
+        profile = st.session_state.ui_weight_profile
+        if profile in cfg.WEIGHT_PROFILES:
+            weights = cfg.WEIGHT_PROFILES[profile]
+            for key, value in weights.items():
+                # Update session state keys for sliders (e.g. ui_poids_education)
+                st.session_state[f"ui_{key}"] = value
         
+        st.session_state['processed_gdf'] = None
+    
 
-        st.selectbox(
-            "Profil de Priorité",
-            options=list(cfg.WEIGHT_PROFILES.keys()),
-            key="ui_weight_profile",
-            on_change=_update_weights_from_profile,
-            index=0 # Default to Balanced
-        )
-        
-        # New "Expert Mode" toggle
-        st.toggle("Personnaliser les poids (Expert)", key="ui_expert_weights", value=False)
-        
-        if st.session_state.get('ui_expert_weights'):
-            st.info("Ajustez finement l'importance de chaque catégorie.")
-            st.select_slider("Education", cfg.POIDS_OPTIONS, 
-                            value=st.session_state.get('ui_poids_education', 50), 
-                            key="ui_poids_education", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
-            st.select_slider("Projet Pro", cfg.POIDS_OPTIONS, 
-                            value=st.session_state.get('ui_poids_emploi', 50), 
-                            key="ui_poids_emploi", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
-            st.select_slider("Logement", cfg.POIDS_OPTIONS, 
-                            value=st.session_state.get('ui_poids_logement', 50), 
-                            key="ui_poids_logement", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
-            st.select_slider("Inclusion", cfg.POIDS_OPTIONS, 
-                            value=st.session_state.get('ui_poids_inclusion', 50), 
-                            key="ui_poids_inclusion", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
-            st.select_slider("Santé", cfg.POIDS_OPTIONS, 
-                            value=st.session_state.get('ui_poids_sante', 50), 
-                            key="ui_poids_sante", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
-            st.select_slider("Mobilité", cfg.POIDS_OPTIONS, 
-                            value=st.session_state.get('ui_poids_mobilité', 50), 
-                            key="ui_poids_mobilité", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
-        else:
-            st.caption("Utilisez les profils ci-dessus ou activez le mode expert pour un réglage fin.")
+    st.selectbox(
+        "Profil de pondération",
+        options=list(cfg.WEIGHT_PROFILES.keys()),
+        key="ui_weight_profile",
+        on_change=_update_weights_from_profile,
+        index=0 # Default to Balanced
+    )
+    
+    # New "Expert Mode" toggle
+    st.toggle("Personnaliser les poids", key="ui_expert_weights", value=False)
+    
+    if st.session_state.get('ui_expert_weights'):
+        # st.info("Ajustez finement l'importance de chaque catégorie.")
+        st.select_slider("Education", cfg.POIDS_OPTIONS, 
+                        value=st.session_state.get('ui_poids_education', 50), 
+                        key="ui_poids_education", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
+        st.select_slider("Projet Pro", cfg.POIDS_OPTIONS, 
+                        value=st.session_state.get('ui_poids_emploi', 50), 
+                        key="ui_poids_emploi", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
+        st.select_slider("Logement", cfg.POIDS_OPTIONS, 
+                        value=st.session_state.get('ui_poids_logement', 50), 
+                        key="ui_poids_logement", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
+        st.select_slider("Inclusion", cfg.POIDS_OPTIONS, 
+                        value=st.session_state.get('ui_poids_inclusion', 50), 
+                        key="ui_poids_inclusion", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
+        st.select_slider("Santé", cfg.POIDS_OPTIONS, 
+                        value=st.session_state.get('ui_poids_sante', 50), 
+                        key="ui_poids_sante", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
+        st.select_slider("Mobilité", cfg.POIDS_OPTIONS, 
+                        value=st.session_state.get('ui_poids_mobilité', 50), 
+                        key="ui_poids_mobilité", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
+    else:
+        st.caption("Utilisez un profil prédéfini ci-dessus ou activez le mode personalisé pour un réglage fin.")
     
     
 

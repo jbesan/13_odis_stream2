@@ -232,7 +232,20 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
         pdf.ln(2)
 
         # Pitch
-        pitch = ui._produce_pitch_markdown(row, st_session_state['config'], st_session_state['app_data']['scores_cat'])
+        config = st_session_state.get('config')
+        h = config.compute_hash() if config else None
+        scorer_res = st_session_state.get('async_scorer_results', {}).get(h) if h else None
+        
+        ai_pitch = ""
+        codgeo = str(row.get('codgeo', row.name))
+        if scorer_res and isinstance(scorer_res, dict) and "pitches" in scorer_res:
+            ai_pitch = scorer_res["pitches"].get(codgeo, "")
+            
+        if ai_pitch:
+            pitch = ai_pitch
+        else:
+            pitch = ui._produce_pitch_markdown(row, config, st_session_state['app_data']['scores_cat'])
+            
         pdf.set_font("DejaVu", '', 9)
         pdf.multi_cell(0, 5, pitch, markdown=True)
         pdf.ln(5)

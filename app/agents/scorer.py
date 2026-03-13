@@ -16,6 +16,7 @@ logger = logging.getLogger("scorer_agent_v2")
 # --- Structured Output ---
 class CityPitch(BaseModel):
     codgeo: str = Field(description="Code INSEE de la commune (5 chiffres)")
+    name: str = Field(description="Nom de la commune")
     pitch: str = Field(description="Résumé explicatif très concis des points forts de la commune pour le projet.")
 
 class ScorerResult(BaseModel):
@@ -35,9 +36,9 @@ Les critères de recherche sont injectés automatiquement dans le contexte, util
 **Instructions** :
 1. Lance `compute_top_cities` (pas besoin de passer d'arguments).
 2. Une fois les résultats reçus, analyse le **Top 5** des meilleures communes.
-3. Remplis `response` avec une phrase d'introduction générale.
+3. Remplis `response` avec une synthèse complète et engageante pour l'utilisateur. Tu dois y inclure le Top 5 des villes avec leurs points forts principaux. C'est ce message qui sera affiché directement dans le chat.
 4. Pour `pitches_per_city`, pour chaque ville du Top 5:
-    a. Fournis le code INSEE exact (`codgeo`).
+    a. Fournis le code INSEE exact (`codgeo`) et le nom (`name`).
     b. Rédige un `pitch` court et pertinent par rapport au contexte. Cite 3 à 5 points forts concrets et chiffrés (en pourcentage si pertinent).
 5. **IMPORTANT** : Ne retourne jamais les références des données (ex: %{{log_soc_inoc_scaled}}).
 """
