@@ -4,7 +4,7 @@ import numpy as np
 import geopandas as gpd
 from utils import data_loader
 from core.scoring import ScoringEngine
-from core.models import ScoringConfig
+from core.models import SearchCriterias
 import config as cfg
 
 @pytest.mark.unit
@@ -37,7 +37,7 @@ def test_vacant_housing_criterion():
             np.testing.assert_almost_equal(sample['log_vac_struct_ratio'], expected_ratio, decimal=5)
 
     # 4. Verify Scoring Logic
-    config = ScoringConfig(
+    config = SearchCriterias(
         poids_emploi=100, poids_logement=100, poids_education=0,
         poids_inclusion=0, poids_sante=0, poids_mobilité=0,
         commune_actuelle='01004', loc_search_area='departement',

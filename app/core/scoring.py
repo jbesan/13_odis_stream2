@@ -7,7 +7,7 @@ from typing import List, Dict, Set, Any, Optional, Union, Tuple
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-from core.models import ScoringConfig
+from core.models import SearchCriterias
 import config as cfg
 import logging
 from utils.logger import log_search_results
@@ -39,8 +39,9 @@ class ScoringEngine:
                     float(row.iloc[0]['max_bound']) if pd.notna(row.iloc[0]['max_bound']) else 1.0)
         return 0.0, 1.0
 
-    def _compute_distance_score(self, df: gpd.GeoDataFrame, config: ScoringConfig) -> gpd.GeoDataFrame:
-        current_codgeo = config.commune_actuelle
+    def _compute_distance_score(self, df: gpd.GeoDataFrame, config: SearchCriterias) -> gpd.GeoDataFrame:
+        current_codgeo_raw = config.commune_actuelle
+        current_codgeo = current_codgeo_raw.code if hasattr(current_codgeo_raw, 'code') else current_codgeo_raw
         target_geom = None
         if current_codgeo in df.index:
              target_geom = df.loc[current_codgeo, 'centroid'] if 'centroid' in df.columns else df.loc[current_codgeo].geometry.centroid
@@ -69,7 +70,7 @@ class ScoringEngine:
         
         return df
 
-    def _compute_category_scores(self, df: pd.DataFrame, config: ScoringConfig) -> pd.DataFrame:
+    def _compute_category_scores(self, df: pd.DataFrame, config: SearchCriterias) -> pd.DataFrame:
         df = df.copy()
         
         # Use cached active criteria if available
@@ -150,7 +151,7 @@ class ScoringEngine:
 
         return df
 
-    def _compute_weighted_score(self, df: pd.DataFrame, config: ScoringConfig) -> pd.Series:
+    def _compute_weighted_score(self, df: pd.DataFrame, config: SearchCriterias) -> pd.Series:
         total_score = pd.Series(0.0, index=df.index)
         total_weight = 0.0
         
@@ -189,7 +190,7 @@ class ScoringEngine:
         else:
             return (total_score / total_weight).fillna(0)
 
-    def _prune_irrelevant_metrics(self, df: pd.DataFrame, config: ScoringConfig) -> pd.DataFrame:
+    def _prune_irrelevant_metrics(self, df: pd.DataFrame, config: SearchCriterias) -> pd.DataFrame:
         """Prunes columns that are not relevant based on active criteria."""
         if config is None or config.active_criteria is None:
             return df
@@ -311,7 +312,7 @@ class ScoringEngine:
         self.siae_jobs_data = siae_jobs_data
         self.bmo_vertical = bmo_vertical
 
-    def _get_active_criteria(self, config: Optional[ScoringConfig]) -> Set[str]:
+    def _get_active_criteria(self, config: Optional[SearchCriterias]) -> Set[str]:
         """Centralized logic to determine which criteria are active based on config."""
         active = set()
         
@@ -363,11 +364,12 @@ class ScoringEngine:
         # Rent scaling activation (if Location or IML)
         if config.logement == 'Location' or "Location avec Intermédiation" in heb_sel:
              active.add('log_vac_scaled')
-             # Handle both formats: log_loyer_moyen_appt_all_scaled and log_loyer_moyen_scaled_appartement_toutes
-             active.add(f'log_loyer_moyen_{config.type_logement}_scaled')
-             if config.type_logement == 'appartement_toutes':
+         # Handle both formats: log_loyer_moyen_appt_all_scaled and log_loyer_moyen_scaled_appartement_toutes
+             type_log = config.type_logement.code if hasattr(config.type_logement, 'code') else config.type_logement
+             active.add(f'log_loyer_moyen_{type_log}_scaled')
+             if type_log == 'appartement_toutes':
                  active.add('log_loyer_moyen_scaled_appartement_toutes')
-             elif config.type_logement == 'appt_all':
+             elif type_log == 'appt_all':
                  active.add('log_loyer_moyen_appt_all_scaled')
 
         if config.logement == 'Logement Social':
@@ -416,7 +418,7 @@ class ScoringEngine:
         return active
 
     
-    def format_city_details(self, row: pd.Series, config: Optional[ScoringConfig] = None) -> Dict[str, Any]:
+    def format_city_details(self, row: pd.Series, config: Optional[SearchCriterias] = None) -> Dict[str, Any]:
         """
         Formats detailed information for a city to be displayed in the UI.
         """
@@ -451,7 +453,7 @@ class ScoringEngine:
                 "mob_trans_pub_stop_density": float(row.get('mob_trans_pub_stop_density', 0.0))
             },
             "logement": {
-                "selected_type": config.type_logement if config else 'appt_all',
+                "selected_type": (config.type_logement.code if hasattr(config.type_logement, 'code') else config.type_logement) if config else 'appt_all',
                 "raw_euro_m2": None, "odace_all_variants": {},
                 "jaccueille_count": float(row.get('heb_accueillants_count', 0.0))
             }
@@ -593,16 +595,21 @@ class ScoringEngine:
             details['logement']['odace_all_variants'][ht] = variant_data
             
             # Set top-level raw value if it's the selected type
-            if config and config.type_logement == ht:
+            type_log = None
+            if config and config.type_logement:
+                type_log = config.type_logement.code if hasattr(config.type_logement, 'code') else config.type_logement
+            
+            if config and type_log == ht:
                 details['logement']['raw_euro_m2'] = variant_data['raw']
             elif not config and ht == 'appt_all':
                 details['logement']['raw_euro_m2'] = variant_data['raw']
 
         # 3. Emploi (Top 10 from Live Jobs & Formations)
-        if codgeo:
+        c_code = codgeo.code if hasattr(codgeo, "code") else codgeo
+        if c_code:
             # --- Live Jobs Match (ROME) ---
             if not self.live_jobs_data.empty:
-                live_city = self.live_jobs_data[self.live_jobs_data['commune'] == codgeo].copy()
+                live_city = self.live_jobs_data[self.live_jobs_data['commune'] == c_code].copy()
                 if not live_city.empty:
                     # Global Summary
                     live_summary = live_city.groupby('romeLibelle')['total_postes'].sum().to_dict()
@@ -616,9 +623,13 @@ class ScoringEngine:
                         for codes in config.codes_metiers:
                             if isinstance(codes, list):
                                 for c in codes:
-                                    if len(c) == 5: target_romes.add(c)
+                                    val = c.code if hasattr(c, 'code') else c
+                                    if len(val) == 5: target_romes.add(val)
                             elif isinstance(codes, str) and len(codes) == 5:
                                 target_romes.add(codes)
+                            elif hasattr(codes, 'code'):
+                                val = codes.code
+                                if len(val) == 5: target_romes.add(val)
                         
                         if target_romes:
                             matching_city = live_city[live_city['romeCode'].isin(target_romes)]
@@ -655,9 +666,12 @@ class ScoringEngine:
                         for codes in config.codes_metiers:
                             if isinstance(codes, list):
                                 for c in codes:
-                                    if len(c) >= 3: siae_prefixes.add(c[:3])
-                            elif isinstance(codes, str) and len(codes) >= 3:
-                                siae_prefixes.add(codes[:3])
+                                    val = c.code if hasattr(c, 'code') else c
+                                    if len(val) >= 3: siae_prefixes.add(val[:3])
+                            else:
+                                val = codes.code if hasattr(codes, 'code') else codes
+                                if isinstance(val, str) and len(val) >= 3:
+                                    siae_prefixes.add(val[:3])
                         
                         if siae_prefixes:
                             # Use 'rome' column
@@ -668,7 +682,7 @@ class ScoringEngine:
             
             # Formations logic remains
             if not self.formations_data.empty:
-                 city_forms = self.formations_data[self.formations_data['codgeo'] == codgeo].copy()
+                 city_forms = self.formations_data[self.formations_data['codgeo'] == c_code].copy()
                  if not city_forms.empty:
                      if self.codformations_index is not None and not self.codformations_index.empty:
                          # Robust type conversion for merge keys
@@ -807,14 +821,15 @@ class ScoringEngine:
 
         return self.format_city_details(self.df_all_communes.loc[codgeo])
 
-    def run(self, config: ScoringConfig, log_prefix: Optional[str] = None) -> gpd.GeoDataFrame:
+    def run(self, config: SearchCriterias, log_prefix: Optional[str] = None) -> gpd.GeoDataFrame:
         """Orchestrates the full scoring pipeline."""
         logger.debug(f"⚙️ [ENGINE] Starting run with Profile: {config.weight_profile}")
         logger.debug(f"⚙️ [ENGINE] Config: {config}")
         if not config.active_criteria:
             config.active_criteria = self._get_active_criteria(config)
         
-        start_commune = self.df_all_communes.loc[[config.commune_actuelle]]
+        c_code = config.commune_actuelle.code if hasattr(config.commune_actuelle, 'code') else config.commune_actuelle
+        start_commune = self.df_all_communes.loc[[c_code]]
         loc_type = config.loc_search_area # 'departement', 'region', 'france'
         loc_code = config.loc_search_code
         
@@ -837,7 +852,7 @@ class ScoringEngine:
 
         return results
 
-    def _compute_scores(self, df_search: gpd.GeoDataFrame, config: ScoringConfig) -> pd.DataFrame:
+    def _compute_scores(self, df_search: gpd.GeoDataFrame, config: SearchCriterias) -> pd.DataFrame:
         if df_search.empty: return df_search.copy()
 
         # Distance
@@ -869,18 +884,19 @@ class ScoringEngine:
         odis_exploded['weighted_score'] = self._compute_weighted_score(odis_exploded, config)
 
         # Exclusion
-        if config.commune_actuelle in odis_exploded.index:
-            odis_exploded = odis_exploded.drop(config.commune_actuelle)
+        c_code = config.commune_actuelle.code if hasattr(config.commune_actuelle, 'code') else config.commune_actuelle
+        if c_code in odis_exploded.index:
+            odis_exploded = odis_exploded.drop(c_code)
         
-        if config.commune_actuelle in cfg.PLM_MAPPING:
-            prefix = cfg.PLM_MAPPING[config.commune_actuelle]
+        if c_code in cfg.PLM_MAPPING:
+            prefix = cfg.PLM_MAPPING[c_code]
             odis_exploded = odis_exploded[~odis_exploded.index.astype(str).str.startswith(prefix)]
 
         return odis_exploded.sort_values(by='weighted_score', ascending=False)
 
 
 
-    def _prune_irrelevant_metrics(self, df: pd.DataFrame, config: ScoringConfig) -> pd.DataFrame:
+    def _prune_irrelevant_metrics(self, df: pd.DataFrame, config: SearchCriterias) -> pd.DataFrame:
         """Prunes columns that are not relevant based on active criteria."""
         active = config.active_criteria if config.active_criteria is not None else self._get_active_criteria(config)
         
@@ -919,7 +935,7 @@ class ScoringEngine:
             
         return df
 
-    def _compute_employment_scores(self, df: gpd.GeoDataFrame, config: ScoringConfig) -> gpd.GeoDataFrame:
+    def _compute_employment_scores(self, df: gpd.GeoDataFrame, config: SearchCriterias) -> gpd.GeoDataFrame:
         df = df.copy()
         
         # --- Live Jobs (ROME-based) ---
@@ -1051,7 +1067,7 @@ class ScoringEngine:
 
         return df
 
-    def _compute_sante_scores(self, df: gpd.GeoDataFrame, config: ScoringConfig) -> gpd.GeoDataFrame:
+    def _compute_sante_scores(self, df: gpd.GeoDataFrame, config: SearchCriterias) -> gpd.GeoDataFrame:
         df = df.copy()
         if config.besoin_sante != 'Aucun':
             col_map = {'Hôpital': 'sante_hopital_scaled', 'Hopital': 'sante_hopital_scaled',
@@ -1064,7 +1080,7 @@ class ScoringEngine:
                 df['sante_structures_scaled'] = 0.0
         return df
 
-    def _compute_mobility_scores(self, df: gpd.GeoDataFrame, config: ScoringConfig) -> gpd.GeoDataFrame:
+    def _compute_mobility_scores(self, df: gpd.GeoDataFrame, config: SearchCriterias) -> gpd.GeoDataFrame:
         df = df.copy()
         
         # --- Density ---
@@ -1081,10 +1097,8 @@ class ScoringEngine:
         
         # Resolve current location details
         if config.commune_actuelle:
-             # Handle CriteriaItem properly if it is one, but config.commune_actuelle is usually code str here
-             # Wait, model definition says CriteriaItem for SearchCriterias but ScoringConfig has pure strings?
-             # Let's check ScoringConfig definition. It has 'commune_actuelle: str'. Good.
-             c_code = config.commune_actuelle
+             c_code_raw = config.commune_actuelle
+             c_code = c_code_raw.code if hasattr(c_code_raw, 'code') else c_code_raw
              if c_code in self.df_all_communes.index:
                  cur_row = self.df_all_communes.loc[c_code]
                  current_epci = cur_row['epci_code']
@@ -1106,17 +1120,17 @@ class ScoringEngine:
              
         return df
 
-    def _compute_education_scores(self, df: gpd.GeoDataFrame, config: ScoringConfig) -> gpd.GeoDataFrame:
+    def _compute_education_scores(self, df: gpd.GeoDataFrame, config: SearchCriterias) -> gpd.GeoDataFrame:
         # Placeholder for specific education logic if needed in future.
         # Currently education scores are pre-computed in DB/DF.
         return df
 
-    def _compute_housing_scores(self, df: gpd.GeoDataFrame, config: ScoringConfig) -> gpd.GeoDataFrame:
+    def _compute_housing_scores(self, df: gpd.GeoDataFrame, config: SearchCriterias) -> gpd.GeoDataFrame:
         # Placeholder for specific housing logic if needed.
         # Currently housing pruning handles most variation.
         return df
 
-    def _compute_inclusion_scores(self, df: gpd.GeoDataFrame, config: ScoringConfig) -> gpd.GeoDataFrame:
+    def _compute_inclusion_scores(self, df: gpd.GeoDataFrame, config: SearchCriterias) -> gpd.GeoDataFrame:
         df = df.copy()
         for col in ['inc_services_core_scaled', 'inc_asso_core_scaled']:
             if col not in df.columns: df[col] = 0.0
@@ -1166,7 +1180,7 @@ class ScoringEngine:
 
         return df
 
-    def _compute_criteria_scores(self, df: gpd.GeoDataFrame, config: ScoringConfig) -> gpd.GeoDataFrame:
+    def _compute_criteria_scores(self, df: gpd.GeoDataFrame, config: SearchCriterias) -> gpd.GeoDataFrame:
         # Orchestrator
         df = self._compute_employment_scores(df, config)
         df = self._compute_mobility_scores(df, config)

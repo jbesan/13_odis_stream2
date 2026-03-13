@@ -2,7 +2,7 @@ import pytest
 import pandas as pd
 import geopandas as gpd
 from core import scoring
-from app.core.models import ScoringConfig
+from app.core.models import SearchCriterias
 
 def test_format_city_details_rna_rag_summary(sample_data, sample_scores_cat, default_config):
     """Verifies that format_city_details correctly extracts RNA RAG counts."""

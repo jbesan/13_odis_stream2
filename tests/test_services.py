@@ -52,7 +52,7 @@ def test_log_agent_state_to_bq(mock_client_class):
             args, _ = mock_client.insert_rows_json.call_args
             row = args[1][0] # client.insert_rows_json(table_ref, [row])
             assert row["username"] == "test_user"
-            assert row["user_input"] == "hello"
+            assert row["last_user_message"] == "hello"
 
 @patch("ui.feedback.bigquery.Client")
 def test_feedback_submission(mock_client_class):

@@ -2,7 +2,7 @@ import pytest
 import pandas as pd
 import geopandas as gpd
 from core import scoring
-from app.core.models import ScoringConfig
+from app.core.models import SearchCriterias
 
 @pytest.fixture
 def scoring_engine(sample_data, sample_scores_cat, sample_incl_index, global_stats):
@@ -41,7 +41,7 @@ def base_df(sample_data):
 
 @pytest.fixture
 def base_config():
-    return ScoringConfig(
+    return SearchCriterias(
         poids_emploi=100,
         poids_logement=100,
         poids_education=100,

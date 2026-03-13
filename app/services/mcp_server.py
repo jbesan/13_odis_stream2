@@ -7,7 +7,7 @@ import geopandas as gpd
 import numpy as np
 from utils.data_loader import load_all_data_raw
 from core.scoring import ScoringEngine
-from core.models import ScoringConfig, SearchCriterias
+from core.models import SearchCriterias, SearchCriterias
 from services.rna_rag import RNARagService
 import config as cfg
 import logging
@@ -224,7 +224,7 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
     
     # Normalize filters for the engine
     for k in ['commune_actuelle', 'codes_metiers', 'codes_formations', 
-              'inc_services_add_selection', 'inc_asso_add_selection']:
+              'inc_services_add_selection', 'inc_asso_add_selection', 'type_logement']:
         if k in filters:
             filters[k] = get_code(filters[k])
 
@@ -276,7 +276,7 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
         if f"poids_{key_suffix}" in weights: return int(weights[f"poids_{key_suffix}"])
         return default
 
-    config = ScoringConfig(
+    config = SearchCriterias(
         poids_emploi=get_weight('emploi'),
         poids_logement=get_weight('logement'),
         poids_education=get_weight('education'),
@@ -296,7 +296,7 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
         codes_formations=c_formations,
         classe_enfants=filters.get('classe_enfants', []),
         besoin_sante=filters.get('besoin_sante', 'Aucun'),
-        type_logement=get_code(filters.get('type_logement')) or "appt_all",
+        type_logement=filters.get('type_logement') or "appt_all",
         inc_services_add_selection=specific_needs,
         inc_services_core_selection=socle_sel,
         inc_asso_add_selection=filters.get('inc_asso_add_selection', [])

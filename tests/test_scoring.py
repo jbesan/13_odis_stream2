@@ -5,7 +5,7 @@ import numpy as np
 import copy
 from core import scoring
 from app import config as cfg
-from app.core.models import ScoringConfig
+from app.core.models import SearchCriterias
 
 # --- Unit Tests for Scoring Logic ---
 
@@ -320,7 +320,7 @@ class TestConditionalScoring:
         })
 
         # Config with 0 kids and no health needs
-        config = ScoringConfig(
+        config = SearchCriterias(
             poids_emploi=100,
             poids_logement=100,
             poids_education=100, # Weight is present, but should be ignored
@@ -374,7 +374,7 @@ class TestConditionalScoring:
         })
 
         # Config with kids and health needs
-        config = ScoringConfig(
+        config = SearchCriterias(
             poids_emploi=100,
             poids_logement=0,
             poids_education=100,
@@ -472,12 +472,12 @@ class TestMCPScenario:
     
     def test_mcp_stateless_execution(self, sample_data, sample_scores_cat, sample_incl_index, global_stats):
         """
-        Simulates an MCP call where the agent constructs a ScoringConfig 
+        Simulates an MCP call where the agent constructs a SearchCriterias 
         and invokes the engine without any Streamlit session state context.
         """
         # 1. MCP Agent prepares the configuration based on user prompt
         # e.g. "I want to move to a place with good jobs and cheap rent near Bordeaux"
-        config = ScoringConfig(
+        config = SearchCriterias(
              commune_actuelle='33063', # Bordeaux
              loc_search_area='region', # Increased scope to include Pau (170km)
              poids_emploi=100, # "Good jobs"
@@ -554,7 +554,7 @@ class TestMCPScenario:
             assert score >= 0.0 and score <= 1.0
         
         # Ensure statelessness: No side effects on config or engine
-        assert config.commune_actuelle == '33063'
+        assert config.commune_actuelle.code == '33063'
 
 # --- Consolidated Tests from other files ---
 
@@ -741,7 +741,7 @@ class TestHousingScoresLogic:
 
 
         def run_scoring(heb_list, logement):
-            config = ScoringConfig(
+            config = SearchCriterias(
                 poids_emploi=0, poids_logement=100, poids_education=0, poids_inclusion=0, poids_sante=0, poids_mobilité=0,
                 criteria_weights={}, 
                 weight_profile="",
@@ -818,7 +818,7 @@ class TestHousingScoresLogic:
         )
 
         def run_scoring(type_logement):
-            config = ScoringConfig(
+            config = SearchCriterias(
                 poids_emploi=0, poids_logement=100, poids_education=0, poids_inclusion=0, poids_sante=0, poids_mobilité=0,
                 criteria_weights={}, 
                 weight_profile="",

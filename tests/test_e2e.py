@@ -15,7 +15,7 @@ from config import DEMO_DATA_DEFAULT, DEMO_SCENARIOS
 import config as cfg
 from utils import data_loader
 from core import scoring
-from core.models import ScoringConfig
+from core.models import SearchCriterias
 from ui import components as ui
 
 SNAPSHOT_DIR = Path(__file__).parent / "snapshots"
@@ -111,7 +111,7 @@ def run_test_scenario(scenario_id, app_data):
             mock_session_state['ui_departement'] = value
         elif key == 'binome_penalty':
             # The UI slider uses percentage values (e.g., 50), but the config expects a float (e.g., 0.5)
-            # The create_scoring_config_from_inputs function handles the division by 100.
+            # The create_search_criterias_from_inputs function handles the division by 100.
             mock_session_state['ui_binome_penalty'] = value * 100 if value <= 1 else value
         # Handle list-based inputs for children's classes and professional goals
         elif key == 'classe_enfants':
@@ -131,7 +131,7 @@ def run_test_scenario(scenario_id, app_data):
         mock_session_state['ui_inc_services_add_selection'] = {}
 
     # Ensure dynamic keys for adults and children are present, even if empty,
-    # to prevent KeyErrors in the list comprehensions in create_scoring_config_from_inputs.
+    # to prevent KeyErrors in the list comprehensions in create_search_criterias_from_inputs.
     for i in range(default_data['nb_adultes']):
         mock_session_state.setdefault(f"ui_metiers_adult_{i}", [])
         mock_session_state.setdefault(f"ui_formations_adult_{i}", [])
@@ -156,11 +156,11 @@ def run_test_scenario(scenario_id, app_data):
         else:
             mock_session_state['ui_mobility_dept'] = current_dept_code
 
-    # 4. Create the ScoringConfig by calling the app's own UI function.
+    # 4. Create the SearchCriterias by calling the app's own UI function.
     # We use unittest.mock.patch to temporarily replace streamlit's session_state
     # with our dictionary for the duration of the call.
     with patch('app.ui.components.st.session_state', mock_session_state):
-        scoring_config = ui.create_scoring_config_from_inputs()
+        scoring_config = ui.create_search_criterias_from_inputs()
 
     # 5. Instantiate ScoringEngine
     # We pass empty global_stats as in the app page
@@ -250,7 +250,7 @@ def test_result_details_display(app_data):
         'ui_formations_adult_0': []
     }
     with patch('app.ui.components.st.session_state', mock_config_state):
-        scoring_config = ui.create_scoring_config_from_inputs()
+        scoring_config = ui.create_search_criterias_from_inputs()
 
     # 3. Set up a mock session state for the UI functions
     class MockSessionState(dict):

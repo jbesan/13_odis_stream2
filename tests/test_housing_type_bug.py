@@ -41,7 +41,7 @@ def mock_data_context():
     return data
 
 def test_type_logement_propagation(mock_data_context):
-    """Verify that type_logement is correctly propagated to ScoringConfig."""
+    """Verify that type_logement is correctly propagated to SearchCriterias."""
     from app.core.scoring import ScoringEngine
     import app.services.mcp_server as mcp_server
     
@@ -65,7 +65,7 @@ def test_type_logement_propagation(mock_data_context):
         # Check the config passed to engine.run
         assert mock_engine.run.called
         config = mock_engine.run.call_args[0][0]
-        assert config.type_logement == 'appt_t1_t2', f"Expected appt_t1_t2, got {config.type_logement}"
+        assert config.type_logement.code == 'appt_t1_t2', f"Expected appt_t1_t2, got {config.type_logement}"
         
         # Test default value
         mock_engine.run.reset_mock()
@@ -75,7 +75,7 @@ def test_type_logement_propagation(mock_data_context):
         }
         _compute_top_cities_logic(criteria_no_type)
         config_default = mock_engine.run.call_args[0][0]
-        assert config_default.type_logement == 'appt_all', f"Expected appt_all by default, got {config_default.type_logement}"
+        assert config_default.type_logement.code == 'appt_all', f"Expected appt_all by default, got {config_default.type_logement}"
 
     finally:
         mcp_server.get_scoring_engine = original_get_engine

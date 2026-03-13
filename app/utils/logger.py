@@ -7,7 +7,7 @@ from datetime import datetime
 from dataclasses import asdict
 from typing import Optional, Dict, Any, List
 import pandas as pd
-from core.models import ScoringConfig
+from core.models import SearchCriterias
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +107,7 @@ def setup_logging() -> None:
 setup_logging()
 
 def log_search_results(
-    config: ScoringConfig, 
+    config: SearchCriterias, 
     results_df: pd.DataFrame, 
     unaggregated_df: Optional[pd.DataFrame] = None,
     scores_cat: Optional[pd.DataFrame] = None,
@@ -122,7 +122,7 @@ def log_search_results(
         return
 
     # --- Markdown Generation ---
-    search_params = asdict(config)
+    search_params = config.model_dump() if hasattr(config, 'model_dump') else asdict(config)
     
     # Create a mapping from score column to category if scores_cat is provided
     score_to_cat = {}

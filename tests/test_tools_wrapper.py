@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import patch, MagicMock
 from agents.tools import compute_top_cities
-from core.models import SearchCriterias, ScoringConfig
+from core.models import SearchCriterias, SearchCriterias
 
 def test_compute_top_cities_wrapper():
     # Use context managers for patching to avoid pytest fixture conflicts

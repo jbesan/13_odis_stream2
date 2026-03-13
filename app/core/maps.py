@@ -9,7 +9,7 @@ from folium.plugins import FastMarkerCluster, MarkerCluster
 
 from typing import Union, List, Tuple, Optional, Any, Set, Dict
 import config as cfg
-from core.models import ScoringConfig
+from core.models import SearchCriterias
 
 import logging
 import warnings
@@ -198,7 +198,7 @@ def _build_generic_points_layer(df: gpd.GeoDataFrame, icon: str, color: str, too
 
     return cluster
 
-def build_ecoles_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config: ScoringConfig) -> flm.FeatureGroup:
+def build_ecoles_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config: SearchCriterias) -> flm.FeatureGroup:
     """Builds the map layer for schools using unified POIs."""
     fg = flm.FeatureGroup(name="Établissements Scolaires")
     
@@ -256,7 +256,7 @@ def build_ecoles_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config:
     cluster.add_to(fg)
     return fg
 
-def build_sante_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config: ScoringConfig) -> flm.FeatureGroup:
+def build_sante_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config: SearchCriterias) -> flm.FeatureGroup:
     """Builds the map layer for health facilities using unified POIs."""
     fg = flm.FeatureGroup(name="Établissements de Santé")
     
@@ -293,7 +293,7 @@ def build_sante_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config: 
     cluster.add_to(fg)
     return fg
 
-def build_services_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config: ScoringConfig) -> flm.FeatureGroup:
+def build_services_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config: SearchCriterias) -> flm.FeatureGroup:
     """Builds the map layer for inclusion services using unified POIs."""
     fg = flm.FeatureGroup(name="Services d'inclusion")
     
@@ -322,7 +322,10 @@ def build_services_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], confi
     
     # New logic: check if 'type' (slug) is in the list of selected slugs
     if isinstance(config.inc_services_add_selection, list):
-        mask = filtered['type'].isin(config.inc_services_add_selection)
+        slugs = []
+        for item in config.inc_services_add_selection:
+            slugs.append(item.code if hasattr(item, 'code') else item)
+        mask = filtered['type'].isin(slugs)
     elif isinstance(config.inc_services_add_selection, dict):
         # Backward compatibility if it's still a dict (keys are categories?)
         # Or keys are slugs? The old code used keys() as categories.

@@ -6,12 +6,12 @@ from shapely.geometry import Polygon
 
 from core.pdf_generator import generate_pdf_report
 import config as cfg
-from core.models import ScoringConfig
+from core.models import SearchCriterias
 
 @pytest.fixture
 def sample_session_state():
     """Creates a sample session_state object for testing."""
-    config = ScoringConfig(
+    config = SearchCriterias(
         poids_emploi=100,
         poids_logement=100,
         poids_education=100,

@@ -10,7 +10,7 @@ class CriteriaItem(BaseModel):
     code: str = Field(..., description="Technical code (e.g. INSEE, ROME, WALDEC)")
     label: str = Field(..., description="Human-readable label (e.g. 'Bordeaux', 'Boulangerie')")
 
-    model_config = ConfigDict(populate_by_name=True, revalidate_instances='never')
+    model_config = ConfigDict(populate_by_name=True, revalidate_instances='never', frozen=True)
 
     @model_validator(mode='before')
     @classmethod
@@ -43,14 +43,27 @@ class SearchCriterias(BaseModel):
     hebergement_cible: List[str] = Field(default_factory=list, description="Preferred accommodation types")
     logement: Optional[str] = Field(None, description="Housing type (e.g. 'Logement Social')")
     type_logement: Optional[CriteriaItem] = Field(None, description="Enriched housing type (e.g., 'Appartement', 'Maison')")
-    sante: Optional[str] = Field(None, description="Specific health need (e.g. 'Maternité')")
-    
+    besoin_sante: Optional[str] = Field(None, description="Specific health need (e.g. 'Maternité')")
+
+    # Core Inclusion Services
+    inc_services_core_selection: List[CriteriaItem] = Field(default_factory=list, description="List of core inclusion services codes")
+
     # Qualitative notes (free text indices for Scout and Synthesis)
     notes_qualitatives: List[str] = Field(default_factory=list, description="List of qualitative notes (e.g. ['Famille libanaise', 'Passions: échecs'])")
 
     # Final scoring priority
     weight_profile: str = Field("", description="Scoring weights profile from ['Famille', 'Santé', 'Économique', 'Équilibré']")
     criteria_weights: Dict[str, float] = Field(default_factory=dict, description="Custom weights for specific criteria")
+    
+    # Global Category Weights
+    poids_emploi: float = Field(0.0, description="Weight for employment criteria")
+    poids_logement: float = Field(0.0, description="Weight for housing criteria")
+    poids_education: float = Field(0.0, description="Weight for education criteria")
+    poids_inclusion: float = Field(0.0, description="Weight for inclusion criteria")
+    poids_mobilité: float = Field(0.0, description="Weight for mobility")
+    poids_sante: float = Field(0.0, description="Weight for health criteria")
+
+    active_criteria: Optional[Set[str]] = Field(None, description="Set of active criteria computed by the engine")
 
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True, revalidate_instances='never')
 
@@ -88,7 +101,8 @@ class SearchCriterias(BaseModel):
             
         fields_to_fix = [
             'commune_actuelle', 'codes_metiers', 'codes_formations', 
-            'inc_services_add_selection', 'inc_asso_add_selection', 'type_logement'
+            'inc_services_add_selection', 'inc_asso_add_selection', 
+            'inc_services_core_selection', 'type_logement'
         ]
         
         for f in fields_to_fix:
@@ -102,34 +116,4 @@ class SearchCriterias(BaseModel):
         criteria_json = self.model_dump_json()
         return hashlib.md5(criteria_json.encode()).hexdigest()
 
-@dataclass
-class ScoringConfig:
-    """
-    A dataclass to hold all user preferences and scoring parameters.
-    Used by the internal scoring engine.
-    """
-    poids_emploi: int
-    poids_logement: int
-    poids_education: int
-    poids_inclusion: int
-    poids_mobilité: int
-    poids_sante: int
-    
-    criteria_weights: Dict[str, float]
-    commune_actuelle: str
-    loc_search_area: str
-    nb_adultes: int
-    nb_enfants: int
-    hebergement_cible: List[str]
-    logement: str
-    codes_metiers: List[List[str]]
-    codes_formations: List[List[str]]
-    classe_enfants: List[str]
-    besoin_sante: str
-    inc_services_add_selection: List[str]
-    inc_services_core_selection: List[str]
-    inc_asso_add_selection: List[str]
-    type_logement: str = "appt_all"
-    loc_search_code: Optional[str] = None
-    weight_profile: str = ""
-    active_criteria: Optional[Set[str]] = None
+
