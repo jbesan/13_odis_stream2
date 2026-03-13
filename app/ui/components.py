@@ -586,7 +586,25 @@ def render_housing_form() -> None:
     """Renders the UI for the 'Logement' form section."""
     col1, col2 = st.columns(2)
     with col1:
-        st.multiselect('Hébergement cible à court terme', cfg.HEBERGEMENT_OPTIONS, key="ui_hebergement_cible")
+        st.markdown("**Hébergement cible à court terme**")
+        
+        # Initialize checkboxes from aggregate state if they don't exist
+        # This ensures demo scenarios are correctly reflected in the checkboxes
+        current_heb = st.session_state.get('ui_hebergement_cible', [])
+        selected_heb = []
+        
+        # Streamlit doesn't have a built-in Checkbox Group, so we loop through options
+        for opt in cfg.HEBERGEMENT_OPTIONS:
+            cb_key = f"ui_heb_cb_{opt.replace(' ', '_').lower()}"
+            if cb_key not in st.session_state:
+                st.session_state[cb_key] = opt in current_heb
+            
+            if st.checkbox(opt, key=cb_key):
+                selected_heb.append(opt)
+        
+        # Update aggregate state for scoring
+        st.session_state['ui_hebergement_cible'] = selected_heb
+        
         st.toggle("Prioritaire", key="ui_priority_hebergement", help="Donne plus de poids à ce critère")
     with col2:
         st.radio('Logement cible à long terme', cfg.LOGEMENT_OPTIONS, key="ui_logement")
