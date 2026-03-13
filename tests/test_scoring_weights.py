@@ -2,12 +2,12 @@ import pandas as pd
 import pytest
 import numpy as np
 from core.scoring import ScoringEngine
-from core.models import ScoringConfig
+from core.models import SearchCriterias
 import geopandas as gpd
 
 @pytest.fixture
 def mock_config():
-    return ScoringConfig(
+    return SearchCriterias(
         poids_emploi=100, poids_logement=100, poids_education=100,
         poids_inclusion=100, poids_sante=100, poids_mobilité=100,
         commune_actuelle='33063',

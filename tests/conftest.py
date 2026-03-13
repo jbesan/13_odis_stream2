@@ -14,7 +14,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning, module="google.ge
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="google.genai.types")
 from shapely.geometry import Polygon
 import config as cfg
-from core.models import ScoringConfig
+from core.models import SearchCriterias
 import copy
 
 def pytest_addoption(parser):
@@ -142,8 +142,8 @@ def sample_incl_index():
 
 @pytest.fixture
 def default_config():
-    """Returns a default ScoringConfig for testing."""
-    return ScoringConfig(
+    """Returns a default SearchCriterias for testing."""
+    return SearchCriterias(
         poids_emploi=100,
         poids_logement=100,
         poids_education=100,

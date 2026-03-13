@@ -4,7 +4,7 @@ import pandas as pd
 from plotly.express import line_polar
 import geopandas as gpd
 import config as cfg
-from core.models import ScoringConfig
+from core.models import SearchCriterias
 from core import maps
 from typing import Dict, Any, List, Optional
 from pathlib import Path
@@ -153,13 +153,81 @@ def show_details_dialog(details: Dict[str, Any]):
             st.markdown("<br>", unsafe_allow_html=True) # Minor spacing
 
     # --- Tabs ---
-    tab_emploi, tab_logement, tab_edu, tab_sante, tab_vie = st.tabs([
+    tab_ia, tab_emploi, tab_logement, tab_edu, tab_sante, tab_vie = st.tabs([
+        "✨ Analyse IA",
         "💼 Emploi & Formation", 
         "🏠 Logement", 
         "🎓 Education", 
         "🏥 Santé", 
         "🤝 Vie Sociale & Inclusion"
     ])
+
+    with tab_ia:
+        nom = identity.get('nom', 'cette ville')
+        codgeo = identity.get('codgeo')
+        
+        search_criterias = st.session_state.config
+        h = search_criterias.compute_hash()
+        
+        # Unique session key for this city's analysis
+        cache_key = f"ia_analysis_{h}_{codgeo}"
+        
+        if cache_key not in st.session_state['app_data']:
+            # st.info(f"Découvrez une synthèse contextuelle de {nom} générée par notre panel d'experts IA (Scout, Web, Emploi).")
+            with st.spinner("Les experts analysent la ville, veuillez patienter (environ 15 à 30s)..."):
+                from agents.utils import run_async_safe
+                
+                state_dict = {
+                    "search_criteria": search_criterias.model_dump(),
+                    "is_interview_complete": True,
+                    "execution_mode": "full_analysis",
+                    "focus_city": {"name": nom, "codgeo": codgeo},
+                    "messages": [{"role": "user", "content": f"Fais une analyse complète pour {nom}."}]
+                }
+                try:
+                    final_state = run_async_safe(state_dict)
+                    syn_msg = final_state.get("messages", [])[-1]["content"] if final_state.get("messages") else "Pas de synthèse générée."
+                    st.session_state['app_data'][cache_key] = {
+                        "synthesis": syn_msg,
+                        "chat": []
+                    }
+                except Exception as e:
+                    st.error(f"Erreur lors de la génération: {str(e)}")
+
+        if cache_key in st.session_state['app_data']:
+            data_cache = st.session_state['app_data'][cache_key]
+            st.markdown(data_cache["synthesis"])
+            
+            st.divider()
+            st.markdown(f"#### Poser une question sur {nom}")
+            
+            for msg in data_cache["chat"]:
+                with st.chat_message(msg["role"]):
+                    st.markdown(msg["content"])
+            
+            question = st.chat_input(f"Ex: Quelles associations facilitent le logement à {nom} ?")
+            if question:
+                data_cache["chat"].append({"role": "user", "content": question})
+                with st.chat_message("user"):
+                    st.markdown(question)
+                
+                with st.spinner("Recherche de la réponse en cours..."):
+                    from agents.utils import run_async_safe
+                    state_dict = {
+                        "search_criteria": search_criterias.model_dump(),
+                        "is_interview_complete": True,
+                        "execution_mode": "specific_ask",
+                        "focus_city": {"name": nom, "codgeo": codgeo},
+                        "messages": data_cache["chat"]
+                    }
+                    try:
+                        final_state = run_async_safe(state_dict)
+                        answer = final_state.get("messages", [])[-1]["content"] if final_state.get("messages") else "Pas de réponse."
+                        data_cache["chat"].append({"role": "assistant", "content": answer})
+                        with st.chat_message("assistant"):
+                            st.markdown(answer)
+                    except Exception as e:
+                        st.error(f"Erreur de l'agent: {str(e)}")
 
     with tab_emploi:
         emploi_data = details.get('emploi', {})
@@ -725,19 +793,21 @@ def display_input_tabs(demo_data: Optional[Dict[str, Any]] = None) -> None:
         render_mobility_form()
 
 
-def create_scoring_config_from_inputs() -> ScoringConfig:
-    """Gathers all user inputs from session_state and creates a ScoringConfig object."""
+from core.models import SearchCriterias, CriteriaItem
+import config as cfg
+
+def create_search_criterias_from_inputs() -> SearchCriterias:
+    """Gathers all user inputs from session_state and creates a SearchCriterias object."""
     app_data = st.session_state['app_data']
     
     # Location
     commune_codgeo = app_data['depcom_df'][
-        (
-            app_data['depcom_df'].dep_code == st.session_state['ui_departement']
-        ) & 
-        (
-            app_data['depcom_df'].libgeo == st.session_state['ui_commune']
-        )
+        (app_data['depcom_df'].dep_code == st.session_state['ui_departement']) & 
+        (app_data['depcom_df'].libgeo == st.session_state['ui_commune'])
     ].index[0]
+    
+    libgeo = st.session_state['ui_commune']
+    commune_actuelle = CriteriaItem(code=str(commune_codgeo), label=str(libgeo))
 
     # New Mobility Logic
     if st.session_state.get('ui_mobility_france'):
@@ -755,9 +825,26 @@ def create_scoring_config_from_inputs() -> ScoringConfig:
     # Education
     classe_enfants = [st.session_state[f"ui_classe_enfant_{i}"] for i in range(st.session_state['ui_nb_enfants'])]
 
-    # Employment
-    codes_metiers = [st.session_state[f"ui_metiers_adult_{i}"] for i in range(st.session_state['ui_nb_adultes'])]
-    codes_formations = [st.session_state[f"ui_formations_adult_{i}"] for i in range(st.session_state['ui_nb_adultes'])]
+    # Employment (Enrich with CriteriaItem)
+    rome_index = app_data.get('rome_index', pd.DataFrame())
+    codes_metiers = []
+    for i in range(st.session_state['ui_nb_adultes']):
+        raw_codes = st.session_state[f"ui_metiers_adult_{i}"]
+        enriched_list = []
+        for code in raw_codes:
+            label = rome_index.loc[code, 'label'] if not rome_index.empty and code in rome_index.index else str(code)
+            enriched_list.append(CriteriaItem(code=str(code), label=str(label)))
+        codes_metiers.append(enriched_list)
+        
+    form_index = app_data.get('codformations_index', pd.DataFrame())
+    codes_formations = []
+    for i in range(st.session_state['ui_nb_adultes']):
+        raw_codes = st.session_state[f"ui_formations_adult_{i}"]
+        enriched_list = []
+        for code in raw_codes:
+            label = form_index.loc[code, 'label'] if not form_index.empty and code in form_index.index else str(code)
+            enriched_list.append(CriteriaItem(code=str(code), label=str(label)))
+        codes_formations.append(enriched_list)
 
     # Process Autres Besoins from Flat List (F-13 UI Update)
     # Process Autres Besoins from Flat List (F-13 UI Update)
@@ -844,29 +931,58 @@ def create_scoring_config_from_inputs() -> ScoringConfig:
         # Maps to the new Extra Services score
         criteria_weights['inc_services_add_scaled'] = 3.0
 
-    return ScoringConfig(
+    # Enrich Inclusion Services
+    inc_index = app_data.get('inclusion_services_index', pd.DataFrame())
+    inc_services_mapped = []
+    for code in inc_services_add_selection_list:
+        label = inc_index.loc[code, 'label'] if not inc_index.empty and code in inc_index.index else str(code)
+        inc_services_mapped.append(CriteriaItem(code=str(code), label=str(label)))
+
+    # Enrich Inclusion Associations
+    inc_assos_mapped = []
+    for label in st.session_state.get('ui_inc_asso_add_selection', []):
+        codes = cfg.WALDEC_INC_ASSO_ADD_MAPPING.get(label, [])
+        code_str = ",".join(codes) if codes else "000"
+        inc_assos_mapped.append(CriteriaItem(code=code_str, label=str(label)))
+
+    # Enrich Core Services
+    inc_core_mapped = []
+    for code in st.session_state.get('ui_inc_services_core_selection', []):
+        label = inc_index.loc[code, 'label'] if not inc_index.empty and code in inc_index.index else str(code)
+        inc_core_mapped.append(CriteriaItem(code=str(code), label=str(label)))
+
+    # Type Logement Enrich
+    type_log = None
+    ui_type_log = st.session_state.get('ui_type_logement', 'appartement_toutes')
+    if ui_type_log in cfg.HOUSING_TYPE_OPTIONS:
+        type_log = CriteriaItem(code=ui_type_log, label=cfg.HOUSING_TYPE_OPTIONS[ui_type_log])
+
+    return SearchCriterias(
         poids_emploi=st.session_state['ui_poids_emploi'],
         poids_logement=st.session_state['ui_poids_logement'],
         poids_education=st.session_state['ui_poids_education'],
         poids_inclusion=st.session_state['ui_poids_inclusion'],
-        poids_sante=st.session_state['ui_poids_sante'], # NEW
-        criteria_weights=criteria_weights, # F-15
+        poids_sante=st.session_state['ui_poids_sante'],
         poids_mobilité=st.session_state['ui_poids_mobilité'],
-        commune_actuelle=commune_codgeo,
+        criteria_weights=criteria_weights,
+        
+        commune_actuelle=commune_actuelle,
         loc_search_area=loc_search_area,
         loc_search_code=loc_search_code,
         nb_adultes=st.session_state['ui_nb_adultes'],
         nb_enfants=st.session_state['ui_nb_enfants'],
         hebergement_cible=heb_sel,
         logement=st.session_state['ui_logement'],
+        type_logement=type_log,
+        
         codes_metiers=codes_metiers,
         codes_formations=codes_formations,
         classe_enfants=classe_enfants,
         besoin_sante=st.session_state['ui_besoin_sante'],
-        inc_services_add_selection=inc_services_add_selection_list,
-        inc_services_core_selection=st.session_state.get('ui_inc_services_core_selection', []), # NEW
-        inc_asso_add_selection=st.session_state.get('ui_inc_asso_add_selection', []), # NEW
-        type_logement=st.session_state.get('ui_type_logement', 'appartement_toutes')
+        
+        inc_services_add_selection=inc_services_mapped,
+        inc_asso_add_selection=inc_assos_mapped,
+        inc_services_core_selection=inc_core_mapped
     )
 
 def _result_highlight_callback(rank: int) -> None:
@@ -976,8 +1092,35 @@ def _display_result_details(row: pd.Series) -> None:
     # --- Existing Details ---
     with st.container(border=True):
         # --- Pitch ---
-        pitch = _produce_pitch_markdown(row, st.session_state.config, st.session_state.app_data['scores_cat'])
-        st.markdown(pitch)
+        population = f"{row['population']:,.0f}".replace(",", " ")
+        libgeo = row.get('libgeo', row.get('libelle_bassin_de_vie', 'Localité'))
+        score_percent = f"{row['weighted_score'] * 100:.0f}%"
+        
+        st.markdown(f"**{libgeo}** ({population} habitants) fait partie du bassin de vie de : **{row.get('libelle_bassin_de_vie', 'N/A')}**.  \nLa correspondance avec le projet est évaluée à **{score_percent}**.")
+        
+        search_criterias = st.session_state.config
+        h = search_criterias.compute_hash()
+        
+        # --- AI Pitch Fragment ---
+        # Refreshes every 3s as long as the background task is running (result is None)
+        @st.fragment(run_every=(3.0 if st.session_state.get('async_scorer_results', {}).get(h) is None else None))
+        def ai_pitch_container():
+            scorer_res = st.session_state.get('async_scorer_results', {}).get(h, None)
+            pitch_for_city = ""
+            
+            if scorer_res is None:
+                # Still running in background
+                st.info("✨ _L'IA prépare son analyse pour cette ville..._")
+            else:
+                if isinstance(scorer_res, dict) and "pitches" in scorer_res:
+                    pitch_for_city = scorer_res["pitches"].get(main_code, "")
+                elif isinstance(scorer_res, str):
+                    pitch_for_city = scorer_res
+                    
+                if pitch_for_city:
+                    st.markdown(pitch_for_city)
+        
+        ai_pitch_container()
 
         # --- Radar Chart ---
         cat_scores = row[[col for col in row.index if col.endswith('_cat_score')]]
@@ -1004,7 +1147,7 @@ def _display_result_details(row: pd.Series) -> None:
                 show_ccas_dialog(targets, st.session_state['app_data'].get('structures_ccas', pd.DataFrame()), priority_code=main_code, priority_label=row['libgeo'])
         
 
-def _produce_pitch_markdown(row: pd.Series, config: ScoringConfig, scores_cat: pd.DataFrame) -> str:
+def _produce_pitch_markdown(row: pd.Series, config: SearchCriterias, scores_cat: pd.DataFrame) -> str:
     """Generates a summary "pitch" for a result, adapting to commune or bassin de vie."""
     pitch_md = []
     population = f"{row['population']:,.0f}".replace(",", " ")

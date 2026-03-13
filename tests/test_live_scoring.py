@@ -6,7 +6,7 @@ import pandas as pd
 import geopandas as gpd
 import numpy as np
 import core.scoring as scoring
-from core.models import ScoringConfig
+from core.models import SearchCriterias
 
 from shapely.geometry import Point
 
@@ -60,7 +60,7 @@ def test_live_jobs_scoring():
     )
 
     # 3. Configure Search (Searching for FAP T2A60)
-    config = ScoringConfig(
+    config = SearchCriterias(
         poids_emploi=1,
         poids_logement=1,
         poids_education=1,

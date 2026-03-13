@@ -126,66 +126,7 @@ def display_message(role, content):
         st.markdown(content)
 
 # --- 🛠️ ASYNC HANDLING (Cloud Run & Streamlit Safe) ---
-def run_async_safe(input_data: dict):
-    """
-    Exécute la logique asynchrone de manière sécurisée.
-    Stratégie: "Non-Destructive Loop Management".
-    On réutilise la loop du thread si elle existe, on en crée une si besoin,
-    MAIS on ne la ferme JAMAIS explicitement ici. C'est le thread/process
-    qui gérera son cycle de vie.
-    """
-    try:
-        # 1. Check current loop
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        # 2. If no loop exists, create new
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    if loop.is_closed():
-        # 3. If found loop is closed, replace it
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    # 4. Run without closing
-    return loop.run_until_complete(run_logic(input_data))
-
-async def run_logic(input_data: dict):
-    """Logique asynchrone pure."""
-    
-    # 1. Client Local (Critique: Fresh instance per request)
-    api_key = os.getenv("GOOGLE_API_KEY")
-    client = genai.Client(
-        api_key=api_key, 
-        http_options=types.HttpOptions(
-            api_version="v1beta",
-            retry_options=types.HttpRetryOptions(
-                attempts=3,
-                initial_delay=1.0,
-                max_delay=10.0,
-                http_status_codes=[429, 503]
-            )
-        )
-    )
-    
-    # 2. State & Deps
-    input_state = ODISGraphState.model_validate(input_data)
-    deps = ODISDeps(state=input_state, client=client)
-    
-    # 3. Graphe
-    app = create_odis_graph() 
-    
-    # 4. Config & Injection Deps
-    config = {
-        "configurable": {
-            "thread_id": "session_user",
-            "deps": deps 
-        }
-    }
-    
-    # 5. Appel
-    final_state = await app.ainvoke(input_state, config=config)
-    return final_state
+from agents.utils import run_async_safe
 
 # --- Session State ---
 if "chat_history" not in st.session_state:

@@ -8,7 +8,7 @@ import tempfile
 import os
 import config as cfg
 from ui import components as ui
-from core.models import ScoringConfig
+from core.models import SearchCriterias
 import base64
 import logging
 from typing import Dict, Any, List, Optional
@@ -150,25 +150,13 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
 
         formations_df = app_data.get('codformations_index')
 
-        # Get job names from codes
-        selected_metier_codes = [code for sublist in config.codes_metiers for code in sublist]
-        if selected_metier_codes and metiers_df is not None:
-            # metiers_df is already indexed by code (from data_loader)
-            valid_codes = [c for c in selected_metier_codes if c in metiers_df.index]
-            metier_names = metiers_df.loc[valid_codes, 'label'].tolist()
-            metiers_str = ", ".join(metier_names)
-        else:
-            metiers_str = "Non spécifié"
+        # Get job names from enriched CriteriaItems
+        metier_names = [c.label for sublist in config.codes_metiers for c in sublist]
+        metiers_str = ", ".join(metier_names) if metier_names else "Non spécifié"
 
-        # Get formation names from codes
-        selected_formation_codes = [code for sublist in config.codes_formations for code in sublist]
-        if selected_formation_codes and formations_df is not None:
-            # formations_df is indexed by code (from data_loader)
-            valid_codes = [c for c in selected_formation_codes if c in formations_df.index]
-            formation_names = formations_df.loc[valid_codes, 'label'].tolist()
-            formations_str = ", ".join(formation_names)
-        else:
-            formations_str = "Non spécifié"
+        # Get formation names from enriched CriteriaItems
+        formation_names = [c.label for sublist in config.codes_formations for c in sublist]
+        formations_str = ", ".join(formation_names) if formation_names else "Non spécifié"
 
         # Dynamically build the full criteria list
         criteria = {
@@ -183,12 +171,7 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
             "Hébergement": ", ".join(config.hebergement_cible) if config.hebergement_cible else "Non spécifié",
             "Logement à long terme": config.logement,
             "Besoin de santé": config.besoin_sante,
-            "Autres besoins": (lambda: 
-                ", ".join([
-                    {v: k for k, v in st_session_state.get('ui_inc_services_add_selection_map', {}).items()}.get(slug, slug)
-                    for slug in config.inc_services_add_selection
-                ]) if config.inc_services_add_selection else "Aucun"
-            )(),
+            "Autres besoins": ", ".join([c.label for c in config.inc_services_add_selection]) if config.inc_services_add_selection else "Aucun",
         }
         
         table_data = [[key, str(value)] for key, value in criteria.items() if value]

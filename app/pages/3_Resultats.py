@@ -87,14 +87,14 @@ def run_search():
     from services import telemetry
     telemetry.reset_interaction_id()
     
-    config = ui.create_scoring_config_from_inputs()
+    config = ui.create_search_criterias_from_inputs()
     st.session_state['config'] = config
 
     # Get required dataframes from session state
     df_all_communes = st.session_state.app_data['odis']
     df_bv_geo = st.session_state.app_data['bv_geo']
     df_area_geo = st.session_state.app_data['area_geo']
-    start_commune = df_all_communes.loc[[config.commune_actuelle]]
+    start_commune = df_all_communes.loc[[config.commune_actuelle.code]]
 
     # --- Run Scoring Pipeline ---
     # Instantiate the stateless engine with current data
@@ -132,7 +132,7 @@ def run_search():
     
     # --- Unified Telemetry Logging (BigQuery) ---
     try:
-        # Extract criteria vs weights from the ScoringConfig
+        # Extract criteria vs weights from the SearchCriterias
         criteria_keys = ['commune_actuelle', 'loc_search_area', 'situation_famille', 'nb_enfants', 'besoin_emploi', 'besoin_sante', 'inc_services_add_selection']
         full_config = config.model_dump() if hasattr(config, 'model_dump') else config.__dict__
         
@@ -141,20 +141,29 @@ def run_search():
         
         top_5_results = []
         top_5_breakdown = {}
+        top_cities_full = []
         if not processed_gdf.empty:
             top_5 = processed_gdf.head(5)
-            top_5_results = [
-                {"codgeo": str(idx), "libgeo": str(row.get('libgeo', '')), "score": float(row.get('weighted_score', 0))} 
-                for idx, row in top_5.iterrows()
-            ]
-            
             # Granular Breakdown (mirroring markdown logs logic)
             for idx, row in top_5.iterrows():
                 city_details = engine.format_city_details(row, config=config)
+                
+                # For Telemetry
                 top_5_breakdown[str(idx)] = {
                     "libgeo": row.get('libgeo', ''),
                     "scores": city_details.get('scores', {})
                 }
+                top_5_results.append(
+                    {"codgeo": str(idx), "libgeo": str(row.get('libgeo', '')), "score": float(row.get('weighted_score', 0))} 
+                )
+                
+                # For Background AI Agent (to avoid double calculation)
+                top_cities_full.append({
+                    "codgeo": str(idx),
+                    "libgeo": row.get('libgeo', ''),
+                    "weighted_score": float(row.get('weighted_score', 0)),
+                    "details": city_details
+                })
         
         telemetry.log_search_complete(
             criteria=search_criteria,
@@ -165,7 +174,20 @@ def run_search():
         )
     except Exception as tel_e:
         logging.warning(f"Failed to log search telemetry: {str(tel_e)}")
+        
+    # --- Background Scorer Pitch Generation ---
+    from agents.utils import launch_background_scorer
     
+    search_criterias = config
+    h = search_criterias.compute_hash()
+    
+    if 'async_scorer_results' not in st.session_state:
+        st.session_state['async_scorer_results'] = {}
+        
+    if h not in st.session_state['async_scorer_results']:
+        st.session_state['async_scorer_results'][h] = None # Indicates it's running
+        launch_background_scorer(search_criterias, st.session_state['async_scorer_results'], h, top_cities=top_cities_full)
+
     # Calculate center for map
     if not processed_gdf.empty:
         # Compute centroid of all results
@@ -189,7 +211,7 @@ def run_search():
         final_center_x = center_x
         final_center_y = center_y
 
-    st.session_state['selected_geo'] = st.session_state.app_data['odis'].loc[[config.commune_actuelle]].copy()
+    st.session_state['selected_geo'] = st.session_state.app_data['odis'].loc[[config.commune_actuelle.code]].copy()
     st.session_state['center'] = [final_center_y, final_center_x]
     st.session_state['zoom'] = maps.get_map_zoom(config.loc_search_area)
     st.session_state['fg_dict_ref'] = {}
@@ -259,27 +281,31 @@ with st.sidebar:
             index=0 # Default to Balanced
         )
         
-        st.select_slider("Education", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_education', 50), 
-                        key="ui_poids_education")
-        st.select_slider("Projet Pro", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_emploi', 50), 
-                        key="ui_poids_emploi")
-        st.select_slider("Logement", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_logement', 50), 
-                        key="ui_poids_logement")
-        st.select_slider("Inclusion", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_inclusion', 50), 
-                        key="ui_poids_inclusion")
-        st.select_slider("Santé", cfg.POIDS_OPTIONS, # NEW
-                        value=st.session_state.get('ui_poids_sante', 50), # NEW
-                        key="ui_poids_sante") # NEW
-        st.select_slider("Mobilité", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_mobilité', 50), 
-                        key="ui_poids_mobilité")
-
-        # def clear_processed_gdf():
-        #     st.session_state['processed_gdf'] = None
+        # New "Expert Mode" toggle
+        st.toggle("Personnaliser les poids (Expert)", key="ui_expert_weights", value=False)
+        
+        if st.session_state.get('ui_expert_weights'):
+            st.info("Ajustez finement l'importance de chaque catégorie.")
+            st.select_slider("Education", cfg.POIDS_OPTIONS, 
+                            value=st.session_state.get('ui_poids_education', 50), 
+                            key="ui_poids_education", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
+            st.select_slider("Projet Pro", cfg.POIDS_OPTIONS, 
+                            value=st.session_state.get('ui_poids_emploi', 50), 
+                            key="ui_poids_emploi", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
+            st.select_slider("Logement", cfg.POIDS_OPTIONS, 
+                            value=st.session_state.get('ui_poids_logement', 50), 
+                            key="ui_poids_logement", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
+            st.select_slider("Inclusion", cfg.POIDS_OPTIONS, 
+                            value=st.session_state.get('ui_poids_inclusion', 50), 
+                            key="ui_poids_inclusion", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
+            st.select_slider("Santé", cfg.POIDS_OPTIONS, 
+                            value=st.session_state.get('ui_poids_sante', 50), 
+                            key="ui_poids_sante", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
+            st.select_slider("Mobilité", cfg.POIDS_OPTIONS, 
+                            value=st.session_state.get('ui_poids_mobilité', 50), 
+                            key="ui_poids_mobilité", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
+        else:
+            st.caption("Utilisez les profils ci-dessus ou activez le mode expert pour un réglage fin.")
     
     
 

@@ -300,7 +300,8 @@ async def scorer_node(state: ODISGraphState, config: RunnableConfig):
         "messages": [{"role": "assistant", "content": result.output.response}],
         "top_cities": top_cities,
         "criteria_hash": compute_criteria_hash(state.search_criteria),
-        "scoring_results": {"scorer": result.output.response}, # For synthesizer/refiner to see the text
+        "scoring_results": {"scorer": result.output.model_dump()}, # Now it contains response and pitches_per_city 
+
         "next_node": END,
         "usage": capture_usage(result, "scorer", mod_id)
     }
