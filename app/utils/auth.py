@@ -37,6 +37,7 @@ def check_password():
                     if submit:
                         if verify_credentials(username, password, st.secrets):
                             st.session_state["password_correct"] = True
+                            st.session_state["username"] = username
                             st.rerun()
                         else:
                             st.error("❌ Identifiants incorrects")
@@ -45,4 +46,5 @@ def check_password():
         return False
     else:
         # Password correct.
+        st.warning("L'application est en phase de test. Vos interactions sont collectées pour améliorer l'outil. Merci d'anonymiser au maximum vos saisies libres.", icon="⚠️")
         return True

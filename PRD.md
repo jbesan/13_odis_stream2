@@ -90,3 +90,21 @@ _(Most features omitted for brevity. Appending F-42)_
 - **March 2026 (Fix)**: Resolved "Ecoles Elémentaires" visibility issue through enhanced data ingestion (expanded matching logic) and updated POI categorization.
 - **March 2026 (Pipeline)**: Robustness improvements to `pipeline/etl.py` and `pipeline/ingest.py` (CLI arguments fix and non-interactive support).
 - Planned (Feb 2026) - Initial refinements planned.
+
+## 🚀 Feature [F-45]: Télémétrie, Feedback et Authentification Globale
+
+### 📝 User Story
+
+- En tant que chef de produit, je veux collecter des données quantitatives (télémétrie) et qualitatives (feedback utilisateur, état de l'agent) lors des tests réels, sans impacter les performances de l'application.
+- En tant qu'administrateur, je veux m'assurer que l'application entière est protégée par une authentification avant accès.
+
+### 🔑 Key Features
+
+- **Authentification Globale :** `main.py` bloque l'accès à toutes les pages et affiche un avertissement "Feedback Mode". Utilisation du système d'authentification existant (`utils.auth`).
+- **Télémétrie via Cloud Logging :** Des événements structurés (`RUN_SEARCH`, `SEARCH_RESULTS_RETURNED`) sont enregistrés de façon asynchrone (via Cloud Logging) et synchronisés dans BigQuery grâce à un Sink. Chaque événement possède un `interaction_id`.
+- **Suivi de l'État Agent :** L'état asynchrone du LLM (ODISGraphState) est structuré et inséré directement dans une table BigQuery dédiée lors des interactions avec le Chatbot.
+- **Formulaire de Feedback Intégré :** Un bouton dans la barre latérale permet d'ouvrir un modal de feedback ('Bug', 'Question', 'Suggestion'). Les envois sont liés à la session via le `interaction_id` et sauvegardés sur BigQuery.
+
+### 📊 Status
+
+- **March 2026**: Conception technique validée, en cours de développement.

@@ -43,13 +43,13 @@ SYNTH_SYSTEM_PROMPT_ANALYSIS = """
 2. Structure ta réponse au format Markdown avec les sections suivantes :
     - ## 🏙️ Aperçu de {FOCUS_CITY} : 3 à 5 phrases de description.
     - ## 🧭 Synthèse thématique :
-        - **Vie Quotidienne** : Synthèse (affinités culturelles, mobilité, éducation, santé, sports, loisirs)
+        - **Vie Quotidienne** : Synthèse (Logement, mobilité sur place, éducation, santé, affinités culturelles, sports, loisirs etc.)
         - **Inclusion** : Synthèse (associations, solidarité, insertion)
         - **Opportunités Emploi** : Synthèse (marché du travail, secteurs porteurs, emploi)
         - ** Actualités **: Synthèse des actualités pertinentes des dernières années.
     - ## ✅ Forces & ⚠️ Vigilances : Tableau Markdown.
     - ## 💡 Contact du CCAS de {FOCUS_CITY}
-    - ## ❓ Et ensuite ? : Propose d'analyser une autre ville ou d'approfondir un point.
+    - ## ❓ Et ensuite ? : Propose d'analyser une autre ville du Top 5 ou d'approfondir un point sur la ville en court.
 """
 
 SYNTH_SYSTEM_PROMPT_SPECIFIC = """
@@ -75,7 +75,7 @@ SYNTH_SYSTEM_PROMPT_SPECIFIC = """
 
 # Instructions :
 - Réponds UNIQUEMENT et de manière détaillée à la question de l'utilisateur : {LAST_MESSAGE}
-- Sois factuel et précis. Si pertinent, utilise un tableau Markdown.
+- Sois factuel et précis et mentionne les codes & identifiants des éléments trouvés. Si pertinent, utilise un tableau Markdown.
 - N'invente rien, utilise uniqument les éléments des Experts. Mets en gras les élements importants. Si les données des experts sont insuffisantes, mentionne-le clairement.
 """
 

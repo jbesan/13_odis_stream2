@@ -258,6 +258,43 @@ async def scorer_node(state: ODISGraphState, config: RunnableConfig):
     end_time = datetime.now()
     logger.debug(f"📊 [SCORER] Exiting scorer_node at {end_time.strftime('%H:%M:%S.%f')[:-3]} - Duration: {(end_time - start_time).total_seconds():.3f}s")
 
+    # --- Unified Telemetry Logging (BigQuery) ---
+    try:
+        from services import telemetry
+        criteria_model = state.search_criteria
+        full_config = criteria_model.model_dump()
+        
+        criteria_keys = ['commune_actuelle', 'loc_search_area', 'situation_famille', 'nb_enfants', 'besoin_emploi', 'besoin_sante', 'inc_services_add_selection']
+        search_criteria = {k: full_config.get(k) for k in criteria_keys if k in full_config}
+        weights = {k: v for k, v in full_config.items() if k.startswith('poids_')}
+        
+        top_5_results = []
+        top_5_breakdown = {}
+        if top_cities:
+            top_5 = top_cities[:5]
+            top_5_results = [
+                {"codgeo": str(c.get('codgeo')), "libgeo": str(c.get('libgeo', '')), "score": float(c.get('weighted_score', 0))} 
+                for c in top_5
+            ]
+            
+            # Granular Breakdown (extracted from tool results)
+            for city in top_5:
+                codgeo = str(city.get('codgeo'))
+                top_5_breakdown[codgeo] = {
+                    "libgeo": city.get('libgeo', city.get('name', '')),
+                    "scores": city.get('details', {}).get('scores', {})
+                }
+        
+        telemetry.log_search_complete(
+            criteria=search_criteria,
+            weights=weights,
+            results=top_5_results,
+            breakdown=top_5_breakdown,
+            source_flow='ia'
+        )
+    except Exception as tel_e:
+        logger.warning(f"⚠️ [SCORER] Telemetry failed: {tel_e}")
+
     # We update top_cities from recovered data
     return {
         "messages": [{"role": "assistant", "content": result.output.response}],

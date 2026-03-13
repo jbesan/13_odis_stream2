@@ -42,12 +42,37 @@ st.markdown("Identifions ensemble le projet de vie et les meilleures options de 
 
 # --- Sidebar ---
 with st.sidebar:
+    if st.button("🏠 Retour à l'Accueil", use_container_width=True):
+        st.switch_page("pages/1_Accueil.py")
+    
+ 
+    st.markdown("""
+        <style>
+            .st-key-btn_recommencer .stButton p {color: #1B4429;}
+        </style>
+    """, unsafe_allow_html=True)
+    if st.button("Nouvelle Discussion", type="primary", key="btn_recommencer", width="stretch"):
+        print("="*150)
+        st.session_state.chat_history = []
+        st.session_state.agent_state = ODISGraphState()
+        st.rerun()
+
+    from ui import feedback
+    st.write("")
+    feedback.render_feedback_button()
+    
+    st.divider()
+    st.checkbox("⚙️ Infos techniques", value=False, key="show_tech_info")
+
     api_key = os.getenv("GOOGLE_API_KEY") # Utilisation cohérente de GEMINI_API_KEY
     if not api_key:
         st.error("Clé API GEMINI non trouvée.")
 
+    # Read tech info visibility from session state (set by checkbox at the bottom)
+    show_tech = st.session_state.get("show_tech_info", False)
+
     # API Usage Tracking
-    if st.session_state.get("agent_state"):
+    if st.session_state.get("agent_state") and show_tech:
         state = st.session_state.agent_state
         with st.expander("📊 Consommation LLM", expanded=False):
             u = state.usage
@@ -90,18 +115,10 @@ with st.sidebar:
                         st.write(state.commune_artifacts[norm_name][criteria_hash][agent])
                     except Exception:
                         st.write("Pas de données.")
-
-    st.divider()
-    st.markdown("""
-        <style>
-            .st-key-btn_recommencer .stButton p {color: #1B4429;}
-        </style>
-    """, unsafe_allow_html=True)
-    if st.button("Recommencer", type="primary", key="btn_recommencer"):
-        print("="*150)
-        st.session_state.chat_history = []
-        st.session_state.agent_state = ODISGraphState()
-        st.rerun()
+    
+    if st.session_state.get("agent_state") and not show_tech:
+        # Show a minimal summary if hidden? No, just keep it clean.
+        pass
 
 # --- Helpers ---
 def display_message(role, content):
@@ -190,7 +207,7 @@ if prompt := st.chat_input("Répondez ici...", key="chat_input"):
     display_message("user", prompt)
     
     # 2. Agent Response
-    with st.spinner("L'Agent ODIS réfléchit... (Patience 🧘)"):
+    with st.spinner("L'Agent ODIS réfléchit..."):
         response_text = None
         try:
             # Préparation
@@ -213,6 +230,13 @@ if prompt := st.chat_input("Répondez ici...", key="chat_input"):
             
             if not response_text:
                 response_text = "Je n'ai pas pu générer de réponse."
+
+            # Log State to BigQuery
+            try:
+                from services import bq_logger
+                bq_logger.log_agent_state_to_bq(prompt, final_output)
+            except Exception as bq_e:
+                logging.warning(f"Failed to log BQ state: {str(bq_e)}")
 
         except Exception as e:
             logging.getLogger(__name__).exception(f"⚠️ Erreur technique : {str(e)}")
