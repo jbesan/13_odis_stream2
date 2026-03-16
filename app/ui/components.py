@@ -10,6 +10,7 @@ from typing import Dict, Any, List, Optional
 from pathlib import Path
 import base64
 import logging
+import string
 from utils.data_loader import ensure_data_initialized
 from core.scoring import ScoringEngine
 
@@ -173,26 +174,28 @@ def show_details_dialog(details: Dict[str, Any]):
         cache_key = f"ia_analysis_{h}_{codgeo}"
         
         if cache_key not in st.session_state['app_data']:
-            # st.info(f"Découvrez une synthèse contextuelle de {nom} générée par notre panel d'experts IA (Scout, Web, Emploi).")
-            with st.spinner("Les experts analysent la ville, veuillez patienter (environ 15 à 30s)..."):
-                from agents.utils import run_async_safe
-                
-                state_dict = {
-                    "search_criteria": search_criterias.model_dump(),
-                    "is_interview_complete": True,
-                    "execution_mode": "full_analysis",
-                    "focus_city": {"name": nom, "codgeo": codgeo},
-                    "messages": [{"role": "user", "content": f"Fais une analyse complète pour {nom}."}]
-                }
-                try:
-                    final_state = run_async_safe(state_dict)
-                    syn_msg = final_state.get("messages", [])[-1]["content"] if final_state.get("messages") else "Pas de synthèse générée."
-                    st.session_state['app_data'][cache_key] = {
-                        "synthesis": syn_msg,
-                        "chat": []
+            st.info(f"Découvrez une synthèse contextuelle de {nom} générée par notre panel d'experts IA (Scout, Web, Emploi).")
+            if st.button("✨ Lancer l'analyse IA", key=f"btn_ia_{codgeo}"):
+                with st.spinner("Les experts analysent la ville, veuillez patienter (environ 15 à 30s)..."):
+                    from agents.utils import run_async_safe
+                    
+                    state_dict = {
+                        "search_criteria": search_criterias.model_dump(),
+                        "is_interview_complete": True,
+                        "execution_mode": "full_analysis",
+                        "focus_city": {"name": nom, "codgeo": codgeo},
+                        "messages": [{"role": "user", "content": f"Fais une analyse complète pour {nom}."}]
                     }
-                except Exception as e:
-                    st.error(f"Erreur lors de la génération: {str(e)}")
+                    try:
+                        final_state = run_async_safe(state_dict)
+                        syn_msg = final_state.get("messages", [])[-1]["content"] if final_state.get("messages") else "Pas de synthèse générée."
+                        st.session_state['app_data'][cache_key] = {
+                            "synthesis": syn_msg,
+                            "chat": []
+                        }
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erreur lors de la génération: {str(e)}")
 
         if cache_key in st.session_state['app_data']:
             data_cache = st.session_state['app_data'][cache_key]
@@ -377,23 +380,8 @@ def show_details_dialog(details: Dict[str, Any]):
         c1, c2 = st.columns([1, 1], gap="medium")
         with c1:
             with st.container(border=False):
-                # 1. Specialized Associations (Refugees) - AT THE TOP
-                refugee_assos = incl_data.get('refugee_associations', [])
-                if refugee_assos:
-                    st.markdown("#### :material/diversity_1: Associations spécialisées nouveaux arrivants")
-                    with st.expander("Consulter les associations spécialisées", expanded=False):
-                        refugee_df = pd.DataFrame(refugee_assos)
-                        # Group by waldec_label for categorization
-                        for label, group in refugee_df.groupby('waldec_label'):
-                             with st.expander(f"{label} ({len(group)})", expanded=False):
-                                    for _, asso in group.iterrows():
-                                        st.write(f"**{asso['name']}**")
-                                        if pd.notna(asso['description']):
-                                            st.caption(asso['description'])
-                                        # Link to assoce.fr
-                                        url = f"https://www.assoce.fr/waldec/{asso['id']}"
-                                        st.markdown(f"🔗 [Voir sur assoce.fr]({url})")
-                                        st.markdown("---")
+                
+                    
                 
                 # 2. Services d'Inclusion - NESTED IN EXPANDER
                 st.markdown("#### :material/volunteer_activism: Services d'Inclusion")
@@ -411,7 +399,7 @@ def show_details_dialog(details: Dict[str, Any]):
                         st.info("Aucun service spécifique référencé.")
                 
                 # 3. ODIS Associations Directory (Refactored to RAG Categories)
-                st.markdown("#### :material/groups: Annuaire des Associations ODIS")
+                st.markdown("#### :material/groups: Associations de l'inclusion")
                 
                 # Fetch associations from BQ via RNARagService
                 rna_service = st.session_state.get('rna_rag_service')
@@ -420,24 +408,74 @@ def show_details_dialog(details: Dict[str, Any]):
                 if rna_service and codgeo:
                     with st.spinner("Chargement des associations..."):
                         try:
-                            assos_raw = rna_service.get_associations_by_codgeo(codgeo)
+                            # F-48: Expand search to the entire "bassin de vie"
+                            bv_id = identity.get('bassin_de_vie')
+                            odis = st.session_state.app_data.get('odis')
+                            if odis is not None and bv_id:
+                                # Get all codgeos belonging to the same bassin de vie
+                                codgeos_in_bv = odis[odis['bassin_de_vie'] == bv_id].index.tolist()
+                                if codgeo not in codgeos_in_bv:
+                                    codgeos_in_bv.append(codgeo)
+                                assos_raw = rna_service.get_associations_by_codgeo(codgeos_in_bv)
+                            else:
+                                # Fallback to single commune if BV not found
+                                assos_raw = rna_service.get_associations_by_codgeo([codgeo])
+
                             if assos_raw:
-                                # Group by primary_category
+                                # Separate Refugee-focused from others
+                                refugee_assos_from_rag = [a for a in assos_raw if a.get('is_refugee_focused')]
+                                other_assos_from_rag = [a for a in assos_raw if not a.get('is_refugee_focused')]
+
+                                # Re-group others by primary_category
                                 grouped_assos = {}
-                                for a in assos_raw:
+                                for a in other_assos_from_rag:
                                     cat = a.get('primary_category') or "Autres"
                                     if cat not in grouped_assos:
                                         grouped_assos[cat] = []
                                     grouped_assos[cat].append(a)
                                 
-                                with st.expander("Consulter l'annuaire par catégories", expanded=False):
-                                    for cat, list_assos in sorted(grouped_assos.items()):
-                                        with st.expander(f"{cat} ({len(list_assos)})", expanded=False):
-                                            for asso in list_assos:
-                                                # Link to assoce.fr
-                                                url = f"https://www.assoce.fr/waldec/{asso['id']}"
-                                                st.markdown(f"**[{asso['name']}]({url})**")
-                                                # st.markdown("---")
+                                # 1. Display Refugee Focused Associations (if any)
+                                if refugee_assos_from_rag:
+                                    with st.expander("Intégration des réfugiés & migrants", expanded=False):
+                                        # Sort refugee associations by name for readability
+                                        refugee_assos_from_rag = sorted(refugee_assos_from_rag, key=lambda x: str(x['name']))
+                                        for asso in refugee_assos_from_rag:
+                                            name = string.capwords(str(asso['name']).lower())
+                                            url = f"https://www.assoce.fr/waldec/{asso['id']}"
+                                            desc = str(asso['description']).strip() if pd.notna(asso.get('description')) else ""
+                                            
+                                            if desc.lower() in ["nan", "none", "null"]:
+                                                desc = ""
+                                            
+                                            if desc:
+                                                if len(desc) > 200:
+                                                    desc = desc[:200].strip() + "..."
+                                                desc = desc[0].upper() + desc[1:] if len(desc) > 1 else desc
+                                                st.markdown(f"**{name}**: {desc} [En savoir plus]({url})")
+                                            else:
+                                                st.markdown(f"**{name}**: [En savoir plus]({url})")
+                                
+                                for cat, list_assos in sorted(grouped_assos.items()):
+                                    with st.expander(f"{cat} ({len(list_assos)})", expanded=False):
+                                        for asso in list_assos:
+                                            name = string.capwords(str(asso['name']).lower())
+                                            # st.write(f"**{name}**")
+                                            
+                                            # Link to assoce.fr
+                                            url = f"https://www.assoce.fr/waldec/{asso['id']}"
+                                            
+                                            desc = str(asso['description']).strip() if pd.notna(asso.get('description')) else ""
+                                            if desc.lower() in ["nan", "none", "null"]:
+                                                desc = ""
+                                            
+                                            if desc:
+                                                if len(desc) > 200:
+                                                    desc = desc[:200].strip() + "..."
+                                                # Capitalize first letter of description for better look
+                                                desc = desc[0].upper() + desc[1:] if len(desc) > 1 else desc
+                                                st.markdown(f"**{name}**: {desc} [En savoir plus]({url})")
+                                            else:
+                                                st.markdown(f"**{name}**: [En savoir plus]({url})")
                             else:
                                 st.info("Aucune association répertoriée pour cette commune.")
                         except Exception as e:
@@ -532,16 +570,20 @@ def start_over() -> None:
 def render_localisation_form() -> None:
     """Renders the UI for the 'Localisation Actuelle' form section."""
     app_data = st.session_state.app_data
-    col1, col2 = st.columns(2)
-    with col1:
-        options_dep = app_data['coddep_set']
-        # The index is now correctly derived from the session state, preventing the warning.
-        departement_actuel = st.selectbox("Département", options_dep, key="ui_departement")
-    with col2:
-        communes = app_data['depcom_df'][app_data['depcom_df'].dep_code == departement_actuel]['libgeo'].tolist()
-        if st.session_state['ui_commune'] not in communes:
-            st.session_state['ui_commune'] = communes[0]
-        st.selectbox("Commune", communes, key="ui_commune")
+    dept_details = app_data.get('dept_details', {})
+    options_dep = app_data['coddep_set']
+    
+    departement_actuel = st.selectbox(
+        "Département", 
+        options_dep, 
+        key="ui_departement",
+        format_func=lambda x: f"{x} - {dept_details.get(x, {}).get('label', x)}" if dept_details else x
+    )
+    
+    communes = app_data['depcom_df'][app_data['depcom_df'].dep_code == departement_actuel]['libgeo'].tolist()
+    if st.session_state['ui_commune'] not in communes:
+        st.session_state['ui_commune'] = communes[0]
+    st.selectbox("Commune", communes, key="ui_commune")
 
 def render_family_form() -> None:
     """Renders the UI for the 'Situation familiale' form section."""
@@ -564,7 +606,7 @@ def render_education_form() -> None:
                 options = cfg.CLASSES_SCOLAIRES
                 key = f"ui_classe_enfant_{i}"
                 st.selectbox(f'Niveau enfant {i+1}', options, key=key)
-                st.toggle("Prioritaire", key=f"ui_priority_edu_{i}", help="Donne plus de poids à ce critère")
+                # st.toggle("Prioritaire", key=f"ui_priority_edu_{i}", help="Donne plus de poids à ce critère")
 
 def render_employment_form() -> None:
     """Renders the UI for the 'Projet Professionnel' form section."""
@@ -580,7 +622,7 @@ def render_employment_form() -> None:
             st.multiselect(f"Formations recherchées Adulte {i+1}", codform_select.index, format_func=lambda x: codform_select.loc[x, 'label'], key=f"ui_formations_adult_{i}")
             
             # F-15: Priority Toggle
-            st.toggle("Prioritaire", key=f"ui_priority_job_adult_{i}", help="Donne plus de poids à la recherche d'emploi pour cet adulte")
+            # st.toggle("Prioritaire", key=f"ui_priority_job_adult_{i}", help="Donne plus de poids à la recherche d'emploi pour cet adulte")
 
 def render_housing_form() -> None:
     """Renders the UI for the 'Logement' form section."""
@@ -605,20 +647,26 @@ def render_housing_form() -> None:
         # Update aggregate state for scoring
         st.session_state['ui_hebergement_cible'] = selected_heb
         
-        st.toggle("Prioritaire", key="ui_priority_hebergement", help="Donne plus de poids à ce critère")
+        # st.toggle("Prioritaire", key="ui_priority_hebergement", help="Donne plus de poids à ce critère")
     with col2:
         st.radio('Logement cible à long terme', cfg.LOGEMENT_OPTIONS, key="ui_logement")
-        st.toggle("Prioritaire", key="ui_priority_logement", help="Donne plus de poids à ce critère")
+        # st.toggle("Prioritaire", key="ui_priority_logement", help="Donne plus de poids à ce critère")
         
     # F-41: Only show housing type selector if 'Location' or 'Location avec Intermédiation' is selected
     heb_sel = st.session_state.get('ui_hebergement_cible', [])
     if "Location avec Intermédiation" in heb_sel or st.session_state.get('ui_logement') == 'Location':
         
+        housing_type_options = list(cfg.HOUSING_TYPE_OPTIONS.keys())
+        if "ui_type_logement" in st.session_state and st.session_state["ui_type_logement"] in housing_type_options:
+            default_housing_idx = housing_type_options.index(st.session_state["ui_type_logement"])
+        else:
+            default_housing_idx = housing_type_options.index("appt_all")
+
         st.selectbox(
             "Type de logement (affine les loyers)",
-            options=list(cfg.HOUSING_TYPE_OPTIONS.keys()),
+            options=housing_type_options,
             format_func=lambda x: cfg.HOUSING_TYPE_OPTIONS[x],
-            index=list(cfg.HOUSING_TYPE_OPTIONS.keys()).index("appt_all"),
+            index=default_housing_idx,
             key="ui_type_logement",
             help="Permet d'utiliser les loyers spécifiques au type de logement choisi (Source ODACE 2024)"
         )
@@ -629,8 +677,8 @@ def render_health_form() -> None:
     """Renders the UI for the 'Santé' form section."""
     options = ["Aucun", "Hopital", 'Maternité', "Soutien Psychologique & Addictologie"]
     st.radio('Support médical à proximité', options, key="ui_besoin_sante")
-    if st.session_state.ui_besoin_sante != "Aucun":
-        st.toggle("Prioritaire", key="ui_priority_sante", help="Donne plus de poids à ce critère")
+    # if st.session_state.ui_besoin_sante != "Aucun":
+        # st.toggle("Prioritaire", key="ui_priority_sante", help="Donne plus de poids à ce critère")
 
 def render_other_needs_form() -> None:
     """Renders the UI for the 'Inclusion' form section (F-13)."""
@@ -721,8 +769,8 @@ def render_other_needs_form() -> None:
         key="ui_inc_services_add_selection_flat",
         help="Recherchez et ajoutez des services spécifiques."
     )
-    if st.session_state.ui_inc_services_add_selection_flat:
-        st.toggle("Prioritaire", key="ui_priority_other_needs", help="Donne plus de poids à ces besoins spécifiques")
+    # if st.session_state.ui_inc_services_add_selection_flat:
+    #     st.toggle("Prioritaire", key="ui_priority_other_needs", help="Donne plus de poids à ces besoins spécifiques")
     
     # We store the map in session state so we can use it in create_scoring_config_from_inputs
     # without re-computing it (optimization)
@@ -733,37 +781,37 @@ def render_mobility_form() -> None:
     app_data = st.session_state['app_data']
     dept_details = app_data.get('dept_details', {})
     regions_dict = app_data.get('regions_names', {})
-    
-    # 1. France Métropolitaine Override
-    is_france = st.checkbox("France Métropolitaine", key="ui_mobility_france")
-    
-    st.text("ou")
+    is_france = False
 
-    # 2. Region & Department Selectors
-    col1, col2 = st.columns(2)
-    
+    # 1. Region & Department Selectors
     # Defaults based on current localization
     current_dept_code = st.session_state.get('ui_departement')
     current_reg_code = dept_details.get(current_dept_code, {}).get('reg_code')
     
-    with col1:
-        region_codes = sorted(regions_dict.keys())
+    region_codes = ['france'] + sorted(regions_dict.keys())
+    
+    # F-48: Fix st.selectbox warning by aligning index with session_state if present
+    if "ui_mobility_region" in st.session_state and st.session_state["ui_mobility_region"] in region_codes:
+        default_reg_idx = region_codes.index(st.session_state["ui_mobility_region"])
+    else:
         try:
+            # Default to current region, if current_reg_code is not in dict, use first option (France)
             default_reg_idx = region_codes.index(current_reg_code) if current_reg_code in region_codes else 0
         except ValueError:
             default_reg_idx = 0
             
-        selected_region_code = st.selectbox(
-            "Région",
-            region_codes,
-            format_func=lambda x: regions_dict.get(x, f"Code {x}"),
-            key="ui_mobility_region",
-            disabled=is_france,
-            index=default_reg_idx
-        )
-        
-    with col2:
-        # Filter departments by selected region
+    selected_region_code = st.selectbox(
+        "Région",
+        region_codes,
+        format_func=lambda x: regions_dict.get(x, "France Métropolitaine") if x != 'france' else "France Métropolitaine",
+        key="ui_mobility_region",
+        index=default_reg_idx
+    )
+    
+    is_france = (selected_region_code == 'france')
+
+    # Filter departments by selected region
+    if not is_france:
         depts_in_region = [
             code for code, details in dept_details.items() 
             if details.get('reg_code') == selected_region_code
@@ -773,28 +821,105 @@ def render_mobility_form() -> None:
         # Options: "Toute la région" + departments
         dept_options = ["Toute la région"] + depts_in_region
         
-        # Try to default to current department if it's in the region
-        try:
-            default_dept_idx = dept_options.index(current_dept_code) if current_dept_code in dept_options else 0
-        except ValueError:
-            default_dept_idx = 0
+        # F-48: Fix st.selectbox warning by aligning index with session_state if present
+        if "ui_mobility_dept" in st.session_state and st.session_state["ui_mobility_dept"] in dept_options:
+            default_dept_idx = dept_options.index(st.session_state["ui_mobility_dept"])
+        else:
+            try:
+                default_dept_idx = dept_options.index(current_dept_code) if current_dept_code in dept_options else 0
+            except ValueError:
+                default_dept_idx = 0
 
         st.selectbox(
             "Département",
             dept_options,
             format_func=lambda x: f"{x} - {dept_details.get(x, {}).get('label', x)}" if x != "Toute la région" else x,
             key="ui_mobility_dept",
-            disabled=is_france,
             index=default_dept_idx
         )
+    else:
+        st.info("Recherche sur l'ensemble du territoire métropolitain.")
+
+def render_weight_profile_form() -> None:
+    """Renders the UI for selecting the weighting profile and expert weights adjustment."""
+    def _update_weights_from_profile():
+        profile = st.session_state.ui_weight_profile
+        if profile in cfg.WEIGHT_PROFILES:
+            weights = cfg.WEIGHT_PROFILES[profile]
+            for key, value in weights.items():
+                # Update session state keys for sliders (e.g. ui_poids_education)
+                st.session_state[f"ui_{key}"] = value
+        
+        # Reset results if weights change
+        st.session_state['processed_gdf'] = None
+
+    weight_profiles = list(cfg.WEIGHT_PROFILES.keys())
+    if "ui_weight_profile" in st.session_state and st.session_state["ui_weight_profile"] in weight_profiles:
+        default_profile_idx = weight_profiles.index(st.session_state["ui_weight_profile"])
+    else:
+        default_profile_idx = 0
+
+    st.selectbox(
+        "Profil de pondération pour la recherche",
+        options=weight_profiles,
+        key="ui_weight_profile",
+        on_change=_update_weights_from_profile,
+        index=default_profile_idx
+    )
+    
+    # New "Expert Mode" toggle
+    st.toggle("Personnaliser les poids", key="ui_expert_weights", value=False)
+    
+    if st.session_state.get('ui_expert_weights'):
+        st.info("Ajustez finement l'importance de chaque catégorie.")
+        st.select_slider("Education", cfg.POIDS_OPTIONS, 
+                        value=st.session_state.get('ui_poids_education', 50), 
+                        key="ui_poids_education", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
+        st.select_slider("Projet Pro", cfg.POIDS_OPTIONS, 
+                        value=st.session_state.get('ui_poids_emploi', 50), 
+                        key="ui_poids_emploi", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
+        st.select_slider("Logement", cfg.POIDS_OPTIONS, 
+                        value=st.session_state.get('ui_poids_logement', 50), 
+                        key="ui_poids_logement", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
+        st.select_slider("Inclusion", cfg.POIDS_OPTIONS, 
+                        value=st.session_state.get('ui_poids_inclusion', 50), 
+                        key="ui_poids_inclusion", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
+        st.select_slider("Santé", cfg.POIDS_OPTIONS, 
+                        value=st.session_state.get('ui_poids_sante', 50), 
+                        key="ui_poids_sante", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
+        st.select_slider("Mobilité", cfg.POIDS_OPTIONS, 
+                        value=st.session_state.get('ui_poids_mobilité', 50), 
+                        key="ui_poids_mobilité", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
+    else:
+        st.caption("Utilisez un profil prédéfini ci-dessus ou activez le mode personnalisé pour un réglage fin.")
 
 def display_input_tabs(demo_data: Optional[Dict[str, Any]] = None) -> None:
     """Displays the main tabs for user input, composed of modular rendering functions."""
-    tab_localisation, tab_foyer, tab_edu, tab_emploi, tab_logement, tab_sante, tab_autres, tab_mobilite = st.tabs([
-        'Localisation Actuelle', 'Situation familiale', 'Education', 'Projet Professionnel', 'Logement', 'Santé', 'Inclusion', 'Mobilité'
+    # F-48: Custom CSS to widen multi-select pills using stable selectors
+    st.markdown("""
+        <style>
+            /* Target stable BaseWeb tag attributes used by Streamlit */
+            [data-baseweb="tag"] {
+                max-width: 500px !important;
+            }
+            /* Alternative stable selector for text inside tags */
+            div[data-testid="stMultiSelect"] span {
+                max-width: 500px !important;
+            }
+        </style>
+    """, unsafe_allow_html=True)
+    
+    tab_localisation, tab_foyer, tab_edu, tab_emploi, tab_logement, tab_sante, tab_autres, tab_profile = st.tabs([
+        'Localisation', 'Situation familiale', 'Education', 'Projet Professionnel', 'Logement', 'Santé', 'Inclusion', 'Profil'
     ])
     with tab_localisation:
-        render_localisation_form()
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("**Localisation actuelle**")
+            render_localisation_form()
+        with col2:
+            st.markdown("**Zone de recherche souhaitée**")
+            render_mobility_form()
     with tab_foyer:
         render_family_form()
     with tab_edu:
@@ -807,8 +932,8 @@ def display_input_tabs(demo_data: Optional[Dict[str, Any]] = None) -> None:
         render_health_form()
     with tab_autres:
         render_other_needs_form()
-    with tab_mobilite:
-        render_mobility_form()
+    with tab_profile:
+        render_weight_profile_form()
 
 
 from core.models import SearchCriterias, CriteriaItem
@@ -828,7 +953,8 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
     commune_actuelle = CriteriaItem(code=str(commune_codgeo), label=str(libgeo))
 
     # New Mobility Logic
-    if st.session_state.get('ui_mobility_france'):
+    selected_region = st.session_state.get('ui_mobility_region')
+    if selected_region == 'france':
         loc_search_area = 'france'
         loc_search_code = None
     else:

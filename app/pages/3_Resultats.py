@@ -276,67 +276,22 @@ with st.sidebar:
     
     st.divider()
 
-    # --- Weights ---
-    # with st.expander('Pondérations', expanded=False):
-        # F-15: Profile Selector
-    def _update_weights_from_profile():
-        profile = st.session_state.ui_weight_profile
-        if profile in cfg.WEIGHT_PROFILES:
-            weights = cfg.WEIGHT_PROFILES[profile]
-            for key, value in weights.items():
-                # Update session state keys for sliders (e.g. ui_poids_education)
-                st.session_state[f"ui_{key}"] = value
-        
-        st.session_state['processed_gdf'] = None
-    
-
-    st.selectbox(
-        "Profil de pondération",
-        options=list(cfg.WEIGHT_PROFILES.keys()),
-        key="ui_weight_profile",
-        on_change=_update_weights_from_profile,
-        index=0 # Default to Balanced
-    )
-    
-    # New "Expert Mode" toggle
-    st.toggle("Personnaliser les poids", key="ui_expert_weights", value=False)
-    
-    if st.session_state.get('ui_expert_weights'):
-        # st.info("Ajustez finement l'importance de chaque catégorie.")
-        st.select_slider("Education", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_education', 50), 
-                        key="ui_poids_education", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
-        st.select_slider("Projet Pro", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_emploi', 50), 
-                        key="ui_poids_emploi", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
-        st.select_slider("Logement", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_logement', 50), 
-                        key="ui_poids_logement", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
-        st.select_slider("Inclusion", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_inclusion', 50), 
-                        key="ui_poids_inclusion", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
-        st.select_slider("Santé", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_sante', 50), 
-                        key="ui_poids_sante", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
-        st.select_slider("Mobilité", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_mobilité', 50), 
-                        key="ui_poids_mobilité", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
-    else:
-        st.caption("Utilisez un profil prédéfini ci-dessus ou activez le mode personalisé pour un réglage fin.")
+    # --- Weights --- (MOVED TO TOP FILTER FORM)
     
     
 
 # Top filter Form
 with st.container(border=False, key='top_menu'):
     st.markdown("<style>.st-key-top_menu {background-color:whitesmoke; padding:30px; border-radius:10px} .stTabs div div button div p {font-size:1rem}</style>", unsafe_allow_html=True)
-    st.subheader(f"Projet de vie {ui.get_person_accompanied_str()}")
+    
     col_tabs, col_button = st.columns([5,1])
     with col_tabs:
-        ui.display_input_tabs(st.session_state['demo_data'])
+        st.subheader(f"Projet de vie {ui.get_person_accompanied_str()}")    
     with col_button: 
         with st.container(height="stretch", horizontal_alignment="center", vertical_alignment="center"):
             st.button("Lancer la recherche", on_click=run_search, type="primary")
-
+    ui.display_input_tabs(st.session_state['demo_data'])
+    
 # Main two sections: results and map
 col_map, col_results  = st.columns([3, 2])
 

@@ -93,11 +93,11 @@ class RNARagService:
             query_vector = self._get_embedding(query)
             
             # 2. Fetch vectors from BigQuery for this commune
-            # Columns in BQ: id, titre_court, primary_category, embedding_128, is_inclusion_relevant
-            table_id = "odis-stream2.rna_rag.rna_rag_mini"
+            # Columns in BQ: id, titre_court, primary_category, embedding_128, is_inclusion_relevant, description
+            table_id = "odis-stream2.rna_rag.rna_rag"
             
             query_bq = f"""
-                SELECT id, titre_court as name, primary_category, embedding_128 as embedding
+                SELECT id, titre_court as name, primary_category, embedding_128 as embedding, description
                 FROM `{table_id}`
                 WHERE codgeo = @codgeo
                 {"AND is_inclusion_relevant = TRUE" if inclusion_only else ""}
@@ -130,6 +130,7 @@ class RNARagService:
                         "id": row['id'],
                         "name": row['name'],
                         "primary_category": row['primary_category'],
+                        "description": row['description'],
                         "score": round(score, 4)
                     })
             
@@ -142,30 +143,31 @@ class RNARagService:
             logger.error(f"get_associations_semantic failed: {e}")
             raise RuntimeError(f"BigQuery/Vertex connection failed: {e}")
 
-    def get_associations_by_codgeo(self, codgeo: str) -> List[Dict[str, Any]]:
+    def get_associations_by_codgeo(self, codgeos: List[str]) -> List[Dict[str, Any]]:
         """
-        Fetches all inclusion-relevant associations for a specific commune.
+        Fetches all inclusion-relevant associations for a list of communes.
         
         Args:
-            codgeo: The 5-digit INSEE code of the commune
+            codgeos: List of 5-digit INSEE codes
             
         Returns:
             List of associations with their name and primary_category.
         """
-        logger.info(f"Fetching all associations for codgeo='{codgeo}'")
+        logger.info(f"Fetching all associations for {len(codgeos)} communes")
         
         try:
-            table_id = "odis-stream2.rna_rag.rna_rag_mini"
+            table_id = "odis-stream2.rna_rag.rna_rag"
             query_bq = f"""
-                SELECT id, titre_court as name, primary_category
+                SELECT id, titre_court as name, primary_category, description, max_score, is_refugee_focused, codgeo
                 FROM `{table_id}`
-                WHERE codgeo = @codgeo AND is_inclusion_relevant = TRUE
-                ORDER BY titre_court ASC
+                WHERE codgeo IN UNNEST(@codgeos) 
+                  AND ((is_inclusion_relevant = TRUE AND max_score > 0.8) OR is_refugee_focused = TRUE)
+                ORDER BY max_score DESC
             """
             
             job_config = bigquery.QueryJobConfig(
                 query_parameters=[
-                    bigquery.ScalarQueryParameter("codgeo", "STRING", codgeo)
+                    bigquery.ArrayQueryParameter("codgeos", "STRING", codgeos)
                 ]
             )
             

@@ -636,45 +636,31 @@ def clean_refugee_associations(config: Dict[str, Any], logger: PipelineLogger):
         logging.warning("RNA file not found.")
         return
 
-    # Load RNA
-    df = load_dataset(path, source)
-    df.columns = [c.strip() for c in df.columns]
-
-    # Filter Position 'A' (Active)
-    if 'position' in df.columns:
-        df = df[df['position'] == 'A'].copy()
-
-    # Filtering Logic
-    filter_codes = ('003', '019', '020', '014')
-    filter_keywords = ('asil', 'refug', 'nouveaux arrivants', 'migrant')
-
-    # Ensure columns exist
-    if 'objet_social1' not in df.columns or 'objet' not in df.columns:
-        logging.warning("RNA missing required columns for filtering.")
+    # Updated to fetch from BigQuery using is_refugee_focused flag (Harmonization)
+    try:
+        client = bigquery.Client()
+        query = """
+        SELECT 
+            id,
+            codgeo,
+            titre_court as name,
+            description,
+            primary_category as waldec_code -- Using primary_category as it contains more useful semantic grouping
+        FROM `odis-stream2.rna_rag.rna_rag`
+        WHERE is_refugee_focused = True
+        """
+        logging.info("📡 [RNA RAG] Fetching detailed refugee associations from BigQuery...")
+        df_refug = client.query(query).to_dataframe()
+    except Exception as e:
+        logging.error(f"Failed to fetch refugee associations from BQ: {e}")
         return
 
-    mask_code = df['objet_social1'].astype(str).str.startswith(filter_codes, na=False)
-    mask_keyword = df['objet'].astype(str).str.contains('|'.join(filter_keywords), case=False, na=False)
-    
-    df_refug = df[mask_code & mask_keyword].copy()
-    
     if df_refug.empty:
-        logging.warning("No refugee associations found after filtering.")
+        logging.warning("No refugee associations found in BigQuery.")
         return
-
-    # Renaming and Preparing
-    df_refug.rename(columns={
-        'adrs_codeinsee': 'codgeo',
-        'objet_social1': 'waldec_code',
-        'objet': 'description',
-        'titre': 'name'
-    }, inplace=True)
 
     # Normalize codgeo
     df_refug['codgeo'] = df_refug['codgeo'].astype(str).str.zfill(5)
-    
-    # Truncate description
-    df_refug['description'] = df_refug['description'].astype(str).str[:300]
 
     # Add Bassin de Vie mapping (INSEE Source)
     mapping_source = config['sources']['bassins_de_vie']
@@ -1061,7 +1047,7 @@ def compute_rna_rag_counts(query_text: str, threshold: float = 0.65) -> pd.DataF
     SELECT 
         codgeo,
         COUNT(*) as count
-    FROM `odis-stream2.rna_rag.rna_rag_mini`
+    FROM `odis-stream2.rna_rag.rna_rag`
     WHERE is_inclusion_relevant = True
     AND ML.DISTANCE(ARRAY(SELECT element FROM UNNEST(embedding_128.list)), @query_vec, 'COSINE') < @dist_threshold
     GROUP BY 1
@@ -1791,28 +1777,48 @@ def fetch_rna_rag_stats(logger: PipelineLogger) -> Optional[Path]:
 
     try:
         client = bigquery.Client()
-        query = """
+        
+        # 1. Fetch Category Counts
+        query_cats = """
         SELECT 
             codgeo,
             primary_category,
             COUNT(*) as count
-        FROM `odis-stream2.rna_rag.rna_rag_mini`
+        FROM `odis-stream2.rna_rag.rna_rag`
         WHERE is_inclusion_relevant = True
         GROUP BY 1, 2
         """
-        logging.info("📡 [RNA RAG] Fetching aggregated stats from BigQuery...")
-        df = client.query(query).to_dataframe()
+        logging.info("📡 [RNA RAG] Fetching category counts from BigQuery...")
+        df_cats = client.query(query_cats).to_dataframe()
         
-        if df.empty:
-            logging.warning("[RNA RAG] No data returned from BigQuery.")
+        # 2. Fetch Refugee-specific Counts
+        query_refug = """
+        SELECT 
+            codgeo,
+            COUNT(*) as heb_asso_refug_count
+        FROM `odis-stream2.rna_rag.rna_rag`
+        WHERE is_refugee_focused = True
+        GROUP BY 1
+        """
+        logging.info("📡 [RNA RAG] Fetching refugee counts from BigQuery...")
+        df_refug = client.query(query_refug).to_dataframe()
+
+        if df_cats.empty:
+            logging.warning("[RNA RAG] No category data returned from BigQuery.")
             return None
 
-        # Pivot to get one row per codgeo
-        df_pivot = df.pivot(index='codgeo', columns='primary_category', values='count').fillna(0).reset_index()
-        
-        # Rename columns to standardized names
+        # Pivot category counts
+        df_pivot = df_cats.pivot(index='codgeo', columns='primary_category', values='count').fillna(0).reset_index()
         df_pivot.columns = [f"inc_rna_{col}_count" if col != 'codgeo' else col for col in df_pivot.columns]
         df_pivot['codgeo'] = df_pivot['codgeo'].astype(str).str.zfill(5)
+
+        # Merge with refugee counts
+        if not df_refug.empty:
+            df_refug['codgeo'] = df_refug['codgeo'].astype(str).str.zfill(5)
+            df_pivot = df_pivot.merge(df_refug, on='codgeo', how='left')
+            df_pivot['heb_asso_refug_count'] = df_pivot['heb_asso_refug_count'].fillna(0)
+        else:
+            df_pivot['heb_asso_refug_count'] = 0
 
         df_pivot.to_parquet(local_path)
         logging.info(f"✅ [RNA RAG] Saved {len(df_pivot)} commune stats to {local_path}")

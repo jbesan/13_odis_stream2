@@ -108,3 +108,20 @@ _(Most features omitted for brevity. Appending F-42)_
 ### 📊 Status
 
 - **March 2026**: Conception technique validée, en cours de développement.
+
+## 🚀 Feature [F-46]: Associations Directory Refinements
+
+### 📝 User Story
+
+- En tant que travailleur social, je veux que l'annuaire des associations soit plus lisible et informatif pour mieux orienter les usagers.
+- Je veux voir une description courte des associations pour comprendre leur champ d'action sans quitter l'application.
+
+### 🔑 Key Features
+
+- **Formatage des noms :** Transformation des noms d'associations (souvent en MAJUSCULES dans la base RNA) en Title Case (majuscule en début de chaque mot).
+- **Affichage des descriptions :** Intégration du champ `description` de la table `rna_rag`. Affichage des ~250 premiers caractères.
+- **Lien externe :** Ajout d'un lien "Lire la suite" pointant vers la fiche détaillée sur `assoce.fr` pour chaque association.
+
+### 📊 Status
+
+- **March 2026**: Planned and under implementation.

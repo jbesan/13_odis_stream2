@@ -202,14 +202,8 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
 
         # Associations merge (Deprecated - Now handled via RNA RAG above)
 
-        # Merge Refugee Associations Count
-        refug_path = CLEAN_DIR / "refugee_associations.parquet"
-        if refug_path.exists():
-            refug_df = pd.read_parquet(refug_path)
-            refug_agg = refug_df.groupby('codgeo').size().rename('heb_asso_refug_count').reset_index()
-            communes_gdf = communes_gdf.merge(refug_agg, on='codgeo', how='left')
-            communes_gdf['heb_asso_refug_count'] = communes_gdf['heb_asso_refug_count'].fillna(0)
-            logging.info(f"Refugee associations counts merged.")
+        # Merge Refugee Associations Count - NOW HANDLED via rna_inclusion_agg.parquet
+        # (See fetch_rna_rag_stats in ingest.py and merge_clean("rna_inclusion_agg") above)
 
         # --- Calculate Health Counts (On-the-fly) ---
         # Since we don't have a clean health file with counts, we calculate them here from raw/cache.

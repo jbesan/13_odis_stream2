@@ -23,13 +23,13 @@ Ce prototype a un triple objectif :
 ## ✨ Fonctionnalités Principales
 
 - **Profil Personnalisé :** Définissez un "projet de vie" détaillé incluant la composition du foyer, le niveau scolaire des enfants, les métiers visés, les besoins en formation, etc.
-- **Pondération Avancée :** Ajustez l'importance de chaque grande catégorie ou utilisez des profils prédéfinis (Famille, Santé, Emploi). Affinez la priorité de critères spécifiques (ex: "Logement Social" prioritaire).
+- **Pondération Avancée :** Choisissez un profil prédéfinis (Équilibré, Famille, Santé, Emploi) ou activez le **Mode Expert** pour un réglage fin des poids de chaque catégorie.
 - **Vue par Bassin de Vie ([DEPRECATED]) :** Permet d'agréger les résultats à l'échelle des "bassins de vie" de l'INSEE. Cette fonctionnalité est maintenue pour compatibilité mais le projet privilégie désormais la vue par commune.
-- **Scoring Intelligent :** Chaque commune de France est évaluée sur sa compatibilité avec le profil. La taille de la population n'est plus un filtre mais un critère de score.
+- **Scoring Intelligent :** Chaque commune de France est évaluée sur sa compatibilité avec le profil via un modèle de données typé (Pydantic). La taille de la population n'est plus un filtre mais un critère de score.
 - **Système de "Binômes" ([DEPRECATED]) :** L'algorithme associait des communes voisines pour proposer des solutions conjointes. Cette logique est en cours de remplacement par l'enrichissement automatique via le bassin de vie.
 - **Carte Interactive :** Visualisez les localités les mieux notées, leur score, et superposez des couches d'informations additionnelles (écoles, établissements de santé, services d'inclusion).
-- **Résultats Détaillés & Export PDF :** Explorez les 5 meilleurs résultats avec une analyse de leurs points forts et exportez un rapport PDF complet pour la famille accompagnée.
-- **Assistant IA (Multi-Agent ODIS) :** Interagissez en langage naturel avec un système multi-agent capable de conduire l'entretien, de calculer les scores, et de décorer les résultats avec des infos terrain et web. Voir la [documentation détaillée de l'architecture](app/agents/README.md).
+- **Résultats Détaillés & Export PDF :** Explorez les 5 meilleurs résultats avec une analyse comparative générée automatiquement par l'IA et exportez un rapport PDF complet incluant ces analyses.
+- **Assistant IA (Multi-Agent ODIS) :** Système multi-agent (LangGraph) capable de conduire l'entretien via l'agent **Interviewer**, de calculer les scores avec l'agent **Scorer**, et d'enrichir les résultats avec des infos terrain (**Scout**) et web (**Web**). voir la [documentation détaillée de l'architecture](app/agents/README.md).
 - **Grounding Google Search :** Grâce à l'agent spécialisé WEB, accédez aux dernières actualités locales et au contexte social des communes visées.
 - **Référentiel des Associations Réfugiés ([F-26]):** Accédez à une base de données qualifiée d'associations spécialisées dans l'accueil des nouveaux arrivants.
 - **Moteur de Recherche RAG (RNA) :** Recherche sémantique et thématique sur l'ensemble du Répertoire National des Associations (RNA) via BigQuery et Vertex AI, permettant de classer les associations par catégories d'inclusion (FLE, Logement, Emploi, etc.) avec une précision inégalée.
@@ -95,7 +95,7 @@ Le cœur de l'application est un pipeline de scoring qui évalue les communes (o
 4.  **Logique de Binôme ([DEPRECATED]) :** Historiquement, le moteur créait des paires de communes. Cette approche est devenue secondaire face à l'enrichissement par le bassin de vie décrit ci-dessus.
 5.  **Agrégation par Catégorie :** Les scores des critères individuels sont moyennés pour former des scores de catégories. Pour un exemple concret du calcul, consultez le [SCORE_EXAMPLE.md](./SCORE_EXAMPLE.md).
 6.  **Agrégation par Bassin de Vie (Optionnel) :** Si l'utilisateur choisit cette vue, **tous les scores** des communes (y compris Éducation, Santé, Inclusion) sont agrégés au niveau du bassin de vie par une **moyenne pondérée par la population**. Cela permet d'obtenir une vue d'ensemble cohérente où les services des grandes communes pèsent plus lourd.
-7.  **Score Pondéré Final :** Enfin, un `weighted_score` global est calculé pour chaque entité (commune, binôme ou bassin de vie) en appliquant les poids définis par l'utilisateur. Les résultats sont ensuite classés selon ce score final.
+7.  **Score Pondéré Final :** Enfin, un `weighted_score` global est calculé pour chaque entité (commune ou bassin de vie) en appliquant les poids définis. Le moteur s'appuie sur le modèle `SearchCriterias` pour garantir la cohérence entre l'interface formulaire, le chatbot et l'export PDF. Les résultats sont ensuite classés selon ce score final.
 
 ![Explication de la logique de scoring](./images/Screenshot-4.png)
 
