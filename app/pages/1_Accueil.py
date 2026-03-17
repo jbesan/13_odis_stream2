@@ -197,14 +197,18 @@ with col_form:
             # st.session_state.ui_nom = person_name_input
             st.switch_page("pages/2_Formulaire.py")
 
+@st.dialog('IN PROGRESS', width="large")
+def show_unstructure_input_dialog():
+    st.write("IN PROGRESS")
+
 with col_ia:
     st.markdown("""
         <div class="step-card" style="min-height: 250px; justify-content: space-between; padding: 30px;">
             <div>
                 <div style="font-size: 3rem; margin-bottom: 15px;">🤖</div>
-                <h3 style="font-weight: bold; font-size: 1.5rem; margin-bottom: 10px;">Assistant IA (Beta)</h3>
+                <h3 style="font-weight: bold; font-size: 1.5rem; margin-bottom: 10px;">Je ne veux pas tout resaisir</h3>
                 <div style="font-size: 1.1rem; margin-bottom: 20px;">
-                    Discutez naturellement et librement avec notre agent intelligent pour identifier les besoins et trouver les bassins de vie adéquats.
+                    Copiez-collez un email ou un document texte décrivant la situation et les besoins de la personne accompagnée, on essaiera de pré-remplire le fomulaire pour vous.
                 </div>
             </div>
         </div>
@@ -212,8 +216,10 @@ with col_ia:
     
     with st.container(border=True):
         #  st.write("") # Alignment spacer to match the input height on the left
-         if st.button("Lancer l'Assistant IA", type="primary", use_container_width=True, key="btn_ia"):
-             st.switch_page("pages/4_AI_Chatbot.py")
+         if st.button("Lancer le mode flemme", type="primary", use_container_width=True, key="btn_ia"):
+
+            show_unstructure_input_dialog()
+            #  st.switch_page("pages/4_AI_Chatbot.py")
 
 # st.markdown("<br><br>", unsafe_allow_html=True)
 # col_skip1, col_skip2, col_skip3 = st.columns([1,2,1])

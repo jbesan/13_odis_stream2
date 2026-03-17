@@ -123,7 +123,8 @@ class TestScoringLogic:
         df_with_dist['sante_maternite_scaled'] = 0.5
         df_with_dist['sante_maternite_scaled'] = 0.5
         df_with_dist['sante_psy_scaled'] = 0.5
-        df_with_dist['inc_asso_core_scaled'] = 0.5 # Mock pre-calculated score
+        df_with_dist['inc_asso_core_scaled'] = 0.5 
+        df_with_dist['inc_services_incl_scaled'] = 0.5
 
         scored_df = engine._compute_criteria_scores(
             df=df_with_dist,
@@ -136,7 +137,7 @@ class TestScoringLogic:
             'met_match_adult1_tension_scaled',
             'log_vac_scaled', 
             'inc_population_scaled',
-            'inc_services_core_scaled',
+            'inc_services_incl_scaled',
             'inc_asso_core_scaled',
             'inc_asso_add_scaled',
             'edu_petite_enfance_scaled',
@@ -591,7 +592,7 @@ class TestInclusionScoringLogic:
             'lien_social_count': [10, 5],
             'lien_social_density': [10.0, 10.0],
             'inc_asso_core_scaled': [0.5, 0.5],
-            'inc_services_core_scaled': [1.0, 0.5]
+            'inc_services_incl_scaled': [1.0, 0.5]
         }
         return gpd.GeoDataFrame(data).set_index('codgeo')
 
@@ -599,9 +600,8 @@ class TestInclusionScoringLogic:
         """Tests Socle Administratif score calculation."""
         from types import SimpleNamespace
         prefs = SimpleNamespace(
-            inc_services_core_selection=['social_aide', 'admin_mairie'],
-            inc_asso_add_selection=[],
-            inc_services_add_selection=[]
+            inc_services_add_selection=['social_aide', 'admin_mairie'],
+            inc_asso_add_selection=[]
         )
         engine = scoring.ScoringEngine(
             df_all_communes=gpd.GeoDataFrame(), 
@@ -615,14 +615,14 @@ class TestInclusionScoringLogic:
         )
         scores = engine._compute_inclusion_scores(mock_geo_df, prefs)
         
-        assert scores.loc['33063', 'inc_services_core_scaled'] == 1.0
-        assert scores.loc['64445', 'inc_services_core_scaled'] == 0.5
+        assert scores.loc['33063', 'inc_services_incl_scaled'] == 1.0
+        # 64445: one match out of two needed -> 0.5
+        assert scores.loc['64445', 'inc_services_incl_scaled'] == 0.5
 
     def test_compute_inclusion_score_affinite(self, mock_geo_df, mock_incl_index, mock_associations_data, sample_scores_cat, global_stats):
         """Tests Affinité score calculation."""
         from types import SimpleNamespace
         prefs = SimpleNamespace(
-            inc_services_core_selection=[],
             inc_asso_add_selection=['Bricolage / Création'],
             inc_services_add_selection=[]
         )
@@ -643,7 +643,6 @@ class TestInclusionScoringLogic:
         assert scores.loc['64445', 'inc_asso_add_scaled'] >= 0
         
         prefs_sport = SimpleNamespace(
-            inc_services_core_selection=[],
             inc_asso_add_selection=['Sport (Général)'],
             inc_services_add_selection=[]
         )
@@ -665,9 +664,8 @@ class TestInclusionScoringLogic:
         """Tests that all inclusion components are present."""
         from types import SimpleNamespace
         prefs = SimpleNamespace(
-            inc_services_core_selection=['social_aide'], 
-            inc_asso_add_selection=['Bricolage / Création'],
-            inc_services_add_selection=[]
+            inc_services_add_selection=['social_aide'], 
+            inc_asso_add_selection=['Bricolage / Création']
         )
         engine = scoring.ScoringEngine(
             df_all_communes=gpd.GeoDataFrame(), 
@@ -681,7 +679,7 @@ class TestInclusionScoringLogic:
         )
         scores = engine._compute_inclusion_scores(mock_geo_df, prefs)
         
-        assert 'inc_services_core_scaled' in scores.columns
+        assert 'inc_services_incl_scaled' in scores.columns
         assert 'inc_asso_core_scaled' in scores.columns
         assert 'inc_asso_add_scaled' in scores.columns
 
@@ -703,7 +701,7 @@ class TestHousingScoresLogic:
             'log_occup_scaled': [0.9, 0.2],
             'log_loyer_moyen_house_all_scaled': [0.5, 0.5],
             'met_scaled': [0.5, 0.5], 
-            'inc_services_core_scaled': [0.0, 0.0],
+            'inc_services_incl_scaled': [0.0, 0.0],
             'inc_asso_core_scaled': [0.0, 0.0],
             'inc_population_scaled': [0.0, 0.0],
             'inc_pol_scaled': [0.0, 0.0],

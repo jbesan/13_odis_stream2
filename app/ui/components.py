@@ -21,6 +21,104 @@ from utils.common import get_asset_path, get_base64_image
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ui")
 
+def inject_custom_css() -> None:
+    """Injects custom CSS for UI refinements (F-48, pills width)."""
+    st.markdown("""
+        <style>
+            /* Target stable BaseWeb tag attributes used by Streamlit */
+            [data-baseweb="tag"] {
+                max-width: 500px !important;
+            }
+            /* Alternative stable selector for text inside tags */
+            div[data-testid="stMultiSelect"] span {
+                max-width: 500px !important;
+            }
+        </style>
+    """, unsafe_allow_html=True)
+
+@st.dialog(title=" ", width="large")
+def show_ia_analysis_dialog(details: Dict[str, Any]):
+    """Displays AI synthesis and chat for a city in a modal."""
+    if not details:
+        st.error("Détails non disponibles.")
+        return
+
+    identity = details.get('identity', {})
+    nom = identity.get('nom', 'cette ville')
+    codgeo = identity.get('codgeo')
+    
+    st.header(f"Analyse OD&IS pour {nom}")
+    
+    @st.fragment
+    def ia_analysis_content():
+        search_criterias = st.session_state.config
+        h = search_criterias.compute_hash()
+        
+        # Unique session key for this city's analysis
+        cache_key = f"ia_analysis_{h}_{codgeo}"
+        
+        if cache_key not in st.session_state['app_data']:
+            # F-IA: Automate trigger on open
+            with st.spinner(f"Les experts analysent {nom}, veuillez patienter (environ 15 à 30s)..."):
+                from agents.utils import run_async_safe
+                
+                state_dict = {
+                    "search_criteria": search_criterias.model_dump(),
+                    "is_interview_complete": True,
+                    "execution_mode": "full_analysis",
+                    "focus_city": {"name": nom, "codgeo": codgeo},
+                    "messages": [{"role": "user", "content": f"Fais une analyse complète pour {nom}."}]
+                }
+                try:
+                    final_state = run_async_safe(state_dict)
+                    syn_msg = final_state.get("messages", [])[-1]["content"] if final_state.get("messages") else "Pas de synthèse générée."
+                    st.session_state['app_data'][cache_key] = {
+                        "synthesis": syn_msg,
+                        "chat": []
+                    }
+                    # Within a fragment, rerun() only reruns the fragment
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erreur lors de la génération: {str(e)}")
+
+        if cache_key in st.session_state['app_data']:
+            data_cache = st.session_state['app_data'][cache_key]
+            st.markdown(data_cache["synthesis"])
+            
+            st.divider()
+            st.markdown(f"#### Poser une question sur {nom}")
+            
+            for msg in data_cache["chat"]:
+                with st.chat_message(msg["role"]):
+                    st.markdown(msg["content"])
+            
+            question = st.chat_input(f"Ex: Quelles associations facilitent le logement à {nom} ?", key=f"chat_input_ia_{codgeo}")
+            if question:
+                data_cache["chat"].append({"role": "user", "content": question})
+                with st.chat_message("user"):
+                    st.markdown(question)
+                
+                with st.spinner("Recherche de la réponse en cours..."):
+                    from agents.utils import run_async_safe
+                    state_dict = {
+                        "search_criteria": search_criterias.model_dump(),
+                        "is_interview_complete": True,
+                        "execution_mode": "specific_ask",
+                        "focus_city": {"name": nom, "codgeo": codgeo},
+                        "messages": data_cache["chat"]
+                    }
+                    try:
+                        final_state = run_async_safe(state_dict)
+                        answer = final_state.get("messages", [])[-1]["content"] if final_state.get("messages") else "Pas de réponse."
+                        data_cache["chat"].append({"role": "assistant", "content": answer})
+                        with st.chat_message("assistant"):
+                            st.markdown(answer)
+                        st.rerun() # Refresh fragment to show answer and clear input
+                    except Exception as e:
+                        st.error(f"Erreur de l'agent: {str(e)}")
+    
+    ia_analysis_content()
+
 @st.dialog("Centre Communal d'Action Sociale", width="large")
 def show_ccas_dialog(codgeo_or_list: Any, structures_df: pd.DataFrame, priority_code: Optional[str] = None, priority_label: Optional[str] = None):
      target_codes = []
@@ -154,83 +252,13 @@ def show_details_dialog(details: Dict[str, Any]):
             st.markdown("<br>", unsafe_allow_html=True) # Minor spacing
 
     # --- Tabs ---
-    tab_ia, tab_emploi, tab_logement, tab_edu, tab_sante, tab_vie = st.tabs([
-        "✨ Analyse IA",
+    tab_emploi, tab_logement, tab_edu, tab_sante, tab_vie = st.tabs([
         "💼 Emploi & Formation", 
         "🏠 Logement", 
         "🎓 Education", 
         "🏥 Santé", 
         "🤝 Vie Sociale & Inclusion"
     ])
-
-    with tab_ia:
-        nom = identity.get('nom', 'cette ville')
-        codgeo = identity.get('codgeo')
-        
-        search_criterias = st.session_state.config
-        h = search_criterias.compute_hash()
-        
-        # Unique session key for this city's analysis
-        cache_key = f"ia_analysis_{h}_{codgeo}"
-        
-        if cache_key not in st.session_state['app_data']:
-            st.info(f"Découvrez une synthèse contextuelle de {nom} générée par notre panel d'experts IA (Scout, Web, Emploi).")
-            if st.button("✨ Lancer l'analyse IA", key=f"btn_ia_{codgeo}"):
-                with st.spinner("Les experts analysent la ville, veuillez patienter (environ 15 à 30s)..."):
-                    from agents.utils import run_async_safe
-                    
-                    state_dict = {
-                        "search_criteria": search_criterias.model_dump(),
-                        "is_interview_complete": True,
-                        "execution_mode": "full_analysis",
-                        "focus_city": {"name": nom, "codgeo": codgeo},
-                        "messages": [{"role": "user", "content": f"Fais une analyse complète pour {nom}."}]
-                    }
-                    try:
-                        final_state = run_async_safe(state_dict)
-                        syn_msg = final_state.get("messages", [])[-1]["content"] if final_state.get("messages") else "Pas de synthèse générée."
-                        st.session_state['app_data'][cache_key] = {
-                            "synthesis": syn_msg,
-                            "chat": []
-                        }
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erreur lors de la génération: {str(e)}")
-
-        if cache_key in st.session_state['app_data']:
-            data_cache = st.session_state['app_data'][cache_key]
-            st.markdown(data_cache["synthesis"])
-            
-            st.divider()
-            st.markdown(f"#### Poser une question sur {nom}")
-            
-            for msg in data_cache["chat"]:
-                with st.chat_message(msg["role"]):
-                    st.markdown(msg["content"])
-            
-            question = st.chat_input(f"Ex: Quelles associations facilitent le logement à {nom} ?")
-            if question:
-                data_cache["chat"].append({"role": "user", "content": question})
-                with st.chat_message("user"):
-                    st.markdown(question)
-                
-                with st.spinner("Recherche de la réponse en cours..."):
-                    from agents.utils import run_async_safe
-                    state_dict = {
-                        "search_criteria": search_criterias.model_dump(),
-                        "is_interview_complete": True,
-                        "execution_mode": "specific_ask",
-                        "focus_city": {"name": nom, "codgeo": codgeo},
-                        "messages": data_cache["chat"]
-                    }
-                    try:
-                        final_state = run_async_safe(state_dict)
-                        answer = final_state.get("messages", [])[-1]["content"] if final_state.get("messages") else "Pas de réponse."
-                        data_cache["chat"].append({"role": "assistant", "content": answer})
-                        with st.chat_message("assistant"):
-                            st.markdown(answer)
-                    except Exception as e:
-                        st.error(f"Erreur de l'agent: {str(e)}")
 
     with tab_emploi:
         emploi_data = details.get('emploi', {})
@@ -554,18 +582,43 @@ def show_details_dialog(details: Dict[str, Any]):
         # def clear_processed_gdf():
         #     st.session_state['processed_gdf'] = None
 
+@st.dialog("Confirmer la réinitialisation")
+def confirm_reset_dialog():
+    # st.warning("⚠️ Cette action réinitialisera tous vos critères de recherche.")
+    st.write("Cette action réinitialisera tous vos critères de recherche. Souhaitez-vous vraiment retourner à l'accueil et effacer vos saisies ?")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Oui", use_container_width=True):
+            # 1. Radical cleanup: clear EVERYTHING except heavy datasets and auth
+            to_preserve = {'app_data', '_data_hash', 'rna_rag_service', 'rna_rag_status', 'password_correct', 'username'}
+            all_keys = list(st.session_state.keys())
+            for k in all_keys:
+                if k not in to_preserve:
+                    del st.session_state[k]
+
+            # 2. Specific cleanup inside app_data (clear city analysis cache)
+            if 'app_data' in st.session_state:
+                ia_keys = [k for k in st.session_state['app_data'].keys() if str(k).startswith('ia_analysis_')]
+                for k in ia_keys:
+                    del st.session_state['app_data'][k]
+
+            # 3. Redirect to home
+            st.switch_page("pages/1_Accueil.py")
+    with col2:
+        if st.button("Annuler", use_container_width=True):
+            st.rerun()
+
 def start_over() -> None:
     # --- Start over ---
     st.markdown("""
         <style>
-            .st-key-btn_recommencer .stButton p {color: #1B4429;}
+            .st-key-btn_recommencer .stButton p {color: white;}
         </style>
         """
     , unsafe_allow_html=True)
-    if st.button("🏠 Retour à l'Accueil", use_container_width=True):
-        st.session_state['processed_gdf'] = None
-        st.session_state['form_completed'] = False
-        st.switch_page("pages/1_Accueil.py")
+    if st.button("Retour à l'Accueil", icon=":material/home:", use_container_width=True, key="btn_recommencer"):
+        confirm_reset_dialog()
         
 def render_localisation_form() -> None:
     """Renders the UI for the 'Localisation Actuelle' form section."""
@@ -609,15 +662,41 @@ def render_education_form() -> None:
                 # st.toggle("Prioritaire", key=f"ui_priority_edu_{i}", help="Donne plus de poids à ce critère")
 
 def render_employment_form() -> None:
-    """Renders the UI for the 'Projet Professionnel' form section."""
+    """Renders the UI for the 'Emploi & Formation' form section."""
+    inject_custom_css()
     app_data = st.session_state.app_data
     col1, col2 = st.columns(2)
-    rome_select = app_data['rome_index']
+    rome_full_index = app_data['rome_index']
+    rome_top_index = app_data.get('rome_top_index', rome_full_index) # Fallback to full if missing
     codform_select = app_data['codformations_index']
     
     for i in range(st.session_state.ui_nb_adultes):
         with col1:
-            st.multiselect(f"Métiers ciblés Adulte {i+1}", rome_select.index, format_func=lambda x: rome_select.loc[x, 'label'], key=f"ui_metiers_adult_{i}", help="Recherchez par nom de métier (Référentiel ROME)")
+            # F-47: Use rome_top_index but ensure currently selected codes are in options
+            current_selection = st.session_state.get(f"ui_metiers_adult_{i}", [])
+            
+            # Combine top index with current selection to avoid "Value not in options" errors
+            available_options = list(rome_top_index.index)
+            for code in current_selection:
+                if code not in available_options and code in rome_full_index.index:
+                    available_options.append(code)
+            
+            def format_rome_label(code):
+                if code in rome_full_index.index:
+                    row = rome_full_index.loc[code]
+                    label = row['label']
+                    count = row.get('total_postes', 0)
+                    count_str = f"{int(count):,}".replace(",", " ")
+                    return f"{label} ({count_str} postes)"
+                return str(code)
+
+            st.multiselect(
+                f"Métiers ciblés Adulte {i+1}", 
+                available_options, 
+                format_func=format_rome_label, 
+                key=f"ui_metiers_adult_{i}", 
+                help="Recherchez par nom de métier (Référentiel ROME). La liste affiche les métiers les plus demandés en nombre de postes."
+            )
         with col2:
             st.multiselect(f"Formations recherchées Adulte {i+1}", codform_select.index, format_func=lambda x: codform_select.loc[x, 'label'], key=f"ui_formations_adult_{i}")
             
@@ -628,7 +707,7 @@ def render_housing_form() -> None:
     """Renders the UI for the 'Logement' form section."""
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown("**Hébergement cible à court terme**")
+        st.subheader("Hébergement cible à court terme")
         
         # Initialize checkboxes from aggregate state if they don't exist
         # This ensures demo scenarios are correctly reflected in the checkboxes
@@ -649,7 +728,8 @@ def render_housing_form() -> None:
         
         # st.toggle("Prioritaire", key="ui_priority_hebergement", help="Donne plus de poids à ce critère")
     with col2:
-        st.radio('Logement cible à long terme', cfg.LOGEMENT_OPTIONS, key="ui_logement")
+        st.subheader("Logement cible à long terme")
+        st.radio('Logement', cfg.LOGEMENT_OPTIONS, key="ui_logement", label_visibility="hidden")
         # st.toggle("Prioritaire", key="ui_priority_logement", help="Donne plus de poids à ce critère")
         
     # F-41: Only show housing type selector if 'Location' or 'Location avec Intermédiation' is selected
@@ -661,12 +741,13 @@ def render_housing_form() -> None:
             default_housing_idx = housing_type_options.index(st.session_state["ui_type_logement"])
         else:
             default_housing_idx = housing_type_options.index("appt_all")
-
+        st.markdown("\n\n")
         st.selectbox(
-            "Type de logement (affine les loyers)",
+            "Si location quel type de logement ?",
             options=housing_type_options,
             format_func=lambda x: cfg.HOUSING_TYPE_OPTIONS[x],
             index=default_housing_idx,
+            width=300,
             key="ui_type_logement",
             help="Permet d'utiliser les loyers spécifiques au type de logement choisi (Source ODACE 2024)"
         )
@@ -681,100 +762,113 @@ def render_health_form() -> None:
         # st.toggle("Prioritaire", key="ui_priority_sante", help="Donne plus de poids à ce critère")
 
 def render_other_needs_form() -> None:
-    """Renders the UI for the 'Inclusion' form section (F-13)."""
+    """Renders the UI for the 'Autres Besoins' (Inclusion) section (Refactored F-13/F-48)."""
+    inject_custom_css()
     app_data = st.session_state.app_data
     
-    # --- 1. Socle Administratif (Hidden but Active) ---
-    # st.subheader("Socle Administratif")
-    # st.info("Sélectionnez les services institutionnels essentiels pour vous.")
-    
-    # Pre-defined list from PRD/Config
-    default_socle = cfg.DEFAULT_INC_SERVICES_CORE
-    
-    # Initialize session state for this selection if not present
-    if 'ui_inc_services_core_selection' not in st.session_state:
-        # Default to the recommended list
-        st.session_state.ui_inc_services_core_selection = st.session_state['demo_data'].get('inc_services_core_selection', default_socle)
-
-    # Widget hidden as per user request, but state is preserved for scoring.
-    # st.multiselect(...) 
-
-    # --- 2. Affinités (Loisirs & Intérêts) ---
-    st.subheader("Affinités & Loisirs")
-    st.text("Sélectionnez vos centres d'intérêt pour identifier les territoires avec un tissu associatif correspondant.")
-    
-    # from rna_config import WALDEC_INC_ASSO_ADD_MAPPING
-    interest_options = list(cfg.WALDEC_INC_ASSO_ADD_MAPPING.keys())
-    
-    if 'ui_inc_asso_add_selection' not in st.session_state:
-        st.session_state.ui_inc_asso_add_selection = st.session_state['demo_data'].get('inc_asso_add_selection', [])
+    col1, col2 = st.columns(2)
+    with col2:
+        # --- 1. Affinités (Loisirs & Intérêts) ---
+        st.subheader("Loisirs")
+        st.text("Sélectionnez vos centres d'intérêt pour identifier les territoires avec un tissu associatif correspondant.")
         
-    st.multiselect(
-        "Centres d'intérêt",
-        options=interest_options,
-        key="ui_inc_asso_add_selection"
-    )
-
-    # --- 3. Autres Besoins (Refactored) ---
-    st.subheader("Autres Besoins")
-    
-    # F-35: FLE Checkbox (Most important need)
-    # Initialize from session state or demo data
-    if 'ui_inc_service_fle' not in st.session_state:
-        current_list = st.session_state.get('ui_inc_services_add_selection', st.session_state['demo_data'].get('inc_services_add_selection', []))
-        st.session_state.ui_inc_service_fle = cfg.INC_SERVICE_FLE_SLUG in current_list
-
-    st.checkbox("Apprentissage du Français (FLE)", key="ui_inc_service_fle", help="Recherche de structures FLE (Français Langue Étrangère)")
-
-    st.text("Sélectionnez d'autres services d'inclusion spécifiques.")
-    
-    # Prepare options: Use the Referentiel loaded in app_data
-    inclusion_index = app_data.get('inclusion_services_index', pd.DataFrame())
-    socle_keys = set(default_socle)
-    socle_keys.add(cfg.INC_SERVICE_FLE_SLUG) # Hide FLE from the multiselect
-    
-    options_map = {} # Display String -> Slug (Nom)
-    options_list = []
-    
-    if not inclusion_index.empty:
-        for code, row in inclusion_index.iterrows():
-            # Filter out if in socle (optional, depending on if socle uses same codes)
-            # The user said "use Nom as the code and use the resulting label as options"
-            if code not in socle_keys:
-                display_str = row['label']
-                options_list.append(display_str)
-                options_map[display_str] = code
+        interest_options = list(cfg.WALDEC_INC_ASSO_ADD_MAPPING.keys())
+        
+        if 'ui_inc_asso_add_selection' not in st.session_state:
+            st.session_state.ui_inc_asso_add_selection = st.session_state['demo_data'].get('inc_asso_add_selection', [])
             
-    options_list.sort()
-    
-    # Initialize flat selection state from existing list state (if any, e.g. from demo data)
-    if 'ui_inc_services_add_selection_flat' not in st.session_state:
-        # User config now stores a list of slugs
-        current_list = st.session_state.get('ui_inc_services_add_selection', st.session_state['demo_data'].get('inc_services_add_selection', []))
-        flat_selection = []
-        
-        # Create reverse map for initialization: Slug -> Display String
-        slug_to_display = {v: k for k, v in options_map.items()}
-        
-        for slug in current_list:
-            if slug in slug_to_display:
-                flat_selection.append(slug_to_display[slug])
-                
-        st.session_state.ui_inc_services_add_selection_flat = flat_selection
+        st.multiselect(
+            "Centres d'intérêt",
+            options=interest_options,
+            key="ui_inc_asso_add_selection",
+            label_visibility="collapsed"
+        )
 
-    # Widget
-    st.multiselect(
-        "Services disponibles",
-        options=options_list,
-        key="ui_inc_services_add_selection_flat",
-        help="Recherchez et ajoutez des services spécifiques."
-    )
-    # if st.session_state.ui_inc_services_add_selection_flat:
-    #     st.toggle("Prioritaire", key="ui_priority_other_needs", help="Donne plus de poids à ces besoins spécifiques")
+    with col1:
+        # --- 2. Besoins d'Analyse (Inclusion Services) ---
+        st.subheader("Services d'Inclusion")
+        st.text("Sélectionnez des services pertinents pour faciliter leur installation une fois sur place.")
+        st.text("Services courants:")
+
+        # Initialize global selection if not present
+        if 'ui_inc_services_add_selection' not in st.session_state:
+            # Default includes the core services according to F-48
+            st.session_state.ui_inc_services_add_selection = st.session_state['demo_data'].get('inc_services_add_selection', cfg.DEFAULT_INC_SERVICES_CORE)
+
+        current_selection = set(st.session_state.ui_inc_services_add_selection)
+        checkbox_selection = set()
+
+        # Render explicit checkboxes from mapping in config
+        for slug, label in cfg.INC_SERVICES_CHECKBOX_MAPPING.items():
+            cb_key = f"ui_cb_inc_{slug.replace('-', '_')}"
+            
+            # Initialize individual checkbox state from global selection
+            if cb_key not in st.session_state:
+                st.session_state[cb_key] = slug in current_selection
+            
+            if st.checkbox(label, key=cb_key):
+                checkbox_selection.add(slug)
+
+        st.markdown("\n")
+        st.text("Services plus spécifiques:")
+        
+        # Prepare options: Filter out services already present in checkboxes
+        inclusion_index = app_data.get('inclusion_services_index', pd.DataFrame())
+        checkbox_slugs = set(cfg.INC_SERVICES_CHECKBOX_MAPPING.keys())
+        
+        options_map = {} # Display String -> Slug
+        if not inclusion_index.empty:
+            for code, row in inclusion_index.iterrows():
+                if code not in checkbox_slugs:
+                    label = row['label']
+                    options_map[label] = code
+        
+        options_list = sorted(list(options_map.keys()))
+        
+        # Use a separate state for the multiselect to avoid conflict with the global merge
+        if 'ui_inc_services_multi_only' not in st.session_state:
+            # Filter the current selection to only keep those NOT in checkboxes
+            initial_multi = []
+            if not inclusion_index.empty:
+                for s in current_selection:
+                    if s in inclusion_index.index and s not in checkbox_slugs:
+                        initial_multi.append(inclusion_index.loc[s, 'label'])
+            st.session_state.ui_inc_services_multi_only = initial_multi
+
+        selected_labels = st.multiselect(
+            "Autres services d'inclusion",
+            options=options_list,
+            key="ui_inc_services_multi_only",
+            help="Recherchez et ajoutez des services spécifiques.",
+            label_visibility="collapsed"
+        )
+        
+        # Merge Checkboxes + Multiselect into the final state used for scoring
+        final_selection = list(checkbox_selection)
+        for label in selected_labels:
+            if label in options_map:
+                final_selection.append(options_map[label])
+        
+        st.session_state.ui_inc_services_add_selection = sorted(list(set(final_selection)))
+        
+        # Store map for label recovery in results page if needed
+        st.session_state['ui_inc_services_add_selection_map'] = options_map
+
+def render_other_notes_form() -> None:
+    """Renders the UI for entering free-text qualitative notes (F-48 update)."""
+    if 'ui_notes_qualitatives' not in st.session_state:
+        st.session_state.ui_notes_qualitatives = st.session_state['demo_data'].get('notes_qualitatives', "")
+
+    # st.subheader("Autres informations")
+    st.text("Précisez ici tout élément supplémentaire potentiellement utile pour la recherche (origine culturelle, contexte familial, passions, contraintes spécifiques, etc.).")
     
-    # We store the map in session state so we can use it in create_scoring_config_from_inputs
-    # without re-computing it (optimization)
-    st.session_state['ui_inc_services_add_selection_map'] = options_map
+    st.text_area(
+        "Notes qualitatives",
+        key="ui_notes_qualitatives",
+        height=250,  # "Grande zone" as requested by user
+        placeholder="Exemple : Famille sud-américaine parlant espagnol, souhaite une zone rurale avec accès à la nature...",
+        label_visibility="collapsed"
+    )
 
 def render_mobility_form() -> None:
     """Renders the UI for the 'Mobilité' form section (Consolidated)."""
@@ -859,58 +953,53 @@ def render_weight_profile_form() -> None:
     else:
         default_profile_idx = 0
 
-    st.selectbox(
-        "Profil de pondération pour la recherche",
-        options=weight_profiles,
-        key="ui_weight_profile",
-        on_change=_update_weights_from_profile,
-        index=default_profile_idx
-    )
+    st.text('Pour améliorer la pertinence des résultats de la recherche, vous pouvez ajuster les poids des différentes catégories de critères de recherche en utilisant soit un profil pré-défini (recommandé) soit une pondération sur-mesure.')
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.selectbox(
+            "Profils prédéfinis",
+            options=weight_profiles,
+            key="ui_weight_profile",
+            on_change=_update_weights_from_profile,
+            index=default_profile_idx
+        )
+        # New "Expert Mode" toggle
+        st.toggle("Profil personalisé", key="ui_expert_weights", value=False)
     
-    # New "Expert Mode" toggle
-    st.toggle("Personnaliser les poids", key="ui_expert_weights", value=False)
-    
-    if st.session_state.get('ui_expert_weights'):
-        st.info("Ajustez finement l'importance de chaque catégorie.")
+    with col2:
+       
+        
+        # if st.session_state.get('ui_expert_weights'):
+            # st.info("Ajustez finement l'importance de chaque catégorie.")
+        
         st.select_slider("Education", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_education', 50), 
+                        value=st.session_state.get('ui_poids_education', 50), disabled=not st.session_state.get('ui_expert_weights'),
                         key="ui_poids_education", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
         st.select_slider("Projet Pro", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_emploi', 50), 
+                        value=st.session_state.get('ui_poids_emploi', 50), disabled=not st.session_state.get('ui_expert_weights'),
                         key="ui_poids_emploi", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
         st.select_slider("Logement", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_logement', 50), 
+                        value=st.session_state.get('ui_poids_logement', 50), disabled=not st.session_state.get('ui_expert_weights'),
                         key="ui_poids_logement", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
         st.select_slider("Inclusion", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_inclusion', 50), 
+                        value=st.session_state.get('ui_poids_inclusion', 50), disabled=not st.session_state.get('ui_expert_weights'),
                         key="ui_poids_inclusion", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
         st.select_slider("Santé", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_sante', 50), 
+                        value=st.session_state.get('ui_poids_sante', 50), disabled=not st.session_state.get('ui_expert_weights'),
                         key="ui_poids_sante", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
         st.select_slider("Mobilité", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_mobilité', 50), 
+                        value=st.session_state.get('ui_poids_mobilité', 50), disabled=not st.session_state.get('ui_expert_weights'),
                         key="ui_poids_mobilité", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
-    else:
-        st.caption("Utilisez un profil prédéfini ci-dessus ou activez le mode personnalisé pour un réglage fin.")
+        # else:
+        #     st.caption("Utilisez un profil prédéfini ci-dessus ou activez le mode personnalisé pour un réglage fin.")
 
 def display_input_tabs(demo_data: Optional[Dict[str, Any]] = None) -> None:
     """Displays the main tabs for user input, composed of modular rendering functions."""
-    # F-48: Custom CSS to widen multi-select pills using stable selectors
-    st.markdown("""
-        <style>
-            /* Target stable BaseWeb tag attributes used by Streamlit */
-            [data-baseweb="tag"] {
-                max-width: 500px !important;
-            }
-            /* Alternative stable selector for text inside tags */
-            div[data-testid="stMultiSelect"] span {
-                max-width: 500px !important;
-            }
-        </style>
-    """, unsafe_allow_html=True)
+    inject_custom_css()
     
-    tab_localisation, tab_foyer, tab_edu, tab_emploi, tab_logement, tab_sante, tab_autres, tab_profile = st.tabs([
-        'Localisation', 'Situation familiale', 'Education', 'Projet Professionnel', 'Logement', 'Santé', 'Inclusion', 'Profil'
+    tab_localisation, tab_foyer, tab_edu, tab_emploi, tab_logement, tab_sante, tab_autres, tab_notes, tab_profile = st.tabs([
+        'Localisation', 'Situation familiale', 'Education', 'Projet Professionnel', 'Logement', 'Santé', 'Inclusion', 'Autres', 'Profil'
     ])
     with tab_localisation:
         col1, col2 = st.columns(2)
@@ -918,7 +1007,7 @@ def display_input_tabs(demo_data: Optional[Dict[str, Any]] = None) -> None:
             st.markdown("**Localisation actuelle**")
             render_localisation_form()
         with col2:
-            st.markdown("**Zone de recherche souhaitée**")
+            st.markdown("**Zone de recherche**")
             render_mobility_form()
     with tab_foyer:
         render_family_form()
@@ -932,6 +1021,8 @@ def display_input_tabs(demo_data: Optional[Dict[str, Any]] = None) -> None:
         render_health_form()
     with tab_autres:
         render_other_needs_form()
+    with tab_notes:
+        render_other_notes_form()
     with tab_profile:
         render_weight_profile_form()
 
@@ -1009,13 +1100,6 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
         # Fallback to existing list if flat not present (e.g. tests or legacy)
         inc_services_add_selection_list = st.session_state.get('ui_inc_services_add_selection', [])
 
-    # F-35: Add FLE if checked
-    if st.session_state.get('ui_inc_service_fle'):
-        if cfg.INC_SERVICE_FLE_SLUG not in inc_services_add_selection_list:
-            inc_services_add_selection_list.append(cfg.INC_SERVICE_FLE_SLUG)
-    elif cfg.INC_SERVICE_FLE_SLUG in inc_services_add_selection_list:
-        # If unchecked but present (e.g. from demo), remove it
-        inc_services_add_selection_list = [s for s in inc_services_add_selection_list if s != cfg.INC_SERVICE_FLE_SLUG]
 
     # F-15: Compute Criteria Weights
     criteria_weights = {}
@@ -1073,7 +1157,7 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
     # Other Needs Priority (F-15)
     if st.session_state.get("ui_priority_other_needs", False):
         # Maps to the new Extra Services score
-        criteria_weights['inc_services_add_scaled'] = 3.0
+        criteria_weights['inc_services_incl_scaled'] = 3.0
 
     # Enrich Inclusion Services
     inc_index = app_data.get('inclusion_services_index', pd.DataFrame())
@@ -1089,11 +1173,6 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
         code_str = ",".join(codes) if codes else "000"
         inc_assos_mapped.append(CriteriaItem(code=code_str, label=str(label)))
 
-    # Enrich Core Services
-    inc_core_mapped = []
-    for code in st.session_state.get('ui_inc_services_core_selection', []):
-        label = inc_index.loc[code, 'label'] if not inc_index.empty and code in inc_index.index else str(code)
-        inc_core_mapped.append(CriteriaItem(code=str(code), label=str(label)))
 
     # Type Logement Enrich
     type_log = None
@@ -1126,7 +1205,7 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
         
         inc_services_add_selection=inc_services_mapped,
         inc_asso_add_selection=inc_assos_mapped,
-        inc_services_core_selection=inc_core_mapped
+        notes_qualitatives=[st.session_state.get('ui_notes_qualitatives', "")] if st.session_state.get('ui_notes_qualitatives') else []
     )
 
 def _result_highlight_callback(rank: int) -> None:
@@ -1182,6 +1261,31 @@ def _show_details_callback(rank: int) -> None:
     details = engine.format_city_details(row, config=st.session_state.get('config'))
 
     show_details_dialog(details)
+
+def _show_ia_dialog_callback(rank: int) -> None:
+    """Callback to compute and show AI analysis modal."""
+    row = st.session_state.processed_gdf.loc[rank]
+    app_data = st.session_state['app_data']
+    
+    # Initialize ScoringEngine to format details
+    engine = ScoringEngine(
+        df_all_communes=app_data['odis'],
+        df_bv_geo=app_data['bv_geo'],
+        df_area_geo=app_data['area_geo'],
+        scores_cat=app_data['scores_cat'],
+        incl_index=app_data['incl_index'],
+        # Associations and Jobs only needed for details, but engine needs them
+        associations_data=app_data['associations_data'],
+        formations_data=app_data['formations_data'],
+        codformations_index=app_data['codformations_index'],
+        waldec_index=app_data.get('waldec_index'),
+        global_stats={},
+        refugee_associations_data=app_data['refugee_associations_data'],
+        live_jobs_data=app_data['live_jobs_data']
+    )
+    
+    details = engine.format_city_details(row, config=st.session_state.get('config'))
+    show_ia_analysis_dialog(details)
 
 def get_person_accompanied_str() -> str:
     if st.session_state.get('ui_nom'):
@@ -1254,7 +1358,7 @@ def _display_result_details(row: pd.Series) -> None:
             
             if scorer_res is None:
                 # Still running in background
-                st.info("✨ _L'IA prépare son analyse pour cette ville..._")
+                st.info("✨ _Récupération des points forts pour cette ville..._")
             else:
                 if isinstance(scorer_res, dict) and "pitches" in scorer_res:
                     pitch_for_city = scorer_res["pitches"].get(main_code, "")
@@ -1265,6 +1369,10 @@ def _display_result_details(row: pd.Series) -> None:
                     st.markdown(pitch_for_city)
         
         ai_pitch_container()
+        
+        # F-IA: AI Dialog Button
+        if st.button("Analyse Complète OD&IS", key=f"btn_ia_comm_{row.name}", icon=':material/bolt:', width="stretch", type="primary"):
+             _show_ia_dialog_callback(row.name)
 
         # --- Radar Chart ---
         cat_scores = row[[col for col in row.index if col.endswith('_cat_score')]]
@@ -1276,13 +1384,16 @@ def _display_result_details(row: pd.Series) -> None:
         st.caption('Plus le critère s’approche du bord, plus il est attractif.')
 
         # --- Links ---
-        st.divider()
+        # st.divider()
+        
+
+             
         c1, c2 = st.columns(2)
         with c1:
             if st.button("En savoir plus", key=f"btn_details_comm_{row.name}", width="stretch"):
                 _show_details_callback(row.name)
         with c2:
-            if st.button("Contact local", key=f"btn_ccas_commune_{row.name}", icon=':material/phone:', type="primary", width="stretch"):
+            if st.button("Contact local", key=f"btn_ccas_commune_{row.name}", icon=':material/phone:', type="secondary", width="stretch"):
                 # For commune: Include binome if present
                 targets = [main_code]
 

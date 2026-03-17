@@ -282,15 +282,22 @@ with st.sidebar:
 
 # Top filter Form
 with st.container(border=False, key='top_menu'):
-    st.markdown("<style>.st-key-top_menu {background-color:whitesmoke; padding:30px; border-radius:10px} .stTabs div div button div p {font-size:1rem}</style>", unsafe_allow_html=True)
-    
+    st.markdown("""
+    <style>
+        .st-key-top_menu {background-color:whitesmoke; padding:20px; border-radius:10px} 
+        .st-key-top_menu h2 {padding:0px} 
+        .stTabs div div button div p {font-size:1rem}
+    </style>
+    """, unsafe_allow_html=True)
+
     col_tabs, col_button = st.columns([5,1])
     with col_tabs:
-        st.subheader(f"Projet de vie {ui.get_person_accompanied_str()}")    
+        st.markdown(f"## Projet de vie {ui.get_person_accompanied_str()}")    
     with col_button: 
         with st.container(height="stretch", horizontal_alignment="center", vertical_alignment="center"):
             st.button("Lancer la recherche", on_click=run_search, type="primary")
-    ui.display_input_tabs(st.session_state['demo_data'])
+    with st.expander('Modifier les critères de recherche', expanded=False):
+        ui.display_input_tabs(st.session_state['demo_data'])
     
 # Main two sections: results and map
 col_map, col_results  = st.columns([3, 2])
@@ -304,7 +311,7 @@ with col_results:
 
 with col_map:
     if st.session_state.get('processed_gdf') is not None:
-        st.subheader("Cartographie des résultats")
+        st.subheader("Carte des résultats")
         m = maps.create_base_map(st.session_state["center"], st.session_state["zoom"])
         
         # Base layer with all scored communes

@@ -34,9 +34,7 @@ with st.sidebar:
     st.text("Remplissez ce formulaire afin de préciser le projet de vie de la ou des personnes accompagnées.")
 
     st.divider()
-
-
-
+    
     ui.start_over()
     from ui import feedback
     feedback.render_feedback_button()
@@ -54,6 +52,7 @@ PAGES = {
     "housing": "Logement",
     "health": "Santé",
     "other_needs": "Inclusion",
+    "notes": "Autres",
     "profile": "Profil"
 }
 PAGES_LIST = list(PAGES.keys())
@@ -71,7 +70,7 @@ def display_localisation_actuelle_page():
         st.markdown("**Localisation actuelle**")
         ui.render_localisation_form()
     with col2:
-        st.markdown("**Localisation souhaitée**")
+        st.markdown("**Zone de recherche**")
         ui.render_mobility_form()
 
 def display_family_situation_page():
@@ -98,8 +97,12 @@ def display_other_needs_page():
     st.subheader(f"Inclusion et vie sociale {get_person_accompanied_str()}")
     ui.render_other_needs_form()
 
+def display_other_notes_page():
+    st.subheader(f"Autres informations {get_person_accompanied_str()}")
+    ui.render_other_notes_form()
+
 def display_profile_page():
-    st.subheader(f"Profil de pondération pour la recherche")
+    st.subheader(f"Profil des priorités pour la recherche")
     ui.render_weight_profile_form()
 
 if 'form_page' not in st.session_state:
@@ -116,6 +119,7 @@ page_function_map = {
     "housing": display_housing_page,
     "health": display_health_page,
     "other_needs": display_other_needs_page,
+    "notes": display_other_notes_page,
     "profile": display_profile_page,
 }
 page_function_map[st.session_state.form_page]()

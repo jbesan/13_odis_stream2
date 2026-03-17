@@ -236,22 +236,6 @@ scores:
     weight: 1.0
     min_bound: 0.0
     max_bound: 1.0
-  - id: inc_services_core_scaled
-    category: inclusion
-    source_metric: socle_match_count
-    bdv_factor: 0.8
-    computation: precomputed
-    display:
-      name: Socle Administratif
-      strong_point_text: Services administratifs essentiels présents
-      high_value_adjective: complet
-      show: true
-      unit: services
-      display_factor: 1
-      tooltip: Présence des services administratifs sélectionnés
-    weight: 1.0
-    min_bound: 0.0
-    max_bound: 1.0
   - id: inc_asso_core_scaled
     category: inclusion
     source_metric: lien_social_density
@@ -316,19 +300,19 @@ scores:
     weight: 1.0
     min_bound: 0.0
     max_bound: 0.25 ## This is Jacques guess looking at the data
-  - id: inc_services_add_scaled
+  - id: inc_services_incl_scaled
     category: inclusion
     source_metric: extra_services_match_count
     bdv_factor: 0.8
     computation: live
     display:
-      name: Services Spécifiques
-      strong_point_text: Services spécifiques recherchés présents
+      name: Services Inclusion
+      strong_point_text: Services d'inclusion recherchés présents
       high_value_adjective: complet
       show: true
       unit: "%"
       display_factor: 100
-      tooltip: Présence des services spécifiques sélectionnés
+      tooltip: Présence des services d'inclusion sélectionnés
     weight: 1.0
     min_bound: 0.0
     max_bound: 1.0

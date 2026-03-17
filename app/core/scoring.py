@@ -407,12 +407,11 @@ class ScoringEngine:
         # 6. Inclusion
         active.add('inc_pol_scaled')
         active.add('inc_population_scaled')
-        active.add('inc_services_core_scaled')
         active.add('inc_asso_core_scaled')
         # F-26: Refugee Associations
         active.add('heb_asso_refug_scaled') 
         active.add('inc_siae_density_scaled') # New F-39: SIAE Density
-        if config.inc_services_add_selection: active.add('inc_services_add_scaled')
+        if config.inc_services_add_selection: active.add('inc_services_incl_scaled')
         if config.inc_asso_add_selection: active.add('inc_asso_add_scaled')
         
         return active
@@ -1132,8 +1131,7 @@ class ScoringEngine:
 
     def _compute_inclusion_scores(self, df: gpd.GeoDataFrame, config: SearchCriterias) -> gpd.GeoDataFrame:
         df = df.copy()
-        for col in ['inc_services_core_scaled', 'inc_asso_core_scaled']:
-            if col not in df.columns: df[col] = 0.0
+        if 'inc_asso_core_scaled' not in df.columns: df['inc_asso_core_scaled'] = 0.0
 
         # Affinities
         if config.inc_asso_add_selection:
@@ -1162,7 +1160,7 @@ class ScoringEngine:
         else: 
             if 'inc_asso_add_scaled' in df.columns: df.drop(columns=['inc_asso_add_scaled'], inplace=True)
 
-        # Specific Services
+        # Inclusion Services (F-48: Merged Core and Additional)
         needed = set()
         for i in config.inc_services_add_selection:
             needed.add(i.code if hasattr(i, 'code') else str(i))
@@ -1174,9 +1172,9 @@ class ScoringEngine:
                  return sum(1 for n in needed if any(n in a for a in available))
 
              if 'key' not in df.columns: df = df.join(self.incl_index, how='left')
-             df['inc_services_add_scaled'] = df['key'].apply(count_matches) / len(needed)
+             df['inc_services_incl_scaled'] = df['key'].apply(count_matches) / len(needed)
         else:
-             if 'inc_services_add_scaled' in df.columns: df.drop(columns=['inc_services_add_scaled'], inplace=True)
+             if 'inc_services_incl_scaled' in df.columns: df.drop(columns=['inc_services_incl_scaled'], inplace=True)
 
         return df
 

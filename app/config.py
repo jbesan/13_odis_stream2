@@ -117,7 +117,19 @@ DEFAULT_INC_SERVICES_CORE = [
     "difficultes-administratives-ou-juridiques--accompagnement-aux-demarches-administratives",
     "preparer-sa-candidature--organiser-ses-demarches-de-recherche-demploi"
 ]
-INC_SERVICE_FLE_SLUG = 'lecture-ecriture-calcul--maitriser-le-francais'
+INC_SERVICES_CHECKBOX_MAPPING = {
+    "lecture-ecriture-calcul--maitriser-le-francais": "Apprendre le français (FLE)",
+    "difficultes-administratives-ou-juridiques--accompagnement-pour-lacces-aux-droits": "Accompagnement aux droits",
+    "difficultes-administratives-ou-juridiques--accompagnement-aux-demarches-administratives": "Accompagnement démarches administratives",
+    "numerique--acceder-a-des-services-en-ligne": "Accéder aux services numériques",
+    "preparer-sa-candidature--organiser-ses-demarches-de-recherche-demploi": "Accompagnement emploi",
+    "logement-hebergement--sinformer-sur-les-demarches-liees-a-lacces-au-logement": "Démarches accès au logement",
+    "logement-hebergement--rechercher-une-solution-dhebergement-temporaire": "Recherche d'un hébergement temporaire",
+    "famille--garde-denfants": "Garde d'enfants",
+    "equipement-et-alimentation--alimentation": "Aide alimentaire",
+    "difficultes-financieres--acquerir-une-autonomie-budgetaire": "Autonomie budgétaire",
+    "mobilite--acceder-a-un-vehicule": "Accès à un véhicule",
+}
 
 
 # --- Demo Scenarios ---
@@ -146,7 +158,9 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     'inc_asso_add_selection': [],
     'loc_search_code': None,
     'ui_inc_service_fle': False,
-    'type_logement': 'appt_all'
+    'type_logement': 'appt_all',
+    'weight_profile': 'Équilibré',
+    'notes_qualitatives': ""
 }
 
 
@@ -160,6 +174,8 @@ DEMO_SCENARIOS = {
         'nb_adultes': 1,
         'nb_enfants': 0,
         'poids_mobilité': 50,
+        'weight_profile': 'Équilibré',
+        'notes_qualitatives': "Zacharie est un jeune homme dynamique."
     },
     "2": {
         'nom': 'Olga & Dimitri',
@@ -175,6 +191,8 @@ DEMO_SCENARIOS = {
         'classe_enfants': ['Maternelle', 'Elémentaire'],
         'sante': "Maternité",
         'poids_mobilité': 0,
+        'weight_profile': 'Équilibré',
+        'notes_qualitatives': "Olga et Dimitri cherchent un environnement calme pour leurs enfants."
     },
     "3": {
         'nom': 'Aïcha',
@@ -187,31 +205,21 @@ DEMO_SCENARIOS = {
         'nb_enfants': 2,
         'codes_metiers': [['K1302']],
         'classe_enfants': ['Crèche / Assistante Maternelle', 'Collège'],
-        'inc_services_add_selection': ['lecture-ecriture-calcul--maitriser-le-francais'],
-        'poids_mobilité': 50,
-        'poids_inclusion': 100,
-        'poids_emploi': 100,
+        'inc_services_add_selection': DEFAULT_INC_SERVICES_CORE + ['lecture-ecriture-calcul--maitriser-le-francais'],
+        'weight_profile': 'Famille',
+        'poids_emploi': 25,
+        'poids_logement': 100,
+        'poids_education': 100,
+        'poids_inclusion': 50,
+        'poids_sante': 50,
+        'poids_mobilité': 25,
         'sante': "Maternité",
         'inc_asso_add_selection': ['Entraide / Bénévolat'],
-        'loc_search_code': None
+        'loc_search_code': None,
+        'notes_qualitatives': "Aïcha souhaite passer son permis et cherche une boucherie Hallal à proximité"
     }
 }
 
-WALDEC_CORE_INCLUSION = [
-    # --- SOCIAL & ENTRAIDE ---
-    # "009",    # ACTION SOCIOCULTURELLE (Tout le niveau 1 : Centres sociaux, MJC...)
-    "015070", # Apprentissage de langues, alphabétisation (CRITIQUE)
-    # "015095", # Soutien scolaire
-    # "019016", # Aide à l'insertion des jeunes
-    # "019020", # Aide aux chômeurs
-    "019025", # Aide aux réfugiés et aux immigrés (CRITIQUE)
-    "020",    # ASSOCIATIONS CARITATIVES, HUMANITAIRES (Tout le niveau 1 : Secours, Alimentaire...)
-    "024",    # Entraide et solidarité
-    # "021",    # SERVICES FAMILIAUX (Crèches, Halte-garderie...)
-    # "014030", # Associations de parents d'élèves (Indicateur de vie scolaire)
-    # "014040", # Associations de locataires (Indicateur de vie de quartier)
-    # "024020", # Garde d'enfants, crèches parentales
-]
 
 # 2. LE DICTIONNAIRE D'AFFINITÉS (Pour le matching "Projet de Vie")
 # Clés = Ce que le TS sélectionne dans le multiselect
@@ -267,7 +275,7 @@ WALDEC_INC_ASSO_ADD_MAPPING = {
 
 def get_relevant_rna_codes() -> List[str]:
     """Retourne une liste plate unique de tous les codes utiles pour l'extraction SQL/Pandas"""
-    all_codes = set(WALDEC_CORE_INCLUSION)
+    all_codes = set()
     for code_list in WALDEC_INC_ASSO_ADD_MAPPING.values():
         all_codes.update(code_list)
     return list(all_codes)

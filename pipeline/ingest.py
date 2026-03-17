@@ -609,11 +609,6 @@ def clean_associations(config: Dict[str, Any], logger: PipelineLogger):
         # For now, let's try to load from app.config if possible, or just use a known list.
         # To avoid dependency issues, I will read them from config.py if I can, or just skip filtering here?
         # No, I need to filter to get 'lien_social'.
-        # Let's import from app.config carefully.
-        import sys
-        sys.path.append(str(Path(__file__).resolve().parent.parent))
-        from app import config as cfg
-        core_prefixes = tuple(cfg.WALDEC_CORE_INCLUSION)
         
         df['id_waldec'] = df['id_waldec'].astype(str).str.zfill(6)
         df['codgeo'] = df['codgeo'].astype(str).str.zfill(5)

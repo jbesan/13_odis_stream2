@@ -124,4 +124,37 @@ _(Most features omitted for brevity. Appending F-42)_
 
 ### 📊 Status
 
-- **March 2026**: Planned and under implementation.
+## 🚀 Feature [F-47]: Amélioration de la Sélection des Métiers (ROME)
+
+### 📝 User Story
+
+- En tant que travailleur social, je veux que la liste des métiers proposés soit plus courte et mette en avant les métiers les plus prometteurs pour faciliter la saisie du projet de vie.
+- Je veux que la liste soit triée par volume d'offres d'emploi réelles pour orienter l'usager vers les secteurs qui recrutent.
+
+### 🔑 Key Features
+
+- **Tri par pertinence :** La liste des codes ROME dans le formulaire est triée par le nombre total d'offres d'emploi (`total_postes`) enregistrées dans `odis_ft_jobs_agg.parquet`.
+- **Troncature (Top 200) :** Limiter la liste initiale aux 200 métiers les plus demandés (couvrant ~75% du marché) pour éviter de perdre l'utilisateur dans une liste de 1500+ codes.
+- **Support des codes existants :** Assurer que les codes ROME saisis manuellement ou via des scénarios démo qui ne seraient pas dans le Top 200 restent fonctionnels et affichables.
+
+### 📊 Status
+
+- **March 2026**: Definition and implementation started.
+
+## 🚀 Feature [F-48]: Refonte de la Section Inclusion (Autres Besoins)
+
+### 📝 User Story
+
+- En tant que travailleur social, je veux que les besoins d'inclusion les plus courants (FLE, accompagnement administratif, recherche d'emploi) soient mis en avant via des cases à cocher simples et pré-remplies.
+- Je veux une interface simplifiée où les critères "socle" et "additionnels" sont fusionnés pour plus de clarté dans le scoring.
+
+### 🔑 Key Features
+
+- **Simplification UI :** Remplacement du multiselect "Socle Administratif" caché par une série de 10-12 checkboxes explicites pour les besoins prioritaires.
+- **Valeurs par Défaut :** Les 3 services du "Socle Administratif" actuel sont cochés par défaut.
+- **Fusion du Scoring :** Suppression du critère `inc_services_core_scaled`. Tous les services sélectionnés (via checkboxes ou multiselect complémentaire) sont désormais agrégés dans un score unique `inc_services_add_scaled`.
+- **Filtre Dynamique :** Le multiselect "Autres services" ne propose plus les services déjà présents sous forme de checkboxes pour éviter les doublons.
+
+### 📊 Status
+
+- **March 2026**: Definition and implementation started.

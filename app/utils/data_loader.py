@@ -109,16 +109,12 @@ def ensure_data_initialized() -> None:
             )
             logger.error(f"RNARagService init failed: {e}")
 
-    # --- J'Accueille BigQuery Fetch (New) ---
-    if 'jaccueille_data' not in st.session_state:
-        st.session_state['jaccueille_data'] = fetch_jaccueille_data_bq()
-        if not st.session_state['jaccueille_data'].empty:
-            st.session_state['jaccueille_status'] = "connected"
-        else:
-            st.session_state['jaccueille_status'] = "failed"
+    # --- J'Accueille BigQuery Fetch (Managed via cache) ---
+    # We no longer store it in session_state here, as it's fetched via load_all_data_raw -> fetch_jaccueille_data_bq (cached)
+    pass
 
-def fetch_jaccueille_data_bq() -> pd.DataFrame:
-    """Fetches J'Accueille host counts from BigQuery."""
+def _fetch_jaccueille_data_bq_logic() -> pd.DataFrame:
+    """Internal logic to fetch J'Accueille host counts from BigQuery."""
     try:
         from google.cloud import bigquery
         client = bigquery.Client(project="odis-stream2")
@@ -130,19 +126,48 @@ def fetch_jaccueille_data_bq() -> pd.DataFrame:
         logger.error(f"J'Accueille BQ fetch failed: {e}")
         return pd.DataFrame(columns=['bassin_de_vie', 'heb_accueillants_count'])
 
-    # Show warning if some data failed to load
-    load_errors = st.session_state['app_data'].get('_load_errors', [])
-    if load_errors:
-        st.toast(
-            f"⚠️ Attention: Certains jeux de données ({len(load_errors)}) n'ont pas pu être chargés. "
-            f"Les résultats peuvent être incomplets.",
-            icon="⚠️"
-        )
-        for err in load_errors:
-            logger.error(f"Missing required data file: {err}")
+@st.cache_data(ttl=3600)
+def fetch_jaccueille_data_bq_cached() -> pd.DataFrame:
+    """Cached version of J'Accueille fetch for Streamlit."""
+    return _fetch_jaccueille_data_bq_logic()
 
-    scores_path = os.path.join(cfg.APP_DIR, cfg.SCORES_CAT_FILE)
-    st.session_state['app_data']['scores_cat'] = load_scores_config_as_df(scores_path)
+def fetch_jaccueille_data_bq() -> pd.DataFrame:
+    """
+    Fetches J'Accueille host counts, using Streamlit cache if context is available,
+    otherwise fetching directly (useful for background threads or MCP).
+    """
+    try:
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+        if get_script_run_ctx():
+            return fetch_jaccueille_data_bq_cached()
+    except ImportError:
+        pass
+    return _fetch_jaccueille_data_bq_logic()
+
+def _enrich_rome_index(rome_index: pd.DataFrame, live_jobs_data: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Enriches the ROME index with job offer counts and returns both the full 
+    sorted index and the top items list.
+    """
+    if rome_index.empty or live_jobs_data.empty:
+        return rome_index, rome_index.head(200)
+
+    # 1. Aggregate total_postes by romeCode
+    # Note: romeCode and romeLibelle are guaranteed in live_jobs_data as per user snippet
+    jobs_top = live_jobs_data.groupby('romeCode')['total_postes'].sum().to_frame()
+    
+    # 2. Join to rome_index
+    enriched_rome = rome_index.copy()
+    enriched_rome = enriched_rome.join(jobs_top, how='left')
+    enriched_rome['total_postes'] = enriched_rome['total_postes'].fillna(0)
+    
+    # 3. Sort by total_postes desc, then by label alpha
+    enriched_rome = enriched_rome.sort_values(by=['total_postes', 'label'], ascending=[False, True])
+    
+    # 4. Create Top 200
+    rome_top_index = enriched_rome.head(200)
+    
+    return enriched_rome, rome_top_index
 
 def _load_parquet(path: str, columns: Optional[list] = None, error_list: Optional[list] = None) -> pd.DataFrame:
     """Internal non-cached loader with error tracking."""
@@ -371,6 +396,9 @@ def load_all_data_raw() -> Dict[str, Any]:
     
     scores_cat = load_scores_config_as_df(os.path.join(cfg.APP_DIR, cfg.SCORES_CAT_FILE))
 
+    # --- Enrichment: ROME Index Sorting & Truncation [F-47] ---
+    rome_index, rome_top_index = _enrich_rome_index(rome_index, live_jobs_data)
+
     # 5. Bassins de Vie Geo
     bv_path = os.path.join(base_path, cfg.BV_FILE)
     bv_geo = _load_parquet(bv_path, error_list=load_errors)
@@ -392,10 +420,8 @@ def load_all_data_raw() -> Dict[str, Any]:
             bv_geo['libgeo'] = bv_geo.index.astype(str).map(bv_names)
             bv_geo['libgeo'] = bv_geo['libgeo'].fillna(bv_geo.index.to_series())
 
-    # --- 5b. Enrich with dynamic J'Accueille data ---
-    df_jacc = st.session_state.get('jaccueille_data')
-    if df_jacc is None or df_jacc.empty:
-        df_jacc = fetch_jaccueille_data_bq()
+    # --- 5b. Enrich with dynamic J'Accueille data (Cached) ---
+    df_jacc = fetch_jaccueille_data_bq()
 
     if df_jacc is not None and not df_jacc.empty:
         # Join to BV
@@ -441,6 +467,7 @@ def load_all_data_raw() -> Dict[str, Any]:
         'odis': odis,
         'scores_cat': scores_cat,
         'rome_index': rome_index,
+        'rome_top_index': rome_top_index,
         'codformations_index': codformations_index,
         'inclusion_services_index': inclusion_services_index,
         'annuaire_ecoles': annuaire_ecoles,

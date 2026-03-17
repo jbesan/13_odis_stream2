@@ -45,8 +45,6 @@ class SearchCriterias(BaseModel):
     type_logement: Optional[CriteriaItem] = Field(None, description="Enriched housing type (e.g., 'Appartement', 'Maison')")
     besoin_sante: Optional[str] = Field(None, description="Specific health need (e.g. 'Maternité')")
 
-    # Core Inclusion Services
-    inc_services_core_selection: List[CriteriaItem] = Field(default_factory=list, description="List of core inclusion services codes")
 
     # Qualitative notes (free text indices for Scout and Synthesis)
     notes_qualitatives: List[str] = Field(default_factory=list, description="List of qualitative notes (e.g. ['Famille libanaise', 'Passions: échecs'])")

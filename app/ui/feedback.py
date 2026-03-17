@@ -56,5 +56,5 @@ def feedback_dialog():
 
 def render_feedback_button():
     """Renders the feedback button, usually in the sidebar."""
-    if st.button("💬 Donner mon avis", use_container_width=True):
+    if st.button("Donner mon avis", icon=":material/comment:", use_container_width=True):
         feedback_dialog()

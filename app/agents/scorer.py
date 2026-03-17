@@ -39,7 +39,7 @@ Les critères de recherche sont injectés automatiquement dans le contexte, util
 3. Remplis `response` avec une synthèse complète et engageante pour l'utilisateur. Tu dois y inclure le Top 5 des villes avec leurs points forts principaux. C'est ce message qui sera affiché directement dans le chat.
 4. Pour `pitches_per_city`, pour chaque ville du Top 5:
     a. Fournis le code INSEE exact (`codgeo`) et le nom (`name`).
-    b. Rédige un `pitch` court et pertinent par rapport au contexte. Cite 3 à 5 points forts concrets et chiffrés (en pourcentage si pertinent).
+    b. Rédige un `pitch` court et pertinent par rapport au contexte. Cite 3 à 5 points forts concrets et chiffrés (en pourcentage si pertinent) sous forme de liste à puces au format markdown.
 5. **IMPORTANT** : Ne retourne jamais les références des données (ex: %{{log_soc_inoc_scaled}}).
 """
 
