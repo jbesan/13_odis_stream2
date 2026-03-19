@@ -156,7 +156,7 @@ def log_search_results(
             else:
                 val_str = str(value)
             md_lines.append(f"| {key} | {val_str} |")
-    md_lines.append(f"| active_criteria | {', '.join(sorted(config.active_criteria)) if config.active_criteria else 'None'} |")
+    # md_lines.append(f"| active_criteria | {', '.join(sorted(config.active_criteria)) if config.active_criteria else 'None'} |")
     md_lines.append("")
 
     # Weights

@@ -15,7 +15,6 @@ DEST_DIR = 'data'
 
 FILES_TO_COPY = [
     'odis_communes.parquet',
-    'odis_communes_pre.parquet',
     'odis_bassins_de_vie.parquet',
     'odis_pois.parquet',
     'odis_associations_agg.parquet',

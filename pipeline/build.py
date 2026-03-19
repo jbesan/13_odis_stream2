@@ -180,6 +180,9 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
                 df_merged['odace_col'] = df_merged.apply(get_col_name, axis=1)
                 
                 # Pivot: 1 row per commune_sk, columns are the 4 housing types
+                # FIX: Coerce to numeric before pivot to avoid "agg function failed [how->mean,dtype->object]"
+                df_merged['loyer_m2_moy'] = pd.to_numeric(df_merged['loyer_m2_moy'], errors='coerce').fillna(0)
+
                 df_pivot = df_merged.pivot_table(
                     index='commune_sk', 
                     columns='odace_col', 
@@ -187,10 +190,19 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
                     aggfunc='mean' # Should be unique per sk/col anyway
                 ).reset_index()
                 
+                # Ensure all 4 expected columns exist even if no data for some profiles
+                expected_cols = [
+                    'loyer_m2_moy_appt_all', 'loyer_m2_moy_appt_t1_t2', 
+                    'loyer_m2_moy_appt_t3_p', 'loyer_m2_moy_house_all'
+                ]
+                for c in expected_cols:
+                    if c not in df_pivot.columns:
+                        df_pivot[c] = np.nan
+
                 # Merge into main GDF on commune_sk
                 if 'commune_sk' in communes_gdf.columns:
                     communes_gdf = communes_gdf.merge(df_pivot, on='commune_sk', how='left')
-                    logging.info(f"Odace Rent: Merged pivoted data. Columns added: {list(df_pivot.columns[1:])}")
+                    logging.info(f"Odace Rent: Merged pivoted data. Columns added: {list(df_pivot.columns)}")
                     logging.info(f"DEBUG: communes_gdf cols after merge: {[c for c in communes_gdf.columns if 'loyer' in c]}")
             else:
                 logging.warning("Odace Rent clean files missing.")

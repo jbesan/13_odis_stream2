@@ -624,7 +624,7 @@ def render_employment_form() -> None:
                     label = row['label']
                     count = row.get('total_postes', 0)
                     count_str = f"{int(count):,}".replace(",", " ")
-                    return f"{label} ({count_str} postes)"
+                    return f"{label} [{count_str} postes]"
                 return str(code)
 
             st.multiselect(
@@ -727,7 +727,8 @@ def render_other_needs_form() -> None:
             for code, row in loisirs_df.iterrows():
                 item = CriteriaItem(code=str(code), label=row['label'])
                 options_items.append(item)
-                item_map[item.code] = f"[{item.code}] {item.label} ({row['count']} assos)"
+                count_str = f"{int(row['count']):,}".replace(",", " ")
+                item_map[item.code] = f"{item.label.title()} [{count_str} assos]"
 
             if 'ui_inc_asso_add_selection' not in st.session_state:
                 st.session_state.ui_inc_asso_add_selection = st.session_state['demo_data'].get('inc_asso_add_selection', [])

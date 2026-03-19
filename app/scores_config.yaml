@@ -221,7 +221,7 @@ scores:
     max_bound: null
   - id: inc_asso_refug_scaled
     category: inclusion
-    source_metric: heb_asso_refug_count
+    source_metric: heb_asso_refug_density
     bdv_factor: 0.8
     computation: precomputed
     display:
@@ -234,7 +234,7 @@ scores:
       tooltip: Densité d'associations spécialisées réfugiés (Source RNA)
     weight: 1.0
     min_bound: 0.0
-    max_bound: 0.05
+    max_bound: 0.3
   - id: inc_siae_density_scaled
     category: inclusion
     source_metric: inc_siae_density
@@ -250,7 +250,7 @@ scores:
       tooltip: Densité de structures d'insertion (ACI, AI, EI, ETTI, EITI)
     weight: 1.0
     min_bound: 0.0
-    max_bound: 0.2
+    max_bound: 0.5
   - id: inc_asso_add_scaled
     category: inclusion
     source_metric: affinite_density
@@ -382,7 +382,7 @@ scores:
     min_bound: null
     max_bound: null
   - id: sante_structures_scaled
-    category: santé
+    category: sante
     source_metric: sante_structures_scaled
     bdv_factor: 0.5
     computation: precomputed
@@ -442,8 +442,8 @@ scores:
       display_factor: 100
       tooltip: Evolution de la population des moins de 15 ans entre 2016 et 2022
     weight: 1.0
-    min_bound: -0.1
-    max_bound: 0.1
+    min_bound: -0.2
+    max_bound: 0.2
   - id: workclass_decline_scaled
     category: emploi
     source_metric: workclass_growth_rate
@@ -589,7 +589,7 @@ scores:
       tooltip: Capacité d'accueil totale en CHRS et CPH pour 1000 habitants (Source BPE)
     weight: 2.0
     min_bound: 0.0
-    max_bound: 5.0
+    max_bound: 2.5
 
   - id: heb_foyers_scaled
     category: logement
@@ -610,7 +610,7 @@ scores:
 
   - id: heb_asso_habitant_scaled
     category: logement
-    source_metric: heb_habitant_count
+    source_metric: heb_habitant_density
     bdv_factor: 0.8
     computation: precomputed
     display:
@@ -623,7 +623,7 @@ scores:
       tooltip: Densité d'associations proposant de l'hébergement citoyen (Source RNA/RNAG)
     weight: 2.0
     min_bound: 0.0
-    max_bound: 0.1
+    max_bound: 0.2
 
   - id: heb_jaccueille_score
     category: logement

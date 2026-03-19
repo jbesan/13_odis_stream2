@@ -22,8 +22,8 @@ class OdaceClient:
             "Content-Type": "application/json"
         }
 
-    def _get_preview(self, table_name: str, limit: int = 50000, ttl_seconds: int = 7 * 24 * 60 * 60) -> Optional[Dict[str, Any]]:
-        """Fetches table preview from Odace API with local caching (default 1 week TTL)."""
+    def _get_preview(self, table_name: str, limit: int = 50000, ttl_seconds: int = 7 * 24 * 60 * 60, sort_by: str = None) -> Optional[Dict[str, Any]]:
+        """Fetches table data from Odace /api/data/query with robust SQL pagination."""
         cache_file = CACHE_DIR / f"odace_{table_name}.json"
         
         # Check cache
@@ -37,23 +37,23 @@ class OdaceClient:
                 except Exception as e:
                     logging.warning(f"OdaceClient: Failed to read cache for {table_name}: {e}")
 
-        # Implementation of chunked fetching to avoid 500 errors on large datasets
-        url = f"{self.api_url}/api/data/preview/silver/{table_name}"
+        # Implementation of chunked fetching using SQL OFFSET/LIMIT
+        url = f"{self.api_url}/api/data/query"
         all_data = []
         chunk_size = 50000
         offset = 0
-        total_rows = None
         
         try:
-            logging.info(f"OdaceClient: Starting chunked fetch for {table_name}...")
+            logging.info(f"OdaceClient: Starting chunked fetch for silver_{table_name} via SQL...")
+            order_clause = f" ORDER BY {sort_by}" if sort_by else ""
             
             while True:
+                fetch_limit = min(chunk_size, limit - len(all_data)) if limit else chunk_size
+                sql = f"SELECT * FROM silver_{table_name}{order_clause} LIMIT {fetch_limit} OFFSET {offset}"
+                
                 payload = {
-                    "limit": min(chunk_size, limit - len(all_data)) if limit else chunk_size,
-                    "offset": offset,
-                    "filters": None,
-                    "sort_by": None,
-                    "sort_order": "asc"
+                    "sql": sql,
+                    "limit": fetch_limit
                 }
                 
                 response = requests.post(url, headers=self.headers, json=payload, timeout=60)
@@ -63,22 +63,18 @@ class OdaceClient:
                 chunk_data = chunk_resp.get("data", [])
                 all_data.extend(chunk_data)
                 
-                if total_rows is None:
-                    total_rows = chunk_resp.get("total_rows", 0)
-                    logging.info(f"OdaceClient: {table_name} total rows: {total_rows}")
+                logging.info(f"OdaceClient: Fetched {len(all_data)} rows...")
                 
-                logging.info(f"OdaceClient: Fetched {len(all_data)}/{min(limit, total_rows) if limit else total_rows} rows...")
-                
-                if not chunk_data or (limit and len(all_data) >= limit) or (total_rows and len(all_data) >= total_rows):
+                if not chunk_data or len(chunk_data) < fetch_limit or (limit and len(all_data) >= limit):
                     break
                     
                 offset += chunk_size
-                time.sleep(0.5) # Subtle throttling
+                time.sleep(0.5)
 
             full_resp = {
                 "data": all_data,
                 "columns": chunk_resp.get("columns", []),
-                "total_rows": total_rows
+                "total_rows": len(all_data)
             }
             
             # Save to cache
@@ -93,50 +89,56 @@ class OdaceClient:
             return full_resp
             
         except Exception as e:
-            error_msg = f"Failed to fetch {table_name}: {str(e)}"
+            error_msg = f"Failed to fetch {table_name} via query: {str(e)}"
             logging.error(error_msg)
+            
+            # Fallback to expired cache if available
+            if cache_file.exists():
+                logging.warning(f"OdaceClient: API failed for silver_{table_name}, falling back to existing cache ({cache_file.name})")
+                try:
+                    with open(cache_file, "r") as f:
+                        return json.load(f)
+                except:
+                    pass
+
             if self.logger:
                 self.logger.log_source(f"odace_{table_name}", "ERROR", error_msg)
             return None
 
     def fetch_dim_commune(self) -> pd.DataFrame:
         """Fetches dim_commune and returns as DataFrame (1 year TTL)."""
-        resp = self._get_preview("dim_commune", ttl_seconds=365 * 24 * 60 * 60)
+        resp = self._get_preview("dim_commune", ttl_seconds=365 * 24 * 60 * 60, sort_by="commune_sk")
         if not resp or not resp.get("data"):
             return pd.DataFrame()
         
         df = pd.DataFrame(resp["data"])
-        # Columns: commune_sk, commune_insee_code, commune_label, departement_code, region_code
         return df
 
     def fetch_dim_gare(self) -> pd.DataFrame:
         """Fetches dim_gare and returns as DataFrame (1 year TTL)."""
-        resp = self._get_preview("dim_gare", ttl_seconds=365 * 24 * 60 * 60)
+        resp = self._get_preview("dim_gare", ttl_seconds=365 * 24 * 60 * 60, sort_by="gare_sk")
         if not resp or not resp.get("data"):
             return pd.DataFrame()
             
         df = pd.DataFrame(resp["data"])
-        # Columns: gare_sk, commune_sk, gare_code, gare_label...
         return df
 
     def fetch_fact_loyer_annonce(self, limit: int = 200000) -> pd.DataFrame:
         """Fetches fact_loyer_annonce and returns as DataFrame (1 month TTL)."""
-        resp = self._get_preview("fact_loyer_annonce", limit=limit, ttl_seconds=30 * 24 * 60 * 60)
+        resp = self._get_preview("fact_loyer_annonce", limit=limit, ttl_seconds=30 * 24 * 60 * 60, sort_by="commune_sk")
         if not resp or not resp.get("data"):
             return pd.DataFrame()
             
         df = pd.DataFrame(resp["data"])
-        # Columns: commune_sk, logement_profil_sk, loyer_m2_moy, score_qualite, maille_observation...
         return df
 
     def fetch_ref_logement_profil(self) -> pd.DataFrame:
         """Fetches ref_logement_profil and returns as DataFrame."""
-        resp = self._get_preview("ref_logement_profil")
+        resp = self._get_preview("ref_logement_profil", sort_by="logement_profil_sk")
         if not resp or not resp.get("data"):
             return pd.DataFrame()
             
         df = pd.DataFrame(resp["data"])
-        # Columns: logement_profil_sk, logement_type, typologie, annee...
         return df
 
 

@@ -1699,10 +1699,18 @@ def clean_odace_rent(config: Dict[str, Any], logger: PipelineLogger):
         logging.warning("Odace API returned empty data for rent facts or housing profiles.")
         return
 
-    # Filter for relevant data (as per user instructions: maille_observation == 'commune')
+    # Filter for relevant data (Prioritize 'commune', fallback to 'maille' if commune not available)
     if 'maille_observation' in df_rent.columns:
-        df_rent = df_rent[df_rent['maille_observation'] == 'commune'].copy()
-        logging.info(f"Odace Rent: Filtered for maille='commune'. {len(df_rent)} rows remaining.")
+        # Define priority (smaller number = higher priority)
+        priority_map = {'commune': 1, 'maille': 2, 'EPCI': 3}
+        df_rent['maille_priority'] = df_rent['maille_observation'].map(priority_map).fillna(99)
+        
+        # Sort and drop duplicates for each (commune_sk, logement_profil_sk)
+        df_rent = df_rent.sort_values(['commune_sk', 'logement_profil_sk', 'maille_priority'])
+        df_rent = df_rent.drop_duplicates(subset=['commune_sk', 'logement_profil_sk'])
+        
+        logging.info(f"Odace Rent: Filtered and deduplicated. {len(df_rent)} rows remaining.")
+        df_rent = df_rent.drop(columns=['maille_priority'])
 
     # Save to Clean Dir
     df_rent.to_parquet(CLEAN_DIR / "odace_loyer_annonce.parquet", index=False)

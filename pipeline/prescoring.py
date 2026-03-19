@@ -431,7 +431,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             'svc_incl_count',
             # 'count_hopital', 'count_psy', 'count_maternite', # KEEP for details
             # 'log_soc_inoc_ratio', 'log_pp_occup', # KEEP for details
-            # 'metiers_offres_ratio', 'pop_chomage_ratio', # 'met_ratio', # KEEP
+            # 'metiers_offres_ratio', 'pop_chomage_ratio', # KEEP
             # 'log_vac_struct_ratio', 'risque_fermeture_ratio', 'bpe_creches_density', # 'lien_social_density', # KEEP
             #'edu_pe_tx_couverture', # 'bpe_creches_count', # KEEP
             # 'lien_social_count', # KEEP
@@ -501,11 +501,6 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
 
         communes_gdf.drop(columns=[c for c in cols_to_drop if c in communes_gdf.columns], inplace=True)
         
-        # DEBUG met_ratio existence
-        if 'met_ratio' in communes_gdf.columns:
-             logging.info("DEBUG: met_ratio present after first drop.")
-        else:
-             logging.warning("DEBUG: met_ratio DROPPED or MISSING after first drop!")
         
         # Additional drop request from user
         more_cols_to_drop = [
