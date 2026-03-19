@@ -204,7 +204,8 @@ def show_unstructured_input_dialog():
     
     text_input = st.text_area(
         "Texte source", 
-        height=300, 
+        height="content", 
+        width="stretch",
         placeholder="Ex: J'accompagne une famille de 4 personnes (2 adultes, 2 enfants en primaire). Ils cherchent un logement social à Bordeaux...",
         label_visibility="collapsed"
     )
@@ -214,7 +215,7 @@ def show_unstructured_input_dialog():
     analysis_key = "unstructured_analysis_result"
     
     with col1:
-        if st.button("Extraire les critères de rechere", type="primary", use_container_width=True):
+        if st.button("Détecter les critères de recherche", type="primary", width="content"):
             if not text_input.strip():
                 st.warning("Veuillez saisir du texte avant de lancer l'analyse.")
             else:
@@ -258,8 +259,8 @@ with col_ia:
     st.markdown("""
         <div class="step-card" style="min-height: 250px; justify-content: space-between; padding: 30px;">
             <div>
-                <div style="font-size: 3rem; margin-bottom: 15px;">🤖</div>
-                <h3 style="font-weight: bold; font-size: 1.5rem; margin-bottom: 10px;">Je ne veux pas tout resaisir</h3>
+                <div style="font-size: 3rem; margin-bottom: 15px;">⚡️</div>
+                <h3 style="font-weight: bold; font-size: 1.5rem; margin-bottom: 10px;">Auto Détection</h3>
                 <div style="font-size: 1.1rem; margin-bottom: 20px;">
                     Copiez-collez un email ou un document texte décrivant la situation et les besoins de la personne accompagnée, on essaiera de pré-remplire le fomulaire pour vous.
                 </div>
@@ -269,7 +270,7 @@ with col_ia:
     
     with st.container(border=True):
         #  st.write("") # Alignment spacer to match the input height on the left
-         if st.button("Lancer le mode flemme", type="primary", use_container_width=True, key="btn_ia"):
+         if st.button("Démarrer Auto-Detect", type="primary", use_container_width=True, key="btn_ia"):
 
             show_unstructured_input_dialog()
             #  st.switch_page("pages/4_AI_Chatbot.py")
