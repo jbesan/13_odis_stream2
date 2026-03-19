@@ -1,9 +1,11 @@
-from shapely import wkb
 import logging
 import pandas as pd
 import geopandas as gpd
 import numpy as np
-from typing import Dict, Any
+import yaml
+from shapely import wkb
+from typing import Dict, Any, Optional
+from pathlib import Path
 
 from pipeline.common import (
     PipelineLogger, load_config,
@@ -11,11 +13,71 @@ from pipeline.common import (
 )
 import app.config as cfg
 
-import logging
-import pandas as pd
-import geopandas as gpd
-import numpy as np
-from typing import Dict, Any
+# Global Scores Config cache
+_scores_config_cache = {}
+
+def get_scores_config():
+    global _scores_config_cache
+    if _scores_config_cache:
+        return _scores_config_cache
+        
+    app_config_path = Path(__file__).parent.parent / "app" / "scores_config.yaml"
+    
+    if app_config_path.exists():
+        with open(app_config_path, 'r') as f:
+            full_config = yaml.safe_load(f)
+            if 'scores' in full_config:
+                for s in full_config['scores']:
+                    _scores_config_cache[s['id']] = {
+                        'min': s.get('min_bound'), 
+                        'max': s.get('max_bound'),
+                        'scaling_type': s.get('scaling_type', 'linear'),
+                        'mu': s.get('mu'),
+                        'sigma': s.get('sigma')
+                    }
+    else:
+        logging.warning(f"App config not found at {app_config_path}")
+    return _scores_config_cache
+
+def scale_series(series, min_b, max_b, inverted=False):
+    if series.empty: return series
+    denom = max_b - min_b
+    if denom == 0:
+        scaled = pd.Series(0.0 if not inverted else 1.0, index=series.index)
+    else:
+        scaled = (series - min_b) / denom
+        
+    if inverted and denom != 0:
+        scaled = 1.0 - scaled
+    return scaled.clip(0, 1)
+
+def get_min_max(series):
+    if series.empty: return 0.0, 1.0
+    return float(series.min()), float(series.max())
+
+def process_scaling(df, col_name, output_col, inverted=False):
+    if col_name not in df.columns: return
+    
+    scores_config = get_scores_config()
+    conf = scores_config.get(output_col, {})
+    scaling_type = conf.get('scaling_type', 'linear')
+    
+    if scaling_type == 'gaussian':
+        mu = float(conf.get('mu', 50000))
+        sigma = float(conf.get('sigma', 40000))
+        logging.info(f"Applying Gaussian scaling to {col_name} -> {output_col} (mu={mu}, sigma={sigma})")
+        df[output_col] = np.exp(-0.5 * ((df[col_name] - mu) / sigma)**2)
+        return
+
+    c_min, c_max = conf.get('min'), conf.get('max')
+    
+    if c_min is not None and c_max is not None:
+        min_b, max_b = c_min, c_max
+    else:
+        min_b, max_b = get_min_max(df[col_name])
+        
+    df[output_col] = scale_series(df[col_name], min_b, max_b, inverted)
+
 
 def aggregate_plm(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """Aggregates data from arrondissements to the global commune for PLM."""
@@ -239,84 +301,9 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
                     0.0
                 )
         
-        # --- Load Configuration ---
-        import yaml
-        from pathlib import Path
-        
         # Load App Config for Scores (Source of Truth)
-        # We access the sibling 'app' directory
-        app_config_path = Path(__file__).parent.parent / "app" / "scores_config.yaml"
-        scores_config = {}
+        scores_config = get_scores_config()
         socle_admin_list = []
-        
-        if app_config_path.exists():
-            with open(app_config_path, 'r') as f:
-                full_config = yaml.safe_load(f)
-                # Parse scores config into a dict for easy lookup: id -> {min: x, max: y}
-                if 'scores' in full_config:
-                    for s in full_config['scores']:
-                        scores_config[s['id']] = {
-                            'min': s.get('min_bound'), 
-                            'max': s.get('max_bound')
-                        }
-        else:
-             logging.warning(f"App config not found at {app_config_path}")
-
-        # Note: socle_admin list is separate... currently in prescoring_config or app?
-        # User wants unified. socle_admin is in app/config.py usually, not scores_config.yaml.
-        # But we previously created prescoring_config.yaml for it.
-        # We will keep prescoring_config ONLY for socle_admin if it's not in scores_config?
-        # Or better: Read it from prescoring_config if exists, else empty?
-        # User said "Pipeline vs App configs" split was bad.
-        # Let's check prescoring_config.yaml content. It has socle_admin.
-        # We can keep prescoring_config.yaml JUST for pipeline-specific inputs that aren't scores.
-        # OR put socle_admin in scores_config? No, it's a list of slugs.
-        # Let's keep prescoring_config.yaml for INPUTS (socle slugs) but use scores_config.yaml for BOUNDS.
-        
-        # Use defaults from app.config
-        default_socle_admin = cfg.DEFAULT_INC_SERVICES_CORE
-
-
-        # --- Scaling ---
-        logging.info(f"DEBUG: communes_gdf cols before scaling: {[c for c in communes_gdf.columns if 'loyer' in c]}")
-        def get_min_max(series):
-            return series.quantile(0.01), series.quantile(0.99)
-            
-        def scale_series(series, min_b, max_b, inverted=False):
-            if max_b is None or min_b is None:
-                 # Fallback to auto-detection (should check caller, but safe here)
-                 min_b, max_b = get_min_max(series)
-                 
-            if max_b == min_b: return 1.0 if inverted else 0.0
-            
-            # Cast bounds to float just in case
-            min_b, max_b = float(min_b), float(max_b)
-            
-            denom = max_b - min_b
-            if denom == 0:
-                scaled = pd.Series(0.0 if not inverted else 1.0, index=series.index)
-            else:
-                scaled = (series - min_b) / denom
-                
-            if inverted and denom != 0:
-                scaled = 1.0 - scaled
-            return scaled.clip(0, 1)
-
-        # Helper to get bounds from config or auto-calc
-        def process_scaling(df, col_name, output_col, inverted=False):
-            if col_name not in df.columns: return
-            
-            conf = scores_config.get(output_col, {})
-            c_min, c_max = conf.get('min'), conf.get('max')
-            
-            # If config has bounds, use them. Else auto-calc.
-            if c_min is not None and c_max is not None:
-                min_b, max_b = c_min, c_max
-            else:
-                min_b, max_b = get_min_max(df[col_name])
-                
-            df[output_col] = scale_series(df[col_name], min_b, max_b, inverted)
-
         
         
         # Updated Housing Rent Scaling (ODACE source)
@@ -338,7 +325,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         # Fixed logic:
         process_scaling(communes_gdf, 'log_vac_struct_ratio', 'log_vac_scaled')
         process_scaling(communes_gdf, 'lien_social_density', 'inc_asso_core_scaled')
-        process_scaling(communes_gdf, 'heb_asso_refug_density', 'heb_asso_refug_scaled')
+        process_scaling(communes_gdf, 'heb_asso_refug_density', 'inc_asso_refug_scaled')
         process_scaling(communes_gdf, 'inc_siae_density', 'inc_siae_density_scaled')
         process_scaling(communes_gdf, 'population', 'inc_population_scaled')
         
@@ -629,7 +616,7 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
 
         if 'heb_asso_refug_density' in bv_gdf.columns:
             min_b, max_b = get_min_max(bv_gdf['heb_asso_refug_density'])
-            bv_gdf['heb_asso_refug_scaled'] = scale_series(bv_gdf['heb_asso_refug_density'], min_b, max_b)
+            bv_gdf['inc_asso_refug_scaled'] = scale_series(bv_gdf['heb_asso_refug_density'], min_b, max_b)
         
         if 'inc_siae_density' in bv_gdf.columns:
             min_b, max_b = get_min_max(bv_gdf['inc_siae_density'])
@@ -642,7 +629,7 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
         # --- 3. Weighted Averages from Communes ---
         metrics_to_avg = [
             'inc_services_core_scaled', 
-            'heb_asso_refug_scaled',
+            'inc_asso_refug_scaled',
             'inc_siae_density_scaled',
             'edu_classes_ferm_scaled', 
             'log_vac_scaled', 
@@ -695,8 +682,7 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
                  
         # --- 4. Special cases ---
         if 'population_bv' in bv_gdf.columns:
-            min_b, max_b = get_min_max(bv_gdf['population_bv'])
-            bv_gdf['inc_population_scaled'] = scale_series(bv_gdf['population_bv'], min_b, max_b)
+            process_scaling(bv_gdf, 'population_bv', 'inc_population_scaled')
             
         # Clean up
         # Clean up

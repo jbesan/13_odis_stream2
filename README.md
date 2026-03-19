@@ -25,7 +25,8 @@ Ce prototype a un triple objectif :
 - **Profil Personnalisé :** Définissez un "projet de vie" détaillé incluant la composition du foyer, le niveau scolaire des enfants, les métiers visés, les besoins en formation, etc.
 - **Pondération Avancée :** Choisissez un profil prédéfinis (Équilibré, Famille, Santé, Emploi) ou activez le **Mode Expert** pour un réglage fin des poids de chaque catégorie.
 - **Vue par Bassin de Vie ([DEPRECATED]) :** Permet d'agréger les résultats à l'échelle des "bassins de vie" de l'INSEE. Cette fonctionnalité est maintenue pour compatibilité mais le projet privilégie désormais la vue par commune.
-- **Scoring Intelligent :** Chaque commune de France est évaluée sur sa compatibilité avec le profil via un modèle de données typé (Pydantic). La taille de la population n'est plus un filtre mais un critère de score.
+- **Scoring Intelligent :** Chaque commune de France est évaluée sur sa compatibilité avec le profil via un modèle de données typé. La taille de la population est traitée via un **score Gaussien** (favorisant les villes moyennes autour de 50 000 habitants) plutôt qu'un simple filtre.
+- **Optimisation Mémoire :** Le moteur de recherche est optimisé pour traiter des milliers de communes en limitant le chargement des colonnes redondantes et en purgeant les indicateurs non pertinents après le calcul des scores (Deny-list).
 - **Système de "Binômes" ([DEPRECATED]) :** L'algorithme associait des communes voisines pour proposer des solutions conjointes. Cette logique est en cours de remplacement par l'enrichissement automatique via le bassin de vie.
 - **Carte Interactive :** Visualisez les localités les mieux notées, leur score, et superposez des couches d'informations additionnelles (écoles, établissements de santé, services d'inclusion).
 - **Résultats Détaillés & Export PDF :** Explorez les 5 meilleurs résultats avec une analyse comparative générée automatiquement par l'IA et exportez un rapport PDF complet incluant ces analyses.
@@ -91,9 +92,9 @@ Le cœur de l'application est un pipeline de scoring qui évalue les communes (o
 
 1.  **Filtrage Géographique :** Le moteur délimite la zone de recherche selon le périmètre choisi (Département, Région, France Métropolitaine) ou une zone spécifique (Custom). Il n'utilise plus de rayon en km mais des limites administratives réelles.
 2.  **Calcul des Critères :** Il calcule des dizaines de scores individuels pour chaque commune (Emploi, Logement, Santé, etc.).
-3.  **Enrichissement par le Bassin de Vie :** Pour certains critères (ex: Éducation, Santé), le score d'une commune est **enrichi** par les services présents dans son bassin de vie. Si une commune n'a pas de lycée mais qu'il y en a un dans son bassin de vie, elle reçoit un score partiel (via le `bdv_factor` défini dans [scores_config.yaml](./app/scores_config.yaml)). Cela permet de valoriser les communes qui bénéficient des services de leur territoire proche.
+3.  **Enrichissement par le Bassin de Vie :** Pour certains critères (ex: Éducation, Santé), le score d'une commune est bonifié par les opportunités du Bassin de Vie via une logique de Boost non-pénalisante. Si une commune n'a pas de lycée mais qu'il y en a un dans son Bassin de Vie, elle reçoit un bonus (via le `bdv_factor` défini dans [scores_config.yaml](./app/scores_config.yaml)). Cela permet de valoriser les communes qui bénéficient des services de leur territoire proche.
 4.  **Logique de Binôme ([DEPRECATED]) :** Historiquement, le moteur créait des paires de communes. Cette approche est devenue secondaire face à l'enrichissement par le bassin de vie décrit ci-dessus.
-5.  **Agrégation par Catégorie :** Les scores des critères individuels sont moyennés pour former des scores de catégories. Pour un exemple concret du calcul, consultez le [SCORE_EXAMPLE.md](./SCORE_EXAMPLE.md).
+5.  **Agrégation par Catégorie :** Les scores des critères individuels sont moyennés pour former des scores de catégories. Pour un exemple concret du calcul et une explication détaillée de la logique de boost, consultez la [Documentation du Scoring](./SCORING.md).
 6.  **Agrégation par Bassin de Vie (Optionnel) :** Si l'utilisateur choisit cette vue, **tous les scores** des communes (y compris Éducation, Santé, Inclusion) sont agrégés au niveau du bassin de vie par une **moyenne pondérée par la population**. Cela permet d'obtenir une vue d'ensemble cohérente où les services des grandes communes pèsent plus lourd.
 7.  **Score Pondéré Final :** Enfin, un `weighted_score` global est calculé pour chaque entité (commune ou bassin de vie) en appliquant les poids définis. Le moteur s'appuie sur le modèle `SearchCriterias` pour garantir la cohérence entre l'interface formulaire, le chatbot et l'export PDF. Les résultats sont ensuite classés selon ce score final.
 
@@ -131,7 +132,7 @@ Le score est calculé à partir d'une multitude de critères, regroupés en gran
 - **Taux de Services d'Inclusion** : Mesure la densité de services dédiés à l'inclusion (apprentissage du français, aide juridique, etc.) pour 1000 habitants.
 - **Accompagnement Réfugiés** : Évalue la présence d'associations spécialisées dans l'accueil des personnes réfugiées (Source: RNA filtré).
 - **Présence de Soutien Spécifique** : Vérifie la présence de services répondant aux besoins spécifiques exprimés dans le formulaire (santé, handicap, etc.).
-- **Taille de la Population** : La population de la commune est utilisée comme un critère, favorisant les communes de taille intermédiaire pour un meilleur équilibre accueil/intégration.
+- **Taille de la Population** : Utilisé via une fonction Gaussienne ($\mu$=50k, $\sigma$=40k) pour favoriser les communes de taille intermédiaire et les villes moyennes, offrant un meilleur équilibre accueil/intégration.
 - **Couleur Politique** : Prend en compte l'affiliation politique de la municipalité, en valorisant celles jugées plus favorables à l'accueil.
 
 **Catégorie : Mobilité**

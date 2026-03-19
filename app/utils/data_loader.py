@@ -36,7 +36,10 @@ def load_scores_config_as_df(config_path: str) -> pd.DataFrame:
             'metric': item.get('source_metric'),
             'computation': item.get('computation', 'live'),
             'display_factor': item.get('display', {}).get('display_factor', 1.0),
-            'unit': item.get('display', {}).get('unit', '')
+            'unit': item.get('display', {}).get('unit', ''),
+            'scaling_type': item.get('scaling_type', 'linear'),
+            'mu': item.get('mu'),
+            'sigma': item.get('sigma')
         })
     return pd.DataFrame(data)
 
@@ -79,6 +82,97 @@ def session_states_init(defaults: Dict[str, Any]) -> None:
              for i, val in enumerate(defaults[key_in_defaults]):
                  k = f"{key_base}_{i}"
                  if k not in st.session_state: st.session_state[k] = val
+
+def apply_search_criteria_to_ui(criteria: Any) -> None:
+    """
+    Maps a SearchCriterias model (from AI extraction) to the ui_ session states.
+    Uses dynamic iteration over model fields to ensure 100% parity with UI variables.
+    """
+    if not criteria:
+        return
+
+    # Convert model to dict - ONLY include fields that were explicitly set by the AI
+    # This prevents default values (like weights=0.0) from overwriting profile values.
+    crit_dict = criteria.model_dump(exclude_unset=True) if hasattr(criteria, 'model_dump') else criteria.__dict__
+
+    # 1. Generic flattening (extract code/label from CriteriaItems)
+    def flatten_val(key, v):
+        if isinstance(v, dict) and 'code' in v and 'label' in v:
+            # We want the label for commune input, but codes for everything else
+            return v['label'] if key == 'commune_actuelle' else v['code']
+        if isinstance(v, list):
+            return [flatten_val(key, item) for item in v]
+        return v
+
+    flat_crit = {}
+    for k, v in crit_dict.items():
+        if v is not None:
+            flat_crit[k] = flatten_val(k, v)
+
+    # 2. Iterate and set all ui_ dynamically
+    for k, v in flat_crit.items():
+        st.session_state[f"ui_{k}"] = v
+        
+    # Mapping specific values that are used directly in component initialization
+    if 'commune_actuelle' in flat_crit:
+        st.session_state['ui_commune'] = flat_crit['commune_actuelle']
+        # Try to infer department from the original code if possible
+        if criteria.commune_actuelle and criteria.commune_actuelle.code and len(criteria.commune_actuelle.code) >= 2:
+            st.session_state['ui_departement'] = criteria.commune_actuelle.code[:2]
+
+    # Handle 'sante' field properly
+    if 'besoin_sante' in flat_crit:
+        st.session_state['ui_besoin_sante'] = flat_crit['besoin_sante'] or "Aucun"
+    elif 'sante' in flat_crit:
+        st.session_state['ui_besoin_sante'] = flat_crit['sante'] or "Aucun"
+
+    # 3. Handle specific lists mapping that have index suffixes (e.g. metiers_adult_0)
+    for key_base, crit_key in [('ui_classe_enfant', 'classe_enfants'), 
+                               ('ui_metiers_adult', 'codes_metiers'), 
+                               ('ui_formations_adult', 'codes_formations')]:
+        if crit_key in flat_crit and isinstance(flat_crit[crit_key], list):
+             for i, val in enumerate(flat_crit[crit_key]):
+                 st.session_state[f"{key_base}_{i}"] = val
+
+    # 4. Handle Mobility Form special case (which deviates from 1-to-1 parsing)
+    loc_area = flat_crit.get('loc_search_area')
+    loc_code = flat_crit.get('loc_search_code')
+    
+    if loc_area == 'france':
+        st.session_state['ui_mobility_region'] = 'france'
+    elif loc_area == 'region':
+        st.session_state['ui_mobility_region'] = loc_code
+        st.session_state['ui_mobility_dept'] = "Toute la région"
+    elif loc_area == 'departement' and loc_code:
+        # Infer region for this department
+        app_data = st.session_state.get('app_data', {})
+        dept_details = app_data.get('dept_details', {})
+        reg_code = dept_details.get(loc_code, {}).get('reg_code')
+        if reg_code:
+            st.session_state['ui_mobility_region'] = reg_code
+        st.session_state['ui_mobility_dept'] = loc_code
+        
+    # 5. Handle notes_qualitatives (UI expects a string, model provides a list of strings)
+    if 'notes_qualitatives' in flat_crit:
+        val = flat_crit['notes_qualitatives']
+        if isinstance(val, list):
+            st.session_state['ui_notes_qualitatives'] = "\n".join(val)
+        else:
+            st.session_state['ui_notes_qualitatives'] = str(val) if val else ""
+
+    # 6. Handle Weight Profile & Weights (F-15 & User Feedback)
+    # If a profile is selected, we MUST set the individual ui_poids_... keys
+    # because Streamlit widgets don't trigger on_change when set programmatically.
+    profile = flat_crit.get('weight_profile')
+    if profile in cfg.WEIGHT_PROFILES:
+        profile_weights = cfg.WEIGHT_PROFILES[profile]
+        for pw_key, pw_val in profile_weights.items():
+            st.session_state[f"ui_{pw_key}"] = pw_val
+    
+    # Finally, if any explicit weights were extracted (higher priority), apply them
+    for k, v in flat_crit.items():
+        if k.startswith('poids_'):
+            st.session_state[f"ui_{k}"] = v
 
 def ensure_data_initialized() -> None:
     """Ensures that the session state and datasets are initialized."""
@@ -143,6 +237,30 @@ def fetch_jaccueille_data_bq() -> pd.DataFrame:
     except ImportError:
         pass
     return _fetch_jaccueille_data_bq_logic()
+
+def _enrich_waldec_index(waldec_index: pd.DataFrame, associations_data: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Enriches the WALDEC index with association counts and returns both the full 
+    sorted index and the top items list.
+    """
+    if waldec_index.empty or associations_data.empty:
+        return waldec_index, waldec_index.head(500)
+
+    # 1. Aggregate counts by id_waldec
+    topo_assos = associations_data.groupby('id_waldec')['count'].sum().to_frame()
+    
+    # 2. Join to waldec_index
+    enriched_waldec = waldec_index.copy()
+    enriched_waldec = enriched_waldec.join(topo_assos, how='left')
+    enriched_waldec['count'] = enriched_waldec['count'].fillna(0).astype(int)
+    
+    # 3. Sort by count desc, then by label alpha
+    enriched_waldec = enriched_waldec.sort_values(by=['count', 'label'], ascending=[False, True])
+    
+    # 4. Create Top 500 (Larger than ROME as associations are more diverse)
+    waldec_top_index = enriched_waldec.head(500)
+    
+    return enriched_waldec, waldec_top_index
 
 def _enrich_rome_index(rome_index: pd.DataFrame, live_jobs_data: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
@@ -396,8 +514,9 @@ def load_all_data_raw() -> Dict[str, Any]:
     
     scores_cat = load_scores_config_as_df(os.path.join(cfg.APP_DIR, cfg.SCORES_CAT_FILE))
 
-    # --- Enrichment: ROME Index Sorting & Truncation [F-47] ---
+    # --- Enrichment: Index Sorting & Truncation ---
     rome_index, rome_top_index = _enrich_rome_index(rome_index, live_jobs_data)
+    waldec_index, waldec_top_index = _enrich_waldec_index(waldec_index, associations_data)
 
     # 5. Bassins de Vie Geo
     bv_path = os.path.join(base_path, cfg.BV_FILE)
@@ -416,9 +535,14 @@ def load_all_data_raw() -> Dict[str, Any]:
             bv_geo.set_index(key_col, inplace=True)
             if cfg.BV_CODE_COL != 'bassin_de_vie': bv_geo.index.name = cfg.BV_CODE_COL
 
+        # Drop redundant columns that are NOT needed for scoring and cause overhead when merged as _bdv
+        cols_to_drop = ['polygon', 'centroid', 'libgeo']
+        bv_geo = bv_geo.drop(columns=[c for c in cols_to_drop if c in bv_geo.columns], errors='ignore')
+
         if 'libgeo' not in bv_geo.columns:
-            bv_geo['libgeo'] = bv_geo.index.astype(str).map(bv_names)
-            bv_geo['libgeo'] = bv_geo['libgeo'].fillna(bv_geo.index.to_series())
+            # We still might want to map the name to a column called 'libelle_bassin_de_vie' 
+            # if we didn't have it, but usually it's already in the main odis dataset.
+            pass
 
     # --- 5b. Enrich with dynamic J'Accueille data (Cached) ---
     df_jacc = fetch_jaccueille_data_bq()
@@ -491,6 +615,7 @@ def load_all_data_raw() -> Dict[str, Any]:
         'dept_details': dept_details,
         'refugee_associations_data': refugee_associations_data,
         'waldec_index': waldec_index,
+        'waldec_top_index': waldec_top_index,
         'siae_jobs_data': siae_jobs_data,
         '_load_errors': load_errors
     }

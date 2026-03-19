@@ -133,7 +133,6 @@ class TestScoringLogic:
         
         expected_cols = [
             'met_match_adult1_scaled', 
-            'met_match_adult1_bdv_scaled',
             'met_match_adult1_tension_scaled',
             'log_vac_scaled', 
             'inc_population_scaled',
@@ -623,7 +622,7 @@ class TestInclusionScoringLogic:
         """Tests Affinité score calculation."""
         from types import SimpleNamespace
         prefs = SimpleNamespace(
-            inc_asso_add_selection=['Bricolage / Création'],
+            inc_asso_add_selection=['009'],
             inc_services_add_selection=[]
         )
         engine = scoring.ScoringEngine(
@@ -643,7 +642,7 @@ class TestInclusionScoringLogic:
         assert scores.loc['64445', 'inc_asso_add_scaled'] >= 0
         
         prefs_sport = SimpleNamespace(
-            inc_asso_add_selection=['Sport (Général)'],
+            inc_asso_add_selection=['011'],
             inc_services_add_selection=[]
         )
         engine_sport = scoring.ScoringEngine(

@@ -1260,8 +1260,8 @@ def clean_nomenclature_waldec(config: Dict[str, Any], logger: PipelineLogger):
         
         if code_col and label_col:
             df_out = df[[code_col, label_col]].rename(columns={code_col: 'code', label_col: 'label'})
-            # Ensure strings
-            df_out['code'] = df_out['code'].astype(str)
+            # Ensure strings and zero-padding (6 digits)
+            df_out['code'] = df_out['code'].astype(str).str.zfill(6)
             df_out['label'] = df_out['label'].astype(str)
             
             output_path = CLEAN_DIR / "referentiel_waldec.parquet"

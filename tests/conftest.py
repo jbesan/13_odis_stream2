@@ -85,7 +85,7 @@ def sample_scores_cat():
             'edu_classes_ferm_scaled', 'inc_pol_scaled', 'inc_population_scaled',
             'form_match_adult1_scaled', 'form_match_adult1_bdv_scaled',
             'form_match_adult2_scaled', 'form_match_adult2_bdv_scaled',
-            'mob_dist_scaled', 'mob_epci_scaled',
+            'mob_dist_current_loc_scaled', 'mob_epci_scaled',
             'edu_structures_scaled', 'sante_structures_scaled',
             'besoins_match_scaled',
             'log_loyer_moyen_scaled_appartement_toutes',

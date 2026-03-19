@@ -17,10 +17,23 @@ import warnings
 
 st.set_page_config(layout="wide")
 
+# Reduce padding around results
+st.markdown("""
+<style>
+    .stMainBlockContainer {
+        padding: 2rem;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # --- Authentication ---
 from utils import auth
 if not auth.check_password():
     st.stop()
+    
+# --- Session State Initialization ---
+if 'highlighted_result' not in st.session_state:
+    st.session_state['highlighted_result'] = (False, None)
 
 # --- PDF Modal Logic ---
 if st.session_state.get('show_pdf_modal'):
@@ -321,21 +334,37 @@ with col_map:
         fgs_to_show = {'Scores'}
         legend_items = []
         
-        cols = st.columns(5, vertical_alignment="center")
-        with cols[0]:
-            st.text("Afficher:")
-        with cols[1]:
-            show_top_5 = st.toggle("Top 5", key="show_top_5_toggle", value=True)
-        
         config = st.session_state.get('config')
+        
+        # Build dynamic options for pills
+        pill_options = ["🏠 Top 5"]
+        if config:
+            if config.nb_enfants > 0:
+                pill_options.append("🎓 Éducation")
+            if config.besoin_sante != "Aucun":
+                pill_options.append("🏥 Santé")
+            if config.inc_services_add_selection:
+                pill_options.append("🤝 Inclusion")
+        
+        # Display pills
+        selected_layers = st.pills(
+            "Afficher sur la carte :", 
+            pill_options, 
+            selection_mode="multi", 
+            default=["🏠 Top 5"],
+            key="map_layers_pills",
+            label_visibility="collapsed",
+            # width="stretch"
+        )
+        
+        # Map selections to boolean flags
+        show_top_5 = "🏠 Top 5" in selected_layers
+        show_ecoles = "🎓 Éducation" in selected_layers
+        show_sante = "🏥 Santé" in selected_layers
+        show_inclusion = "🤝 Inclusion" in selected_layers
+
         if config:
             target_codgeos = set(st.session_state.get('unaggregated_gdf', gpd.GeoDataFrame()).index.tolist())
-            with cols[2]:
-                show_ecoles = st.toggle('Éducation', key='show_ecoles_toggle', disabled=(config.nb_enfants == 0))
-            with cols[3]:
-                show_sante = st.toggle('Santé', key='show_sante_toggle', disabled=(config.besoin_sante == "Aucun"))
-            with cols[4]:
-                show_inclusion = st.toggle("Inclusion", key='show_inclusion_toggle', disabled=(not config.inc_services_add_selection))
 
             if show_ecoles:
                 st.session_state.fg_dict_ref['fg_ecoles'] = maps.build_ecoles_layer(st.session_state.app_data['pois'], target_codgeos, config)
@@ -391,4 +420,8 @@ with col_map:
         )
         st.markdown('<style>.stCustomComponentV1 {border-radius:10px}</style>', unsafe_allow_html=True)
 
-
+# To debug criteria scoring
+# try:
+#     st.dataframe(st.session_state.processed_gdf, column_order=sorted(st.session_state.processed_gdf.columns))
+# except:
+#     pass

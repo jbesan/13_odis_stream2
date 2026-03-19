@@ -3,6 +3,7 @@ import streamlit as st
 import config as cfg
 from ui import components as ui
 from utils import data_loader
+from agents.utils import run_async_safe
 import logging
 
 # --- Page Configuration ---
@@ -38,10 +39,10 @@ st.markdown("""
         color: white;
     }
     
-    /* Text Color Overrides for specific Streamlit elements if needed */
-    .stMarkdown, .stText, h1, h2, h3, p, label {
-        color: white !important;
-    }
+    # /* Text Color Overrides for specific Streamlit elements if needed */
+    # .stMarkdown, .stText, h1, h2, h3, p, label {
+    #     color: white !important;
+    # }
     
     /* Global Container Padding */
     .block-container {
@@ -197,9 +198,61 @@ with col_form:
             # st.session_state.ui_nom = person_name_input
             st.switch_page("pages/2_Formulaire.py")
 
-@st.dialog('IN PROGRESS', width="large")
-def show_unstructure_input_dialog():
-    st.write("IN PROGRESS")
+@st.dialog('Analyse de votre document', width="large")
+def show_unstructured_input_dialog():
+    st.text("Collez ici un texte décrivant la situation (email, notes d'entretien, export CRM...) :")
+    
+    text_input = st.text_area(
+        "Texte source", 
+        height=300, 
+        placeholder="Ex: J'accompagne une famille de 4 personnes (2 adultes, 2 enfants en primaire). Ils cherchent un logement social à Bordeaux...",
+        label_visibility="collapsed"
+    )
+    
+    col1, col2 = st.columns([3, 1])
+    
+    analysis_key = "unstructured_analysis_result"
+    
+    with col1:
+        if st.button("Extraire les critères de rechere", type="primary", use_container_width=True):
+            if not text_input.strip():
+                st.warning("Veuillez saisir du texte avant de lancer l'analyse.")
+            else:
+                with st.spinner("Analyse en cours par l'agent Interviewer..."):
+                    # Prepare the state for the agent
+                    state_dict = {
+                        "messages": [{"role": "user", "content": text_input}],
+                        "is_interview_complete": False, # We want the interviewer to process it
+                        "execution_mode": "full_analysis"
+                    }
+                    try:
+                        final_state = run_async_safe(state_dict)
+                        # The interviewer returns the response in the last message
+                        # and the extracted criteria in search_criteria
+                        response = final_state.get("messages", [])[-1]["content"] if final_state.get("messages") else "Erreur d'analyse."
+                        criteria = final_state.get("search_criteria")
+                        
+                        st.session_state[analysis_key] = {
+                            "response": response,
+                            "criteria": criteria
+                        }
+                    except Exception as e:
+                        st.error(f"Une erreur est survenue lors de l'analyse : {e}")
+
+    if analysis_key in st.session_state:
+        st.divider()
+        st.text("Données pertinentes identifiées")
+        st.info(st.session_state[analysis_key]["response"])
+        
+        if st.button("✅ Confirmer et Pré-remplir le formulaire", type="primary", use_container_width=True):
+            # Apply the criteria to the UI session states
+            data_loader.apply_search_criteria_to_ui(st.session_state[analysis_key]["criteria"])
+            
+            # Reset the dialog state for next time
+            del st.session_state[analysis_key]
+            
+            # Switch to form
+            st.switch_page("pages/2_Formulaire.py")
 
 with col_ia:
     st.markdown("""
@@ -218,7 +271,7 @@ with col_ia:
         #  st.write("") # Alignment spacer to match the input height on the left
          if st.button("Lancer le mode flemme", type="primary", use_container_width=True, key="btn_ia"):
 
-            show_unstructure_input_dialog()
+            show_unstructured_input_dialog()
             #  st.switch_page("pages/4_AI_Chatbot.py")
 
 # st.markdown("<br><br>", unsafe_allow_html=True)

@@ -12,7 +12,7 @@ scores:
       unit: "%"
       display_factor: 100
       tooltip: Part des logements vacants depuis plus de 2 ans sur le parc total
-    weight: 1.0
+    weight: 3.0
     min_bound: 0
     max_bound: 0.10
   - id: log_soc_inoc_scaled
@@ -148,15 +148,16 @@ scores:
       display_factor: 1
       tooltip: Population totale de la commune
     weight: 3.0
-    min_bound: 1000 #Une commune de moins de 1000 habitants est peu pertinente
-    max_bound: 25000 #Eviter le skew par les tres grandes métropoles
+    scaling_type: gaussian
+    mu: 50000
+    sigma: 40000
   - id: form_match_adult1_scaled
     category: emploi
     source_metric: form_match_adult1
-    bdv_factor: 0.0
+    bdv_factor: 0.8
     computation: live
     display:
-      name: Match besoins et Centres de formation (Ville)
+      name: Match besoins et Centres de formation
       strong_point_text:
         Des centres de formations proposent les formations recherchées
         par l'adulte 1
@@ -164,34 +165,17 @@ scores:
       show: true
       unit: formations offertes
       display_factor: 1
-      tooltip: Nombre centres de formations dans la commune
+      tooltip: Nombre centres de formations
     weight: 2.0
-    min_bound: 0.0
-    max_bound: null
-  - id: form_match_adult1_bdv_scaled
-    category: emploi
-    source_metric: form_match_adult1_bdv
-    bdv_factor: 0.0
-    computation: live
-    display:
-      name: Match besoins et Centres de formation (Bassin de Vie)
-      strong_point_text: Le bassin de vie propose les formations recherchées
-        par l'adulte 1
-      high_value_adjective: présent
-      show: true
-      unit: formations offertes
-      display_factor: 1
-      tooltip: Nombre centres de formations dans le bassin de vie
-    weight: 1.0
     min_bound: 0.0
     max_bound: null
   - id: form_match_adult2_scaled
     category: emploi
     source_metric: form_match_adult2
-    bdv_factor: 0.0
+    bdv_factor: 0.8
     computation: live
     display:
-      name: Match besoins et Centres de formation (Ville)
+      name: Match besoins et Centres de formation
       strong_point_text:
         Des centres de formations proposent les formations recherchées
         par l'adulte 2
@@ -199,25 +183,8 @@ scores:
       show: true
       unit: formations offertes
       display_factor: 1
-      tooltip: Nombre centres de formations dans la commune
+      tooltip: Nombre centres de formations
     weight: 2.0
-    min_bound: 0.0
-    max_bound: null
-  - id: form_match_adult2_bdv_scaled
-    category: emploi
-    source_metric: form_match_adult2_bdv
-    bdv_factor: 0.0
-    computation: live
-    display:
-      name: Match besoins et Centres de formation (Bassin de Vie)
-      strong_point_text: Le bassin de vie propose les formations recherchées
-        par l'adulte 2
-      high_value_adjective: présent
-      show: true
-      unit: formations offertes
-      display_factor: 1
-      tooltip: Nombre centres de formations dans le bassin de vie
-    weight: 1.0
     min_bound: 0.0
     max_bound: null
   - id: mob_epci_scaled
@@ -252,10 +219,10 @@ scores:
     weight: 1.0
     min_bound: null
     max_bound: null
-  - id: heb_asso_refug_scaled
+  - id: inc_asso_refug_scaled
     category: inclusion
     source_metric: heb_asso_refug_count
-    bdv_factor: 1.0
+    bdv_factor: 0.8
     computation: precomputed
     display:
       name: Accompagnement Réfugiés
@@ -266,8 +233,8 @@ scores:
       display_factor: 1
       tooltip: Densité d'associations spécialisées réfugiés (Source RNA)
     weight: 1.0
-    min_bound: null
-    max_bound: null
+    min_bound: 0.0
+    max_bound: 0.05
   - id: inc_siae_density_scaled
     category: inclusion
     source_metric: inc_siae_density
@@ -282,8 +249,8 @@ scores:
       display_factor: 1
       tooltip: Densité de structures d'insertion (ACI, AI, EI, ETTI, EITI)
     weight: 1.0
-    min_bound: null
-    max_bound: null
+    min_bound: 0.0
+    max_bound: 0.2
   - id: inc_asso_add_scaled
     category: inclusion
     source_metric: affinite_density
@@ -319,7 +286,7 @@ scores:
   - id: edu_petite_enfance_scaled
     category: education
     source_metric: edu_pe_tx_couverture
-    bdv_factor: 0.5
+    bdv_factor: 0.0
     computation: precomputed
     display:
       name: Accueil Petite Enfance
@@ -337,7 +304,7 @@ scores:
   - id: edu_maternelle_scaled
     category: education
     source_metric: edu_maternelle_ct
-    bdv_factor: 0.5
+    bdv_factor: 0.0
     computation: precomputed
     display:
       name: Ecole Maternelle
@@ -353,7 +320,7 @@ scores:
   - id: edu_elementaire_scaled
     category: education
     source_metric: edu_elementaire_ct
-    bdv_factor: 0.5
+    bdv_factor: 0.0
     computation: precomputed
     display:
       name: Ecole Elémentaire
@@ -369,7 +336,7 @@ scores:
   - id: edu_college_scaled
     category: education
     source_metric: edu_college_ct
-    bdv_factor: 0.8
+    bdv_factor: 0.5
     computation: precomputed
     display:
       name: Collège
@@ -433,16 +400,16 @@ scores:
   - id: mob_gare_scaled
     category: mobilité
     source_metric: mob_gare_scaled
-    bdv_factor: 1.0
+    bdv_factor: 0.0
     computation: precomputed
     display:
       name: Gare ferroviaire
-      strong_point_text: Présence d'une gare ferroviaire
+      strong_point_text: Présence d'une gare SNCF
       high_value_adjective: présente
       show: true
       unit: ""
       display_factor: 1
-      tooltip: "Présence d'une gare ferroviaire dans la commune (Source: Odace)"
+      tooltip: "Présence d'une gare ferroviaire dans la commune"
     weight: 1.0
     max_bound: 1.0
   - id: mob_trans_pub_density_scaled
@@ -496,35 +463,19 @@ scores:
   - id: met_match_adult1_scaled
     category: emploi
     source_metric: met_match_adult1
-    bdv_factor: 0.0
+    bdv_factor: 0.5
     computation: live
     display:
-      name: Opportunités Emploi (Ville) - Adulte 1
-      strong_point_text: De nombreuses offres d'emploi correspondent à la recherche de l'adulte 1 dans la ville
+      name: Opportunités Emploi - Adulte 1
+      strong_point_text: De nombreuses offres d'emploi correspondent à la recherche de l'adulte 1
       high_value_adjective: nombreuses
       show: true
       unit: offres
       display_factor: 1
       tooltip: "Nombre d'offres d'emploi en direct pour l'adulte 1 (Source: France Travail)"
-    weight: 2.0
+    weight: 3.0
     min_bound: 0
     max_bound: 10
-  - id: met_match_adult1_bdv_scaled
-    category: emploi
-    source_metric: met_match_adult1_bdv
-    bdv_factor: 0.0
-    computation: live
-    display:
-      name: Opportunités Emploi (Bassin de Vie) - Adulte 1
-      strong_point_text: Le bassin de vie est très dynamique pour la recherche de l'adulte 1
-      high_value_adjective: dynamique
-      show: true
-      unit: offres
-      display_factor: 1
-      tooltip: "Nombre d'offres d'emploi dans le bassin de vie pour l'adulte 1 (Source: France Travail)"
-    weight: 1.0
-    min_bound: 0
-    max_bound: 50
   - id: met_match_adult1_tension_scaled
     category: emploi
     source_metric: met_match_adult1_tension
@@ -544,35 +495,19 @@ scores:
   - id: met_match_adult2_scaled
     category: emploi
     source_metric: met_match_adult2
-    bdv_factor: 0.0
+    bdv_factor: 0.5
     computation: live
     display:
-      name: Opportunités Emploi (Ville) - Adulte 2
-      strong_point_text: De nombreuses offres d'emploi correspondent à la recherche de l'adulte 2 dans la ville
+      name: Opportunités Emploi - Adulte 2
+      strong_point_text: De nombreuses offres d'emploi correspondent à la recherche de l'adulte 2
       high_value_adjective: nombreuses
       show: true
       unit: offres
       display_factor: 1
       tooltip: "Nombre d'offres d'emploi en direct pour l'adulte 2 (Source: France Travail)"
-    weight: 2.0
+    weight: 3.0
     min_bound: 0
     max_bound: 10
-  - id: met_match_adult2_bdv_scaled
-    category: emploi
-    source_metric: met_match_adult2_bdv
-    bdv_factor: 0.0
-    computation: live
-    display:
-      name: Opportunités Emploi (Bassin de Vie) - Adulte 2
-      strong_point_text: Le bassin de vie est très dynamique pour la recherche de l'adulte 2
-      high_value_adjective: dynamique
-      show: true
-      unit: offres
-      display_factor: 1
-      tooltip: "Nombre d'offres d'emploi dans le bassin de vie pour l'adulte 2 (Source: France Travail)"
-    weight: 1.0
-    min_bound: 0
-    max_bound: 50
   - id: met_match_adult2_tension_scaled
     category: emploi
     source_metric: met_match_adult2_tension
@@ -592,7 +527,7 @@ scores:
   - id: met_siae_match_adult1_scaled
     category: emploi
     source_metric: met_siae_match_adult1
-    bdv_factor: 0.0
+    bdv_factor: 0.5
     computation: live
     display:
       name: Offres SIAE - Adulte 1
@@ -635,14 +570,14 @@ scores:
       unit: assos/1000 hab.
       display_factor: 1
       tooltip: Densité d'associations proposant de l'intermédiation locative ou Solibail (Source RNA)
-    weight: 2.0
+    weight: 1.0
     min_bound: 0.0
     max_bound: 0.1
 
   - id: heb_centres_heb_scaled
     category: logement
     source_metric: heb_centres_heb_density
-    bdv_factor: 0.8
+    bdv_factor: 0.5
     computation: precomputed
     display:
       name: Centres d'Hébergement (CHRS, CPH)
@@ -659,7 +594,7 @@ scores:
   - id: heb_foyers_scaled
     category: logement
     source_metric: heb_foyers_density
-    bdv_factor: 0.8
+    bdv_factor: 0.5
     computation: precomputed
     display:
       name: Foyers & Pensions de Famille
@@ -703,6 +638,6 @@ scores:
       unit: ""
       display_factor: 1
       tooltip: Au moins un accueillant actif dans le bassin de vie (Source J'Accueille)
-    weight: 2.0
+    weight: 3.0
     min_bound: 0.0
     max_bound: 1.0

@@ -4,7 +4,7 @@ import pandas as pd
 from plotly.express import line_polar
 import geopandas as gpd
 import config as cfg
-from core.models import SearchCriterias
+from core.models import SearchCriterias, CriteriaItem
 from core import maps
 from typing import Dict, Any, List, Optional
 from pathlib import Path
@@ -514,70 +514,7 @@ def show_details_dialog(details: Dict[str, Any]):
             st.markdown("#### :material/diversity_3: Indicateurs Inclusion")
             render_scores_for_category('inclusion')
 
-# def open_pdf_modal() -> None:
-#     """Callback to signal that the PDF modal should be shown."""
-#     st.session_state['show_pdf_modal'] = True
 
-# def display_sidebar(demo_data: Optional[Dict[str, Any]] = None) -> None:
-#     """Displays the sidebar with location and weight controls."""
-    
-#     with st.sidebar:
- 
-
-
-
-#         # --- Export to PDF ---
-#         if st.session_state.get('processed_gdf') is not None:
-#             st.button(
-#                 "Générer le PDF", 
-#                 on_click=open_pdf_modal,
-#                 icon=':material/picture_as_pdf:',
-#                 type='secondary',
-#                 width="stretch"
-#             )
-
-#         st.divider()
-
-#         # --- Weights ---
-#         with st.expander('Pondérations', expanded=False):
-#             # F-15: Profile Selector
-#             def _update_weights_from_profile():
-#                 profile = st.session_state.ui_weight_profile
-#                 if profile in cfg.WEIGHT_PROFILES:
-#                     weights = cfg.WEIGHT_PROFILES[profile]
-#                     for key, value in weights.items():
-#                         # Update session state keys for sliders (e.g. ui_poids_education)
-#                         st.session_state[f"ui_{key}"] = value
-                
-#                 st.session_state['processed_gdf'] = None
-            
-
-#             st.selectbox(
-#                 "Profil de Priorité",
-#                 options=list(cfg.WEIGHT_PROFILES.keys()),
-#                 key="ui_weight_profile",
-#                 on_change=_update_weights_from_profile,
-#                 index=0 # Default to Balanced
-#             )
-            
-#             st.select_slider("Education", cfg.POIDS_OPTIONS, 
-#                             value=st.session_state.get('ui_poids_education', 50), 
-#                             key="ui_poids_education")
-#             st.select_slider("Projet Pro", cfg.POIDS_OPTIONS, 
-#                             value=st.session_state.get('ui_poids_emploi', 50), 
-#                             key="ui_poids_emploi")
-#             st.select_slider("Logement", cfg.POIDS_OPTIONS, 
-#                             value=st.session_state.get('ui_poids_logement', 50), 
-#                             key="ui_poids_logement")
-#             st.select_slider("Inclusion", cfg.POIDS_OPTIONS, 
-#                             value=st.session_state.get('ui_poids_inclusion', 50), 
-#                             key="ui_poids_inclusion")
-#             st.select_slider("Santé", cfg.POIDS_OPTIONS, # NEW
-#                             value=st.session_state.get('ui_poids_sante', 50), # NEW
-#                             key="ui_poids_sante") # NEW
-#             st.select_slider("Mobilité", cfg.POIDS_OPTIONS, 
-#                             value=st.session_state.get('ui_poids_mobilité', 50), 
-#                             key="ui_poids_mobilité")
 
         # def clear_processed_gdf():
         #     st.session_state['processed_gdf'] = None
@@ -590,8 +527,8 @@ def confirm_reset_dialog():
     col1, col2 = st.columns(2)
     with col1:
         if st.button("Oui", use_container_width=True):
-            # 1. Radical cleanup: clear EVERYTHING except heavy datasets and auth
-            to_preserve = {'app_data', '_data_hash', 'rna_rag_service', 'rna_rag_status', 'password_correct', 'username'}
+            # 1. Radical cleanup: clear EVERYTHING except heavy datasets, auth, and essential UI state
+            to_preserve = {'app_data', '_data_hash', 'rna_rag_service', 'rna_rag_status', 'password_correct', 'username', 'highlighted_result', 'config'}
             all_keys = list(st.session_state.keys())
             for k in all_keys:
                 if k not in to_preserve:
@@ -769,20 +706,47 @@ def render_other_needs_form() -> None:
     col1, col2 = st.columns(2)
     with col2:
         # --- 1. Affinités (Loisirs & Intérêts) ---
-        st.subheader("Loisirs")
+        st.subheader("Associations Locales (Solidarité, Loisirs, Culture)")
         st.text("Sélectionnez vos centres d'intérêt pour identifier les territoires avec un tissu associatif correspondant.")
         
-        interest_options = list(cfg.WALDEC_INC_ASSO_ADD_MAPPING.keys())
-        
-        if 'ui_inc_asso_add_selection' not in st.session_state:
-            st.session_state.ui_inc_asso_add_selection = st.session_state['demo_data'].get('inc_asso_add_selection', [])
+        # Load pre-enriched waldec_index
+        if 'waldec_index' in st.session_state.app_data:
+            waldec_index = st.session_state.app_data['waldec_index']
+            # Prefixes from config
+            prefixes = cfg.WALDEC_CATEGORIES
             
-        st.multiselect(
-            "Centres d'intérêt",
-            options=interest_options,
-            key="ui_inc_asso_add_selection",
-            label_visibility="collapsed"
-        )
+            # Filter for Loisirs categories
+            # waldec_index is already indexed by 'code' and sorted by count DESC
+            mask = waldec_index.index.str[:3].isin(prefixes)
+            loisirs_df = waldec_index[mask].copy()
+            
+            # Prepare options: CriteriaItem for consistency
+            options_items = []
+            item_map = {}
+            
+            for code, row in loisirs_df.iterrows():
+                item = CriteriaItem(code=str(code), label=row['label'])
+                options_items.append(item)
+                item_map[item.code] = f"[{item.code}] {item.label} ({row['count']} assos)"
+
+            if 'ui_inc_asso_add_selection' not in st.session_state:
+                st.session_state.ui_inc_asso_add_selection = st.session_state['demo_data'].get('inc_asso_add_selection', [])
+                
+            selected_codes = st.multiselect(
+                "Centres d'intérêt",
+                options=[item.code for item in options_items],
+                format_func=lambda x: item_map.get(x, x),
+                key="ui_inc_asso_add_selection_raw", 
+                label_visibility="collapsed"
+            )
+            
+            # Sync with the main selection
+            st.session_state.ui_inc_asso_add_selection = [
+                next(item for item in options_items if item.code == code)
+                for code in selected_codes
+            ]
+        else:
+            st.warning("Référentiel WALDEC non chargé.")
 
     with col1:
         # --- 2. Besoins d'Analyse (Inclusion Services) ---
@@ -805,6 +769,10 @@ def render_other_needs_form() -> None:
             # Initialize individual checkbox state from global selection
             if cb_key not in st.session_state:
                 st.session_state[cb_key] = slug in current_selection
+                if slug in cfg.DEFAULT_INC_SERVICES_CORE:
+                    st.session_state[cb_key] = True
+                else:
+                    st.session_state[cb_key] = False
             
             if st.checkbox(label, key=cb_key):
                 checkbox_selection.add(slug)
@@ -1168,10 +1136,22 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
 
     # Enrich Inclusion Associations
     inc_assos_mapped = []
-    for label in st.session_state.get('ui_inc_asso_add_selection', []):
-        codes = cfg.WALDEC_INC_ASSO_ADD_MAPPING.get(label, [])
-        code_str = ",".join(codes) if codes else "000"
-        inc_assos_mapped.append(CriteriaItem(code=code_str, label=str(label)))
+    # session_state['ui_inc_asso_add_selection'] should be a list of CriteriaItem
+    # but for tests, it might be a list of strings
+    for item in st.session_state.get('ui_inc_asso_add_selection', []):
+        if isinstance(item, CriteriaItem):
+            inc_assos_mapped.append(item)
+        elif isinstance(item, str):
+            # Try to find the code in waldec_index by label (Backward compatibility for tests)
+            waldec_index = app_data.get('waldec_index', pd.DataFrame())
+            code_str = "000"
+            if not waldec_index.empty:
+                # Find the first entry that matches the label
+                matches = waldec_index[waldec_index['label'] == item]
+                if not matches.empty:
+                    # In current logic, item.code is just the first match
+                    code_str = str(matches.index[0])
+            inc_assos_mapped.append(CriteriaItem(code=code_str, label=str(item)))
 
 
     # Type Logement Enrich
@@ -1400,6 +1380,26 @@ def _display_result_details(row: pd.Series) -> None:
                 
                 # Priority code is the main commune
                 show_ccas_dialog(targets, st.session_state['app_data'].get('structures_ccas', pd.DataFrame()), priority_code=main_code, priority_label=row['libgeo'])
+                
+        # --- Feedback ---
+        st.divider()
+        st.caption("Évaluez la pertinence de ce résultat :")
+        fb_key = f"fb_result_{main_code}_{h}"
+        
+        def _on_result_feedback(cid, c_name, score):
+            val = st.session_state.get(f"fb_result_{cid}_{h}")
+            if val is not None:
+                import json
+                try:
+                    from ui.feedback import _submit_to_bq
+                    context = json.dumps({"codgeo": cid, "libgeo": c_name, "score": score})
+                    _submit_to_bq("Result Relevance", str(val + 1), context=context)
+                    st.toast(f"Merci pour votre évaluation de {c_name} !")
+                except Exception as e:
+                    logger.error(f"Failed to submit result feedback: {e}")
+                    
+        st.feedback("stars", key=fb_key, on_change=_on_result_feedback, args=(main_code, libgeo, row.get('weighted_score')))
+
         
 
 def _produce_pitch_markdown(row: pd.Series, config: SearchCriterias, scores_cat: pd.DataFrame) -> str:

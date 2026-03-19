@@ -156,6 +156,7 @@ def log_search_results(
             else:
                 val_str = str(value)
             md_lines.append(f"| {key} | {val_str} |")
+    md_lines.append(f"| active_criteria | {', '.join(sorted(config.active_criteria)) if config.active_criteria else 'None'} |")
     md_lines.append("")
 
     # Weights
@@ -236,6 +237,9 @@ def log_search_results(
                         if score_to_cat:
                             for score_col, category in score_to_cat.items():
                                 if score_col in commune_data:
+                                    if config.active_criteria and score_col not in config.active_criteria:
+                                        continue
+
                                     val = commune_data[score_col]
                                     try:
                                         score_val = float(val) if pd.notna(val) else 0.0

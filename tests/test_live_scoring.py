@@ -1,5 +1,6 @@
 import sys
 import os
+import pytest
 sys.path.append(os.path.join(os.getcwd(), 'app'))
 
 import pandas as pd
@@ -35,8 +36,8 @@ def test_live_jobs_scoring():
     ])
 
     scores_cat = pd.DataFrame([
-        {'score': 'met_match_adult1_scaled', 'min_bound': 0, 'max_bound': 10, 'cat': 'emploi', 'weight': 2.0, 'metric': 'met_match_adult1'},
-        {'score': 'met_match_adult1_bdv_scaled', 'min_bound': 0, 'max_bound': 50, 'cat': 'emploi', 'weight': 1.0, 'metric': 'met_match_adult1_bdv'},
+        {'score': 'met_match_adult1_scaled', 'min_bound': 0, 'max_bound': 10, 'cat': 'emploi', 'weight': 2.0, 'metric': 'met_match_adult1', 'bdv_factor': 0.5},
+        {'score': 'met_match_adult1_scaled_bdv', 'min_bound': 0, 'max_bound': 50, 'cat': 'emploi', 'weight': 1.0, 'metric': 'met_match_adult1_bdv'},
         {'score': 'met_match_adult1_tension_scaled', 'min_bound': 0, 'max_bound': 5, 'cat': 'emploi', 'weight': 1.0, 'metric': 'met_match_adult1_tension'}
     ])
 
@@ -84,24 +85,29 @@ def test_live_jobs_scoring():
     )
 
     # 4. Run Scoring
+    # Ensure scores_config uses bdv_factor instead of separate entries for integrated logic
+    # In a real run, this comes from scores_config.yaml
+    # For this test, met_match_adult1_scaled should have a bdv_factor=0.5 (as per latest user request)
     scored = engine.run(config)
 
     # 5. Assertions
     print("\n--- Results ---")
     print(f"Columns available: {scored.columns.tolist()}")
-    try:
-        print(scored[['met_match_adult1', 'met_match_adult1_scaled', 'met_match_adult1_bdv', 'met_match_adult1_bdv_scaled', 'met_match_adult1_tension', 'met_match_adult1_tension_scaled']])
-    except KeyError as e:
-        print(f"KeyError: {e}")
     
-    # Commune 33063 should have 5 jobs
+    # Formula: Sc + (1 - Sc) * (Sb * factor)
+    # Sc = 5/10 = 0.5
+    # Sb = 15/50 = 0.3
+    # factor = 0.5 (Jobs factor)
+    # Score = 0.5 + (1 - 0.5) * (0.3 * 0.5) = 0.5 + 0.5 * 0.15 = 0.575
+    
     assert scored.loc['33063', 'met_match_adult1'] == 5
-    assert scored.loc['33063', 'met_match_adult1_scaled'] == 0.5 # 5/10
+    assert scored.loc['33063', 'met_match_adult1_scaled'] == pytest.approx(0.575)
     
     # Bassin de Vie 33301 contains both, so 15 jobs total
+    # This column is now used internally by the blender
     assert scored.loc['33063', 'met_match_adult1_bdv'] == 15
-    assert scored.loc['33063', 'met_match_adult1_bdv_scaled'] == 0.3 # 15/50
-    
+    assert scored.loc['33063', 'met_match_adult1_scaled_bdv'] == 0.3 # 15/50
+
     # Tension for 33063 (1)
     assert scored.loc['33063', 'met_match_adult1_tension'] == 1
     assert scored.loc['33063', 'met_match_adult1_tension_scaled'] == 0.2 # 1/5

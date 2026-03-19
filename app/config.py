@@ -214,71 +214,20 @@ DEMO_SCENARIOS = {
         'poids_sante': 50,
         'poids_mobilité': 25,
         'sante': "Maternité",
-        'inc_asso_add_selection': ['Entraide / Bénévolat'],
+        'inc_asso_add_selection': ['chant choral, musique'],
         'loc_search_code': None,
         'notes_qualitatives': "Aïcha souhaite passer son permis et cherche une boucherie Hallal à proximité"
     }
 }
 
 
-# 2. LE DICTIONNAIRE D'AFFINITÉS (Pour le matching "Projet de Vie")
-# Clés = Ce que le TS sélectionne dans le multiselect
-# Valeurs = Liste des codes WALDEC à scanner
-WALDEC_INC_ASSO_ADD_MAPPING = {
-    # --- PILIER SPORT ---
-    "Sport (Général)": [
-        "011000", # Sports, activités de plein air (Général)
-        "011010"  # Multisports
-    ],
-    "Football / Sports Co": [
-        "011120", # Football
-        "011035", # Basket-ball
-        "011065", # Handball
-        "011145", # Rugby
-        "011190"  # Volley-ball
-    ],
-    "Sports de Combat": [
-        "011015", # Arts martiaux
-        "011040", # Boxe
-        "011085", # Judo
-        "011090"  # Karaté
-    ],
-    
-    # --- PILIER CULTURE & ART ---
-    "Arts & Culture": [
-        "006"     # CULTURE (Tout le niveau 1 : Théâtre, Musique, Danse...)
-    ],
-    "Musique / Chant": [
-        "006030", # Chant choral, musique
-        "006035"  # Groupes folkloriques
-    ],
-    
-    # --- PILIER NATURE & MANUEL ---
-    "Jardinage / Nature": [
-        "007050", # Jardins ouvriers, floraux, jardins partagés (TOP INCLUSION)
-        "023005"  # Amap, distribution produits bio
-    ],
-    "Bricolage / Création": [
-        "009010", # Activités manuelles (couture, poterie...)
-        "007025"  # Bricolage
-    ],
-    
-    # --- PILIER COMMUNAUTAIRE ---
-    "Lieux de Culte / Spirituel": [
-        "028"     # ACTIVITES RELIGIEUSES, SPIRITUELLES (Tout le niveau 1)
-    ],
-    "Entraide / Bénévolat": [
-        "020",    # Caritatif
-        "024"     # Entraide et solidarité
-    ]
-}
+# --- LOISIRS CATÉGORIES (WALDEC PREFIXES) ---
+# Seuls les codes commençant par ces 3 digits sont conservés pour la sélection "Loisirs"
+WALDEC_CATEGORIES = ["003", "006", "007", "009", "011", "013", "014", "019", "020", "021", "024"]
 
 def get_relevant_rna_codes() -> List[str]:
-    """Retourne une liste plate unique de tous les codes utiles pour l'extraction SQL/Pandas"""
-    all_codes = set()
-    for code_list in WALDEC_INC_ASSO_ADD_MAPPING.values():
-        all_codes.update(code_list)
-    return list(all_codes)
+    """Retourne les préfixes de catégories WALDEC utiles pour le filtrage"""
+    return WALDEC_CATEGORIES
 # 3. WALDEC labels for refugee associations
 WALDEC_REFUGEE_LABELS = {
     "003": "Action socio-culturelle",

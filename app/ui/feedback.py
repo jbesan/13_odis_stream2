@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 DATASET_ID = "odis_logs"
 TABLE_ID = "user_feedback"
 
-def _submit_to_bq(feedback_type, comment):
+def _submit_to_bq(feedback_type, comment, context=None):
     if not os.getenv("GOOGLE_CLOUD_PROJECT") and not os.getenv("GCP_PROJECT"):
          logger.warning("No Google Cloud Project found. Skipping BQ feedback insert.")
          # Return True so the UI doesn't block local dev
@@ -28,6 +28,9 @@ def _submit_to_bq(feedback_type, comment):
             "feedback_type": feedback_type,
             "comment": comment
         }
+        if context is not None:
+            row["context"] = context
+            
         errors = client.insert_rows_json(table_ref, [row])
         if errors:
             logger.error(f"BQ Feedback Insert Error: {errors}")

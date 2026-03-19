@@ -96,16 +96,19 @@ class RNARagService:
             # Columns in BQ: id, titre_court, primary_category, embedding_128, is_inclusion_relevant, description
             table_id = "odis-stream2.rna_rag.rna_rag"
             
+            import config as cfg
             query_bq = f"""
                 SELECT id, titre_court as name, primary_category, embedding_128 as embedding, description
                 FROM `{table_id}`
                 WHERE codgeo = @codgeo
+                  AND SUBSTR(primary_category, 1, 3) IN UNNEST(@allowed_prefixes)
                 {"AND is_inclusion_relevant = TRUE" if inclusion_only else ""}
             """
             
             job_config = bigquery.QueryJobConfig(
                 query_parameters=[
-                    bigquery.ScalarQueryParameter("codgeo", "STRING", codgeo)
+                    bigquery.ScalarQueryParameter("codgeo", "STRING", codgeo),
+                    bigquery.ArrayQueryParameter("allowed_prefixes", "STRING", cfg.WALDEC_CATEGORIES)
                 ]
             )
             
@@ -156,18 +159,21 @@ class RNARagService:
         logger.info(f"Fetching all associations for {len(codgeos)} communes")
         
         try:
+            import config as cfg
             table_id = "odis-stream2.rna_rag.rna_rag"
             query_bq = f"""
                 SELECT id, titre_court as name, primary_category, description, max_score, is_refugee_focused, codgeo
                 FROM `{table_id}`
                 WHERE codgeo IN UNNEST(@codgeos) 
+                  AND SUBSTR(primary_category, 1, 3) IN UNNEST(@allowed_prefixes)
                   AND ((is_inclusion_relevant = TRUE AND max_score > 0.8) OR is_refugee_focused = TRUE)
                 ORDER BY max_score DESC
             """
             
             job_config = bigquery.QueryJobConfig(
                 query_parameters=[
-                    bigquery.ArrayQueryParameter("codgeos", "STRING", codgeos)
+                    bigquery.ArrayQueryParameter("codgeos", "STRING", codgeos),
+                    bigquery.ArrayQueryParameter("allowed_prefixes", "STRING", cfg.WALDEC_CATEGORIES)
                 ]
             )
             

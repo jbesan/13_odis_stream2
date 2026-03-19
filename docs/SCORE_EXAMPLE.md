@@ -85,7 +85,8 @@ The algorithm calculates a score between 0 and 1 for each category for every can
   - Calculates density of associations matching "Entraide / Bénévolat".
   - Normalized relative to other communes.
 - **Population (`inc_population_scaled`)**:
-  - Population size normalized to favor larger communes (urban centers).
+  - Score basé sur une fonction Gaussienne ($\mu$=50 000, $\sigma$=40 000).
+  - Ce calcul favorise les villes moyennes (proches de 50 000 habitants) et pénalise progressivement les très petites communes ou les métropoles géantes pour garantir un équilibre d'accueil optimal.
 - **Global Inclusion Score**: Average of Socle, Lien Social, Affinité, and Population.
 
 ### F. Mobilité (Weight: 50)

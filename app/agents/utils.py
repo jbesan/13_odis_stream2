@@ -108,10 +108,18 @@ def map_ui_config_to_search_criterias(config: SearchCriterias, app_data: Dict[st
     # 5. Inclusion Associations
     import config as cfg
     inc_assos = []
-    for label in config.inc_asso_add_selection:
-        codes = cfg.WALDEC_INC_ASSO_ADD_MAPPING.get(label, [])
-        code_str = ",".join(codes) if codes else "000"
-        inc_assos.append(CriteriaItem(code=code_str, label=str(label)))
+    waldec_index = app_data.get('waldec_index', pd.DataFrame())
+    for item in config.inc_asso_add_selection:
+        if isinstance(item, CriteriaItem):
+            inc_assos.append(item)
+        else:
+            # item is likely a label (string)
+            code_str = "000"
+            if not waldec_index.empty:
+                matches = waldec_index[waldec_index['label'] == item]
+                if not matches.empty:
+                    code_str = str(matches.index[0])
+            inc_assos.append(CriteriaItem(code=code_str, label=str(item)))
         
     # 6. Type Logement
     type_log = None

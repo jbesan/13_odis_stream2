@@ -26,7 +26,10 @@ class ScoringEngine:
         elif loc_type == 'france': return df[~df['dep_code'].astype(str).str.startswith(('97', '98'))].copy()
         return gpd.GeoDataFrame()
     @staticmethod
-    def _min_max_scale(series: pd.Series, min_val: float, max_val: float) -> pd.Series:
+    def _scale_series(series: pd.Series, min_val: float, max_val: float, scaling_type: str = 'linear', mu: Optional[float] = None, sigma: Optional[float] = None) -> pd.Series:
+        if scaling_type == 'gaussian' and mu is not None and sigma is not None:
+             return np.exp(-0.5 * ((series - mu) / sigma)**2)
+        
         if max_val == min_val: return pd.Series(0.0, index=series.index)
         return ((series - min_val) / (max_val - min_val)).clip(0, 1)
 
@@ -55,18 +58,11 @@ class ScoringEngine:
         
         # Scale if computed
         if 'dist_current_loc' in df.columns:
-             min_b, max_b = self._get_bounds('dist_current_loc_scaled')
+             min_b, max_b = self._get_bounds('mob_dist_current_loc_scaled')
              if pd.isna(max_b): max_b = 50000.0 # Default 50km
              # Inverse scale: closer is better
-             # We use standard min_max then invert? Or just 1 - dist/max
-             # Let's stick to standard pattern if bounds are set for "dist_current_loc_scaled"
-             # Usually distance is "lower is better".
-             # If min=0, max=50000. 
-             # Val = (d - min)/(max - min). 0 -> 0. 50000 -> 1.
-             # We want 0 -> 1 (Good), 50000 -> 0 (Bad).
-             # So 1 - min_max_scale
-             scaled = self._min_max_scale(df['dist_current_loc'], min_b, max_b)
-             df['dist_current_loc_scaled'] = 1.0 - scaled
+             scaled = self._scale_series(df['dist_current_loc'], min_b, max_b)
+             df['mob_dist_current_loc_scaled'] = 1.0 - scaled
         
         return df
 
@@ -108,11 +104,13 @@ class ScoringEngine:
                  # 3. Parity Check: Log warning if an active criteria is missing from data
                  if config.active_criteria is not None and sid in config.active_criteria and val_commune is None and val_bdv is None:
                       logger.warning(f"⚠️ [SCORING] Active criterion '{sid}' (or '{sid_bdv}') is MISSING from the input data. Score will be defaulted to 0.")
-
-                 # 4. Combine using bdv_factor
+                 # 4. Combine using bdv_factor (Non-penalizing Boost Logic)
                  if val_commune is not None and val_bdv is not None:
-                      # Typical ODIS enrichment formula
-                      val = val_commune.fillna(0) * (1.0 - bdv_f) + val_bdv.fillna(0) * bdv_f
+                      # Formula: Sc + (1 - Sc) * (Sb * factor)
+                      # Bassin de Vie opportunities act as a bonus to local ones
+                      s_c = val_commune.fillna(0)
+                      s_b = val_bdv.fillna(0)
+                      val = s_c + (1.0 - s_c) * (s_b * bdv_f)
                  elif val_commune is not None:
                       val = val_commune.fillna(0)
                  elif val_bdv is not None:
@@ -191,81 +189,41 @@ class ScoringEngine:
             return (total_score / total_weight).fillna(0)
 
     def _prune_irrelevant_metrics(self, df: pd.DataFrame, config: SearchCriterias) -> pd.DataFrame:
-        """Prunes columns that are not relevant based on active criteria."""
-        if config is None or config.active_criteria is None:
+        """
+        Prunes redundant columns to optimize memory usage.
+        Conservative approach: 
+        1. Always drop the 3 requested BdV columns.
+        2. Selectively drop unselected '_scaled' scores to keep the DataFrame lean.
+        """
+        if config is None:
             return df
             
-        columns_to_keep = set()
+        # 1. Deny-list: Explicitly requested redundant BdV columns
+        to_drop = ['polygon_bdv', 'libgeo_bdv', 'centroid_bdv']
         
-        # 1. Base identity and essential columns
-        identity_cols = ['nom_commune', 'libgeo', 'codgeo', 'population', 'bassin_de_vie', 
-                         'libelle_bassin_de_vie', 'geometry', 'epci_code', 'epci_nom', 
-                         'dep_code', 'reg_code', 'centroid']
-        columns_to_keep.update([c for c in identity_cols if c in df.columns])
-        
-        # 2. Active criteria and their raw metrics
-        active_ids = config.active_criteria
-        for score_id in active_ids:
-            # The scaled score itself
-            if score_id in df.columns:
-                columns_to_keep.add(score_id)
-            else:
-                # Log if an active criteria is totally missing (Parity Check)
-                logger.warning(f"⚠️ [SCORING] Active criteria '{score_id}' is MISSING from DataFrame columns. PRUNING SKIPPED.")
-            
-            # The BDV variant if applicable
-            score_bdv = f"{score_id}_bdv"
-            if score_bdv in df.columns:
-                columns_to_keep.add(score_bdv)
-            
-            # The underlying raw metrics (from config)
-            # Find the row in scores_cat to get the metric name
-            mask = self.scores_cat['score'] == score_id
-            if mask.any():
-                metric_name = self.scores_cat.loc[mask, 'metric'].iloc[0]
-                if metric_name and metric_name in df.columns:
-                    columns_to_keep.add(metric_name)
-                    # Also keep the bdv variant of the metric
-                    metric_bdv = f"{metric_name}_bdv"
-                    if metric_bdv in df.columns:
-                        columns_to_keep.add(metric_bdv)
-                elif metric_name:
-                    # Log missing raw metrics only if they are for an active criteria
-                    logger.debug(f"ℹ️ [SCORING] Raw metric '{metric_name}' for active criteria '{score_id}' is missing from data.")
-        
-        # 3. Category scores and final weighted score
-        for cat in ['emploi', 'logement', 'education', 'inclusion', 'mobilité', 'sante']:
-            cat_score_col = f"{cat}_cat_score"
-            if cat_score_col in df.columns:
-                columns_to_keep.add(cat_score_col)
-        if 'weighted_score' in df.columns:
-            columns_to_keep.add('weighted_score')
+        # 2. Selective Pruning: Drop unselected high-level scores
+        # This keeps the dataframe lean as expected by tests, but avoids touching identity/raw columns.
+        active_ids = None
+        if hasattr(config, 'active_criteria') and config.active_criteria is not None:
+            active_ids = set(config.active_criteria)
+        else:
+            try:
+                # Fallback: compute active criteria if possible (e.g. in tests)
+                active_ids = set(self._get_active_criteria(config))
+            except Exception:
+                pass
 
-        # 4. Columns needed for format_city_details (if not already covered)
-        # This is a bit redundant with the above, but ensures specific columns are kept
-        # for UI display even if not directly part of a score calculation.
-        # Example: mob_trans_pub_stop_density, loyer_m2_moy_*, etc.
-        # It's safer to list them explicitly or ensure they are covered by active_ids/metrics.
-        # For now, rely on active_ids and their metrics to cover most.
-        # Add specific columns for format_city_details that might not be active criteria
-        details_specific_cols = [
-            'nb_stops_bus', 'nb_stops_tram', 'nb_stops_metro', 'nb_stops_train', 'nb_stops_total',
-            'mob_trans_pub_stop_density', 'heb_accueillants_count',
-            'loyer_m2_moy_appt_all', 'loyer_m2_moy_appt_t1_t2', 'loyer_m2_moy_appt_t3_p', 'loyer_m2_moy_house_all',
-            'edu_maternelle_ct', 'edu_elementaire_ct', 'edu_college_ct', 'edu_lycee_ct',
-            'count_hopital', 'count_maternite', 'count_psy'
-        ]
-        for col in details_specific_cols:
-            if col in df.columns:
-                columns_to_keep.add(col)
-        
-        # Add RNA RAG columns for associations
-        rna_rag_cols = [c for c in df.columns if c.startswith("inc_rna_") and c.endswith("_count")]
-        columns_to_keep.update(rna_rag_cols)
-
-        # Filter the DataFrame
-        final_columns = [c for c in columns_to_keep if c in df.columns]
-        return df[final_columns]
+        if active_ids:
+            scaled_cols = [c for c in df.columns if c.endswith('_scaled')]
+            for col in scaled_cols:
+                if col not in active_ids:
+                    to_drop.append(col)
+            
+        actual_drops = [c for c in to_drop if c in df.columns]
+        if actual_drops:
+            df = df.drop(columns=actual_drops)
+            
+        return df
 
     def __init__(
         self,
@@ -324,9 +282,11 @@ class ScoringEngine:
         active.add('workclass_decline_scaled')
         active.add('mob_gare_scaled')
         active.add('mob_trans_pub_density_scaled')
-        active.add('mob_epci_scaled')
-        active.add('dist_current_loc_scaled')
-        active.add('mob_dist_scaled') # Alias used in some tests/configs
+        
+        # Only add proximity scores if it's a local search
+        if self._is_local_search(config):
+            active.add('mob_epci_scaled')
+            active.add('mob_dist_current_loc_scaled')
         
         # 2. Employment & Formations (Only if specific adult was searched)
         for i in range(config.nb_adultes):
@@ -334,14 +294,12 @@ class ScoringEngine:
             # Employment
             if i < len(config.codes_metiers) and config.codes_metiers[i]:
                 active.add(f'met_match_adult{adult_idx}_scaled')
-                active.add(f'met_match_adult{adult_idx}_bdv_scaled')
                 active.add(f'met_match_adult{adult_idx}_tension_scaled')
                 active.add(f'met_siae_match_adult{adult_idx}_scaled') 
 
             # Formations
             if i < len(config.codes_formations) and config.codes_formations[i]:
                 active.add(f'form_match_adult{adult_idx}_scaled')
-                active.add(f'form_match_adult{adult_idx}_bdv_scaled')
 
         # 3. Logement
         # F-42: Hebergement Refinements
@@ -409,7 +367,7 @@ class ScoringEngine:
         active.add('inc_population_scaled')
         active.add('inc_asso_core_scaled')
         # F-26: Refugee Associations
-        active.add('heb_asso_refug_scaled') 
+        active.add('inc_asso_refug_scaled') 
         active.add('inc_siae_density_scaled') # New F-39: SIAE Density
         if config.inc_services_add_selection: active.add('inc_services_incl_scaled')
         if config.inc_asso_add_selection: active.add('inc_asso_add_scaled')
@@ -460,7 +418,7 @@ class ScoringEngine:
 
         # F-26: Refugee Associations - If the score is active and present, update jaccueille_count
         # This is a specific override/addition based on the presence of the refugee association score.
-        if 'heb_asso_refug_scaled' in row and pd.notna(row['heb_asso_refug_scaled']):
+        if 'inc_asso_refug_scaled' in row and pd.notna(row['inc_asso_refug_scaled']):
             # The instruction implies that jaccueille_count might be related to this.
             # Assuming the original line for jaccueille_count is kept, this might be an additional check
             # or a way to ensure it's only shown if the refugee association score is relevant.
@@ -472,16 +430,14 @@ class ScoringEngine:
         # Use cached active criteria if available
         active_ids = config.active_criteria if config and config.active_criteria is not None else self._get_active_criteria(config)
 
-        # Calculate weights for relative_weight
-        # We need to replicate compute_weighted_score logic to find the global impact
+        # 1. Normalize and aggregate category weights
         cat_weights = {
             'emploi': config.poids_emploi if config else 100,
             'logement': config.poids_logement if config else 100,
             'education': config.poids_education if config else 100,
             'inclusion': config.poids_inclusion if config else 100,
             'mobilité': config.poids_mobilité if config else 100,
-            'sante': config.poids_sante if config else 100,
-            'santé': config.poids_sante if config else 100 # support for mock
+            'sante': config.poids_sante if config else 100
         }
         
         # Skip categories based on config
@@ -489,53 +445,48 @@ class ScoringEngine:
             if config.nb_enfants == 0: cat_weights['education'] = 0
             if config.besoin_sante == 'Aucun': 
                 cat_weights['sante'] = 0
-                cat_weights['santé'] = 0
-            
-        # Total Category Weight Sum (Effective for this city)
-        total_cat_weight = 0.0
-        for c, w in cat_weights.items():
-            if c == 'santé': continue # Skip alias
-            
-            # Use 'cat_cat_score' existence and non-nullity to determine if cat is active for THIS city
-            # Check for both 'sante' and 'santé' variants
-            score_col = f"{c}_cat_score"
-            if c == 'sante' and 'santé_cat_score' in row:
-                score_col = 'santé_cat_score'
-                
-            if score_col in row and pd.notna(row[score_col]):
-                total_cat_weight += w
         
-        if total_cat_weight == 0: total_cat_weight = 1.0
-
-        # Pre-compute category internal weight sums (Effective for this city)
-        cat_internal_weights = {}
-        for cat in cat_weights:
-            # Normalize cat for matching weights
-            norm_cat = 'sante' if cat == 'santé' else cat
-            c_scores_def = self.scores_cat[self.scores_cat.cat == norm_cat]
-            
-            # Sum criteria weights ONLY for those that have data in THIS city row
-            weight_sum = 0.0
-            for _, s_row in c_scores_def.iterrows():
-                sid = s_row['score']
-                if sid in active_ids and sid in row and pd.notna(row[sid]):
-                    w = float(s_row['weight'])
-                    if config and sid in config.criteria_weights: w *= config.criteria_weights[sid]
-                    weight_sum += w
-            cat_internal_weights[cat] = weight_sum if weight_sum > 0 else 1.0
-
-        # 1. Scores per Category
+        # 2. Identify displayed criteria and compute internal weights based on visibility
+        displayed_items = []
+        cat_internal_weights = {} # sum of w_crit for displayed items in each normalized cat
+        active_norm_cats = set()
+        
         for _, score_row in self.scores_cat.iterrows():
-            cat = score_row['cat']
             score_id = score_row['score']
-            
             val_scaled = float(row[score_id]) if score_id in row and pd.notna(row[score_id]) else None
             
-
-            # Central pruning: skip if not active or if value is missing (NaN)
+            # Skip if not active or if value is missing
             if (config and score_id not in active_ids) or val_scaled is None:
                 continue
             
+            cat = score_row['cat']
+            norm_cat = 'sante' if cat == 'santé' else cat
+            active_norm_cats.add(norm_cat)
+            
+            w_crit = float(score_row['weight'])
+            if config and score_id in config.criteria_weights: w_crit *= config.criteria_weights[score_id]
+            
+            cat_internal_weights[norm_cat] = cat_internal_weights.get(norm_cat, 0.0) + w_crit
+            displayed_items.append({
+                "score_row": score_row,
+                "val_scaled": val_scaled,
+                "norm_cat": norm_cat,
+                "w_crit": w_crit
+            })
+
+        # 3. Total Category Weight Sum (Effective for displayed items)
+        total_cat_weight = sum(cat_weights[c] for c in active_norm_cats)
+        if total_cat_weight == 0: total_cat_weight = 1.0
+
+        # 4. Populate details with correctly weighted items
+        for item in displayed_items:
+            score_row = item['score_row']
+            cat = score_row['cat']
+            norm_cat = item['norm_cat']
+            val_scaled = item['val_scaled']
+            w_crit = item['w_crit']
+            score_id = score_row['score']
+
             if cat not in details['scores']: details['scores'][cat] = []
             
             # Improved Valeur KPI (Return Float as requested)
@@ -565,12 +516,8 @@ class ScoringEngine:
                 else:
                     val_raw = round(float(val_raw), 1)
             
-            # Relative Weight Calculation
-            w_crit = float(score_row['weight'])
-            if config and score_id in config.criteria_weights: w_crit *= config.criteria_weights[score_id]
-            
             # Impact = (w_crit / sum_weights_in_cat) * (cat_weight / total_cat_weight)
-            rel_weight = (w_crit / cat_internal_weights[cat]) * (cat_weights[cat] / total_cat_weight)
+            rel_weight = (w_crit / cat_internal_weights[norm_cat]) * (cat_weights[norm_cat] / total_cat_weight)
 
             details['scores'][cat].append({
                 "label": score_row.get('label', score_id),
@@ -805,7 +752,7 @@ class ScoringEngine:
             asso_city = self.associations_data[self.associations_data['codgeo'] == codgeo]
             refugee_assos = asso_city[asso_city['id_waldec'].astype(str).str.startswith('019025', na=False)]
             details['associations']['refugee_count'] = int(refugee_assos['count'].sum()) if 'count' in refugee_assos.columns else len(refugee_assos)
-        elif 'heb_asso_refug_scaled' in row:
+        elif 'inc_asso_refug_scaled' in row:
              # If we have a scaled score, we can assume some presence, but maybe not the count
              pass
 
@@ -895,44 +842,6 @@ class ScoringEngine:
 
 
 
-    def _prune_irrelevant_metrics(self, df: pd.DataFrame, config: SearchCriterias) -> pd.DataFrame:
-        """Prunes columns that are not relevant based on active criteria."""
-        active = config.active_criteria if config.active_criteria is not None else self._get_active_criteria(config)
-        
-        # Identify all scaled columns present
-        scaled_cols = [c for c in df.columns if c.endswith('_scaled') or c.endswith('_scaled_binome')]
-        
-        # Identify columns to drop
-        # Logic: Drop if base score (without _binome) is NOT in active set
-        cols_to_drop = [c for c in scaled_cols if c.replace('_binome', '') not in active]
-        
-        # Also drop corresponding raw metrics if they are in scores_cat
-        score_to_metric = dict(zip(self.scores_cat['score'], self.scores_cat['metric']))
-        extra_drops = []
-        for sid in cols_to_drop:
-            base_sid = sid.replace('_binome', '')
-            if base_sid in score_to_metric:
-                metric = score_to_metric[base_sid]
-                if metric and metric in df.columns:
-                    extra_drops.append(metric)
-        
-        # Add special cases for employment/formations raw columns (if entire block unused)
-        if not any(config.codes_metiers):
-            for i in range(config.nb_adultes):
-                prefix = f'met_match_adult{i+1}'
-                extra_drops.extend([prefix, f'{prefix}_bdv', f'{prefix}_tension'])
-
-        if not any(config.codes_formations):
-             for i in range(config.nb_adultes):
-                prefix = f'form_match_adult{i+1}'
-                extra_drops.extend([prefix, f'{prefix}_bdv', f'form_match_codes_{prefix}'])
-
-        if cols_to_drop or extra_drops:
-            # Only drop if columns exist
-            all_drops = set(cols_to_drop + extra_drops)
-            df.drop(columns=[c for c in all_drops if c in df.columns], inplace=True)
-            
-        return df
 
     def _compute_employment_scores(self, df: gpd.GeoDataFrame, config: SearchCriterias) -> gpd.GeoDataFrame:
         df = df.copy()
@@ -984,17 +893,35 @@ class ScoringEngine:
                     df[col_bdv_raw] = 0.0
 
                 # Scaling
+                s_def = self.scores_cat[self.scores_cat['score'] == f'{col_raw}_scaled'].iloc[0] if not self.scores_cat[self.scores_cat['score'] == f'{col_raw}_scaled'].empty else {}
                 min_c, max_c = self._get_bounds(f'{col_raw}_scaled')
                 if pd.isna(max_c): max_c = 10.0
-                df[f'{col_raw}_scaled'] = self._min_max_scale(df[col_raw], min_c, max_c)
+                df[f'{col_raw}_scaled'] = self._scale_series(
+                    df[col_raw], min_c, max_c, 
+                    scaling_type=s_def.get('scaling_type', 'linear'),
+                    mu=s_def.get('mu'),
+                    sigma=s_def.get('sigma')
+                )
                 
-                min_b, max_b = self._get_bounds(f'{col_bdv_raw}_scaled')
+                s_def_bdv = self.scores_cat[self.scores_cat['score'] == f'{col_raw}_scaled_bdv'].iloc[0] if not self.scores_cat[self.scores_cat['score'] == f'{col_raw}_scaled_bdv'].empty else {}
+                min_b, max_b = self._get_bounds(f'{col_raw}_scaled_bdv')
                 if pd.isna(max_b): max_b = 50.0
-                df[f'{col_bdv_raw}_scaled'] = self._min_max_scale(df[col_bdv_raw], min_b, max_b)
+                df[f'{col_raw}_scaled_bdv'] = self._scale_series(
+                    df[col_bdv_raw], min_b, max_b,
+                    scaling_type=s_def_bdv.get('scaling_type', 'linear'),
+                    mu=s_def_bdv.get('mu'),
+                    sigma=s_def_bdv.get('sigma')
+                )
                 
+                s_def_t = self.scores_cat[self.scores_cat['score'] == f'{col_tension_raw}_scaled'].iloc[0] if not self.scores_cat[self.scores_cat['score'] == f'{col_tension_raw}_scaled'].empty else {}
                 min_t, max_t = self._get_bounds(f'{col_tension_raw}_scaled')
                 if pd.isna(max_t): max_t = 5.0
-                df[f'{col_tension_raw}_scaled'] = self._min_max_scale(df[col_tension_raw], min_t, max_t)
+                df[f'{col_tension_raw}_scaled'] = self._scale_series(
+                    df[col_tension_raw], min_t, max_t,
+                    scaling_type=s_def_t.get('scaling_type', 'linear'),
+                    mu=s_def_t.get('mu'),
+                    sigma=s_def_t.get('sigma')
+                )
 
                 # --- SIAE Jobs Matching (New F-39) ---
                 col_siae_raw = f'met_siae_match_{adult_key}'
@@ -1015,9 +942,15 @@ class ScoringEngine:
                         df[col_siae_raw] = df.index.map(siae_counts).fillna(0)
 
                 # Scaling SIAE
+                s_def_s = self.scores_cat[self.scores_cat['score'] == f'{col_siae_raw}_scaled'].iloc[0] if not self.scores_cat[self.scores_cat['score'] == f'{col_siae_raw}_scaled'].empty else {}
                 min_s, max_s = self._get_bounds(f'{col_siae_raw}_scaled')
                 if pd.isna(max_s): max_s = 5.0
-                df[f'{col_siae_raw}_scaled'] = self._min_max_scale(df[col_siae_raw], min_s, max_s)
+                df[f'{col_siae_raw}_scaled'] = self._scale_series(
+                    df[col_siae_raw], min_s, max_s,
+                    scaling_type=s_def_s.get('scaling_type', 'linear'),
+                    mu=s_def_s.get('mu'),
+                    sigma=s_def_s.get('sigma')
+                )
 
         # --- Formations ---
         if any(config.codes_formations):
@@ -1041,16 +974,28 @@ class ScoringEngine:
                     # Match Score Local
                     score_key = f'form_match_{adult_key}'
                     df[score_key] = df.index.map(lambda c: len(form_map.get(c, set()).intersection(prefs)))
+                    s_def_fl = self.scores_cat[self.scores_cat['score'] == f'{score_key}_scaled'].iloc[0] if not self.scores_cat[self.scores_cat['score'] == f'{score_key}_scaled'].empty else {}
                     min_b, max_b = self._get_bounds(f'{score_key}_scaled')
                     if pd.isna(max_b): max_b = float(len(prefs))
-                    df[f'{score_key}_scaled'] = self._min_max_scale(df[score_key].fillna(0), min_b, max_b)
+                    df[f'{score_key}_scaled'] = self._scale_series(
+                        df[score_key].fillna(0), min_b, max_b,
+                        scaling_type=s_def_fl.get('scaling_type', 'linear'),
+                        mu=s_def_fl.get('mu'),
+                        sigma=s_def_fl.get('sigma')
+                    )
 
                     # Match Score BdV
                     if 'bassin_de_vie' in df.columns:
                         df[f'{score_key}_bdv'] = df['bassin_de_vie'].map(lambda b: len(form_map_bdv.get(b, set()).intersection(prefs)))
-                        min_b, max_b = self._get_bounds(f'{score_key}_bdv_scaled')
+                        s_def_fb = self.scores_cat[self.scores_cat['score'] == f'{score_key}_scaled_bdv'].iloc[0] if not self.scores_cat[self.scores_cat['score'] == f'{score_key}_scaled_bdv'].empty else {}
+                        min_b, max_b = self._get_bounds(f'{score_key}_scaled_bdv')
                         if pd.isna(max_b): max_b = float(len(prefs))
-                        df[f'{score_key}_bdv_scaled'] = self._min_max_scale(df[f'{score_key}_bdv'].fillna(0), min_b, max_b)
+                        df[f'{score_key}_scaled_bdv'] = self._scale_series(
+                            df[f'{score_key}_bdv'].fillna(0), min_b, max_b,
+                            scaling_type=s_def_fb.get('scaling_type', 'linear'),
+                            mu=s_def_fb.get('mu'),
+                            sigma=s_def_fb.get('sigma')
+                        )
 
             # Aggregate formation names
             if self.codformations_index is not None and not self.codformations_index.empty:
@@ -1085,9 +1030,15 @@ class ScoringEngine:
         # --- Density ---
         if 'nb_stops_total' in df.columns:
             df['mob_trans_pub_stop_density'] = (df['nb_stops_total'] / df['population'].replace(0, 1)) * 1000
+            s_def_mob = self.scores_cat[self.scores_cat['score'] == 'mob_trans_pub_density_scaled'].iloc[0] if not self.scores_cat[self.scores_cat['score'] == 'mob_trans_pub_density_scaled'].empty else {}
             min_b, max_b = self._get_bounds('mob_trans_pub_density_scaled')
             if pd.isna(max_b): max_b = 10.0 
-            df['mob_trans_pub_density_scaled'] = self._min_max_scale(df['mob_trans_pub_stop_density'], min_b, max_b)
+            df['mob_trans_pub_density_scaled'] = self._scale_series(
+                df['mob_trans_pub_stop_density'], min_b, max_b,
+                scaling_type=s_def_mob.get('scaling_type', 'linear'),
+                mu=s_def_mob.get('mu'),
+                sigma=s_def_mob.get('sigma')
+            )
 
         # --- EPCI Bonus ---
         current_epci = None
@@ -1104,15 +1055,7 @@ class ScoringEngine:
                  current_reg = cur_row['reg_code']
                  current_dep = cur_row['dep_code']
 
-        apply_epci_bonus = False
-        if config.loc_search_area in ['departement', 'region']:
-             if config.loc_search_code:
-                  if config.loc_search_area == 'departement' and config.loc_search_code == current_dep:
-                       apply_epci_bonus = True
-                  elif config.loc_search_area == 'region' and config.loc_search_code == current_reg:
-                       apply_epci_bonus = True
-        
-        if apply_epci_bonus and current_epci:
+        if self._is_local_search(config) and current_epci:
              df['mob_epci_scaled'] = np.where(df['epci_code'] == current_epci, 1.0, 0.0)
         else:
              df['mob_epci_scaled'] = 0.0
@@ -1137,10 +1080,9 @@ class ScoringEngine:
         if config.inc_asso_add_selection:
             interest_codes = set()
             for i in config.inc_asso_add_selection:
-                 # Logic to handle CriteriaItem or str
-                 code = i.code if hasattr(i, 'code') else str(i)
-                 if code in cfg.WALDEC_INC_ASSO_ADD_MAPPING: interest_codes.update(cfg.WALDEC_INC_ASSO_ADD_MAPPING[code])
-                 elif len(code)>=3: interest_codes.add(code)
+                  # Logic to handle CriteriaItem or str
+                  code = i.code if hasattr(i, 'code') else str(i)
+                  interest_codes.add(code)
             
             if interest_codes:
                 # Normalization logic
@@ -1154,7 +1096,14 @@ class ScoringEngine:
                 affinite_counts = affinite_assos.groupby('codgeo')['count'].sum().reindex(df.index, fill_value=0)
                 df['affinite_density'] = (affinite_counts * 1000) / df['population']
                 min_b, max_b = self._get_bounds('inc_asso_add_scaled')
-                df['inc_asso_add_scaled'] = self._min_max_scale(df['affinite_density'], min_b, max_b)
+                s_def_inc = self.scores_cat[self.scores_cat['score'] == 'inc_asso_add_scaled'].iloc[0] if not self.scores_cat[self.scores_cat['score'] == 'inc_asso_add_scaled'].empty else {}
+                min_b, max_b = self._get_bounds('inc_asso_add_scaled')
+                df['inc_asso_add_scaled'] = self._scale_series(
+                    df['affinite_density'], min_b, max_b,
+                    scaling_type=s_def_inc.get('scaling_type', 'linear'),
+                    mu=s_def_inc.get('mu'),
+                    sigma=s_def_inc.get('sigma')
+                )
             else: 
                 if 'inc_asso_add_scaled' in df.columns: df.drop(columns=['inc_asso_add_scaled'], inplace=True)
         else: 
@@ -1193,3 +1142,27 @@ class ScoringEngine:
         return df
 
 
+    def _is_local_search(self, config: SearchCriterias) -> bool:
+        """Determines if the search is happening within the user's current area."""
+        if not config.commune_actuelle:
+            return False
+            
+        c_code_raw = config.commune_actuelle
+        c_code = c_code_raw.code if hasattr(c_code_raw, 'code') else c_code_raw
+        
+        if c_code not in self.df_all_communes.index:
+            return False
+            
+        cur_row = self.df_all_communes.loc[c_code]
+        current_dep = cur_row['dep_code']
+        current_reg = cur_row['reg_code']
+        
+        # Search area must either be the same department or same region
+        if config.loc_search_area == 'region':
+            return config.loc_search_code == current_reg
+            
+        if config.loc_search_area == 'departement':
+            return config.loc_search_code == current_dep
+            
+        # If searching France or another area, proximity is not a local search factor
+        return False

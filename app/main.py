@@ -8,6 +8,13 @@ st.set_page_config(
     layout="wide"
 )
 
+# --- Authentication (Standard ODIS) ---
+# We check passwords here too to ensure that hitting the root URL with 
+# query params (e.g. ?demo=3) doesn't reset the session or bypass auth.
+from utils import auth
+if not auth.check_password():
+    st.stop()
+
 # --- Initialize Data ---
 data_loader.ensure_data_initialized()
 
