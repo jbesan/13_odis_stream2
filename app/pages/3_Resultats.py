@@ -14,6 +14,7 @@ import pandas as pd
 import logging
 import gc
 import warnings
+from agents.utils import launch_background_scorer, odis_get_bg_result
 
 st.set_page_config(layout="wide")
 
@@ -203,8 +204,6 @@ def run_search():
     except Exception as tel_e:
         logging.warning(f"Failed to log search telemetry: {str(tel_e)}")
         
-    from agents.utils import launch_background_scorer, odis_get_bg_result
-    
     search_criterias = config
     h = search_criterias.compute_hash()
     
@@ -257,7 +256,10 @@ if st.session_state.get('processed_gdf') is None and st.session_state.get('form_
 @st.fragment(run_every=3.0)
 def export_pdf_container(h: str):
     """Module-level fragment to avoid redefinition issues."""
-    scorer_done = st.session_state.get('async_scorer_results', {}).get(h) is not None
+    scorer_res = odis_get_bg_result(h)
+    # scorer_res can be dict (success) or str (error)
+    scorer_done = scorer_res is not None and not isinstance(scorer_res, str)
+    
     if scorer_done:
         st.button(
             "Exporter résultats", 

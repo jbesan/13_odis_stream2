@@ -1,5 +1,6 @@
 import streamlit as st
 import hmac
+from ui.idle_sleep import inject_idle_sleep
 
 def verify_credentials(username, password, secrets):
     """
@@ -47,4 +48,8 @@ def check_password():
     else:
         # Password correct.
         st.sidebar.warning("ATTENTION: L'application est en phase de test. Vos interactions sont collectées pour améliorer l'outil. Merci d'anonymiser au maximum vos saisies libres.")
+        
+        # Inject Idle Sleep monitor (10 mins timeout)
+        inject_idle_sleep(timeout_minutes=0.1)
+        
         return True

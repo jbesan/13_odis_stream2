@@ -1,4 +1,4 @@
-# OD&IS - Prototype d'Aide à la Localisation (Recherche Inversée)
+# OD&IS - Prototype d'Aide à la Mobilité (Recherche Inversée)
 
 [![Python Version](https://img.shields.io/badge/python-3.10-blue.svg)](https://www.python.org/downloads/release/python-3100/)
 [![Framework](https://img.shields.io/badge/Framework-Streamlit-red.svg)](https://streamlit.io)
