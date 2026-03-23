@@ -34,6 +34,20 @@ if not auth.check_password():
 # --- Session State Initialization ---
 if 'highlighted_result' not in st.session_state:
     st.session_state['highlighted_result'] = (False, None)
+if 'fg_dict_ref' not in st.session_state:
+    st.session_state['fg_dict_ref'] = {}
+if 'fgs_to_show' not in st.session_state:
+    st.session_state['fgs_to_show'] = set()
+if 'center' not in st.session_state:
+    st.session_state['center'] = [46.5, 2.5] # Default France
+if 'zoom' not in st.session_state:
+    st.session_state['zoom'] = 6
+if 'active_ia_city_index' not in st.session_state:
+    st.session_state['active_ia_city_index'] = None
+if 'active_details_index' not in st.session_state:
+    st.session_state['active_details_index'] = None
+if 'active_ccas_index' not in st.session_state:
+    st.session_state['active_ccas_index'] = None
 
 # --- PDF Modal Logic ---
 if st.session_state.get('show_pdf_modal'):
@@ -142,6 +156,7 @@ def run_search():
     # --- State Update ---
     st.session_state['processed_gdf'] = processed_gdf
     st.session_state['unaggregated_gdf'] = unaggregated_gdf
+    st.session_state['engine'] = engine
     
     # --- Unified Telemetry Logging (BigQuery) ---
     try:
@@ -188,18 +203,16 @@ def run_search():
     except Exception as tel_e:
         logging.warning(f"Failed to log search telemetry: {str(tel_e)}")
         
-    # --- Background Scorer Pitch Generation ---
-    from agents.utils import launch_background_scorer
+    from agents.utils import launch_background_scorer, odis_get_bg_result
     
     search_criterias = config
     h = search_criterias.compute_hash()
     
-    if 'async_scorer_results' not in st.session_state:
-        st.session_state['async_scorer_results'] = {}
-        
-    if h not in st.session_state['async_scorer_results']:
-        st.session_state['async_scorer_results'][h] = None # Indicates it's running
-        launch_background_scorer(search_criterias, st.session_state['async_scorer_results'], h, top_cities=top_cities_full)
+    # Trigger background scorer if result not already present or running
+    if odis_get_bg_result(h) is None:
+        # We pass an empty dict for compatibility with the old API signature if needed, 
+        # but our new implementation in agents/utils.py uses a global store.
+        launch_background_scorer(search_criterias, {}, h, top_cities=top_cities_full)
 
     # Calculate center for map
     if not processed_gdf.empty:
@@ -240,7 +253,27 @@ if st.session_state.get('processed_gdf') is None and st.session_state.get('form_
     run_search()
     st.session_state['form_completed'] = False
 
-# --- UI LAYOUT ---
+# --- UI LAYOUT
+@st.fragment(run_every=3.0)
+def export_pdf_container(h: str):
+    """Module-level fragment to avoid redefinition issues."""
+    scorer_done = st.session_state.get('async_scorer_results', {}).get(h) is not None
+    if scorer_done:
+        st.button(
+            "Exporter résultats", 
+            on_click=open_pdf_modal,
+            icon=':material/picture_as_pdf:',
+            type='secondary',
+            width="stretch"
+        )
+    else:
+        st.button(
+            "Patience...", 
+            disabled=True,
+            icon=':material/hourglass_empty:',
+            type='secondary',
+            width="stretch"
+        )
 
 # Sidebar
 with st.sidebar:
@@ -264,28 +297,7 @@ with st.sidebar:
     if st.session_state.get('processed_gdf') is not None:
         config = st.session_state.get('config')
         h = config.compute_hash() if config else None
-        
-        @st.fragment(run_every=(3.0 if st.session_state.get('async_scorer_results', {}).get(h) is None else None))
-        def export_pdf_container():
-            scorer_done = st.session_state.get('async_scorer_results', {}).get(h) is not None
-            if scorer_done:
-                st.button(
-                    "Exporter résultats", 
-                    on_click=open_pdf_modal,
-                    icon=':material/picture_as_pdf:',
-                    type='secondary',
-                    width="stretch"
-                )
-            else:
-                st.button(
-                    "IA en cours...", 
-                    disabled=True,
-                    icon=':material/hourglass_empty:',
-                    type='secondary',
-                    width="stretch"
-                )
-        
-        export_pdf_container()
+        export_pdf_container(h)
     
     st.divider()
 

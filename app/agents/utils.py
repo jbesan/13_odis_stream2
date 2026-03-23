@@ -1,5 +1,18 @@
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
+import streamlit as st
 from pydantic_ai import Agent
+import threading
+import logging
+
+# Global storage for background tasks (Thread-safe, survives reloads via cache_resource)
+@st.cache_resource
+def get_odis_bg_store() -> dict:
+    """Returns a singleton dictionary for background task results."""
+    return {}
+
+def odis_get_bg_result(hash_val: str) -> Any:
+    """Safely retrieves a background result from the global store."""
+    return get_odis_bg_store().get(hash_val)
 
 # Humoristic messages for the ODIS agents
 AGENT_TOASTS = {
@@ -146,15 +159,15 @@ def map_ui_config_to_search_criterias(config: SearchCriterias, app_data: Dict[st
         notes_qualitatives=[]
     )
 
-import threading
-import logging
-
-def launch_background_scorer(search_criterias: SearchCriterias, results_dict: dict, hash_val: str, top_cities: list = None):
+def launch_background_scorer(search_criterias: SearchCriterias, results_dict_ignored: dict, hash_val: str, top_cities: list = None):
     """
     Launches a background thread to generate the SCORER AI pitch.
-    Stores the result in `results_dict[hash_val]`.
+    Stores the result in the cached global store.
     """
-    def bg_task():
+    # Get the store here (main thread) to ensure it's initialized in the cache
+    store = get_odis_bg_store()
+    
+    def bg_task(results_store: dict):
         import asyncio
         import os
         from google import genai
@@ -165,10 +178,13 @@ def launch_background_scorer(search_criterias: SearchCriterias, results_dict: di
         from pydantic_ai import ModelSettings
         
         try:
+            logging.info(f"🚀 [BG] Starting background scorer for hash {hash_val}")
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             
             api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+            logging.info(f"🚀 [BG] API Key present: {bool(api_key)}")
+            
             client = genai.Client(
                 api_key=api_key, 
                 http_options=types.HttpOptions(
@@ -188,31 +204,37 @@ def launch_background_scorer(search_criterias: SearchCriterias, results_dict: di
             model = get_p_model("scorer", client=client)
             
             async def run_agent():
-                res = await scorer_agent.run(
+                logging.info(f"🚀 [BG] Calling scorer_agent.run for hash {hash_val}")
+                return await scorer_agent.run(
                     "Génère le résumé explicatif des résultats pour ce profil.", 
                     deps=deps, 
                     model=model, 
                     model_settings=ModelSettings(max_output_tokens=4096)
                 )
-                return res.output
             
             try:
-                response_obj = loop.run_until_complete(run_agent())
-                # response_obj is a ScorerResult
+                result_run = loop.run_until_complete(run_agent())
+                response_obj = result_run.output
+                logging.info(f"🚀 [BG] Agent call successful for hash {hash_val}")
+                
                 pitches_dict = {
                     "global": response_obj.response,
                     "pitches": {p.codgeo: p.pitch for p in response_obj.pitches_per_city}
                 }
-                results_dict[hash_val] = pitches_dict
-                logging.info(f"✅ Background Scorer finished for hash {hash_val}")
+                results_store[hash_val] = pitches_dict
+                logging.info(f"✅ [BG] Background Scorer fully finished for hash {hash_val}")
             except Exception as e:
-                logging.error(f"❌ Background Scorer Error: {e}")
-                results_dict[hash_val] = f"⚠️ L'analyse IA a échoué: {e}"
+                logging.error(f"❌ [BG] Background Scorer Error for hash {hash_val}: {e}")
+                results_store[hash_val] = f"⚠️ L'analyse IA a échoué: {e}"
         except Exception as global_e:
-            logging.error(f"❌ Background Scorer Setup Error: {global_e}")
-            results_dict[hash_val] = f"⚠️ L'analyse IA a échoué: {global_e}"
+            logging.error(f"❌ [BG] Background Scorer Setup Error for hash {hash_val}: {global_e}")
+            results_store[hash_val] = f"⚠️ L'analyse IA a échoué (Setup): {global_e}"
+        finally:
+            if 'loop' in locals():
+                loop.close()
+                logging.info(f"🚀 [BG] Loop closed for hash {hash_val}")
             
-    thread = threading.Thread(target=bg_task)
+    thread = threading.Thread(target=bg_task, args=(store,))
     thread.start()
 
 import asyncio

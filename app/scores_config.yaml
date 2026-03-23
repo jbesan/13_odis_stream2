@@ -631,7 +631,7 @@ scores:
     bdv_factor: 1.0
     computation: precomputed
     display:
-      name: Accueils J'Accueille
+      name: Accueilants J'Accueille dans le bassin de vie
       strong_point_text: Des particuliers accueillent déjà dans ce bassin de vie
       high_value_adjective: présents
       show: true

@@ -66,27 +66,29 @@ class RNARagService:
             logger.error(f"Embedding generation failed: {e}")
             raise
 
-    def get_associations_semantic(
-        self, 
-        query: str, 
-        codgeo: str, 
-        top_k: int = 10, 
-        inclusion_only: bool = True
-    ) -> List[Dict[str, Any]]:
+    def get_associations_semantic(self, query: str, codgeos: List[str] = None, top_k: int = 10, inclusion_only: bool = True, threshold: float = 0.8) -> List[Dict[str, Any]]:
         """
         Performs semantic lookup for associations in a specific commune.
         Fetches vectors from BQ, computes similarity locally.
         
         Args:
             query: The search term (e.g. 'football', 'hébergement')
-            codgeo: The 5-digit INSEE code of the commune
+            codgeos: List of 5-digit INSEE codes
             top_k: Number of results to return
             inclusion_only: If True, filters for is_inclusion_relevant associations
+            threshold: Minimum similarity score (default 0.8)
             
         Returns:
-            List of matching associations with scores > 0.8, sorted by score DESC.
+            List of matching associations with scores > threshold, sorted by score DESC.
         """
-        logger.info(f"Searching associations for query='{query}' in codgeo='{codgeo}'")
+        # Support single codgeo for backward compatibility or singular input
+        if isinstance(codgeos, str):
+            codgeos = [codgeos]
+        elif codgeos is None:
+            codgeos = []
+
+        codgeos = [str(c) for c in codgeos]
+        logger.info(f"Searching associations for query='{query}' in {len(codgeos)} codgeos")
         
         try:
             # 1. Generate query embedding
@@ -100,14 +102,14 @@ class RNARagService:
             query_bq = f"""
                 SELECT id, titre_court as name, primary_category, embedding_128 as embedding, description
                 FROM `{table_id}`
-                WHERE codgeo = @codgeo
-                  AND SUBSTR(primary_category, 1, 3) IN UNNEST(@allowed_prefixes)
+                WHERE codgeo IN UNNEST(@codgeos)
+                  AND SUBSTR(code_waldec, 1, 3) IN UNNEST(@allowed_prefixes)
                 {"AND is_inclusion_relevant = TRUE" if inclusion_only else ""}
             """
             
             job_config = bigquery.QueryJobConfig(
                 query_parameters=[
-                    bigquery.ScalarQueryParameter("codgeo", "STRING", codgeo),
+                    bigquery.ArrayQueryParameter("codgeos", "STRING", codgeos),
                     bigquery.ArrayQueryParameter("allowed_prefixes", "STRING", cfg.WALDEC_CATEGORIES)
                 ]
             )
@@ -115,7 +117,7 @@ class RNARagService:
             df = self.bq_client.query(query_bq, job_config=job_config).to_dataframe()
             
             if df.empty:
-                logger.info(f"No associations found in BigQuery for codgeo {codgeo}")
+                logger.info(f"No associations found in BigQuery for {len(codgeos)} codgeos")
                 return []
             
             # 3. Local Similarity Computation (Dot Product)
@@ -127,8 +129,8 @@ class RNARagService:
                 vec = self._flatten_embedding(row['embedding'])
                 score = float(np.dot(query_vector, vec))
                 
-                # Apply 0.8 threshold
-                if score > 0.8:
+                # Apply threshold
+                if score > threshold:
                     scores.append({
                         "id": row['id'],
                         "name": row['name'],
@@ -156,6 +158,7 @@ class RNARagService:
         Returns:
             List of associations with their name and primary_category.
         """
+        codgeos = [str(c) for c in codgeos]
         logger.info(f"Fetching all associations for {len(codgeos)} communes")
         
         try:
@@ -165,7 +168,7 @@ class RNARagService:
                 SELECT id, titre_court as name, primary_category, description, max_score, is_refugee_focused, codgeo
                 FROM `{table_id}`
                 WHERE codgeo IN UNNEST(@codgeos) 
-                  AND SUBSTR(primary_category, 1, 3) IN UNNEST(@allowed_prefixes)
+                  AND SUBSTR(code_waldec, 1, 3) IN UNNEST(@allowed_prefixes)
                   AND ((is_inclusion_relevant = TRUE AND max_score > 0.8) OR is_refugee_focused = TRUE)
                 ORDER BY max_score DESC
             """

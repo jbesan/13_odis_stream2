@@ -775,6 +775,12 @@ class ScoringEngine:
             config.active_criteria = self._get_active_criteria(config)
         
         c_code = config.commune_actuelle.code if hasattr(config.commune_actuelle, 'code') else config.commune_actuelle
+        
+        # Robustness: fallback to Paris if c_code is missing
+        if not c_code:
+            logger.warning("⚠️ [ENGINE] commune_actuelle is None or empty. Falling back to Paris (75056).")
+            c_code = '75056'
+
         start_commune = self.df_all_communes.loc[[c_code]]
         loc_type = config.loc_search_area # 'departement', 'region', 'france'
         loc_code = config.loc_search_code
@@ -1121,7 +1127,8 @@ class ScoringEngine:
                  return sum(1 for n in needed if any(n in a for a in available))
 
              if 'key' not in df.columns: df = df.join(self.incl_index, how='left')
-             df['inc_services_incl_scaled'] = df['key'].apply(count_matches) / len(needed)
+             df['extra_services_match_count'] = df['key'].apply(count_matches)
+             df['inc_services_incl_scaled'] = df['extra_services_match_count'] / len(needed)
         else:
              if 'inc_services_incl_scaled' in df.columns: df.drop(columns=['inc_services_incl_scaled'], inplace=True)
 

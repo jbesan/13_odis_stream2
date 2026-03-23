@@ -108,11 +108,13 @@ async def router_node(state: ODISGraphState, config: RunnableConfig):
         # Inject client!
         mod_id = get_model("router")
         model =  get_p_model("router", client=deps.client)
+        from pydantic_ai.usage import UsageLimits
         result = await router_agent.run(
             user_msg, 
             deps=deps, 
             model=model,
-            model_settings=ModelSettings(max_output_tokens=4096)
+            model_settings=ModelSettings(max_output_tokens=4096),
+            usage_limits=UsageLimits(request_limit=10)
         )
         decision = result.output
         
@@ -174,11 +176,13 @@ async def refiner_node(state: ODISGraphState, config: RunnableConfig):
         mod_id = get_model("refiner")
         model =  get_p_model("refiner", client=deps.client)
         
+        from pydantic_ai.usage import UsageLimits
         result = await refiner_agent.run(
             "Mise à jour du briefing", 
             deps=deps, 
             model=model,
-            model_settings=ModelSettings(max_output_tokens=4096)
+            model_settings=ModelSettings(max_output_tokens=4096),
+            usage_limits=UsageLimits(request_limit=10)
         )
         
         briefing = result.output.briefing.strip()
@@ -205,9 +209,11 @@ async def interviewer_node(state: ODISGraphState, config: RunnableConfig):
     try:
         mod_id = get_model("interviewer")
         model =  get_p_model("interviewer", client=deps.client)
+        from pydantic_ai.usage import UsageLimits
         result = await interviewer_agent.run(
             user_msg, deps=deps, model=model,
-            model_settings=ModelSettings(max_output_tokens=4096)
+            model_settings=ModelSettings(max_output_tokens=4096),
+            usage_limits=UsageLimits(request_limit=10)
         )
         
         end_time = datetime.now()
@@ -235,12 +241,24 @@ async def scorer_node(state: ODISGraphState, config: RunnableConfig):
 
     mod_id = get_model("scorer")
     model =  get_p_model("scorer", client=deps.client)
-    result = await scorer_agent.run(
-        "Start Scoring", 
-        deps=deps, 
-        model=model,
-        model_settings=ModelSettings(max_output_tokens=4096)
-    ) 
+    from pydantic_ai.usage import UsageLimits
+    from pydantic_ai.exceptions import UsageLimitExceeded
+    try:
+        result = await scorer_agent.run(
+            "Start Scoring", 
+            deps=deps, 
+            model=model,
+            model_settings=ModelSettings(max_output_tokens=4096),
+            usage_limits=UsageLimits(request_limit=10)
+        ) 
+    except UsageLimitExceeded as e:
+        logger.error(f"🚨 [SCORER] Usage limit exceeded: {e}. Too many turns or tool calls.")
+        # Attempt to return a graceful failure message 
+        return {
+            "messages": [{"role": "assistant", "content": "Désolé, j'ai rencontré une erreur interne suite à une boucle de réflexion. Peux-tu reformuler ta demande ?"}],
+            "active_agent": "scorer",
+            "next_node": END
+        }
 
     # We extract top_cities EXCLUSIVELY from the tool history to avoid LLM parroting lag
     top_cities = []
@@ -338,11 +356,13 @@ async def scout_node(state: ODISGraphState, config: RunnableConfig):
     logger.info("🚀 [SCOUT] Node started.")
     mod_id = get_model("scout")
     model =  get_p_model("scout", client=deps.client)
+    from pydantic_ai.usage import UsageLimits
     result = await scout_agent.run(
         user_msg, 
         deps=deps, 
         model=model,
-        model_settings=ModelSettings(max_output_tokens=4096)
+        model_settings=ModelSettings(max_output_tokens=4096),
+        usage_limits=UsageLimits(request_limit=10)
     )
     
     logger.info(f"✅ [SCOUT] Node finished for {focus}.")
@@ -371,11 +391,13 @@ async def web_node(state: ODISGraphState, config: RunnableConfig):
     logger.info("🚀 [WEB] Node started.")
     mod_id = get_model("web")
     model =  get_p_model("web", client=deps.client)
+    from pydantic_ai.usage import UsageLimits
     result = await web_agent.run(
         user_msg, 
         deps=deps, 
         model=model,
-        model_settings=ModelSettings(max_output_tokens=4096)
+        model_settings=ModelSettings(max_output_tokens=4096),
+        usage_limits=UsageLimits(request_limit=15) # Web needs more for research
     )
     
     logger.info(f"✅ [WEB] Node finished for {focus}.")
@@ -404,11 +426,13 @@ async def job_hunter_node(state: ODISGraphState, config: RunnableConfig):
     logger.info("🚀 [JOB_HUNTER] Node started.")
     mod_id = get_model("job_hunter")
     model =  get_p_model("job_hunter", client=deps.client)
+    from pydantic_ai.usage import UsageLimits
     result = await job_hunter_agent.run(
         user_msg, 
         deps=deps, 
         model=model,
-        model_settings=ModelSettings(max_output_tokens=4096)
+        model_settings=ModelSettings(max_output_tokens=4096),
+        usage_limits=UsageLimits(request_limit=15)
     )
     
     logger.info(f"✅ [JOB_HUNTER] Node finished for {focus}.")
@@ -429,11 +453,13 @@ async def synthesizer_node(state: ODISGraphState, config: RunnableConfig):
     
     mod_id = get_model("synthesizer")
     model =  get_p_model("synthesizer", client=deps.client)
+    from pydantic_ai.usage import UsageLimits
     result = await synthesizer_agent.run(
         input_msg, 
         deps=deps, 
         model=model,
-        model_settings=ModelSettings(max_output_tokens=4096)
+        model_settings=ModelSettings(max_output_tokens=4096),
+        usage_limits=UsageLimits(request_limit=10)
     )
     logger.info(f"✅ [SYNTHESIZER] Synthesis complete for {city_name}.")
     

@@ -40,6 +40,10 @@ python -m pipeline.etl --step prescoring
 python -m pipeline.etl --step deploy
 ```
 
+Optional flags:
+- `--skip-live-jobs`: Skip fetching live job offers from France Travail.
+- `--skip-inclusion-jobs`: Skip fetching jobs from Les emplois de l'inclusion.
+
 ## 📂 Architecture
 
 The pipeline is split into several main stages:
@@ -86,14 +90,12 @@ The pipeline generates the following Parquet files in `pipeline/cache/output/` a
 | --------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | **`odis_communes.parquet`**             | Main dataset at Commune level.             | `codgeo`, `population`, `pop_active`, `met_ratio`, `met_tension_ratio`, `pop_chomage_ratio`, `bassin_de_vie`, `polygon`, `*_scaled` scores |
 | **`odis_bassins_de_vie.parquet`**       | Aggregated dataset at Bassin de Vie level. | `bassin_de_vie`, `libelle_bassin_de_vie`, `population_bv`, `pop_active`, `pop_chomage_ratio`, `geometry` (dissolved)                       |
-| **`rna_inclusion_agg.parquet`**         | Aggregated counts from RNA RAG (BQ).       | `codgeo`, `inc_rna_{category}_count`                                                                                                       |
-| **`gares.parquet`**                     | Train Stations presence (Odace).           | `codgeo`, `gare_count`, `has_gare`                                                                                                         |
-| **`pois.parquet`**                      | Points of Interest for map layers.         | `id`, `type`, `lat`, `lon`, `metadata`                                                                                                     |
-| **`referentiels.parquet`**              | Reference tables for UI dropdowns.         | `type`, `code`, `label`                                                                                                                    |
-| **`loyers.parquet`**                    | Average Rent data (Appartements).          | `codgeo`, `loyer_app_m2`                                                                                                                   |
-| **`population_details.parquet`**        | Age-specific population counts (2016-2022) | `codgeo`, `pop_jeune_2016`, `pop_jeune_2022`, `pop_active_2016`, `pop_active_2022`                                                         |
+| **`odis_associations_agg.parquet`**     | Aggregated counts from RNA.                | `codgeo`, `inc_rna_{category}_count`                                                                                                       |
+| **`odis_pois.parquet`**                 | Points of Interest for map layers.         | `id`, `type`, `lat`, `lon`, `metadata`                                                                                                     |
+| **`odis_referentiels.parquet`**         | Reference tables for UI dropdowns.         | `type`, `code`, `label`                                                                                                                    |
+| **`odis_formations_agg.parquet`**       | Aggregated training centers.               | `codgeo`, `form_count`                                                                                                                     |
+| **`odis_ccas.parquet`**                 | CCAS locations.                            | `codgeo`, `name`, `address`                                                                                                                |
 | **`odis_refugee_associations.parquet`** | Detailed Refugee Associations List.        | `id`, `codgeo`, `bassin_de_vie`, `name`, `description`, `waldec_code`                                                                      |
-| **`jaccueille_accueillants_bdv` (BQ)**  | Sensitive host counts (BQ only).           | `bassin_de_vie`, `heb_accueillants_count`                                                                                                  |
 | **`odis_ft_jobs_agg.parquet`**          | Live Employment counts (France Travail).   | `commune`, `romeCode`, `romeLibelle`, `total_postes`, `nb_offres_tension`                                                                  |
 | **`odis_inclusion_jobs.parquet`**       | Granular Inclusion Job offers.             | `codgeo`, `siae_siret`, `siae_name`, `siae_type`, `rome`, `postes`                                                                         |
 

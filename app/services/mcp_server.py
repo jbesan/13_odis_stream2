@@ -7,7 +7,7 @@ import geopandas as gpd
 import numpy as np
 from utils.data_loader import load_all_data_raw
 from core.scoring import ScoringEngine
-from core.models import SearchCriterias, SearchCriterias
+from core.models import SearchCriterias, CriteriaItem
 from services.rna_rag import RNARagService
 import config as cfg
 import logging
@@ -235,17 +235,20 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
     engine = get_scoring_engine()
     
     # 1. Resolve Commune
-    commune_input = filters.get('commune_actuelle', 'Paris')
-    resolved_commune = commune_input
-    if engine and isinstance(commune_input, str):
-         if commune_input in engine.df_all_communes.index:
-             resolved_commune = commune_input
-         else:
+    commune_input = filters.get('commune_actuelle')
+    # Use 'Paris' (75056) as the absolute fallback if input is missing or None
+    resolved_commune = '75056' 
+    
+    if engine and isinstance(commune_input, (str, dict, CriteriaItem)):
+         c_code = get_code(commune_input)
+         if c_code and c_code in engine.df_all_communes.index:
+             resolved_commune = c_code
+         elif isinstance(commune_input, str) and commune_input.strip():
              matches = engine.df_all_communes[engine.df_all_communes['libgeo'].str.lower() == commune_input.lower()]
              if not matches.empty:
-                 resolved_commune = matches.index[0]
+                 resolved_commune = str(matches.index[0])
              else:
-                 logger.warning(f"   ⚠️ City '{commune_input}' not found.")
+                 logger.warning(f"   ⚠️ City '{commune_input}' not found. Falling back to Paris (75056).")
 
     # 2. Map Inputs (Geography)
     loc_search_area = filters.get('loc_search_area', 'departement')
@@ -695,7 +698,7 @@ def _search_rna_rag_logic(query: str, codgeo: str, top_k: int = 10) -> Union[Lis
         return {"error": "RNARagService not initialized. Check BigQuery authentication."}
     
     try:
-        return rna_rag_service.get_associations_semantic(query, codgeo, top_k=top_k)
+        return rna_rag_service.get_associations_semantic(query, codgeos=[codgeo], top_k=top_k)
     except Exception as e:
         logger.exception(f"❌ [MCP] _search_rna_rag_logic failed: {e}")
         return {"error": str(e)}

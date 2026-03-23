@@ -127,10 +127,9 @@ L'agent **JobHunter** doit souvent rechercher des offres pour plusieurs métiers
 - `search_refugee_associations` (RNA) : Associations spécialisées dans l'accueil des réfugiés (Source: BigQuery).
 - `search_rna_rag` (RAG) : Recherche sémantique thématique (FLE, Hébergement, etc.) sur le RNA (Source: BigQuery + Vertex AI).
 
-## 📝 Configuration des Modèles (Janv 2026)
+## 📝 Configuration des Modèles (Mars 2026)
 
-- Router / Interviewer / Synthesizer : `gemini-3-flash-preview`.
-- Scorer / Refiner / Experts : `gemini-2.5-flash-lite`.
+L'ensemble des agents utilise désormais le modèle **`gemini-3.1-flash-lite-preview`** (configuré dans `agent_config.py`) pour un équilibre optimal entre performance, latence et coût.
 
 ## ⚙️ Async Loop Management (Architecture Critique)
 
@@ -145,13 +144,13 @@ Nous avons mis en place une architecture d'isolation stricte :
 1.  **Isolation de Thread** : Le graphe LangGraph s'exécute dans un `ThreadPoolExecutor` dédié via `run_async_in_thread`.
 2.  **Isolation de Boucle** : À l'intérieur de ce thread, nous utilisons `asyncio.run()`, ce qui garantit une boucle d'événement fraîche pour chaque interaction.
 3.  **Injection de Client (CRITIQUE)** :
-    - Nous instancions un `genai.Client` _à l'intérieur_ de ce thread protégé.
+    - Nous instancions un `genai.Client` _à l'intérieur_ de ce thread protégé (voir `utils.py`).
     - Nous injectons EXPLICITEMENT ce client dans **chaque** agent PydanticAI via `GoogleProvider(client=deps.client)`.
     - Cela empêche les agents d'utiliser un client global "caché" qui serait rattaché à une boucle morte.
 
 ```python
-# Pattern d'injection dans graph.py
-def _get_p_model(agent_name: str, client: genai.Client) -> GoogleModel:
+# Pattern d'injection dans agent_config.py
+def get_p_model(agent_name: str, client: genai.Client) -> GoogleModel:
     provider = GoogleProvider(client=client) # <-- Le secret est ici
-    return GoogleModel(name, provider=provider)
+    return GoogleModel(model_name, provider=provider)
 ```

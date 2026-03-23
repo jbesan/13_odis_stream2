@@ -36,122 +36,156 @@ def inject_custom_css() -> None:
         </style>
     """, unsafe_allow_html=True)
 
-@st.dialog(title=" ", width="large")
-def show_ia_analysis_dialog(details: Dict[str, Any]):
-    """Displays AI synthesis and chat for a city in a modal."""
-    if not details:
-        st.error("Détails non disponibles.")
-        return
+@st.fragment
+def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
+    # Unique session key for this city's analysis
+    h = search_criterias.compute_hash()
+    cache_key = f"ia_analysis_{h}_{codgeo}"
+    
+    if cache_key not in st.session_state['app_data']:
+        # F-IA: Automate trigger on open
+        with st.spinner(f"Les experts analysent {nom}, veuillez patienter (environ 15 à 30s)..."):
+            from agents.utils import run_async_safe
+            
+            state_dict = {
+                "search_criteria": search_criterias.model_dump(),
+                "is_interview_complete": True,
+                "execution_mode": "full_analysis",
+                "focus_city": {"name": nom, "codgeo": codgeo},
+                "messages": [{"role": "user", "content": f"Fais une analyse complète pour {nom}."}]
+            }
+            try:
+                final_state = run_async_safe(state_dict)
+                syn_msg = final_state.get("messages", [])[-1]["content"] if final_state.get("messages") else "Pas de synthèse générée."
+                st.session_state['app_data'][cache_key] = {
+                    "synthesis": syn_msg,
+                    "chat": []
+                }
+                # Within a fragment, rerun() only reruns the fragment
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erreur lors de la génération: {str(e)}")
 
+    if cache_key in st.session_state['app_data']:
+        data_cache = st.session_state['app_data'][cache_key]
+        st.markdown(data_cache["synthesis"])
+        
+        st.divider()
+        st.markdown(f"#### Poser une question sur {nom}")
+        
+        for msg in data_cache["chat"]:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+        
+        question = st.chat_input(f"Ex: Quelles associations facilitent le logement à {nom} ?", key=f"chat_input_ia_{codgeo}")
+        if question:
+            data_cache["chat"].append({"role": "user", "content": question})
+            with st.chat_message("user"):
+                st.markdown(question)
+            
+            with st.spinner("Recherche de la réponse en cours..."):
+                from agents.utils import run_async_safe
+                state_dict = {
+                    "search_criteria": search_criterias.model_dump(),
+                    "is_interview_complete": True,
+                    "execution_mode": "specific_ask",
+                    "focus_city": {"name": nom, "codgeo": codgeo},
+                    "messages": data_cache["chat"]
+                }
+                try:
+                    final_state = run_async_safe(state_dict)
+                    answer = final_state.get("messages", [])[-1]["content"] if final_state.get("messages") else "Pas de réponse."
+                    data_cache["chat"].append({"role": "assistant", "content": answer})
+                    with st.chat_message("assistant"):
+                        st.markdown(answer)
+                    st.rerun() # Refresh fragment to show answer and clear input
+                except Exception as e:
+                    st.error(f"Erreur de l'agent: {str(e)}")
+
+def _on_ia_dialog_dismiss():
+    st.session_state.active_ia_city_index = None
+
+def _on_details_dialog_dismiss():
+    st.session_state.active_details_index = None
+
+def _on_ccas_dialog_dismiss():
+    st.session_state.active_ccas_index = None
+
+@st.dialog(title=" ", width="large", on_dismiss=_on_ia_dialog_dismiss)
+def show_ia_analysis_dialog(index: Any):
+    """Displays AI synthesis and chat for a city in a modal."""
+    if 'processed_gdf' not in st.session_state or index not in st.session_state.processed_gdf.index:
+        st.error("Données de la ville introuvables.")
+        return
+        
+    row = st.session_state.processed_gdf.loc[index]
+    # We need to compute details for the specific city
+    # In the results page, this is usually done during the list render.
+    # We re-calculate it here to ensure it's available for the dialog.
+    engine = st.session_state.get('engine')
+    if not engine:
+        # Fallback to creating one if not in session state (should be there)
+        # But safer to error if we are in results list
+        st.error("Moteur de recherche non initialisé.")
+        return
+        
+    details = engine.format_city_details(row, config=st.session_state.config)
+    
     identity = details.get('identity', {})
     nom = identity.get('nom', 'cette ville')
     codgeo = identity.get('codgeo')
     
     st.header(f"Analyse OD&IS pour {nom}")
     
-    @st.fragment
-    def ia_analysis_content():
-        search_criterias = st.session_state.config
-        h = search_criterias.compute_hash()
-        
-        # Unique session key for this city's analysis
-        cache_key = f"ia_analysis_{h}_{codgeo}"
-        
-        if cache_key not in st.session_state['app_data']:
-            # F-IA: Automate trigger on open
-            with st.spinner(f"Les experts analysent {nom}, veuillez patienter (environ 15 à 30s)..."):
-                from agents.utils import run_async_safe
-                
-                state_dict = {
-                    "search_criteria": search_criterias.model_dump(),
-                    "is_interview_complete": True,
-                    "execution_mode": "full_analysis",
-                    "focus_city": {"name": nom, "codgeo": codgeo},
-                    "messages": [{"role": "user", "content": f"Fais une analyse complète pour {nom}."}]
-                }
-                try:
-                    final_state = run_async_safe(state_dict)
-                    syn_msg = final_state.get("messages", [])[-1]["content"] if final_state.get("messages") else "Pas de synthèse générée."
-                    st.session_state['app_data'][cache_key] = {
-                        "synthesis": syn_msg,
-                        "chat": []
-                    }
-                    # Within a fragment, rerun() only reruns the fragment
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Erreur lors de la génération: {str(e)}")
+    search_criterias = st.session_state.config
+    ia_analysis_content(nom, codgeo, search_criterias)
 
-        if cache_key in st.session_state['app_data']:
-            data_cache = st.session_state['app_data'][cache_key]
-            st.markdown(data_cache["synthesis"])
-            
-            st.divider()
-            st.markdown(f"#### Poser une question sur {nom}")
-            
-            for msg in data_cache["chat"]:
-                with st.chat_message(msg["role"]):
-                    st.markdown(msg["content"])
-            
-            question = st.chat_input(f"Ex: Quelles associations facilitent le logement à {nom} ?", key=f"chat_input_ia_{codgeo}")
-            if question:
-                data_cache["chat"].append({"role": "user", "content": question})
-                with st.chat_message("user"):
-                    st.markdown(question)
-                
-                with st.spinner("Recherche de la réponse en cours..."):
-                    from agents.utils import run_async_safe
-                    state_dict = {
-                        "search_criteria": search_criterias.model_dump(),
-                        "is_interview_complete": True,
-                        "execution_mode": "specific_ask",
-                        "focus_city": {"name": nom, "codgeo": codgeo},
-                        "messages": data_cache["chat"]
-                    }
-                    try:
-                        final_state = run_async_safe(state_dict)
-                        answer = final_state.get("messages", [])[-1]["content"] if final_state.get("messages") else "Pas de réponse."
-                        data_cache["chat"].append({"role": "assistant", "content": answer})
-                        with st.chat_message("assistant"):
-                            st.markdown(answer)
-                        st.rerun() # Refresh fragment to show answer and clear input
-                    except Exception as e:
-                        st.error(f"Erreur de l'agent: {str(e)}")
+@st.fragment(run_every=3.0)
+def ai_pitch_container(main_code: str, h: str):
+    """Module-level fragment to avoid redefinition issues and use global results."""
+    from agents.utils import odis_get_bg_result
+    scorer_res = odis_get_bg_result(h)
+    pitch_for_city = ""
     
-    ia_analysis_content()
+    if scorer_res is None:
+        # Still running in background
+        st.info("✨ _Récupération des points forts pour cette ville..._")
+    else:
+        if isinstance(scorer_res, dict) and "pitches" in scorer_res:
+            pitch_for_city = scorer_res["pitches"].get(main_code, "")
+        elif isinstance(scorer_res, str):
+            pitch_for_city = scorer_res
+            
+        if pitch_for_city:
+            st.markdown(pitch_for_city)
 
-@st.dialog("Centre Communal d'Action Sociale", width="large")
-def show_ccas_dialog(codgeo_or_list: Any, structures_df: pd.DataFrame, priority_code: Optional[str] = None, priority_label: Optional[str] = None):
-     target_codes = []
-     if isinstance(codgeo_or_list, list):
-         target_codes = [str(c).strip() for c in codgeo_or_list]
-     else:
-         target_codes = [str(codgeo_or_list).strip()]
-
-     if not structures_df.empty and 'codgeo' in structures_df.columns:
-         # Filter with clean string types
-         subset = structures_df[structures_df['codgeo'].isin(target_codes)].copy()
+@st.dialog("Centre Communal d'Action Sociale", width="large", on_dismiss=_on_ccas_dialog_dismiss)
+def show_ccas_dialog(index: Any):
+    if 'processed_gdf' not in st.session_state or index not in st.session_state.processed_gdf.index:
+         st.error("Données de la ville introuvables.")
+         return
          
-         if not subset.empty:
-             # Check if priority code is missing (and we have results for others)
-             if priority_code:
-                 p_code_clean = str(priority_code).strip()
-                 if p_code_clean not in subset['codgeo'].values:
-                     label = priority_label if priority_label else "la zone sélectionnée"
-                     st.markdown(f"⚠️ **{label}** ne dispose pas de structure référencée.")
-                     st.caption("Affichage des structures disponibles pour les autres communes de la zone :")
-                     st.divider()
+    row = st.session_state.processed_gdf.loc[index]
+    codgeo = str(row['codgeo']) if 'codgeo' in row else str(index)
+    libgeo = row.get('libgeo', 'cette ville')
+    structures_df = st.session_state['app_data'].get('structures_ccas', pd.DataFrame())
+    
+    target_codes = [codgeo.strip()]
+    # Include binome if present
+    if row.get('binome') and row.get('codgeo_binome'):
+        target_codes.append(str(row['codgeo_binome']).strip())
 
-             # Sorting: Priority code first, then alphabetical by commune/nom
-             if priority_code:
-                 p_code_clean = str(priority_code).strip()
-                 subset['is_main'] = subset['codgeo'] == p_code_clean
-                 subset = subset.sort_values(by=['is_main', 'commune', 'nom'], ascending=[False, True, True])
-             
-             st.write(f"**Structures trouvées : {len(subset)}**")
+    if not structures_df.empty and 'codgeo' in structures_df.columns:
+        # Filter with clean string types
+        subset = structures_df[structures_df['codgeo'].isin(target_codes)].copy()
+        
+        if not subset.empty:
+             # For ccas, we just show them all for the commune/binome
+             st.subheader(f"Contacts locaux pour {libgeo}")
              
              for _, struct in subset.iterrows():
                  # Layout: Commune First
-                 label = struct['commune'] if pd.notna(struct.get('commune')) else "Commune Inconnue"
+                 label = struct['commune'] if pd.notna(struct.get('commune')) else libgeo
                  st.subheader(f"📍 {label}")
                  
                  # Name
@@ -176,14 +210,26 @@ def show_ccas_dialog(codgeo_or_list: Any, structures_df: pd.DataFrame, priority_
                      
                  # Separator AFTER
                  st.markdown("---")
-         else:
-             st.info("Aucune structure CCAS/CIAS référencée (avec contact) pour cette zone.")
-     else:
-         st.warning("Données structures non disponibles.")
+        else:
+             st.info(f"Aucune structure CCAS/CIAS référencée (avec contact) pour {libgeo}.")
+    else:
+        st.warning("Données structures non disponibles.")
 
-@st.dialog(title="Détails du Territoire", width="large")
-def show_details_dialog(details: Dict[str, Any]):
+@st.dialog(title="Détails du Territoire", width="large", on_dismiss=_on_details_dialog_dismiss)
+def show_details_dialog(index: Any):
     """Displays thematic details for a city in a large modal."""
+    if 'processed_gdf' not in st.session_state or index not in st.session_state.processed_gdf.index:
+        st.error("Données de la ville introuvables.")
+        return
+        
+    row = st.session_state.processed_gdf.loc[index]
+    engine = st.session_state.get('engine')
+    if not engine:
+        st.error("Moteur de recherche non initialisé.")
+        return
+        
+    details = engine.format_city_details(row, config=st.session_state.config)
+    
     if not details:
         st.error("Détails non disponibles.")
         return
@@ -1212,61 +1258,18 @@ def _result_highlight_callback(rank: int) -> None:
 
 def _show_details_callback(rank: int) -> None:
     """Callback to compute and show city details modal."""
-    row = st.session_state.processed_gdf.loc[rank]
-    app_data = st.session_state['app_data']
-    
-    # Initialize ScoringEngine to format details
-    engine = ScoringEngine(
-        df_all_communes=app_data['odis'],
-        df_bv_geo=app_data['bv_geo'],
-        df_area_geo=app_data['area_geo'],
-        scores_cat=app_data['scores_cat'],
-        incl_index=app_data['incl_index'],
-        associations_data=app_data['associations_data'],
-        formations_data=app_data['formations_data'],
-        codformations_index=app_data['codformations_index'],
-        waldec_index=app_data.get('waldec_index'),
-        global_stats={},
-
-        # Ensure all indices and annuaires are passed
-        annuaire_ecoles=app_data.get('annuaire_ecoles', pd.DataFrame()),
-        annuaire_sante=app_data.get('annuaire_sante', pd.DataFrame()),
-        annuaire_inclusion=app_data.get('annuaire_inclusion', pd.DataFrame()),
-        inclusion_services_index=app_data.get('inclusion_services_index', pd.DataFrame()),
-        refugee_associations_data=app_data['refugee_associations_data'],
-        live_jobs_data=app_data['live_jobs_data'],
-        siae_jobs_data=app_data.get('siae_jobs_data', pd.DataFrame()),
-        rome_index=app_data.get('rome_index', pd.DataFrame())
-    )
-    
-    details = engine.format_city_details(row, config=st.session_state.get('config'))
-
-    show_details_dialog(details)
+    st.session_state.active_details_index = rank
+    st.rerun()
 
 def _show_ia_dialog_callback(rank: int) -> None:
     """Callback to compute and show AI analysis modal."""
-    row = st.session_state.processed_gdf.loc[rank]
-    app_data = st.session_state['app_data']
-    
-    # Initialize ScoringEngine to format details
-    engine = ScoringEngine(
-        df_all_communes=app_data['odis'],
-        df_bv_geo=app_data['bv_geo'],
-        df_area_geo=app_data['area_geo'],
-        scores_cat=app_data['scores_cat'],
-        incl_index=app_data['incl_index'],
-        # Associations and Jobs only needed for details, but engine needs them
-        associations_data=app_data['associations_data'],
-        formations_data=app_data['formations_data'],
-        codformations_index=app_data['codformations_index'],
-        waldec_index=app_data.get('waldec_index'),
-        global_stats={},
-        refugee_associations_data=app_data['refugee_associations_data'],
-        live_jobs_data=app_data['live_jobs_data']
-    )
-    
-    details = engine.format_city_details(row, config=st.session_state.get('config'))
-    show_ia_analysis_dialog(details)
+    st.session_state.active_ia_city_index = rank
+    st.rerun()
+
+def _show_ccas_dialog_callback(rank: int) -> None:
+    """Callback to compute and show CCAS dialog."""
+    st.session_state.active_ccas_index = rank
+    st.rerun()
 
 def get_person_accompanied_str() -> str:
     if st.session_state.get('ui_nom'):
@@ -1274,7 +1277,21 @@ def get_person_accompanied_str() -> str:
     return "de la personne accompagnée"
 
 def display_results_list() -> None:
-    """Displays the list of top N results."""
+    """Renders the list of search results or the detailed view for the highlighted result."""
+    if 'processed_gdf' not in st.session_state or st.session_state.processed_gdf.empty:
+        st.info("Aucun résultat à afficher.")
+        return
+
+    # Handle Active Dialogs (at page/list rendering level)
+    if st.session_state.get('active_ia_city_index') is not None:
+        show_ia_analysis_dialog(st.session_state.active_ia_city_index)
+        
+    if st.session_state.get('active_details_index') is not None:
+        show_details_dialog(st.session_state.active_details_index)
+        
+    if st.session_state.get('active_ccas_index') is not None:
+        show_ccas_dialog(st.session_state.active_ccas_index)
+
     st.subheader("Meilleurs résultats")
     st.text("Cliquez sur un résultat pour comprendre le détail du score")
     st.markdown('<style> [class*="st-key-button_top"] .stButton button div, [class*="st-key-button_top"] .stButton button p { justify-content: flex-start !important; text-align: left !important; width: 100%; } </style>', unsafe_allow_html=True)
@@ -1331,29 +1348,15 @@ def _display_result_details(row: pd.Series) -> None:
         h = search_criterias.compute_hash()
         
         # --- AI Pitch Fragment ---
-        # Refreshes every 3s as long as the background task is running (result is None)
-        @st.fragment(run_every=(3.0 if st.session_state.get('async_scorer_results', {}).get(h) is None else None))
-        def ai_pitch_container():
-            scorer_res = st.session_state.get('async_scorer_results', {}).get(h, None)
-            pitch_for_city = ""
-            
-            if scorer_res is None:
-                # Still running in background
-                st.info("✨ _Récupération des points forts pour cette ville..._")
-            else:
-                if isinstance(scorer_res, dict) and "pitches" in scorer_res:
-                    pitch_for_city = scorer_res["pitches"].get(main_code, "")
-                elif isinstance(scorer_res, str):
-                    pitch_for_city = scorer_res
-                    
-                if pitch_for_city:
-                    st.markdown(pitch_for_city)
+        ai_pitch_container(main_code, h)
         
-        ai_pitch_container()
-        
-        # F-IA: AI Dialog Button
-        if st.button("Analyse Complète OD&IS", key=f"btn_ia_comm_{row.name}", icon=':material/bolt:', width="stretch", type="primary"):
-             _show_ia_dialog_callback(row.name)
+        # F-IA: AI Dialog Trigger (Session State based)
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.markdown('<style> [class*="st-key-btn_ia"] .stButton button { background-color: #F5D819; color: #1B4429; } </style>', unsafe_allow_html=True)
+            if st.button("Analyse Complète OD&IS", key=f"btn_ia_comm_{row.name}", icon=':material/bolt:', width="content", type="primary"):
+                st.session_state.active_ia_city_index = row.name
+                st.rerun()
 
         # --- Radar Chart ---
         cat_scores = row[[col for col in row.index if col.endswith('_cat_score')]]
@@ -1372,15 +1375,12 @@ def _display_result_details(row: pd.Series) -> None:
         c1, c2 = st.columns(2)
         with c1:
             if st.button("En savoir plus", key=f"btn_details_comm_{row.name}", width="stretch"):
-                _show_details_callback(row.name)
+                st.session_state.active_details_index = row.name
+                st.rerun()
         with c2:
             if st.button("Contact local", key=f"btn_ccas_commune_{row.name}", icon=':material/phone:', type="secondary", width="stretch"):
-                # For commune: Include binome if present
-                targets = [main_code]
-
-                
-                # Priority code is the main commune
-                show_ccas_dialog(targets, st.session_state['app_data'].get('structures_ccas', pd.DataFrame()), priority_code=main_code, priority_label=row['libgeo'])
+                st.session_state.active_ccas_index = row.name
+                st.rerun()
                 
         # --- Feedback ---
         st.divider()

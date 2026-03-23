@@ -24,17 +24,15 @@ Ce prototype a un triple objectif :
 
 - **Profil Personnalisé :** Définissez un "projet de vie" détaillé incluant la composition du foyer, le niveau scolaire des enfants, les métiers visés, les besoins en formation, etc.
 - **Pondération Avancée :** Choisissez un profil prédéfinis (Équilibré, Famille, Santé, Emploi) ou activez le **Mode Expert** pour un réglage fin des poids de chaque catégorie.
-- **Vue par Bassin de Vie ([DEPRECATED]) :** Permet d'agréger les résultats à l'échelle des "bassins de vie" de l'INSEE. Cette fonctionnalité est maintenue pour compatibilité mais le projet privilégie désormais la vue par commune.
 - **Scoring Intelligent :** Chaque commune de France est évaluée sur sa compatibilité avec le profil via un modèle de données typé. La taille de la population est traitée via un **score Gaussien** (favorisant les villes moyennes autour de 50 000 habitants) plutôt qu'un simple filtre.
 - **Optimisation Mémoire :** Le moteur de recherche est optimisé pour traiter des milliers de communes en limitant le chargement des colonnes redondantes et en purgeant les indicateurs non pertinents après le calcul des scores (Deny-list).
-- **Système de "Binômes" ([DEPRECATED]) :** L'algorithme associait des communes voisines pour proposer des solutions conjointes. Cette logique est en cours de remplacement par l'enrichissement automatique via le bassin de vie.
 - **Carte Interactive :** Visualisez les localités les mieux notées, leur score, et superposez des couches d'informations additionnelles (écoles, établissements de santé, services d'inclusion).
 - **Résultats Détaillés & Export PDF :** Explorez les 5 meilleurs résultats avec une analyse comparative générée automatiquement par l'IA et exportez un rapport PDF complet incluant ces analyses.
 - **Assistant IA (Multi-Agent ODIS) :** Système multi-agent (LangGraph) capable de conduire l'entretien via l'agent **Interviewer**, de calculer les scores avec l'agent **Scorer**, et d'enrichir les résultats avec des infos terrain (**Scout**) et web (**Web**). voir la [documentation détaillée de l'architecture](app/agents/README.md).
 - **Grounding Google Search :** Grâce à l'agent spécialisé WEB, accédez aux dernières actualités locales et au contexte social des communes visées.
-- **Référentiel des Associations Réfugiés ([F-26]):** Accédez à une base de données qualifiée d'associations spécialisées dans l'accueil des nouveaux arrivants.
+- **Référentiel des Associations Réfugiés :** Accédez à une base de données qualifiée d'associations spécialisées dans l'accueil des nouveaux arrivants.
 - **Moteur de Recherche RAG (RNA) :** Recherche sémantique et thématique sur l'ensemble du Répertoire National des Associations (RNA) via BigQuery et Vertex AI, permettant de classer les associations par catégories d'inclusion (FLE, Logement, Emploi, etc.) avec une précision inégalée.
-- **Accueils Citoyens (J'Accueille) :** Intégration de la base de données de l'association J'Accueille pour valoriser les bassins de vie disposant déjà d'un réseau d'hébergement citoyen actif. Pour des raisons de sécurité, ces données sensibles sont hébergées sur BigQuery et récupérées dynamiquement au lancement de l'application.
+- **Accueils Citoyens (J'Accueille) :** Intégration de la base de données de l'association J'Accueille pour valoriser les bassins de vie disposant déjà d'un réseau d'hébergement citoyen actif. (Données Mars 2026).
 - **Scénarios de Démonstration :** Chargez rapidement des profils pré-configurés pour découvrir le potentiel de l'outil.
 
 ## 📸 Aperçu de l'Application
@@ -93,10 +91,8 @@ Le cœur de l'application est un pipeline de scoring qui évalue les communes (o
 1.  **Filtrage Géographique :** Le moteur délimite la zone de recherche selon le périmètre choisi (Département, Région, France Métropolitaine) ou une zone spécifique (Custom). Il n'utilise plus de rayon en km mais des limites administratives réelles.
 2.  **Calcul des Critères :** Il calcule des dizaines de scores individuels pour chaque commune (Emploi, Logement, Santé, etc.).
 3.  **Enrichissement par le Bassin de Vie :** Pour certains critères (ex: Éducation, Santé), le score d'une commune est bonifié par les opportunités du Bassin de Vie via une logique de Boost non-pénalisante. Si une commune n'a pas de lycée mais qu'il y en a un dans son Bassin de Vie, elle reçoit un bonus (via le `bdv_factor` défini dans [scores_config.yaml](./app/scores_config.yaml)). Cela permet de valoriser les communes qui bénéficient des services de leur territoire proche.
-4.  **Logique de Binôme ([DEPRECATED]) :** Historiquement, le moteur créait des paires de communes. Cette approche est devenue secondaire face à l'enrichissement par le bassin de vie décrit ci-dessus.
-5.  **Agrégation par Catégorie :** Les scores des critères individuels sont moyennés pour former des scores de catégories. Pour un exemple concret du calcul et une explication détaillée de la logique de boost, consultez la [Documentation du Scoring](./SCORING.md).
-6.  **Agrégation par Bassin de Vie (Optionnel) :** Si l'utilisateur choisit cette vue, **tous les scores** des communes (y compris Éducation, Santé, Inclusion) sont agrégés au niveau du bassin de vie par une **moyenne pondérée par la population**. Cela permet d'obtenir une vue d'ensemble cohérente où les services des grandes communes pèsent plus lourd.
-7.  **Score Pondéré Final :** Enfin, un `weighted_score` global est calculé pour chaque entité (commune ou bassin de vie) en appliquant les poids définis. Le moteur s'appuie sur le modèle `SearchCriterias` pour garantir la cohérence entre l'interface formulaire, le chatbot et l'export PDF. Les résultats sont ensuite classés selon ce score final.
+4.  **Agrégation par Catégorie :** Les scores des critères individuels sont moyennés pour former des scores de catégories. Pour un exemple concret du calcul et une explication détaillée de la logique de boost, consultez la [Documentation du Scoring](./SCORING.md).
+5.  **Score Pondéré Final :** Enfin, un `weighted_score` global est calculé pour chaque commune en appliquant les poids définis. Le moteur s'appuie sur le modèle `SearchCriterias` pour garantir la cohérence entre l'interface formulaire, le chatbot et l'export PDF. Les résultats sont ensuite classés selon ce score final.
 
 ![Explication de la logique de scoring](./images/Screenshot-4.png)
 
@@ -106,39 +102,38 @@ Le score est calculé à partir d'une multitude de critères, regroupés en gran
 
 **Catégorie : Emploi**
 
-- **Taux Besoin Emploi** : Mesure le nombre d'emplois non pourvus pour 1000 habitants, indiquant la demande de main-d'œuvre locale.
-- **Taux Besoin Emploi en Tension** : Identifie spécifiquement les métiers "en tension" (difficiles à recruter) pour 1000 habitants, signalant les zones où l'insertion professionnelle est potentiellement plus rapide.
-- **Adéquation Compétences/Emploi** : Évalue la correspondance entre les métiers recherchés par les adultes du foyer et les familles de métiers les plus demandées dans la zone.
-- **Adéquation Besoins/Formations** : Mesure la présence de centres de formation proposant les cursus recherchés par les adultes du foyer.
+- **Opportunités Emploi (Match direct)** : Mesure le nombre réel d'offres d'emploi disponibles dans la commune pour les métiers recherchés (Source: API France Travail).
+- **Tension de recrutement** : Identifie les offres signalées comme difficiles à pourvoir, signalant un fort besoin de main-d'œuvre immédiat.
+- **Offres SIAE** : Identification des offres d'insertion par l'activité économique correspondant au profil (Source: Les emplois de l'inclusion).
+- **Centres de Formation** : Mesure la présence de centres de formation proposant les cursus recherchés par les adultes du foyer.
 - **Déclin Démographique Actif** : Valorise les communes perdant leur population active (25-54 ans), signalant un besoin de main-d'œuvre.
-- **Opportunités Emploi (Live)** : Mesure le nombre réel d'offres d'emploi disponibles dans la commune pour les métiers recherchés (Source: API France Travail).
-- **Tension de recrutement (Live)** : Identifie les offres signalées comme difficiles à pourvoir, signalant un fort besoin de main-d'œuvre immédiat.
 
 **Catégorie : Logement**
 
-- **Taux de Logements Vacants** : Calcule le pourcentage de logements vacants, un indicateur de la disponibilité sur le marché locatif privé.
+- **Taux de Logements Vacants** : Calcule le pourcentage de logements vacants structurels (> 2 ans), un indicateur de la disponibilité sur le marché locatif privé.
 - **Taux de Logements Sociaux Inoccupés** : Mesure la part des logements sociaux vacants ou vides, indiquant une disponibilité potentielle dans le parc social.
-- **Taux de Grandes Résidences Principales** : Pour l'hébergement "chez l'habitant", ce critère évalue la proportion de résidences principales de 5 pièces et plus.
+- **Sous-occupation** : Évalue le potentiel de cohabitation et d'accueil chez l'habitant via le taux de sous-occupation des résidences principales.
+- **Loyer Moyen** : Intégration des loyers moyens (Appartements et Maisons) pour évaluer l'accessibilité financière (Source: ODACE 2024).
 
 **Catégorie : Éducation**
 
 - **Taux de Classes à Risque de Fermeture** : Identifie les écoles où des classes risquent de fermer faute d'élèves, ce qui peut être une opportunité pour de nouvelles familles.
 - **Taux de Couverture Petite Enfance** : Évalue la disponibilité des modes de garde (crèches, assistantes maternelles) pour les jeunes enfants (< 3 ans), basé sur les données de la CAF.
+- **Proximité Scolaire** : Vérifie la présence de structures d'enseignement (Maternelle, Elémentaire, Collège, Lycée) dans la commune ou à proximité immédiate.
 - **Déclin Démographique Jeune** : Valorise les communes perdant leur population jeune (-15 ans), indicateur d'un besoin de repeuplement scolaire.
-- **Education**: Annuaire de l'éducation (Data.gouv), Effectifs (Data.gouv), Taux de couverture Petite Enfance (CAF), Crèches (BPE/INSEE), Formations (Data.gouv).
 
 **Catégorie : Inclusion & Vie Locale**
 
-- **Taux de Services d'Inclusion** : Mesure la densité de services dédiés à l'inclusion (apprentissage du français, aide juridique, etc.) pour 1000 habitants.
-- **Accompagnement Réfugiés** : Évalue la présence d'associations spécialisées dans l'accueil des personnes réfugiées (Source: RNA filtré).
-- **Présence de Soutien Spécifique** : Vérifie la présence de services répondant aux besoins spécifiques exprimés dans le formulaire (santé, handicap, etc.).
-- **Taille de la Population** : Utilisé via une fonction Gaussienne ($\mu$=50k, $\sigma$=40k) pour favoriser les communes de taille intermédiaire et les villes moyennes, offrant un meilleur équilibre accueil/intégration.
-- **Couleur Politique** : Prend en compte l'affiliation politique de la municipalité, en valorisant celles jugées plus favorables à l'accueil.
+- **Accueils J'Accueille** : Valorise les bassins de vie disposant d'un réseau actif d'hébergement citoyen.
+- **Accompagnement Réfugiés** : Évalue la présence d'associations spécialisées dans l'accueil des personnes réfugiées (Source: RNA).
+- **Lien Social & Associations** : Mesure la densité associative globale et thématique (Loisirs, Sport, Culture) pour favoriser l'intégration.
+- **Services d'Inclusion** : Mesure la présence de services dédiés (Français Langue Étrangère, aide administrative, etc.).
+- **Taille de la Population** : Utilisé via une fonction Gaussienne ($\mu$=50k, $\sigma$=40k) pour favoriser les communes de taille intermédiaire.
 
 **Catégorie : Mobilité**
 
-- **Appartenance à la même agglomération (EPCI)** (`mob_epci_scaled`) : Vérifie si la commune proposée est dans le même Établissement Public de Coopération Intercommunale (EPCI) que la commune de départ.
-- **Présence d'une Gare (`mob_gare_scaled`)** : Bonifie les communes disposant d'une gare ferroviaire (Source: Odace).
+- **Appartenance à la même agglomération (EPCI)** : Vérifie si la commune proposée est dans le même Établissement Public de Coopération Intercommunale (EPCI) que la commune de départ.
+- **Présence d'une Gare et Transports** : Bonifie les communes disposant d'une gare ferroviaire et d'une bonne densité d'arrêts de transports en commun.
 
 ## 🛠️ Stack Technique
 
@@ -155,37 +150,37 @@ Le code de l'application Streamlit est organisé de manière modulaire au sein d
 
 ```
 app/
-├── 1_Accueil.py
-├── config.py
-├── data_loader.py
-├── maps.py
-├── scoring.py
-├── ui.py
-├── pages/
-│ ├── 2_Formulaire.py
-│ └── 3_Resultats.py
-└── requirements.txt
+├── main.py                 # Point d'entrée Streamlit
+├── config.py               # Configuration globale
+├── scores_config.yaml      # Paramétrage des poids du scoring
+├── core/                   # Logique métier transverse
+│   ├── scoring.py          # Moteur de scoring ODIS
+│   ├── models.py           # Modèles de données (Pydantic)
+│   ├── maps.py             # Fonctions cartographiques Folium
+│   └── pdf_generator.py    # Génération des rapports PDF
+├── ui/                     # Composants et Graphiques
+│   ├── components.py       # Composants réutilisables Streamlit
+│   └── charts.py           # Visualisations Plotly
+├── utils/                  # Utilitaires techniques
+│   ├── data_loader.py      # Chargement et cache des données
+│   └── logger.py           # Gestion des logs applicatifs
+├── agents/                 # Intelligence Artificielle (Multi-Agent)
+│   ├── graph.py            # Orchestration LangGraph
+│   ├── state.py            # Définition de l'état partagé
+│   └── tools.py            # Outils experts (Scoring, FT, Maps)
+└── pages/                  # Pages de l'application
+    ├── 1_Accueil.py
+    ├── 2_Formulaire.py
+    ├── 3_Resultats.py
+    └── 4_AI_Chatbot.py
 ```
 
-- 1_Accueil.py : Point d'entrée principal.
-- pages/2_Formulaire.py : Formulaire du projet de vie.
-- pages/3_Resultats.py : Résultats du scoring.
-- ui.py : Composants UI Streamlit.
-- scoring.py : Moteur de scoring ODIS.
-- maps.py : Fonctions cartographiques Folium.
-- config.py : Configuration globale.
-- data_loader.py : Chargement des données.
-- app/agents/ : Intelligence Artificielle (Multi-Agent).
-  - graph.py : Graphe d'orchestration LangGraph.
-  - interviewer.py : Agent de collecte des besoins.
-  - scorer.py : Expert scoring ODIS.
-  - scout.py : Expert terrain (POIs, routes).
-  - web.py : Expert news et actualités locales.
-  - job_hunter.py : Expert emploi (France Travail).
-  - synthesizer.py : Expert en synthèse finale.
-  - refiner.py : Agent de synthèse de briefing.
-  - state.py : Définition de l'état partagé.
-  - tools.py : Outils de recherche et computationnels.
+- **core/** : Contient le cœur algorithmique du projet, notamment le moteur de scoring et les modèles de données.
+- **ui/** : Regroupe les composants visuels et les fonctions de rendu graphique.
+- **utils/** : Services techniques pour le chargement optimisé des données Parquet et le logging.
+- **app/agents/** : Architecture multi-agent orchestrée par LangGraph pour l'assistance interactive.
+  - **graph.py** : Graphe d'orchestration.
+  - **interviewer.py**, **scorer.py**, **scout.py**, **web.py**, **job_hunter.py**, **synthesizer.py**, **refiner.py** : Agents spécialisés.
 
 ## 🤖 Interface AI Agent (Assistant ODIS 2.0)
 
@@ -198,11 +193,11 @@ Contrairement à un chatbot classique, l'Assistant ODIS est orchestré par un gr
 1.  **Le Routeur :** Analyse la demande et décide de l'action à entreprendre.
 2.  **L'Interviewer :** Conduit l'entretien et affine le diagnostic.
 3.  **Le Scorer :** Calcule les scores ODIS et explique les résultats.
-4.  **Parallélisation des Experts (v3.1) :** Pour toute analyse de ville, le système lance simultanément :
+4.  **Parallélisation des Experts :** Pour toute analyse de ville, le système lance simultanément :
     - **Scout** : Analyse le terrain (Google Maps).
     - **WEB** : Recherche l'actualité et le contexte social (Google Search).
     - **Job Hunter** : Trouve les offres d'emploi réelles (France Travail).
-5.  **Synthétiseur** : Fusionne toutes les données en une réponse unique et adaptée au dernier échange utilisateur.
+5.  **Synthétiseur** : Fusionne toutes les données en une réponse unique.
 
 ### Points Forts de l'Agent
 

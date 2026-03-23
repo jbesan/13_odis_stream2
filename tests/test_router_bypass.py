@@ -19,7 +19,8 @@ load_dotenv(dotenv_path=env_path)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-@pytest.mark.asyncio
+# @pytest.mark.asyncio.skip(reason="This test costs tokens")
+@pytest.mark.skip(reason="This test costs tokens")
 async def test_router_bypass_flow():
     """
     Verifies the Router Bypass logic:
