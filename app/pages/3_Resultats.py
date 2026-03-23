@@ -212,6 +212,8 @@ def run_search():
         # We pass an empty dict for compatibility with the old API signature if needed, 
         # but our new implementation in agents/utils.py uses a global store.
         launch_background_scorer(search_criterias, {}, h, top_cities=top_cities_full)
+    
+    st.session_state['active_search_hash'] = h
 
     # Calculate center for map
     if not processed_gdf.empty:
@@ -256,6 +258,9 @@ if st.session_state.get('processed_gdf') is None and st.session_state.get('form_
 @st.fragment(run_every=3.0)
 def export_pdf_container(h: str):
     """Module-level fragment to avoid redefinition issues."""
+    if not h:
+        return
+        
     scorer_res = odis_get_bg_result(h)
     # scorer_res can be dict (success) or str (error)
     scorer_done = scorer_res is not None and not isinstance(scorer_res, str)
@@ -268,14 +273,21 @@ def export_pdf_container(h: str):
             type='secondary',
             width="stretch"
         )
+    elif isinstance(scorer_res, str) and "⚠️" in scorer_res:
+        st.error(scorer_res)
     else:
-        st.button(
-            "Patience...", 
-            disabled=True,
-            icon=':material/hourglass_empty:',
-            type='secondary',
-            width="stretch"
-        )
+        # Still running
+        col1, col2 = st.columns([1, 4])
+        with col1:
+            st.spinner("")
+        with col2:
+            st.button(
+                "Patience...", 
+                disabled=True,
+                icon=':material/picture_as_pdf:',
+                type='secondary',
+                width="stretch"
+            )
 
 # Sidebar
 with st.sidebar:
@@ -297,9 +309,12 @@ with st.sidebar:
 
     # --- Export to PDF ---
     if st.session_state.get('processed_gdf') is not None:
-        config = st.session_state.get('config')
-        h = config.compute_hash() if config else None
-        export_pdf_container(h)
+        active_h = st.session_state.get('active_search_hash')
+        if not active_h:
+            config = st.session_state.get('config')
+            active_h = config.compute_hash() if config else None
+        
+        export_pdf_container(active_h)
     
     st.divider()
 
