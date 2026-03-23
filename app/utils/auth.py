@@ -50,6 +50,6 @@ def check_password():
         st.sidebar.warning("ATTENTION: L'application est en phase de test. Vos interactions sont collectées pour améliorer l'outil. Merci d'anonymiser au maximum vos saisies libres.")
         
         # Inject Idle Sleep monitor (10 mins timeout)
-        inject_idle_sleep(timeout_minutes=0.1)
+        inject_idle_sleep(timeout_minutes=10)
         
         return True
