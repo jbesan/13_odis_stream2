@@ -42,7 +42,7 @@ st.markdown("Identifions ensemble le projet de vie et les meilleures options de 
 
 # --- Sidebar ---
 with st.sidebar:
-    if st.button("🏠 Retour à l'Accueil", use_container_width=True):
+    if st.button("🏠 Retour à l'Accueil", width="stretch"):
         st.switch_page("pages/1_Accueil.py")
     
  

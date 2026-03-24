@@ -1,6 +1,7 @@
 
 import streamlit as st
 import pandas as pd
+import numpy as np
 from plotly.express import line_polar
 import geopandas as gpd
 import config as cfg
@@ -572,7 +573,7 @@ def confirm_reset_dialog():
     
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("Oui", use_container_width=True):
+        if st.button("Oui", width="stretch"):
             # 1. Radical cleanup: clear EVERYTHING except heavy datasets, auth, and essential UI state
             to_preserve = {'app_data', '_data_hash', 'rna_rag_service', 'rna_rag_status', 'password_correct', 'username', 'highlighted_result', 'config'}
             all_keys = list(st.session_state.keys())
@@ -589,7 +590,7 @@ def confirm_reset_dialog():
             # 3. Redirect to home
             st.switch_page("pages/1_Accueil.py")
     with col2:
-        if st.button("Annuler", use_container_width=True):
+        if st.button("Annuler", width="stretch"):
             st.rerun()
 
 def start_over() -> None:
@@ -600,7 +601,7 @@ def start_over() -> None:
         </style>
         """
     , unsafe_allow_html=True)
-    if st.button("Retour à l'Accueil", icon=":material/home:", use_container_width=True, key="btn_recommencer"):
+    if st.button("Retour à l'Accueil", icon=":material/home:", width="stretch", key="btn_recommencer"):
         confirm_reset_dialog()
         
 def render_localisation_form() -> None:
@@ -1276,9 +1277,10 @@ def get_person_accompanied_str() -> str:
         return f"de {st.session_state.ui_nom}"
     return "de la personne accompagnée"
 
-def display_results_list() -> None:
+def display_results_list(display_gdf: Optional[pd.DataFrame] = None) -> None:
     """Renders the list of search results or the detailed view for the highlighted result."""
-    if 'processed_gdf' not in st.session_state or st.session_state.processed_gdf.empty:
+    gdf = display_gdf if display_gdf is not None else st.session_state.get('processed_gdf')
+    if gdf is None or gdf.empty:
         st.info("Aucun résultat à afficher.")
         return
 
@@ -1297,7 +1299,7 @@ def display_results_list() -> None:
     st.markdown('<style> [class*="st-key-button_top"] .stButton button div, [class*="st-key-button_top"] .stButton button p { justify-content: flex-start !important; text-align: left !important; width: 100%; } </style>', unsafe_allow_html=True)
 
     top_n = 5
-    df = st.session_state.processed_gdf
+    df = gdf
     is_highlighted, highlighted_rank = st.session_state.highlighted_result
 
     # Pre-build layers for top results to be shown on map
@@ -1358,14 +1360,62 @@ def _display_result_details(row: pd.Series) -> None:
                 st.session_state.active_ia_city_index = row.name
                 st.rerun()
 
-        # --- Radar Chart ---
-        cat_scores = row[[col for col in row.index if col.endswith('_cat_score')]]
-        cat_scores.rename(lambda x: x.split('_')[0].capitalize(), inplace=True)
-        fig = line_polar(theta=cat_scores.index, r=cat_scores.values * 100, line_close=True, range_r=[0, 100])
-        fig.update_traces(fill='toself', hovertemplate='%{theta}: %{r:.1f}%<extra></extra>')
-        fig.update_layout(margin=dict(l=50, r=50, t=50, b=50))
-        st.plotly_chart(fig, width='stretch', config=None)
-        st.caption('Plus le critère s’approche du bord, plus il est attractif.')
+        # --- Radar Chart with Comparison ---
+        def get_radar_data(row_data):
+            cols = [col for col in row_data.index if col.endswith('_cat_score')]
+            vals = list(row_data[cols].values * 100)
+            labels = [col.split('_')[0].capitalize() for col in cols]
+            # Close the loop
+            if vals:
+                vals.append(vals[0])
+                labels.append(labels[0])
+            return labels, vals
+
+        labels_target, vals_target = get_radar_data(row)
+        
+        # Current City Data
+        config = st.session_state.get('config')
+        current_codgeo = config.commune_actuelle.code if config and hasattr(config.commune_actuelle, 'code') else (config.commune_actuelle if config else None)
+        
+        # Initialize Figure
+        import plotly.graph_objects as go
+        fig = go.Figure()
+
+        # Add trace for target city (Green)
+        fig.add_trace(go.Scatterpolar(
+            r=vals_target,
+            theta=labels_target,
+            fill='toself',
+            name=libgeo,
+            fillcolor='rgba(0, 98, 104, 0.5)', # Semi-transparent green
+            line=dict(color='#006268'),
+            hovertemplate='%{theta}: %{r:.1f}%<extra></extra>'
+        ))
+
+        # Add trace for current city (Blue) if available
+        if current_codgeo and current_codgeo in st.session_state.processed_gdf.index:
+            row_current = st.session_state.processed_gdf.loc[current_codgeo]
+            _, vals_current = get_radar_data(row_current)
+            
+            fig.add_trace(go.Scatterpolar(
+                r=vals_current,
+                theta=labels_target, # Use same theta labels
+                fill='toself',
+                name=f"Actuel ({config.commune_actuelle.label})",
+                fillcolor='rgba(31, 119, 180, 0.4)', # Semi-transparent blue
+                line=dict(color='#1f77b4'),
+                hovertemplate='%{theta}: %{r:.1f}%<extra></extra>'
+            ))
+
+        fig.update_layout(
+            polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
+            showlegend=True,
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            margin=dict(l=50, r=50, t=50, b=50)
+        )
+        
+        st.plotly_chart(fig, width="stretch", config=None)
+        st.caption(f"**Comparaison des profils** : la zone verte représente **{libgeo}**, la zone bleue représente la **{config.commune_actuelle.label}**. Une plus grande surface indique une meilleure adéquation avec vos critères.")
 
         # --- Links ---
         # st.divider()

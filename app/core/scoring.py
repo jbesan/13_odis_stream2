@@ -835,14 +835,14 @@ class ScoringEngine:
         # logger.info(f"⚙️ [ENGINE] Computing final weighted scores...")
         odis_exploded['weighted_score'] = self._compute_weighted_score(odis_exploded, config)
 
-        # Exclusion
-        c_code = config.commune_actuelle.code if hasattr(config.commune_actuelle, 'code') else config.commune_actuelle
-        if c_code in odis_exploded.index:
-            odis_exploded = odis_exploded.drop(c_code)
+        # Exclusion logic (REMOVED: we keep the current city for comparison)
+        # c_code = config.commune_actuelle.code if hasattr(config.commune_actuelle, 'code') else config.commune_actuelle
+        # if c_code in odis_exploded.index:
+        #     odis_exploded = odis_exploded.drop(c_code)
         
-        if c_code in cfg.PLM_MAPPING:
-            prefix = cfg.PLM_MAPPING[c_code]
-            odis_exploded = odis_exploded[~odis_exploded.index.astype(str).str.startswith(prefix)]
+        # if c_code in cfg.PLM_MAPPING:
+        #     prefix = cfg.PLM_MAPPING[c_code]
+        #     odis_exploded = odis_exploded[~odis_exploded.index.astype(str).str.startswith(prefix)]
 
         return odis_exploded.sort_values(by='weighted_score', ascending=False)
 

@@ -50,44 +50,46 @@ if 'active_details_index' not in st.session_state:
 if 'active_ccas_index' not in st.session_state:
     st.session_state['active_ccas_index'] = None
 
-# --- PDF Modal Logic ---
-if st.session_state.get('show_pdf_modal'):
-    
-    def on_dialog_dismiss():
-        """Callback to clean up state when the dialog is dismissed."""
-        st.session_state.show_pdf_modal = False
-        st.session_state.pdf_modal_data = None
-
-    @st.dialog("Export des résultats en PDF", on_dismiss=on_dialog_dismiss)
-    def pdf_modal():
-        # State 1: Loading / Generating
-        if 'pdf_modal_data' not in st.session_state or st.session_state.pdf_modal_data is None:
-            with st.spinner("Veuillez patienter, nous générons votre document..."):
+@st.dialog("Export des résultats en PDF")
+def pdf_modal():
+    """Renders the PDF export dialog."""
+    # State 1: Loading / Generating
+    if 'pdf_modal_data' not in st.session_state or st.session_state.pdf_modal_data is None:
+        with st.spinner("Veuillez patienter, nous générons votre document..."):
+            try:
                 pdf_bytes = generate_pdf_report(
                     st.session_state, 
                     st.session_state.processed_gdf
                 )
                 st.session_state.pdf_modal_data = pdf_bytes
-                st.rerun() # Rerun to update the dialog's content to the download state
-        
-        # State 2: Download Ready
-        else:
-            st.success("Votre document est prêt !")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.download_button(
+                st.rerun() 
+            except Exception as e:
+                st.error(f"Erreur lors de la génération du PDF : {e}")
+                if st.button("Fermer"):
+                    st.session_state.show_pdf_modal = False
+                    st.rerun()
+    
+    # State 2: Download Ready
+    else:
+        st.success("Votre document est prêt !")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.download_button(
                 label="Télécharger le PDF",
                 data=st.session_state.pdf_modal_data,
                 file_name="synthese_jaccueille.pdf",
                 mime="application/pdf",
                 icon=':material/picture_as_pdf:',
                 type='primary'
-                )
-            with col2:
-                if st.button("Fermer"):
-                    on_dialog_dismiss()
-                    st.rerun()
+            )
+        with col2:
+            if st.button("Fermer", width="stretch"):
+                st.session_state.show_pdf_modal = False
+                st.session_state.pdf_modal_data = None
+                st.rerun()
 
+# Trigger PDF Modal
+if st.session_state.get('show_pdf_modal'):
     pdf_modal()
 
 # Ensure app_data is initialized
@@ -192,6 +194,17 @@ def run_search():
                     "libgeo": row.get('libgeo', ''),
                     "weighted_score": float(row.get('weighted_score', 0)),
                     "details": city_details
+                })
+            
+            # F-49: Ensure current city is ALSO in top_cities_full for Synthesizer comparison
+            if current_codgeo and current_codgeo in processed_gdf.index and current_codgeo not in top_5.index:
+                row_cur = processed_gdf.loc[current_codgeo]
+                city_details_cur = engine.format_city_details(row_cur, config=config)
+                top_cities_full.append({
+                    "codgeo": str(current_codgeo),
+                    "libgeo": row_cur.get('libgeo', ''),
+                    "weighted_score": float(row_cur.get('weighted_score', 0)),
+                    "details": city_details_cur
                 })
         
         telemetry.log_search_complete(
@@ -346,10 +359,20 @@ col_map, col_results  = st.columns([3, 2])
 
 with col_results:
     if st.session_state.get('processed_gdf') is not None:
-        if st.session_state.processed_gdf.empty:
+        # Filter out current city from the recommended list (Top 5)
+        config = st.session_state.get('config')
+        current_codgeo = config.commune_actuelle.code if config and hasattr(config.commune_actuelle, 'code') else (config.commune_actuelle if config else None)
+        
+        # Create a display-only GDF excluding the current city
+        if current_codgeo and current_codgeo in st.session_state.processed_gdf.index:
+            display_gdf = st.session_state.processed_gdf.drop(index=current_codgeo)
+        else:
+            display_gdf = st.session_state.processed_gdf
+
+        if display_gdf.empty:
             st.warning("Aucun résultat ne correspond à vos critères de recherche.")
         else:
-            ui.display_results_list()
+            ui.display_results_list(display_gdf=display_gdf)
 
 with col_map:
     if st.session_state.get('processed_gdf') is not None:

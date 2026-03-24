@@ -24,6 +24,9 @@ SYNTH_SYSTEM_PROMPT_ANALYSIS = """
 {CITY_DETAILS}
 ```
 
+# Données chiffrées COMMUNE ACTUELLE :
+{CURRENT_CITY_DETAILS}
+
 # Expert Terrain (Scout) : 
 {SCOUT_RES}
 
@@ -42,6 +45,8 @@ SYNTH_SYSTEM_PROMPT_ANALYSIS = """
     - Longueur synthèse: minimum 750 mots, idéal 1000 mots. Utilise des listes à puces ou tableaux dès que pertinents.
 2. Structure ta réponse au format Markdown avec les sections suivantes :
     - ## 🏙️ Aperçu de {FOCUS_CITY} : 3 à 5 phrases de description.
+    - ## ⚖️ Analyse comparative entre {FOCUS_CITY} et {CURRENT_CITY_NAME} :
+        - Identifie les **3 à 5 points chiffrés les plus déterminants** en faveur de {FOCUS_CITY} (ex: loyer plus bas, meilleures écoles, plus d'opportunités d'emploi spécifiques).
     - ## 🧭 Synthèse thématique :
         - **Vie Quotidienne** : Synthèse (Logement, mobilité sur place, éducation, santé, affinités culturelles, sports, loisirs etc.)
         - **Inclusion** : Synthèse (associations, solidarité, insertion)
@@ -87,17 +92,37 @@ synthesizer_agent = Agent(
 
 @synthesizer_agent.system_prompt
 async def synth_instructions(ctx: RunContext[ODISDeps]) -> str:
-    # Get city details
+    # Get city details for focused city
     city_details = "N/A"
     if ctx.deps.state.focus_city and ctx.deps.state.top_cities:
-        target_city = ctx.deps.state.focus_city.name.lower().strip()
+        target_city_name = ctx.deps.state.focus_city.name.lower().strip()
         for c in ctx.deps.state.top_cities:
-            # Robust matching: normalize both names
             cand_name = str(c.get("name", "")).lower().strip()
-            if cand_name == target_city:
-                # Format as nice JSON for the prompt
+            if cand_name == target_city_name:
                 city_details = json.dumps(c.get("details", {}), indent=2, ensure_ascii=False)
                 break
+    
+    # Get details for current city (comparison)
+    current_city_details = "N/A"
+    current_city_name = "la commune actuelle"
+    if ctx.deps.state.search_criteria and ctx.deps.state.top_cities:
+        sc = ctx.deps.state.search_criteria
+        # Extract code from SearchCriterias commune_actuelle
+        # Robust check: it can be a dict (dumped from model) or the object itself
+        ca = sc.get('commune_actuelle', {})
+        if isinstance(ca, dict):
+            current_code = ca.get('code')
+            current_city_name = ca.get('label', "la commune actuelle")
+        else:
+            # Fallback if it's already an object or just a string
+            current_code = getattr(ca, 'code', str(ca))
+            current_city_name = getattr(ca, 'label', "la commune actuelle")
+        
+        if current_code:
+            for c in ctx.deps.state.top_cities:
+                if str(c.get("codgeo")) == str(current_code):
+                    current_city_details = json.dumps(c.get("details", {}), indent=2, ensure_ascii=False)
+                    break
     
     # Get expert results from commune_artifacts
     h = compute_criteria_hash(ctx.deps.state.search_criteria)
@@ -117,6 +142,8 @@ async def synth_instructions(ctx: RunContext[ODISDeps]) -> str:
         BRIEFING=ctx.deps.state.briefing or "",
         FOCUS_CITY=str(ctx.deps.state.focus_city.name or "Non définie"),
         CITY_DETAILS=city_details,
+        CURRENT_CITY_NAME=current_city_name,
+        CURRENT_CITY_DETAILS=current_city_details,
         SCOUT_RES=artifacts.get("scout", "Non disponible"),
         WEB_RES=artifacts.get("web", "Non disponible"),
         LAST_MESSAGE=ctx.deps.state.messages[-1].get("content", "Non disponible"),
