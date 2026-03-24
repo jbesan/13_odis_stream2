@@ -194,7 +194,7 @@ with col_form:
         #     value=st.session_state.get('ui_nom', ''),
         #     label_visibility="collapsed"
         # )
-        if st.button("Démarrer l'entretien", type="primary", use_container_width=True, key="btn_classic"):
+        if st.button("Démarrer l'entretien", type="primary", width="stretch", key="btn_classic"):
             # st.session_state.ui_nom = person_name_input
             st.switch_page("pages/2_Formulaire.py")
 
@@ -245,7 +245,7 @@ def show_unstructured_input_dialog():
         st.text("Données pertinentes identifiées")
         st.info(st.session_state[analysis_key]["response"])
         
-        if st.button("✅ Confirmer et Pré-remplir le formulaire", type="primary", use_container_width=True):
+        if st.button("✅ Confirmer et Pré-remplir le formulaire", type="primary", width="stretch"):
             # Apply the criteria to the UI session states
             data_loader.apply_search_criteria_to_ui(st.session_state[analysis_key]["criteria"])
             
@@ -270,7 +270,7 @@ with col_ia:
     
     with st.container(border=True):
         #  st.write("") # Alignment spacer to match the input height on the left
-         if st.button("Démarrer Auto-Detect", type="primary", use_container_width=True, key="btn_ia"):
+         if st.button("Démarrer Auto-Detect", type="primary", width="stretch", key="btn_ia"):
 
             show_unstructured_input_dialog()
             #  st.switch_page("pages/4_AI_Chatbot.py")
@@ -278,7 +278,7 @@ with col_ia:
 # st.markdown("<br><br>", unsafe_allow_html=True)
 # col_skip1, col_skip2, col_skip3 = st.columns([1,2,1])
 # with col_skip2:
-#     if st.button("Passer directement aux résultats ➞", type="secondary", use_container_width=True):
+#     if st.button("Passer directement aux résultats ➞", type="secondary", width="stretch"):
 #         st.switch_page("pages/3_Resultats.py")
 
 

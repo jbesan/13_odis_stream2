@@ -47,7 +47,7 @@ def check_password():
                 with st.form("login_form"):
                     username = st.text_input("Username", autocomplete="username")
                     password = st.text_input("Password", type="password", autocomplete="current-password")
-                    submit = st.form_submit_button("Se connecter", use_container_width=True)
+                    submit = st.form_submit_button("Se connecter", width="stretch")
                     
                     if submit:
                         if verify_credentials(username, password, st.secrets):

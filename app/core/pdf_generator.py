@@ -250,21 +250,33 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
         pdf.multi_cell(0, 5, pitch, markdown=True)
         pdf.ln(5)
 
-        # Radar Chart
+        # Radar Chart with Comparison
         try:
+            # 1. Target Data
             cat_scores = row[[col for col in row.index if col.endswith('_cat_score')]]
             cat_scores.rename(lambda x: x.split('_')[0].capitalize(), inplace=True)
-            
-            # Matplotlib Radar Chart
             categories = cat_scores.index.tolist()
             values = (cat_scores.values * 100).tolist()
-            N = len(categories)
             
+            # 2. Current City Data
+            config = st_session_state.get('config')
+            current_codgeo = config.commune_actuelle.code if config and hasattr(config.commune_actuelle, 'code') else (config.commune_actuelle if config else None)
+            
+            has_comparison = False
+            values_current = []
+            if current_codgeo and current_codgeo in results_df.index:
+                row_current = results_df.loc[current_codgeo]
+                cat_scores_current = row_current[[col for col in row_current.index if col.endswith('_cat_score')]]
+                cat_scores_current.rename(lambda x: x.split('_')[0].capitalize(), inplace=True)
+                # Align values_current with categories of target
+                values_current = [(cat_scores_current.get(cat, 0) * 100) for cat in categories]
+                has_comparison = True
+
+            N = len(categories)
             if N > 0:
                 # Compute angles
                 angles = [n / float(N) * 2 * 3.14159 for n in range(N)]
                 angles += angles[:1] # Close the loop
-                values += values[:1] # Close the loop
                 
                 fig, ax = plt.subplots(figsize=(4, 4), subplot_kw=dict(polar=True))
                 
@@ -276,9 +288,18 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
                 plt.yticks([25, 50, 75], ["25", "50", "75"], color="grey", size=7)
                 plt.ylim(0, 100)
                 
-                # Plot data
-                ax.plot(angles, values, linewidth=1, linestyle='solid')
-                ax.fill(angles, values, 'b', alpha=0.1)
+                # Plot target city (Green)
+                vals_target = values + values[:1]
+                ax.plot(angles, vals_target, linewidth=2, linestyle='solid', color='#006268', label=row.libgeo)
+                ax.fill(angles, vals_target, '#006268', alpha=0.3)
+                
+                # Plot current city (Blue)
+                if has_comparison:
+                    vals_current = values_current + values_current[:1]
+                    label_cur = config.commune_actuelle.label if config and hasattr(config.commune_actuelle, 'label') else "Actuel"
+                    ax.plot(angles, vals_current, linewidth=2, linestyle='solid', color='#1f77b4', label=f"Actuel ({label_cur})")
+                    ax.fill(angles, vals_current, '#1f77b4', alpha=0.2)
+                    plt.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1), fontsize=8)
                 
                 # Save to buffer
                 buf = io.BytesIO()
@@ -288,6 +309,13 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
                 
                 # Embed in PDF
                 pdf.image(buf, w=100)
+                
+                if has_comparison:
+                    pdf.set_font("DejaVu", 'I', 8)
+                    label_cur = config.commune_actuelle.label if config and hasattr(config.commune_actuelle, 'label') else "votre commune"
+                    pdf.cell(0, 5, f"Comparaison entre {row.libgeo} (vert) et {label_cur} (bleu).", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
+                    pdf.ln(2)
+
         except Exception as e:
             pdf.set_font("DejaVu", 'I', 8)
             pdf.multi_cell(0, 6, f"Erreur lors de la generation du graphique: {e}")
