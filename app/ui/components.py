@@ -10,10 +10,13 @@ from core import maps
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 import base64
+import json
 import logging
 import string
 from utils.data_loader import ensure_data_initialized
 from core.scoring import ScoringEngine
+from typing import Any, Dict, List, Optional, Union
+from core.models import SearchCriterias, CommuneResult, CommuneScoreDetail, SearchResultsData
 
 # --- Preservation of New Utils ---
 from utils.common import get_asset_path, get_base64_image
@@ -132,9 +135,8 @@ def show_ia_analysis_dialog(index: Any):
         
     details = engine.format_city_details(row, config=st.session_state.config)
     
-    identity = details.get('identity', {})
-    nom = identity.get('nom', 'cette ville')
-    codgeo = identity.get('codgeo')
+    nom = details.name
+    codgeo = details.codgeo
     
     st.header(f"Analyse OD&IS pour {nom}")
     
@@ -229,65 +231,49 @@ def show_details_dialog(index: Any):
         st.error("Moteur de recherche non initialisé.")
         return
         
-    details = engine.format_city_details(row, config=st.session_state.config)
+    commune: CommuneResult = engine.format_city_details(row, config=st.session_state.config)
     
-    if not details:
+    if not commune:
         st.error("Détails non disponibles.")
         return
 
     # --- Header ---
-    identity = details.get('identity', {})
-    st.markdown(f"## 📍 {identity.get('nom', 'Inconnu')} (code INSEE: {identity.get('codgeo', 'N/A')})")
+    st.markdown(f"## 📍 {commune.name} (code INSEE: {commune.codgeo})")
     
     with st.container(border=False):
         col1, col2, col3 = st.columns(3)
         with col1:
-            pop = identity.get('population', 0)
-            if pd.isna(pop) or pop is None:
-                pop = 0
-            st.metric("Population", f"{int(pop):,}".replace(",", " "), help="Population totale de la commune")
+            st.metric("Population", f"{commune.population:,}".replace(",", " "), help="Population totale de la commune")
         with col2:
-            st.metric("Bassin de Vie", identity.get('bassin_de_vie', 'N/A'), help="Territoire d'influence économique et sociale")
+            st.metric("Bassin de Vie", commune.bassin_de_vie, help="Territoire d'influence économique et sociale")
         with col3:
-            score_gl = identity.get('score_global')
-            if pd.notna(score_gl) and score_gl is not None:
-                st.metric("Score Global", f"{float(score_gl)*100:.1f}%", help="Adéquation globale avec votre projet de vie")
+            st.metric("Score Global", f"{commune.global_score*100:.1f}%", help="Adéquation globale avec votre projet de vie")
 
     # --- Helper to render scores table ---
     def render_scores_for_category(category_key: str):
-        scores_dict = details.get('scores', {})
-        # Map tab categories to config categories
-        # Config cats: emploi, logement, education, santé, inclusion, mobilité
-        
-        scores = scores_dict.get(category_key, [])
+        # category_key: emploi, logement, education, sante, inclusion, mobilite
+        scores: List[CommuneScoreDetail] = commune.scores.get(category_key, [])
         if not scores:
             st.info("Aucun indicateur spécifique pour cette catégorie.")
             return
         
         # Filter out redundant education presence scores if we have the counts tab
         if category_key == 'education':
-            scores = [s for s in scores if not s['label'].startswith('Présence')]
+            scores = [s for s in scores if not s.label.startswith('Présence')]
 
-        # Sort by score_normalise desc to show strengths (Directly on the list to preserve types)
-        scores = sorted(scores, key=lambda x: x.get('score_normalise', 0.0), reverse=True)
+        # Sort by score_normalise desc to show strengths
+        scores = sorted(scores, key=lambda x: x.score_normalise, reverse=True)
         
         for s in scores:
             with st.container():
                 c_label, c_val = st.columns([3, 1])
                 with c_label:
-                    st.markdown(f"**{s['label']}**")
-                    p_val = s['score_normalise']
-                    if pd.isna(p_val):
-                        p_val = 0.0
+                    st.markdown(f"**{s.label}**")
+                    p_val = s.score_normalise
                     st.progress(float(max(0.0, min(1.0, p_val))))
-                    # Add description/tooltip as caption for better readability
-                    if s.get('tooltip'):
-                        st.caption(f"_{s['tooltip']}_")
                 with c_val:
-                    # Format value as string to be safe, but keep it as-is if it's already an int
-                    val_display = s['valeur_kpi']
+                    val_display = s.valeur_kpi
                     if isinstance(val_display, (int, float)) and pd.notna(val_display):
-                         # If it's a large integer (like population), add spaces for readability
                          if isinstance(val_display, int) and val_display > 1000:
                              st.markdown(f"### {val_display:,}".replace(",", " "))
                          else:
@@ -295,86 +281,60 @@ def show_details_dialog(index: Any):
                     else:
                          st.markdown(f"### {val_display}")
                     
-                    st.caption(s['unit'] if pd.notna(s['unit']) and s['unit'] != 'None' else "")
+                    st.caption(s.unit if s.unit and s.unit != 'None' else "")
             st.markdown("<br>", unsafe_allow_html=True) # Minor spacing
 
     # --- Tabs ---
     tab_emploi, tab_logement, tab_edu, tab_sante, tab_vie = st.tabs([
         "💼 Emploi & Formation", 
         "🏠 Logement", 
-        "🎓 Education", 
+        "🎓 Éducation", 
         "🏥 Santé", 
         "🤝 Vie Sociale & Inclusion"
     ])
 
     with tab_emploi:
-        emploi_data = details.get('emploi', {})
-        c1, c2 = st.columns([1, 1.5], gap="medium")
-        
+        emploi_data = commune.emploi
+        c1, c2 = st.columns([1, 1], gap="medium")
         with c1:
             with st.container(border=False):
-                st.markdown("#### :material/work: Marché de l'emploi")
+                st.markdown("#### :material/work: Opportunités")
                 
-                matching_total = emploi_data.get('matching_total', 0)
-                if matching_total > 0:
-                    st.success(f"**{matching_total} offres en direct** correspondent à votre recherche actuelle.")
-                    with st.expander(f"Offres correspondant au projet ({matching_total})", expanded=True):
-                        for rome, count in emploi_data.get('matching_jobs_summary', {}).items():
-                            st.write(f"• **{rome}** : {count} offre{'s' if count > 1 else ''}")
-                else:
-                    st.error("Aucune offre en direct ne correspond à votre recherche actuelle.")
+                live_total = emploi_data.ft_jobs_total
+                matching_total = emploi_data.matching_total
                 
-                with st.expander("Top 10 des métiers recherchés", expanded=False):
-
-                    top_metiers = emploi_data.get('top_metiers', [])
+                if live_total > 0:
+                    st.info(f"**{live_total} postes** à pourvoir actuellement dans le bassin de vie.")
+                    if matching_total > 0:
+                        st.success(f"**{matching_total} correspondances** directes avec votre projet !")
+                
+                with st.expander("Top Métiers (volume)", expanded=False):
+                    top_metiers = emploi_data.top_metiers
                     if top_metiers:
-                        pref_metiers = []
-                        # Support both single and list-based session state keys
-                        for k in st.session_state:
-                            if k.startswith('ui_metiers_adult'):
-                                val = st.session_state[k]
-                                if isinstance(val, list): pref_metiers.extend(val)
-                                elif isinstance(val, str) and val: pref_metiers.append(val)
-                        
-                        unique_prefs = set(str(p).lower() for p in pref_metiers)
-                        for label in top_metiers:
-                            is_pref = any(p in label.lower() for p in unique_prefs)
-                            icon = "⭐ " if is_pref else ""
-                            st.write(f"• {icon}{label}")
+                        for m in top_metiers:
+                            st.write(f"• {m}")
                     else:
-                        st.info("Pas de données disponibles.")
-                        
-                # --- New SIAE Jobs (F-39) ---
-                siae_data = emploi_data.get('siae', {})
-                if siae_data and siae_data.get('total', 0) > 0:
-                    # st.divider()
-                    # st.markdown("#### :material/volunteer_activism: Offres d'Inclusion (SIAE)")
-                    
-                    matching_siae = siae_data.get('matching_summary', {})
-                    if matching_siae:
-                        # st.info(f"**{sum(matching_siae.values())} offres d'insertion** correspondent à votre recherche.")
-                        with st.expander(f"Offres par les SIAE correspondant au projet ({sum(matching_siae.values())})", expanded=True):
-                            for label, count in matching_siae.items():
-                                st.write(f"• **{label}** : {count} offre{'s' if count > 1 else ''}")
-                    else:
-                        # st.write(f"{siae_data['total']} opportunités d'insertion identifiées dans d'autres domaines.")
-                        with st.expander(f"Toutes les offres par les SIAE locales ({siae_data['total']})", expanded=False):
-                            for label, count in siae_data.get('summary', {}).items():
-                                st.write(f"• **{label}** : {count} offre{'s' if count > 1 else ''}")
+                        st.write("Pas de données détaillées.")
                 
-                
+                matching_siae = emploi_data.siae_matching_summary
+                if matching_siae:
+                    with st.expander(f"Offres par les SIAE correspondant au projet ({emploi_data.siae_matching_total})", expanded=True):
+                        for label, count in matching_siae.items():
+                            st.write(f"• **{label}** : {count} offre{'s' if count > 1 else ''}")
+                elif emploi_data.siae_total > 0:
+                    with st.expander(f"Toutes les offres par les SIAE locales ({emploi_data.siae_total})", expanded=False):
+                        for label, count in emploi_data.siae_summary.items():
+                            st.write(f"• **{label}** : {count} offre{'s' if count > 1 else ''}")
                 
                 with st.expander("Formations proposées", expanded=False):
-                    formations = emploi_data.get('formations', [])
+                    formations = emploi_data.formations
                     if formations:
                         pref_forms = []
-                        # Support both single and list-based session state keys
                         for k in st.session_state:
                             if k.startswith('ui_formations_adult'):
                                 val = st.session_state[k]
                                 if isinstance(val, list): pref_forms.extend(val)
                                 elif isinstance(val, str) and val: pref_forms.append(val)
-                                
                         unique_prefs = set(str(p).lower() for p in pref_forms)
                         for label in formations:
                             is_pref = any(p in label.lower() for p in unique_prefs)
@@ -388,57 +348,46 @@ def show_details_dialog(index: Any):
             render_scores_for_category('emploi')
 
     with tab_logement:
-        logement_data = details.get('logement', {})
+        logement_data = commune.logement
         c1, c2 = st.columns([1, 1], gap="medium")
         with c2:
             st.markdown("#### :material/home: Indicateurs Logement")
             render_scores_for_category('logement')
         with c1:
             st.markdown("#### :material/info: Données Complémentaires")
-            # Show J'Accueille host count if available
-            j_count = logement_data.get('jaccueille_count', 0)
+            j_count = logement_data.jaccueille_count
             if j_count > 0:
                  st.info(f"**{int(j_count)} accueillants** J'Accueille identifiés dans le bassin de vie.")
 
     with tab_edu:
-        edu_data = details.get('education', {})
+        edu_data = commune.education
         c1, c2 = st.columns([1, 1], gap="medium")
         with c1:
             with st.container(border=False):
                 st.markdown("#### :material/school: Établissements")
-                
-                etablissements = edu_data.get('etablissements', {})
+                etablissements = edu_data.etablissements
                 if etablissements:
                     for cat, names in sorted(etablissements.items()):
-                        # Deduplicate, remove NaN, and sort
                         items = sorted(list(set([n for n in names if pd.notna(n)])))
                         if items:
                             with st.expander(f"{cat} ({len(items)})", expanded=False):
                                 for name in items:
                                     st.write(f"• {name}")
                 else:
-                    # Fallback to old formations list if any
-                    formations = edu_data.get('formations', [])
-                    if formations:
-                        with st.expander("Liste des établissements", expanded=True):
-                            for f in sorted(list(set(formations))):
-                                st.write(f"• {f}")
-                    else:
-                        st.info("Aucune information détaillée sur les établissements.")
+                    st.info("Aucune information détaillée sur les établissements.")
         with c2:
             st.markdown("#### :material/analytics: Indicateurs Éducation")
             render_scores_for_category('education')
 
     with tab_sante:
-        sante_data = details.get('sante', {})
+        sante_data = commune.sante
         c1, c2 = st.columns([1, 1], gap="medium")
         with c1:
             with st.container(border=False):
                 st.markdown("#### :material/medical_services: Établissements de Santé")
-                etablissements = sante_data.get('etablissements', {})
+                etablissements = sante_data.etablissements
                 if etablissements:
                     for cat, names in sorted(etablissements.items()):
-                        # Deduplicate, remove NaN, and sort
                         items = sorted(list(set([n for n in names if pd.notna(n)])))
                         if items:
                             with st.expander(f"{cat} ({len(items)})", expanded=False):
@@ -451,20 +400,15 @@ def show_details_dialog(index: Any):
             render_scores_for_category('sante')
 
     with tab_vie:
-        incl_data = details.get('inclusion', {})
+        incl_data = commune.inclusion
         c1, c2 = st.columns([1, 1], gap="medium")
         with c1:
             with st.container(border=False):
-                
-                    
-                
-                # 2. Services d'Inclusion - NESTED IN EXPANDER
                 st.markdown("#### :material/volunteer_activism: Services d'Inclusion")
                 with st.expander("Consulter les services disponibles", expanded=False):
-                    services_grouped = incl_data.get('services_grouped', {})
+                    services_grouped = incl_data.services_grouped
                     if services_grouped:
                         for thematique, names in sorted(services_grouped.items()):
-                            # Deduplicate, remove NaN, and sort
                             items = sorted(list(set([n for n in names if pd.notna(n)])))
                             if items:
                                 with st.expander(f"{thematique} ({len(items)})", expanded=False):
@@ -473,35 +417,49 @@ def show_details_dialog(index: Any):
                     else:
                         st.info("Aucun service spécifique référencé.")
                 
-                # 3. ODIS Associations Directory (Refactored to RAG Categories)
                 st.markdown("#### :material/groups: Associations de l'inclusion")
                 
-                # Fetch associations from BQ via RNARagService
+                # Show pre-calculated summary from CommuneResult if available
+                if incl_data.total_associations > 0:
+                    st.info(f"**{incl_data.total_associations} associations** actives identifiées dans la commune.")
+                    if incl_data.refugee_asso_count > 0:
+                        st.success(f"Détail : **{incl_data.refugee_asso_count} associations** spécifiquement dédiées aux réfugiés.")
+                    
+                    if incl_data.associations_summary_by_category:
+                        with st.expander("Répartition par catégorie", expanded=False):
+                            for cat, count in sorted(incl_data.associations_summary_by_category.items()):
+                                st.write(f"• **{cat}** : {count}")
+                
+                # Show detailed list of refugee associations from static data if available
+                if incl_data.refugee_asso_list:
+                    with st.expander("Associations Réfugiés (données statiques)", expanded=False):
+                        for asso in incl_data.refugee_asso_list:
+                            name = str(asso.get('nom', asso.get('name', 'Association'))).capitalize()
+                            label = asso.get('waldec_label', '')
+                            desc = asso.get('objet', '')
+                            st.markdown(f"**{name}** ({label})")
+                            if desc: st.info(desc)
+
+                # Fallback / Complement with Live RAG
                 rna_service = st.session_state.get('rna_rag_service')
-                codgeo = identity.get('codgeo')
+                codgeo = commune.codgeo
                 
                 if rna_service and codgeo:
                     with st.spinner("Chargement des associations..."):
                         try:
-                            # F-48: Expand search to the entire "bassin de vie"
-                            bv_id = identity.get('bassin_de_vie')
+                            bv_id = commune.bassin_de_vie
                             odis = st.session_state.app_data.get('odis')
                             if odis is not None and bv_id:
-                                # Get all codgeos belonging to the same bassin de vie
                                 codgeos_in_bv = odis[odis['bassin_de_vie'] == bv_id].index.tolist()
                                 if codgeo not in codgeos_in_bv:
                                     codgeos_in_bv.append(codgeo)
                                 assos_raw = rna_service.get_associations_by_codgeo(codgeos_in_bv)
                             else:
-                                # Fallback to single commune if BV not found
                                 assos_raw = rna_service.get_associations_by_codgeo([codgeo])
 
                             if assos_raw:
-                                # Separate Refugee-focused from others
                                 refugee_assos_from_rag = [a for a in assos_raw if a.get('is_refugee_focused')]
                                 other_assos_from_rag = [a for a in assos_raw if not a.get('is_refugee_focused')]
-
-                                # Re-group others by primary_category
                                 grouped_assos = {}
                                 for a in other_assos_from_rag:
                                     cat = a.get('primary_category') or "Autres"
@@ -509,22 +467,16 @@ def show_details_dialog(index: Any):
                                         grouped_assos[cat] = []
                                     grouped_assos[cat].append(a)
                                 
-                                # 1. Display Refugee Focused Associations (if any)
                                 if refugee_assos_from_rag:
                                     with st.expander("Intégration des réfugiés & migrants", expanded=False):
-                                        # Sort refugee associations by name for readability
                                         refugee_assos_from_rag = sorted(refugee_assos_from_rag, key=lambda x: str(x['name']))
                                         for asso in refugee_assos_from_rag:
                                             name = string.capwords(str(asso['name']).lower())
                                             url = f"https://www.assoce.fr/waldec/{asso['id']}"
                                             desc = str(asso['description']).strip() if pd.notna(asso.get('description')) else ""
-                                            
-                                            if desc.lower() in ["nan", "none", "null"]:
-                                                desc = ""
-                                            
+                                            if desc.lower() in ["nan", "none", "null"]: desc = ""
                                             if desc:
-                                                if len(desc) > 200:
-                                                    desc = desc[:200].strip() + "..."
+                                                if len(desc) > 200: desc = desc[:200].strip() + "..."
                                                 desc = desc[0].upper() + desc[1:] if len(desc) > 1 else desc
                                                 st.markdown(f"**{name}**: {desc} [En savoir plus]({url})")
                                             else:
@@ -534,19 +486,11 @@ def show_details_dialog(index: Any):
                                     with st.expander(f"{cat} ({len(list_assos)})", expanded=False):
                                         for asso in list_assos:
                                             name = string.capwords(str(asso['name']).lower())
-                                            # st.write(f"**{name}**")
-                                            
-                                            # Link to assoce.fr
                                             url = f"https://www.assoce.fr/waldec/{asso['id']}"
-                                            
                                             desc = str(asso['description']).strip() if pd.notna(asso.get('description')) else ""
-                                            if desc.lower() in ["nan", "none", "null"]:
-                                                desc = ""
-                                            
+                                            if desc.lower() in ["nan", "none", "null"]: desc = ""
                                             if desc:
-                                                if len(desc) > 200:
-                                                    desc = desc[:200].strip() + "..."
-                                                # Capitalize first letter of description for better look
+                                                if len(desc) > 200: desc = desc[:200].strip() + "..."
                                                 desc = desc[0].upper() + desc[1:] if len(desc) > 1 else desc
                                                 st.markdown(f"**{name}**: {desc} [En savoir plus]({url})")
                                             else:
@@ -991,22 +935,22 @@ def render_weight_profile_form() -> None:
         
         st.select_slider("Education", cfg.POIDS_OPTIONS, 
                         value=st.session_state.get('ui_poids_education', 50), disabled=not st.session_state.get('ui_expert_weights'),
-                        key="ui_poids_education", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
+                        key="ui_poids_education", on_change=lambda: [st.session_state.setdefault('processed_gdf', None), st.session_state.setdefault('search_results', None)])
         st.select_slider("Projet Pro", cfg.POIDS_OPTIONS, 
                         value=st.session_state.get('ui_poids_emploi', 50), disabled=not st.session_state.get('ui_expert_weights'),
-                        key="ui_poids_emploi", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
+                        key="ui_poids_emploi", on_change=lambda: [st.session_state.setdefault('processed_gdf', None), st.session_state.setdefault('search_results', None)])
         st.select_slider("Logement", cfg.POIDS_OPTIONS, 
                         value=st.session_state.get('ui_poids_logement', 50), disabled=not st.session_state.get('ui_expert_weights'),
-                        key="ui_poids_logement", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
+                        key="ui_poids_logement", on_change=lambda: [st.session_state.setdefault('processed_gdf', None), st.session_state.setdefault('search_results', None)])
         st.select_slider("Inclusion", cfg.POIDS_OPTIONS, 
                         value=st.session_state.get('ui_poids_inclusion', 50), disabled=not st.session_state.get('ui_expert_weights'),
-                        key="ui_poids_inclusion", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
+                        key="ui_poids_inclusion", on_change=lambda: [st.session_state.setdefault('processed_gdf', None), st.session_state.setdefault('search_results', None)])
         st.select_slider("Santé", cfg.POIDS_OPTIONS, 
                         value=st.session_state.get('ui_poids_sante', 50), disabled=not st.session_state.get('ui_expert_weights'),
-                        key="ui_poids_sante", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
+                        key="ui_poids_sante", on_change=lambda: [st.session_state.setdefault('processed_gdf', None), st.session_state.setdefault('search_results', None)])
         st.select_slider("Mobilité", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_mobilité', 50), disabled=not st.session_state.get('ui_expert_weights'),
-                        key="ui_poids_mobilité", on_change=lambda: st.session_state.setdefault('processed_gdf', None))
+                        value=st.session_state.get('ui_poids_mobilite', 50), disabled=not st.session_state.get('ui_expert_weights'),
+                        key="ui_poids_mobilite", on_change=lambda: [st.session_state.setdefault('processed_gdf', None), st.session_state.setdefault('search_results', None)])
         # else:
         #     st.caption("Utilisez un profil prédéfini ci-dessus ou activez le mode personnalisé pour un réglage fin.")
 
@@ -1214,7 +1158,7 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
         poids_education=st.session_state['ui_poids_education'],
         poids_inclusion=st.session_state['ui_poids_inclusion'],
         poids_sante=st.session_state['ui_poids_sante'],
-        poids_mobilité=st.session_state['ui_poids_mobilité'],
+        poids_mobilite=st.session_state['ui_poids_mobilite'],
         criteria_weights=criteria_weights,
         
         commune_actuelle=commune_actuelle,
@@ -1236,25 +1180,22 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
         notes_qualitatives=[st.session_state.get('ui_notes_qualitatives', "")] if st.session_state.get('ui_notes_qualitatives') else []
     )
 
-def _result_highlight_callback(rank: int) -> None:
-    """Callback to handle highlighting a result."""
+def _result_highlight_callback(index: int) -> None:
+    """Callback to handle highlighting a result by its index in the top results."""
+    search_results: SearchResultsData = st.session_state.get('search_results')
+    if not search_results or index >= len(search_results.top_communes):
+        return
+
     is_highlighted, highlighted_rank = st.session_state.highlighted_result
     
     # If the same button is clicked again, un-highlight it
-    if is_highlighted and rank == highlighted_rank:
+    if is_highlighted and index == highlighted_rank:
         st.session_state.highlighted_result = [False, None]
         st.session_state.zoom = None
     else:
-        # Highlight the new result
-        row = st.session_state.processed_gdf.loc[rank]
-        st.session_state.highlighted_result = [True, rank]
-        
-        # Project centroid to 4326 for map centering (On-the-fly)
-        # processed_gdf is in EPSG:2154
-        centroid_2154 = row.polygon.centroid
-        centroid_4326 = gpd.GeoSeries([centroid_2154], crs=cfg.PROJECTED_CRS).to_crs("EPSG:4326").iloc[0]
-        
-        st.session_state.center = [centroid_4326.y, centroid_4326.x]
+        commune = search_results.top_communes[index]
+        st.session_state.highlighted_result = [True, index]
+        st.session_state.center = [commune.lat, commune.lon]
         st.session_state.zoom = cfg.DETAIL_MAP_ZOOM
 
 def _show_details_callback(rank: int) -> None:
@@ -1279,8 +1220,9 @@ def get_person_accompanied_str() -> str:
 
 def display_results_list(display_gdf: Optional[pd.DataFrame] = None) -> None:
     """Renders the list of search results or the detailed view for the highlighted result."""
-    gdf = display_gdf if display_gdf is not None else st.session_state.get('processed_gdf')
-    if gdf is None or gdf.empty:
+    search_results: SearchResultsData = st.session_state.get('search_results')
+    
+    if not search_results or not search_results.top_communes:
         st.info("Aucun résultat à afficher.")
         return
 
@@ -1298,23 +1240,16 @@ def display_results_list(display_gdf: Optional[pd.DataFrame] = None) -> None:
     st.text("Cliquez sur un résultat pour comprendre le détail du score")
     st.markdown('<style> [class*="st-key-button_top"] .stButton button div, [class*="st-key-button_top"] .stButton button p { justify-content: flex-start !important; text-align: left !important; width: 100%; } </style>', unsafe_allow_html=True)
 
-    top_n = 5
-    df = gdf
     is_highlighted, highlighted_rank = st.session_state.highlighted_result
 
-    # Pre-build layers for top results to be shown on map
-    for i, (index, row) in enumerate(df.head(top_n).iterrows()):
-        fg_key = f'Top{i + 1}'
-        st.session_state.fg_dict_ref[fg_key] = maps.build_top_result_layer(row, i)
-
     # Display buttons and details
-    for i, (index, row) in enumerate(df.head(top_n).iterrows()):
-        title = f"Top {i+1} | {row.libgeo}"
+    for i, commune in enumerate(search_results.top_communes):
+        title = f"Top {i+1} | {commune.name}"
 
         st.button(
             title,
             on_click=_result_highlight_callback,
-            args=(index,),
+            args=(i,),
             width='stretch',
             key=f'button_top{i+1}',
             type='primary',
@@ -1322,60 +1257,78 @@ def display_results_list(display_gdf: Optional[pd.DataFrame] = None) -> None:
         )
 
         # Check if this row's index matches the highlighted index
-        if is_highlighted and index == highlighted_rank:
-            _display_result_details(row)
+        if is_highlighted and i == highlighted_rank:
+            _display_result_details(commune)
 
         
 
-def _display_result_details(row: pd.Series) -> None:
+def _display_result_details(commune: CommuneResult) -> None:
     """Displays the detailed information for a single search result (Commune)."""
-    # Use codgeo from column if available, else fallback to index (row.name)
-    main_code = str(row['codgeo']) if 'codgeo' in row else str(row.name)
+    h = st.session_state.get('active_search_hash')
     
-    # --- Structures Inclusion (Dialog Trigger) ---
-    # We moved the display to the bottom links section or a header button
-    
-    # ... Skipping inline section ...
-    
-    # --- Existing Details ---
     with st.container(border=True):
         # --- Pitch ---
-        population = f"{row['population']:,.0f}".replace(",", " ")
-        libgeo = row.get('libgeo', row.get('libelle_bassin_de_vie', 'Localité'))
-        score_percent = f"{row['weighted_score'] * 100:.1f}%"
+        population = f"{commune.population:,}".replace(",", " ")
+        libgeo = commune.name
+        score_percent = f"{commune.global_score * 100:.1f}%"
         
-        st.markdown(f"**{libgeo}** ({population} habitants) fait partie du bassin de vie de : **{row.get('libelle_bassin_de_vie', 'N/A')}**.  \nLa correspondance avec le projet est évaluée à **{score_percent}**.")
-        
-        search_criterias = st.session_state.config
-        h = search_criterias.compute_hash()
+        st.markdown(f"**{libgeo}** ({population} habitants) fait partie du bassin de vie de : **{commune.bassin_de_vie}**.  \nLa correspondance avec le projet est évaluée à **{score_percent}**.")
         
         # --- AI Pitch Fragment ---
-        ai_pitch_container(main_code, h)
+        ai_pitch_container(commune.codgeo, h)
         
         # F-IA: AI Dialog Trigger (Session State based)
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             st.markdown('<style> [class*="st-key-btn_ia"] .stButton button { background-color: #F5D819; color: #1B4429; } </style>', unsafe_allow_html=True)
-            if st.button("Analyse Complète OD&IS", key=f"btn_ia_comm_{row.name}", icon=':material/bolt:', width="content", type="primary"):
-                st.session_state.active_ia_city_index = row.name
+            if st.button("Analyse Complète OD&IS", key=f"btn_ia_comm_{commune.codgeo}", icon=':material/bolt:', width="content", type="primary"):
+                st.session_state.active_ia_city_index = commune.codgeo
                 st.rerun()
 
         # --- Radar Chart with Comparison ---
-        def get_radar_data(row_data):
-            cols = [col for col in row_data.index if col.endswith('_cat_score')]
-            vals = list(row_data[cols].values * 100)
-            labels = [col.split('_')[0].capitalize() for col in cols]
-            # Close the loop
+        def get_radar_data(c: CommuneResult):
+            # Define all potential categories
+            all_cats = ['emploi', 'logement', 'education', 'sante', 'inclusion', 'mobilite']
+            
+            # Filter categories based on user criteria
+            config = st.session_state.get('config')
+            if config and config.active_criteria:
+                # Basic mapping: some criteria might have multiple points but they all fall under one category
+                # We show the category if at least one of its indicators was active in scoring
+                active_prefixes = {crit.split('_')[0] for crit in config.active_criteria}
+                # Special cases for prefixes (e.g., 'inc' -> 'inclusion', 'edu' -> 'education', 'mob' -> 'mobilite', 'met'/'form' -> 'emploi')
+                prefix_map = {
+                    'inc': 'inclusion', 
+                    'edu': 'education', 
+                    'mob': 'mobilite',
+                    'met': 'emploi',
+                    'form': 'emploi'
+                }
+                mapped_active = {prefix_map.get(p, p) for p in active_prefixes}
+                
+                cats = [cat for cat in all_cats if cat in mapped_active]
+            else:
+                cats = all_cats
+
+            labels = [cat.capitalize() for cat in cats]
+            vals = []
+            for cat in cats:
+                data = getattr(c, cat)
+                vals.append(data.cat_score * 100)
+            
             if vals:
+                # Duplicate first point to close the radar loop
                 vals.append(vals[0])
                 labels.append(labels[0])
             return labels, vals
 
-        labels_target, vals_target = get_radar_data(row)
+        labels_target, vals_target = get_radar_data(commune)
         
         # Current City Data
         config = st.session_state.get('config')
         current_codgeo = config.commune_actuelle.code if config and hasattr(config.commune_actuelle, 'code') else (config.commune_actuelle if config else None)
+        search_results: SearchResultsData = st.session_state.get('search_results')
+        current_geo = search_results.current_geo if search_results else None
         
         # Initialize Figure
         import plotly.graph_objects as go
@@ -1393,15 +1346,17 @@ def _display_result_details(row: pd.Series) -> None:
         ))
 
         # Add trace for current city (Blue) if available
-        if current_codgeo and current_codgeo in st.session_state.processed_gdf.index:
-            row_current = st.session_state.processed_gdf.loc[current_codgeo]
-            _, vals_current = get_radar_data(row_current)
+        if search_results and search_results.current_geo:
+            _, vals_current = get_radar_data(search_results.current_geo)
+            
+            # Use name from current_geo or fallback
+            current_name = search_results.current_geo.name
             
             fig.add_trace(go.Scatterpolar(
                 r=vals_current,
                 theta=labels_target, # Use same theta labels
                 fill='toself',
-                name=f"Actuel ({config.commune_actuelle.label})",
+                name=f"Actuel ({current_name})",
                 fillcolor='rgba(31, 119, 180, 0.4)', # Semi-transparent blue
                 line=dict(color='#1f77b4'),
                 hovertemplate='%{theta}: %{r:.1f}%<extra></extra>'
@@ -1415,90 +1370,81 @@ def _display_result_details(row: pd.Series) -> None:
         )
         
         st.plotly_chart(fig, width="stretch", config=None)
-        st.caption(f"**Comparaison des profils** : la zone verte représente **{libgeo}**, la zone bleue représente la **{config.commune_actuelle.label}**. Une plus grande surface indique une meilleure adéquation avec vos critères.")
+        
+        current_label = current_geo.name if current_geo else "votre ville"
+        st.caption(f"**Comparaison des profils** : la zone verte représente **{commune.name}**, la zone bleue représente la **{current_label}**. Une plus grande surface indique une meilleure adéquation avec vos critères.")
 
         # --- Links ---
+        c1, c2 = st.columns(2)
         # st.divider()
         
 
              
-        c1, c2 = st.columns(2)
         with c1:
-            if st.button("En savoir plus", key=f"btn_details_comm_{row.name}", width="stretch"):
-                st.session_state.active_details_index = row.name
+            if st.button("En savoir plus", key=f"btn_details_comm_{commune.codgeo}", width="stretch"):
+                st.session_state.active_details_index = commune.codgeo
                 st.rerun()
         with c2:
-            if st.button("Contact local", key=f"btn_ccas_commune_{row.name}", icon=':material/phone:', type="secondary", width="stretch"):
-                st.session_state.active_ccas_index = row.name
+            if st.button("Contact local", key=f"btn_ccas_commune_{commune.codgeo}", icon=':material/phone:', type="secondary", width="stretch"):
+                st.session_state.active_ccas_index = commune.codgeo
                 st.rerun()
                 
         # --- Feedback ---
         st.divider()
-        st.caption("Évaluez la pertinence de ce résultat :")
-        fb_key = f"fb_result_{main_code}_{h}"
+        col1, col2 = st.columns([3,2])
+        with col1:
+            st.text("Évaluez la pertinence de ce résultat :")
         
-        def _on_result_feedback(cid, c_name, score):
-            val = st.session_state.get(f"fb_result_{cid}_{h}")
-            if val is not None:
-                import json
-                try:
-                    from ui.feedback import _submit_to_bq
-                    context = json.dumps({"codgeo": cid, "libgeo": c_name, "score": score})
-                    _submit_to_bq("Result Relevance", str(val + 1), context=context)
-                    st.toast(f"Merci pour votre évaluation de {c_name} !")
-                except Exception as e:
-                    logger.error(f"Failed to submit result feedback: {e}")
+        with col2:
+            fb_key = f"fb_result_{commune.codgeo}_{h}"
+            
+            def _on_result_feedback(cid, c_name, score):
+                val = st.session_state.get(f"fb_result_{cid}_{h}")
+                if val is not None:
+                    try:
+                        from ui.feedback import _submit_to_bq
+                        context = json.dumps({"codgeo": cid, "libgeo": c_name, "score": score})
+                        _submit_to_bq("Result Relevance", str(val + 1), context=context)
+                        st.toast(f"Merci pour votre évaluation de {c_name} !")
+                    except Exception as e:
+                        logger.error(f"Failed to submit result feedback: {e}")
                     
-        st.feedback("stars", key=fb_key, on_change=_on_result_feedback, args=(main_code, libgeo, row.get('weighted_score')))
+            st.feedback("faces", key=fb_key, on_change=_on_result_feedback, args=(commune.codgeo, commune.name, commune.global_score))
 
         
 
-def _produce_pitch_markdown(row: pd.Series, config: SearchCriterias, scores_cat: pd.DataFrame) -> str:
+def _produce_pitch_markdown(commune: CommuneResult, config: SearchCriterias) -> str:
     """Generates a summary "pitch" for a result, adapting to commune or bassin de vie."""
     pitch_md = []
-    population = f"{row['population']:,.0f}".replace(",", " ")
+    population = f"{commune.population:,}".replace(",", " ")
 
     # It's a commune
-    libgeo = row.get('libgeo', row.get('libelle_bassin_de_vie', 'Localité'))
-    pitch_md.append(f'**{libgeo}** ({population} habitants) fait partie du bassin de vie de : **{row.get("libelle_bassin_de_vie", "N/A")}**.  ')
+    libgeo = commune.name
+    pitch_md.append(f'**{libgeo}** ({population} habitants) fait partie du bassin de vie de : **{commune.bassin_de_vie}**.  ')
 
-    score_percent = f"{row['weighted_score'] * 100:.1f}%"
+    score_percent = f"{commune.global_score * 100:.1f}%"
     pitch_md.append(f'\nLa correspondance avec le projet est évaluée à **{score_percent}**. ')
 
-    # --- Top contributing criteria (common logic) ---
-    all_scores = scores_cat['score'].unique()
-    crit_scores_cols = [col for col in row.keys() if col in all_scores]
-    weighted_scores = {}
-    for col in crit_scores_cols:
-        cat = scores_cat[scores_cat.score == col]['cat'].iloc[0]
-        cat_weight = getattr(config, f'poids_{cat}', 0)
-        
-        # F-15: Include criteria-level weights
-        base_weight = scores_cat[scores_cat.score == col]['weight'].iloc[0]
-        dynamic_multiplier = config.criteria_weights.get(col, 1.0)
-        
-        total_weight = cat_weight * base_weight * dynamic_multiplier
-        
-        # Robust handling of NaN or None
-        def safe_get(key):
-            v = row.get(key, 0)
-            return v if pd.notna(v) else 0
+    # --- Top contributing criteria (from CommuneScoreDetail) ---
+    all_scores = []
+    for cat, details in commune.scores.items():
+        all_scores.extend(details)
+    
+    # Sort by score_normalise desc
+    sorted_scores = sorted(all_scores, key=lambda x: x.score_normalise, reverse=True)
 
-        effective_score = safe_get(col)
-        weighted_scores[col] = effective_score * total_weight
-
-    sorted_scores = sorted(weighted_scores.items(), key=lambda item: item[1], reverse=True)
-
-    if any(s > 0 for s in weighted_scores.values()):
+    if sorted_scores:
         pitch_md.append(f"\nCette localité se distingue par :")
         count = 0
-        for score_col, weighted_val in sorted_scores:
-            if weighted_val > 0 and count < 5:
-                # Robustly find label
-                details = scores_cat[scores_cat.score == score_col]
-                if not details.empty:
-                    label = details.iloc[0]["score_affichage"]
-                    pitch_md.append(f'- {label}')
-                    count += 1
+        for s in sorted_scores:
+            if s.score_normalise > 0.4 and count < 4: # Only show significant points
+                val_display = s.valeur_kpi
+                if isinstance(val_display, (int, float)):
+                    if isinstance(val_display, int) and val_display > 1000:
+                        val_display = f"{val_display:,}".replace(",", " ")
+                
+                unit_str = f" {s.unit}" if s.unit and s.unit != 'None' else ""
+                pitch_md.append(f"\n- **{s.label}** : {val_display}{unit_str}")
+                count += 1
 
-    return "\n".join(pitch_md)
+    return "".join(pitch_md)

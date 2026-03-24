@@ -286,7 +286,7 @@ class TestScoringLogic:
         # But let's set them to 0 to simplify test
         config.poids_education = 0
         config.poids_inclusion = 0
-        config.poids_mobilité = 0
+        config.poids_mobilite = 0
         
         engine = scoring.ScoringEngine(
             df_all_communes=pd.DataFrame(),
@@ -326,7 +326,7 @@ class TestConditionalScoring:
             poids_education=100, # Weight is present, but should be ignored
             poids_sante=100,     # Weight is present, but should be ignored
             poids_inclusion=0,
-            poids_mobilité=0,
+            poids_mobilite=0,
             commune_actuelle='33063',
             loc_search_area='departement',
             loc_search_code=None,
@@ -380,7 +380,7 @@ class TestConditionalScoring:
             poids_education=100,
             poids_sante=100,
             poids_inclusion=0,
-            poids_mobilité=0,
+            poids_mobilite=0,
             commune_actuelle='33063',
             loc_search_area='departement',
             loc_search_code=None,
@@ -485,7 +485,7 @@ class TestMCPScenario:
              poids_education=0,
              poids_sante=0,
              poids_inclusion=0,
-             poids_mobilité=0,
+             poids_mobilite=0,
              nb_adultes=1,
              nb_enfants=0,
              hebergement_cible=[],
@@ -739,7 +739,7 @@ class TestHousingScoresLogic:
 
         def run_scoring(heb_list, logement):
             config = SearchCriterias(
-                poids_emploi=0, poids_logement=100, poids_education=0, poids_inclusion=0, poids_sante=0, poids_mobilité=0,
+                poids_emploi=0, poids_logement=100, poids_education=0, poids_inclusion=0, poids_sante=0, poids_mobilite=0,
                 criteria_weights={}, 
                 weight_profile="",
                 commune_actuelle='A',
@@ -816,7 +816,7 @@ class TestHousingScoresLogic:
 
         def run_scoring(type_logement):
             config = SearchCriterias(
-                poids_emploi=0, poids_logement=100, poids_education=0, poids_inclusion=0, poids_sante=0, poids_mobilité=0,
+                poids_emploi=0, poids_logement=100, poids_education=0, poids_inclusion=0, poids_sante=0, poids_mobilite=0,
                 criteria_weights={}, 
                 weight_profile="",
                 commune_actuelle='A',

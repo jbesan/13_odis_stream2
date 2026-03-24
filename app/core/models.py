@@ -58,7 +58,7 @@ class SearchCriterias(BaseModel):
     poids_logement: float = Field(0.0, description="Weight for housing criteria")
     poids_education: float = Field(0.0, description="Weight for education criteria")
     poids_inclusion: float = Field(0.0, description="Weight for inclusion criteria")
-    poids_mobilité: float = Field(0.0, description="Weight for mobility")
+    poids_mobilite: float = Field(0.0, description="Weight for mobility")
     poids_sante: float = Field(0.0, description="Weight for health criteria")
 
     active_criteria: Optional[Set[str]] = Field(None, description="Set of active criteria computed by the engine")
@@ -113,5 +113,100 @@ class SearchCriterias(BaseModel):
         """Computes a stable MD5 hash for search criteria to detect changes."""
         criteria_json = self.model_dump_json()
         return hashlib.md5(criteria_json.encode()).hexdigest()
+
+class CommuneScoreDetail(BaseModel):
+    """Represents the value and score of a specific indicator."""
+    label: str = Field(description="Nom d'affichage lisible (ex: 'Écoles élémentaires')")
+    score_id: str = Field(description="Code interne unique (ex: 'edu_elementaire_ct')")
+    valeur_kpi: Optional[Union[float, int, str]] = Field(None, description="Valeur brute métier")
+    score_normalise: float = Field(description="Score de 0.0 à 1.0 issu du ScoringEngine")
+    unit: str = Field(description="Unité de la valeur brute (ex: 'habitants', '%')")
+    relative_weight: float = Field(description="Poids relatif en % dans sa catégorie")
+
+    model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
+
+class EmploiDetails(BaseModel):
+    cat_score: float = 0.0
+    ft_jobs_total: int = 0
+    matching_total: int = 0
+    top_metiers: List[str] = Field(default_factory=list)
+    siae_total: int = 0
+    siae_summary: Dict[str, int] = Field(default_factory=dict)
+    siae_matching_total: int = 0
+    siae_matching_summary: Dict[str, int] = Field(default_factory=dict)
+    formations: List[str] = Field(default_factory=list)
+    ft_jobs_summary: Dict[str, int] = Field(default_factory=dict)
+    matching_jobs_summary: Dict[str, int] = Field(default_factory=dict)
+
+class LogementDetails(BaseModel):
+    cat_score: float = 0.0
+    jaccueille_count: int = 0
+    raw_euro_m2: Optional[float] = None
+    odace_all_variants: Dict[str, Dict[str, Optional[float]]] = Field(default_factory=dict)
+
+
+class EducationDetails(BaseModel):
+    cat_score: float = 0.0
+    counts: Dict[str, int] = Field(default_factory=dict)
+    etablissements: Dict[str, List[str]] = Field(default_factory=dict)
+
+class SanteDetails(BaseModel):
+    cat_score: float = Field(0.0)
+    counts: Dict[str, int] = Field(default_factory=dict)
+    etablissements: Dict[str, List[str]] = Field(default_factory=dict)
+
+class InclusionDetails(BaseModel):
+    cat_score: float = Field(0.0)
+    services_grouped: Dict[str, List[str]] = Field(default_factory=dict)
+    refugee_asso_list: List[Dict[str, Any]] = Field(default_factory=list)
+    # Merged from AssociationsDetails
+    total_associations: int = Field(0)
+    refugee_asso_count: int = Field(0)
+    associations_summary_by_category: Dict[str, int] = Field(default_factory=dict)
+
+class MobiliteDetails(BaseModel):
+    cat_score: float = Field(0.0)
+    nb_stops_bus: int = Field(0)
+    nb_stops_tram: int = Field(0)
+    nb_stops_metro: int = Field(0)
+    nb_stops_train: int = Field(0)
+    nb_stops_total: int = Field(0)
+    mob_trans_pub_stop_density: float = Field(0.0)
+
+class CommuneResult(BaseModel):
+    """Encapsulates identity, scores, and metadata for a specific commune."""
+    # Identity
+    codgeo: str = Field(description="Code INSEE (ex: '75101')")
+    name: str = Field(description="Nom de la commune")
+    population: int = Field(description="Population totale lissée")
+    bassin_de_vie: str = Field(description="Nom du bassin de vie d'appartenance")
+    
+    # Geographic coordinates (for maps)
+    lat: float = Field(0.0)
+    lon: float = Field(0.0)
+    
+    # Global score
+    global_score: float = Field(description="Score pondéré global (0-1.0)")
+    
+    # Thematic scores (grouped by category)
+    scores: Dict[str, List[CommuneScoreDetail]] = Field(default_factory=dict, description="Details grouped by category")
+    
+    # Domain specific aggregations (Strongly typed)
+    emploi: EmploiDetails = Field(default_factory=EmploiDetails)
+    logement: LogementDetails = Field(default_factory=LogementDetails)
+    education: EducationDetails = Field(default_factory=EducationDetails)
+    sante: SanteDetails = Field(default_factory=SanteDetails)
+    inclusion: InclusionDetails = Field(default_factory=InclusionDetails)
+    mobilite: MobiliteDetails = Field(default_factory=MobiliteDetails)
+
+    model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
+
+class SearchResultsData(BaseModel):
+    """Main payload container for search results."""
+    search_hash: str = Field(description="MD5 hash of the criteria used")
+    top_communes: List[CommuneResult] = Field(default_factory=list, description="Top recommended communes")
+    current_geo: Optional[CommuneResult] = Field(None, description="Reference data for the starting point")
+
+    model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 
 

@@ -85,19 +85,19 @@ HOUSING_TYPE_OPTIONS = {
 WEIGHT_PROFILES = {
     "Équilibré": {
         "poids_emploi": 50, "poids_logement": 50, "poids_education": 50,
-        "poids_inclusion": 50, "poids_sante": 50, "poids_mobilité": 50
+        "poids_inclusion": 50, "poids_sante": 50, "poids_mobilite": 50
     },
     "Famille": {
         "poids_emploi": 25, "poids_logement": 100, "poids_education": 100,
-        "poids_inclusion": 50, "poids_sante": 50, "poids_mobilité": 25
+        "poids_inclusion": 50, "poids_sante": 50, "poids_mobilite": 25
     },
     "Santé": {
         "poids_emploi": 25, "poids_logement": 50, "poids_education": 25,
-        "poids_inclusion": 50, "poids_sante": 100, "poids_mobilité": 25
+        "poids_inclusion": 50, "poids_sante": 100, "poids_mobilite": 25
     },
     "Economique": {
         "poids_emploi": 100, "poids_logement": 25, "poids_education": 25,
-        "poids_inclusion": 50, "poids_sante": 25, "poids_mobilité": 25
+        "poids_inclusion": 50, "poids_sante": 25, "poids_mobilite": 25
     }
 }
 
@@ -139,7 +139,7 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     'poids_logement': 50,
     'poids_education': 50,
     'poids_inclusion': 50,
-    'poids_mobilité': 50,
+    'poids_mobilite': 50,
     'poids_sante': 50, # Added default weight for sante
     'departement_actuel': '33',
     'commune_actuelle': 'Bordeaux',
@@ -173,7 +173,7 @@ DEMO_SCENARIOS = {
         'hebergement_cible': ["Chez l'habitant"],
         'nb_adultes': 1,
         'nb_enfants': 0,
-        'poids_mobilité': 50,
+        'poids_mobilite': 50,
         'weight_profile': 'Équilibré',
         'notes_qualitatives': "Zacharie est un jeune homme dynamique."
     },
@@ -190,7 +190,7 @@ DEMO_SCENARIOS = {
         'codes_formations': [[], ['331', '330', '326']],
         'classe_enfants': ['Maternelle', 'Elémentaire'],
         'sante': "Maternité",
-        'poids_mobilité': 0,
+        'poids_mobilite': 0,
         'weight_profile': 'Équilibré',
         'notes_qualitatives': "Olga et Dimitri cherchent un environnement calme pour leurs enfants."
     },
@@ -212,7 +212,7 @@ DEMO_SCENARIOS = {
         'poids_education': 100,
         'poids_inclusion': 50,
         'poids_sante': 50,
-        'poids_mobilité': 25,
+        'poids_mobilite': 25,
         'sante': "Maternité",
         'inc_asso_add_selection': ['chant choral, musique'],
         'loc_search_code': None,

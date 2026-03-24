@@ -188,7 +188,7 @@ scores:
     min_bound: 0.0
     max_bound: null
   - id: mob_epci_scaled
-    category: mobilité
+    category: mobilite
     source_metric: null
     bdv_factor: 0.0
     computation: live
@@ -398,7 +398,7 @@ scores:
     min_bound: 0.0
     max_bound: 1.0
   - id: mob_gare_scaled
-    category: mobilité
+    category: mobilite
     source_metric: mob_gare_scaled
     bdv_factor: 0.0
     computation: precomputed
@@ -413,7 +413,7 @@ scores:
     weight: 1.0
     max_bound: 1.0
   - id: mob_trans_pub_density_scaled
-    category: mobilité
+    category: mobilite
     source_metric: mob_trans_pub_stop_density
     bdv_factor: 0.0
     computation: live

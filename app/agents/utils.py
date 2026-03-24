@@ -14,6 +14,27 @@ def odis_get_bg_result(hash_val: str) -> Any:
     """Safely retrieves a background result from the global store."""
     return get_odis_bg_store().get(hash_val)
 
+def sanitize_llm_markdown(text: str) -> str:
+    """
+    Cleans up common LLM artifacts in markdown strings, 
+    specifically literal '\\n' strings and other escaping artifacts.
+    """
+    if not text:
+        return ""
+    
+    # Handle literal double-escaped newlines
+    # Some LLMs return "\\n" which becomes "\n" literal in Python
+    # Some might return "\\\\n"
+    res = text
+    for _ in range(3):
+        res = res.replace('\\r\\n', '\n').replace('\\n', '\n').replace('\\r', '\n')
+    
+    # Also handle literal markdown escaping if the LLM is too aggressive
+    # (e.g. \" replaced by ")
+    res = res.replace('\\"', '"').replace("\\'", "'")
+    
+    return res
+
 # Humoristic messages for the ODIS agents
 AGENT_TOASTS = {
     "interviewer": {
@@ -216,11 +237,16 @@ def launch_background_scorer(search_criterias: SearchCriterias, results_dict_ign
                 result_run = loop.run_until_complete(run_agent())
                 response_obj = result_run.output
                 logging.info(f"🚀 [BG] Agent call successful for hash {hash_val}")
+                logging.info(f"💎 [DEBUG-BG-RAW] response={repr(response_obj.response)}")
+                for p in response_obj.pitches_per_city:
+                    logging.info(f"💎 [DEBUG-BG-PITCH] codgeo={p.codgeo} pitch={repr(p.pitch)}")
                 
                 pitches_dict = {
-                    "global": response_obj.response,
-                    "pitches": {p.codgeo: p.pitch for p in response_obj.pitches_per_city}
+                    "global": sanitize_llm_markdown(response_obj.response),
+                    "pitches": {p.codgeo: sanitize_llm_markdown(p.pitch) for p in response_obj.pitches_per_city}
                 }
+                for code, p in pitches_dict["pitches"].items():
+                    logging.info(f"✨ [DEBUG-SANITY-CHECK] code={code} pitch={repr(p)}")
                 results_store[hash_val] = pitches_dict
                 logging.info(f"✅ [BG] Background Scorer fully finished for hash {hash_val}")
             except Exception as e:

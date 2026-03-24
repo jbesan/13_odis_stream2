@@ -8,7 +8,8 @@ import tempfile
 import os
 import config as cfg
 from ui import components as ui
-from core.models import SearchCriterias
+from core.models import SearchCriterias, CommuneResult
+from core.scoring import ScoringEngine
 import base64
 import logging
 from typing import Dict, Any, List, Optional
@@ -223,28 +224,36 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
     pdf.ln(5)
 
     # --- INDIVIDUAL RESULT PAGES ---
+    config = st_session_state.get('config')
+    engine = ScoringEngine.from_app_data(st_session_state['app_data'])
+
     for rank, (index, row) in enumerate(results_df.head(5).iterrows(), start=1):
         pdf.add_page()
         # Result Title
-        title = f"Top {rank} | {row.libgeo}"
+        name = row.get('libgeo', row.get('libelle_bassin_de_vie', 'Localité'))
+        title = f"Top {rank} | {name}"
         pdf.set_font("DejaVu", 'B', 12)
         pdf.cell(0, 8, title, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(2)
 
         # Pitch
-        config = st_session_state.get('config')
         h = config.compute_hash() if config else None
         scorer_res = st_session_state.get('async_scorer_results', {}).get(h) if h else None
         
         ai_pitch = ""
         codgeo = str(row.get('codgeo', row.name))
+        
+        # Convert row to CommuneResult for the manual pitch
+        commune = engine.format_city_details(row, config=config)
+
         if scorer_res and isinstance(scorer_res, dict) and "pitches" in scorer_res:
             ai_pitch = scorer_res["pitches"].get(codgeo, "")
             
         if ai_pitch:
             pitch = ai_pitch
         else:
-            pitch = ui._produce_pitch_markdown(row, config, st_session_state['app_data']['scores_cat'])
+            # New signature: (commune, config)
+            pitch = ui._produce_pitch_markdown(commune, config)
             
         pdf.set_font("DejaVu", '', 9)
         pdf.multi_cell(0, 5, pitch, markdown=True)

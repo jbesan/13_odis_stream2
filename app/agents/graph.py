@@ -14,6 +14,7 @@ from pydantic_ai.messages import ToolReturnPart
 # Loading each ODIS agent
 from agents.state import ODISDeps, ODISGraphState, UsageStats, FocusCity, compute_criteria_hash
 from agents.router import router_agent, RoutingResult
+from agents.utils import sanitize_llm_markdown
 from agents.interviewer import interviewer_agent
 from agents.refiner import refiner_agent
 from agents.scorer import scorer_agent
@@ -220,7 +221,7 @@ async def interviewer_node(state: ODISGraphState, config: RunnableConfig):
         logger.info(f"📊 [INTERVIEWER] Done in {(end_time - start_time).total_seconds():.3f}s")
         
         return {
-            "messages": [{"role": "assistant", "content": result.output.response}],
+            "messages": [{"role": "assistant", "content": sanitize_llm_markdown(result.output.response)}],
             "search_criteria": result.output.search_criteria,
             "criteria_hash": compute_criteria_hash(result.output.search_criteria),
             "active_agent": "interviewer",
@@ -316,11 +317,16 @@ async def scorer_node(state: ODISGraphState, config: RunnableConfig):
     # --- Message Construction ---
     # We combine the global response and individual pitches into a clean markdown message for the chat.
     final_content = result.output.response or ""
+    logging.info(f"💎 [DEBUG-RAW-SCORER] response={repr(final_content)}")
     
     if result.output.pitches_per_city:
         final_content += "\n\n### 📍 Top des communes recommandées\n"
         for city in result.output.pitches_per_city:
-            final_content += f"\n- **{city.name}** ({city.codgeo})\n  {city.pitch}\n"
+            logging.info(f"💎 [DEBUG-RAW-PITCH] city={city.codgeo} pitch={repr(city.pitch)}")
+            final_content += f"\n- **{city.name}** ({city.codgeo})\n  {sanitize_llm_markdown(city.pitch)}\n"
+    
+    final_content = sanitize_llm_markdown(final_content)
+    logging.info(f"✨ [DEBUG-SANITY-CHECK-FINAL] content={repr(final_content)}")
     
     logger.info(f"📤 [SCORER] Final message constructed (length: {len(final_content)})")
 
@@ -464,7 +470,7 @@ async def synthesizer_node(state: ODISGraphState, config: RunnableConfig):
     logger.info(f"✅ [SYNTHESIZER] Synthesis complete for {city_name}.")
     
     return {
-        "messages": [{"role": "assistant", "content": result.output.response}],
+        "messages": [{"role": "assistant", "content": sanitize_llm_markdown(result.output.response)}],
         "next_node": END,
         "pending_experts": [], # Clear the pending list here now
         "usage": capture_usage(result, "synthesizer", mod_id)

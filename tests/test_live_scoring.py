@@ -66,7 +66,7 @@ def test_live_jobs_scoring():
         poids_logement=1,
         poids_education=1,
         poids_inclusion=1,
-        poids_mobilité=1,
+        poids_mobilite=1,
         poids_sante=1,
         criteria_weights={},
         commune_actuelle='99999',

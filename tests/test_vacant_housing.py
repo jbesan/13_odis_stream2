@@ -39,7 +39,7 @@ def test_vacant_housing_criterion():
     # 4. Verify Scoring Logic
     config = SearchCriterias(
         poids_emploi=100, poids_logement=100, poids_education=0,
-        poids_inclusion=0, poids_sante=0, poids_mobilité=0,
+        poids_inclusion=0, poids_sante=0, poids_mobilite=0,
         commune_actuelle='01004', loc_search_area='departement',
         nb_adultes=1, nb_enfants=0,
         hebergement_cible=[], logement='Location',

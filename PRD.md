@@ -158,3 +158,19 @@ _(Most features omitted for brevity. Appending F-42)_
 ### 📊 Status
 
 - **March 2026**: Definition and implementation started.
+
+## 🚀 Feature [F-49]: Refonte Pydantic Data Models (Search Results)
+
+### 📝 User Story
+
+- En tant que développeur, je veux que la structure des résultats de recherche (Top 5, Current Geo) soit typée et unifiée afin d'éviter les accès par dictionnaire non sécurisés et de simplifier l'intégration dans toutes les fonctionnalités (Chatbot, Pitch, PDF, Télémétrie).
+
+### 🔑 Key Features
+
+- **Nouveau Modèle `CityResult`** : Encapsule l'identité d'une commune, son score global et ses détails par catégorie de manière formelle.
+- **Nouveau Modèle `SearchResultsData`** : Encapsule les métadonnées de la recherche (Hash), la liste structurée des n meilleurs résultats (`top_cities`), et la commune actuelle de référence (`current_geo`).
+- **Refactorisation Transversale** : Remplacement des dictionnaires natifs dans l'interface, le Scoring Engine, PDF Generator et les interactions avec les agents AI.
+
+### 📊 Status
+
+- **March 2026**: Definition started.

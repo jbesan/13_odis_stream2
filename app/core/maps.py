@@ -98,9 +98,9 @@ def build_scores_layer(df: pd.DataFrame) -> Tuple[flm.FeatureGroup, Optional[Any
         df_serializable,
         style_function=lambda feature: {
             "fillColor": colormap(score_dict.get(feature["properties"][id_col])),
-            "stroke": True,
-            "color": "white",
-            "weight": 1,
+            "stroke": False,
+            "color": "#1b4429",
+            "weight": 0.5,
             "fillOpacity": 0.5,
         },
         tooltip=flm.GeoJsonTooltip(
@@ -132,6 +132,8 @@ def build_top_result_layer(row: pd.Series, rank: int) -> flm.FeatureGroup:
     # Add rank marker at the centroid of the main polygon
     # Project centroid to 4326 using scalar-safe helper
     cx, cy = utils.project_point(row.polygon.centroid.x, row.polygon.centroid.y, from_crs=cfg.PROJECTED_CRS, to_crs='EPSG:4326')
+    
+    logging.info(f"📍 [MAP] Building Top {rank+1} for {row.get('libgeo', '???')}. Centroid: {cy}, {cx}")
     
     flm.Marker(
         location=[cy, cx],

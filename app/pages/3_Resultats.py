@@ -15,6 +15,7 @@ import logging
 import gc
 import warnings
 from agents.utils import launch_background_scorer, odis_get_bg_result
+from core.models import SearchResultsData
 
 st.set_page_config(layout="wide")
 
@@ -34,7 +35,7 @@ if not auth.check_password():
     
 # --- Session State Initialization ---
 if 'highlighted_result' not in st.session_state:
-    st.session_state['highlighted_result'] = (False, None)
+    st.session_state['highlighted_result'] = [False, None]
 if 'fg_dict_ref' not in st.session_state:
     st.session_state['fg_dict_ref'] = {}
 if 'fgs_to_show' not in st.session_state:
@@ -50,43 +51,50 @@ if 'active_details_index' not in st.session_state:
 if 'active_ccas_index' not in st.session_state:
     st.session_state['active_ccas_index'] = None
 
-@st.dialog("Export des résultats en PDF")
-def pdf_modal():
-    """Renders the PDF export dialog."""
-    # State 1: Loading / Generating
-    if 'pdf_modal_data' not in st.session_state or st.session_state.pdf_modal_data is None:
-        with st.spinner("Veuillez patienter, nous générons votre document..."):
-            try:
-                pdf_bytes = generate_pdf_report(
-                    st.session_state, 
-                    st.session_state.processed_gdf
-                )
-                st.session_state.pdf_modal_data = pdf_bytes
-                st.rerun() 
-            except Exception as e:
-                st.error(f"Erreur lors de la génération du PDF : {e}")
-                if st.button("Fermer"):
-                    st.session_state.show_pdf_modal = False
-                    st.rerun()
+# --- PDF Modal Logic ---
+if st.session_state.get('show_pdf_modal'):
     
-    # State 2: Download Ready
-    else:
-        st.success("Votre document est prêt !")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.download_button(
-                label="Télécharger le PDF",
-                data=st.session_state.pdf_modal_data,
-                file_name="synthese_jaccueille.pdf",
-                mime="application/pdf",
-                icon=':material/picture_as_pdf:',
-                type='primary'
-            )
-        with col2:
-            if st.button("Fermer", width="stretch"):
-                st.session_state.show_pdf_modal = False
-                st.session_state.pdf_modal_data = None
-                st.rerun()
+    def on_dialog_dismiss():
+        """Callback to clean up state when the dialog is dismissed."""
+        st.session_state.show_pdf_modal = False
+        st.session_state.pdf_modal_data = None
+
+    @st.dialog("Export des résultats en PDF", on_dismiss=on_dialog_dismiss)
+    def pdf_modal():
+        # State 1: Loading / Generating
+        if 'pdf_modal_data' not in st.session_state or st.session_state.pdf_modal_data is None:
+            with st.spinner("Veuillez patienter, nous générons votre document..."):
+                try:    
+                    pdf_bytes = generate_pdf_report(
+                        st.session_state, 
+                        st.session_state.processed_gdf.copy()
+                    )
+                    st.session_state.pdf_modal_data = pdf_bytes
+                    st.rerun() 
+                except Exception as e:
+                    st.error(f"Erreur lors de la génération du PDF : {e}")
+                    if st.button("Fermer"):
+                        st.session_state.show_pdf_modal = False
+                        st.rerun()
+    
+        # State 2: Download Ready
+        else:
+            st.success("Votre document est prêt !")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.download_button(
+                    label="Télécharger le PDF",
+                    data=st.session_state.pdf_modal_data,
+                    file_name="synthese_jaccueille.pdf",
+                    mime="application/pdf",
+                    icon=':material/picture_as_pdf:',
+                    type='primary'
+                )
+            with col2:
+                if st.button("Fermer", width="stretch"):
+                    st.session_state.show_pdf_modal = False
+                    st.session_state.pdf_modal_data = None
+                    st.rerun()
 
 # Trigger PDF Modal
 if st.session_state.get('show_pdf_modal'):
@@ -154,18 +162,21 @@ def run_search():
         config=config,
         log_prefix="classic"
     )
-    unaggregated_gdf = processed_gdf # Single view now, they are identical
-
+    
+    # --- Create Standardized Search Results Payload ---
+    search_results: SearchResultsData = engine.create_search_results(processed_gdf, config)
+    
     # --- State Update ---
     st.session_state['processed_gdf'] = processed_gdf
-    st.session_state['unaggregated_gdf'] = unaggregated_gdf
+    st.session_state['unaggregated_gdf'] = processed_gdf # Single view now
     st.session_state['engine'] = engine
+    st.session_state['search_results'] = search_results
     
     # --- Unified Telemetry Logging (BigQuery) ---
     try:
         # Extract criteria vs weights from the SearchCriterias
         criteria_keys = ['commune_actuelle', 'loc_search_area', 'situation_famille', 'nb_enfants', 'besoin_emploi', 'besoin_sante', 'inc_services_add_selection']
-        full_config = config.model_dump() if hasattr(config, 'model_dump') else config.__dict__
+        full_config = config.model_dump()
         
         search_criteria = {k: full_config.get(k) for k in criteria_keys if k in full_config}
         weights = {k: v for k, v in full_config.items() if k.startswith('poids_')}
@@ -173,39 +184,23 @@ def run_search():
         top_5_results = []
         top_5_breakdown = {}
         top_cities_full = []
-        if not processed_gdf.empty:
-            top_5 = processed_gdf.head(5)
-            # Granular Breakdown (mirroring markdown logs logic)
-            for idx, row in top_5.iterrows():
-                city_details = engine.format_city_details(row, config=config)
-                
-                # For Telemetry
-                top_5_breakdown[str(idx)] = {
-                    "libgeo": row.get('libgeo', ''),
-                    "scores": city_details.get('scores', {})
-                }
-                top_5_results.append(
-                    {"codgeo": str(idx), "libgeo": str(row.get('libgeo', '')), "score": float(row.get('weighted_score', 0))} 
-                )
-                
-                # For Background AI Agent (to avoid double calculation)
-                top_cities_full.append({
-                    "codgeo": str(idx),
-                    "libgeo": row.get('libgeo', ''),
-                    "weighted_score": float(row.get('weighted_score', 0)),
-                    "details": city_details
-                })
+        for commune in search_results.top_communes:
+            idx = commune.codgeo
+            top_5_breakdown[str(idx)] = {
+                "libgeo": commune.name,
+                "scores": {cat: [s.model_dump() for s in items] for cat, items in commune.scores.items()}
+            }
+            top_5_results.append(
+                {"codgeo": str(idx), "libgeo": commune.name, "score": commune.global_score} 
+            )
             
-            # F-49: Ensure current city is ALSO in top_cities_full for Synthesizer comparison
-            if current_codgeo and current_codgeo in processed_gdf.index and current_codgeo not in top_5.index:
-                row_cur = processed_gdf.loc[current_codgeo]
-                city_details_cur = engine.format_city_details(row_cur, config=config)
-                top_cities_full.append({
-                    "codgeo": str(current_codgeo),
-                    "libgeo": row_cur.get('libgeo', ''),
-                    "weighted_score": float(row_cur.get('weighted_score', 0)),
-                    "details": city_details_cur
-                })
+            # For Background AI Agent
+            top_cities_full.append({
+                "codgeo": str(idx),
+                "libgeo": commune.name,
+                "weighted_score": commune.global_score,
+                "details": commune.model_dump()
+            })
         
         telemetry.log_search_complete(
             criteria=search_criteria,
@@ -215,26 +210,20 @@ def run_search():
             source_flow='classic'
         )
     except Exception as tel_e:
-        logging.warning(f"Failed to log search telemetry: {str(tel_e)}")
+        logging.warning(f"Failed to log search telemetry: {tel_e}")
         
-    search_criterias = config
-    h = search_criterias.compute_hash()
+    h = search_results.search_hash
     
     # Trigger background scorer if result not already present or running
     if odis_get_bg_result(h) is None:
-        # We pass an empty dict for compatibility with the old API signature if needed, 
-        # but our new implementation in agents/utils.py uses a global store.
-        launch_background_scorer(search_criterias, {}, h, top_cities=top_cities_full)
+        launch_background_scorer(config, {}, h, top_cities=top_cities_full)
     
     st.session_state['active_search_hash'] = h
 
     # Calculate center for map
     if not processed_gdf.empty:
-        # Compute centroid of all results
-        # Use EPSG:2154 for accurate centroid, then back to 4326
-        # Optimization: use the mean of centroids if the dataset is large
         with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*array with ndim > 0 to a scalar is deprecated.*")
+            warnings.filterwarnings("ignore", category=DeprecationWarning)
             projected_centroids = processed_gdf.to_crs('EPSG:2154').centroid
             avg_centroid_projected = projected_centroids.union_all().centroid
         
@@ -243,18 +232,21 @@ def run_search():
     else:
         # Fallback to current commune
         with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*array with ndim > 0 to a scalar is deprecated.*")
+            warnings.filterwarnings("ignore", category=DeprecationWarning)
             start_commune_projected = start_commune.to_crs('EPSG:2154')
             start_centroid = start_commune_projected.centroid.iloc[0]
             
         center_x, center_y = utils.project_point(start_centroid.x, start_centroid.y, from_crs='EPSG:2154', to_crs='EPSG:4326')
-        final_center_x = center_x
-        final_center_y = center_y
+        final_center_x, final_center_y = center_x, center_y
 
     st.session_state['selected_geo'] = st.session_state.app_data['odis'].loc[[config.commune_actuelle.code]].copy()
     st.session_state['center'] = [final_center_y, final_center_x]
     st.session_state['zoom'] = maps.get_map_zoom(config.loc_search_area)
+    
+    # We no longer pre-build Top 5 layers here to avoid Folium serialization issues in session state.
+    # They are now rebuilt on the fly in the map rendering block.
     st.session_state['fg_dict_ref'] = {}
+    
     st.session_state['fgs_to_show'] = set()
     st.session_state['highlighted_result'] = [False, None]
 
@@ -355,7 +347,7 @@ with st.container(border=False, key='top_menu'):
         ui.display_input_tabs(st.session_state['demo_data'])
     
 # Main two sections: results and map
-col_map, col_results  = st.columns([3, 2])
+col_map, col_results = st.columns([3, 2])
 
 with col_results:
     if st.session_state.get('processed_gdf') is not None:
@@ -377,6 +369,16 @@ with col_results:
 with col_map:
     if st.session_state.get('processed_gdf') is not None:
         st.subheader("Carte des résultats")
+        
+        # Define config early to avoid NameError
+        config = st.session_state.get('config')
+        
+        # Safety check for zoom
+        if st.session_state.get("zoom") is None:
+            st.session_state["zoom"] = maps.get_map_zoom(config.loc_search_area if config else 'departement')
+
+        
+        # Initialize map
         m = maps.create_base_map(st.session_state["center"], st.session_state["zoom"])
         
         # Base layer with all scored communes
@@ -394,7 +396,7 @@ with col_map:
             if config.nb_enfants > 0:
                 pill_options.append("🎓 Éducation")
             if config.besoin_sante != "Aucun":
-                pill_options.append("🏥 Santé")
+                pill_options.append("🏥 sante")
             if config.inc_services_add_selection:
                 pill_options.append("🤝 Inclusion")
         
@@ -405,14 +407,13 @@ with col_map:
             selection_mode="multi", 
             default=["🏠 Top 5"],
             key="map_layers_pills",
-            label_visibility="collapsed",
-            # width="stretch"
+            label_visibility="collapsed"
         )
         
         # Map selections to boolean flags
         show_top_5 = "🏠 Top 5" in selected_layers
         show_ecoles = "🎓 Éducation" in selected_layers
-        show_sante = "🏥 Santé" in selected_layers
+        show_sante = "🏥 sante" in selected_layers
         show_inclusion = "🤝 Inclusion" in selected_layers
 
         if config:
@@ -425,19 +426,26 @@ with col_map:
             if show_sante:
                 st.session_state.fg_dict_ref['fg_sante'] = maps.build_sante_layer(st.session_state.app_data['pois'], target_codgeos, config)
                 fgs_to_show.add('fg_sante')
-                legend_items.append({'color': 'blue', 'icon': 'plus', 'text': 'Santé'})
+                legend_items.append({'color': 'blue', 'icon': 'plus', 'text': 'sante'})
             if show_inclusion:
                 st.session_state.fg_dict_ref['fg_services'] = maps.build_services_layer(st.session_state.app_data['pois'], target_codgeos, config)
                 fgs_to_show.add('fg_services')
                 legend_items.append({'color': 'purple', 'icon': 'heart', 'text': 'Inclusion'})
-
         is_highlighted, highlighted_index = st.session_state.highlighted_result
+        
         if show_top_5:
-            for i in range(5):
-                fgs_to_show.add(f'Top{i + 1}')
+            # Rebuild Top 5 layers on the fly to avoid Folium object exhaustion in session state
+            for i, (idx, row) in enumerate(st.session_state.processed_gdf.head(5).iterrows()):
+                name = f'Top{i+1}'
+                st.session_state['fg_dict_ref'][name] = maps.build_top_result_layer(row, i)
+                fgs_to_show.add(name)
             st.session_state["zoom"] = None
         elif is_highlighted:
-            fgs_to_show.add(f'Top{highlighted_index + 1}')
+            # Rebuild ONLY the highlighted layer
+            row = st.session_state.processed_gdf.iloc[highlighted_index]
+            name = f'Top{highlighted_index + 1}'
+            st.session_state['fg_dict_ref'][name] = maps.build_top_result_layer(row, highlighted_index)
+            fgs_to_show.add(name)
 
         st.session_state.fgs_to_show = fgs_to_show
 
@@ -450,26 +458,34 @@ with col_map:
             for name in sorted(list(st.session_state['fgs_to_show']))
             if name in st.session_state['fg_dict_ref']
         ]
-
         map_key = "odis_scored_map_" + "_".join(sorted(list(st.session_state.fgs_to_show)))
 
-        # Manually add all visible layers to the map object so it's complete for the PDF export
+        # Manually add all visible layers to the map object
+        # This is the most stable way to ensure they appear in the UI and PDF
         for fg in fgs_to_add:
             fg.add_to(m)
-        
-        # flm.LayerControl().add_to(m)
-
+                
         st.session_state['map_object'] = m
 
-        st_folium(
-            m,
-            zoom=st.session_state["zoom"],
-            center=st.session_state["center"],
-            feature_group_to_add=fgs_to_add,
-            key=map_key,
-            width='stretch',
-            returned_objects=[],
-        )
+
+        try:
+            # Adding explicit height back as it's a known fix for Streamlit column collapses
+            st_folium(
+                m,
+                zoom=st.session_state["zoom"],
+                center=st.session_state["center"],
+                feature_group_to_add=fgs_to_add,
+                # layer_control=True,
+                key=map_key,
+                # height=500,
+                use_container_width=True,
+                returned_objects=[],
+            )
+        except Exception as e:
+            st.error(f"Erreur d'affichage de la carte: {e}")
+            logging.error(f"❌ [MAP-ERROR] st_folium failed: {e}")
+            import traceback
+            logging.error(traceback.format_exc())
         st.markdown('<style>.stCustomComponentV1 {border-radius:10px}</style>', unsafe_allow_html=True)
 
 # To debug criteria scoring

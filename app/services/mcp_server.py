@@ -284,7 +284,7 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
         poids_logement=get_weight('logement'),
         poids_education=get_weight('education'),
         poids_inclusion=get_weight('inclusion'),
-        poids_mobilité=get_weight('mobilité'),
+        poids_mobilite=get_weight('mobilité'),
         poids_sante=get_weight('sante'),
         criteria_weights=criteria_obj.criteria_weights,
         weight_profile=profile_name,
@@ -356,17 +356,22 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
                 detailed_scores[found_cat][col] = float(row[col])
 
         bdv = row.get('libelle_bassin_de_vie', "N/A")
-        details_full = engine.format_city_details(row, config=config)
+        details_obj: CommuneResult = engine.format_city_details(row, config=config)
+        details_dict = details_obj.model_dump()
         
         # AI Pruning: Streamline details but keep data not yet handled by other tools
         # Education and Formations stay here for now. Associations are handled by SCOUT.
         details_streamlined = {
-            "identity": details_full.get("identity", {}),
-            "scores": details_full.get("scores", {}),
-            "education": details_full.get("education", {}),
+            "identity": {
+                "name": details_obj.name,
+                "population": details_obj.population,
+                "bassin_de_vie": details_obj.bassin_de_vie
+            },
+            "scores": details_dict.get("scores", {}),
+            "education": details_dict.get("education", {}),
             "emploi": {
-                "top_metiers": details_full.get("emploi", {}).get("top_metiers", []),
-                "formations": details_full.get("emploi", {}).get("formations", [])
+                "top_metiers": details_dict.get("emploi", {}).get("top_metiers", []),
+                "formations": details_dict.get("emploi", {}).get("formations", [])
             }
         }
         

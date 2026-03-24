@@ -42,7 +42,7 @@ def base_config():
         poids_logement=100,
         poids_education=100,
         poids_inclusion=100,
-        poids_mobilité=100,
+        poids_mobilite=100,
         poids_sante=100,
         criteria_weights={},
         commune_actuelle='33063',

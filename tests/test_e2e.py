@@ -245,7 +245,7 @@ def test_result_details_display(app_data):
         'ui_poids_education': 100,
         'ui_poids_inclusion': 25,
         'ui_poids_sante': 100,
-        'ui_poids_mobilité': 100,
+        'ui_poids_mobilite': 100,
         'ui_metiers_adult_0': [],
         'ui_formations_adult_0': []
     }
@@ -266,9 +266,12 @@ def test_result_details_display(app_data):
     })
 
     # 4. Test the commune details display
+    engine = scoring.ScoringEngine.from_app_data(app_data)
     with patch('app.ui.components.st.session_state', mock_session_state_details):
         for index, row in results_communes.head(5).iterrows():
             try:
-                ui._display_result_details(row)
+                # Convert row to CommuneResult as expected by the new UI logic
+                commune = engine.format_city_details(row, scoring_config)
+                ui._display_result_details(commune)
             except Exception as e:
                 pytest.fail(f"Failed to display details for commune result {row.get('libgeo', 'UNKNOWN')} ({index}): {e}")
