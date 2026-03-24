@@ -103,6 +103,12 @@ def setup_logging() -> None:
     except ImportError:
         pass
 
+    # Specifically for Streamlit fragment session warnings (harmless racy reruns)
+    for fragment_logger in ["streamlit.runtime.fragment", "streamlit.runtime.fragment_manager"]:
+        f_logger = logging.getLogger(fragment_logger)
+        f_logger.setLevel(logging.ERROR)
+        f_logger.propagate = False
+
 # Initialize logging when module is imported
 setup_logging()
 

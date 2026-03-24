@@ -250,7 +250,7 @@ def show_details_dialog(index: Any):
         with col3:
             score_gl = identity.get('score_global')
             if pd.notna(score_gl) and score_gl is not None:
-                st.metric("Score Global", f"{float(score_gl)*100:.0f}%", help="Adéquation globale avec votre projet de vie")
+                st.metric("Score Global", f"{float(score_gl)*100:.1f}%", help="Adéquation globale avec votre projet de vie")
 
     # --- Helper to render scores table ---
     def render_scores_for_category(category_key: str):
@@ -1340,7 +1340,7 @@ def _display_result_details(row: pd.Series) -> None:
         # --- Pitch ---
         population = f"{row['population']:,.0f}".replace(",", " ")
         libgeo = row.get('libgeo', row.get('libelle_bassin_de_vie', 'Localité'))
-        score_percent = f"{row['weighted_score'] * 100:.0f}%"
+        score_percent = f"{row['weighted_score'] * 100:.1f}%"
         
         st.markdown(f"**{libgeo}** ({population} habitants) fait partie du bassin de vie de : **{row.get('libelle_bassin_de_vie', 'N/A')}**.  \nLa correspondance avec le projet est évaluée à **{score_percent}**.")
         
@@ -1362,7 +1362,7 @@ def _display_result_details(row: pd.Series) -> None:
         cat_scores = row[[col for col in row.index if col.endswith('_cat_score')]]
         cat_scores.rename(lambda x: x.split('_')[0].capitalize(), inplace=True)
         fig = line_polar(theta=cat_scores.index, r=cat_scores.values * 100, line_close=True, range_r=[0, 100])
-        fig.update_traces(fill='toself', hovertemplate='%{theta}: %{r:.0f}%<extra></extra>')
+        fig.update_traces(fill='toself', hovertemplate='%{theta}: %{r:.1f}%<extra></extra>')
         fig.update_layout(margin=dict(l=50, r=50, t=50, b=50))
         st.plotly_chart(fig, width='stretch', config=None)
         st.caption('Plus le critère s’approche du bord, plus il est attractif.')
@@ -1412,7 +1412,7 @@ def _produce_pitch_markdown(row: pd.Series, config: SearchCriterias, scores_cat:
     libgeo = row.get('libgeo', row.get('libelle_bassin_de_vie', 'Localité'))
     pitch_md.append(f'**{libgeo}** ({population} habitants) fait partie du bassin de vie de : **{row.get("libelle_bassin_de_vie", "N/A")}**.  ')
 
-    score_percent = f"{row['weighted_score'] * 100:.0f}%"
+    score_percent = f"{row['weighted_score'] * 100:.1f}%"
     pitch_md.append(f'\nLa correspondance avec le projet est évaluée à **{score_percent}**. ')
 
     # --- Top contributing criteria (common logic) ---

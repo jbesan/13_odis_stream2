@@ -217,7 +217,7 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
     pdf.cell(0, 10, "Top 5 des résultats", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='L')
     pdf.set_font("DejaVu", '', 9)
     for rank, (index, row) in enumerate(results_df.head(5).iterrows(), start=1):
-        score_percent = f"{row['weighted_score'] * 100:.0f}%"
+        score_percent = f"{row['weighted_score'] * 100:.1f}%"
         name = row.libgeo
         pdf.cell(0, 5, f"  {rank}. {name} - {score_percent}", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(5)

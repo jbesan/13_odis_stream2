@@ -41,7 +41,7 @@ with st.sidebar:
 
     st.divider()
     
-    if st.button("Passer aux résultats", type='secondary', width="stretch"):
+    if st.button("Passer aux résultats", type='secondary', width="stretch", icon=":material/fast_forward:"):
         st.switch_page("pages/3_Resultats.py") 
 
 PAGES = {

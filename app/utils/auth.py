@@ -1,5 +1,6 @@
 import streamlit as st
 import hmac
+import os
 from ui.idle_sleep import inject_idle_sleep
 
 def verify_credentials(username, password, secrets):
@@ -18,9 +19,22 @@ def verify_credentials(username, password, secrets):
     return False
 
 def check_password():
-    """Returns `True` if the user had a correct password."""
+    """
+    Returns `True` if the user had a correct password.
+    Skips authentication and Idle Sleep when running locally.
+    """
+    # Detect Cloud Run environment
+    is_cloud_run = os.environ.get("K_SERVICE") is not None
+    
+    # 1. Skip if not running on Cloud Run (Local Dev)
+    if not is_cloud_run:
+        # Default user for local logging/telemetry
+        if "username" not in st.session_state:
+            st.session_state["username"] = "jacques-local"
+        st.session_state["password_correct"] = True
+        return True
 
-    # Initialize session state for auth
+    # 2. Initialize session state for auth
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
 
@@ -49,7 +63,7 @@ def check_password():
         # Password correct.
         st.sidebar.warning("ATTENTION: L'application est en phase de test. Vos interactions sont collectées pour améliorer l'outil. Merci d'anonymiser au maximum vos saisies libres.")
         
-        # Inject Idle Sleep monitor (10 mins timeout)
+        # 3. Inject Idle Sleep monitor (10 mins timeout) - ONLY on Cloud Run
         inject_idle_sleep(timeout_minutes=10)
         
         return True

@@ -81,6 +81,8 @@ def build_scores_layer(df: pd.DataFrame) -> Tuple[flm.FeatureGroup, Optional[Any
 
     # Add all scored geometries (communes or bassins de vie)
     df_serializable = df[[id_col, name_col, 'weighted_score', 'polygon']].copy()
+    # F-SDD: Pre-format the score for display to avoid Folium formatter issues
+    df_serializable['score_pct'] = df_serializable['weighted_score'].apply(lambda x: f"{x*100:.1f}%" if pd.notna(x) else "N/A")
     df_serializable.set_geometry('polygon', inplace=True)
     
     # Force the known CRS (PROJECTED_CRS) if missing, then convert to 4326 for Folium
@@ -96,11 +98,16 @@ def build_scores_layer(df: pd.DataFrame) -> Tuple[flm.FeatureGroup, Optional[Any
         df_serializable,
         style_function=lambda feature: {
             "fillColor": colormap(score_dict.get(feature["properties"][id_col])),
-            "color": "grey",
+            "stroke": True,
+            "color": "white",
             "weight": 1,
-            "fillOpacity": 0.7,
+            "fillOpacity": 0.5,
         },
-        tooltip=flm.GeoJsonTooltip(fields=tooltip_fields, aliases=tooltip_aliases, fmt=['', '{:.0%}']),
+        tooltip=flm.GeoJsonTooltip(
+            fields=[name_col, 'score_pct'], 
+            aliases=['Commune:', 'Score:'],
+            localize=True
+        ),
     ).add_to(fg)
 
     return fg, colormap
