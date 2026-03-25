@@ -53,53 +53,51 @@ if 'active_ccas_index' not in st.session_state:
     st.session_state['active_ccas_index'] = None
 
 # --- PDF Modal Logic ---
-if st.session_state.get('show_pdf_modal'):
-    
-    def on_dialog_dismiss():
-        """Callback to clean up state when the dialog is dismissed."""
-        st.session_state.show_pdf_modal = False
-        st.session_state.pdf_modal_data = None
+def on_pdf_dialog_dismiss():
+    """Callback to clean up state when the dialog is dismissed."""
+    st.session_state.show_pdf_modal = False
+    st.session_state.pdf_modal_data = None
 
-    @st.dialog("Export des résultats en PDF", on_dismiss=on_dialog_dismiss)
-    def pdf_modal():
-        # State 1: Loading / Generating
-        if 'pdf_modal_data' not in st.session_state or st.session_state.pdf_modal_data is None:
-            with st.spinner("Veuillez patienter, nous générons votre document..."):
-                try:    
-                    pdf_bytes = generate_pdf_report(
-                        st.session_state, 
-                        st.session_state.processed_gdf.copy()
-                    )
-                    st.session_state.pdf_modal_data = pdf_bytes
-                    st.rerun() 
-                except Exception as e:
-                    st.error(f"Erreur lors de la génération du PDF : {e}")
-                    if st.button("Fermer"):
-                        st.session_state.show_pdf_modal = False
-                        st.rerun()
-    
-        # State 2: Download Ready
-        else:
-            st.success("Votre document est prêt !")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.download_button(
-                    label="Télécharger le PDF",
-                    data=st.session_state.pdf_modal_data,
-                    file_name="synthese_jaccueille.pdf",
-                    mime="application/pdf",
-                    icon=':material/picture_as_pdf:',
-                    type='primary'
+@st.dialog("Export des résultats en PDF", on_dismiss=on_pdf_dialog_dismiss)
+def pdf_modal():
+    # State 1: Loading / Generating
+    if 'pdf_modal_data' not in st.session_state or st.session_state.pdf_modal_data is None:
+        with st.spinner("Veuillez patienter, nous générons votre document..."):
+            try:    
+                pdf_bytes = generate_pdf_report(
+                    st.session_state, 
+                    st.session_state.search_results
                 )
-            with col2:
-                if st.button("Fermer", width="stretch"):
+                st.session_state.pdf_modal_data = pdf_bytes
+                st.rerun() 
+            except Exception as e:
+                st.error(f"Erreur lors de la génération du PDF : {e}")
+                if st.button("Fermer"):
                     st.session_state.show_pdf_modal = False
-                    st.session_state.pdf_modal_data = None
                     st.rerun()
 
-# Trigger PDF Modal
-if st.session_state.get('show_pdf_modal'):
-    pdf_modal()
+    # State 2: Download Ready
+    else:
+        st.success("Votre document est prêt !")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.download_button(
+                label="Télécharger le PDF",
+                data=st.session_state.pdf_modal_data,
+                file_name="synthese_jaccueille.pdf",
+                mime="application/pdf",
+                icon=':material/picture_as_pdf:',
+                type='primary',
+                width='stretch'
+            )
+        with col2:
+            if st.button("Fermer", width="stretch"):
+                st.session_state.show_pdf_modal = False
+                st.session_state.pdf_modal_data = None
+                st.rerun()
+
+
+# --- PDF Modal Execution (moved to bottom for reliability) ---
 
 # Ensure app_data is initialized
 # Ensure app data and session state are initialized
@@ -182,10 +180,11 @@ def run_search():
     # Prepare cities for background AI agents
     top_cities_full = [
         {"codgeo": str(c.codgeo), "libgeo": c.name, "weighted_score": c.global_score, "details": c.model_dump(exclude={'geometry', 'centroid'})} 
-        for c in search_results.top_communes
+        for c in search_results.results
     ]
         
     h = search_results.search_hash
+    st.session_state['active_search_hash'] = h
     
     # Trigger background scorer if result not already present or running
     if odis_get_bg_result(h) is None:
@@ -392,7 +391,7 @@ with col_map:
         show_inclusion = "🤝 Inclusion" in selected_layers
 
         if config and search_results:
-            target_codgeos = {str(c.codgeo) for c in search_results.top_communes}
+            target_codgeos = {str(c.codgeo) for c in search_results.results}
 
             if show_ecoles:
                 st.session_state.fg_dict_ref['fg_ecoles'] = maps.build_ecoles_layer(st.session_state.app_data['pois'], target_codgeos, config)
@@ -409,8 +408,8 @@ with col_map:
         is_highlighted, highlighted_index = st.session_state.highlighted_result
         
         if show_top_5 and search_results:
-            # Rebuild Top 5 layers on the fly from SearchResultsData.top_communes
-            for i, commune in enumerate(search_results.top_communes):
+            # Rebuild Top 5 layers on the fly from SearchResultsData.results
+            for i, commune in enumerate(search_results.results):
                 if commune.geometry:
                     name = f'Top{i+1}'
                     # Re-use existing map builder by creating a dummy Series if needed, or refine map builder
@@ -424,7 +423,7 @@ with col_map:
             st.session_state["zoom"] = None
         elif is_highlighted and search_results:
             # Rebuild ONLY the highlighted layer
-            commune = search_results.top_communes[highlighted_index]
+            commune = search_results.results[highlighted_index]
             if commune.geometry:
                 name = f'Top{highlighted_index + 1}'
                 row_data = pd.Series({
@@ -485,9 +484,12 @@ with col_map:
             logging.error(traceback.format_exc())
         st.markdown('<style>.stCustomComponentV1 {border-radius:10px}</style>', unsafe_allow_html=True)
 
-# To debug criteria scoring
+# --- PDF Modal Execution (at the end to ensure all state is initialized) ---
+if st.session_state.get('show_pdf_modal'):
+    pdf_modal()
+
+# Do not remove, useful to debug states
 try:
-    st.dataframe(st.session_state.processed_gdf, column_order=sorted(st.session_state.processed_gdf.columns))
-    st.write(search_results)
+    st.json(search_results.results)
 except:
     pass

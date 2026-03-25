@@ -10,8 +10,8 @@ import pandas as pd
 import config as cfg
 from core.models import (
     SearchCriterias, CommuneResult, CommuneScoreDetail, SearchResultsData,
-    EmploiDetails, LogementDetails, EducationDetails, SanteDetails, 
-    InclusionDetails, MobiliteDetails
+    EmploymentMetrics, HousingMetrics, EducationMetrics, HealthMetrics, 
+    InclusionMetrics, MobilityMetrics
 )
 from shapely.geometry import Point
 import logging
@@ -428,31 +428,30 @@ class ScoringEngine:
 
         # Domain Dictionaries (for backward compatibility and detailed UI data)
         emploi_data = {
-            "ft_jobs_total": 0, "matching_total": 0, "ft_jobs_summary": {}, "matching_jobs_summary": {},
-            "top_metiers": [], "formations": [],
-            "siae_total": 0, "siae_summary": {}, "siae_matching_total": 0, "siae_matching_summary": {}
+            "standard_jobs_total": 0, "standard_jobs_matching_total": 0, "standard_jobs_summary": {}, "standard_jobs_matching_summary": {},
+            "top_professions": [], "training_programs": [],
+            "inclusive_jobs_total": 0, "inclusive_jobs_summary": {}, "inclusive_jobs_matching_total": 0, "inclusive_jobs_matching_summary": {}
         }
-        edu_data = {"counts": {}, "etablissements": {}}
-        sante_data = {"counts": {}, "etablissements": {}}
+        edu_data = {"facility_counts": {}, "facility_details": {}}
+        sante_data = {"facility_counts": {}, "facility_details": {}}
         incl_data = {
             "services_grouped": {}, 
             "refugee_asso_list": [],
-            "total_associations": 0, 
-            "refugee_asso_count": 0,
+            "associations_total": 0, 
+            "associations_refugee_focused_total": 0,
             "associations_summary_by_category": {}
         }
         mob_data = {
-            "nb_stops_bus": int(row.get('nb_stops_bus', 0)),
-            "nb_stops_tram": int(row.get('nb_stops_tram', 0)),
-            "nb_stops_metro": int(row.get('nb_stops_metro', 0)),
-            "nb_stops_train": int(row.get('nb_stops_train', 0)),
-            "nb_stops_total": int(row.get('nb_stops_total', 0)),
-            "mob_trans_pub_stop_density": float(row.get('mob_trans_pub_stop_density', 0.0))
+            "bus_stops": int(row.get('nb_stops_bus', 0)),
+            "tram_stops": int(row.get('nb_stops_tram', 0)),
+            "metro_stops": int(row.get('nb_stops_metro', 0)),
+            "train_stops": int(row.get('nb_stops_train', 0)),
+            "total_stops": int(row.get('nb_stops_total', 0)),
+            "stop_density": float(row.get('mob_trans_pub_stop_density', 0.0))
         }
         logement_data = {
-            "selected_type": (config.type_logement.code if hasattr(config.type_logement, 'code') else config.type_logement) if config else 'appt_all',
-            "raw_euro_m2": None, "odace_all_variants": {},
-            "jaccueille_count": float(row.get('heb_accueillants_count', 0.0))
+            "price_per_sqm": None, "odace_all_variants": {},
+            "host_count": float(row.get('heb_accueillants_count', 0.0))
         }
 
         # Extract lat/lon from geometry if available
@@ -601,9 +600,9 @@ class ScoringEngine:
                 type_log = config.type_logement.code if hasattr(config.type_logement, 'code') else config.type_logement
             
             if config and type_log == ht:
-                logement_data['raw_euro_m2'] = variant_data['raw']
+                logement_data['price_per_sqm'] = variant_data['raw']
             elif not config and ht == 'appt_all':
-                logement_data['raw_euro_m2'] = variant_data['raw']
+                logement_data['price_per_sqm'] = variant_data['raw']
 
         # 3. Emploi (Top 10 from Live Jobs & Formations)
         c_code = codgeo_str
@@ -614,8 +613,8 @@ class ScoringEngine:
                 if not live_city.empty:
                     # Global Summary
                     live_summary = live_city.groupby('romeLibelle')['total_postes'].sum().to_dict()
-                    emploi_data['ft_jobs_summary'] = live_summary
-                    emploi_data['ft_jobs_total'] = int(live_city['total_postes'].sum())
+                    emploi_data['standard_jobs_summary'] = live_summary
+                    emploi_data['standard_jobs_total'] = int(live_city['total_postes'].sum())
                     
                     # Matching Summary (filtered by config)
                     if config and config.codes_metiers:
@@ -634,16 +633,16 @@ class ScoringEngine:
                         
                         if target_romes:
                             matching_city = live_city[live_city['romeCode'].isin(target_romes)]
-                            emploi_data['matching_jobs_summary'] = matching_city.groupby('romeLibelle')['total_postes'].sum().to_dict()
-                            emploi_data['matching_total'] = int(matching_city['total_postes'].sum())
+                            emploi_data['standard_jobs_matching_summary'] = matching_city.groupby('romeLibelle')['total_postes'].sum().to_dict()
+                            emploi_data['standard_jobs_matching_total'] = int(matching_city['total_postes'].sum())
 
                     # Top 10 unique labels by volume with postes count
                     top_live = live_city.groupby('romeLibelle')['total_postes'].sum().sort_values(ascending=False).head(10)
-                    emploi_data['top_metiers'] = [f"{label} ({int(vol)} postes)" for label, vol in top_live.items()]
+                    emploi_data['top_professions'] = [f"{label} ({int(vol)} postes)" for label, vol in top_live.items()]
                 else:
-                    emploi_data['ft_jobs_total'] = 0
-                    emploi_data['matching_total'] = 0
-                    emploi_data['top_metiers'] = []
+                    emploi_data['standard_jobs_total'] = 0
+                    emploi_data['standard_jobs_matching_total'] = 0
+                    emploi_data['top_professions'] = []
 
             # --- SIAE Jobs Match (New F-39) ---
             if not self.siae_jobs_data.empty:
@@ -656,10 +655,10 @@ class ScoringEngine:
                     # Fallback for display if no label at all
                     label_col = 'rome_label' if 'rome_label' in siae_city.columns else 'rome'
                     
-                    emploi_data['siae_total'] = int(len(siae_city))
-                    emploi_data['siae_summary'] = siae_city.groupby(label_col).size().to_dict()
-                    emploi_data['siae_matching_summary'] = {}
-                    emploi_data['siae_matching_total'] = 0
+                    emploi_data['inclusive_jobs_total'] = int(len(siae_city))
+                    emploi_data['inclusive_jobs_summary'] = siae_city.groupby(label_col).size().to_dict()
+                    emploi_data['inclusive_jobs_matching_summary'] = {}
+                    emploi_data['inclusive_jobs_matching_total'] = 0
                     
                     if config and config.codes_metiers:
                         siae_prefixes = set()
@@ -677,13 +676,13 @@ class ScoringEngine:
                             # Use 'rome' column
                             siae_matching = siae_city[siae_city['rome'].str[:3].isin(siae_prefixes)]
                             matching_dict = siae_matching.groupby(label_col).size().to_dict()
-                            emploi_data['siae_matching_summary'] = matching_dict
-                            emploi_data['siae_matching_total'] = sum(matching_dict.values())
+                            emploi_data['inclusive_jobs_matching_summary'] = matching_dict
+                            emploi_data['inclusive_jobs_matching_total'] = sum(matching_dict.values())
                 else:
-                    emploi_data['siae_total'] = 0
-                    emploi_data['siae_summary'] = {}
-                    emploi_data['siae_matching_summary'] = {}
-                    emploi_data['siae_matching_total'] = 0
+                    emploi_data['inclusive_jobs_total'] = 0
+                    emploi_data['inclusive_jobs_summary'] = {}
+                    emploi_data['inclusive_jobs_matching_summary'] = {}
+                    emploi_data['inclusive_jobs_matching_total'] = 0
             
             # Formations logic remains
             if not self.formations_data.empty:
@@ -694,9 +693,9 @@ class ScoringEngine:
                          city_forms['formation_code'] = city_forms['formation_code'].astype(str)
                          merged_f = city_forms.merge(self.codformations_index, left_on='formation_code', right_index=True, how='left')
                          merged_f['label'] = merged_f['label'].fillna(merged_f['formation_code'])
-                         emploi_data['formations'] = sorted(merged_f['label'].unique().tolist())
+                         emploi_data['training_programs'] = sorted(merged_f['label'].unique().tolist())
                      else:
-                         emploi_data['formations'] = sorted(city_forms['formation_code'].unique().tolist())
+                         emploi_data['training_programs'] = sorted(city_forms['formation_code'].unique().tolist())
 
         # 4. Education & Sante Counts & Grouped Etablissements
         for dom, mapping, annuaire, data_obj in [
@@ -704,7 +703,7 @@ class ScoringEngine:
             ('sante', {'hopital': 'count_hopital', 'maternite': 'count_maternite', 'psy': 'count_psy'}, self.annuaire_sante, sante_data)
         ]:
             for key, col in mapping.items():
-                if col in row: data_obj['counts'][key] = int(row[col])
+                if col in row: data_obj['facility_counts'][key] = int(row[col])
             
             if codgeo_str and not annuaire.empty:
                 # Extra safety: filter by codgeo and category to avoid leaks
@@ -717,7 +716,7 @@ class ScoringEngine:
                     
                     if type_col and label_col:
                         grouped = city_pois.groupby(type_col, observed=True)[label_col].apply(lambda x: sorted(list(set(x)))).to_dict()
-                        data_obj['etablissements'] = grouped
+                        data_obj['facility_details'] = grouped
 
         # 6. Inclusion (Grouped by Thematic)
         if codgeo_str and not self.annuaire_inclusion.empty:
@@ -787,7 +786,7 @@ class ScoringEngine:
         rna_cols = [c for c in row.index if c.startswith("inc_rna_") and c.endswith("_count")]
         if rna_cols:
             total_assos = row[rna_cols].sum()
-            incl_data['total_associations'] = int(total_assos)
+            incl_data['associations_total'] = int(total_assos)
             incl_data['associations_summary_by_category'] = {
                 c.replace("inc_rna_", "").replace("_count", ""): int(row[c]) 
                 for c in rna_cols if row[c] > 0
@@ -796,13 +795,13 @@ class ScoringEngine:
             asso_city = self.associations_data[self.associations_data['codgeo'] == codgeo_str]
             if not asso_city.empty:
                 total_assos = asso_city['count'].sum() if 'count' in asso_city.columns else len(asso_city)
-                incl_data['total_associations'] = int(total_assos)
+                incl_data['associations_total'] = int(total_assos)
         
         # 7b. Refugee Associations (Counts)
         if codgeo_str and not self.associations_data.empty and 'id_waldec' in self.associations_data.columns:
             asso_city = self.associations_data[self.associations_data['codgeo'] == codgeo_str]
             refugee_assos = asso_city[asso_city['id_waldec'].astype(str).str.startswith('019025', na=False)]
-            incl_data['refugee_asso_count'] = int(refugee_assos['count'].sum()) if 'count' in refugee_assos.columns else len(refugee_assos)
+            incl_data['associations_refugee_focused_total'] = int(refugee_assos['count'].sum()) if 'count' in refugee_assos.columns else len(refugee_assos)
         # 8. Calculate dynamic category scores (weighted average of active criteria)
         # This ensures the radar chart is populated even for reference cities not in the search pool.
         cat_final_scores = {}
@@ -849,12 +848,12 @@ class ScoringEngine:
             geometry=poly,
             global_score=float(row.get('weighted_score', 0.0)),
             scores=structured_scores,
-            emploi=EmploiDetails(**emploi_data),
-            logement=LogementDetails(**logement_data),
-            education=EducationDetails(**edu_data),
-            sante=SanteDetails(**sante_data),
-            inclusion=InclusionDetails(**incl_data),
-            mobilite=MobiliteDetails(**mob_data)
+            employment=EmploymentMetrics(**emploi_data),
+            housing=HousingMetrics(**logement_data),
+            education=EducationMetrics(**edu_data),
+            health=HealthMetrics(**sante_data),
+            inclusion=InclusionMetrics(**incl_data),
+            mobility=MobilityMetrics(**mob_data)
         )
 
     def create_search_results(self, processed_gdf: gpd.GeoDataFrame, config: SearchCriterias) -> SearchResultsData:
@@ -912,18 +911,18 @@ class ScoringEngine:
 
         # 4. Generate Top 5 Communes
         top_5 = display_gdf.head(5)
-        top_communes = []
+        results = []
         for idx, row in top_5.iterrows():
             # Add safety bounds
             try:
                 details = self.format_city_details(row, config)
-                top_communes.append(details)
+                results.append(details)
             except Exception as e:
                 logger.error(f"Error formatting details for city {idx}: {e}")
             
         return SearchResultsData(
             search_hash=config.compute_hash(),
-            top_communes=top_communes,
+            results=results,
             current_geo=current_geo
         )
 

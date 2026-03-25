@@ -75,14 +75,13 @@ def log_search_complete(config: SearchCriterias, search_results: SearchResultsDa
         # 2. Prepare Results Summary
         top_5_results = []
         top_5_breakdown = {}
-        for commune in search_results.top_communes:
-            idx = str(commune.codgeo)
+        for commune in search_results.results:
             top_5_results.append({
-                "codgeo": idx,
+                "codgeo": commune.codgeo,
                 "libgeo": commune.name,
                 "score": commune.global_score
             })
-            top_5_breakdown[idx] = {
+            top_5_breakdown[str(commune.codgeo)] = {
                 "libgeo": commune.name,
                 "scores": {cat: [s.model_dump() for s in items] for cat, items in commune.scores.items()}
             }

@@ -369,9 +369,9 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
             },
             "scores": details_dict.get("scores", {}),
             "education": details_dict.get("education", {}),
-            "emploi": {
-                "top_metiers": details_dict.get("emploi", {}).get("top_metiers", []),
-                "formations": details_dict.get("emploi", {}).get("formations", [])
+            "employment": {
+                "top_professions": details_dict.get("employment", {}).get("top_professions", []),
+                "training_programs": details_dict.get("employment", {}).get("training_programs", [])
             }
         }
         

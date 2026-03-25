@@ -164,16 +164,16 @@ def log_search_results(
 
     # 2. Results Summary
     md_lines.append("## Top Results")
-    if search_results.top_communes:
+    if search_results.results:
         # Get active categories from the first result
-        first = search_results.top_communes[0]
+        first = search_results.results[0]
         cat_keys = sorted(first.scores.keys())
         headers = ["Rank", "Commune", "Score"] + [k.capitalize() for k in cat_keys]
         
         md_lines.append("| " + " | ".join(headers) + " |")
         md_lines.append("| " + " | ".join([":---"] * len(headers)) + " |")
 
-        for i, commune in enumerate(search_results.top_communes):
+        for i, commune in enumerate(search_results.results):
             row_vals = [str(i + 1), commune.name, f"{commune.global_score:.2f}"]
             # Calculate category averages from structured scores
             for cat in cat_keys:
@@ -198,7 +198,7 @@ def log_search_results(
 
     # 4. Detailed Breakdown
     md_lines.append("## Detailed Breakdown")
-    for i, commune in enumerate(search_results.top_communes):
+    for i, commune in enumerate(search_results.results):
         md_lines.append(f"### {i+1}. {commune.name} ({commune.codgeo})")
         md_lines.append(f"* **Population**: {commune.population:,}")
         md_lines.append(f"* **Global Score**: {commune.global_score:.2f}")

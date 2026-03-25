@@ -126,53 +126,52 @@ class CommuneScoreDetail(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 
-class EmploiDetails(BaseModel):
+class EmploymentMetrics(BaseModel):
     cat_score: float = 0.0
-    ft_jobs_total: int = 0
-    matching_total: int = 0
-    top_metiers: List[str] = Field(default_factory=list)
-    siae_total: int = 0
-    siae_summary: Dict[str, int] = Field(default_factory=dict)
-    siae_matching_total: int = 0
-    siae_matching_summary: Dict[str, int] = Field(default_factory=dict)
-    formations: List[str] = Field(default_factory=list)
-    ft_jobs_summary: Dict[str, int] = Field(default_factory=dict)
-    matching_jobs_summary: Dict[str, int] = Field(default_factory=dict)
+    standard_jobs_total: int = 0
+    standard_jobs_matching_total: int = 0
+    top_professions: List[str] = Field(default_factory=list)
+    inclusive_jobs_total: int = 0
+    inclusive_jobs_summary: Dict[str, int] = Field(default_factory=dict)
+    inclusive_jobs_matching_total: int = 0
+    inclusive_jobs_matching_summary: Dict[str, int] = Field(default_factory=dict)
+    training_programs: List[str] = Field(default_factory=list)
+    standard_jobs_summary: Dict[str, int] = Field(default_factory=dict)
+    standard_jobs_matching_summary: Dict[str, int] = Field(default_factory=dict)
 
-class LogementDetails(BaseModel):
+class HousingMetrics(BaseModel):
     cat_score: float = 0.0
-    jaccueille_count: int = 0
-    raw_euro_m2: Optional[float] = None
+    host_count: int = 0
+    price_per_sqm: Optional[float] = None
     odace_all_variants: Dict[str, Dict[str, Optional[float]]] = Field(default_factory=dict)
 
 
-class EducationDetails(BaseModel):
+class EducationMetrics(BaseModel):
     cat_score: float = 0.0
-    counts: Dict[str, int] = Field(default_factory=dict)
-    etablissements: Dict[str, List[str]] = Field(default_factory=dict)
+    facility_counts: Dict[str, int] = Field(default_factory=dict)
+    facility_details: Dict[str, List[str]] = Field(default_factory=dict)
 
-class SanteDetails(BaseModel):
+class HealthMetrics(BaseModel):
     cat_score: float = Field(0.0)
-    counts: Dict[str, int] = Field(default_factory=dict)
-    etablissements: Dict[str, List[str]] = Field(default_factory=dict)
+    facility_counts: Dict[str, int] = Field(default_factory=dict)
+    facility_details: Dict[str, List[str]] = Field(default_factory=dict)
 
-class InclusionDetails(BaseModel):
+class InclusionMetrics(BaseModel):
     cat_score: float = Field(0.0)
     services_grouped: Dict[str, List[str]] = Field(default_factory=dict)
     refugee_asso_list: List[Dict[str, Any]] = Field(default_factory=list)
-    # Merged from AssociationsDetails
-    total_associations: int = Field(0)
-    refugee_asso_count: int = Field(0)
+    associations_total: int = Field(0)
+    associations_refugee_focused_total: int = Field(0)
     associations_summary_by_category: Dict[str, int] = Field(default_factory=dict)
 
-class MobiliteDetails(BaseModel):
+class MobilityMetrics(BaseModel):
     cat_score: float = Field(0.0)
-    nb_stops_bus: int = Field(0)
-    nb_stops_tram: int = Field(0)
-    nb_stops_metro: int = Field(0)
-    nb_stops_train: int = Field(0)
-    nb_stops_total: int = Field(0)
-    mob_trans_pub_stop_density: float = Field(0.0)
+    bus_stops: int = Field(0)
+    tram_stops: int = Field(0)
+    metro_stops: int = Field(0)
+    train_stops: int = Field(0)
+    total_stops: int = Field(0)
+    stop_density: float = Field(0.0)
 
 class CommuneResult(BaseModel):
     """Encapsulates identity, scores, and metadata for a specific commune."""
@@ -194,21 +193,25 @@ class CommuneResult(BaseModel):
     scores: Dict[str, List[CommuneScoreDetail]] = Field(default_factory=dict, description="Details grouped by category")
     
     # Domain specific aggregations (Strongly typed)
-    emploi: EmploiDetails = Field(default_factory=EmploiDetails)
-    logement: LogementDetails = Field(default_factory=LogementDetails)
-    education: EducationDetails = Field(default_factory=EducationDetails)
-    sante: SanteDetails = Field(default_factory=SanteDetails)
-    inclusion: InclusionDetails = Field(default_factory=InclusionDetails)
-    mobilite: MobiliteDetails = Field(default_factory=MobiliteDetails)
+    employment: EmploymentMetrics = Field(default_factory=EmploymentMetrics)
+    housing: HousingMetrics = Field(default_factory=HousingMetrics)
+    education: EducationMetrics = Field(default_factory=EducationMetrics)
+    health: HealthMetrics = Field(default_factory=HealthMetrics)
+    inclusion: InclusionMetrics = Field(default_factory=InclusionMetrics)
+    mobility: MobilityMetrics = Field(default_factory=MobilityMetrics)
 
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 
 class SearchResultsData(BaseModel):
     """Main payload container for search results."""
     search_hash: str = Field(description="MD5 hash of the criteria used")
-    top_communes: List[CommuneResult] = Field(default_factory=list, description="Top recommended communes")
-    current_geo: CommuneResult = Field(None, description="Reference data for the starting point")
+    results: List[CommuneResult] = Field(default_factory=list, description="Top recommended communes in rank order")
+    current_geo: CommuneResult = Field(..., description="Reference data for the user current location")
     
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
+
+    def get_by_code(self, codgeo: str) -> Optional[CommuneResult]:
+        """Helper to find a result by its INSEE code."""
+        return next((c for c in self.results if c.codgeo == codgeo), None)
 
 

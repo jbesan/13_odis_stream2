@@ -8,7 +8,7 @@ import tempfile
 import os
 import config as cfg
 from ui import components as ui
-from core.models import SearchCriterias, CommuneResult
+from core.models import SearchCriterias, CommuneResult, SearchResultsData
 from core.scoring import ScoringEngine
 import base64
 import logging
@@ -115,7 +115,7 @@ def _generate_static_map_image(results_df: pd.DataFrame) -> bytes:
     return buf.getvalue()
 
 
-def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFrame, folium_map: Any = None) -> bytes:
+def generate_pdf_report(st_session_state: Dict[str, Any], search_results: SearchResultsData, folium_map: Any = None) -> bytes:
     """
     Generates a PDF report with the top 5 results and search criteria using a Unicode font.
     """
@@ -217,21 +217,18 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
     pdf.set_font("DejaVu", 'B', 12)
     pdf.cell(0, 10, "Top 5 des résultats", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='L')
     pdf.set_font("DejaVu", '', 9)
-    for rank, (index, row) in enumerate(results_df.head(5).iterrows(), start=1):
-        score_percent = f"{row['weighted_score'] * 100:.1f}%"
-        name = row.libgeo
-        pdf.cell(0, 5, f"  {rank}. {name} - {score_percent}", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    for rank, commune in enumerate(search_results.results, start=1):
+        score_percent = f"{commune.global_score * 100:.1f}%"
+        pdf.cell(0, 5, f"  {rank}. {commune.name} - {score_percent}", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(5)
 
     # --- INDIVIDUAL RESULT PAGES ---
     config = st_session_state.get('config')
-    engine = ScoringEngine.from_app_data(st_session_state['app_data'])
 
-    for rank, (index, row) in enumerate(results_df.head(5).iterrows(), start=1):
+    for rank, commune in enumerate(search_results.results, start=1):
         pdf.add_page()
         # Result Title
-        name = row.get('libgeo', row.get('libelle_bassin_de_vie', 'Localité'))
-        title = f"Top {rank} | {name}"
+        title = f"Top {rank} | {commune.name}"
         pdf.set_font("DejaVu", 'B', 12)
         pdf.cell(0, 8, title, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(2)
@@ -241,11 +238,8 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
         scorer_res = st_session_state.get('async_scorer_results', {}).get(h) if h else None
         
         ai_pitch = ""
-        codgeo = str(row.get('codgeo', row.name))
+        codgeo = commune.codgeo
         
-        # Convert row to CommuneResult for the manual pitch
-        commune = engine.format_city_details(row, config=config)
-
         if scorer_res and isinstance(scorer_res, dict) and "pitches" in scorer_res:
             ai_pitch = scorer_res["pitches"].get(codgeo, "")
             
@@ -262,10 +256,30 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
         # Radar Chart with Comparison
         try:
             # 1. Target Data
-            cat_scores = row[[col for col in row.index if col.endswith('_cat_score')]]
-            cat_scores.rename(lambda x: x.split('_')[0].capitalize(), inplace=True)
-            categories = cat_scores.index.tolist()
-            values = (cat_scores.values * 100).tolist()
+            categories = ['Emploi', 'Logement', 'Education', 'Sante', 'Inclusion', 'Mobilite']
+            raw_values = [
+                commune.employment.cat_score * 100,
+                commune.housing.cat_score * 100,
+                commune.education.cat_score * 100,
+                commune.health.cat_score * 100,
+                commune.inclusion.cat_score * 100,
+                commune.mobility.cat_score * 100
+            ]
+            
+            # filter out inactive categories based on config
+            active_cats = config.active_categories if config and hasattr(config, 'active_categories') else []
+            if active_cats:
+                 cat_map = {'emploi': 'Emploi', 'logement': 'Logement', 'education': 'Education', 'sante': 'Sante', 'inclusion': 'Inclusion', 'mobilite': 'Mobilite'}
+                 filtered_cats = []
+                 filtered_vals = []
+                 for i, cat in enumerate(['emploi', 'logement', 'education', 'sante', 'inclusion', 'mobilite']):
+                     if cat in active_cats:
+                         filtered_cats.append(cat_map.get(cat, cat.capitalize()))
+                         filtered_vals.append(raw_values[i])
+                 categories = filtered_cats
+                 values = filtered_vals
+            else:
+                 values = raw_values
             
             # 2. Current City Data
             config = st_session_state.get('config')
@@ -273,12 +287,24 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
             
             has_comparison = False
             values_current = []
-            if current_codgeo and current_codgeo in results_df.index:
-                row_current = results_df.loc[current_codgeo]
-                cat_scores_current = row_current[[col for col in row_current.index if col.endswith('_cat_score')]]
-                cat_scores_current.rename(lambda x: x.split('_')[0].capitalize(), inplace=True)
-                # Align values_current with categories of target
-                values_current = [(cat_scores_current.get(cat, 0) * 100) for cat in categories]
+            if search_results.current_geo:
+                current_c = search_results.current_geo
+                raw_values_cur = [
+                    current_c.employment.cat_score * 100,
+                    current_c.housing.cat_score * 100,
+                    current_c.education.cat_score * 100,
+                    current_c.health.cat_score * 100,
+                    current_c.inclusion.cat_score * 100,
+                    current_c.mobility.cat_score * 100
+                ]
+                if active_cats:
+                     filtered_vals_cur = []
+                     for i, cat in enumerate(['emploi', 'logement', 'education', 'sante', 'inclusion', 'mobilite']):
+                         if cat in active_cats:
+                             filtered_vals_cur.append(raw_values_cur[i])
+                     values_current = filtered_vals_cur
+                else:
+                     values_current = raw_values_cur
                 has_comparison = True
 
             N = len(categories)
@@ -299,7 +325,7 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
                 
                 # Plot target city (Green)
                 vals_target = values + values[:1]
-                ax.plot(angles, vals_target, linewidth=2, linestyle='solid', color='#006268', label=row.libgeo)
+                ax.plot(angles, vals_target, linewidth=2, linestyle='solid', color='#006268', label=commune.name)
                 ax.fill(angles, vals_target, '#006268', alpha=0.3)
                 
                 # Plot current city (Blue)
@@ -321,8 +347,8 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
                 
                 if has_comparison:
                     pdf.set_font("DejaVu", 'I', 8)
-                    label_cur = config.commune_actuelle.label if config and hasattr(config.commune_actuelle, 'label') else "votre commune"
-                    pdf.cell(0, 5, f"Comparaison entre {row.libgeo} (vert) et {label_cur} (bleu).", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
+                    label_cur = search_results.current_geo.name if search_results.current_geo else "votre commune"
+                    pdf.cell(0, 5, f"Comparaison entre {commune.name} (vert) et {label_cur} (bleu).", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
                     pdf.ln(2)
 
         except Exception as e:
@@ -339,19 +365,10 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
         pdf.cell(0, 6, "Top métiers recherchés", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.set_font("DejaVu", '', 9)
         
-        live_jobs = st_session_state['app_data'].get('live_jobs_data', pd.DataFrame())
-        codgeo = str(row.get('codgeo', row.name))
+        top_professions = commune.employment.top_professions
         
-        top_metiers = []
-        if not live_jobs.empty:
-            city_live = live_jobs[live_jobs['commune'] == codgeo]
-            if not city_live.empty:
-                # Group by label and sort by volume
-                top_live = city_live.groupby('romeLibelle')['total_postes'].sum().sort_values(ascending=False).head(10)
-                top_metiers = top_live.index.tolist()
-        
-        if top_metiers:
-            pdf.multi_cell(0, 5, "\n".join([f'- {item}' for item in top_metiers]))
+        if top_professions:
+            pdf.multi_cell(0, 5, "\n".join([f'- {item}' for item in top_professions]))
         else:
             pdf.multi_cell(0, 5, "Pas de données disponibles.")
         pdf.ln(3)
@@ -361,9 +378,9 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
         pdf.set_font("DejaVu", 'B', 9)
         pdf.cell(0, 6, "Formations proposées", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.set_font("DejaVu", '', 9)
-        formations = set(row.get('noms_formations', []) or [])
-        if formations:
-            pdf.multi_cell(0, 5, "\n".join([f'- {item}' for item in sorted(list(formations))]))
+        training_programs = commune.employment.training_programs
+        if training_programs:
+            pdf.multi_cell(0, 5, "\n".join([f'- {item}' for item in sorted(list(training_programs))]))
         else:
             pdf.multi_cell(0, 5, "Pas de données disponibles.")
         pdf.ln(3)
@@ -383,7 +400,7 @@ def generate_pdf_report(st_session_state: Dict[str, Any], results_df: pd.DataFra
         if 'ui_inc_services_add_selection' in st_session_state and st_session_state['ui_inc_services_add_selection']:
                 target_slugs.update(st_session_state['ui_inc_services_add_selection'])
         
-        communes_to_check = row.get('communes', [row.name])
+        communes_to_check = [commune.codgeo]
         
         # Filter services
         # We look for services in any of the communes (if aggregated) or the single commune
