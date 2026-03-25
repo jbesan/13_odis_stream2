@@ -171,7 +171,7 @@ async def refiner_node(state: ODISGraphState, config: RunnableConfig):
     try:
         # 1. Skip if no new info to summarize
         new_msgs_count = len(state.messages) - state.last_summarized_idx
-        if new_msgs_count <= 0 and not state.search_results and state.briefing:
+        if new_msgs_count <= 0 and not state.search_results and state.odis_brief:
             logger.info("⏩ [REFINER] No new info, skipping synthesis.")
             return {}
 
@@ -187,7 +187,7 @@ async def refiner_node(state: ODISGraphState, config: RunnableConfig):
             usage_limits=UsageLimits(request_limit=10)
         )
         
-        briefing = result.output.briefing.strip()
+        briefing = result.output.odis_brief.strip()
         logger.info(f"📝 [REFINER] Briefing updated.")
         logger.debug(briefing)
         

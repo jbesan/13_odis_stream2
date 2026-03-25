@@ -83,7 +83,7 @@ async def web_instructions(ctx: RunContext[ODISDeps]) -> str:
         prompt = WEB_ANALYSIS_SYSTEM_PROMPT
 
     return prompt.format(
-        BRIEFING=ctx.deps.state.briefing or "",
+        BRIEFING=ctx.deps.state.odis_brief or "",
         FOCUS_CITY=f"{city_name} ({city_code})",
         LAST_MESSAGE = last_message,
         COMMUNE_ARTIFACT=artifacts.get("web", "Non disponible")

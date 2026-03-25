@@ -74,7 +74,7 @@ async def refiner_instructions(ctx: RunContext[ODISDeps]) -> str:
     top_cities = json.dumps([{"name": c.name, "codgeo": c.codgeo} for c in results], indent=2, ensure_ascii=False) if results else "Aucune ville identifiée."
 
     prompt = REFINER_PROMPT.format(
-        PREVIOUS_BRIEFING=state.briefing or "Début du dossier.",
+        PREVIOUS_BRIEFING=state.odis_brief or "Début du dossier.",
         NEW_HISTORY=new_history or "Aucun nouvel échange.",
         SCORING_RESULTS=scoring_results_json,
         STRUCTURED_CRITERIA=criteria_json,

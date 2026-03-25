@@ -1,6 +1,8 @@
 
 from fastmcp import FastMCP
 from typing import Dict, Any, List, Optional, Union
+import threading
+
 import json
 import pandas as pd
 import geopandas as gpd
@@ -32,6 +34,8 @@ except Exception as e:
 
 # Global State for Data (Loaded on startup)
 DATA_CONTEXT = {}
+DATA_LOCK = threading.Lock()
+
 
 def set_data_context(context: Dict[str, Any]) -> None:
     """Allows external injection of data context (e.g. from Streamlit cache)"""
@@ -40,14 +44,19 @@ def set_data_context(context: Dict[str, Any]) -> None:
     # logger.info("Data Context injected externally.")
 
 def ensure_data_context() -> None:
-    """Ensures data context is loaded if missing."""
+    """Ensures data context is loaded if missing (thread-safe)."""
     global DATA_CONTEXT
     if not DATA_CONTEXT:
-        try:
-            DATA_CONTEXT = load_all_data_raw()
-        except Exception as e:
-            logger.error(f"Failed to load data context: {e}")
-            raise RuntimeError(f"Failed to load ODIS data: {e}")
+        with DATA_LOCK:
+            # Double-check inside lock
+            if not DATA_CONTEXT:
+                try:
+                    logger.info("⚙️ [MCP] Loading full data context (first time use)...")
+                    DATA_CONTEXT = load_all_data_raw()
+                except Exception as e:
+                    logger.error(f"Failed to load data context: {e}")
+                    raise RuntimeError(f"Failed to load ODIS data: {e}")
+
 
 def get_scoring_engine() -> ScoringEngine:
     """

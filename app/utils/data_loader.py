@@ -208,17 +208,48 @@ def ensure_data_initialized() -> None:
     pass
 
 def _fetch_jaccueille_data_bq_logic() -> pd.DataFrame:
-    """Internal logic to fetch J'Accueille host counts from BigQuery."""
+    """
+    Internal logic to fetch J'Accueille host counts from BigQuery.
+    Implements a persistent local cache to avoid redundant BQ hits.
+    """
+    import time
+    # Use a private data folder to avoid tracking in git
+    cache_dir = os.path.join(cfg.PROJECT_ROOT, "data_private")
+    cache_path = os.path.join(cache_dir, "jaccueille_hosts_cache.parquet")
+    ttl_seconds = 30 * 24 * 3600  # 30 days (1 month)
+
+
+    # 1. Try to load from persistent local cache
+    if os.path.exists(cache_path):
+        mtime = os.path.getmtime(cache_path)
+        if (time.time() - mtime) < ttl_seconds:
+            try:
+                # logger.info("📂 [J'ACCUEILLE] Loading host counts from local cache...")
+                return pd.read_parquet(cache_path)
+            except Exception as e:
+                logger.warning(f"Failed to read J'Accueille cache: {e}")
+
+    # 2. Fetch from BigQuery if cache is missing or stale
     try:
         from google.cloud import bigquery
         client = bigquery.Client(project="odis-stream2")
         query = "SELECT bassin_de_vie, heb_accueillants_count FROM `odis-stream2.jaccueille.jaccueille_accueillants_bdv`"
-        logger.info("📡 [J'ACCUEILLE] Fetching host counts from BigQuery...")
+        logger.info("📡 [J'ACCUEILLE] Fetching host counts from BigQuery (Cache stale or missing)...")
         df_jacc = client.query(query).to_dataframe()
+        
+        # Save to local cache for future use
+        if not df_jacc.empty:
+            try:
+                os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+                df_jacc.to_parquet(cache_path)
+            except Exception as e:
+                logger.warning(f"Failed to save J'Accueille cache: {e}")
+                
         return df_jacc
     except Exception as e:
         logger.error(f"J'Accueille BQ fetch failed: {e}")
         return pd.DataFrame(columns=['bassin_de_vie', 'heb_accueillants_count'])
+
 
 @st.cache_data(ttl=3600)
 def fetch_jaccueille_data_bq_cached() -> pd.DataFrame:
