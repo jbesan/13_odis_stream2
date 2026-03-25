@@ -200,6 +200,10 @@ class CommuneResult(BaseModel):
     inclusion: InclusionMetrics = Field(default_factory=InclusionMetrics)
     mobility: MobilityMetrics = Field(default_factory=MobilityMetrics)
 
+    # Agent-generated content
+    scorer_pitch: str = Field(default="", description="Short pitch from Scorer Agent")
+    expert_analysis: Dict[str, str] = Field(default_factory=dict, description="Detailed reports from experts (scout, web, etc.)")
+
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 
 class SearchResultsData(BaseModel):
@@ -207,6 +211,7 @@ class SearchResultsData(BaseModel):
     search_hash: str = Field(description="MD5 hash of the criteria used")
     results: List[CommuneResult] = Field(default_factory=list, description="Top recommended communes in rank order")
     current_geo: CommuneResult = Field(..., description="Reference data for the user current location")
+    global_pitch: str = Field(default="", description="Global introduction from Scorer Agent")
     
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 

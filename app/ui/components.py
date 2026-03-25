@@ -1130,6 +1130,7 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
         type_log = CriteriaItem(code=ui_type_log, label=cfg.HOUSING_TYPE_OPTIONS[ui_type_log])
 
     return SearchCriterias(
+        weight_profile=st.session_state.get('ui_weight_profile', ""),
         poids_emploi=st.session_state['ui_poids_emploi'],
         poids_logement=st.session_state['ui_poids_logement'],
         poids_education=st.session_state['ui_poids_education'],
