@@ -60,7 +60,7 @@ def log_agent_state_to_bq(user_input: str, agent_state: dict):
             "last_user_message": user_input[:2000] if user_input else "",
             "last_agent_response": last_response[:10000] if last_response else "",
             "search_criteria": json.dumps(agent_state.get('search_criteria', {}), default=str, ensure_ascii=False),
-            "odis_brief": str(agent_state.get('odis_brief', '')),
+            "briefing": str(agent_state.get('odis_brief', '')),
             "top_cities": json.dumps(top_cities_data, default=str, ensure_ascii=False),
             "artifacts": json.dumps(artifacts_data, default=str, ensure_ascii=False),
             "execution_mode": str(agent_state.get('execution_mode', 'full_analysis')),

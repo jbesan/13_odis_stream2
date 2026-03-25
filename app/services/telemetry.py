@@ -111,8 +111,7 @@ def log_search_complete(config: SearchCriterias, search_results: SearchResultsDa
             "search_criteria": json.dumps(search_criteria, default=str, ensure_ascii=False),
             "weights": json.dumps(weights, default=str, ensure_ascii=False),
             "top_results": json.dumps(top_5_results, default=str, ensure_ascii=False),
-            "detailed_breakdown": json.dumps(top_5_breakdown, default=str, ensure_ascii=False),
-            "global_pitch": search_results.global_pitch
+            "detailed_breakdown": json.dumps(top_5_breakdown, default=str, ensure_ascii=False)
         }
         
         errors = client.insert_rows_json(table_ref, [row])
