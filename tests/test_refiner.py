@@ -58,9 +58,14 @@ async def test_refiner_node_skips_if_nothing_new(state, config):
 async def test_refiner_node_with_experts(state, config):
     """Verify that expert results trigger an update even if no new messages."""
     from agents.refiner import RefinerResult
+    from app.core.models import SearchResultsData, CommuneResult
     state.briefing = "Existing briefing"
     state.last_summarized_idx = 2
-    state.scoring_results = {"scout": "Infos sur Bordeaux"}
+    state.search_results = SearchResultsData(
+        search_hash="dummy",
+        results=[CommuneResult(codgeo="33063", name="Bordeaux", population=0, global_score=0.0, expert_analysis={"scout": "Infos sur Bordeaux"})],
+        current_geo=CommuneResult(codgeo="75056", name="Paris", population=0, global_score=0.0)
+    )
     
     mock_result = MagicMock()
     mock_result.output = RefinerResult(

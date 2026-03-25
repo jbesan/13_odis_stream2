@@ -83,7 +83,13 @@ async def scout_instructions(ctx: RunContext[ODISDeps]) -> str:
     city_code = focus.codgeo if focus else "Inconnu"
     last_message = ctx.deps.state.messages[-1].get("content", "Non disponible") if ctx.deps.state.messages else "Non disponible"
     h = compute_criteria_hash(ctx.deps.state.search_criteria)
-    artifacts = ctx.deps.state.commune_artifacts.get(city_name.lower().strip(), {}).get(h, {})
+    
+    # Get artifacts from the new search_results structure
+    artifacts = {}
+    if ctx.deps.state.search_results:
+        city_res = ctx.deps.state.search_results.get_by_code(city_code)
+        if city_res:
+             artifacts = city_res.expert_analysis
     
 
     # We select prompt according to mode: generic commune analysis or a specific question
@@ -95,7 +101,7 @@ async def scout_instructions(ctx: RunContext[ODISDeps]) -> str:
 
     
     return prompt.format(
-        BRIEFING=ctx.deps.state.briefing or "",
+        BRIEFING=ctx.deps.state.odis_brief or "",
         FOCUS_CITY_NAME=city_name,
         FOCUS_CITY_CODE=city_code,
         LAST_MESSAGE = last_message,

@@ -22,6 +22,7 @@ from agents.scout import scout_agent
 from agents.web import web_agent
 from agents.job_hunter import job_hunter_agent
 from agents.synthesizer import synthesizer_agent
+from utils.common import normalize_text
 
 
 logger = logging.getLogger("odis_graph")
@@ -192,10 +193,14 @@ async def refiner_node(state: ODISGraphState, config: RunnableConfig):
         
         # Robust update: only override if not empty
         updates = {"last_summarized_idx": len(state.messages)}
-        if briefing:
-            updates["briefing"] = briefing
+        if result.output.odis_brief:
+            updates["odis_brief"] = result.output.odis_brief
         
         updates["usage"] = capture_usage(result, "refiner", mod_id)
+        # Consolidate briefing into search_results for single source of truth (F-IA)
+        if result.output.odis_brief:
+            updates["search_results"] = {"odis_brief": result.output.odis_brief}
+        
         return updates
     except Exception as e:
         logger.error(f"❌ [REFINER] Node failed: {e}", exc_info=True)
@@ -277,14 +282,6 @@ async def scorer_node(state: ODISGraphState, config: RunnableConfig):
     end_time = datetime.now()
     logger.debug(f"📊 [SCORER] Exiting scorer_node at {end_time.strftime('%H:%M:%S.%f')[:-3]} - Duration: {(end_time - start_time).total_seconds():.3f}s")
 
-    # --- Unified Telemetry Logging (BigQuery) ---
-    try:
-        from services import telemetry
-        if search_results:
-            telemetry.log_search_complete(state.search_criteria, search_results, source_flow='ia')
-    except Exception as tel_e:
-        logger.warning(f"⚠️ [SCORER] Telemetry failed: {tel_e}")
-
     # --- Message Construction ---
     # We combine the global response and individual pitches into a clean markdown message for the chat.
     final_content = result.output.response or ""
@@ -302,7 +299,7 @@ async def scorer_node(state: ODISGraphState, config: RunnableConfig):
     logger.info(f"📤 [SCORER] Final message constructed (length: {len(final_content)})")
 
     # --- Convert to Type SearchResultsData ---
-    search_results = None
+    search_results_payload = None
     if top_cities:
         results_objs = []
         for c in top_cities:
@@ -323,31 +320,39 @@ async def scorer_node(state: ODISGraphState, config: RunnableConfig):
                 codgeo_bdv=details.get("codgeo_bdv", ""),
                 name_bdv=details.get("name_bdv", "")
             )
-            # Find pitch in results
-            for p in result.output.pitches_per_city:
-                if str(p.codgeo) == str(city_res.codgeo):
-                    city_res.scorer_pitch = sanitize_llm_markdown(p.pitch)
-                    break
+            # Find pitch in results (Robust matching: Code first, then Name fallback)
+            if result.output.pitches_per_city:
+                for p in result.output.pitches_per_city:
+                    p_codgeo = str(p.codgeo)
+                    p_name_norm = normalize_text(str(p.name or ""))
+                    target_name_norm = normalize_text(city_res.name)
+                    
+                    if p_codgeo == str(city_res.codgeo) or p_name_norm == target_name_norm:
+                        city_res.scorer_pitch = sanitize_llm_markdown(p.pitch)
+                        break
             results_objs.append(city_res)
         
         # Determine Current Geo (Reference)
-        # We search if the current_geo is already in the list or if we need to fetch it
-        # Actually in compute_top_cities tool, it often returns the current city first or in the list
-        current_geo = results_objs[0] # Fallback
-        # Check if hash is available
+        current_geo = results_objs[0] if results_objs else None
         search_hash = compute_criteria_hash(state.search_criteria)
-        search_results = SearchResultsData(
+        search_results_payload = SearchResultsData(
             search_hash=search_hash,
             results=results_objs,
-            current_geo=current_geo, # Scorer tool should probably return this explicitly
+            current_geo=current_geo, 
             global_pitch=sanitize_llm_markdown(result.output.response)
         )
 
+        # --- Unified Telemetry Logging (BigQuery) ---
+        try:
+            from services import telemetry
+            telemetry.log_search_complete(state.search_criteria, search_results_payload, source_flow='ia')
+        except Exception as tel_e:
+            logger.warning(f"⚠️ [SCORER] Telemetry failed: {tel_e}")
+
     return {
         "messages": [{"role": "assistant", "content": final_content}],
-        "search_results": search_results,
+        "search_results": search_results_payload,
         "criteria_hash": compute_criteria_hash(state.search_criteria),
-
         "next_node": END,
         "usage": capture_usage(result, "scorer", mod_id)
     }
@@ -366,10 +371,12 @@ async def scout_node(state: ODISGraphState, config: RunnableConfig):
     # Bypass cache ONLY if in full_analysis mode. 
     # specific_ask ALWAYS triggers the LLM to answer the user's question.
     if state.execution_mode == 'full_analysis':
-        existing = state.commune_artifacts.get(focus, {}).get(h, {}).get("scout")
-        if existing:
-            logger.info(f"⏭️ [SCOUT] Artifact already exists for {focus}. Skipping LLM call.")
-            return {"criteria_hash": h} 
+        h_current = compute_criteria_hash(state.search_criteria)
+        if state.search_results and state.search_results.search_hash == h_current:
+             city_res = state.search_results.get_by_code(state.focus_city.codgeo if state.focus_city else "")
+             if city_res and city_res.expert_analysis.get("scout"):
+                logger.info(f"⏭️ [SCOUT] Artifact already exists for {focus}. Skipping LLM call.")
+                return {"criteria_hash": h} 
 
     logger.info("🚀 [SCOUT] Node started.")
     mod_id = get_model("scout")
@@ -409,10 +416,12 @@ async def web_node(state: ODISGraphState, config: RunnableConfig):
     
     # --- CACHE BYPASS ---
     if state.execution_mode == 'full_analysis':
-        existing = state.commune_artifacts.get(focus, {}).get(h, {}).get("web")
-        if existing:
-            logger.info(f"⏭️ [WEB] Artifact already exists for {focus}. Skipping LLM call.")
-            return {"criteria_hash": h}
+        h_current = compute_criteria_hash(state.search_criteria)
+        if state.search_results and state.search_results.search_hash == h_current:
+             city_res = state.search_results.get_by_code(state.focus_city.codgeo if state.focus_city else "")
+             if city_res and city_res.expert_analysis.get("web"):
+                logger.info(f"⏭️ [WEB] Artifact already exists for {focus}. Skipping LLM call.")
+                return {"criteria_hash": h}
 
     logger.info("🚀 [WEB] Node started.")
     mod_id = get_model("web")
@@ -452,10 +461,12 @@ async def job_hunter_node(state: ODISGraphState, config: RunnableConfig):
     
     # --- CACHE BYPASS ---
     if state.execution_mode == 'full_analysis':
-        existing = state.commune_artifacts.get(focus, {}).get(h, {}).get("job_hunter")
-        if existing:
-            logger.info(f"⏭️ [JOB_HUNTER] Artifact already exists for {focus}. Skipping LLM call.")
-            return {"criteria_hash": h}
+        h_current = compute_criteria_hash(state.search_criteria)
+        if state.search_results and state.search_results.search_hash == h_current:
+             city_res = state.search_results.get_by_code(state.focus_city.codgeo if state.focus_city else "")
+             if city_res and city_res.expert_analysis.get("job_hunter"):
+                logger.info(f"⏭️ [JOB_HUNTER] Artifact already exists for {focus}. Skipping LLM call.")
+                return {"criteria_hash": h}
 
     logger.info("🚀 [JOB_HUNTER] Node started.")
     mod_id = get_model("job_hunter")
@@ -490,7 +501,8 @@ async def synthesizer_node(state: ODISGraphState, config: RunnableConfig):
     deps.state = state
     
     city_name = state.focus_city.name if state.focus_city else "Unknown"
-    logger.info(f"🎤 [SYNTHESIZER] Starting synthesis for {city_name}...")
+    logger.info(f"Synthesizer starting for {city_name}...")
+    
     input_msg = f"Synthèse demandée pour {city_name}."
     
     mod_id = get_model("synthesizer")
@@ -503,10 +515,20 @@ async def synthesizer_node(state: ODISGraphState, config: RunnableConfig):
         model_settings=ModelSettings(max_output_tokens=4096),
         usage_limits=UsageLimits(request_limit=10)
     )
-    logger.info(f"✅ [SYNTHESIZER] Synthesis complete for {city_name}.")
+    logger.info(f"Synthesis complete for {city_name}.")
     
+    # Return both the chat message and the model update for single source of truth
     return {
         "messages": [{"role": "assistant", "content": sanitize_llm_markdown(result.output.response)}],
+        "search_results": {
+            "results": [
+                {
+                    "codgeo": state.focus_city.codgeo if state.focus_city and state.focus_city.codgeo else "",
+                    "name": state.focus_city.name if state.focus_city else "",
+                    "odis_synthesis": result.output.response
+                }
+            ]
+        },
         "next_node": END,
         "pending_experts": [], # Clear the pending list here now
         "usage": capture_usage(result, "synthesizer", mod_id)

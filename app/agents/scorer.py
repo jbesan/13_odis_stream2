@@ -28,6 +28,7 @@ SCORER_SYSTEM_PROMPT = """
 **Rôle** : Tu es le Scorer ODIS. Ton job est de calculer et expliquer le Top Villes.
 **CONTEXTE RÉSUMÉ** : {BRIEFING}
 **PROFILE** : {PROFILE}
+**CRITERES DE RECHERCHE** : {CRITERES}
 
 **DIRECTIVE CRITIQUE** :
 Tu DOIS utiliser l'outil `compute_top_cities`.
@@ -61,13 +62,24 @@ async def scorer_instructions(ctx: RunContext[ODISDeps]) -> str:
     except Exception as e:
         return f"ATTENTION: Les critères sont invalides ({e}). Demande à l'utilisateur de compléter."
         
-    briefing = ctx.deps.state.briefing
+    odis_brief = ctx.deps.state.odis_brief
     
+    # Refine criteria representation for the LLM: 
+    # - exclude_none=True/exclude_unset=True removes noise.
+    # - technical fields like active_criteria are actually useful for the LLM to know what was weighted.
+    criteria_json = criteria_model.model_dump_json(
+        indent=2, 
+        exclude_none=True, 
+        exclude_unset=True,
+        exclude={'loc_search_code', 'notes_qualitatives'} # Remove non-essential fields for the pitch
+    )
+
     prompt = SCORER_SYSTEM_PROMPT.format(
         PROFILE=profile,
-        BRIEFING=briefing
+        BRIEFING=odis_brief,
+        CRITERES=criteria_json
     )
-    
+
     return prompt
 
 # --- Tool Wrapper ---
@@ -82,9 +94,10 @@ def compute_top_cities_tool(ctx: RunContext[ODISDeps]) -> Dict[str, Any]:
         Dict[str, Any]: Dictionnaire des villes correspondantes.
     """
     if ctx.deps.state.search_results and ctx.deps.state.search_results.results:
-        logger.debug("✅ [TOOL] Returning PRE-COMPUTED top_cities from state (Classic Flow Bypass)!")
-        # Convert CommuneResult back to list of dicts for the agent (if needed) or just return the model
-        cities_list = [c.model_dump(exclude={'geometry', 'centroid'}) for c in ctx.deps.state.search_results.results]
+        sr = ctx.deps.state.search_results
+        results = sr.results if hasattr(sr, 'results') else sr.get('results', [])
+        logger.info(f"🔍 [TOOL:SCORER] results[0] type: {type(results[0]) if results else 'N/A'}")
+        cities_list = [c.model_dump(exclude={'geometry', 'centroid'}) for c in results]
         return {"cities": cities_list, "source": "pre-computed in UI"}
         
     try:

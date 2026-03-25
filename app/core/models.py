@@ -203,6 +203,7 @@ class CommuneResult(BaseModel):
     # Agent-generated content
     scorer_pitch: str = Field(default="", description="Short pitch from Scorer Agent")
     expert_analysis: Dict[str, str] = Field(default_factory=dict, description="Detailed reports from experts (scout, web, etc.)")
+    odis_synthesis: str = Field(default="", description="Final ODIS synthesis for the city")
 
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 
@@ -212,6 +213,7 @@ class SearchResultsData(BaseModel):
     results: List[CommuneResult] = Field(default_factory=list, description="Top recommended communes in rank order")
     current_geo: CommuneResult = Field(..., description="Reference data for the user current location")
     global_pitch: str = Field(default="", description="Global introduction from Scorer Agent")
+    odis_brief: str = Field(default="", description="Final briefing about the person profile")
     
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 

@@ -199,12 +199,12 @@ def launch_background_scorer(search_criterias: SearchCriterias, results_dict_ign
         from pydantic_ai import ModelSettings
         
         try:
-            logging.info(f"🚀 [BG] Starting background scorer for hash {hash_val}")
+            logging.debug(f"🚀 [BG] Starting background scorer for hash {hash_val}")
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             
             api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-            logging.info(f"🚀 [BG] API Key present: {bool(api_key)}")
+            logging.debug(f"🚀 [BG] API Key present: {bool(api_key)}")
             
             client = genai.Client(
                 api_key=api_key, 
@@ -253,7 +253,7 @@ def launch_background_scorer(search_criterias: SearchCriterias, results_dict_ign
             model = get_p_model("scorer", client=client)
             
             async def run_agent():
-                logging.info(f"🚀 [BG] Calling scorer_agent.run for hash {hash_val}")
+                logging.debug(f"🚀 [BG] Calling scorer_agent.run for hash {hash_val}")
                 return await scorer_agent.run(
                     "Génère le résumé explicatif des résultats pour ce profil.", 
                     deps=deps, 
@@ -264,19 +264,19 @@ def launch_background_scorer(search_criterias: SearchCriterias, results_dict_ign
             try:
                 result_run = loop.run_until_complete(run_agent())
                 response_obj = result_run.output
-                logging.info(f"🚀 [BG] Agent call successful for hash {hash_val}")
-                logging.info(f"💎 [DEBUG-BG-RAW] response={repr(response_obj.response)}")
+                logging.debug(f"🚀 [BG] Agent call successful for hash {hash_val}")
+                logging.debug(f"💎 [DEBUG-BG-RAW] response={repr(response_obj.response)}")
                 for p in response_obj.pitches_per_city:
-                    logging.info(f"💎 [DEBUG-BG-PITCH] codgeo={p.codgeo} pitch={repr(p.pitch)}")
+                    logging.debug(f"💎 [DEBUG-BG-PITCH] codgeo={p.codgeo} pitch={repr(p.pitch)}")
                 
                 pitches_dict = {
                     "global": sanitize_llm_markdown(response_obj.response),
                     "pitches": {p.codgeo: sanitize_llm_markdown(p.pitch) for p in response_obj.pitches_per_city}
                 }
                 for code, p in pitches_dict["pitches"].items():
-                    logging.info(f"✨ [DEBUG-SANITY-CHECK] code={code} pitch={repr(p)}")
+                    logging.debug(f"✨ [DEBUG-SANITY-CHECK] code={code} pitch={repr(p)}")
                 results_store[hash_val] = pitches_dict
-                logging.info(f"✅ [BG] Background Scorer fully finished for hash {hash_val}")
+                logging.debug(f"✅ [BG] Background Scorer fully finished for hash {hash_val}")
             except Exception as e:
                 logging.error(f"❌ [BG] Background Scorer Error for hash {hash_val}: {e}")
                 results_store[hash_val] = f"⚠️ L'analyse IA a échoué: {e}"
@@ -286,7 +286,7 @@ def launch_background_scorer(search_criterias: SearchCriterias, results_dict_ign
         finally:
             if 'loop' in locals():
                 loop.close()
-                logging.info(f"🚀 [BG] Loop closed for hash {hash_val}")
+                logging.info(f"🚀 [SCORER] Loop closed for hash {hash_val}")
             
     thread = threading.Thread(target=bg_task, args=(store,))
     thread.start()

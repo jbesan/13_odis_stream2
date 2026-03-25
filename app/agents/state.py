@@ -1,9 +1,12 @@
 import json
+import logging
 from typing import List, Dict, Any, Optional, Annotated, Literal
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 from google import genai
 import operator
 from core.models import SearchCriterias, SearchResultsData, CommuneResult
+
+logger = logging.getLogger(__name__)
 
 class UsageStats(BaseModel):
     """Cumulative usage statistics for the graph."""
@@ -23,6 +26,7 @@ class UsageStats(BaseModel):
         return data
 
 def add_usage(left: UsageStats, right: Any) -> UsageStats:
+    # left and right are usually UsageStats or dicts
     if right is None:
         return left
     if isinstance(right, dict):
@@ -55,12 +59,20 @@ def add_usage(left: UsageStats, right: Any) -> UsageStats:
 
 def merge_search_criteria(left: SearchCriterias, right: Any) -> SearchCriterias:
     """Reducer to merge search criteria updates."""
+    # right is usually a dict or an ODISGraphState update
     if not right:
         return left
     
     # We want to keep existing values that are not in the update (right)
     # We dump CURRENT with exclude_unset=False to get defaults too
-    current_data = left.model_dump() if left else {}
+    try:
+        current_data = left.model_dump() if left else {}
+    except AttributeError as e:
+        logger.error(f"Failed to dump left criteria in reducer: {e}. left type: {type(left)}")
+        current_data = left if isinstance(left, dict) else {}
+    except Exception as e:
+        logger.error(f"Unexpected error in merge_search_criteria: {e}")
+        raise e
     
     if isinstance(right, dict):
         current_data.update(right)
@@ -88,6 +100,8 @@ def compute_criteria_hash(criteria: SearchCriterias) -> str:
 
 def merge_search_results(left: Optional[SearchResultsData], right: Any) -> Optional[SearchResultsData]:
     """Reducer to merge search results and expert artifacts."""
+    # right is usually a dict or an ODISGraphState update
+    
     if right is None:
         return left
     
@@ -102,15 +116,33 @@ def merge_search_results(left: Optional[SearchResultsData], right: Any) -> Optio
     if not isinstance(right, dict):
         return left
 
-    new_data = left.model_dump()
+    try:
+        new_data = left.model_dump()
+    except AttributeError as e:
+        logger.error(f"Failed to dump left model in reducer: {e}. left type: {type(left)}")
+        new_data = left if isinstance(left, dict) else {}
+    except Exception as e:
+        logger.error(f"Unexpected error in merge_search_results: {e}")
+        raise e
     
-    # 1. Merge results list by codgeo
+    # 1. Merge results list by codgeo or name (robust matching)
     if "results" in right and right["results"]:
+        from utils.common import normalize_text
+        
+        # Build lookup maps for existing results
         existing_results = {str(r["codgeo"]): i for i, r in enumerate(new_data.get("results", []))}
+        existing_names = {normalize_text(str(r["name"])): i for i, r in enumerate(new_data.get("results", []))}
+        
         for new_res in right["results"]:
             cg = str(new_res.get("codgeo"))
-            if cg in existing_results:
-                idx = existing_results[cg]
+            name_norm = normalize_text(str(new_res.get("name", "")))
+            
+            # Identify target index (Code first, then Name)
+            idx = existing_results.get(cg)
+            if idx is None:
+                idx = existing_names.get(name_norm)
+            
+            if idx is not None:
                 target = new_data["results"][idx]
                 
                 # Merge expert_analysis
@@ -124,7 +156,16 @@ def merge_search_results(left: Optional[SearchResultsData], right: Any) -> Optio
                     if k != "expert_analysis" and v is not None:
                         target[k] = v
             else:
-                new_data.setdefault("results", []).append(new_res)
+                # If city not found, only append if it's a complete record (has population)
+                # This prevents partial expert updates from creating invalid "skeleton" results
+                if "population" in new_res and new_res["population"]:
+                    new_data.setdefault("results", []).append(new_res)
+                    # Update maps for subsequent items in the same 'right' update
+                    idx_new = len(new_data["results"]) - 1
+                    existing_results[cg] = idx_new
+                    existing_names[name_norm] = idx_new
+                else:
+                    logger.debug(f"Dropped partial update for unknown city: {cg}")
                 
     # 2. Update other top-level fields (global_pitch, current_geo, search_hash)
     for k, v in right.items():
@@ -134,7 +175,15 @@ def merge_search_results(left: Optional[SearchResultsData], right: Any) -> Optio
             else:
                 new_data[k] = v
                 
-    return SearchResultsData(**new_data)
+    # Diagnostic logging before final creation
+    try:
+        res_obj = SearchResultsData(**new_data)
+        if res_obj.results:
+            logger.debug(f"Combined state merge successful.")
+        return res_obj
+    except Exception as e:
+        logger.error(f"SearchResultsData validation failed: {e}")
+        raise e
 
 class FocusCity(BaseModel):
     """Structured representation of the focus city."""
@@ -174,7 +223,7 @@ class ODISGraphState(BaseModel):
     criteria_hash: Annotated[Optional[str], take_latest_hash] = None
     pending_experts: List[str] = Field(default_factory=list)
     execution_mode: Literal['full_analysis', 'specific_ask'] = 'full_analysis'
-    briefing: str = ""
+    odis_brief: str = ""
     last_summarized_idx: int = 0
     next_node: Optional[str] = None
     active_agent: Optional[str] = Field(None, description="The last active agent node name")

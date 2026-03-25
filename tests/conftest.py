@@ -14,7 +14,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning, module="google.ge
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="google.genai.types")
 from shapely.geometry import Polygon
 import config as cfg
-from core.models import SearchCriterias
+from core.models import SearchCriterias, CriteriaItem
 import copy
 
 def pytest_addoption(parser):
@@ -152,7 +152,7 @@ def default_config():
         poids_mobilite=100,
         criteria_weights={}, # Added for F-15
         weight_profile="Équilibré",
-        commune_actuelle='33063', # Bordeaux
+        commune_actuelle=CriteriaItem(code='33063', label='Bordeaux'),
         loc_search_area='departement',
         loc_search_code=None,
         nb_adultes=1,
@@ -166,7 +166,7 @@ def default_config():
         inc_services_add_selection=[],
         inc_services_core_selection=[],
         inc_asso_add_selection=[],
-        type_logement="appartement_toutes"
+        type_logement=CriteriaItem(code="appartement_toutes", label="Appartement (Toutes)")
     )
 
 @pytest.fixture

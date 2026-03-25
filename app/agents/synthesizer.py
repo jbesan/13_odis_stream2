@@ -93,6 +93,7 @@ synthesizer_agent = Agent(
 @synthesizer_agent.system_prompt
 async def synth_instructions(ctx: RunContext[ODISDeps]) -> str:
     # Get city details for focused city
+    print("Hello")
     city_details = "N/A"
     scorer_pitch = "N/A"
     if ctx.deps.state.focus_city and ctx.deps.state.search_results:
@@ -104,7 +105,14 @@ async def synth_instructions(ctx: RunContext[ODISDeps]) -> str:
             target_res = next((r for r in sr.results if r.name.lower().strip() == norm_name), None)
             
         if target_res:
-            city_details = json.dumps(target_res.model_dump(exclude={'geometry', 'centroid', 'expert_analysis'}), indent=2, ensure_ascii=False)
+            # We must use model_dump() to ensure we have a dict for the prompt
+            if isinstance(target_res, dict):
+                logger.debug(f"target_res is a dict, keys: {list(target_res.keys())}")
+                target_dict = target_res
+            else:
+                target_dict = target_res.model_dump(exclude={'geometry', 'centroid', 'expert_analysis'})
+            
+            city_details = json.dumps(target_dict, indent=2, ensure_ascii=False)
             scorer_pitch = target_res.scorer_pitch or "Non disponible"
     
     # Get details for current city (comparison)
@@ -113,7 +121,12 @@ async def synth_instructions(ctx: RunContext[ODISDeps]) -> str:
     if ctx.deps.state.search_results:
         sr = ctx.deps.state.search_results
         if sr.current_geo:
-            current_city_details = json.dumps(sr.current_geo.model_dump(exclude={'geometry', 'centroid', 'expert_analysis'}), indent=2, ensure_ascii=False)
+            if isinstance(sr.current_geo, dict):
+                cur_dict = sr.current_geo
+            else:
+                cur_dict = sr.current_geo.model_dump(exclude={'geometry', 'centroid', 'expert_analysis'})
+                
+            current_city_details = json.dumps(cur_dict, indent=2, ensure_ascii=False)
             current_city_name = sr.current_geo.name
     
     # Get expert results from search_results
@@ -135,7 +148,7 @@ async def synth_instructions(ctx: RunContext[ODISDeps]) -> str:
         prompt = SYNTH_SYSTEM_PROMPT_ANALYSIS
 
     prompt = prompt.format(
-        BRIEFING=ctx.deps.state.briefing or "",
+        BRIEFING=ctx.deps.state.odis_brief or "",
         FOCUS_CITY=str(ctx.deps.state.focus_city.name or "Non définie"),
         CITY_DETAILS=city_details,
         CURRENT_CITY_NAME=current_city_name,
@@ -146,7 +159,7 @@ async def synth_instructions(ctx: RunContext[ODISDeps]) -> str:
         JOB_RES=artifacts.get("job_hunter", "Non disponible"),
     )
 
-    logger.info(f"🎤 [SYNTHESIZER] Prompt prepared for {ctx.deps.state.focus_city.name if ctx.deps.state.focus_city else 'Unknown'}")
+    logger.debug(f"Prompt prepared for {ctx.deps.state.focus_city.name if ctx.deps.state.focus_city else 'Unknown'}")
     logger.debug(f"SYNTH PROMPT: {prompt}")
 
     return prompt

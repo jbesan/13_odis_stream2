@@ -42,17 +42,25 @@ def inject_custom_css() -> None:
 
 @st.fragment
 def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
-    # Check if analysis already exists in unified state
-    if 'search_results' in st.session_state and st.session_state.search_results:
-        commune = st.session_state.search_results.get_by_code(codgeo)
-        # If we have at least one expert result, we consider it "pre-cached"
-        if commune and commune.expert_analysis:
-            # Reconstruct the synthesis if needed or just use what's there
-            # For now, if we have expert analysis, we still might need the final synthesis message
-            pass
+    """Component to display AI synthesis and handle follow-up questions."""
+    # 1. Access Single Source of Truth from unified state
+    if 'search_results' not in st.session_state or not st.session_state.search_results:
+        st.error("Résultats introuvables.")
+        return
+        
+    results: SearchResultsData = st.session_state.search_results
+    commune = results.get_by_code(codgeo)
+    if not commune:
+        st.error(f"Détails introuvables pour {nom} ({codgeo}).")
+        return
 
-    if cache_key not in st.session_state['app_data']:
-        # F-IA: Automate trigger on open
+    # Initialize chat history in session state for interactivity
+    chat_key = f"chat_history_{codgeo}"
+    if chat_key not in st.session_state:
+        st.session_state[chat_key] = []
+
+    # 2. Trigger analysis if synthesis is missing
+    if not commune.odis_synthesis:
         with st.spinner(f"Les experts analysent {nom}, veuillez patienter (environ 15 à 30s)..."):
             from agents.utils import run_async_safe
             
@@ -61,34 +69,42 @@ def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
                 "is_interview_complete": True,
                 "execution_mode": "full_analysis",
                 "focus_city": {"name": nom, "codgeo": codgeo},
+                "search_results": results.model_dump(),
+                "criteria_hash": st.session_state.get('active_search_hash'),
                 "messages": [{"role": "user", "content": f"Fais une analyse complète pour {nom}."}]
             }
             try:
                 final_state = run_async_safe(state_dict)
-                syn_msg = final_state.get("messages", [])[-1]["content"] if final_state.get("messages") else "Pas de synthèse générée."
-                st.session_state['app_data'][cache_key] = {
-                    "synthesis": syn_msg,
-                    "chat": []
-                }
-                # Within a fragment, rerun() only reruns the fragment
-                st.rerun()
+                
+                # Back-sync updated results to session state (Persistence)
+                if "search_results" in final_state and final_state["search_results"]:
+                    new_res_data = final_state["search_results"]
+                    if isinstance(new_res_data, dict):
+                        st.session_state.search_results = SearchResultsData(**new_res_data)
+                    else:
+                        st.session_state.search_results = new_res_data
+                
+                st.rerun() # Refresh to display the new odis_synthesis
             except Exception as e:
                 st.error(f"Erreur lors de la génération: {str(e)}")
+                return
 
-    if cache_key in st.session_state['app_data']:
-        data_cache = st.session_state['app_data'][cache_key]
-        st.markdown(data_cache["synthesis"])
+    # 3. Display Synthesis
+
+    if commune.odis_synthesis:
+        st.markdown(commune.odis_synthesis)
         
         st.divider()
         st.markdown(f"#### Poser une question sur {nom}")
         
-        for msg in data_cache["chat"]:
+        # Display chat history
+        for msg in st.session_state[chat_key]:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
         
         question = st.chat_input(f"Ex: Quelles associations facilitent le logement à {nom} ?", key=f"chat_input_ia_{codgeo}")
         if question:
-            data_cache["chat"].append({"role": "user", "content": question})
+            st.session_state[chat_key].append({"role": "user", "content": question})
             with st.chat_message("user"):
                 st.markdown(question)
             
@@ -99,15 +115,26 @@ def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
                     "is_interview_complete": True,
                     "execution_mode": "specific_ask",
                     "focus_city": {"name": nom, "codgeo": codgeo},
-                    "messages": data_cache["chat"]
+                    "search_results": st.session_state.search_results.model_dump(),
+                    "criteria_hash": st.session_state.get('active_search_hash'),
+                    "messages": st.session_state[chat_key]
                 }
                 try:
                     final_state = run_async_safe(state_dict)
+                    
+                    # Back-sync updated results to session state
+                    if "search_results" in final_state and final_state["search_results"]:
+                        new_res_data = final_state["search_results"]
+                        if isinstance(new_res_data, dict):
+                            st.session_state.search_results = SearchResultsData(**new_res_data)
+                        else:
+                            st.session_state.search_results = new_res_data
+                            
                     answer = final_state.get("messages", [])[-1]["content"] if final_state.get("messages") else "Pas de réponse."
-                    data_cache["chat"].append({"role": "assistant", "content": answer})
+                    st.session_state[chat_key].append({"role": "assistant", "content": answer})
                     with st.chat_message("assistant"):
                         st.markdown(answer)
-                    st.rerun() # Refresh fragment to show answer and clear input
+                    st.rerun() 
                 except Exception as e:
                     st.error(f"Erreur de l'agent: {str(e)}")
 
@@ -146,20 +173,29 @@ def ai_pitch_container(main_code: str, h: str):
             st.markdown(commune.scorer_pitch)
             return
 
-    # 2. Fallback to background store (Legacy/In-progress)
+    # 2. Fallback to background store with back-sync
     from agents.utils import odis_get_bg_result
     scorer_res = odis_get_bg_result(h)
-    pitch_for_city = ""
     
     if scorer_res is None:
         st.info("✨ _Récupération des points forts pour cette ville..._")
     else:
+        pitch_for_city = ""
         if isinstance(scorer_res, dict) and "pitches" in scorer_res:
             pitch_for_city = scorer_res["pitches"].get(main_code, "")
         elif isinstance(scorer_res, str):
-            pitch_for_city = scorer_res
-            
+             pitch_for_city = scorer_res
+             
         if pitch_for_city:
+            # Sync back to unified state for persistence
+            if 'search_results' in st.session_state:
+                c = st.session_state.search_results.get_by_code(main_code)
+                if c and not c.scorer_pitch:
+                    c.scorer_pitch = pitch_for_city
+                    # Also update current_geo if needed
+                    if st.session_state.search_results.current_geo and st.session_state.search_results.current_geo.codgeo == main_code:
+                         st.session_state.search_results.current_geo.scorer_pitch = pitch_for_city
+                    st.rerun()
             st.markdown(pitch_for_city)
 
 @st.dialog("Centre Communal d'Action Sociale", width="large", on_dismiss=_on_ccas_dialog_dismiss)

@@ -39,6 +39,20 @@ def log_agent_state_to_bq(user_input: str, agent_state: dict):
         usage = agent_state.get('usage', {})
         cost = usage.get('cost_usd', 0.0) if isinstance(usage, dict) else getattr(usage, 'cost_usd', 0.0)
         
+        # Map new search_results to old columns for BQ schema compatibility
+        sr = agent_state.get('search_results')
+        top_cities_data = []
+        artifacts_data = {}
+        if sr:
+             results = getattr(sr, 'results', []) if not isinstance(sr, dict) else sr.get('results', [])
+             for r in results:
+                  if hasattr(r, 'model_dump'):
+                       top_cities_data.append(r.model_dump(exclude={'geometry', 'centroid', 'expert_analysis'}))
+                       artifacts_data[r.codgeo] = r.expert_analysis
+                  elif isinstance(r, dict):
+                       top_cities_data.append({k: v for k, v in r.items() if k not in ['geometry', 'centroid', 'expert_analysis']})
+                       artifacts_data[r.get('codgeo', '')] = r.get('expert_analysis', {})
+
         row = {
             "interaction_id": interaction_id,
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -46,9 +60,9 @@ def log_agent_state_to_bq(user_input: str, agent_state: dict):
             "last_user_message": user_input[:2000] if user_input else "",
             "last_agent_response": last_response[:10000] if last_response else "",
             "search_criteria": json.dumps(agent_state.get('search_criteria', {}), default=str, ensure_ascii=False),
-            "briefing": str(agent_state.get('briefing', '')),
-            "top_cities": json.dumps(agent_state.get('top_cities', []), default=str, ensure_ascii=False),
-            "artifacts": json.dumps(agent_state.get('commune_artifacts', {}), default=str, ensure_ascii=False),
+            "odis_brief": str(agent_state.get('odis_brief', '')),
+            "top_cities": json.dumps(top_cities_data, default=str, ensure_ascii=False),
+            "artifacts": json.dumps(artifacts_data, default=str, ensure_ascii=False),
             "execution_mode": str(agent_state.get('execution_mode', 'full_analysis')),
             "cost_usd": float(cost)
         }

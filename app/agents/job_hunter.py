@@ -81,14 +81,20 @@ job_hunter_agent = Agent(
 
 @job_hunter_agent.system_prompt
 async def job_hunter_instructions(ctx: RunContext[ODISDeps]) -> str:
-    briefing = ctx.deps.state.briefing or ""
+    odis_brief = ctx.deps.state.odis_brief or ""
     focus = ctx.deps.state.focus_city
     city_name = focus.name if focus else "Non définie"
     city_code = focus.codgeo if focus else "Inconnu"
     codes_metiers = ctx.deps.state.search_criteria.codes_metiers or []
     last_message = ctx.deps.state.messages[-1].get("content", "Non disponible") if ctx.deps.state.messages else "Non disponible"
     h = compute_criteria_hash(ctx.deps.state.search_criteria)
-    artifacts = ctx.deps.state.commune_artifacts.get(city_name.lower().strip(), {}).get(h, {})
+    
+    # Get artifacts from the new search_results structure
+    artifacts = {}
+    if ctx.deps.state.search_results:
+        city_res = ctx.deps.state.search_results.get_by_code(city_code)
+        if city_res:
+             artifacts = city_res.expert_analysis
 
     # We select prompt according to mode: generic commune analysis or a specific question
     mode = ctx.deps.state.execution_mode
@@ -98,7 +104,7 @@ async def job_hunter_instructions(ctx: RunContext[ODISDeps]) -> str:
         prompt = JOB_HUNTER_ANALYSIS_SYSTEM_PROMPT
     
     prompt = prompt.format(
-        BRIEFING=briefing, 
+        BRIEFING=odis_brief, 
         FOCUS_CITY_NAME=city_name, 
         FOCUS_CITY_CODE=city_code,
         ROME_CODES= codes_metiers,

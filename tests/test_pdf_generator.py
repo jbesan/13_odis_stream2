@@ -6,7 +6,7 @@ from shapely.geometry import Polygon
 
 from core.pdf_generator import generate_pdf_report
 import config as cfg
-from core.models import SearchCriterias
+from core.models import SearchCriterias, SearchResultsData, CommuneResult, CriteriaItem, EmploymentMetrics, HousingMetrics, EducationMetrics, HealthMetrics, InclusionMetrics, MobilityMetrics
 
 @pytest.fixture
 def sample_session_state():
@@ -79,46 +79,54 @@ def sample_session_state():
     return session_state_mock
 
 @pytest.fixture
-def sample_results_df():
-    """Creates a sample GeoDataFrame of results for testing."""
-    data = {
-        'codgeo': ['75056', '69123'],
-        'libgeo': ['Paris', 'Lyon'],
-        'libgeo_binome': [None, None],
-        'weighted_score': [0.85, 0.72],
-        'emploi_cat_score': [0.9, 0.8],
-        'logement_cat_score': [0.7, 0.6],
-        'education_cat_score': [0.8, 0.9],
-        'inclusion_cat_score': [0.9, 0.7],
-        'mobilité_cat_score': [0.8, 0.8],
-        'binome': [False, False],
-        'population': [2000000, 500000],
-        'epci_nom': ['Métropole du Grand Paris', 'Métropole de Lyon'],
-        'libelle_bassin_de_vie': ['Paris', 'Lyon'],
-        'geometry': [
-            Polygon([(2.224, 48.816), (2.469, 48.816), (2.469, 48.902), (2.224, 48.902)]),
-            Polygon([(4.8, 45.7), (4.9, 45.7), (4.9, 45.8), (4.8, 45.8)])
-        ]
-    }
-    gdf = gpd.GeoDataFrame(data, crs="EPSG:4326")
-    gdf = gdf.set_index('codgeo')
-    return gdf.reset_index()
+def sample_search_results():
+    """Creates a sample SearchResultsData object for testing."""
+    results = [
+        CommuneResult(
+            codgeo='75056',
+            name='Paris',
+            population=2200000,
+            global_score=0.85,
+            geometry=Polygon([(2.224, 48.816), (2.469, 48.816), (2.469, 48.902), (2.224, 48.902)])
+        ),
+        CommuneResult(
+            codgeo='69123',
+            name='Lyon',
+            population=500000,
+            global_score=0.72,
+            geometry=Polygon([(4.8, 45.7), (4.9, 45.7), (4.9, 45.8), (4.8, 45.8)])
+        )
+    ]
+    
+    current_geo = CommuneResult(
+        codgeo='33063',
+        name='Bordeaux',
+        population=250000,
+        global_score=0.65,
+        geometry=Polygon([(-0.6, 44.8), (-0.5, 44.8), (-0.5, 44.9), (-0.6, 44.9)])
+    )
+    
+    return SearchResultsData(
+        search_hash="test_hash",
+        results=results,
+        current_geo=current_geo
+    )
 
 
 from unittest.mock import patch
 
-def test_generate_pdf_report(sample_session_state, sample_results_df):
+def test_generate_pdf_report(sample_session_state, sample_search_results):
     """
     Tests that generate_pdf_report runs without errors and produces a valid PDF bytes object.
     """
     # Arrange
     session_state = sample_session_state
-    results_df = sample_results_df
+    search_results = sample_search_results
 
     # Act
     # Use patch to mock streamlit's session_state for the duration of the call
     with patch('app.core.pdf_generator.ui.st.session_state', session_state):
-        pdf_bytes = generate_pdf_report(session_state, results_df)
+        pdf_bytes = generate_pdf_report(session_state, search_results)
 
     # Assert
     # 1. Check that the output is a bytes object

@@ -39,7 +39,7 @@ REFINER_PROMPT = """
 
 class RefinerResult(BaseModel):
     """Synthesis of the conversation context."""
-    briefing: str = Field(..., description="The complete synthesized briefing")
+    odis_brief: str = Field(..., description="The complete synthesized briefing")
 
 RefinerResult.model_rebuild()
 
@@ -64,13 +64,14 @@ async def refiner_instructions(ctx: RunContext[ODISDeps]) -> str:
         new_history += f"{role}: {text}\n"
 
     # Scoring Results
-    scoring_results_json = json.dumps(state.scoring_results, indent=2, ensure_ascii=False) if state.scoring_results else "Aucun nouveau résultat expert."
+    scoring_results_json = state.search_results.model_dump_json(indent=2, exclude={'geometry', 'centroid'}) if state.search_results else "Aucun nouveau résultat expert."
     
     # Enriched Criteria
     criteria_json = state.search_criteria.model_dump_json(indent=2)
     
     # Top 5 Cities podium
-    top_cities = json.dumps([{"name": c.get("name"), "codgeo": c.get("codgeo")} for c in state.top_cities], indent=2, ensure_ascii=False) if state.top_cities else "Aucune ville identifiée."
+    results = state.search_results.results if state.search_results else []
+    top_cities = json.dumps([{"name": c.name, "codgeo": c.codgeo} for c in results], indent=2, ensure_ascii=False) if results else "Aucune ville identifiée."
 
     prompt = REFINER_PROMPT.format(
         PREVIOUS_BRIEFING=state.briefing or "Début du dossier.",

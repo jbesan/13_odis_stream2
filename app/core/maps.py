@@ -58,6 +58,35 @@ def build_scores_layer(df: pd.DataFrame) -> Tuple[flm.FeatureGroup, Optional[Any
                  if id_col not in df.columns:
                      return fg, None # Return empty layer if the required ID is missing
 
+    # Filter out current commune and its PLM family from choropleth to avoid overlap
+    current_code = None
+    if 'config' in st.session_state and st.session_state.config.commune_actuelle:
+        c = st.session_state.config.commune_actuelle
+        current_code = c.code if hasattr(c, 'code') else c
+    
+    if current_code and id_col in df.columns:
+        # Detect PLM family
+        plm_prefix = None
+        if current_code in cfg.PLM_MAPPING:
+            plm_prefix = cfg.PLM_MAPPING[current_code]
+            df = df[df[id_col] != current_code].copy()
+        else:
+            for parent_code, prefix in cfg.PLM_MAPPING.items():
+                if str(current_code).startswith(prefix):
+                    plm_prefix = prefix
+                    # Drop parent if we are in an arrondissement
+                    df = df[df[id_col] != parent_code].copy()
+                    # Drop current arrondissement
+                    df = df[df[id_col] != current_code].copy()
+                    break
+        
+        if plm_prefix:
+            # Drop all siblings in the family
+            df = df[~df[id_col].astype(str).str.startswith(plm_prefix)].copy()
+        else:
+            # Standard single commune exclusion
+            df = df[df[id_col] != current_code].copy()
+
     score_dict = df.set_index(id_col)["weighted_score"]
     colormap = getattr(linear, 'YlGn_09').scale(score_dict.min(), score_dict.max())
 
@@ -75,7 +104,7 @@ def build_scores_layer(df: pd.DataFrame) -> Tuple[flm.FeatureGroup, Optional[Any
 
     flm.GeoJson(
         current_geo_df_serializable,
-        style_function=lambda x: {"fillColor": 'blue', "fillOpacity": 0.5, "stroke": True, "color": "blue"},
+        style_function=lambda x: {"fillColor": 'blue', "fillOpacity": 0.8, "stroke": True, "color": "blue"},
         tooltip=current_geo_df_serializable['libgeo'].iloc[0]
     ).add_to(fg)
 
@@ -101,7 +130,7 @@ def build_scores_layer(df: pd.DataFrame) -> Tuple[flm.FeatureGroup, Optional[Any
             "stroke": False,
             "color": "#1b4429",
             "weight": 0.5,
-            "fillOpacity": 0.5,
+            "fillOpacity": 0.7,
         },
         tooltip=flm.GeoJsonTooltip(
             fields=[name_col, 'score_pct'], 

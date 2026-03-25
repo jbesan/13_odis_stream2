@@ -52,10 +52,11 @@ router_agent = Agent(
 
 @router_agent.system_prompt
 async def router_instructions(ctx: RunContext[ODISDeps]) -> str:
-    top_cities_names = [getattr(c, 'name', str(c)) for c in ctx.deps.state.top_cities]
+    results = ctx.deps.state.search_results.results if ctx.deps.state.search_results else []
+    top_cities_names = [getattr(c, 'name', str(c)) for c in results]
     return ROUTING_SYSTEM_PROMPT.format(
         CITIES_IDENTIFIED=str(top_cities_names),
-        BRIEFING=ctx.deps.state.briefing or "(Pas encore de briefing)",
+        BRIEFING=ctx.deps.state.odis_brief or "(Pas encore de briefing)",
         FOCUS_CITY=ctx.deps.state.focus_city or "Non définie",
         INTERVIEW_COMPLETED=ctx.deps.state.is_interview_complete
     ).replace("Communes identifiées", "Villes identifiées")

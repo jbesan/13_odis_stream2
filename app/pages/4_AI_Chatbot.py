@@ -99,22 +99,32 @@ with st.sidebar:
                     st.divider()
 
         with st.expander("⚙️ État Agent", expanded=False):
-            st.json(state.model_dump(mode='json', exclude={'commune_artifacts'})) # Optimisation affichage
+            st.json(state.model_dump(mode='json', exclude={'search_results'})) # Optimisation affichage
 
         with st.expander("⚙️ Briefing", expanded=False):
-            st.write(state.briefing)
+            st.write(state.odis_brief)
 
         criteria_hash = state.criteria_hash
         
         if state.focus_city and state.focus_city.name:
-            st.write(state.focus_city.name)
+            st.write(f"Ville cible: **{state.focus_city.name}**")
             for agent in ['scout', 'web', 'job_hunter']:
                 with st.expander(f"⚙️ {agent.upper()} Results", expanded=False):
                     try:
-                        norm_name = state.focus_city.name.lower().strip()
-                        st.write(state.commune_artifacts[norm_name][criteria_hash][agent])
-                    except Exception:
-                        st.write("Pas de données.")
+                        if state.search_results:
+                            res = state.search_results.get_by_code(state.focus_city.codgeo)
+                            if not res and state.focus_city.name:
+                                norm_name = state.focus_city.name.lower().strip()
+                                res = next((r for r in state.search_results.results if r.name.lower().strip() == norm_name), None)
+                            
+                            if res and res.expert_analysis and agent in res.expert_analysis:
+                                st.write(res.expert_analysis[agent])
+                            else:
+                                st.write("Pas de données.")
+                        else:
+                            st.write("Pas de résultats de recherche disponibles.")
+                    except Exception as e:
+                        st.write(f"Erreur: {e}")
     
     if st.session_state.get("agent_state") and not show_tech:
         # Show a minimal summary if hidden? No, just keep it clean.

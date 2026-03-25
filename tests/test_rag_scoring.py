@@ -26,7 +26,7 @@ def test_format_city_details_rna_rag_summary(sample_data, sample_scores_cat, def
     details = engine.format_city_details(row, default_config)
     
     # 3. Assert
-    assert details.inclusion.total_associations == 15
+    assert details.inclusion.associations_total == 15
     summary = details.inclusion.associations_summary_by_category
     assert summary['fle'] == 10
     assert summary['logement'] == 5
@@ -67,4 +67,4 @@ def test_scoring_engine_init_with_missing_data(sample_data, sample_scores_cat):
     row['inc_rna_fle_count'] = 10
     
     details = engine.format_city_details(row, None)
-    assert details.inclusion.total_associations == 10
+    assert details.inclusion.associations_total == 10

@@ -60,13 +60,20 @@ def on_pdf_dialog_dismiss():
 
 @st.dialog("Export des résultats en PDF", on_dismiss=on_pdf_dialog_dismiss)
 def pdf_modal():
+    logging.info(f"📄 [UI-MODAL] pdf_modal called. show_pdf_modal={st.session_state.get('show_pdf_modal')}")
     # State 1: Loading / Generating
     if 'pdf_modal_data' not in st.session_state or st.session_state.pdf_modal_data is None:
+        logging.info("📄 [UI] Opening PDF modal: Starting generation state")
         with st.spinner("Veuillez patienter, nous générons votre document..."):
             try:    
+                search_results = st.session_state.get('search_results')
+                logging.info(f"📄 [UI-MODAL] search_results present: {search_results is not None}")
+                if search_results:
+                     logging.info(f"📄 [UI-MODAL] number of results: {len(search_results.results)}")
+                
                 pdf_bytes = generate_pdf_report(
                     st.session_state, 
-                    st.session_state.search_results
+                    search_results
                 )
                 st.session_state.pdf_modal_data = pdf_bytes
                 st.rerun() 
@@ -109,6 +116,7 @@ for k, v in st.session_state.items():
         st.session_state[k] = v
 
 app_data = st.session_state.app_data
+search_results: SearchResultsData = st.session_state.get('search_results')
 
 def run_search():
     """
@@ -238,6 +246,7 @@ def run_search():
 
 def open_pdf_modal() -> None:
     """Callback to signal that the PDF modal should be shown."""
+    logging.info("🎯 [UI] 'Exporter résultats' button clicked. Setting show_pdf_modal=True")
     st.session_state['show_pdf_modal'] = True
 
 # Automatically run the search if not already processed and form is completed
@@ -246,7 +255,7 @@ if st.session_state.get('processed_gdf') is None and st.session_state.get('form_
     st.session_state['form_completed'] = False
 
 # --- UI LAYOUT
-@st.fragment(run_every=3.0)
+# @st.fragment(run_every=3.0)
 def export_pdf_container(h: str):
     """Module-level fragment to avoid redefinition issues."""
     if not h:
@@ -359,7 +368,6 @@ with col_map:
             st.session_state['fg_dict_ref']['Scores'], colormap = maps.build_scores_layer(st.session_state['processed_gdf'])
         
         # 1. ADD BLUE LAYER FOR CURRENT COMMUNE (from SearchResultsData.current_geo)
-        search_results: SearchResultsData = st.session_state.get('search_results')
         if search_results and search_results.current_geo and search_results.current_geo.geometry:
             fg_current = flm.FeatureGroup(name="Ma position")
             poly_4326 = gpd.GeoSeries([search_results.current_geo.geometry], crs=cfg.PROJECTED_CRS).to_crs("EPSG:4326").iloc[0]
@@ -503,6 +511,5 @@ if st.session_state.get('show_pdf_modal'):
 with st.expander("Debug", expanded=False):
     try:
         st.json(search_results.results)
-        st.json(search_results.current_geo)
     except:
         pass

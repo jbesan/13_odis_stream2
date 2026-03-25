@@ -67,6 +67,10 @@ def log_search_complete(config: SearchCriterias, search_results: SearchResultsDa
         username = st.session_state.get('username', 'unknown')
         
         # 1. Prepare Criteria & Weights
+        _telemetry_logger.info(f"🔍 [TELEMETRY] config type: {type(config)}")
+        if isinstance(config, dict):
+            _telemetry_logger.warning(f"⚠️ [TELEMETRY] config is a dict, not a model! Keys: {list(config.keys())}")
+        
         full_config = config.model_dump()
         criteria_keys = ['commune_actuelle', 'loc_search_area', 'situation_famille', 'nb_enfants', 'besoin_emploi', 'besoin_sante', 'inc_services_add_selection']
         search_criteria = {k: full_config.get(k) for k in criteria_keys if k in full_config}
@@ -81,9 +85,16 @@ def log_search_complete(config: SearchCriterias, search_results: SearchResultsDa
                 "libgeo": commune.name,
                 "score": commune.global_score
             })
+            # Log score items type
+            commune_scores = {}
+            for cat, items in commune.scores.items():
+                if items and not hasattr(items[0], 'model_dump'):
+                    _telemetry_logger.warning(f"⚠️ [TELEMETRY] Score items in {cat} are not models! Type: {type(items[0])}")
+                commune_scores[cat] = [s.model_dump() if hasattr(s, 'model_dump') else s for s in items]
+
             top_5_breakdown[str(commune.codgeo)] = {
                 "libgeo": commune.name,
-                "scores": {cat: [s.model_dump() for s in items] for cat, items in commune.scores.items()},
+                "scores": commune_scores,
                 "scorer_pitch": commune.scorer_pitch,
                 "expert_analysis": commune.expert_analysis
             }

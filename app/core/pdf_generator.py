@@ -16,6 +16,7 @@ from typing import Dict, Any, List, Optional
 import matplotlib.pyplot as plt
 import contextily as ctx
 import geopandas as gpd
+from agents.utils import odis_get_bg_result
 
 # Basic constants
 PDF_TITLE = "Synthèse de votre recherche de territoire"
@@ -37,23 +38,79 @@ def _setup_unicode_font(pdf: FPDF) -> None:
         pdf.set_font("Arial", size=12)
 
 
-def _generate_static_map_image(results_df: pd.DataFrame) -> bytes:
+def _generate_static_map_image(search_results: SearchResultsData) -> bytes:
     """
     Generates a static map image using Matplotlib and Contextily.
-    Highlights the top 5 results.
+    Highlights the results and the current location.
     """
-    if results_df.empty:
+    if not search_results.results:
         return b""
 
+    # 1. Reconstruct results GeoDataFrame internally
+    data = []
+    for c in search_results.results:
+        data.append({
+            'codgeo': c.codgeo,
+            'libgeo': c.name,
+            'weighted_score': c.global_score,
+            'geometry': c.geometry
+        })
+    
+    # 🕵️ Debug Logging
+    if data:
+        sample_geom = data[0]['geometry']
+        logging.info(f"🕵️ [PDF-MAP] Sample geometry type: {type(sample_geom)}")
+        if hasattr(sample_geom, 'centroid'):
+            logging.info(f"🕵️ [PDF-MAP] Sample centroid: ({sample_geom.centroid.x}, {sample_geom.centroid.y})")
+    
+    # Try to detect CRS or fallback to config
+    # If coordinates are large, it's likely projected (2154)
+    first_x = data[0]['geometry'].centroid.x if data and hasattr(data[0]['geometry'], 'centroid') else 0
+    inferred_crs = "EPSG:4326"
+    if abs(first_x) > 180:
+        inferred_crs = cfg.PROJECTED_CRS
+    
+    logging.info(f"🕵️ [PDF-MAP] Inferred CRS: {inferred_crs}")
+    results_df = gpd.GeoDataFrame(data, crs=inferred_crs)
+    
+    # 🕵️ PLM Family Exclusion Logic
+    current_code = search_results.current_geo.codgeo if search_results.current_geo else None
+    if current_code and not results_df.empty:
+        plm_prefix = None
+        if current_code in cfg.PLM_MAPPING:
+            plm_prefix = cfg.PLM_MAPPING[current_code]
+            results_df = results_df[results_df['codgeo'] != current_code]
+        else:
+            for parent_code, prefix in cfg.PLM_MAPPING.items():
+                if str(current_code).startswith(prefix):
+                    plm_prefix = prefix
+                    results_df = results_df[results_df['codgeo'] != parent_code]
+                    results_df = results_df[results_df['codgeo'] != current_code]
+                    break
+        
+        if plm_prefix:
+            results_df = results_df[~results_df['codgeo'].astype(str).str.startswith(plm_prefix)]
+        else:
+            results_df = results_df[results_df['codgeo'] != current_code]
+
+    # 2. Handle Current Location
+    current_df = None
+    if search_results.current_geo and search_results.current_geo.geometry:
+        current_df = gpd.GeoDataFrame([{
+            'codgeo': search_results.current_geo.codgeo,
+            'libgeo': search_results.current_geo.name,
+            'weighted_score': search_results.current_geo.global_score,
+            'geometry': search_results.current_geo.geometry
+        }], crs=inferred_crs)
+
     # Project to Web Mercator for Contextily
-    gdf_plot = results_df.to_crs(epsg=3857)
+    gdf_results_plot = results_df.to_crs(epsg=3857)
     
     # Initialize figure
-    # Use a square aspect ratio or slightly landscape
     fig, ax = plt.subplots(figsize=(8, 8))
     
-    # Plot all scores (choropleth)
-    gdf_plot.plot(
+    # Plot results (choropleth)
+    gdf_results_plot.plot(
         column='weighted_score',
         cmap='YlGn',
         alpha=0.6,
@@ -61,13 +118,25 @@ def _generate_static_map_image(results_df: pd.DataFrame) -> bytes:
         linewidth=0.5,
         ax=ax,
         legend=True,
+        vmin=0.0,
+        vmax=1.0,
         legend_kwds={'label': "Score Global", 'orientation': "horizontal", 'shrink': 0.5, 'pad': 0.05}
     )
     
-    # Highlight Top 5 results
-    top_5 = gdf_plot.head(5)
+    # Highlight Current Location (Blue dashed outline + light fill)
+    if current_df is not None:
+        gdf_curr_plot = current_df.to_crs(epsg=3857)
+        gdf_curr_plot.plot(
+            ax=ax,
+            facecolor='#1f77b4',
+            alpha=0.3,
+            edgecolor='#1f77b4',
+            linewidth=3,
+            linestyle='--'
+        )
     
-    # Plot outlines for Top 5
+    # Plot outlines for top results (Red)
+    top_5 = gdf_results_plot.head(5)
     top_5.plot(
         ax=ax,
         facecolor='none',
@@ -75,16 +144,10 @@ def _generate_static_map_image(results_df: pd.DataFrame) -> bytes:
         linewidth=2
     )
     
-    # Add numbered markers for Top 5
-    # Get the name of the geometry column (it might be 'geometry', 'polygon', etc.)
-    geom_col = gdf_plot.geometry.name
-    
+    # Add numbered markers for top results
     for idx, row in top_5.iterrows():
-        # Find the rank (0-based index in the dataframe)
-        rank = results_df.index.get_loc(idx) + 1
-        
-        # Access geometry using the column name
-        centroid = row[geom_col].centroid
+        rank = idx + 1
+        centroid = row.geometry.centroid
         ax.annotate(
             str(rank),
             xy=(centroid.x, centroid.y),
@@ -119,6 +182,7 @@ def generate_pdf_report(st_session_state: Dict[str, Any], search_results: Search
     """
     Generates a PDF report with the top 5 results and search criteria using a Unicode font.
     """
+    logging.info("📄 [PDF] Starting PDF report generation...")
     pdf = FPDF()
     _setup_unicode_font(pdf)
     pdf.add_page()
@@ -192,6 +256,7 @@ def generate_pdf_report(st_session_state: Dict[str, Any], search_results: Search
     pdf.ln(5)
 
     # --- PAGE 2: MAP & SUMMARY ---
+    logging.info("📄 [PDF] Generating Page 2 (Map & Summary)")
     pdf.add_page()
 
     # Page 2 Title
@@ -201,7 +266,7 @@ def generate_pdf_report(st_session_state: Dict[str, Any], search_results: Search
 
     # Map Generation
     try:
-        map_png = _generate_static_map_image(results_df)
+        map_png = _generate_static_map_image(search_results)
         if map_png:
             map_image_stream = io.BytesIO(map_png)
             # Center the image and limit width to avoid it being too big
@@ -223,9 +288,11 @@ def generate_pdf_report(st_session_state: Dict[str, Any], search_results: Search
     pdf.ln(5)
 
     # --- INDIVIDUAL RESULT PAGES ---
+    logging.info(f"📄 [PDF] Generating {len(search_results.results)} individual result pages")
     config = st_session_state.get('config')
 
     for rank, commune in enumerate(search_results.results, start=1):
+        logging.info(f"📄 [PDF] Processing commune: {commune.name}")
         pdf.add_page()
         # Result Title
         title = f"Top {rank} | {commune.name}"
@@ -235,7 +302,7 @@ def generate_pdf_report(st_session_state: Dict[str, Any], search_results: Search
 
         # Pitch
         h = config.compute_hash() if config else None
-        scorer_res = st_session_state.get('async_scorer_results', {}).get(h) if h else None
+        scorer_res = odis_get_bg_result(h) if h else None
         
         ai_pitch = ""
         codgeo = commune.codgeo
@@ -390,8 +457,9 @@ def generate_pdf_report(st_session_state: Dict[str, Any], search_results: Search
         pdf.cell(0, 6, "Services d'inclusion", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.set_font("DejaVu", '', 9)
         
-        services_df = st_session_state['app_data']['annuaire_inclusion']
-        incl_index = st_session_state['app_data'].get('inclusion_services_index', pd.DataFrame())
+        app_data = st_session_state.get('app_data', {})
+        services_df = app_data.get('annuaire_inclusion', pd.DataFrame())
+        incl_index = app_data.get('inclusion_services_index', pd.DataFrame())
         
         # Determine Target Slugs for Filtering
         target_slugs = set(cfg.DEFAULT_INC_SERVICES_CORE)
