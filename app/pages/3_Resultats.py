@@ -489,7 +489,9 @@ if st.session_state.get('show_pdf_modal'):
     pdf_modal()
 
 # Do not remove, useful to debug states
-try:
-    st.json(search_results.results)
-except:
-    pass
+with st.expander("Debug", expanded=False):
+    try:
+        st.json(search_results.results)
+        st.json(search_results.current_geo)
+    except:
+        pass

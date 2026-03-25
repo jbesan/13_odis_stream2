@@ -142,21 +142,47 @@ def log_search_results(
     md_lines.append("| Parameter | Value |")
     md_lines.append("| :--- | :--- |")
     
-    criteria_keys = ['commune_actuelle', 'loc_search_area', 'situation_famille', 'nb_enfants', 'besoin_emploi', 'besoin_sante']
-    for key in criteria_keys:
-        if key in search_params:
-            val = search_params[key]
-            # Handle SearchCriterias nested models if they exist
-            if hasattr(val, 'label'): val = val.label
-            elif isinstance(val, dict) and 'label' in val: val = val['label']
-            md_lines.append(f"| {key} | {val} |")
+    def format_value(v: Any) -> str:
+        if v is None:
+            return "N/A"
+        if isinstance(v, bool):
+            return "Yes" if v else "No"
+        if isinstance(v, (int, float)):
+            return str(v)
+        if hasattr(v, 'label'):
+            return str(v.label)
+        if isinstance(v, dict):
+            if 'label' in v: return str(v['label'])
+            return json.dumps(v, ensure_ascii=False)
+        if isinstance(v, list):
+            if not v: return "[]"
+            # Handle list of CriteriaItem or list of strings
+            formatted_items = []
+            for item in v:
+                if hasattr(item, 'label'):
+                    formatted_items.append(str(item.label))
+                elif isinstance(item, dict) and 'label' in item:
+                    formatted_items.append(str(item['label']))
+                elif isinstance(item, list):
+                    # Recurse for nested lists (e.g. codes_metiers)
+                    formatted_items.append(f"[{format_value(item)}]")
+                else:
+                    formatted_items.append(str(item))
+            return ", ".join(formatted_items)
+        return str(v)
+
+    # Log all search parameters except weights (logged separately)
+    excluded_keys = {'criteria_weights', 'active_criteria', 'active_categories'}
+    for key, val in sorted(search_params.items()):
+        if not key.startswith('poids_') and key not in excluded_keys:
+            md_lines.append(f"| {key} | {format_value(val)} |")
     
     # Weights
     md_lines.append("")
     md_lines.append("### Weights")
     md_lines.append("| Category | Weight |")
     md_lines.append("| :--- | :--- |")
-    for key, value in search_params.items():
+    for key, value in sorted(search_params.items()):
         if key.startswith('poids_'):
             category = key.replace('poids_', '').capitalize()
             md_lines.append(f"| {category} | {value} |")
@@ -188,29 +214,41 @@ def log_search_results(
         md_lines.append("No results found.")
     md_lines.append("")
 
-    # 3. Current Location Comparison
+    # 3. Current Location Reference
     if search_results.current_geo:
         md_lines.append("## Current Location Reference")
         cg = search_results.current_geo
         md_lines.append(f"**Name**: {cg.name} ({cg.codgeo})")
         md_lines.append(f"**Global Score (Simulated)**: {cg.global_score:.2f}")
         md_lines.append("")
+        
+        # Detailed breakdown for Current Location
+        md_lines.append("### Detailed Breakdown (Current)")
+        for cat, details in sorted(cg.scores.items()):
+            md_lines.append(f"#### {cat.capitalize()}")
+            md_lines.append("| Technical ID | Label | Value | Score | Weight |")
+            md_lines.append("| :--- | :--- | :--- | :--- | :--- |")
+            for d in details:
+                val_kpi = d.valeur_kpi if d.valeur_kpi is not None else "N/A"
+                md_lines.append(f"| `{d.score_id}` | {d.label} | {val_kpi} {d.unit} | {d.score_normalise:.2f} | {d.relative_weight}% |")
+            md_lines.append("")
 
-    # 4. Detailed Breakdown
-    md_lines.append("## Detailed Breakdown")
+    # 4. Detailed Breakdown (Top Results)
+    md_lines.append("## Detailed Breakdown (Top Results)")
     for i, commune in enumerate(search_results.results):
         md_lines.append(f"### {i+1}. {commune.name} ({commune.codgeo})")
         md_lines.append(f"* **Population**: {commune.population:,}")
         md_lines.append(f"* **Global Score**: {commune.global_score:.2f}")
-        md_lines.append("* **Criteria Details**:")
-        
-        for cat, details in commune.scores.items():
-            md_lines.append(f"    * **{cat.capitalize()}**:")
-            for d in details:
-                # Use value_kpi and label
-                val_kpi = d.valeur_kpi if d.valeur_kpi is not None else "N/A"
-                md_lines.append(f"        * `{d.label}`: {val_kpi} {d.unit} (Score: {d.score_normalise:.2f}, Weight: {d.relative_weight}%)")
         md_lines.append("")
+        
+        for cat, details in sorted(commune.scores.items()):
+            md_lines.append(f"#### {cat.capitalize()}")
+            md_lines.append("| Technical ID | Label | Value | Score | Weight |")
+            md_lines.append("| :--- | :--- | :--- | :--- | :--- |")
+            for d in details:
+                val_kpi = d.valeur_kpi if d.valeur_kpi is not None else "N/A"
+                md_lines.append(f"| `{d.score_id}` | {d.label} | {val_kpi} {d.unit} | {d.score_normalise:.2f} | {d.relative_weight}% |")
+            md_lines.append("")
 
     # Write to file
     try:
