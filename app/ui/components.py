@@ -42,10 +42,15 @@ def inject_custom_css() -> None:
 
 @st.fragment
 def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
-    # Unique session key for this city's analysis
-    h = search_criterias.compute_hash()
-    cache_key = f"ia_analysis_{h}_{codgeo}"
-    
+    # Check if analysis already exists in unified state
+    if 'search_results' in st.session_state and st.session_state.search_results:
+        commune = st.session_state.search_results.get_by_code(codgeo)
+        # If we have at least one expert result, we consider it "pre-cached"
+        if commune and commune.expert_analysis:
+            # Reconstruct the synthesis if needed or just use what's there
+            # For now, if we have expert analysis, we still might need the final synthesis message
+            pass
+
     if cache_key not in st.session_state['app_data']:
         # F-IA: Automate trigger on open
         with st.spinner(f"Les experts analysent {nom}, veuillez patienter (environ 15 à 30s)..."):
@@ -134,13 +139,19 @@ def show_ia_analysis_dialog(index: Any):
 
 @st.fragment(run_every=3.0)
 def ai_pitch_container(main_code: str, h: str):
-    """Module-level fragment to avoid redefinition issues and use global results."""
+    # 1. Try unified state first (Single source of truth)
+    if 'search_results' in st.session_state and st.session_state.search_results:
+        commune = st.session_state.search_results.get_by_code(main_code)
+        if commune and commune.scorer_pitch:
+            st.markdown(commune.scorer_pitch)
+            return
+
+    # 2. Fallback to background store (Legacy/In-progress)
     from agents.utils import odis_get_bg_result
     scorer_res = odis_get_bg_result(h)
     pitch_for_city = ""
     
     if scorer_res is None:
-        # Still running in background
         st.info("✨ _Récupération des points forts pour cette ville..._")
     else:
         if isinstance(scorer_res, dict) and "pitches" in scorer_res:

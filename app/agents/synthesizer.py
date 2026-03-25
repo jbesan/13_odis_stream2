@@ -94,42 +94,38 @@ synthesizer_agent = Agent(
 async def synth_instructions(ctx: RunContext[ODISDeps]) -> str:
     # Get city details for focused city
     city_details = "N/A"
-    if ctx.deps.state.focus_city and ctx.deps.state.top_cities:
-        target_city_name = ctx.deps.state.focus_city.name.lower().strip()
-        for c in ctx.deps.state.top_cities:
-            cand_name = str(c.get("name", "")).lower().strip()
-            if cand_name == target_city_name:
-                city_details = json.dumps(c.get("details", {}), indent=2, ensure_ascii=False)
-                break
+    scorer_pitch = "N/A"
+    if ctx.deps.state.focus_city and ctx.deps.state.search_results:
+        sr = ctx.deps.state.search_results
+        target_res = sr.get_by_code(ctx.deps.state.focus_city.codgeo)
+        # Fallback by name if code is missing (e.g. from router)
+        if not target_res and ctx.deps.state.focus_city.name:
+            norm_name = ctx.deps.state.focus_city.name.lower().strip()
+            target_res = next((r for r in sr.results if r.name.lower().strip() == norm_name), None)
+            
+        if target_res:
+            city_details = json.dumps(target_res.model_dump(exclude={'geometry', 'centroid', 'expert_analysis'}), indent=2, ensure_ascii=False)
+            scorer_pitch = target_res.scorer_pitch or "Non disponible"
     
     # Get details for current city (comparison)
     current_city_details = "N/A"
     current_city_name = "la commune actuelle"
-    if ctx.deps.state.search_criteria and ctx.deps.state.top_cities:
-        sc = ctx.deps.state.search_criteria
-        # Extract code from SearchCriterias commune_actuelle
-        # Robust check: it can be a dict (dumped from model) or the object itself
-        ca = sc.get('commune_actuelle', {})
-        if isinstance(ca, dict):
-            current_code = ca.get('code')
-            current_city_name = ca.get('label', "la commune actuelle")
-        else:
-            # Fallback if it's already an object or just a string
-            current_code = getattr(ca, 'code', str(ca))
-            current_city_name = getattr(ca, 'label', "la commune actuelle")
-        
-        if current_code:
-            for c in ctx.deps.state.top_cities:
-                if str(c.get("codgeo")) == str(current_code):
-                    current_city_details = json.dumps(c.get("details", {}), indent=2, ensure_ascii=False)
-                    break
+    if ctx.deps.state.search_results:
+        sr = ctx.deps.state.search_results
+        if sr.current_geo:
+            current_city_details = json.dumps(sr.current_geo.model_dump(exclude={'geometry', 'centroid', 'expert_analysis'}), indent=2, ensure_ascii=False)
+            current_city_name = sr.current_geo.name
     
-    # Get expert results from commune_artifacts
-    h = compute_criteria_hash(ctx.deps.state.search_criteria)
-    focus = ctx.deps.state.focus_city.name if ctx.deps.state.focus_city else "Unknown"
+    # Get expert results from search_results
+    focus_codgeo = ctx.deps.state.focus_city.codgeo if ctx.deps.state.focus_city else ""
+    focus_res = ctx.deps.state.search_results.get_by_code(focus_codgeo) if ctx.deps.state.search_results else None
     
-    # Structure: { focus: { hash: { scout: result, web: result, job_hunter: result } } }
-    artifacts = ctx.deps.state.commune_artifacts.get(focus.lower().strip(), {}).get(h, {})
+    # Fallback by name
+    if not focus_res and ctx.deps.state.focus_city and ctx.deps.state.search_results:
+        norm_name = ctx.deps.state.focus_city.name.lower().strip()
+        focus_res = next((r for r in ctx.deps.state.search_results.results if r.name.lower().strip() == norm_name), None)
+
+    artifacts = focus_res.expert_analysis if focus_res else {}
     
     # Dynamic mode logic
     mode = ctx.deps.state.execution_mode

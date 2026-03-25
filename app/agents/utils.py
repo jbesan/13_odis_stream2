@@ -214,11 +214,39 @@ def launch_background_scorer(search_criterias: SearchCriterias, results_dict_ign
                 )
             )
             
+            # Prepare search_results for the background state
+            search_results_data = None
+            if top_cities:
+                results_objs = []
+                for c in top_cities:
+                    details = c.get("details", {})
+                    results_objs.append({
+                        "codgeo": str(c.get("codgeo")),
+                        "name": str(c.get("libgeo", c.get("name", ""))),
+                        "population": int(c.get("population", 0)),
+                        "global_score": float(c.get("weighted_score", 0.0)),
+                        "scores": c.get("scores", {}),
+                        # "scores": details.get("scores", {}),
+                        # "employment": details.get("employment", {}),
+                        # "housing": details.get("housing", {}),
+                        # "education": details.get("education", {}),
+                        # "health": details.get("health", {}),
+                        # "inclusion": details.get("inclusion", {}),
+                        # "mobility": details.get("mobility", {}),
+                        # "codgeo_bdv": details.get("codgeo_bdv", ""),
+                        # "name_bdv": details.get("name_bdv", "")
+                    })
+                search_results_data = {
+                    "search_hash": hash_val,
+                    "results": results_objs,
+                    "current_geo": results_objs[0] if results_objs else None
+                }
+
             state_dict = {
                 "search_criteria": search_criterias.model_dump(),
                 "is_interview_complete": True,
                 "execution_mode": "full_analysis",
-                "top_cities": top_cities or []
+                "search_results": search_results_data
             }
             state = ODISGraphState.model_validate(state_dict)
             deps = ODISDeps(state=state, client=client)

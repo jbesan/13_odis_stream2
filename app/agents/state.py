@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional, Annotated, Literal
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 from google import genai
 import operator
-from core.models import SearchCriterias
+from core.models import SearchCriterias, SearchResultsData, CommuneResult
 
 class UsageStats(BaseModel):
     """Cumulative usage statistics for the graph."""
@@ -86,41 +86,55 @@ def compute_criteria_hash(criteria: SearchCriterias) -> str:
         return ""
     return criteria.compute_hash()
 
-def merge_commune_artifacts(left: Dict[str, Any], right: Any) -> Dict[str, Any]:
-    """
-    Structure: { "CommuneName": { "Hash": { "agent": Result } } }
-    Makes results CUMULATIVE by concatenating new strings to existing ones.
-    """
-    if not right or not isinstance(right, dict):
+def merge_search_results(left: Optional[SearchResultsData], right: Any) -> Optional[SearchResultsData]:
+    """Reducer to merge search results and expert artifacts."""
+    if right is None:
         return left
     
-    new_state = left.copy()
-    for commune, hashes in right.items():
-        norm_commune = commune.lower().strip()
-        if norm_commune not in new_state:
-            new_state[norm_commune] = hashes
-        else:
-            commune_state = new_state[norm_commune].copy()
-            for h, agents in hashes.items():
-                if h not in commune_state:
-                    commune_state[h] = agents
-                else:
-                    hash_state = commune_state[h].copy()
-                    for agent_name, new_content in agents.items():
-                        if agent_name in hash_state:
-                            # Cumulative merge with separator
-                            old_content = hash_state[agent_name]
-                            if isinstance(old_content, str) and isinstance(new_content, str):
-                                hash_state[agent_name] = f"{old_content}\n\n--- ANNEXES ---\n\n{new_content}"
-                            else:
-                                # Fallback or just update if not strings
-                                hash_state[agent_name] = new_content
-                        else:
-                            hash_state[agent_name] = new_content
-                    commune_state[h] = hash_state
-            new_state[norm_commune] = commune_state
-            
-    return new_state
+    if left is None:
+        if isinstance(right, dict):
+            return SearchResultsData(**right)
+        return right
+
+    if isinstance(right, SearchResultsData):
+        right = right.model_dump(exclude_unset=True)
+    
+    if not isinstance(right, dict):
+        return left
+
+    new_data = left.model_dump()
+    
+    # 1. Merge results list by codgeo
+    if "results" in right and right["results"]:
+        existing_results = {str(r["codgeo"]): i for i, r in enumerate(new_data.get("results", []))}
+        for new_res in right["results"]:
+            cg = str(new_res.get("codgeo"))
+            if cg in existing_results:
+                idx = existing_results[cg]
+                target = new_data["results"][idx]
+                
+                # Merge expert_analysis
+                if "expert_analysis" in new_res and new_res["expert_analysis"]:
+                    if "expert_analysis" not in target or target["expert_analysis"] is None:
+                        target["expert_analysis"] = {}
+                    target["expert_analysis"].update(new_res["expert_analysis"])
+                
+                # Update other fields (scorer_pitch, global score, etc.)
+                for k, v in new_res.items():
+                    if k != "expert_analysis" and v is not None:
+                        target[k] = v
+            else:
+                new_data.setdefault("results", []).append(new_res)
+                
+    # 2. Update other top-level fields (global_pitch, current_geo, search_hash)
+    for k, v in right.items():
+        if k != "results" and v is not None:
+            if k == "current_geo" and isinstance(v, dict):
+                 new_data.setdefault("current_geo", {}).update(v)
+            else:
+                new_data[k] = v
+                
+    return SearchResultsData(**new_data)
 
 class FocusCity(BaseModel):
     """Structured representation of the focus city."""
@@ -155,9 +169,7 @@ class ODISGraphState(BaseModel):
     messages: Annotated[List[Dict[str, Any]], operator.add] = Field(default_factory=list)
     user_profile: UserProfile = Field(default_factory=UserProfile)
     search_criteria: Annotated[SearchCriterias, merge_search_criteria] = Field(default_factory=SearchCriterias)
-    scoring_results: Annotated[Dict[str, Any], operator.ior] = Field(default_factory=dict)
-    commune_artifacts: Annotated[Dict[str, Any], merge_commune_artifacts] = Field(default_factory=dict)
-    top_cities: List[Dict[str, Any]] = Field(default_factory=list)
+    search_results: Annotated[Optional[SearchResultsData], merge_search_results] = None
     focus_city: Optional[FocusCity] = None
     criteria_hash: Annotated[Optional[str], take_latest_hash] = None
     pending_experts: List[str] = Field(default_factory=list)

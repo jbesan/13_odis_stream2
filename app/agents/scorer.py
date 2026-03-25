@@ -81,9 +81,11 @@ def compute_top_cities_tool(ctx: RunContext[ODISDeps]) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: Dictionnaire des villes correspondantes.
     """
-    if ctx.deps.state.top_cities:
+    if ctx.deps.state.search_results and ctx.deps.state.search_results.results:
         logger.debug("✅ [TOOL] Returning PRE-COMPUTED top_cities from state (Classic Flow Bypass)!")
-        return {"cities": ctx.deps.state.top_cities, "source": "pre-computed in UI"}
+        # Convert CommuneResult back to list of dicts for the agent (if needed) or just return the model
+        cities_list = [c.model_dump(exclude={'geometry', 'centroid'}) for c in ctx.deps.state.search_results.results]
+        return {"cities": cities_list, "source": "pre-computed in UI"}
         
     try:
         start_time = datetime.now()

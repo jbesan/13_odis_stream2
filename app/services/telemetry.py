@@ -83,7 +83,9 @@ def log_search_complete(config: SearchCriterias, search_results: SearchResultsDa
             })
             top_5_breakdown[str(commune.codgeo)] = {
                 "libgeo": commune.name,
-                "scores": {cat: [s.model_dump() for s in items] for cat, items in commune.scores.items()}
+                "scores": {cat: [s.model_dump() for s in items] for cat, items in commune.scores.items()},
+                "scorer_pitch": commune.scorer_pitch,
+                "expert_analysis": commune.expert_analysis
             }
         
         # 3. BigQuery Insert
@@ -98,7 +100,8 @@ def log_search_complete(config: SearchCriterias, search_results: SearchResultsDa
             "search_criteria": json.dumps(search_criteria, default=str, ensure_ascii=False),
             "weights": json.dumps(weights, default=str, ensure_ascii=False),
             "top_results": json.dumps(top_5_results, default=str, ensure_ascii=False),
-            "detailed_breakdown": json.dumps(top_5_breakdown, default=str, ensure_ascii=False)
+            "detailed_breakdown": json.dumps(top_5_breakdown, default=str, ensure_ascii=False),
+            "global_pitch": search_results.global_pitch
         }
         
         errors = client.insert_rows_json(table_ref, [row])

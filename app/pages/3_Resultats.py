@@ -179,7 +179,18 @@ def run_search():
         
     # Prepare cities for background AI agents
     top_cities_full = [
-        {"codgeo": str(c.codgeo), "libgeo": c.name, "weighted_score": c.global_score, "details": c.model_dump(exclude={'geometry', 'centroid'})} 
+        {
+            "codgeo": str(c.codgeo), 
+            "libgeo": c.name, 
+            "weighted_score": c.global_score, 
+            "scores": c.scores,
+            # "details": c.model_dump(include={
+                
+            #     'population', 'scores', 'employment', 'housing', 
+            #     'education', 'health', 'inclusion', 'mobility', 
+            #     'codgeo_bdv', 'name_bdv'
+            # })
+        } 
         for c in search_results.results
     ]
         

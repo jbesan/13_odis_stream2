@@ -170,7 +170,7 @@ async def refiner_node(state: ODISGraphState, config: RunnableConfig):
     try:
         # 1. Skip if no new info to summarize
         new_msgs_count = len(state.messages) - state.last_summarized_idx
-        if new_msgs_count <= 0 and not state.scoring_results and state.briefing:
+        if new_msgs_count <= 0 and not state.search_results and state.briefing:
             logger.info("⏩ [REFINER] No new info, skipping synthesis.")
             return {}
 
@@ -280,37 +280,8 @@ async def scorer_node(state: ODISGraphState, config: RunnableConfig):
     # --- Unified Telemetry Logging (BigQuery) ---
     try:
         from services import telemetry
-        criteria_model = state.search_criteria
-        full_config = criteria_model.model_dump()
-        
-        criteria_keys = ['commune_actuelle', 'loc_search_area', 'situation_famille', 'nb_enfants', 'besoin_emploi', 'besoin_sante', 'inc_services_add_selection']
-        search_criteria = {k: full_config.get(k) for k in criteria_keys if k in full_config}
-        weights = {k: v for k, v in full_config.items() if k.startswith('poids_')}
-        
-        top_5_results = []
-        top_5_breakdown = {}
-        if top_cities:
-            top_5 = top_cities[:5]
-            top_5_results = [
-                {"codgeo": str(c.get('codgeo')), "libgeo": str(c.get('libgeo', '')), "score": float(c.get('weighted_score', 0))} 
-                for c in top_5
-            ]
-            
-            # Granular Breakdown (extracted from tool results)
-            for city in top_5:
-                codgeo = str(city.get('codgeo'))
-                top_5_breakdown[codgeo] = {
-                    "libgeo": city.get('libgeo', city.get('name', '')),
-                    "scores": city.get('details', {}).get('scores', {})
-                }
-        
-        telemetry.log_search_complete(
-            criteria=search_criteria,
-            weights=weights,
-            results=top_5_results,
-            breakdown=top_5_breakdown,
-            source_flow='ia'
-        )
+        if search_results:
+            telemetry.log_search_complete(state.search_criteria, search_results, source_flow='ia')
     except Exception as tel_e:
         logger.warning(f"⚠️ [SCORER] Telemetry failed: {tel_e}")
 
@@ -330,11 +301,52 @@ async def scorer_node(state: ODISGraphState, config: RunnableConfig):
     
     logger.info(f"📤 [SCORER] Final message constructed (length: {len(final_content)})")
 
+    # --- Convert to Type SearchResultsData ---
+    search_results = None
+    if top_cities:
+        results_objs = []
+        for c in top_cities:
+            # Reconstruct CommuneResult from top_cities tool output
+            details = c.get("details", {})
+            city_res = CommuneResult(
+                codgeo=str(c.get("codgeo")),
+                name=str(c.get("libgeo", c.get("name", ""))),
+                population=int(c.get("population", 0)),
+                global_score=float(c.get("weighted_score", 0.0)),
+                scores=details.get("scores", {}),
+                employment=details.get("employment", {}),
+                housing=details.get("housing", {}),
+                education=details.get("education", {}),
+                health=details.get("health", {}),
+                inclusion=details.get("inclusion", {}),
+                mobility=details.get("mobility", {}),
+                codgeo_bdv=details.get("codgeo_bdv", ""),
+                name_bdv=details.get("name_bdv", "")
+            )
+            # Find pitch in results
+            for p in result.output.pitches_per_city:
+                if str(p.codgeo) == str(city_res.codgeo):
+                    city_res.scorer_pitch = sanitize_llm_markdown(p.pitch)
+                    break
+            results_objs.append(city_res)
+        
+        # Determine Current Geo (Reference)
+        # We search if the current_geo is already in the list or if we need to fetch it
+        # Actually in compute_top_cities tool, it often returns the current city first or in the list
+        current_geo = results_objs[0] # Fallback
+        # Check if hash is available
+        search_hash = compute_criteria_hash(state.search_criteria)
+        search_results = SearchResultsData(
+            search_hash=search_hash,
+            results=results_objs,
+            current_geo=current_geo, # Scorer tool should probably return this explicitly
+            global_pitch=sanitize_llm_markdown(result.output.response)
+        )
+
     return {
         "messages": [{"role": "assistant", "content": final_content}],
-        "top_cities": top_cities,
+        "search_results": search_results,
         "criteria_hash": compute_criteria_hash(state.search_criteria),
-        "scoring_results": {"scorer": result.output.model_dump()}, # Now it contains response and pitches_per_city 
 
         "next_node": END,
         "usage": capture_usage(result, "scorer", mod_id)
@@ -374,7 +386,15 @@ async def scout_node(state: ODISGraphState, config: RunnableConfig):
     logger.info(f"✅ [SCOUT] Node finished for {focus}.")
     
     return {
-        "commune_artifacts": {focus: {h: {"scout": f"### Recherches effectuees\n{result.output.searched}\n\n### Resultats\n{result.output.result}"}}},
+        "search_results": {
+            "results": [
+                {
+                    "codgeo": state.focus_city.codgeo if state.focus_city and state.focus_city.codgeo else "",
+                    "name": state.focus_city.name if state.focus_city else "",
+                    "expert_analysis": {"scout": f"### Recherches effectuees\n{result.output.searched}\n\n### Resultats\n{result.output.result}"}
+                }
+            ]
+        },
         "criteria_hash": h,
         "usage": capture_usage(result, "scout", mod_id)
     }
@@ -409,7 +429,15 @@ async def web_node(state: ODISGraphState, config: RunnableConfig):
     logger.info(f"✅ [WEB] Node finished for {focus}.")
     
     return {
-        "commune_artifacts": {focus: {h: {"web": f"### Recherches effectuees\n{result.output.searched}\n\n### Resultats\n{result.output.result}"}}},
+        "search_results": {
+            "results": [
+                {
+                    "codgeo": state.focus_city.codgeo if state.focus_city and state.focus_city.codgeo else "",
+                    "name": state.focus_city.name if state.focus_city else "",
+                    "expert_analysis": {"web": f"### Recherches effectuees\n{result.output.searched}\n\n### Resultats\n{result.output.result}"}
+                }
+            ]
+        },
         "criteria_hash": h,
         "usage": capture_usage(result, "web", mod_id)
     }
@@ -444,7 +472,15 @@ async def job_hunter_node(state: ODISGraphState, config: RunnableConfig):
     logger.info(f"✅ [JOB_HUNTER] Node finished for {focus}.")
     
     return {
-        "commune_artifacts": {focus: {h: {"job_hunter": f"### Recherches effectuees\n{result.output.searched}\n\n### Resultats\n{result.output.result}"}}},
+        "search_results": {
+            "results": [
+                {
+                    "codgeo": state.focus_city.codgeo if state.focus_city and state.focus_city.codgeo else "",
+                    "name": state.focus_city.name if state.focus_city else "",
+                    "expert_analysis": {"job_hunter": f"### Recherches effectuees\n{result.output.searched}\n\n### Resultats\n{result.output.result}"}
+                }
+            ]
+        },
         "criteria_hash": h,
         "usage": capture_usage(result, "job_hunter", mod_id)
     }
