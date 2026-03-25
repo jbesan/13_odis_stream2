@@ -33,7 +33,8 @@ def test_main_logic_unauthenticated():
          patch('utils.auth.st.form'), \
          patch('utils.auth.st.subheader'), \
          patch('utils.auth.st.text_input'), \
-         patch('utils.auth.st.form_submit_button', return_value=False):
+         patch('utils.auth.st.form_submit_button', return_value=False), \
+         patch('utils.auth.os.environ', {"K_SERVICE": "test"}):
         
         # In main.py: if not auth.check_password(): st.stop()
         # If check_password returns False, it would call st.stop()

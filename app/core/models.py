@@ -62,6 +62,7 @@ class SearchCriterias(BaseModel):
     poids_sante: float = Field(0.0, description="Weight for health criteria")
 
     active_criteria: Optional[Set[str]] = Field(None, description="Set of active criteria computed by the engine")
+    active_categories: List[str] = Field(default_factory=list, description="List of categories with active criteria")
 
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True, revalidate_instances='never')
 
@@ -179,11 +180,12 @@ class CommuneResult(BaseModel):
     codgeo: str = Field(description="Code INSEE (ex: '75101')")
     name: str = Field(description="Nom de la commune")
     population: int = Field(description="Population totale lissée")
-    bassin_de_vie: str = Field(description="Nom du bassin de vie d'appartenance")
+    codgeo_bdv: str = Field(default="", description="Code du bassin de vie d'appartenance")
+    name_bdv: str = Field(default="", description="Nom du bassin de vie d'appartenance")
     
-    # Geographic coordinates (for maps)
-    lat: float = Field(0.0)
-    lon: float = Field(0.0)
+    # Geographic data (for maps)
+    centroid: Optional[Any] = Field(None, exclude=True, description="Centroid Point in 4326")
+    geometry: Optional[Any] = Field(None, exclude=True, description="Geometry object (Polygon/MultiPolygon)")
     
     # Global score
     global_score: float = Field(description="Score pondéré global (0-1.0)")
@@ -205,8 +207,8 @@ class SearchResultsData(BaseModel):
     """Main payload container for search results."""
     search_hash: str = Field(description="MD5 hash of the criteria used")
     top_communes: List[CommuneResult] = Field(default_factory=list, description="Top recommended communes")
-    current_geo: Optional[CommuneResult] = Field(None, description="Reference data for the starting point")
-
+    current_geo: CommuneResult = Field(None, description="Reference data for the starting point")
+    
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 
 

@@ -11,6 +11,7 @@ import folium as flm
 from utils import data_loader
 import geopandas as gpd
 import pandas as pd
+from shapely.geometry import mapping
 import logging
 import gc
 import warnings
@@ -174,43 +175,15 @@ def run_search():
     
     # --- Unified Telemetry Logging (BigQuery) ---
     try:
-        # Extract criteria vs weights from the SearchCriterias
-        criteria_keys = ['commune_actuelle', 'loc_search_area', 'situation_famille', 'nb_enfants', 'besoin_emploi', 'besoin_sante', 'inc_services_add_selection']
-        full_config = config.model_dump()
-        
-        search_criteria = {k: full_config.get(k) for k in criteria_keys if k in full_config}
-        weights = {k: v for k, v in full_config.items() if k.startswith('poids_')}
-        
-        top_5_results = []
-        top_5_breakdown = {}
-        top_cities_full = []
-        for commune in search_results.top_communes:
-            idx = commune.codgeo
-            top_5_breakdown[str(idx)] = {
-                "libgeo": commune.name,
-                "scores": {cat: [s.model_dump() for s in items] for cat, items in commune.scores.items()}
-            }
-            top_5_results.append(
-                {"codgeo": str(idx), "libgeo": commune.name, "score": commune.global_score} 
-            )
-            
-            # For Background AI Agent
-            top_cities_full.append({
-                "codgeo": str(idx),
-                "libgeo": commune.name,
-                "weighted_score": commune.global_score,
-                "details": commune.model_dump()
-            })
-        
-        telemetry.log_search_complete(
-            criteria=search_criteria,
-            weights=weights,
-            results=top_5_results,
-            breakdown=top_5_breakdown,
-            source_flow='classic'
-        )
+        telemetry.log_search_complete(config, search_results, source_flow='classic')
     except Exception as tel_e:
         logging.warning(f"Failed to log search telemetry: {tel_e}")
+        
+    # Prepare cities for background AI agents
+    top_cities_full = [
+        {"codgeo": str(c.codgeo), "libgeo": c.name, "weighted_score": c.global_score, "details": c.model_dump(exclude={'geometry', 'centroid'})} 
+        for c in search_results.top_communes
+    ]
         
     h = search_results.search_hash
     
@@ -218,26 +191,29 @@ def run_search():
     if odis_get_bg_result(h) is None:
         launch_background_scorer(config, {}, h, top_cities=top_cities_full)
     
-    st.session_state['active_search_hash'] = h
-
     # Calculate center for map
     if not processed_gdf.empty:
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=DeprecationWarning)
-            projected_centroids = processed_gdf.to_crs('EPSG:2154').centroid
-            avg_centroid_projected = projected_centroids.union_all().centroid
+            # Use centroid of unioned polygons in projected CRS
+            projected_union = processed_gdf.to_crs(cfg.PROJECTED_CRS).union_all()
+            avg_centroid = projected_union.centroid
         
-        center_x, center_y = utils.project_point(avg_centroid_projected.x, avg_centroid_projected.y, from_crs='EPSG:2154', to_crs='EPSG:4326')
-        final_center_y, final_center_x = center_y, center_x
+        # Project back to 4326 for Folium
+        lon, lat = utils.project_point(avg_centroid.x, avg_centroid.y, from_crs=cfg.PROJECTED_CRS, to_crs='EPSG:4326')
+        final_center_y, final_center_x = lat, lon
     else:
         # Fallback to current commune
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=DeprecationWarning)
-            start_commune_projected = start_commune.to_crs('EPSG:2154')
-            start_centroid = start_commune_projected.centroid.iloc[0]
-            
-        center_x, center_y = utils.project_point(start_centroid.x, start_centroid.y, from_crs='EPSG:2154', to_crs='EPSG:4326')
-        final_center_x, final_center_y = center_x, center_y
+            # start_commune is already a GeoDataFrame from data_loader
+            start_geom = start_commune.geometry.iloc[0]
+            if start_geom.x > 180: # Meters
+                 start_lon, start_lat = utils.project_point(start_geom.centroid.x, start_geom.centroid.y, from_crs=cfg.PROJECTED_CRS, to_crs='EPSG:4326')
+            else:
+                 start_lon, start_lat = start_geom.centroid.x, start_geom.centroid.y
+                 
+        final_center_y, final_center_x = start_lat, start_lon
 
     st.session_state['selected_geo'] = st.session_state.app_data['odis'].loc[[config.commune_actuelle.code]].copy()
     st.session_state['center'] = [final_center_y, final_center_x]
@@ -350,21 +326,8 @@ with st.container(border=False, key='top_menu'):
 col_map, col_results = st.columns([3, 2])
 
 with col_results:
-    if st.session_state.get('processed_gdf') is not None:
-        # Filter out current city from the recommended list (Top 5)
-        config = st.session_state.get('config')
-        current_codgeo = config.commune_actuelle.code if config and hasattr(config.commune_actuelle, 'code') else (config.commune_actuelle if config else None)
-        
-        # Create a display-only GDF excluding the current city
-        if current_codgeo and current_codgeo in st.session_state.processed_gdf.index:
-            display_gdf = st.session_state.processed_gdf.drop(index=current_codgeo)
-        else:
-            display_gdf = st.session_state.processed_gdf
-
-        if display_gdf.empty:
-            st.warning("Aucun résultat ne correspond à vos critères de recherche.")
-        else:
-            ui.display_results_list(display_gdf=display_gdf)
+    if st.session_state.get('search_results') is not None:
+        ui.display_results_list() # No args needed, it uses session_state.search_results internally
 
 with col_map:
     if st.session_state.get('processed_gdf') is not None:
@@ -381,9 +344,21 @@ with col_map:
         # Initialize map
         m = maps.create_base_map(st.session_state["center"], st.session_state["zoom"])
         
-        # Base layer with all scored communes
+        # Base layer with all scored communes (we still need the full GDF for the background layer)
         if not st.session_state.processed_gdf.empty:
             st.session_state['fg_dict_ref']['Scores'], colormap = maps.build_scores_layer(st.session_state['processed_gdf'])
+        
+        # 1. ADD BLUE LAYER FOR CURRENT COMMUNE (from SearchResultsData.current_geo)
+        search_results: SearchResultsData = st.session_state.get('search_results')
+        if search_results and search_results.current_geo and search_results.current_geo.geometry:
+            fg_current = flm.FeatureGroup(name="Ma position")
+            poly_4326 = gpd.GeoSeries([search_results.current_geo.geometry], crs=cfg.PROJECTED_CRS).to_crs("EPSG:4326").iloc[0]
+            flm.GeoJson(
+                mapping(poly_4326),
+                style_function=lambda x: {"fillColor": 'blue', "fillOpacity": 0.4, "stroke": True, "color": "blue", "weight": 2},
+                tooltip=f"Actuel: {search_results.current_geo.name}"
+            ).add_to(fg_current)
+            fg_current.add_to(m)
 
         fgs_to_show = {'Scores'}
         legend_items = []
@@ -416,8 +391,8 @@ with col_map:
         show_sante = "🏥 sante" in selected_layers
         show_inclusion = "🤝 Inclusion" in selected_layers
 
-        if config:
-            target_codgeos = set(st.session_state.get('unaggregated_gdf', gpd.GeoDataFrame()).index.tolist())
+        if config and search_results:
+            target_codgeos = {str(c.codgeo) for c in search_results.top_communes}
 
             if show_ecoles:
                 st.session_state.fg_dict_ref['fg_ecoles'] = maps.build_ecoles_layer(st.session_state.app_data['pois'], target_codgeos, config)
@@ -433,19 +408,41 @@ with col_map:
                 legend_items.append({'color': 'purple', 'icon': 'heart', 'text': 'Inclusion'})
         is_highlighted, highlighted_index = st.session_state.highlighted_result
         
-        if show_top_5:
-            # Rebuild Top 5 layers on the fly to avoid Folium object exhaustion in session state
-            for i, (idx, row) in enumerate(st.session_state.processed_gdf.head(5).iterrows()):
-                name = f'Top{i+1}'
-                st.session_state['fg_dict_ref'][name] = maps.build_top_result_layer(row, i)
-                fgs_to_show.add(name)
+        if show_top_5 and search_results:
+            # Rebuild Top 5 layers on the fly from SearchResultsData.top_communes
+            for i, commune in enumerate(search_results.top_communes):
+                if commune.geometry:
+                    name = f'Top{i+1}'
+                    # Re-use existing map builder by creating a dummy Series if needed, or refine map builder
+                    # For now, let's create a minimal Series to satisfy build_top_result_layer
+                    row_data = pd.Series({
+                        'polygon': commune.geometry,
+                        'libgeo': commune.name
+                    })
+                    st.session_state['fg_dict_ref'][name] = maps.build_top_result_layer(row_data, i)
+                    fgs_to_show.add(name)
             st.session_state["zoom"] = None
-        elif is_highlighted:
+        elif is_highlighted and search_results:
             # Rebuild ONLY the highlighted layer
-            row = st.session_state.processed_gdf.iloc[highlighted_index]
-            name = f'Top{highlighted_index + 1}'
-            st.session_state['fg_dict_ref'][name] = maps.build_top_result_layer(row, highlighted_index)
-            fgs_to_show.add(name)
+            commune = search_results.top_communes[highlighted_index]
+            if commune.geometry:
+                name = f'Top{highlighted_index + 1}'
+                row_data = pd.Series({
+                    'polygon': commune.geometry,
+                    'libgeo': commune.name
+                })
+                st.session_state['fg_dict_ref'][name] = maps.build_top_result_layer(row_data, highlighted_index)
+                fgs_to_show.add(name)
+                # No automatic re-centering as per user request
+                
+            if search_results.current_geo and search_results.current_geo.geometry:
+                row_actuel = pd.Series({
+                    'polygon': search_results.current_geo.geometry,
+                    'libgeo': search_results.current_geo.name
+                })
+                st.session_state['fg_dict_ref']['current_loc'] = maps.build_current_loc_layer(row_actuel)
+                fgs_to_show.add('current_loc')
+                legend_items.append({'color': 'blue', 'icon': 'home', 'text': 'Ma position'})
 
         st.session_state.fgs_to_show = fgs_to_show
 
@@ -489,7 +486,8 @@ with col_map:
         st.markdown('<style>.stCustomComponentV1 {border-radius:10px}</style>', unsafe_allow_html=True)
 
 # To debug criteria scoring
-# try:
-#     st.dataframe(st.session_state.processed_gdf, column_order=sorted(st.session_state.processed_gdf.columns))
-# except:
-#     pass
+try:
+    st.dataframe(st.session_state.processed_gdf, column_order=sorted(st.session_state.processed_gdf.columns))
+    st.write(search_results)
+except:
+    pass

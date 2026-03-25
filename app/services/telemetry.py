@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import streamlit as st
 from google.cloud import bigquery
 import os
+from core.models import SearchCriterias, SearchResultsData
 
 class JsonFormatter(logging.Formatter):
     """Formatter that outputs JSON strings for Google Cloud Logging."""
@@ -54,18 +55,39 @@ def log_event(event_name: str, payload: dict = None):
     
     _telemetry_logger.info(f"Telemetry Technical: {event_name}", extra={"json_payload": event_data})
 
-def log_search_complete(criteria: dict, weights: dict, results: list, breakdown: dict = None, source_flow: str = 'classic'):
+def log_search_complete(config: SearchCriterias, search_results: SearchResultsData, source_flow: str = 'classic'):
     """
     Consolidated logging of a search event directly to BigQuery search_events table.
     """
     if not os.getenv("GOOGLE_CLOUD_PROJECT") and not os.getenv("GCP_PROJECT"):
-        # Silently skip if no GCP project (local dev without config)
         return
 
     try:
         interaction_id = get_interaction_id()
         username = st.session_state.get('username', 'unknown')
         
+        # 1. Prepare Criteria & Weights
+        full_config = config.model_dump()
+        criteria_keys = ['commune_actuelle', 'loc_search_area', 'situation_famille', 'nb_enfants', 'besoin_emploi', 'besoin_sante', 'inc_services_add_selection']
+        search_criteria = {k: full_config.get(k) for k in criteria_keys if k in full_config}
+        weights = {k: v for k, v in full_config.items() if k.startswith('poids_')}
+        
+        # 2. Prepare Results Summary
+        top_5_results = []
+        top_5_breakdown = {}
+        for commune in search_results.top_communes:
+            idx = str(commune.codgeo)
+            top_5_results.append({
+                "codgeo": idx,
+                "libgeo": commune.name,
+                "score": commune.global_score
+            })
+            top_5_breakdown[idx] = {
+                "libgeo": commune.name,
+                "scores": {cat: [s.model_dump() for s in items] for cat, items in commune.scores.items()}
+            }
+        
+        # 3. BigQuery Insert
         client = bigquery.Client()
         table_ref = f"{client.project}.odis_logs.search_events"
         
@@ -74,10 +96,10 @@ def log_search_complete(criteria: dict, weights: dict, results: list, breakdown:
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "username": username,
             "source_flow": source_flow,
-            "search_criteria": json.dumps(criteria, default=str, ensure_ascii=False),
+            "search_criteria": json.dumps(search_criteria, default=str, ensure_ascii=False),
             "weights": json.dumps(weights, default=str, ensure_ascii=False),
-            "top_results": json.dumps(results, default=str, ensure_ascii=False),
-            "detailed_breakdown": json.dumps(breakdown or {}, default=str, ensure_ascii=False)
+            "top_results": json.dumps(top_5_results, default=str, ensure_ascii=False),
+            "detailed_breakdown": json.dumps(top_5_breakdown, default=str, ensure_ascii=False)
         }
         
         errors = client.insert_rows_json(table_ref, [row])

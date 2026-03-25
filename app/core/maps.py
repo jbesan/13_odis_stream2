@@ -119,7 +119,7 @@ def build_top_result_layer(row: pd.Series, rank: int) -> flm.FeatureGroup:
     # Main commune outline
     # Project to 4326
     with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*array with ndim > 0 to a scalar is deprecated.*")
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
         poly_4326 = gpd.GeoSeries([row.polygon], crs=cfg.PROJECTED_CRS).to_crs("EPSG:4326").iloc[0]
     
     flm.GeoJson(
@@ -128,12 +128,9 @@ def build_top_result_layer(row: pd.Series, rank: int) -> flm.FeatureGroup:
     ).add_to(fg)
 
 
-
     # Add rank marker at the centroid of the main polygon
     # Project centroid to 4326 using scalar-safe helper
     cx, cy = utils.project_point(row.polygon.centroid.x, row.polygon.centroid.y, from_crs=cfg.PROJECTED_CRS, to_crs='EPSG:4326')
-    
-    logging.info(f"📍 [MAP] Building Top {rank+1} for {row.get('libgeo', '???')}. Centroid: {cy}, {cx}")
     
     flm.Marker(
         location=[cy, cx],
@@ -144,6 +141,21 @@ def build_top_result_layer(row: pd.Series, rank: int) -> flm.FeatureGroup:
         )
     ).add_to(fg)
         
+    return fg
+
+def build_current_loc_layer(row: pd.Series) -> flm.FeatureGroup:
+    """Builds a thick blue outline for the current location."""
+    fg = flm.FeatureGroup(name="Ma position")
+    
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
+        poly_4326 = gpd.GeoSeries([row.polygon], crs=cfg.PROJECTED_CRS).to_crs("EPSG:4326").iloc[0]
+            
+    flm.GeoJson(
+        mapping(poly_4326),
+        style_function=lambda x: {"color": "#1f77b4", "fillOpacity": 0.1, "weight": 4, "dashArray": "5, 5"}
+    ).add_to(fg)
+    
     return fg
 
 def build_legend(items_list: List[Dict[str, str]]) -> str:

@@ -85,8 +85,8 @@ def test_format_city_details_consistency(scoring_engine, base_df, base_config):
     # 2. Format details
     details = scoring_engine.format_city_details(row, config)
     
-    # Check Pruning in details['scores']
-    all_scores = [item['score_id'] for cat_list in details['scores'].values() for item in cat_list]
+    # Check Pruning in details.scores
+    all_scores = [item.score_id for cat_list in details.scores.values() for item in cat_list]
     
     # Active
     assert 'edu_classes_ferm_scaled' in all_scores
@@ -102,7 +102,7 @@ def test_format_city_details_consistency(scoring_engine, base_df, base_config):
     assert 'log_soc_inoc_scaled' not in all_scores # Pruned if logement='Location' (not social)
     
     # Check Relative Weights
-    total_rel_weight = sum(item['relative_weight'] for cat_list in details['scores'].values() for item in cat_list)
+    total_rel_weight = sum(item.relative_weight for cat_list in details.scores.values() for item in cat_list)
     # Due to rounding, it should be close to 100
     assert 99.0 <= total_rel_weight <= 130.0
     
@@ -110,9 +110,9 @@ def test_format_city_details_consistency(scoring_engine, base_df, base_config):
     # Find a score with a display_factor. In sample_scores_cat, all are 1.0.
     # Let's check log_vac_scaled (metric: log_vac_ratio)
     # In sample_data, Bordeaux has log_vac = 6
-    vac_item = next(item for item in details['scores']['logement'] if item['score_id'] == 'log_vac_scaled')
+    vac_item = next(item for item in details.scores['logement'] if item.score_id == 'log_vac_scaled')
     # Since d_factor is 1.0 in mock, it should be "6"
-    assert vac_item['valeur_kpi'] == 6.0
+    assert vac_item.valeur_kpi == 6.0
 
 def test_format_city_details_no_config(scoring_engine, base_df):
     """Verifies that format_city_details works without config (defaulting to include many things)."""
@@ -120,5 +120,5 @@ def test_format_city_details_no_config(scoring_engine, base_df):
     details = scoring_engine.format_city_details(row, None)
     
     # Without config, it should include most things present in the row
-    all_scores = [item['score_id'] for cat_list in details['scores'].values() for item in cat_list]
+    all_scores = [item.score_id for cat_list in details.scores.values() for item in cat_list]
     assert len(all_scores) > 0

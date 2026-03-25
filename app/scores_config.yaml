@@ -387,13 +387,13 @@ scores:
     bdv_factor: 0.5
     computation: precomputed
     display:
-      name: Structure de santé recherchée
-      strong_point_text: L'établissement de santé recherché est présent
+      name: Structure de sante recherchée
+      strong_point_text: L'établissement de sante recherché est présent
       high_value_adjective: présent
       show: true
       unit: ""
       display_factor: 100
-      tooltip: Présence de la structure de santé sélectionnée
+      tooltip: Présence de la structure de sante sélectionnée
     weight: 1.0
     min_bound: 0.0
     max_bound: 1.0

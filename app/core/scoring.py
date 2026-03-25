@@ -13,6 +13,7 @@ from core.models import (
     EmploiDetails, LogementDetails, EducationDetails, SanteDetails, 
     InclusionDetails, MobiliteDetails
 )
+from shapely.geometry import Point
 import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -509,8 +510,10 @@ class ScoringEngine:
             
             cat = score_row['cat']
             norm_cat = cat
-            if norm_cat == 'mobilité':
+            if norm_cat in ['mobilité', 'mobilite']:
                 norm_cat = 'mobilite'
+            elif norm_cat in ['santé', 'sante']:
+                norm_cat = 'sante'
             active_norm_cats.add(norm_cat)
             
             w_crit = float(score_row['weight'])
@@ -800,22 +803,51 @@ class ScoringEngine:
             asso_city = self.associations_data[self.associations_data['codgeo'] == codgeo_str]
             refugee_assos = asso_city[asso_city['id_waldec'].astype(str).str.startswith('019025', na=False)]
             incl_data['refugee_asso_count'] = int(refugee_assos['count'].sum()) if 'count' in refugee_assos.columns else len(refugee_assos)
-        # 8. Enrich results with thematic category scores for the radar chart
-        emploi_data['cat_score'] = float(row.get('emploi_cat_score', 0.0))
-        logement_data['cat_score'] = float(row.get('logement_cat_score', 0.0))
-        edu_data['cat_score'] = float(row.get('education_cat_score', 0.0))
-        sante_data['cat_score'] = float(row.get('sante_cat_score', 0.0))
-        incl_data['cat_score'] = float(row.get('inclusion_cat_score', 0.0))
-        mob_data['cat_score'] = float(row.get('mobilite_cat_score', row.get('mobilité_cat_score', 0.0)))
+        # 8. Calculate dynamic category scores (weighted average of active criteria)
+        # This ensures the radar chart is populated even for reference cities not in the search pool.
+        cat_final_scores = {}
+        for norm_cat in active_norm_cats:
+            cat_items = [it for it in displayed_items if it['norm_cat'] == norm_cat]
+            if cat_items and cat_internal_weights.get(norm_cat, 0) > 0:
+                cat_final_scores[norm_cat] = sum(it['val_scaled'] * it['w_crit'] for it in cat_items) / cat_internal_weights[norm_cat]
+            else:
+                cat_final_scores[norm_cat] = 0.0
+
+        emploi_data['cat_score'] = float(cat_final_scores.get('emploi', 0.0))
+        logement_data['cat_score'] = float(cat_final_scores.get('logement', 0.0))
+        edu_data['cat_score'] = float(cat_final_scores.get('education', 0.0))
+        sante_data['cat_score'] = float(cat_final_scores.get('sante', 0.0))
+        incl_data['cat_score'] = float(cat_final_scores.get('inclusion', 0.0))
+        mob_data['cat_score'] = float(cat_final_scores.get('mobilite', 0.0))
+
+        # Extract coordinates and centroid point (in 4326)
+        # The engine ensures a 'centroid' column exists in 2154
+        c_geom = row.get('centroid') if 'centroid' in row else (row.geometry.centroid if hasattr(row, 'geometry') else None)
+        
+        lat_val, lon_val = 0.0, 0.0
+        c_point = None
+        if c_geom:
+            # France bounds in 2154 are meters (>1000), 4326 are degrees (<180)
+            if c_geom.x > 1000 or c_geom.y > 1000:
+                lon_val, lat_val = project_point(c_geom.x, c_geom.y, from_crs="EPSG:2154", to_crs="EPSG:4326")
+            else:
+                lon_val, lat_val = c_geom.x, c_geom.y
+            
+            from shapely.geometry import Point
+            c_point = Point(lon_val, lat_val)
+
+        # Main geometry (cached in model for map rendering)
+        poly = row.get('polygon') if 'polygon' in row else (row.geometry if hasattr(row, 'geometry') else None)
 
         return CommuneResult(
-            codgeo=codgeo_str,
-            name=identity["name"],
-            population=identity["population"],
-            bassin_de_vie=identity["bassin_de_vie"],
-            lat=lat,
-            lon=lon,
-            global_score=identity["global_score"],
+            codgeo=str(row.name),
+            name=row.get('libgeo', 'Inconnu'),
+            population=int(row.get('population', 0)),
+            codgeo_bdv=str(row.get('bassin_de_vie', 'Inconnu')),
+            name_bdv=row.get('libelle_bassin_de_vie', 'Inconnu'),
+            centroid=c_point,
+            geometry=poly,
+            global_score=float(row.get('weighted_score', 0.0)),
             scores=structured_scores,
             emploi=EmploiDetails(**emploi_data),
             logement=LogementDetails(**logement_data),
@@ -827,18 +859,67 @@ class ScoringEngine:
 
     def create_search_results(self, processed_gdf: gpd.GeoDataFrame, config: SearchCriterias) -> SearchResultsData:
         """Helper to create a SearchResultsData object from the scoring results."""
-        top_5 = processed_gdf.head(5)
-        top_communes = []
-        for _, row in top_5.iterrows():
-            top_communes.append(self.format_city_details(row, config))
-            
+        
+        # 1. Identify the current city
+        c_code_raw = config.commune_actuelle
+        c_code = c_code_raw.code if hasattr(c_code_raw, 'code') else c_code_raw
+        
+        # 2. Extract current location data for comparison
         current_geo = None
-        if self.current_city_scored_row is not None:
+        
+        # Try to get it from the actively scored dataframe first (best case: fully scored)
+        if c_code in processed_gdf.index:
+            try:
+                # Need to convert Series to single-row DataFrame if it's the only way, but format_city_details takes a Series
+                current_row = processed_gdf.loc[c_code]
+                if isinstance(current_row, pd.DataFrame):
+                    current_row = current_row.iloc[0]
+                current_geo = self.format_city_details(current_row, config)
+            except Exception as e:
+                logger.warning(f"Failed to format scored current city {c_code}: {e}")
+        
+        # Fallback to base data if it was filtered out early (e.g. by region/dept filter)
+        if current_geo is None and self.current_city_scored_row is not None:
              current_geo = self.format_city_details(self.current_city_scored_row, config)
+        elif current_geo is None and c_code in self.df_all_communes.index:
+             # Basic static data without search context scores
+             current_geo = self.format_city_details(self.df_all_communes.loc[c_code], config)
+             
+        # 3. Filter out current city and its PLM family from the results list
+        display_gdf = processed_gdf.copy()
+        
+        # Drop the current code itself
+        if c_code in display_gdf.index:
+            display_gdf = display_gdf.drop(c_code)
+            
+        # Detect PLM family (either parent or arrondissement)
+        plm_prefix = None
+        if c_code in cfg.PLM_MAPPING:
+            plm_prefix = cfg.PLM_MAPPING[c_code]
         else:
-             c_code = config.commune_actuelle.code if hasattr(config.commune_actuelle, 'code') else config.commune_actuelle
-             if c_code in self.df_all_communes.index:
-                 current_geo = self.format_city_details(self.df_all_communes.loc[c_code], config)
+            # Check if c_code is an arrondissement (e.g. '13201' starts with '132')
+            for parent_code, prefix in cfg.PLM_MAPPING.items():
+                if str(c_code).startswith(prefix):
+                    plm_prefix = prefix
+                    # Also explicitly drop the parent code if it's in the results
+                    if parent_code in display_gdf.index:
+                        display_gdf = display_gdf.drop(parent_code)
+                    break
+        
+        if plm_prefix:
+            # Drop all members of this PLM family (starts with prefix)
+            display_gdf = display_gdf[~display_gdf.index.astype(str).str.startswith(plm_prefix)]
+
+        # 4. Generate Top 5 Communes
+        top_5 = display_gdf.head(5)
+        top_communes = []
+        for idx, row in top_5.iterrows():
+            # Add safety bounds
+            try:
+                details = self.format_city_details(row, config)
+                top_communes.append(details)
+            except Exception as e:
+                logger.error(f"Error formatting details for city {idx}: {e}")
             
         return SearchResultsData(
             search_hash=config.compute_hash(),
@@ -859,6 +940,18 @@ class ScoringEngine:
         logger.debug(f"⚙️ [ENGINE] Config: {config}")
         if not config.active_criteria:
             config.active_criteria = self._get_active_criteria(config)
+            
+        # Derive active categories from scores_cat mapping
+        if config.active_criteria:
+            active_mask = self.scores_cat['score'].isin(config.active_criteria)
+            cats = self.scores_cat[active_mask]['cat'].unique()
+            normalized = set()
+            for c in cats:
+                nc = str(c).lower()
+                if nc in ['mobilité', 'mobilite']: nc = 'mobilite'
+                elif nc in ['santé', 'sante']: nc = 'sante'
+                normalized.add(nc)
+            config.active_categories = sorted(list(normalized))
         
         c_code = config.commune_actuelle.code if hasattr(config.commune_actuelle, 'code') else config.commune_actuelle
         
@@ -883,10 +976,21 @@ class ScoringEngine:
             loc_code=loc_code
         )
         
+        # 🧪 CRITICAL: Always include the current commune in the scoring pool
+        # This ensures it gets scored with the exact same logic (normalization bounds, active criteria)
+        # as the candidates, even if it falls outside the geographic filter.
+        if c_code in self.df_all_communes.index and c_code not in communes_to_score.index:
+            communes_to_score = pd.concat([communes_to_score, self.df_all_communes.loc[[c_code]]])
+        
         results = self._compute_scores(communes_to_score, config)
 
         if log_prefix:
-            log_search_results(config, results, results, self.scores_cat, prefix=log_prefix)
+            # We need SearchResultsData here, but ScoringEngine.run returns a DataFrame.
+            # Best to let create_search_results handle it or pass it.
+            # For now, let's just make sure we don't break the log_prefix if used.
+            # Actually, ScoringEngine.run is often used by the BG agent, let's keep it clean.
+            search_results = self.create_search_results(results, config)
+            log_search_results(config, search_results, prefix=log_prefix)
 
         return results
 
@@ -921,10 +1025,7 @@ class ScoringEngine:
         # logger.info(f"⚙️ [ENGINE] Computing final weighted scores...")
         odis_exploded['weighted_score'] = self._compute_weighted_score(odis_exploded, config)
 
-        # Exclusion
-        c_code = config.commune_actuelle.code if hasattr(config.commune_actuelle, 'code') else config.commune_actuelle
-        if c_code in odis_exploded.index:
-            odis_exploded = odis_exploded.drop(c_code)
+        # logger.info(f"⚙️ [ENGINE] Final results sorted.")
         
         # if c_code in cfg.PLM_MAPPING:
         #     prefix = cfg.PLM_MAPPING[c_code]

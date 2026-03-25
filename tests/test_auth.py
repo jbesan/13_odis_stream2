@@ -42,7 +42,8 @@ def test_check_password_flow_unauthenticated():
          patch('utils.auth.st.subheader'), \
          patch('utils.auth.st.text_input'), \
          patch('utils.auth.st.form_submit_button') as mock_submit, \
-         patch('utils.auth.st.rerun'): 
+         patch('utils.auth.st.rerun'), \
+         patch('utils.auth.os.environ', {"K_SERVICE": "test"}): 
         
         mock_verify.return_value = False
         mock_submit.return_value = False

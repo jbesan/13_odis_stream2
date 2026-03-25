@@ -528,8 +528,8 @@ class TestMCPScenario:
         assert not processed_gdf.empty
         assert 'weighted_score' in processed_gdf.columns
         
-        # Expect Bordeaux (33063) to be EXCLUDED as it is the current location
-        assert '33063' not in processed_gdf.index, "Current commune should be excluded"
+        # Expect Bordeaux (33063) to be INCLUDED for comparison as per engine's latest requirement
+        assert '33063' in processed_gdf.index, "Current commune should be included for comparison"
         
         # Expect Pau (64445) to be present (it's within distance ~170km if distance is wide enough, 
         # but config says 50km. Wait, Pau is > 50km from Bordeaux.

@@ -7,7 +7,7 @@ from datetime import datetime
 from dataclasses import asdict
 from typing import Optional, Dict, Any, List
 import pandas as pd
-from core.models import SearchCriterias
+from core.models import SearchCriterias, SearchResultsData, CommuneResult
 
 logger = logging.getLogger(__name__)
 
@@ -114,31 +114,20 @@ setup_logging()
 
 def log_search_results(
     config: SearchCriterias, 
-    results_df: pd.DataFrame, 
-    unaggregated_df: Optional[pd.DataFrame] = None,
-    scores_cat: Optional[pd.DataFrame] = None,
+    search_results: SearchResultsData,
     prefix: str = "search_results"
 ) -> None:
     """
-    Logs the search configuration and the top 5 results using the standard logger.
+    Logs the search configuration and the top results using the standard logger.
     This logging is skipped if the application is detected to be running on Cloud Run.
     """
-    # Skip logging if running on Cloud Run (identified by K_SERVICE environment variable)
+    # Skip logging if running on Cloud Run
     if os.environ.get('K_SERVICE'):
         return
 
     # --- Markdown Generation ---
-    search_params = config.model_dump() if hasattr(config, 'model_dump') else asdict(config)
-    
-    # Create a mapping from score column to category if scores_cat is provided
-    score_to_cat = {}
-    if scores_cat is not None:
-        # Ensure we have the necessary columns
-        if 'score' in scores_cat.columns and 'cat' in scores_cat.columns:
-            score_to_cat = dict(zip(scores_cat['score'], scores_cat['cat']))
-
+    search_params = config.model_dump()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    # Log directory is now in app/.logs (one level up from utils)
     log_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.logs'))
     os.makedirs(log_dir, exist_ok=True)
     log_file = os.path.join(log_dir, f"{prefix}_{timestamp}.md")
@@ -149,132 +138,79 @@ def log_search_results(
 
     # 1. Configuration Section
     md_lines.append("## Configuration")
-    
-    # Search Criteria
     md_lines.append("### Search Criteria")
     md_lines.append("| Parameter | Value |")
     md_lines.append("| :--- | :--- |")
-    for key, value in search_params.items():
-        if not key.startswith('poids_'):
-            # Format lists nicely
-            if isinstance(value, list):
-                val_str = ", ".join(map(str, value)) if value else "None"
-            else:
-                val_str = str(value)
-            md_lines.append(f"| {key} | {val_str} |")
-    # md_lines.append(f"| active_criteria | {', '.join(sorted(config.active_criteria)) if config.active_criteria else 'None'} |")
-    md_lines.append("")
-
+    
+    criteria_keys = ['commune_actuelle', 'loc_search_area', 'situation_famille', 'nb_enfants', 'besoin_emploi', 'besoin_sante']
+    for key in criteria_keys:
+        if key in search_params:
+            val = search_params[key]
+            # Handle SearchCriterias nested models if they exist
+            if hasattr(val, 'label'): val = val.label
+            elif isinstance(val, dict) and 'label' in val: val = val['label']
+            md_lines.append(f"| {key} | {val} |")
+    
     # Weights
+    md_lines.append("")
     md_lines.append("### Weights")
     md_lines.append("| Category | Weight |")
     md_lines.append("| :--- | :--- |")
-    
-    # Extract weights dynamically
     for key, value in search_params.items():
         if key.startswith('poids_'):
             category = key.replace('poids_', '').capitalize()
             md_lines.append(f"| {category} | {value} |")
     md_lines.append("")
 
-    # 2. Top 5 Results Table
-    md_lines.append("## Top 5 Results")
-    
-    if not results_df.empty:
-        # Determine columns for the summary table
-        cat_scores = [col for col in results_df.columns if col.endswith('_cat_score')]
-        headers = ["Rank", "Commune/Bassin", "Weighted Score"] + [c.replace('_cat_score', '').capitalize() for c in cat_scores]
+    # 2. Results Summary
+    md_lines.append("## Top Results")
+    if search_results.top_communes:
+        # Get active categories from the first result
+        first = search_results.top_communes[0]
+        cat_keys = sorted(first.scores.keys())
+        headers = ["Rank", "Commune", "Score"] + [k.capitalize() for k in cat_keys]
         
         md_lines.append("| " + " | ".join(headers) + " |")
         md_lines.append("| " + " | ".join([":---"] * len(headers)) + " |")
 
-        top_5_rows = results_df.head(5)
-
-        # Let's iterate with enumerate on the head
-        for i, (index, row) in enumerate(top_5_rows.iterrows()):
-            rank = i + 1
-            name = row.get('libgeo', index)
-            score = f"{row.get('weighted_score', 0):.2f}"
-            
-            row_vals = [str(rank), str(name), score]
-            for cat in cat_scores:
-                row_vals.append(f"{row.get(cat, 0):.2f}")
-            
+        for i, commune in enumerate(search_results.top_communes):
+            row_vals = [str(i + 1), commune.name, f"{commune.global_score:.2f}"]
+            # Calculate category averages from structured scores
+            for cat in cat_keys:
+                details = commune.scores.get(cat, [])
+                if details:
+                    avg_cat = sum(d.score_normalise for d in details) / len(details)
+                    row_vals.append(f"{avg_cat:.2f}")
+                else:
+                    row_vals.append("0.00")
             md_lines.append("| " + " | ".join(row_vals) + " |")
-        
-        md_lines.append("")
-
-        # 3. Detailed Breakdown
-        md_lines.append("## Detailed Breakdown")
-        
-        for i, (index, row) in enumerate(top_5_rows.iterrows()):
-            rank = i + 1
-            name = row.get('libgeo', index)
-            md_lines.append(f"### {rank}. {name}")
-            
-            # Re-use the logic to extract underlying details
-            # We need to do this again or reuse the logic. 
-            # Since we are rewriting the function, let's just do it here.
-            
-            target_codgeos = []
-            if 'communes' in row and isinstance(row['communes'], list):
-                target_codgeos = row['communes']
-            elif 'codgeo' in row:
-                target_codgeos = [row['codgeo']]
-                if row.get('binome') and row.get('codgeo_binome'):
-                    target_codgeos.append(row['codgeo_binome'])
-            else:
-                # Fallback to index if 'codgeo' column is not found (it's the index)
-                target_codgeos = [index]
-            
-            if unaggregated_df is not None:
-                for codgeo in target_codgeos:
-                    if codgeo in unaggregated_df.index:
-                        commune_data = unaggregated_df.loc[codgeo]
-                        c_name = commune_data.get('libgeo', codgeo)
-                        pop = int(commune_data.get('population', 0)) if pd.notna(commune_data.get('population')) else 0
-                        
-                        md_lines.append(f"#### {c_name} ({codgeo})")
-                        md_lines.append(f"* **Population**: {pop}")
-                        md_lines.append("* **Criteria Scores**:")
-                        
-                        # Extract and group scores
-                        criteria_by_cat: Dict[str, Dict[str, float]] = {}
-                        if score_to_cat:
-                            for score_col, category in score_to_cat.items():
-                                if score_col in commune_data:
-                                    if config.active_criteria and score_col not in config.active_criteria:
-                                        continue
-
-                                    val = commune_data[score_col]
-                                    try:
-                                        score_val = float(val) if pd.notna(val) else 0.0
-                                    except (ValueError, TypeError):
-                                        score_val = 0.0
-                                    # Always include the score, even if 0
-                                    if category not in criteria_by_cat:
-                                        criteria_by_cat[category] = {}
-                                    criteria_by_cat[category][score_col] = score_val
-                        else:
-                             # Fallback
-                            for k, v in commune_data.items():
-                                if isinstance(k, str) and (k.endswith('_scaled') or k.endswith('_score')):
-                                    try:
-                                        score_val = float(v) if pd.notna(v) else 0.0
-                                    except: score_val = 0.0
-                                    category = 'other'
-                                    if category not in criteria_by_cat:
-                                        criteria_by_cat[category] = {}
-                                    criteria_by_cat[category][k] = score_val
-
-                        for cat, scores in criteria_by_cat.items():
-                            md_lines.append(f"    * **{cat.capitalize()}**:")
-                            for s_name, s_val in scores.items():
-                                md_lines.append(f"        * `{s_name}`: {s_val:.2f}")
-                        
-                        md_lines.append("")
     else:
         md_lines.append("No results found.")
+    md_lines.append("")
+
+    # 3. Current Location Comparison
+    if search_results.current_geo:
+        md_lines.append("## Current Location Reference")
+        cg = search_results.current_geo
+        md_lines.append(f"**Name**: {cg.name} ({cg.codgeo})")
+        md_lines.append(f"**Global Score (Simulated)**: {cg.global_score:.2f}")
+        md_lines.append("")
+
+    # 4. Detailed Breakdown
+    md_lines.append("## Detailed Breakdown")
+    for i, commune in enumerate(search_results.top_communes):
+        md_lines.append(f"### {i+1}. {commune.name} ({commune.codgeo})")
+        md_lines.append(f"* **Population**: {commune.population:,}")
+        md_lines.append(f"* **Global Score**: {commune.global_score:.2f}")
+        md_lines.append("* **Criteria Details**:")
+        
+        for cat, details in commune.scores.items():
+            md_lines.append(f"    * **{cat.capitalize()}**:")
+            for d in details:
+                # Use value_kpi and label
+                val_kpi = d.valeur_kpi if d.valeur_kpi is not None else "N/A"
+                md_lines.append(f"        * `{d.label}`: {val_kpi} {d.unit} (Score: {d.score_normalise:.2f}, Weight: {d.relative_weight}%)")
+        md_lines.append("")
 
     # Write to file
     try:

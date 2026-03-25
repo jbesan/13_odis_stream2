@@ -21,7 +21,7 @@ class CityPitch(BaseModel):
 
 class ScorerResult(BaseModel):
     response: str = Field(description="Réponse textuelle globale à afficher dans le chat (introduction).")
-    pitches_per_city: List[CityPitch] = Field(default_factory=list, description="Liste des résumés spécifiques pour chaque ville du Top 5")
+    pitches_per_city: List[CityPitch] = Field(default_factory=list, description="Liste des points forts pertinents pour chaque cette ville")
 
 # --- System Prompt ---
 SCORER_SYSTEM_PROMPT = """

@@ -101,8 +101,8 @@ def sample_scores_cat():
             'education', 'inclusion', 'inclusion',
             'emploi', 'emploi',
             'emploi', 'emploi',
-            'mobilité', 'mobilité',
-            'education', 'santé',
+            'mobilite', 'mobilite',
+            'education', 'sante',
             'inclusion',
             'logement', 'logement', 'logement', 'logement'
         ],

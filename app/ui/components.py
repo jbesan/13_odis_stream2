@@ -245,7 +245,7 @@ def show_details_dialog(index: Any):
         with col1:
             st.metric("Population", f"{commune.population:,}".replace(",", " "), help="Population totale de la commune")
         with col2:
-            st.metric("Bassin de Vie", commune.bassin_de_vie, help="Territoire d'influence économique et sociale")
+            st.metric("Bassin de Vie", commune.name_bdv, help="Territoire d'influence économique et sociale")
         with col3:
             st.metric("Score Global", f"{commune.global_score*100:.1f}%", help="Adéquation globale avec votre projet de vie")
 
@@ -308,7 +308,7 @@ def show_details_dialog(index: Any):
                     if matching_total > 0:
                         st.success(f"**{matching_total} correspondances** directes avec votre projet !")
                 
-                with st.expander("Top Métiers (volume)", expanded=False):
+                with st.expander("Métiers les plus recherchés", expanded=False):
                     top_metiers = emploi_data.top_metiers
                     if top_metiers:
                         for m in top_metiers:
@@ -421,9 +421,9 @@ def show_details_dialog(index: Any):
                 
                 # Show pre-calculated summary from CommuneResult if available
                 if incl_data.total_associations > 0:
-                    st.info(f"**{incl_data.total_associations} associations** actives identifiées dans la commune.")
+                    st.info(f"**{incl_data.total_associations} associations** actives identifiées dans le bassin de vie.")
                     if incl_data.refugee_asso_count > 0:
-                        st.success(f"Détail : **{incl_data.refugee_asso_count} associations** spécifiquement dédiées aux réfugiés.")
+                        st.success(f"**{incl_data.refugee_asso_count} association(s)** spécifiquement dédiée(s) aux réfugiés.")
                     
                     if incl_data.associations_summary_by_category:
                         with st.expander("Répartition par catégorie", expanded=False):
@@ -431,14 +431,14 @@ def show_details_dialog(index: Any):
                                 st.write(f"• **{cat}** : {count}")
                 
                 # Show detailed list of refugee associations from static data if available
-                if incl_data.refugee_asso_list:
-                    with st.expander("Associations Réfugiés (données statiques)", expanded=False):
-                        for asso in incl_data.refugee_asso_list:
-                            name = str(asso.get('nom', asso.get('name', 'Association'))).capitalize()
-                            label = asso.get('waldec_label', '')
-                            desc = asso.get('objet', '')
-                            st.markdown(f"**{name}** ({label})")
-                            if desc: st.info(desc)
+                # if incl_data.refugee_asso_list:
+                #     with st.expander("Associations Réfugiés (données statiques)", expanded=False):
+                #         for asso in incl_data.refugee_asso_list:
+                #             name = str(asso.get('nom', asso.get('name', 'Association'))).capitalize()
+                #             label = asso.get('waldec_label', '')
+                #             desc = asso.get('objet', '')
+                #             st.markdown(f"**{name}** ({label})")
+                #             if desc: st.info(desc)
 
                 # Fallback / Complement with Live RAG
                 rna_service = st.session_state.get('rna_rag_service')
@@ -447,7 +447,7 @@ def show_details_dialog(index: Any):
                 if rna_service and codgeo:
                     with st.spinner("Chargement des associations..."):
                         try:
-                            bv_id = commune.bassin_de_vie
+                            bv_id = commune.codgeo_bdv
                             odis = st.session_state.app_data.get('odis')
                             if odis is not None and bv_id:
                                 codgeos_in_bv = odis[odis['bassin_de_vie'] == bv_id].index.tolist()
@@ -1195,7 +1195,7 @@ def _result_highlight_callback(index: int) -> None:
     else:
         commune = search_results.top_communes[index]
         st.session_state.highlighted_result = [True, index]
-        st.session_state.center = [commune.lat, commune.lon]
+        st.session_state.center = [commune.centroid.y, commune.centroid.x]
         st.session_state.zoom = cfg.DETAIL_MAP_ZOOM
 
 def _show_details_callback(rank: int) -> None:
@@ -1272,7 +1272,7 @@ def _display_result_details(commune: CommuneResult) -> None:
         libgeo = commune.name
         score_percent = f"{commune.global_score * 100:.1f}%"
         
-        st.markdown(f"**{libgeo}** ({population} habitants) fait partie du bassin de vie de : **{commune.bassin_de_vie}**.  \nLa correspondance avec le projet est évaluée à **{score_percent}**.")
+        st.markdown(f"**{libgeo}** ({population} habitants) fait partie du bassin de vie de : **{commune.name_bdv}**.  \nLa correspondance avec le projet est évaluée à **{score_percent}**.")
         
         # --- AI Pitch Fragment ---
         ai_pitch_container(commune.codgeo, h)
@@ -1286,35 +1286,14 @@ def _display_result_details(commune: CommuneResult) -> None:
                 st.rerun()
 
         # --- Radar Chart with Comparison ---
-        def get_radar_data(c: CommuneResult):
-            # Define all potential categories
-            all_cats = ['emploi', 'logement', 'education', 'sante', 'inclusion', 'mobilite']
-            
-            # Filter categories based on user criteria
-            config = st.session_state.get('config')
-            if config and config.active_criteria:
-                # Basic mapping: some criteria might have multiple points but they all fall under one category
-                # We show the category if at least one of its indicators was active in scoring
-                active_prefixes = {crit.split('_')[0] for crit in config.active_criteria}
-                # Special cases for prefixes (e.g., 'inc' -> 'inclusion', 'edu' -> 'education', 'mob' -> 'mobilite', 'met'/'form' -> 'emploi')
-                prefix_map = {
-                    'inc': 'inclusion', 
-                    'edu': 'education', 
-                    'mob': 'mobilite',
-                    'met': 'emploi',
-                    'form': 'emploi'
-                }
-                mapped_active = {prefix_map.get(p, p) for p in active_prefixes}
-                
-                cats = [cat for cat in all_cats if cat in mapped_active]
-            else:
-                cats = all_cats
-
-            labels = [cat.capitalize() for cat in cats]
+        def get_radar_data(c: CommuneResult, active_cats: List[str]):
+            labels = [cat.capitalize() for cat in active_cats]
             vals = []
-            for cat in cats:
+            for cat in active_cats:
                 data = getattr(c, cat)
-                vals.append(data.cat_score * 100)
+                # Cast to float and handle None/NaN safely
+                val = float(data.cat_score) if data.cat_score is not None else 0.0
+                vals.append(val * 100)
             
             if vals:
                 # Duplicate first point to close the radar loop
@@ -1322,7 +1301,16 @@ def _display_result_details(commune: CommuneResult) -> None:
                 labels.append(labels[0])
             return labels, vals
 
-        labels_target, vals_target = get_radar_data(commune)
+        # 1. Determine active categories based on user criteria stored in config
+        all_cats = ['emploi', 'logement', 'education', 'sante', 'inclusion', 'mobilite']
+        config = st.session_state.get('config')
+        if config and config.active_categories:
+            active_cats = [cat for cat in all_cats if cat in config.active_categories]
+        else:
+            # Fallback to all categories if config is missing or empty
+            active_cats = all_cats
+
+        labels_target, vals_target = get_radar_data(commune, active_cats)
         
         # Current City Data
         config = st.session_state.get('config')
@@ -1347,16 +1335,14 @@ def _display_result_details(commune: CommuneResult) -> None:
 
         # Add trace for current city (Blue) if available
         if search_results and search_results.current_geo:
-            _, vals_current = get_radar_data(search_results.current_geo)
-            
-            # Use name from current_geo or fallback
-            current_name = search_results.current_geo.name
+            _, vals_current = get_radar_data(search_results.current_geo, active_cats)
+            current_name = search_results.current_geo.name or "Actuel"
             
             fig.add_trace(go.Scatterpolar(
                 r=vals_current,
                 theta=labels_target, # Use same theta labels
                 fill='toself',
-                name=f"Actuel ({current_name})",
+                name=current_name,
                 fillcolor='rgba(31, 119, 180, 0.4)', # Semi-transparent blue
                 line=dict(color='#1f77b4'),
                 hovertemplate='%{theta}: %{r:.1f}%<extra></extra>'
@@ -1372,7 +1358,7 @@ def _display_result_details(commune: CommuneResult) -> None:
         st.plotly_chart(fig, width="stretch", config=None)
         
         current_label = current_geo.name if current_geo else "votre ville"
-        st.caption(f"**Comparaison des profils** : la zone verte représente **{commune.name}**, la zone bleue représente la **{current_label}**. Une plus grande surface indique une meilleure adéquation avec vos critères.")
+        st.caption(f"**Comparaison des profils** : la zone verte représente **{commune.name}**, la zone bleue représente **{current_label}**. Une plus grande surface indique une meilleure adéquation avec vos critères.")
 
         # --- Links ---
         c1, c2 = st.columns(2)
@@ -1420,7 +1406,7 @@ def _produce_pitch_markdown(commune: CommuneResult, config: SearchCriterias) -> 
 
     # It's a commune
     libgeo = commune.name
-    pitch_md.append(f'**{libgeo}** ({population} habitants) fait partie du bassin de vie de : **{commune.bassin_de_vie}**.  ')
+    pitch_md.append(f'**{libgeo}** ({population} habitants) fait partie du bassin de vie de : **{commune.name_bdv}**.  ')
 
     score_percent = f"{commune.global_score * 100:.1f}%"
     pitch_md.append(f'\nLa correspondance avec le projet est évaluée à **{score_percent}**. ')

@@ -365,7 +365,7 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
             "identity": {
                 "name": details_obj.name,
                 "population": details_obj.population,
-                "bassin_de_vie": details_obj.bassin_de_vie
+                "bassin_de_vie": details_obj.name_bdv
             },
             "scores": details_dict.get("scores", {}),
             "education": details_dict.get("education", {}),
