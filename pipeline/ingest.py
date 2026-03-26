@@ -921,6 +921,8 @@ def clean_school_effectifs(config: Dict[str, Any], logger: PipelineLogger):
         0.0
     )
     
+    output_path = CLEAN_DIR / "school_effectifs.parquet"
+    df_agg.to_parquet(output_path)
     logger.log_step("clean_school_effectifs", "COMPLETED", {"path": str(output_path), "rows": len(df_agg)})
 
 def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):

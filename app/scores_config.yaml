@@ -12,7 +12,7 @@ scores:
       unit: "%"
       display_factor: 100
       tooltip: Part des logements vacants depuis plus de 2 ans sur le parc total
-    weight: 3.0
+    weight: 1.0
     min_bound: 0
     max_bound: 0.10
   - id: log_soc_inoc_scaled
@@ -30,7 +30,7 @@ scores:
       tooltip:
         Nombre de logements sociaux innocupés (vacants ou vide) sur le parc de
         logements sociaux
-    weight: 1.0
+    weight: 3.0
     min_bound: 0.0
     max_bound: 0.10
   - id: log_occup_scaled
@@ -63,7 +63,7 @@ scores:
       unit: "€/m²"
       display_factor: 1
       tooltip: "Loyer moyen d'annonce par m² pour tous les appartements (Source: ODACE 2024)"
-    weight: 1.0
+    weight: 3.0
     min_bound: null
     max_bound: null
 
@@ -80,7 +80,7 @@ scores:
       unit: "€/m²"
       display_factor: 1
       tooltip: "Loyer moyen d'annonce par m² pour les appartements T1 et T2 (Source: ODACE 2024)"
-    weight: 1.0
+    weight: 3.0
     min_bound: null
     max_bound: null
 
@@ -97,7 +97,7 @@ scores:
       unit: "€/m²"
       display_factor: 1
       tooltip: "Loyer moyen d'annonce par m² pour les appartements T3 et plus (Source: ODACE 2024)"
-    weight: 1.0
+    weight: 3.0
     min_bound: null
     max_bound: null
 
@@ -114,7 +114,7 @@ scores:
       unit: "€/m²"
       display_factor: 1
       tooltip: "Loyer moyen d'annonce par m² pour les maisons (Source: ODACE 2024)"
-    weight: 1.0
+    weight: 3.0
     min_bound: null
     max_bound: null
 

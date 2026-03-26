@@ -153,7 +153,28 @@ def merge_search_results(left: Optional[SearchResultsData], right: Any) -> Optio
                 
                 # Update other fields (scorer_pitch, global score, etc.)
                 for k, v in new_res.items():
-                    if k != "expert_analysis" and v is not None:
+                    if k == "expert_analysis" or v is None:
+                        continue
+                    
+                    if k == "odis_synthesis":
+                        # Handle list merging (Append instead of Overwrite)
+                        existing_val = target.get("odis_synthesis", [])
+                        if isinstance(existing_val, str):
+                            existing_list = [{"role": "assistant", "content": existing_val}] if existing_val else []
+                        else:
+                            existing_list = list(existing_val)
+
+                        new_msgs = v if isinstance(v, list) else [{"role": "assistant", "content": v}]
+                        
+                        # Deduplicate by content to prevent double-appending on node retries or parallel runs
+                        seen_content = {m.get("content") for m in existing_list if isinstance(m, dict)}
+                        for msg in new_msgs:
+                            if isinstance(msg, dict) and msg.get("content") not in seen_content:
+                                existing_list.append(msg)
+                                seen_content.add(msg.get("content"))
+                        
+                        target["odis_synthesis"] = existing_list
+                    else:
                         target[k] = v
             else:
                 # If city not found, only append if it's a complete record (has population)

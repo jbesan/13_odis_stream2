@@ -61,7 +61,7 @@ def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
 
     # 2. Trigger analysis if synthesis is missing
     if not commune.odis_synthesis:
-        with st.spinner(f"Les experts analysent {nom}, veuillez patienter (environ 15 à 30s)..."):
+        with st.spinner(f"Les experts analysent {nom}, veuillez patienter (environ 15s)..."):
             from agents.utils import run_async_safe
             
             state_dict = {
@@ -76,67 +76,87 @@ def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
             try:
                 final_state = run_async_safe(state_dict)
                 
-                # Back-sync updated results to session state (Persistence)
+                # Selective Merge into session state
                 if "search_results" in final_state and final_state["search_results"]:
-                    new_res_data = final_state["search_results"]
-                    if isinstance(new_res_data, dict):
-                        st.session_state.search_results = SearchResultsData(**new_res_data)
-                    else:
-                        st.session_state.search_results = new_res_data
+                    new_state_data = final_state["search_results"]
+                    # Handle both dict and SearchResultsData model
+                    def _get_field(obj, field, default=None):
+                        if isinstance(obj, dict): return obj.get(field, default)
+                        return getattr(obj, field, default)
+                    
+                    # 1. Update Global Brief
+                    st.session_state.search_results.odis_brief = _get_field(new_state_data, "odis_brief", st.session_state.search_results.odis_brief)
+                    
+                    # 2. Find and update the specific focus city
+                    new_results = _get_field(new_state_data, "results", [])
+                    for city_data in new_results:
+                        city_codgeo = _get_field(city_data, "codgeo")
+                        if str(city_codgeo) == str(codgeo):
+                            commune.odis_synthesis = _get_field(city_data, "odis_synthesis", [])
+                            # Expert analysis is a dict, we update it
+                            commune.expert_analysis.update(_get_field(city_data, "expert_analysis", {}))
+                            new_pitch = _get_field(city_data, "scorer_pitch")
+                            if new_pitch:
+                                commune.scorer_pitch = new_pitch
+                            break
                 
                 st.rerun() # Refresh to display the new odis_synthesis
             except Exception as e:
                 st.error(f"Erreur lors de la génération: {str(e)}")
                 return
 
-    # 3. Display Synthesis
-
-    if commune.odis_synthesis:
-        st.markdown(commune.odis_synthesis)
+    # 3. Display Synthesis and Chat History
+    # Use the persistent list from the model as the single source of truth
+    history = list(commune.odis_synthesis)
+    
+    for msg in history:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+    
+    # 4. Handle follow-up questions
+    question = st.chat_input(f"Ex: Quelles associations facilitent le logement à {nom} ?", key=f"chat_input_ia_{codgeo}")
+    if question:
+        # Display user message immediately for responsiveness
+        with st.chat_message("user"):
+            st.markdown(question)
         
-        st.divider()
-        st.markdown(f"#### Poser une question sur {nom}")
-        
-        # Display chat history
-        for msg in st.session_state[chat_key]:
-            with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
-        
-        question = st.chat_input(f"Ex: Quelles associations facilitent le logement à {nom} ?", key=f"chat_input_ia_{codgeo}")
-        if question:
-            st.session_state[chat_key].append({"role": "user", "content": question})
-            with st.chat_message("user"):
-                st.markdown(question)
-            
-            with st.spinner("Recherche de la réponse en cours..."):
-                from agents.utils import run_async_safe
-                state_dict = {
-                    "search_criteria": search_criterias.model_dump(),
-                    "is_interview_complete": True,
-                    "execution_mode": "specific_ask",
-                    "focus_city": {"name": nom, "codgeo": codgeo},
-                    "search_results": st.session_state.search_results.model_dump(),
-                    "criteria_hash": st.session_state.get('active_search_hash'),
-                    "messages": st.session_state[chat_key]
-                }
-                try:
-                    final_state = run_async_safe(state_dict)
+        with st.spinner("Recherche de la réponse en cours..."):
+            from agents.utils import run_async_safe
+            # The graph now handles appending to odis_synthesis internally
+            state_dict = {
+                "search_criteria": search_criterias.model_dump(),
+                "is_interview_complete": True,
+                "execution_mode": "specific_ask",
+                "focus_city": {"name": nom, "codgeo": codgeo},
+                "search_results": st.session_state.search_results.model_dump(),
+                "criteria_hash": st.session_state.get('active_search_hash'),
+                "messages": history + [{"role": "user", "content": question}]
+            }
+            try:
+                final_state = run_async_safe(state_dict)
+                
+                # Selective Merge for Chat session
+                if "search_results" in final_state and final_state["search_results"]:
+                    new_state_data = final_state["search_results"]
+                    # Handle both dict and SearchResultsData model
+                    def _get_field(obj, field, default=None):
+                        if isinstance(obj, dict): return obj.get(field, default)
+                        return getattr(obj, field, default)
+                        
+                    # Update global brief if it evolved
+                    st.session_state.search_results.odis_brief = _get_field(new_state_data, "odis_brief", st.session_state.search_results.odis_brief)
                     
-                    # Back-sync updated results to session state
-                    if "search_results" in final_state and final_state["search_results"]:
-                        new_res_data = final_state["search_results"]
-                        if isinstance(new_res_data, dict):
-                            st.session_state.search_results = SearchResultsData(**new_res_data)
-                        else:
-                            st.session_state.search_results = new_res_data
+                    # Update conversation history for THIS city
+                    new_results = _get_field(new_state_data, "results", [])
+                    for city_data in new_results:
+                        city_codgeo = _get_field(city_data, "codgeo")
+                        if str(city_codgeo) == str(codgeo):
+                            commune.odis_synthesis = _get_field(city_data, "odis_synthesis", [])
+                            break
                             
-                    answer = final_state.get("messages", [])[-1]["content"] if final_state.get("messages") else "Pas de réponse."
-                    st.session_state[chat_key].append({"role": "assistant", "content": answer})
-                    with st.chat_message("assistant"):
-                        st.markdown(answer)
-                    st.rerun() 
-                except Exception as e:
-                    st.error(f"Erreur de l'agent: {str(e)}")
+                st.rerun() 
+            except Exception as e:
+                st.error(f"Erreur de l'agent: {str(e)}")
 
 def _on_ia_dialog_dismiss():
     st.session_state.active_ia_city_index = None
@@ -689,16 +709,14 @@ def render_housing_form() -> None:
     if "Location avec Intermédiation" in heb_sel or st.session_state.get('ui_logement') == 'Location':
         
         housing_type_options = list(cfg.HOUSING_TYPE_OPTIONS.keys())
-        if "ui_type_logement" in st.session_state and st.session_state["ui_type_logement"] in housing_type_options:
-            default_housing_idx = housing_type_options.index(st.session_state["ui_type_logement"])
-        else:
-            default_housing_idx = housing_type_options.index("appt_all")
+        if "ui_type_logement" not in st.session_state or st.session_state["ui_type_logement"] not in housing_type_options:
+            st.session_state["ui_type_logement"] = "appt_all"
+
         st.markdown("\n\n")
         st.selectbox(
             "Si location quel type de logement ?",
             options=housing_type_options,
             format_func=lambda x: cfg.HOUSING_TYPE_OPTIONS[x],
-            index=default_housing_idx,
             width=300,
             key="ui_type_logement",
             help="Permet d'utiliser les loyers spécifiques au type de logement choisi (Source ODACE 2024)"
@@ -868,22 +886,19 @@ def render_mobility_form() -> None:
     
     region_codes = ['france'] + sorted(regions_dict.keys())
     
-    # F-48: Fix st.selectbox warning by aligning index with session_state if present
-    if "ui_mobility_region" in st.session_state and st.session_state["ui_mobility_region"] in region_codes:
-        default_reg_idx = region_codes.index(st.session_state["ui_mobility_region"])
-    else:
+    # F-48: Fix st.selectbox warning by ensuring session state is set BEFORE giving the key to the widget
+    if "ui_mobility_region" not in st.session_state or st.session_state["ui_mobility_region"] not in region_codes:
+        # Default to current region, if current_reg_code is not in dict, use first option (France)
         try:
-            # Default to current region, if current_reg_code is not in dict, use first option (France)
-            default_reg_idx = region_codes.index(current_reg_code) if current_reg_code in region_codes else 0
-        except ValueError:
-            default_reg_idx = 0
+             st.session_state["ui_mobility_region"] = current_reg_code if current_reg_code in region_codes else region_codes[0]
+        except:
+             st.session_state["ui_mobility_region"] = region_codes[0]
             
     selected_region_code = st.selectbox(
         "Région",
         region_codes,
         format_func=lambda x: regions_dict.get(x, "France Métropolitaine") if x != 'france' else "France Métropolitaine",
-        key="ui_mobility_region",
-        index=default_reg_idx
+        key="ui_mobility_region"
     )
     
     is_france = (selected_region_code == 'france')
@@ -899,21 +914,18 @@ def render_mobility_form() -> None:
         # Options: "Toute la région" + departments
         dept_options = ["Toute la région"] + depts_in_region
         
-        # F-48: Fix st.selectbox warning by aligning index with session_state if present
-        if "ui_mobility_dept" in st.session_state and st.session_state["ui_mobility_dept"] in dept_options:
-            default_dept_idx = dept_options.index(st.session_state["ui_mobility_dept"])
-        else:
+        # F-48: Fix st.selectbox warning by ensuring session state is set BEFORE giving the key to the widget
+        if "ui_mobility_dept" not in st.session_state or st.session_state["ui_mobility_dept"] not in dept_options:
             try:
-                default_dept_idx = dept_options.index(current_dept_code) if current_dept_code in dept_options else 0
-            except ValueError:
-                default_dept_idx = 0
+                st.session_state["ui_mobility_dept"] = current_dept_code if current_dept_code in dept_options else dept_options[0]
+            except:
+                st.session_state["ui_mobility_dept"] = dept_options[0]
 
         st.selectbox(
             "Département",
             dept_options,
             format_func=lambda x: f"{x} - {dept_details.get(x, {}).get('label', x)}" if x != "Toute la région" else x,
-            key="ui_mobility_dept",
-            index=default_dept_idx
+            key="ui_mobility_dept"
         )
     else:
         st.info("Recherche sur l'ensemble du territoire métropolitain.")
@@ -932,10 +944,8 @@ def render_weight_profile_form() -> None:
         st.session_state['processed_gdf'] = None
 
     weight_profiles = list(cfg.WEIGHT_PROFILES.keys())
-    if "ui_weight_profile" in st.session_state and st.session_state["ui_weight_profile"] in weight_profiles:
-        default_profile_idx = weight_profiles.index(st.session_state["ui_weight_profile"])
-    else:
-        default_profile_idx = 0
+    if "ui_weight_profile" not in st.session_state or st.session_state["ui_weight_profile"] not in weight_profiles:
+        st.session_state["ui_weight_profile"] = weight_profiles[0]
 
     st.text('Pour améliorer la pertinence des résultats de la recherche, vous pouvez ajuster les poids des différentes catégories de critères de recherche en utilisant soit un profil pré-défini (recommandé) soit une pondération sur-mesure.')
 
@@ -945,8 +955,7 @@ def render_weight_profile_form() -> None:
             "Profils prédéfinis",
             options=weight_profiles,
             key="ui_weight_profile",
-            on_change=_update_weights_from_profile,
-            index=default_profile_idx
+            on_change=_update_weights_from_profile
         )
         # New "Expert Mode" toggle
         st.toggle("Profil personalisé", key="ui_expert_weights", value=False)
@@ -957,23 +966,28 @@ def render_weight_profile_form() -> None:
         # if st.session_state.get('ui_expert_weights'):
             # st.info("Ajustez finement l'importance de chaque catégorie.")
         
+        # F-48: Fix slider warnings by removing 'value' and managing via key + session state
+        for p_key in ["ui_poids_education", "ui_poids_emploi", "ui_poids_logement", "ui_poids_inclusion", "ui_poids_sante", "ui_poids_mobilite"]:
+            if p_key not in st.session_state:
+                st.session_state[p_key] = 50
+
         st.select_slider("Education", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_education', 50), disabled=not st.session_state.get('ui_expert_weights'),
+                        disabled=not st.session_state.get('ui_expert_weights'),
                         key="ui_poids_education", on_change=lambda: [st.session_state.setdefault('processed_gdf', None), st.session_state.setdefault('search_results', None)])
         st.select_slider("Projet Pro", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_emploi', 50), disabled=not st.session_state.get('ui_expert_weights'),
+                        disabled=not st.session_state.get('ui_expert_weights'),
                         key="ui_poids_emploi", on_change=lambda: [st.session_state.setdefault('processed_gdf', None), st.session_state.setdefault('search_results', None)])
         st.select_slider("Logement", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_logement', 50), disabled=not st.session_state.get('ui_expert_weights'),
+                        disabled=not st.session_state.get('ui_expert_weights'),
                         key="ui_poids_logement", on_change=lambda: [st.session_state.setdefault('processed_gdf', None), st.session_state.setdefault('search_results', None)])
         st.select_slider("Inclusion", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_inclusion', 50), disabled=not st.session_state.get('ui_expert_weights'),
+                        disabled=not st.session_state.get('ui_expert_weights'),
                         key="ui_poids_inclusion", on_change=lambda: [st.session_state.setdefault('processed_gdf', None), st.session_state.setdefault('search_results', None)])
         st.select_slider("Santé", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_sante', 50), disabled=not st.session_state.get('ui_expert_weights'),
+                        disabled=not st.session_state.get('ui_expert_weights'),
                         key="ui_poids_sante", on_change=lambda: [st.session_state.setdefault('processed_gdf', None), st.session_state.setdefault('search_results', None)])
         st.select_slider("Mobilité", cfg.POIDS_OPTIONS, 
-                        value=st.session_state.get('ui_poids_mobilite', 50), disabled=not st.session_state.get('ui_expert_weights'),
+                        disabled=not st.session_state.get('ui_expert_weights'),
                         key="ui_poids_mobilite", on_change=lambda: [st.session_state.setdefault('processed_gdf', None), st.session_state.setdefault('search_results', None)])
         # else:
         #     st.caption("Utilisez un profil prédéfini ci-dessus ou activez le mode personnalisé pour un réglage fin.")

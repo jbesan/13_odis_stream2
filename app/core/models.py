@@ -203,7 +203,17 @@ class CommuneResult(BaseModel):
     # Agent-generated content
     scorer_pitch: str = Field(default="", description="Short pitch from Scorer Agent")
     expert_analysis: Dict[str, str] = Field(default_factory=dict, description="Detailed reports from experts (scout, web, etc.)")
-    odis_synthesis: str = Field(default="", description="Final ODIS synthesis for the city")
+    odis_synthesis: List[Dict[str, str]] = Field(default_factory=list, description="List of messages (conversation thread) for the city analysis")
+    
+    @model_validator(mode='before')
+    @classmethod
+    def handle_odis_synthesis_type(cls, data: Any) -> Any:
+        if isinstance(data, dict) and 'odis_synthesis' in data:
+            val = data['odis_synthesis']
+            if isinstance(val, str):
+                # Convert legacy string to a list of one assistant message if not empty
+                data['odis_synthesis'] = [{"role": "assistant", "content": val}] if val else []
+        return data
 
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 

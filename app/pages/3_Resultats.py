@@ -360,147 +360,108 @@ with col_map:
             st.session_state["zoom"] = maps.get_map_zoom(config.loc_search_area if config else 'departement')
 
         
-        # Initialize map
-        m = maps.create_base_map(st.session_state["center"], st.session_state["zoom"])
+        # --- 1. Map Initialization ---
+        # st.session_state.center and st.session_state.zoom are managed by callbacks
+        m = maps.create_base_map(st.session_state.get("center"), st.session_state.get("zoom"))
         
-        # Base layer with all scored communes (we still need the full GDF for the background layer)
+        # --- 2. Static Layers (Always rendered) ---
+        # Base Scores (Choropleth + Current Location)
         if not st.session_state.processed_gdf.empty:
-            st.session_state['fg_dict_ref']['Scores'], colormap = maps.build_scores_layer(st.session_state['processed_gdf'])
-        
-        # 1. ADD BLUE LAYER FOR CURRENT COMMUNE (from SearchResultsData.current_geo)
-        if search_results and search_results.current_geo and search_results.current_geo.geometry:
-            fg_current = flm.FeatureGroup(name="Ma position")
-            poly_4326 = gpd.GeoSeries([search_results.current_geo.geometry], crs=cfg.PROJECTED_CRS).to_crs("EPSG:4326").iloc[0]
-            flm.GeoJson(
-                mapping(poly_4326),
-                style_function=lambda x: {"fillColor": 'blue', "fillOpacity": 0.4, "stroke": True, "color": "blue", "weight": 2},
-                tooltip=f"Actuel: {search_results.current_geo.name}"
-            ).add_to(fg_current)
-            fg_current.add_to(m)
+            fg_scores, colormap = maps.build_scores_layer(st.session_state['processed_gdf'])
+            fg_scores.add_to(m)
 
-        fgs_to_show = {'Scores'}
-        legend_items = []
-        
+            row_actuel = pd.Series({'polygon': search_results.current_geo.geometry, 'libgeo': search_results.current_geo.name})
+            fg_curr_loc = maps.build_current_loc_layer(row_actuel)
+            fg_curr_loc.add_to(m)
+
+        # --- 3. Dynamic Layers (Based on Pills) ---
         config = st.session_state.get('config')
         
-        # Build dynamic options for pills
-        pill_options = ["🏠 Top 5"]
+        # Build dynamic options for pills (Objects with ID and Label)
+        pill_options = [{"id": "top_5", "label": "🥇 Top 5"}]
         if config:
             if config.nb_enfants > 0:
-                pill_options.append("🎓 Éducation")
+                pill_options.append({"id": "edu", "label": "🎓 Éducation"})
             if config.besoin_sante != "Aucun":
-                pill_options.append("🏥 sante")
+                pill_options.append({"id": "sante", "label": "🏥 sante"})
             if config.inc_services_add_selection:
-                pill_options.append("🤝 Inclusion")
+                pill_options.append({"id": "inc", "label": "🤝 Inclusion"})
         
-        # Display pills
-        selected_layers = st.pills(
+        # Display pills - returns the selected objects
+        selected_objs = st.pills(
             "Afficher sur la carte :", 
             pill_options, 
             selection_mode="multi", 
-            default=["🏠 Top 5"],
+            default=[pill_options[0]], # Default to Top 5
+            format_func=lambda x: x["label"],
             key="map_layers_pills",
             label_visibility="collapsed"
         )
+        selected_ids = {obj["id"] for obj in selected_objs} if selected_objs else set()
         
-        # Map selections to boolean flags
-        show_top_5 = "🏠 Top 5" in selected_layers
-        show_ecoles = "🎓 Éducation" in selected_layers
-        show_sante = "🏥 sante" in selected_layers
-        show_inclusion = "🤝 Inclusion" in selected_layers
+        fgs_to_show = {'Scores', 'Commune Actuelle'}
+        legend_items = []
 
         if config and search_results:
             target_codgeos = {str(c.codgeo) for c in search_results.results}
-
-            if show_ecoles:
-                st.session_state.fg_dict_ref['fg_ecoles'] = maps.build_ecoles_layer(st.session_state.app_data['pois'], target_codgeos, config)
-                fgs_to_show.add('fg_ecoles')
+            
+            if "edu" in selected_ids:
+                fg_edu = maps.build_ecoles_layer(st.session_state.app_data['pois'], target_codgeos, config)
+                fg_edu.add_to(m)
                 legend_items.append({'color': 'green', 'icon': 'pencil', 'text': 'Écoles'})
-            if show_sante:
-                st.session_state.fg_dict_ref['fg_sante'] = maps.build_sante_layer(st.session_state.app_data['pois'], target_codgeos, config)
-                fgs_to_show.add('fg_sante')
+            
+            if "sante" in selected_ids:
+                fg_sante = maps.build_sante_layer(st.session_state.app_data['pois'], target_codgeos, config)
+                fg_sante.add_to(m)
                 legend_items.append({'color': 'blue', 'icon': 'plus', 'text': 'sante'})
-            if show_inclusion:
-                st.session_state.fg_dict_ref['fg_services'] = maps.build_services_layer(st.session_state.app_data['pois'], target_codgeos, config)
-                fgs_to_show.add('fg_services')
+            
+            if "inc" in selected_ids:
+                fg_inc = maps.build_services_layer(st.session_state.app_data['pois'], target_codgeos, config)
+                fg_inc.add_to(m)
                 legend_items.append({'color': 'purple', 'icon': 'heart', 'text': 'Inclusion'})
-        is_highlighted, highlighted_index = st.session_state.highlighted_result
         
+        # --- 4. Highlights & Top 5 Borders ---
+        is_highlighted, highlighted_index = st.session_state.highlighted_result
+        show_top_5 = "top_5" in selected_ids
+
+        # Build Top 5 Borders (Linear additive logic)
         if show_top_5 and search_results:
-            # Rebuild Top 5 layers on the fly from SearchResultsData.results
             for i, commune in enumerate(search_results.results):
                 if commune.geometry:
-                    name = f'Top{i+1}'
-                    # Re-use existing map builder by creating a dummy Series if needed, or refine map builder
-                    # For now, let's create a minimal Series to satisfy build_top_result_layer
-                    row_data = pd.Series({
-                        'polygon': commune.geometry,
-                        'libgeo': commune.name
-                    })
-                    st.session_state['fg_dict_ref'][name] = maps.build_top_result_layer(row_data, i)
-                    fgs_to_show.add(name)
-            st.session_state["zoom"] = None
-        elif is_highlighted and search_results:
-            # Rebuild ONLY the highlighted layer
+                    row_data = pd.Series({'polygon': commune.geometry, 'libgeo': commune.name})
+                    fg_top = maps.build_top_result_layer(row_data, i)
+                    fg_top.add_to(m)
+
+        # Build Specific Highlight (Red border + dashed current pos)
+        if is_highlighted and search_results:
             commune = search_results.results[highlighted_index]
             if commune.geometry:
-                name = f'Top{highlighted_index + 1}'
-                row_data = pd.Series({
-                    'polygon': commune.geometry,
-                    'libgeo': commune.name
-                })
-                st.session_state['fg_dict_ref'][name] = maps.build_top_result_layer(row_data, highlighted_index)
-                fgs_to_show.add(name)
-                # No automatic re-centering as per user request
-                
-            if search_results.current_geo and search_results.current_geo.geometry:
-                row_actuel = pd.Series({
-                    'polygon': search_results.current_geo.geometry,
-                    'libgeo': search_results.current_geo.name
-                })
-                st.session_state['fg_dict_ref']['current_loc'] = maps.build_current_loc_layer(row_actuel)
-                fgs_to_show.add('current_loc')
-                legend_items.append({'color': 'blue', 'icon': 'home', 'text': 'Ma position'})
+                row_data = pd.Series({'polygon': commune.geometry, 'libgeo': commune.name})
+                fg_highlight = maps.build_top_result_layer(row_data, highlighted_index)
+                fg_highlight.add_to(m)
 
         st.session_state.fgs_to_show = fgs_to_show
 
+        # --- 5. Final Rendering ---
         if legend_items:
             legend = maps.build_legend(legend_items)
             m.get_root().html.add_child(flm.Element(legend))
 
-        fgs_to_add = [
-            st.session_state['fg_dict_ref'][name] 
-            for name in sorted(list(st.session_state['fgs_to_show']))
-            if name in st.session_state['fg_dict_ref']
-        ]
-        map_key = "odis_scored_map_" + "_".join(sorted(list(st.session_state.fgs_to_show)))
-
-        # Manually add all visible layers to the map object
-        # This is the most stable way to ensure they appear in the UI and PDF
-        for fg in fgs_to_add:
-            fg.add_to(m)
-                
         st.session_state['map_object'] = m
 
-
         try:
-            # Adding explicit height back as it's a known fix for Streamlit column collapses
             st_folium(
                 m,
-                zoom=st.session_state["zoom"],
-                center=st.session_state["center"],
-                feature_group_to_add=fgs_to_add,
-                # layer_control=True,
-                key=map_key,
-                # height=500,
+                zoom=st.session_state.get("zoom"),
+                center=st.session_state.get("center"),
+                key="odis_main_map",
                 use_container_width=True,
                 returned_objects=[],
             )
         except Exception as e:
             st.error(f"Erreur d'affichage de la carte: {e}")
-            logging.error(f"❌ [MAP-ERROR] st_folium failed: {e}")
-            import traceback
-            logging.error(traceback.format_exc())
+            logging.error(f"❌ [MAP-ERROR] st_folium: {e}")
+        
         st.markdown('<style>.stCustomComponentV1 {border-radius:10px}</style>', unsafe_allow_html=True)
 
 # --- PDF Modal Execution (at the end to ensure all state is initialized) ---
@@ -508,8 +469,8 @@ if st.session_state.get('show_pdf_modal'):
     pdf_modal()
 
 # Do not remove, useful to debug states
-with st.expander("Debug", expanded=False):
-    try:
-        st.json(search_results.results)
-    except:
-        pass
+# with st.expander("Debug", expanded=False):
+#     try:
+#         st.json(search_results.results)
+#     except:
+#         pass

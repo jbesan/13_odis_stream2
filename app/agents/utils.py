@@ -226,15 +226,6 @@ def launch_background_scorer(search_criterias: SearchCriterias, results_dict_ign
                         "population": int(c.get("population", 0)),
                         "global_score": float(c.get("weighted_score", 0.0)),
                         "scores": c.get("scores", {}),
-                        # "scores": details.get("scores", {}),
-                        # "employment": details.get("employment", {}),
-                        # "housing": details.get("housing", {}),
-                        # "education": details.get("education", {}),
-                        # "health": details.get("health", {}),
-                        # "inclusion": details.get("inclusion", {}),
-                        # "mobility": details.get("mobility", {}),
-                        # "codgeo_bdv": details.get("codgeo_bdv", ""),
-                        # "name_bdv": details.get("name_bdv", "")
                     })
                 search_results_data = {
                     "search_hash": hash_val,

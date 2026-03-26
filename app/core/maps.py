@@ -90,24 +90,6 @@ def build_scores_layer(df: pd.DataFrame) -> Tuple[flm.FeatureGroup, Optional[Any
     score_dict = df.set_index(id_col)["weighted_score"]
     colormap = getattr(linear, 'YlGn_09').scale(score_dict.min(), score_dict.max())
 
-    # Add current commune in blue
-    current_geo_df = st.session_state.selected_geo
-    
-    # Default to Commune view
-    # Prepare serializable DF in 4326 for Folium
-    current_geo_df_serializable = current_geo_df[['libgeo', 'polygon']].copy()
-    current_geo_df_serializable.set_geometry('polygon', inplace=True)
-    if current_geo_df_serializable.crs != "EPSG:4326":
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*array with ndim > 0 to a scalar is deprecated.*")
-            current_geo_df_serializable = current_geo_df_serializable.to_crs("EPSG:4326")
-
-    flm.GeoJson(
-        current_geo_df_serializable,
-        style_function=lambda x: {"fillColor": 'blue', "fillOpacity": 0.8, "stroke": True, "color": "blue"},
-        tooltip=current_geo_df_serializable['libgeo'].iloc[0]
-    ).add_to(fg)
-
     # Add all scored geometries (communes or bassins de vie)
     df_serializable = df[[id_col, name_col, 'weighted_score', 'polygon']].copy()
     # F-SDD: Pre-format the score for display to avoid Folium formatter issues
@@ -174,17 +156,26 @@ def build_top_result_layer(row: pd.Series, rank: int) -> flm.FeatureGroup:
 
 def build_current_loc_layer(row: pd.Series) -> flm.FeatureGroup:
     """Builds a thick blue outline for the current location."""
-    fg = flm.FeatureGroup(name="Ma position")
     
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", category=DeprecationWarning)
-        poly_4326 = gpd.GeoSeries([row.polygon], crs=cfg.PROJECTED_CRS).to_crs("EPSG:4326").iloc[0]
-            
+    fg = flm.FeatureGroup(name="Commune Actuelle")
+    
+    current_geo_df = gpd.GeoDataFrame([row], geometry='polygon', crs=cfg.PROJECTED_CRS)
+    
+    # Default to Commune view
+    # Prepare serializable DF in 4326 for Folium
+    current_geo_df_serializable = current_geo_df[['libgeo', 'polygon']].copy()
+    current_geo_df_serializable.set_geometry('polygon', inplace=True)
+    if current_geo_df_serializable.crs != "EPSG:4326":
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*array with ndim > 0 to a scalar is deprecated.*")
+            current_geo_df_serializable = current_geo_df_serializable.to_crs("EPSG:4326")
+
     flm.GeoJson(
-        mapping(poly_4326),
-        style_function=lambda x: {"color": "#1f77b4", "fillOpacity": 0.1, "weight": 4, "dashArray": "5, 5"}
+        current_geo_df_serializable,
+        style_function=lambda x: {"fillColor": 'blue', "fillOpacity": 0.7, "stroke": True, "color": "blue"},
+        tooltip=current_geo_df_serializable['libgeo'].iloc[0]
     ).add_to(fg)
-    
+
     return fg
 
 def build_legend(items_list: List[Dict[str, str]]) -> str:

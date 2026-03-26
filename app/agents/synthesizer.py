@@ -93,7 +93,6 @@ synthesizer_agent = Agent(
 @synthesizer_agent.system_prompt
 async def synth_instructions(ctx: RunContext[ODISDeps]) -> str:
     # Get city details for focused city
-    print("Hello")
     city_details = "N/A"
     scorer_pitch = "N/A"
     if ctx.deps.state.focus_city and ctx.deps.state.search_results:

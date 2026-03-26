@@ -26,7 +26,7 @@ GRAND_DOMAINES = [
 TYPES_CONTRAT = ["CDI", "CDD", "MIS", "CCE", "CTI", "LIB", "DIN", "FRA"]
 
 # Scope: Metropolitan France (01 to 95)
-DEPARTEMENTS = [str(i).zfill(2) for i in range(1, 40)] + ["2A", "2B"] + [str(i).zfill(2) for i in range(41, 96)]
+DEPARTEMENTS = [str(i).zfill(2) for i in range(1, 96)] + ["2A", "2B"]
 DEPARTEMENTS = sorted(list(set(DEPARTEMENTS)))
 if "20" in DEPARTEMENTS:
     DEPARTEMENTS.remove("20")
@@ -217,7 +217,7 @@ def run_etl():
         
         # Level 1 Split (by Domain)
         if results is None and "grandDomaine" not in params:
-            print(f"\n  Splitting {params['departement']} by Domain...")
+            # print(f"\n  Splitting {params['departement']} by Domain...")
             sub_results = []
             for domain in GRAND_DOMAINES:
                 res = process_segment({**params, "grandDomaine": domain})
@@ -283,6 +283,11 @@ def run_etl():
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         agg.to_parquet(output_path, index=False)
         
+        # Validation: Check if all expected departments are present
+        df['dept'] = df['commune'].str[:2]
+        found_depts = df['dept'].unique()
+        missing_depts = [d for d in DEPARTEMENTS if d not in found_depts]
+        
         duration = (time.time() - METRICS["start_time"]) / 60
         print(f"\n=== ETL SUMMARY ===")
         print(f"Duration: {duration:.2f} minutes")
@@ -291,6 +296,12 @@ def run_etl():
         print(f"Raw Offers Fetched: {initial_count}")
         print(f"Final Aggregated Rows: {len(agg)}")
         print(f"Total Postes (Market Opportunity): {int(agg['total_postes'].sum())}")
+        
+        if missing_depts:
+            print(f"/!\\ WARNING: Missing data for departments: {missing_depts}")
+        else:
+            print("✅ All departments successfully mapped in output.")
+            
         print(f"Saved to: {output_path}")
         return output_path
     else:

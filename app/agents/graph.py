@@ -517,6 +517,16 @@ async def synthesizer_node(state: ODISGraphState, config: RunnableConfig):
     )
     logger.info(f"Synthesis complete for {city_name}.")
     
+    # Build odis_synthesis as a list of new messages to append
+    # In specific_ask mode, we also want to persist the user's question for context
+    new_odis_synthesis = []
+    if state.execution_mode == 'specific_ask' and state.messages:
+        last_user_msg = state.messages[-1]
+        if last_user_msg.get("role") == "user":
+             new_odis_synthesis.append(last_user_msg)
+    
+    new_odis_synthesis.append({"role": "assistant", "content": result.output.response})
+
     # Return both the chat message and the model update for single source of truth
     return {
         "messages": [{"role": "assistant", "content": sanitize_llm_markdown(result.output.response)}],
@@ -525,7 +535,7 @@ async def synthesizer_node(state: ODISGraphState, config: RunnableConfig):
                 {
                     "codgeo": state.focus_city.codgeo if state.focus_city and state.focus_city.codgeo else "",
                     "name": state.focus_city.name if state.focus_city else "",
-                    "odis_synthesis": result.output.response
+                    "odis_synthesis": new_odis_synthesis
                 }
             ]
         },
