@@ -27,7 +27,7 @@ async def test_refiner_node_updates_state(state, config):
     """Verify that refiner_node calls the agent and returns state updates."""
     mock_result = MagicMock()
     mock_result.output = RefinerResult(
-        briefing="Nouveau briefing."
+        odis_brief="Nouveau briefing."
     )
     
     with patch('agents.refiner.refiner_agent.run') as mock_run, \
@@ -37,7 +37,7 @@ async def test_refiner_node_updates_state(state, config):
         
         output = await refiner_node(state, config)
         
-        assert output["briefing"] == "Nouveau briefing."
+        assert output["odis_brief"] == "Nouveau briefing."
         assert output["last_summarized_idx"] == 2
         assert "focus_city" not in output
         mock_run.assert_called_once()
@@ -45,7 +45,7 @@ async def test_refiner_node_updates_state(state, config):
 @pytest.mark.asyncio
 async def test_refiner_node_skips_if_nothing_new(state, config):
     """Verify that refiner_node skips if no new developments."""
-    state.briefing = "Existing briefing"
+    state.odis_brief = "Existing briefing"
     state.last_summarized_idx = 2
     
     with patch('agents.refiner.refiner_agent.run') as mock_run:
@@ -59,7 +59,7 @@ async def test_refiner_node_with_experts(state, config):
     """Verify that expert results trigger an update even if no new messages."""
     from agents.refiner import RefinerResult
     from app.core.models import SearchResultsData, CommuneResult
-    state.briefing = "Existing briefing"
+    state.odis_brief = "Existing briefing"
     state.last_summarized_idx = 2
     state.search_results = SearchResultsData(
         search_hash="dummy",
@@ -69,7 +69,7 @@ async def test_refiner_node_with_experts(state, config):
     
     mock_result = MagicMock()
     mock_result.output = RefinerResult(
-        briefing="Briefing mis à jour."
+        odis_brief="Briefing mis à jour."
     )
     
     with patch('agents.refiner.refiner_agent.run') as mock_run, \
@@ -79,5 +79,5 @@ async def test_refiner_node_with_experts(state, config):
         
         output = await refiner_node(state, config)
         
-        assert output["briefing"] == "Briefing mis à jour."
+        assert output["odis_brief"] == "Briefing mis à jour."
         mock_run.assert_called_once()

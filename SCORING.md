@@ -43,22 +43,22 @@ Enfin, les scores sont regroupés par catégories (Emploi, Logement, Santé, etc
 
 ## 📊 Synthèse de la Configuration (Tous les Critères)
 
-Voici l'intégralité des 35 critères configurés dans le moteur de soring OD&IS (`scores_config.yaml`).
+Voici l'intégralité des 40 critères configurés dans le moteur de soring OD&IS (`scores_config.yaml` + Distance).
 
 ### 🏠 Logement
 
 | Critère                       | Poids | Boost BdV | Description                                     |
 | :---------------------------- | :---- | :-------- | :---------------------------------------------- |
-| **Vacance Structurelle**      | 3.0   | 0.0       | Logements vacants depuis plus de 2 ans.         |
-| **Logements Sociaux Vacants** | 1.0   | 0.0       | Taux de vacance dans le parc social.            |
-| **Sous-occupation**           | 1.0   | 0.0       | Potentiel de cohabitation/accueil.              |
-| **Loyer Moyen (Tous Appt)**   | 1.0   | 0.0       | Loyer moyen d'annonce au m².                    |
-| **Loyer Moyen (T1/T2)**       | 1.0   | 0.0       | Loyer spécifiquement pour petits appartements.  |
-| **Loyer Moyen (T3+)**         | 1.0   | 0.0       | Loyer spécifiquement pour grands appartements.  |
-| **Loyer Moyen (Maisons)**     | 1.0   | 0.0       | Loyer moyen pour les maisons.                   |
-| **Associations IML**          | 1.0   | 0.8       | Intermédiation Locative (Solibail, etc.).       |
+| **Vacance Structurelle**      | 1.0   | 0.0       | Taux de vacance (> 2 ans) sur le parc total.    |
+| **Logements Sociaux Vacants** | 3.0   | 0.0       | Taux de logements sociaux inoccupés.            |
+| **Sous-occupation**           | 1.0   | 0.0       | Part des logements sous-occupés.                |
+| **Loyer Moyen (Tous Appt)**   | 3.0   | 0.0       | Loyer moyen d'annonce au m² (Ensemble).         |
+| **Loyer Moyen (T1/T2)**       | 3.0   | 0.0       | Loyer spécifiquement pour petits appartements.  |
+| **Loyer Moyen (T3+)**         | 3.0   | 0.0       | Loyer spécifiquement pour grands appartements.  |
+| **Loyer Moyen (Maisons)**     | 3.0   | 0.0       | Loyer moyen pour les maisons.                   |
+| **Associations IML**          | 1.0   | 0.8       | Location avec Intermédiation (Solibail, etc.).  |
 | **Centres d'Hébergement**     | 2.0   | 0.5       | Capacité en CHRS / CPH.                         |
-| **Foyers & Pensions**         | 2.0   | 0.5       | Densité FJT, Pensions de famille.               |
+| **Foyers & Pensions**         | 2.0   | 0.5       | Densité FJT, Pensions de famille, Migrants.     |
 | **Hébergement Citoyen**       | 2.0   | 0.8       | Associations d'accueil chez l'habitant.         |
 | **Accueils J'Accueille**      | 3.0   | 1.0       | Présence active d'accueillants (Bassin de Vie). |
 
@@ -66,22 +66,27 @@ Voici l'intégralité des 35 critères configurés dans le moteur de soring OD&I
 
 | Critère                        | Poids | Boost BdV | Description                                   |
 | :----------------------------- | :---- | :-------- | :-------------------------------------------- |
-| **Opportunités Emploi (ROME)** | 3.0   | 0.5       | Match direct avec les métiers recherchés.     |
-| **Tension de recrutement**     | 1.0   | 0.0       | Métiers en manque de main d'œuvre.            |
-| **Offres SIAE**                | 3.0   | 0.5       | Insertion par l'activité économique.          |
-| **Centres de Formation**       | 2.0   | 0.8       | Proximité des formations souhaitées.          |
-| **Déclin Population Active**   | 1.0   | 0.0       | Zones avec besoin de renouvellement d'actifs. |
+| **Opportunités Emploi (A1)**   | 3.0   | 0.5       | Match direct métiers Adulte 1 (FT).           |
+| **Opportunités Emploi (A2)**   | 3.0   | 0.5       | Match direct métiers Adulte 2 (FT).           |
+| **Tension recrutement (A1)**   | 1.0   | 0.0       | Métiers en tension Adulte 1.                  |
+| **Tension recrutement (A2)**   | 1.0   | 0.0       | Métiers en tension Adulte 2.                  |
+| **Offres SIAE (A1)**           | 3.0   | 0.5       | Insertion (SIAE) Adulte 1.                    |
+| **Offres SIAE (A2)**           | 3.0   | 0.0       | Insertion (SIAE) Adulte 2.                    |
+| **Centres de Formation (A1)**  | 2.0   | 0.8       | Formations recherchées Adulte 1.              |
+| **Centres de Formation (A2)**  | 2.0   | 0.8       | Formations recherchées Adulte 2.              |
+| **Déclin Population Active**   | 1.0   | 0.0       | Baisse de la population des actifs.           |
 
 ### 🤝 Inclusion & Lien Social
 
 | Critère                     | Poids | Boost BdV | Description                                    |
 | :-------------------------- | :---- | :-------- | :--------------------------------------------- |
 | **Lien Social (Général)**   | 1.0   | 0.8       | Densité associative globale (RNA).             |
-| **Accompagnement Réfugiés** | 1.0   | 0.8       | Associations spécialisées (Bassin de Vie).     |
+| **Accompagnement Réfugiés** | 1.0   | 0.8       | Associations spécialisées (RNA).               |
 | **SIAE (Densité)**          | 1.0   | 0.8       | Présence de structures d'insertion.            |
 | **Affinités (Thématiques)** | 1.0   | 0.8       | Assos correspondant aux loisirs/intérets.      |
-| **Services Inclusion**      | 1.0   | 0.8       | Match avec les besoins administratifs/sociaux. |
-| **Dynamisme Population**    | 3.0   | 0.0       | Score basé sur la taille de ville (Gauss).     |
+| **Services Inclusion**      | 1.0   | 0.8       | Match avec les services sélectionnés.          |
+| **Population Commune**      | 3.0   | 0.0       | Score basé sur la taille de ville (Gauss).     |
+| **Couleur Politique**       | 1.0   | 0.0       | Affiliation politique (Si configuré).          |
 
 ### 🎓 Éducation
 
