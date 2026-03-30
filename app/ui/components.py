@@ -236,7 +236,7 @@ def sync_background_data(commune: CommuneResult, h: Optional[str]):
     if 'enrichment' in bg_res:
         enrich_data = bg_res['enrichment'].get(str(commune.codgeo))
         if enrich_data and not commune.inclusion.asso_inclusion_list_by_cat:
-            logging.info(f"✨ [SYNC] Associations sync for {commune.codgeo}")
+            logging.debug(f"✨ [SYNC] Associations sync for {commune.codgeo}")
             commune.inclusion.asso_refugee_list = enrich_data.get('refugee', [])
             commune.inclusion.asso_refugee_count = len(commune.inclusion.asso_refugee_list)
             commune.inclusion.asso_inclusion_list_by_cat = enrich_data.get('inclusion', {})
@@ -248,7 +248,7 @@ def sync_background_data(commune: CommuneResult, h: Optional[str]):
         if isinstance(pitches_data, dict) and "pitches" in pitches_data:
             pitch_for_city = pitches_data["pitches"].get(str(commune.codgeo))
             if pitch_for_city:
-                logging.info(f"✨ [SYNC] Pitch sync for {commune.codgeo}")
+                logging.debug(f"✨ [SYNC] Pitch sync for {commune.codgeo}")
                 commune.scorer_pitch = pitch_for_city
 
 @st.dialog("Centre Communal d'Action Sociale", width="large", on_dismiss=_on_ccas_dialog_dismiss)
@@ -356,7 +356,7 @@ def show_details_dialog(index: Any):
         # Sort by score_normalise desc to show strengths
         scores = sorted(scores, key=lambda x: x.score_normalise, reverse=True)
         
-        with st.container(height=600):
+        with st.container(border=False):
             for s in scores:
                 c_label, c_val = st.columns([3, 1])
                 with c_label:
@@ -535,20 +535,40 @@ def show_details_dialog(index: Any):
                         if inc_data.asso_refugee_count > 0:
                             st.success(f"**{inc_data.asso_refugee_count} association(s)** spécifiquement dédiée(s) aux réfugiés.")
                         
+
+                        # Display Refugee associations from the model (secondary list)  
+                        if inclusion_data.asso_refugee_list:
+                            with st.expander("Intégration des réfugiés & migrants", expanded=True):
+                                # Sort by local preference if needed (already sorted in scoring.py)
+                                for asso in inclusion_data.asso_refugee_list:
+                                    name = str(asso.get('name', 'Inconnu'))
+                                    id_val = asso.get('id', '')
+                                    url = f"https://www.assoce.fr/waldec/{id_val}" if id_val else "#"
+                                    desc = str(asso.get('description', '')).strip()
+                                    
+                                    cat_label = asso.get('waldec_label', '')
+                                    cat_str = f" ({cat_label})" if cat_label else ""
+                                    
+                                    if desc:
+                                        st.markdown(f"**{name}**{cat_str}: {desc} [En savoir plus]({url})")
+                                    else:
+                                        st.markdown(f"**{name}**{cat_str}: [En savoir plus]({url})")
+
+                        # Display other categories
                         if inc_data.asso_inclusion_list_by_cat:
-                            with st.expander("Répartition par catégorie", expanded=False):
-                                for cat, asso_list in sorted(inc_data.asso_inclusion_list_by_cat.items()):
-                                    with st.expander(f"**{cat}** ({len(asso_list)})", expanded=False):
-                                        for asso in asso_list:
-                                            name = str(asso.get('name', 'Inconnu'))
-                                            id_val = asso.get('id', '')
-                                            url = f"https://www.assoce.fr/waldec/{id_val}" if id_val else "#"
-                                            desc = str(asso.get('description', '')).strip()
-                                            
-                                            if desc:
-                                                st.markdown(f"**{name}**: {desc} [En savoir plus]({url})")
-                                            else:
-                                                st.markdown(f"**{name}**: [En savoir plus]({url})")
+                            # with st.expander("Répartition par catégorie", expanded=False):
+                            for cat, asso_list in sorted(inc_data.asso_inclusion_list_by_cat.items()):
+                                with st.expander(f"**{cat}** ({len(asso_list)})", expanded=False):
+                                    for asso in asso_list:
+                                        name = str(asso.get('name', 'Inconnu'))
+                                        id_val = asso.get('id', '')
+                                        url = f"https://www.assoce.fr/waldec/{id_val}" if id_val else "#"
+                                        desc = str(asso.get('description', '')).strip()
+                                        
+                                        if desc:
+                                            st.markdown(f"**{name}**: {desc} [En savoir plus]({url})")
+                                        else:
+                                            st.markdown(f"**{name}**: [En savoir plus]({url})")
                     elif h and (not odis_get_bg_result(h) or 'enrichment' not in odis_get_bg_result(h)):
                         with st.status("Récupération des associations détaillées...", expanded=True):
                             st.write("Nous interrogeons BigQuery pour obtenir la liste complète des associations locales.")
@@ -558,23 +578,7 @@ def show_details_dialog(index: Any):
                 # Call the fragment
                 associations_polling_fragment()
                 
-                # Display Refugee associations from the model (secondary list)
-                if inclusion_data.asso_refugee_list:
-                    with st.expander("Intégration des réfugiés & migrants", expanded=True):
-                        # Sort by local preference if needed (already sorted in scoring.py)
-                        for asso in inclusion_data.asso_refugee_list:
-                            name = str(asso.get('name', 'Inconnu'))
-                            id_val = asso.get('id', '')
-                            url = f"https://www.assoce.fr/waldec/{id_val}" if id_val else "#"
-                            desc = str(asso.get('description', '')).strip()
-                            
-                            cat_label = asso.get('waldec_label', '')
-                            cat_str = f" ({cat_label})" if cat_label else ""
-                            
-                            if desc:
-                                st.markdown(f"**{name}**{cat_str}: {desc} [En savoir plus]({url})")
-                            else:
-                                st.markdown(f"**{name}**{cat_str}: [En savoir plus]({url})")
+                
                 
                 # If we still want to allow dynamic search as a fallback/expansion, 
                 # keep it but make it optional or moved to the Scout agent.

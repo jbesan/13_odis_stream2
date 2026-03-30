@@ -165,7 +165,7 @@ class RNARagService:
             List of associations with their name and primary_category.
         """
         codgeos = [str(c) for c in codgeos]
-        logger.info(f"Fetching all associations for {len(codgeos)} communes")
+        logger.debug(f"Fetching all associations for {len(codgeos)} communes")
         
         try:
             import config as cfg
