@@ -141,7 +141,7 @@ def run_search():
     df_area_geo = st.session_state.app_data['area_geo']
     start_commune = df_all_communes.loc[[config.commune_actuelle.code]]
 
-    # --- Run Scoring Pipeline ---
+    # --- Run Scoring Pipeline (Optimized) ---
     # Instantiate the stateless engine with current data
     engine = scoring.ScoringEngine(
         df_all_communes=df_all_communes,
@@ -165,13 +165,12 @@ def run_search():
         bv_data=st.session_state.app_data.get('bv_data')
     )
 
-    processed_gdf = engine.run(
-        config=config,
-        log_prefix="classic"
-    )
-    
-    # --- Create Standardized Search Results Payload ---
-    search_results: SearchResultsData = engine.create_search_results(processed_gdf, config)
+    # 1. Clear old heavy results from session state (Centralized pattern)
+    from utils import memory
+    memory.clear_search_state()
+
+    # 2. Run optimized scoring (returns model and pruned GDF)
+    search_results, processed_gdf = engine.run_optimized(config)
     
     # --- State Update ---
     st.session_state['processed_gdf'] = processed_gdf

@@ -17,6 +17,7 @@ from core.models import (
 )
 from shapely.geometry import Point
 import logging
+import gc
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 from utils.logger import log_search_results
@@ -75,7 +76,7 @@ class ScoringEngine:
         return df
 
     def _compute_category_scores(self, df: pd.DataFrame, config: SearchCriterias) -> pd.DataFrame:
-        df = df.copy()
+        # Operating in-place on the provided DataFrame
         
         # Use cached active criteria if available
         active = config.active_criteria if config.active_criteria is not None else self._get_active_criteria(config)
@@ -84,8 +85,8 @@ class ScoringEngine:
         categories = ['emploi', 'logement', 'education', 'inclusion', 'mobilite', 'sante']
         for category in categories:
             # Skip if category totally irrelevant
-            if category == 'education' and config.nb_enfants == 0: continue
-            if category == 'sante' and config.besoin_sante == 'Aucun': continue
+            if category == 'education' and getattr(config, 'nb_enfants', 1) == 0: continue
+            if category == 'sante' and getattr(config, 'besoin_sante', 'Aucun') == 'Aucun': continue
 
             # Find columns for this category that are active
             cat_scores = self.scores_cat[self.scores_cat.cat == category]
@@ -196,40 +197,43 @@ class ScoringEngine:
         else:
             return (total_score / total_weight).fillna(0)
 
-    def _prune_irrelevant_metrics(self, df: pd.DataFrame, config: SearchCriterias) -> pd.DataFrame:
+    def _prune_irrelevant_metrics(self, df: pd.DataFrame, config: SearchCriterias, aggressive: bool = False) -> pd.DataFrame:
         """
         Prunes redundant columns to optimize memory usage.
-        Conservative approach: 
-        1. Always drop the 3 requested BdV columns.
-        2. Selectively drop unselected '_scaled' scores to keep the DataFrame lean.
+        Conservative approach by default, aggressive approach clears everything except essential UI/Map columns.
         """
-        if config is None:
+        if df is None or df.empty:
             return df
             
-        # 1. Deny-list: Explicitly requested redundant BdV columns
-        to_drop = ['polygon_bdv', 'libgeo_bdv', 'centroid_bdv']
+        to_drop = []
         
-        # 2. Selective Pruning: Drop unselected high-level scores
-        # This keeps the dataframe lean as expected by tests, but avoids touching identity/raw columns.
-        active_ids = None
-        if hasattr(config, 'active_criteria') and config.active_criteria is not None:
-            active_ids = set(config.active_criteria)
+        if aggressive:
+            # Keep only what's needed for the Map (scores_layer) and identity
+            keep_cols = {'libgeo', 'weighted_score', 'polygon', 'centroid', 'population', 'dep_code', 'reg_code', 'epci_code', 'bassin_de_vie', 'libelle_bassin_de_vie'}
+            to_drop = [c for c in df.columns if c not in keep_cols]
         else:
-            try:
-                # Fallback: compute active criteria if possible (e.g. in tests)
-                active_ids = set(self._get_active_criteria(config))
-            except Exception:
-                pass
+            # 1. Deny-list: Explicitly requested redundant BdV columns
+            to_drop = ['polygon_bdv', 'libgeo_bdv', 'centroid_bdv']
+            
+            # 2. Selective Pruning: Drop unselected high-level scores
+            active_ids = None
+            if hasattr(config, 'active_criteria') and config.active_criteria is not None:
+                active_ids = set(config.active_criteria)
+            else:
+                try:
+                    active_ids = set(self._get_active_criteria(config))
+                except Exception:
+                    pass
 
-        if active_ids:
-            scaled_cols = [c for c in df.columns if c.endswith('_scaled')]
-            for col in scaled_cols:
-                if col not in active_ids:
-                    to_drop.append(col)
+            if active_ids:
+                scaled_cols = [c for c in df.columns if c.endswith('_scaled')]
+                for col in scaled_cols:
+                    if col not in active_ids:
+                        to_drop.append(col)
             
         actual_drops = [c for c in to_drop if c in df.columns]
         if actual_drops:
-            df = df.drop(columns=actual_drops)
+            df.drop(columns=actual_drops, inplace=True)
             
         return df
 
@@ -341,21 +345,25 @@ class ScoringEngine:
             active.add('mob_dist_current_loc_scaled')
         
         # 2. Employment & Formations (Only if specific adult was searched)
-        for i in range(config.nb_adultes):
+        nb_adultes = getattr(config, 'nb_adultes', 0)
+        codes_metiers = getattr(config, 'codes_metiers', [])
+        codes_formations = getattr(config, 'codes_formations', [])
+        
+        for i in range(nb_adultes):
             adult_idx = i + 1
             # Employment
-            if i < len(config.codes_metiers) and config.codes_metiers[i]:
+            if i < len(codes_metiers) and codes_metiers[i]:
                 active.add(f'met_match_adult{adult_idx}_scaled')
                 active.add(f'met_match_adult{adult_idx}_tension_scaled')
                 active.add(f'met_siae_match_adult{adult_idx}_scaled') 
 
             # Formations
-            if i < len(config.codes_formations) and config.codes_formations[i]:
+            if i < len(codes_formations) and codes_formations[i]:
                 active.add(f'form_match_adult{adult_idx}_scaled')
 
         # 3. Logement
         # F-42: Hebergement Refinements
-        heb_sel = config.hebergement_cible
+        heb_sel = getattr(config, 'hebergement_cible', [])
         if "Location avec Intermédiation" in heb_sel:
             active.add('heb_loc_iml_scaled')
             active.add('log_vac_scaled')
@@ -372,22 +380,25 @@ class ScoringEngine:
             active.add('log_occup_scaled')
             
         # Rent scaling activation (if Location or IML)
-        if config.logement == 'Location' or "Location avec Intermédiation" in heb_sel:
+        logement_type = getattr(config, 'logement', 'Location')
+        if logement_type == 'Location' or "Location avec Intermédiation" in heb_sel:
              active.add('log_vac_scaled')
          # Handle both formats: log_loyer_moyen_appt_all_scaled and log_loyer_moyen_scaled_appartement_toutes
-             type_log = config.type_logement.code if hasattr(config.type_logement, 'code') else config.type_logement
+             type_log_attr = getattr(config, 'type_logement', 'appt_all')
+             type_log = type_log_attr.code if hasattr(type_log_attr, 'code') else type_log_attr
              active.add(f'log_loyer_moyen_{type_log}_scaled')
              if type_log == 'appartement_toutes':
                  active.add('log_loyer_moyen_scaled_appartement_toutes')
              elif type_log == 'appt_all':
                  active.add('log_loyer_moyen_appt_all_scaled')
 
-        if config.logement == 'Logement Social':
+        if logement_type == 'Logement Social':
             active.add('log_soc_inoc_scaled')
             active.add('log_soc_dem_scaled')
 
         # 4. Education
-        if config.nb_enfants > 0:
+        nb_enfants = getattr(config, 'nb_enfants', 0)
+        if nb_enfants > 0:
             active.add('youth_decline_scaled')
             active.add('edu_classes_ferm_scaled')
             edu_map = {
@@ -398,20 +409,21 @@ class ScoringEngine:
                 'Collège': 'edu_college_scaled',
                 'Lycée': 'edu_lycee_scaled'
             }
-            if config.classe_enfants:
-                for opt in config.classe_enfants:
-                    if opt in edu_map: active.add(edu_map[opt])
+            # Add specific levels
+            for level in getattr(config, 'classe_enfants', []):
+                if level in edu_map: active.add(edu_map[level])
 
         # 5. Sante
-        if config.besoin_sante != 'Aucun':
+        besoin_sante = getattr(config, 'besoin_sante', 'Aucun')
+        if besoin_sante != 'Aucun':
              sante_map = {
                  'Hôpital': 'sante_hopital_scaled',
                  'Maternité': 'sante_maternite_scaled',
                  'Soutien Psychologique & Addictologie': 'sante_psy_scaled',
                  'Psychiatrie': 'sante_psy_scaled'
              }
-             if config.besoin_sante in sante_map:
-                 active.add(sante_map[config.besoin_sante])
+             if besoin_sante in sante_map:
+                 active.add(sante_map[besoin_sante])
              active.add('sante_structures_scaled')
 
         # 6. Inclusion
@@ -421,10 +433,19 @@ class ScoringEngine:
         # F-26: Refugee Associations
         active.add('inc_asso_refug_scaled') 
         active.add('inc_siae_density_scaled') # New F-39: SIAE Density
-        if config.inc_services_add_selection or config.inc_services_core_selection: 
-            active.add('inc_services_incl_scaled')
-        if config.inc_asso_add_selection: active.add('inc_asso_add_scaled')
         
+        inc_services_add = getattr(config, 'inc_services_add_selection', [])
+        inc_services_core = getattr(config, 'inc_services_core_selection', [])
+        if inc_services_add or inc_services_core: 
+            active.add('inc_services_incl_scaled')
+            
+        if getattr(config, 'inc_asso_add_selection', []): 
+            active.add('inc_asso_add_scaled')
+        
+        # 7. Population Target (F-50)
+        if hasattr(config, 'target_population'): # Only if explicitly requested or part of full model
+            active.add('inc_population_scaled')
+
         return active
 
     
@@ -906,6 +927,22 @@ class ScoringEngine:
 
         return self.format_city_details(self.df_all_communes.loc[codgeo])
 
+    def run_optimized(self, config: SearchCriterias) -> Tuple[SearchResultsData, gpd.GeoDataFrame]:
+        """
+        Orchestrates the full scoring pipeline with optimized memory management.
+        Returns a tuple (SearchResultsData model, pruned GeoDataFrame for map).
+        """
+        # 1. Compute full scores
+        results_raw = self.run(config)
+        
+        # 2. Extract into Pydantic model while we still have all columns
+        model = self.create_search_results(results_raw, config)
+        
+        # 3. Aggressively prune the DataFrame to only what's needed for the map
+        self._prune_irrelevant_metrics(results_raw, config, aggressive=True)
+        
+        return model, results_raw
+
     def run(self, config: SearchCriterias, log_prefix: Optional[str] = None) -> gpd.GeoDataFrame:
         """Orchestrates the full scoring pipeline."""
         logger.debug(f"⚙️ [ENGINE] Starting run with Profile: {config.weight_profile}")
@@ -925,7 +962,8 @@ class ScoringEngine:
                 normalized.add(nc)
             config.active_categories = sorted(list(normalized))
         
-        c_code = config.commune_actuelle.code if hasattr(config.commune_actuelle, 'code') else config.commune_actuelle
+        c_code_obj = getattr(config, 'commune_actuelle', None)
+        c_code = c_code_obj.code if hasattr(c_code_obj, 'code') else c_code_obj
         
         # Robustness: fallback to Paris if c_code is missing
         if not c_code:
@@ -955,23 +993,21 @@ class ScoringEngine:
             communes_to_score = pd.concat([communes_to_score, self.df_all_communes.loc[[c_code]]])
         
         results = self._compute_scores(communes_to_score, config)
+        
+        # 1. Mandatory cleanup of intermediate pool
+        del communes_to_score
+        gc.collect()
 
-        if log_prefix:
-            # We need SearchResultsData here, but ScoringEngine.run returns a DataFrame.
-            # Best to let create_search_results handle it or pass it.
-            # For now, let's just make sure we don't break the log_prefix if used.
-            # Actually, ScoringEngine.run is often used by the BG agent, let's keep it clean.
-            search_results = self.create_search_results(results, config)
-            log_search_results(config, search_results, prefix=log_prefix)
-
+        # 2. Return the results
+        # Note: We do NOT prune aggressively here yet because the caller (UI or MCP)
+        # needs the full data to call format_city_details for the Top results.
         return results
 
     def _compute_scores(self, df_search: gpd.GeoDataFrame, config: SearchCriterias) -> pd.DataFrame:
-        if df_search.empty: return df_search.copy()
+        if df_search.empty: return df_search
 
         # Distance
-        # Distance
-        odis_search = df_search.copy()
+        odis_search = df_search
         if 'dist_current_loc' not in odis_search.columns:
             odis_search = self._compute_distance_score(odis_search, config)
 
@@ -979,12 +1015,16 @@ class ScoringEngine:
         if self.bv_data is not None and not self.bv_data.empty and 'bassin_de_vie' in odis_search.columns:
              # Ensure type consistency for merge
              odis_search['bassin_de_vie'] = odis_search['bassin_de_vie'].astype(str)
-             bv_data_scoped = self.bv_data.copy()
-             bv_data_scoped.index = bv_data_scoped.index.astype(str)
+             
+             # Instead of copying the whole bv_data, we merge and then handle suffixes if needed
+             # Or even better, only merge the columns that are not already in odis_search
+             bv_cols = [c for c in self.bv_data.columns if c not in odis_search.columns or c == 'bassin_de_vie']
+             # However, the engine logic expects '_bdv' suffix for everything.
+             # So we do need the suffix. Let's do it efficiently.
              
              odis_search = pd.merge(
                  odis_search, 
-                 bv_data_scoped.add_suffix('_bdv'), 
+                 self.bv_data.add_suffix('_bdv'), 
                  left_on='bassin_de_vie', 
                  right_index=True, 
                  how='left'
@@ -997,11 +1037,10 @@ class ScoringEngine:
         # logger.info(f"⚙️ [ENGINE] Computing final weighted scores...")
         odis_exploded['weighted_score'] = self._compute_weighted_score(odis_exploded, config)
 
-        # logger.info(f"⚙️ [ENGINE] Final results sorted.")
-        
-        # if c_code in cfg.PLM_MAPPING:
-        #     prefix = cfg.PLM_MAPPING[c_code]
-        #     odis_exploded = odis_exploded[~odis_exploded.index.astype(str).str.startswith(prefix)]
+        # Final pruning of intermediates before return
+        # Note: We don't do aggressive pruning here yet because the caller might need details.
+        # Aggressive pruning happens in run() if needed.
+        self._prune_irrelevant_metrics(odis_exploded, config, aggressive=False)
 
         return odis_exploded.sort_values(by='weighted_score', ascending=False)
 
@@ -1009,7 +1048,7 @@ class ScoringEngine:
 
 
     def _compute_employment_scores(self, df: gpd.GeoDataFrame, config: SearchCriterias) -> gpd.GeoDataFrame:
-        df = df.copy()
+        # Operating in-place
         
         # --- Live Jobs (ROME-based) ---
         if any(config.codes_metiers) and not self.live_jobs_data.empty:
@@ -1177,7 +1216,7 @@ class ScoringEngine:
         return df
 
     def _compute_sante_scores(self, df: gpd.GeoDataFrame, config: SearchCriterias) -> gpd.GeoDataFrame:
-        df = df.copy()
+        # Operating in-place
         if config.besoin_sante != 'Aucun':
             col_map = {'Hôpital': 'sante_hopital_scaled', 'Hopital': 'sante_hopital_scaled',
                        'Maternité': 'sante_maternite_scaled', 
@@ -1190,7 +1229,7 @@ class ScoringEngine:
         return df
 
     def _compute_mobility_scores(self, df: gpd.GeoDataFrame, config: SearchCriterias) -> gpd.GeoDataFrame:
-        df = df.copy()
+        # Operating in-place
         
         # --- Density ---
         if 'nb_stops_total' in df.columns:
@@ -1211,14 +1250,14 @@ class ScoringEngine:
         current_dep = None
         
         # Resolve current location details
-        if config.commune_actuelle:
-             c_code_raw = config.commune_actuelle
-             c_code = c_code_raw.code if hasattr(c_code_raw, 'code') else c_code_raw
+        c_code_obj = getattr(config, 'commune_actuelle', None)
+        if c_code_obj:
+             c_code = c_code_obj.code if hasattr(c_code_obj, 'code') else c_code_obj
              if c_code in self.df_all_communes.index:
-                 cur_row = self.df_all_communes.loc[c_code]
-                 current_epci = cur_row['epci_code']
-                 current_reg = cur_row['reg_code']
-                 current_dep = cur_row['dep_code']
+                  cur_row = self.df_all_communes.loc[c_code]
+                  current_epci = cur_row['epci_code']
+                  current_reg = cur_row['reg_code']
+                  current_dep = cur_row['dep_code']
 
         if self._is_local_search(config) and current_epci:
              df['mob_epci_scaled'] = np.where(df['epci_code'] == current_epci, 1.0, 0.0)
@@ -1238,13 +1277,13 @@ class ScoringEngine:
         return df
 
     def _compute_inclusion_scores(self, df: gpd.GeoDataFrame, config: SearchCriterias) -> gpd.GeoDataFrame:
-        df = df.copy()
+        # Operating in-place
         
         # Population Score (F-50) - Dynamic re-calculation
         # This overrides the precomputed 'inc_population_scaled' if mu/sigma are provided in config
-        if 'inc_population_scaled' in self._get_active_criteria(config):
-            mu = config.target_population
-            sigma = config.target_population_sigma
+        if 'inc_population_scaled' in self._get_active_criteria(config) and 'population' in df.columns:
+            mu = getattr(config, 'target_population', 5000)
+            sigma = getattr(config, 'target_population_sigma', 2000)
             
             # Recompute gaussian score based on raw population
             # We use _scale_series which handles 'gaussian' type
@@ -1256,9 +1295,10 @@ class ScoringEngine:
         if 'inc_asso_core_scaled' not in df.columns: df['inc_asso_core_scaled'] = 0.0
 
         # Affinities
-        if config.inc_asso_add_selection:
+        inc_asso_add = getattr(config, 'inc_asso_add_selection', [])
+        if inc_asso_add:
             interest_codes = set()
-            for i in config.inc_asso_add_selection:
+            for i in inc_asso_add:
                   # Logic to handle CriteriaItem or str
                   code = i.code if hasattr(i, 'code') else str(i)
                   interest_codes.add(code)
@@ -1273,7 +1313,12 @@ class ScoringEngine:
                 
                 affinite_assos = self.associations_data[self.associations_data['id_waldec'].astype(str).str.startswith(tuple(expanded_interests), na=False)]
                 affinite_counts = affinite_assos.groupby('codgeo')['count'].sum().reindex(df.index, fill_value=0)
-                df['affinite_density'] = (affinite_counts * 1000) / df['population']
+                
+                # Safety check for population column
+                if 'population' in df.columns:
+                    df['affinite_density'] = (affinite_counts * 1000) / df['population']
+                else:
+                    df['affinite_density'] = 0.0
                 min_b, max_b = self._get_bounds('inc_asso_add_scaled')
                 s_def_inc = self.scores_cat[self.scores_cat['score'] == 'inc_asso_add_scaled'].iloc[0] if not self.scores_cat[self.scores_cat['score'] == 'inc_asso_add_scaled'].empty else {}
                 min_b, max_b = self._get_bounds('inc_asso_add_scaled')
@@ -1290,9 +1335,9 @@ class ScoringEngine:
 
         # Inclusion Services (F-48: Merged Selection)
         needed = set()
-        for i in config.inc_services_core_selection:
+        for i in getattr(config, 'inc_services_core_selection', []):
             needed.add(i.code if hasattr(i, 'code') else str(i))
-        for i in config.inc_services_add_selection:
+        for i in getattr(config, 'inc_services_add_selection', []):
             needed.add(i.code if hasattr(i, 'code') else str(i))
             
         if needed:
@@ -1329,10 +1374,10 @@ class ScoringEngine:
 
     def _is_local_search(self, config: SearchCriterias) -> bool:
         """Determines if the search is happening within the user's current area."""
-        if not config.commune_actuelle:
+        c_code_raw = getattr(config, 'commune_actuelle', None)
+        if not c_code_raw:
             return False
             
-        c_code_raw = config.commune_actuelle
         c_code = c_code_raw.code if hasattr(c_code_raw, 'code') else c_code_raw
         
         if c_code not in self.df_all_communes.index:

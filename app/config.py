@@ -165,7 +165,9 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     'ui_inc_service_fle': False,
     'type_logement': 'appt_all',
     'weight_profile': 'Équilibré',
-    'notes_qualitatives': ""
+    'notes_qualitatives': "",
+    'target_population': DEFAULT_MU,
+    'target_population_sigma': DEFAULT_SIGMA
 }
 
 

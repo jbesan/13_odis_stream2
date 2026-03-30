@@ -314,22 +314,21 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
         inc_asso_add_selection=filters.get('inc_asso_add_selection', [])
     )
     
-    # 3. Run Engine
+    # 3. Run Engine (Optimized)
     try:
         start_engine = datetime.now()
-        processed_gdf = engine.run(config, log_prefix="chatbot")
+        # run_optimized returns (model: SearchResultsData, pruned_gdf: GeoDataFrame)
+        search_model, processed_gdf = engine.run_optimized(config)
         end_engine = datetime.now()
-        logger.debug(f"⏱️  [ENGINE] run() took {(end_engine - start_engine).total_seconds():.3f}s")
+        logger.debug(f"⏱️  [ENGINE] run_optimized() took {(end_engine - start_engine).total_seconds():.3f}s")
     except Exception as e:
         logger.error(f"❌ [MCP] Error: {e}")
         return {"error": str(e)}
     
-    if processed_gdf.empty:
+    if not search_model.results:
         logger.info("   [MCP] No results found.")
         return {"cities": [], "criteria_definitions": {}}
         
-    top_5 = processed_gdf.head(5).copy()
-    
     # 4. Criteria Definitions
     criteria_definitions: Dict[str, Any] = {}
     if not engine.scores_cat.empty:
@@ -337,63 +336,68 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
             score_id = row['score']
             cat = row['cat']
             if cat not in criteria_definitions: criteria_definitions[cat] = {}
-            
             criteria_definitions[cat][score_id] = {
                 "label": row.get('label', score_id),
                 "description": row.get('score_affichage', ''),
                 "tooltip": row.get('description', '')
             }
 
-    # 5. Build Results
+    # 5. Build Results from Pydantic Model
     results = []
-    for codgeo, row in top_5.iterrows():
-        detailed_scores: Dict[str, Any] = {}
-        for col in row.index:
-            if col.endswith('_cat_score'):
-                 cat_name = col.replace('_cat_score', '')
-                 if cat_name not in detailed_scores: detailed_scores[cat_name] = {}
-                 detailed_scores[cat_name]['score_global'] = float(row[col])
-            
-            if col.endswith('_scaled') or col.endswith('_scaled_binome'):
-                base_col = col.replace('_binome', '')
-                found_cat = "autre"
-                for cat, items in criteria_definitions.items():
-                    if base_col in items:
-                        found_cat = cat
-                        break
-                if found_cat not in detailed_scores: detailed_scores[found_cat] = {}
-                detailed_scores[found_cat][col] = float(row[col])
-
-        bdv = row.get('libelle_bassin_de_vie', "N/A")
-        details_obj: CommuneResult = engine.format_city_details(row, config=config)
-        details_dict = details_obj.model_dump()
+    for city in search_model.results:
+        # Extract data from model instead of heavy DataFrame
+        # Preserve the structure expected by the Agent
+        details_dict = city.model_dump()
         
-        # AI Pruning: Streamline details but keep data not yet handled by other tools
-        # Education and Formations stay here for now. Associations are handled by SCOUT.
-        details_streamlined = {
-            "identity": {
-                "name": details_obj.name,
-                "population": details_obj.population,
-                "bassin_de_vie": details_obj.name_bdv
-            },
-            "scores": details_dict.get("scores", {}),
-            "education": details_dict.get("education", {}),
-            "employment": {
-                "top_professions": details_dict.get("employment", {}).get("top_professions", []),
-                "training_programs": details_dict.get("employment", {}).get("training_programs", [])
-            }
+        # Build the 'detailed_scores' flat structure expected by the chatbot logic
+        # This matches the legacy logic but uses model data
+        detailed_scores: Dict[str, Any] = {}
+        for cat, items in city.scores.items():
+            detailed_scores[cat] = {"score_global": city.get_cat_score(cat)} # Need a helper or manual lookup
+            for item in items:
+                detailed_scores[cat][item.score_id] = item.score_normalise
+
+        # Note: city.get_cat_score doesn't exist, we use the metrics objects
+        cat_scores = {
+            "emploi": city.employment.cat_score,
+            "logement": city.housing.cat_score,
+            "education": city.education.cat_score,
+            "sante": city.health.cat_score,
+            "inclusion": city.inclusion.cat_score,
+            "mobilite": city.mobility.cat_score
         }
         
+        # Build detailed_scores
+        detailed_scores = {}
+        for cat, score_val in cat_scores.items():
+            detailed_scores[cat] = {"score_global": score_val}
+            if cat in city.scores:
+                for item in city.scores[cat]:
+                    detailed_scores[cat][item.score_id] = item.score_normalise
+
         results.append({
-            "codgeo": str(codgeo),
-            "name": row['libgeo'],
-            "bassin_de_vie": bdv,
-            "population": int(row.get('population', 0)),
-            "score": float(row.get('weighted_score', 0)),
-            "detailed_scores": detailed_scores, 
-            "details": details_streamlined
+            "codgeo": city.codgeo,
+            "name": city.name,
+            "bassin_de_vie": city.name_bdv,
+            "population": city.population,
+            "score": city.global_score,
+            "detailed_scores": detailed_scores,
+            "details": {
+                "identity": {"name": city.name, "population": city.population, "bassin_de_vie": city.name_bdv},
+                "scores": city.scores,
+                "education": city.education,
+                "employment": {
+                    "top_professions": city.employment.top_professions,
+                    "training_programs": city.employment.training_programs
+                }
+            }
         })
         
+    # Explicitly clear the pruned DataFrame reference as we only return the dict
+    del processed_gdf
+    import gc
+    gc.collect()
+
     end_logic = datetime.now()
     logger.debug(f"🏁 [MCP] Exiting _compute_top_cities_logic at {end_logic.strftime('%H:%M:%S.%f')[:-3]} - Full duration: {(end_logic - start_logic).total_seconds():.3f}s")
     

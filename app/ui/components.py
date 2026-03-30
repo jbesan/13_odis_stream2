@@ -276,9 +276,10 @@ def show_ccas_dialog(index: Any):
         
         if not subset.empty:
              # For ccas, we just show them all for the commune/binome
-             st.subheader(f"Contacts locaux pour {libgeo}")
+            #  st.subheader(f"Contacts locaux pour {libgeo}")
              
              for _, struct in subset.iterrows():
+                 st.divider()
                  # Layout: Commune First
                  label = struct['commune'] if pd.notna(struct.get('commune')) else libgeo
                  st.subheader(f"📍 {label}")
@@ -303,8 +304,6 @@ def show_ccas_dialog(index: Any):
                  if pd.notna(struct.get('site_web')):
                      st.markdown(f"🌐 [Site Web]({struct['site_web']})")
                      
-                 # Separator AFTER
-                 st.markdown("---")
         else:
              st.info(f"Aucune structure CCAS/CIAS référencée (avec contact) pour {libgeo}.")
     else:
@@ -600,18 +599,16 @@ def confirm_reset_dialog():
     col1, col2 = st.columns(2)
     with col1:
         if st.button("Oui", width="stretch"):
-            # 1. Radical cleanup: clear EVERYTHING except heavy datasets, auth, and essential UI state
+            # 1. Clear heavy search artifacts using centralized helper
+            from utils import memory
+            memory.clear_search_state()
+            
+            # 2. Radical cleanup: clear EVERYTHING except heavy datasets, auth, and essential UI state
             to_preserve = {'app_data', '_data_hash', 'rna_rag_service', 'rna_rag_status', 'password_correct', 'username', 'highlighted_result', 'config'}
             all_keys = list(st.session_state.keys())
             for k in all_keys:
                 if k not in to_preserve:
                     del st.session_state[k]
-
-            # 2. Specific cleanup inside app_data (clear city analysis cache)
-            if 'app_data' in st.session_state:
-                ia_keys = [k for k in st.session_state['app_data'].keys() if str(k).startswith('ia_analysis_')]
-                for k in ia_keys:
-                    del st.session_state['app_data'][k]
 
             # 3. Redirect to home
             st.switch_page("pages/1_Accueil.py")
@@ -972,7 +969,6 @@ def render_mobility_form() -> None:
     st.divider()
     # st.markdown("**Taille de ville cible**")
     
-    # helper for sigma interpolation
     def _calculate_sigma(mu):
         if mu <= 5000: return 4000
         if mu <= 50000:
@@ -981,6 +977,7 @@ def render_mobility_form() -> None:
 
     if "ui_target_population" not in st.session_state:
         st.session_state["ui_target_population"] = cfg.DEFAULT_MU
+        st.session_state["ui_target_population_sigma"] = _calculate_sigma(cfg.DEFAULT_MU)
     
     target_mu = st.select_slider(
         "Population cible de la ville recherchée",
