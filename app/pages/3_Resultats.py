@@ -39,8 +39,6 @@ if not auth.check_password():
 # --- Session State Initialization ---
 if 'highlighted_result' not in st.session_state:
     st.session_state['highlighted_result'] = [False, None]
-if 'fg_dict_ref' not in st.session_state:
-    st.session_state['fg_dict_ref'] = {}
 if 'fgs_to_show' not in st.session_state:
     st.session_state['fgs_to_show'] = set()
 if 'center' not in st.session_state:
@@ -129,7 +127,6 @@ def run_search():
     gc.collect()
     # Clear any previously generated PDF data on new search
     st.session_state['pdf_data'] = None
-    st.session_state['map_object'] = None
 
     from services import telemetry
     telemetry.reset_interaction_id()
@@ -237,8 +234,6 @@ def run_search():
     
     # We no longer pre-build Top 5 layers here to avoid Folium serialization issues in session state.
     # They are now rebuilt on the fly in the map rendering block.
-    st.session_state['fg_dict_ref'] = {}
-    
     st.session_state['fgs_to_show'] = set()
     st.session_state['highlighted_result'] = [False, None]
 
@@ -349,118 +344,90 @@ with col_results:
 
 with col_map:
     if st.session_state.get('processed_gdf') is not None:
-        st.subheader("Carte des résultats")
-        
-        # Define config early to avoid NameError
+        # 1. Map View State (Driven by st.session_state)
+        # Defining variables early to avoid NameError
         config = st.session_state.get('config')
+        search_results = st.session_state.get('search_results')
         
-        # Safety check for zoom
+        # Default zoom if not set
         if st.session_state.get("zoom") is None:
             st.session_state["zoom"] = maps.get_map_zoom(config.loc_search_area if config else 'departement')
 
+        # 2. Base Map Initialization (🧪 SOTA: Stable object for st-folium)
+        # We pass None/None to the constructor to ensure the base object is stable.
+        m = maps.create_base_map(None, None)
         
-        # --- 1. Map Initialization ---
-        # st.session_state.center and st.session_state.zoom are managed by callbacks
-        m = maps.create_base_map(st.session_state.get("center"), st.session_state.get("zoom"))
+        # 3. Build Consolidated Dynamic FeatureGroup
+        fg_dynamic = flm.FeatureGroup(name="ODIS_Dynamic_Layers")
         
-        # Safety check for search_results
-        search_results = st.session_state.get('search_results')
-        
-        # --- 2. Static Layers (Always rendered) ---
-        # Base Scores (Choropleth + Current Location)
+        # A. Scores & Current Location
         if not st.session_state.processed_gdf.empty:
-            fg_scores, colormap = maps.build_scores_layer(st.session_state['processed_gdf'])
-            fg_scores.add_to(m)
+            fg_scores, _ = maps.build_scores_layer(st.session_state['processed_gdf'])
+            # Logic: Instead of nesting FGs, add children of the generated layers to fg_dynamic if possible
+            # for child in fg_scores._children.values(): 
+            # actually nesting should work, but let's be flat if it helps
+            fg_scores.add_to(fg_dynamic)
 
             if search_results and search_results.current_geo:
                 row_actuel = pd.Series({'polygon': search_results.current_geo.geometry, 'libgeo': search_results.current_geo.name})
-                fg_curr_loc = maps.build_current_loc_layer(row_actuel)
-                fg_curr_loc.add_to(m)
+                maps.build_current_loc_layer(row_actuel).add_to(fg_dynamic)
 
-        # --- 3. Dynamic Layers (Based on Pills) ---
-        config = st.session_state.get('config')
-        
-        # Build dynamic options for pills (Objects with ID and Label)
+        # B. User-selected Layers (Pills)
         pill_options = [{"id": "top_5", "label": "🥇 Top 5"}]
         if config:
-            if config.nb_enfants > 0:
-                pill_options.append({"id": "edu", "label": "🎓 Éducation"})
-            if config.besoin_sante != "Aucun":
-                pill_options.append({"id": "sante", "label": "🏥 sante"})
-            if config.inc_services_add_selection:
-                pill_options.append({"id": "inc", "label": "🤝 Inclusion"})
+            if config.nb_enfants > 0: pill_options.append({"id": "edu", "label": "🎓 Éducation"})
+            if config.besoin_sante != "Aucun": pill_options.append({"id": "sante", "label": "🏥 Santé"})
+            if config.inc_services_add_selection: pill_options.append({"id": "inc", "label": "🤝 Inclusion"})
         
-        # Display pills - returns the selected objects
-        selected_objs = st.pills(
-            "Afficher sur la carte :", 
-            pill_options, 
-            selection_mode="multi", 
-            default=[pill_options[0]], # Default to Top 5
-            format_func=lambda x: x["label"],
-            key="map_layers_pills",
-            label_visibility="collapsed"
-        )
+        selected_objs = st.pills("Afficher sur la carte :", pill_options, selection_mode="multi", 
+                                default=[pill_options[0]], format_func=lambda x: x["label"],
+                                key="map_layers_pills", label_visibility="collapsed")
+        
         selected_ids = {obj["id"] for obj in selected_objs} if selected_objs else set()
-        
-        fgs_to_show = {'Scores', 'Commune Actuelle'}
-        legend_items = [
-            # {'color': 'blue', 'text': 'Ma position'}, # No icon = circle
-            {'color': 'red', 'text': 'Top 5', 'icon':'circle'} # No icon = circle
-        ]
+        legend_items = [{'color': 'red', 'text': 'Top 5', 'icon':'circle'}]
 
+        # C. POI & Top 5 Rendering
         if config and search_results:
             target_codgeos = {str(c.codgeo) for c in search_results.results}
             
+            # Additional Layers
             if "edu" in selected_ids:
-                fg_edu = maps.build_ecoles_layer(data_loader.get_app_data()['pois'], target_codgeos, config)
-                fg_edu.add_to(m)
+                maps.build_ecoles_layer(data_loader.get_app_data()['pois'], target_codgeos, config).add_to(fg_dynamic)
                 legend_items.append({'color': 'green', 'icon': 'pencil', 'text': 'Écoles'})
-            
             if "sante" in selected_ids:
-                fg_sante = maps.build_sante_layer(data_loader.get_app_data()['pois'], target_codgeos, config)
-                fg_sante.add_to(m)
+                maps.build_sante_layer(data_loader.get_app_data()['pois'], target_codgeos, config).add_to(fg_dynamic)
                 legend_items.append({'color': 'blue', 'icon': 'plus', 'text': 'Santé'})
-            
             if "inc" in selected_ids:
-                fg_inc = maps.build_services_layer(data_loader.get_app_data()['pois'], target_codgeos, config)
-                fg_inc.add_to(m)
+                maps.build_services_layer(data_loader.get_app_data()['pois'], target_codgeos, config).add_to(fg_dynamic)
                 legend_items.append({'color': 'purple', 'icon': 'heart', 'text': 'Inclusion'})
-        
-        # --- 4. Highlights & Top 5 Borders ---
-        is_highlighted, highlighted_index = st.session_state.highlighted_result
-        show_top_5 = "top_5" in selected_ids
+            
+            # Top 5 & Highlights
+            show_top_5 = "top_5" in selected_ids
+            is_highlighted, highlighted_index = st.session_state.highlighted_result
 
-        # Build Top 5 Borders (Linear additive logic)
-        if show_top_5 and search_results:
-            for i, commune in enumerate(search_results.results[:5]):
-                if commune.geometry:
-                    fg_top = maps.build_top_result_layer(commune, i)
-                    fg_top.add_to(m)
+            if show_top_5:
+                for i, commune in enumerate(search_results.results[:5]):
+                    if commune.geometry: maps.build_top_result_layer(commune, i).add_to(fg_dynamic)
 
-        # Build Specific Highlight
-        if is_highlighted and search_results:
-            commune = search_results.results[highlighted_index]
-            if commune.geometry:
-                fg_highlight = maps.build_top_result_layer(commune, highlighted_index)
-                fg_highlight.add_to(m)
+            if is_highlighted:
+                commune = search_results.results[highlighted_index]
+                if commune.geometry: maps.build_top_result_layer(commune, highlighted_index).add_to(fg_dynamic)
 
-        st.session_state.fgs_to_show = fgs_to_show
-
-        # --- 5. Final Rendering ---
+        # 4. Legend Rendering (Added to the stable map object)
         if legend_items:
-            legend = maps.build_legend(legend_items)
-            m.get_root().html.add_child(flm.Element(legend))
+            legend_html = maps.build_legend(legend_items)
+            m.get_root().html.add_child(flm.Element(legend_html))
 
-        st.session_state['map_object'] = m
-
+        # 5. Final Incremental Rendering
         try:
             st_folium(
                 m,
-                zoom=st.session_state.get("zoom"),
                 center=st.session_state.get("center"),
+                zoom=st.session_state.get("zoom"),
+                feature_group_to_add=fg_dynamic,
                 key="odis_main_map",
                 use_container_width=True,
-                returned_objects=[],
+                returned_objects=[]
             )
         except Exception as e:
             st.error(f"Erreur d'affichage de la carte: {e}")

@@ -198,23 +198,19 @@ def _build_generic_points_layer(df: gpd.GeoDataFrame, icon: str, color: str, too
     
     # Prepare data for map layer
     
-    # Switch to MarkerCluster for robustness with icons and popups
-    # FastMarkerCluster with JS callback was proving fragile/broken in some contexts
-    logging.info(f"Building MarkerCluster with {len(df)} points. Icon: {icon}, Color: {color}")
-    
-    cluster = MarkerCluster()
+    # 🧪 SOTA: Using a plain FeatureGroup instead of MarkerCluster for maximum st-folium compatibility
+    # plugins like MarkerCluster can sometimes interfere with incremental updates
+    fg = flm.FeatureGroup()
     
     for _, row in df.iterrows():
-        # Construct popup content safely
-        popup_content = "<br>".join([f"<b>{'Catégorie' if col == 'type' else 'Nom'}</b>: {row.get(col, '')}" for col in tooltip_cols])
-        
+        popup_content = "<br>".join([f"<b>{col.capitalize()}</b>: {row.get(col, '')}" for col in tooltip_cols])
         flm.Marker(
             location=[row['lat'], row['lon']],
             popup=flm.Popup(popup_content, max_width=300),
             icon=flm.Icon(color=color, icon=icon, prefix='fa')
-        ).add_to(cluster)
+        ).add_to(fg)
 
-    return cluster
+    return fg
 
 def build_ecoles_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config: SearchCriterias) -> flm.FeatureGroup:
     """Builds the map layer for schools using unified POIs."""
