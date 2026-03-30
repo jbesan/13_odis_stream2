@@ -35,8 +35,7 @@ from utils import data_loader
 from services import mcp_server
 
 with st.spinner("Chargement des données ODIS..."):
-    data_loader.ensure_data_initialized()
-    app_data = st.session_state.app_data
+    app_data = data_loader.get_app_data()
     mcp_server.set_data_context(app_data)
 st.markdown("Identifions ensemble le projet de vie et les meilleures options de relocalisation.")
 

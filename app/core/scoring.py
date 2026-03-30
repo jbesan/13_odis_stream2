@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import itertools
 import string
+import warnings
 import config as cfg
 from core.models import (
     SearchCriterias, CommuneResult, CommuneScoreDetail, SearchResultsData,
@@ -52,18 +53,28 @@ class ScoringEngine:
         return 0.0, 1.0
 
     def _compute_distance_score(self, df: gpd.GeoDataFrame, config: SearchCriterias) -> gpd.GeoDataFrame:
+        """
+        Calculates linear distance to user's current location.
+        🧪 SOTA: Temporarily project to metric EPSG:2154 for accurate distance.
+        """
         current_codgeo_raw = config.commune_actuelle
         current_codgeo = current_codgeo_raw.code if hasattr(current_codgeo_raw, 'code') else current_codgeo_raw
-        target_geom = None
-        if current_codgeo in df.index:
-             target_geom = df.loc[current_codgeo, 'centroid'] if 'centroid' in df.columns else df.loc[current_codgeo].geometry.centroid
-        elif self.df_all_communes is not None and current_codgeo in self.df_all_communes.index: # Use self.df_all_communes
-             target_geom = self.df_all_communes.loc[current_codgeo, 'centroid'] if 'centroid' in self.df_all_communes.columns else self.df_all_communes.loc[current_codgeo].geometry.centroid
         
-        if target_geom is not None:
-             # Use projected centroids
-             centroids = df['centroid'] if 'centroid' in df.columns else df.centroid
-             df.loc[:, 'dist_current_loc'] = centroids.distance(target_geom)
+        target_geom_4326 = None
+        if current_codgeo in df.index:
+             target_geom_4326 = df.loc[current_codgeo, 'centroid'] if 'centroid' in df.columns else df.loc[current_codgeo].geometry.centroid
+        elif self.df_all_communes is not None and current_codgeo in self.df_all_communes.index:
+             target_geom_4326 = self.df_all_communes.loc[current_codgeo, 'centroid'] if 'centroid' in self.df_all_communes.columns else self.df_all_communes.loc[current_codgeo].geometry.centroid
+        
+        if target_geom_4326 is not None:
+             # Project source point to metric 2154
+             sx, sy = project_point(target_geom_4326.x, target_geom_4326.y, from_crs="EPSG:4326", to_crs="EPSG:2154")
+             from shapely.geometry import Point
+             target_point_2154 = Point(sx, sy)
+             
+             # Project candidates to metric space
+             df_metric = df.to_crs(cfg.PROJECTED_CRS)
+             df.loc[:, 'dist_current_loc'] = df_metric.geometry.distance(target_point_2154)
         
         # Scale if computed
         if 'dist_current_loc' in df.columns:
@@ -208,8 +219,10 @@ class ScoringEngine:
         to_drop = []
         
         if aggressive:
-            # Keep only what's needed for the Map (scores_layer) and identity
-            keep_cols = {'libgeo', 'weighted_score', 'polygon', 'centroid', 'population', 'dep_code', 'reg_code', 'epci_code', 'bassin_de_vie', 'libelle_bassin_de_vie'}
+            # SOTA Optimization: Keep identifiers, scores, AND essential geometries for the filtered subset.
+            # We only keep geometries for the search area (e.g. results for 1 department),
+            # which is lightweight enough (~1MB) for the session state.
+            keep_cols = {'libgeo', 'weighted_score', 'dep_code', 'reg_code', 'epci_code', 'bassin_de_vie', 'libelle_bassin_de_vie', 'polygon', 'centroid'}
             to_drop = [c for c in df.columns if c not in keep_cols]
         else:
             # 1. Deny-list: Explicitly requested redundant BdV columns
@@ -453,15 +466,24 @@ class ScoringEngine:
         """
         Formats detailed information for a city to be displayed in the UI.
         Returns a CommuneResult Pydantic model.
+        Hydrates static data (geometries, labels) from the shared global dataset.
         """
         codgeo_str = str(row['codgeo']) if 'codgeo' in row else str(row.name)
         
+        # 🧪 SOTA: Hydrate static data from the shared global dataframe (Singleton)
+        # This allows 'row' to only contain the computed results (scores).
+        try:
+            static_row = self.df_all_communes.loc[codgeo_str]
+        except KeyError:
+            # Fallback if the code is not in the baseline (unlikely)
+            static_row = row
+
         # Identity
         identity = {
             "codgeo": codgeo_str,
-            "name": row.get('libgeo', 'Inconnu'),
-            "population": int(round(row.get('population', 0) / 1000) * 1000),
-            "bassin_de_vie": row.get('libelle_bassin_de_vie', 'N/A'),
+            "name": static_row.get('libgeo', 'Inconnu'),
+            "population": int(round(static_row.get('population', 0))),
+            "bassin_de_vie": static_row.get('libelle_bassin_de_vie', 'N/A'),
             "global_score": float(row.get('weighted_score', 0.0)) if 'weighted_score' in row else 0.0
         }
 
@@ -473,34 +495,36 @@ class ScoringEngine:
         mob_data = MobilityMetrics()
         logement_data = HousingMetrics()
         
-        # Populate mobility defaults from row
-        mob_data.bus_stops = int(row.get('nb_stops_bus', 0))
-        mob_data.tram_stops = int(row.get('nb_stops_tram', 0))
-        mob_data.metro_stops = int(row.get('nb_stops_metro', 0))
-        mob_data.train_stops = int(row.get('nb_stops_train', 0))
-        mob_data.total_stops = int(row.get('nb_stops_total', 0))
-        mob_data.stop_density = float(row.get('mob_trans_pub_stop_density', 0.0))
+        # Populate mobility & static defaults from static_row
+        mob_data.bus_stops = int(static_row.get('nb_stops_bus', 0))
+        mob_data.tram_stops = int(static_row.get('nb_stops_tram', 0))
+        mob_data.metro_stops = int(static_row.get('nb_stops_metro', 0))
+        mob_data.train_stops = int(static_row.get('nb_stops_train', 0))
+        mob_data.total_stops = int(static_row.get('nb_stops_total', 0))
+        mob_data.stop_density = float(static_row.get('mob_trans_pub_stop_density', 0.0))
         
         # Populate logement defaults
-        logement_data.host_count = int(row.get('heb_accueillants_count', 0))
+        logement_data.host_count = int(static_row.get('heb_accueillants_count', 0))
 
-        # Extract lat/lon from geometry if available
+        # Extract lat/lon from geometry if available (Use static_row)
         lat, lon = 0.0, 0.0
-        if 'centroid' in row and row['centroid'] is not None:
+        row_for_geom = static_row if 'centroid' in static_row or 'geometry' in static_row else row
+
+        if 'centroid' in row_for_geom and row_for_geom['centroid'] is not None:
              # Assuming centroid is a Point object (from GeoPandas)
              try:
                  # Use utility to project from Lambert-93 to WGS84
                  # Lambert-93 (EPSG:2154) coordinates are typically > 100000
-                 curr_x, curr_y = row['centroid'].x, row['centroid'].y
+                 curr_x, curr_y = row_for_geom['centroid'].x, row_for_geom['centroid'].y
                  if curr_x > 180 or curr_y > 90:
                     lon, lat = project_point(curr_x, curr_y, from_crs='EPSG:2154', to_crs='EPSG:4326')
                  else:
                     lon, lat = curr_x, curr_y
              except AttributeError:
                  pass
-        elif 'geometry' in row and row['geometry'] is not None:
+        elif 'geometry' in row_for_geom and row_for_geom['geometry'] is not None:
              try:
-                 c = row['geometry'].centroid
+                 c = row_for_geom['geometry'].centroid
                  lon, lat = c.x, c.y
              except AttributeError:
                  pass
@@ -574,11 +598,15 @@ class ScoringEngine:
 
             if norm_cat not in structured_scores: structured_scores[norm_cat] = []
             
-            # Improved Valeur KPI
+            # Improved Valeur KPI (Checking both shared data and computed results)
             val_raw = None
             raw_metric_col = score_row['metric']
-            if raw_metric_col and raw_metric_col in row and pd.notna(row[raw_metric_col]):
-                val = row[raw_metric_col]
+            
+            # KPI could be either in computed results OR in static shared data
+            src_row = static_row if raw_metric_col in static_row else (row if raw_metric_col in row else None)
+            
+            if src_row is not None and raw_metric_col in src_row and pd.notna(src_row[raw_metric_col]):
+                val = src_row[raw_metric_col]
                 d_factor = float(score_row.get('display_factor', 1.0))
                 if pd.api.types.is_number(val):
                     val_raw = float(val * d_factor)
@@ -814,30 +842,27 @@ class ScoringEngine:
         mob_data.cat_score = float(cat_final_scores.get('mobilite', 0.0))
 
         # Extract coordinates and centroid point (in 4326)
-        # The engine ensures a 'centroid' column exists in 2154
+        # 🧪 SOTA: odis.centroid is now ALREADY in 4326 at load time.
+        # This eliminates the "Atlantic Ocean" bug caused by double-projection.
         c_geom = row.get('centroid') if 'centroid' in row else (row.geometry.centroid if hasattr(row, 'geometry') else None)
         
         lat_val, lon_val = 0.0, 0.0
         c_point = None
         if c_geom:
-            # France bounds in 2154 are meters (>1000), 4326 are degrees (<180)
-            if c_geom.x > 1000 or c_geom.y > 1000:
-                lon_val, lat_val = project_point(c_geom.x, c_geom.y, from_crs="EPSG:2154", to_crs="EPSG:4326")
-            else:
-                lon_val, lat_val = c_geom.x, c_geom.y
+            lon_val, lat_val = c_geom.x, c_geom.y
             
             from shapely.geometry import Point
             c_point = Point(lon_val, lat_val)
 
-        # Main geometry (cached in model for map rendering)
-        poly = row.get('polygon') if 'polygon' in row else (row.geometry if hasattr(row, 'geometry') else None)
+        # Geometry (Use static_row)
+        poly = static_row.get('polygon') if 'polygon' in static_row else (static_row.geometry if hasattr(static_row, 'geometry') else None)
 
         return CommuneResult(
             codgeo=str(row.name),
-            name=row.get('libgeo', 'Inconnu'),
-            population=int(row.get('population', 0)),
-            codgeo_bdv=str(row.get('bassin_de_vie', 'Inconnu')),
-            name_bdv=row.get('libelle_bassin_de_vie', 'Inconnu'),
+            name=static_row.get('libgeo', 'Inconnu'),
+            population=int(static_row.get('population', 0)),
+            codgeo_bdv=str(static_row.get('bassin_de_vie', 'Inconnu')),
+            name_bdv=static_row.get('libelle_bassin_de_vie', 'Inconnu'),
             centroid=c_point,
             geometry=poly,
             global_score=float(row.get('weighted_score', 0.0)),
@@ -927,20 +952,26 @@ class ScoringEngine:
 
         return self.format_city_details(self.df_all_communes.loc[codgeo])
 
-    def run_optimized(self, config: SearchCriterias) -> Tuple[SearchResultsData, gpd.GeoDataFrame]:
+    def run_optimized(self, config: SearchCriterias) -> Tuple[SearchResultsData, pd.DataFrame]:
         """
         Orchestrates the full scoring pipeline with optimized memory management.
-        Returns a tuple (SearchResultsData model, pruned GeoDataFrame for map).
+        Returns a tuple (SearchResultsData model, pruned DataFrame for map).
         """
         # 1. Compute full scores
         results_raw = self.run(config)
         
         # 2. Extract into Pydantic model while we still have all columns
+        # (Hydration from shared static_row happens inside format_city_details)
         model = self.create_search_results(results_raw, config)
         
         # 3. Aggressively prune the DataFrame to only what's needed for the map
+        # Now dropping polygons as they are hydrated JIT during rendering
         self._prune_irrelevant_metrics(results_raw, config, aggressive=True)
         
+        # Convert to standard DataFrame to remove GeoPandas overhead in session state
+        if isinstance(results_raw, gpd.GeoDataFrame):
+            results_raw = pd.DataFrame(results_raw.drop(columns='geometry', errors='ignore'))
+            
         return model, results_raw
 
     def run(self, config: SearchCriterias, log_prefix: Optional[str] = None) -> gpd.GeoDataFrame:

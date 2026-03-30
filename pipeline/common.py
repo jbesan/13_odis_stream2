@@ -82,7 +82,7 @@ def load_dataset(path: Path, config: Dict[str, Any], **kwargs) -> pd.DataFrame:
     # Prioritize config format
     encoding = config.get('encoding', None)
     if fmt == 'parquet':
-        return pd.read_parquet(path, **kwargs)
+        return pd.read_parquet(path, engine='fastparquet', **kwargs)
     elif fmt == 'csv':
         return pd.read_csv(path, sep=None, engine='python', encoding=encoding, **kwargs)
     elif fmt == 'json':
@@ -98,7 +98,7 @@ def load_dataset(path: Path, config: Dict[str, Any], **kwargs) -> pd.DataFrame:
     
     # Fallback to extension
     if path.suffix == '.parquet':
-        return pd.read_parquet(path, **kwargs)
+        return pd.read_parquet(path, engine='fastparquet', **kwargs)
     elif path.suffix == '.csv':
         return pd.read_csv(path, sep=None, engine='python', encoding=encoding, **kwargs)
     elif path.suffix == '.json':

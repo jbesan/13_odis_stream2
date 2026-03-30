@@ -149,7 +149,7 @@ def run_ingestion(token: str = None, departments: List[str] = None):
     # Load SIAE lookup for code_insee fallback
     if SIAE_LOOKUP_PATH.exists():
         print(f"  [Lookup] Loading SIAE lookup table from {SIAE_LOOKUP_PATH}...")
-        str_inc = pd.read_parquet(SIAE_LOOKUP_PATH)
+        str_inc = pd.read_parquet(SIAE_LOOKUP_PATH, engine='fastparquet')
         # Ensure siret is string for matching
         str_inc['siret'] = str_inc['siret'].astype(str)
     else:
@@ -227,7 +227,7 @@ def run_ingestion(token: str = None, departments: List[str] = None):
         
         # Save granular data as requested (no aggregation)
         os.makedirs(OUTPUT_PATH.parent, exist_ok=True)
-        df.to_parquet(OUTPUT_PATH, index=False)
+        df.to_parquet(OUTPUT_PATH, index=False, engine='fastparquet')
         print(f"\n✅ Successfully saved {len(df)} job opening records to {OUTPUT_PATH}")
     else:
         print("\n⚠️ No job data collected.")
@@ -237,7 +237,7 @@ def run_ingestion(token: str = None, departments: List[str] = None):
         # Unique structures per commune
         df_struct = df_struct.drop_duplicates(subset=['codgeo', 'siae_siret'])
         os.makedirs(STRUCTURES_PATH.parent, exist_ok=True)
-        df_struct.to_parquet(STRUCTURES_PATH, index=False)
+        df_struct.to_parquet(STRUCTURES_PATH, index=False, engine='fastparquet')
         print(f"✅ Successfully saved {len(df_struct)} unique SIAE structure records to {STRUCTURES_PATH}")
     else:
         print("\n⚠️ No structure data collected.")

@@ -1,6 +1,9 @@
 import streamlit as st
 import gc
 import logging
+import tracemalloc
+import pandas as pd
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -30,13 +33,6 @@ def clear_search_state():
             del st.session_state[key]
             cleared_count += 1
             
-    # Also clear city analysis cache inside app_data if it exists
-    if 'app_data' in st.session_state:
-        ia_keys = [k for k in st.session_state['app_data'].keys() if str(k).startswith('ia_analysis_')]
-        for k in ia_keys:
-            del st.session_state['app_data'][k]
-            cleared_count += 1
-
     if cleared_count > 0:
         logger.info(f"🧹 [MEMORY] Removed {cleared_count} heavy objects from session state.")
         perform_garbage_collection()
@@ -49,3 +45,4 @@ def perform_garbage_collection():
     """
     gc.collect()
     logger.info("♻️ [MEMORY] Garbage collection triggered.")
+

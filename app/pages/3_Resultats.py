@@ -18,6 +18,7 @@ import gc
 import warnings
 from agents.utils import launch_background_scorer, odis_get_bg_result, launch_background_enrichment
 from core.models import SearchResultsData
+from utils import memory
 
 st.set_page_config(layout="wide")
 
@@ -116,7 +117,7 @@ for k, v in st.session_state.items():
     if str(k).startswith('ui_'):
         st.session_state[k] = v
 
-app_data = st.session_state.app_data
+app_data = data_loader.get_app_data()
 search_results: SearchResultsData = st.session_state.get('search_results')
 
 def run_search():
@@ -136,10 +137,11 @@ def run_search():
     config = ui.create_search_criterias_from_inputs()
     st.session_state['config'] = config
 
-    # Get required dataframes from session state
-    df_all_communes = st.session_state.app_data['odis']
-    df_bv_geo = st.session_state.app_data['bv_geo']
-    df_area_geo = st.session_state.app_data['area_geo']
+    # Get required dataframes from global cached app_data
+    app_data = data_loader.get_app_data()
+    df_all_communes = app_data['odis']
+    df_bv_geo = app_data['bv_geo']
+    df_area_geo = app_data['area_geo']
     start_commune = df_all_communes.loc[[config.commune_actuelle.code]]
 
     # --- Run Scoring Pipeline (Optimized) ---
@@ -148,26 +150,26 @@ def run_search():
         df_all_communes=df_all_communes,
         df_bv_geo=df_bv_geo,
         df_area_geo=df_area_geo,
-        scores_cat=st.session_state.app_data['scores_cat'],
-        incl_index=st.session_state.app_data['incl_index'],
-        associations_data=st.session_state.app_data['associations_data'],
-        formations_data=st.session_state.app_data['formations_data'],
-        codformations_index=st.session_state.app_data['codformations_index'],
-        waldec_index=st.session_state.app_data['waldec_index'],
+        scores_cat=app_data['scores_cat'],
+        incl_index=app_data['incl_index'],
+        associations_data=app_data['associations_data'],
+        formations_data=app_data['formations_data'],
+        codformations_index=app_data['codformations_index'],
+        waldec_index=app_data['waldec_index'],
         global_stats={},
-        refugee_associations_data=st.session_state.app_data['refugee_associations_data'],
-        live_jobs_data=st.session_state.app_data['live_jobs_data'],
-        siae_jobs_data=st.session_state.app_data['siae_jobs_data'],
-        annuaire_ecoles=st.session_state.app_data.get('annuaire_ecoles', pd.DataFrame()),
-        annuaire_sante=st.session_state.app_data.get('annuaire_sante', pd.DataFrame()),
-        annuaire_inclusion=st.session_state.app_data.get('annuaire_inclusion', pd.DataFrame()),
-        inclusion_services_index=st.session_state.app_data.get('inclusion_services_index', pd.DataFrame()),
-        rome_index=st.session_state.app_data.get('rome_index', pd.DataFrame()),
-        bv_data=st.session_state.app_data.get('bv_data')
+        refugee_associations_data=app_data['refugee_associations_data'],
+        live_jobs_data=app_data['live_jobs_data'],
+        siae_jobs_data=app_data['siae_jobs_data'],
+        annuaire_ecoles=app_data.get('annuaire_ecoles', pd.DataFrame()),
+        annuaire_sante=app_data.get('annuaire_sante', pd.DataFrame()),
+        annuaire_inclusion=app_data.get('annuaire_inclusion', pd.DataFrame()),
+        inclusion_services_index=app_data.get('inclusion_services_index', pd.DataFrame()),
+        rome_index=app_data.get('rome_index', pd.DataFrame()),
+        bv_data=app_data.get('bv_data')
     )
 
     # 1. Clear old heavy results from session state (Centralized pattern)
-    from utils import memory
+    
     memory.clear_search_state()
 
     # 2. Run optimized scoring (returns model and pruned GDF)
@@ -212,31 +214,24 @@ def run_search():
         target_codgeos = [c['codgeo'] for c in top_cities_full]
         launch_background_enrichment(engine, target_codgeos, h)
     
-    # Calculate center for map
-    if not processed_gdf.empty:
+    # Calculate center for map (Use starting commune as anchor - more efficient & robust)
+    if not start_commune.empty:
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=DeprecationWarning)
-            # Use centroid of unioned polygons in projected CRS
-            projected_union = processed_gdf.to_crs(cfg.PROJECTED_CRS).union_all()
-            avg_centroid = projected_union.centroid
+            # Use centroid of starting commune 
+            avg_centroid = start_commune.geometry.iloc[0].centroid
         
         # Project back to 4326 for Folium
-        lon, lat = utils.project_point(avg_centroid.x, avg_centroid.y, from_crs=cfg.PROJECTED_CRS, to_crs='EPSG:4326')
+        if avg_centroid.x > 180: # Check if projected
+             lon, lat = utils.project_point(avg_centroid.x, avg_centroid.y, from_crs=cfg.PROJECTED_CRS, to_crs='EPSG:4326')
+        else:
+             lon, lat = avg_centroid.x, avg_centroid.y
         final_center_y, final_center_x = lat, lon
     else:
-        # Fallback to current commune
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=DeprecationWarning)
-            # start_commune is already a GeoDataFrame from data_loader
-            start_geom = start_commune.geometry.iloc[0]
-            if start_geom.x > 180: # Meters
-                 start_lon, start_lat = utils.project_point(start_geom.centroid.x, start_geom.centroid.y, from_crs=cfg.PROJECTED_CRS, to_crs='EPSG:4326')
-            else:
-                 start_lon, start_lat = start_geom.centroid.x, start_geom.centroid.y
-                 
-        final_center_y, final_center_x = start_lat, start_lon
+        # Fallback to absolute default
+        final_center_y, final_center_x = cfg.DEFAULT_MAP_CENTER
 
-    st.session_state['selected_geo'] = st.session_state.app_data['odis'].loc[[config.commune_actuelle.code]].copy()
+    st.session_state['selected_geo'] = data_loader.get_app_data()['odis'].loc[[config.commune_actuelle.code]].copy()
     st.session_state['center'] = [final_center_y, final_center_x]
     st.session_state['zoom'] = maps.get_map_zoom(config.loc_search_area)
     
@@ -246,6 +241,7 @@ def run_search():
     
     st.session_state['fgs_to_show'] = set()
     st.session_state['highlighted_result'] = [False, None]
+
 
 def open_pdf_modal() -> None:
     """Callback to signal that the PDF modal should be shown."""
@@ -407,23 +403,26 @@ with col_map:
         selected_ids = {obj["id"] for obj in selected_objs} if selected_objs else set()
         
         fgs_to_show = {'Scores', 'Commune Actuelle'}
-        legend_items = []
+        legend_items = [
+            # {'color': 'blue', 'text': 'Ma position'}, # No icon = circle
+            {'color': 'red', 'text': 'Top 5', 'icon':'circle'} # No icon = circle
+        ]
 
         if config and search_results:
             target_codgeos = {str(c.codgeo) for c in search_results.results}
             
             if "edu" in selected_ids:
-                fg_edu = maps.build_ecoles_layer(st.session_state.app_data['pois'], target_codgeos, config)
+                fg_edu = maps.build_ecoles_layer(data_loader.get_app_data()['pois'], target_codgeos, config)
                 fg_edu.add_to(m)
                 legend_items.append({'color': 'green', 'icon': 'pencil', 'text': 'Écoles'})
             
             if "sante" in selected_ids:
-                fg_sante = maps.build_sante_layer(st.session_state.app_data['pois'], target_codgeos, config)
+                fg_sante = maps.build_sante_layer(data_loader.get_app_data()['pois'], target_codgeos, config)
                 fg_sante.add_to(m)
-                legend_items.append({'color': 'blue', 'icon': 'plus', 'text': 'sante'})
+                legend_items.append({'color': 'blue', 'icon': 'plus', 'text': 'Santé'})
             
             if "inc" in selected_ids:
-                fg_inc = maps.build_services_layer(st.session_state.app_data['pois'], target_codgeos, config)
+                fg_inc = maps.build_services_layer(data_loader.get_app_data()['pois'], target_codgeos, config)
                 fg_inc.add_to(m)
                 legend_items.append({'color': 'purple', 'icon': 'heart', 'text': 'Inclusion'})
         
@@ -433,18 +432,16 @@ with col_map:
 
         # Build Top 5 Borders (Linear additive logic)
         if show_top_5 and search_results:
-            for i, commune in enumerate(search_results.results):
+            for i, commune in enumerate(search_results.results[:5]):
                 if commune.geometry:
-                    row_data = pd.Series({'polygon': commune.geometry, 'libgeo': commune.name})
-                    fg_top = maps.build_top_result_layer(row_data, i)
+                    fg_top = maps.build_top_result_layer(commune, i)
                     fg_top.add_to(m)
 
-        # Build Specific Highlight (Red border + dashed current pos)
+        # Build Specific Highlight
         if is_highlighted and search_results:
             commune = search_results.results[highlighted_index]
             if commune.geometry:
-                row_data = pd.Series({'polygon': commune.geometry, 'libgeo': commune.name})
-                fg_highlight = maps.build_top_result_layer(row_data, highlighted_index)
+                fg_highlight = maps.build_top_result_layer(commune, highlighted_index)
                 fg_highlight.add_to(m)
 
         st.session_state.fgs_to_show = fgs_to_show
@@ -480,9 +477,19 @@ if st.session_state.get('show_pdf_modal'):
 is_cloud_run = os.environ.get("K_SERVICE") is not None
 
 # 1. Skip if not running on Cloud Run (Local Dev)
-if not is_cloud_run:
-    with st.expander("Debug", expanded=False):
-        try:
-            st.json(search_results.results)
-        except:
-            pass
+# if not is_cloud_run:
+#     with st.expander("Debug", expanded=False):
+        # try:
+        # 🧪 SOTA: Drop geometry columns to avoid 'pyarrow.lib.ArrowTypeError'
+        # Streamlit's Arrow serialization doesn't support GeoPandas objects in st.dataframe
+        # debug_df = st.session_state.get('processed_gdf')
+        # if debug_df is not None:
+        #     st.text(f"Lignes: {len(debug_df)}")
+        #     st.text(f"colonnes: {len(debug_df.columns)}")
+        #     mem_usage = debug_df.memory_usage(deep=True).sum() / (1024 * 1024)
+        #     st.text(f"Mémoire RAM: {mem_usage:.2f} Mo")                
+        # st.dataframe(st.session_state['processed_gdf'].drop(columns=['polygon', 'centroid'], errors='ignore'))
+        # st.json(search_results.results)
+
+        # except:
+        #     pass

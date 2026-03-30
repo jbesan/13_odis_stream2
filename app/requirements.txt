@@ -19,8 +19,7 @@ pydantic
 python-dotenv
 langgraph
 pydantic-ai
-polars
 google-cloud-bigquery
 google-cloud-bigquery-storage
-pyarrow
 db-dtypes
+fastparquet

@@ -281,7 +281,7 @@ def run_etl():
         
         output_path = "pipeline/cache/output/odis_ft_jobs_agg.parquet"
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        agg.to_parquet(output_path, index=False)
+        agg.to_parquet(output_path, index=False, engine='fastparquet')
         
         # Validation: Check if all expected departments are present
         df['dept'] = df['commune'].str[:2]

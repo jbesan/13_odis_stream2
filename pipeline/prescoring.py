@@ -141,7 +141,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
              return
 
         # Read as standard Parquet (WKB)
-        communes_df = pd.read_parquet(input_path)
+        communes_df = pd.read_parquet(input_path, engine='fastparquet')
         
         # Convert WKB to Geometry
         if 'polygon' in communes_df.columns:
@@ -329,7 +329,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         process_scaling(communes_gdf, 'lien_social_density', 'inc_asso_core_scaled')
         process_scaling(communes_gdf, 'inc_asso_refug_density', 'inc_asso_refug_scaled')
         process_scaling(communes_gdf, 'inc_siae_density', 'inc_siae_density_scaled')
-        process_scaling(communes_gdf, 'population', 'inc_population_scaled')
+        
         
         # inc_pol_scaled (already 0-1)
         if 'pol_num' in communes_gdf.columns:
@@ -448,7 +448,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
                 default_socle_admin = cfg.DEFAULT_INC_SERVICES_CORE
 
                 
-                pois_df = pd.read_parquet(pois_path)
+                pois_df = pd.read_parquet(pois_path, engine='fastparquet')
                 incl_pois = pois_df[pois_df['category'] == 'incl_services'].copy()
                 
                 if not incl_pois.empty:
@@ -525,7 +525,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         if 'geometry' in communes_gdf.columns:
              communes_gdf['polygon'] = communes_gdf.geometry.to_wkb()
              communes_gdf.drop(columns=['geometry'], inplace=True)
-        pd.DataFrame(communes_gdf).to_parquet(output_path, compression='brotli', index=False)
+        pd.DataFrame(communes_gdf).to_parquet(output_path, compression='brotli', index=False, engine='fastparquet')
         logger.log_step("apply_prescoring", "COMPLETED", {"columns": len(communes_gdf.columns), "path": str(output_path), "rows": len(communes_gdf)})
 
     except Exception as e:
@@ -546,7 +546,7 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
              return
 
         # Read as standard Parquet (WKB) - BV
-        bv_df = pd.read_parquet(bv_path)
+        bv_df = pd.read_parquet(bv_path, engine='fastparquet')
         if 'polygon' in bv_df.columns:
              bv_df['geometry'] = bv_df['polygon'].apply(lambda x: wkb.loads(bytes(x)))
              bv_gdf = gpd.GeoDataFrame(bv_df, geometry='geometry', crs=cfg.PROJECTED_CRS)
@@ -554,7 +554,7 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
              bv_gdf = gpd.GeoDataFrame(bv_df, geometry='geometry')
 
         # Read as standard Parquet (WKB) - Communes
-        communes_df = pd.read_parquet(communes_path)
+        communes_df = pd.read_parquet(communes_path, engine='fastparquet')
         # We don't need geometry for communes here, just scores.
 
         
@@ -678,9 +678,6 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
                  pass
                  
         # --- 4. Special cases ---
-        if 'population_bv' in bv_gdf.columns:
-            process_scaling(bv_gdf, 'population_bv', 'inc_population_scaled')
-            
         # Clean up
         # Clean up
         if 'geometry' in bv_gdf.columns:
@@ -692,7 +689,7 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
         if 'level_0' in bv_export.columns:
             bv_export.drop(columns=['level_0'], inplace=True)
             
-        bv_export.reset_index().to_parquet(bv_path, compression='brotli', index=False)
+        bv_export.reset_index().to_parquet(bv_path, compression='brotli', index=False, engine='fastparquet')
         logger.log_step("score_bassins_de_vie", "COMPLETED", {"rows": len(bv_gdf)})
 
     except Exception as e:

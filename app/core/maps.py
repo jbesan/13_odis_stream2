@@ -14,6 +14,7 @@ from core.models import SearchCriterias
 import logging
 import warnings
 from utils import common as utils
+from utils import data_loader
 
 
 def get_map_zoom(search_area: str) -> int:
@@ -32,83 +33,45 @@ def create_base_map(center: List[float], zoom: int) -> flm.Map:
     if zoom is None: zoom = get_map_zoom(st.session_state.config.loc_search_area)
     return flm.Map(location=center, zoom_start=zoom, tiles="cartodbpositron")
 
-def build_scores_layer(df: pd.DataFrame) -> Tuple[flm.FeatureGroup, Optional[Any]]:
-    """Builds the FeatureGroup for all scored communes or bassins de vie, colored by score."""
-    fg = flm.FeatureGroup(name="Scores")
-    
-    id_col = 'codgeo'
-    name_col = 'libgeo'
-    tooltip_fields = [name_col, 'weighted_score']
-    tooltip_aliases = ['Commune:', 'Score:']
+def build_scores_layer(df: pd.DataFrame, id_col: str = "codgeo", name_col: str = "libgeo") -> Tuple[flm.FeatureGroup, Optional[Any]]:
+    """
+    Builds a choropleth layer from a scored and pruned DataFrame.
+    🧪 SOTA: Uses standardized 4326 geometries from the results.
+    """
+    fg = flm.FeatureGroup(name="Scores (Chaleur)")
+    if df.empty:
+        return fg, None
+
+    # Ensure id_col is a column (it might be the index)
+    if id_col not in df.columns:
+        if df.index.name == id_col:
+            df = df.reset_index()
+        else:
+            df = df.reset_index()
+            if "index" in df.columns:
+                df = df.rename(columns={"index": id_col})
 
     if id_col not in df.columns:
-        # Check if it's in the index
-        if df.index.name == id_col:
-             df = df.reset_index()
-        else:
-             # Try resetting anyway, maybe index doesn't have a name but is the ID
-             df = df.reset_index()
-             if id_col not in df.columns:
-                 # If still not found, rename 'index' to id_col if it looks right? 
-                 # Or just return empty.
-                 # Let's try to be robust: if 'index' is the column now, rename it?
-                 if 'index' in df.columns:
-                     df.rename(columns={'index': id_col}, inplace=True)
-                 
-                 if id_col not in df.columns:
-                     return fg, None # Return empty layer if the required ID is missing
+        logging.error(f"Required ID column '{id_col}' not found.")
+        return fg, None
 
-    # Filter out current commune and its PLM family from choropleth to avoid overlap
-    current_code = None
-    if 'config' in st.session_state and st.session_state.config.commune_actuelle:
-        c = st.session_state.config.commune_actuelle
-        current_code = c.code if hasattr(c, 'code') else c
+    # Cast IDs to string for robust matching with GeoJSON properties
+    df[id_col] = df[id_col].astype(str)
     
-    if current_code and id_col in df.columns:
-        # Detect PLM family
-        plm_prefix = None
-        if current_code in cfg.PLM_MAPPING:
-            plm_prefix = cfg.PLM_MAPPING[current_code]
-            df = df[df[id_col] != current_code].copy()
-        else:
-            for parent_code, prefix in cfg.PLM_MAPPING.items():
-                if str(current_code).startswith(prefix):
-                    plm_prefix = prefix
-                    # Drop parent if we are in an arrondissement
-                    df = df[df[id_col] != parent_code].copy()
-                    # Drop current arrondissement
-                    df = df[df[id_col] != current_code].copy()
-                    break
-        
-        if plm_prefix:
-            # Drop all siblings in the family
-            df = df[~df[id_col].astype(str).str.startswith(plm_prefix)].copy()
-        else:
-            # Standard single commune exclusion
-            df = df[df[id_col] != current_code].copy()
+    score_dict = df.set_index(id_col)["weighted_score"].to_dict()
+    colormap = getattr(linear, 'YlGn_09').scale(min(score_dict.values()), max(score_dict.values()))
 
-    score_dict = df.set_index(id_col)["weighted_score"]
-    colormap = getattr(linear, 'YlGn_09').scale(score_dict.min(), score_dict.max())
-
-    # Add all scored geometries (communes or bassins de vie)
+    # F-SDD: Pre-format the score for display
     df_serializable = df[[id_col, name_col, 'weighted_score', 'polygon']].copy()
-    # F-SDD: Pre-format the score for display to avoid Folium formatter issues
     df_serializable['score_pct'] = df_serializable['weighted_score'].apply(lambda x: f"{x*100:.1f}%" if pd.notna(x) else "N/A")
-    df_serializable.set_geometry('polygon', inplace=True)
     
-    # Force the known CRS (PROJECTED_CRS) if missing, then convert to 4326 for Folium
-    if df_serializable.crs is None:
-        df_serializable.crs = cfg.PROJECTED_CRS
+    # Create GeoDataFrame (Already in 4326)
+    gdf = gpd.GeoDataFrame(df_serializable, geometry='polygon', crs="EPSG:4326")
     
-    if df_serializable.crs != "EPSG:4326":
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*array with ndim > 0 to a scalar is deprecated.*")
-            df_serializable = df_serializable.to_crs("EPSG:4326")
-
     flm.GeoJson(
-        df_serializable,
+        gdf,
         style_function=lambda feature: {
-            "fillColor": colormap(score_dict.get(feature["properties"][id_col])),
+            "fillColor": colormap(score_dict.get(str(feature["properties"][id_col]))),
             "stroke": False,
             "color": "#1b4429",
             "weight": 0.5,
@@ -123,28 +86,44 @@ def build_scores_layer(df: pd.DataFrame) -> Tuple[flm.FeatureGroup, Optional[Any
 
     return fg, colormap
 
-def build_top_result_layer(row: pd.Series, rank: int) -> flm.FeatureGroup:
+def _get_geom(row: Union[pd.Series, Any], field: str = 'polygon') -> Optional[Any]:
+    """Helper to extract geometry from either a pd.Series or a Pydantic model (CommuneResult)."""
+    if hasattr(row, field):
+        return getattr(row, field)
+    # Pydantic CommuneResult uses 'geometry' and 'centroid' fields
+    if field == 'polygon' and hasattr(row, 'geometry'):
+        return row.geometry
+    if field == 'centroid' and hasattr(row, 'centroid'):
+        return row.centroid
+    # Dictionary/Series access
+    try:
+        return row.get(field)
+    except:
+        return None
+
+def build_top_result_layer(row: Union[pd.Series, Any], rank: int) -> flm.FeatureGroup:
     """Builds a FeatureGroup to highlight a single top result (commune + binome)."""
     fg = flm.FeatureGroup(name=f"Top {rank + 1}")
 
+    poly = _get_geom(row, 'polygon')
+    if poly is None:
+        logging.warning(f"No polygon found for Top {rank+1}")
+        return fg
+
     # Main commune outline
-    # Project to 4326
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", category=DeprecationWarning)
-        poly_4326 = gpd.GeoSeries([row.polygon], crs=cfg.PROJECTED_CRS).to_crs("EPSG:4326").iloc[0]
-    
+    # 🧪 SOTA: Standardized in 4326 already
     flm.GeoJson(
-        mapping(poly_4326),
+        mapping(poly),
         style_function=lambda x: {"color": "red", "fillOpacity": 0, "weight": 3}
     ).add_to(fg)
 
 
     # Add rank marker at the centroid of the main polygon
-    # Project centroid to 4326 using scalar-safe helper
-    cx, cy = utils.project_point(row.polygon.centroid.x, row.polygon.centroid.y, from_crs=cfg.PROJECTED_CRS, to_crs='EPSG:4326')
+    c = poly.centroid
+    cx, cy = c.x, c.y # Longitude, Latitude
     
     flm.Marker(
-        location=[cy, cx],
+        location=[cy, cx], # Folium expects [lat, lon]
         icon=flm.features.DivIcon(
             icon_size=(25, 25),
             icon_anchor=(12, 12),
@@ -154,26 +133,23 @@ def build_top_result_layer(row: pd.Series, rank: int) -> flm.FeatureGroup:
         
     return fg
 
-def build_current_loc_layer(row: pd.Series) -> flm.FeatureGroup:
+def build_current_loc_layer(row: Union[pd.Series, Any]) -> flm.FeatureGroup:
     """Builds a thick blue outline for the current location."""
-    
     fg = flm.FeatureGroup(name="Commune Actuelle")
     
-    current_geo_df = gpd.GeoDataFrame([row], geometry='polygon', crs=cfg.PROJECTED_CRS)
-    
-    # Default to Commune view
-    # Prepare serializable DF in 4326 for Folium
-    current_geo_df_serializable = current_geo_df[['libgeo', 'polygon']].copy()
-    current_geo_df_serializable.set_geometry('polygon', inplace=True)
-    if current_geo_df_serializable.crs != "EPSG:4326":
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*array with ndim > 0 to a scalar is deprecated.*")
-            current_geo_df_serializable = current_geo_df_serializable.to_crs("EPSG:4326")
+    poly = _get_geom(row, 'polygon')
+    libgeo = _get_geom(row, 'libgeo') or "Ma position"
 
+    if poly is None:
+        return fg
+
+    # 🧪 SOTA: Standardized in 4326 already
+    current_geo_df = gpd.GeoDataFrame([{'libgeo': libgeo, 'polygon': poly}], geometry='polygon', crs="EPSG:4326")
+    
     flm.GeoJson(
-        current_geo_df_serializable,
-        style_function=lambda x: {"fillColor": 'blue', "fillOpacity": 0.7, "stroke": True, "color": "blue"},
-        tooltip=current_geo_df_serializable['libgeo'].iloc[0]
+        current_geo_df,
+        style_function=lambda x: {"fillColor": 'blue', "fillOpacity": 0.4, "stroke": True, "color": "blue", "weight": 4},
+        tooltip=libgeo
     ).add_to(fg)
 
     return fg
@@ -194,8 +170,9 @@ def build_legend(items_list: List[Dict[str, str]]) -> str:
     """
     for item in items_list:
         color = leaflet_colors.get(item['color'], 'grey')
+        icon_html = f"<i class='fa fa-{item['icon']}' style='color:{color}; width: 20px; text-align: center;'></i>" if item.get('icon') else f"<span style='display:inline-block; width:12px; height:12px; background-color:{color}; border-radius:50%; margin-right:5px; border:1px solid white;'></span>"
         legend_html += f"""
-            <li><i class='fa fa-{item['icon']}' style='color:{color}; width: 20px; text-align: center;'></i> {item['text']}</li>
+            <li>{icon_html} {item['text']}</li>
         """
     legend_html += "</ul></div>"
     return legend_html

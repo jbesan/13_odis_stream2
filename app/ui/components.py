@@ -14,7 +14,8 @@ import json
 import logging
 import string
 from agents.utils import odis_get_bg_result
-from utils.data_loader import ensure_data_initialized
+from utils.data_loader import ensure_data_initialized, get_app_data
+from utils import memory
 from core.scoring import ScoringEngine
 from typing import Any, Dict, List, Optional, Union
 from core.models import SearchCriterias, CommuneResult, CommuneScoreDetail, SearchResultsData
@@ -159,6 +160,7 @@ def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
             except Exception as e:
                 st.error(f"Erreur de l'agent: {str(e)}")
 
+
 def _on_ia_dialog_dismiss():
     st.session_state.active_ia_city_index = None
 
@@ -260,11 +262,11 @@ def show_ccas_dialog(index: Any):
     commune = st.session_state.search_results.get_by_code(index)
     codgeo = commune.codgeo
     libgeo = commune.name
-    structures_df = st.session_state['app_data'].get('structures_ccas', pd.DataFrame())
+    structures_df = get_app_data().get('structures_ccas', pd.DataFrame())
     
     target_codes = [codgeo.strip()]
     # Optional logic for binome if needed (fallback to df_all_communes)
-    df_all = st.session_state['app_data'].get('df_all_communes', pd.DataFrame())
+    df_all = get_app_data().get('odis', pd.DataFrame())
     if codgeo in df_all.index:
         row = df_all.loc[codgeo]
         if 'binome' in row and row['binome'] and 'codgeo_binome' in row:
@@ -600,7 +602,7 @@ def confirm_reset_dialog():
     with col1:
         if st.button("Oui", width="stretch"):
             # 1. Clear heavy search artifacts using centralized helper
-            from utils import memory
+            
             memory.clear_search_state()
             
             # 2. Radical cleanup: clear EVERYTHING except heavy datasets, auth, and essential UI state
@@ -629,7 +631,7 @@ def start_over() -> None:
         
 def render_localisation_form() -> None:
     """Renders the UI for the 'Localisation Actuelle' form section."""
-    app_data = st.session_state.app_data
+    app_data = get_app_data()
     dept_details = app_data.get('dept_details', {})
     options_dep = app_data['coddep_set']
     
@@ -671,7 +673,7 @@ def render_education_form() -> None:
 def render_employment_form() -> None:
     """Renders the UI for the 'Emploi & Formation' form section."""
     inject_custom_css()
-    app_data = st.session_state.app_data
+    app_data = get_app_data()
     col1, col2 = st.columns(2)
     rome_full_index = app_data['rome_index']
     rome_top_index = app_data.get('rome_top_index', rome_full_index) # Fallback to full if missing
@@ -769,7 +771,7 @@ def render_health_form() -> None:
 def render_other_needs_form() -> None:
     """Renders the UI for the 'Autres Besoins' (Inclusion) section (Refactored F-13/F-48)."""
     inject_custom_css()
-    app_data = st.session_state.app_data
+    app_data = get_app_data()
     
     col1, col2 = st.columns(2)
     with col2:
@@ -778,8 +780,8 @@ def render_other_needs_form() -> None:
         st.text("Sélectionnez vos centres d'intérêt pour identifier les territoires avec un tissu associatif correspondant.")
         
         # Load pre-enriched waldec_index
-        if 'waldec_index' in st.session_state.app_data:
-            waldec_index = st.session_state.app_data['waldec_index']
+        if 'waldec_index' in get_app_data():
+            waldec_index = get_app_data()['waldec_index']
             # Prefixes from config
             prefixes = cfg.WALDEC_CATEGORIES
             
@@ -909,7 +911,7 @@ def render_other_notes_form() -> None:
 
 def render_mobility_form() -> None:
     """Renders the UI for the 'Mobilité' form section (Consolidated)."""
-    app_data = st.session_state['app_data']
+    app_data = get_app_data()
     dept_details = app_data.get('dept_details', {})
     regions_dict = app_data.get('regions_names', {})
     is_france = False
@@ -983,7 +985,7 @@ def render_mobility_form() -> None:
         "Population cible de la ville recherchée",
         options=cfg.POPULATION_TARGET_OPTIONS,
         key="ui_target_population",
-        help=f'Définit la taille idéale de la commune recherchée. Le score de population sera maximal pour cette valeur et diminuera progressivement autour. Tolérance : +/- {st.session_state['ui_target_population_sigma']:,} hab.'.replace(",", " ")
+        help=f"Définit la taille idéale de la commune recherchée. Le score de population sera maximal pour cette valeur et diminuera progressivement autour. Tolérance : +/- {st.session_state['ui_target_population_sigma']} hab.".replace(",", " ")
     )
     
     # Auto-calculate and store sigma
@@ -1090,7 +1092,7 @@ import config as cfg
 
 def create_search_criterias_from_inputs() -> SearchCriterias:
     """Gathers all user inputs from session_state and creates a SearchCriterias object."""
-    app_data = st.session_state['app_data']
+    app_data = get_app_data()
     
     # Location
     commune_codgeo = app_data['depcom_df'][

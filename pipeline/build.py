@@ -47,7 +47,15 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
             logger.log_step("build_communes", "FAILED", {"reason": "Clean Communes file not found"})
             return gpd.GeoDataFrame()
             
-        communes_gdf = gpd.read_parquet(communes_path)
+        # Read with pandas (WKB) and reconstruct GDF
+        communes_df = pd.read_parquet(communes_path, engine='fastparquet')
+        if 'polygon' in communes_df.columns:
+            from shapely import wkb
+            communes_df['geometry'] = communes_df['polygon'].apply(lambda x: wkb.loads(bytes(x)))
+            communes_gdf = gpd.GeoDataFrame(communes_df, geometry='geometry', crs=cfg.PROJECTED_CRS)
+        else:
+            communes_gdf = gpd.GeoDataFrame(communes_df, geometry='geometry')
+
         
         # 2. Merge Indicators
         # Helper to merge
@@ -55,7 +63,7 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
             nonlocal communes_gdf
             path = CLEAN_DIR / f"{name}.parquet"
             if path.exists():
-                df = pd.read_parquet(path)
+                df = pd.read_parquet(path, engine='fastparquet')
                 if cols:
                     # Ensure codgeo is present
                     cols_to_use = ['codgeo'] + [c for c in cols if c in df.columns and c != 'codgeo']
@@ -124,7 +132,7 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         # Merge SIAE Structures Count (New F-39)
         siae_path = CLEAN_DIR.parent / "output" / "odis_inclusion_structures.parquet"
         if siae_path.exists():
-            siae_df = pd.read_parquet(siae_path)
+            siae_df = pd.read_parquet(siae_path, engine='fastparquet')
             siae_agg = siae_df.groupby('codgeo').size().rename('inc_siae_count').reset_index()
             communes_gdf = communes_gdf.merge(siae_agg, on='codgeo', how='left')
             communes_gdf['inc_siae_count'] = communes_gdf['inc_siae_count'].fillna(0)
@@ -152,8 +160,8 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
             rent_path = CLEAN_DIR / "odace_loyer_annonce.parquet"
             profil_path = CLEAN_DIR / "odace_logement_profil.parquet"
             if rent_path.exists() and profil_path.exists():
-                df_rent = pd.read_parquet(rent_path)
-                df_profil = pd.read_parquet(profil_path)
+                df_rent = pd.read_parquet(rent_path, engine='fastparquet')
+                df_profil = pd.read_parquet(profil_path, engine='fastparquet')
                 
                 # Merge profile info to get human labels
                 df_merged = df_rent.merge(df_profil, on='logement_profil_sk', how='inner')
@@ -429,7 +437,7 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         
         output_path = OUTPUT_DIR / "odis_communes_pre.parquet"
         logging.info(f"DEBUG: Saving to {output_path}. Columns: {[c for c in df_to_save.columns if 'loyer' in c]}")
-        df_to_save.to_parquet(output_path, compression='brotli', index=False)
+        df_to_save.to_parquet(output_path, compression='brotli', index=False, engine='fastparquet')
         logger.log_step("build_communes", "CREATED", {"path": str(output_path), "rows": len(df_to_save)})
         
         # Copy bmo_vertical to output -> Handled in build_vertical_tables as odis_metiers_agg.parquet
@@ -554,7 +562,7 @@ def build_bassins_de_vie(communes_gdf: gpd.GeoDataFrame, config: Dict[str, Any],
         df_to_save = pd.DataFrame(bv_gdf.drop(columns=cols_to_drop))
         
         output_path = OUTPUT_DIR / "odis_bassins_de_vie.parquet"
-        df_to_save.reset_index().to_parquet(output_path, compression='brotli', index=False)
+        df_to_save.reset_index().to_parquet(output_path, compression='brotli', index=False, engine='fastparquet')
         logger.log_step("build_bassins_de_vie", "CREATED", {"path": str(output_path), "rows": len(df_to_save)})
 
     except Exception as e:
@@ -568,18 +576,18 @@ def build_vertical_tables(config: Dict[str, Any], logger: PipelineLogger):
         # 1. Metiers - DEPRECATED (Moved to Live Jobs)
         # bmo_path = CLEAN_DIR / "bmo_vertical.parquet"
         # if bmo_path.exists():
-        #     df = pd.read_parquet(bmo_path)
+        #     df = pd.read_parquet(bmo_path, engine='fastparquet')
         #     out = OUTPUT_DIR / "odis_metiers_agg.parquet"
-        #     df.to_parquet(out)
+        #     df.to_parquet(out, engine='fastparquet')
         #     logger.log_step("build_vertical_tables", "METIERS", {"path": str(out)})
 
             
         # 2. Associations
         assoc_path = CLEAN_DIR / "associations_vertical.parquet"
         if assoc_path.exists():
-            df = pd.read_parquet(assoc_path)
+            df = pd.read_parquet(assoc_path, engine='fastparquet')
             out = OUTPUT_DIR / "odis_associations_agg.parquet"
-            df.to_parquet(out, compression='brotli', index=False)
+            df.to_parquet(out, compression='brotli', index=False, engine='fastparquet')
             logger.log_step("build_vertical_tables", "ASSOCIATIONS", {"path": str(out)})
             
             # Copy raw vertical file to output as well if requested -> Replaced by odis_associations_agg
@@ -595,7 +603,7 @@ def build_vertical_tables(config: Dict[str, Any], logger: PipelineLogger):
         # 4. Formations
         form_path = CLEAN_DIR / "formations_annuaire.parquet"
         if form_path.exists():
-            df = pd.read_parquet(form_path)
+            df = pd.read_parquet(form_path, engine='fastparquet')
             # Aggregate count by codgeo and formation_code
             # The file has 'codgeo', 'formation_code' (one row per entity)
             # We want count of entities per formation type per commune?
@@ -606,7 +614,7 @@ def build_vertical_tables(config: Dict[str, Any], logger: PipelineLogger):
             df_agg = df.groupby(['codgeo', 'formation_code']).size().rename('count').reset_index()
             
             out = OUTPUT_DIR / "odis_formations_agg.parquet"
-            df_agg.to_parquet(out, compression='brotli', index=False)
+            df_agg.to_parquet(out, compression='brotli', index=False, engine='fastparquet')
             logger.log_step("build_vertical_tables", "FORMATIONS", {"path": str(out)})
 
         # 5. Refugee Associations (Detailed List)
@@ -828,7 +836,7 @@ def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
         # Inclusion Services (Cleaned in Ingest)
         incl_clean_path = CLEAN_DIR / "services_inclusion.parquet"
         if incl_clean_path.exists():
-            incl_df = pd.read_parquet(incl_clean_path)
+            incl_df = pd.read_parquet(incl_clean_path, engine='fastparquet')
             logging.info(f"Inclusion Clean File Found: {len(incl_df)} rows")
             
             # Create unique ID from id_structure and service_slug
@@ -854,7 +862,7 @@ def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
         # BPE - POIs (Creches + Hebergement)
         bpe_pois_path = CLEAN_DIR / "bpe_pois.parquet"
         if bpe_pois_path.exists():
-            bpe_pois_df = pd.read_parquet(bpe_pois_path)
+            bpe_pois_df = pd.read_parquet(bpe_pois_path, engine='fastparquet')
             # Schema already matches from ingest step
             pois_list.append(bpe_pois_df)
 
@@ -870,7 +878,7 @@ def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
                  all_pois['codgeo'] = all_pois['codgeo'].astype('category')
             
             output_path = OUTPUT_DIR / "odis_pois.parquet"
-            all_pois.to_parquet(output_path, compression='brotli', index=False)
+            all_pois.to_parquet(output_path, compression='brotli', index=False, engine='fastparquet')
             logger.log_step("generate_pois", "CREATED", {"path": str(output_path)})
 
     except Exception as e:
@@ -886,7 +894,7 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
         if refs_list:
             all_refs = pd.concat(refs_list, ignore_index=True)
             output_path = OUTPUT_DIR / "odis_referentiels.parquet"
-            all_refs.to_parquet(output_path)
+            all_refs.to_parquet(output_path, engine='fastparquet')
             logger.log_step("generate_referentiels", "CREATED", {"path": str(output_path)})
 
     except Exception as e:
@@ -896,7 +904,7 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
         # Formations
         form_ref_path = CLEAN_DIR / "formations_referentiel.parquet"
         if form_ref_path.exists():
-            form_df = pd.read_parquet(form_ref_path)
+            form_df = pd.read_parquet(form_ref_path, engine='fastparquet')
             # Expected: code, label
             if 'code' in form_df.columns and 'label' in form_df.columns:
                 form_ref = pd.DataFrame({
@@ -910,7 +918,7 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
         if refs_list:
             all_refs = pd.concat(refs_list, ignore_index=True)
             output_path = OUTPUT_DIR / "referentiels.parquet"
-            all_refs.to_parquet(output_path)
+            all_refs.to_parquet(output_path, engine='fastparquet')
             logger.log_step("generate_referentiels", "CREATED", {"path": str(output_path)})
 
     except Exception as e:
@@ -945,7 +953,7 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
         # WALDEC
         waldec_path = CLEAN_DIR / "referentiel_waldec.parquet"
         if waldec_path.exists():
-            waldec_df = pd.read_parquet(waldec_path)
+            waldec_df = pd.read_parquet(waldec_path, engine='fastparquet')
             if 'code' in waldec_df.columns and 'label' in waldec_df.columns:
                  waldec_ref = pd.DataFrame({
                     'key': 'waldec_codes',
@@ -965,7 +973,7 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
         communes_path = CLEAN_DIR / "communes.parquet"
         if communes_path.exists():
             # Clean file uses 'nom' instead of 'libgeo'
-            communes_df = pd.read_parquet(communes_path, columns=['codgeo', 'nom'])
+            communes_df = pd.read_parquet(communes_path, columns=['codgeo', 'nom'], engine='fastparquet')
             if 'codgeo' in communes_df.columns and 'nom' in communes_df.columns:
                  communes_ref = pd.DataFrame({
                     'key': 'communes',
@@ -1005,7 +1013,7 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
         # Regions
         regions_path = CLEAN_DIR / "regions.parquet"
         if regions_path.exists():
-            regions_df = pd.read_parquet(regions_path)
+            regions_df = pd.read_parquet(regions_path, engine='fastparquet')
             regions_ref = pd.DataFrame({
                 'key': 'regions',
                 'code': regions_df['code'],
@@ -1017,7 +1025,7 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
         # Departements
         deps_path = CLEAN_DIR / "departements.parquet"
         if deps_path.exists():
-            deps_df = pd.read_parquet(deps_path)
+            deps_df = pd.read_parquet(deps_path, engine='fastparquet')
             deps_ref = pd.DataFrame({
                 'key': 'departements',
                 'code': deps_df['code'],
@@ -1032,7 +1040,7 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
         # ROME Codes (Referential from API)
         rome_path = CACHE_DIR / "rome_referential_api.parquet"
         if rome_path.exists():
-            rome_df = pd.read_parquet(rome_path)
+            rome_df = pd.read_parquet(rome_path, engine='fastparquet')
             # Expected: code, label
             if 'code' in rome_df.columns and 'label' in rome_df.columns:
                 rome_ref = pd.DataFrame({
@@ -1050,7 +1058,7 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
     if refs_list:
         all_refs = pd.concat(refs_list, ignore_index=True)
         output_path = OUTPUT_DIR / "odis_referentiels.parquet"
-        all_refs.to_parquet(output_path)
+        all_refs.to_parquet(output_path, engine='fastparquet')
         logger.log_step("generate_referentiels", "CREATED", {"path": str(output_path)})
 
 def main(argv=None):

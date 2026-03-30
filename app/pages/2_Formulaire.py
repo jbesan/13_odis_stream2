@@ -16,7 +16,7 @@ data_loader.ensure_data_initialized()
 for k, v in st.session_state.items():
     if str(k).startswith('ui_'):
         st.session_state[k] = v
-app_data = st.session_state.app_data
+app_data = data_loader.get_app_data()
 
 import logging
 from utils import common as utils

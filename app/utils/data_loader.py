@@ -176,17 +176,20 @@ def apply_search_criteria_to_ui(criteria: Any) -> None:
 
 def ensure_data_initialized() -> None:
     """Ensures that the session state and datasets are initialized."""
-    if 'demo_data' not in st.session_state:
+    # Force re-initialization IF a demo parameter is present in query string
+    # This allows Deep-linking scenarios like ?demo=3 to work even if already on the page.
+    force_demo_refresh = 'demo' in st.query_params
+    
+    if 'demo_data' not in st.session_state or force_demo_refresh:
         defaults = copy.deepcopy(cfg.DEMO_DATA_DEFAULT)
+        # Only overwrite defaults if demo is in query params
         apply_demo_data_if_present(defaults)
+        
+        # If it's a refresh from query params, we update the state
         session_states_init(defaults)
 
-    # Use mtime to invalidate cache if files changed
-    data_hash = get_data_mtime()
-    
-    if 'app_data' not in st.session_state or st.session_state.get('_data_hash') != data_hash:
-        st.session_state['app_data'] = init_datasets(data_hash)
-        st.session_state['_data_hash'] = data_hash
+    # Ensure global cache is warm
+    get_app_data()
 
     # --- RNA RAG Initialization (New) ---
     if 'rna_rag_service' not in st.session_state:
@@ -225,7 +228,7 @@ def _fetch_jaccueille_data_bq_logic() -> pd.DataFrame:
         if (time.time() - mtime) < ttl_seconds:
             try:
                 # logger.info("📂 [J'ACCUEILLE] Loading host counts from local cache...")
-                return pd.read_parquet(cache_path)
+                return pd.read_parquet(cache_path, engine='fastparquet')
             except Exception as e:
                 logger.warning(f"Failed to read J'Accueille cache: {e}")
 
@@ -241,7 +244,7 @@ def _fetch_jaccueille_data_bq_logic() -> pd.DataFrame:
         if not df_jacc.empty:
             try:
                 os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-                df_jacc.to_parquet(cache_path)
+                df_jacc.to_parquet(cache_path, engine='fastparquet')
             except Exception as e:
                 logger.warning(f"Failed to save J'Accueille cache: {e}")
                 
@@ -327,8 +330,8 @@ def _load_parquet(path: str, columns: Optional[list] = None, error_list: Optiona
             error_list.append(fname)
         return pd.DataFrame()
     if columns:
-        return pd.read_parquet(path, columns=columns)
-    return pd.read_parquet(path)
+        return pd.read_parquet(path, engine='fastparquet', columns=columns)
+    return pd.read_parquet(path, engine='fastparquet')
 
 @st.cache_resource
 def load_parquet_dataset(path: str, columns: Optional[list] = None) -> pd.DataFrame:
@@ -339,7 +342,7 @@ def _load_ccas(base_path: str) -> pd.DataFrame:
     """Internal non-cached CCAS loader."""
     path = os.path.join(base_path, cfg.CCAS_FILE)
     if os.path.exists(path):
-         return pd.read_parquet(path)
+         return pd.read_parquet(path, engine='fastparquet')
     return pd.DataFrame()
 
 @st.cache_resource
@@ -366,7 +369,7 @@ def load_all_data_raw() -> Dict[str, Any]:
     
     try:
         # Load all columns first to identify what we need
-        temp_df = pd.read_parquet(odis_path)
+        temp_df = pd.read_parquet(odis_path, engine='fastparquet')
         all_cols = temp_df.columns.tolist()
         del temp_df
         gc.collect()
@@ -397,15 +400,19 @@ def load_all_data_raw() -> Dict[str, Any]:
         except Exception as e:
             logger.warning(f"Could not load raw metrics from config: {e}")
 
-        odis = pd.read_parquet(odis_path, columns=list(columns_to_load))
+        odis = pd.read_parquet(odis_path, engine='fastparquet', columns=list(columns_to_load))
         
         # Geometry processing
         if 'polygon' in odis.columns:
+            # 🧪 SOTA: Standardize on EPSG:4326 (Lat/Lon) at the source
+            # This simplifies everything: UI, Maps, and AI Agents 
+            # We ONLY convert back to metric EPSG:2154 when calculating distances.
             odis['polygon'] = odis.polygon.apply(wkb.loads)
             odis = gpd.GeoDataFrame(odis, geometry='polygon', crs='EPSG:2154')
-            odis.set_geometry('polygon', inplace=True)
-            # Try to believe ETL data is valid. Only minimal fix.
-            # odis['polygon'] = odis.polygon.buffer(0) 
+            
+            # with warnings.catch_warnings():
+            #     warnings.filterwarnings("ignore", category=DeprecationWarning)
+            #     odis = odis.to_crs("EPSG:4326")
             
             if 'centroid' not in odis.columns:
                  odis['centroid'] = odis.geometry.centroid
@@ -663,6 +670,13 @@ def get_data_mtime() -> float:
         if os.path.exists(f):
             mtimes.append(os.path.getmtime(f))
     return max(mtimes) if mtimes else 0.0
+
+def get_app_data() -> Dict[str, Any]:
+    """
+    Universal entry point to get the shared datasets (cached).
+    Returns the immutable global app_data dictionary.
+    """
+    return init_datasets(get_data_mtime())
 
 @st.cache_resource
 def init_datasets(data_hash: float) -> Dict[str, Any]:

@@ -221,7 +221,7 @@ scores:
     max_bound: null
   - id: inc_asso_refug_scaled
     category: inclusion
-    source_metric: heb_asso_refug_density
+    source_metric: inc_asso_refug_density
     bdv_factor: 0.8
     computation: precomputed
     display:
