@@ -15,7 +15,7 @@ from shapely.geometry import mapping
 import logging
 import gc
 import warnings
-from agents.utils import launch_background_scorer, odis_get_bg_result
+from agents.utils import launch_background_scorer, odis_get_bg_result, launch_background_enrichment
 from core.models import SearchResultsData
 
 st.set_page_config(layout="wide")
@@ -205,9 +205,12 @@ def run_search():
     h = search_results.search_hash
     st.session_state['active_search_hash'] = h
     
-    # Trigger background scorer if result not already present or running
+    # Trigger background scorer and enrichment if result not already present or running
     if odis_get_bg_result(h) is None:
         launch_background_scorer(config, {}, h, top_cities=top_cities_full)
+        # Background enrichment for detailed associations (SOTA Pattern)
+        target_codgeos = [c['codgeo'] for c in top_cities_full]
+        launch_background_enrichment(engine, target_codgeos, h)
     
     # Calculate center for map
     if not processed_gdf.empty:
@@ -255,7 +258,7 @@ if st.session_state.get('processed_gdf') is None and st.session_state.get('form_
     st.session_state['form_completed'] = False
 
 # --- UI LAYOUT
-# @st.fragment(run_every=3.0)
+@st.fragment(run_every=3.0)
 def export_pdf_container(h: str):
     """Module-level fragment to avoid redefinition issues."""
     if not h:
@@ -364,15 +367,19 @@ with col_map:
         # st.session_state.center and st.session_state.zoom are managed by callbacks
         m = maps.create_base_map(st.session_state.get("center"), st.session_state.get("zoom"))
         
+        # Safety check for search_results
+        search_results = st.session_state.get('search_results')
+        
         # --- 2. Static Layers (Always rendered) ---
         # Base Scores (Choropleth + Current Location)
         if not st.session_state.processed_gdf.empty:
             fg_scores, colormap = maps.build_scores_layer(st.session_state['processed_gdf'])
             fg_scores.add_to(m)
 
-            row_actuel = pd.Series({'polygon': search_results.current_geo.geometry, 'libgeo': search_results.current_geo.name})
-            fg_curr_loc = maps.build_current_loc_layer(row_actuel)
-            fg_curr_loc.add_to(m)
+            if search_results and search_results.current_geo:
+                row_actuel = pd.Series({'polygon': search_results.current_geo.geometry, 'libgeo': search_results.current_geo.name})
+                fg_curr_loc = maps.build_current_loc_layer(row_actuel)
+                fg_curr_loc.add_to(m)
 
         # --- 3. Dynamic Layers (Based on Pills) ---
         config = st.session_state.get('config')
@@ -469,8 +476,8 @@ if st.session_state.get('show_pdf_modal'):
     pdf_modal()
 
 # Do not remove, useful to debug states
-# with st.expander("Debug", expanded=False):
-#     try:
-#         st.json(search_results.results)
-#     except:
-#         pass
+with st.expander("Debug", expanded=False):
+    try:
+        st.json(search_results.results)
+    except:
+        pass

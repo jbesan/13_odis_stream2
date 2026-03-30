@@ -93,10 +93,10 @@ def _search_inclusion_jobs_logic(
         if insee_match:
             params["code_insee"] = insee_match.group(1)
             params["distance_max_km"] = 20 # 20km radius
-            logger.info(f"🔍 [Inclusion] Searching near INSEE {params['code_insee']}")
+            logger.debug(f"🔍 [Inclusion] Searching near INSEE {params['code_insee']}")
         elif dept_match:
             params["postes_dans_le_departement"] = dept_match.group(1)
-            logger.info(f"🔍 [Inclusion] Searching in Dept {params['postes_dans_le_departement']}")
+            logger.debug(f"🔍 [Inclusion] Searching in Dept {params['postes_dans_le_departement']}")
         else:
             # Fallback to original but it will likely 400 if garbage
             params["postes_dans_le_departement"] = location
@@ -105,7 +105,7 @@ def _search_inclusion_jobs_logic(
     # Actually, let's check the API documentation or previous script.
     # In emplois_inclusion_ingest.py, it fetches EVERYTHING for a dept and filters.
     
-    logger.info(f"🔍 [Inclusion] Searching for jobs near {location} (20km radius)...")
+    logger.debug(f"🔍 [Inclusion] Searching for jobs near {location} (20km radius)...")
     
     try:
         response = requests.get(API_URL, headers=headers, params=params, timeout=15)

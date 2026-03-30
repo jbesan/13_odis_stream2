@@ -66,20 +66,22 @@ class RNARagService:
             logger.error(f"Embedding generation failed: {e}")
             raise
 
-    def get_associations_semantic(self, query: str, codgeos: List[str] = None, top_k: int = 10, inclusion_only: bool = True, threshold: float = 0.8) -> List[Dict[str, Any]]:
+    def get_associations_semantic(self, query: str, codgeos: List[str] = None, bv_code: str = None, top_k: int = 10, inclusion_only: bool = True, threshold: float = 0.8) -> List[Dict[str, Any]]:
         """
-        Performs semantic lookup for associations in a specific commune.
+        Performs semantic lookup for associations in a specific commune or Bassin de Vie.
         Fetches vectors from BQ, computes similarity locally.
         
         Args:
             query: The search term (e.g. 'football', 'hébergement')
-            codgeos: List of 5-digit INSEE codes
+            codgeos: List of 5-digit INSEE codes (used as fallback or specific filter)
+            bv_code: Optional Bassin de Vie code for broader search
             top_k: Number of results to return
             inclusion_only: If True, filters for is_inclusion_relevant associations
             threshold: Minimum similarity score (default 0.8)
             
         Returns:
             List of matching associations with scores > threshold, sorted by score DESC.
+            Includes 'codgeo' for each result.
         """
         # Support single codgeo for backward compatibility or singular input
         if isinstance(codgeos, str):
@@ -88,61 +90,65 @@ class RNARagService:
             codgeos = []
 
         codgeos = [str(c) for c in codgeos]
-        logger.info(f"Searching associations for query='{query}' in {len(codgeos)} codgeos")
+        
+        log_msg = f"Searching associations for query='{query}'"
+        if bv_code:
+            log_msg += f" in BV {bv_code}"
+        else:
+            log_msg += f" in {len(codgeos)} codgeos"
+        logger.info(log_msg)
         
         try:
             # 1. Generate query embedding
             query_vector = self._get_embedding(query)
             
-            # 2. Fetch vectors from BigQuery for this commune
-            # Columns in BQ: id, titre_court, primary_category, embedding_128, is_inclusion_relevant, description
+            # 2. Fetch vectors from BigQuery
             table_id = "odis-stream2.rna_rag.rna_rag"
-            
             import config as cfg
+            
+            # Build WHERE clause dynamically
+            where_geo = "code_bdv = @bv_code" if bv_code else "codgeo IN UNNEST(@codgeos)"
+            
             query_bq = f"""
-                SELECT id, titre_court as name, primary_category, embedding_128 as embedding, description
+                SELECT id, titre_court as name, primary_category, code_waldec, categorie, embedding_128 as embedding, description, codgeo
                 FROM `{table_id}`
-                WHERE codgeo IN UNNEST(@codgeos)
+                WHERE {where_geo}
                   AND SUBSTR(code_waldec, 1, 3) IN UNNEST(@allowed_prefixes)
                 {"AND is_inclusion_relevant = TRUE" if inclusion_only else ""}
             """
             
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ArrayQueryParameter("codgeos", "STRING", codgeos),
-                    bigquery.ArrayQueryParameter("allowed_prefixes", "STRING", cfg.WALDEC_CATEGORIES)
-                ]
-            )
+            params = [
+                bigquery.ArrayQueryParameter("allowed_prefixes", "STRING", cfg.WALDEC_CATEGORIES)
+            ]
+            if bv_code:
+                params.append(bigquery.ScalarQueryParameter("bv_code", "STRING", bv_code))
+            else:
+                params.append(bigquery.ArrayQueryParameter("codgeos", "STRING", codgeos))
+
+            job_config = bigquery.QueryJobConfig(query_parameters=params)
             
             df = self.bq_client.query(query_bq, job_config=job_config).to_dataframe()
             
             if df.empty:
-                logger.info(f"No associations found in BigQuery for {len(codgeos)} codgeos")
+                logger.info(f"No associations found in BigQuery for the given criteria.")
                 return []
             
-            # 3. Local Similarity Computation (Dot Product)
-            # embeddings in DF are lists or numpy arrays
+            # 3. Vectorized Similarity Computation (Dot Product)
+            # Flatten all embeddings into a matrix (N x 128)
+            embeddings_matrix = np.stack(df['embedding'].apply(self._flatten_embedding).values)
             
-            scores = []
-            for _, row in df.iterrows():
-                # BQ to_dataframe converts arrays to lists or nested dicts
-                vec = self._flatten_embedding(row['embedding'])
-                score = float(np.dot(query_vector, vec))
-                
-                # Apply threshold
-                if score > threshold:
-                    scores.append({
-                        "id": row['id'],
-                        "name": row['name'],
-                        "primary_category": row['primary_category'],
-                        "description": row['description'],
-                        "score": round(score, 4)
-                    })
+            # Compute similarity scores for all rows at once
+            dot_products = np.dot(embeddings_matrix, query_vector)
+            df['score'] = np.round(dot_products.astype(float), 4)
             
-            # 4. Sort by score DESC
-            results = sorted(scores, key=lambda x: x['score'], reverse=True)
+            # 4. Filter, Sort and Format
+            results_df = df[df['score'] > threshold].sort_values(by='score', ascending=False)
             
-            return results[:top_k]
+            # Rename/select columns for output
+            output_cols = ['id', 'name', 'primary_category', 'code_waldec', 'categorie', 'description', 'score', 'codgeo']
+            results = results_df[output_cols].head(top_k).to_dict(orient='records')
+            
+            return results
 
         except Exception as e:
             logger.error(f"get_associations_semantic failed: {e}")
@@ -165,11 +171,10 @@ class RNARagService:
             import config as cfg
             table_id = "odis-stream2.rna_rag.rna_rag"
             query_bq = f"""
-                SELECT id, titre_court as name, primary_category, description, max_score, is_refugee_focused, codgeo
+                SELECT id, titre_court as name, primary_category, code_waldec, categorie, description, max_score, is_refugee_focused, codgeo
                 FROM `{table_id}`
                 WHERE codgeo IN UNNEST(@codgeos) 
-                  AND SUBSTR(code_waldec, 1, 3) IN UNNEST(@allowed_prefixes)
-                  AND ((is_inclusion_relevant = TRUE AND max_score > 0.8) OR is_refugee_focused = TRUE)
+                  AND (is_refugee_focused = TRUE OR is_inclusion_relevant = TRUE)
                 ORDER BY max_score DESC
             """
             

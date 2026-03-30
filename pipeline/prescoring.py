@@ -92,7 +92,7 @@ def aggregate_plm(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         'population', 'pop_active', 'pop_chomeurs', 'pop_employes',
         'edu_maternelle_ct', 'edu_elementaire_ct', 'edu_college_ct', 'edu_lycee_ct',
         'count_hopital', 'count_maternite', 'count_psy',
-        'lien_social_count', 'heb_asso_refug_count', 'bpe_creches_count', 'risky_schools_count',
+        'lien_social_count', 'inc_asso_refug_count', 'bpe_creches_count', 'risky_schools_count',
         'log_priv_total', 'log_priv_vacant_plus_2ans',
         'log_soc_total', 'log_soc_inoccupes',
         'total_eleves', 'ecoles_count',
@@ -167,8 +167,10 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             'pol_num', 'log_vac_struct_ratio',
             'heb_centres_heb_cap', 'heb_foyers_count', 
             'heb_loc_iml_count', 'heb_habitant_count'
-
         ]
+        # Robust fill for RNA Category counts (inc_rna_..._count)
+        rna_cols = [c for c in communes_gdf.columns if c.startswith('inc_rna_') and c.endswith('_count')]
+        raw_metrics_to_fill.extend(rna_cols)
         for col in raw_metrics_to_fill:
             if col in communes_gdf.columns:
                  communes_gdf[col] = communes_gdf[col].fillna(0)
@@ -276,10 +278,10 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
                     (communes_gdf['heb_centres_heb_cap'] * 1000) / communes_gdf['population'],
                     0.0
                 )
-            if 'heb_asso_refug_count' in communes_gdf.columns:
-                communes_gdf['heb_asso_refug_density'] = np.where(
+            if 'inc_asso_refug_count' in communes_gdf.columns:
+                communes_gdf['inc_asso_refug_density'] = np.where(
                     communes_gdf['population'] > 0,
-                    (communes_gdf['heb_asso_refug_count'] * 1000) / communes_gdf['population'],
+                    (communes_gdf['inc_asso_refug_count'] * 1000) / communes_gdf['population'],
                     0.0
                 )
             if 'heb_foyers_count' in communes_gdf.columns:
@@ -325,7 +327,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         # Fixed logic:
         process_scaling(communes_gdf, 'log_vac_struct_ratio', 'log_vac_scaled')
         process_scaling(communes_gdf, 'lien_social_density', 'inc_asso_core_scaled')
-        process_scaling(communes_gdf, 'heb_asso_refug_density', 'inc_asso_refug_scaled')
+        process_scaling(communes_gdf, 'inc_asso_refug_density', 'inc_asso_refug_scaled')
         process_scaling(communes_gdf, 'inc_siae_density', 'inc_siae_density_scaled')
         process_scaling(communes_gdf, 'population', 'inc_population_scaled')
         
@@ -576,11 +578,11 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
                  0.0
              )
         
-        # Refugee Associations
-        if 'heb_asso_refug_count' in bv_gdf.columns and 'population_bv' in bv_gdf.columns:
-             bv_gdf['heb_asso_refug_density'] = np.where(
+        # Refugee Associations (Inclusion)
+        if 'inc_asso_refug_count' in bv_gdf.columns and 'population_bv' in bv_gdf.columns:
+             bv_gdf['inc_asso_refug_density'] = np.where(
                  bv_gdf['population_bv'] > 0,
-                 bv_gdf['heb_asso_refug_count'] / bv_gdf['population_bv'] * 1000,
+                 bv_gdf['inc_asso_refug_count'] / bv_gdf['population_bv'] * 1000,
                  0.0
              )
 
@@ -609,9 +611,9 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
             min_b, max_b = get_min_max(bv_gdf['lien_social_density'])
             bv_gdf['inc_asso_core_scaled'] = scale_series(bv_gdf['lien_social_density'], min_b, max_b)
 
-        if 'heb_asso_refug_density' in bv_gdf.columns:
-            min_b, max_b = get_min_max(bv_gdf['heb_asso_refug_density'])
-            bv_gdf['inc_asso_refug_scaled'] = scale_series(bv_gdf['heb_asso_refug_density'], min_b, max_b)
+        if 'inc_asso_refug_density' in bv_gdf.columns:
+            min_b, max_b = get_min_max(bv_gdf['inc_asso_refug_density'])
+            bv_gdf['inc_asso_refug_scaled'] = scale_series(bv_gdf['inc_asso_refug_density'], min_b, max_b)
         
         if 'inc_siae_density' in bv_gdf.columns:
             min_b, max_b = get_min_max(bv_gdf['inc_siae_density'])

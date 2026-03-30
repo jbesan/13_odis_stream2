@@ -37,7 +37,8 @@ class SearchCriterias(BaseModel):
     codes_metiers: List[List[CriteriaItem]] = Field(default_factory=list, description="List of list of enriched ROME codes")
     codes_formations: List[List[CriteriaItem]] = Field(default_factory=list, description="List of list of enriched training codes")
     
-    inc_services_add_selection: List[CriteriaItem] = Field(default_factory=list, description="List of additional relevant inclusion services codes")
+    inc_services_core_selection: List[CriteriaItem] = Field(default_factory=list, description="List of core inclusion services codes (checkboxes)")
+    inc_services_add_selection: List[CriteriaItem] = Field(default_factory=list, description="List of additional relevant inclusion services codes (multiselect)")
     inc_asso_add_selection: List[CriteriaItem] = Field(default_factory=list, description="List of additional relevant association codes (hobbies, support, etc.)")
     
     hebergement_cible: List[str] = Field(default_factory=list, description="Preferred accommodation types")
@@ -60,6 +61,10 @@ class SearchCriterias(BaseModel):
     poids_inclusion: float = Field(0.0, description="Weight for inclusion criteria")
     poids_mobilite: float = Field(0.0, description="Weight for mobility")
     poids_sante: float = Field(0.0, description="Weight for health criteria")
+    
+    # Population target (F-50)
+    target_population: int = Field(50000, description="Target population size for the city (mu)")
+    target_population_sigma: int = Field(40000, description="Tolerance (sigma) for the population size")
 
     active_criteria: Optional[Set[str]] = Field(None, description="Set of active criteria computed by the engine")
     active_categories: List[str] = Field(default_factory=list, description="List of categories with active criteria")
@@ -159,10 +164,10 @@ class HealthMetrics(BaseModel):
 class InclusionMetrics(BaseModel):
     cat_score: float = Field(0.0)
     services_grouped: Dict[str, List[str]] = Field(default_factory=dict)
-    refugee_asso_list: List[Dict[str, Any]] = Field(default_factory=list)
-    associations_total: int = Field(0)
-    associations_refugee_focused_total: int = Field(0)
-    associations_summary_by_category: Dict[str, int] = Field(default_factory=dict)
+    asso_refugee_list: List[Dict[str, Any]] = Field(default_factory=list)
+    asso_inclusion_count: int = Field(0)
+    asso_refugee_count: int = Field(0)
+    asso_inclusion_list_by_cat: Dict[str, Any] = Field(default_factory=dict)
 
 class MobilityMetrics(BaseModel):
     cat_score: float = Field(0.0)

@@ -20,3 +20,4 @@ pipeline/.env
 app/.env
 app/.streamlit/secrets.toml
 data_private/
+.antigravityignore

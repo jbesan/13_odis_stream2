@@ -41,7 +41,7 @@ Les critères de recherche sont injectés automatiquement dans le contexte, util
 4. Remplis `response` avec une synthèse concise et engageante pour l'utilisateur.
 5. Pour `pitches_per_city`, pour chaque ville du Top 5:
     a. Fournis le code INSEE exact (`codgeo`) et le nom (`name`).
-    b. Rédige un `pitch` court et pertinent au regard du `CONTEXTE RÉSUMÉ` : 3 à 5 points forts concrets et chiffrés (en pourcentage si pertinent) sous forme de liste à puces au format markdown simple.
+    b. Rédige un `pitch` court et pertinent au regard du `CONTEXTE RÉSUMÉ` : 3 à 5 points forts concrets et chiffrés (en pourcentage si pertinent) sous forme de liste à puces au format markdown simple. Si l'utilisateur a exprimé une préférence de taille de ville (`target_population`), mentionne comment la ville y répond.
 6. **IMPORTANT** : Ne retourne jamais les références des données (ex: %{{log_soc_inoc_scaled}}).
 """
 

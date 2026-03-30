@@ -382,7 +382,7 @@ def load_all_data_raw() -> Dict[str, Any]:
         
         columns_to_load = {
             c for c in all_cols 
-            if c in essential_cols or c.endswith('_scaled')
+            if c in essential_cols or c.endswith('_scaled') or c.startswith('inc_rna_') or c == 'inc_asso_refug_count'
         }
 
         # Load metrics from config (Robustness)

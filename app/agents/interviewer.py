@@ -44,11 +44,12 @@ INTERVIEWER_SYSTEM_PROMPT = """
 5. **Logement**: Type ({HEBERGEMENT_OPTIONS} pour hébergement (court terme) et {LOGEMENT_OPTIONS} pour logement (long terme). 
     - Si 'location', choisi un type de logement dans {HOUSING_TYPE_OPTIONS} et demande confirmation.
 6. **Scolaire**: {CLASSES_SCOLAIRES} selon age enfants.
-7. **Besoins Spécifiques**: 
+7. **Cadre de vie**: Préférence pour la taille de la ville (ex: Village vs Grande Ville). Si une préférence est exprimée, propose une cible (ex: 5000 pour un village, 100000 pour une grande ville).
+8. **Besoins Spécifiques**: 
     - Santé ({SANTE_OPTIONS}) 
     - Services d'inclusion (logement, emploi, FLE, juridique, mobilité) via `search_referentiels_batch` (domain: 'inclusion_services')
     - Associations (Culturel, Sport, Soutien) via `search_referentiels_batch` (domain: 'waldec_codes')
-8. [OBLIGATOIRE] **Profil pondération pour le score**: Suggérer parmi {WEIGHT_PROFILES}.
+9. [OBLIGATOIRE] **Profil pondération pour le score**: Suggérer parmi {WEIGHT_PROFILES}.
 
 **FIN DE MISSION**:
 - LORSQUE TOUS les champs [OBLIGATOIRE] sont collectés, produis une synthèse ultra-courte pour le travailleur social et demande confirmation pour lancer la recherche.

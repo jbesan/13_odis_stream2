@@ -707,12 +707,22 @@ def compute_routes(origin: str, destination: str, mode: str = "transit") -> Dict
 def _search_rna_rag_logic(query: str, codgeo: str, top_k: int = 10) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """
     Internal logic for looking up associations via RAG.
+    Resolves the Bassin de Vie code for the given commune to perform a broader search.
     """
     if not rna_rag_service:
         return {"error": "RNARagService not initialized. Check BigQuery authentication."}
     
+    ensure_data_context()
+    bv_code = None
+    odis = DATA_CONTEXT.get('odis')
+    
+    if odis is not None and codgeo in odis.index:
+        bv = odis.loc[codgeo, 'bassin_de_vie']
+        if not pd.isna(bv):
+            bv_code = str(bv).replace('.0', '')
+    
     try:
-        return rna_rag_service.get_associations_semantic(query, codgeos=[codgeo], top_k=top_k)
+        return rna_rag_service.get_associations_semantic(query, codgeos=[codgeo], bv_code=bv_code, top_k=top_k)
     except Exception as e:
         logger.exception(f"❌ [MCP] _search_rna_rag_logic failed: {e}")
         return {"error": str(e)}

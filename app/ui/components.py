@@ -13,6 +13,7 @@ import base64
 import json
 import logging
 import string
+from agents.utils import odis_get_bg_result
 from utils.data_loader import ensure_data_initialized
 from core.scoring import ScoringEngine
 from typing import Any, Dict, List, Optional, Union
@@ -184,7 +185,7 @@ def show_ia_analysis_dialog(index: Any):
     search_criterias = st.session_state.config
     ia_analysis_content(nom, codgeo, search_criterias)
 
-@st.fragment(run_every=3.0)
+@st.fragment(run_every=2.0)
 def ai_pitch_container(main_code: str, h: str):
     # 1. Try unified state first (Single source of truth)
     if 'search_results' in st.session_state and st.session_state.search_results:
@@ -202,7 +203,9 @@ def ai_pitch_container(main_code: str, h: str):
     else:
         pitch_for_city = ""
         if isinstance(scorer_res, dict) and "pitches" in scorer_res:
-            pitch_for_city = scorer_res["pitches"].get(main_code, "")
+            pitches_data = scorer_res["pitches"]
+            if isinstance(pitches_data, dict) and "pitches" in pitches_data:
+                pitch_for_city = pitches_data["pitches"].get(main_code, "")
         elif isinstance(scorer_res, str):
              pitch_for_city = scorer_res
              
@@ -217,6 +220,36 @@ def ai_pitch_container(main_code: str, h: str):
                          st.session_state.search_results.current_geo.scorer_pitch = pitch_for_city
                     st.rerun()
             st.markdown(pitch_for_city)
+
+def sync_background_data(commune: CommuneResult, h: Optional[str]):
+    """
+    Syncs both enrichment (associations) and pitches from the background store 
+    back into the CommuneResult model for persistence.
+    """
+    if not h: return
+    
+    from agents.utils import odis_get_bg_result
+    bg_res = odis_get_bg_result(h)
+    if not isinstance(bg_res, dict): return
+    
+    # 1. Sync Enrichment (Associations)
+    if 'enrichment' in bg_res:
+        enrich_data = bg_res['enrichment'].get(str(commune.codgeo))
+        if enrich_data and not commune.inclusion.asso_inclusion_list_by_cat:
+            logging.info(f"✨ [SYNC] Associations sync for {commune.codgeo}")
+            commune.inclusion.asso_refugee_list = enrich_data.get('refugee', [])
+            commune.inclusion.asso_refugee_count = len(commune.inclusion.asso_refugee_list)
+            commune.inclusion.asso_inclusion_list_by_cat = enrich_data.get('inclusion', {})
+            commune.inclusion.asso_inclusion_count = sum(len(l) for l in commune.inclusion.asso_inclusion_list_by_cat.values())
+            
+    # 2. Sync Pitches (AI analysis)
+    if 'pitches' in bg_res and not commune.scorer_pitch:
+        pitches_data = bg_res['pitches']
+        if isinstance(pitches_data, dict) and "pitches" in pitches_data:
+            pitch_for_city = pitches_data["pitches"].get(str(commune.codgeo))
+            if pitch_for_city:
+                logging.info(f"✨ [SYNC] Pitch sync for {commune.codgeo}")
+                commune.scorer_pitch = pitch_for_city
 
 @st.dialog("Centre Communal d'Action Sociale", width="large", on_dismiss=_on_ccas_dialog_dismiss)
 def show_ccas_dialog(index: Any):
@@ -293,6 +326,12 @@ def show_details_dialog(index: Any):
     # --- Header ---
     st.markdown(f"## 📍 {commune.name} (code INSEE: {commune.codgeo})")
     
+    # Active search hash for background enrichment (SOTA Pattern)
+    h = st.session_state.get('active_search_hash')
+    
+    # Sync background results into model if available
+    sync_background_data(commune, h)
+    
     with st.container(border=False):
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -317,8 +356,8 @@ def show_details_dialog(index: Any):
         # Sort by score_normalise desc to show strengths
         scores = sorted(scores, key=lambda x: x.score_normalise, reverse=True)
         
-        for s in scores:
-            with st.container():
+        with st.container(height=600):
+            for s in scores:
                 c_label, c_val = st.columns([3, 1])
                 with c_label:
                     st.markdown(f"**{s.label}**")
@@ -472,79 +511,74 @@ def show_details_dialog(index: Any):
                 
                 st.markdown("#### :material/groups: Associations de l'inclusion")
                 
-                # Show pre-calculated summary from CommuneResult if available
-                if inclusion_data.associations_total > 0:
-                    st.info(f"**{inclusion_data.associations_total} associations** actives identifiées dans le bassin de vie.")
-                    if inclusion_data.associations_refugee_focused_total > 0:
-                        st.success(f"**{inclusion_data.associations_refugee_focused_total} association(s)** spécifiquement dédiée(s) aux réfugiés.")
+                @st.fragment(run_every=3.0)
+                def associations_polling_fragment():
+                    # Local reference to data
+                    inc_data = commune.inclusion
                     
-                    if inclusion_data.associations_summary_by_category:
-                        with st.expander("Répartition par catégorie", expanded=False):
-                            for cat, count in sorted(inclusion_data.associations_summary_by_category.items()):
-                                st.write(f"• **{cat}** : {count}")
-                
+                    # 1. Background Sync (if data is missing)
+                    if h and not inc_data.asso_inclusion_list_by_cat:
+                        bg_res = odis_get_bg_result(h)
+                        if isinstance(bg_res, dict) and 'enrichment' in bg_res:
+                            enrich_data = bg_res['enrichment'].get(str(commune.codgeo))
+                            if enrich_data:
+                                logging.info(f"✨ [FRAGMENT] Data arrived for {commune.codgeo}, updating UI")
+                                inc_data.asso_refugee_list = enrich_data.get('refugee', [])
+                                inc_data.asso_refugee_count = len(inc_data.asso_refugee_list)
+                                inc_data.asso_inclusion_list_by_cat = enrich_data.get('inclusion', {})
+                                inc_data.asso_inclusion_count = sum(len(l) for l in inc_data.asso_inclusion_list_by_cat.values())
+                                # No st.rerun() here to avoid closing/resetting the dialog tabs
 
-                
-                rna_service = st.session_state.get('rna_rag_service')
-                codgeo = commune.codgeo
-                
-                if rna_service and codgeo:
-                    with st.spinner("Chargement des associations..."):
-                        try:
-                            bv_id = commune.codgeo_bdv
-                            odis = st.session_state.app_data.get('odis')
-                            if odis is not None and bv_id:
-                                codgeos_in_bv = odis[odis['bassin_de_vie'] == bv_id].index.tolist()
-                                if codgeo not in codgeos_in_bv:
-                                    codgeos_in_bv.append(codgeo)
-                                assos_raw = rna_service.get_associations_by_codgeo(codgeos_in_bv)
-                            else:
-                                assos_raw = rna_service.get_associations_by_codgeo([codgeo])
-
-                            if assos_raw:
-                                refugee_assos_from_rag = [a for a in assos_raw if a.get('is_refugee_focused')]
-                                other_assos_from_rag = [a for a in assos_raw if not a.get('is_refugee_focused')]
-                                grouped_assos = {}
-                                for a in other_assos_from_rag:
-                                    cat = a.get('primary_category') or "Autres"
-                                    if cat not in grouped_assos:
-                                        grouped_assos[cat] = []
-                                    grouped_assos[cat].append(a)
-                                
-                                if refugee_assos_from_rag:
-                                    with st.expander("Intégration des réfugiés & migrants", expanded=False):
-                                        refugee_assos_from_rag = sorted(refugee_assos_from_rag, key=lambda x: str(x['name']))
-                                        for asso in refugee_assos_from_rag:
-                                            name = string.capwords(str(asso['name']).lower())
-                                            url = f"https://www.assoce.fr/waldec/{asso['id']}"
-                                            desc = str(asso['description']).strip() if pd.notna(asso.get('description')) else ""
-                                            if desc.lower() in ["nan", "none", "null"]: desc = ""
+                    # 2. Render UI
+                    if inc_data.asso_inclusion_count > 0:
+                        st.info(f"**{inc_data.asso_inclusion_count} associations** actives identifiées dans le bassin de vie.")
+                        if inc_data.asso_refugee_count > 0:
+                            st.success(f"**{inc_data.asso_refugee_count} association(s)** spécifiquement dédiée(s) aux réfugiés.")
+                        
+                        if inc_data.asso_inclusion_list_by_cat:
+                            with st.expander("Répartition par catégorie", expanded=False):
+                                for cat, asso_list in sorted(inc_data.asso_inclusion_list_by_cat.items()):
+                                    with st.expander(f"**{cat}** ({len(asso_list)})", expanded=False):
+                                        for asso in asso_list:
+                                            name = str(asso.get('name', 'Inconnu'))
+                                            id_val = asso.get('id', '')
+                                            url = f"https://www.assoce.fr/waldec/{id_val}" if id_val else "#"
+                                            desc = str(asso.get('description', '')).strip()
+                                            
                                             if desc:
-                                                if len(desc) > 200: desc = desc[:200].strip() + "..."
-                                                desc = desc[0].upper() + desc[1:] if len(desc) > 1 else desc
                                                 st.markdown(f"**{name}**: {desc} [En savoir plus]({url})")
                                             else:
                                                 st.markdown(f"**{name}**: [En savoir plus]({url})")
-                                
-                                for cat, list_assos in sorted(grouped_assos.items()):
-                                    with st.expander(f"{cat} ({len(list_assos)})", expanded=False):
-                                        for asso in list_assos:
-                                            name = string.capwords(str(asso['name']).lower())
-                                            url = f"https://www.assoce.fr/waldec/{asso['id']}"
-                                            desc = str(asso['description']).strip() if pd.notna(asso.get('description')) else ""
-                                            if desc.lower() in ["nan", "none", "null"]: desc = ""
-                                            if desc:
-                                                if len(desc) > 200: desc = desc[:200].strip() + "..."
-                                                desc = desc[0].upper() + desc[1:] if len(desc) > 1 else desc
-                                                st.markdown(f"**{name}**: {desc} [En savoir plus]({url})")
-                                            else:
-                                                st.markdown(f"**{name}**: [En savoir plus]({url})")
+                    elif h and (not odis_get_bg_result(h) or 'enrichment' not in odis_get_bg_result(h)):
+                        with st.status("Récupération des associations détaillées...", expanded=True):
+                            st.write("Nous interrogeons BigQuery pour obtenir la liste complète des associations locales.")
+                    else:
+                        st.info("Aucune association détaillée répertoriée pour ce territoire.")
+                
+                # Call the fragment
+                associations_polling_fragment()
+                
+                # Display Refugee associations from the model (secondary list)
+                if inclusion_data.asso_refugee_list:
+                    with st.expander("Intégration des réfugiés & migrants", expanded=True):
+                        # Sort by local preference if needed (already sorted in scoring.py)
+                        for asso in inclusion_data.asso_refugee_list:
+                            name = str(asso.get('name', 'Inconnu'))
+                            id_val = asso.get('id', '')
+                            url = f"https://www.assoce.fr/waldec/{id_val}" if id_val else "#"
+                            desc = str(asso.get('description', '')).strip()
+                            
+                            cat_label = asso.get('waldec_label', '')
+                            cat_str = f" ({cat_label})" if cat_label else ""
+                            
+                            if desc:
+                                st.markdown(f"**{name}**{cat_str}: {desc} [En savoir plus]({url})")
                             else:
-                                st.info("Aucune association répertoriée pour cette commune.")
-                        except Exception as e:
-                            st.warning(f"Impossible de charger les associations : {e}")
-                else:
-                    st.warning("Le service de recherche d'associations n'est pas disponible.")
+                                st.markdown(f"**{name}**{cat_str}: [En savoir plus]({url})")
+                
+                # If we still want to allow dynamic search as a fallback/expansion, 
+                # keep it but make it optional or moved to the Scout agent.
+                # For now, let's keep the UI focused on the pre-computed data.
         with c2:
             st.markdown("#### :material/diversity_3: Indicateurs Inclusion")
             render_scores_for_category('inclusion')
@@ -930,6 +964,31 @@ def render_mobility_form() -> None:
     else:
         st.info("Recherche sur l'ensemble du territoire métropolitain.")
 
+    # 2. Target Population Size (F-50)
+    st.divider()
+    # st.markdown("**Taille de ville cible**")
+    
+    # helper for sigma interpolation
+    def _calculate_sigma(mu):
+        if mu <= 5000: return 4000
+        if mu <= 50000:
+            return int(4000 + (mu - 5000) * (40000 - 4000) / (50000 - 5000))
+        return int(40000 + (mu - 50000) * (100000 - 40000) / (200000 - 50000))
+
+    if "ui_target_population" not in st.session_state:
+        st.session_state["ui_target_population"] = cfg.DEFAULT_MU
+    
+    target_mu = st.select_slider(
+        "Population cible de la ville recherchée",
+        options=cfg.POPULATION_TARGET_OPTIONS,
+        key="ui_target_population",
+        help=f'Définit la taille idéale de la commune recherchée. Le score de population sera maximal pour cette valeur et diminuera progressivement autour. Tolérance : +/- {st.session_state['ui_target_population_sigma']:,} hab.'.replace(",", " ")
+    )
+    
+    # Auto-calculate and store sigma
+    st.session_state["ui_target_population_sigma"] = _calculate_sigma(target_mu)
+    # st.caption(f"Tolérance : +/- {st.session_state['ui_target_population_sigma']:,} hab.".replace(",", " "))
+
 def render_weight_profile_form() -> None:
     """Renders the UI for selecting the weighting profile and expert weights adjustment."""
     def _update_weights_from_profile():
@@ -1190,15 +1249,22 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
     if ui_type_log in cfg.HOUSING_TYPE_OPTIONS:
         type_log = CriteriaItem(code=ui_type_log, label=cfg.HOUSING_TYPE_OPTIONS[ui_type_log])
 
+    # Final scoring settings (F-50)
+    target_pop = st.session_state.get('ui_target_population', cfg.DEFAULT_MU)
+    target_sigma = st.session_state.get('ui_target_population_sigma', cfg.DEFAULT_SIGMA)
+
     return SearchCriterias(
         weight_profile=st.session_state.get('ui_weight_profile', ""),
-        poids_emploi=st.session_state['ui_poids_emploi'],
-        poids_logement=st.session_state['ui_poids_logement'],
-        poids_education=st.session_state['ui_poids_education'],
-        poids_inclusion=st.session_state['ui_poids_inclusion'],
-        poids_sante=st.session_state['ui_poids_sante'],
-        poids_mobilite=st.session_state['ui_poids_mobilite'],
+        poids_emploi=st.session_state['ui_poids_emploi'] / 100.0,
+        poids_logement=st.session_state['ui_poids_logement'] / 100.0,
+        poids_education=st.session_state['ui_poids_education'] / 100.0,
+        poids_inclusion=st.session_state['ui_poids_inclusion'] / 100.0,
+        poids_sante=st.session_state['ui_poids_sante'] / 100.0,
+        poids_mobilite=st.session_state['ui_poids_mobilite'] / 100.0,
         criteria_weights=criteria_weights,
+        
+        target_population=target_pop,
+        target_population_sigma=target_sigma,
         
         commune_actuelle=commune_actuelle,
         loc_search_area=loc_search_area,
@@ -1259,11 +1325,23 @@ def get_person_accompanied_str() -> str:
 
 def display_results_list(display_gdf: Optional[pd.DataFrame] = None) -> None:
     """Renders the list of search results or the detailed view for the highlighted result."""
+    h = st.session_state.get('active_search_hash')
     search_results: SearchResultsData = st.session_state.get('search_results')
     
     if not search_results or not search_results.results:
         st.info("Aucun résultat à afficher.")
         return
+        
+    # SOTA Global Sync Fragment: Hydrates all results in the background
+    @st.fragment(run_every=4.0)
+    def global_sync_fragment():
+        if h and 'search_results' in st.session_state:
+            results = st.session_state.search_results.results
+            for c in results:
+                # Proactively sync both pitches and associations
+                sync_background_data(c, h)
+
+    global_sync_fragment()
 
     # Handle Active Dialogs (at page/list rendering level)
     if st.session_state.get('active_ia_city_index') is not None:
@@ -1312,6 +1390,9 @@ def _display_result_details(commune: CommuneResult) -> None:
         score_percent = f"{commune.global_score * 100:.1f}%"
         
         st.markdown(f"**{libgeo}** ({population} habitants) fait partie du bassin de vie de : **{commune.name_bdv}**.  \nLa correspondance avec le projet est évaluée à **{score_percent}**.")
+        
+        # Sync background results into model if available
+        sync_background_data(commune, h)
         
         # --- AI Pitch Fragment ---
         ai_pitch_container(commune.codgeo, h)

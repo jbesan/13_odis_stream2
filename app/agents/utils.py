@@ -264,22 +264,61 @@ def launch_background_scorer(search_criterias: SearchCriterias, results_dict_ign
                     "global": sanitize_llm_markdown(response_obj.response),
                     "pitches": {p.codgeo: sanitize_llm_markdown(p.pitch) for p in response_obj.pitches_per_city}
                 }
-                for code, p in pitches_dict["pitches"].items():
-                    logging.debug(f"✨ [DEBUG-SANITY-CHECK] code={code} pitch={repr(p)}")
-                results_store[hash_val] = pitches_dict
+                
+                # Harmonized storage: merge with existing results if any
+                current_val = results_store.get(hash_val, {})
+                if not isinstance(current_val, dict): current_val = {}
+                current_val["pitches"] = pitches_dict
+                results_store[hash_val] = current_val
+                
                 logging.debug(f"✅ [BG] Background Scorer fully finished for hash {hash_val}")
             except Exception as e:
                 logging.error(f"❌ [BG] Background Scorer Error for hash {hash_val}: {e}")
-                results_store[hash_val] = f"⚠️ L'analyse IA a échoué: {e}"
+                current_val = results_store.get(hash_val, {})
+                if not isinstance(current_val, dict): current_val = {}
+                current_val["pitches_error"] = f"⚠️ L'analyse IA a échoué: {e}"
+                results_store[hash_val] = current_val
         except Exception as global_e:
             logging.error(f"❌ [BG] Background Scorer Setup Error for hash {hash_val}: {global_e}")
-            results_store[hash_val] = f"⚠️ L'analyse IA a échoué (Setup): {global_e}"
+            current_val = results_store.get(hash_val, {})
+            if not isinstance(current_val, dict): current_val = {}
+            current_val["pitches_error"] = f"⚠️ L'analyse IA a échoué (Setup): {global_e}"
+            results_store[hash_val] = current_val
         finally:
             if 'loop' in locals():
                 loop.close()
                 logging.info(f"🚀 [SCORER] Loop closed for hash {hash_val}")
             
     thread = threading.Thread(target=bg_task, args=(store,))
+    thread.daemon = True # Ensure it doesn't block exit
+    thread.start()
+
+def launch_background_enrichment(engine: Any, codgeos: List[str], hash_val: str):
+    """
+    Launches a background thread to fetch detailed associations for the search results.
+    """
+    store = get_odis_bg_store()
+    
+    def bg_enrichment_task(results_store: dict):
+        try:
+            logging.info(f"🚀 [ENRICH] Starting background enrichment for {len(codgeos)} communes (hash: {hash_val})")
+            
+            # Use the provided engine to prefetch
+            # Note: engine is likely a ScoringEngine instance
+            enrichment_data = engine.prefetch_associations(codgeos)
+            
+            # Merge into harmonized storage
+            current_val = results_store.get(hash_val, {})
+            if not isinstance(current_val, dict): current_val = {}
+            current_val["enrichment"] = enrichment_data
+            results_store[hash_val] = current_val
+            
+            logging.info(f"✅ [ENRICH] Background enrichment finished for hash {hash_val}")
+        except Exception as e:
+            logging.error(f"❌ [ENRICH] Background enrichment error for {hash_val}: {e}")
+            
+    thread = threading.Thread(target=bg_enrichment_task, args=(store,))
+    thread.daemon = True
     thread.start()
 
 import asyncio

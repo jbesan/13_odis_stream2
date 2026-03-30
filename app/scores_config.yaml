@@ -138,7 +138,7 @@ scores:
     category: inclusion
     source_metric: population
     bdv_factor: 0.0
-    computation: precomputed
+    computation: live
     display:
       name: Population de la commune
       strong_point_text: La commune est de taille importante
@@ -269,7 +269,7 @@ scores:
     max_bound: 0.25 ## This is Jacques guess looking at the data
   - id: inc_services_incl_scaled
     category: inclusion
-    source_metric: extra_services_match_count
+    source_metric: null
     bdv_factor: 0.8
     computation: live
     display:

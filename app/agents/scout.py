@@ -11,8 +11,8 @@ from .tools import (
     search_places_batch, 
     compute_routes, 
     search_refugee_associations, 
-    search_rna_rag,
     search_ccas,
+    search_rna_rag_batch,
 )
 
 class ScoutResult(BaseModel):
@@ -37,7 +37,7 @@ SCOUT_ANALYSIS_SYSTEM_PROMPT = """
         - Des commerces spécialisés (ex: boucherie halal, épicerie asiatique)
         - Des lieux de culte **pertinents** hors églises (ex: pagode, mosquée, temple) 
         - Lieux d'hébergement et d'insertion (ex: CPH, CHRS, CADA)
-    - Utilise `search_rna_rag_tool` UNIQUEMENT pour trouver des associations pertinentes pour leur insertion (loisirs, affinités culturelles, solidarité)
+    - Utilise `search_rna_rag_batch_tool` pour trouver des associations pertinentes pour leur insertion (loisirs, affinités culturelles, solidarité).
     - Utilise `compute_routes_tool` pour calculer les temps de trajet (ex: vers prefecture).
     
 
@@ -60,7 +60,7 @@ SCOUT_SPECIFIC_SYSTEM_PROMPT = """
 1. Si la `QUESTION POSÉE` peut-être répondue avec les `CONNAISSANCES ACTUELLES` ne fais rien.
 2. Si des données manquent pour répondre à la `QUESTION POSÉE` : 
     - Utilise `search_refugee_associations_tool` pour trouver des associations de support aux réfugiés.
-    - Utilise `search_rna_rag_tool` pour trouver des associations pertinentes pour leur insertion (loisirs, affinités culturelles, solidarité).
+    - Utilise `search_rna_rag_batch_tool` pour trouver des associations pertinentes (loisirs, affinités culturelles, solidarité).
     - Utilise `search_places_batch_tool` pour trouver des POIs (écoles, parcs, commerces, lieux de culte).
     - Utilise `compute_routes_tool` pour calculer les temps de trajet.
 
@@ -154,19 +154,21 @@ def search_refugee_associations_tool(ctx: RunContext[ODISDeps], codgeo: str) -> 
     return search_refugee_associations(codgeo)
 
 @scout_agent.tool
-def search_rna_rag_tool(ctx: RunContext[ODISDeps], query: str, codgeo: str, top_k: int = 10) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
-    """Recherche sémantique d'associations. Un appel par terme de recherche.
+def search_rna_rag_batch_tool(ctx: RunContext[ODISDeps], queries: List[str], codgeo: str, top_k: int = 10) -> Dict[str, Any]:
+    """Recherche sémantique d'associations en mode batch. 
+    
+    Permet d'effectuer plusieurs recherches distinctes en un seul appel.
     
     Args:
         ctx (RunContext[ODISDeps]): Contexte de l'agent.
-        query (str): Terme de recherche (ex: 'football', 'hébergement d'urgence').
+        queries (List[str]): Liste de termes de recherche courts (ex: ['football', 'aide alimentaire']).
         codgeo (str): Code INSEE de la commune (5 chiffres).
-        top_k (int): Nombre de résultats.
+        top_k (int): Nombre de résultats par terme.
     
     Returns:
-        Union[List[Dict[str, Any]], Dict[str, Any]]: Liste des associations correspondantes.
+        Dict[str, Any]: Dictionnaire mappant chaque requête à ses résultats.
     """
-    return search_rna_rag(query, codgeo, top_k=top_k)
+    return search_rna_rag_batch(queries, codgeo, top_k=top_k)
 
 @scout_agent.tool
 def search_ccas_tool(ctx: RunContext[ODISDeps], codgeo: str) -> List[Dict[str, Any]]:

@@ -599,6 +599,7 @@ class TestInclusionScoringLogic:
         """Tests Socle Administratif score calculation."""
         from types import SimpleNamespace
         prefs = SimpleNamespace(
+            inc_services_core_selection=[],
             inc_services_add_selection=['social_aide', 'admin_mairie'],
             inc_asso_add_selection=[]
         )
@@ -622,6 +623,7 @@ class TestInclusionScoringLogic:
         """Tests Affinité score calculation."""
         from types import SimpleNamespace
         prefs = SimpleNamespace(
+            inc_services_core_selection=[],
             inc_asso_add_selection=['009'],
             inc_services_add_selection=[]
         )
@@ -642,6 +644,7 @@ class TestInclusionScoringLogic:
         assert scores.loc['64445', 'inc_asso_add_scaled'] >= 0
         
         prefs_sport = SimpleNamespace(
+            inc_services_core_selection=[],
             inc_asso_add_selection=['011'],
             inc_services_add_selection=[]
         )
@@ -663,6 +666,7 @@ class TestInclusionScoringLogic:
         """Tests that all inclusion components are present."""
         from types import SimpleNamespace
         prefs = SimpleNamespace(
+            inc_services_core_selection=[],
             inc_services_add_selection=['social_aide'], 
             inc_asso_add_selection=['Bricolage / Création']
         )

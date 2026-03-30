@@ -24,16 +24,13 @@ Ce prototype a un triple objectif :
 
 - **Profil Personnalisé :** Définissez un "projet de vie" détaillé incluant la composition du foyer, le niveau scolaire des enfants, les métiers visés, les besoins en formation, etc.
 - **Pondération Avancée :** Choisissez un profil prédéfinis (Équilibré, Famille, Santé, Emploi) ou activez le **Mode Expert** pour un réglage fin des poids de chaque catégorie.
-- **Scoring Intelligent :** Chaque commune de France est évaluée sur sa compatibilité avec le profil via un modèle de données typé. La taille de la population est traitée via un **score Gaussien** (favorisant les villes moyennes autour de 50 000 habitants) plutôt qu'un simple filtre.
-- **Optimisation Mémoire :** Le moteur de recherche est optimisé pour traiter des milliers de communes en limitant le chargement des colonnes redondantes et en purgeant les indicateurs non pertinents après le calcul des scores (Deny-list).
+- **Scoring Intelligent :** Chaque commune de France est évaluée sur sa compatibilité avec le profil via un modèle de données typé. La taille de la population est traitée via un **score Gaussien dynamique** (permettant à l'utilisateur de définir sa taille de ville idéale, par défaut 50 000 habitants) plutôt qu'un simple filtre.
 - **Carte Interactive :** Visualisez les localités les mieux notées, leur score, et superposez des couches d'informations additionnelles (écoles, établissements de santé, services d'inclusion).
 - **Résultats Détaillés & Export PDF :** Explorez les 5 meilleurs résultats avec une analyse comparative générée automatiquement par l'IA et exportez un rapport PDF complet incluant ces analyses.
 - **Assistant IA (Multi-Agent ODIS) :** Système multi-agent (LangGraph) capable de conduire l'entretien via l'agent **Interviewer**, de calculer les scores avec l'agent **Scorer**, et d'enrichir les résultats avec des infos terrain (**Scout**) et web (**Web**). voir la [documentation détaillée de l'architecture](app/agents/README.md).
 - **Grounding Google Search :** Grâce à l'agent spécialisé WEB, accédez aux dernières actualités locales et au contexte social des communes visées.
-- **Référentiel des Associations Réfugiés :** Accédez à une base de données qualifiée d'associations spécialisées dans l'accueil des nouveaux arrivants.
-- **Moteur de Recherche RAG (RNA) :** Recherche sémantique et thématique sur l'ensemble du Répertoire National des Associations (RNA) via BigQuery et Vertex AI, permettant de classer les associations par catégories d'inclusion (FLE, Logement, Emploi, etc.) avec une précision inégalée.
+- **Moteur de Recherche RAG (RNA) :** Recherche sémantique et thématique sur l'ensemble du Répertoire National des Associations (RNA) via BigQuery et Vertex AI, permettant de classer les associations par catégories d'inclusion (FLE, Logement, Emploi, etc.) ou des recherches spécifiques (intégration des personnes réfugiées).
 - **Accueils Citoyens (J'Accueille) :** Intégration de la base de données de l'association J'Accueille pour valoriser les bassins de vie disposant déjà d'un réseau d'hébergement citoyen actif. (Données Mars 2026).
-- **Scénarios de Démonstration :** Chargez rapidement des profils pré-configurés pour découvrir le potentiel de l'outil.
 
 ## 📸 Aperçu de l'Application
 
@@ -128,7 +125,7 @@ Le score est calculé à partir d'une multitude de critères, regroupés en gran
 - **Accompagnement Réfugiés** : Évalue la présence d'associations spécialisées dans l'accueil des personnes réfugiées (Source: RNA).
 - **Lien Social & Associations** : Mesure la densité associative globale et thématique (Loisirs, Sport, Culture) pour favoriser l'intégration.
 - **Services d'Inclusion** : Mesure la présence de services dédiés (Français Langue Étrangère, aide administrative, etc.).
-- **Taille de la Population** : Utilisé via une fonction Gaussienne ($\mu$=50k, $\sigma$=40k) pour favoriser les communes de taille intermédiaire.
+- **Taille de la Population** : Utilisé via une fonction Gaussienne dynamique (cible réglable entre 5k et 200k habitants) pour favoriser les communes correspondant au projet de vie.
 
 **Catégorie : Mobilité**
 
@@ -146,41 +143,35 @@ Le score est calculé à partir d'une multitude de critères, regroupés en gran
 
 ## 📂 Structure du Projet
 
-Le code de l'application Streamlit est organisé de manière modulaire au sein du répertoire app/ pour séparer les différentes logiques :
-
-```
+```text
 app/
-├── main.py                 # Point d'entrée Streamlit
-├── config.py               # Configuration globale
-├── scores_config.yaml      # Paramétrage des poids du scoring
-├── core/                   # Logique métier transverse
-│   ├── scoring.py          # Moteur de scoring ODIS
-│   ├── models.py           # Modèles de données (Pydantic)
-│   ├── maps.py             # Fonctions cartographiques Folium
-│   └── pdf_generator.py    # Génération des rapports PDF
-├── ui/                     # Composants et Graphiques
-│   ├── components.py       # Composants réutilisables Streamlit
-│   └── charts.py           # Visualisations Plotly
-├── utils/                  # Utilitaires techniques
-│   ├── data_loader.py      # Chargement et cache des données
-│   └── logger.py           # Gestion des logs applicatifs
-├── agents/                 # Intelligence Artificielle (Multi-Agent)
-│   ├── graph.py            # Orchestration LangGraph
-│   ├── state.py            # Définition de l'état partagé
-│   └── tools.py            # Outils experts (Scoring, FT, Maps)
-└── pages/                  # Pages de l'application
-    ├── 1_Accueil.py
-    ├── 2_Formulaire.py
-    ├── 3_Resultats.py
-    └── 4_AI_Chatbot.py
+├── 1_Accueil.py            # Point d'entrée principal Streamlit
+├── config.py               # Configuration et constantes
+├── scores_config.yaml      # Paramétrage des critères de scoring
+├── core/                   # Logique métier ODIS
+│   ├── scoring.py          # Moteur de calcul (Normalisation, Pondération)
+│   ├── models.py           # Modèles de données Pydantic (SearchCriterias, etc.)
+│   ├── maps.py             # Rendu cartographique Folium
+│   └── pdf_generator.py    # Génération de rapports PDF ReportLab
+├── ui/                     # Interface et Composants
+│   ├── components.py       # Fragments UI et formulaires
+│   ├── charts.py           # Graphiques Plotly
+│   └── feedback.py         # Module de collecte de retours
+├── utils/                  # Services transverses
+│   ├── data_loader.py      # Chargement et cache des données (Parquet/BigQuery)
+│   ├── auth.py             # Authentification simple
+│   └── common.py           # Fonctions utilitaires
+├── agents/                 # Écosystème Multi-Agent (LangGraph)
+│   ├── graph.py            # Graphe d'orchestration
+│   ├── interviewer.py      # Agent de conduite d'entretien
+│   ├── scorer.py           # Agent d'analyse de scores
+│   ├── scout.py            # Agent de recherche locale (Maps)
+│   └── ...                 # Autres agents experts (Web, JobHunter, etc.)
+└── pages/                  # Pages Streamlit secondaires
+    ├── 2_Formulaire.py     # Saisie manuelle du projet
+    ├── 3_Resultats.py      # Recherche et visualisation
+    └── 4_AI_Chatbot.py     # Interface de discussion
 ```
-
-- **core/** : Contient le cœur algorithmique du projet, notamment le moteur de scoring et les modèles de données.
-- **ui/** : Regroupe les composants visuels et les fonctions de rendu graphique.
-- **utils/** : Services techniques pour le chargement optimisé des données Parquet et le logging.
-- **app/agents/** : Architecture multi-agent orchestrée par LangGraph pour l'assistance interactive.
-  - **graph.py** : Graphe d'orchestration.
-  - **interviewer.py**, **scorer.py**, **scout.py**, **web.py**, **job_hunter.py**, **synthesizer.py**, **refiner.py** : Agents spécialisés.
 
 ## 🤖 Interface AI Agent (Assistant ODIS 2.0)
 
@@ -211,18 +202,14 @@ Ce prototype est une base solide qui peut être grandement améliorée :
 
 - **⭐ Fonctionnalités :**
   - **Comptes Utilisateurs :** Permettre de sauvegarder, nommer et gérer plusieurs scénarios de "projets de vie".
-  - **Filtres Avancés :** Ajouter des filtres plus fins (ex: exclure certaines régions, filtrer par couleur politique).
   - **Comparaison des Résultats :** Ajouter une fonction pour comparer 2 ou 3 des meilleurs résultats côte à côte.
 
 - **📊 Données & Scoring :**
-  - **Intégrer le Loyer Moyen :** Ajouter le loyer moyen comme critère de score pour mieux évaluer l'accessibilité financière.
   - **Étendre les Sources de Données :** Intégrer plus de jeux de données (transports en commun, services de santé spécifiques, activités culturelles).
   - **Fraîcheur des Données :** Mettre en place un pipeline pour mettre à jour automatiquement les données sous-jacentes.
   - **Affiner les Critères :** Travailler avec des travailleurs sociaux pour affiner la liste des critères et leur pertinence.
 
 - **💻 Technique & UX :**
-  - **Refactoring du Scoring :** La logique de scoring a été refactorisée et optimisée, mais peut encore être améliorée pour plus de modularité.
-  - **Tests :** Ajouter des tests unitaires et d'intégration pour fiabiliser le pipeline de scoring et l'interface.
   - **Performance :** Optimiser le chargement des données et les calculs de score pour une meilleure fluidité.
   - **Design UI/UX :** Améliorer le design visuel, la mise en page et l'ergonomie sur mobile.
 

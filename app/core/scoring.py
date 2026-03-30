@@ -7,6 +7,8 @@ from typing import List, Dict, Set, Any, Optional, Union, Tuple
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import itertools
+import string
 import config as cfg
 from core.models import (
     SearchCriterias, CommuneResult, CommuneScoreDetail, SearchResultsData,
@@ -19,6 +21,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 from utils.logger import log_search_results
 from utils.common import project_point
+from services.rna_rag import RNARagService
 
 class ScoringEngine:
     """
@@ -256,7 +259,8 @@ class ScoringEngine:
             refugee_associations_data=app_data.get('refugee_associations_data', pd.DataFrame()),
             live_jobs_data=app_data.get('live_jobs_data', pd.DataFrame()),
             siae_jobs_data=app_data.get('siae_jobs_data', pd.DataFrame()),
-            bmo_vertical=app_data.get('bmo_vertical', pd.DataFrame())
+            bmo_vertical=app_data.get('bmo_vertical', pd.DataFrame()),
+            rna_rag_service=app_data.get('rna_rag_service')
         )
 
     def __init__(
@@ -281,7 +285,8 @@ class ScoringEngine:
         refugee_associations_data: pd.DataFrame = pd.DataFrame(),
         live_jobs_data: pd.DataFrame = pd.DataFrame(),
         siae_jobs_data: pd.DataFrame = pd.DataFrame(),
-        bmo_vertical: pd.DataFrame = pd.DataFrame() # Deprecated
+        bmo_vertical: pd.DataFrame = pd.DataFrame(), # Deprecated
+        rna_rag_service: Optional[RNARagService] = None
     ):
         self.current_city_scored_row = None
         self.df_all_communes = df_all_communes
@@ -304,6 +309,18 @@ class ScoringEngine:
         self.live_jobs_data = live_jobs_data
         self.siae_jobs_data = siae_jobs_data
         self.bmo_vertical = bmo_vertical
+        
+        # Initialize RNA RAG Service if not provided
+        # Initialize RNA RAG Service if not provided
+        self.rna_rag_service = rna_rag_service
+        if self.rna_rag_service is None:
+            try:
+                self.rna_rag_service = RNARagService()
+            except Exception as e:
+                logger.warning(f"Could not initialize RNARagService in ScoringEngine: {e}")
+        
+        # Batch cache for associations (Store for detailed results)
+        self._associations_cache: Dict[str, Dict[str, Any]] = {}
 
     def _get_active_criteria(self, config: Optional[SearchCriterias]) -> Set[str]:
         """Centralized logic to determine which criteria are active based on config."""
@@ -404,7 +421,8 @@ class ScoringEngine:
         # F-26: Refugee Associations
         active.add('inc_asso_refug_scaled') 
         active.add('inc_siae_density_scaled') # New F-39: SIAE Density
-        if config.inc_services_add_selection: active.add('inc_services_incl_scaled')
+        if config.inc_services_add_selection or config.inc_services_core_selection: 
+            active.add('inc_services_incl_scaled')
         if config.inc_asso_add_selection: active.add('inc_asso_add_scaled')
         
         return active
@@ -426,33 +444,24 @@ class ScoringEngine:
             "global_score": float(row.get('weighted_score', 0.0)) if 'weighted_score' in row else 0.0
         }
 
-        # Domain Dictionaries (for backward compatibility and detailed UI data)
-        emploi_data = {
-            "standard_jobs_total": 0, "standard_jobs_matching_total": 0, "standard_jobs_summary": {}, "standard_jobs_matching_summary": {},
-            "top_professions": [], "training_programs": [],
-            "inclusive_jobs_total": 0, "inclusive_jobs_summary": {}, "inclusive_jobs_matching_total": 0, "inclusive_jobs_matching_summary": {}
-        }
-        edu_data = {"facility_counts": {}, "facility_details": {}}
-        sante_data = {"facility_counts": {}, "facility_details": {}}
-        incl_data = {
-            "services_grouped": {}, 
-            "refugee_asso_list": [],
-            "associations_total": 0, 
-            "associations_refugee_focused_total": 0,
-            "associations_summary_by_category": {}
-        }
-        mob_data = {
-            "bus_stops": int(row.get('nb_stops_bus', 0)),
-            "tram_stops": int(row.get('nb_stops_tram', 0)),
-            "metro_stops": int(row.get('nb_stops_metro', 0)),
-            "train_stops": int(row.get('nb_stops_train', 0)),
-            "total_stops": int(row.get('nb_stops_total', 0)),
-            "stop_density": float(row.get('mob_trans_pub_stop_density', 0.0))
-        }
-        logement_data = {
-            "price_per_sqm": None, "odace_all_variants": {},
-            "host_count": float(row.get('heb_accueillants_count', 0.0))
-        }
+        # Domain Objects (Using unified models for robust typing)
+        emploi_data = EmploymentMetrics()
+        edu_data = EducationMetrics()
+        sante_data = HealthMetrics()
+        incl_data = InclusionMetrics()
+        mob_data = MobilityMetrics()
+        logement_data = HousingMetrics()
+        
+        # Populate mobility defaults from row
+        mob_data.bus_stops = int(row.get('nb_stops_bus', 0))
+        mob_data.tram_stops = int(row.get('nb_stops_tram', 0))
+        mob_data.metro_stops = int(row.get('nb_stops_metro', 0))
+        mob_data.train_stops = int(row.get('nb_stops_train', 0))
+        mob_data.total_stops = int(row.get('nb_stops_total', 0))
+        mob_data.stop_density = float(row.get('mob_trans_pub_stop_density', 0.0))
+        
+        # Populate logement defaults
+        logement_data.host_count = int(row.get('heb_accueillants_count', 0))
 
         # Extract lat/lon from geometry if available
         lat, lon = 0.0, 0.0
@@ -592,7 +601,7 @@ class ScoringEngine:
                 "raw": float(row[raw_col]) if raw_col in row and pd.notna(row[raw_col]) else None,
                 "scaled": float(row[scaled_col]) if scaled_col in row and pd.notna(row[scaled_col]) else None
             }
-            logement_data['odace_all_variants'][ht] = variant_data
+            logement_data.odace_all_variants[ht] = variant_data
             
             # Set top-level raw value if it's the selected type
             type_log = None
@@ -600,9 +609,9 @@ class ScoringEngine:
                 type_log = config.type_logement.code if hasattr(config.type_logement, 'code') else config.type_logement
             
             if config and type_log == ht:
-                logement_data['price_per_sqm'] = variant_data['raw']
+                logement_data.price_per_sqm = variant_data['raw']
             elif not config and ht == 'appt_all':
-                logement_data['price_per_sqm'] = variant_data['raw']
+                logement_data.price_per_sqm = variant_data['raw']
 
         # 3. Emploi (Top 10 from Live Jobs & Formations)
         c_code = codgeo_str
@@ -613,8 +622,8 @@ class ScoringEngine:
                 if not live_city.empty:
                     # Global Summary
                     live_summary = live_city.groupby('romeLibelle')['total_postes'].sum().to_dict()
-                    emploi_data['standard_jobs_summary'] = live_summary
-                    emploi_data['standard_jobs_total'] = int(live_city['total_postes'].sum())
+                    emploi_data.standard_jobs_summary = live_summary
+                    emploi_data.standard_jobs_total = int(live_city['total_postes'].sum())
                     
                     # Matching Summary (filtered by config)
                     if config and config.codes_metiers:
@@ -633,16 +642,16 @@ class ScoringEngine:
                         
                         if target_romes:
                             matching_city = live_city[live_city['romeCode'].isin(target_romes)]
-                            emploi_data['standard_jobs_matching_summary'] = matching_city.groupby('romeLibelle')['total_postes'].sum().to_dict()
-                            emploi_data['standard_jobs_matching_total'] = int(matching_city['total_postes'].sum())
+                            emploi_data.standard_jobs_matching_summary = matching_city.groupby('romeLibelle')['total_postes'].sum().to_dict()
+                            emploi_data.standard_jobs_matching_total = int(matching_city['total_postes'].sum())
 
                     # Top 10 unique labels by volume with postes count
                     top_live = live_city.groupby('romeLibelle')['total_postes'].sum().sort_values(ascending=False).head(10)
-                    emploi_data['top_professions'] = [f"{label} ({int(vol)} postes)" for label, vol in top_live.items()]
+                    emploi_data.top_professions = [f"{label} ({int(vol)} postes)" for label, vol in top_live.items()]
                 else:
-                    emploi_data['standard_jobs_total'] = 0
-                    emploi_data['standard_jobs_matching_total'] = 0
-                    emploi_data['top_professions'] = []
+                    emploi_data.standard_jobs_total = 0
+                    emploi_data.standard_jobs_matching_total = 0
+                    emploi_data.top_professions = []
 
             # --- SIAE Jobs Match (New F-39) ---
             if not self.siae_jobs_data.empty:
@@ -655,10 +664,10 @@ class ScoringEngine:
                     # Fallback for display if no label at all
                     label_col = 'rome_label' if 'rome_label' in siae_city.columns else 'rome'
                     
-                    emploi_data['inclusive_jobs_total'] = int(len(siae_city))
-                    emploi_data['inclusive_jobs_summary'] = siae_city.groupby(label_col).size().to_dict()
-                    emploi_data['inclusive_jobs_matching_summary'] = {}
-                    emploi_data['inclusive_jobs_matching_total'] = 0
+                    emploi_data.inclusive_jobs_total = int(len(siae_city))
+                    emploi_data.inclusive_jobs_summary = siae_city.groupby(label_col).size().to_dict()
+                    emploi_data.inclusive_jobs_matching_summary = {}
+                    emploi_data.inclusive_jobs_matching_total = 0
                     
                     if config and config.codes_metiers:
                         siae_prefixes = set()
@@ -676,13 +685,13 @@ class ScoringEngine:
                             # Use 'rome' column
                             siae_matching = siae_city[siae_city['rome'].str[:3].isin(siae_prefixes)]
                             matching_dict = siae_matching.groupby(label_col).size().to_dict()
-                            emploi_data['inclusive_jobs_matching_summary'] = matching_dict
-                            emploi_data['inclusive_jobs_matching_total'] = sum(matching_dict.values())
+                            emploi_data.inclusive_jobs_matching_summary = matching_dict
+                            emploi_data.inclusive_jobs_matching_total = sum(matching_dict.values())
                 else:
-                    emploi_data['inclusive_jobs_total'] = 0
-                    emploi_data['inclusive_jobs_summary'] = {}
-                    emploi_data['inclusive_jobs_matching_summary'] = {}
-                    emploi_data['inclusive_jobs_matching_total'] = 0
+                    emploi_data.inclusive_jobs_total = 0
+                    emploi_data.inclusive_jobs_summary = {}
+                    emploi_data.inclusive_jobs_matching_summary = {}
+                    emploi_data.inclusive_jobs_matching_total = 0
             
             # Formations logic remains
             if not self.formations_data.empty:
@@ -693,9 +702,9 @@ class ScoringEngine:
                          city_forms['formation_code'] = city_forms['formation_code'].astype(str)
                          merged_f = city_forms.merge(self.codformations_index, left_on='formation_code', right_index=True, how='left')
                          merged_f['label'] = merged_f['label'].fillna(merged_f['formation_code'])
-                         emploi_data['training_programs'] = sorted(merged_f['label'].unique().tolist())
+                         emploi_data.training_programs = sorted(merged_f['label'].unique().tolist())
                      else:
-                         emploi_data['training_programs'] = sorted(city_forms['formation_code'].unique().tolist())
+                         emploi_data.training_programs = sorted(city_forms['formation_code'].unique().tolist())
 
         # 4. Education & Sante Counts & Grouped Etablissements
         for dom, mapping, annuaire, data_obj in [
@@ -703,7 +712,7 @@ class ScoringEngine:
             ('sante', {'hopital': 'count_hopital', 'maternite': 'count_maternite', 'psy': 'count_psy'}, self.annuaire_sante, sante_data)
         ]:
             for key, col in mapping.items():
-                if col in row: data_obj['facility_counts'][key] = int(row[col])
+                if col in row: data_obj.facility_counts[key] = int(row[col])
             
             if codgeo_str and not annuaire.empty:
                 # Extra safety: filter by codgeo and category to avoid leaks
@@ -716,9 +725,12 @@ class ScoringEngine:
                     
                     if type_col and label_col:
                         grouped = city_pois.groupby(type_col, observed=True)[label_col].apply(lambda x: sorted(list(set(x)))).to_dict()
-                        data_obj['facility_details'] = grouped
+                        data_obj.facility_details = grouped
 
         # 6. Inclusion (Grouped by Thematic)
+        incl_data = InclusionMetrics()
+        incl_data.cat_score = float(row.get('inclusion_cat_score', 0.0))
+        
         if codgeo_str and not self.annuaire_inclusion.empty:
             city_incl = self.annuaire_inclusion[self.annuaire_inclusion['codgeo'] == codgeo_str]
             if not city_incl.empty:
@@ -741,67 +753,28 @@ class ScoringEngine:
                                 pass
                             grouped_incl[label] = sorted(list(set(names)))
                         
-                        incl_data['services_grouped'] = grouped_incl
-
-        # 6b. Refugee Associations (Detailed List for Inclusion Tab)
-        if codgeo_str and not self.refugee_associations_data.empty:
-            # Filter by codgeo or bassin_de_vie
-            mask = (self.refugee_associations_data['codgeo'] == codgeo_str)
-            if 'bassin_de_vie' in row and row['bassin_de_vie']:
-                mask |= (self.refugee_associations_data['bassin_de_vie'] == row['bassin_de_vie'])
-            
-            refug_city = self.refugee_associations_data[mask].copy()
-            if not refug_city.empty:
-                refugee_list = []
-                for _, asso in refug_city.iterrows():
-                    raw_code = str(asso['waldec_code']).strip()
-                    code_norm = raw_code.lstrip('0') if raw_code.startswith('0') else raw_code
-                    label = raw_code
-                    
-                    try:
-                        if self.waldec_index is not None:
-                            possible_codes = [raw_code, code_norm]
-                            if len(raw_code) >= 3:
-                                possible_codes.append(raw_code[:3])
-                                possible_codes.append(raw_code[:3].lstrip('0'))
-                            if len(raw_code) >= 2:
-                                possible_codes.append(raw_code[:2])
-                                possible_codes.append(raw_code[:2].lstrip('0'))
-                                
-                            for pc in possible_codes:
-                                if pc and pc in self.waldec_index.index:
-                                    val = self.waldec_index.loc[pc, 'label']
-                                    label = val if isinstance(val, str) else val.iloc[0]
-                                    break
-                    except:
-                        pass
-                    
-                    asso_dict = asso.to_dict()
-                    asso_dict['waldec_label'] = str(label).capitalize()
-                    refugee_list.append(asso_dict)
-                
-                    incl_data['refugee_asso_list'].append(asso_dict)
-
-        # 7. Associations (Updated to use RNA RAG columns)
-        rna_cols = [c for c in row.index if c.startswith("inc_rna_") and c.endswith("_count")]
-        if rna_cols:
-            total_assos = row[rna_cols].sum()
-            incl_data['associations_total'] = int(total_assos)
-            incl_data['associations_summary_by_category'] = {
-                c.replace("inc_rna_", "").replace("_count", ""): int(row[c]) 
-                for c in rna_cols if row[c] > 0
-            }
-        elif codgeo_str and not self.associations_data.empty:
-            asso_city = self.associations_data[self.associations_data['codgeo'] == codgeo_str]
-            if not asso_city.empty:
-                total_assos = asso_city['count'].sum() if 'count' in asso_city.columns else len(asso_city)
-                incl_data['associations_total'] = int(total_assos)
+                        incl_data.services_grouped = grouped_incl
+        # 6b. Detailed Associations (Refugee & Inclusion) from BigQuery
+        # SOTA Pattern: Use pre-fetched cache if available, otherwise return empty + "loading" status
+        refugee_list = []
+        inclusion_list_by_cat = {}
+        total_incl_count = 0
         
-        # 7b. Refugee Associations (Counts)
-        if codgeo_str and not self.associations_data.empty and 'id_waldec' in self.associations_data.columns:
-            asso_city = self.associations_data[self.associations_data['codgeo'] == codgeo_str]
-            refugee_assos = asso_city[asso_city['id_waldec'].astype(str).str.startswith('019025', na=False)]
-            incl_data['associations_refugee_focused_total'] = int(refugee_assos['count'].sum()) if 'count' in refugee_assos.columns else len(refugee_assos)
+        cached_data = self._associations_cache.get(codgeo_str)
+        
+        if cached_data:
+            refugee_list = cached_data.get("refugee", [])
+            inclusion_list_by_cat = cached_data.get("inclusion", {})
+            total_incl_count = sum(len(l) for l in inclusion_list_by_cat.values())
+        elif self.rna_rag_service and codgeo_str:
+            # Fallback (Sync) - only if we don't use the background enrichment or for single-city tests
+            # For now, we keep it empty to allow background enrichment to fill it.
+            pass
+
+        incl_data.asso_refugee_list = refugee_list
+        incl_data.asso_refugee_count = len(refugee_list)
+        incl_data.asso_inclusion_list_by_cat = inclusion_list_by_cat
+        incl_data.asso_inclusion_count = total_incl_count
         # 8. Calculate dynamic category scores (weighted average of active criteria)
         # This ensures the radar chart is populated even for reference cities not in the search pool.
         cat_final_scores = {}
@@ -812,12 +785,12 @@ class ScoringEngine:
             else:
                 cat_final_scores[norm_cat] = 0.0
 
-        emploi_data['cat_score'] = float(cat_final_scores.get('emploi', 0.0))
-        logement_data['cat_score'] = float(cat_final_scores.get('logement', 0.0))
-        edu_data['cat_score'] = float(cat_final_scores.get('education', 0.0))
-        sante_data['cat_score'] = float(cat_final_scores.get('sante', 0.0))
-        incl_data['cat_score'] = float(cat_final_scores.get('inclusion', 0.0))
-        mob_data['cat_score'] = float(cat_final_scores.get('mobilite', 0.0))
+        emploi_data.cat_score = float(cat_final_scores.get('emploi', 0.0))
+        logement_data.cat_score = float(cat_final_scores.get('logement', 0.0))
+        edu_data.cat_score = float(cat_final_scores.get('education', 0.0))
+        sante_data.cat_score = float(cat_final_scores.get('sante', 0.0))
+        incl_data.cat_score = float(cat_final_scores.get('inclusion', 0.0))
+        mob_data.cat_score = float(cat_final_scores.get('mobilite', 0.0))
 
         # Extract coordinates and centroid point (in 4326)
         # The engine ensures a 'centroid' column exists in 2154
@@ -848,12 +821,12 @@ class ScoringEngine:
             geometry=poly,
             global_score=float(row.get('weighted_score', 0.0)),
             scores=structured_scores,
-            employment=EmploymentMetrics(**emploi_data),
-            housing=HousingMetrics(**logement_data),
-            education=EducationMetrics(**edu_data),
-            health=HealthMetrics(**sante_data),
-            inclusion=InclusionMetrics(**incl_data),
-            mobility=MobilityMetrics(**mob_data)
+            employment=emploi_data,
+            housing=logement_data,
+            education=edu_data,
+            health=sante_data,
+            inclusion=incl_data,
+            mobility=mob_data
         )
 
     def create_search_results(self, processed_gdf: gpd.GeoDataFrame, config: SearchCriterias) -> SearchResultsData:
@@ -1266,6 +1239,20 @@ class ScoringEngine:
 
     def _compute_inclusion_scores(self, df: gpd.GeoDataFrame, config: SearchCriterias) -> gpd.GeoDataFrame:
         df = df.copy()
+        
+        # Population Score (F-50) - Dynamic re-calculation
+        # This overrides the precomputed 'inc_population_scaled' if mu/sigma are provided in config
+        if 'inc_population_scaled' in self._get_active_criteria(config):
+            mu = config.target_population
+            sigma = config.target_population_sigma
+            
+            # Recompute gaussian score based on raw population
+            # We use _scale_series which handles 'gaussian' type
+            df['inc_population_scaled'] = self._scale_series(
+                df['population'], 0, 0, 
+                scaling_type='gaussian', mu=mu, sigma=sigma
+            )
+
         if 'inc_asso_core_scaled' not in df.columns: df['inc_asso_core_scaled'] = 0.0
 
         # Affinities
@@ -1301,8 +1288,10 @@ class ScoringEngine:
         else: 
             if 'inc_asso_add_scaled' in df.columns: df.drop(columns=['inc_asso_add_scaled'], inplace=True)
 
-        # Inclusion Services (F-48: Merged Core and Additional)
+        # Inclusion Services (F-48: Merged Selection)
         needed = set()
+        for i in config.inc_services_core_selection:
+            needed.add(i.code if hasattr(i, 'code') else str(i))
         for i in config.inc_services_add_selection:
             needed.add(i.code if hasattr(i, 'code') else str(i))
             
@@ -1312,11 +1301,14 @@ class ScoringEngine:
                  if not isinstance(available, set): return 0
                  return sum(1 for n in needed if any(n in a for a in available))
 
-             if 'key' not in df.columns: df = df.join(self.incl_index, how='left')
-             df['extra_services_match_count'] = df['key'].apply(count_matches)
-             df['inc_services_incl_scaled'] = df['extra_services_match_count'] / len(needed)
+             if 'key' not in df.columns: 
+                 df = df.join(self.incl_index, how='left')
+             
+             # Direct calculation without intermediate column
+             df['inc_services_incl_scaled'] = df['key'].apply(count_matches) / len(needed)
         else:
-             if 'inc_services_incl_scaled' in df.columns: df.drop(columns=['inc_services_incl_scaled'], inplace=True)
+             if 'inc_services_incl_scaled' in df.columns: 
+                 df.drop(columns=['inc_services_incl_scaled'], inplace=True)
 
         return df
 
@@ -1359,3 +1351,60 @@ class ScoringEngine:
             
         # If searching France or another area, proximity is not a local search factor
         return False
+
+    def prefetch_associations(self, codgeos: List[str]) -> Dict[str, Dict[str, Any]]:
+        """
+        Fetches association details for multiple communes in a single BigQuery call.
+        Updates self._associations_cache.
+        """
+        if not self.rna_rag_service or not codgeos:
+            return {}
+            
+        try:
+            logger.info(f"📊 [PREFETCH] Fetching associations for {len(codgeos)} communes")
+            all_assos = self.rna_rag_service.get_associations_by_codgeo(codgeos)
+            
+            # Reset cache for these specific codgeos
+            temp_results = {cg: {"refugee": [], "inclusion": {}} for cg in codgeos}
+            
+            for asso in all_assos:
+                codgeo = asso.get('codgeo')
+                if not codgeo or codgeo not in temp_results:
+                    continue
+                
+                # Mapping logic (same as in format_city_details)
+                raw_code = str(asso.get('code_waldec', '')).strip()
+                desc = str(asso.get('description', '')).strip()
+                if desc.lower() in ["nan", "none"]: desc = ""
+                if len(desc) > 250: desc = desc[:250] + "..."
+                
+                name = string.capwords(str(asso.get('name', 'Inconnu')).lower())
+                
+                asso_data = {
+                    "id": asso.get('id', ''),
+                    "name": name,
+                    "description": desc,
+                    "waldec_code": raw_code,
+                    "waldec_label": asso.get('categorie', 'Action Sociale'),
+                    "categorie_odis": asso.get('primary_category', ''),
+                    "codgeo": codgeo,
+                    "is_refugee_focused": bool(asso.get('is_refugee_focused', False))
+                }
+                
+                if asso_data["is_refugee_focused"]:
+                    temp_results[codgeo]["refugee"].append(asso_data)
+                else:
+                    cat = asso_data["categorie_odis"] or "Inclusion"
+                    if cat not in temp_results[codgeo]["inclusion"]:
+                        temp_results[codgeo]["inclusion"][cat] = []
+                    
+                    if len(temp_results[codgeo]["inclusion"][cat]) < 20:
+                        temp_results[codgeo]["inclusion"][cat].append(asso_data)
+            
+            # Bulk update cache
+            self._associations_cache.update(temp_results)
+            return temp_results
+            
+        except Exception as e:
+            logger.error(f"❌ [PREFETCH] Failed associations fetch: {e}")
+            return {}

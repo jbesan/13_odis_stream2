@@ -145,6 +145,43 @@ def search_rna_rag(query: str, codgeo: str, top_k: int = 10) -> Union[List[Dict[
     logger.info(f"🔍 [TOOL] search_rna_rag: {query} in {codgeo}")
     return _search_rna_rag_logic(query, codgeo, top_k=top_k)
 
+def search_rna_rag_batch(queries: List[str], codgeo: str, top_k: int = 10) -> List[Dict[str, Any]]:
+    """
+    Exécute plusieurs recherches sémantiques distinctes et consolide les résultats sans doublons.
+    
+    Args:
+        queries: Liste de termes de recherche.
+        codgeo: Code INSEE de la commune (5 chiffres).
+        top_k: Nombre maximum de résultats par terme.
+    
+    Returns:
+        List[Dict[str, Any]]: Liste unique d'associations dédoublées par ID.
+    """
+    logger.info(f"🔍 [TOOL] search_rna_rag_batch starting: {queries} in {codgeo}")
+    all_results = []
+    seen_ids = set()
+    
+    for q in queries:
+        logger.info(f"  ↳ Processing query: '{q}'")
+        try:
+            res = _search_rna_rag_logic(q, codgeo, top_k=top_k)
+            
+            # _search_rna_rag_logic returns List[Dict] usually
+            if isinstance(res, list):
+                for assoc in res:
+                    assoc_id = assoc.get('id')
+                    if assoc_id and assoc_id not in seen_ids:
+                        all_results.append(assoc)
+                        seen_ids.add(assoc_id)
+            elif isinstance(res, dict) and "error" in res:
+                logger.warning(f"  ⚠️ Research failed for '{q}': {res['error']}")
+                
+        except Exception as e:
+            logger.error(f"❌ [TOOL] search_rna_rag_batch loop failed for {q}: {e}")
+            
+    logger.info(f"✅ [TOOL] search_rna_rag_batch finished: {len(all_results)} unique results.")
+    return all_results
+
 def search_ccas(codgeo: str) -> List[Dict[str, Any]]:
     """
     Recherche les informations du CCAS (Centre Communal d'Action Sociale) pour une commune.

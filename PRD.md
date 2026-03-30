@@ -51,7 +51,7 @@ Liste en vrac d'idées d'amélioration
 - [ ] Ajouter le critère insse d'acces aux instratuctures (mobilité): https://www.insee.fr/fr/statistiques/1908098
 - [ ] Ajouter le critère insse d'affordabilité
 - [ ] Temps d'accès à un médecin / Déserts médicaux
-- [ ] Regarder les Entreprises de l'Insertion (et leur soffres d'emploi)
+- [x] Regarder les Entreprises de l'Insertion (et leur soffres d'emploi)
   - champ 'est_siae' https://recherche-entreprises.api.gouv.fr/docs/
   - Il y a aussi des tables structures + offres sur Odace
 - [ ] Remplacer par y-a-t'il un CTAI/PTAI (signe que la commune s'implique dans l'intégration) + Est-ce que la commune est adhérante ANVITA ? Ajouter un label ?
@@ -59,13 +59,13 @@ Liste en vrac d'idées d'amélioration
 - [x] Ajouter un 'en savoir plus' pour comprendre le scoring
 - [ ] Gare --> a conditionner avec une question mobilité (besoin de revenir regulierement)
 - [x] FLE doit être un critere à part entiere et il faut trouver une base spécifique
-- [ ] Les multiselects sont frustrants car il faut trouver la terminologie exacte
+- [x] Les multiselects sont frustrants car il faut trouver la terminologie exacte
 - [x] Créer et exploiter un dataset des associations dédiés aux réfugiés / demandeurs d'asile
-- [ ] [F-43] Upgrade to Gemini 3.1 Flash-Lite for all agents.
-- [ ] [F-44] Standardize all agents to return Pydantic structured outputs instead of raw strings.
-- [ ] AI Bot: ajouter le contact CCAS (passer dans get_city_details? )
+- [x] [F-43] Upgrade to Gemini 3.1 Flash-Lite for all agents.
+- [x] [F-44] Standardize all agents to return Pydantic structured outputs instead of raw strings.
+- [x] AI Bot: ajouter le contact CCAS (passer dans get_city_details? )
 
-## 5. Features
+## 5. Recent / active Feature Developements
 
 _(Most features omitted for brevity. Appending F-42)_
 
@@ -107,7 +107,7 @@ _(Most features omitted for brevity. Appending F-42)_
 
 ### 📊 Status
 
-- **March 2026**: Conception technique validée, en cours de développement.
+- **March 2026**: Done
 
 ## 🚀 Feature [F-46]: Associations Directory Refinements
 
@@ -174,3 +174,20 @@ _(Most features omitted for brevity. Appending F-42)_
 ### 📊 Status
 
 - **March 2026**: Definition started.
+
+## 🚀 Feature [F-50]: Ciblage Dynamique de la Population
+
+### 📝 User Story
+
+- En tant que travailleur social, je veux pouvoir ajuster la taille cible de la commune (population) pour mieux correspondre aux préférences de l'usager (ex: petite ville vs grande métropole).
+- Je veux que l'outil recalcule automatiquement la pertinence en fonction de cette taille cible, avec une marge de tolérance (sigma) adaptée.
+
+### 🔑 Key Features
+
+- **Slider de Population :** Ajout d'un curseur dans la section "Zone de recherche" permettant de choisir une cible entre 2 000 et 200 000 habitants (échelle logarithmique).
+- **Calcul de Sigma Dynamique :** Ajustement automatique de l'écart-type (sigma) de la fonction gaussienne en fonction de la cible `mu` pour maintenir une dispersion cohérente.
+- **Scoring Temps Réel :** Re-calcul dynamique du score `inc_population_scaled` lors de la recherche, outre-passant la valeur pré-calculée si une cible est définie par l'utilisateur.
+
+### 📊 Status
+
+- **March 2026**: Conception et implémentation en cours.

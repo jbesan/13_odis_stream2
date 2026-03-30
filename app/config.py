@@ -81,6 +81,11 @@ HOUSING_TYPE_OPTIONS = {
     "house_all": "Maison"
 }
 
+# --- Population Target Options (F-50) ---
+POPULATION_TARGET_OPTIONS = [5000, 10000, 20000, 50000, 100000, 150000, 200000]
+DEFAULT_MU = 50000
+DEFAULT_SIGMA = 40000
+
 # --- Weight Profiles (F-15) ---
 WEIGHT_PROFILES = {
     "Équilibré": {
