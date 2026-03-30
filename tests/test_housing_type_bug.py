@@ -48,7 +48,9 @@ def test_type_logement_propagation(mock_data_context):
     # Mock ScoringEngine to capture the config
     mock_engine = MagicMock(spec=ScoringEngine)
     mock_engine.df_all_communes = mock_data_context['odis']
-    mock_engine.run.return_value = MagicMock() # Return empty GDF
+    mock_engine.scores_cat = MagicMock()
+    mock_engine.scores_cat.empty = True
+    mock_engine.run_optimized.return_value = (MagicMock(results=[]), MagicMock()) # Return (SearchResultsData, GDF)
     
     original_get_engine = mcp_server.get_scoring_engine
     mcp_server.get_scoring_engine = lambda: mock_engine
@@ -62,9 +64,9 @@ def test_type_logement_propagation(mock_data_context):
         
         _compute_top_cities_logic(criteria)
         
-        # Check the config passed to engine.run
-        assert mock_engine.run.called
-        config = mock_engine.run.call_args[0][0]
+        # Check the config passed to engine.run_optimized
+        assert mock_engine.run_optimized.called
+        config = mock_engine.run_optimized.call_args[0][0]
         assert config.type_logement.code == 'appt_t1_t2', f"Expected appt_t1_t2, got {config.type_logement}"
         
         # Test default value
@@ -74,7 +76,7 @@ def test_type_logement_propagation(mock_data_context):
             'hebergement_cible': []
         }
         _compute_top_cities_logic(criteria_no_type)
-        config_default = mock_engine.run.call_args[0][0]
+        config_default = mock_engine.run_optimized.call_args[0][0]
         assert config_default.type_logement.code == 'appt_all', f"Expected appt_all by default, got {config_default.type_logement}"
 
     finally:

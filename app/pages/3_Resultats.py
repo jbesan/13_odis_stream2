@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 from streamlit_folium import st_folium
 from core import scoring
@@ -475,8 +476,13 @@ if st.session_state.get('show_pdf_modal'):
     pdf_modal()
 
 # Do not remove, useful to debug states
-with st.expander("Debug", expanded=False):
-    try:
-        st.json(search_results.results)
-    except:
-        pass
+# Detect Cloud Run environment
+is_cloud_run = os.environ.get("K_SERVICE") is not None
+
+# 1. Skip if not running on Cloud Run (Local Dev)
+if not is_cloud_run:
+    with st.expander("Debug", expanded=False):
+        try:
+            st.json(search_results.results)
+        except:
+            pass

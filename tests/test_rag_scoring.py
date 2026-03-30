@@ -23,13 +23,22 @@ def test_format_city_details_rna_rag_summary(sample_data, sample_scores_cat, def
     )
     
     # 2. Act
+    # Mock the associations cache for the engine
+    engine._associations_cache[str(row.name)] = {
+        "inclusion": {
+            "fle": ["Asso"] * 10,
+            "logement": ["Asso"] * 5
+        },
+        "refugee": []
+    }
+    
     details = engine.format_city_details(row, default_config)
     
     # 3. Assert
-    assert details.inclusion.associations_total == 15
-    summary = details.inclusion.associations_summary_by_category
-    assert summary['fle'] == 10
-    assert summary['logement'] == 5
+    assert details.inclusion.asso_inclusion_count == 15
+    summary = details.inclusion.asso_inclusion_list_by_cat
+    assert len(summary['fle']) == 10
+    assert len(summary['logement']) == 5
     assert 'sante' not in summary # Because it was 0
 
 def test_build_communes_rna_count_logic():
@@ -64,7 +73,14 @@ def test_scoring_engine_init_with_missing_data(sample_data, sample_scores_cat):
     )
     
     row = sample_data.iloc[0].copy()
-    row['inc_rna_fle_count'] = 10
+    
+    # Mock the associations cache
+    engine._associations_cache[str(row.name)] = {
+        "inclusion": {
+            "fle": ["Asso"] * 10
+        },
+        "refugee": []
+    }
     
     details = engine.format_city_details(row, None)
-    assert details.inclusion.associations_total == 10
+    assert details.inclusion.asso_inclusion_count == 10

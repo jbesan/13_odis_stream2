@@ -342,20 +342,12 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
                 "tooltip": row.get('description', '')
             }
 
-    # 5. Build Results from Pydantic Model
-    results = []
-    for city in search_model.results:
-        # Extract data from model instead of heavy DataFrame
-        # Preserve the structure expected by the Agent
-        details_dict = city.model_dump()
-        
-        # Build the 'detailed_scores' flat structure expected by the chatbot logic
-        # This matches the legacy logic but uses model data
-        detailed_scores: Dict[str, Any] = {}
-        for cat, items in city.scores.items():
-            detailed_scores[cat] = {"score_global": city.get_cat_score(cat)} # Need a helper or manual lookup
-            for item in items:
-                detailed_scores[cat][item.score_id] = item.score_normalise
+        # Build results
+        results = []
+        for city in search_model.results:
+            # Extract data from model instead of heavy DataFrame
+            # Preserve the structure expected by the Agent
+            details_dict = city.model_dump()
 
         # Note: city.get_cat_score doesn't exist, we use the metrics objects
         cat_scores = {

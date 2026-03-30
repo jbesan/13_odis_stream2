@@ -189,5 +189,5 @@ _(Most features omitted for brevity. Appending F-42)_
 - **Scoring Temps Réel :** Re-calcul dynamique du score `inc_population_scaled` lors de la recherche, outre-passant la valeur pré-calculée si une cible est définie par l'utilisateur.
 
 ### 📊 Status
-
 - **March 2026**: Conception et implémentation en cours.
+
