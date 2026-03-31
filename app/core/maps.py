@@ -28,19 +28,24 @@ def get_map_zoom(search_area: str) -> int:
 
 
 def create_base_map(center: List[float], zoom: int) -> flm.Map:
-    """Creates the base Folium map."""
+    """
+    Creates the base Folium map.
+    🧪 SOTA: 'prefer_canvas=True' is critical for 35k+ polygons at France-wide scale.
+    """
     if center is None: center = cfg.DEFAULT_MAP_CENTER
     if zoom is None: zoom = get_map_zoom(st.session_state.config.loc_search_area)
-    return flm.Map(location=center, zoom_start=zoom, tiles="cartodbpositron")
+    return flm.Map(location=center, zoom_start=zoom, tiles="cartodbpositron", prefer_canvas=True)
 
 def build_scores_layer(df: pd.DataFrame, id_col: str = "codgeo", name_col: str = "libgeo") -> Tuple[flm.FeatureGroup, Optional[Any]]:
     """
     Builds a choropleth layer from a scored and pruned DataFrame.
-    🧪 SOTA: Uses standardized 4326 geometries from the results.
+    🧪 Performance: JIT Decoding from raw WKB bytes.
     """
     fg = flm.FeatureGroup(name="Scores (Chaleur)")
     if df.empty:
         return fg, None
+
+    from shapely import wkb
 
     # Ensure id_col is a column (it might be the index)
     if id_col not in df.columns:
@@ -62,20 +67,28 @@ def build_scores_layer(df: pd.DataFrame, id_col: str = "codgeo", name_col: str =
     colormap = getattr(linear, 'YlGn_09').scale(min(score_dict.values()), max(score_dict.values()))
 
     # F-SDD: Pre-format the score for display
-    # 🧪 SOTA: No JIT join here. We assume the incoming 'df' is already hydrated 
-    # (joined with geometries and WKB decoded) from the search callback.
     df_serializable = df[[id_col, name_col, 'weighted_score', 'polygon']].copy()
-
     df_serializable['score_pct'] = df_serializable['weighted_score'].apply(lambda x: f"{x*100:.1f}%" if pd.notna(x) else "N/A")
     
-    # Pre-emptively drop any missing geometries to protect Folium
+    # 🧪 JIT Hydration: Vectorized WKB Decoding (Much faster than .apply)
+    # This handles France-wide (35k rows) in milliseconds instead of seconds.
+    # Robustness check: if already Shapely polygons (eg. in tests), skip from_wkb
+    first_valid = df_serializable['polygon'].dropna().iloc[0] if not df_serializable['polygon'].dropna().empty else None
+    if isinstance(first_valid, (bytes, bytearray)):
+        geom = gpd.GeoSeries.from_wkb(df_serializable['polygon'], crs="EPSG:4326")
+    else:
+        # Fallback for already decoded geometries (e.g. tests)
+        geom = gpd.GeoSeries(df_serializable['polygon'], crs="EPSG:4326")
+    
+    # Assign back and drop any missing geometries to protect Folium
+    df_serializable['polygon'] = geom
     df_serializable = df_serializable.dropna(subset=['polygon'])
 
     if df_serializable.empty:
-        logging.warning("build_scores_layer: No valid geometries found in hydrated DataFrame.")
+        logging.warning("build_scores_layer: No valid geometries found.")
         return fg, None
     
-    # Create GeoDataFrame in 4326 (native format of rehabilitated pipeline)
+    # Create GeoDataFrame in 4326
     gdf = gpd.GeoDataFrame(df_serializable, geometry='polygon', crs="EPSG:4326")
     
     flm.GeoJson(
@@ -99,28 +112,44 @@ def build_scores_layer(df: pd.DataFrame, id_col: str = "codgeo", name_col: str =
 def _get_geom(row: Union[pd.Series, Any], field: str = 'polygon', gdf_context: Optional[pd.DataFrame] = None) -> Optional[Any]:
     """
     Helper to extract geometry from a row or model. 
-    🧪 Optimized: Uses the provided gdf_context (pre-hydrated GDF) for O(1) lookup.
+    🧪 Performance: JIT Decoding from WKB bytes.
     """
+    from shapely import wkb
     codgeo = None
     if hasattr(row, 'codgeo') and row.codgeo: codgeo = str(row.codgeo)
     elif isinstance(row, pd.Series): codgeo = str(row.name) if 'codgeo' not in row else str(row['codgeo'])
     elif isinstance(row, dict): codgeo = str(row.get('codgeo', ''))
 
-    # 1. Try Lookup in provided context (Fastest, pre-decoded)
+    # 1. Try Lookup in provided context (Fastest)
     if gdf_context is not None and codgeo in gdf_context.index:
         try:
+            val = gdf_context.loc[codgeo, field]
             # SOTA: If we need a centroid but only have the polygon column, compute it on the fly
             if field == 'centroid' and 'centroid' not in gdf_context.columns:
-                poly = gdf_context.loc[codgeo, 'polygon']
+                poly_wkb = gdf_context.loc[codgeo, 'polygon']
+                poly = wkb.loads(bytes(poly_wkb)) if isinstance(poly_wkb, (bytes, bytearray)) else poly_wkb
                 return poly.centroid if poly else None
-
-            return gdf_context.loc[codgeo, field]
+                
+            # JIT Decode if it's a WKB blob
+            if isinstance(val, (bytes, bytearray)):
+                return wkb.loads(bytes(val))
+            return val
         except KeyError:
             # Maybe the column name in GDF is different
             alt_field = 'geometry' if field == 'polygon' else 'polygon'
-            return gdf_context.loc[codgeo].get(alt_field)
+            val = gdf_context.loc[codgeo].get(alt_field)
+            
+            # 🧪 JIT Decode if it's a WKB blob
+            geom = val
+            if isinstance(val, (bytes, bytearray)):
+                geom = wkb.loads(bytes(val))
+            
+            # CRITICAL FIX: If centroid was requested but we found a polygon, return the centroid
+            if field == 'centroid' and geom and not hasattr(geom, 'x'):
+                return geom.centroid
+            return geom
 
-    # 2. Fallback: check the object itself
+    # 2. Fallback: check the object itself (Metadata only)
     if hasattr(row, field): return getattr(row, field)
     if isinstance(row, dict) and field in row: return row.get(field)
     

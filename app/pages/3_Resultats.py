@@ -73,7 +73,6 @@ def pdf_modal():
                 pdf_bytes = generate_pdf_report(
                     search_results=search_results,
                     config=st.session_state.config,
-                    active_search_hash=st.session_state.get('active_search_hash'),
                     processed_gdf=st.session_state.get('processed_gdf')
                 )
                 st.session_state.pdf_modal_data = pdf_bytes
@@ -174,18 +173,15 @@ def run_search():
     # 2. Run optimized scoring (returns model and pruned GDF)
     search_results, processed_gdf = engine.run_optimized(config, log_prefix="classic")
     
-    # 3. 🧪 SOTA: One-time Geometry Hydration (EPSG:4326)
-    # We join and decode geometries once per search to avoid 'JIT Hydration Latency' during reruns.
+    # 3. 🧪 SOTA: Lightweight Geometry Hydration (Raw WKB)
+    # We join raw WKB bytes to keep session state lightweight.
+    # Decoding moves to JIT (Just-In-Time) in the map rendering loop.
     odis_geo = app_data.get('odis_geo')
     if odis_geo is not None and not odis_geo.empty:
-        logging.info(f"💾 [HYDRATION] Pre-loading geometries for {len(processed_gdf)} results...")
-        # Merge geometries into the pruned results using INSEE code index
+        logging.info(f"💾 [HYDRATION] Attaching WKB geometries for {len(processed_gdf)} results...")
+        # Merge raw geometries into the pruned results using INSEE code index
         processed_gdf = processed_gdf.merge(odis_geo.to_frame('polygon'), left_index=True, right_index=True, how='left')
-        from shapely import wkb
-        # Decode WKB bytes to Shapely objects once
-        processed_gdf['polygon'] = processed_gdf['polygon'].apply(lambda x: wkb.loads(bytes(x)) if isinstance(x, (bytes, bytearray)) else x)
-        # Convert to GeoDataFrame to avoid repeated type checks in maps.py
-        processed_gdf = gpd.GeoDataFrame(processed_gdf, geometry='polygon', crs="EPSG:4326")
+        # Keep as pd.DataFrame to avoid GeoPandas validation of WKB bytes in session state
 
     # --- State Update ---
     st.session_state['processed_gdf'] = processed_gdf
@@ -319,13 +315,8 @@ with st.sidebar:
     feedback.render_feedback_button()
 
     # --- Export to PDF ---
-    if st.session_state.get('processed_gdf') is not None:
-        active_h = st.session_state.get('active_search_hash')
-        if not active_h:
-            config = st.session_state.get('config')
-            active_h = config.compute_hash() if config else None
-        
-        export_pdf_container(active_h)
+    if st.session_state.get('search_results') is not None:
+        export_pdf_container(st.session_state.search_results.search_hash)
     
     st.divider()
 
@@ -361,33 +352,31 @@ with col_results:
 
 with col_map:
     if st.session_state.get('processed_gdf') is not None:
-        # 1. Map View State (Driven by st.session_state)
-        # Defining variables early to avoid NameError
+        # 1. Map View State (Driven by search_results.search_hash)
         config = st.session_state.get('config')
         search_results = st.session_state.get('search_results')
+        h = search_results.search_hash if search_results else None
         
         # Default zoom if not set
         if st.session_state.get("zoom") is None:
             st.session_state["zoom"] = maps.get_map_zoom(config.loc_search_area if config else 'departement')
 
-        # 2. Base Map Initialization (🧪 SOTA: Stable object for st-folium)
-        # We pass None/None to the constructor to ensure the base object is stable.
-        m = maps.create_base_map(None, None)
+        # 2. Fresh Map Instance (Mandatory for st-folium React mount)
+        m = maps.create_base_map(st.session_state.get("center"), st.session_state.get("zoom"))
         
-        # 3. Build Consolidated Dynamic FeatureGroup
-        fg_dynamic = flm.FeatureGroup(name="ODIS_Dynamic_Layers")
-        
-        # A. Scores & Current Location
+        # 3. Build Dynamic FeatureGroup (Freshly built on every rerun to prevent Folium ReferenceErrors)
+        fg_scores = flm.FeatureGroup(name="Scores (Chaleur)")
         if not st.session_state.processed_gdf.empty:
-            fg_scores, _ = maps.build_scores_layer(st.session_state['processed_gdf'])
-            # Logic: Instead of nesting FGs, add children of the generated layers to fg_dynamic if possible
-            # for child in fg_scores._children.values(): 
-            # actually nesting should work, but let's be flat if it helps
-            fg_scores.add_to(fg_dynamic)
-
+            compiled_fg, _ = maps.build_scores_layer(st.session_state['processed_gdf'])
+            compiled_fg.add_to(fg_scores)
+            
             if search_results and search_results.current_geo:
-                maps.build_current_loc_layer(search_results.current_geo).add_to(fg_dynamic)
+                maps.build_current_loc_layer(search_results.current_geo, gdf_context=st.session_state.processed_gdf).add_to(fg_scores)
 
+        fg_scores.add_to(m)
+        
+        # 4. Build Transient Group (Pills & Top 5)
+        fg_dynamic = flm.FeatureGroup(name="ODIS_Dynamic_Layers")
         # B. User-selected Layers (Pills)
         pill_options = [{"id": "top_5", "label": "🥇 Top 5"}]
         if config:
@@ -406,7 +395,6 @@ with col_map:
         if config and search_results:
             target_codgeos = {str(c.codgeo) for c in search_results.results}
             
-            # Additional Layers
             if "edu" in selected_ids:
                 maps.build_ecoles_layer(data_loader.get_app_data()['pois'], target_codgeos, config).add_to(fg_dynamic)
                 legend_items.append({'color': 'green', 'icon': 'pencil', 'text': 'Écoles'})
@@ -417,12 +405,10 @@ with col_map:
                 maps.build_services_layer(data_loader.get_app_data()['pois'], target_codgeos, config).add_to(fg_dynamic)
                 legend_items.append({'color': 'purple', 'icon': 'heart', 'text': 'Inclusion'})
             
-            # Top 5 & Highlights
             show_top_5 = "top_5" in selected_ids
             is_highlighted, highlighted_index = st.session_state.highlighted_result
 
             if show_top_5:
-                # 🧪 Pass hydrated context for O(1) lookup
                 for i, commune_result in enumerate(search_results.results[:5]):
                     maps.build_top_result_layer(commune_result, i, gdf_context=st.session_state.processed_gdf).add_to(fg_dynamic)
 
@@ -430,13 +416,12 @@ with col_map:
                 commune_result = search_results.results[highlighted_index]
                 maps.build_top_result_layer(commune_result, highlighted_index, gdf_context=st.session_state.processed_gdf).add_to(fg_dynamic)
 
-        # 4. Legend Rendering (🧪 SOTA: Add to the dynamic FG instead of the map root)
-        # This keeps the base map 'm' truly immutable, avoiding root-level re-syncs in st-folium.
+        # 4. Legend Rendering
         if legend_items:
             legend_html = maps.build_legend(legend_items)
             fg_dynamic.add_child(flm.Element(legend_html))
 
-        # 5. Final Incremental Rendering
+        # 5. Final Rendering (Streamlit Integration)
         try:
             st_folium(
                 m,
