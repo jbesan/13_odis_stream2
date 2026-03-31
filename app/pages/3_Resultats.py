@@ -430,10 +430,11 @@ with col_map:
                 commune_result = search_results.results[highlighted_index]
                 maps.build_top_result_layer(commune_result, highlighted_index, gdf_context=st.session_state.processed_gdf).add_to(fg_dynamic)
 
-        # 4. Legend Rendering (Added to the stable map object)
+        # 4. Legend Rendering (🧪 SOTA: Add to the dynamic FG instead of the map root)
+        # This keeps the base map 'm' truly immutable, avoiding root-level re-syncs in st-folium.
         if legend_items:
             legend_html = maps.build_legend(legend_items)
-            m.get_root().html.add_child(flm.Element(legend_html))
+            fg_dynamic.add_child(flm.Element(legend_html))
 
         # 5. Final Incremental Rendering
         try:

@@ -1301,7 +1301,7 @@ def _result_highlight_callback(index: int) -> None:
     else:
         commune = search_results.results[index]
         st.session_state.highlighted_result = [True, index]
-        c_pt = maps._get_geom(commune, 'centroid')
+        c_pt = maps._get_geom(commune, 'centroid', gdf_context=st.session_state.processed_gdf)
         if c_pt:
             st.session_state.center = [c_pt.y, c_pt.x]
         st.session_state.zoom = cfg.DETAIL_MAP_ZOOM

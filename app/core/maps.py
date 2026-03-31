@@ -109,6 +109,11 @@ def _get_geom(row: Union[pd.Series, Any], field: str = 'polygon', gdf_context: O
     # 1. Try Lookup in provided context (Fastest, pre-decoded)
     if gdf_context is not None and codgeo in gdf_context.index:
         try:
+            # SOTA: If we need a centroid but only have the polygon column, compute it on the fly
+            if field == 'centroid' and 'centroid' not in gdf_context.columns:
+                poly = gdf_context.loc[codgeo, 'polygon']
+                return poly.centroid if poly else None
+
             return gdf_context.loc[codgeo, field]
         except KeyError:
             # Maybe the column name in GDF is different
