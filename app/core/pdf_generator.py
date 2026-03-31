@@ -8,14 +8,16 @@ import tempfile
 import os
 import config as cfg
 from ui import components as ui
+import streamlit as st
+from core import maps
 from core.models import SearchCriterias, CommuneResult, SearchResultsData
-from core.scoring import ScoringEngine
 import base64
 import logging
 from typing import Dict, Any, List, Optional
 import matplotlib.pyplot as plt
 import contextily as ctx
 import geopandas as gpd
+import re
 from agents.utils import odis_get_bg_result
 
 # Basic constants
@@ -38,70 +40,42 @@ def _setup_unicode_font(pdf: FPDF) -> None:
         pdf.set_font("Arial", size=12)
 
 
-def _generate_static_map_image(search_results: SearchResultsData) -> bytes:
+def _generate_static_map_image(search_results: SearchResultsData, processed_gdf: Optional[gpd.GeoDataFrame] = None) -> bytes:
     """
     Generates a static map image using Matplotlib and Contextily.
-    Highlights the results and the current location.
+    Leverages passed processed_gdf for performance and consistency.
     """
     if not search_results.results:
         return b""
 
-    # 1. Reconstruct results GeoDataFrame internally
-    data = []
-    for c in search_results.results:
-        data.append({
-            'codgeo': c.codgeo,
-            'libgeo': c.name,
-            'weighted_score': c.global_score,
-            'geometry': c.geometry
-        })
-    
-    # 🕵️ Debug Logging
-    if data:
-        sample_geom = data[0]['geometry']
-        logging.info(f"🕵️ [PDF-MAP] Sample geometry type: {type(sample_geom)}")
-        if hasattr(sample_geom, 'centroid'):
-            logging.info(f"🕵️ [PDF-MAP] Sample centroid: ({sample_geom.centroid.x}, {sample_geom.centroid.y})")
-    
-    # Use the projected CRS from config (EPSG:2154 / Lambert-93)
-    # Centroids are now guaranteed to be in metric meters by the fixed pipeline.
-    inferred_crs = cfg.PROJECTED_CRS
-    
-    logging.info(f"🕵️ [PDF-MAP] Inferred CRS: {inferred_crs}")
-    results_df = gpd.GeoDataFrame(data, crs=inferred_crs)
-    
-    # 🕵️ PLM Family Exclusion Logic
-    current_code = search_results.current_geo.codgeo if search_results.current_geo else None
-    if current_code and not results_df.empty:
-        plm_prefix = None
-        if current_code in cfg.PLM_MAPPING:
-            plm_prefix = cfg.PLM_MAPPING[current_code]
-            results_df = results_df[results_df['codgeo'] != current_code]
-        else:
-            for parent_code, prefix in cfg.PLM_MAPPING.items():
-                if str(current_code).startswith(prefix):
-                    plm_prefix = prefix
-                    results_df = results_df[results_df['codgeo'] != parent_code]
-                    results_df = results_df[results_df['codgeo'] != current_code]
-                    break
-        
-        if plm_prefix:
-            results_df = results_df[~results_df['codgeo'].astype(str).str.startswith(plm_prefix)]
-        else:
-            results_df = results_df[results_df['codgeo'] != current_code]
+    # 1. Get scored GeoDataFrame
+    gdf = processed_gdf
+    if gdf is None or gdf.empty:
+        logging.warning("⚠️ [PDF-MAP] processed_gdf is missing or empty. Map will be skipped.")
+        return b""
 
-    # 2. Handle Current Location
+    # Use native 4326
+    inferred_crs = "EPSG:4326"
+    
+    # 2. Extract/Hydrate geometries for plotting
+    gdf = gdf.copy()
+    gdf['geometry'] = gdf.apply(lambda row: maps._get_geom(row, 'polygon'), axis=1)
+    gdf = gpd.GeoDataFrame(gdf, geometry='geometry', crs=inferred_crs)
+    
+    # 3. Handle Current Location Geometry
     current_df = None
-    if search_results.current_geo and search_results.current_geo.geometry:
-        current_df = gpd.GeoDataFrame([{
-            'codgeo': search_results.current_geo.codgeo,
-            'libgeo': search_results.current_geo.name,
-            'weighted_score': search_results.current_geo.global_score,
-            'geometry': search_results.current_geo.geometry
-        }], crs=inferred_crs)
+    if search_results.current_geo:
+        poly = maps._get_geom(search_results.current_geo, 'polygon')
+        if poly:
+            current_df = gpd.GeoDataFrame([{
+                'codgeo': search_results.current_geo.codgeo,
+                'libgeo': search_results.current_geo.name,
+                'weighted_score': search_results.current_geo.global_score,
+                'geometry': poly
+            }], crs=inferred_crs)
 
     # Project to Web Mercator for Contextily
-    gdf_results_plot = results_df.to_crs(epsg=3857)
+    gdf_results_plot = gdf.to_crs(epsg=3857)
     
     # Initialize figure
     fig, ax = plt.subplots(figsize=(8, 8))
@@ -134,7 +108,12 @@ def _generate_static_map_image(search_results: SearchResultsData) -> bytes:
     
     # Plot outlines for top results (Red)
     top_5 = gdf_results_plot.head(5)
-    top_5.plot(
+    # Plot outlines for top results (Red)
+    # We use codgeos from search_results to ensure consistency with the list
+    top_codgeos = [c.codgeo for c in search_results.results[:5]]
+    top_5_gdf = gdf_results_plot[gdf_results_plot.index.isin(top_codgeos)]
+    
+    top_5_gdf.plot(
         ax=ax,
         facecolor='none',
         edgecolor='red',
@@ -142,21 +121,23 @@ def _generate_static_map_image(search_results: SearchResultsData) -> bytes:
     )
     
     # Add numbered markers for top results
-    for idx, row in top_5.iterrows():
-        rank = idx + 1
-        centroid = row.geometry.centroid
-        ax.annotate(
-            str(rank),
-            xy=(centroid.x, centroid.y),
-            xytext=(0, 0),
-            textcoords="offset points",
-            ha='center',
-            va='center',
-            color='white',
-            weight='bold',
-            fontsize=10,
-            bbox=dict(boxstyle="circle,pad=0.3", fc="#D63E2A", ec="none")
-        )
+    for i, codgeo in enumerate(top_codgeos):
+        if codgeo in gdf_results_plot.index:
+            row = gdf_results_plot.loc[codgeo]
+            rank = i + 1
+            centroid = row.geometry.centroid
+            ax.annotate(
+                str(rank),
+                xy=(centroid.x, centroid.y),
+                xytext=(0, 0),
+                textcoords="offset points",
+                ha='center',
+                va='center',
+                color='white',
+                weight='bold',
+                fontsize=10,
+                bbox=dict(boxstyle="circle,pad=0.3", fc="#D63E2A", ec="none")
+            )
 
     # Add basemap
     try:
@@ -175,9 +156,15 @@ def _generate_static_map_image(search_results: SearchResultsData) -> bytes:
     return buf.getvalue()
 
 
-def generate_pdf_report(st_session_state: Dict[str, Any], search_results: SearchResultsData, folium_map: Any = None) -> bytes:
+def generate_pdf_report(
+    search_results: SearchResultsData, 
+    config: SearchCriterias, 
+    active_search_hash: Optional[str] = None,
+    processed_gdf: Optional[gpd.GeoDataFrame] = None
+) -> bytes:
     """
     Generates a PDF report with the top 5 results and search criteria using a Unicode font.
+    Decoupled from st.session_state for better testability and clean architecture.
     """
     logging.info("📄 [PDF] Starting PDF report generation...")
     pdf = FPDF()
@@ -191,50 +178,51 @@ def generate_pdf_report(st_session_state: Dict[str, Any], search_results: Search
         pdf.image(logo_path, x=10, y=8, w=40)
     pdf.ln(50)  # Add space for the logo
     pdf.set_font("DejaVu", 'B', 16)
-    pdf.cell(0, 10, PDF_TITLE, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
+    pdf.cell(pdf.epw, 10, PDF_TITLE, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
 
     # Subtitle with beneficiary's name
     subtitle = f"Pour le projet de vie {ui.get_person_accompanied_str()}"
     pdf.set_font("DejaVu", '', 12)
-    pdf.cell(0, 10, subtitle, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
+    pdf.cell(pdf.epw, 10, subtitle, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
     pdf.ln(10)
 
     # --- Search Criteria ---
     pdf.set_font("DejaVu", 'B', 12)
-    pdf.cell(0, 10, "Vos critères de recherche", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='L')
+    pdf.cell(pdf.epw, 10, "Vos critères de recherche", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='L')
     pdf.ln(2)
     
-    config = st_session_state.get('config')
     if config:
-        # --- Correctly look up names for Jobs & Formations ---
-        app_data = st_session_state.get('app_data', {})
-        metiers_df = app_data.get('rome_index')
-
-        formations_df = app_data.get('codformations_index')
-
-        # Get job names from enriched CriteriaItems
         metier_names = [c.label for sublist in config.codes_metiers for c in sublist]
         metiers_str = ", ".join(metier_names) if metier_names else "Non spécifié"
 
-        # Get formation names from enriched CriteriaItems
         formation_names = [c.label for sublist in config.codes_formations for c in sublist]
         formations_str = ", ".join(formation_names) if formation_names else "Non spécifié"
 
         # Dynamically build the full criteria list
         criteria = {
-            "Lieu de départ": st_session_state.get('ui_commune'),
-            "Zone de recherche": cfg.LOC_SEARCH_AREA_OPTIONS.get(config.loc_search_area,
-                                                               str(config.loc_search_area)),
+            "Lieu de départ": config.commune_actuelle.label if config.commune_actuelle else "N/A",
+            "Zone de recherche": cfg.LOC_SEARCH_AREA_OPTIONS.get(config.loc_search_area, str(config.loc_search_area)),
             "Métiers recherchés": metiers_str,
             "Formations recherchées": formations_str,
+            "Profil de poids": config.weight_profile if config.weight_profile else "Standard",
             "Nb. adultes": config.nb_adultes,
             "Nb. enfants": config.nb_enfants,
             "Niveaux scolaires": ", ".join(config.classe_enfants) if config.classe_enfants else "N/A",
-            "Hébergement": ", ".join(config.hebergement_cible) if config.hebergement_cible else "Non spécifié",
-            "Logement à long terme": config.logement,
+            "Type de logement": config.type_logement.label if config.type_logement else (config.logement if config.logement else "N/A"),
             "Besoin de santé": config.besoin_sante,
+            "Population cible": f"{config.target_population:,} hab. (+/- {config.target_population_sigma:,})".replace(",", " "),
             "Autres besoins": ", ".join([c.label for c in config.inc_services_add_selection]) if config.inc_services_add_selection else "Aucun",
         }
+
+        # Add Qualitative Notes
+        if config.notes_qualitatives:
+             criteria["Notes qualitatives"] = ", ".join(config.notes_qualitatives)
+             
+        # Add non-zero custom weights
+        if config.criteria_weights:
+            custom_weights = [f"{k}: {v}" for k, v in config.criteria_weights.items() if v > 0]
+            if custom_weights:
+                criteria["Poids personnalisés"] = ", ".join(custom_weights)
         
         table_data = [[key, str(value)] for key, value in criteria.items() if value]
 
@@ -244,7 +232,8 @@ def generate_pdf_report(st_session_state: Dict[str, Any], search_results: Search
             with pdf.table(
                 col_widths=(50, 130),
                 text_align="LEFT",
-                borders_layout="NONE"
+                borders_layout="NONE",
+                width=180
             ) as table:
                 for data_row in table_data:
                     row = table.row()
@@ -253,17 +242,16 @@ def generate_pdf_report(st_session_state: Dict[str, Any], search_results: Search
     pdf.ln(5)
 
     # --- PAGE 2: MAP & SUMMARY ---
-    logging.info("📄 [PDF] Generating Page 2 (Map & Summary)")
     pdf.add_page()
 
     # Page 2 Title
     pdf.set_font("DejaVu", 'B', 14)
-    pdf.cell(0, 10, "Résultats de la recherche", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
+    pdf.cell(pdf.epw, 10, "Résultats de la recherche", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
     pdf.ln(5)
 
     # Map Generation
     try:
-        map_png = _generate_static_map_image(search_results)
+        map_png = _generate_static_map_image(search_results, processed_gdf)
         if map_png:
             map_image_stream = io.BytesIO(map_png)
             # Center the image and limit width to avoid it being too big
@@ -277,44 +265,48 @@ def generate_pdf_report(st_session_state: Dict[str, Any], search_results: Search
 
     # Top 5 Summary
     pdf.set_font("DejaVu", 'B', 12)
-    pdf.cell(0, 10, "Top 5 des résultats", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='L')
+    pdf.cell(pdf.epw, 10, "Top 5 des résultats", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='L')
     pdf.set_font("DejaVu", '', 9)
     for rank, commune in enumerate(search_results.results, start=1):
         score_percent = f"{commune.global_score * 100:.1f}%"
-        pdf.cell(0, 5, f"  {rank}. {commune.name} - {score_percent}", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.cell(pdf.epw, 5, f"  {rank}. {commune.name} - {score_percent}", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(5)
 
     # --- INDIVIDUAL RESULT PAGES ---
-    logging.info(f"📄 [PDF] Generating {len(search_results.results)} individual result pages")
-    config = st_session_state.get('config')
 
     for rank, commune in enumerate(search_results.results, start=1):
-        logging.info(f"📄 [PDF] Processing commune: {commune.name}")
         pdf.add_page()
-        # Result Title
-        title = f"Top {rank} | {commune.name}"
-        pdf.set_font("DejaVu", 'B', 12)
-        pdf.cell(0, 8, title, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        pdf.ln(2)
+        
+        # --- Header (Identity) ---
+        population = f"{commune.population:,}".replace(",", " ")
+        title = f"Top {rank} | {commune.name} ({population} hab.)"
+        pdf.set_font("DejaVu", 'B', 14)
+        pdf.cell(pdf.epw, 8, title, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        
+        pdf.set_font("DejaVu", 'I', 10)
+        bdv_text = f"Fait partie du bassin de vie de : {commune.name_bdv}"
+        pdf.cell(pdf.epw, 6, bdv_text, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        
+        score_percent = f"Adéquation globale : {commune.global_score * 100:.1f}%"
+        pdf.set_font("DejaVu", 'B', 10)
+        pdf.cell(pdf.epw, 6, score_percent, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.ln(4)
 
-        # Pitch
-        h = config.compute_hash() if config else None
-        scorer_res = odis_get_bg_result(h) if h else None
-        
-        ai_pitch = ""
-        codgeo = commune.codgeo
-        
-        if scorer_res and isinstance(scorer_res, dict) and "pitches" in scorer_res:
-            ai_pitch = scorer_res["pitches"].get(codgeo, "")
+        # --- Pitch (AI content as priority) ---
+        pitch = commune.scorer_pitch
+        if not pitch:
+            # Fallback to simple pitch logic if scorer_pitch is missing
+            pitch = f"{commune.name} se distingue particulièrement sur vos critères prioritaires."
             
-        if ai_pitch:
-            pitch = ai_pitch
-        else:
-            # New signature: (commune, config)
-            pitch = ui._produce_pitch_markdown(commune, config)
-            
-        pdf.set_font("DejaVu", '', 9)
-        pdf.multi_cell(0, 5, pitch, markdown=True)
+        # Convert simple markdown to HTML tags for better compatibility with write_html
+        pitch_html = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', pitch) # Proper bold toggle
+        # Handle bullet points at start of lines
+        pitch_html = re.sub(r'^\s*-\s*', '• ', pitch_html, flags=re.MULTILINE)
+        pitch_html = re.sub(r'^\s*\*\s*', '• ', pitch_html, flags=re.MULTILINE)
+        pitch_html = pitch_html.replace("\n", "<br>")
+
+        pdf.set_font("DejaVu", '', 10)
+        pdf.write_html(f'<p>{pitch_html}</p>')
         pdf.ln(5)
 
         # Radar Chart with Comparison
@@ -346,9 +338,6 @@ def generate_pdf_report(st_session_state: Dict[str, Any], search_results: Search
                  values = raw_values
             
             # 2. Current City Data
-            config = st_session_state.get('config')
-            current_codgeo = config.commune_actuelle.code if config and hasattr(config.commune_actuelle, 'code') else (config.commune_actuelle if config else None)
-            
             has_comparison = False
             values_current = []
             if search_results.current_geo:
@@ -395,7 +384,7 @@ def generate_pdf_report(st_session_state: Dict[str, Any], search_results: Search
                 # Plot current city (Blue)
                 if has_comparison:
                     vals_current = values_current + values_current[:1]
-                    label_cur = config.commune_actuelle.label if config and hasattr(config.commune_actuelle, 'label') else "Actuel"
+                    label_cur = config.commune_actuelle.label if config.commune_actuelle else "Actuel"
                     ax.plot(angles, vals_current, linewidth=2, linestyle='solid', color='#1f77b4', label=f"Actuel ({label_cur})")
                     ax.fill(angles, vals_current, '#1f77b4', alpha=0.2)
                     plt.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1), fontsize=8)
@@ -406,13 +395,14 @@ def generate_pdf_report(st_session_state: Dict[str, Any], search_results: Search
                 plt.close(fig)
                 buf.seek(0)
                 
-                # Embed in PDF
-                pdf.image(buf, w=100)
+                # Embed in PDF (Centered)
+                chart_w = 100
+                pdf.image(buf, x=(pdf.w - chart_w) / 2, w=chart_w)
                 
                 if has_comparison:
                     pdf.set_font("DejaVu", 'I', 8)
                     label_cur = search_results.current_geo.name if search_results.current_geo else "votre commune"
-                    pdf.cell(0, 5, f"Comparaison entre {commune.name} (vert) et {label_cur} (bleu).", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
+                    pdf.cell(pdf.epw, 5, f"Comparaison entre {commune.name} (vert) et {label_cur} (bleu).", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
                     pdf.ln(2)
 
         except Exception as e:
@@ -420,89 +410,128 @@ def generate_pdf_report(st_session_state: Dict[str, Any], search_results: Search
             pdf.multi_cell(0, 6, f"Erreur lors de la generation du graphique: {e}")
         pdf.ln(5)
 
-        # Additional Info
-        pdf.set_font("DejaVu", 'B', 10)
-        pdf.cell(0, 8, "Plus d’informations:", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        # --- Detailed Indicator Tables (Loop per category) ---
+        pdf.set_font("DejaVu", 'B', 11)
+        pdf.cell(pdf.epw, 10, "Indicateurs détaillés par catégorie", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.ln(2)
 
-        # Métiers
-        pdf.set_font("DejaVu", 'B', 9)
-        pdf.cell(0, 6, "Top métiers recherchés", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        pdf.set_font("DejaVu", '', 9)
-        
-        top_professions = commune.employment.top_professions
-        
-        if top_professions:
-            pdf.multi_cell(0, 5, "\n".join([f'- {item}' for item in top_professions]))
-        else:
-            pdf.multi_cell(0, 5, "Pas de données disponibles.")
-        pdf.ln(3)
+        cat_labels = {
+            'emploi': 'Emploi & Formation',
+            'logement': 'Logement',
+            'education': 'Éducation',
+            'sante': 'Santé',
+            'inclusion': 'Vie Sociale & Inclusion',
+            'mobilite': 'Mobilité'
+        }
 
-
-        # Formations
-        pdf.set_font("DejaVu", 'B', 9)
-        pdf.cell(0, 6, "Formations proposées", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        pdf.set_font("DejaVu", '', 9)
-        training_programs = commune.employment.training_programs
-        if training_programs:
-            pdf.multi_cell(0, 5, "\n".join([f'- {item}' for item in sorted(list(training_programs))]))
-        else:
-            pdf.multi_cell(0, 5, "Pas de données disponibles.")
-        pdf.ln(3)
-
-        # Services d'inclusion
-        pdf.set_font("DejaVu", 'B', 9)
-        pdf.cell(0, 6, "Services d'inclusion", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        pdf.set_font("DejaVu", '', 9)
-        
-        app_data = st_session_state.get('app_data', {})
-        services_df = app_data.get('annuaire_inclusion', pd.DataFrame())
-        incl_index = app_data.get('inclusion_services_index', pd.DataFrame())
-        
-        # Determine Target Slugs for Filtering
-        target_slugs = set(cfg.DEFAULT_INC_SERVICES_CORE)
-        
-        # Add user selected specific needs
-        if 'ui_inc_services_add_selection' in st_session_state and st_session_state['ui_inc_services_add_selection']:
-                target_slugs.update(st_session_state['ui_inc_services_add_selection'])
-        
-        communes_to_check = [commune.codgeo]
-        
-        # Filter services
-        # We look for services in any of the communes (if aggregated) or the single commune
-        bv_services = services_df[
-            (services_df['codgeo'].isin(communes_to_check)) &
-            (services_df['categorie'].isin(target_slugs))
-        ]
-
-        if not bv_services.empty:
-            # Get unique slugs found
-            unique_slugs = sorted(bv_services['categorie'].unique())
+        for cat_key, cat_name in cat_labels.items():
+            scores_list = commune.scores.get(cat_key, [])
+            if not scores_list:
+                continue
             
-            valid_labels = []
-            for slug in unique_slugs:
-                # Lookup label
-                if not incl_index.empty and slug in incl_index.index:
-                    try:
-                        label = incl_index.loc[slug, 'label']
-                        # If duplicate index
-                        if isinstance(label, (pd.Series, pd.DataFrame)):
-                            label = label.iloc[0]
-                    except:
-                        label = slug
-                else:
-                    label = slug # Fallback
+            pdf.set_font("DejaVu", 'B', 10)
+            pdf.cell(pdf.epw, 8, cat_name, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            
+            # Category Table
+            pdf.set_font("DejaVu", '', 8)
+            with pdf.table(col_widths=(80, 60, 40), text_align="LEFT", borders_layout="SINGLE_TOP_LINE", width=180) as table:
+                header = table.row()
+                header.cell("Indicateur")
+                header.cell("Données")
+                header.cell("Score")
                 
-                if label:
-                        valid_labels.append(label)
+                for s in sorted(scores_list, key=lambda x: x.score_normalise, reverse=True):
+                    row = table.row()
+                    row.cell(s.label)
+                    val_str = f"{s.valeur_kpi}" if s.valeur_kpi is not None else "N/A"
+                    if s.unit and s.unit != 'None':
+                        val_str += f" {s.unit}"
+                    row.cell(val_str)
+                    row.cell(f"{s.score_normalise * 100:.1f}%")
+            pdf.ln(4)
 
-            if valid_labels:
-                    # Deduplicate labels
-                    valid_labels = sorted(list(set(valid_labels)))
-                    pdf.multi_cell(0, 5, "\n".join([f'- {label}' for label in valid_labels]))
-            else:
-                pdf.multi_cell(0, 5, "Aucun service d'inclusion correspondant aux critères trouvé.")
+        # --- Focus Opportunités & Vie Sociale ---
+        pdf.add_page()
+        pdf.set_font("DejaVu", 'B', 12)
+        pdf.cell(pdf.epw, 10, "Focus Opportunités & Vie Sociale", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.ln(2)
+
+        # 1. Employment Details
+        pdf.set_font("DejaVu", 'B', 10)
+        pdf.cell(pdf.epw, 8, "Métiers les plus recherchés (Bassin de vie)", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_font("DejaVu", '', 9)
+        top_professions = commune.employment.top_professions
+        if top_professions:
+            pdf.multi_cell(pdf.epw, 5, "\n".join([f"• {m}" for m in top_professions]))
         else:
-            pdf.multi_cell(0, 5, "Aucun service d'inclusion correspondant aux critères trouvé.")
+            pdf.multi_cell(pdf.epw, 5, "Aucune donnée de tension spécifique disponible.")
         pdf.ln(3)
+
+        pdf.set_font("DejaVu", 'B', 10)
+        pdf.cell(pdf.epw, 8, "Offres d'emplois par les SIAE locales", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_font("DejaVu", '', 9)
+        inclusive_summary = commune.employment.inclusive_jobs_summary
+        if inclusive_summary:
+            items = [f"• {cat}: {count} offre(s)" for cat, count in sorted(inclusive_summary.items(), key=lambda x: x[1], reverse=True)]
+            pdf.multi_cell(pdf.epw, 5, "\n".join(items))
+        else:
+            pdf.multi_cell(pdf.epw, 5, "Aucune offre inclusive active identifiée.")
+        pdf.ln(3)
+
+        # 2. Association Details
+        pdf.set_font("DejaVu", 'B', 10)
+        pdf.cell(pdf.epw, 8, "Associations - Intégration des réfugiés (Top 10)", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_font("DejaVu", '', 8)
+        refugee_assos = commune.inclusion.asso_refugee_list[:10]
+        if refugee_assos:
+            refugee_html = ""
+            for asso in refugee_assos:
+                name = asso.get('name', 'Inconnu')
+                cat = asso.get('waldec_label', '')
+                cat_str = f" ({cat})" if cat else ""
+                desc = asso.get('description', '').strip()
+                line = f"• <b>{name}</b>{cat_str}"
+                if desc: line += f": {desc}"
+                refugee_html += f"<div>{line}</div><br><br>"
+            
+            pdf.write_html(refugee_html)
+        else:
+            pdf.multi_cell(pdf.epw, 5, "Aucune association spécifique identifiée.")
+        pdf.ln(3)
+
+        pdf.set_font("DejaVu", 'B', 10)
+        pdf.cell(pdf.epw, 8, "Réseau inclusion & solidarité (Top 5 par catégorie)", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_font("DejaVu", '', 8)
+        inclusion_by_cat = commune.inclusion.asso_inclusion_list_by_cat
+        if inclusion_by_cat:
+            for cat, assos in sorted(inclusion_by_cat.items()):
+                pdf.set_font("DejaVu", 'B', 9)
+                pdf.cell(pdf.epw, 6, cat, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                pdf.set_font("DejaVu", '', 8)
+                cat_html = ""
+                for asso in assos[:5]:
+                    name = asso.get('name', 'Inconnu')
+                    desc = asso.get('description', '').strip()
+                    line = f"• <b>{name}</b>"
+                    if desc: line += f": {desc}"
+                    cat_html += f"<div>{line}</div><br><br>"
+                
+                pdf.write_html(cat_html)
+                pdf.ln(2)
+        else:
+            pdf.multi_cell(pdf.epw, 5, "Aucun réseau détaillé répertorié.")
+        pdf.ln(5)
+
+        # --- Synthesis ---
+        if commune.odis_synthesis:
+            pdf.set_font("DejaVu", 'B', 12)
+            pdf.cell(pdf.epw, 10, "Synthèse de l'analyse OD&IS", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.set_font("DejaVu", '', 9)
+            # Format odis_synthesis as a small block
+            for msg in commune.odis_synthesis:
+                role = "Assistant" if msg.get("role") == "assistant" else "Aide"
+                content = msg.get("content", "")
+                pdf.multi_cell(pdf.epw, 5, f"{role}: {content}")
+            pdf.ln(5)
 
     return bytes(pdf.output())

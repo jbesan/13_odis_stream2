@@ -24,6 +24,8 @@ def clear_search_state():
         'map_object',           # Folium Map object
         'pdf_data',             # Cached PDF bytes
         'pdf_modal_data',       # Cached PDF bytes for dialog
+        'show_pdf_modal',       # Flag to trigger PDF dialog
+        'pdf_modal_rerun_done', # Flag to track rerun status
         'selected_geo'          # Filtered GeoDataFrame subset
     ]
     

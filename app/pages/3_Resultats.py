@@ -60,38 +60,32 @@ if 'active_ccas_index' not in st.session_state:
     st.session_state['active_ccas_index'] = None
 
 # --- PDF Modal Logic ---
-def on_pdf_dialog_dismiss():
-    """Callback to clean up state when the dialog is dismissed."""
-    st.session_state.show_pdf_modal = False
-    st.session_state.pdf_modal_data = None
-
-@st.dialog("Export des résultats en PDF", on_dismiss=on_pdf_dialog_dismiss)
+@st.dialog("Export des résultats en PDF")
 def pdf_modal():
-    logging.info(f"📄 [UI-MODAL] pdf_modal called. show_pdf_modal={st.session_state.get('show_pdf_modal')}")
+    
     # State 1: Loading / Generating
     if 'pdf_modal_data' not in st.session_state or st.session_state.pdf_modal_data is None:
-        logging.info("📄 [UI] Opening PDF modal: Starting generation state")
+        
         with st.spinner("Veuillez patienter, nous générons votre document..."):
             try:    
                 search_results = st.session_state.get('search_results')
-                logging.info(f"📄 [UI-MODAL] search_results present: {search_results is not None}")
-                if search_results:
-                     logging.info(f"📄 [UI-MODAL] number of results: {len(search_results.results)}")
                 
                 pdf_bytes = generate_pdf_report(
-                    st.session_state, 
-                    search_results
+                    search_results=search_results,
+                    config=st.session_state.config,
+                    active_search_hash=st.session_state.get('active_search_hash'),
+                    processed_gdf=st.session_state.get('processed_gdf')
                 )
                 st.session_state.pdf_modal_data = pdf_bytes
-                st.rerun() 
             except Exception as e:
                 st.error(f"Erreur lors de la génération du PDF : {e}")
                 if st.button("Fermer"):
-                    st.session_state.show_pdf_modal = False
+                    st.session_state.pdf_modal_data = None
                     st.rerun()
+                return
 
     # State 2: Download Ready
-    else:
+    if st.session_state.get('pdf_modal_data'):
         st.success("Votre document est prêt !")
         col1, col2 = st.columns(2)
         with col1:
@@ -106,7 +100,6 @@ def pdf_modal():
             )
         with col2:
             if st.button("Fermer", width="stretch"):
-                st.session_state.show_pdf_modal = False
                 st.session_state.pdf_modal_data = None
                 st.rerun()
 
@@ -253,10 +246,6 @@ def run_search():
     st.session_state['highlighted_result'] = [False, None]
 
 
-def open_pdf_modal() -> None:
-    """Callback to signal that the PDF modal should be shown."""
-    logging.info("🎯 [UI] 'Exporter résultats' button clicked. Setting show_pdf_modal=True")
-    st.session_state['show_pdf_modal'] = True
 
 # Automatically run the search if not already processed and form is completed
 if st.session_state.get('processed_gdf') is None and st.session_state.get('form_completed'):
@@ -264,39 +253,38 @@ if st.session_state.get('processed_gdf') is None and st.session_state.get('form_
     st.session_state['form_completed'] = False
 
 # --- UI LAYOUT
-@st.fragment(run_every=3.0)
+@st.fragment(run_every=2.0)
 def export_pdf_container(h: str):
-    """Module-level fragment to avoid redefinition issues."""
+    """Module-level fragment to handle background status and PDF triggering."""
     if not h:
         return
-        
+
     scorer_res = odis_get_bg_result(h)
-    # scorer_res can be dict (success) or str (error)
-    scorer_done = scorer_res is not None and not isinstance(scorer_res, str)
     
-    if scorer_done:
-        st.button(
+    # 🧪 SOTA: Robust check for BOTH Scorer and Enrichment completion
+    has_pitches = isinstance(scorer_res, dict) and "pitches" in scorer_res
+    has_enrichment = isinstance(scorer_res, dict) and "enrichment" in scorer_res
+    
+    if has_pitches and has_enrichment:
+        if st.button(
             "Exporter résultats", 
-            on_click=open_pdf_modal,
             icon=':material/picture_as_pdf:',
+            type='secondary',
+            width="stretch",
+            key=f"pdf_btn_{h}" # Keyed by hash to ensure fresh button per search
+        ):
+            pdf_modal()
+    elif isinstance(scorer_res, dict) and "pitches_error" in scorer_res:
+        st.error(scorer_res["pitches_error"])
+    else:
+        # Still running or not started
+        st.button(
+            "Patientez...", 
+            disabled=True,
+            icon=':material/hourglass_empty:',
             type='secondary',
             width="stretch"
         )
-    elif isinstance(scorer_res, str) and "⚠️" in scorer_res:
-        st.error(scorer_res)
-    else:
-        # Still running
-        col1, col2 = st.columns([1, 4])
-        with col1:
-            st.spinner("")
-        with col2:
-            st.button(
-                "Patience...", 
-                disabled=True,
-                icon=':material/picture_as_pdf:',
-                type='secondary',
-                width="stretch"
-            )
 
 # Sidebar
 with st.sidebar:
@@ -448,10 +436,6 @@ with col_map:
             logging.error(f"❌ [MAP-ERROR] st_folium: {e}")
         
         st.markdown('<style>.stCustomComponentV1 {border-radius:10px}</style>', unsafe_allow_html=True)
-
-# --- PDF Modal Execution (at the end to ensure all state is initialized) ---
-if st.session_state.get('show_pdf_modal'):
-    pdf_modal()
 
 # Do not remove, useful to debug states
 # Detect Cloud Run environment

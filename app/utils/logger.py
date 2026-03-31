@@ -118,7 +118,7 @@ def log_search_results(
     prefix: str = "search_results"
 ) -> None:
     """
-    Logs the search configuration and the top results using the standard logger.
+    Logs the search configuration and the top results using the standard logger as a Markdown file in ./logs/.
     This logging is skipped if the application is detected to be running on Cloud Run.
     """
     # Skip logging if running on Cloud Run
