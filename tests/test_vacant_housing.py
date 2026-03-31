@@ -51,7 +51,8 @@ def test_vacant_housing_criterion():
     
     # Instantiate Engine
     engine = ScoringEngine(
-        df_all_communes=odis,
+        df_odis_geo=gpd.GeoDataFrame(),
+            df_all_communes=odis,
         df_bv_geo=app_data['bv_geo'],
         df_area_geo=app_data['area_geo'],
         scores_cat=scores_cat,

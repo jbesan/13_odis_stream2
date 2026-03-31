@@ -30,11 +30,12 @@ class ScoringEngine:
     The engine responsible for running the ODIS scoring algorithm.
     """
     @staticmethod
-    def _filter_communes(df: gpd.GeoDataFrame, start_commune: pd.DataFrame, loc_type: str, loc_code: Optional[str]) -> gpd.GeoDataFrame:
+    def _filter_communes(df: pd.DataFrame, start_commune: pd.DataFrame, loc_type: str, loc_code: Optional[str]) -> pd.DataFrame:
         if loc_type == 'departement': return df[df['dep_code'] == loc_code].copy()
         elif loc_type == 'region': return df[df['reg_code'] == loc_code].copy()
         elif loc_type == 'france': return df[~df['dep_code'].astype(str).str.startswith(('97', '98'))].copy()
-        return gpd.GeoDataFrame()
+        return pd.DataFrame()
+
     @staticmethod
     def _scale_series(series: pd.Series, min_val: float, max_val: float, scaling_type: str = 'linear', mu: Optional[float] = None, sigma: Optional[float] = None) -> pd.Series:
         if scaling_type == 'gaussian' and mu is not None and sigma is not None:
@@ -52,29 +53,29 @@ class ScoringEngine:
                     float(row.iloc[0]['max_bound']) if pd.notna(row.iloc[0]['max_bound']) else 1.0)
         return 0.0, 1.0
 
-    def _compute_distance_score(self, df: gpd.GeoDataFrame, config: SearchCriterias) -> gpd.GeoDataFrame:
+    def _compute_distance_score(self, df: pd.DataFrame, config: SearchCriterias) -> pd.DataFrame:
         """
         Calculates linear distance to user's current location.
-        🧪 SOTA: Temporarily project to metric EPSG:2154 for accurate distance.
+        🧪 SOTA: Numpy vectorization on metric coordinates for ultra-fast scoring
         """
         current_codgeo_raw = config.commune_actuelle
         current_codgeo = current_codgeo_raw.code if hasattr(current_codgeo_raw, 'code') else current_codgeo_raw
         
-        target_geom_4326 = None
-        if current_codgeo in df.index:
-             target_geom_4326 = df.loc[current_codgeo, 'centroid'] if 'centroid' in df.columns else df.loc[current_codgeo].geometry.centroid
-        elif self.df_all_communes is not None and current_codgeo in self.df_all_communes.index:
-             target_geom_4326 = self.df_all_communes.loc[current_codgeo, 'centroid'] if 'centroid' in self.df_all_communes.columns else self.df_all_communes.loc[current_codgeo].geometry.centroid
+        target_lon, target_lat = None, None
         
-        if target_geom_4326 is not None:
-             # Project source point to metric 2154
-             sx, sy = project_point(target_geom_4326.x, target_geom_4326.y, from_crs="EPSG:4326", to_crs="EPSG:2154")
-             from shapely.geometry import Point
-             target_point_2154 = Point(sx, sy)
-             
-             # Project candidates to metric space
-             df_metric = df.to_crs(cfg.PROJECTED_CRS)
-             df.loc[:, 'dist_current_loc'] = df_metric.geometry.distance(target_point_2154)
+        # Priority mapping from the actively processed dataframe
+        if current_codgeo in df.index and 'centroid_lon' in df.columns:
+            target_lon = df.loc[current_codgeo, 'centroid_lon']
+            target_lat = df.loc[current_codgeo, 'centroid_lat']
+        elif self.df_all_communes is not None and current_codgeo in self.df_all_communes.index and 'centroid_lon' in self.df_all_communes.columns:
+            target_lon = self.df_all_communes.loc[current_codgeo, 'centroid_lon']
+            target_lat = self.df_all_communes.loc[current_codgeo, 'centroid_lat']
+        
+        if target_lon is not None and target_lat is not None and pd.notna(target_lon) and 'centroid_lon' in df.columns:
+             # EPSG:2154 is metric (meters). Simple euclidean math avoids geometry overhead entirely
+             dx = df['centroid_lon'] - target_lon
+             dy = df['centroid_lat'] - target_lat
+             df['dist_current_loc'] = np.sqrt(dx**2 + dy**2)
         
         # Scale if computed
         if 'dist_current_loc' in df.columns:
@@ -257,6 +258,7 @@ class ScoringEngine:
         """
         return cls(
             df_all_communes=app_data.get('odis', pd.DataFrame()),
+            df_odis_geo=app_data.get('odis_geo', gpd.GeoDataFrame()),
             df_bv_geo=app_data.get('bv_geo', pd.DataFrame()),
             df_area_geo=app_data.get('area_geo', pd.DataFrame()),
             scores_cat=app_data.get('scores_cat', pd.DataFrame()),
@@ -282,7 +284,8 @@ class ScoringEngine:
 
     def __init__(
         self,
-        df_all_communes: gpd.GeoDataFrame,
+        df_all_communes: pd.DataFrame,
+        df_odis_geo: gpd.GeoDataFrame,
         df_bv_geo: gpd.GeoDataFrame,
         df_area_geo: gpd.GeoDataFrame,
         scores_cat: pd.DataFrame,
@@ -307,6 +310,7 @@ class ScoringEngine:
     ):
         self.current_city_scored_row = None
         self.df_all_communes = df_all_communes
+        self.df_odis_geo = df_odis_geo
         self.df_bv_geo = df_bv_geo
         self.df_area_geo = df_area_geo
         self.scores_cat = scores_cat
@@ -508,25 +512,17 @@ class ScoringEngine:
 
         # Extract lat/lon from geometry if available (Use static_row)
         lat, lon = 0.0, 0.0
-        row_for_geom = static_row if 'centroid' in static_row or 'geometry' in static_row else row
 
-        if 'centroid' in row_for_geom and row_for_geom['centroid'] is not None:
-             # Assuming centroid is a Point object (from GeoPandas)
+        if 'centroid_lon' in static_row and pd.notna(static_row['centroid_lon']):
              try:
                  # Use utility to project from Lambert-93 to WGS84
                  # Lambert-93 (EPSG:2154) coordinates are typically > 100000
-                 curr_x, curr_y = row_for_geom['centroid'].x, row_for_geom['centroid'].y
+                 curr_x, curr_y = static_row['centroid_lon'], static_row['centroid_lat']
                  if curr_x > 180 or curr_y > 90:
                     lon, lat = project_point(curr_x, curr_y, from_crs='EPSG:2154', to_crs='EPSG:4326')
                  else:
                     lon, lat = curr_x, curr_y
-             except AttributeError:
-                 pass
-        elif 'geometry' in row_for_geom and row_for_geom['geometry'] is not None:
-             try:
-                 c = row_for_geom['geometry'].centroid
-                 lon, lat = c.x, c.y
-             except AttributeError:
+             except Exception:
                  pass
 
         # Use cached active criteria if available
@@ -841,30 +837,12 @@ class ScoringEngine:
         incl_data.cat_score = float(cat_final_scores.get('inclusion', 0.0))
         mob_data.cat_score = float(cat_final_scores.get('mobilite', 0.0))
 
-        # Extract coordinates and centroid point (in 4326)
-        # 🧪 SOTA: odis.centroid is now ALREADY in 4326 at load time.
-        # This eliminates the "Atlantic Ocean" bug caused by double-projection.
-        c_geom = row.get('centroid') if 'centroid' in row else (row.geometry.centroid if hasattr(row, 'geometry') else None)
-        
-        lat_val, lon_val = 0.0, 0.0
-        c_point = None
-        if c_geom:
-            lon_val, lat_val = c_geom.x, c_geom.y
-            
-            from shapely.geometry import Point
-            c_point = Point(lon_val, lat_val)
-
-        # Geometry (Use static_row)
-        poly = static_row.get('polygon') if 'polygon' in static_row else (static_row.geometry if hasattr(static_row, 'geometry') else None)
-
         return CommuneResult(
             codgeo=str(row.name),
             name=static_row.get('libgeo', 'Inconnu'),
             population=int(static_row.get('population', 0)),
             codgeo_bdv=str(static_row.get('bassin_de_vie', 'Inconnu')),
             name_bdv=static_row.get('libelle_bassin_de_vie', 'Inconnu'),
-            centroid=c_point,
-            geometry=poly,
             global_score=float(row.get('weighted_score', 0.0)),
             scores=structured_scores,
             employment=emploi_data,
@@ -974,7 +952,7 @@ class ScoringEngine:
             
         return model, results_raw
 
-    def run(self, config: SearchCriterias, log_prefix: Optional[str] = None) -> gpd.GeoDataFrame:
+    def run(self, config: SearchCriterias, log_prefix: Optional[str] = None) -> pd.DataFrame:
         """Orchestrates the full scoring pipeline."""
         logger.debug(f"⚙️ [ENGINE] Starting run with Profile: {config.weight_profile}")
         logger.debug(f"⚙️ [ENGINE] Config: {config}")
@@ -1023,9 +1001,13 @@ class ScoringEngine:
         if c_code in self.df_all_communes.index and c_code not in communes_to_score.index:
             communes_to_score = pd.concat([communes_to_score, self.df_all_communes.loc[[c_code]]])
         
+        # 1. Early Pruning
+        # We drop any _scaled metrics that are NOT active in the request to save memory and processing time.
+        communes_to_score = self._prune_irrelevant_metrics(communes_to_score, config, aggressive=False)
+        
         results = self._compute_scores(communes_to_score, config)
         
-        # 1. Mandatory cleanup of intermediate pool
+        # 2. Return the results
         del communes_to_score
         gc.collect()
 
@@ -1034,7 +1016,7 @@ class ScoringEngine:
         # needs the full data to call format_city_details for the Top results.
         return results
 
-    def _compute_scores(self, df_search: gpd.GeoDataFrame, config: SearchCriterias) -> pd.DataFrame:
+    def _compute_scores(self, df_search: pd.DataFrame, config: SearchCriterias) -> pd.DataFrame:
         if df_search.empty: return df_search
 
         # Distance
@@ -1078,7 +1060,7 @@ class ScoringEngine:
 
 
 
-    def _compute_employment_scores(self, df: gpd.GeoDataFrame, config: SearchCriterias) -> gpd.GeoDataFrame:
+    def _compute_employment_scores(self, df: pd.DataFrame, config: SearchCriterias) -> pd.DataFrame:
         # Operating in-place
         
         # --- Live Jobs (ROME-based) ---
@@ -1246,7 +1228,7 @@ class ScoringEngine:
 
         return df
 
-    def _compute_sante_scores(self, df: gpd.GeoDataFrame, config: SearchCriterias) -> gpd.GeoDataFrame:
+    def _compute_sante_scores(self, df: pd.DataFrame, config: SearchCriterias) -> pd.DataFrame:
         # Operating in-place
         if config.besoin_sante != 'Aucun':
             col_map = {'Hôpital': 'sante_hopital_scaled', 'Hopital': 'sante_hopital_scaled',
@@ -1259,7 +1241,7 @@ class ScoringEngine:
                 df['sante_structures_scaled'] = 0.0
         return df
 
-    def _compute_mobility_scores(self, df: gpd.GeoDataFrame, config: SearchCriterias) -> gpd.GeoDataFrame:
+    def _compute_mobility_scores(self, df: pd.DataFrame, config: SearchCriterias) -> pd.DataFrame:
         # Operating in-place
         
         # --- Density ---
@@ -1297,17 +1279,17 @@ class ScoringEngine:
              
         return df
 
-    def _compute_education_scores(self, df: gpd.GeoDataFrame, config: SearchCriterias) -> gpd.GeoDataFrame:
+    def _compute_education_scores(self, df: pd.DataFrame, config: SearchCriterias) -> pd.DataFrame:
         # Placeholder for specific education logic if needed in future.
         # Currently education scores are pre-computed in DB/DF.
         return df
 
-    def _compute_housing_scores(self, df: gpd.GeoDataFrame, config: SearchCriterias) -> gpd.GeoDataFrame:
+    def _compute_housing_scores(self, df: pd.DataFrame, config: SearchCriterias) -> pd.DataFrame:
         # Placeholder for specific housing logic if needed.
         # Currently housing pruning handles most variation.
         return df
 
-    def _compute_inclusion_scores(self, df: gpd.GeoDataFrame, config: SearchCriterias) -> gpd.GeoDataFrame:
+    def _compute_inclusion_scores(self, df: pd.DataFrame, config: SearchCriterias) -> pd.DataFrame:
         # Operating in-place
         
         # Population Score (F-50) - Dynamic re-calculation
@@ -1388,7 +1370,7 @@ class ScoringEngine:
 
         return df
 
-    def _compute_criteria_scores(self, df: gpd.GeoDataFrame, config: SearchCriterias) -> gpd.GeoDataFrame:
+    def _compute_criteria_scores(self, df: pd.DataFrame, config: SearchCriterias) -> pd.DataFrame:
         # Orchestrator
         df = self._compute_employment_scores(df, config)
         df = self._compute_mobility_scores(df, config)

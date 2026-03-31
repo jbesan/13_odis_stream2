@@ -66,6 +66,7 @@ def get_scoring_engine() -> ScoringEngine:
             
     return ScoringEngine(
         df_all_communes=DATA_CONTEXT['odis'],
+        df_odis_geo=DATA_CONTEXT.get('odis_geo', gpd.GeoDataFrame()),
         df_bv_geo=DATA_CONTEXT['bv_geo'],
         df_area_geo=DATA_CONTEXT['area_geo'],
         scores_cat=DATA_CONTEXT['scores_cat'],

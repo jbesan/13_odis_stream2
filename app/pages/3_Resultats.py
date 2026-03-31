@@ -145,6 +145,7 @@ def run_search():
     # Instantiate the stateless engine with current data
     engine = scoring.ScoringEngine(
         df_all_communes=df_all_communes,
+        df_odis_geo=app_data.get('odis_geo'),
         df_bv_geo=df_bv_geo,
         df_area_geo=df_area_geo,
         scores_cat=app_data['scores_cat'],
@@ -212,17 +213,15 @@ def run_search():
         launch_background_enrichment(engine, target_codgeos, h)
     
     # Calculate center for map (Use starting commune as anchor - more efficient & robust)
-    if not start_commune.empty:
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=DeprecationWarning)
-            # Use centroid of starting commune 
-            avg_centroid = start_commune.geometry.iloc[0].centroid
+    if not start_commune.empty and 'centroid_lon' in start_commune.columns:
+        c_lon = start_commune['centroid_lon'].iloc[0]
+        c_lat = start_commune['centroid_lat'].iloc[0]
         
-        # Project back to 4326 for Folium
-        if avg_centroid.x > 180: # Check if projected
-             lon, lat = utils.project_point(avg_centroid.x, avg_centroid.y, from_crs=cfg.PROJECTED_CRS, to_crs='EPSG:4326')
+        # Project from 2154 to 4326 for Folium if needed
+        if pd.notna(c_lon) and c_lon > 180:
+             lon, lat = utils.project_point(c_lon, c_lat, from_crs=cfg.PROJECTED_CRS, to_crs='EPSG:4326')
         else:
-             lon, lat = avg_centroid.x, avg_centroid.y
+             lon, lat = c_lon, c_lat
         final_center_y, final_center_x = lat, lon
     else:
         # Fallback to absolute default
@@ -369,8 +368,7 @@ with col_map:
             fg_scores.add_to(fg_dynamic)
 
             if search_results and search_results.current_geo:
-                row_actuel = pd.Series({'polygon': search_results.current_geo.geometry, 'libgeo': search_results.current_geo.name})
-                maps.build_current_loc_layer(row_actuel).add_to(fg_dynamic)
+                maps.build_current_loc_layer(search_results.current_geo).add_to(fg_dynamic)
 
         # B. User-selected Layers (Pills)
         pill_options = [{"id": "top_5", "label": "🥇 Top 5"}]
@@ -407,11 +405,11 @@ with col_map:
 
             if show_top_5:
                 for i, commune in enumerate(search_results.results[:5]):
-                    if commune.geometry: maps.build_top_result_layer(commune, i).add_to(fg_dynamic)
+                    maps.build_top_result_layer(commune, i).add_to(fg_dynamic)
 
             if is_highlighted:
                 commune = search_results.results[highlighted_index]
-                if commune.geometry: maps.build_top_result_layer(commune, highlighted_index).add_to(fg_dynamic)
+                maps.build_top_result_layer(commune, highlighted_index).add_to(fg_dynamic)
 
         # 4. Legend Rendering (Added to the stable map object)
         if legend_items:

@@ -23,7 +23,8 @@ def verify_bdv_fields():
     
     # 2. Instantiate Engine
     engine = scoring.ScoringEngine(
-        df_all_communes=df_all,
+        df_odis_geo=gpd.GeoDataFrame(),
+            df_all_communes=df_all,
         df_bv_geo=None,
         df_area_geo=None,
         scores_cat=pd.DataFrame(columns=['score', 'cat', 'metric', 'weight', 'min_bound', 'max_bound']),

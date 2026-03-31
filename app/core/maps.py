@@ -62,10 +62,27 @@ def build_scores_layer(df: pd.DataFrame, id_col: str = "codgeo", name_col: str =
     colormap = getattr(linear, 'YlGn_09').scale(min(score_dict.values()), max(score_dict.values()))
 
     # F-SDD: Pre-format the score for display
-    df_serializable = df[[id_col, name_col, 'weighted_score', 'polygon']].copy()
+    df_serializable = df[[id_col, name_col, 'weighted_score']].copy()
+    
+    # 🧪 SOTA JIT Join: Hydrate polygon geometries from the singleton cache
+    app_data = data_loader.get_app_data()
+    odis_geo = app_data.get('odis_geo')
+    
+    if odis_geo is not None and not odis_geo.empty:
+        # Merge using inner join to strictly drop rows where geometry is missing
+        df_serializable = df_serializable.merge(odis_geo[['polygon']], left_on=id_col, right_index=True, how='inner')
+    else:
+        df_serializable['polygon'] = None
+
     df_serializable['score_pct'] = df_serializable['weighted_score'].apply(lambda x: f"{x*100:.1f}%" if pd.notna(x) else "N/A")
     
-    # Create GeoDataFrame (Already in 4326)
+    # Pre-emptively drop any remaining NaNs in geometry column to protect Folium
+    df_serializable = df_serializable.dropna(subset=['polygon'])
+
+    if df_serializable.empty:
+        return fg, None
+        
+    # Create GeoDataFrame directly in 4326 (this is the native format of odis_geo)
     gdf = gpd.GeoDataFrame(df_serializable, geometry='polygon', crs="EPSG:4326")
     
     flm.GeoJson(
@@ -87,19 +104,36 @@ def build_scores_layer(df: pd.DataFrame, id_col: str = "codgeo", name_col: str =
     return fg, colormap
 
 def _get_geom(row: Union[pd.Series, Any], field: str = 'polygon') -> Optional[Any]:
-    """Helper to extract geometry from either a pd.Series or a Pydantic model (CommuneResult)."""
-    if hasattr(row, field):
-        return getattr(row, field)
-    # Pydantic CommuneResult uses 'geometry' and 'centroid' fields
-    if field == 'polygon' and hasattr(row, 'geometry'):
-        return row.geometry
-    if field == 'centroid' and hasattr(row, 'centroid'):
-        return row.centroid
-    # Dictionary/Series access
-    try:
-        return row.get(field)
-    except:
+    """Helper to extract geometry from the shared JIT cache for a given row or model."""
+    codgeo = None
+    if hasattr(row, 'codgeo') and row.codgeo: codgeo = row.codgeo
+    elif isinstance(row, pd.Series): codgeo = str(row.name) if 'codgeo' not in row else str(row['codgeo'])
+    elif isinstance(row, dict): codgeo = row.get('codgeo')
+
+    if not codgeo:
+        # Fallback for current location which might just pass the polygon in a dummy dict
+        if isinstance(row, dict) and field in row: return row.get(field)
+        if hasattr(row, field): return getattr(row, field)
         return None
+
+    app_data = data_loader.get_app_data()
+    odis_geo = app_data.get('odis_geo')
+    
+    if odis_geo is None or odis_geo.empty or codgeo not in odis_geo.index:
+        return None
+
+    try:
+        poly_4326 = odis_geo.loc[codgeo, 'polygon']
+        if poly_4326 is None: return None
+        
+        if field == 'polygon' or field == 'geometry':
+            return poly_4326
+        elif field == 'centroid':
+            return poly_4326.centroid
+    except Exception as e:
+        logging.warning(f"JIT Geom error for {codgeo}: {e}")
+        
+    return None
 
 def build_top_result_layer(row: Union[pd.Series, Any], rank: int) -> flm.FeatureGroup:
     """Builds a FeatureGroup to highlight a single top result (commune + binome)."""

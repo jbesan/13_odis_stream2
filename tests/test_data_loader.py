@@ -53,7 +53,7 @@ def test_init_datasets(mock_get_data_path, mock_read_parquet, mock_exists, mock_
     odis_df, pois_df, ref_df = mock_parquet_data
     
     # Configure mock side effects for different files
-    def side_effect(path, columns=None):
+    def side_effect(path, columns=None, **kwargs):
         if 'odis_communes' in path:
             return odis_df
         elif 'pois' in path:

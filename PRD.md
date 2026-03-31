@@ -191,3 +191,18 @@ _(Most features omitted for brevity. Appending F-42)_
 ### 📊 Status
 - **March 2026**: Conception et implémentation en cours.
 
+## 🚀 Feature [F-51]: Optimisation Mémoire et CPU (Zero-Copy & Pruning)
+
+### 📝 User Story
+
+- En tant qu'administrateur système, je veux que l'application puisse supporter plusieurs utilisateurs simultanés sans crasher (OOM) sur Cloud Run, et que les calculs du moteur de recherche soient rapides et efficients.
+
+### 🔑 Key Features
+
+- **Refonte Data Loader (`data_loader.py`) :** Chargement strict des colonnes requises via `fastparquet`. Réduction des géométries en cache (utilisation d'objets point/simplifiés au lieu de double projection) et suppression des copies inutiles.
+- **Scoring en Place (`scoring.py`) :** Élimination des `.copy()` dans `_filter_communes` et les helpers. Utilisation de vues Pandas ou de calculs Numpy vectorisés pour éviter la duplication de gros GeoDataFrames.
+- **Pruning Agressif Anticipé :** Suppression anticipée des colonnes non utilisées (plutôt qu'à la fin de la chaîne) pour réduire l'empreinte mémoire du `ScoringEngine` pendant le process de recherche.
+- **Validation Test-Driven :** Vérification continue via `test_e2e.py` et `test_scoring.py` avec snapshots pour s'assurer que les calculs de scores restent identiques malgré l'optimisation.
+
+### 📊 Status
+- **March 2026**: Audit de performance et conception en cours.

@@ -13,7 +13,8 @@ def test_format_city_details_rna_rag_summary(sample_data, sample_scores_cat, def
     row['inc_rna_sante_count'] = 0 # Should be ignored in summary if 0
     
     engine = scoring.ScoringEngine(
-        df_all_communes=sample_data,
+        df_odis_geo=gpd.GeoDataFrame(),
+            df_all_communes=sample_data,
         df_bv_geo=gpd.GeoDataFrame(),
         df_area_geo=gpd.GeoDataFrame(),
         scores_cat=sample_scores_cat,
@@ -63,7 +64,8 @@ def test_scoring_engine_init_with_missing_data(sample_data, sample_scores_cat):
     """Verifies that ScoringEngine handles empty associations_data without crashing."""
     # This simulates the state after cleaning up legacy files
     engine = scoring.ScoringEngine(
-        df_all_communes=sample_data,
+        df_odis_geo=gpd.GeoDataFrame(),
+            df_all_communes=sample_data,
         df_bv_geo=gpd.GeoDataFrame(),
         df_area_geo=gpd.GeoDataFrame(),
         scores_cat=sample_scores_cat,

@@ -13,16 +13,16 @@ from utils import common as utils
 @pytest.fixture
 def sample_result_row():
     """Creates a sample GeoDataFrame row for testing."""
-    # Use coordinates that are valid for EPSG:2154 (Lambert-93)
-    # Roughly a triangle near Paris
+    # Use coordinates that are valid for EPSG:4326 (WGS84)
+    # Roughly a triangle near Paris (Lon, Lat)
     data = {
         'libgeo': ['Testville'],
         'binome': [False],
         'polygon_binome': [None],
-        'geometry': [Polygon([(600000, 6800000), (610000, 6810000), (610000, 6800000)])]
+        'geometry': [Polygon([(2.3, 48.8), (2.4, 48.9), (2.4, 48.8)])]
     }
-    # Note: We create it without CRS, or generic, because the function assumes 2154
-    gdf = gpd.GeoDataFrame(data, geometry='geometry')
+    # Note: The function assumes input is already in 4326 as per SOTA comments
+    gdf = gpd.GeoDataFrame(data, geometry='geometry', crs="EPSG:4326")
     # The geometry column in the app is named 'polygon', let's align with that
     gdf = gdf.rename_geometry('polygon')
     return gdf.iloc[0]
@@ -56,12 +56,11 @@ def test_build_top_result_layer_creates_ranked_marker(sample_result_row):
     assert expected_rank_html in div_icon_marker.icon.options['html'], \
         f"The marker's HTML does not contain the correct rank. Expected '{expected_rank_html}'."
 
-    # Check marker position (Must convert to EPSG:4326 to match marker)
+    # Check marker position (Should be the centroid of the polygon in 4326)
     centroid = row.polygon.centroid
-    cx, cy = utils.project_point(centroid.x, centroid.y, from_crs=cfg.PROJECTED_CRS, to_crs='EPSG:4326')
     
     # Folium uses [lat, lon] -> [y, x]
-    expected_location = [cy, cx]
+    expected_location = [centroid.y, centroid.x]
     
     # Allow for small floating point differences
     assert div_icon_marker.location == pytest.approx(expected_location, abs=1e-6)

@@ -70,7 +70,7 @@ To ensure scalability and prevent Out-Of-Memory (OOM) errors, ODIS uses a **Deco
 
 ### Lean Scoring & JIT Hydration
 - **Session Results**: The `ScoringEngine` generates a lightweight results DataFrame containing only IDs (`codgeo`) and numeric scores.
+- **Model Dehydration**: Geometries are explicitly excluded from Pydantic Models (`CommuneResult`) to prevent inflating `st.session_state` serialization.
 - **Just-in-Time (JIT) Hydration**: 
-    - **Geometries**: Joined from the global cache only during map rendering (`maps.build_scores_layer`).
-    - **Labels & Details**: Hydrated from the global cache only when formatting specific results for display (`ScoringEngine.format_city_details`).
+    - **Geometries**: Joined from the global cache (`app_data['odis_geo']`) only during map rendering (`maps.build_scores_layer`, `maps.build_top_result_layer`).
 - **Isolation**: Each user session only stores ~1-5MB of computed data, even when scoring 36,000+ communes.

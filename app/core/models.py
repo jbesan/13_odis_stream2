@@ -187,10 +187,6 @@ class CommuneResult(BaseModel):
     codgeo_bdv: str = Field(default="", description="Code du bassin de vie d'appartenance")
     name_bdv: str = Field(default="", description="Nom du bassin de vie d'appartenance")
     
-    # Geographic data (for maps)
-    centroid: Optional[Any] = Field(None, exclude=True, description="Centroid Point in 4326")
-    geometry: Optional[Any] = Field(None, exclude=True, description="Geometry object (Polygon/MultiPolygon)")
-    
     # Global score
     global_score: float = Field(description="Score pondéré global (0-1.0)")
     

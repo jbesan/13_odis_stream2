@@ -372,7 +372,6 @@ def load_all_data_raw() -> Dict[str, Any]:
         temp_df = pd.read_parquet(odis_path, engine='fastparquet')
         all_cols = temp_df.columns.tolist()
         del temp_df
-        gc.collect()
         
         essential_cols = {
             'codgeo', 'polygon', 'dep_code', 'reg_code', 'epci_code', 'epci_nom',
@@ -403,19 +402,24 @@ def load_all_data_raw() -> Dict[str, Any]:
         odis = pd.read_parquet(odis_path, engine='fastparquet', columns=list(columns_to_load))
         
         # Geometry processing
+        odis_geo = gpd.GeoDataFrame()
         if 'polygon' in odis.columns:
-            # 🧪 SOTA: Standardize on EPSG:4326 (Lat/Lon) at the source
-            # This simplifies everything: UI, Maps, and AI Agents 
-            # We ONLY convert back to metric EPSG:2154 when calculating distances.
-            odis['polygon'] = odis.polygon.apply(wkb.loads)
-            odis = gpd.GeoDataFrame(odis, geometry='polygon', crs='EPSG:2154')
+            logger.info("Extracting geometries to odis_geo and computing numeric centroids...")
+            polys = odis['polygon'].apply(wkb.loads)
+            # The source geometries are in EPSG:4326 (lat/lon)
+            odis_geo = gpd.GeoDataFrame({'codgeo': odis['codgeo'], 'polygon': polys}, geometry='polygon', crs='EPSG:4326')
+            odis_geo.set_index('codgeo', inplace=True)
             
-            # with warnings.catch_warnings():
-            #     warnings.filterwarnings("ignore", category=DeprecationWarning)
-            #     odis = odis.to_crs("EPSG:4326")
+            # SOTA: Keep only metric numerical coordinates in the massive `odis` dataframe to avoid geometry overhead for fast Euclidean distance computations
+            metric_geo = odis_geo.geometry.to_crs('EPSG:2154')
+            cents = metric_geo.centroid
+            # These are truly EPSG:2154 numerical coordinates
+            odis['centroid_lon'] = cents.x.values
+            odis['centroid_lat'] = cents.y.values
             
-            if 'centroid' not in odis.columns:
-                 odis['centroid'] = odis.geometry.centroid
+            odis.drop(columns=['polygon'], inplace=True)
+            if 'centroid' in odis.columns:
+                 odis.drop(columns=['centroid'], inplace=True)
         
         odis.set_index('codgeo', inplace=True)
         
@@ -607,14 +611,15 @@ def load_all_data_raw() -> Dict[str, Any]:
 
     # 6. Area Geo
     area_dfs = []
-    if not odis.empty and isinstance(odis, gpd.GeoDataFrame):
+    if not odis_geo.empty:
         try:
-            deps = odis.dissolve(by='dep_code')[['polygon']]
+            geo_merged = odis_geo.join(odis[['dep_code', 'reg_code']], how='inner')
+            deps = geo_merged.dissolve(by='dep_code')[['polygon']]
             deps['type'] = 'departement'
             deps = deps.reset_index().rename(columns={'dep_code': 'code'})
             area_dfs.append(deps)
             
-            regs = odis.dissolve(by='reg_code')[['polygon']]
+            regs = geo_merged.dissolve(by='reg_code')[['polygon']]
             regs['type'] = 'region'
             regs = regs.reset_index().rename(columns={'reg_code': 'code'})
             area_dfs.append(regs)
@@ -623,10 +628,10 @@ def load_all_data_raw() -> Dict[str, Any]:
 
     area_geo = pd.concat(area_dfs).set_index(['type', 'code']) if area_dfs else gpd.GeoDataFrame()
     del area_dfs
-    gc.collect()
 
     return {
         'odis': odis,
+        'odis_geo': odis_geo,
         'scores_cat': scores_cat,
         'rome_index': rome_index,
         'rome_top_index': rome_top_index,
