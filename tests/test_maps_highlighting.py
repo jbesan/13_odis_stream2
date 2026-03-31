@@ -57,7 +57,13 @@ def test_build_scores_layer_highlights_commune(monkeypatch):
     mock_state = MagicMock()
     mock_state.selected_geo = selected_geo
     
+    # Mock data_loader.get_app_data to provide the polygon geometry (JIT Hydration)
+    mock_app_data = {
+        'odis_geo': pd.Series({commune_code: commune_poly})
+    }
+    
     monkeypatch.setattr("core.maps.st.session_state", mock_state)
+    monkeypatch.setattr("core.maps.data_loader.get_app_data", lambda: mock_app_data)
 
     # Act
     fg, colormap = build_scores_layer(scored_df)

@@ -150,7 +150,7 @@ scores:
     weight: 3.0
     scaling_type: gaussian
     mu: 50000
-    sigma: 40000
+    sigma: 25000
   - id: form_match_adult1_scaled
     category: emploi
     source_metric: form_match_adult1
@@ -189,7 +189,7 @@ scores:
     max_bound: null
   - id: mob_epci_scaled
     category: mobilite
-    source_metric: null
+    source_metric: mob_epci_scaled
     bdv_factor: 0.0
     computation: live
     display:
@@ -197,7 +197,7 @@ scores:
       strong_point_text: La localité proposée est bien connectée à la commune actuelle
       high_value_adjective: proche
       show: false
-      unit: None
+      unit: ""
       display_factor: 1
       tooltip: ""
     weight: 1.0
@@ -269,7 +269,7 @@ scores:
     max_bound: 0.25 ## This is Jacques guess looking at the data
   - id: inc_services_incl_scaled
     category: inclusion
-    source_metric: null
+    source_metric: inc_services_incl_scaled
     bdv_factor: 0.8
     computation: live
     display:
@@ -559,7 +559,7 @@ scores:
 
   - id: heb_loc_iml_scaled
     category: logement
-    source_metric: heb_loc_iml_density
+    source_metric: heb_loc_iml_count
     bdv_factor: 0.8
     computation: precomputed
     display:
@@ -567,9 +567,9 @@ scores:
       strong_point_text: Présence d'associations IML/Solibail
       high_value_adjective: forte
       show: true
-      unit: assos/1000 hab.
+      unit: associations
       display_factor: 1
-      tooltip: Densité d'associations proposant de l'intermédiation locative ou Solibail (Source RNA)
+      tooltip: Nombre d'associations proposant de l'intermédiation locative ou Solibail (Source RNA)
     weight: 1.0
     min_bound: 0.0
     max_bound: 0.1
@@ -593,7 +593,7 @@ scores:
 
   - id: heb_foyers_scaled
     category: logement
-    source_metric: heb_foyers_density
+    source_metric: heb_foyers_count
     bdv_factor: 0.5
     computation: precomputed
     display:
@@ -601,16 +601,16 @@ scores:
       strong_point_text: Présence de foyers (FJT, migrants) et pensions de famille
       high_value_adjective: forte
       show: true
-      unit: structures/1000 hab.
+      unit: structures
       display_factor: 1
-      tooltip: Densité de Foyers de Jeunes Travailleurs, Pensions de famille et Foyers de Migrants (Source BPE)
+      tooltip: Nombre de foyers (FJT, migrants) et pensions de famille identifiés (Source BPE)
     weight: 2.0
     min_bound: 0.0
     max_bound: 0.2
 
   - id: heb_asso_habitant_scaled
     category: logement
-    source_metric: heb_habitant_density
+    source_metric: heb_habitant_count
     bdv_factor: 0.8
     computation: precomputed
     display:
@@ -618,9 +618,9 @@ scores:
       strong_point_text: Présence d'associations d'hébergement citoyen
       high_value_adjective: forte
       show: true
-      unit: assos/1000 hab.
+      unit: associations
       display_factor: 1
-      tooltip: Densité d'associations proposant de l'hébergement citoyen (Source RNA/RNAG)
+      tooltip: Nombre d'associations proposant de l'hébergement citoyen (Source RNA/RNAG)
     weight: 2.0
     min_bound: 0.0
     max_bound: 0.2

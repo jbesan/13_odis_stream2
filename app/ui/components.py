@@ -973,10 +973,7 @@ def render_mobility_form() -> None:
     # st.markdown("**Taille de ville cible**")
     
     def _calculate_sigma(mu):
-        if mu <= 5000: return 4000
-        if mu <= 50000:
-            return int(4000 + (mu - 5000) * (40000 - 4000) / (50000 - 5000))
-        return int(40000 + (mu - 50000) * (100000 - 40000) / (200000 - 50000))
+        return int(mu / 2)
 
     if "ui_target_population" not in st.session_state:
         st.session_state["ui_target_population"] = cfg.DEFAULT_MU

@@ -62,30 +62,18 @@ def build_scores_layer(df: pd.DataFrame, id_col: str = "codgeo", name_col: str =
     colormap = getattr(linear, 'YlGn_09').scale(min(score_dict.values()), max(score_dict.values()))
 
     # F-SDD: Pre-format the score for display
-    df_serializable = df[[id_col, name_col, 'weighted_score']].copy()
-    
-    # 🧪 SOTA JIT Join: Hydrate polygon geometries from the singleton cache
-    app_data = data_loader.get_app_data()
-    odis_geo = app_data.get('odis_geo')
-    
-    if odis_geo is not None and not odis_geo.empty:
-        # Merge using inner join to strictly drop rows where geometry is missing
-        # Convert Series to DataFrame with 'polygon' name for successful merge
-        df_serializable = df_serializable.merge(odis_geo.to_frame('polygon'), left_on=id_col, right_index=True, how='inner')
-    else:
-        df_serializable['polygon'] = None
+    # 🧪 SOTA: No JIT join here. We assume the incoming 'df' is already hydrated 
+    # (joined with geometries and WKB decoded) from the search callback.
+    df_serializable = df[[id_col, name_col, 'weighted_score', 'polygon']].copy()
 
     df_serializable['score_pct'] = df_serializable['weighted_score'].apply(lambda x: f"{x*100:.1f}%" if pd.notna(x) else "N/A")
     
-    # Pre-emptively drop any remaining NaNs in geometry column to protect Folium
+    # Pre-emptively drop any missing geometries to protect Folium
     df_serializable = df_serializable.dropna(subset=['polygon'])
 
     if df_serializable.empty:
+        logging.warning("build_scores_layer: No valid geometries found in hydrated DataFrame.")
         return fg, None
-        
-    # JIT HYDRATION: Convert WKB bytes to Shapely objects only for the Top N results
-    from shapely import wkb
-    df_serializable['polygon'] = df_serializable['polygon'].apply(lambda x: wkb.loads(bytes(x)) if isinstance(x, (bytes, bytearray)) else x)
     
     # Create GeoDataFrame in 4326 (native format of rehabilitated pipeline)
     gdf = gpd.GeoDataFrame(df_serializable, geometry='polygon', crs="EPSG:4326")
@@ -108,47 +96,36 @@ def build_scores_layer(df: pd.DataFrame, id_col: str = "codgeo", name_col: str =
 
     return fg, colormap
 
-def _get_geom(row: Union[pd.Series, Any], field: str = 'polygon') -> Optional[Any]:
-    """Helper to extract geometry from the shared JIT cache for a given row or model."""
+def _get_geom(row: Union[pd.Series, Any], field: str = 'polygon', gdf_context: Optional[pd.DataFrame] = None) -> Optional[Any]:
+    """
+    Helper to extract geometry from a row or model. 
+    🧪 Optimized: Uses the provided gdf_context (pre-hydrated GDF) for O(1) lookup.
+    """
     codgeo = None
-    if hasattr(row, 'codgeo') and row.codgeo: codgeo = row.codgeo
+    if hasattr(row, 'codgeo') and row.codgeo: codgeo = str(row.codgeo)
     elif isinstance(row, pd.Series): codgeo = str(row.name) if 'codgeo' not in row else str(row['codgeo'])
-    elif isinstance(row, dict): codgeo = row.get('codgeo')
+    elif isinstance(row, dict): codgeo = str(row.get('codgeo', ''))
 
-    if not codgeo:
-        # Fallback for current location which might just pass the polygon in a dummy dict
-        if isinstance(row, dict) and field in row: return row.get(field)
-        if hasattr(row, field): return getattr(row, field)
-        return None
+    # 1. Try Lookup in provided context (Fastest, pre-decoded)
+    if gdf_context is not None and codgeo in gdf_context.index:
+        try:
+            return gdf_context.loc[codgeo, field]
+        except KeyError:
+            # Maybe the column name in GDF is different
+            alt_field = 'geometry' if field == 'polygon' else 'polygon'
+            return gdf_context.loc[codgeo].get(alt_field)
 
-    app_data = data_loader.get_app_data()
-    odis_geo = app_data.get('odis_geo')
+    # 2. Fallback: check the object itself
+    if hasattr(row, field): return getattr(row, field)
+    if isinstance(row, dict) and field in row: return row.get(field)
     
-    if odis_geo is None or odis_geo.empty or codgeo not in odis_geo.index:
-        return None
-
-    try:
-        wkb_bytes = odis_geo.loc[codgeo]
-        if wkb_bytes is None: return None
-        
-        # JIT Hydrate
-        from shapely import wkb
-        poly_4326 = wkb.loads(bytes(wkb_bytes)) if isinstance(wkb_bytes, (bytes, bytearray)) else wkb_bytes
-        
-        if field == 'polygon' or field == 'geometry':
-            return poly_4326
-        elif field == 'centroid':
-            return poly_4326.centroid
-    except Exception as e:
-        logging.warning(f"JIT Geom error for {codgeo}: {e}")
-        
     return None
 
-def build_top_result_layer(row: Union[pd.Series, Any], rank: int) -> flm.FeatureGroup:
+def build_top_result_layer(row: Union[pd.Series, Any], rank: int, gdf_context: Optional[pd.DataFrame] = None) -> flm.FeatureGroup:
     """Builds a FeatureGroup to highlight a single top result (commune + binome)."""
     fg = flm.FeatureGroup(name=f"Top {rank + 1}")
 
-    poly = _get_geom(row, 'polygon')
+    poly = _get_geom(row, 'polygon', gdf_context=gdf_context)
     if poly is None:
         logging.warning(f"No polygon found for Top {rank+1}")
         return fg
@@ -176,12 +153,12 @@ def build_top_result_layer(row: Union[pd.Series, Any], rank: int) -> flm.Feature
         
     return fg
 
-def build_current_loc_layer(row: Union[pd.Series, Any]) -> flm.FeatureGroup:
+def build_current_loc_layer(row: Union[pd.Series, Any], gdf_context: Optional[pd.DataFrame] = None) -> flm.FeatureGroup:
     """Builds a thick blue outline for the current location."""
     fg = flm.FeatureGroup(name="Commune Actuelle")
     
-    poly = _get_geom(row, 'polygon')
-    libgeo = _get_geom(row, 'libgeo') or "Ma position"
+    poly = _get_geom(row, 'polygon', gdf_context=gdf_context)
+    libgeo = _get_geom(row, 'libgeo', gdf_context=gdf_context) or "Ma position"
 
     if poly is None:
         return fg

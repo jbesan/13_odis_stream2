@@ -64,7 +64,7 @@ class SearchCriterias(BaseModel):
     
     # Population target (F-50)
     target_population: int = Field(50000, description="Target population size for the city (mu)")
-    target_population_sigma: int = Field(40000, description="Tolerance (sigma) for the population size")
+    target_population_sigma: int = Field(25000, description="Tolerance (sigma) for the population size")
 
     active_criteria: Optional[Set[str]] = Field(None, description="Set of active criteria computed by the engine")
     active_categories: List[str] = Field(default_factory=list, description="List of categories with active criteria")

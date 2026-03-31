@@ -1,7 +1,7 @@
 [
     {
         "bassin_de_vie": "75056",
-        "weighted_score": 0.7223454352401293,
+        "weighted_score": 0.7219101414976791,
         "population_bv": 12543353,
         "libgeo": "Évry-Courcouronnes",
         "communes": [
@@ -465,12 +465,12 @@
             "95680",
             "95682"
         ],
-        "inclusion_cat_score": 0.6020989597750683,
+        "inclusion_cat_score": 0.5999224910628179,
         "mob_epci_scaled": 0.0
     },
     {
         "bassin_de_vie": "78361",
-        "weighted_score": 0.7011203027919939,
+        "weighted_score": 0.7001111071907887,
         "population_bv": 118012,
         "libgeo": "Mantes-la-Jolie",
         "communes": [
@@ -512,12 +512,12 @@
             "95656",
             "95676"
         ],
-        "inclusion_cat_score": 0.6408343499680417,
+        "inclusion_cat_score": 0.6357883719620158,
         "mob_epci_scaled": 0.0
     },
     {
         "bassin_de_vie": "77284",
-        "weighted_score": 0.6893594205564669,
+        "weighted_score": 0.6887714398049057,
         "population_bv": 116929,
         "libgeo": "Meaux",
         "communes": [
@@ -568,12 +568,12 @@
             "77515",
             "77526"
         ],
-        "inclusion_cat_score": 0.5743549864423334,
+        "inclusion_cat_score": 0.571415082684527,
         "mob_epci_scaled": 0.0
     },
     {
         "bassin_de_vie": "77470",
-        "weighted_score": 0.6849215169088703,
+        "weighted_score": 0.6564849470427171,
         "population_bv": 22819,
         "libgeo": "Tournan-en-Brie",
         "communes": [
@@ -585,30 +585,23 @@
             "77377",
             "77470"
         ],
-        "inclusion_cat_score": 0.3368199265682012,
+        "inclusion_cat_score": 0.1946370772374349,
         "mob_epci_scaled": 0.0
     },
     {
-        "bassin_de_vie": "77186",
-        "weighted_score": 0.6795638498688201,
-        "population_bv": 53864,
-        "libgeo": "Fontainebleau",
+        "bassin_de_vie": "78517",
+        "weighted_score": 0.6535069961517317,
+        "population_bv": 30729,
+        "libgeo": "Rambouillet",
         "communes": [
-            "77014",
-            "77037",
-            "77048",
-            "77096",
-            "77179",
-            "77186",
-            "77202",
-            "77226",
-            "77266",
-            "77312",
-            "77441",
-            "77442",
-            "77533"
+            "78164",
+            "78269",
+            "78464",
+            "78470",
+            "78497",
+            "78517"
         ],
-        "inclusion_cat_score": 0.4468442882222234,
+        "inclusion_cat_score": 0.43235887049101906,
         "mob_epci_scaled": 0.0
     }
 ]

@@ -125,6 +125,7 @@ def run_search():
     """
     logging.info('--- Running new search with refactored logic ---')
     gc.collect()
+    
     # Clear any previously generated PDF data on new search
     st.session_state['pdf_data'] = None
 
@@ -171,11 +172,24 @@ def run_search():
     memory.clear_search_state()
 
     # 2. Run optimized scoring (returns model and pruned GDF)
-    search_results, processed_gdf = engine.run_optimized(config)
+    search_results, processed_gdf = engine.run_optimized(config, log_prefix="classic")
     
+    # 3. 🧪 SOTA: One-time Geometry Hydration (EPSG:4326)
+    # We join and decode geometries once per search to avoid 'JIT Hydration Latency' during reruns.
+    odis_geo = app_data.get('odis_geo')
+    if odis_geo is not None and not odis_geo.empty:
+        logging.info(f"💾 [HYDRATION] Pre-loading geometries for {len(processed_gdf)} results...")
+        # Merge geometries into the pruned results using INSEE code index
+        processed_gdf = processed_gdf.merge(odis_geo.to_frame('polygon'), left_index=True, right_index=True, how='left')
+        from shapely import wkb
+        # Decode WKB bytes to Shapely objects once
+        processed_gdf['polygon'] = processed_gdf['polygon'].apply(lambda x: wkb.loads(bytes(x)) if isinstance(x, (bytes, bytearray)) else x)
+        # Convert to GeoDataFrame to avoid repeated type checks in maps.py
+        processed_gdf = gpd.GeoDataFrame(processed_gdf, geometry='polygon', crs="EPSG:4326")
+
     # --- State Update ---
     st.session_state['processed_gdf'] = processed_gdf
-    st.session_state['unaggregated_gdf'] = processed_gdf # Single view now
+    st.session_state['unaggregated_gdf'] = processed_gdf 
     st.session_state['engine'] = engine
     st.session_state['search_results'] = search_results
     
@@ -408,12 +422,13 @@ with col_map:
             is_highlighted, highlighted_index = st.session_state.highlighted_result
 
             if show_top_5:
-                for i, commune in enumerate(search_results.results[:5]):
-                    maps.build_top_result_layer(commune, i).add_to(fg_dynamic)
+                # 🧪 Pass hydrated context for O(1) lookup
+                for i, commune_result in enumerate(search_results.results[:5]):
+                    maps.build_top_result_layer(commune_result, i, gdf_context=st.session_state.processed_gdf).add_to(fg_dynamic)
 
             if is_highlighted:
-                commune = search_results.results[highlighted_index]
-                maps.build_top_result_layer(commune, highlighted_index).add_to(fg_dynamic)
+                commune_result = search_results.results[highlighted_index]
+                maps.build_top_result_layer(commune_result, highlighted_index, gdf_context=st.session_state.processed_gdf).add_to(fg_dynamic)
 
         # 4. Legend Rendering (Added to the stable map object)
         if legend_items:

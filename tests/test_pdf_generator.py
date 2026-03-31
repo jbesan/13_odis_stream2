@@ -125,8 +125,8 @@ def test_generate_pdf_report(sample_session_state, sample_search_results):
 
     # Act
     # Use patch to mock streamlit's session_state for the duration of the call
-    with patch('app.core.pdf_generator.ui.st.session_state', session_state):
-        pdf_bytes = generate_pdf_report(session_state, search_results)
+    with patch('core.pdf_generator.ui.st.session_state', session_state):
+        pdf_bytes = generate_pdf_report(search_results, session_state.config)
 
     # Assert
     # 1. Check that the output is a bytes object

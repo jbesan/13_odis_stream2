@@ -926,7 +926,7 @@ class ScoringEngine:
 
         return self.format_city_details(self.df_all_communes.loc[codgeo])
 
-    def run_optimized(self, config: SearchCriterias) -> Tuple[SearchResultsData, pd.DataFrame]:
+    def run_optimized(self, config: SearchCriterias, log_prefix: str = "search_results") -> Tuple[SearchResultsData, pd.DataFrame]:
         """
         Orchestrates the full scoring pipeline with optimized memory management.
         Returns a tuple (SearchResultsData model, pruned DataFrame for map).
@@ -937,6 +937,12 @@ class ScoringEngine:
         # 2. Extract into Pydantic model while we still have all columns
         # (Hydration from shared static_row happens inside format_city_details)
         model = self.create_search_results(results_raw, config)
+
+        # 🧪 SOTA: Local markdown logging for development audit
+        try:
+            log_search_results(config, model, prefix=log_prefix)
+        except Exception as e:
+            logger.warning(f"⚠️ [SCORING] Search result logging failed: {e}")
         
         # 3. Aggressively prune the DataFrame to only what's needed for the map
         # Now dropping polygons as they are hydrated JIT during rendering
@@ -1291,8 +1297,8 @@ class ScoringEngine:
         # Population Score (F-50) - Dynamic re-calculation
         # This overrides the precomputed 'inc_population_scaled' if mu/sigma are provided in config
         if 'inc_population_scaled' in self._get_active_criteria(config) and 'population' in df.columns:
-            mu = getattr(config, 'target_population', 5000)
-            sigma = getattr(config, 'target_population_sigma', 2000)
+            mu = getattr(config, 'target_population', 50000)
+            sigma = getattr(config, 'target_population_sigma', 25000)
             
             # Recompute gaussian score based on raw population
             # We use _scale_series which handles 'gaussian' type

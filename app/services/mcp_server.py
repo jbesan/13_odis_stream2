@@ -319,7 +319,7 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
     try:
         start_engine = datetime.now()
         # run_optimized returns (model: SearchResultsData, pruned_gdf: GeoDataFrame)
-        search_model, processed_gdf = engine.run_optimized(config)
+        search_model, processed_gdf = engine.run_optimized(config, log_prefix="chatbot")
         end_engine = datetime.now()
         logger.debug(f"⏱️  [ENGINE] run_optimized() took {(end_engine - start_engine).total_seconds():.3f}s")
     except Exception as e:
