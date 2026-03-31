@@ -63,12 +63,9 @@ def _generate_static_map_image(search_results: SearchResultsData) -> bytes:
         if hasattr(sample_geom, 'centroid'):
             logging.info(f"🕵️ [PDF-MAP] Sample centroid: ({sample_geom.centroid.x}, {sample_geom.centroid.y})")
     
-    # Try to detect CRS or fallback to config
-    # If coordinates are large, it's likely projected (2154)
-    first_x = data[0]['geometry'].centroid.x if data and hasattr(data[0]['geometry'], 'centroid') else 0
-    inferred_crs = "EPSG:4326"
-    if abs(first_x) > 180:
-        inferred_crs = cfg.PROJECTED_CRS
+    # Use the projected CRS from config (EPSG:2154 / Lambert-93)
+    # Centroids are now guaranteed to be in metric meters by the fixed pipeline.
+    inferred_crs = cfg.PROJECTED_CRS
     
     logging.info(f"🕵️ [PDF-MAP] Inferred CRS: {inferred_crs}")
     results_df = gpd.GeoDataFrame(data, crs=inferred_crs)

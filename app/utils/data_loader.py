@@ -376,6 +376,7 @@ def load_all_data_raw() -> Dict[str, Any]:
         essential_cols = {
             'codgeo', 'polygon', 'dep_code', 'reg_code', 'epci_code', 'epci_nom',
             'population', 'bassin_de_vie',
+            'centroid_lon', 'centroid_lat',
             'youth_growth_rate', 'workclass_growth_rate',
             'count_hopital', 'count_maternite', 'count_psy',
             'log_priv_vacant_plus_2ans', 'log_total', # For vacancy tests
@@ -401,22 +402,14 @@ def load_all_data_raw() -> Dict[str, Any]:
 
         odis = pd.read_parquet(odis_path, engine='fastparquet', columns=list(columns_to_load))
         
-        # Geometry processing
-        odis_geo = gpd.GeoDataFrame()
+        # Geometry processing (JIT DEHYDRATION: Store as raw WKB bytes mapping)
+        # This prevents massive memory bloat by not instantiating thousands of Shapely objects at startup.
+        odis_geo = pd.Series(dtype='object')
         if 'polygon' in odis.columns:
-            logger.info("Extracting geometries to odis_geo and computing numeric centroids...")
-            polys = odis['polygon'].apply(wkb.loads)
-            # The source geometries are in EPSG:4326 (lat/lon)
-            odis_geo = gpd.GeoDataFrame({'codgeo': odis['codgeo'], 'polygon': polys}, geometry='polygon', crs='EPSG:4326')
-            odis_geo.set_index('codgeo', inplace=True)
+            logger.info("Dehydrating geometries to odis_geo (Lazy Load pattern)...")
+            odis_geo = odis[['codgeo', 'polygon']].set_index('codgeo')['polygon']
             
-            # SOTA: Keep only metric numerical coordinates in the massive `odis` dataframe to avoid geometry overhead for fast Euclidean distance computations
-            metric_geo = odis_geo.geometry.to_crs('EPSG:2154')
-            cents = metric_geo.centroid
-            # These are truly EPSG:2154 numerical coordinates
-            odis['centroid_lon'] = cents.x.values
-            odis['centroid_lat'] = cents.y.values
-            
+            # Remove the heavy WKB column from the main odis dataframe to save RAM
             odis.drop(columns=['polygon'], inplace=True)
             if 'centroid' in odis.columns:
                  odis.drop(columns=['centroid'], inplace=True)

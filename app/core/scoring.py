@@ -515,13 +515,9 @@ class ScoringEngine:
 
         if 'centroid_lon' in static_row and pd.notna(static_row['centroid_lon']):
              try:
-                 # Use utility to project from Lambert-93 to WGS84
-                 # Lambert-93 (EPSG:2154) coordinates are typically > 100000
+                 # Project from Lambert-93 (2154) to Lat/Lon (4326) for UI/Analysis consumers
                  curr_x, curr_y = static_row['centroid_lon'], static_row['centroid_lat']
-                 if curr_x > 180 or curr_y > 90:
-                    lon, lat = project_point(curr_x, curr_y, from_crs='EPSG:2154', to_crs='EPSG:4326')
-                 else:
-                    lon, lat = curr_x, curr_y
+                 lon, lat = project_point(curr_x, curr_y, from_crs='EPSG:2154', to_crs='EPSG:4326')
              except Exception:
                  pass
 

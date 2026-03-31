@@ -5,6 +5,18 @@ from ui import components as ui
 from utils import data_loader
 from agents.utils import run_async_safe
 import logging
+from utils import memory
+
+# --- TOP-LEVEL REDIRECT HANDLER (Fixes White Screen from Dialogs) ---
+if st.session_state.get('trigger_home'):
+    del st.session_state['trigger_home']
+    st.switch_page("pages/1_Accueil.py")
+    st.stop()
+
+# --- SOFT RESET: Clear search memory when returning to home ---
+if 'search_results' in st.session_state:
+    memory.clear_search_state()
+
 
 # --- Page Configuration ---
 st.set_page_config(

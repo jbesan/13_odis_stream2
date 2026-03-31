@@ -52,7 +52,8 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         if 'polygon' in communes_df.columns:
             from shapely import wkb
             communes_df['geometry'] = communes_df['polygon'].apply(lambda x: wkb.loads(bytes(x)))
-            communes_gdf = gpd.GeoDataFrame(communes_df, geometry='geometry', crs=cfg.PROJECTED_CRS)
+            # Initialize with the native CRS (4326)
+            communes_gdf = gpd.GeoDataFrame(communes_df, geometry='geometry', crs='EPSG:4326')
         else:
             communes_gdf = gpd.GeoDataFrame(communes_df, geometry='geometry')
 
@@ -417,15 +418,15 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         # LOGGING CRS STATE
         # logger.log_step("build_communes", "DEBUG", {"crs": str(communes_gdf.crs)})
         
-        # Explicitly convert to WKB to ensure we save the PROJECTED geometry (EPSG:2154)
-        # and avoid any implicit conversion to EPSG:4326 by GeoParquet logic
-        if communes_gdf.crs != cfg.PROJECTED_CRS:
-             logger.log_step("build_communes", "WARNING", {"msg": "CRS mismatch before save, re-projecting"})
-             with warnings.catch_warnings():
-                 warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*array with ndim > 0 to a scalar is deprecated.*")
-                 communes_gdf = communes_gdf.to_crs(cfg.PROJECTED_CRS)
-             
-        communes_gdf['polygon'] = communes_gdf.geometry.to_wkb()
+        # Save polygons as WKB in WGS84 (4326) for direct map rendering
+        # We ensure we are in 4326 before converting to WKB
+        if communes_gdf.crs != 'EPSG:4326':
+             temp_gdf = communes_gdf.to_crs('EPSG:4326')
+             communes_gdf['polygon'] = temp_gdf.geometry.to_wkb()
+        else:
+             communes_gdf['polygon'] = communes_gdf.geometry.to_wkb()
+        
+        # Drop the geometry column and conversion artifacts
         
         # Drop the geometry column and conversion artifacts to avoid GeoParquet metadata overriding
         # Also drop 'centroid' (shapely objects) which fails to serialize. app/data_loader.py will re-calc it.

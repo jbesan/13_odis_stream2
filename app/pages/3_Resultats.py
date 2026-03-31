@@ -1,5 +1,12 @@
 import os
 import streamlit as st
+
+# --- TOP-LEVEL REDIRECT HANDLER (Fixes White Screen from Dialogs) ---
+if st.session_state.get('trigger_home'):
+    del st.session_state['trigger_home']
+    st.switch_page("pages/1_Accueil.py")
+    st.stop()
+
 from streamlit_folium import st_folium
 from core import scoring
 import config as cfg
@@ -212,24 +219,33 @@ def run_search():
         target_codgeos = [c['codgeo'] for c in top_cities_full]
         launch_background_enrichment(engine, target_codgeos, h)
     
-    # Calculate center for map (Use starting commune as anchor - more efficient & robust)
-    if not start_commune.empty and 'centroid_lon' in start_commune.columns:
-        c_lon = start_commune['centroid_lon'].iloc[0]
-        c_lat = start_commune['centroid_lat'].iloc[0]
-        
-        # Project from 2154 to 4326 for Folium if needed
-        if pd.notna(c_lon) and c_lon > 180:
-             lon, lat = utils.project_point(c_lon, c_lat, from_crs=cfg.PROJECTED_CRS, to_crs='EPSG:4326')
+    # Calculate center for map (Use Top 5 Average Centroid - much better UX for distant searches)
+    # Stateful Centering: Only reset the map center if this is a NEW search.
+    # This prevents the map from "snapping back" during heartbeats or sidebar interactions.
+    if st.session_state.get('last_centered_hash') != h:
+        top_5_results = search_results.results[:5]
+        if top_5_results:
+            odis_df = data_loader.get_app_data()['odis']
+            top_codgeos = [str(c.codgeo) for c in top_5_results]
+            top_data = odis_df.loc[odis_df.index.isin(top_codgeos)]
+            
+            if not top_data.empty and 'centroid_lon' in top_data.columns:
+                # Average EPSG:2154 coordinates
+                avg_x = top_data['centroid_lon'].mean()
+                avg_y = top_data['centroid_lat'].mean()
+                
+                # Project from Lambert-93 (2154) to Lat/Lon (4326) for Folium
+                lon, lat = utils.project_point(avg_x, avg_y, from_crs=cfg.PROJECTED_CRS, to_crs='EPSG:4326')
+                final_center_y, final_center_x = lat, lon
+            else:
+                final_center_y, final_center_x = cfg.DEFAULT_MAP_CENTER
         else:
-             lon, lat = c_lon, c_lat
-        final_center_y, final_center_x = lat, lon
-    else:
-        # Fallback to absolute default
-        final_center_y, final_center_x = cfg.DEFAULT_MAP_CENTER
+            final_center_y, final_center_x = cfg.DEFAULT_MAP_CENTER
 
-    st.session_state['selected_geo'] = data_loader.get_app_data()['odis'].loc[[config.commune_actuelle.code]].copy()
-    st.session_state['center'] = [final_center_y, final_center_x]
-    st.session_state['zoom'] = maps.get_map_zoom(config.loc_search_area)
+        st.session_state['center'] = [final_center_y, final_center_x]
+        st.session_state['zoom'] = maps.get_map_zoom(config.loc_search_area)
+        st.session_state['last_centered_hash'] = h
+        st.session_state['selected_geo'] = data_loader.get_app_data()['odis'].loc[[config.commune_actuelle.code]].copy()
     
     # We no longer pre-build Top 5 layers here to avoid Folium serialization issues in session state.
     # They are now rebuilt on the fly in the map rendering block.

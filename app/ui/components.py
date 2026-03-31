@@ -612,8 +612,9 @@ def confirm_reset_dialog():
                 if k not in to_preserve:
                     del st.session_state[k]
 
-            # 3. Redirect to home
-            st.switch_page("pages/1_Accueil.py")
+            # 3. Trigger Redirect (via top-level handler to avoid white screen)
+            st.session_state['trigger_home'] = True
+            st.rerun()
     with col2:
         if st.button("Annuler", width="stretch"):
             st.rerun()

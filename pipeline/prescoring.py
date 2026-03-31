@@ -146,7 +146,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         # Convert WKB to Geometry
         if 'polygon' in communes_df.columns:
             communes_df['geometry'] = communes_df['polygon'].apply(lambda x: wkb.loads(bytes(x)))
-            communes_gdf = gpd.GeoDataFrame(communes_df, geometry='geometry', crs=cfg.PROJECTED_CRS)
+            communes_gdf = gpd.GeoDataFrame(communes_df, geometry='geometry', crs='EPSG:4326')
         else:
             # Fallback
             communes_gdf = gpd.GeoDataFrame(communes_df, geometry='geometry')
@@ -523,8 +523,23 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             communes_gdf['inc_services_core_scaled'] = 0.0
         # Save
         if 'geometry' in communes_gdf.columns:
-             communes_gdf['polygon'] = communes_gdf.geometry.to_wkb()
-             communes_gdf.drop(columns=['geometry'], inplace=True)
+            # SOTA: Keep only metric numerical coordinates in the massive `odis` dataframe to avoid geometry overhead for fast Euclidean distance computations
+            # LAMBERT-93 (EPSG:2154)
+            metric_geo = communes_gdf.geometry.to_crs('EPSG:2154')
+            cents = metric_geo.centroid
+            communes_gdf['centroid_lon'] = cents.x.values
+            communes_gdf['centroid_lat'] = cents.y.values
+
+            # Ensure we are in EPSG:4326 (WGS84) before serializing polygons to WKB for the UI
+            if communes_gdf.crs != 'EPSG:4326':
+                temp_gdf = communes_gdf.to_crs('EPSG:4326')
+                communes_gdf['polygon'] = temp_gdf.geometry.to_wkb()
+            else:
+                communes_gdf['polygon'] = communes_gdf.geometry.to_wkb()
+            
+            # Drop the heavy metric geometry to keep the dataframe lightweight
+            communes_gdf.drop(columns=['geometry'], inplace=True)
+            
         pd.DataFrame(communes_gdf).to_parquet(output_path, compression='brotli', index=False, engine='fastparquet')
         logger.log_step("apply_prescoring", "COMPLETED", {"columns": len(communes_gdf.columns), "path": str(output_path), "rows": len(communes_gdf)})
 

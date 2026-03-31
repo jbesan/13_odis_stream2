@@ -70,7 +70,8 @@ def build_scores_layer(df: pd.DataFrame, id_col: str = "codgeo", name_col: str =
     
     if odis_geo is not None and not odis_geo.empty:
         # Merge using inner join to strictly drop rows where geometry is missing
-        df_serializable = df_serializable.merge(odis_geo[['polygon']], left_on=id_col, right_index=True, how='inner')
+        # Convert Series to DataFrame with 'polygon' name for successful merge
+        df_serializable = df_serializable.merge(odis_geo.to_frame('polygon'), left_on=id_col, right_index=True, how='inner')
     else:
         df_serializable['polygon'] = None
 
@@ -82,7 +83,11 @@ def build_scores_layer(df: pd.DataFrame, id_col: str = "codgeo", name_col: str =
     if df_serializable.empty:
         return fg, None
         
-    # Create GeoDataFrame directly in 4326 (this is the native format of odis_geo)
+    # JIT HYDRATION: Convert WKB bytes to Shapely objects only for the Top N results
+    from shapely import wkb
+    df_serializable['polygon'] = df_serializable['polygon'].apply(lambda x: wkb.loads(bytes(x)) if isinstance(x, (bytes, bytearray)) else x)
+    
+    # Create GeoDataFrame in 4326 (native format of rehabilitated pipeline)
     gdf = gpd.GeoDataFrame(df_serializable, geometry='polygon', crs="EPSG:4326")
     
     flm.GeoJson(
@@ -123,8 +128,12 @@ def _get_geom(row: Union[pd.Series, Any], field: str = 'polygon') -> Optional[An
         return None
 
     try:
-        poly_4326 = odis_geo.loc[codgeo, 'polygon']
-        if poly_4326 is None: return None
+        wkb_bytes = odis_geo.loc[codgeo]
+        if wkb_bytes is None: return None
+        
+        # JIT Hydrate
+        from shapely import wkb
+        poly_4326 = wkb.loads(bytes(wkb_bytes)) if isinstance(wkb_bytes, (bytes, bytearray)) else wkb_bytes
         
         if field == 'polygon' or field == 'geometry':
             return poly_4326
