@@ -9,17 +9,16 @@ from utils import memory
 
 
 
-# --- RESET: Clear search memory when returning to home ---
-if 'search_results' in st.session_state:
-    memory.reset_app_state()
-
-
 # --- Page Configuration ---
 st.set_page_config(
     page_title="J'accueille",
     page_icon="👋",
     layout="wide"
 )
+
+# --- RESET: Clear search memory when returning to home ---
+if 'search_results' in st.session_state:
+    memory.reset_app_state()
 
 # --- Authentication ---
 from utils import auth
