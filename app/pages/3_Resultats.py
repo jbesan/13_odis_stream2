@@ -421,11 +421,7 @@ with col_map:
         
         st.markdown('<style>.stCustomComponentV1 {border-radius:10px}</style>', unsafe_allow_html=True)
 
-    debug_df = st.session_state.get('processed_gdf')
-    if debug_df is not None:
-        nb_communes_affichees = len(debug_df)
-        if nb_communes_affichees >= cfg.MAX_MAP_POLYGONS:
-            st.caption(f"⚠️ Seules les {cfg.MAX_MAP_POLYGONS} meilleures communes sont affichées")
+    st.caption(f"⚠️ Seules les {cfg.MAX_MAP_POLYGONS} meilleures communes sont affichées")
 
 # Do not remove, useful to debug states
 # Detect Cloud Run environment
@@ -436,7 +432,7 @@ if not is_cloud_run:
     with st.expander("Debug", expanded=False):
         # try:
         # 🧪 SOTA: Drop geometry columns to avoid 'pyarrow.lib.ArrowTypeError'
-        # Streamlit's Arrow serialization doesn't support GeoPandas objects in st.dataframe
+        # Streamlits Arrow serialization doesn't support GeoPandas objects in st.dataframe
         debug_df = st.session_state.get('processed_gdf')
         if debug_df is not None:
             st.text(f"Lignes: {len(debug_df)}")
