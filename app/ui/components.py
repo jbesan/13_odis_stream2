@@ -601,20 +601,11 @@ def confirm_reset_dialog():
     col1, col2 = st.columns(2)
     with col1:
         if st.button("Oui", width="stretch"):
-            # 1. Clear heavy search artifacts using centralized helper
+            # 1. Clear session state (preserving auth and heavy caches)
+            memory.reset_app_state()
             
-            memory.clear_search_state()
-            
-            # 2. Radical cleanup: clear EVERYTHING except heavy datasets, auth, and essential UI state
-            to_preserve = {'app_data', '_data_hash', 'rna_rag_service', 'rna_rag_status', 'password_correct', 'username', 'highlighted_result', 'config'}
-            all_keys = list(st.session_state.keys())
-            for k in all_keys:
-                if k not in to_preserve:
-                    del st.session_state[k]
-
-            # 3. Trigger Redirect (via top-level handler to avoid white screen)
-            st.session_state['trigger_home'] = True
-            st.rerun()
+            # 2. Direct Redirect
+            st.switch_page("pages/1_Accueil.py")
     with col2:
         if st.button("Annuler", width="stretch"):
             st.rerun()

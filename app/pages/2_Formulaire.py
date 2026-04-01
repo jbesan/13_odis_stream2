@@ -1,10 +1,6 @@
 import streamlit as st
 
-# --- TOP-LEVEL REDIRECT HANDLER (Fixes White Screen from Dialogs) ---
-if st.session_state.get('trigger_home'):
-    del st.session_state['trigger_home']
-    st.switch_page("pages/1_Accueil.py")
-    st.stop()
+
 
 import config as cfg
 

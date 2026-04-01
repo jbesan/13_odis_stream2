@@ -1,11 +1,7 @@
 import os
 import streamlit as st
 
-# --- TOP-LEVEL REDIRECT HANDLER (Fixes White Screen from Dialogs) ---
-if st.session_state.get('trigger_home'):
-    del st.session_state['trigger_home']
-    st.switch_page("pages/1_Accueil.py")
-    st.stop()
+
 
 from streamlit_folium import st_folium
 from core import scoring
@@ -163,11 +159,7 @@ def run_search():
         bv_data=app_data.get('bv_data')
     )
 
-    # 1. Clear old heavy results from session state (Centralized pattern)
-    
-    memory.clear_search_state()
-
-    # 2. Run optimized scoring (returns model and pruned GDF)
+    # 1. Run optimized scoring (returns model and pruned GDF)
     search_results, processed_gdf = engine.run_optimized(config, log_prefix="classic")
     
     # 3. 🧪 SOTA: Lightweight Geometry Hydration (Raw WKB)
@@ -336,6 +328,9 @@ col_map, col_results = st.columns([3, 2])
 
 with col_results:
     if st.session_state.get('search_results') is not None:
+        # st.subheader("Meilleurs résultats")
+        st.text("Cliquez sur un résultat pour comprendre le détail du score")
+        
         ui.display_results_list() # No args needed, it uses session_state.search_results internally
 
 with col_map:

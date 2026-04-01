@@ -338,18 +338,6 @@ def load_parquet_dataset(path: str, columns: Optional[list] = None) -> pd.DataFr
     """Generic loader for parquet datasets with caching."""
     return _load_parquet(path, columns)
 
-def _load_ccas(base_path: str) -> pd.DataFrame:
-    """Internal non-cached CCAS loader."""
-    path = os.path.join(base_path, cfg.CCAS_FILE)
-    if os.path.exists(path):
-         return pd.read_parquet(path, engine='fastparquet')
-    return pd.DataFrame()
-
-@st.cache_resource
-def load_ccas_structures(base_path: str) -> pd.DataFrame:
-    """Loads CCAS structures."""
-    return _load_ccas(base_path)
-
 def get_pois_by_category(pois_df: pd.DataFrame, category: str) -> pd.DataFrame:
     """Filters POIs by category and returns a copy."""
     if pois_df.empty:
@@ -361,6 +349,8 @@ def load_all_data_raw() -> Dict[str, Any]:
     Initializes and loads all necessary datasets for the application.
     (Non-cached version for MCP usage)
     """
+
+    print("################### DATA RELOADED ###################")
     base_path = cfg.get_data_path()
     logger.info(f"Loading datasets from: {base_path}")
 
@@ -543,7 +533,7 @@ def load_all_data_raw() -> Dict[str, Any]:
     if not formations_data.empty and 'formation_code' in formations_data.columns:
         formations_data['formation_code'] = formations_data['formation_code'].astype(str).str.replace(r'\.0$', '', regex=True)
 
-    structures_ccas = _load_ccas(base_path)
+    structures_ccas = _load_parquet(os.path.join(base_path, cfg.CCAS_FILE), error_list=load_errors)
     
     siae_jobs_data = _load_parquet(os.path.join(base_path, cfg.SIAE_JOBS_FILE), error_list=load_errors)
     

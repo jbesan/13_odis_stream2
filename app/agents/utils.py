@@ -5,12 +5,15 @@ import threading
 import logging
 from utils.logger import log_search_results
 from services.telemetry import log_search_complete
+from core.models import SearchCriterias, SearchCriterias, CriteriaItem
+import pandas as pd
 
-# Global storage for background tasks (Thread-safe, survives reloads via cache_resource)
-@st.cache_resource
+# Global storage for background tasks (Now restricted to session state for privacy)
 def get_odis_bg_store() -> dict:
-    """Returns a singleton dictionary for background task results."""
-    return {}
+    """Returns a session-specific dictionary for background task results."""
+    if 'odis_bg_store' not in st.session_state:
+        st.session_state['odis_bg_store'] = {}
+    return st.session_state['odis_bg_store']
 
 def odis_get_bg_result(hash_val: str) -> Any:
     """Safely retrieves a background result from the global store."""
@@ -37,72 +40,6 @@ def sanitize_llm_markdown(text: str) -> str:
     
     return res
 
-# Humoristic messages for the ODIS agents
-AGENT_TOASTS = {
-    "interviewer": {
-        "emoji": "💬",
-        "messages": [
-            "Interrogatoire poli en cours.",
-            "Je prépare mes meilleures questions pièges.",
-            "Discussion mondaine avec l'IA.",
-            "À l'écoute de chaque pixel de votre demande.",
-            "Le détective ODIS mène l'enquête."
-        ]
-    },
-    "scorer": {
-        "emoji": "📈",
-        "messages": [
-            "Sortez les calculatrices, ça va chauffer !",
-            "Tri sélectif des meilleures opportunités.",
-            "Le jury a délibéré... Calcul des scores.",
-            "Je cherche la perle rare sur la carte.",
-            "Alchimie urbaine : transformer les données en pépites."
-        ]
-    },
-    "scout": {
-        "emoji": "🏘️",
-        "messages": [
-            "Exploration du quartier en baskets virtuelles.",
-            "Je vérifie si la boulangerie est ouverte.",
-            "Repérage terrain. GPS activé.",
-            "Je fouille les recoins de chaque commune.",
-            "Mission de reconnaissance lancée !"
-        ]
-    },
-    "web": {
-        "emoji": "🌐",
-        "messages": [
-            "Plongeon dans les abysses d'Internet.",
-            "Google est mon meilleur ami (pour le moment).",
-            "Surf sur la vague de l'information.",
-            "Je rapporte des nouvelles fraîches du Web.",
-            "Connexion au grand cerveau mondial."
-        ]
-    },
-    "job_hunter": {
-        "emoji": "💼",
-        "messages": [
-            "Chasseur de jobs : Mode furtif activé.",
-            "Je déniche des offres avant qu'elles ne refroidissent.",
-            "Pêche au gros dans le bassin de l'emploi.",
-            "Tri des CV et des annonces... C'est du sérieux.",
-            "Le recruteur de choc est sur le coup !"
-        ]
-    },
-    "synthesizer": {
-        "emoji": "🧩",
-        "messages": [
-            "Assemblage des pièces du puzzle.",
-            "La cerise sur le gâteau ODIS.",
-            "Grand mélange final... Agitez bien.",
-            "Dernière vérification avant le décollage.",
-            "Je mets de l'ordre dans tout ce bazar."
-        ]
-    }
-}
-
-from core.models import SearchCriterias, SearchCriterias, CriteriaItem
-import pandas as pd
 
 def map_ui_config_to_search_criterias(config: SearchCriterias, app_data: Dict[str, Any]) -> SearchCriterias:
     """
@@ -355,6 +292,11 @@ def launch_post_scoring_tasks(engine: Any, config: Any, search_results: Any, h: 
     """
     Orchestrator for all background tasks triggered after scoring.
     """
+    # 0. Initialize the store entry for this hash to prevent race conditions between threads
+    store = get_odis_bg_store()
+    if h not in store:
+        store[h] = {}
+
     # 1. Extract city data for Scorer Agent
     top_cities_full = [
         {

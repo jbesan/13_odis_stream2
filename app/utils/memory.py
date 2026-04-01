@@ -7,39 +7,37 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-def clear_search_state():
+def reset_app_state():
     """
-    Clears all heavy search-related artifacts from the Streamlit session state
-    to reclaim memory. This is used before starting a new search or when
-    resetting the application to its initial state.
+    Clears almost all session state to provide a fresh start, while preserving 
+    authentication and heavy data caches. Used when returning to Home.
     """
-    logger.info("🧹 [MEMORY] Clearing search state...")
+    logger.info("🧹 [MEMORY] Resetting session state...")
     
-    # Define keys that hold large objects or DataFrames
-    heavy_keys = [
-        'processed_gdf',        # Pruned GeoDataFrame for mapping
-        'unaggregated_gdf',     # Alias for processed_gdf
-        'search_results',       # Large Pydantic model tree
-        'engine',               # ScoringEngine instance (carries some state)
-        'map_object',           # Folium Map object
-        'pdf_data',             # Cached PDF bytes
-        'pdf_modal_data',       # Cached PDF bytes for dialog
-        'show_pdf_modal',       # Flag to trigger PDF dialog
-        'pdf_modal_rerun_done', # Flag to track rerun status
-        'selected_geo'          # Filtered GeoDataFrame subset
-    ]
+    # Define keys to preserve (auth and heavy caches)
+    to_keep = {
+        'app_data',        # cached datasets
+        '_data_hash',      # caching verification
+        'password_correct',# auth status
+        'username',        # current user
+        'rna_rag_service', # AI tools
+        'rna_rag_status',  # AI tools
+        'demo_data',       # Scenario data
+    }
     
     cleared_count = 0
-    for key in heavy_keys:
-        if key in st.session_state:
+    # Must use list() to avoid RuntimeError: dictionary changed size during iteration
+    for key in list(st.session_state.keys()):
+        if key not in to_keep:
             del st.session_state[key]
             cleared_count += 1
-            
+    
     if cleared_count > 0:
-        logger.info(f"🧹 [MEMORY] Removed {cleared_count} heavy objects from session state.")
+        logger.info(f"🧹 [MEMORY] Removed {cleared_count} objects from session state.")
         perform_garbage_collection()
     else:
-        logger.debug("🧹 [MEMORY] No heavy objects found to clear.")
+        logger.debug("🧹 [MEMORY] No objects found to clear.")
+            
 
 def perform_garbage_collection():
     """
