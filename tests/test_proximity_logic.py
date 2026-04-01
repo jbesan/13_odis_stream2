@@ -6,10 +6,8 @@ from core.models import SearchCriterias
 
 def get_engine(sample_data, sample_scores_cat=None, sample_incl_index=None):
     return scoring.ScoringEngine(
-        df_odis_geo=gpd.GeoDataFrame(),
             df_all_communes=sample_data,
         df_bv_geo=gpd.GeoDataFrame(),
-        df_area_geo=gpd.GeoDataFrame(),
         scores_cat=sample_scores_cat if sample_scores_cat is not None else pd.DataFrame(),
         incl_index=sample_incl_index if sample_incl_index is not None else pd.DataFrame(),
         associations_data=pd.DataFrame(),

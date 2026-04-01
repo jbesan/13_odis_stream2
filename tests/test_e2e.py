@@ -167,10 +167,8 @@ def run_test_scenario(scenario_id, app_data):
     # 5. Instantiate ScoringEngine
     # We pass empty global_stats as in the app page
     engine = scoring.ScoringEngine(
-        df_odis_geo=gpd.GeoDataFrame(),
             df_all_communes=app_data['odis'],
         df_bv_geo=app_data['bv_geo'],
-        df_area_geo=app_data['area_geo'],
         scores_cat=app_data['scores_cat'],
         incl_index=app_data['incl_index'],
         associations_data=app_data['associations_data'],

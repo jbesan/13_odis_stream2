@@ -3,6 +3,8 @@ import streamlit as st
 from pydantic_ai import Agent
 import threading
 import logging
+from utils.logger import log_search_results
+from services.telemetry import log_search_complete
 
 # Global storage for background tasks (Thread-safe, survives reloads via cache_resource)
 @st.cache_resource
@@ -320,6 +322,60 @@ def launch_background_enrichment(engine: Any, codgeos: List[str], hash_val: str)
     thread = threading.Thread(target=bg_enrichment_task, args=(store,))
     thread.daemon = True
     thread.start()
+
+def launch_background_audit_log(config: Any, search_results: Any, h: str):
+    """
+    Launches a background thread to log search results to Markdown and Telemetry.
+    """
+    def bg_logging_task():
+        try:
+            logging.info(f"💾 [LOGGING] Starting background audit log for hash {h}")
+            
+            # 1. Markdown Local Logging (Dev Audit)
+            try:
+                log_search_results(config, search_results, prefix="classic")
+            except Exception as e:
+                logging.warning(f"⚠️ [LOGGING] Markdown logging failed: {e}")
+            
+            # 2. Telemetry Logging (BigQuery)
+            try:
+                log_search_complete(config, search_results, source_flow='classic')
+            except Exception as e:
+                logging.warning(f"⚠️ [LOGGING] Telemetry logging failed: {e}")
+                
+            logging.info(f"✅ [LOGGING] Background logging finished for hash {h}")
+        except Exception as e:
+            logging.error(f"❌ [LOGGING] Background logging FATAL error for {h}: {e}")
+            
+    thread = threading.Thread(target=bg_logging_task)
+    thread.daemon = True
+    thread.start()
+
+def launch_post_scoring_tasks(engine: Any, config: Any, search_results: Any, h: str):
+    """
+    Orchestrator for all background tasks triggered after scoring.
+    """
+    # 1. Extract city data for Scorer Agent
+    top_cities_full = [
+        {
+            "codgeo": str(c.codgeo), 
+            "libgeo": c.name, 
+            "weighted_score": c.global_score, 
+            "scores": c.scores,
+            "population": c.population
+        } 
+        for c in search_results.results
+    ]
+    
+    # 2. Launch Scorer (AI Pitch)
+    launch_background_scorer(config, {}, h, top_cities=top_cities_full)
+    
+    # 3. Launch Enrichment (Detailed Associations - BQ/RAG)
+    target_codgeos = [c['codgeo'] for c in top_cities_full]
+    launch_background_enrichment(engine, target_codgeos, h)
+    
+    # 4. Launch Logging & Telemetry
+    launch_background_audit_log(config, search_results, h)
 
 import asyncio
 

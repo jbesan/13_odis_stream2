@@ -66,17 +66,14 @@ def get_scoring_engine() -> ScoringEngine:
             
     return ScoringEngine(
         df_all_communes=DATA_CONTEXT['odis'],
-        df_odis_geo=DATA_CONTEXT.get('odis_geo', gpd.GeoDataFrame()),
         df_bv_geo=DATA_CONTEXT['bv_geo'],
-        df_area_geo=DATA_CONTEXT['area_geo'],
         scores_cat=DATA_CONTEXT['scores_cat'],
         incl_index=DATA_CONTEXT['incl_index'],
         associations_data=DATA_CONTEXT['associations_data'],
         formations_data=DATA_CONTEXT['formations_data'],
         codformations_index=DATA_CONTEXT['codformations_index'],
         rome_index=DATA_CONTEXT.get('rome_index', pd.DataFrame()),
-
-        global_stats={}, # TODO: Compute or load global stats if needed for scaling
+        global_stats={},
         refugee_associations_data=DATA_CONTEXT.get('refugee_associations_data', pd.DataFrame()),
         live_jobs_data=DATA_CONTEXT.get('live_jobs_data', pd.DataFrame()),
         siae_jobs_data=DATA_CONTEXT.get('siae_jobs_data', pd.DataFrame())

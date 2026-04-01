@@ -68,10 +68,8 @@ def test_live_jobs_scoring_aicha_scenario():
 
     # 2. Instantiate Engine
     engine = scoring.ScoringEngine(
-        df_odis_geo=gpd.GeoDataFrame(),
             df_all_communes=df_all_communes,
         df_bv_geo=df_bv_geo,
-        df_area_geo=None,
         scores_cat=scores_cat,
         incl_index=incl_index,
         associations_data=pd.DataFrame(columns=['id_waldec', 'codgeo', 'count']),

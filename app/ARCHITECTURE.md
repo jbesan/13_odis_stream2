@@ -69,8 +69,25 @@ To ensure scalability and prevent Out-Of-Memory (OOM) errors, ODIS uses a **Deco
 - This eliminates per-session copies of multi-megabyte DataFrames.
 
 ### Lean Scoring & JIT Hydration
-- **Session Results**: The `ScoringEngine` generates a lightweight results DataFrame containing only IDs (`codgeo`) and numeric scores.
-- **Model Dehydration**: Geometries are explicitly excluded from Pydantic Models (`CommuneResult`) to prevent inflating `st.session_state` serialization.
+- **Global Data Split**: The main commune dataset is split into `odis` (numerical/categorical metadata) and `odis_geo` (raw WKB bytes).
+- **Index-Driven Joins**: Both `odis` and `odis_geo` are indexed by `codgeo`. This allows $O(1)$ lookups and extremely fast `.join()` operations without redundant searching.
+- **WKB-until-render**: To save memory and serialization time, geometries stay in **WKB (Well-Known Binary) bytes** throughout the entire pipeline. 
 - **Just-in-Time (JIT) Hydration**: 
-    - **Geometries**: Joined from the global cache (`app_data['odis_geo']`) only during map rendering (`maps.build_scores_layer`, `maps.build_top_result_layer`).
+    - `3_Resultats.py`: Merges WKB bytes into the top-N results using a simple `.join(odis_geo)`.
+    - `maps.py`: Decodes WKB into Shapely objects using `gpd.GeoSeries.from_wkb()` only at the moment of drawing. 
+- **No Pre-computation**: Unused legacy pre-computations (like `area_geo` / dissolved department boundaries) have been removed to significantly speed up application startup.
 - **Isolation**: Each user session only stores ~1-5MB of computed data, even when scoring 36,000+ communes.
+
+---
+
+## 7. Post-Scoring Background Orchestration
+
+To maintain a highly responsive UI, all "side-effect" operations (Logging, Telemetry) and heavy AI tasks are decoupled from the main scoring execution.
+
+### Unified Orchestrator (`app/agents/utils.py`)
+- **`launch_post_scoring_tasks`**: The central entry point called by the UI after `ScoringEngine.run_optimized`.
+- **Parallel Execution**: Uses `threading.Thread` to launch:
+    - **AI Scorer**: Generates personalized pitches.
+    - **Enrichment**: Fetches detailed association data (RAG).
+    - **Audit & Telemetry**: Writes local Markdown logs and BigQuery events without blocking.
+- **State Sync**: Results are stored in a `@st.cache_resource` singleton (`odis_bg_store`) and polled via fragments for JIT UI updates.

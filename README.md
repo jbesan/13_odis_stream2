@@ -210,8 +210,8 @@ Ce prototype est une base solide qui peut être grandement améliorée :
   - **Affiner les Critères :** Travailler avec des travailleurs sociaux pour affiner la liste des critères et leur pertinence.
 
 - **💻 Technique & UX :**
-  - **Performance :** Optimiser le chargement des données et les calculs de score pour une meilleure fluidité.
-  - **Design UI/UX :** Améliorer le design visuel, la mise en page et l'ergonomie sur mobile.
+- **Performance :** Optimisation du rendu cartographique via un cutoff automatique à 1 000 polygones (Top 1000) pour garantir la fluidité sur tous les terminaux.
+- **Design UI/UX :** Améliorer le design visuel, la mise en page et l'ergonomie sur mobile.
 
 ## ⚖️ Licence
 

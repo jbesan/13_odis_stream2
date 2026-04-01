@@ -409,10 +409,10 @@ def load_all_data_raw() -> Dict[str, Any]:
             logger.info("Dehydrating geometries to odis_geo (Lazy Load pattern)...")
             odis_geo = odis[['codgeo', 'polygon']].set_index('codgeo')['polygon']
             
-            # Remove the heavy WKB column from the main odis dataframe to save RAM
+            # Remove heavy WKB columns from the main odis dataframe to save RAM
             odis.drop(columns=['polygon'], inplace=True)
             if 'centroid' in odis.columns:
-                 odis.drop(columns=['centroid'], inplace=True)
+                odis.drop(columns=['centroid'], inplace=True)
         
         odis.set_index('codgeo', inplace=True)
         
@@ -602,25 +602,8 @@ def load_all_data_raw() -> Dict[str, Any]:
             odis['heb_jaccueille_score'] = (odis['heb_accueillants_count'] > 0).astype(float)
             odis = odis.set_index('codgeo')
 
-    # 6. Area Geo
-    area_dfs = []
-    if not odis_geo.empty:
-        try:
-            geo_merged = odis_geo.join(odis[['dep_code', 'reg_code']], how='inner')
-            deps = geo_merged.dissolve(by='dep_code')[['polygon']]
-            deps['type'] = 'departement'
-            deps = deps.reset_index().rename(columns={'dep_code': 'code'})
-            area_dfs.append(deps)
-            
-            regs = geo_merged.dissolve(by='reg_code')[['polygon']]
-            regs['type'] = 'region'
-            regs = regs.reset_index().rename(columns={'reg_code': 'code'})
-            area_dfs.append(regs)
-        except Exception as e:
-            logger.error(f"Failed to generate area geometries: {e}")
-
-    area_geo = pd.concat(area_dfs).set_index(['type', 'code']) if area_dfs else gpd.GeoDataFrame()
-    del area_dfs
+    # Area geometries (dep/region outlines) are not pre-computed at startup.
+    # They are not used in the current scoring or rendering pipeline.
 
     return {
         'odis': odis,
@@ -640,7 +623,7 @@ def load_all_data_raw() -> Dict[str, Any]:
         'coddep_set': coddep_set,
         'bv_geo': bv_geo,
         'bv_data': bv_geo,
-        'area_geo': area_geo,
+
         'bmo_vertical': bmo_vertical,
         'live_jobs_data': live_jobs_data,
         'structures_ccas': structures_ccas,

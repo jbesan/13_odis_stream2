@@ -206,3 +206,19 @@ _(Most features omitted for brevity. Appending F-42)_
 
 ### 📊 Status
 - **March 2026**: Audit de performance et conception en cours.
+209: 
+210: ## 🚀 Feature [F-52]: Limitation de l'Affichage Cartographique (Performance)
+211: 
+212: ### 📝 User Story
+213: 
+214: - En tant qu'utilisateur final, je veux que la carte Folium reste fluide et réactive même lors de recherches nationales ou régionales étendues.
+215: - En tant que développeur, je veux éviter de surcharger le navigateur du client avec des milliers de polygones GeoJSON inutiles qui ralentissent l'interaction.
+216: 
+217: ### 🔑 Key Features
+218: 
+219: - **Cutoff de Scoring :** Limitation du DataFrame `processed_gdf` aux 1000 meilleurs résultats selon le `weighted_score` après le calcul complet.
+220: - **Configuration Centralisée :** Introduction de `MAX_MAP_POLYGONS` dans `app/config.py` pour un ajustement facile du seuil de performance.
+221: - **Préservation du Contexte :** Garantie que la commune actuelle de référence reste incluse dans les résultats (même si hors Top 1000) pour préserver les repères visuels sur la carte.
+222: 
+223: ### 📊 Status
+224: - **April 2026**: Conception et implémentation demandées.

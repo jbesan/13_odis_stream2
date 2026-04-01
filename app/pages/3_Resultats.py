@@ -23,7 +23,7 @@ from shapely.geometry import mapping
 import logging
 import gc
 import warnings
-from agents.utils import launch_background_scorer, odis_get_bg_result, launch_background_enrichment
+from agents.utils import launch_background_scorer, odis_get_bg_result, launch_background_enrichment, launch_post_scoring_tasks
 from core.models import SearchResultsData
 from utils import memory
 
@@ -138,16 +138,13 @@ def run_search():
     app_data = data_loader.get_app_data()
     df_all_communes = app_data['odis']
     df_bv_geo = app_data['bv_geo']
-    df_area_geo = app_data['area_geo']
     start_commune = df_all_communes.loc[[config.commune_actuelle.code]]
 
     # --- Run Scoring Pipeline (Optimized) ---
     # Instantiate the stateless engine with current data
     engine = scoring.ScoringEngine(
         df_all_communes=df_all_communes,
-        df_odis_geo=app_data.get('odis_geo'),
         df_bv_geo=df_bv_geo,
-        df_area_geo=df_area_geo,
         scores_cat=app_data['scores_cat'],
         incl_index=app_data['incl_index'],
         associations_data=app_data['associations_data'],
@@ -174,14 +171,12 @@ def run_search():
     search_results, processed_gdf = engine.run_optimized(config, log_prefix="classic")
     
     # 3. 🧪 SOTA: Lightweight Geometry Hydration (Raw WKB)
-    # We join raw WKB bytes to keep session state lightweight.
-    # Decoding moves to JIT (Just-In-Time) in the map rendering loop.
+    # Join raw WKB bytes from odis_geo (pd.Series indexed by codgeo) onto results.
+    # Decoding to Shapely happens JIT in maps.py — never here.
     odis_geo = app_data.get('odis_geo')
     if odis_geo is not None and not odis_geo.empty:
         logging.info(f"💾 [HYDRATION] Attaching WKB geometries for {len(processed_gdf)} results...")
-        # Merge raw geometries into the pruned results using INSEE code index
-        processed_gdf = processed_gdf.merge(odis_geo.to_frame('polygon'), left_index=True, right_index=True, how='left')
-        # Keep as pd.DataFrame to avoid GeoPandas validation of WKB bytes in session state
+        processed_gdf = processed_gdf.join(odis_geo.rename('polygon'), how='left')
 
     # --- State Update ---
     st.session_state['processed_gdf'] = processed_gdf
@@ -189,11 +184,7 @@ def run_search():
     st.session_state['engine'] = engine
     st.session_state['search_results'] = search_results
     
-    # --- Unified Telemetry Logging (BigQuery) ---
-    try:
-        telemetry.log_search_complete(config, search_results, source_flow='classic')
-    except Exception as tel_e:
-        logging.warning(f"Failed to log search telemetry: {tel_e}")
+    # --- Unified Telemetry & Logging is now handled in background (launch_post_scoring_tasks) ---
         
     # Prepare cities for background AI agents
     top_cities_full = [
@@ -215,12 +206,9 @@ def run_search():
     h = search_results.search_hash
     st.session_state['active_search_hash'] = h
     
-    # Trigger background scorer and enrichment if result not already present or running
+    # Trigger all background tasks via unified orchestrator (SOTA Pattern)
     if odis_get_bg_result(h) is None:
-        launch_background_scorer(config, {}, h, top_cities=top_cities_full)
-        # Background enrichment for detailed associations (SOTA Pattern)
-        target_codgeos = [c['codgeo'] for c in top_cities_full]
-        launch_background_enrichment(engine, target_codgeos, h)
+        launch_post_scoring_tasks(engine, config, search_results, h)
     
     # Calculate center for map (Use Top 5 Average Centroid - much better UX for distant searches)
     # Stateful Centering: Only reset the map center if this is a NEW search.
@@ -438,19 +426,25 @@ with col_map:
         
         st.markdown('<style>.stCustomComponentV1 {border-radius:10px}</style>', unsafe_allow_html=True)
 
+    debug_df = st.session_state.get('processed_gdf')
+    if debug_df is not None:
+        nb_communes_affichees = len(debug_df)
+        if nb_communes_affichees >= cfg.MAX_MAP_POLYGONS:
+            st.caption(f"⚠️ Seules les {cfg.MAX_MAP_POLYGONS} meilleures communes sont affichées")
+
 # Do not remove, useful to debug states
 # Detect Cloud Run environment
 is_cloud_run = os.environ.get("K_SERVICE") is not None
 
 # 1. Skip if not running on Cloud Run (Local Dev)
-# if not is_cloud_run:
-#     with st.expander("Debug", expanded=False):
+if not is_cloud_run:
+    with st.expander("Debug", expanded=False):
         # try:
         # 🧪 SOTA: Drop geometry columns to avoid 'pyarrow.lib.ArrowTypeError'
         # Streamlit's Arrow serialization doesn't support GeoPandas objects in st.dataframe
-        # debug_df = st.session_state.get('processed_gdf')
-        # if debug_df is not None:
-        #     st.text(f"Lignes: {len(debug_df)}")
+        debug_df = st.session_state.get('processed_gdf')
+        if debug_df is not None:
+            st.text(f"Lignes: {len(debug_df)}")
         #     st.text(f"colonnes: {len(debug_df.columns)}")
         #     mem_usage = debug_df.memory_usage(deep=True).sum() / (1024 * 1024)
         #     st.text(f"Mémoire RAM: {mem_usage:.2f} Mo")                

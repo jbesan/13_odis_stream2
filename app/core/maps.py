@@ -123,19 +123,20 @@ def _get_geom(row: Union[pd.Series, Any], field: str = 'polygon', gdf_context: O
     # 1. Try Lookup in provided context (Fastest)
     if gdf_context is not None and codgeo in gdf_context.index:
         try:
-            val = gdf_context.loc[codgeo, field]
-            # SOTA: If we need a centroid but only have the polygon column, compute it on the fly
+            # 🧪 SOTA: If centroid requested but missing, fallback to polygon-based JIT calculation
             if field == 'centroid' and 'centroid' not in gdf_context.columns:
                 poly_wkb = gdf_context.loc[codgeo, 'polygon']
                 poly = wkb.loads(bytes(poly_wkb)) if isinstance(poly_wkb, (bytes, bytearray)) else poly_wkb
                 return poly.centroid if poly else None
-                
+            
+            val = gdf_context.loc[codgeo, field]
+
             # JIT Decode if it's a WKB blob
             if isinstance(val, (bytes, bytearray)):
                 return wkb.loads(bytes(val))
             return val
         except KeyError:
-            # Maybe the column name in GDF is different
+            # Maybe the column name in GDF is different (e.g. 'geometry')
             alt_field = 'geometry' if field == 'polygon' else 'polygon'
             val = gdf_context.loc[codgeo].get(alt_field)
             
@@ -144,7 +145,7 @@ def _get_geom(row: Union[pd.Series, Any], field: str = 'polygon', gdf_context: O
             if isinstance(val, (bytes, bytearray)):
                 geom = wkb.loads(bytes(val))
             
-            # CRITICAL FIX: If centroid was requested but we found a polygon, return the centroid
+            # If centroid was requested but we found a polygon (or vice versa), handle conversion
             if field == 'centroid' and geom and not hasattr(geom, 'x'):
                 return geom.centroid
             return geom
@@ -173,7 +174,10 @@ def build_top_result_layer(row: Union[pd.Series, Any], rank: int, gdf_context: O
 
 
     # Add rank marker at the centroid of the main polygon
-    c = poly.centroid
+    # 🧪 JIT: _get_geom handles the decoding/calculation if necessary
+    c = _get_geom(row, 'centroid', gdf_context=gdf_context)
+    if c is None: return fg
+
     cx, cy = c.x, c.y # Longitude, Latitude
     
     flm.Marker(

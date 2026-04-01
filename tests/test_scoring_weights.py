@@ -39,10 +39,8 @@ def test_weighted_average(mock_config):
     
     # Init engine
     engine = ScoringEngine(
-        df_odis_geo=gpd.GeoDataFrame(),
             df_all_communes=gpd.GeoDataFrame(),
         df_bv_geo=gpd.GeoDataFrame(),
-        df_area_geo=gpd.GeoDataFrame(),
         scores_cat=scores_cat,
         incl_index=pd.DataFrame(),
         associations_data=pd.DataFrame(),
@@ -69,10 +67,8 @@ def test_weighted_average_with_zeros(mock_config):
     Verifies that weighted average correctly handles 0.0 values (active criteria with 0 score).
     """
     engine = ScoringEngine(
-        df_odis_geo=gpd.GeoDataFrame(),
             df_all_communes=gpd.GeoDataFrame(),
         df_bv_geo=gpd.GeoDataFrame(),
-        df_area_geo=gpd.GeoDataFrame(),
         scores_cat=pd.DataFrame({
             'score': ['crit1', 'crit2'],
             'cat': ['emploi', 'emploi'],

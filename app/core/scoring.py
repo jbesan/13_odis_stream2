@@ -21,7 +21,6 @@ import logging
 import gc
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-from utils.logger import log_search_results
 from utils.common import project_point
 from services.rna_rag import RNARagService
 
@@ -31,9 +30,9 @@ class ScoringEngine:
     """
     @staticmethod
     def _filter_communes(df: pd.DataFrame, start_commune: pd.DataFrame, loc_type: str, loc_code: Optional[str]) -> pd.DataFrame:
-        if loc_type == 'departement': return df[df['dep_code'] == loc_code].copy()
-        elif loc_type == 'region': return df[df['reg_code'] == loc_code].copy()
-        elif loc_type == 'france': return df[~df['dep_code'].astype(str).str.startswith(('97', '98'))].copy()
+        if loc_type == 'departement': return df[df['dep_code'] == loc_code]
+        elif loc_type == 'region': return df[df['reg_code'] == loc_code]
+        elif loc_type == 'france': return df[~df['dep_code'].astype(str).str.startswith(('97', '98'))]
         return pd.DataFrame()
 
     @staticmethod
@@ -75,7 +74,7 @@ class ScoringEngine:
              # EPSG:2154 is metric (meters). Simple euclidean math avoids geometry overhead entirely
              dx = df['centroid_lon'] - target_lon
              dy = df['centroid_lat'] - target_lat
-             df['dist_current_loc'] = np.sqrt(dx**2 + dy**2)
+             df.loc[:, 'dist_current_loc'] = np.sqrt(dx**2 + dy**2)
         
         # Scale if computed
         if 'dist_current_loc' in df.columns:
@@ -83,7 +82,7 @@ class ScoringEngine:
              if pd.isna(max_b): max_b = 50000.0 # Default 50km
              # Inverse scale: closer is better
              scaled = self._scale_series(df['dist_current_loc'], min_b, max_b)
-             df['mob_dist_current_loc_scaled'] = 1.0 - scaled
+             df.loc[:, 'mob_dist_current_loc_scaled'] = 1.0 - scaled
         
         return df
 
@@ -223,7 +222,7 @@ class ScoringEngine:
             # SOTA Optimization: Keep identifiers, scores, AND essential geometries for the filtered subset.
             # We only keep geometries for the search area (e.g. results for 1 department),
             # which is lightweight enough (~1MB) for the session state.
-            keep_cols = {'libgeo', 'weighted_score', 'dep_code', 'reg_code', 'epci_code', 'bassin_de_vie', 'libelle_bassin_de_vie', 'polygon', 'centroid'}
+            keep_cols = {'libgeo', 'weighted_score', 'population', 'dep_code', 'reg_code', 'epci_code', 'bassin_de_vie', 'libelle_bassin_de_vie', 'polygon', 'centroid'}
             to_drop = [c for c in df.columns if c not in keep_cols]
         else:
             # 1. Deny-list: Explicitly requested redundant BdV columns
@@ -247,7 +246,7 @@ class ScoringEngine:
             
         actual_drops = [c for c in to_drop if c in df.columns]
         if actual_drops:
-            df.drop(columns=actual_drops, inplace=True)
+            df = df.drop(columns=actual_drops)
             
         return df
 
@@ -258,9 +257,7 @@ class ScoringEngine:
         """
         return cls(
             df_all_communes=app_data.get('odis', pd.DataFrame()),
-            df_odis_geo=app_data.get('odis_geo', gpd.GeoDataFrame()),
             df_bv_geo=app_data.get('bv_geo', pd.DataFrame()),
-            df_area_geo=app_data.get('area_geo', pd.DataFrame()),
             scores_cat=app_data.get('scores_cat', pd.DataFrame()),
             incl_index=app_data.get('incl_index', pd.DataFrame()),
             associations_data=app_data.get('associations_data', pd.DataFrame()),
@@ -285,9 +282,7 @@ class ScoringEngine:
     def __init__(
         self,
         df_all_communes: pd.DataFrame,
-        df_odis_geo: gpd.GeoDataFrame,
         df_bv_geo: gpd.GeoDataFrame,
-        df_area_geo: gpd.GeoDataFrame,
         scores_cat: pd.DataFrame,
         incl_index: pd.DataFrame,
         associations_data: pd.DataFrame,
@@ -310,9 +305,7 @@ class ScoringEngine:
     ):
         self.current_city_scored_row = None
         self.df_all_communes = df_all_communes
-        self.df_odis_geo = df_odis_geo
         self.df_bv_geo = df_bv_geo
-        self.df_area_geo = df_area_geo
         self.scores_cat = scores_cat
         self.incl_index = incl_index
         self.associations_data = associations_data
@@ -659,7 +652,7 @@ class ScoringEngine:
         if c_code:
             # --- Live Jobs Match (ROME) ---
             if not self.live_jobs_data.empty:
-                live_city = self.live_jobs_data[self.live_jobs_data['commune'] == c_code].copy()
+                live_city = self.live_jobs_data[self.live_jobs_data['commune'] == c_code]
                 if not live_city.empty:
                     # Global Summary
                     live_summary = live_city.groupby('romeLibelle')['total_postes'].sum().to_dict()
@@ -696,17 +689,18 @@ class ScoringEngine:
 
             # --- SIAE Jobs Match (New F-39) ---
             if not self.siae_jobs_data.empty:
-                siae_city = self.siae_jobs_data[self.siae_jobs_data['codgeo'] == codgeo_str].copy()
+                siae_city = self.siae_jobs_data[self.siae_jobs_data['codgeo'] == codgeo_str]
                 if not siae_city.empty:
                     # Map rome to label using rome_index if rome_label is missing
-                    if 'rome_label' not in siae_city.columns and not self.rome_index.empty:
-                        siae_city['rome_label'] = siae_city['rome'].map(self.rome_index['label']).fillna(siae_city['rome'])
-                    
-                    # Fallback for display if no label at all
-                    label_col = 'rome_label' if 'rome_label' in siae_city.columns else 'rome'
+                    if 'rome_label' in siae_city.columns:
+                        group_keys = siae_city['rome_label']
+                    elif not self.rome_index.empty:
+                        group_keys = siae_city['rome'].map(self.rome_index['label']).fillna(siae_city['rome'])
+                    else:
+                        group_keys = siae_city['rome']
                     
                     emploi_data.inclusive_jobs_total = int(len(siae_city))
-                    emploi_data.inclusive_jobs_summary = siae_city.groupby(label_col).size().to_dict()
+                    emploi_data.inclusive_jobs_summary = siae_city.groupby(group_keys).size().to_dict()
                     emploi_data.inclusive_jobs_matching_summary = {}
                     emploi_data.inclusive_jobs_matching_total = 0
                     
@@ -725,7 +719,7 @@ class ScoringEngine:
                         if siae_prefixes:
                             # Use 'rome' column
                             siae_matching = siae_city[siae_city['rome'].str[:3].isin(siae_prefixes)]
-                            matching_dict = siae_matching.groupby(label_col).size().to_dict()
+                            matching_dict = siae_matching.groupby(group_keys.loc[siae_matching.index]).size().to_dict()
                             emploi_data.inclusive_jobs_matching_summary = matching_dict
                             emploi_data.inclusive_jobs_matching_total = sum(matching_dict.values())
                 else:
@@ -736,12 +730,11 @@ class ScoringEngine:
             
             # Formations logic remains
             if not self.formations_data.empty:
-                 city_forms = self.formations_data[self.formations_data['codgeo'] == c_code].copy()
+                 city_forms = self.formations_data[self.formations_data['codgeo'] == c_code]
                  if not city_forms.empty:
                      if self.codformations_index is not None and not self.codformations_index.empty:
-                         # Robust type conversion for merge keys
-                         city_forms['formation_code'] = city_forms['formation_code'].astype(str)
-                         merged_f = city_forms.merge(self.codformations_index, left_on='formation_code', right_index=True, how='left')
+                         form_codes = city_forms['formation_code'].astype(str)
+                         merged_f = form_codes.to_frame('formation_code').merge(self.codformations_index, left_on='formation_code', right_index=True, how='left')
                          merged_f['label'] = merged_f['label'].fillna(merged_f['formation_code'])
                          emploi_data.training_programs = sorted(merged_f['label'].unique().tolist())
                      else:
@@ -878,14 +871,9 @@ class ScoringEngine:
              current_geo = self.format_city_details(self.df_all_communes.loc[c_code], config)
              
         # 3. Filter out current city and its PLM family from the results list
-        display_gdf = processed_gdf.copy()
-        
-        # Drop the current code itself
-        if c_code in display_gdf.index:
-            display_gdf = display_gdf.drop(c_code)
-            
         # Detect PLM family (either parent or arrondissement)
         plm_prefix = None
+        parent_c = None
         if c_code in cfg.PLM_MAPPING:
             plm_prefix = cfg.PLM_MAPPING[c_code]
         else:
@@ -893,14 +881,17 @@ class ScoringEngine:
             for parent_code, prefix in cfg.PLM_MAPPING.items():
                 if str(c_code).startswith(prefix):
                     plm_prefix = prefix
-                    # Also explicitly drop the parent code if it's in the results
-                    if parent_code in display_gdf.index:
-                        display_gdf = display_gdf.drop(parent_code)
+                    parent_c = parent_code
                     break
         
         if plm_prefix:
-            # Drop all members of this PLM family (starts with prefix)
-            display_gdf = display_gdf[~display_gdf.index.astype(str).str.startswith(plm_prefix)]
+            mask = ~processed_gdf.index.astype(str).str.startswith(plm_prefix)
+            if parent_c:
+                mask = mask & (processed_gdf.index != parent_c)
+            mask = mask & (processed_gdf.index != c_code)
+            display_gdf = processed_gdf[mask]
+        else:
+            display_gdf = processed_gdf[processed_gdf.index != c_code]
 
         # 4. Generate Top 5 Communes
         top_5 = display_gdf.head(5)
@@ -931,21 +922,14 @@ class ScoringEngine:
         Orchestrates the full scoring pipeline with optimized memory management.
         Returns a tuple (SearchResultsData model, pruned DataFrame for map).
         """
-        # 1. Compute full scores
+        # 1. Compute full scores via legacy run()
         results_raw = self.run(config)
         
         # 2. Extract into Pydantic model while we still have all columns
-        # (Hydration from shared static_row happens inside format_city_details)
         model = self.create_search_results(results_raw, config)
-
-        # 🧪 SOTA: Local markdown logging for development audit
-        try:
-            log_search_results(config, model, prefix=log_prefix)
-        except Exception as e:
-            logger.warning(f"⚠️ [SCORING] Search result logging failed: {e}")
         
         # 3. Aggressively prune the DataFrame to only what's needed for the map
-        # Now dropping polygons as they are hydrated JIT during rendering
+        # This reduces the size of the objects stored in Streamlit session state
         self._prune_irrelevant_metrics(results_raw, config, aggressive=True)
         
         # Convert to standard DataFrame to remove GeoPandas overhead in session state
@@ -955,38 +939,33 @@ class ScoringEngine:
         return model, results_raw
 
     def run(self, config: SearchCriterias, log_prefix: Optional[str] = None) -> pd.DataFrame:
-        """Orchestrates the full scoring pipeline."""
+        """
+        Orchestrates the full scoring pipeline.
+        Returns the FULL unpruned DataFrame (useful for tests and detailed analysis).
+        """
         logger.debug(f"⚙️ [ENGINE] Starting run with Profile: {config.weight_profile}")
-        logger.debug(f"⚙️ [ENGINE] Config: {config}")
         if not config.active_criteria:
             config.active_criteria = self._get_active_criteria(config)
             
-        # Derive active categories from scores_cat mapping
+        # Derive active categories
         if config.active_criteria:
             active_mask = self.scores_cat['score'].isin(config.active_criteria)
             cats = self.scores_cat[active_mask]['cat'].unique()
-            normalized = set()
-            for c in cats:
-                nc = str(c).lower()
-                if nc in ['mobilité', 'mobilite']: nc = 'mobilite'
-                elif nc in ['santé', 'sante']: nc = 'sante'
-                normalized.add(nc)
+            normalized = {str(c).lower().replace('é', 'e') for c in cats}
             config.active_categories = sorted(list(normalized))
         
         c_code_obj = getattr(config, 'commune_actuelle', None)
         c_code = c_code_obj.code if hasattr(c_code_obj, 'code') else c_code_obj
         
-        # Robustness: fallback to Paris if c_code is missing
+        # Fallback to Paris
         if not c_code:
-            logger.warning("⚠️ [ENGINE] commune_actuelle is None or empty. Falling back to Paris (75056).")
             c_code = '75056'
 
         start_commune = self.df_all_communes.loc[[c_code]]
-        loc_type = config.loc_search_area # 'departement', 'region', 'france'
+        loc_type = config.loc_search_area or 'departement'
         loc_code = config.loc_search_code
         
         if not loc_code and loc_type != 'france':
-            # Fallback to current location's area
             loc_col = 'dep_code' if loc_type == 'departement' else 'reg_code'
             loc_code = start_commune.iloc[0][loc_col]
 
@@ -997,25 +976,16 @@ class ScoringEngine:
             loc_code=loc_code
         )
         
-        # 🧪 CRITICAL: Always include the current commune in the scoring pool
-        # This ensures it gets scored with the exact same logic (normalization bounds, active criteria)
-        # as the candidates, even if it falls outside the geographic filter.
+        # Always include current commune
         if c_code in self.df_all_communes.index and c_code not in communes_to_score.index:
             communes_to_score = pd.concat([communes_to_score, self.df_all_communes.loc[[c_code]]])
         
-        # 1. Early Pruning
-        # We drop any _scaled metrics that are NOT active in the request to save memory and processing time.
+        # Early conservative pruning
         communes_to_score = self._prune_irrelevant_metrics(communes_to_score, config, aggressive=False)
         
         results = self._compute_scores(communes_to_score, config)
         
-        # 2. Return the results
         del communes_to_score
-        gc.collect()
-
-        # 2. Return the results
-        # Note: We do NOT prune aggressively here yet because the caller (UI or MCP)
-        # needs the full data to call format_city_details for the Top results.
         return results
 
     def _compute_scores(self, df_search: pd.DataFrame, config: SearchCriterias) -> pd.DataFrame:
@@ -1029,7 +999,7 @@ class ScoringEngine:
         # Merge BdV Data
         if self.bv_data is not None and not self.bv_data.empty and 'bassin_de_vie' in odis_search.columns:
              # Ensure type consistency for merge
-             odis_search['bassin_de_vie'] = odis_search['bassin_de_vie'].astype(str)
+             odis_search = odis_search.assign(bassin_de_vie=odis_search['bassin_de_vie'].astype(str))
              
              # Instead of copying the whole bv_data, we merge and then handle suffixes if needed
              # Or even better, only merge the columns that are not already in odis_search
@@ -1057,7 +1027,26 @@ class ScoringEngine:
         # Aggressive pruning happens in run() if needed.
         self._prune_irrelevant_metrics(odis_exploded, config, aggressive=False)
 
-        return odis_exploded.sort_values(by='weighted_score', ascending=False)
+        # Sort by weighted score
+        odis_sorted = odis_exploded.sort_values(by='weighted_score', ascending=False)
+        
+        # 🧪 SOTA: Limit the number of polygons for the map performance
+        if len(odis_sorted) > cfg.MAX_MAP_POLYGONS:
+            # We take the top K
+            top_k = odis_sorted.head(cfg.MAX_MAP_POLYGONS)
+            
+            # Always keep the current city in the results, even if poorly scored,
+            # to ensure it remains visible on the map for user reference.
+            c_code_raw = config.commune_actuelle
+            c_code = c_code_raw.code if hasattr(c_code_raw, 'code') else c_code_raw
+            
+            if c_code and c_code in odis_sorted.index and c_code not in top_k.index:
+                # Append the current city row to the top K (already sorted)
+                top_k = pd.concat([top_k, odis_sorted.loc[[c_code]]])
+            
+            return top_k
+            
+        return odis_sorted
 
 
 
@@ -1087,7 +1076,7 @@ class ScoringEngine:
                     df[f'met_match_{adult_key}_tension_scaled'] = 0.0
                     continue
 
-                target_live = self.live_jobs_data[self.live_jobs_data['romeCode'].isin(adult_romes)].copy()
+                target_live = self.live_jobs_data[self.live_jobs_data['romeCode'].isin(adult_romes)]
                 
                 # City Sum
                 commune_live_counts = target_live.groupby('commune')['total_postes'].sum()
@@ -1105,8 +1094,8 @@ class ScoringEngine:
                 # BdV Sum
                 col_bdv_raw = f'met_match_{adult_key}_bdv'
                 if 'bassin_de_vie' in df.columns:
-                    target_live['bdv'] = target_live['commune'].map(commune_to_bdv)
-                    bdv_live_counts = target_live.groupby('bdv')['total_postes'].sum()
+                    bdv_series = target_live['commune'].map(commune_to_bdv)
+                    bdv_live_counts = target_live.groupby(bdv_series)['total_postes'].sum()
                     df[col_bdv_raw] = df['bassin_de_vie'].map(bdv_live_counts).fillna(0)
                 else:
                     df[col_bdv_raw] = 0.0
@@ -1177,9 +1166,8 @@ class ScoringEngine:
             form_map = relevant_formations.groupby('codgeo')['formation_code'].apply(set).to_dict()
             
             commune_to_bdv = self.df_all_communes['bassin_de_vie'].dropna().to_dict()
-            relevant_formations_bdv = relevant_formations.copy()
-            relevant_formations_bdv['bdv'] = relevant_formations_bdv['codgeo'].map(commune_to_bdv)
-            form_map_bdv = relevant_formations_bdv.groupby('bdv')['formation_code'].apply(set).to_dict()
+            bdv_series = relevant_formations['codgeo'].map(commune_to_bdv)
+            form_map_bdv = relevant_formations.groupby(bdv_series)['formation_code'].apply(set).to_dict()
 
             for i in range(config.nb_adultes):
                 if i < len(config.codes_formations) and config.codes_formations[i]:

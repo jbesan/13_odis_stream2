@@ -147,4 +147,14 @@ La mobilité est évaluée sur trois axes :
 - **Proximité (Distance Decay)** : Utilisation de la décroissance linéaire par rapport au point de départ.
 - **Bonus EPCI** : Un bonus est accordé si la commune appartient à la même intercommunalité que la ville actuelle, favorisant les déplacements au sein d'un même bassin d'emploi.
 
-> Cette logique permet de mettre en lumière des "pépites" territoriales : des communes de taille moyenne, bien intégrées dans un Bassin de Vie dynamique.
+---
+
+## ⚡ Limitations de Performance (Map Cutoff) 🏁
+
+Pour garantir une expérience utilisateur fluide sur la carte Folium (évitant le gel du navigateur avec des dizaines de milliers de polygones), le moteur applique une **limitation automatique** :
+
+- **Seuil** : 1 000 communes maximum (`MAX_MAP_POLYGONS` dans `app/config.py`).
+- **Logique** : Seules les 1 000 meilleures communes selon le `weighted_score` sont conservées pour l'affichage cartographique.
+- **Exception** : La **commune actuelle** (départ) est systématiquement conservée dans le jeu de données, même si son score est faible, afin de servir de point de repère visuel.
+
+> Cette optimisation permet de réduire drastiquement l'empreinte mémoire côté client tout en conservant les résultats les plus pertinents pour le projet de vie.

@@ -115,6 +115,14 @@ L'agent **JobHunter** doit souvent rechercher des offres pour plusieurs métiers
 - **Fonctionnement** : Permet de lancer plusieurs recherches France Travail en une seule interaction.
 - **Gain** : Optimise la latence et les tokens lors de l'exploration multi-métiers.
 
+### 🧵 Orchestration Post-Scoring (SOTA)
+
+Pour libérer le thread principal immédiatement après le calcul des scores :
+
+- **Solution** : `launch_post_scoring_tasks`.
+- **Fonctionnement** : Centralise le lancement de tous les agents d'analyse (`Scorer`, `Enrichment`) ET des effets de bord (Audit Logs, Télémétrie) dans des threads daemon.
+- **Gain** : Réduction drastique de la latence perçue au moment de l'affichage des résultats.
+
 ## 🛠️ Outils & Capacités
 
 - `search_referentiels_batch` : Identification précise des données (Communes, ROME, Formations, etc.) - Standardisé sur tous les agents.

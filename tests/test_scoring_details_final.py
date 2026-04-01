@@ -7,10 +7,8 @@ from app.core.models import SearchCriterias
 @pytest.fixture
 def scoring_engine(sample_data, sample_scores_cat, sample_incl_index, global_stats):
     return scoring.ScoringEngine(
-        df_odis_geo=gpd.GeoDataFrame(),
             df_all_communes=sample_data,
         df_bv_geo=gpd.GeoDataFrame(),
-        df_area_geo=gpd.GeoDataFrame(),
         scores_cat=sample_scores_cat,
         incl_index=sample_incl_index,
         associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']),

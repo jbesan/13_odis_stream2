@@ -85,10 +85,8 @@ class TestScoringLogic:
         config.inc_services_add_selection = ['social_aide'] # Enable specific services scoring
         
         engine = scoring.ScoringEngine(
-            df_odis_geo=gpd.GeoDataFrame(),
             df_all_communes=sample_data,
             df_bv_geo=gpd.GeoDataFrame(),
-            df_area_geo=gpd.GeoDataFrame(),
             scores_cat=sample_scores_cat,
             incl_index=sample_incl_index,
             associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']),
@@ -157,10 +155,8 @@ class TestScoringLogic:
         config.classe_enfants = ['Maternelle']
         
         engine = scoring.ScoringEngine(
-            df_odis_geo=gpd.GeoDataFrame(),
             df_all_communes=sample_data,
             df_bv_geo=gpd.GeoDataFrame(),
-            df_area_geo=gpd.GeoDataFrame(),
             scores_cat=sample_scores_cat,
             incl_index=sample_incl_index,
             associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']),
@@ -212,10 +208,8 @@ class TestScoringLogic:
         scores_cat_subset = sample_scores_cat[sample_scores_cat['score'] == 'met_match_adult1_scaled'].copy()
         
         engine = scoring.ScoringEngine(
-            df_odis_geo=gpd.GeoDataFrame(),
             df_all_communes=pd.DataFrame(),
             df_bv_geo=gpd.GeoDataFrame(),
-            df_area_geo=gpd.GeoDataFrame(),
             scores_cat=scores_cat_subset,
             associations_data=pd.DataFrame(),
             formations_data=pd.DataFrame(),
@@ -251,10 +245,8 @@ class TestScoringLogic:
         # Act
         # Act
         engine = scoring.ScoringEngine(
-            df_odis_geo=gpd.GeoDataFrame(),
             df_all_communes=pd.DataFrame(),
             df_bv_geo=gpd.GeoDataFrame(),
-            df_area_geo=gpd.GeoDataFrame(),
             scores_cat=pd.DataFrame(), # Not used for weighted_score directly
             associations_data=pd.DataFrame(),
             formations_data=pd.DataFrame(),
@@ -293,10 +285,8 @@ class TestScoringLogic:
         config.poids_mobilite = 0
         
         engine = scoring.ScoringEngine(
-            df_odis_geo=gpd.GeoDataFrame(),
             df_all_communes=pd.DataFrame(),
             df_bv_geo=gpd.GeoDataFrame(),
-            df_area_geo=gpd.GeoDataFrame(),
             scores_cat=pd.DataFrame(),
             associations_data=pd.DataFrame(),
             formations_data=pd.DataFrame(),
@@ -354,10 +344,8 @@ class TestConditionalScoring:
         # Act
         # Expected behavior (after fix): (1.0*100 + 1.0*100) / 200 = 1.0
         engine = scoring.ScoringEngine(
-            df_odis_geo=gpd.GeoDataFrame(),
             df_all_communes=pd.DataFrame(),
             df_bv_geo=gpd.GeoDataFrame(),
-            df_area_geo=gpd.GeoDataFrame(),
             scores_cat=pd.DataFrame(), # Not needed for weighted score
             associations_data=pd.DataFrame(),
             formations_data=pd.DataFrame(),
@@ -407,10 +395,8 @@ class TestConditionalScoring:
         # Act
         # (1.0*100 + 0.5*100 + 0.5*100) / 300 = 200 / 300 = 0.666...
         engine = scoring.ScoringEngine(
-            df_odis_geo=gpd.GeoDataFrame(),
             df_all_communes=pd.DataFrame(),
             df_bv_geo=gpd.GeoDataFrame(),
-            df_area_geo=gpd.GeoDataFrame(),
             scores_cat=pd.DataFrame(),
             incl_index=pd.DataFrame(),
             associations_data=pd.DataFrame(),
@@ -426,10 +412,8 @@ class TestConditionalScoring:
         """Tests that match scores use dynamic max bounds based on preference length."""
         # Prerequisite: distance
         engine = scoring.ScoringEngine(
-            df_odis_geo=gpd.GeoDataFrame(),
             df_all_communes=sample_data,
             df_bv_geo=gpd.GeoDataFrame(),
-            df_area_geo=gpd.GeoDataFrame(),
             scores_cat=sample_scores_cat,
             incl_index=sample_incl_index,
             associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']),
@@ -511,10 +495,8 @@ class TestMCPScenario:
         # 2. MCP Server initializes the Engine (with pre-loaded datasets)
         # In a real scenario, this engine instance might be persistent or created per request with shared data
         engine = scoring.ScoringEngine(
-            df_odis_geo=gpd.GeoDataFrame(),
             df_all_communes=sample_data,
             df_bv_geo=gpd.GeoDataFrame(), # Not using BV view here
-            df_area_geo=gpd.GeoDataFrame(),
             scores_cat=sample_scores_cat,
             incl_index=sample_incl_index,
             associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']),
@@ -613,10 +595,8 @@ class TestInclusionScoringLogic:
             inc_asso_add_selection=[]
         )
         engine = scoring.ScoringEngine(
-            df_odis_geo=gpd.GeoDataFrame(),
             df_all_communes=gpd.GeoDataFrame(), 
             df_bv_geo=gpd.GeoDataFrame(), 
-            df_area_geo=gpd.GeoDataFrame(), 
             scores_cat=sample_scores_cat, 
             incl_index=mock_incl_index, 
             associations_data=mock_associations_data, 
@@ -638,10 +618,8 @@ class TestInclusionScoringLogic:
             inc_services_add_selection=[]
         )
         engine = scoring.ScoringEngine(
-            df_odis_geo=gpd.GeoDataFrame(),
             df_all_communes=gpd.GeoDataFrame(), 
             df_bv_geo=gpd.GeoDataFrame(), 
-            df_area_geo=gpd.GeoDataFrame(), 
             scores_cat=sample_scores_cat, 
             incl_index=mock_incl_index, 
             associations_data=mock_associations_data, 
@@ -660,10 +638,8 @@ class TestInclusionScoringLogic:
             inc_services_add_selection=[]
         )
         engine_sport = scoring.ScoringEngine(
-            df_odis_geo=gpd.GeoDataFrame(),
             df_all_communes=gpd.GeoDataFrame(), 
             df_bv_geo=gpd.GeoDataFrame(), 
-            df_area_geo=gpd.GeoDataFrame(), 
             scores_cat=sample_scores_cat, 
             incl_index=mock_incl_index, 
             associations_data=mock_associations_data, 
@@ -683,10 +659,8 @@ class TestInclusionScoringLogic:
             inc_asso_add_selection=['Bricolage / Création']
         )
         engine = scoring.ScoringEngine(
-            df_odis_geo=gpd.GeoDataFrame(),
             df_all_communes=gpd.GeoDataFrame(), 
             df_bv_geo=gpd.GeoDataFrame(), 
-            df_area_geo=gpd.GeoDataFrame(), 
             scores_cat=sample_scores_cat, 
             incl_index=mock_incl_index, 
             associations_data=mock_associations_data, 
@@ -729,10 +703,8 @@ class TestHousingScoresLogic:
         df = gpd.GeoDataFrame(data, index=['A', 'B'])
 
         engine = scoring.ScoringEngine(
-            df_odis_geo=gpd.GeoDataFrame(),
             df_all_communes=gpd.GeoDataFrame({'epci_code': ['1'], 'bassin_de_vie': ['1'], 'reg_code': ['75'], 'dep_code': ['75']}, index=['A']),
             df_bv_geo=gpd.GeoDataFrame(),
-            df_area_geo=gpd.GeoDataFrame(),
             scores_cat=pd.DataFrame([
                 {'cat': 'logement', 'score': 'log_vac_scaled', 'metric': 'log_vac_ratio', 'weight': 1.0},
                 {'cat': 'logement', 'score': 'log_soc_inoc_scaled', 'metric': 'log_soc_inoc_ratio', 'weight': 1.0},
@@ -808,10 +780,8 @@ class TestHousingScoresLogic:
         df = gpd.GeoDataFrame(data, index=['A', 'B'])
 
         engine = scoring.ScoringEngine(
-            df_odis_geo=gpd.GeoDataFrame(),
             df_all_communes=gpd.GeoDataFrame({'epci_code': ['1'], 'bassin_de_vie': ['1'], 'reg_code': ['75'], 'dep_code': ['75']}, index=['A']),
             df_bv_geo=gpd.GeoDataFrame(),
-            df_area_geo=gpd.GeoDataFrame(),
             scores_cat=pd.DataFrame([
                 {'cat': 'logement', 'score': 'log_vac_scaled', 'metric': 'log_vac_ratio', 'weight': 1.0},
                 {'cat': 'logement', 'score': 'log_soc_inoc_scaled', 'metric': 'log_soc_inoc_ratio', 'weight': 1.0},
