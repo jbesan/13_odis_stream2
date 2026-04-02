@@ -5,7 +5,6 @@ import geopandas as gpd
 import pandas as pd
 from shapely.geometry import mapping
 from branca.colormap import linear
-from folium.plugins import FastMarkerCluster, MarkerCluster
 
 from typing import Union, List, Tuple, Optional, Any, Set, Dict
 import config as cfg

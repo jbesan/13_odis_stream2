@@ -20,6 +20,5 @@ python-dotenv
 langgraph
 pydantic-ai==1.76.0
 google-cloud-bigquery
-google-cloud-bigquery-storage
 db-dtypes
 fastparquet

@@ -7,16 +7,12 @@ from typing import List, Dict, Set, Any, Optional, Union, Tuple
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-import itertools
-import string
-import warnings
 import config as cfg
 from core.models import (
     SearchCriterias, CommuneResult, CommuneScoreDetail, SearchResultsData,
     EmploymentMetrics, HousingMetrics, EducationMetrics, HealthMetrics, 
     InclusionMetrics, MobilityMetrics
 )
-from shapely.geometry import Point
 import logging
 import gc
 logging.basicConfig(level=logging.INFO)
