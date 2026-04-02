@@ -12,8 +12,7 @@ def scoring_engine(sample_data, sample_scores_cat, sample_incl_index, global_sta
         scores_cat=sample_scores_cat,
         incl_index=sample_incl_index,
         associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']),
-        bmo_vertical=pd.DataFrame(columns=['codgeo', 'fap_code']),
-        formations_data=pd.DataFrame(columns=['codgeo', 'formation_code']),
+        formations_data=pd.DataFrame(columns=['codgeo', 'formation_code', 'count']),
         codformations_index=pd.DataFrame(columns=['label']),
         global_stats=global_stats
     )

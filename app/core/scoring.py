@@ -280,7 +280,6 @@ class ScoringEngine:
             refugee_associations_data=app_data.get('refugee_associations_data', pd.DataFrame()),
             live_jobs_data=app_data.get('live_jobs_data', pd.DataFrame()),
             siae_jobs_data=app_data.get('siae_jobs_data', pd.DataFrame()),
-            bmo_vertical=app_data.get('bmo_vertical', pd.DataFrame()),
             rna_rag_service=app_data.get('rna_rag_service')
         )
 
@@ -305,7 +304,6 @@ class ScoringEngine:
         refugee_associations_data: pd.DataFrame = pd.DataFrame(),
         live_jobs_data: pd.DataFrame = pd.DataFrame(),
         siae_jobs_data: pd.DataFrame = pd.DataFrame(),
-        bmo_vertical: pd.DataFrame = pd.DataFrame(), # Deprecated
         rna_rag_service: Optional[RNARagService] = None
     ):
         self.current_city_scored_row = None
@@ -327,7 +325,6 @@ class ScoringEngine:
         self.refugee_associations_data = refugee_associations_data
         self.live_jobs_data = live_jobs_data
         self.siae_jobs_data = siae_jobs_data
-        self.bmo_vertical = bmo_vertical
         
         # Initialize RNA RAG Service if not provided
         # Initialize RNA RAG Service if not provided

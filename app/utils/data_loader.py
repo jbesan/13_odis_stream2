@@ -532,8 +532,6 @@ def load_all_data_raw() -> Dict[str, Any]:
     # List to track all loading errors in this session
     load_errors = []
 
-    # bmo_vertical = _load_parquet(os.path.join(base_path, cfg.AGG_METIERS_FILE), error_list=load_errors) # Deprecated
-    bmo_vertical = pd.DataFrame()
 
     live_jobs_data = _load_parquet(os.path.join(base_path, cfg.LIVE_JOBS_FILE), error_list=load_errors)
     associations_data = _load_parquet(os.path.join(base_path, cfg.AGG_ASSOCIATIONS_FILE), error_list=load_errors)
@@ -602,8 +600,6 @@ def load_all_data_raw() -> Dict[str, Any]:
             odis['heb_jaccueille_score'] = (odis['heb_accueillants_count'] > 0).astype(float)
             odis = odis.set_index('codgeo')
 
-    # Area geometries (dep/region outlines) are not pre-computed at startup.
-    # They are not used in the current scoring or rendering pipeline.
 
     return {
         'odis': odis,
@@ -624,7 +620,6 @@ def load_all_data_raw() -> Dict[str, Any]:
         'bv_geo': bv_geo,
         'bv_data': bv_geo,
 
-        'bmo_vertical': bmo_vertical,
         'live_jobs_data': live_jobs_data,
         'structures_ccas': structures_ccas,
         'pois': pois_df,

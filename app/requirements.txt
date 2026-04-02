@@ -14,11 +14,11 @@ shapely
 streamlit==1.55.0
 streamlit-folium>=0.13.0
 fastmcp
-google-genai
+google-genai==1.70.0
 pydantic
 python-dotenv
 langgraph
-pydantic-ai
+pydantic-ai==1.76.0
 google-cloud-bigquery
 google-cloud-bigquery-storage
 db-dtypes

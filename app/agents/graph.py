@@ -196,7 +196,7 @@ async def refiner_node(state: ODISGraphState, config: RunnableConfig):
         
         briefing = result.output.odis_brief.strip()
         logger.info(f"📝 [REFINER] Briefing updated.")
-        logger.info(f"📝 [REFINER-OUTPUT] Content:\n{briefing}")
+        logger.debug(f"📝 [REFINER-OUTPUT] Content:\n{briefing}")
         
         # Robust update: only override if not empty
         updates = {"last_summarized_idx": len(state.messages)}

@@ -132,8 +132,8 @@ async def refiner_instructions(ctx: RunContext[ODISDeps]) -> str:
 
     # DEBUG: Log full context sent to Refiner for review during testing
     logger.info(f"📋 [REFINER-CONTEXT] Sending dossier + results context (~{len(criteria_json) + len(results_json)} chars)")
-    logger.info(f"📋 [REFINER-CONTEXT] dossier={criteria_json}")
-    logger.info(f"📋 [REFINER-CONTEXT] results={results_json}")
+    logger.debug(f"📋 [REFINER-CONTEXT] dossier={criteria_json}")
+    logger.debug(f"📋 [REFINER-CONTEXT] results={results_json}")
 
     return REFINER_PROMPT.format(
         PREVIOUS_BRIEFING=state.odis_brief or "Début du dossier.",

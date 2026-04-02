@@ -179,7 +179,6 @@ def run_test_scenario(scenario_id, app_data):
         scores_cat=app_data['scores_cat'],
         incl_index=app_data['incl_index'],
         associations_data=app_data['associations_data'],
-        bmo_vertical=app_data['bmo_vertical'],
         formations_data=app_data['formations_data'],
         codformations_index=app_data['codformations_index'],
         global_stats={} 

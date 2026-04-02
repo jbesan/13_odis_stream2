@@ -60,7 +60,7 @@ def inject_idle_sleep(timeout_minutes: int = 10):
             document.addEventListener(type, updateActivity, true);
         }});
 
-        if (!localStorage.getItem(STORAGE_KEY)) updateActivity();
+        updateActivity();
         setInterval(check, 2000);
     }}
     """

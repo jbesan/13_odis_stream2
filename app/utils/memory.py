@@ -22,7 +22,6 @@ def reset_app_state():
         'username',        # current user
         'rna_rag_service', # AI tools
         'rna_rag_status',  # AI tools
-        'demo_data',       # Scenario data
     }
     
     cleared_count = 0

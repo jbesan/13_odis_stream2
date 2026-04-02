@@ -72,9 +72,8 @@ def test_live_jobs_scoring_aicha_scenario():
         df_bv_geo=df_bv_geo,
         scores_cat=scores_cat,
         incl_index=incl_index,
-        associations_data=pd.DataFrame(columns=['id_waldec', 'codgeo', 'count']),
-        bmo_vertical=pd.DataFrame(columns=['codgeo', 'fap_code']),
-        formations_data=pd.DataFrame(columns=['codgeo', 'formation_code']),
+        associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']),
+        formations_data=pd.DataFrame(columns=['codgeo', 'formation_code', 'count']),
         siae_jobs_data=pd.DataFrame(columns=['codgeo', 'rome']),
         live_jobs_data=live_jobs_data,
         global_stats={}

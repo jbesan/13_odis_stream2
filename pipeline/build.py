@@ -441,11 +441,6 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         df_to_save.to_parquet(output_path, compression='brotli', index=False, engine='fastparquet')
         logger.log_step("build_communes", "CREATED", {"path": str(output_path), "rows": len(df_to_save)})
         
-        # Copy bmo_vertical to output -> Handled in build_vertical_tables as odis_metiers_agg.parquet
-        # bmo_vertical_path = CLEAN_DIR / "bmo_vertical.parquet"
-        # if bmo_vertical_path.exists():
-        #    shutil.copy2(bmo_vertical_path, OUTPUT_DIR / "bmo_vertical.parquet")
-        #    logger.log_step("build_communes", "COPIED", {"file": "bmo_vertical.parquet"})
         
         return communes_gdf
 
@@ -574,13 +569,6 @@ def build_vertical_tables(config: Dict[str, Any], logger: PipelineLogger):
     """Generates vertical lookup tables."""
     logger.log_step("build_vertical_tables", "STARTED")
     try:
-        # 1. Metiers - DEPRECATED (Moved to Live Jobs)
-        # bmo_path = CLEAN_DIR / "bmo_vertical.parquet"
-        # if bmo_path.exists():
-        #     df = pd.read_parquet(bmo_path, engine='fastparquet')
-        #     out = OUTPUT_DIR / "odis_metiers_agg.parquet"
-        #     df.to_parquet(out, engine='fastparquet')
-        #     logger.log_step("build_vertical_tables", "METIERS", {"path": str(out)})
 
             
         # 2. Associations

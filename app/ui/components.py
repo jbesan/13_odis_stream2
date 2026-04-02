@@ -606,15 +606,11 @@ def show_details_dialog(index: Any):
 @st.dialog("Confirmer la réinitialisation")
 def confirm_reset_dialog():
     # st.warning("⚠️ Cette action réinitialisera tous vos critères de recherche.")
-    st.write("Cette action réinitialisera tous vos critères de recherche. Souhaitez-vous vraiment retourner à l'accueil et effacer vos saisies ?")
+    st.write("Cette action réinitialisera la recherche en cours. Souhaitez-vous vraiment retourner à l'accueil et effacer vos saisies ?")
     
     col1, col2 = st.columns(2)
     with col1:
         if st.button("Oui", width="stretch"):
-            # 1. Clear session state (preserving auth and heavy caches)
-            memory.reset_app_state()
-            
-            # 2. Direct Redirect
             st.switch_page("pages/1_Accueil.py")
     with col2:
         if st.button("Annuler", width="stretch"):
@@ -629,8 +625,11 @@ def start_over() -> None:
         """
     , unsafe_allow_html=True)
     if st.button("Retour à l'Accueil", icon=":material/home:", width="stretch", key="btn_recommencer"):
-        confirm_reset_dialog()
-        
+        if 'search_results' in st.session_state:
+            confirm_reset_dialog()
+        else:
+            st.switch_page("pages/1_Accueil.py")
+
 def render_localisation_form() -> None:
     """Renders the UI for the 'Localisation Actuelle' form section."""
     app_data = get_app_data()
@@ -1461,6 +1460,7 @@ def _display_result_details(commune: CommuneResult) -> None:
             return labels, vals
 
         labels_target, vals_target = get_radar_data(commune, active_cats)
+        logger.info(f"📊 [RADAR-DEBUG] Commune: {commune.name}, Values: {vals_target}")
         
         # Current City Data
         config = st.session_state.get('config')

@@ -1,12 +1,10 @@
 import time
 import streamlit as st
 import config as cfg
-from ui import components as ui
-from utils import data_loader
-from agents.utils import run_async_safe
 import logging
-from utils import memory
-
+from ui import components as ui
+from utils import memory, auth, data_loader
+from agents.utils import run_async_safe
 
 
 # --- Page Configuration ---
@@ -18,10 +16,10 @@ st.set_page_config(
 
 # --- RESET: Clear search memory when returning to home ---
 if 'search_results' in st.session_state:
-    memory.reset_app_state()
+    memory.reset_app_state()    
 
 # --- Authentication ---
-from utils import auth
+
 if not auth.check_password():
     st.stop()
 

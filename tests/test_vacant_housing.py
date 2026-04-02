@@ -55,8 +55,7 @@ def test_vacant_housing_criterion():
         df_bv_geo=app_data['bv_geo'],
         scores_cat=scores_cat,
         incl_index=incl_index,
-        associations_data=associations_data,
-        bmo_vertical=app_data['bmo_vertical'],
+        associations_data=app_data['associations_data'],
         formations_data=app_data['formations_data'],
         codformations_index=app_data.get('codformations_index'),
         global_stats=app_data.get('global_stats', {})
