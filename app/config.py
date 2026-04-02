@@ -115,6 +115,9 @@ DETAIL_MAP_ZOOM = 11
 MAX_MAP_POLYGONS = 5000
 PROJECTED_CRS = "EPSG:2154"  # RGF93 / Lambert-93, suitable for metropolitan France
 
+# --- Auth ---
+# Note: ALLOWED_AUTH_DOMAINS is now managed in .streamlit/secrets.toml
+
 
 
 # --- Inclusion Defaults ---

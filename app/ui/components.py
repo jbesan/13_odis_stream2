@@ -1062,7 +1062,7 @@ def render_weight_profile_form() -> None:
         # else:
         #     st.caption("Utilisez un profil prédéfini ci-dessus ou activez le mode personnalisé pour un réglage fin.")
 
-def display_input_tabs(demo_data: Optional[Dict[str, Any]] = None) -> None:
+def display_input_tabs() -> None:
     """Displays the main tabs for user input, composed of modular rendering functions."""
     inject_custom_css()
     
@@ -1316,20 +1316,6 @@ def _result_highlight_callback(index: int) -> None:
             st.session_state.center = [c_pt.y, c_pt.x]
         st.session_state.zoom = cfg.DETAIL_MAP_ZOOM
 
-def _show_details_callback(rank: int) -> None:
-    """Callback to compute and show city details modal."""
-    st.session_state.active_details_index = rank
-    st.rerun()
-
-def _show_ia_dialog_callback(rank: int) -> None:
-    """Callback to compute and show AI analysis modal."""
-    st.session_state.active_ia_city_index = rank
-    st.rerun()
-
-def _show_ccas_dialog_callback(rank: int) -> None:
-    """Callback to compute and show CCAS dialog."""
-    st.session_state.active_ccas_index = rank
-    st.rerun()
 
 def get_person_accompanied_str() -> str:
     if st.session_state.get('ui_nom'):

@@ -27,37 +27,54 @@ def check_password():
     is_cloud_run = os.environ.get("K_SERVICE") is not None
     
     # 1. Skip if not running on Cloud Run (Local Dev)
-    if not is_cloud_run:
-        # Default user for local logging/telemetry
-        if "username" not in st.session_state:
-            st.session_state["username"] = "jacques-local"
-        st.session_state["password_correct"] = True
-        return True
+    # if not is_cloud_run:
+    #     # Default user for local logging/telemetry
+    #     if "username" not in st.session_state:
+    #         st.session_state["username"] = "jacques-local"
+    #     st.session_state["password_correct"] = True
+    #     return True
 
     # 2. Initialize session state for auth
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
 
     if not st.session_state["password_correct"]:
-        # Show input for username and password
+        # Show simplified email-only input for known orgs
         with st.container(width='stretch', horizontal_alignment="center"):
-            with st.container(width=300, border=True, horizontal_alignment="center"):
-                st.subheader("Authentification")
+            with st.container(width=400, border=True, horizontal_alignment="center"):
+                st.subheader("Accès ODIS (Test)")
+                st.info("👋 Bienvenue ! Utilisez votre email professionnel pour accéder à l'application.")
                 
                 with st.form("login_form"):
-                    username = st.text_input("Username", autocomplete="username")
-                    password = st.text_input("Password", type="password", autocomplete="current-password")
-                    submit = st.form_submit_button("Se connecter", width="stretch")
+                    email = st.text_input("Email professionnel", placeholder="votre@email.org")
+                    submit = st.form_submit_button("Accéder", width="stretch")
                     
                     if submit:
-                        if verify_credentials(username, password, st.secrets):
-                            st.session_state["password_correct"] = True
-                            st.session_state["username"] = username
-                            st.rerun()
+                        if not email or "@" not in email:
+                            st.error("❌ Veuillez saisir une adresse email valide.")
                         else:
-                            st.error("❌ Identifiants incorrects")
-                            st.session_state["password_correct"] = False
-             
+                            domain = email.split("@")[-1].lower().strip()
+                            allowed_domains = st.secrets.get("allowed_domains", [])
+                            if domain in [d.strip().lower() for d in allowed_domains]:
+                                st.session_state["password_correct"] = True
+                                st.session_state["username"] = email
+                                st.rerun()
+                            else:
+                                st.error("❌ Ce domaine n'est pas autorisé pour la phase de test.")
+                
+                # --- Legacy Password Login (Commented out as requested) ---
+                # with st.expander("Admin Login"):
+                #     with st.form("admin_login_form"):
+                #         username = st.text_input("Username", autocomplete="username")
+                #         password = st.text_input("Password", type="password", autocomplete="current-password")
+                #         admin_submit = st.form_submit_button("Se connecter")
+                #         if admin_submit:
+                #             if verify_credentials(username, password, st.secrets):
+                #                 st.session_state["password_correct"] = True
+                #                 st.session_state["username"] = username
+                #                 st.rerun()
+                #             else:
+                #                 st.error("❌ Identifiants incorrects")
         return False
     else:
         # Password correct.

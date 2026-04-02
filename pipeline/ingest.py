@@ -1723,25 +1723,6 @@ def clean_odace_rent(config: Dict[str, Any], logger: PipelineLogger):
 
     logger.log_step("clean_odace_rent", "COMPLETED", {"rent_rows": len(df_rent), "profil_rows": len(df_profil)})
 
-def clean_regions(config: Dict[str, Any], logger: PipelineLogger):
-    """Cleans Regions referential and saves to parquet."""
-    logger.log_step("clean_regions", "STARTED")
-    source = config['sources']['regions_ref']
-    path = CACHE_DIR / source['local_name']
-    if not path.exists(): return
-
-    df = load_dataset(path, source)
-    
-    # Expected columns: REG, LIBELLE
-    if 'REG' in df.columns and 'LIBELLE' in df.columns:
-        df_out = df[['REG', 'LIBELLE']].rename(columns={'REG': 'code', 'LIBELLE': 'label'})
-        df_out['code'] = df_out['code'].astype(str).str.zfill(2)
-        
-        output_path = CLEAN_DIR / "regions.parquet"
-        df_out.to_parquet(output_path, engine='fastparquet')
-        logger.log_step("clean_regions", "COMPLETED", {"path": str(output_path), "rows": len(df_out)})
-    else:
-        logging.warning(f"Regions: Columns not found. Found: {df.columns}")
 
 def clean_departements(config: Dict[str, Any], logger: PipelineLogger):
     """Cleans Departements referential and saves to parquet."""

@@ -385,7 +385,7 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
                 communes_gdf.loc[paris_mask & communes_gdf['libelle_bassin_de_vie'].isna(), 'libelle_bassin_de_vie'] = paris_bv_label
                 
                 # Check patch result
-                patched_paris = communes_gdf.loc[paris_mask, 'bassin_de_vie']
+                # (patched_paris assignment removed as it was unused)
                 
 
                 # Lyon Arrondissements

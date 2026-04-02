@@ -321,7 +321,7 @@ with st.container(border=False, key='top_menu'):
         with st.container(height="stretch", horizontal_alignment="center", vertical_alignment="center"):
             st.button("Lancer la recherche", on_click=run_search, type="primary")
     with st.expander('Modifier les critères de recherche', expanded=False):
-        ui.display_input_tabs(st.session_state['demo_data'])
+        ui.display_input_tabs()
     
 # Main two sections: results and map
 col_map, col_results = st.columns([3, 2])

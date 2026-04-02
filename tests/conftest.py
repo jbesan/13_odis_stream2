@@ -154,7 +154,7 @@ def default_config():
         weight_profile="Équilibré",
         commune_actuelle=CriteriaItem(code='33063', label='Bordeaux'),
         loc_search_area='departement',
-        loc_search_code=None,
+        loc_search_code=[],
         nb_adultes=1,
         nb_enfants=0,
         hebergement_cible=[],

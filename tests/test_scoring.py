@@ -324,7 +324,7 @@ class TestConditionalScoring:
             poids_mobilite=0,
             commune_actuelle='33063',
             loc_search_area='departement',
-            loc_search_code=None,
+            loc_search_code=[],
             nb_adultes=1,
             nb_enfants=0,        # Condition to ignore education
             hebergement_cible=[],
@@ -377,7 +377,7 @@ class TestConditionalScoring:
             poids_mobilite=0,
             commune_actuelle='33063',
             loc_search_area='departement',
-            loc_search_code=None,
+            loc_search_code=[],
             nb_adultes=1,
             nb_enfants=1,        # Condition to include education
             hebergement_cible=[],
@@ -472,6 +472,7 @@ class TestMCPScenario:
         config = SearchCriterias(
              commune_actuelle='33063', # Bordeaux
              loc_search_area='region', # Increased scope to include Pau (170km)
+             loc_search_code=[], # region mode usually requires a code, but for test [] is safer than None
              poids_emploi=100, # "Good jobs"
              poids_logement=100, # "Cheap rent" implies high weight on housing affordability
              poids_education=0,
@@ -734,7 +735,7 @@ class TestHousingScoresLogic:
                 weight_profile="",
                 commune_actuelle='A',
                 loc_search_area='departement',
-                loc_search_code=None,
+                loc_search_code=[],
                 nb_adultes=1,
                 nb_enfants=0,
                 hebergement_cible=heb_list,
@@ -810,7 +811,7 @@ class TestHousingScoresLogic:
                 weight_profile="",
                 commune_actuelle='A',
                 loc_search_area='departement',
-                loc_search_code=None,
+                loc_search_code=[],
                 nb_adultes=1,
                 nb_enfants=0,
                 hebergement_cible=[],

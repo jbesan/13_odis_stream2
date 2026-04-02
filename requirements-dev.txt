@@ -4,3 +4,4 @@ mypy
 types-requests
 types-PyYAML
 types-setuptools
+vulture
