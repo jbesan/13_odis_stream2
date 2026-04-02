@@ -214,11 +214,39 @@ _(Most features omitted for brevity. Appending F-42)_
 214: - En tant qu'utilisateur final, je veux que la carte Folium reste fluide et réactive même lors de recherches nationales ou régionales étendues.
 215: - En tant que développeur, je veux éviter de surcharger le navigateur du client avec des milliers de polygones GeoJSON inutiles qui ralentissent l'interaction.
 216: 
-217: ### 🔑 Key Features
-218: 
-219: - **Cutoff de Scoring :** Limitation du DataFrame `processed_gdf` aux 1000 meilleurs résultats selon le `weighted_score` après le calcul complet.
-220: - **Configuration Centralisée :** Introduction de `MAX_MAP_POLYGONS` dans `app/config.py` pour un ajustement facile du seuil de performance.
-221: - **Préservation du Contexte :** Garantie que la commune actuelle de référence reste incluse dans les résultats (même si hors Top 1000) pour préserver les repères visuels sur la carte.
-222: 
-223: ### 📊 Status
-224: - **April 2026**: Conception et implémentation demandées.
+
+## 🚀 Feature [F-52]: Limitation de l'Affichage Cartographique (Performance)
+
+### 📝 User Story
+
+- En tant qu'utilisateur final, je veux que la carte Folium reste fluide et réactive même lors de recherches nationales ou régionales étendues.
+- En tant que développeur, je veux éviter de surcharger le navigateur du client avec des milliers de polygones GeoJSON inutiles qui ralentissent l'interaction.
+
+### 🔑 Key Features
+
+- **Cutoff de Scoring :** Limitation du DataFrame `processed_gdf` aux 1000 meilleurs résultats selon le `weighted_score` après le calcul complet.
+- **Configuration Centralisée :** Introduction de `MAX_MAP_POLYGONS` dans `app/config.py` pour un ajustement facile du seuil de performance.
+- **Préservation du Contexte :** Garantie que la commune actuelle de référence reste incluse dans les résultats (même si hors Top 1000) pour préserver les repères visuels sur la carte.
+
+### 📊 Status
+- **April 2026**: Conception et implémentation demandées.
+
+## 🚀 Feature [F-53]: Sélection Multiple de Départements (Localisation)
+
+### 📝 User Story
+
+- En tant que travailleur social, je veux pouvoir sélectionner plusieurs départements au sein d'une région pour affiner la recherche sans être limité à un seul département ou à toute la région.
+- Je veux une interface claire où je peux facilement basculer entre une recherche nationale, régionale ou multi-départementale.
+
+### 🔑 Key Features
+
+- **Refonte de l'interface de localisation :**
+    - Ajout d'une case à cocher "France Métropolitaine" qui désactive les sélecteurs de région et de département.
+    - Ajout d'une case à cocher "Toute la région" qui désactive le multiselect de départements.
+    - Transformation du sélecteur de département en `st.multiselect`.
+- **Évolution du Modèle de Données :** Passage de `loc_search_code` (string) à une liste de strings dans `SearchCriterias`.
+- **Adaptation du Moteur de Scoring :** Mise à jour de `ScoringEngine._filter_communes` pour supporter le filtrage par une liste de codes départements via `.isin()`.
+- **Persistance et Démo :** Mise à jour du chargement des critères et des scénarios de démo pour supporter le nouveau format de liste.
+
+### 📊 Status
+- **April 2026**: Conception validée, implémentation en cours.

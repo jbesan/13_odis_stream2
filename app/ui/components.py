@@ -635,7 +635,7 @@ def render_localisation_form() -> None:
     )
     
     communes = app_data['depcom_df'][app_data['depcom_df'].dep_code == departement_actuel]['libgeo'].tolist()
-    if st.session_state['ui_commune'] not in communes:
+    if st.session_state.get('ui_commune') not in communes:
         st.session_state['ui_commune'] = communes[0]
     st.selectbox("Commune", communes, key="ui_commune")
 
@@ -649,11 +649,12 @@ def render_family_form() -> None:
 
 def render_education_form() -> None:
     """Renders the UI for the 'Education' form section."""
-    if st.session_state['ui_nb_enfants'] == 0:
+    nb_enfants = st.session_state.get('ui_nb_enfants', 0)
+    if nb_enfants == 0:
         st.info("Aucun enfant n'a été ajouté dans l'onglet 'Situation familiale'.")
     else:
         col1, col2 = st.columns(2)
-        for i in range(st.session_state['ui_nb_enfants']):
+        for i in range(nb_enfants):
             col = col1 if i % 2 == 0 else col2
             with col:
                 # This widget also needs the index to be set correctly.
@@ -906,58 +907,76 @@ def render_mobility_form() -> None:
     app_data = get_app_data()
     dept_details = app_data.get('dept_details', {})
     regions_dict = app_data.get('regions_names', {})
-    is_france = False
 
-    # 1. Region & Department Selectors
     # Defaults based on current localization
     current_dept_code = st.session_state.get('ui_departement')
     current_reg_code = dept_details.get(current_dept_code, {}).get('reg_code')
     
-    region_codes = ['france'] + sorted(regions_dict.keys())
+    # 1. France & Region Selectors
+    region_codes = sorted(regions_dict.keys())
     
-    # F-48: Fix st.selectbox warning by ensuring session state is set BEFORE giving the key to the widget
+    # Ensure session states are initialized
+    if "ui_france_search" not in st.session_state:
+        st.session_state["ui_france_search"] = False
+    if "ui_region_search" not in st.session_state:
+        st.session_state["ui_region_search"] = False
     if "ui_mobility_region" not in st.session_state or st.session_state["ui_mobility_region"] not in region_codes:
-        # Default to current region, if current_reg_code is not in dict, use first option (France)
-        try:
-             st.session_state["ui_mobility_region"] = current_reg_code if current_reg_code in region_codes else region_codes[0]
-        except:
-             st.session_state["ui_mobility_region"] = region_codes[0]
-            
-    selected_region_code = st.selectbox(
-        "Région",
-        region_codes,
-        format_func=lambda x: regions_dict.get(x, "France Métropolitaine") if x != 'france' else "France Métropolitaine",
-        key="ui_mobility_region"
-    )
-    
-    is_france = (selected_region_code == 'france')
+        st.session_state["ui_mobility_region"] = current_reg_code if current_reg_code in region_codes else region_codes[0]
 
-    # Filter departments by selected region
-    if not is_france:
-        depts_in_region = [
-            code for code, details in dept_details.items() 
-            if details.get('reg_code') == selected_region_code
-        ]
-        depts_in_region.sort()
-        
-        # Options: "Toute la région" + departments
-        dept_options = ["Toute la région"] + depts_in_region
-        
-        # F-48: Fix st.selectbox warning by ensuring session state is set BEFORE giving the key to the widget
-        if "ui_mobility_dept" not in st.session_state or st.session_state["ui_mobility_dept"] not in dept_options:
-            try:
-                st.session_state["ui_mobility_dept"] = current_dept_code if current_dept_code in dept_options else dept_options[0]
-            except:
-                st.session_state["ui_mobility_dept"] = dept_options[0]
-
-        st.selectbox(
-            "Département",
-            dept_options,
-            format_func=lambda x: f"{x} - {dept_details.get(x, {}).get('label', x)}" if x != "Toute la région" else x,
-            key="ui_mobility_dept"
+    col_reg_1, col_reg_2 = st.columns([3, 1])
+    with col_reg_1:
+        selected_region_code = st.selectbox(
+            "Région",
+            region_codes,
+            format_func=lambda x: regions_dict.get(x, x),
+            key="ui_mobility_region",
+            disabled=st.session_state.ui_france_search
         )
-    else:
-        st.info("Recherche sur l'ensemble du territoire métropolitain.")
+    with col_reg_2:
+        st.markdown("\n\n")
+        st.markdown("\n\n")
+        st.checkbox("France Métro.", key="ui_france_search", help="Rechercher sur l'ensemble du territoire.")
+
+    # 2. Region Checkbox & Department Multiselect
+    depts_in_region = [
+        code for code, details in dept_details.items() 
+        if details.get('reg_code') == selected_region_code
+    ]
+    depts_in_region.sort()
+    
+    if "ui_mobility_dept" not in st.session_state:
+         # Initialize as a list for multiselect
+         st.session_state["ui_mobility_dept"] = [current_dept_code] if current_dept_code in depts_in_region else []
+    elif isinstance(st.session_state["ui_mobility_dept"], str):
+         # Migration: if it was a selection from previous version, convert to list if valid
+         old_val = st.session_state["ui_mobility_dept"]
+         st.session_state["ui_mobility_dept"] = [old_val] if old_val in depts_in_region else []
+
+    col_dept_1, col_dept_2 = st.columns([3, 1])
+    with col_dept_2:
+        st.markdown("\n\n")
+        st.markdown("\n\n")
+        st.checkbox(
+            "Toute la région", 
+            key="ui_region_search", 
+            disabled=st.session_state.ui_france_search,
+            help="Rechercher dans tous les départements de cette région."
+        )
+        
+    with col_dept_1:
+        st.multiselect(
+            "Départements",
+            depts_in_region,
+            format_func=lambda x: f"{x} - {dept_details.get(x, {}).get('label', x)}",
+            key="ui_mobility_dept",
+            disabled=st.session_state.ui_france_search or st.session_state.ui_region_search,
+            placeholder="Sélectionnez un ou plusieurs départements"
+        )
+
+    if st.session_state.ui_france_search:
+        st.info("💡 Recherche sur l'ensemble du territoire métropolitain.")
+    elif st.session_state.ui_region_search:
+        st.info(f"💡 Recherche sur toute la région {regions_dict.get(selected_region_code)}.")
 
     # 2. Target Population Size (F-50)
     st.divider()
@@ -1051,7 +1070,7 @@ def display_input_tabs(demo_data: Optional[Dict[str, Any]] = None) -> None:
         'Localisation', 'Situation familiale', 'Education', 'Projet Professionnel', 'Logement', 'Santé', 'Inclusion', 'Autres', 'Profil'
     ])
     with tab_localisation:
-        col1, col2 = st.columns(2)
+        col1, col2 = st.columns([1, 2])
         with col1:
             st.markdown("**Localisation actuelle**")
             render_localisation_form()
@@ -1084,36 +1103,40 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
     app_data = get_app_data()
     
     # Location
+    dept_code = st.session_state.get('ui_departement', cfg.DEMO_DATA_DEFAULT['departement_actuel'])
+    commune_lib = st.session_state.get('ui_commune', cfg.DEMO_DATA_DEFAULT['commune_actuelle'])
+    
     commune_codgeo = app_data['depcom_df'][
-        (app_data['depcom_df'].dep_code == st.session_state['ui_departement']) & 
-        (app_data['depcom_df'].libgeo == st.session_state['ui_commune'])
+        (app_data['depcom_df'].dep_code == dept_code) & 
+        (app_data['depcom_df'].libgeo == commune_lib)
     ].index[0]
     
-    libgeo = st.session_state['ui_commune']
-    commune_actuelle = CriteriaItem(code=str(commune_codgeo), label=str(libgeo))
+    commune_actuelle = CriteriaItem(code=str(commune_codgeo), label=str(commune_lib))
 
-    # New Mobility Logic
-    selected_region = st.session_state.get('ui_mobility_region')
-    if selected_region == 'france':
+    # New Mobility Logic (F-53)
+    if st.session_state.get('ui_france_search'):
         loc_search_area = 'france'
-        loc_search_code = None
+        loc_search_code = []
+    elif st.session_state.get('ui_region_search'):
+        loc_search_area = 'region'
+        loc_search_code = [st.session_state.get('ui_mobility_region')]
     else:
-        selected_dept = st.session_state.get('ui_mobility_dept')
-        if selected_dept == "Toute la région":
-            loc_search_area = 'region'
-            loc_search_code = st.session_state.get('ui_mobility_region')
-        else:
-            loc_search_area = 'departement'
-            loc_search_code = selected_dept
+        loc_search_area = 'departement'
+        selected_depts = st.session_state.get('ui_mobility_dept', [])
+        # Multiselect returns a list of codes
+        loc_search_code = selected_depts if isinstance(selected_depts, list) else [selected_depts]
 
     # Education
-    classe_enfants = [st.session_state[f"ui_classe_enfant_{i}"] for i in range(st.session_state['ui_nb_enfants'])]
+    nb_enfants = st.session_state.get('ui_nb_enfants', 0)
+    classe_enfants = [st.session_state.get(f"ui_classe_enfant_{i}") for i in range(nb_enfants)]
 
     # Employment (Enrich with CriteriaItem)
+    nb_adultes = st.session_state.get('ui_nb_adultes', 1)
     rome_index = app_data.get('rome_index', pd.DataFrame())
     codes_metiers = []
-    for i in range(st.session_state['ui_nb_adultes']):
-        raw_codes = st.session_state[f"ui_metiers_adult_{i}"]
+    for i in range(nb_adultes):
+        raw_codes = st.session_state.get(f"ui_metiers_adult_{i}", [])
+        if not isinstance(raw_codes, list): raw_codes = [raw_codes] if raw_codes else []
         enriched_list = []
         for code in raw_codes:
             label = rome_index.loc[code, 'label'] if not rome_index.empty and code in rome_index.index else str(code)
@@ -1122,8 +1145,9 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
         
     form_index = app_data.get('codformations_index', pd.DataFrame())
     codes_formations = []
-    for i in range(st.session_state['ui_nb_adultes']):
-        raw_codes = st.session_state[f"ui_formations_adult_{i}"]
+    for i in range(nb_adultes):
+        raw_codes = st.session_state.get(f"ui_formations_adult_{i}", [])
+        if not isinstance(raw_codes, list): raw_codes = [raw_codes] if raw_codes else []
         enriched_list = []
         for code in raw_codes:
             label = form_index.loc[code, 'label'] if not form_index.empty and code in form_index.index else str(code)
@@ -1131,16 +1155,15 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
         codes_formations.append(enriched_list)
 
     # Process Autres Besoins from Flat List (F-13 UI Update)
-    # Process Autres Besoins from Flat List (F-13 UI Update)
     inc_services_add_selection_list = []
     if 'ui_inc_services_add_selection_flat' in st.session_state:
         flat_selection = st.session_state.ui_inc_services_add_selection_flat
         options_map = st.session_state.get('ui_inc_services_add_selection_map', {})
         
         if options_map:
-            for ui_inc_asso_add_selection in flat_selection:
-                if ui_inc_asso_add_selection in options_map:
-                    slug = options_map[ui_inc_asso_add_selection]
+            for item_label in flat_selection:
+                if item_label in options_map:
+                    slug = options_map[item_label]
                     inc_services_add_selection_list.append(slug)
         
         # Update session state for compatibility
@@ -1161,20 +1184,18 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
         'Collège': 'edu_college_scaled',
         'Lycée': 'edu_lycee_scaled'
     }
-    for i in range(st.session_state['ui_nb_enfants']):
+    for i in range(nb_enfants):
         level = st.session_state.get(f"ui_classe_enfant_{i}")
         is_priority = st.session_state.get(f"ui_priority_edu_{i}", False)
         if is_priority and level in edu_map:
             criteria_weights[edu_map[level]] = 3.0
             
     # Employment Priorities (F-15)
-    for i in range(st.session_state['ui_nb_adultes']):
+    for i in range(nb_adultes):
         if st.session_state.get(f"ui_priority_job_adult_{i}", False):
             # Boost the match score for this adult
             criteria_weights[f'met_match_adult{i+1}_scaled'] = 3.0
-            # Also boost the general employment availability? Maybe not, keep it specific.
             
-    # Housing Priorities (F-15)
     # Housing Priorities (F-15)
     # 1. Hebergement Priority (F-42)
     heb_sel = st.session_state.get('ui_hebergement_cible', [])
@@ -1217,8 +1238,6 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
 
     # Enrich Inclusion Associations
     inc_assos_mapped = []
-    # session_state['ui_inc_asso_add_selection'] should be a list of CriteriaItem
-    # but for tests, it might be a list of strings
     for item in st.session_state.get('ui_inc_asso_add_selection', []):
         if isinstance(item, CriteriaItem):
             inc_assos_mapped.append(item)
@@ -1230,29 +1249,29 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
                 # Find the first entry that matches the label
                 matches = waldec_index[waldec_index['label'] == item]
                 if not matches.empty:
-                    # In current logic, item.code is just the first match
                     code_str = str(matches.index[0])
             inc_assos_mapped.append(CriteriaItem(code=code_str, label=str(item)))
 
 
     # Type Logement Enrich
     type_log = None
-    ui_type_log = st.session_state.get('ui_type_logement', 'appartement_toutes')
+    ui_type_log = st.session_state.get('ui_type_logement', 'appt_all')
     if ui_type_log in cfg.HOUSING_TYPE_OPTIONS:
         type_log = CriteriaItem(code=ui_type_log, label=cfg.HOUSING_TYPE_OPTIONS[ui_type_log])
 
-    # Final scoring settings (F-50)
+    # Weights & Profile
+    profile = st.session_state.get('ui_weight_profile', 'Équilibré')
     target_pop = st.session_state.get('ui_target_population', cfg.DEFAULT_MU)
     target_sigma = st.session_state.get('ui_target_population_sigma', cfg.DEFAULT_SIGMA)
-
+    
     return SearchCriterias(
-        weight_profile=st.session_state.get('ui_weight_profile', ""),
-        poids_emploi=st.session_state['ui_poids_emploi'] / 100.0,
-        poids_logement=st.session_state['ui_poids_logement'] / 100.0,
-        poids_education=st.session_state['ui_poids_education'] / 100.0,
-        poids_inclusion=st.session_state['ui_poids_inclusion'] / 100.0,
-        poids_sante=st.session_state['ui_poids_sante'] / 100.0,
-        poids_mobilite=st.session_state['ui_poids_mobilite'] / 100.0,
+        weight_profile=profile,
+        poids_emploi=st.session_state.get('ui_poids_emploi', 50) / 100.0,
+        poids_logement=st.session_state.get('ui_poids_logement', 50) / 100.0,
+        poids_education=st.session_state.get('ui_poids_education', 50) / 100.0,
+        poids_inclusion=st.session_state.get('ui_poids_inclusion', 50) / 100.0,
+        poids_sante=st.session_state.get('ui_poids_sante', 50) / 100.0,
+        poids_mobilite=st.session_state.get('ui_poids_mobilite', 50) / 100.0,
         criteria_weights=criteria_weights,
         
         target_population=target_pop,
@@ -1261,16 +1280,16 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
         commune_actuelle=commune_actuelle,
         loc_search_area=loc_search_area,
         loc_search_code=loc_search_code,
-        nb_adultes=st.session_state['ui_nb_adultes'],
-        nb_enfants=st.session_state['ui_nb_enfants'],
+        nb_adultes=nb_adultes,
+        nb_enfants=nb_enfants,
         hebergement_cible=heb_sel,
-        logement=st.session_state['ui_logement'],
+        logement=st.session_state.get('ui_logement', 'Location'),
         type_logement=type_log,
         
         codes_metiers=codes_metiers,
         codes_formations=codes_formations,
         classe_enfants=classe_enfants,
-        besoin_sante=st.session_state['ui_besoin_sante'],
+        besoin_sante=st.session_state.get('ui_besoin_sante', 'Aucun'),
         
         inc_services_add_selection=inc_services_mapped,
         inc_asso_add_selection=inc_assos_mapped,

@@ -162,7 +162,7 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     'inc_services_add_selection': [],
     'inc_services_core_selection': DEFAULT_INC_SERVICES_CORE,
     'inc_asso_add_selection': [],
-    'loc_search_code': None,
+    'loc_search_code': [],
     'ui_inc_service_fle': False,
     'type_logement': 'appt_all',
     'weight_profile': 'Équilibré',
@@ -190,6 +190,7 @@ DEMO_SCENARIOS = {
         'departement_actuel': '75',
         'commune_actuelle': 'Paris',
         'loc_search_area': 'region',
+        'loc_search_code': ['75'],
         'hebergement_cible': ["Location avec Intermédiation"],
         'logement': "Logement Social",
         'nb_adultes': 2,
@@ -207,6 +208,7 @@ DEMO_SCENARIOS = {
         'departement_actuel': '13',
         'commune_actuelle': 'Marseille',
         'loc_search_area': 'departement',
+        'loc_search_code': ['13'],
         'hebergement_cible': ["Location avec Intermédiation"],
         'logement': "Logement Social",
         'nb_adultes': 1,
@@ -223,7 +225,7 @@ DEMO_SCENARIOS = {
         'poids_mobilite': 25,
         'sante': "Maternité",
         'inc_asso_add_selection': ['chant choral, musique'],
-        'loc_search_code': None,
+        'loc_search_code': ['13'],
         'notes_qualitatives': "Aïcha souhaite passer son permis et cherche une boucherie Hallal à proximité"
     }
 }

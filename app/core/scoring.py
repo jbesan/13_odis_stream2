@@ -29,9 +29,14 @@ class ScoringEngine:
     The engine responsible for running the ODIS scoring algorithm.
     """
     @staticmethod
-    def _filter_communes(df: pd.DataFrame, start_commune: pd.DataFrame, loc_type: str, loc_code: Optional[str]) -> pd.DataFrame:
-        if loc_type == 'departement': return df[df['dep_code'] == loc_code]
-        elif loc_type == 'region': return df[df['reg_code'] == loc_code]
+    def _filter_communes(df: pd.DataFrame, start_commune: pd.DataFrame, loc_type: str, loc_code: Union[str, List[str], None]) -> pd.DataFrame:
+        if loc_type == 'departement': 
+            # Handle both single string and list for backward compatibility and flexibility
+            codes = [loc_code] if isinstance(loc_code, str) else (loc_code or [])
+            return df[df['dep_code'].isin(codes)]
+        elif loc_type == 'region': 
+            codes = [loc_code] if isinstance(loc_code, str) else (loc_code or [])
+            return df[df['reg_code'].isin(codes)]
         elif loc_type == 'france': return df[~df['dep_code'].astype(str).str.startswith(('97', '98'))]
         return pd.DataFrame()
 

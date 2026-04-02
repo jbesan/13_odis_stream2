@@ -69,11 +69,17 @@ def get_person_accompanied_str():
 # These functions now act as simple wrappers, calling the centralized UI components.
 def display_localisation_actuelle_page():
     st.subheader(f"Localisation {get_person_accompanied_str()}")
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns([3,1,5])
     with col1:
         st.markdown("**Localisation actuelle**")
         ui.render_localisation_form()
     with col2:
+        # with st.container(width="stretch"):
+        st.markdown("\n\n")
+        st.markdown("\n\n")
+        st.markdown("\n\n")
+        st.header(":material/arrow_forward_ios:", text_alignment="center")
+    with col3:
         st.markdown("**Zone de recherche**")
         ui.render_mobility_form()
 

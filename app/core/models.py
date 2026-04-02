@@ -26,7 +26,7 @@ class SearchCriterias(BaseModel):
     """
     commune_actuelle: Optional[CriteriaItem] = Field(None, description="Enriched current city (code + label)")
     loc_search_area: str = Field("", description="scope for search area ('departement', 'region', 'france')")
-    loc_search_code: Optional[str] = Field(None, description="Explicit code for targeted search area (Reg or Dep)")
+    loc_search_code: List[str] = Field(default_factory=list, description="Explicit codes for targeted search area (Reg or Dep)")
     
     nb_adultes: int = Field(1, description="Number of adults in the household")
     nb_enfants: int = Field(0, description="Number of children in the household")
