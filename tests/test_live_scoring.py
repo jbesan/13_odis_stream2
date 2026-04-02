@@ -92,7 +92,7 @@ def test_live_jobs_scoring_aicha_scenario():
         criteria_weights={},
         commune_actuelle='99999',
         loc_search_area='departement',
-        loc_search_code='13',
+        loc_search_code=['13'],
         nb_adultes=aicha_raw['nb_adultes'],
         nb_enfants=aicha_raw['nb_enfants'],
         hebergement_cible=aicha_raw['hebergement_cible'],

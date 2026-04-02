@@ -2,7 +2,6 @@ import streamlit as st
 
 
 
-import config as cfg
 
 
 # --- Authentication ---

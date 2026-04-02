@@ -179,6 +179,10 @@ async def refiner_node(state: ODISGraphState, config: RunnableConfig):
         model =  get_p_model("refiner", client=deps.client)
         
         from pydantic_ai.usage import UsageLimits
+        from datetime import datetime
+        t0 = datetime.now()
+        logger.info(f"🚀 [REFINER] LLM call starting (model={mod_id}) at {t0.strftime('%H:%M:%S.%f')[:-3]}")
+        
         result = await refiner_agent.run(
             "Mise à jour du briefing", 
             deps=deps, 
@@ -187,9 +191,12 @@ async def refiner_node(state: ODISGraphState, config: RunnableConfig):
             usage_limits=UsageLimits(request_limit=10)
         )
         
+        t1 = datetime.now()
+        logger.info(f"✅ [REFINER] LLM call done in {(t1 - t0).total_seconds():.2f}s at {t1.strftime('%H:%M:%S.%f')[:-3]}")
+        
         briefing = result.output.odis_brief.strip()
         logger.info(f"📝 [REFINER] Briefing updated.")
-        logger.debug(briefing)
+        logger.info(f"📝 [REFINER-OUTPUT] Content:\n{briefing}")
         
         # Robust update: only override if not empty
         updates = {"last_summarized_idx": len(state.messages)}
@@ -205,6 +212,7 @@ async def refiner_node(state: ODISGraphState, config: RunnableConfig):
     except Exception as e:
         logger.error(f"❌ [REFINER] Node failed: {e}", exc_info=True)
         raise e
+
 
 async def interviewer_node(state: ODISGraphState, config: RunnableConfig):
     deps = get_deps(config)

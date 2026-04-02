@@ -465,8 +465,7 @@
             "95680",
             "95682"
         ],
-        "inclusion_cat_score": 0.5999224910628179,
-        "mob_epci_scaled": 0.0
+        "inclusion_cat_score": 0.5999224910628179
     },
     {
         "bassin_de_vie": "78361",
@@ -512,8 +511,7 @@
             "95656",
             "95676"
         ],
-        "inclusion_cat_score": 0.6357883719620158,
-        "mob_epci_scaled": 0.0
+        "inclusion_cat_score": 0.6357883719620158
     },
     {
         "bassin_de_vie": "77284",
@@ -568,8 +566,7 @@
             "77515",
             "77526"
         ],
-        "inclusion_cat_score": 0.571415082684527,
-        "mob_epci_scaled": 0.0
+        "inclusion_cat_score": 0.571415082684527
     },
     {
         "bassin_de_vie": "77470",
@@ -585,8 +582,7 @@
             "77377",
             "77470"
         ],
-        "inclusion_cat_score": 0.1946370772374349,
-        "mob_epci_scaled": 0.0
+        "inclusion_cat_score": 0.1946370772374349
     },
     {
         "bassin_de_vie": "78517",
@@ -601,7 +597,6 @@
             "78497",
             "78517"
         ],
-        "inclusion_cat_score": 0.43235887049101906,
-        "mob_epci_scaled": 0.0
+        "inclusion_cat_score": 0.43235887049101906
     }
 ]

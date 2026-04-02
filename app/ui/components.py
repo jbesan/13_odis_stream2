@@ -45,6 +45,8 @@ def inject_custom_css() -> None:
 @st.fragment
 def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
     """Component to display AI synthesis and handle follow-up questions."""
+    
+    logger.info(f"Starting ia_analysis_content: {nom} {codgeo}")
     # 1. Access Single Source of Truth from unified state
     if 'search_results' not in st.session_state or not st.session_state.search_results:
         st.error("Résultats introuvables.")
@@ -102,7 +104,15 @@ def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
                                 commune.scorer_pitch = new_pitch
                             break
                 
-                st.rerun() # Refresh to display the new odis_synthesis
+                # Fail-safe: only rerun if synthesis was actually populated.
+                # If the graph failed silently and returned empty synthesis, avoid
+                # an infinite loop by showing an error instead of calling st.rerun().
+                if commune.odis_synthesis:
+                    st.rerun()
+                else:
+                    logger.warning(f"⚠️ [IA-DIALOG] Synthesis empty after graph run for {codgeo}. Check synthesizer logs.")
+                    st.error("La synthèse n'a pas pu être générée. Veuillez réessayer.")
+                    return
             except Exception as e:
                 st.error(f"Erreur lors de la génération: {str(e)}")
                 return
@@ -112,8 +122,8 @@ def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
     history = list(commune.odis_synthesis)
     
     for msg in history:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
+        # with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
     
     # 4. Handle follow-up questions
     question = st.chat_input(f"Ex: Quelles associations facilitent le logement à {nom} ?", key=f"chat_input_ia_{codgeo}")

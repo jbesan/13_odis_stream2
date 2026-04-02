@@ -1,6 +1,5 @@
 import os
 import yaml
-import requests
 import pandas as pd
 import geopandas as gpd
 import logging
@@ -8,7 +7,7 @@ import json
 import zipfile
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional
 from dotenv import load_dotenv
 
 # Load environment variables

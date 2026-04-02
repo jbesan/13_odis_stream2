@@ -21,7 +21,7 @@ def sample_session_state():
         criteria_weights={}, # Added for F-15
         commune_actuelle='33063',
         loc_search_area='departement',
-        loc_search_code=None,
+        loc_search_code=[],
         nb_adultes=1,
         nb_enfants=1,
         hebergement_cible=[],

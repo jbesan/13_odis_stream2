@@ -144,9 +144,16 @@ def run_test_scenario(scenario_id, app_data):
     # Map old loc_search_area to new Mobility UI fields for test compatibility
     loc_val = default_data.get('loc_search_area')
     if loc_val == 'france':
-        mock_session_state['ui_mobility_france'] = True
+        mock_session_state['ui_france_search'] = True
+        mock_session_state['ui_region_search'] = False
+    elif loc_val == 'region':
+        mock_session_state['ui_france_search'] = False
+        mock_session_state['ui_region_search'] = True
     else:
-        mock_session_state['ui_mobility_france'] = False
+        mock_session_state['ui_france_search'] = False
+        mock_session_state['ui_region_search'] = False
+
+    if not mock_session_state.get('ui_france_search'):
         current_dept_code = mock_session_state['ui_departement']
         # Find region code for the department
         dept_details = app_data.get('dept_details', {})
@@ -154,9 +161,9 @@ def run_test_scenario(scenario_id, app_data):
         
         mock_session_state['ui_mobility_region'] = current_reg_code
         if loc_val == 'region':
-            mock_session_state['ui_mobility_dept'] = "Toute la région"
+            mock_session_state['ui_mobility_dept'] = ["Toute la région"]
         else:
-            mock_session_state['ui_mobility_dept'] = current_dept_code
+            mock_session_state['ui_mobility_dept'] = [current_dept_code]
 
     # 4. Create the SearchCriterias by calling the app's own UI function.
     # We use unittest.mock.patch to temporarily replace streamlit's session_state

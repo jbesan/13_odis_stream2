@@ -162,7 +162,7 @@ def search_rna_rag_batch(queries: List[str], codgeo: str, top_k: int = 10) -> Li
     seen_ids = set()
     
     for q in queries:
-        logger.info(f"  ↳ Processing query: '{q}'")
+        logger.debug(f"  ↳ Processing query: '{q}'")
         try:
             res = _search_rna_rag_logic(q, codgeo, top_k=top_k)
             

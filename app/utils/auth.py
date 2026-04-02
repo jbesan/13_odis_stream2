@@ -27,12 +27,12 @@ def check_password():
     is_cloud_run = os.environ.get("K_SERVICE") is not None
     
     # 1. Skip if not running on Cloud Run (Local Dev)
-    # if not is_cloud_run:
-    #     # Default user for local logging/telemetry
-    #     if "username" not in st.session_state:
-    #         st.session_state["username"] = "jacques-local"
-    #     st.session_state["password_correct"] = True
-    #     return True
+    if not is_cloud_run:
+        # Default user for local logging/telemetry
+        if "username" not in st.session_state:
+            st.session_state["username"] = "jacques-local"
+        st.session_state["password_correct"] = True
+        return True
 
     # 2. Initialize session state for auth
     if "password_correct" not in st.session_state:

@@ -44,18 +44,31 @@ def set_data_context(context: Dict[str, Any]) -> None:
     # logger.info("Data Context injected externally.")
 
 def ensure_data_context() -> None:
-    """Ensures data context is loaded if missing (thread-safe)."""
+    """
+    Ensures data context is loaded, sharing the Streamlit @st.cache_resource.
+
+    Uses get_app_data() instead of load_all_data_raw() so that the MCP server
+    reuses the already-loaded in-process data dict (zero I/O) when running
+    inside the same Streamlit process. Falls back to direct load only if the
+    Streamlit cache is unavailable (e.g. standalone MCP server mode).
+    """
     global DATA_CONTEXT
     if not DATA_CONTEXT:
         with DATA_LOCK:
-            # Double-check inside lock
             if not DATA_CONTEXT:
                 try:
-                    logger.info("⚙️ [MCP] Loading full data context (first time use)...")
-                    DATA_CONTEXT = load_all_data_raw()
+                    # Try to reuse the Streamlit @st.cache_resource first (zero I/O)
+                    from utils.data_loader import get_app_data
+                    DATA_CONTEXT = get_app_data()
+                    logger.info("⚙️ [MCP] Data context loaded from Streamlit cache (shared).")
                 except Exception as e:
-                    logger.error(f"Failed to load data context: {e}")
-                    raise RuntimeError(f"Failed to load ODIS data: {e}")
+                    # Fallback: standalone MCP mode (e.g. running as separate process)
+                    try:
+                        logger.info("⚙️ [MCP] Loading full data context (fallback direct load)...")
+                        DATA_CONTEXT = load_all_data_raw()
+                    except Exception as e2:
+                        logger.error(f"Failed to load data context: {e2}")
+                        raise RuntimeError(f"Failed to load ODIS data: {e2}")
 
 
 def get_scoring_engine() -> ScoringEngine:
