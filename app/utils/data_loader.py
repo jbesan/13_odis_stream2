@@ -136,21 +136,30 @@ def apply_search_criteria_to_ui(criteria: Any) -> None:
 
     # 4. Handle Mobility Form special case (which deviates from 1-to-1 parsing)
     loc_area = flat_crit.get('loc_search_area')
-    loc_code = flat_crit.get('loc_search_code')
+    loc_code = flat_crit.get('loc_search_code') or [] # Now a list
     
     if loc_area == 'france':
-        st.session_state['ui_mobility_region'] = 'france'
+        st.session_state['ui_france_search'] = True
+        st.session_state['ui_region_search'] = False
     elif loc_area == 'region':
-        st.session_state['ui_mobility_region'] = loc_code
-        st.session_state['ui_mobility_dept'] = "Toute la région"
+        st.session_state['ui_france_search'] = False
+        st.session_state['ui_region_search'] = True
+        if loc_code:
+            st.session_state['ui_mobility_region'] = loc_code[0] if isinstance(loc_code, list) else loc_code
     elif loc_area == 'departement' and loc_code:
-        # Infer region for this department
+        st.session_state['ui_france_search'] = False
+        st.session_state['ui_region_search'] = False
+        
+        # loc_code is a list of department codes
+        st.session_state['ui_mobility_dept'] = loc_code if isinstance(loc_code, list) else [loc_code]
+        
+        # Infer region from the first department
+        first_dept = loc_code[0] if isinstance(loc_code, list) else loc_code
         app_data = st.session_state.get('app_data', {})
         dept_details = app_data.get('dept_details', {})
-        reg_code = dept_details.get(loc_code, {}).get('reg_code')
+        reg_code = dept_details.get(first_dept, {}).get('reg_code')
         if reg_code:
             st.session_state['ui_mobility_region'] = reg_code
-        st.session_state['ui_mobility_dept'] = loc_code
         
     # 5. Handle notes_qualitatives (UI expects a string, model provides a list of strings)
     if 'notes_qualitatives' in flat_crit:
@@ -184,9 +193,10 @@ def ensure_data_initialized() -> None:
         defaults = copy.deepcopy(cfg.DEMO_DATA_DEFAULT)
         # Only overwrite defaults if demo is in query params
         apply_demo_data_if_present(defaults)
+        st.session_state['demo_data'] = defaults
         
-        # If it's a refresh from query params, we update the state
-        session_states_init(defaults)
+    # Always ensure session states are initialized if missing
+    session_states_init(st.session_state['demo_data'])
 
     # Ensure global cache is warm
     get_app_data()
