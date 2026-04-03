@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional, Union
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 import config as cfg
-from .state import ODISGraphState, ODISDeps, FocusCity, compute_criteria_hash
+from .state import ODISGraphState, ODISDeps, FocusCity, compute_criteria_hash, ODISContextBuilder
 from .agent_config import get_model
 
 logger = logging.getLogger(__name__)
@@ -21,44 +21,46 @@ class ScoutResult(BaseModel):
 
 SCOUT_ANALYSIS_SYSTEM_PROMPT = """
 **Rôle** : Tu es le Scout ODIS. Tu épaules le travailleur social pour trouver les infrastructures locales pertinentes pour le projet de vie de la personne accompagnée.
-**Objectif** : Rapporter le résultat d'un analyse poussée sur la commune demandée.
+**Objectif** : Rapporter le résultat d'une analyse poussée sur la commune demandée.
 **Ton** : Hyper synthétique, direct, factuel.
 
-**CONTEXTE RÉSUMÉ** : {BRIEFING}
+# Contexte du dossier :
+```json
+{DATA_CONTEXT}
+```
 
 **Instructions** :
-1. **Gestion du Focus** : La localité d'intérêt est `{FOCUS_CITY_NAME}`.
-2. Sois efficace et ne cherche JAMAIS deux fois la même chose
+1. **Gestion du Focus** : La localité d'intérêt est la `Ville analysée` dans le contexte.
+2. Sois efficace et ne cherche JAMAIS deux fois la même chose. Fais particulièrement attention aux `Notes qualitatives` pour tes recherches.
 3. **Recherche de Terrain** : Effectue TOUTES les recherches suivantes en choisissant le bon outil :
-    - Utilise SYSTEMATQIEUEMENT `search_refugee_associations_tool` pour trouver des associations spécialisées dans l'aide aux réugiés.
+    - Utilise SYSTEMATIQUEMENT `search_refugee_associations_tool` pour trouver des associations spécialisées dans l'aide aux réfugiés.
     - Utilise SYSTEMATIQUEMENT `search_ccas_tool` pour trouver le Centre Communal d'Action Social local.
     - Utilise SYSTEMATIQUEMENT `search_places_batch_tool` UNIQUEMENT pour trouver des POIs pertinents au regard du contexte:
-        - Des infastrctures de transports (ex: gares, gares routières)
-        - Des commerces spécialisés (ex: boucherie halal, épicerie asiatique)
-        - Des lieux de culte **pertinents** hors églises (ex: pagode, mosquée, temple) 
+        - Des infrastructures de transports (ex: gares, gares routières)
+        - Des commerces spécialisés (ex: boucherie halal, épicerie asiatique) **si mentionnés dans les notes qualitatives**
+        - Des lieux de culte **pertinents** hors églises (ex: pagode, mosquée, temple)
         - Lieux d'hébergement et d'insertion (ex: CPH, CHRS, CADA)
     - Utilise `search_rna_rag_batch_tool` pour trouver des associations pertinentes pour leur insertion (loisirs, affinités culturelles, solidarité).
-    - Utilise `compute_routes_tool` pour calculer les temps de trajet (ex: vers prefecture).
-    
+    - Utilise `compute_routes_tool` pour calculer les temps de trajet (ex: vers préfecture).
 
-3. **Réponse (STRUCTURED)** :
+5. **Réponse (STRUCTURED)** :
     - Tu DOIS retourner un objet `ScoutResult`.
     - `searched` : Une phrase courte listant les outils/recherches effectués.
-    - `result` : Ton analyse factuelle, argumentative et concise (incluant systématiquement le CCAS trouvé). Vise 250 mots minimum et ne garde que ce qui est pertinent au regard du `CONTEXTE RÉSUMÉ`.
+    - `result` : Ton analyse factuelle, argumentative et concise (incluant systématiquement le CCAS trouvé). Vise 250 mots minimum et ne garde que ce qui est pertinent au regard du dossier.
 """
 
 SCOUT_SPECIFIC_SYSTEM_PROMPT = """
 **Rôle** : Tu es le Scout ODIS. Ta mission est de compléter une analyse existante en effectuant des recherches additionnelles avec les outils disponibles.
 **Objectif** : Fournir des informations d'actualité, de contexte social et de veille sur la ville de réinstallation.
 
-**CONTEXTE RÉSUMÉ** : {BRIEFING}
-**VILLE ACTIVE** : {FOCUS_CITY_NAME} (Code INSEE: {FOCUS_CITY_CODE})
-**QUESTION POSÉE** : {LAST_MESSAGE}
-**CONNAISSANCES ACTUELLES** : {COMMUNE_ARTIFACT}
+# Contexte du dossier :
+```json
+{DATA_CONTEXT}
+```
 
 **Instructions** :
-1. Si la `QUESTION POSÉE` peut-être répondue avec les `CONNAISSANCES ACTUELLES` ne fais rien.
-2. Si des données manquent pour répondre à la `QUESTION POSÉE` : 
+1. Si la `Dernière question` peut être répondue avec les `Connaissances actuelles (Scout)` ne fais rien.
+2. Si des données manquent pour répondre à la `Dernière question` :
     - Utilise `search_refugee_associations_tool` pour trouver des associations de support aux réfugiés.
     - Utilise `search_rna_rag_batch_tool` pour trouver des associations pertinentes (loisirs, affinités culturelles, solidarité).
     - Utilise `search_places_batch_tool` pour trouver des POIs (écoles, parcs, commerces, lieux de culte).
@@ -67,7 +69,7 @@ SCOUT_SPECIFIC_SYSTEM_PROMPT = """
 3. **Réponse (STRUCTURED)** :
     - Tu DOIS retourner un objet `ScoutResult`.
     - `searched` : Résumé des recherches additionnelles effectuées.
-    - `result` : Réponse à la `QUESTION POSÉE` basée sur les nouvelles recherches ou les `CONNAISSANCES ACTUELLES`.
+    - `result` : Réponse à la question basée sur les nouvelles recherches ou les connaissances actuelles.
 """
 
 scout_agent = Agent(
@@ -78,35 +80,14 @@ scout_agent = Agent(
 
 @scout_agent.system_prompt
 async def scout_instructions(ctx: RunContext[ODISDeps]) -> str:
-    focus = ctx.deps.state.focus_city
-    city_name = focus.name if focus else "Non définie"
-    city_code = focus.codgeo if focus else "Inconnu"
-    last_message = ctx.deps.state.messages[-1].get("content", "Non disponible") if ctx.deps.state.messages else "Non disponible"
-    h = compute_criteria_hash(ctx.deps.state.search_criteria)
-    
-    # Get artifacts from the new search_results structure
-    artifacts = {}
-    if ctx.deps.state.search_results:
-        city_res = ctx.deps.state.search_results.get_by_code(city_code)
-        if city_res:
-             artifacts = city_res.expert_analysis
-    
-
-    # We select prompt according to mode: generic commune analysis or a specific question
+    """Builds Scout prompt using ODISContextBuilder."""
+    data_context = ODISContextBuilder.agent_context(ctx.deps.state, "scout")
     mode = ctx.deps.state.execution_mode
-    if mode == 'specific_ask':
-        prompt = SCOUT_SPECIFIC_SYSTEM_PROMPT
-    else:
-        prompt = SCOUT_ANALYSIS_SYSTEM_PROMPT
-
+    prompt_template = SCOUT_ANALYSIS_SYSTEM_PROMPT if mode in ["analysis", "full_analysis"] else SCOUT_SPECIFIC_SYSTEM_PROMPT
     
-    return prompt.format(
-        BRIEFING=ctx.deps.state.odis_brief or "",
-        FOCUS_CITY_NAME=city_name,
-        FOCUS_CITY_CODE=city_code,
-        LAST_MESSAGE = last_message,
-        COMMUNE_ARTIFACT=artifacts.get("scout", "Non disponible")
-    )
+    prompt = prompt_template.format(DATA_CONTEXT=data_context)
+    logger.debug(f"--- [SCOUT PROMPT] ---\n{prompt}\n----------------------------")
+    return prompt
 
 # --- Tools ---
 

@@ -3,7 +3,7 @@ import re
 from typing import List, Dict, Any, Optional
 from pydantic_ai import Agent, RunContext
 from pydantic import BaseModel, Field
-from .state import ODISGraphState, ODISDeps, compute_criteria_hash
+from .state import ODISGraphState, ODISDeps, compute_criteria_hash, ODISContextBuilder
 from .agent_config import get_model
 from .tools import (
     search_job_offers_batch,
@@ -30,16 +30,17 @@ class JobSearchQuery(BaseModel):
 JOB_HUNTER_ANALYSIS_SYSTEM_PROMPT = """
 **Rôle** : Tu es le Job Hunter ODIS. Expert ultra-proactif du marché de l'emploi.
 
-**CONTEXTE RÉSUMÉ** : {BRIEFING}
-** CODES METIERS IDENTIFIES** : {ROME_CODES}
-**VILLE ACTIVE** : {FOCUS_CITY_NAME} (Code INSEE: {FOCUS_CITY_CODE})
+# Contexte du dossier :
+```json
+{DATA_CONTEXT}
+```
 
-**Objectif** : Trouver des offres d'emploi RÉELLES et PERTINENTES selon le `CONTEXTE RÉSUMÉ` dans `{FOCUS_CITY_NAME}` pour TOUS les adultes du ménage. 
+**Objectif** : Trouver des offres d'emploi RÉELLES et PERTINENTES selon le dossier JSON dans la `Ville analysée` pour TOUS les adultes du ménage. 
 **Note** : Les offres de Structures d'insertion par l'activité Economique (SIAE) sont particulièrement pertinentes même si les codes ROME ne correspondent pas exactement.
 
 **DIRECTIVES CRITIQUES (NE PAS DEMANDER, AGIR)** :
-1. **UTILISATION DU CODE INSEE** : Ne cherche pas le code, utilise celui fourni : `{FOCUS_CITY_CODE}`.
-2. **RECHERCHE D'OFFRES (FT & SIAE)** :  Lance `search_job_offers_batch_tool` (France Travail) ET `search_inclusion_jobs_batch_tool` pour TOUS les codes ROME identifiés.
+1. **UTILISATION DU CODE INSEE** : Ne cherche pas le code, utilise celui fourni dans `Ville analysée` (`Code INSEE`).
+2. **RECHERCHE D'OFFRES (FT & SIAE)** : Lance `search_job_offers_batch_tool` (France Travail) ET `search_inclusion_jobs_batch_tool` pour TOUS les métiers identifiés.
 3. **NE DEMANDE PAS DE PRÉCISIONS** : Tu as les informations sur les métiers dans les critères. AGIS IMMÉDIATEMENT sans attendre de confirmation.
 4. **Réponse (STRUCTURED)** : 
     - Tu DOIS retourner un objet `JobHunterResult`.
@@ -51,20 +52,20 @@ JOB_HUNTER_SPECIFIC_SYSTEM_PROMPT = """
 **Rôle** : Tu es le Job Hunter ODIS. Expert ultra-proactif du marché de l'emploi.
 **Objectif** : Faire d'éventuelles recherches supplémentaires pour répondre à une question spécifique de l'utilisateur.
 
-**CONTEXTE RÉSUMÉ** : {BRIEFING}
-**VILLE ACTIVE** : {FOCUS_CITY_NAME} (Code INSEE: {FOCUS_CITY_CODE})
-**QUESTION POSÉE** : {LAST_MESSAGE}
-**CONNAISSANCES ACTUELLES** : {COMMUNE_ARTIFACT}
+# Contexte du dossier :
+```json
+{DATA_CONTEXT}
+```
 
 **DIRECTIVES CRITIQUES (NE PAS DEMANDER, AGIR)** :
-- Pour récupérer le détail d'une offre appele IMMEDIATEMENT `get_job_details` pour l'ID du dans `QUESTION POSÉE` structure ta réponse avec les points suivants :
-    - Lien vers l'offre
+- Pour récupérer le détail d'une offre appelle IMMEDIATEMENT `get_job_details` pour l'ID mentionné dans `Dernière question`. Structure ta réponse avec les points suivants :
+    - Lien vers l'offre.
     - Type de contrat et durée.
     - Compétences attendues (traduis si trop technique).
-    - Analyse d'adéquation avec le `CONTEXTE RÉSUMÉ`.
+    - Analyse d'adéquation avec le dossier.
     - Employeur. Localisation précise et salaire (si disponible).
-- Pour récupérer de nouvelles offres:
-    - Utilise `search_referentiels_batch_tool` pour récupérer le/les code(s) ROME ou un code commune manquant (ne les invente JAMAIS)
+- Pour récupérer de nouvelles offres :
+    - Utilise `search_referentiels_batch_tool` pour récupérer le/les code(s) ROME ou un code commune manquant (ne les invente JAMAIS).
     - Utilise `search_job_offers_batch_tool` (France Travail) ou `search_inclusion_jobs_batch_tool` (SIAE) selon la demande.
 
 **Réponse (STRUCTURED)** :
@@ -81,39 +82,13 @@ job_hunter_agent = Agent(
 
 @job_hunter_agent.system_prompt
 async def job_hunter_instructions(ctx: RunContext[ODISDeps]) -> str:
-    odis_brief = ctx.deps.state.odis_brief or ""
-    focus = ctx.deps.state.focus_city
-    city_name = focus.name if focus else "Non définie"
-    city_code = focus.codgeo if focus else "Inconnu"
-    codes_metiers = ctx.deps.state.search_criteria.codes_metiers or []
-    last_message = ctx.deps.state.messages[-1].get("content", "Non disponible") if ctx.deps.state.messages else "Non disponible"
-    h = compute_criteria_hash(ctx.deps.state.search_criteria)
-    
-    # Get artifacts from the new search_results structure
-    artifacts = {}
-    if ctx.deps.state.search_results:
-        city_res = ctx.deps.state.search_results.get_by_code(city_code)
-        if city_res:
-             artifacts = city_res.expert_analysis
-
-    # We select prompt according to mode: generic commune analysis or a specific question
+    """Builds Job Hunter agent prompt using ODISContextBuilder."""
+    data_context = ODISContextBuilder.agent_context(ctx.deps.state, "job_hunter")
     mode = ctx.deps.state.execution_mode
-    if mode == 'specific_ask':
-        prompt = JOB_HUNTER_SPECIFIC_SYSTEM_PROMPT
-    else:
-        prompt = JOB_HUNTER_ANALYSIS_SYSTEM_PROMPT
-    
-    prompt = prompt.format(
-        BRIEFING=odis_brief, 
-        FOCUS_CITY_NAME=city_name, 
-        FOCUS_CITY_CODE=city_code,
-        ROME_CODES= codes_metiers,
-        LAST_MESSAGE = last_message,
-        COMMUNE_ARTIFACT=artifacts.get("job_hunter", "Non disponible")
-    )    
+    prompt_template = JOB_HUNTER_ANALYSIS_SYSTEM_PROMPT if mode in ["analysis", "full_analysis"] else JOB_HUNTER_SPECIFIC_SYSTEM_PROMPT
 
-    logger.debug(f"Job Hunter Prompt: {prompt}")
-
+    prompt = prompt_template.format(DATA_CONTEXT=data_context)
+    logger.debug(f"--- [JOB HUNTER PROMPT] ---\n{prompt}\n----------------------------")
     return prompt
 
 # Tools wrapped for PydanticAI

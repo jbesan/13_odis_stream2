@@ -6,7 +6,7 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field, ConfigDict
 from pydantic_ai import Agent, RunContext
 
-from .state import ODISGraphState, ODISDeps
+from .state import ODISGraphState, ODISDeps, ODISContextBuilder
 from .agent_config import get_model
 from .tools import compute_top_cities
 from core.models import SearchCriterias
@@ -25,24 +25,25 @@ class ScorerResult(BaseModel):
 
 # --- System Prompt ---
 SCORER_SYSTEM_PROMPT = """
-**Rôle** : Tu es le Scorer ODIS. Ton job est de calculer et expliquer le Top Villes.
-**CONTEXTE RÉSUMÉ** : {BRIEFING}
-**PROFILE** : {PROFILE}
-**CRITERES DE RECHERCHE** : {CRITERES}
+**Rôle** : Tu es le Scorer ODIS. Ton job est de calculer et argumenter le Top 5 des Villes identifiées.
+
+# Contexte du dossier :
+```json
+{DATA_CONTEXT}
+```
 
 **DIRECTIVE CRITIQUE** :
 Tu DOIS utiliser l'outil `compute_top_cities`.
-Les critères de recherche sont injectés automatiquement dans le contexte, utilise-les tels quels.
+Les critères de recherche sont injectés automatiquement dans le contexte JSON, utilise-les tels quels.
 
 **Instructions** :
 1. Lance `compute_top_cities` (pas besoin de passer d'arguments).
-2. **SI l'outil retourne une erreur**, n'essaie pas de le relancer indéfiniment. Explique simplement à l'utilisateur qu'une erreur technique est survenue et demande-lui de vérifier ses critères (notamment la commune).
-3. Une fois les résultats reçus, analyse le **Top 5** des meilleures communes.
-4. Remplis `response` avec une synthèse concise et engageante pour l'utilisateur.
-5. Pour `pitches_per_city`, pour chaque ville du Top 5:
+2. Une fois les résultats reçus, analyse le **Top 5** des meilleures communes.
+3. Remplis `response` avec une synthèse concise et engageante pour l'utilisateur.
+4. Pour `pitches_per_city`, pour chaque ville du Top 5 :
     a. Fournis le code INSEE exact (`codgeo`) et le nom (`name`).
-    b. Rédige un `pitch` court et pertinent au regard du `CONTEXTE RÉSUMÉ` : 3 à 5 points forts concrets et chiffrés (en pourcentage si pertinent) sous forme de liste à puces au format markdown simple. Si l'utilisateur a exprimé une préférence de taille de ville (`target_population`), mentionne comment la ville y répond.
-6. **IMPORTANT** : Ne retourne jamais les références des données (ex: %{{log_soc_inoc_scaled}}).
+    b. Rédige un `pitch` court et pertinent au regard du contexte : 3 à 5 points forts concrets et chiffrés (en pourcentage si pertinent) sous forme de liste à puces au format markdown simple. Si l'utilisateur a exprimé une préférence de taille de ville, mentionne comment la ville y répond.
+5. **IMPORTANT** : Ne retourne jamais les références des données techniques internes (ex: %{{log_soc_inoc_scaled}}).
 """
 
 # --- Agent Definition ---
@@ -54,32 +55,13 @@ scorer_agent = Agent(
 
 @scorer_agent.system_prompt
 async def scorer_instructions(ctx: RunContext[ODISDeps]) -> str:
-    # Validation / Pre-processing
-    try:
-        # criteria is already a SearchCriterias model in ODISGraphState
-        criteria_model = ctx.deps.state.search_criteria
-        profile = criteria_model.weight_profile or "Équilibré"
-    except Exception as e:
-        return f"ATTENTION: Les critères sont invalides ({e}). Demande à l'utilisateur de compléter."
-        
-    odis_brief = ctx.deps.state.odis_brief
+    """Builds Scorer agent prompt using ODISContextBuilder."""
+    data_context = ODISContextBuilder.agent_context(ctx.deps.state, "scorer")
     
-    # Refine criteria representation for the LLM: 
-    # - exclude_none=True/exclude_unset=True removes noise.
-    # - technical fields like active_criteria are actually useful for the LLM to know what was weighted.
-    criteria_json = criteria_model.model_dump_json(
-        indent=2, 
-        exclude_none=True, 
-        exclude_unset=True,
-        exclude={'loc_search_code', 'notes_qualitatives'} # Remove non-essential fields for the pitch
-    )
-
     prompt = SCORER_SYSTEM_PROMPT.format(
-        PROFILE=profile,
-        BRIEFING=odis_brief,
-        CRITERES=criteria_json
+        DATA_CONTEXT=data_context
     )
-
+    logger.debug(f"--- [SCORER PROMPT] ---\n{prompt}\n----------------------------")
     return prompt
 
 # --- Tool Wrapper ---

@@ -329,7 +329,8 @@ col_map, col_results = st.columns([3, 2])
 with col_results:
     if st.session_state.get('search_results') is not None:
         # st.subheader("Meilleurs résultats")
-        st.text("Cliquez sur un résultat pour comprendre le détail du score")
+        with st.container(height=40, vertical_alignment="center", border=False):
+            st.caption("Cliquez sur un résultat ⬇ pour comprendre le détail du score", text_alignment='center', width='stretch')
         
         ui.display_results_list() # No args needed, it uses session_state.search_results internally
 
@@ -367,10 +368,16 @@ with col_map:
             if config.besoin_sante != "Aucun": pill_options.append({"id": "sante", "label": "🏥 Santé"})
             if config.inc_services_add_selection: pill_options.append({"id": "inc", "label": "🤝 Inclusion"})
         
-        selected_objs = st.pills("Afficher sur la carte :", pill_options, selection_mode="multi", 
-                                default=[pill_options[0]], format_func=lambda x: x["label"],
-                                key="map_layers_pills", label_visibility="collapsed")
+        col1, col2 = st.columns([1,4])
+        with col1:
+            with st.container(height="stretch", vertical_alignment="center"):
+                st.text("Afficher", text_alignment='right', width='stretch')
         
+        with col2:
+            selected_objs = st.pills("Afficher sur la carte :", pill_options, selection_mode="multi", 
+                                    default=[pill_options[0]], format_func=lambda x: x["label"],
+                                    key="map_layers_pills", label_visibility="collapsed")
+            
         selected_ids = {obj["id"] for obj in selected_objs} if selected_objs else set()
         legend_items = [{'color': 'red', 'text': 'Top 5', 'icon':'circle'}]
 
@@ -421,21 +428,21 @@ with col_map:
         
         st.markdown('<style>.stCustomComponentV1 {border-radius:10px}</style>', unsafe_allow_html=True)
 
-    st.caption(f"⚠️ Seules les {cfg.MAX_MAP_POLYGONS} meilleures communes sont affichées")
+    # st.caption(f"⚠️ Seules les {cfg.MAX_MAP_POLYGONS} meilleures communes sont affichées")
 
 # Do not remove, useful to debug states
 # Detect Cloud Run environment
 is_cloud_run = os.environ.get("K_SERVICE") is not None
 
 # 1. Skip if not running on Cloud Run (Local Dev)
-if not is_cloud_run:
-    with st.expander("Debug", expanded=False):
-        # try:
-        # 🧪 SOTA: Drop geometry columns to avoid 'pyarrow.lib.ArrowTypeError'
-        # Streamlits Arrow serialization doesn't support GeoPandas objects in st.dataframe
-        debug_df = st.session_state.get('processed_gdf')
-        if debug_df is not None:
-            st.text(f"Lignes: {len(debug_df)}")
+# if not is_cloud_run:
+#     with st.expander("Debug", expanded=False):
+#         # try:
+#         # 🧪 SOTA: Drop geometry columns to avoid 'pyarrow.lib.ArrowTypeError'
+#         # Streamlits Arrow serialization doesn't support GeoPandas objects in st.dataframe
+#         debug_df = st.session_state.get('processed_gdf')
+#         if debug_df is not None:
+#             st.text(f"Lignes: {len(debug_df)}")
         #     st.text(f"colonnes: {len(debug_df.columns)}")
         #     mem_usage = debug_df.memory_usage(deep=True).sum() / (1024 * 1024)
         #     st.text(f"Mémoire RAM: {mem_usage:.2f} Mo")                

@@ -37,7 +37,97 @@ def _setup_unicode_font(pdf: FPDF) -> None:
         logging.warning(f"--- WARNING: Could not load local Unicode font. Falling back to Arial. Error: {e} ---")
         logging.warning("--- Please ensure you have downloaded the font files as per the instructions. ---")
         # Fallback to Arial if font setup fails
-        pdf.set_font("Arial", size=12)
+    pdf.set_font("Arial", size=12)
+
+
+def _format_markdown_for_pdf(text: str) -> str:
+    """
+    Converts basic markdown (bold, italic, headers, bullets, tables) 
+    into HTML for FPDF write_html.
+    """
+    if not text:
+        return ""
+
+    # 1. Headers (### Header)
+    text = re.sub(r'(^|\n)###\s*(.*)', r'\1<h3>\2</h3>', text)
+    text = re.sub(r'(^|\n)##\s*(.*)', r'\1<h2>\2</h2>', text)
+    text = re.sub(r'(^|\n)#\s*(.*)', r'\1<h1>\2</h1>', text)
+
+    # 2. Bold/Italic
+    text = re.sub(r'\*\*\*(.*?)\*\*\*', r'<b><i>\1</i></b>', text) # Triple
+    text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', text) # Bold
+    text = re.sub(r'\*(.*?)\*', r'<i>\1</i>', text) # Italic
+
+    # 3. Bullet points (retaining the visual bullet)
+    text = re.sub(r'^\s*[-*+]\s+', '• ', text, flags=re.MULTILINE)
+
+    # 4. Tables (Simple Markdown to HTML Table)
+    lines = text.split('\n')
+    in_table = False
+    html_lines = []
+    table_buffer = []
+
+    for line in lines:
+        if '|' in line and not in_table:
+            # Check if next line is a header separator (e.g. |---|)
+            # (Simple heuristic: look for pipes and dashes)
+            in_table = True
+            table_buffer = [line]
+        elif in_table:
+            if '|' in line:
+                table_buffer.append(line)
+            else:
+                # End of table
+                in_table = False
+                html_lines.append(_convert_md_table_to_html(table_buffer))
+                table_buffer = []
+                html_lines.append(line)
+        else:
+            html_lines.append(line)
+    
+    if table_buffer: # Close trailing table
+        html_lines.append(_convert_md_table_to_html(table_buffer))
+
+    final_html = "<br>".join(html_lines)
+    # Ensure paragraphs are closed if using multi_cell/write_html mix
+    return final_html
+
+
+def _convert_md_table_to_html(md_lines: List[str]) -> str:
+    """Helper to convert a list of markdown table lines to HTML."""
+    rows = []
+    # Skip separator lines (e.g. |---|)
+    for line in md_lines:
+        if re.match(r'^\s*\|?\s*[:\-]+\s*\|\s*[:\-\s|]+$', line):
+            continue
+        
+        # Split by | and trim, removing empty first/last
+        cells = [c.strip() for c in line.split('|')]
+        if not cells[0]: cells.pop(0)
+        if cells and not cells[-1]: cells.pop(-1)
+        
+        if not cells: continue
+        rows.append(cells)
+    
+    if not rows: return ""
+    
+    html = '<table border="1" width="100%">'
+    # Header row
+    html += '<thead><tr>'
+    for cell in rows[0]:
+        html += f'<th><b>{cell}</b></th>'
+    html += '</tr></thead>'
+    
+    # Body rows
+    html += '<tbody>'
+    for row in rows[1:]:
+        html += '<tr>'
+        for cell in row:
+            html += f'<td>{cell}</td>'
+        html += '</tr>'
+    html += '</tbody></table>'
+    
+    return html
 
 
 def _generate_static_map_image(search_results: SearchResultsData, processed_gdf: Optional[gpd.GeoDataFrame] = None) -> bytes:
@@ -298,12 +388,7 @@ def generate_pdf_report(
             # Fallback to simple pitch logic if scorer_pitch is missing
             pitch = f"{commune.name} se distingue particulièrement sur vos critères prioritaires."
             
-        # Convert simple markdown to HTML tags for better compatibility with write_html
-        pitch_html = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', pitch) # Proper bold toggle
-        # Handle bullet points at start of lines
-        pitch_html = re.sub(r'^\s*-\s*', '• ', pitch_html, flags=re.MULTILINE)
-        pitch_html = re.sub(r'^\s*\*\s*', '• ', pitch_html, flags=re.MULTILINE)
-        pitch_html = pitch_html.replace("\n", "<br>")
+        pitch_html = _format_markdown_for_pdf(pitch)
 
         pdf.set_font("DejaVu", '', 10)
         pdf.write_html(f'<p>{pitch_html}</p>')
@@ -527,11 +612,16 @@ def generate_pdf_report(
             pdf.set_font("DejaVu", 'B', 12)
             pdf.cell(pdf.epw, 10, "Synthèse de l'analyse OD&IS", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             pdf.set_font("DejaVu", '', 9)
-            # Format odis_synthesis as a small block
+            
+            # Combine synthesis messages into a single markdown block
+            synthesis_md = ""
             for msg in commune.odis_synthesis:
-                role = "Assistant" if msg.get("role") == "assistant" else "Aide"
+                role = "OD&IS" if msg.get("role") == "assistant" else "Projet"
                 content = msg.get("content", "")
-                pdf.multi_cell(pdf.epw, 5, f"{role}: {content}")
+                synthesis_md += f"### {role}\n{content}\n\n"
+            
+            synthesis_html = _format_markdown_for_pdf(synthesis_md)
+            pdf.write_html(synthesis_html)
             pdf.ln(5)
 
     return bytes(pdf.output())

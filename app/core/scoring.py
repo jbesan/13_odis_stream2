@@ -4,6 +4,7 @@
 Scoring module for the ODIS application.
 """
 from typing import List, Dict, Set, Any, Optional, Union, Tuple
+import string
 import geopandas as gpd
 import numpy as np
 import pandas as pd

@@ -94,7 +94,7 @@ def build_scores_layer(df: pd.DataFrame, id_col: str = "codgeo", name_col: str =
         gdf,
         style_function=lambda feature: {
             "fillColor": colormap(score_dict.get(str(feature["properties"][id_col]))),
-            "stroke": False,
+            "stroke": True,
             "color": "#1b4429",
             "weight": 0.5,
             "fillOpacity": 0.7,
@@ -150,9 +150,20 @@ def _get_geom(row: Union[pd.Series, Any], field: str = 'polygon', gdf_context: O
             return geom
 
     # 2. Fallback: check the object itself (Metadata only)
-    if hasattr(row, field): return getattr(row, field)
-    if isinstance(row, dict) and field in row: return row.get(field)
+    val = None
+    if hasattr(row, field): val = getattr(row, field)
+    elif isinstance(row, dict) and field in row: val = row.get(field)
     
+    # 🧪 JIT Decode if it's a WKB blob or handle centroid conversion
+    if val is not None:
+        geom = val
+        if isinstance(val, (bytes, bytearray)):
+            geom = wkb.loads(bytes(val))
+        
+        if field == 'centroid' and geom and not hasattr(geom, 'x'):
+            return geom.centroid
+        return geom
+
     return None
 
 def build_top_result_layer(row: Union[pd.Series, Any], rank: int, gdf_context: Optional[pd.DataFrame] = None) -> flm.FeatureGroup:

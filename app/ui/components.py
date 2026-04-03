@@ -166,7 +166,7 @@ def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
                             commune.odis_synthesis = _get_field(city_data, "odis_synthesis", [])
                             break
                             
-                st.rerun() 
+                # st.rerun() 
             except Exception as e:
                 st.error(f"Erreur de l'agent: {str(e)}")
 
@@ -230,7 +230,7 @@ def ai_pitch_container(main_code: str, h: str):
                     # Also update current_geo if needed
                     if st.session_state.search_results.current_geo and st.session_state.search_results.current_geo.codgeo == main_code:
                          st.session_state.search_results.current_geo.scorer_pitch = pitch_for_city
-                    st.rerun()
+                    # st.rerun()
             st.markdown(pitch_for_city)
 
 def sync_background_data(commune: CommuneResult, h: Optional[str]):
@@ -1361,15 +1361,13 @@ def display_results_list(display_gdf: Optional[pd.DataFrame] = None) -> None:
     if st.session_state.get('active_ccas_index') is not None:
         show_ccas_dialog(st.session_state.active_ccas_index)
 
-    st.subheader("Meilleurs résultats")
-    st.text("Cliquez sur un résultat pour comprendre le détail du score")
     st.markdown('<style> [class*="st-key-button_top"] .stButton button div, [class*="st-key-button_top"] .stButton button p { justify-content: flex-start !important; text-align: left !important; width: 100%; } </style>', unsafe_allow_html=True)
 
     is_highlighted, highlighted_rank = st.session_state.highlighted_result
 
     # Display buttons and details
     for i, commune in enumerate(search_results.results):
-        title = f"Top {i+1} | {commune.name}"
+        title = f"**{commune.global_score * 100:.1f}%**  |  {commune.name}"
 
         st.button(
             title,
@@ -1460,7 +1458,6 @@ def _display_result_details(commune: CommuneResult) -> None:
             return labels, vals
 
         labels_target, vals_target = get_radar_data(commune, active_cats)
-        logger.info(f"📊 [RADAR-DEBUG] Commune: {commune.name}, Values: {vals_target}")
         
         # Current City Data
         config = st.session_state.get('config')
@@ -1529,8 +1526,8 @@ def _display_result_details(commune: CommuneResult) -> None:
         st.divider()
         col1, col2 = st.columns([3,2])
         with col1:
-            st.text("Évaluez la pertinence de ce résultat :")
-        
+            st.text("Évaluez la pertinence de ce résultat :", text_alignment='right', width='stretch')
+                
         with col2:
             fb_key = f"fb_result_{commune.codgeo}_{h}"
             

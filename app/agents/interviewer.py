@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field, ConfigDict
 from pydantic_ai import Agent, RunContext
 import config as cfg
-from .state import ODISGraphState, ODISDeps
+from .state import ODISGraphState, ODISDeps, ODISContextBuilder
 from core.models import SearchCriterias
 from .agent_config import get_model
 # Import the pure tools
@@ -28,8 +28,10 @@ INTERVIEWER_SYSTEM_PROMPT = """
 **Objectif**: Compléter ou modifier les critères de réinstallation.
 **Style**: Tu interragis avec leur Travailleur Social assigné et non la personne réfugiée. Sois direct, professionnel, itératif (1 thème/message).
 
-** Critères identifiés jusqu'à présent**: 
-{SEARCH_CRITERIAS}
+**Données de contexte**:
+```json
+{DATA_CONTEXT}
+```
 
 **RÈGLES D'OR**:
 1. Vérifie TOUJOURS les données existantes avant de questionner et ne demande JAMAIS une info déjà présente dans le contexte.
@@ -65,13 +67,11 @@ interviewer_agent = Agent(
 
 @interviewer_agent.system_prompt
 async def main_instructions(ctx: RunContext[ODISDeps]) -> str:
-    """Injects dynamic values directly into the prompt using Python's string formatting."""
-    
-    # Serialize search criteria for the prompt
-    search_criteria_json = ctx.deps.state.search_criteria.model_dump_json(indent=2, exclude_none=True)
+    """Builds Interviewer agent prompt using ODISContextBuilder."""
+    data_context = ODISContextBuilder.agent_context(ctx.deps.state, "interviewer")
 
     prompt = INTERVIEWER_SYSTEM_PROMPT.format(
-        SEARCH_CRITERIAS=search_criteria_json,
+        DATA_CONTEXT=data_context,
         HEBERGEMENT_OPTIONS=str(cfg.HEBERGEMENT_OPTIONS),
         LOGEMENT_OPTIONS=str(cfg.LOGEMENT_OPTIONS),
         HOUSING_TYPE_OPTIONS=str(list(cfg.HOUSING_TYPE_OPTIONS.keys())),
@@ -79,7 +79,7 @@ async def main_instructions(ctx: RunContext[ODISDeps]) -> str:
         SANTE_OPTIONS=str(cfg.SANTE_OPTIONS),
         WEIGHT_PROFILES=str(list(cfg.WEIGHT_PROFILES.keys())),
     )
-    
+    logger.debug(f"--- [INTERVIEWER PROMPT] ---\n{prompt}\n----------------------------")
     return prompt
 
 @interviewer_agent.tool
