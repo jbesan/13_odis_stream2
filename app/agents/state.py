@@ -406,12 +406,24 @@ class ODISContextBuilder:
 
     @classmethod
     def _scorer_context(cls, state: "ODISGraphState") -> dict:
-        """Criteria labels only + Briefing."""
+        """Criteria labels only + Briefing + Top 5 results if available."""
         ctx = {}
         if state.odis_brief:
             ctx["Résumé du dossier (Briefing)"] = state.odis_brief
         if state.search_criteria:
             ctx["Critères de recherche"] = cls._criteria_labels(state.search_criteria)
+        
+        # Include Top 5 results if they exist to avoid redundant tool calls
+        if state.search_results and state.search_results.results:
+            ctx["Top 5 communes identifiées (scores calculés)"] = [
+                {
+                    "Rang": i + 1,
+                    "Code INSEE": r.codgeo,
+                    **cls._city_scores_only(r)
+                }
+                for i, r in enumerate(state.search_results.results[:5])
+            ]
+            
         return ctx
 
     @classmethod

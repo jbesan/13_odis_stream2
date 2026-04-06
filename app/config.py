@@ -82,6 +82,12 @@ HOUSING_TYPE_OPTIONS = {
 
 # --- Population Target Options (F-50) ---
 POPULATION_TARGET_OPTIONS = [5000, 10000, 20000, 50000, 100000, 150000, 200000]
+CITY_SIZE_MAPPING = {
+    "🚜 Commune rurale": {"mu": 5000, "sigma": 2500},
+    "🏡 Bourg": {"mu": 20000, "sigma": 10000},
+    "🏘️ Petite Ville": {"mu": 50000, "sigma": 25000},
+    "🏙️ Ville moyenne": {"mu": 150000, "sigma": 75000}
+}
 DEFAULT_MU = 50000
 DEFAULT_SIGMA = 25000
 

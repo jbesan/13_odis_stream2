@@ -48,5 +48,4 @@ async def refiner_instructions(ctx: RunContext[ODISDeps]) -> str:
     prompt = REFINER_PROMPT.format(
         DATA_CONTEXT=data_context
     )
-    logger.debug(f"--- [REFINER PROMPT] ---\n{prompt}\n----------------------------")
     return prompt

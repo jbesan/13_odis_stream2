@@ -33,7 +33,7 @@ with st.sidebar:
     else:
         st.error("Logo not found")
 
-    st.text("")
+    st.space('medium')
     st.text("Remplissez ce formulaire afin de préciser le projet de vie de la ou des personnes accompagnées.")
 
     st.divider()
@@ -73,10 +73,7 @@ def display_localisation_actuelle_page():
         st.markdown("**Localisation actuelle**")
         ui.render_localisation_form()
     with col2:
-        # with st.container(width="stretch"):
-        st.markdown("\n\n")
-        st.markdown("\n\n")
-        st.markdown("\n\n")
+        st.space("large")
         st.header(":material/arrow_forward_ios:", text_alignment="center")
     with col3:
         st.markdown("**Zone de recherche**")

@@ -86,7 +86,6 @@ async def scout_instructions(ctx: RunContext[ODISDeps]) -> str:
     prompt_template = SCOUT_ANALYSIS_SYSTEM_PROMPT if mode in ["analysis", "full_analysis"] else SCOUT_SPECIFIC_SYSTEM_PROMPT
     
     prompt = prompt_template.format(DATA_CONTEXT=data_context)
-    logger.debug(f"--- [SCOUT PROMPT] ---\n{prompt}\n----------------------------")
     return prompt
 
 # --- Tools ---

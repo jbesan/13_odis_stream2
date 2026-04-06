@@ -154,11 +154,11 @@ def log_search_results(
         if isinstance(v, dict):
             if 'label' in v: return str(v['label'])
             return json.dumps(v, ensure_ascii=False)
-        if isinstance(v, list):
+        if isinstance(v, (list, set)):
             if not v: return "[]"
-            # Handle list of CriteriaItem or list of strings
+            # Handle list/set of CriteriaItem or list of strings
             formatted_items = []
-            for item in v:
+            for item in sorted(list(v)) if isinstance(v, set) else v:
                 if hasattr(item, 'label'):
                     formatted_items.append(str(item.label))
                 elif isinstance(item, dict) and 'label' in item:
@@ -172,10 +172,11 @@ def log_search_results(
         return str(v)
 
     # Log all search parameters except weights (logged separately)
-    excluded_keys = {'criteria_weights', 'active_criteria', 'active_categories'}
+    excluded_keys = {'criteria_weights'}
     for key, val in sorted(search_params.items()):
         if not key.startswith('poids_') and key not in excluded_keys:
             md_lines.append(f"| {key} | {format_value(val)} |")
+
     
     # Weights
     md_lines.append("")
@@ -256,3 +257,100 @@ def log_search_results(
             f.write('\n'.join(md_lines))
     except Exception as e:
         logger.error(f"Failed to write log file: {e}")
+
+
+def log_agent_trace(agent_name: str, model_id: str, result: Any) -> None:
+    """
+    Logs the full AI agent interaction to a Markdown file in ./logs/ (Local only)
+    and pushes a trace to BigQuery (Cloud).
+    """
+    # 1. BigQuery Telemetry (Cloud) - Aligned approach
+    try:
+        from services.bq_logger import log_llm_trace_to_bq
+        log_llm_trace_to_bq(agent_name, model_id, result)
+    except Exception as e:
+        logger.warning(f"⚠️ [LOGGING] Could not log LLM trace to BigQuery: {e}")
+
+    # 2. Markdown Logging (Local only)
+    if os.environ.get('K_SERVICE'):
+        return
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.logs'))
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, f"trace_{agent_name}_{timestamp}.md")
+
+    md_lines = []
+    md_lines.append(f"# Agent Trace: {agent_name} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    md_lines.append(f"* **Model**: `{model_id}`")
+    
+    usage = result.usage()
+    md_lines.append(f"* **Usage**: {usage.total_tokens} tokens (In: {usage.input_tokens}, Out: {usage.output_tokens})")
+    md_lines.append("")
+
+    # --- Conversation History ---
+    md_lines.append("## Conversation History")
+    
+    for i, msg in enumerate(result.all_messages()):
+        role = "System"
+        from pydantic_ai.messages import ModelRequest, ModelResponse, SystemPromptPart, TextPart, ToolCallPart, ToolReturnPart
+        
+        if isinstance(msg, ModelRequest):
+            # Request might contain SystemPrompt or User message Parts
+            for part in msg.parts:
+                if isinstance(part, SystemPromptPart):
+                    md_lines.append("### 💻 System Prompt")
+                    md_lines.append("```markdown")
+                    md_lines.append(part.content)
+                    md_lines.append("```\n")
+                elif isinstance(part, TextPart):
+                    md_lines.append(f"### 👤 User Message [{i}]")
+                    md_lines.append(part.content)
+                    md_lines.append("\n")
+        
+        elif isinstance(msg, ModelResponse):
+            md_lines.append(f"### 🤖 Assistant Response [{i}]")
+            for part in msg.parts:
+                if isinstance(part, TextPart):
+                    md_lines.append(part.content)
+                elif isinstance(part, ToolCallPart):
+                    md_lines.append(f"\n> 🛠️ **Tool Call**: `{part.tool_name}`")
+                    try:
+                        args = part.args.model_dump() if hasattr(part.args, 'model_dump') else part.args
+                        md_lines.append(f"```json\n{json.dumps(args, indent=2, ensure_ascii=False)}\n```")
+                    except:
+                        md_lines.append(f"```\n{part.args}\n```")
+            md_lines.append("")
+
+        # Handle tool returns (usually grouped in ModelRequest in the next turn)
+        if hasattr(msg, 'parts'):
+            for part in msg.parts:
+                if isinstance(part, ToolReturnPart):
+                    md_lines.append(f"### 📥 Tool Return: `{part.tool_name}`")
+                    try:
+                        content = part.content
+                        if hasattr(content, 'model_dump'): content = content.model_dump()
+                        md_lines.append(f"```json\n{json.dumps(content, indent=2, ensure_ascii=False)}\n```")
+                    except:
+                        md_lines.append(f"```\n{part.content}\n```")
+                    md_lines.append("")
+
+    # --- Final Output ---
+    md_lines.append("## Final Structured Output")
+    try:
+        if hasattr(result.output, 'model_dump'):
+            md_lines.append(f"```json\n{json.dumps(result.output.model_dump(), indent=2, ensure_ascii=False)}\n```")
+        else:
+            md_lines.append("```")
+            md_lines.append(str(result.output))
+            md_lines.append("```")
+    except Exception as e:
+        md_lines.append(f"*(Serialization failed: {e})*")
+        md_lines.append(str(result.output))
+
+    # Write to file
+    try:
+        with open(log_file, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(md_lines))
+    except Exception as e:
+        logger.error(f"Failed to write agent trace log file: {e}")

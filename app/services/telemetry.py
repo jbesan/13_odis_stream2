@@ -72,7 +72,7 @@ def log_search_complete(config: SearchCriterias, search_results: SearchResultsDa
             _telemetry_logger.warning(f"⚠️ [TELEMETRY] config is a dict, not a model! Keys: {list(config.keys())}")
         
         full_config = config.model_dump()
-        criteria_keys = ['commune_actuelle', 'loc_search_area', 'situation_famille', 'nb_enfants', 'besoin_emploi', 'besoin_sante', 'inc_services_add_selection']
+        criteria_keys = ['commune_actuelle', 'loc_search_area', 'situation_famille', 'nb_enfants', 'besoin_emploi', 'besoin_sante', 'inc_services_add_selection', 'freq_retour', 'active_criteria']
         search_criteria = {k: full_config.get(k) for k in criteria_keys if k in full_config}
         weights = {k: v for k, v in full_config.items() if k.startswith('poids_')}
         

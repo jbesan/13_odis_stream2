@@ -88,7 +88,6 @@ async def job_hunter_instructions(ctx: RunContext[ODISDeps]) -> str:
     prompt_template = JOB_HUNTER_ANALYSIS_SYSTEM_PROMPT if mode in ["analysis", "full_analysis"] else JOB_HUNTER_SPECIFIC_SYSTEM_PROMPT
 
     prompt = prompt_template.format(DATA_CONTEXT=data_context)
-    logger.debug(f"--- [JOB HUNTER PROMPT] ---\n{prompt}\n----------------------------")
     return prompt
 
 # Tools wrapped for PydanticAI

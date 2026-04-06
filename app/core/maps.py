@@ -348,14 +348,8 @@ def build_sante_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config: 
     ].copy()
     
     if filtered.empty:
-        logging.info("build_sante_layer: No health facilities found.")
         return fg
         
-    logging.info(f"build_sante_layer: Found {len(filtered)} health facilities before filtering.")
-    logging.info(f"build_sante_layer: Config selection: '{config.besoin_sante}'")
-    if not filtered.empty:
-        logging.info(f"build_sante_layer: Available types: {filtered['type'].unique()}")
-
     # Filter by type (Standardized in ETL)
     mask = pd.Series(False, index=filtered.index)
     if config.besoin_sante == 'Maternité':
@@ -366,10 +360,7 @@ def build_sante_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config: 
         mask = filtered['type'] == 'Soutien Psychologique & Addictologie'
     
     if not mask.any():
-        logging.info("build_sante_layer: No facilities match the selected type.")
         return fg
-    
-    logging.info(f"build_sante_layer: {mask.sum()} facilities match the selected type.")
 
     cluster = _build_generic_points_layer(filtered[mask], icon='plus', color='blue', tooltip_cols=['name', 'type'])
     cluster.add_to(fg)

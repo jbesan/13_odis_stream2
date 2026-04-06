@@ -79,7 +79,6 @@ async def main_instructions(ctx: RunContext[ODISDeps]) -> str:
         SANTE_OPTIONS=str(cfg.SANTE_OPTIONS),
         WEIGHT_PROFILES=str(list(cfg.WEIGHT_PROFILES.keys())),
     )
-    logger.debug(f"--- [INTERVIEWER PROMPT] ---\n{prompt}\n----------------------------")
     return prompt
 
 @interviewer_agent.tool

@@ -69,5 +69,4 @@ async def web_instructions(ctx: RunContext[ODISDeps]) -> str:
     prompt_template = WEB_SPECIFIC_SYSTEM_PROMPT if mode == "specific_ask" else WEB_ANALYSIS_SYSTEM_PROMPT
     
     prompt = prompt_template.format(DATA_CONTEXT=data_context)
-    logger.debug(f"--- [WEB PROMPT] ---\n{prompt}\n----------------------------")
     return prompt

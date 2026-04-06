@@ -9,7 +9,8 @@ from services.telemetry import get_interaction_id
 logger = logging.getLogger(__name__)
 
 DATASET_ID = "odis_logs"
-TABLE_ID = "agent_state_logs"
+TABLE_STATE_LOGS = "agent_state_logs"
+TABLE_LLM_TRACES = "llm_traces"
 
 def log_agent_state_to_bq(user_input: str, agent_state: dict):
     """
@@ -25,7 +26,7 @@ def log_agent_state_to_bq(user_input: str, agent_state: dict):
         username = st.session_state.get('username', 'unknown')
         
         client = bigquery.Client()
-        table_ref = f"{client.project}.{DATASET_ID}.{TABLE_ID}"
+        table_ref = f"{client.project}.{DATASET_ID}.{TABLE_STATE_LOGS}"
         
         messages = agent_state.get('messages', [])
         # Extract last agent response
@@ -76,3 +77,46 @@ def log_agent_state_to_bq(user_input: str, agent_state: dict):
             
     except Exception as e:
         logger.error(f"Failed to log agent state to BQ: {str(e)}")
+
+def log_llm_trace_to_bq(agent_name: str, model_id: str, result: any):
+    """
+    Logs the full LLM interaction (prompts, tool calls, results) to BigQuery.
+    'result' is expected to be a pydantic_ai.RunResult.
+    """
+    if not os.getenv("GOOGLE_CLOUD_PROJECT") and not os.getenv("GCP_PROJECT"):
+         return
+
+    try:
+        interaction_id = get_interaction_id()
+        username = st.session_state.get('username', 'unknown')
+        
+        client = bigquery.Client()
+        table_ref = f"{client.project}.{DATASET_ID}.{TABLE_LLM_TRACES}"
+        
+        # Serialize messages
+        messages = []
+        for msg in result.all_messages():
+            if hasattr(msg, 'model_dump'):
+                messages.append(msg.model_dump())
+            else:
+                messages.append(str(msg))
+
+        usage = result.usage()
+        
+        row = {
+            "interaction_id": interaction_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "username": username,
+            "agent_name": agent_name,
+            "model_id": model_id,
+            "messages": json.dumps(messages, default=str, ensure_ascii=False),
+            "output_raw": str(result.output) if not hasattr(result.output, 'model_dump') else json.dumps(result.output.model_dump(), ensure_ascii=False),
+            "input_tokens": int(usage.input_tokens or 0),
+            "output_tokens": int(usage.output_tokens or 0),
+            "total_tokens": int(usage.total_tokens or 0)
+        }
+        
+        client.insert_rows_json(table_ref, [row])
+        # We don't block or error heavily if tracing fails to keep UI snappy
+    except Exception as e:
+        logger.warning(f"⚠️ [BQ-TRACE] Failed to log LLM trace: {e}")

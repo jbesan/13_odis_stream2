@@ -203,6 +203,22 @@ scores:
     weight: 1.0
     min_bound: 0.0
     max_bound: 1.0
+  - id: mob_dist_current_loc_scaled
+    category: mobilite
+    source_metric: dist_current_loc
+    bdv_factor: 0.0
+    computation: live
+    display:
+      name: Proximité avec la commune actuelle
+      strong_point_text: La localité proposée est proche de la commune actuelle
+      high_value_adjective: proche
+      show: false
+      unit: "km"
+      display_factor: 0.001
+      tooltip: "Distance à vol d'oiseau avec la commune actuelle"
+    weight: 1.0
+    min_bound: 0.0
+    max_bound: 50000.0
   - id: inc_asso_core_scaled
     category: inclusion
     source_metric: lien_social_density

@@ -49,4 +49,5 @@ async def test_interviewer_memory_commune_actuelle(test_deps):
                                 full_prompt += part.content
             
             assert "Bordeaux" in full_prompt
-            assert '"code": "33063"' in full_prompt
+            assert '"Commune actuelle (code INSEE)": "33063"' in full_prompt
+            assert '"Critères identifiés"' in full_prompt

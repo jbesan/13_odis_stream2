@@ -80,5 +80,4 @@ async def synth_instructions(ctx: RunContext[ODISDeps]) -> str:
         LAST_MESSAGE=last_message,
     )
 
-    logger.debug(f"--- [SYNTHESIZER PROMPT] ---\n{prompt}\n----------------------------")
     return prompt

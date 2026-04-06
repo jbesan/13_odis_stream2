@@ -648,6 +648,32 @@ def render_localisation_form() -> None:
         st.session_state['ui_commune'] = communes[0]
     st.selectbox("Commune", communes, key="ui_commune")
 
+    st.markdown("---")
+    
+    force_skip = st.session_state.get("ui_france_search", False)
+    
+    if force_skip:
+        freq_options = ["Pas d'attache particulière"]
+        if "ui_freq_retour" not in st.session_state or st.session_state["ui_freq_retour"] != "Pas d'attache particulière":
+             st.session_state["ui_freq_retour"] = "Pas d'attache particulière"
+        freq_disabled = True
+    else:
+        freq_options = [
+             "1 fois/semaine",
+             "1 fois/mois",
+             "1 fois/an",
+             "Pas d'attache particulière"
+        ]
+        freq_disabled = False
+
+    st.selectbox(
+        "A quelle fréquence pense-t-il/elle revenir dans son lieu de vie actuel ?", 
+        options=freq_options,
+        key="ui_freq_retour",
+        disabled=freq_disabled,
+        help="Détermine l'importance de la proximité et des connexions selon le lieu actuel."
+    )
+
 def render_family_form() -> None:
     """Renders the UI for the 'Situation familiale' form section."""
     col1, col2 = st.columns(2)
@@ -751,7 +777,7 @@ def render_housing_form() -> None:
         if "ui_type_logement" not in st.session_state or st.session_state["ui_type_logement"] not in housing_type_options:
             st.session_state["ui_type_logement"] = "appt_all"
 
-        st.markdown("\n\n")
+        st.space("small")
         st.selectbox(
             "Si location quel type de logement ?",
             options=housing_type_options,
@@ -942,8 +968,7 @@ def render_mobility_form() -> None:
             disabled=st.session_state.ui_france_search
         )
     with col_reg_2:
-        st.markdown("\n\n")
-        st.markdown("\n\n")
+        st.space(20)
         st.checkbox("France Métro.", key="ui_france_search", help="Rechercher sur l'ensemble du territoire.")
 
     # 2. Region Checkbox & Department Multiselect
@@ -963,8 +988,7 @@ def render_mobility_form() -> None:
 
     col_dept_1, col_dept_2 = st.columns([3, 1])
     with col_dept_2:
-        st.markdown("\n\n")
-        st.markdown("\n\n")
+        st.space(20)
         st.checkbox(
             "Toute la région", 
             key="ui_region_search", 
@@ -987,26 +1011,34 @@ def render_mobility_form() -> None:
     elif st.session_state.ui_region_search:
         st.info(f"💡 Recherche sur toute la région {regions_dict.get(selected_region_code)}.")
 
-    # 2. Target Population Size (F-50)
+    # 2. Target City Size (F-50 Refactored)
     st.divider()
-    # st.markdown("**Taille de ville cible**")
     
-    def _calculate_sigma(mu):
-        return int(mu / 2)
+    target_options = list(cfg.CITY_SIZE_MAPPING.keys())
+    # Initialize label from current numeric mu if possible, else default to "Petite Ville"
+    if "ui_target_city_size_label" not in st.session_state:
+        # Default target index is 2 for "Petite Ville"
+        default_label = next((l for l in target_options if "Petite Ville" in l), target_options[2])
+        st.session_state["ui_target_city_size_label"] = default_label
 
-    if "ui_target_population" not in st.session_state:
-        st.session_state["ui_target_population"] = cfg.DEFAULT_MU
-        st.session_state["ui_target_population_sigma"] = _calculate_sigma(cfg.DEFAULT_MU)
+    # Centering logic using columns (standard Streamlit pattern)
+    # _, col_center, _ = st.columns([1, 6, 1])
+    # with col_center:
+    with st.container(horizontal=True, width='stretch', horizontal_alignment='center'):
+        st.radio(
+            "Taille de la ville recherchée",
+            options=target_options,
+            key="ui_target_city_size_label",
+            horizontal=True,
+            help="Définit la taille idéale de la commune recherchée. Le score de population sera maximal pour cette catégorie.",
+            label_visibility="visible"
+        )
     
-    target_mu = st.select_slider(
-        "Population cible de la ville recherchée",
-        options=cfg.POPULATION_TARGET_OPTIONS,
-        key="ui_target_population",
-        help=f"Définit la taille idéale de la commune recherchée. Le score de population sera maximal pour cette valeur et diminuera progressivement autour. Tolérance : +/- {st.session_state['ui_target_population_sigma']} hab.".replace(",", " ")
-    )
-    
-    # Auto-calculate and store sigma
-    st.session_state["ui_target_population_sigma"] = _calculate_sigma(target_mu)
+    # Sync numeric values for scoring engine compatibility
+    selected_label = st.session_state["ui_target_city_size_label"]
+    mapping = cfg.CITY_SIZE_MAPPING.get(selected_label, {"mu": cfg.DEFAULT_MU, "sigma": cfg.DEFAULT_SIGMA})
+    st.session_state["ui_target_population"] = mapping["mu"]
+    st.session_state["ui_target_population_sigma"] = mapping["sigma"]
     # st.caption(f"Tolérance : +/- {st.session_state['ui_target_population_sigma']:,} hab.".replace(",", " "))
 
 def render_weight_profile_form() -> None:
@@ -1270,8 +1302,24 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
 
     # Weights & Profile
     profile = st.session_state.get('ui_weight_profile', 'Équilibré')
-    target_pop = st.session_state.get('ui_target_population', cfg.DEFAULT_MU)
-    target_sigma = st.session_state.get('ui_target_population_sigma', cfg.DEFAULT_SIGMA)
+    
+    # Population mapping from Label
+    selected_city_label = st.session_state.get("ui_target_city_size_label")
+    mapping = cfg.CITY_SIZE_MAPPING.get(selected_city_label, {"mu": cfg.DEFAULT_MU, "sigma": cfg.DEFAULT_SIGMA})
+    target_pop = mapping["mu"]
+    target_sigma = mapping["sigma"]
+    
+    # Adjust mobility weights based on freq_retour
+    freq = st.session_state.get('ui_freq_retour', "Pas d'attache particulière")
+    if freq == "1 fois/semaine":
+        criteria_weights['mob_epci_scaled'] = 3.0
+        criteria_weights['mob_dist_current_loc_scaled'] = 3.0
+    elif freq == "1 fois/mois":
+        criteria_weights['mob_epci_scaled'] = 2.0
+        criteria_weights['mob_dist_current_loc_scaled'] = 2.0
+    elif freq == "1 fois/an":
+        criteria_weights['mob_epci_scaled'] = 1.0
+        criteria_weights['mob_dist_current_loc_scaled'] = 1.0
     
     return SearchCriterias(
         weight_profile=profile,
@@ -1294,6 +1342,8 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
         hebergement_cible=heb_sel,
         logement=st.session_state.get('ui_logement', 'Location'),
         type_logement=type_log,
+        
+        freq_retour=freq,
         
         codes_metiers=codes_metiers,
         codes_formations=codes_formations,
@@ -1376,7 +1426,7 @@ def display_results_list(display_gdf: Optional[pd.DataFrame] = None) -> None:
             width='stretch',
             key=f'button_top{i+1}',
             type='primary',
-            icon=f":material/filter_{i+1}:"
+            icon=f":material/counter_{i+1}:"
         )
 
         # Check if this row's index matches the highlighted index
@@ -1505,8 +1555,8 @@ def _display_result_details(commune: CommuneResult) -> None:
         st.plotly_chart(fig, width="stretch", config=None)
         
         current_label = current_geo.name if current_geo else "votre ville"
-        st.caption(f"**Comparaison des profils** : la zone verte représente **{commune.name}**, la zone bleue représente **{current_label}**. Une plus grande surface indique une meilleure adéquation avec vos critères.")
-
+        st.caption(f"**Comparaison des profils** : la zone verte représente **{commune.name}**, la zone bleue **{current_label}**. Une plus grande surface indique une meilleure adéquation avec vos critères.", text_alignment="center")
+        st.space('small')
         # --- Links ---
         c1, c2 = st.columns(2)
         # st.divider()

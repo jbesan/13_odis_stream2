@@ -147,6 +147,17 @@ class ScoringEngine:
                  else:
                       weight *= float(s_row['weight'])
 
+                 # APPLY FREQUENCY MULTIPLIER (F-60)
+                 if sid in ['mob_epci_scaled', 'mob_dist_current_loc_scaled']:
+                      freq = getattr(config, 'freq_retour', "Pas d'attache particulière")
+                      multiplier = 1.0
+                      if freq == "1 fois/semaine": multiplier = 3.0
+                      elif freq == "1 fois/mois": multiplier = 2.0
+                      elif freq == "1 fois/an": multiplier = 1.0
+                      else: multiplier = 0.0 
+                      weight *= multiplier
+
+
                  # Track valid weights per row (using non-nullity of original sources)
                  # If both are null, weight is 0
                  if val_commune is not None and val_bdv is not None:
@@ -157,7 +168,19 @@ class ScoringEngine:
                       has_data = val_bdv.notna()
                       
                  valid_weight = weight * has_data.astype(float)
-                 scores_val.append(val * weight)
+                 
+                 # SKIP CURRENT COMMUNE FOR PROXIMITY SCORING
+                 # The current commune should not be boosted by its own proximity, so we skip the criteria entirely for it.
+                 if sid in ['mob_epci_scaled', 'mob_dist_current_loc_scaled']:
+                     current_codgeo = config.commune_actuelle.code if hasattr(config.commune_actuelle, 'code') else config.commune_actuelle
+                     is_current = (df.index == str(current_codgeo))
+                     # Set weight to 0 so it's excluded from the denominator
+                     valid_weight = np.where(is_current, 0.0, valid_weight)
+                     # Set value to NaN so it doesn't appear in UI details as 100%
+                     val = np.where(is_current, np.nan, val)
+
+                 # Replace NaN with 0 for score addition (since valid_weight handles the skip)
+                 scores_val.append(np.nan_to_num(val, 0.0) * valid_weight) # Use valid_weight for per-row weighting
                  weights_val.append(valid_weight)
                  
                  # IMPORTANT: save the combined value back to the dataframe 
@@ -348,8 +371,9 @@ class ScoringEngine:
         active.add('mob_gare_scaled')
         active.add('mob_trans_pub_density_scaled')
         
-        # Only add proximity scores if it's a local search
-        if self._is_local_search(config):
+        # Only add proximity scores if it's a local search and user has some attachment
+        freq_retour = getattr(config, 'freq_retour', "Pas d'attache particulière")
+        if self._is_local_search(config) and freq_retour != "Pas d'attache particulière":
             active.add('mob_epci_scaled')
             active.add('mob_dist_current_loc_scaled')
         
@@ -1391,10 +1415,12 @@ class ScoringEngine:
         
         # Search area must either be the same department or same region
         if config.loc_search_area == 'region':
-            return config.loc_search_code == current_reg
+            codes = config.loc_search_code if isinstance(config.loc_search_code, list) else [config.loc_search_code]
+            return str(current_reg) in [str(c) for c in codes]
             
         if config.loc_search_area == 'departement':
-            return config.loc_search_code == current_dep
+            codes = config.loc_search_code if isinstance(config.loc_search_code, list) else [config.loc_search_code]
+            return str(current_dep) in [str(c) for c in codes]
             
         # If searching France or another area, proximity is not a local search factor
         return False
