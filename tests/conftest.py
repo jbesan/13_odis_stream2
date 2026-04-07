@@ -57,10 +57,10 @@ def sample_data():
         'loyer_m2_moy_appartement_t1_t2': [16.0, 21.0, 19.0, 17.0, 13.0],
         'loyer_m2_moy_appartement_t3_plus': [14.0, 19.0, 17.0, 15.0, 11.0],
         'loyer_m2_moy_maison_toutes': [12.0, 15.0, 14.0, 13.0, 10.0],
-        'log_loyer_moyen_scaled_appartement_toutes': [0.5, 0.2, 0.3, 0.4, 0.8],
-        'log_loyer_moyen_scaled_appartement_t1_t2': [0.5, 0.2, 0.3, 0.4, 0.8],
-        'log_loyer_moyen_scaled_appartement_t3_plus': [0.5, 0.2, 0.3, 0.4, 0.8],
-        'log_loyer_moyen_scaled_maison_toutes': [0.5, 0.2, 0.3, 0.4, 0.8],
+        'log_loyer_moyen_appt_all_scaled': [0.5, 0.2, 0.3, 0.4, 0.8],
+        'log_loyer_moyen_appt_t1_t2_scaled': [0.5, 0.2, 0.3, 0.4, 0.8],
+        'log_loyer_moyen_appt_t3_p_scaled': [0.5, 0.2, 0.3, 0.4, 0.8],
+        'log_loyer_moyen_house_all_scaled': [0.5, 0.2, 0.3, 0.4, 0.8],
     }
     gdf = gpd.GeoDataFrame(data, crs="EPSG:4326")
     
@@ -88,10 +88,10 @@ def sample_scores_cat():
             'mob_dist_current_loc_scaled', 'mob_epci_scaled',
             'edu_structures_scaled', 'sante_structures_scaled',
             'besoins_match_scaled',
-            'log_loyer_moyen_scaled_appartement_toutes',
-            'log_loyer_moyen_scaled_appartement_t1_t2',
-            'log_loyer_moyen_scaled_appartement_t3_plus',
-            'log_loyer_moyen_scaled_maison_toutes'
+            'log_loyer_moyen_appt_all_scaled',
+            'log_loyer_moyen_appt_t1_t2_scaled',
+            'log_loyer_moyen_appt_t3_p_scaled',
+            'log_loyer_moyen_house_all_scaled'
         ],
         'cat': [
             'emploi', 'emploi', 'emploi',

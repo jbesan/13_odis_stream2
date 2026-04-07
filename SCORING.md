@@ -124,8 +124,11 @@ Avant d'être utilisés dans l'application, les scores passent par une phase de 
 1.  **Calcul des Ratios** : Conversion des données brutes en indicateurs comparables.
     - Exemple : (Nombre de logements vacants / Parc total) → Taux de vacance.
     - Exemple : (Nombre d'associations / Population) \* 1000 → Densité associative.
-2.  **Harmonisation (Scaling)** : Les données sont normalisées entre 0.0 (le moins favorable) et 1.0 (le plus favorable) en fonction de bornes définies (`min_bound`, `max_bound`).
-3.  **Filtrage Qualité** : Les valeurs aberrantes ou manquantes sont traitées (imputation ou exclusion).
+2.  **Harmonisation (Scaling)** : Les données sont normalisées entre 0.0 (le moins favorable) et 1.0 (le plus favorable). Pour garantir la robustesse face aux données aberrantes (ouliers), ODIS utilise un **Scaling par Quantiles** (`get_min_max_quant`) :
+    - **Cas Standard (1%)** : Par défaut, si aucune borne n'est fixée dans la configuration, le moteur utilise les quantiles **p1** et **p99** comme bornes Min/Max.
+    - **Cas Sensibles (5%)** : Pour les données très dispersées comme le **Logement** (Suroccupation, Loyers) ou l'**Éducation** (Petite Enfance, Classes à risque), le filtrage est plus agressif avec les quantiles **p5** et **p95**.
+    - **Bornes Fixes** : Si `min_bound` et `max_bound` sont définis dans `scores_config.yaml`, ils priment sur le calcul par quantiles.
+3.  **Filtrage Qualité** : Les valeurs aberrantes extrêmes sont ainsi écrêtées (clipping) entre 0 et 1.
 
 ---
 

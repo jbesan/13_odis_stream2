@@ -1,30 +1,18 @@
 [
     {
         "bassin_de_vie": "13004",
-        "weighted_score": 0.655410249609928,
+        "weighted_score": 0.7021845603566541,
         "population_bv": 56202,
         "libgeo": "Arles",
         "communes": [
             "13004",
             "13038"
         ],
-        "inclusion_cat_score": 0.6740357722443906
-    },
-    {
-        "bassin_de_vie": "13056",
-        "weighted_score": 0.5938211664122642,
-        "population_bv": 70982,
-        "libgeo": "Martigues",
-        "communes": [
-            "13056",
-            "13077",
-            "13098"
-        ],
-        "inclusion_cat_score": 0.6734469206626442
+        "inclusion_cat_score": 0.6841615286596752
     },
     {
         "bassin_de_vie": "13103",
-        "weighted_score": 0.5934603151406412,
+        "weighted_score": 0.6484558049389744,
         "population_bv": 59680,
         "libgeo": "Salon-de-Provence",
         "communes": [
@@ -34,11 +22,23 @@
             "13069",
             "13103"
         ],
-        "inclusion_cat_score": 0.6419269617802515
+        "inclusion_cat_score": 0.6518909758995797
+    },
+    {
+        "bassin_de_vie": "13056",
+        "weighted_score": 0.6233174258708561,
+        "population_bv": 70982,
+        "libgeo": "Martigues",
+        "communes": [
+            "13056",
+            "13077",
+            "13098"
+        ],
+        "inclusion_cat_score": 0.6839878344770627
     },
     {
         "bassin_de_vie": "13055",
-        "weighted_score": 0.5701380760735938,
+        "weighted_score": 0.6014390547572562,
         "population_bv": 1878132,
         "libgeo": "Aubagne",
         "communes": [
@@ -76,17 +76,17 @@
             "13215",
             "13216"
         ],
-        "inclusion_cat_score": 0.6911112168586545
+        "inclusion_cat_score": 0.6921997183841994
     },
     {
         "bassin_de_vie": "83137",
-        "weighted_score": 0.5666053065223883,
+        "weighted_score": 0.5783166263329704,
         "population_bv": 38937,
         "libgeo": "La Ciotat",
         "communes": [
             "13023",
             "13028"
         ],
-        "inclusion_cat_score": 0.5868572483302444
+        "inclusion_cat_score": 0.596841826582114
     }
 ]

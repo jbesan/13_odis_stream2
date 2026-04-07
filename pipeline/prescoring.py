@@ -51,9 +51,9 @@ def scale_series(series, min_b, max_b, inverted=False):
         scaled = 1.0 - scaled
     return scaled.clip(0, 1)
 
-def get_min_max(series):
+def get_min_max_quant(series, q=0.01):
     if series.empty: return 0.0, 1.0
-    return float(series.min()), float(series.max())
+    return float(series.quantile(q)), float(series.quantile(1 - q))
 
 def process_scaling(df, col_name, output_col, inverted=False):
     if col_name not in df.columns: return
@@ -74,7 +74,8 @@ def process_scaling(df, col_name, output_col, inverted=False):
     if c_min is not None and c_max is not None:
         min_b, max_b = c_min, c_max
     else:
-        min_b, max_b = get_min_max(df[col_name])
+        q_level = conf.get('quantile_level', 0.01)
+        min_b, max_b = get_min_max_quant(df[col_name], q_level)
         
     df[output_col] = scale_series(df[col_name], min_b, max_b, inverted)
 
@@ -614,29 +615,18 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
         # bv_gdf['heb_jaccueille_score'] = (bv_gdf['heb_jaccueille_count'] > 0).astype(float)
              
         # --- 2. Scaling ---
-        def get_min_max(series):
-             return series.quantile(0.01), series.quantile(0.99)
-            
-        def scale_series(series, min_val, max_val):
-             if max_val == min_val: return 0.0
-             return ((series - min_val) / (max_val - min_val)).clip(0, 1)
-
-
+        # Align with config-driven scaling used for communes
         if 'lien_social_density' in bv_gdf.columns:
-            min_b, max_b = get_min_max(bv_gdf['lien_social_density'])
-            bv_gdf['inc_asso_core_scaled'] = scale_series(bv_gdf['lien_social_density'], min_b, max_b)
+            process_scaling(bv_gdf, 'lien_social_density', 'inc_asso_core_scaled')
 
         if 'inc_asso_refug_density' in bv_gdf.columns:
-            min_b, max_b = get_min_max(bv_gdf['inc_asso_refug_density'])
-            bv_gdf['inc_asso_refug_scaled'] = scale_series(bv_gdf['inc_asso_refug_density'], min_b, max_b)
+            process_scaling(bv_gdf, 'inc_asso_refug_density', 'inc_asso_refug_scaled')
         
         if 'inc_siae_density' in bv_gdf.columns:
-            min_b, max_b = get_min_max(bv_gdf['inc_siae_density'])
-            bv_gdf['inc_siae_density_scaled'] = scale_series(bv_gdf['inc_siae_density'], min_b, max_b)
+            process_scaling(bv_gdf, 'inc_siae_density', 'inc_siae_density_scaled')
             
         if 'bpe_creches_density' in bv_gdf.columns:
-            min_b, max_b = get_min_max(bv_gdf['bpe_creches_density'])
-            bv_gdf['edu_creches_scaled'] = scale_series(bv_gdf['bpe_creches_density'], min_b, max_b)
+            process_scaling(bv_gdf, 'bpe_creches_density', 'edu_creches_scaled')
 
         # --- 3. Weighted Averages from Communes ---
         metrics_to_avg = [

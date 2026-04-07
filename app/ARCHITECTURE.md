@@ -70,6 +70,12 @@ To ensure scalability and prevent Out-Of-Memory (OOM) errors, ODIS uses a **Deco
 
 ### Lean Scoring & JIT Hydration
 - **Global Data Split**: The main commune dataset is split into `odis` (numerical/categorical metadata) and `odis_geo` (raw WKB bytes).
+- **Robust Quantile Normalization**: 
+    - To prevent statistical outliers from skewing the normalized 0-1 range, ODIS uses a parameterized **Quantile Scaling** approach (`get_min_max_quant`).
+    - **Tiered Filtering**: 
+        - **Standard (1%)**: Most criteria use p1/p99 as dynamic bounds.
+        - **Aggressive (5%)**: High-variance criteria (Housing Rents, Education capacity) use p5/p95 to ensure stable and comparable scores across regions.
+    - **Fixed Bounds**: If `min_bound`/`max_bound` are defined in `scores_config.yaml`, they override the dynamic quantile calculation.
 - **Index-Driven Joins**: Both `odis` and `odis_geo` are indexed by `codgeo`. This allows $O(1)$ lookups and extremely fast `.join()` operations without redundant searching.
 - **WKB-until-render**: To save memory and serialization time, geometries stay in **WKB (Well-Known Binary) bytes** throughout the entire pipeline. 
 - **Just-in-Time (JIT) Hydration**: 

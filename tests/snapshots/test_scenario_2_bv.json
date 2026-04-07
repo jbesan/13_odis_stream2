@@ -1,7 +1,7 @@
 [
     {
         "bassin_de_vie": "75056",
-        "weighted_score": 0.7219101414976791,
+        "weighted_score": 0.729554404354152,
         "population_bv": 12543353,
         "libgeo": "Évry-Courcouronnes",
         "communes": [
@@ -465,11 +465,11 @@
             "95680",
             "95682"
         ],
-        "inclusion_cat_score": 0.5999224910628179
+        "inclusion_cat_score": 0.6209958163328814
     },
     {
         "bassin_de_vie": "78361",
-        "weighted_score": 0.7001111071907887,
+        "weighted_score": 0.7165079095700059,
         "population_bv": 118012,
         "libgeo": "Mantes-la-Jolie",
         "communes": [
@@ -511,11 +511,11 @@
             "95656",
             "95676"
         ],
-        "inclusion_cat_score": 0.6357883719620158
+        "inclusion_cat_score": 0.6545239041192698
     },
     {
         "bassin_de_vie": "77284",
-        "weighted_score": 0.6887714398049057,
+        "weighted_score": 0.7020136620143363,
         "population_bv": 116929,
         "libgeo": "Meaux",
         "communes": [
@@ -566,37 +566,63 @@
             "77515",
             "77526"
         ],
-        "inclusion_cat_score": 0.571415082684527
+        "inclusion_cat_score": 0.5880892149057532
     },
     {
-        "bassin_de_vie": "77470",
-        "weighted_score": 0.6564849470427171,
-        "population_bv": 22819,
-        "libgeo": "Tournan-en-Brie",
+        "bassin_de_vie": "91223",
+        "weighted_score": 0.6744785173517976,
+        "population_bv": 39815,
+        "libgeo": "Étampes",
         "communes": [
-            "77091",
-            "77177",
-            "77215",
-            "77254",
-            "77336",
-            "77377",
-            "77470"
+            "91001",
+            "91022",
+            "91075",
+            "91079",
+            "91098",
+            "91100",
+            "91109",
+            "91130",
+            "91223",
+            "91240",
+            "91248",
+            "91294",
+            "91374",
+            "91393",
+            "91399",
+            "91433",
+            "91469",
+            "91495",
+            "91508",
+            "91526",
+            "91533",
+            "91544",
+            "91556"
         ],
-        "inclusion_cat_score": 0.1946370772374349
+        "inclusion_cat_score": 0.442015682052828
     },
     {
-        "bassin_de_vie": "78517",
-        "weighted_score": 0.6535069961517317,
-        "population_bv": 30729,
-        "libgeo": "Rambouillet",
+        "bassin_de_vie": "77288",
+        "weighted_score": 0.6517865109635324,
+        "population_bv": 106912,
+        "libgeo": "Melun",
         "communes": [
-            "78164",
-            "78269",
-            "78464",
-            "78470",
-            "78497",
-            "78517"
+            "77038",
+            "77145",
+            "77152",
+            "77195",
+            "77255",
+            "77269",
+            "77285",
+            "77288",
+            "77295",
+            "77306",
+            "77389",
+            "77394",
+            "77410",
+            "77487",
+            "77518",
+            "77528"
         ],
-        "inclusion_cat_score": 0.43235887049101906
+        "inclusion_cat_score": 0.5573238184392105
     }
 ]

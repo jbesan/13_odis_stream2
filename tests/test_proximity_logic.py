@@ -41,7 +41,8 @@ def test_active_criteria_relocation_search(sample_data, default_config, sample_s
 def test_active_criteria_local_search(sample_data, default_config, sample_scores_cat, sample_incl_index):
     engine = get_engine(sample_data, sample_scores_cat, sample_incl_index)
     default_config.loc_search_area = 'departement'
-    default_config.loc_search_code = '33'
+    default_config.loc_search_code = ['33']
+    default_config.freq_retour = "1 fois/semaine"
     
     active = engine._get_active_criteria(default_config)
     assert 'mob_dist_current_loc_scaled' in active

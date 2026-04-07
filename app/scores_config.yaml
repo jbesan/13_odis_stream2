@@ -49,6 +49,7 @@ scores:
     weight: 1.0
     min_bound: null
     max_bound: null
+    quantile_level: 0.05
 
   - id: log_loyer_moyen_appt_all_scaled
     category: logement
@@ -66,6 +67,7 @@ scores:
     weight: 3.0
     min_bound: null
     max_bound: null
+    quantile_level: 0.05
 
   - id: log_loyer_moyen_appt_t1_t2_scaled
     category: logement
@@ -83,6 +85,7 @@ scores:
     weight: 3.0
     min_bound: null
     max_bound: null
+    quantile_level: 0.05
 
   - id: log_loyer_moyen_appt_t3_p_scaled
     category: logement
@@ -100,6 +103,7 @@ scores:
     weight: 3.0
     min_bound: null
     max_bound: null
+    quantile_level: 0.05
 
   - id: log_loyer_moyen_house_all_scaled
     category: logement
@@ -117,6 +121,7 @@ scores:
     weight: 3.0
     min_bound: null
     max_bound: null
+    quantile_level: 0.05
 
   - id: inc_pol_scaled
     category: inclusion
@@ -317,6 +322,7 @@ scores:
     weight: 1.0
     min_bound: null
     max_bound: null
+    quantile_level: 0.05
   - id: edu_maternelle_scaled
     category: education
     source_metric: edu_maternelle_ct
@@ -397,6 +403,7 @@ scores:
     weight: 1.0
     min_bound: null
     max_bound: null
+    quantile_level: 0.05
   - id: sante_structures_scaled
     category: sante
     source_metric: sante_structures_scaled

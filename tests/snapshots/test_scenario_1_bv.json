@@ -1,7 +1,7 @@
 [
     {
         "bassin_de_vie": "33243",
-        "weighted_score": 0.6943696066309334,
+        "weighted_score": 0.6837547073359873,
         "population_bv": 98828,
         "libgeo": "Saint-Émilion",
         "communes": [
@@ -73,11 +73,11 @@
             "33546",
             "33548"
         ],
-        "inclusion_cat_score": 0.18286180945604955
+        "inclusion_cat_score": 0.1950292150519342
     },
     {
         "bassin_de_vie": "33063",
-        "weighted_score": 0.6837191915535559,
+        "weighted_score": 0.6573000054138105,
         "population_bv": 866307,
         "libgeo": "Margaux-Cantenac",
         "communes": [
@@ -140,11 +140,11 @@
             "33550",
             "33554"
         ],
-        "inclusion_cat_score": 0.21447348834023086
+        "inclusion_cat_score": 0.21500118050066694
     },
     {
         "bassin_de_vie": "33140",
-        "weighted_score": 0.6396240292951991,
+        "weighted_score": 0.6334187410034012,
         "population_bv": 19018,
         "libgeo": "Saint-Léon",
         "communes": [
@@ -172,11 +172,11 @@
             "33515",
             "33523"
         ],
-        "inclusion_cat_score": 0.201259620573334
+        "inclusion_cat_score": 0.2256140159596091
     },
     {
         "bassin_de_vie": "33529",
-        "weighted_score": 0.6185520967873634,
+        "weighted_score": 0.573917009067705,
         "population_bv": 63512,
         "libgeo": "Arcachon",
         "communes": [
@@ -185,31 +185,28 @@
             "33527",
             "33529"
         ],
-        "inclusion_cat_score": 0.2343272523212187
+        "inclusion_cat_score": 0.250698071448383
     },
     {
-        "bassin_de_vie": "33081",
-        "weighted_score": 0.5872278234728471,
-        "population_bv": 13913,
-        "libgeo": "Laroque",
+        "bassin_de_vie": "33138",
+        "weighted_score": 0.5736525128816257,
+        "population_bv": 21802,
+        "libgeo": "Tayac",
         "communes": [
-            "33008",
-            "33030",
-            "33040",
-            "33081",
-            "33098",
-            "33120",
-            "33152",
-            "33156",
-            "33176",
-            "33231",
-            "33253",
-            "33288",
-            "33299",
-            "33308",
-            "33355",
-            "33464"
+            "33001",
+            "33088",
+            "33124",
+            "33138",
+            "33154",
+            "33166",
+            "33218",
+            "33315",
+            "33320",
+            "33385",
+            "33447",
+            "33472",
+            "33526"
         ],
-        "inclusion_cat_score": 0.20457421992949448
+        "inclusion_cat_score": 0.16836210131828575
     }
 ]

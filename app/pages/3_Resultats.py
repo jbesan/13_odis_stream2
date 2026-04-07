@@ -368,12 +368,8 @@ with col_map:
             if config.besoin_sante != "Aucun": pill_options.append({"id": "sante", "label": "🏥 Santé"})
             if config.inc_services_add_selection: pill_options.append({"id": "inc", "label": "🤝 Inclusion"})
         
-        col1, col2 = st.columns([1,4])
-        with col1:
-            with st.container(height="stretch", vertical_alignment="center"):
-                st.text("Afficher", text_alignment='right', width='stretch')
-        
-        with col2:
+        with st.container(horizontal=True, horizontal_alignment="center"):
+            st.text("Afficher")
             selected_objs = st.pills("Afficher sur la carte :", pill_options, selection_mode="multi", 
                                     default=[pill_options[0]], format_func=lambda x: x["label"],
                                     key="map_layers_pills", label_visibility="collapsed")
@@ -451,5 +447,3 @@ is_cloud_run = os.environ.get("K_SERVICE") is not None
 
         # except:
         #     pass
-
-st.write(st.session_state.processed_gdf)

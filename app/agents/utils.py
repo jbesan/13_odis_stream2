@@ -198,7 +198,7 @@ def launch_background_scorer(search_criterias: SearchCriterias, results_dict_ign
                 response_obj = result_run.output
                 logging.debug(f"🚀 [BG] Agent call successful for hash {hash_val}")
                 for p in response_obj.pitches_per_city:
-                    logging.info(f"💎 [DEBUG-SCORER-PITCH] codgeo={p.codgeo} pitch={repr(p.pitch)}")
+                    logging.debug(f"💎 [DEBUG-SCORER-PITCH] codgeo={p.codgeo} pitch={repr(p.pitch)}")
                 
                 pitches_dict = {
                     "global": sanitize_llm_markdown(response_obj.response),
