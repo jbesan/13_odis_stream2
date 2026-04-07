@@ -523,6 +523,18 @@ class ScoringEngine:
         mob_data.total_stops = int(static_row.get('nb_stops_total', 0))
         mob_data.stop_density = float(static_row.get('mob_trans_pub_stop_density', 0.0))
         
+        # Populate proximity metrics
+        if 'mob_epci_scaled' in row:
+            val = row['mob_epci_scaled']
+            if pd.notna(val):
+                mob_data.is_same_epci = bool(val == 1.0)
+        
+        if 'dist_current_loc' in row:
+            val = row['dist_current_loc']
+            if pd.notna(val):
+                # dist_current_loc is in meters (EPSG:2154)
+                mob_data.distance_to_current_km = round(float(val) / 1000.0, 1)
+        
         # Populate logement defaults
         logement_data.host_count = int(static_row.get('heb_accueillants_count', 0))
 

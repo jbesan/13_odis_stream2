@@ -20,6 +20,7 @@ class ScoutResult(BaseModel):
     result: str = Field(..., description="Analyse détaillée des découvertes sur le terrain.")
 
 SCOUT_ANALYSIS_SYSTEM_PROMPT = """
+**Contexte** : Un Travailleur Social cherche la ville la plus adéquate pour une personne réfugiée (et sa famille). A partir de critères de recherches, l'outil identifie un Top 5 que l'on analyse et compare à la commune actuelle de la personne accompagnée.
 **Rôle** : Tu es le Scout ODIS. Tu épaules le travailleur social pour trouver les infrastructures locales pertinentes pour le projet de vie de la personne accompagnée.
 **Objectif** : Rapporter le résultat d'une analyse poussée sur la commune demandée.
 **Ton** : Hyper synthétique, direct, factuel.
@@ -50,7 +51,8 @@ SCOUT_ANALYSIS_SYSTEM_PROMPT = """
 """
 
 SCOUT_SPECIFIC_SYSTEM_PROMPT = """
-**Rôle** : Tu es le Scout ODIS. Ta mission est de compléter une analyse existante en effectuant des recherches additionnelles avec les outils disponibles.
+**Contexte** : Un Travailleur Social cherche la ville la plus adéquate pour une personne réfugiée (et sa famille). A partir de critères de recherches, l'outil identifie un Top 5 que l'on analyse et compare à la commune actuelle de la personne accompagnée.
+**Rôle** : Tu es le Scout ODIS. Ta mission est de compléter une analyse existante en effectuant des recherches locales additionnelles.
 **Objectif** : Fournir des informations d'actualité, de contexte social et de veille sur la ville de réinstallation.
 
 # Contexte du dossier :
@@ -92,7 +94,7 @@ async def scout_instructions(ctx: RunContext[ODISDeps]) -> str:
 
 
 @scout_agent.tool
-def search_places_batch_tool(ctx: RunContext[ODISDeps], queries: List[str], location: str) -> Dict[str, Any]:
+async def search_places_batch_tool(ctx: RunContext[ODISDeps], queries: List[str], location: str) -> Dict[str, Any]:
     """Recherche des lieux (POIs) en mode batch.
     
     Args:
@@ -103,8 +105,8 @@ def search_places_batch_tool(ctx: RunContext[ODISDeps], queries: List[str], loca
     Returns:
         Dict[str, Any]: Dictionnaire des lieux correspondants.
     """
-    logger.info(f"🔍 [SCOUT] search_places_batch_tool: {queries} in {location}")
-    return search_places_batch(queries, location)
+    logger.info(f"🔍 [SCOUT] search_places_batch_tool async: {queries} in {location}")
+    return await search_places_batch(queries, location)
 
 @scout_agent.tool
 def compute_routes_tool(ctx: RunContext[ODISDeps], origin: str, destination: str, mode: str = "transit") -> Dict[str, Any]:
@@ -134,7 +136,7 @@ def search_refugee_associations_tool(ctx: RunContext[ODISDeps], codgeo: str) -> 
     return search_refugee_associations(codgeo)
 
 @scout_agent.tool
-def search_rna_rag_batch_tool(ctx: RunContext[ODISDeps], queries: List[str], codgeo: str, top_k: int = 10) -> Dict[str, Any]:
+async def search_rna_rag_batch_tool(ctx: RunContext[ODISDeps], queries: List[str], codgeo: str, top_k: int = 10) -> Dict[str, Any]:
     """Recherche sémantique d'associations en mode batch. 
     
     Permet d'effectuer plusieurs recherches distinctes en un seul appel.
@@ -142,13 +144,13 @@ def search_rna_rag_batch_tool(ctx: RunContext[ODISDeps], queries: List[str], cod
     Args:
         ctx (RunContext[ODISDeps]): Contexte de l'agent.
         queries (List[str]): Liste de termes de recherche courts (ex: ['football', 'aide alimentaire']).
-        codgeo (str): Code INSEE de la commune (5 chiffres).
+        codgeo: Code INSEE de la commune (5 chiffres).
         top_k (int): Nombre de résultats par terme.
     
     Returns:
         Dict[str, Any]: Dictionnaire mappant chaque requête à ses résultats.
     """
-    return search_rna_rag_batch(queries, codgeo, top_k=top_k)
+    return await search_rna_rag_batch(queries, codgeo, top_k=top_k)
 
 @scout_agent.tool
 def search_ccas_tool(ctx: RunContext[ODISDeps], codgeo: str) -> List[Dict[str, Any]]:

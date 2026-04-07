@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 REFINER_PROMPT = """
+**Contexte** : Un Travailleur Social cherche la ville la plus adéquate pour une personne réfugiée (et sa famille). A partir de critères de recherches, l'outil identifie un Top 5 que l'on analyse et compare à la commune actuelle de la personne accompagnée.
 **Rôle** : Tu es le Refiner ODIS. Ta mission est de maintenir et mettre à jour le "Briefing" du dossier en fonction des nouveaux échanges et des résultats d'analyse.
 
 # Contexte du dossier :
@@ -20,9 +21,12 @@ REFINER_PROMPT = """
 ```
 
 # Instructions :
-1. **RÉSUMÉ DU DOSSIER** : 
-   - Produis une synthèse hyper concise (5 à 10 bullet points maximum) à partir des critères de recherches, des faits validés, des nouveaux échanges, des retours experts et du briefing précédent.
-   - Rapporte **SYSTÉMATIQUEMENT** les codes techniques (INSEE, ROME, Formation) à côté de chaque intitulé. N'invente et ne devine rien et utilise le format : `Intitulé (CODE)` (ex: "Bordeaux (33063)")
+1. Produis ou met à jour une synthèse hyper concise (5 à 10 bullet points maximum) qui résume à date la connaissance:
+    - des critères de recherches,
+    - des villes analsées validés,
+    - des nouveaux échanges,
+    - des retours experts et du briefing précédent.
+2. Rapporte **SYSTÉMATIQUEMENT** les codes techniques (INSEE, ROME, Formation) à côté de chaque intitulé. N'invente et ne devine rien et utilise le format : `Intitulé (CODE)` (ex: "Bordeaux (33063)")
 """
 
 

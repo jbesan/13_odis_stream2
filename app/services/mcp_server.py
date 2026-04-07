@@ -1,5 +1,6 @@
 from fastmcp import FastMCP
 from typing import Dict, Any, List, Optional, Union
+import asyncio
 import threading
 
 import json
@@ -443,49 +444,54 @@ def _call_google_v1(endpoint: str, body: Dict[str, Any], field_mask: str) -> Dic
         return {"error": str(e)}
 
 
-def _search_places_logic(queries: List[str], location: str) -> Dict[str, Any]:
+async def _search_places_logic(queries: List[str], location: str) -> Dict[str, Any]:
     ensure_data_context()
     try:
-        results = []
         # Google Places V1 - Text Search (New)
         endpoint = "https://places.googleapis.com/v1/places:searchText"
-        # Only request necessary fields (removing ratings as requested)
         field_mask = "places.displayName,places.types,places.editorialSummary,places.formattedAddress,places.id"
         
-        for q in queries[:30]:
+        logger.info(f"🚀 [MCP] search_places parallel start: {len(queries)} queries for {location}")
+        
+        async def _single_place_search(q: str):
             body = {
                 "textQuery": f"{q} near {location}, France",
                 "languageCode": "fr",
-                "maxResultCount": 5 # Limit to top 5 results per query for tokens
+                "maxResultCount": 5
             }
-            
-            res = _call_google_v1(endpoint, body, field_mask)
+            # REST call -> wrap in to_thread
+            return await asyncio.to_thread(_call_google_v1, endpoint, body, field_mask)
+
+        tasks = [_single_place_search(q) for q in queries[:20]] # Reasonable limit
+        batch_responses = await asyncio.gather(*tasks)
+        
+        all_places = []
+        for res in batch_responses:
             if "error" in res:
-                return res
+                # Log but continue with other results
+                logger.warning(f"  ⚠️ Place search sub-query failed: {res['error']}")
+                continue
             
             places = res.get('places', [])
             for p in places:
-                # V1 structure: displayName is an object with 'text'
                 name = p.get("displayName", {}).get("text")
                 summary = p.get("editorialSummary", {}).get("text")
-                
-                place_data = {
+                all_places.append({
                     "name": name,
                     "description": summary,
                     "types": p.get("types"),
                     "address": p.get("formattedAddress"),
                     "place_id": p.get("id")
-                }
-                results.append(place_data)
+                })
             
-        logger.info(f"✅ [MCP] search_places (V1) finished. Total results: {len(results)}")
-        return sanitize_for_json({"type": "places", "data": results})
+        logger.info(f"✅ [MCP] search_places (V1) finished. Total results: {len(all_places)}")
+        return sanitize_for_json({"type": "places", "data": all_places})
     except Exception as e:
         logger.error(f"❌ [MCP] search_places failed: {e}")
         return {"error": str(e)}
 
 @mcp.tool()
-def search_places(queries: List[str], location: str) -> Dict[str, Any]:
+async def search_places(queries: List[str], location: str) -> Dict[str, Any]:
     """
     Recherche des lieux (POIs), commerces, associations ou services dans un secteur donné.
     Grounding Spatial (Ground 3).
@@ -493,7 +499,7 @@ def search_places(queries: List[str], location: str) -> Dict[str, Any]:
     try:
         if not queries or not location:
             return {"error": "Both 'queries' (list) and 'location' (string) must be provided."}
-        return _search_places_logic(queries, location)
+        return await _search_places_logic(queries, location)
     except Exception as e:
         logger.exception(f"❌ [MCP] search_places failed: {e}")
         return {"error": str(e)}

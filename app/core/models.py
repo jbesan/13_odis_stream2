@@ -180,6 +180,8 @@ class MobilityMetrics(BaseModel):
     train_stops: int = Field(0, description="Nombre d'arrêts de train/RER")
     total_stops: int = Field(0, description="Nombre total d'arrêts de transports en commun")
     stop_density: float = Field(0.0, description="Densité d'arrêts par km²")
+    is_same_epci: Optional[bool] = Field(None, description="Si la ville est dans le même EPCI que la commune actuelle")
+    distance_to_current_km: Optional[float] = Field(None, description="Distance à vol d'oiseau vers la commune actuelle (km)")
 
 class CommuneResult(BaseModel):
     """Encapsulates identity, scores, and metadata for a specific commune."""

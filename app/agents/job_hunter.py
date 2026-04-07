@@ -92,7 +92,7 @@ async def job_hunter_instructions(ctx: RunContext[ODISDeps]) -> str:
 
 # Tools wrapped for PydanticAI
 @job_hunter_agent.tool
-def search_job_offers_batch_tool(
+async def search_job_offers_batch_tool(
     ctx: RunContext[ODISDeps], 
     searches: List[JobSearchQuery]
 ) -> Dict[str, Any]:
@@ -103,7 +103,7 @@ def search_job_offers_batch_tool(
     Args:
         searches: Liste d'objets JobSearchQuery {location, rome}
     """
-    return search_job_offers_batch([s.model_dump() for s in searches])
+    return await search_job_offers_batch([s.model_dump() for s in searches])
 
 def get_job_details_tool(ctx: RunContext[ODISDeps], job_id: str) -> Dict[str, Any]:
     """Recherche des détails d'une offre d'emploi (utilise soit FT soit SIAE selon l'ID)."""
@@ -114,7 +114,7 @@ def get_job_details_tool(ctx: RunContext[ODISDeps], job_id: str) -> Dict[str, An
     return get_inclusion_job_details(job_id)
 
 @job_hunter_agent.tool
-def search_inclusion_jobs_batch_tool(
+async def search_inclusion_jobs_batch_tool(
     ctx: RunContext[ODISDeps], 
     searches: List[JobSearchQuery]
 ) -> Dict[str, Any]:
@@ -125,7 +125,7 @@ def search_inclusion_jobs_batch_tool(
     Args:
         searches: Liste d'objets JobSearchQuery {location, rome}
     """
-    return search_inclusion_jobs_batch([s.model_dump() for s in searches])
+    return await search_inclusion_jobs_batch([s.model_dump() for s in searches])
 
 @job_hunter_agent.tool
 def get_inclusion_job_details_tool(ctx: RunContext[ODISDeps], siae_id: str) -> Dict[str, Any]:
@@ -134,7 +134,7 @@ def get_inclusion_job_details_tool(ctx: RunContext[ODISDeps], siae_id: str) -> D
 
 
 @job_hunter_agent.tool
-def search_referentiels_batch_tool(ctx: RunContext[ODISDeps], searches: List[SearchQuery]) -> Dict[str, List[Dict[str, Any]]]:
+async def search_referentiels_batch_tool(ctx: RunContext[ODISDeps], searches: List[SearchQuery]) -> Dict[str, List[Dict[str, Any]]]:
     """
     Version optimisée pour effectuer plusieurs recherches de référentiels en UN SEUL tour.
     Utilise cet outil si tu as plusieurs informations à normaliser (ex: ville + métier).
@@ -142,5 +142,5 @@ def search_referentiels_batch_tool(ctx: RunContext[ODISDeps], searches: List[Sea
     Args:
         searches (List[SearchQuery]): Liste d'objets {query, domain}
     """
-    return search_referentiels_batch([s.model_dump() for s in searches])
+    return await search_referentiels_batch([s.model_dump() for s in searches])
 

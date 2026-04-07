@@ -12,6 +12,7 @@ class WebResult(BaseModel):
     result: str = Field(..., description="Synthèse des actualités et du contexte local.")
 
 WEB_ANALYSIS_SYSTEM_PROMPT = """
+**Contexte** : Un Travailleur Social cherche la ville la plus adéquate pour une personne réfugiée (et sa famille). A partir de critères de recherches, l'outil identifie un Top 5 que l'on analyse et compare à la commune actuelle de la personne accompagnée.
 **Rôle** : Tu es l'Expert Web ODIS (Agent WEB). Ta mission est de compléter l'analyse du Scout en effectuant des recherches sur le web.
 **Objectif** : Fournir des informations d'actualité, de contexte social et de veille sur la ville de réinstallation.
 
@@ -37,6 +38,7 @@ WEB_ANALYSIS_SYSTEM_PROMPT = """
 """
 
 WEB_SPECIFIC_SYSTEM_PROMPT = """
+**Contexte** : Un Travailleur Social cherche la ville la plus adéquate pour une personne réfugiée (et sa famille). A partir de critères de recherches, l'outil identifie un Top 5 que l'on analyse et compare à la commune actuelle de la personne accompagnée.
 **Rôle** : Tu es l'Expert Web ODIS (Agent WEB). Ta mission est de compléter une analyse existante en effectuant des recherches sur le web.
 **Objectif** : Fournir des informations d'actualité, de contexte social et de veille sur la ville de réinstallation.
 

@@ -40,94 +40,76 @@ def _setup_unicode_font(pdf: FPDF) -> None:
     pdf.set_font("Arial", size=12)
 
 
-def _format_markdown_for_pdf(text: str) -> str:
+def _render_markdown_as_blocks(pdf: FPDF, text: str):
     """
-    Converts basic markdown (bold, italic, headers, bullets, tables) 
-    into HTML for FPDF write_html.
+    Renders markdown text to PDF by splitting it into blocks (Text vs Table).
+    Uses native fpdf2 tables for markdown tables to avoid HTML nesting issues.
     """
-    if not text:
-        return ""
+    if not text: return
 
-    # 1. Headers (### Header)
-    text = re.sub(r'(^|\n)###\s*(.*)', r'\1<h3>\2</h3>', text)
-    text = re.sub(r'(^|\n)##\s*(.*)', r'\1<h2>\2</h2>', text)
-    text = re.sub(r'(^|\n)#\s*(.*)', r'\1<h1>\2</h1>', text)
-
-    # 2. Bold/Italic
-    text = re.sub(r'\*\*\*(.*?)\*\*\*', r'<b><i>\1</i></b>', text) # Triple
-    text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', text) # Bold
-    text = re.sub(r'\*(.*?)\*', r'<i>\1</i>', text) # Italic
-
-    # 3. Bullet points (retaining the visual bullet)
-    text = re.sub(r'^\s*[-*+]\s+', '• ', text, flags=re.MULTILINE)
-
-    # 4. Tables (Simple Markdown to HTML Table)
+    # Normalize newlines
+    text = text.replace('\r\n', '\n')
     lines = text.split('\n')
-    in_table = False
-    html_lines = []
+    
     table_buffer = []
-
+    in_table = False
+    
     for line in lines:
-        if '|' in line and not in_table:
-            # Check if next line is a header separator (e.g. |---|)
-            # (Simple heuristic: look for pipes and dashes)
+        is_table_line = '|' in line
+        if is_table_line and not in_table:
             in_table = True
             table_buffer = [line]
         elif in_table:
-            if '|' in line:
+            if is_table_line:
                 table_buffer.append(line)
             else:
-                # End of table
                 in_table = False
-                html_lines.append(_convert_md_table_to_html(table_buffer))
+                _render_table_block(pdf, table_buffer)
                 table_buffer = []
-                html_lines.append(line)
+                _render_text_block(pdf, line)
         else:
-            html_lines.append(line)
-    
-    if table_buffer: # Close trailing table
-        html_lines.append(_convert_md_table_to_html(table_buffer))
+            _render_text_block(pdf, line)
+            
+    if in_table:
+        _render_table_block(pdf, table_buffer)
 
-    final_html = "<br>".join(html_lines)
-    # Ensure paragraphs are closed if using multi_cell/write_html mix
-    return final_html
+def _render_text_block(pdf: FPDF, line: str):
+    """Renders a single line of markdown text as HTML."""
+    if not line.strip():
+        pdf.ln(2)
+        return
+    html = html_escape(line)
+    html = re.sub(r'###\s*(.*)', r'<h3>\1</h3>', html)
+    html = re.sub(r'##\s*(.*)', r'<h2>\1</h2>', html)
+    html = re.sub(r'#\s*(.*)', r'<h1>\1</h1>', html)
+    html = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', html)
+    html = re.sub(r'\*(.*?)\*', r'<i>\1</i>', html)
+    html = re.sub(r'^\s*[-*+]\s+', '• ', html)
+    pdf.write_html(html)
+    pdf.ln(1)
 
-
-def _convert_md_table_to_html(md_lines: List[str]) -> str:
-    """Helper to convert a list of markdown table lines to HTML."""
+def _render_table_block(pdf: FPDF, table_lines: List[str]):
+    """Renders a markdown table using native fpdf2 Table API."""
     rows = []
-    # Skip separator lines (e.g. |---|)
-    for line in md_lines:
-        if re.match(r'^\s*\|?\s*[:\-]+\s*\|\s*[:\-\s|]+$', line):
-            continue
-        
-        # Split by | and trim, removing empty first/last
+    for line in table_lines:
+        if re.match(r'^\s*\|?\s*[:\-]+\s*\|\s*[:\-\s|]+$', line): continue
         cells = [c.strip() for c in line.split('|')]
         if not cells[0]: cells.pop(0)
         if cells and not cells[-1]: cells.pop(-1)
-        
-        if not cells: continue
-        rows.append(cells)
-    
-    if not rows: return ""
-    
-    html = '<table border="1" width="100%">'
-    # Header row
-    html += '<thead><tr>'
-    for cell in rows[0]:
-        html += f'<th><b>{cell}</b></th>'
-    html += '</tr></thead>'
-    
-    # Body rows
-    html += '<tbody>'
-    for row in rows[1:]:
-        html += '<tr>'
-        for cell in row:
-            html += f'<td>{cell}</td>'
-        html += '</tr>'
-    html += '</tbody></table>'
-    
-    return html
+        if cells: rows.append(cells)
+    if not rows: return
+    with pdf.table(col_widths=None, borders_layout="ALL", line_height=6) as table:
+        for i, row_data in enumerate(rows):
+            row = table.row()
+            for cell_text in row_data:
+                if i == 0: pdf.set_font("DejaVu", 'B', 8)
+                else: pdf.set_font("DejaVu", '', 8)
+                row.cell(cell_text)
+    pdf.ln(2)
+
+def html_escape(text: str) -> str:
+    """Safely escape HTML special characters."""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def _generate_static_map_image(search_results: SearchResultsData, processed_gdf: Optional[gpd.GeoDataFrame] = None) -> bytes:
@@ -294,25 +276,46 @@ def generate_pdf_report(
             "Zone de recherche": cfg.LOC_SEARCH_AREA_OPTIONS.get(config.loc_search_area, str(config.loc_search_area)),
             "Métiers recherchés": metiers_str,
             "Formations recherchées": formations_str,
-            "Profil de poids": config.weight_profile if config.weight_profile else "Standard",
             "Nb. adultes": config.nb_adultes,
             "Nb. enfants": config.nb_enfants,
             "Niveaux scolaires": ", ".join(config.classe_enfants) if config.classe_enfants else "N/A",
             "Type de logement": config.type_logement.label if config.type_logement else (config.logement if config.logement else "N/A"),
             "Besoin de santé": config.besoin_sante,
             "Population cible": f"{config.target_population:,} hab. (+/- {config.target_population_sigma:,})".replace(",", " "),
+            "Fréquence retour": config.freq_retour if config.freq_retour else "N/A",
             "Autres besoins": ", ".join([c.label for c in config.inc_services_add_selection]) if config.inc_services_add_selection else "Aucun",
         }
 
+        # Add Associations Locales
+        if config.inc_asso_add_selection:
+             criteria["Associations Locales"] = ", ".join([c.label for c in config.inc_asso_add_selection])
+
         # Add Qualitative Notes
         if config.notes_qualitatives:
-             criteria["Notes qualitatives"] = ", ".join(config.notes_qualitatives)
-             
-        # Add non-zero custom weights
-        if config.criteria_weights:
-            custom_weights = [f"{k}: {v}" for k, v in config.criteria_weights.items() if v > 0]
-            if custom_weights:
-                criteria["Poids personnalisés"] = ", ".join(custom_weights)
+             criteria["Notes qualitatives"] = ", ".join(config.notes_qualitatives) if isinstance(config.notes_qualitatives, list) else config.notes_qualitatives
+
+        # Profile & Weights (At the bottom)
+        is_expert = st.session_state.get('ui_expert_weights', False)
+        profile_name = "Personnalisé" if is_expert else (config.weight_profile if config.weight_profile else "Équilibré")
+        criteria["Profil de poids"] = profile_name
+
+        # Detail of category weights
+        weight_details = []
+        weight_map = {
+            "Emploi": config.poids_emploi,
+            "Logement": config.poids_logement,
+            "Éducation": config.poids_education,
+            "Santé": config.poids_sante,
+            "Inclusion": config.poids_inclusion,
+            "Mobilité": config.poids_mobilite
+        }
+        for label, val in weight_map.items():
+            if val > 0:
+                # Convert back to percentage (e.g. 0.5 -> 50%)
+                weight_details.append(f"{label}: {int(val*100)}%")
+        
+        if weight_details:
+             criteria["Détails des poids"] = ", ".join(weight_details)
         
         table_data = [[key, str(value)] for key, value in criteria.items() if value]
 
@@ -388,10 +391,8 @@ def generate_pdf_report(
             # Fallback to simple pitch logic if scorer_pitch is missing
             pitch = f"{commune.name} se distingue particulièrement sur vos critères prioritaires."
             
-        pitch_html = _format_markdown_for_pdf(pitch)
-
         pdf.set_font("DejaVu", '', 10)
-        pdf.write_html(f'<p>{pitch_html}</p>')
+        _render_markdown_as_blocks(pdf, pitch)
         pdf.ln(5)
 
         # Radar Chart with Comparison
@@ -569,17 +570,15 @@ def generate_pdf_report(
         pdf.set_font("DejaVu", '', 8)
         refugee_assos = commune.inclusion.asso_refugee_list[:10]
         if refugee_assos:
-            refugee_html = ""
             for asso in refugee_assos:
-                name = asso.get('name', 'Inconnu')
-                cat = asso.get('waldec_label', '')
+                name = html_escape(asso.get('name', 'Inconnu'))
+                cat = html_escape(asso.get('waldec_label', ''))
                 cat_str = f" ({cat})" if cat else ""
-                desc = asso.get('description', '').strip()
+                desc = html_escape(asso.get('description', '').strip())
                 line = f"• <b>{name}</b>{cat_str}"
                 if desc: line += f": {desc}"
-                refugee_html += f"<div>{line}</div><br><br>"
-            
-            pdf.write_html(refugee_html)
+                pdf.write_html(line)
+                pdf.ln(1)
         else:
             pdf.multi_cell(pdf.epw, 5, "Aucune association spécifique identifiée.")
         pdf.ln(3)
@@ -593,15 +592,13 @@ def generate_pdf_report(
                 pdf.set_font("DejaVu", 'B', 9)
                 pdf.cell(pdf.epw, 6, cat, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 pdf.set_font("DejaVu", '', 8)
-                cat_html = ""
                 for asso in assos[:5]:
-                    name = asso.get('name', 'Inconnu')
-                    desc = asso.get('description', '').strip()
+                    name = html_escape(asso.get('name', 'Inconnu'))
+                    desc = html_escape(asso.get('description', '').strip())
                     line = f"• <b>{name}</b>"
                     if desc: line += f": {desc}"
-                    cat_html += f"<div>{line}</div><br><br>"
-                
-                pdf.write_html(cat_html)
+                    pdf.write_html(line)
+                    pdf.ln(1)
                 pdf.ln(2)
         else:
             pdf.multi_cell(pdf.epw, 5, "Aucun réseau détaillé répertorié.")
@@ -613,15 +610,14 @@ def generate_pdf_report(
             pdf.cell(pdf.epw, 10, "Synthèse de l'analyse OD&IS", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             pdf.set_font("DejaVu", '', 9)
             
-            # Combine synthesis messages into a single markdown block
-            synthesis_md = ""
             for msg in commune.odis_synthesis:
                 role = "OD&IS" if msg.get("role") == "assistant" else "Projet"
                 content = msg.get("content", "")
-                synthesis_md += f"### {role}\n{content}\n\n"
-            
-            synthesis_html = _format_markdown_for_pdf(synthesis_md)
-            pdf.write_html(synthesis_html)
-            pdf.ln(5)
+                
+                pdf.set_font("DejaVu", 'B', 10)
+                pdf.cell(pdf.epw, 7, role, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                pdf.set_font("DejaVu", '', 9)
+                _render_markdown_as_blocks(pdf, content)
+                pdf.ln(5)
 
     return bytes(pdf.output())

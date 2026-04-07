@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from typing import List, Dict, Any, Optional, Union
 from services.mcp_server import (
     _search_referentiels_logic, 
@@ -21,26 +22,38 @@ from core.models import SearchCriterias
 logger = logging.getLogger("agent_tools")
 
 
-def search_referentiels_batch(queries: List[Dict[str, str]]) -> Dict[str, List[Dict[str, Any]]]:
+async def search_referentiels_batch(queries: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
     """
-    Version optimisée pour effectuer plusieurs recherches de référentiels en un seul appel.
+    Version optimisée pour effectuer plusieurs recherches de référentiels en parallèle.
     Args:
         queries: Liste de dictionnaires {'query': '...', 'domain': '...'}
     Returns:
         Dictionnaire mappant chaque requête 'query' à ses résultats.
     """
-    logger.info(f"🔍 [TOOL] search_referentiels_batch: {queries}")
-    results = {}
-    for item in queries:
+    logger.info(f"🚀 [TOOL] search_referentiels_batch parallel start: {len(queries)} queries")
+    
+    async def _single_ref_search(item: Dict[str, Any]):
         q, d = item.get('query'), item.get('domain')
-        if q and d: results[f"{d}:{q}"] = _search_referentiels_logic(q, d)
+        if not (q and d): return None, []
+        try:
+            res = await asyncio.to_thread(_search_referentiels_logic, q, d)
+            return f"{d}:{q}", res
+        except Exception as e:
+            logger.error(f"❌ [TOOL] search_referentiels_batch failed for {d}:{q}: {e}")
+            return f"{d}:{q}", []
+
+    tasks = [_single_ref_search(q) for q in queries]
+    completed_results = await asyncio.gather(*tasks)
+    
+    results = {key: res for key, res in completed_results if key}
+    logger.info(f"✅ [TOOL] search_referentiels_batch finished: {len(results)} matches.")
     return results
 
 
-def search_places_batch(queries: List[str], location: str) -> Dict[str, Any]:
-    """Recherche des lieux (POIs), commerces ou services dans une ville (Mode Batch)."""
-    logger.info(f"🔍 [TOOL] search_places_batch: {queries} in {location}")
-    return _search_places_logic(queries, location)
+async def search_places_batch(queries: List[str], location: str) -> Dict[str, Any]:
+    """Recherche des lieux (POIs), commerces ou services dans une ville (Mode Batch Parallélisé)."""
+    logger.info(f"🔍 [TOOL] search_places_batch async: {queries} in {location}")
+    return await _search_places_logic(queries, location)
 
 def compute_routes(origin: str, destination: str, mode: str = "transit") -> Dict[str, Any]:
     """Calcule des itinéraires et temps de trajet."""
@@ -89,26 +102,35 @@ def set_focus_city(city_name: str) -> str:
     return f"SUCCÈS: Ville active définie sur {city_name}."
 
 
-def search_job_offers_batch(queries: List[Dict[str, Any]]) -> Dict[str, Any]:
+async def search_job_offers_batch(queries: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
-    Version optimisée pour effectuer plusieurs recherches d'offres d'emploi en un seul appel.
+    Version optimisée pour effectuer plusieurs recherches d'offres d'emploi en un seul appel (Parallelize).
     Args:
         queries: Liste de dictionnaires contenant les paramètres de recherche (rome, location)
     Returns:
         Dictionnaire mappant une clé unique (ex: "rome:location") aux résultats.
     """
-    results = {}
-    logger.info(f"🔍 [TOOL] search_job_offers_batch: {queries}")
-    for q_params in queries:
+    logger.info(f"🚀 [TOOL] search_job_offers_batch parallel start: {len(queries)} queries")
+    
+    async def _single_job_search(q_params: Dict[str, Any]):
         rome = q_params.get('rome') or q_params.get('rome_code') or q_params.get('rome_codes')
         loc = q_params.get('location')
         q_text = q_params.get('query')
         key = f"{rome or ''}|{loc or ''}|{q_text or ''}"
         try:
-            results[key] = _search_job_offers_logic(**q_params)
+            # logic is blocking I/O (REST calls) -> wrap in to_thread
+            res = await asyncio.to_thread(_search_job_offers_logic, **q_params)
+            return key, res
         except Exception as e:
             logger.error(f"❌ [TOOL] search_job_offers_batch failed for {key}: {e}")
-            results[key] = {"error": str(e), "offres": [], "total": 0}
+            return key, {"error": str(e), "offres": [], "total": 0}
+
+    tasks = [_single_job_search(q) for q in queries]
+    completed_results = await asyncio.gather(*tasks)
+    
+    # Reassemble as dict
+    results = {key: res for key, res in completed_results}
+    logger.info(f"✅ [TOOL] search_job_offers_batch finished: {len(results)} search buckets.")
     return results
 
         
@@ -145,9 +167,9 @@ def search_rna_rag(query: str, codgeo: str, top_k: int = 10) -> Union[List[Dict[
     logger.info(f"🔍 [TOOL] search_rna_rag: {query} in {codgeo}")
     return _search_rna_rag_logic(query, codgeo, top_k=top_k)
 
-def search_rna_rag_batch(queries: List[str], codgeo: str, top_k: int = 10) -> List[Dict[str, Any]]:
+async def search_rna_rag_batch(queries: List[str], codgeo: str, top_k: int = 10) -> List[Dict[str, Any]]:
     """
-    Exécute plusieurs recherches sémantiques distinctes et consolide les résultats sans doublons.
+    Exécute plusieurs recherches sémantiques distinctes en parallèle et consolide les résultats sans doublons.
     
     Args:
         queries: Liste de termes de recherche.
@@ -157,27 +179,32 @@ def search_rna_rag_batch(queries: List[str], codgeo: str, top_k: int = 10) -> Li
     Returns:
         List[Dict[str, Any]]: Liste unique d'associations dédoublées par ID.
     """
-    logger.info(f"🔍 [TOOL] search_rna_rag_batch starting: {queries} in {codgeo}")
+    logger.info(f"🚀 [TOOL] search_rna_rag_batch parallel start: {queries} in {codgeo}")
+    
+    async def _single_rna_search(q: str):
+        try:
+            # Logic involves BigQuery and Vertex API embedding -> wrap in to_thread
+            return await asyncio.to_thread(_search_rna_rag_logic, q, codgeo, top_k=top_k)
+        except Exception as e:
+            logger.error(f"❌ [TOOL] search_rna_rag_batch loop failed for {q}: {e}")
+            return []
+
+    tasks = [_single_rna_search(q) for q in queries]
+    batch_results = await asyncio.gather(*tasks)
+    
     all_results = []
     seen_ids = set()
     
-    for q in queries:
-        logger.debug(f"  ↳ Processing query: '{q}'")
-        try:
-            res = _search_rna_rag_logic(q, codgeo, top_k=top_k)
-            
-            # _search_rna_rag_logic returns List[Dict] usually
-            if isinstance(res, list):
-                for assoc in res:
-                    assoc_id = assoc.get('id')
-                    if assoc_id and assoc_id not in seen_ids:
-                        all_results.append(assoc)
-                        seen_ids.add(assoc_id)
-            elif isinstance(res, dict) and "error" in res:
-                logger.warning(f"  ⚠️ Research failed for '{q}': {res['error']}")
-                
-        except Exception as e:
-            logger.error(f"❌ [TOOL] search_rna_rag_batch loop failed for {q}: {e}")
+    for res in batch_results:
+        # _search_rna_rag_logic returns List[Dict] or Dict with error
+        if isinstance(res, list):
+            for assoc in res:
+                assoc_id = assoc.get('id')
+                if assoc_id and assoc_id not in seen_ids:
+                    all_results.append(assoc)
+                    seen_ids.add(assoc_id)
+        elif isinstance(res, dict) and "error" in res:
+            logger.warning(f"  ⚠️ Research step failed: {res['error']}")
             
     logger.info(f"✅ [TOOL] search_rna_rag_batch finished: {len(all_results)} unique results.")
     return all_results
@@ -193,25 +220,33 @@ def search_ccas(codgeo: str) -> List[Dict[str, Any]]:
     return _search_ccas_logic(codgeo)
 
 
-def search_inclusion_jobs_batch(queries: List[Dict[str, Any]]) -> Dict[str, Any]:
+async def search_inclusion_jobs_batch(queries: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
-    Recherche d'offres SIAE (Insertion par l'Activité Économique) en mode Batch.
+    Recherche d'offres SIAE (Insertion par l'Activité Économique) en mode Batch Parallélisé.
     
     Args:
         queries: Liste de dictionnaires {'location': '...', 'rome': '...', 'query': '...'}
     """
-    results = {}
-    logger.info(f"🔍 [TOOL] search_inclusion_jobs_batch: {queries}")
-    for q in queries:
+    logger.info(f"🚀 [TOOL] search_inclusion_jobs_batch parallel start: {len(queries)} queries")
+    
+    async def _single_inclusion_search(q: Dict[str, Any]):
         loc = q.get('location')
         rome = q.get('rome')
         query_text = q.get('query')
         key = f"{rome or ''}|{loc or ''}|{query_text or ''}"
         try:
-            results[key] = _search_inclusion_jobs_logic(location=loc, rome=rome, query=query_text)
+            # Logic involves external API call -> wrap in to_thread
+            res = await asyncio.to_thread(_search_inclusion_jobs_logic, location=loc, rome=rome, query=query_text)
+            return key, res
         except Exception as e:
             logger.error(f"❌ [TOOL] search_inclusion_jobs_batch failed for {key}: {e}")
-            results[key] = {"error": str(e), "offres": [], "total": 0}
+            return key, {"error": str(e), "offres": [], "total": 0}
+
+    tasks = [_single_inclusion_search(q) for q in queries]
+    completed_results = await asyncio.gather(*tasks)
+    
+    results = {key: res for key, res in completed_results}
+    logger.info(f"✅ [TOOL] search_inclusion_jobs_batch finished: {len(results)} search buckets.")
     return results
 
 

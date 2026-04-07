@@ -3,21 +3,19 @@ import logging
 from typing import Literal, Optional
 from pydantic import BaseModel, Field, ConfigDict
 from pydantic_ai import Agent, RunContext
-from .state import ODISGraphState, ODISDeps, FocusCity
+from .state import ODISGraphState, ODISDeps, FocusCity, ODISContextBuilder
 from .agent_config import get_model
 
 logger = logging.getLogger("router_agent")
 
 ROUTING_SYSTEM_PROMPT = """
+**Contexte** : Un Travailleur Social cherche la ville la plus adéquate pour une personne réfugiée (et sa famille). A partir de critères de recherches, l'outil identifie un Top 5 que l'on analyse et compare à la commune actuelle de la personne accompagnée.
 **Rôle** : Tu es le Cerveau de l'Assistant ODIS. Ton job est de router le message de l'utilisateur vers le bon agent spécialisé.
 
-**Contexte Actuel** :
-- Villes identifiées : {CITIES_IDENTIFIED}
-- Ville cible : {FOCUS_CITY}
-- Interview terminée : {INTERVIEW_COMPLETED}
-
-**Dossier (Briefing)** :
-{BRIEFING}
+**Contexte Actuel (Dossier)** :
+```json
+{DATA_CONTEXT}
+```
 
 **Agents disponibles** :
 
@@ -52,14 +50,9 @@ router_agent = Agent(
 
 @router_agent.system_prompt
 async def router_instructions(ctx: RunContext[ODISDeps]) -> str:
-    results = ctx.deps.state.search_results.results if ctx.deps.state.search_results else []
-    top_cities_names = [getattr(c, 'name', str(c)) for c in results]
-    return ROUTING_SYSTEM_PROMPT.format(
-        CITIES_IDENTIFIED=str(top_cities_names),
-        BRIEFING=ctx.deps.state.odis_brief or "(Pas encore de briefing)",
-        FOCUS_CITY=ctx.deps.state.focus_city or "Non définie",
-        INTERVIEW_COMPLETED=ctx.deps.state.is_interview_complete
-    ).replace("Communes identifiées", "Villes identifiées")
+    """Builds Router prompt using ODISContextBuilder."""
+    data_context = ODISContextBuilder.agent_context(ctx.deps.state, "router")
+    return ROUTING_SYSTEM_PROMPT.format(DATA_CONTEXT=data_context)
 
 
 

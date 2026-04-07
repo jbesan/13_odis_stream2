@@ -65,7 +65,7 @@ def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
 
     # 2. Trigger analysis if synthesis is missing
     if not commune.odis_synthesis:
-        with st.spinner(f"Les experts analysent {nom}, veuillez patienter (environ 15s)..."):
+        with st.spinner(f"Les experts analysent {nom}, veuillez patienter ~30s..."):
             from agents.utils import run_async_safe
             
             state_dict = {

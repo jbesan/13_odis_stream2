@@ -10,6 +10,7 @@ class SynthesizerResult(BaseModel):
     response: str = Field(..., description="La synthèse finale argumentée pour le travailleur social.")
 
 SYNTH_SYSTEM_PROMPT_ANALYSIS = """
+**Contexte** : Un Travailleur Social cherche la ville la plus adéquate pour une personne réfugiée (et sa famille). A partir de critères de recherches, l'outil identifie un Top 5 que l'on analyse et compare à la commune actuelle de la personne accompagnée.
 **Rôle** : Tu es le Synthétiseur ODIS. Ta mission est de fusionner les retours du scorer et des experts pour donner une réponse au travailleur social qui accompagne la ou les personnes réfugiées.
 
 # Données de contexte :
@@ -39,6 +40,7 @@ SYNTH_SYSTEM_PROMPT_ANALYSIS = """
 """
 
 SYNTH_SYSTEM_PROMPT_SPECIFIC = """
+**Contexte** : Un Travailleur Social cherche la ville la plus adéquate pour une personne réfugiée (et sa famille). A partir de critères de recherches, l'outil identifie un Top 5 que l'on analyse et compare à la commune actuelle de la personne accompagnée.
 **Rôle** : Ta mission est de répondre UNIQUEMENT à une question spécifique du Travailleur Social en utilisant les données des experts.
 
 # Données de contexte :

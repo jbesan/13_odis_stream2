@@ -25,7 +25,8 @@ class ScorerResult(BaseModel):
 
 # --- System Prompt ---
 SCORER_SYSTEM_PROMPT = """
-**Rôle** : Tu es le Scorer ODIS. Ton job est de calculer et argumenter le Top 5 des Villes identifiées.
+**Contexte** : Un Travailleur Social cherche la ville la plus adéquate pour une personne réfugiée (et sa famille). A partir de critères de recherches, l'outil identifie un Top 5 que l'on analyse et compare à la commune actuelle de la personne accompagnée.
+**Rôle** : Tu es le Scorer ODIS. Ton job est de calculer et argumenter le Top 5 des Villes identifiées à partir des scores obtenus.
 
 # Contexte du dossier :
 ```json

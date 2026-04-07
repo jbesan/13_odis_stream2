@@ -335,6 +335,7 @@ class ODISContextBuilder:
             "web":         cls._web_context,
             "job_hunter":  cls._job_hunter_context,
             "interviewer": cls._interviewer_context,
+            "router":      cls._router_context,
         }
         builder_fn = builders.get(agent_name)
         if not builder_fn:
@@ -356,9 +357,12 @@ class ODISContextBuilder:
         ctx = {}
         if state.odis_brief:
             ctx["Résumé du dossier (Briefing)"] = state.odis_brief
+            if state.search_criteria and state.search_criteria.notes_qualitatives:
+                ctx["Notes qualitatives"] = state.search_criteria.notes_qualitatives
+        else: 
+            if state.search_criteria:
+                ctx["Critères de recherche"] = cls._criteria_labels(state.search_criteria)
 
-        if state.search_criteria:
-            ctx["Critères de recherche"] = cls._criteria_labels(state.search_criteria)
 
         if state.focus_city and state.search_results:
             focus = state.search_results.get_by_code(state.focus_city.codgeo)
@@ -376,8 +380,8 @@ class ODISContextBuilder:
         if state.search_results and state.search_results.current_geo:
             ctx["Ville actuelle (référence)"] = cls._city_full_thematic(state.search_results.current_geo)
 
-        if state.search_results and state.search_results.results:
-            ctx["Top 5 communes recommandées"] = cls._top5_summary(state.search_results.results)
+        # if state.search_results and state.search_results.results:
+        #     ctx["Top 5 communes recommandées"] = cls._top5_summary(state.search_results.results)
         
         if state.messages:
             ctx["Dernier message"] = state.messages[-1].get("content", "")
@@ -389,7 +393,7 @@ class ODISContextBuilder:
         """Criteria labels + last messages + Top 5 summary + Briefing."""
         ctx = {}
         if state.odis_brief:
-            ctx["Briefing actuel"] = state.odis_brief
+            ctx["Dernier Briefing"] = state.odis_brief
 
         if state.search_criteria:
             ctx["Critères de recherche"] = cls._criteria_labels(state.search_criteria)
@@ -412,8 +416,11 @@ class ODISContextBuilder:
         ctx = {}
         if state.odis_brief:
             ctx["Résumé du dossier (Briefing)"] = state.odis_brief
-        if state.search_criteria:
-            ctx["Critères de recherche"] = cls._criteria_labels(state.search_criteria)
+        else:
+            if state.search_criteria and state.search_criteria.notes_qualitatives:
+                ctx["Notes qualitatives"] = state.search_criteria.notes_qualitatives
+            if state.search_criteria:
+                ctx["Critères de recherche"] = cls._criteria_labels(state.search_criteria)
         
         # Include Top 5 results if they exist to avoid redundant tool calls
         if state.search_results and state.search_results.results:
@@ -434,8 +441,11 @@ class ODISContextBuilder:
         ctx = {}
         if state.odis_brief:
             ctx["Résumé du dossier (Briefing)"] = state.odis_brief
-        if state.search_criteria:
-            ctx["Critères de recherche"] = cls._criteria_labels(state.search_criteria)
+        else:
+            if state.search_criteria and state.search_criteria.notes_qualitatives:
+                ctx["Notes qualitatives"] = state.search_criteria.notes_qualitatives
+            if state.search_criteria:
+                ctx["Critères de recherche"] = cls._criteria_labels(state.search_criteria)
 
         if state.focus_city and state.search_results:
             # Robust lookup: Code first, then Name
@@ -460,8 +470,11 @@ class ODISContextBuilder:
         ctx = {}
         if state.odis_brief:
             ctx["Résumé du dossier (Briefing)"] = state.odis_brief
-        if state.search_criteria:
-            ctx["Critères de recherche"] = cls._criteria_labels(state.search_criteria)
+        else: 
+            if state.search_criteria and state.search_criteria.notes_qualitatives:
+                ctx["Notes qualitatives"] = state.search_criteria.notes_qualitatives
+            if state.search_criteria:
+                ctx["Critères de recherche"] = cls._criteria_labels(state.search_criteria)
 
         if state.focus_city and state.search_results:
             focus = state.search_results.get_by_code(state.focus_city.codgeo)
@@ -486,6 +499,8 @@ class ODISContextBuilder:
         if state.odis_brief:
             ctx["Résumé du dossier (Briefing)"] = state.odis_brief
 
+            if state.search_criteria and state.search_criteria.notes_qualitatives:
+                ctx["Notes qualitatives"] = state.search_criteria.notes_qualitatives
         if state.search_criteria:
             ctx["Codes ROME à rechercher"] = cls._criteria_rome_codes(state.search_criteria)
 
@@ -513,6 +528,25 @@ class ODISContextBuilder:
             ctx["Critères identifiés"] = cls._criteria_full(state.search_criteria)
         if state.messages:
             ctx["Dernier message utilisateur"] = state.messages[-1].get("content", "")
+        return ctx
+
+    @classmethod
+    def _router_context(cls, state: "ODISGraphState") -> dict:
+        """Specific context for the Router: Briefing + Identified Cities + Focus + Interview Status."""
+        ctx = {}
+        if state.odis_brief:
+            ctx["Résumé du dossier (Briefing)"] = state.odis_brief
+            
+        if state.search_results and state.search_results.results:
+            ctx["Villes identifiées"] = [r.name for r in state.search_results.results[:5]]
+        
+        if state.focus_city:
+            ctx["Ville cible"] = state.focus_city.name
+        else:
+            ctx["Ville cible"] = "Non définie"
+        
+        if state.messages:
+            ctx["Dernier message"] = state.messages[-1].get("content", "")
         return ctx
 
     # -------------------------------------------------------------------------
@@ -635,24 +669,15 @@ class ODISContextBuilder:
         ctx["Inclusion"] = {
             "Associations réfugiés identifiées": city.inclusion.asso_refugee_count,
             "Associations d'inclusion (total)": city.inclusion.asso_inclusion_count,
-            "Thématiques services d'inclusion": list(city.inclusion.services_grouped.keys()),
+            # "Thématiques services d'inclusion": list(city.inclusion.services_grouped.keys()),
         }
         mobility_ctx = {"Arrêts transports en commun (total bassin)": city.mobility.total_stops}
         
-        for detail in city.scores.get("mobilite", []):
-            if detail.score_id == "mob_epci_scaled":
-                if detail.valeur_kpi == 1.0:
-                    mobility_ctx["Même EPCI que commune actuelle"] = "Oui"
-                elif detail.valeur_kpi == 0.0:
-                    mobility_ctx["Même EPCI que commune actuelle"] = "Non"
-            elif detail.score_id == "mob_dist_current_loc_scaled":
-                if detail.valeur_kpi is not None:
-                    try:
-                        dist = float(detail.valeur_kpi)
-                        if dist == dist: # check for NaN
-                            mobility_ctx["Distance commune actuelle"] = f"{round(dist, 1)} km"
-                    except (ValueError, TypeError):
-                        pass
+        if city.mobility.is_same_epci is not None:
+            mobility_ctx["Même EPCI que commune actuelle"] = "Oui" if city.mobility.is_same_epci else "Non"
+            
+        if city.mobility.distance_to_current_km is not None:
+            mobility_ctx["Distance commune actuelle"] = f"{city.mobility.distance_to_current_km} km"
 
         ctx["Mobilité"] = mobility_ctx
 
