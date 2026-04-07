@@ -119,7 +119,7 @@ def map_ui_config_to_search_criterias(config: SearchCriterias, app_data: Dict[st
         notes_qualitatives=[]
     )
 
-def launch_background_scorer(search_criterias: SearchCriterias, results_dict_ignored: dict, hash_val: str, top_cities: list = None):
+def launch_background_scorer(search_criterias: SearchCriterias, results_dict_ignored: dict, hash_val: str, top_cities: list = None, interaction_id: str = None, username: str = None):
     """
     Launches a background thread to generate the SCORER AI pitch.
     Stores the result in the cached global store.
@@ -127,7 +127,7 @@ def launch_background_scorer(search_criterias: SearchCriterias, results_dict_ign
     # Get the store here (main thread) to ensure it's initialized in the cache
     store = get_odis_bg_store()
     
-    def bg_task(results_store: dict):
+    def bg_scorer_task(results_store: dict):
         import asyncio
         import os
         from google import genai
@@ -176,7 +176,9 @@ def launch_background_scorer(search_criterias: SearchCriterias, results_dict_ign
                 "search_criteria": search_criterias.model_dump(),
                 "is_interview_complete": True,
                 "execution_mode": "full_analysis",
-                "search_results": search_results_data
+                "search_results": search_results_data,
+                "interaction_id": interaction_id or "",
+                "username": username or "unknown"
             }
             state = ODISGraphState.model_validate(state_dict)
             deps = ODISDeps(state=state, client=client)
@@ -195,9 +197,8 @@ def launch_background_scorer(search_criterias: SearchCriterias, results_dict_ign
                 result_run = loop.run_until_complete(run_agent())
                 response_obj = result_run.output
                 logging.debug(f"🚀 [BG] Agent call successful for hash {hash_val}")
-                logging.debug(f"💎 [DEBUG-BG-RAW] response={repr(response_obj.response)}")
                 for p in response_obj.pitches_per_city:
-                    logging.debug(f"💎 [DEBUG-BG-PITCH] codgeo={p.codgeo} pitch={repr(p.pitch)}")
+                    logging.info(f"💎 [DEBUG-SCORER-PITCH] codgeo={p.codgeo} pitch={repr(p.pitch)}")
                 
                 pitches_dict = {
                     "global": sanitize_llm_markdown(response_obj.response),
@@ -228,7 +229,7 @@ def launch_background_scorer(search_criterias: SearchCriterias, results_dict_ign
                 loop.close()
                 logging.info(f"🚀 [SCORER] Loop closed for hash {hash_val}")
             
-    thread = threading.Thread(target=bg_task, args=(store,))
+    thread = threading.Thread(target=bg_scorer_task, args=(store,))
     thread.daemon = True # Ensure it doesn't block exit
     thread.start()
 
@@ -260,7 +261,7 @@ def launch_background_enrichment(engine: Any, codgeos: List[str], hash_val: str)
     thread.daemon = True
     thread.start()
 
-def launch_background_audit_log(config: Any, search_results: Any, h: str):
+def launch_background_audit_log(config: Any, search_results: Any, h: str, interaction_id: str = None, username: str = None):
     """
     Launches a background thread to log search results to Markdown and Telemetry.
     """
@@ -270,13 +271,15 @@ def launch_background_audit_log(config: Any, search_results: Any, h: str):
             
             # 1. Markdown Local Logging (Dev Audit)
             try:
-                log_search_results(config, search_results, prefix="classic")
+                from utils.logger import log_search_results
+                log_search_results(config, search_results, prefix="classic", interaction_id=interaction_id, username=username)
             except Exception as e:
                 logging.warning(f"⚠️ [LOGGING] Markdown logging failed: {e}")
             
             # 2. Telemetry Logging (BigQuery)
             try:
-                log_search_complete(config, search_results, source_flow='classic')
+                from services.telemetry import log_search_complete
+                log_search_complete(config, search_results, source_flow='classic', interaction_id=interaction_id, username=username)
             except Exception as e:
                 logging.warning(f"⚠️ [LOGGING] Telemetry logging failed: {e}")
                 
@@ -297,7 +300,16 @@ def launch_post_scoring_tasks(engine: Any, config: Any, search_results: Any, h: 
     if h not in store:
         store[h] = {}
 
-    # 1. Extract city data for Scorer Agent
+    # 1. Capture session metadata FROM THE MAIN THREAD
+    try:
+        from services.telemetry import get_interaction_id
+        interaction_id = get_interaction_id()
+        username = st.session_state.get('username', 'unknown')
+    except:
+        interaction_id = "unknown"
+        username = "unknown"
+
+    # 2. Extract city data for Scorer Agent
     top_cities_full = [
         {
             "codgeo": str(c.codgeo), 
@@ -309,15 +321,15 @@ def launch_post_scoring_tasks(engine: Any, config: Any, search_results: Any, h: 
         for c in search_results.results
     ]
     
-    # 2. Launch Scorer (AI Pitch)
-    launch_background_scorer(config, {}, h, top_cities=top_cities_full)
+    # 3. Launch Scorer (AI Pitch)
+    launch_background_scorer(config, {}, h, top_cities=top_cities_full, interaction_id=interaction_id, username=username)
     
-    # 3. Launch Enrichment (Detailed Associations - BQ/RAG)
+    # 4. Launch Enrichment (Detailed Associations - BQ/RAG)
     target_codgeos = [c['codgeo'] for c in top_cities_full]
     launch_background_enrichment(engine, target_codgeos, h)
     
-    # 4. Launch Logging & Telemetry
-    launch_background_audit_log(config, search_results, h)
+    # 5. Launch Logging & Telemetry
+    launch_background_audit_log(config, search_results, h, interaction_id=interaction_id, username=username)
 
 import asyncio
 
@@ -329,8 +341,21 @@ def run_async_safe(input_data: dict):
     MAIS on ne la ferme JAMAIS explicitement ici. C'est le thread/process
     qui gérera son cycle de vie.
     """
+    # 1. Harvest Telemetry Metadata (Main Thread)
     try:
-        # 1. Check current loop
+        from services.telemetry import get_interaction_id
+        interaction_id = get_interaction_id()
+        username = st.session_state.get('username', 'unknown')
+    except:
+        interaction_id = "unknown"
+        username = "unknown"
+
+    # 2. Inject into input_data
+    input_data["interaction_id"] = interaction_id
+    input_data["username"] = username
+
+    try:
+        # 3. Check current loop
         loop = asyncio.get_event_loop()
     except RuntimeError:
         # 2. If no loop exists, create new

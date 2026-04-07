@@ -93,7 +93,7 @@ def compute_top_cities_tool(ctx: RunContext[ODISDeps]) -> Dict[str, Any]:
         }
         
     try:
-        logger.info("🔍 [TOOL:SCORER] Triggering FRESH compute_top_cities calculation...")
+        logger.info("🔍 [SCORER] Triggering FRESH compute_top_cities calculation...")
         start_time = datetime.now()
         res = compute_top_cities(ctx.deps.state.search_criteria)
         end_time = datetime.now()

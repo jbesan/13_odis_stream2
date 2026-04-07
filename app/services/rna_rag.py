@@ -91,12 +91,12 @@ class RNARagService:
 
         codgeos = [str(c) for c in codgeos]
         
-        log_msg = f"Searching associations for query='{query}'"
-        if bv_code:
-            log_msg += f" in BV {bv_code}"
-        else:
-            log_msg += f" in {len(codgeos)} codgeos"
-        logger.info(log_msg)
+        # log_msg = f"Searching associations for query='{query}'"
+        # if bv_code:
+        #     log_msg += f" in BV {bv_code}"
+        # else:
+        #     log_msg += f" in {len(codgeos)} codgeos"
+        # logger.info(log_msg)
         
         try:
             # 1. Generate query embedding

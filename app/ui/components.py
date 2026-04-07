@@ -1375,6 +1375,26 @@ def _result_highlight_callback(index: int) -> None:
             st.session_state.center = [c_pt.y, c_pt.x]
         st.session_state.zoom = cfg.DETAIL_MAP_ZOOM
 
+def _on_result_feedback(cid: str, c_name: str, score: float, fb_key: str) -> None:
+    """Callback for st.feedback to submit relevance directly to BQ."""
+    val = st.session_state.get(fb_key)
+    if val is not None:
+        # Avoid duplicate submission for the same selection state during reruns/fragment updates
+        submission_key = f"last_submitted_{fb_key}"
+        if st.session_state.get(submission_key) == val:
+            return
+            
+        try:
+            from ui.feedback import _submit_to_bq
+            import json
+            context = json.dumps({"codgeo": cid, "libgeo": c_name, "score": score})
+            # st.feedback values are 0-4 (5 faces), we map to 1-5 for BQ
+            if _submit_to_bq("Result Relevance", str(val + 1), context=context):
+                st.session_state[submission_key] = val
+                logger.info(f"✨ Feedback submitted for {c_name} ({cid}): {val + 1}")
+        except Exception as e:
+            logger.error(f"Failed to submit result feedback: {e}")
+
 
 def get_person_accompanied_str() -> str:
     if st.session_state.get('ui_nom'):
@@ -1574,25 +1594,14 @@ def _display_result_details(commune: CommuneResult) -> None:
                 
         # --- Feedback ---
         st.divider()
-        col1, col2 = st.columns([3,2])
-        with col1:
-            st.text("Évaluez la pertinence de ce résultat :", text_alignment='right', width='stretch')
+        with st.container(horizontal=True, horizontal_alignment="center", key="faces_feedback_container"):
+            # col1, col2 = st.columns([3,2])
+        # with col1:
+            st.text("Évaluez la pertinence de ce résultat")
                 
-        with col2:
+        # with col2:
             fb_key = f"fb_result_{commune.codgeo}_{h}"
-            
-            def _on_result_feedback(cid, c_name, score):
-                val = st.session_state.get(f"fb_result_{cid}_{h}")
-                if val is not None:
-                    try:
-                        from ui.feedback import _submit_to_bq
-                        context = json.dumps({"codgeo": cid, "libgeo": c_name, "score": score})
-                        _submit_to_bq("Result Relevance", str(val + 1), context=context)
-                        st.toast(f"Merci pour votre évaluation de {c_name} !")
-                    except Exception as e:
-                        logger.error(f"Failed to submit result feedback: {e}")
-                    
-            st.feedback("faces", key=fb_key, on_change=_on_result_feedback, args=(commune.codgeo, commune.name, commune.global_score))
+            st.feedback("faces", key=fb_key, on_change=_on_result_feedback, args=(commune.codgeo, commune.name, commune.global_score, fb_key), width="content")
 
         
 

@@ -287,7 +287,7 @@ with st.sidebar:
         st.error("Logo not found")
     st.write("")
     st.markdown("Découvrez les lieux de vie correspondant le mieux au projet renseigné. Les scores vous permettent de comparer facilement leurs atouts.", unsafe_allow_html=True)
-
+    st.divider()
     # --- Retour à l'Accueil ---    
     ui.start_over()
 
@@ -298,7 +298,7 @@ with st.sidebar:
     if st.session_state.get('search_results') is not None:
         export_pdf_container(st.session_state.search_results.search_hash)
     
-    st.divider()
+    # st.divider()
 
     # --- Weights --- (MOVED TO TOP FILTER FORM)
     
@@ -451,3 +451,5 @@ is_cloud_run = os.environ.get("K_SERVICE") is not None
 
         # except:
         #     pass
+
+st.write(st.session_state.processed_gdf)

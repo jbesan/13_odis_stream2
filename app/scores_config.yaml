@@ -45,7 +45,7 @@ scores:
       show: true
       unit: "%"
       display_factor: 100
-      tooltip: "Part des logements sous-occupés (Source: INSEE)"
+      tooltip: "Part des logements sous-occupés"
     weight: 1.0
     min_bound: null
     max_bound: null
@@ -62,7 +62,7 @@ scores:
       show: true
       unit: "€/m²"
       display_factor: 1
-      tooltip: "Loyer moyen d'annonce par m² pour tous les appartements (Source: ODACE 2024)"
+      tooltip: "Loyer moyen d'annonce par m² pour tous les appartements"
     weight: 3.0
     min_bound: null
     max_bound: null
@@ -79,7 +79,7 @@ scores:
       show: true
       unit: "€/m²"
       display_factor: 1
-      tooltip: "Loyer moyen d'annonce par m² pour les appartements T1 et T2 (Source: ODACE 2024)"
+      tooltip: "Loyer moyen d'annonce par m² pour les appartements T1 et T2"
     weight: 3.0
     min_bound: null
     max_bound: null
@@ -96,7 +96,7 @@ scores:
       show: true
       unit: "€/m²"
       display_factor: 1
-      tooltip: "Loyer moyen d'annonce par m² pour les appartements T3 et plus (Source: ODACE 2024)"
+      tooltip: "Loyer moyen d'annonce par m² pour les appartements T3 et plus"
     weight: 3.0
     min_bound: null
     max_bound: null
@@ -113,7 +113,7 @@ scores:
       show: true
       unit: "€/m²"
       display_factor: 1
-      tooltip: "Loyer moyen d'annonce par m² pour les maisons (Source: ODACE 2024)"
+      tooltip: "Loyer moyen d'annonce par m² pour les maisons"
     weight: 3.0
     min_bound: null
     max_bound: null

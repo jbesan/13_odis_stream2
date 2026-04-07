@@ -115,7 +115,9 @@ setup_logging()
 def log_search_results(
     config: SearchCriterias, 
     search_results: SearchResultsData,
-    prefix: str = "search_results"
+    prefix: str = "search_results",
+    interaction_id: str = None,
+    username: str = None
 ) -> None:
     """
     Logs the search configuration and the top results using the standard logger as a Markdown file in ./logs/.
@@ -127,13 +129,23 @@ def log_search_results(
 
     # --- Markdown Generation ---
     search_params = config.model_dump()
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # 🧪 SOTA: Robust Paris Timezone logic
+    try:
+        import zoneinfo
+        paris_tz = zoneinfo.ZoneInfo("Europe/Paris")
+        now_paris = datetime.now(paris_tz)
+    except:
+        now_paris = datetime.now()
+
+    timestamp_str = now_paris.strftime("%Y%m%d_%H%M%S")
     log_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.logs'))
     os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, f"{prefix}_{timestamp}.md")
+    log_file = os.path.join(log_dir, f"{timestamp_str}_{prefix}.md")
 
     md_lines = []
-    md_lines.append(f"# Search Results - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    md_lines.append(f"# Search Results - {now_paris.strftime('%Y-%m-%d %H:%M:%S')}")
+    md_lines.append(f"* **User**: `{username or 'unknown'}`")
+    md_lines.append(f"* **Interaction ID**: `{interaction_id or 'unknown'}`")
     md_lines.append("")
 
     # 1. Configuration Section
@@ -264,12 +276,8 @@ def log_agent_trace(agent_name: str, model_id: str, result: Any) -> None:
     Logs the full AI agent interaction to a Markdown file in ./logs/ (Local only)
     and pushes a trace to BigQuery (Cloud).
     """
-    # 1. BigQuery Telemetry (Cloud) - Aligned approach
-    try:
-        from services.bq_logger import log_llm_trace_to_bq
-        log_llm_trace_to_bq(agent_name, model_id, result)
-    except Exception as e:
-        logger.warning(f"⚠️ [LOGGING] Could not log LLM trace to BigQuery: {e}")
+    # 1. BigQuery Telemetry - Result level handled by graph or specialized functions
+    # No individual LLM trace to BQ anymore (simplified strategy)
 
     # 2. Markdown Logging (Local only)
     if os.environ.get('K_SERVICE'):
@@ -278,7 +286,7 @@ def log_agent_trace(agent_name: str, model_id: str, result: Any) -> None:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.logs'))
     os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, f"trace_{agent_name}_{timestamp}.md")
+    log_file = os.path.join(log_dir, f"{timestamp}_trace_{agent_name}.md")
 
     md_lines = []
     md_lines.append(f"# Agent Trace: {agent_name} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")

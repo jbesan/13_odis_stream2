@@ -1,4 +1,5 @@
 import logging
+import asyncio
 import os
 import operator
 from datetime import datetime
@@ -26,6 +27,7 @@ from agents.job_hunter import job_hunter_agent
 from agents.synthesizer import synthesizer_agent
 from utils.common import normalize_text
 from utils.logger import log_agent_trace
+import services.bq_logger as bq_logger
 
 
 logger = logging.getLogger("odis_graph")
@@ -355,9 +357,30 @@ async def scorer_node(state: ODISGraphState, config: RunnableConfig):
         # --- Unified Telemetry Logging (BigQuery) ---
         try:
             from services import telemetry
-            telemetry.log_search_complete(state.search_criteria, search_results_payload, source_flow='ia')
+            asyncio.create_task(asyncio.to_thread(
+                 telemetry.log_search_complete,
+                 state.search_criteria, 
+                 search_results_payload, 
+                 source_flow='ia',
+                 interaction_id=state.interaction_id,
+                 username=state.username
+            ))
         except Exception as tel_e:
-            logger.warning(f"⚠️ [SCORER] Telemetry failed: {tel_e}")
+            logger.warning(f"⚠️ [SCORER] Telemetry fire-and-forget failed: {tel_e}")
+
+    # BQ Logging for result-level (Source of Truth for activity)
+    if state.execution_mode == "quick_score":
+         try:
+              user_input = state.messages[-1].get("content", "Scoring Rapide") if state.messages else "Scoring Rapide"
+              asyncio.create_task(asyncio.to_thread(
+                   bq_logger.log_agent_state_to_bq,
+                   user_input, 
+                   state.model_dump(),
+                   interaction_id=state.interaction_id,
+                   username=state.username
+              ))
+         except Exception as e:
+              logger.warning(f"⚠️ [BQ-LOG] Quick_score fire-and-forget failed: {e}")
 
     return {
         "messages": [{"role": "assistant", "content": final_content}],
@@ -527,6 +550,22 @@ async def synthesizer_node(state: ODISGraphState, config: RunnableConfig):
     log_agent_trace("synthesizer", mod_id, result)
     logger.info(f"Synthesis complete for {city_name}.")
     
+    result_msg = result.output.response
+    
+    # BQ Logging for result-level (Final IA Analysis)
+    try:
+         # Use the user's prompt as the reference input
+         user_input = state.messages[-1].get("content", "Analyse IA") if state.messages else "Analyse IA"
+         asyncio.create_task(asyncio.to_thread(
+              bq_logger.log_agent_state_to_bq,
+              user_input, 
+              state.model_dump(),
+              interaction_id=state.interaction_id,
+              username=state.username
+         ))
+    except Exception as e:
+         logger.warning(f"⚠️ [BQ-LOG] Synthesis fire-and-forget failed: {e}")
+
     # Build odis_synthesis as a list of new messages to append
     # In specific_ask mode, we also want to persist the user's question for context
     new_odis_synthesis = []

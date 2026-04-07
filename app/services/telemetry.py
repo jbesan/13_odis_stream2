@@ -3,6 +3,10 @@ import json
 import uuid
 import time
 from datetime import datetime, timezone
+# try:
+#     import zoneinfo
+# except ImportError:
+#     from backports import zoneinfo # For Python < 3.9 if needed, though 1.55+ streamlit usually means 3.9+
 import streamlit as st
 from google.cloud import bigquery
 import os
@@ -39,23 +43,30 @@ def reset_interaction_id():
     st.session_state.interaction_id = str(uuid.uuid4())[:8]
     return st.session_state.interaction_id
 
-def log_event(event_name: str, payload: dict = None):
+def log_event(event_name: str, payload: dict = None, interaction_id: str = None, username: str = None):
     """Logs a succint technical event to stderr (Cloud Logging)."""
     if payload is None:
         payload = {}
         
-    username = st.session_state.get('username', 'unknown')
+    try:
+        if not username:
+            username = st.session_state.get('username', 'unknown')
+        if not interaction_id:
+            interaction_id = get_interaction_id()
+    except:
+        username = username or 'unknown'
+        interaction_id = interaction_id or 'unknown'
     
     event_data = {
         "event_name": event_name,
-        "interaction_id": get_interaction_id(),
+        "interaction_id": interaction_id,
         "username": username,
         "data_summary": {k: str(v)[:100] for k, v in payload.items()} # Succint summary
     }
     
     _telemetry_logger.info(f"Telemetry Technical: {event_name}", extra={"json_payload": event_data})
 
-def log_search_complete(config: SearchCriterias, search_results: SearchResultsData, source_flow: str = 'classic'):
+def log_search_complete(config: SearchCriterias, search_results: SearchResultsData, source_flow: str = 'classic', interaction_id: str = None, username: str = None):
     """
     Consolidated logging of a search event directly to BigQuery search_events table.
     """
@@ -63,8 +74,18 @@ def log_search_complete(config: SearchCriterias, search_results: SearchResultsDa
         return
 
     try:
-        interaction_id = get_interaction_id()
-        username = st.session_state.get('username', 'unknown')
+        # Resolve metadata
+        try:
+            if not interaction_id:
+                interaction_id = get_interaction_id()
+            if not username:
+                username = st.session_state.get('username', 'unknown')
+        except:
+             interaction_id = interaction_id or "unknown"
+             username = username or "unknown"
+        
+        # paris_tz = zoneinfo.ZoneInfo("Europe/Paris")
+        # timestamp_paris = datetime.now(paris_tz).isoformat()
         
         # 1. Prepare Criteria & Weights
         _telemetry_logger.info(f"🔍 [TELEMETRY] config type: {type(config)}")
@@ -105,7 +126,7 @@ def log_search_complete(config: SearchCriterias, search_results: SearchResultsDa
         
         row = {
             "interaction_id": interaction_id,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now().isoformat(),
             "username": username,
             "source_flow": source_flow,
             "search_criteria": json.dumps(search_criteria, default=str, ensure_ascii=False),

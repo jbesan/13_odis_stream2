@@ -249,6 +249,8 @@ class ODISGraphState(BaseModel):
     next_node: Optional[str] = None
     active_agent: Optional[str] = Field(None, description="The last active agent node name")
     is_interview_complete: bool = Field(False, description="True if Interviewer has finished collection")
+    interaction_id: str = Field("", description="Unique session interaction ID")
+    username: str = Field("unknown", description="Authenticated user email/name")
     usage: Annotated[UsageStats, add_usage] = Field(default_factory=UsageStats)
 
     model_config = ConfigDict(
@@ -372,7 +374,7 @@ class ODISContextBuilder:
                 }
 
         if state.search_results and state.search_results.current_geo:
-            ctx["Ville actuelle (référence)"] = cls._city_scores_only(state.search_results.current_geo)
+            ctx["Ville actuelle (référence)"] = cls._city_full_thematic(state.search_results.current_geo)
 
         if state.search_results and state.search_results.results:
             ctx["Top 5 communes recommandées"] = cls._top5_summary(state.search_results.results)
@@ -419,7 +421,7 @@ class ODISContextBuilder:
                 {
                     "Rang": i + 1,
                     "Code INSEE": r.codgeo,
-                    **cls._city_scores_only(r)
+                    **cls._city_full_thematic(r)
                 }
                 for i, r in enumerate(state.search_results.results[:5])
             ]
@@ -547,6 +549,7 @@ class ODISContextBuilder:
             "Profil de pondération": sc.weight_profile,
             "Services d'inclusion": _labels(sc.inc_services_add_selection),
             "Associations / centres d'intérêt": _labels(sc.inc_asso_add_selection),
+            "Fréquence de retour (attache)": getattr(sc, 'freq_retour', "Pas d'attache particulière") or "Pas d'attache particulière",
             "Notes qualitatives": sc.notes_qualitatives,
         }
 
@@ -634,7 +637,25 @@ class ODISContextBuilder:
             "Associations d'inclusion (total)": city.inclusion.asso_inclusion_count,
             "Thématiques services d'inclusion": list(city.inclusion.services_grouped.keys()),
         }
-        ctx["Mobilité"] = {"Arrêts transports en commun": city.mobility.total_stops}
+        mobility_ctx = {"Arrêts transports en commun (total bassin)": city.mobility.total_stops}
+        
+        for detail in city.scores.get("mobilite", []):
+            if detail.score_id == "mob_epci_scaled":
+                if detail.valeur_kpi == 1.0:
+                    mobility_ctx["Même EPCI que commune actuelle"] = "Oui"
+                elif detail.valeur_kpi == 0.0:
+                    mobility_ctx["Même EPCI que commune actuelle"] = "Non"
+            elif detail.score_id == "mob_dist_current_loc_scaled":
+                if detail.valeur_kpi is not None:
+                    try:
+                        dist = float(detail.valeur_kpi)
+                        if dist == dist: # check for NaN
+                            mobility_ctx["Distance commune actuelle"] = f"{round(dist, 1)} km"
+                    except (ValueError, TypeError):
+                        pass
+
+        ctx["Mobilité"] = mobility_ctx
+
         if city.scorer_pitch:
             ctx["Points forts (Scorer)"] = city.scorer_pitch
         return ctx
