@@ -82,7 +82,7 @@ async def main_instructions(ctx: RunContext[ODISDeps]) -> str:
     return prompt
 
 @interviewer_agent.tool
-def search_referentiels_batch_tool(ctx: RunContext[ODISDeps], searches: List[SearchQuery]) -> Dict[str, List[Dict[str, Any]]]:
+async def search_referentiels_batch_tool(ctx: RunContext[ODISDeps], searches: List[SearchQuery]) -> Dict[str, List[Dict[str, Any]]]:
     """
     Version optimisée pour effectuer plusieurs recherches de référentiels en UN SEUL tour.
     Utilise cet outil si tu as plusieurs informations à normaliser (ex: ville + métier).
@@ -90,4 +90,4 @@ def search_referentiels_batch_tool(ctx: RunContext[ODISDeps], searches: List[Sea
     Args:
         searches (List[SearchQuery]): Liste d'objets {query, domain}. Domaine de recherche possibles:['formation_codes', 'inclusion_services', 'waldec_codes', 'rome_codes', 'regions', 'departements', 'communes', 'housing_types'].
     """
-    return search_referentiels_batch([s.model_dump() for s in searches])
+    return await search_referentiels_batch([s.model_dump() for s in searches])

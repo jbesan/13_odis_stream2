@@ -243,7 +243,7 @@ if st.session_state.get('processed_gdf') is None and st.session_state.get('form_
     st.session_state['form_completed'] = False
 
 # --- UI LAYOUT
-@st.fragment(run_every=2.0)
+@st.fragment(run_every=3.0)
 def export_pdf_container(h: str):
     """Module-level fragment to handle background status and PDF triggering."""
     if not h:
@@ -324,7 +324,7 @@ with st.container(border=False, key='top_menu'):
         ui.display_input_tabs()
     
 # Main two sections: results and map
-col_map, col_results = st.columns([3, 2])
+col_map, col_results = st.columns([2, 1])
 
 with col_results:
     if st.session_state.get('search_results') is not None:
@@ -332,7 +332,11 @@ with col_results:
         with st.container(height=40, vertical_alignment="center", border=False):
             st.caption("Cliquez sur un résultat ⬇ pour comprendre le détail du score", text_alignment='center', width='stretch')
         
-        ui.display_results_list() # No args needed, it uses session_state.search_results internally
+        try:
+            ui.display_results_list() # No args needed, it uses session_state.search_results internally
+        except Exception as e:
+            st.error(f"Erreur d'affichage des résultats : {e}")
+            logger.error(f"❌ [PAGE-CRASH] display_results_list: {e}", exc_info=True)
 
 with col_map:
     if st.session_state.get('processed_gdf') is not None:

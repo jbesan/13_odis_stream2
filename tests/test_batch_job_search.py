@@ -21,9 +21,11 @@ def test_deps():
     mock_client = MagicMock()
     return ODISDeps(state=state, client=mock_client)
 
-def test_search_job_offers_batch_logic():
+@pytest.mark.asyncio
+async def test_search_job_offers_batch_logic():
     """Verify the internal logic of search_job_offers_batch function in tools.py."""
-    with patch('agents.tools._search_job_offers_logic') as mock_logic:
+    with patch('agents.tools._search_job_offers_logic', new_callable=MagicMock) as mock_logic:
+        # Note: _search_job_offers_logic is called via to_thread, so it stays sync in logic
         mock_logic.return_value = {"offres": [], "total": 10}
         
         queries = [
@@ -31,7 +33,7 @@ def test_search_job_offers_batch_logic():
             {"rome": "D1104", "location": "75056"}
         ]
         
-        results = search_job_offers_batch(queries)
+        results = await search_job_offers_batch(queries)
         
         assert "D1102|75056|" in results
         assert "D1104|75056|" in results
@@ -69,16 +71,17 @@ async def test_job_hunter_execution_with_batch_mock(test_deps):
     mock_model = TestModel()
     
     with job_hunter_agent.override(model=mock_model):
-        # Mock dependencies (referentiels and job offers)
-        # We patch the tools used by the agent
-        with patch('agents.job_hunter.search_referentiels_batch', return_value={
-                 "communes:Paris": [{"code": "75056", "label": "Paris"}]
-             }), \
-             patch('agents.job_hunter.search_job_offers_batch', return_value={
+        # Patching async tools using AsyncMock
+        from unittest.mock import AsyncMock
+        with patch('agents.job_hunter.search_referentiels_batch', new_callable=AsyncMock) as mock_ref, \
+             patch('agents.job_hunter.search_job_offers_batch', new_callable=AsyncMock) as mock_jobs, \
+             patch('agents.job_hunter.get_job_details', return_value={}):
+            
+            mock_ref.return_value = {"communes:Paris": [{"code": "75056", "label": "Paris"}]}
+            mock_jobs.return_value = {
                  "D1102|75056|": {"offres": [{"id": "1", "intitule": "Boulanger"}], "total": 1},
                  "D1104|75056|": {"offres": [{"id": "2", "intitule": "Pâtissier"}], "total": 1}
-             }), \
-             patch('agents.job_hunter.get_job_details', return_value={}):
+            }
             
             result = await job_hunter_agent.run(
                 "Cherche des jobs de boulanger et pâtissier à Paris",

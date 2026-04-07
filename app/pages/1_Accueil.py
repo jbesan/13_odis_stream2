@@ -304,13 +304,13 @@ steps = [
     },
     {
         "num": "2",
-        "title": "Choisir les critères",
+        "title": "Calcul des scores",
         "icon": "⚙️",
-        "text": "Sélectionnez les critères géographiques et sociaux importants."
+        "text": "Identifiez les territoires les plus pertinents au regard du projet de vie."
     },
     {
         "num": "3",
-        "title": "Explorer",
+        "title": "Exploration & Synthèse",
         "icon": "🗺️",
         "text": "Découvrez les territoires les plus accueillants correspondant au profil."
     }

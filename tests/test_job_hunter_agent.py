@@ -20,10 +20,13 @@ async def test_job_hunter_search_intent(test_deps):
     mock_model = TestModel()
     
     with job_hunter_agent.override(model=mock_model):
-        # Patching agents.tools which is where the agent imports from
-        with patch('agents.job_hunter.search_referentiels_batch', return_value={"communes:Paris": [{"code": "75056", "label": "Paris"}]}), \
-             patch('agents.job_hunter.search_job_offers_batch', return_value={}), \
+        from unittest.mock import AsyncMock
+        with patch('agents.job_hunter.search_referentiels_batch', new_callable=AsyncMock) as mock_ref, \
+             patch('agents.job_hunter.search_job_offers_batch', new_callable=AsyncMock) as mock_jobs, \
              patch('agents.job_hunter.get_job_details', return_value={}):
+            
+            mock_ref.return_value = {"communes:Paris": [{"code": "75056", "label": "Paris"}]}
+            mock_jobs.return_value = {}
             
             result = await job_hunter_agent.run(
                 "Trouve moi des jobs de boulanger",
@@ -40,9 +43,13 @@ async def test_job_hunter_tool_calls(test_deps):
     mock_model = TestModel()
     
     with job_hunter_agent.override(model=mock_model):
-        with patch('agents.job_hunter.search_referentiels_batch', return_value={"communes:Paris": [{"code": "75056", "label": "Paris"}]}), \
-             patch('agents.job_hunter.search_job_offers_batch', return_value={}), \
+        from unittest.mock import AsyncMock
+        with patch('agents.job_hunter.search_referentiels_batch', new_callable=AsyncMock) as mock_ref, \
+             patch('agents.job_hunter.search_job_offers_batch', new_callable=AsyncMock) as mock_jobs, \
              patch('agents.job_hunter.get_job_details', return_value={"id": "1234567A", "intitule": "Boulanger"}):
+            
+            mock_ref.return_value = {"communes:Paris": [{"code": "75056", "label": "Paris"}]}
+            mock_jobs.return_value = {}
             
             result = await job_hunter_agent.run(
                 "Donne moi plus d'infos sur l'offre 1234567A",

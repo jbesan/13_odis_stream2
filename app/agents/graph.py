@@ -164,7 +164,7 @@ async def router_node(state: ODISGraphState, config: RunnableConfig):
             "usage": capture_usage(result, "router", mod_id)
         }
     except Exception as e:
-        logger.error(f"❌ [ROUTER] Failed: {e}", exc_info=True)
+        logger.error(f"❌ [ROUTER] Failed: {e}")
         raise e
 
 async def refiner_node(state: ODISGraphState, config: RunnableConfig):
@@ -185,7 +185,7 @@ async def refiner_node(state: ODISGraphState, config: RunnableConfig):
         
         from datetime import datetime
         t0 = datetime.now()
-        logger.info(f"🚀 [REFINER] LLM call starting (model={mod_id}) at {t0.strftime('%H:%M:%S.%f')[:-3]}")
+        logger.debug(f"🚀 [REFINER] LLM call starting (model={mod_id}) at {t0.strftime('%H:%M:%S.%f')[:-3]}")
         
         result = await refiner_agent.run(
             "Mise à jour du briefing", 
@@ -197,7 +197,7 @@ async def refiner_node(state: ODISGraphState, config: RunnableConfig):
         log_agent_trace("refiner", mod_id, result)
         
         t1 = datetime.now()
-        logger.info(f"✅ [REFINER] LLM call done in {(t1 - t0).total_seconds():.2f}s at {t1.strftime('%H:%M:%S.%f')[:-3]}")
+        logger.debug(f"✅ [REFINER] LLM call done in {(t1 - t0).total_seconds():.2f}s at {t1.strftime('%H:%M:%S.%f')[:-3]}")
         
         briefing = result.output.odis_brief.strip()
         logger.info(f"📝 [REFINER] Briefing updated.")
@@ -357,30 +357,29 @@ async def scorer_node(state: ODISGraphState, config: RunnableConfig):
         # --- Unified Telemetry Logging (BigQuery) ---
         try:
             from services import telemetry
-            asyncio.create_task(asyncio.to_thread(
+            await asyncio.to_thread(
                  telemetry.log_search_complete,
                  state.search_criteria, 
                  search_results_payload, 
-                 source_flow='ia',
-                 interaction_id=state.interaction_id,
-                 username=state.username
-            ))
+                 'ia', # source_flow
+                 state.interaction_id,
+                 state.username
+            )
         except Exception as tel_e:
             logger.warning(f"⚠️ [SCORER] Telemetry fire-and-forget failed: {tel_e}")
 
-    # BQ Logging for result-level (Source of Truth for activity)
     if state.execution_mode == "quick_score":
          try:
               user_input = state.messages[-1].get("content", "Scoring Rapide") if state.messages else "Scoring Rapide"
-              asyncio.create_task(asyncio.to_thread(
+              await asyncio.to_thread(
                    bq_logger.log_agent_state_to_bq,
                    user_input, 
                    state.model_dump(),
-                   interaction_id=state.interaction_id,
-                   username=state.username
-              ))
+                   state.interaction_id,
+                   state.username
+              )
          except Exception as e:
-              logger.warning(f"⚠️ [BQ-LOG] Quick_score fire-and-forget failed: {e}")
+              logger.warning(f"⚠️ [BQ-LOG] Quick Score logging failed: {e}")
 
     return {
         "messages": [{"role": "assistant", "content": final_content}],
@@ -540,14 +539,23 @@ async def synthesizer_node(state: ODISGraphState, config: RunnableConfig):
     
     mod_id = get_model("synthesizer")
     model =  get_p_model("synthesizer", client=deps.client)
-    result = await synthesizer_agent.run(
-        input_msg, 
-        deps=deps, 
-        model=model,
-        model_settings=ModelSettings(max_output_tokens=4096),
-        usage_limits=UsageLimits(request_limit=10)
-    )
-    log_agent_trace("synthesizer", mod_id, result)
+
+    try:
+        result = await synthesizer_agent.run(
+            input_msg, 
+            deps=deps, 
+            model=model,
+            model_settings=ModelSettings(max_output_tokens=4096),
+            usage_limits=UsageLimits(request_limit=10)
+        )
+        log_agent_trace("synthesizer", mod_id, result)
+    except Exception as e:
+        logger.error(f"❌ [SYNTHESIZER-FAILURE] Agent run failed: {e}", exc_info=True)
+        # return a graceful error to avoid hanging the graph
+        return {
+            "messages": [{"role": "assistant", "content": "⚠️ _Désolé, une erreur technique est survenue lors de la synthèse finale. Les experts ont cependant fini leur travail._"}],
+            "next_node": END
+        }
     logger.info(f"Synthesis complete for {city_name}.")
     
     result_msg = result.output.response
@@ -556,15 +564,15 @@ async def synthesizer_node(state: ODISGraphState, config: RunnableConfig):
     try:
          # Use the user's prompt as the reference input
          user_input = state.messages[-1].get("content", "Analyse IA") if state.messages else "Analyse IA"
-         asyncio.create_task(asyncio.to_thread(
+         await asyncio.to_thread(
               bq_logger.log_agent_state_to_bq,
               user_input, 
               state.model_dump(),
-              interaction_id=state.interaction_id,
-              username=state.username
-         ))
+              state.interaction_id,
+              state.username
+         )
     except Exception as e:
-         logger.warning(f"⚠️ [BQ-LOG] Synthesis fire-and-forget failed: {e}")
+         logger.warning(f"⚠️ [BQ-LOG] Synthesis logging failed: {e}")
 
     # Build odis_synthesis as a list of new messages to append
     # In specific_ask mode, we also want to persist the user's question for context

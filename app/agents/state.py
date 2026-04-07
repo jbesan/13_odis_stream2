@@ -344,7 +344,7 @@ class ODISContextBuilder:
 
         ctx = builder_fn(state)
         result = json.dumps(ctx, ensure_ascii=False, indent=2)
-        logger.info(f"[CTX] {agent_name} context assembled ({len(result)} chars)")
+        logger.debug(f"[CTX] {agent_name} context assembled ({len(result)} chars)")
         return result
 
     # -------------------------------------------------------------------------
@@ -366,9 +366,6 @@ class ODISContextBuilder:
 
         if state.focus_city and state.search_results:
             focus = state.search_results.get_by_code(state.focus_city.codgeo)
-            if not focus and state.focus_city.name:
-                norm = state.focus_city.name.lower().strip()
-                focus = next((r for r in state.search_results.results if r.name.lower().strip() == norm), None)
             if focus:
                 ctx["Ville analysée"] = cls._city_full_thematic(focus)
                 ctx["Artefacts experts"] = {
@@ -448,10 +445,7 @@ class ODISContextBuilder:
                 ctx["Critères de recherche"] = cls._criteria_labels(state.search_criteria)
 
         if state.focus_city and state.search_results:
-            # Robust lookup: Code first, then Name
             focus = state.search_results.get_by_code(state.focus_city.codgeo)
-            if not focus and state.focus_city.name:
-                focus = state.search_results.get_by_name(state.focus_city.name)
             
             if focus:
                 ctx["Ville analysée"] = cls._city_identity(focus)
@@ -478,8 +472,6 @@ class ODISContextBuilder:
 
         if state.focus_city and state.search_results:
             focus = state.search_results.get_by_code(state.focus_city.codgeo)
-            if not focus and state.focus_city.name:
-                focus = state.search_results.get_by_name(state.focus_city.name)
                 
             if focus:
                 ctx["Ville analysée"] = cls._city_identity(focus)
@@ -506,8 +498,6 @@ class ODISContextBuilder:
 
         if state.focus_city and state.search_results:
             focus = state.search_results.get_by_code(state.focus_city.codgeo)
-            if not focus and state.focus_city.name:
-                focus = state.search_results.get_by_name(state.focus_city.name)
                 
             if focus:
                 ctx["Ville analysée"] = cls._city_identity(focus)
@@ -538,10 +528,13 @@ class ODISContextBuilder:
             ctx["Résumé du dossier (Briefing)"] = state.odis_brief
             
         if state.search_results and state.search_results.results:
-            ctx["Villes identifiées"] = [r.name for r in state.search_results.results[:5]]
+            ctx["Villes identifiées"] = [
+                {"nom": r.name, "code_insee": r.codgeo} 
+                for r in state.search_results.results[:5]
+            ]
         
         if state.focus_city:
-            ctx["Ville cible"] = state.focus_city.name
+            ctx["Ville cible"] = f"{state.focus_city.name} ({state.focus_city.codgeo})"
         else:
             ctx["Ville cible"] = "Non définie"
         

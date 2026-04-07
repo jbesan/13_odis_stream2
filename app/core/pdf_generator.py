@@ -238,7 +238,6 @@ def generate_pdf_report(
     Generates a PDF report with the top 5 results and search criteria using a Unicode font.
     Decoupled from st.session_state for better testability and clean architecture.
     """
-    logging.info("📄 [PDF] Starting PDF report generation...")
     pdf = FPDF()
     _setup_unicode_font(pdf)
     pdf.add_page()

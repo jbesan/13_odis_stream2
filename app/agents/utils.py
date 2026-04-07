@@ -331,6 +331,76 @@ def launch_post_scoring_tasks(engine: Any, config: Any, search_results: Any, h: 
     # 5. Launch Logging & Telemetry
     launch_background_audit_log(config, search_results, h, interaction_id=interaction_id, username=username)
 
+def launch_background_city_analysis(nom: str, codgeo: str, search_criterias: Any, search_results: Any, h: str, messages: list = None, interaction_id: str = None, username: str = None):
+    """
+    Launches a background thread to generate the full ODIS synthesis (or answer a specific question) for a specific city.
+    Stores the result in the cached global store under a unique key analysis_{h}_{codgeo}.
+    """
+    store = get_odis_bg_store()
+    task_key = f"analysis_{h}_{codgeo}"
+    
+    # Ensure it's not already running
+    if store.get(task_key, {}).get("status") == "running":
+        return
+        
+    store[task_key] = {"status": "running"}
+
+    def bg_analysis_task(results_store: dict):
+        import asyncio
+        from agents.utils import run_logic
+        
+        try:
+            logging.info(f"🚀 [BG-ANALYSIS] Starting background analysis for {nom} ({codgeo})")
+            
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            execution_mode = "specific_ask" if messages and len(messages) > 1 else "full_analysis"
+            
+            state_dict = {
+                "search_criteria": search_criterias.model_dump() if hasattr(search_criterias, "model_dump") else search_criterias,
+                "is_interview_complete": True,
+                "execution_mode": execution_mode,
+                "focus_city": {"name": nom, "codgeo": codgeo},
+                "search_results": search_results.model_dump() if hasattr(search_results, "model_dump") else search_results,
+                "criteria_hash": h,
+                "messages": messages or [{"role": "user", "content": f"Fais une analyse complète pour {nom}."}],
+                "interaction_id": interaction_id or "unknown",
+                "username": username or "unknown"
+            }
+            
+            try:
+                final_state = loop.run_until_complete(run_logic(state_dict))
+                
+                final_search_results = final_state.get("search_results")
+                current_val = results_store.get(task_key, {})
+                current_val["status"] = "done"
+                current_val["result"] = final_search_results
+                results_store[task_key] = current_val
+                
+                logging.info(f"✅ [BG-ANALYSIS] Background thread finished for {nom} ({codgeo})")
+            except Exception as e:
+                logging.error(f"❌ [BG-ANALYSIS] Agent Error for {nom} ({codgeo}): {e}", exc_info=True)
+                current_val = results_store.get(task_key, {})
+                current_val["status"] = "error"
+                current_val["error"] = str(e)
+                results_store[task_key] = current_val
+                
+        except Exception as global_e:
+            logging.error(f"❌ [BG-ANALYSIS] Setup Error for {nom} ({codgeo}): {global_e}")
+            current_val = results_store.get(task_key, {})
+            current_val["status"] = "error"
+            current_val["error"] = str(global_e)
+            results_store[task_key] = current_val
+        finally:
+            if 'loop' in locals() and not loop.is_closed():
+                loop.close()
+                logging.info(f"🚀 [BG-ANALYSIS] Loop closed for {nom}")
+            
+    thread = threading.Thread(target=bg_analysis_task, args=(store,))
+    thread.daemon = True
+    thread.start()
+
 import asyncio
 
 def run_async_safe(input_data: dict):

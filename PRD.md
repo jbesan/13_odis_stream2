@@ -248,5 +248,4 @@ _(Most features omitted for brevity. Appending F-42)_
 - **Adaptation du Moteur de Scoring :** Mise à jour de `ScoringEngine._filter_communes` pour supporter le filtrage par une liste de codes départements via `.isin()`.
 - **Persistance et Démo :** Mise à jour du chargement des critères et des scénarios de démo pour supporter le nouveau format de liste.
 
-### 📊 Status
-- **April 2026**: Conception validée, implémentation en cours.
+- April 2026: Conception validée, implémentation en cours.

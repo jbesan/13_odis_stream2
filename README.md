@@ -10,7 +10,14 @@ Ce projet, surnommé **"Stream 2"**, est un prototype fonctionnel explorant une 
 
 Il s'inscrit en complément du projet principal [13_odis](https://github.com/dataforgoodfr/13_odis) (ou "Stream 1"), qui se concentre sur l'exploration et la comparaison d'indicateurs pour une commune déjà sélectionnée.
 
-L'innovation de ce prototype est de renverser la logique : au lieu de partir d'un lieu, **on part des besoins et du projet de vie de la personne**. Le persona principal est le travailleur social qui, à travers cet outil, peut identifier les territoires les plus prometteurs pour la réussite d'un projet d'intégration.
+L'innovation de ce prototyp### 🛠️ Key Features
+
+- **Reverse Search Algorithm**: Multi-criteria scoring engine with dynamic weights.
+- **AI Synthesis (Graph-based)**: Agentic workflow powered by LangGraph and Gemini for deep site analysis.
+- **Background Tasks**: Non-blocking AI execution for Cloud Run stability (Daemon threads + Fragment polling).
+- **Interactive Map**: Folium/Leaflet integration for spatial mediation.
+- **PDF Reports**: Automated generation of argued territorial summaries.
+ les plus prometteurs pour la réussite d'un projet d'intégration.
 
 ![Comparaison Stream 1 vs Stream 2](./images/Screenshot-3.png)
 

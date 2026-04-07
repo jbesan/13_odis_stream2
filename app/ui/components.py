@@ -42,133 +42,137 @@ def inject_custom_css() -> None:
         </style>
     """, unsafe_allow_html=True)
 
-@st.fragment
 def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
     """Component to display AI synthesis and handle follow-up questions."""
     
-    logger.info(f"Starting ia_analysis_content: {nom} {codgeo}")
-    # 1. Access Single Source of Truth from unified state
-    if 'search_results' not in st.session_state or not st.session_state.search_results:
-        st.error("Résultats introuvables.")
-        return
-        
-    results: SearchResultsData = st.session_state.search_results
-    commune = results.get_by_code(codgeo)
-    if not commune:
-        st.error(f"Détails introuvables pour {nom} ({codgeo}).")
-        return
-
-    # Initialize chat history in session state for interactivity
-    chat_key = f"chat_history_{codgeo}"
-    if chat_key not in st.session_state:
-        st.session_state[chat_key] = []
-
-    # 2. Trigger analysis if synthesis is missing
-    if not commune.odis_synthesis:
-        with st.spinner(f"Les experts analysent {nom}, veuillez patienter ~30s..."):
-            from agents.utils import run_async_safe
+    try:
+        logger.info(f"Starting ia_analysis_content: {nom} {codgeo}")
+        # 1. Access Single Source of Truth from unified state
+        if 'search_results' not in st.session_state or not st.session_state.search_results:
+            st.error("Résultats introuvables.")
+            return
             
-            state_dict = {
-                "search_criteria": search_criterias.model_dump(),
-                "is_interview_complete": True,
-                "execution_mode": "full_analysis",
-                "focus_city": {"name": nom, "codgeo": codgeo},
-                "search_results": results.model_dump(),
-                "criteria_hash": st.session_state.get('active_search_hash'),
-                "messages": [{"role": "user", "content": f"Fais une analyse complète pour {nom}."}]
-            }
-            try:
-                final_state = run_async_safe(state_dict)
-                
-                # Selective Merge into session state
-                if "search_results" in final_state and final_state["search_results"]:
-                    new_state_data = final_state["search_results"]
-                    # Handle both dict and SearchResultsData model
-                    def _get_field(obj, field, default=None):
-                        if isinstance(obj, dict): return obj.get(field, default)
-                        return getattr(obj, field, default)
-                    
-                    # 1. Update Global Brief
-                    st.session_state.search_results.odis_brief = _get_field(new_state_data, "odis_brief", st.session_state.search_results.odis_brief)
-                    
-                    # 2. Find and update the specific focus city
-                    new_results = _get_field(new_state_data, "results", [])
-                    for city_data in new_results:
-                        city_codgeo = _get_field(city_data, "codgeo")
-                        if str(city_codgeo) == str(codgeo):
-                            commune.odis_synthesis = _get_field(city_data, "odis_synthesis", [])
-                            # Expert analysis is a dict, we update it
-                            commune.expert_analysis.update(_get_field(city_data, "expert_analysis", {}))
-                            new_pitch = _get_field(city_data, "scorer_pitch")
-                            if new_pitch:
-                                commune.scorer_pitch = new_pitch
-                            break
-                
-                # Fail-safe: only rerun if synthesis was actually populated.
-                # If the graph failed silently and returned empty synthesis, avoid
-                # an infinite loop by showing an error instead of calling st.rerun().
-                if commune.odis_synthesis:
-                    st.rerun()
-                else:
-                    logger.warning(f"⚠️ [IA-DIALOG] Synthesis empty after graph run for {codgeo}. Check synthesizer logs.")
-                    st.error("La synthèse n'a pas pu être générée. Veuillez réessayer.")
-                    return
-            except Exception as e:
-                st.error(f"Erreur lors de la génération: {str(e)}")
-                return
+        results: SearchResultsData = st.session_state.search_results
+        commune = results.get_by_code(codgeo)
+        if not commune:
+            st.error(f"Détails introuvables pour {nom} ({codgeo}).")
+            return
 
-    # 3. Display Synthesis and Chat History
-    # Use the persistent list from the model as the single source of truth
-    history = list(commune.odis_synthesis)
-    
-    for msg in history:
-        # with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
-    
-    # 4. Handle follow-up questions
-    question = st.chat_input(f"Ex: Quelles associations facilitent le logement à {nom} ?", key=f"chat_input_ia_{codgeo}")
-    if question:
-        # Display user message immediately for responsiveness
-        with st.chat_message("user"):
-            st.markdown(question)
-        
-        with st.spinner("Recherche de la réponse en cours..."):
-            from agents.utils import run_async_safe
-            # The graph now handles appending to odis_synthesis internally
-            state_dict = {
-                "search_criteria": search_criterias.model_dump(),
-                "is_interview_complete": True,
-                "execution_mode": "specific_ask",
-                "focus_city": {"name": nom, "codgeo": codgeo},
-                "search_results": st.session_state.search_results.model_dump(),
-                "criteria_hash": st.session_state.get('active_search_hash'),
-                "messages": history + [{"role": "user", "content": question}]
-            }
-            try:
-                final_state = run_async_safe(state_dict)
-                
-                # Selective Merge for Chat session
-                if "search_results" in final_state and final_state["search_results"]:
-                    new_state_data = final_state["search_results"]
-                    # Handle both dict and SearchResultsData model
-                    def _get_field(obj, field, default=None):
-                        if isinstance(obj, dict): return obj.get(field, default)
-                        return getattr(obj, field, default)
-                        
-                    # Update global brief if it evolved
-                    st.session_state.search_results.odis_brief = _get_field(new_state_data, "odis_brief", st.session_state.search_results.odis_brief)
+        # Use a unique key for background tracking
+        h = st.session_state.get('active_search_hash')
+        task_key = f"analysis_{h}_{codgeo}"
+
+        def _merge_agent_results(final_state_results):
+            """Helper to merge graph state results back into session state."""
+            if not final_state_results: return
+            
+            # 🧪 SOTA: Robust merging with type checking to prevent page-level crashes
+            def _get_field(obj, field, default=None):
+                if isinstance(obj, dict): return obj.get(field, default)
+                return getattr(obj, field, default)
+            
+            # 1. Update Global Brief
+            st.session_state.search_results.odis_brief = _get_field(final_state_results, "odis_brief", st.session_state.search_results.odis_brief)
+            
+            # 2. Find and update the specific focus city
+            new_results = _get_field(final_state_results, "results", [])
+            for city_data in new_results:
+                city_codgeo = _get_field(city_data, "codgeo")
+                if str(city_codgeo) == str(codgeo):
+                    new_synth = _get_field(city_data, "odis_synthesis", [])
+                    if new_synth:
+                        commune.odis_synthesis = new_synth
                     
-                    # Update conversation history for THIS city
-                    new_results = _get_field(new_state_data, "results", [])
-                    for city_data in new_results:
-                        city_codgeo = _get_field(city_data, "codgeo")
-                        if str(city_codgeo) == str(codgeo):
-                            commune.odis_synthesis = _get_field(city_data, "odis_synthesis", [])
-                            break
-                            
-                # st.rerun() 
-            except Exception as e:
-                st.error(f"Erreur de l'agent: {str(e)}")
+                    # Expert analysis is a dict, we update it
+                    expert_data = _get_field(city_data, "expert_analysis", {})
+                    if expert_data and isinstance(expert_data, dict):
+                        commune.expert_analysis.update(expert_data)
+                    
+                    new_pitch = _get_field(city_data, "scorer_pitch")
+                    if new_pitch:
+                        commune.scorer_pitch = new_pitch
+                    break
+
+        # 2. Trigger analysis if synthesis is missing
+        if not commune.odis_synthesis:
+            from agents.utils import launch_background_city_analysis, odis_get_bg_result
+            
+            # Polling Fragment for Initial Synthesis
+            @st.fragment(run_every=3.0)
+            def polling_synthesis_fragment():
+                status_data = odis_get_bg_result(task_key)
+                
+                if not status_data:
+                    # First run: start the thread
+                    launch_background_city_analysis(nom, codgeo, search_criterias, results, h)
+                    # st.info(f"✨ Les experts se réunissent pour analyser {nom}...")
+                    st.caption("Lancement de la synthèse...")
+                elif status_data.get("status") == "running":
+                #     st.info(f"✨ Les experts analysent {nom}...")
+                    st.caption("Préparation de la synthèse (~30s)...")
+                #     st.spinner("Rédaction de la synthèse détaillée...")
+                elif status_data.get("status") == "error":
+                    st.error(f"Erreur d'analyse : {status_data.get('error')}")
+                    if st.button("Réessayer"):
+                        del st.session_state.odis_bg_store[task_key]
+                        st.rerun()
+                elif status_data.get("status") == "done":
+                    # Success! Merge and rerun the whole component
+                    _merge_agent_results(status_data.get("result"))
+                    st.rerun()
+
+            polling_synthesis_fragment()
+            return # Hide rest of UI until synthesis is ready
+
+        # 3. Display Synthesis and Chat History
+        history = list(commune.odis_synthesis)
+        
+        # Container for chat history
+        history_container = st.container()
+        with history_container:
+            for msg in history:
+                with st.chat_message(msg["role"]):
+                    st.markdown(msg["content"])
+        
+        # Check if a follow-up chat task is running
+        chat_task_key = f"chat_active_flag_{codgeo}"
+        
+        # 4. Handle follow-up questions
+        question = st.chat_input(f"Ex: Quelles associations facilitent le logement à {nom} ?", key=f"chat_input_ia_{codgeo}")
+        
+        if question:
+            from agents.utils import launch_background_city_analysis
+            # Note: the actual graph run will return the full history including this message
+            launch_background_city_analysis(nom, codgeo, search_criterias, results, h, messages=history + [{"role": "user", "content": question}])
+            st.session_state[chat_task_key] = True 
+            st.rerun()
+
+        # Shared Polling Fragment for Follow-up Chat
+        if st.session_state.get(chat_task_key):
+            @st.fragment(run_every=3.0)
+            def polling_chat_fragment():
+                from agents.utils import odis_get_bg_result
+                status_data = odis_get_bg_result(task_key)
+                
+                if status_data and status_data.get("status") == "done":
+                    # Check if the result is NEW (i.e. has more messages than current history)
+                    # We merge and then disable the polling
+                    _merge_agent_results(status_data.get("result"))
+                    del st.session_state[chat_task_key]
+                    st.rerun()
+                elif status_data and status_data.get("status") == "error":
+                    st.error(f"Erreur de l'agent : {status_data.get('error')}")
+                    del st.session_state[chat_task_key]
+                else:
+                    with st.chat_message("assistant"):
+                        st.write("✨ _Recherche de la réponse en cours (Job Hunter / Scouts)..._")
+            
+            polling_chat_fragment()
+            
+    except Exception as e:
+        st.error(f"⚠️ Une erreur est survenue lors de l'affichage de l'analyse : {str(e)}")
+        logger.error(f"❌ [PAGE-CRASH] ia_analysis_content: {e}", exc_info=True)
+
 
 
 def _on_ia_dialog_dismiss():
@@ -197,7 +201,7 @@ def show_ia_analysis_dialog(index: Any):
     search_criterias = st.session_state.config
     ia_analysis_content(nom, codgeo, search_criterias)
 
-@st.fragment(run_every=2.0)
+@st.fragment(run_every=3.0)
 def ai_pitch_container(main_code: str, h: str):
     # 1. Try unified state first (Single source of truth)
     if 'search_results' in st.session_state and st.session_state.search_results:
@@ -1006,10 +1010,10 @@ def render_mobility_form() -> None:
             placeholder="Sélectionnez un ou plusieurs départements"
         )
 
-    if st.session_state.ui_france_search:
-        st.info("💡 Recherche sur l'ensemble du territoire métropolitain.")
-    elif st.session_state.ui_region_search:
-        st.info(f"💡 Recherche sur toute la région {regions_dict.get(selected_region_code)}.")
+    # if st.session_state.ui_france_search:
+    #     st.info("💡 Recherche sur l'ensemble du territoire métropolitain.")
+    # elif st.session_state.ui_region_search:
+    #     st.info(f"💡 Recherche sur toute la région {regions_dict.get(selected_region_code)}.")
 
     # 2. Target City Size (F-50 Refactored)
     st.divider()
@@ -1312,14 +1316,14 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
     # Adjust mobility weights based on freq_retour
     freq = st.session_state.get('ui_freq_retour', "Pas d'attache particulière")
     if freq == "1 fois/semaine":
-        criteria_weights['mob_epci_scaled'] = 3.0
-        criteria_weights['mob_dist_current_loc_scaled'] = 3.0
-    elif freq == "1 fois/mois":
         criteria_weights['mob_epci_scaled'] = 2.0
         criteria_weights['mob_dist_current_loc_scaled'] = 2.0
-    elif freq == "1 fois/an":
+    elif freq == "1 fois/mois":
         criteria_weights['mob_epci_scaled'] = 1.0
         criteria_weights['mob_dist_current_loc_scaled'] = 1.0
+    elif freq == "1 fois/an":
+        criteria_weights['mob_epci_scaled'] = 0.5
+        criteria_weights['mob_dist_current_loc_scaled'] = 0.5
     
     return SearchCriterias(
         weight_profile=profile,
@@ -1411,7 +1415,7 @@ def display_results_list(display_gdf: Optional[pd.DataFrame] = None) -> None:
         return
         
     # SOTA Global Sync Fragment: Hydrates all results in the background
-    @st.fragment(run_every=4.0)
+    @st.fragment(run_every=5.0)
     def global_sync_fragment():
         if h and 'search_results' in st.session_state:
             results = st.session_state.search_results.results
@@ -1477,7 +1481,7 @@ def _display_result_details(commune: CommuneResult) -> None:
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             st.markdown('<style> [class*="st-key-btn_ia"] .stButton button { background-color: #F5D819; color: #1B4429; } </style>', unsafe_allow_html=True)
-            if st.button("Analyse Complète OD&IS", key=f"btn_ia_comm_{commune.codgeo}", icon=':material/bolt:', width="content", type="primary"):
+            if st.button("Analyse Avancée", key=f"btn_ia_comm_{commune.codgeo}", icon=':material/bolt:', width="content", type="primary"):
                 st.session_state.active_ia_city_index = commune.codgeo
                 st.rerun()
 

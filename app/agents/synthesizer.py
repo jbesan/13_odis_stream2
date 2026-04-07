@@ -82,4 +82,8 @@ async def synth_instructions(ctx: RunContext[ODISDeps]) -> str:
         LAST_MESSAGE=last_message,
     )
 
+    logger.info(f"💎 [SYNTHESIZER-PROMPT] Mode: {mode}. Template: {'SPECIFIC' if mode == 'specific_ask' else 'ANALYSIS'}")
+    logger.debug(f"💎 [SYNTHESIZER-CONTEXT-SIZE] {len(prompt)} chars")
+    logger.debug(f"💎 [SYNTHESIZER-FULL-PROMPT-DUMP]\n{prompt}\n--- END DUMP ---")
+
     return prompt
