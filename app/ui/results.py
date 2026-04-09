@@ -91,11 +91,11 @@ def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
                     st.error(f"Erreur d'analyse : {status_data.get('error')}")
                     if st.button("Réessayer"):
                         del st.session_state.odis_bg_store[task_key]
-                        st.rerun()
+                        st.rerun(scope="fragment")
                 elif status_data.get("status") == "done":
                     # Success! Merge and rerun the whole component
                     _merge_agent_results(status_data.get("result"))
-                    st.rerun()
+                    st.rerun(scope="fragment")
 
             polling_synthesis_fragment()
             return # Hide rest of UI until synthesis is ready
@@ -120,7 +120,7 @@ def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
             # Note: the actual graph run will return the full history including this message
             launch_background_city_analysis(nom, codgeo, search_criterias, results, h, messages=history + [{"role": "user", "content": question}])
             st.session_state[chat_task_key] = True 
-            st.rerun()
+            st.rerun(scope="fragment")
 
         # Shared Polling Fragment for Follow-up Chat
         if st.session_state.get(chat_task_key):
@@ -133,7 +133,7 @@ def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
                     # We merge and then disable the polling
                     _merge_agent_results(status_data.get("result"))
                     del st.session_state[chat_task_key]
-                    st.rerun()
+                    st.rerun(scope="fragment")
                 elif status_data and status_data.get("status") == "error":
                     st.error(f"Erreur de l'agent : {status_data.get('error')}")
                     del st.session_state[chat_task_key]
@@ -196,6 +196,7 @@ def ai_pitch_container(main_code: str, h: str):
                     # Also update current_geo if needed
                     if st.session_state.search_results.current_geo and st.session_state.search_results.current_geo.codgeo == main_code:
                          st.session_state.search_results.current_geo.scorer_pitch = pitch_for_city
+                    st.rerun(scope="fragment")
             st.markdown(pitch_for_city)
 
 def sync_background_data(commune: CommuneResult, h: Optional[str]):
@@ -499,6 +500,7 @@ def show_details_dialog(index: Any):
                                 inc_data.asso_refugee_count = len(inc_data.asso_refugee_list)
                                 inc_data.asso_inclusion_list_by_cat = enrich_data.get('inclusion', {})
                                 inc_data.asso_inclusion_count = sum(len(l) for l in inc_data.asso_inclusion_list_by_cat.values())
+                                st.rerun(scope="fragment")
 
                     # 2. Render UI
                     if inc_data.asso_inclusion_count > 0:
@@ -508,10 +510,10 @@ def show_details_dialog(index: Any):
                         
 
                         # Display Refugee associations from the model (secondary list)  
-                        if inclusion_data.asso_refugee_list:
+                        if inc_data.asso_refugee_list:
                             with st.expander("Intégration des réfugiés & migrants", expanded=True):
                                 # Sort by local preference if needed (already sorted in scoring.py)
-                                for asso in inclusion_data.asso_refugee_list:
+                                for asso in inc_data.asso_refugee_list:
                                     name = str(asso.get('name', 'Inconnu'))
                                     id_val = asso.get('id', '')
                                     url = f"https://www.assoce.fr/waldec/{id_val}" if id_val else "#"
@@ -600,16 +602,6 @@ def display_results_list(display_gdf: Optional[pd.DataFrame] = None) -> None:
     if not search_results or not search_results.results:
         st.info("Aucun résultat à afficher.")
         return
-        
-    # SOTA Global Sync Fragment: Hydrates all results in the background
-    @st.fragment(run_every=5.0)
-    def global_sync_fragment():
-        if h and 'search_results' in st.session_state:
-            results = st.session_state.search_results.results
-            for c in results:
-                sync_background_data(c, h)
-
-    global_sync_fragment()
 
     # Handle Active Dialogs (at page/list rendering level)
     if st.session_state.get('active_ia_city_index') is not None:

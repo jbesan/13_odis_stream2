@@ -1,8 +1,5 @@
 import os
 import streamlit as st
-
-
-
 from streamlit_folium import st_folium
 from core import scoring
 import config as cfg
