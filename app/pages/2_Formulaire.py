@@ -10,6 +10,7 @@ if not auth.check_password():
     st.stop()
 
 from ui import components as ui
+from ui import forms as ui_forms
 from utils import data_loader
 
 # Ensure app data and session state are initialized
@@ -71,45 +72,45 @@ def display_localisation_actuelle_page():
     col1, col2, col3 = st.columns([3,1,5])
     with col1:
         st.markdown("**Localisation actuelle**")
-        ui.render_localisation_form()
+        ui_forms.render_localisation_form()
     with col2:
         st.space("large")
         st.header(":material/arrow_forward_ios:", text_alignment="center")
     with col3:
         st.markdown("**Zone de recherche**")
-        ui.render_mobility_form()
+        ui_forms.render_mobility_form()
 
 def display_family_situation_page():
     st.subheader(f"Composition du foyer {get_person_accompanied_str()}")
-    ui.render_family_form()
+    ui_forms.render_family_form()
 
 def display_education_page():
     st.subheader(f"Niveau d'étude des enfants {get_person_accompanied_str()}")
-    ui.render_education_form()
+    ui_forms.render_education_form()
 
 def display_professional_project_page():
     st.subheader(f"Métiers et formations {get_person_accompanied_str()}")
-    ui.render_employment_form()
+    ui_forms.render_employment_form()
 
 def display_housing_page():
     st.subheader(f"Logement et hébergement {get_person_accompanied_str()}")
-    ui.render_housing_form()
+    ui_forms.render_housing_form()
 
 def display_health_page():
     st.subheader(f"Besoin en santé {get_person_accompanied_str()}")
-    ui.render_health_form()
+    ui_forms.render_health_form()
 
 def display_other_needs_page():
     st.subheader(f"Inclusion et vie sociale {get_person_accompanied_str()}")
-    ui.render_other_needs_form()
+    ui_forms.render_other_needs_form()
 
 def display_other_notes_page():
     st.subheader(f"Autres informations {get_person_accompanied_str()}")
-    ui.render_other_notes_form()
+    ui_forms.render_other_notes_form()
 
 def display_profile_page():
     st.subheader(f"Profil des priorités pour la recherche")
-    ui.render_weight_profile_form()
+    ui_forms.render_weight_profile_form()
 
 if 'form_page' not in st.session_state:
     st.session_state.form_page = 'localisation'

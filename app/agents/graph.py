@@ -44,15 +44,17 @@ def capture_usage(result, node_name: str, model_id: str) -> UsageStats:
         rate_in, rate_out = (0.05, 3.00) if any(x in model_id.lower() for x in ["gemini-3", "gemini-4"]) else (0.10, 0.40)
         cost = (u.input_tokens * rate_in / 1_000_000) + (u.output_tokens * rate_out / 1_000_000)
         
+        req_count = getattr(u, 'requests', 1)
+        logger.info(f"📊 [USAGE] {node_name}: {u.total_tokens} t (${cost:.4f}) over {req_count} requests")
+        
         breakdown_entry = {
             "model": model_id, 
             "input": u.input_tokens, 
             "output": u.output_tokens, 
             "total": u.total_tokens, 
-            "cost": float(cost)
+            "cost": float(cost),
+            "requests": req_count
         }
-        
-        logger.info(f"📊 [USAGE] {node_name}: {u.total_tokens} t (${cost:.4f})")
         
         return UsageStats(
             input_tokens=u.input_tokens,
@@ -296,8 +298,8 @@ async def scorer_node(state: ODISGraphState, config: RunnableConfig):
 
     # --- Message Construction ---
     # We combine the global response and individual pitches into a clean markdown message for the chat.
-    final_content = result.output.response or ""
-    logging.info(f"💎 [DEBUG-RAW-SCORER] response={repr(final_content)}")
+    final_content = result.output.odis_brief or ""
+    logging.info(f"💎 [DEBUG-RAW-REFINER] response={repr(final_content)}")
     
     if result.output.pitches_per_city:
         final_content += "\n\n### 📍 Top des communes recommandées\n"
@@ -558,7 +560,9 @@ async def synthesizer_node(state: ODISGraphState, config: RunnableConfig):
         }
     logger.info(f"Synthesis complete for {city_name}.")
     
-    result_msg = result.output.response
+    result_msg = result.output
+    
+    usage = capture_usage(result, "synthesizer", mod_id)
     
     # BQ Logging for result-level (Final IA Analysis)
     try:
@@ -582,11 +586,11 @@ async def synthesizer_node(state: ODISGraphState, config: RunnableConfig):
         if last_user_msg.get("role") == "user":
              new_odis_synthesis.append(last_user_msg)
     
-    new_odis_synthesis.append({"role": "assistant", "content": result.output.response})
+    new_odis_synthesis.append({"role": "assistant", "content": result.output})
 
     # Return both the chat message and the model update for single source of truth
     return {
-        "messages": [{"role": "assistant", "content": sanitize_llm_markdown(result.output.response)}],
+        "messages": [{"role": "assistant", "content": sanitize_llm_markdown(result.output)}],
         "search_results": {
             "results": [
                 {

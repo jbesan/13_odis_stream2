@@ -167,14 +167,15 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     'codes_formations': [],
     'classe_enfants': [],
     'inc_services_add_selection': [],
-    'inc_services_add_selection': [],
     'inc_services_core_selection': DEFAULT_INC_SERVICES_CORE,
     'inc_asso_add_selection': [],
     'loc_search_code': [],
     'ui_inc_service_fle': False,
     'type_logement': 'appt_all',
     'weight_profile': 'Équilibré',
+    'besoin_sante': "Aucun",
     'notes_qualitatives': "",
+    'freq_retour': '1 fois/mois',
     'target_population': DEFAULT_MU,
     'target_population_sigma': DEFAULT_SIGMA
 }
@@ -206,7 +207,7 @@ DEMO_SCENARIOS = {
         'codes_metiers': [['H2206'], []],
         'codes_formations': [[], ['331', '330', '326']],
         'classe_enfants': ['Maternelle', 'Elémentaire'],
-        'sante': "Maternité",
+        'besoin_sante': "Maternité",
         'poids_mobilite': 0,
         'weight_profile': 'Équilibré',
         'notes_qualitatives': "Olga et Dimitri cherchent un environnement calme pour leurs enfants."
@@ -231,8 +232,8 @@ DEMO_SCENARIOS = {
         'poids_inclusion': 50,
         'poids_sante': 50,
         'poids_mobilite': 25,
-        'sante': "Maternité",
-        'inc_asso_add_selection': ['chant choral, musique'],
+        'besoin_sante': "Maternité",
+        'inc_asso_add_selection': ['006030'],
         'loc_search_code': ['13'],
         'notes_qualitatives': "Aïcha souhaite passer son permis et cherche une boucherie Hallal à proximité"
     }

@@ -126,13 +126,20 @@ class ScoringEngine:
                  # 3. Parity Check: Log warning if an active criteria is missing from data
                  if config.active_criteria is not None and sid in config.active_criteria and val_commune is None and val_bdv is None:
                       logger.warning(f"⚠️ [SCORING] Active criterion '{sid}' (or '{sid_bdv}') is MISSING from the input data. Score will be defaulted to 0.")
-                 # 4. Combine using bdv_factor (Non-penalizing Boost Logic)
+                 # 4. Combine using bdv_factor (Multi-mode: Bonus or Malus)
                  if val_commune is not None and val_bdv is not None:
-                      # Formula: Sc + (1 - Sc) * (Sb * factor)
-                      # Bassin de Vie opportunities act as a bonus to local ones
                       s_c = val_commune.fillna(0)
                       s_b = val_bdv.fillna(0)
-                      val = s_c + (1.0 - s_c) * (s_b * bdv_f)
+                      if bdv_f > 0.0:
+                           # Formula: Sc + (1 - Sc) * (Sb * factor)
+                           # Bassin de Vie opportunities act as a bonus to local ones
+                           val = s_c + (1.0 - s_c) * (s_b * bdv_f)
+                      elif bdv_f < 0.0:
+                           # Proportional Malus: Reduces score based on "lack of goodness" in BdV
+                           # Formula: Sc - Sc * (1.0 - Sb) * abs(factor)
+                           val = s_c - s_c * (1.0 - s_b) * abs(bdv_f)
+                      else:
+                           val = s_c
                  elif val_commune is not None:
                       val = val_commune.fillna(0)
                  elif val_bdv is not None:
@@ -1329,6 +1336,16 @@ class ScoringEngine:
                 df['population'], 0, 0, 
                 scaling_type='gaussian', mu=mu, sigma=sigma
             )
+            
+            # --- F-13: BdV Saturation Check ---
+            # If population_bv_bdv is present, we compute the BdV level score s_b 
+            # using the same gaussian peak. A 1M+ population will yield ~0.0, 
+            # triggering the malus if bdv_factor is negative.
+            if 'population_bv_bdv' in df.columns:
+                 df['inc_population_scaled_bdv'] = self._scale_series(
+                    df['population_bv_bdv'], 0, 0, 
+                    scaling_type='gaussian', mu=mu, sigma=sigma
+                )
 
         if 'inc_asso_core_scaled' not in df.columns: df['inc_asso_core_scaled'] = 0.0
 

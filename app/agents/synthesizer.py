@@ -6,8 +6,7 @@ from .agent_config import get_model
 
 logger = logging.getLogger("synthesizer_agent")
 
-class SynthesizerResult(BaseModel):
-    response: str = Field(..., description="La synthèse finale argumentée pour le travailleur social.")
+# --- Synthesis Logic ---
 
 SYNTH_SYSTEM_PROMPT_ANALYSIS = """
 **Contexte** : Un Travailleur Social cherche la ville la plus adéquate pour une personne réfugiée (et sa famille). A partir de critères de recherches, l'outil identifie un Top 5 que l'on analyse et compare à la commune actuelle de la personne accompagnée.
@@ -57,7 +56,7 @@ SYNTH_SYSTEM_PROMPT_SPECIFIC = """
 synthesizer_agent = Agent(
     get_model("synthesizer"),
     deps_type=ODISDeps,
-    output_type=SynthesizerResult
+    output_type=str
 )
 
 @synthesizer_agent.system_prompt

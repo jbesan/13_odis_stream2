@@ -7,6 +7,8 @@ from streamlit_folium import st_folium
 from core import scoring
 import config as cfg
 from ui import components as ui
+from ui import forms as ui_forms
+from ui import results as ui_results
 from ui import feedback
 from utils import common as utils
 from core import maps
@@ -127,7 +129,7 @@ def run_search():
     from services import telemetry
     telemetry.reset_interaction_id()
     
-    config = ui.create_search_criterias_from_inputs()
+    config = ui_forms.create_search_criterias_from_inputs()
     st.session_state['config'] = config
 
     # Get required dataframes from global cached app_data
@@ -321,7 +323,7 @@ with st.container(border=False, key='top_menu'):
         with st.container(height="stretch", horizontal_alignment="center", vertical_alignment="center"):
             st.button("Lancer la recherche", on_click=run_search, type="primary")
     with st.expander('Modifier les critères de recherche', expanded=False):
-        ui.display_input_tabs()
+        ui_forms.display_input_tabs()
     
 # Main two sections: results and map
 col_map, col_results = st.columns([2, 1])
@@ -333,7 +335,7 @@ with col_results:
             st.caption("Cliquez sur un résultat ⬇ pour comprendre le détail du score", text_alignment='center', width='stretch')
         
         try:
-            ui.display_results_list() # No args needed, it uses session_state.search_results internally
+            ui_results.display_results_list() # No args needed, it uses session_state.search_results internally
         except Exception as e:
             st.error(f"Erreur d'affichage des résultats : {e}")
             logger.error(f"❌ [PAGE-CRASH] display_results_list: {e}", exc_info=True)

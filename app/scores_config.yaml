@@ -142,7 +142,7 @@ scores:
   - id: inc_population_scaled
     category: inclusion
     source_metric: population
-    bdv_factor: 0.0
+    bdv_factor: -0.5
     computation: live
     display:
       name: Population de la commune

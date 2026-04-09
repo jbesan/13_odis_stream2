@@ -1,18 +1,19 @@
 [
     {
         "bassin_de_vie": "13004",
-        "weighted_score": 0.7021845603566541,
+        "weighted_score": 0.675421165194116,
         "population_bv": 56202,
         "libgeo": "Arles",
         "communes": [
             "13004",
             "13038"
         ],
-        "inclusion_cat_score": 0.6841615286596752
+        "inclusion_cat_score": 0.6735860157654495,
+        "mob_epci_scaled": 0.0
     },
     {
         "bassin_de_vie": "13103",
-        "weighted_score": 0.6484558049389744,
+        "weighted_score": 0.6445977740017919,
         "population_bv": 59680,
         "libgeo": "Salon-de-Provence",
         "communes": [
@@ -22,11 +23,12 @@
             "13069",
             "13103"
         ],
-        "inclusion_cat_score": 0.6518909758995797
+        "inclusion_cat_score": 0.6401669127060713,
+        "mob_epci_scaled": 1.0
     },
     {
         "bassin_de_vie": "13056",
-        "weighted_score": 0.6233174258708561,
+        "weighted_score": 0.617154347776973,
         "population_bv": 70982,
         "libgeo": "Martigues",
         "communes": [
@@ -34,11 +36,12 @@
             "13077",
             "13098"
         ],
-        "inclusion_cat_score": 0.6839878344770627
+        "inclusion_cat_score": 0.6346851958519535,
+        "mob_epci_scaled": 1.0
     },
     {
         "bassin_de_vie": "13055",
-        "weighted_score": 0.6014390547572562,
+        "weighted_score": 0.5904038324473425,
         "population_bv": 1878132,
         "libgeo": "Aubagne",
         "communes": [
@@ -76,17 +79,19 @@
             "13215",
             "13216"
         ],
-        "inclusion_cat_score": 0.6921997183841994
+        "inclusion_cat_score": 0.5284488197153929,
+        "mob_epci_scaled": 1.0
     },
     {
         "bassin_de_vie": "83137",
-        "weighted_score": 0.5783166263329704,
+        "weighted_score": 0.5685294842412343,
         "population_bv": 38937,
         "libgeo": "La Ciotat",
         "communes": [
             "13023",
             "13028"
         ],
-        "inclusion_cat_score": 0.596841826582114
+        "inclusion_cat_score": 0.45879118445789907,
+        "mob_epci_scaled": 1.0
     }
 ]

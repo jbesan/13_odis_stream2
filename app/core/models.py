@@ -45,7 +45,7 @@ class SearchCriterias(BaseModel):
     logement: Optional[str] = Field(None, description="Housing type (e.g. 'Logement Social')")
     type_logement: Optional[CriteriaItem] = Field(None, description="Enriched housing type (e.g., 'Appartement', 'Maison')")
     besoin_sante: Optional[str] = Field(None, description="Specific health need (e.g. 'Maternité')")
-    freq_retour: str = Field("Pas d'attache particulière", description="Fréquence de retour envisagée vers la commune actuelle")
+    freq_retour: str = Field("1 fois/mois", description="Fréquence de retour envisagée vers la commune actuelle")
 
 
     # Qualitative notes (free text indices for Scout and Synthesis)
@@ -67,7 +67,7 @@ class SearchCriterias(BaseModel):
     target_population: int = Field(50000, description="Target population size for the city (mu)")
     target_population_sigma: int = Field(25000, description="Tolerance (sigma) for the population size")
 
-    freq_retour: str = Field("Pas d'attache particulière", description="Frequency of return to current location")
+
 
     active_criteria: Optional[Set[str]] = Field(None, description="Set of active criteria computed by the engine")
     active_categories: List[str] = Field(default_factory=list, description="List of categories with active criteria")

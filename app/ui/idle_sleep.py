@@ -19,11 +19,13 @@ def inject_idle_sleep(timeout_minutes: int = 10):
         console.log("Eco-Mode V2 (Bidi) Monitor Active.");
 
         function showSleepMode() {{
-            // Since V2 components are NOT sandboxed (same origin), 
-            // 'document' is the main document.
-            if (document.getElementById('idle-sleep-overlay')) return;
+            // Target the main application window (even if running in iframe)
+            const targetWin = window.top;
+            const targetDoc = targetWin.document;
 
-            const overlay = document.createElement('div');
+            if (targetDoc.getElementById('idle-sleep-overlay')) return;
+
+            const overlay = targetDoc.createElement('div');
             overlay.id = 'idle-sleep-overlay';
             overlay.style.cssText = "position:fixed;top:0;left:0;width:100vw;height:100vh;background:#1B4429;z-index:9999999;display:flex;flex-direction:column;align-items:center;justify-content:center;color:white;font-family:sans-serif;text-align:center;padding:20px;backdrop-filter:blur(10px);";
             overlay.innerHTML = `
@@ -36,13 +38,31 @@ def inject_idle_sleep(timeout_minutes: int = 10):
                     <button id="eco-resume-btn" style="background:#FFD700; color:#1B4429; border:none; padding:18px 50px; font-weight:800; border-radius:12px; cursor:pointer; font-size:1.2rem; box-shadow:0 4px 15px rgba(0,0,0,0.3);">REPRENDRE LA SESSION</button>
                 </div>
             `;
-            document.body.appendChild(overlay);
-            document.getElementById('eco-resume-btn').onclick = () => window.location.reload();
+            targetDoc.body.appendChild(overlay);
+            targetDoc.getElementById('eco-resume-btn').onclick = () => targetWin.location.reload();
 
-            // Stopper les battements de coeur
-            window.stop();
-            let id = window.setInterval(function() {{}}, 0);
-            while (id--) window.clearInterval(id);
+            // 1. Stop all current loading
+            targetWin.stop();
+
+            // 2. Kill all timers (Heartbeats, Fragments, etc.)
+            const maxId = targetWin.setTimeout(() => {{}}, 0);
+            for (let i = 0; i <= maxId; i++) {{
+                targetWin.clearTimeout(i);
+                targetWin.clearInterval(i);
+            }}
+
+            // 3. Sabotage outgoing network APIs to prevent further contact
+            try {{
+                targetWin.fetch = () => new Promise(() => {{}});
+                targetWin.XMLHttpRequest.prototype.open = function() {{ 
+                    console.log("Eco-Mode: Connection Blocked.");
+                }};
+                targetWin.XMLHttpRequest.prototype.send = function() {{}};
+            }} catch (e) {{
+                console.error("Eco-Mode: Error blocking network", e);
+            }}
+
+            console.log("Eco-Mode: Application connectivity severed.");
         }}
 
         function updateActivity() {{

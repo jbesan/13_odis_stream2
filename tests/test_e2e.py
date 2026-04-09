@@ -17,6 +17,8 @@ from utils import data_loader
 from core import scoring
 from core.models import SearchCriterias
 from ui import components as ui
+from ui import forms as ui_forms
+from ui import results as ui_results
 
 SNAPSHOT_DIR = Path(__file__).parent / "snapshots"
 
@@ -87,6 +89,15 @@ def app_data():
     This is equivalent to st.session_state['app_data'] in the Streamlit app.
     """
     return data_loader.load_all_data_raw()
+class MockSessionState(dict):
+    def __getattr__(self, name):
+        try:
+            return self[name]
+        except KeyError:
+            raise AttributeError(name)
+    def __setattr__(self, name, value):
+        self[name] = value
+
 
 def run_test_scenario(scenario_id, app_data):
     """
@@ -94,7 +105,7 @@ def run_test_scenario(scenario_id, app_data):
     and calling the app's own logic.
     """
     # 1. Set up a mock session state dictionary
-    mock_session_state = {}
+    mock_session_state = MockSessionState()
 
     # 2. Add app_data to the mock session state, as the UI functions expect it
     mock_session_state['app_data'] = app_data
@@ -168,8 +179,9 @@ def run_test_scenario(scenario_id, app_data):
     # 4. Create the SearchCriterias by calling the app's own UI function.
     # We use unittest.mock.patch to temporarily replace streamlit's session_state
     # with our dictionary for the duration of the call.
-    with patch('app.ui.components.st.session_state', mock_session_state):
-        scoring_config = ui.create_search_criterias_from_inputs()
+    with patch('ui.forms.st.session_state', mock_session_state):
+        scoring_config = ui_forms.create_search_criterias_from_inputs()
+        print(f"DEBUG Scenario {scenario_id}: {scoring_config}")
 
     # 5. Instantiate ScoringEngine
     # We pass empty global_stats as in the app page
@@ -299,7 +311,7 @@ def test_result_details_display(app_data):
     results_communes = run_test_scenario('1', app_data)
 
     # 2. Get the scoring config and app_data that the UI functions will need
-    mock_config_state = {
+    mock_config_state = MockSessionState({
         'app_data': app_data,
         'ui_departement': '33',
         'ui_commune': 'Bordeaux',
@@ -320,16 +332,11 @@ def test_result_details_display(app_data):
         'ui_poids_mobilite': 100,
         'ui_metiers_adult_0': [],
         'ui_formations_adult_0': []
-    }
-    with patch('app.ui.components.st.session_state', mock_config_state):
-        scoring_config = ui.create_search_criterias_from_inputs()
+    })
+    with patch('ui.forms.st.session_state', mock_config_state):
+        scoring_config = ui_forms.create_search_criterias_from_inputs()
 
     # 3. Set up a mock session state for the UI functions
-    class MockSessionState(dict):
-        def __getattr__(self, name):
-            return self[name]
-        def __setattr__(self, name, value):
-            self[name] = value
 
     mock_session_state_details = MockSessionState({
         'app_data': app_data,
@@ -339,11 +346,11 @@ def test_result_details_display(app_data):
 
     # 4. Test the commune details display
     engine = scoring.ScoringEngine.from_app_data(app_data)
-    with patch('app.ui.components.st.session_state', mock_session_state_details):
+    with patch('ui.results.st.session_state', mock_session_state_details):
         for index, row in results_communes.head(5).iterrows():
             try:
                 # Convert row to CommuneResult as expected by the new UI logic
                 commune = engine.format_city_details(row, scoring_config)
-                ui._display_result_details(commune)
+                ui_results._display_result_details(commune)
             except Exception as e:
                 pytest.fail(f"Failed to display details for commune result {row.get('libgeo', 'UNKNOWN')} ({index}): {e}")

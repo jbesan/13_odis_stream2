@@ -157,7 +157,7 @@ _(Most features omitted for brevity. Appending F-42)_
 
 ### 📊 Status
 
-- **March 2026**: Definition and implementation started.
+- **April 2026**: Done. UI modularized into `forms.py` and `results.py`. Inclusion services consolidated into a single field, and demo data standardized on `besoin_sante` and WALDEC codes.
 
 ## 🚀 Feature [F-49]: Refonte Pydantic Data Models (Search Results)
 
