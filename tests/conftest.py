@@ -144,12 +144,12 @@ def sample_incl_index():
 def default_config():
     """Returns a default SearchCriterias for testing."""
     return SearchCriterias(
-        poids_emploi=100,
-        poids_logement=100,
-        poids_education=100,
-        poids_inclusion=25,
-        poids_sante=100, # Added for tests
-        poids_mobilite=100,
+        poids_emploi=1.0,
+        poids_logement=1.0,
+        poids_education=1.0,
+        poids_inclusion=0.5,
+        poids_sante=1.0, # Added for tests
+        poids_mobilite=1.0,
         criteria_weights={}, # Added for F-15
         weight_profile="Équilibré",
         commune_actuelle=CriteriaItem(code='33063', label='Bordeaux'),

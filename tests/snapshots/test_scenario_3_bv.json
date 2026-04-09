@@ -1,7 +1,7 @@
 [
     {
         "bassin_de_vie": "13004",
-        "weighted_score": 0.675421165194116,
+        "weighted_score": 0.6319879723692653,
         "population_bv": 56202,
         "libgeo": "Arles",
         "communes": [
@@ -13,7 +13,7 @@
     },
     {
         "bassin_de_vie": "13103",
-        "weighted_score": 0.6445977740017919,
+        "weighted_score": 0.6132878532908129,
         "population_bv": 59680,
         "libgeo": "Salon-de-Provence",
         "communes": [
@@ -28,7 +28,7 @@
     },
     {
         "bassin_de_vie": "13056",
-        "weighted_score": 0.617154347776973,
+        "weighted_score": 0.5970979737009939,
         "population_bv": 70982,
         "libgeo": "Martigues",
         "communes": [
@@ -40,8 +40,20 @@
         "mob_epci_scaled": 1.0
     },
     {
+        "bassin_de_vie": "83137",
+        "weighted_score": 0.5738359229195906,
+        "population_bv": 38937,
+        "libgeo": "La Ciotat",
+        "communes": [
+            "13023",
+            "13028"
+        ],
+        "inclusion_cat_score": 0.45879118445789907,
+        "mob_epci_scaled": 1.0
+    },
+    {
         "bassin_de_vie": "13055",
-        "weighted_score": 0.5904038324473425,
+        "weighted_score": 0.5722000361967005,
         "population_bv": 1878132,
         "libgeo": "Aubagne",
         "communes": [
@@ -80,18 +92,6 @@
             "13216"
         ],
         "inclusion_cat_score": 0.5284488197153929,
-        "mob_epci_scaled": 1.0
-    },
-    {
-        "bassin_de_vie": "83137",
-        "weighted_score": 0.5685294842412343,
-        "population_bv": 38937,
-        "libgeo": "La Ciotat",
-        "communes": [
-            "13023",
-            "13028"
-        ],
-        "inclusion_cat_score": 0.45879118445789907,
         "mob_epci_scaled": 1.0
     }
 ]

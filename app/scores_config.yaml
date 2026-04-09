@@ -319,7 +319,7 @@ scores:
       tooltip:
         "Nombre de places (collectif + individuel) pour 100 enfants de moins
         de 3 ans (Source: CAF)"
-    weight: 1.0
+    weight: 3.0
     min_bound: null
     max_bound: null
     quantile_level: 0.05
@@ -336,7 +336,7 @@ scores:
       unit: ""
       display_factor: 1
       tooltip: Présence d'une école maternelle
-    weight: 1.0
+    weight: 2.0
     min_bound: 0.0
     max_bound: 1.0
   - id: edu_elementaire_scaled
@@ -352,7 +352,7 @@ scores:
       unit: ""
       display_factor: 1
       tooltip: Présence d'une école élémentaire
-    weight: 1.0
+    weight: 2.0
     min_bound: 0.0
     max_bound: 1.0
   - id: edu_college_scaled
@@ -566,7 +566,7 @@ scores:
   - id: met_siae_match_adult2_scaled
     category: emploi
     source_metric: met_siae_match_adult2
-    bdv_factor: 0.0
+    bdv_factor: 0.5
     computation: live
     display:
       name: Offres SIAE - Adulte 2

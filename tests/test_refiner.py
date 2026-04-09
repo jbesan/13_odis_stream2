@@ -4,6 +4,8 @@ from agents.graph import refiner_node
 from agents.state import ODISGraphState, ODISDeps, SearchCriterias
 from core.models import CriteriaItem
 from agents.refiner import RefinerResult
+from typing import Any
+
 
 @pytest.fixture
 def state():

@@ -15,6 +15,16 @@ logger = logging.getLogger(__name__)
 DATASET_ID = "odis_logs"
 TABLE_STATE_LOGS = "agent_state_logs"
 
+def _safe_json_format(obj: Any) -> Any:
+    """Recursively converts sets to lists for JSON serialization."""
+    if isinstance(obj, set):
+        return list(obj)
+    if isinstance(obj, dict):
+        return {k: _safe_json_format(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_safe_json_format(i) for i in obj]
+    return obj
+
 def log_agent_state_to_bq(user_input: str, agent_state: dict, interaction_id: str = None, username: str = None):
     """
     Logs the structured agent state to BigQuery with dedicated columns.
@@ -73,10 +83,10 @@ def log_agent_state_to_bq(user_input: str, agent_state: dict, interaction_id: st
             "username": username,
             "last_user_message": user_input[:2000] if user_input else "",
             "last_agent_response": last_response[:10000] if last_response else "",
-            "search_criteria": json.dumps(agent_state.get('search_criteria', {}), default=str, ensure_ascii=False),
+            "search_criteria": json.dumps(_safe_json_format(agent_state.get('search_criteria', {})), default=str, ensure_ascii=False),
             "briefing": str(agent_state.get('odis_brief', '')),
-            "top_cities": json.dumps(top_cities_data, default=str, ensure_ascii=False),
-            "artifacts": json.dumps(artifacts_data, default=str, ensure_ascii=False),
+            "top_cities": json.dumps(_safe_json_format(top_cities_data), default=str, ensure_ascii=False),
+            "artifacts": json.dumps(_safe_json_format(artifacts_data), default=str, ensure_ascii=False),
             "execution_mode": str(agent_state.get('execution_mode', 'full_analysis')),
             "cost_usd": float(cost)
         }

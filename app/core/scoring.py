@@ -561,12 +561,12 @@ class ScoringEngine:
 
         # 1. Normalize and aggregate category weights
         cat_weights = {
-            'emploi': config.poids_emploi if config else 100.0,
-            'logement': config.poids_logement if config else 100.0,
-            'education': config.poids_education if config else 100.0,
-            'inclusion': config.poids_inclusion if config else 100.0,
-            'mobilite': config.poids_mobilite if config else 100.0,
-            'sante': config.poids_sante if config else 100.0
+            'emploi': config.poids_emploi if config else 1.0,
+            'logement': config.poids_logement if config else 1.0,
+            'education': config.poids_education if config else 1.0,
+            'inclusion': config.poids_inclusion if config else 1.0,
+            'mobilite': config.poids_mobilite if config else 1.0,
+            'sante': config.poids_sante if config else 1.0
         }
         
         # Skip categories based on config

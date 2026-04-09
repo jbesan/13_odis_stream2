@@ -116,6 +116,10 @@ class SearchCriterias(BaseModel):
             if f in data and data[f]:
                 data[f] = _fix_value(data[f])
                 
+        # Fix notes_qualitatives if it's a string instead of a list
+        if 'notes_qualitatives' in data and isinstance(data['notes_qualitatives'], str):
+            data['notes_qualitatives'] = [data['notes_qualitatives']]
+            
         return data
 
     def compute_hash(self) -> str:

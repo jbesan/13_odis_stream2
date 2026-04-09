@@ -8,8 +8,8 @@ import geopandas as gpd
 @pytest.fixture
 def mock_config():
     return SearchCriterias(
-        poids_emploi=100, poids_logement=100, poids_education=100,
-        poids_inclusion=100, poids_sante=100, poids_mobilite=100,
+        poids_emploi=1.0, poids_logement=1.0, poids_education=1.0,
+        poids_inclusion=1.0, poids_sante=1.0, poids_mobilite=1.0,
         commune_actuelle='33063',
         loc_search_area='departement',
         nb_adultes=1, nb_enfants=0,

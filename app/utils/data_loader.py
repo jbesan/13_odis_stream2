@@ -116,9 +116,12 @@ def apply_search_criteria_to_ui(criteria: Any) -> None:
     # Mapping specific values that are used directly in component initialization
     if 'commune_actuelle' in flat_crit:
         st.session_state['ui_commune'] = flat_crit['commune_actuelle']
-        # Try to infer department from the original code if possible
-        if criteria.commune_actuelle and criteria.commune_actuelle.code and len(criteria.commune_actuelle.code) >= 2:
-            st.session_state['ui_departement'] = criteria.commune_actuelle.code[:2]
+        # Try to infer department from the original code ONLY if it looks like an INSEE code (5 digits)
+        code = criteria.commune_actuelle.code
+        if code and len(code) == 5 and code.isdigit():
+            st.session_state['ui_departement'] = code[:2]
+        elif code and len(code) == 5 and code[:2].isdigit(): # Handle 2A/2B
+            st.session_state['ui_departement'] = code[:2]
 
     # Handle 'sante' field properly
     if 'besoin_sante' in flat_crit:
@@ -176,12 +179,56 @@ def apply_search_criteria_to_ui(criteria: Any) -> None:
     if profile in cfg.WEIGHT_PROFILES:
         profile_weights = cfg.WEIGHT_PROFILES[profile]
         for pw_key, pw_val in profile_weights.items():
+            # Profiles in config are already 0-100
             st.session_state[f"ui_{pw_key}"] = pw_val
     
     # Finally, if any explicit weights were extracted (higher priority), apply them
+    # Now unified: everything is 0.0-1.0
+    has_custom_weights = False
     for k, v in flat_crit.items():
         if k.startswith('poids_'):
-            st.session_state[f"ui_{k}"] = v
+            st.session_state[f"ui_{k}"] = float(v)
+            has_custom_weights = True
+            
+    # If custom weights are present, activate the "Expert Weights" toggle
+    if has_custom_weights:
+        st.session_state['ui_expert_weights'] = True
+
+    # 7. Town Size Reverse Lookup (Sync Radio Button with Mu/Sigma)
+    target_pop = flat_crit.get('target_population')
+    target_sigma = flat_crit.get('target_population_sigma')
+    if target_pop and target_sigma:
+        for label, mapping in cfg.CITY_SIZE_MAPPING.items():
+            if mapping['mu'] == target_pop and mapping['sigma'] == target_sigma:
+                st.session_state["ui_target_city_size_label"] = label
+                break
+
+    # 8. Inclusion Services Sync (Checkboxes + Multiselect)
+    # inc_services_add_selection in flat_crit is a list of CODES
+    inc_codes = flat_crit.get('inc_services_add_selection', [])
+    if inc_codes:
+        # Standard list for the composite key
+        st.session_state['ui_inc_services_add_selection'] = inc_codes
+        
+        # Checkboxes sync
+        checkbox_slugs = set(cfg.INC_SERVICES_CHECKBOX_MAPPING.keys())
+        for slug in checkbox_slugs:
+            cb_key = f"ui_cb_inc_{slug.replace('-', '_')}"
+            st.session_state[cb_key] = slug in inc_codes
+            
+        # Multiselect sync (Labels)
+        inclusion_index = app_data.get('inclusion_services_index', pd.DataFrame())
+        multi_labels = []
+        if not inclusion_index.empty:
+            for c in inc_codes:
+                if c in inclusion_index.index and c not in checkbox_slugs:
+                    multi_labels.append(inclusion_index.loc[c, 'label'])
+        st.session_state['ui_inc_services_multi_only'] = multi_labels
+
+    # 9. Inclusion Associations Sync
+    asso_codes = flat_crit.get('inc_asso_add_selection', [])
+    if asso_codes:
+        st.session_state['ui_inc_asso_add_selection_raw'] = asso_codes
 
 def ensure_data_initialized() -> None:
     """Ensures that the session state and datasets are initialized."""
@@ -197,6 +244,18 @@ def ensure_data_initialized() -> None:
         
     # Always ensure session states are initialized if missing
     session_states_init(st.session_state['demo_data'])
+    
+    # If we just loaded a demo, or on first run, we dispatch the model to the UI
+    # This is the "Model-First" injection point.
+    if force_demo_refresh:
+        from core.models import SearchCriterias
+        try:
+            # We use SearchCriterias to benefit from its validators (strings -> CriteriaItems)
+            criteria = SearchCriterias(**st.session_state['demo_data'])
+            apply_search_criteria_to_ui(criteria)
+        except Exception as e:
+            logger.error(f"Failed to apply demo via SearchCriterias: {e}")
+            # Fallback to manual init if model fails
 
     # Ensure global cache is warm
     get_app_data()

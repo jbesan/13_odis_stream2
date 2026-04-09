@@ -42,7 +42,6 @@ BV_FILE = 'odis_bassins_de_vie.parquet'
 AGG_ASSOCIATIONS_FILE = 'odis_associations_agg.parquet'
 AGG_FORMATIONS_FILE = 'odis_formations_agg.parquet'
 CCAS_FILE = 'odis_ccas.parquet'
-# ODIS_ASSO_MINI_FILE = 'odis_asso_mini.parquet' # Deprecated
 REFUGEE_ASSOCIATIONS_FILE = 'odis_refugee_associations.parquet'
 LIVE_JOBS_FILE = 'odis_ft_jobs_agg.parquet'
 SIAE_JOBS_FILE = 'odis_inclusion_jobs.parquet'
@@ -72,7 +71,7 @@ HEBERGEMENT_OPTIONS = [
 ]
 LOGEMENT_OPTIONS = ['Location', 'Logement Social']
 SANTE_OPTIONS = ["Aucun", "Hopital", 'Maternité', "Soutien Psychologique & Addictologie"]
-POIDS_OPTIONS = [0, 25, 50, 75, 100]
+POIDS_OPTIONS = [0.0, 0.25, 0.5, 0.75, 1.0]
 HOUSING_TYPE_OPTIONS = {
     "appt_all": "Appartement (Tous types)",
     "appt_t1_t2": "Appartement (T1 & T2)",
@@ -94,20 +93,28 @@ DEFAULT_SIGMA = 25000
 # --- Weight Profiles (F-15) ---
 WEIGHT_PROFILES = {
     "Équilibré": {
-        "poids_emploi": 50, "poids_logement": 50, "poids_education": 50,
-        "poids_inclusion": 50, "poids_sante": 50, "poids_mobilite": 50
+        "poids_emploi": 0.5, "poids_logement": 0.5, "poids_education": 0.5,
+        "poids_inclusion": 0.5, "poids_sante": 0.5, "poids_mobilite": 0.5
     },
     "Famille": {
-        "poids_emploi": 25, "poids_logement": 100, "poids_education": 100,
-        "poids_inclusion": 50, "poids_sante": 50, "poids_mobilite": 25
+        "poids_emploi": 0.25, "poids_logement": 1.0, "poids_education": 1.0,
+        "poids_inclusion": 0.25, "poids_sante": 0.5, "poids_mobilite": 0.5
     },
-    "Santé": {
-        "poids_emploi": 25, "poids_logement": 50, "poids_education": 25,
-        "poids_inclusion": 50, "poids_sante": 100, "poids_mobilite": 25
+    "Célibataire / Actif": {
+        "poids_emploi": 1.0, "poids_logement": 0.25, "poids_education": 0.25,
+        "poids_inclusion": 0.25, "poids_sante": 0.25, "poids_mobilite": 1.0
+    },
+    "Précaire": {
+        "poids_emploi": 0.5, "poids_logement": 0.75, "poids_education": 0.25,
+        "poids_inclusion": 1.0, "poids_sante": 0.5, "poids_mobilite": 0.75
+    },
+    "Sénior": {
+        "poids_emploi": 0.0, "poids_logement": 0.75, "poids_education": 0.0,
+        "poids_inclusion": 0.75, "poids_sante": 1.0, "poids_mobilite": 0.75
     },
     "Economique": {
-        "poids_emploi": 100, "poids_logement": 25, "poids_education": 25,
-        "poids_inclusion": 50, "poids_sante": 25, "poids_mobilite": 25
+        "poids_emploi": 1.0, "poids_logement": 0.75, "poids_education": 0.25,
+        "poids_inclusion": 0.5, "poids_sante": 0.25, "poids_mobilite": 0.25
     }
 }
 
@@ -149,12 +156,12 @@ INC_SERVICES_CHECKBOX_MAPPING = {
 # --- Demo Scenarios ---
 DEMO_DATA_DEFAULT: Dict[str, Any] = {
     'nom': None,
-    'poids_emploi': 50,
-    'poids_logement': 50,
-    'poids_education': 50,
-    'poids_inclusion': 50,
-    'poids_mobilite': 50,
-    'poids_sante': 50, # Added default weight for sante
+    'poids_emploi': 0.5,
+    'poids_logement': 0.5,
+    'poids_education': 0.5,
+    'poids_inclusion': 0.5,
+    'poids_mobilite': 0.5,
+    'poids_sante': 0.5, # Added default weight for sante
     'departement_actuel': '33',
     'commune_actuelle': 'Bordeaux',
     'loc_search_area': 'departement',
@@ -190,7 +197,7 @@ DEMO_SCENARIOS = {
         'hebergement_cible': ["Chez l'habitant"],
         'nb_adultes': 1,
         'nb_enfants': 0,
-        'poids_mobilite': 50,
+        'poids_mobilite': 0.5,
         'weight_profile': 'Équilibré',
         'notes_qualitatives': "Zacharie est un jeune homme dynamique."
     },
@@ -208,35 +215,55 @@ DEMO_SCENARIOS = {
         'codes_formations': [[], ['331', '330', '326']],
         'classe_enfants': ['Maternelle', 'Elémentaire'],
         'besoin_sante': "Maternité",
-        'poids_mobilite': 0,
+        'poids_mobilite': 0.0,
         'weight_profile': 'Équilibré',
         'notes_qualitatives': "Olga et Dimitri cherchent un environnement calme pour leurs enfants."
     },
     "3": {
-        'nom': 'Aïcha',
-        'departement_actuel': '13',
-        'commune_actuelle': 'Marseille',
-        'loc_search_area': 'departement',
-        'loc_search_code': ['13'],
-        'hebergement_cible': ["Location avec Intermédiation"],
-        'logement': "Logement Social",
         'nb_adultes': 1,
         'nb_enfants': 2,
-        'codes_metiers': [['K1302']],
-        'classe_enfants': ['Crèche / Assistante Maternelle', 'Collège'],
-        'inc_services_add_selection': DEFAULT_INC_SERVICES_CORE + ['lecture-ecriture-calcul--maitriser-le-francais'],
-        'weight_profile': 'Famille',
-        'poids_emploi': 25,
-        'poids_logement': 100,
-        'poids_education': 100,
-        'poids_inclusion': 50,
-        'poids_sante': 50,
-        'poids_mobilite': 25,
-        'besoin_sante': "Maternité",
-        'inc_asso_add_selection': ['006030'],
+        'commune_actuelle': 'Marseille',
+        'hebergement_cible': ["Location avec Intermédiation"],
+        'logement': "Logement Social",
+        'departement_actuel': '13',
+        'freq_retour': '1 fois/an',
+        'loc_search_area': 'departement',
         'loc_search_code': ['13'],
+        'codes_metiers': [["M1607", "M1602"]],
+        'weight_profile': 'Famille',
+        'besoin_sante': "Maternité",
+        'inc_services_add_selection': DEFAULT_INC_SERVICES_CORE + ['lecture-ecriture-calcul--maitriser-le-francais'],
+        'inc_asso_add_selection': ['006030'],
         'notes_qualitatives': "Aïcha souhaite passer son permis et cherche une boucherie Hallal à proximité"
+    },
+    "agir": {
+        'nb_adultes': 1,
+        'nb_enfants': 2,
+        'codes_metiers': [["I1604"]],
+        'commune_actuelle': 'Bordeaux',
+        'departement_actuel': '33',
+        'freq_retour': '1 fois/an',
+        'loc_search_area': 'departement',
+        'loc_search_code': ['17', '33', '40'],
+        'hebergement_cible': ["Location avec Intermédiation", "Chez l'habitant"],
+        'logement': 'Location',
+        'type_logement': 'appt_all',
+        'classe_enfants': ['Elémentaire'],
+        'inc_services_add_selection': DEFAULT_INC_SERVICES_CORE + ['lecture-ecriture-calcul--maitriser-le-francais'],
+        'inc_asso_add_selection': ['011075'],
+        'weight_profile': 'Economique',
+        'poids_emploi': 1.0,
+        'poids_logement': 0.75,
+        'poids_education': 0.5,
+        'poids_inclusion': 0.5,
+        'poids_sante': 0.25,
+        'poids_mobilite': 0.25,
+        'besoin_sante': "Soutien Psychologique & Addictologie",
+        'notes_qualitatives': "Proximité d'une Mosquée et de la mer",
+        'target_population': 20000,
+        'target_population_sigma': 10000
     }
+
 }
 
 

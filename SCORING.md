@@ -64,41 +64,41 @@ Voici l'intégralité des 40 critères configurés dans le moteur de soring OD&I
 
 ### 💼 Emploi & Formation
 
-| Critère                        | Poids | Boost BdV | Description                                   |
-| :----------------------------- | :---- | :-------- | :-------------------------------------------- |
-| **Opportunités Emploi (A1)**   | 3.0   | 0.5       | Match direct métiers Adulte 1 (FT).           |
-| **Opportunités Emploi (A2)**   | 3.0   | 0.5       | Match direct métiers Adulte 2 (FT).           |
-| **Tension recrutement (A1)**   | 1.0   | 0.0       | Métiers en tension Adulte 1.                  |
-| **Tension recrutement (A2)**   | 1.0   | 0.0       | Métiers en tension Adulte 2.                  |
-| **Offres SIAE (A1)**           | 3.0   | 0.5       | Insertion (SIAE) Adulte 1.                    |
-| **Offres SIAE (A2)**           | 3.0   | 0.0       | Insertion (SIAE) Adulte 2.                    |
-| **Centres de Formation (A1)**  | 2.0   | 0.8       | Formations recherchées Adulte 1.              |
-| **Centres de Formation (A2)**  | 2.0   | 0.8       | Formations recherchées Adulte 2.              |
-| **Déclin Population Active**   | 1.0   | 0.0       | Baisse de la population des actifs.           |
+| Critère                       | Poids | Boost BdV | Description                         |
+| :---------------------------- | :---- | :-------- | :---------------------------------- |
+| **Opportunités Emploi (A1)**  | 3.0   | 0.5       | Match direct métiers Adulte 1 (FT). |
+| **Opportunités Emploi (A2)**  | 3.0   | 0.5       | Match direct métiers Adulte 2 (FT). |
+| **Tension recrutement (A1)**  | 1.0   | 0.0       | Métiers en tension Adulte 1.        |
+| **Tension recrutement (A2)**  | 1.0   | 0.0       | Métiers en tension Adulte 2.        |
+| **Offres SIAE (A1)**          | 3.0   | 0.5       | Insertion (SIAE) Adulte 1.          |
+| **Offres SIAE (A2)**          | 3.0   | 0.5       | Insertion (SIAE) Adulte 2.          |
+| **Centres de Formation (A1)** | 2.0   | 0.8       | Formations recherchées Adulte 1.    |
+| **Centres de Formation (A2)** | 2.0   | 0.8       | Formations recherchées Adulte 2.    |
+| **Déclin Population Active**  | 3.0   | 0.0       | Baisse de la population des actifs. |
 
 ### 🤝 Inclusion & Lien Social
 
-| Critère                     | Poids | Boost BdV | Description                                    |
-| :-------------------------- | :---- | :-------- | :--------------------------------------------- |
-| **Lien Social (Général)**   | 1.0   | 0.8       | Densité associative globale (RNA).             |
-| **Accompagnement Réfugiés** | 1.0   | 0.8       | Associations spécialisées (RNA).               |
-| **SIAE (Densité)**          | 1.0   | 0.8       | Présence de structures d'insertion.            |
-| **Affinités (Thématiques)** | 1.0   | 0.8       | Assos correspondant aux loisirs/intérets.      |
-| **Services Inclusion**      | 1.0   | 0.8       | Match avec les services sélectionnés.          |
-| **Population Commune**      | 3.0   | 0.0       | Score basé sur la taille de ville (Gauss).     |
-| **Couleur Politique**       | 1.0   | 0.0       | Affiliation politique (Si configuré).          |
+| Critère                     | Poids | Boost BdV | Description                                |
+| :-------------------------- | :---- | :-------- | :----------------------------------------- |
+| **Lien Social (Général)**   | 1.0   | 0.8       | Densité associative globale (RNA).         |
+| **Accompagnement Réfugiés** | 1.0   | 0.8       | Associations spécialisées (RNA).           |
+| **SIAE (Densité)**          | 1.0   | 0.8       | Présence de structures d'insertion.        |
+| **Affinités (Thématiques)** | 1.0   | 0.8       | Assos correspondant aux loisirs/intérets.  |
+| **Services Inclusion**      | 1.0   | 0.8       | Match avec les services sélectionnés.      |
+| **Population Commune**      | 3.0   | -0.5      | Score basé sur la taille de ville (Gauss). |
+| **Couleur Politique**       | 1.0   | 0.0       | Affiliation politique (Si configuré).      |
 
 ### 🎓 Éducation
 
 | Critère                    | Poids | Boost BdV | Description                               |
 | :------------------------- | :---- | :-------- | :---------------------------------------- |
-| **Petite Enfance**         | 1.0   | 0.0       | Taux de couverture Crèches/Assmat.        |
-| **Ecole Maternelle**       | 1.0   | 0.0       | Présence locale ou à proximité.           |
-| **Ecole Elémentaire**      | 1.0   | 0.0       | Présence locale ou à proximité.           |
+| **Petite Enfance**         | 3.0   | 0.0       | Taux de couverture Crèches/Assmat.        |
+| **Ecole Maternelle**       | 2.0   | 0.0       | Présence locale ou à proximité.           |
+| **Ecole Elémentaire**      | 2.0   | 0.0       | Présence locale ou à proximité.           |
 | **Collège**                | 1.0   | 0.5       | Présence locale ou à proximité.           |
 | **Lycée**                  | 1.0   | 0.8       | Présence locale ou à proximité.           |
 | **Classes à risque**       | 1.0   | 0.5       | Écoles avec un besoin de nouveaux élèves. |
-| **Evolution Démog. Jeune** | 1.0   | 0.0       | Baisse de la population des -15 ans.      |
+| **Evolution Démog. Jeune** | 2.0   | 0.0       | Baisse de la population des -15 ans.      |
 
 ### 🩺 Santé
 

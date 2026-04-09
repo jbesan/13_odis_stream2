@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 from services import telemetry, bq_logger
 from ui import feedback
+from typing import Any
 
 @pytest.fixture
 def mock_session_state():

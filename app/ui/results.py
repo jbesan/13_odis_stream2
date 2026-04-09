@@ -23,6 +23,132 @@ def _on_details_dialog_dismiss():
 def _on_ccas_dialog_dismiss():
     st.session_state.active_ccas_index = None
 
+# --- Module Level Fragments for Stability ---
+def _merge_agent_results(final_state_results, codgeo: str, commune: CommuneResult):
+    """Helper to merge graph state results back into session state."""
+    if not final_state_results: return
+    
+    # 🧪 SOTA: Robust merging with type checking to prevent page-level crashes
+    def _get_field(obj, field, default=None):
+        if isinstance(obj, dict): return obj.get(field, default)
+        return getattr(obj, field, default)
+    
+    # 1. Update Global Brief
+    import streamlit as st
+    st.session_state.search_results.odis_brief = _get_field(final_state_results, "odis_brief", st.session_state.search_results.odis_brief)
+    
+    # 2. Find and update the specific focus city
+    new_results = _get_field(final_state_results, "results", [])
+    for city_data in new_results:
+        city_codgeo = _get_field(city_data, "codgeo")
+        if str(city_codgeo) == str(codgeo):
+            new_synth = _get_field(city_data, "odis_synthesis", [])
+            if new_synth:
+                commune.odis_synthesis = new_synth
+            
+            expert_data = _get_field(city_data, "expert_analysis", {})
+            if expert_data and isinstance(expert_data, dict):
+                commune.expert_analysis.update(expert_data)
+            
+            new_pitch = _get_field(city_data, "scorer_pitch")
+            if new_pitch:
+                commune.scorer_pitch = new_pitch
+            break
+
+@st.fragment(run_every=2.0)
+def polling_synthesis_fragment(task_key: str, nom: str, codgeo: str, search_criterias: Any, results: SearchResultsData, h: str, commune: CommuneResult):
+    from agents.utils import odis_get_bg_result, launch_background_city_analysis
+    status_data = odis_get_bg_result(task_key)
+    if not status_data:
+        launch_background_city_analysis(nom, codgeo, search_criterias, results, h)
+        st.caption("Lancement de la synthèse...")
+    elif status_data.get("status") == "running":
+        st.caption("Préparation de la synthèse (~30s)...")
+    elif status_data.get("status") == "error":
+        st.error(f"Erreur d'analyse : {status_data.get('error')}")
+        if st.button("Réessayer"):
+            del st.session_state.odis_bg_store[task_key]
+            st.rerun(scope="fragment")
+    elif status_data.get("status") == "done":
+        _merge_agent_results(status_data.get("result"), codgeo, commune)
+        
+        # Safety Break: If agent returned emptiness, force a dummy to prevent app-level infinite loops.
+        if not commune.odis_synthesis:
+            commune.odis_synthesis = [{"role": "assistant", "content": "⚠️ *Synthèse introuvable ou erreur de génération.*"}]
+            
+        st.rerun() # Full rerun to let parent draw the chat history
+
+@st.fragment(run_every=2.0)
+def polling_chat_fragment(task_key: str, chat_task_key: str, codgeo: str, commune: CommuneResult):
+    from agents.utils import odis_get_bg_result
+    status_data = odis_get_bg_result(task_key)
+    
+    if status_data and status_data.get("status") == "done":
+        _merge_agent_results(status_data.get("result"), codgeo, commune)
+        del st.session_state[chat_task_key]
+        st.rerun() # Full rerun because the chat container belongs to the parent!
+    elif status_data and status_data.get("status") == "error":
+        st.error(f"Erreur de l'agent : {status_data.get('error')}")
+        del st.session_state[chat_task_key]
+        st.rerun()
+    else:
+        with st.chat_message("assistant"):
+            st.write("✨ _Recherche de la réponse en cours (Job Hunter / Scouts)..._")
+
+@st.fragment(run_every=3.0)
+def polling_associations_fragment(commune: CommuneResult, h: Optional[str]):
+    from agents.utils import odis_get_bg_result
+    inc_data = commune.inclusion
+    import logging
+    if h and not inc_data.asso_inclusion_list_by_cat:
+        bg_res = odis_get_bg_result(h)
+        if isinstance(bg_res, dict) and 'enrichment' in bg_res:
+            enrich_data = bg_res['enrichment'].get(str(commune.codgeo))
+            if enrich_data:
+                logging.info(f"✨ [FRAGMENT] Data arrived for {commune.codgeo}, updating UI")
+                inc_data.asso_refugee_list = enrich_data.get('refugee', [])
+                inc_data.asso_refugee_count = len(inc_data.asso_refugee_list)
+                inc_data.asso_inclusion_list_by_cat = enrich_data.get('inclusion', {})
+                inc_data.asso_inclusion_count = sum(len(l) for l in inc_data.asso_inclusion_list_by_cat.values())
+                st.rerun(scope="fragment")
+
+    if inc_data.asso_inclusion_count > 0:
+        st.info(f"**{inc_data.asso_inclusion_count} associations** actives identifiées dans le bassin de vie.")
+        if inc_data.asso_refugee_count > 0:
+            st.success(f"**{inc_data.asso_refugee_count} association(s)** spécifiquement dédiée(s) aux réfugiés.")
+
+        if inc_data.asso_refugee_list:
+            with st.expander("Intégration des réfugiés & migrants", expanded=True):
+                for asso in inc_data.asso_refugee_list:
+                    name = str(asso.get('name', 'Inconnu'))
+                    id_val = asso.get('id', '')
+                    url = f"https://www.assoce.fr/waldec/{id_val}" if id_val else "#"
+                    desc = str(asso.get('description', '')).strip()
+                    cat_label = asso.get('waldec_label', '')
+                    cat_str = f" ({cat_label})" if cat_label else ""
+                    if desc:
+                        st.markdown(f"**{name}**{cat_str}: {desc} [En savoir plus]({url})")
+                    else:
+                        st.markdown(f"**{name}**{cat_str}: [En savoir plus]({url})")
+
+        if inc_data.asso_inclusion_list_by_cat:
+            for cat, asso_list in sorted(inc_data.asso_inclusion_list_by_cat.items()):
+                with st.expander(f"**{cat}** ({len(asso_list)})", expanded=False):
+                    for asso in asso_list:
+                        name = str(asso.get('name', 'Inconnu'))
+                        id_val = asso.get('id', '')
+                        url = f"https://www.assoce.fr/waldec/{id_val}" if id_val else "#"
+                        desc = str(asso.get('description', '')).strip()
+                        if desc:
+                            st.markdown(f"**{name}**: {desc} [En savoir plus]({url})")
+                        else:
+                            st.markdown(f"**{name}**: [En savoir plus]({url})")
+    elif h and (not odis_get_bg_result(h) or 'enrichment' not in odis_get_bg_result(h)):
+        with st.status("Récupération des associations détaillées...", expanded=True):
+            st.write("Nous interrogeons BigQuery pour obtenir la liste complète des associations locales.")
+    else:
+        st.info("Aucune association détaillée répertoriée pour ce territoire.")
+
 def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
     """Component to display AI synthesis and handle follow-up questions."""
     
@@ -43,61 +169,9 @@ def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
         h = st.session_state.get('active_search_hash')
         task_key = f"analysis_{h}_{codgeo}"
 
-        def _merge_agent_results(final_state_results):
-            """Helper to merge graph state results back into session state."""
-            if not final_state_results: return
-            
-            # 🧪 SOTA: Robust merging with type checking to prevent page-level crashes
-            def _get_field(obj, field, default=None):
-                if isinstance(obj, dict): return obj.get(field, default)
-                return getattr(obj, field, default)
-            
-            # 1. Update Global Brief
-            st.session_state.search_results.odis_brief = _get_field(final_state_results, "odis_brief", st.session_state.search_results.odis_brief)
-            
-            # 2. Find and update the specific focus city
-            new_results = _get_field(final_state_results, "results", [])
-            for city_data in new_results:
-                city_codgeo = _get_field(city_data, "codgeo")
-                if str(city_codgeo) == str(codgeo):
-                    new_synth = _get_field(city_data, "odis_synthesis", [])
-                    if new_synth:
-                        commune.odis_synthesis = new_synth
-                    
-                    # Expert analysis is a dict, we update it
-                    expert_data = _get_field(city_data, "expert_analysis", {})
-                    if expert_data and isinstance(expert_data, dict):
-                        commune.expert_analysis.update(expert_data)
-                    
-                    new_pitch = _get_field(city_data, "scorer_pitch")
-                    if new_pitch:
-                        commune.scorer_pitch = new_pitch
-                    break
-
         # 2. Trigger analysis if synthesis is missing
         if not commune.odis_synthesis:
-            # Polling Fragment for Initial Synthesis
-            @st.fragment(run_every=3.0)
-            def polling_synthesis_fragment():
-                status_data = odis_get_bg_result(task_key)
-                
-                if not status_data:
-                    # First run: start the thread
-                    launch_background_city_analysis(nom, codgeo, search_criterias, results, h)
-                    st.caption("Lancement de la synthèse...")
-                elif status_data.get("status") == "running":
-                    st.caption("Préparation de la synthèse (~30s)...")
-                elif status_data.get("status") == "error":
-                    st.error(f"Erreur d'analyse : {status_data.get('error')}")
-                    if st.button("Réessayer"):
-                        del st.session_state.odis_bg_store[task_key]
-                        st.rerun(scope="fragment")
-                elif status_data.get("status") == "done":
-                    # Success! Merge and rerun the whole component
-                    _merge_agent_results(status_data.get("result"))
-                    st.rerun(scope="fragment")
-
-            polling_synthesis_fragment()
+            polling_synthesis_fragment(task_key, nom, codgeo, search_criterias, results, h, commune)
             return # Hide rest of UI until synthesis is ready
 
         # 3. Display Synthesis and Chat History
@@ -124,24 +198,7 @@ def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
 
         # Shared Polling Fragment for Follow-up Chat
         if st.session_state.get(chat_task_key):
-            @st.fragment(run_every=3.0)
-            def polling_chat_fragment():
-                status_data = odis_get_bg_result(task_key)
-                
-                if status_data and status_data.get("status") == "done":
-                    # Check if the result is NEW (i.e. has more messages than current history)
-                    # We merge and then disable the polling
-                    _merge_agent_results(status_data.get("result"))
-                    del st.session_state[chat_task_key]
-                    st.rerun(scope="fragment")
-                elif status_data and status_data.get("status") == "error":
-                    st.error(f"Erreur de l'agent : {status_data.get('error')}")
-                    del st.session_state[chat_task_key]
-                else:
-                    with st.chat_message("assistant"):
-                        st.write("✨ _Recherche de la réponse en cours (Job Hunter / Scouts)..._")
-            
-            polling_chat_fragment()
+            polling_chat_fragment(task_key, chat_task_key, codgeo, commune)
             
     except Exception as e:
         st.error(f"⚠️ Une erreur est survenue lors de l'affichage de l'analyse : {str(e)}")
@@ -164,7 +221,7 @@ def show_ia_analysis_dialog(index: Any):
     search_criterias = st.session_state.config
     ia_analysis_content(nom, codgeo, search_criterias)
 
-@st.fragment(run_every=3.0)
+@st.fragment(run_every=2.0)
 def ai_pitch_container(main_code: str, h: str):
     # 1. Try unified state first (Single source of truth)
     if 'search_results' in st.session_state and st.session_state.search_results:
@@ -198,6 +255,15 @@ def ai_pitch_container(main_code: str, h: str):
                          st.session_state.search_results.current_geo.scorer_pitch = pitch_for_city
                     st.rerun(scope="fragment")
             st.markdown(pitch_for_city)
+        elif isinstance(scorer_res, dict) and "pitches_error" in scorer_res:
+            pass # Keep silent or handle gracefully
+        elif scorer_res is not None and isinstance(scorer_res, dict) and "pitches" in scorer_res:
+             # Data arrived but city pitch is empty, mark it to stop polling
+             if 'search_results' in st.session_state:
+                 c = st.session_state.search_results.get_by_code(main_code)
+                 if c and not c.scorer_pitch:
+                     c.scorer_pitch = "Aucun point fort spécifique généré pour cette commune."
+                     st.rerun(scope="fragment")
 
 def sync_background_data(commune: CommuneResult, h: Optional[str]):
     """
@@ -484,71 +550,8 @@ def show_details_dialog(index: Any):
                 
                 st.markdown("#### :material/groups: Associations de l'inclusion")
                 
-                @st.fragment(run_every=3.0)
-                def associations_polling_fragment():
-                    # Local reference to data
-                    inc_data = commune.inclusion
-                    
-                    # 1. Background Sync (if data is missing)
-                    if h and not inc_data.asso_inclusion_list_by_cat:
-                        bg_res = odis_get_bg_result(h)
-                        if isinstance(bg_res, dict) and 'enrichment' in bg_res:
-                            enrich_data = bg_res['enrichment'].get(str(commune.codgeo))
-                            if enrich_data:
-                                logging.info(f"✨ [FRAGMENT] Data arrived for {commune.codgeo}, updating UI")
-                                inc_data.asso_refugee_list = enrich_data.get('refugee', [])
-                                inc_data.asso_refugee_count = len(inc_data.asso_refugee_list)
-                                inc_data.asso_inclusion_list_by_cat = enrich_data.get('inclusion', {})
-                                inc_data.asso_inclusion_count = sum(len(l) for l in inc_data.asso_inclusion_list_by_cat.values())
-                                st.rerun(scope="fragment")
-
-                    # 2. Render UI
-                    if inc_data.asso_inclusion_count > 0:
-                        st.info(f"**{inc_data.asso_inclusion_count} associations** actives identifiées dans le bassin de vie.")
-                        if inc_data.asso_refugee_count > 0:
-                            st.success(f"**{inc_data.asso_refugee_count} association(s)** spécifiquement dédiée(s) aux réfugiés.")
-                        
-
-                        # Display Refugee associations from the model (secondary list)  
-                        if inc_data.asso_refugee_list:
-                            with st.expander("Intégration des réfugiés & migrants", expanded=True):
-                                # Sort by local preference if needed (already sorted in scoring.py)
-                                for asso in inc_data.asso_refugee_list:
-                                    name = str(asso.get('name', 'Inconnu'))
-                                    id_val = asso.get('id', '')
-                                    url = f"https://www.assoce.fr/waldec/{id_val}" if id_val else "#"
-                                    desc = str(asso.get('description', '')).strip()
-                                    
-                                    cat_label = asso.get('waldec_label', '')
-                                    cat_str = f" ({cat_label})" if cat_label else ""
-                                    
-                                    if desc:
-                                        st.markdown(f"**{name}**{cat_str}: {desc} [En savoir plus]({url})")
-                                    else:
-                                        st.markdown(f"**{name}**{cat_str}: [En savoir plus]({url})")
-
-                        # Display other categories
-                        if inc_data.asso_inclusion_list_by_cat:
-                            for cat, asso_list in sorted(inc_data.asso_inclusion_list_by_cat.items()):
-                                with st.expander(f"**{cat}** ({len(asso_list)})", expanded=False):
-                                    for asso in asso_list:
-                                        name = str(asso.get('name', 'Inconnu'))
-                                        id_val = asso.get('id', '')
-                                        url = f"https://www.assoce.fr/waldec/{id_val}" if id_val else "#"
-                                        desc = str(asso.get('description', '')).strip()
-                                        
-                                        if desc:
-                                            st.markdown(f"**{name}**: {desc} [En savoir plus]({url})")
-                                        else:
-                                            st.markdown(f"**{name}**: [En savoir plus]({url})")
-                    elif h and (not odis_get_bg_result(h) or 'enrichment' not in odis_get_bg_result(h)):
-                        with st.status("Récupération des associations détaillées...", expanded=True):
-                            st.write("Nous interrogeons BigQuery pour obtenir la liste complète des associations locales.")
-                    else:
-                        st.info("Aucune association détaillée répertoriée pour ce territoire.")
-                
                 # Call the fragment
-                associations_polling_fragment()
+                polling_associations_fragment(commune, h)
                 
         with c2:
             st.markdown("#### :material/diversity_3: Indicateurs Inclusion")
@@ -743,7 +746,7 @@ def _display_result_details(commune: CommuneResult) -> None:
             margin=dict(l=50, r=50, t=50, b=50)
         )
         
-        st.plotly_chart(fig, use_container_width=True, config=None)
+        st.plotly_chart(fig, width='stretch', config=None)
         
         current_geo = search_results.current_geo if search_results else None
         current_label = current_geo.name if current_geo else "votre ville"

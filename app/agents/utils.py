@@ -281,11 +281,11 @@ def launch_background_audit_log(config: Any, search_results: Any, h: str, intera
                 from services.telemetry import log_search_complete
                 log_search_complete(config, search_results, source_flow='classic', interaction_id=interaction_id, username=username)
             except Exception as e:
-                logging.warning(f"⚠️ [LOGGING] Telemetry logging failed: {e}")
+                logging.error(f"❌ [LOGGING] Telemetry logging failed for hash {h}: {e}", exc_info=True)
                 
             logging.info(f"✅ [LOGGING] Background logging finished for hash {h}")
         except Exception as e:
-            logging.error(f"❌ [LOGGING] Background logging FATAL error for {h}: {e}")
+            logging.error(f"❌ [LOGGING] Background logging FATAL error for {h}: {e}", exc_info=True)
             
     thread = threading.Thread(target=bg_logging_task)
     thread.daemon = True

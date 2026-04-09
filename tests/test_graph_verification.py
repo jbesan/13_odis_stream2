@@ -3,6 +3,8 @@ import os
 import sys
 import logging
 from dotenv import load_dotenv
+from typing import Any
+
 
 # Ensure 'app' directory is in python path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'app'))

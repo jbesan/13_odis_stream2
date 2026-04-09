@@ -6,6 +6,7 @@ from unittest.mock import patch, MagicMock
 import json
 from pathlib import Path
 import numpy as np
+from typing import Any
 
 # Important: The tests in this file must be run from the 'app/' directory
 # for the data paths to resolve correctly.
@@ -116,9 +117,7 @@ def run_test_scenario(scenario_id, app_data):
     default_data.update(scenario_data)
 
     for key, value in default_data.items():
-        if key == 'sante':
-            mock_session_state['ui_besoin_sante'] = value
-        elif key == 'commune_actuelle':
+        if key == 'commune_actuelle':
             mock_session_state['ui_commune'] = value
         elif key == 'departement_actuel':
             mock_session_state['ui_departement'] = value
@@ -136,8 +135,14 @@ def run_test_scenario(scenario_id, app_data):
         elif key == 'codes_formations':
             for i, codes in enumerate(value):
                 mock_session_state[f'ui_formations_adult_{i}'] = codes
+        elif key == 'weight_profile':
+            mock_session_state['ui_weight_profile'] = value
+            # Expand profile weights into session state as data_loader.apply_search_criteria_to_ui would do
+            if value in cfg.WEIGHT_PROFILES:
+                for pw_key, pw_val in cfg.WEIGHT_PROFILES[value].items():
+                    mock_session_state[f"ui_{pw_key}"] = pw_val
         else:
-            mock_session_state[f'ui_{key}'] = value
+            mock_session_state[f"ui_{key}"] = value
     
     # Ensure other necessary defaults are present
     if 'ui_inc_services_add_selection' not in mock_session_state:
@@ -324,12 +329,12 @@ def test_result_details_display(app_data):
         'ui_logement': 'Location',
         'ui_besoin_sante': 'Aucun',
         'ui_inc_services_add_selection': {},
-        'ui_poids_emploi': 100,
-        'ui_poids_logement': 100,
-        'ui_poids_education': 100,
-        'ui_poids_inclusion': 25,
-        'ui_poids_sante': 100,
-        'ui_poids_mobilite': 100,
+        'ui_poids_emploi': 1.0,
+        'ui_poids_logement': 1.0,
+        'ui_poids_education': 1.0,
+        'ui_poids_inclusion': 0.25,
+        'ui_poids_sante': 1.0,
+        'ui_poids_mobilite': 1.0,
         'ui_metiers_adult_0': [],
         'ui_formations_adult_0': []
     })

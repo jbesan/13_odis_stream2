@@ -392,24 +392,32 @@ def render_weight_profile_form() -> None:
     with col2:
         for p_key in ["ui_poids_education", "ui_poids_emploi", "ui_poids_logement", "ui_poids_inclusion", "ui_poids_sante", "ui_poids_mobilite"]:
             if p_key not in st.session_state:
-                st.session_state[p_key] = 50
+                st.session_state[p_key] = 0.5
 
+        format_pct = lambda x: f"{int(x*100)}%"
+        
         st.select_slider("Education", cfg.POIDS_OPTIONS, 
+                        format_func=format_pct,
                         disabled=not st.session_state.get('ui_expert_weights'),
                         key="ui_poids_education", on_change=lambda: [st.session_state.setdefault('processed_gdf', None), st.session_state.setdefault('search_results', None)])
         st.select_slider("Projet Pro", cfg.POIDS_OPTIONS, 
+                        format_func=format_pct,
                         disabled=not st.session_state.get('ui_expert_weights'),
                         key="ui_poids_emploi", on_change=lambda: [st.session_state.setdefault('processed_gdf', None), st.session_state.setdefault('search_results', None)])
         st.select_slider("Logement", cfg.POIDS_OPTIONS, 
+                        format_func=format_pct,
                         disabled=not st.session_state.get('ui_expert_weights'),
                         key="ui_poids_logement", on_change=lambda: [st.session_state.setdefault('processed_gdf', None), st.session_state.setdefault('search_results', None)])
         st.select_slider("Inclusion", cfg.POIDS_OPTIONS, 
+                        format_func=format_pct,
                         disabled=not st.session_state.get('ui_expert_weights'),
                         key="ui_poids_inclusion", on_change=lambda: [st.session_state.setdefault('processed_gdf', None), st.session_state.setdefault('search_results', None)])
         st.select_slider("Santé", cfg.POIDS_OPTIONS, 
+                        format_func=format_pct,
                         disabled=not st.session_state.get('ui_expert_weights'),
                         key="ui_poids_sante", on_change=lambda: [st.session_state.setdefault('processed_gdf', None), st.session_state.setdefault('search_results', None)])
         st.select_slider("Mobilité", cfg.POIDS_OPTIONS, 
+                        format_func=format_pct,
                         disabled=not st.session_state.get('ui_expert_weights'),
                         key="ui_poids_mobilite", on_change=lambda: [st.session_state.setdefault('processed_gdf', None), st.session_state.setdefault('search_results', None)])
 
@@ -616,12 +624,12 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
     
     return SearchCriterias(
         weight_profile=profile,
-        poids_emploi=st.session_state.get('ui_poids_emploi', 50) / 100.0,
-        poids_logement=st.session_state.get('ui_poids_logement', 50) / 100.0,
-        poids_education=st.session_state.get('ui_poids_education', 50) / 100.0,
-        poids_inclusion=st.session_state.get('ui_poids_inclusion', 50) / 100.0,
-        poids_sante=st.session_state.get('ui_poids_sante', 50) / 100.0,
-        poids_mobilite=st.session_state.get('ui_poids_mobilite', 50) / 100.0,
+        poids_emploi=st.session_state.get('ui_poids_emploi', 0.5),
+        poids_logement=st.session_state.get('ui_poids_logement', 0.5),
+        poids_education=st.session_state.get('ui_poids_education', 0.5),
+        poids_inclusion=st.session_state.get('ui_poids_inclusion', 0.5),
+        poids_sante=st.session_state.get('ui_poids_sante', 0.5),
+        poids_mobilite=st.session_state.get('ui_poids_mobilite', 0.5),
         criteria_weights=criteria_weights,
         
         target_population=target_pop,

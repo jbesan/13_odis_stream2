@@ -3,6 +3,8 @@ from unittest.mock import MagicMock, patch
 import os
 import streamlit as st
 from app.ui.feedback import _submit_to_bq
+from typing import Any
+
 
 @patch("app.ui.feedback.bigquery.Client")
 @patch("app.ui.feedback.get_interaction_id")

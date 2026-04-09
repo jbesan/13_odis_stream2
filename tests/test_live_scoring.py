@@ -75,34 +75,36 @@ def test_live_jobs_scoring_aicha_scenario():
         associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']),
         formations_data=pd.DataFrame(columns=['codgeo', 'formation_code', 'count']),
         siae_jobs_data=pd.DataFrame(columns=['codgeo', 'rome']),
-        live_jobs_data=live_jobs_data,
+        live_jobs_data=pd.DataFrame({
+            'commune': ['13055', '13055', '13001'],
+            'romeCode': ['M1607', 'M1602', 'M1607'], # Refereced in config Aicha
+            'total_postes': [10, 5, 2], 
+            'nb_offres_tension': [5, 2, 0]
+        }),
         global_stats={}
     )
 
-    # 3. Use Scenario 3 (Aïcha) Criteria
-    aicha_raw = DEMO_SCENARIOS['3']
-    config = SearchCriterias(
-        poids_emploi=aicha_raw['poids_emploi'],
-        poids_logement=aicha_raw['poids_logement'],
-        poids_education=aicha_raw['poids_education'],
-        poids_inclusion=aicha_raw['poids_inclusion'],
-        poids_mobilite=aicha_raw['poids_mobilite'],
-        poids_sante=aicha_raw['poids_sante'],
-        criteria_weights={},
-        commune_actuelle='99999',
-        loc_search_area='departement',
-        loc_search_code=['13'],
-        nb_adultes=aicha_raw['nb_adultes'],
-        nb_enfants=aicha_raw['nb_enfants'],
-        hebergement_cible=aicha_raw['hebergement_cible'],
-        logement=aicha_raw['logement'],
-        codes_metiers=aicha_raw['codes_metiers'],
-        classe_enfants=['Petite Enfance/Crêche', 'Collège'],
-        besoin_sante=aicha_raw['sante'],
-        inc_services_add_selection=aicha_raw['inc_services_add_selection'],
-        inc_services_core_selection=DEFAULT_INC_SERVICES_CORE,
-        inc_asso_add_selection=aicha_raw['inc_asso_add_selection']
-    )
+    # 3. Use Scenario 3 (Aïcha) Criteria with proper merging
+    from config import DEMO_DATA_DEFAULT, WEIGHT_PROFILES
+    
+    # Base defaults
+    data = DEMO_DATA_DEFAULT.copy()
+    # Scenario data
+    scenario_3 = DEMO_SCENARIOS['3']
+    data.update(scenario_3)
+    
+    # Apply Profile if present
+    profile = data.get('weight_profile')
+    if profile in WEIGHT_PROFILES:
+        data.update(WEIGHT_PROFILES[profile])
+        
+    config = SearchCriterias(**data)
+    
+    # Override for test specificity
+    config.commune_actuelle = '99999'
+    config.loc_search_code = ['13']
+    config.classe_enfants = ['Petite Enfance/Crêche', 'Collège']
+    config.inc_services_core_selection = DEFAULT_INC_SERVICES_CORE
 
     # 4. Run Scoring
     scored = engine.run(config)

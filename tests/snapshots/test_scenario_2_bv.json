@@ -1,9 +1,9 @@
 [
     {
         "bassin_de_vie": "75056",
-        "weighted_score": 0.7018425401851631,
+        "weighted_score": 0.6881568898554709,
         "population_bv": 12543353,
-        "libgeo": "Évry-Courcouronnes",
+        "libgeo": "Bondy",
         "communes": [
             "75056",
             "75101",
@@ -465,12 +465,45 @@
             "95680",
             "95682"
         ],
-        "inclusion_cat_score": 0.4824364954879369,
+        "inclusion_cat_score": 0.424365462475317,
+        "mob_epci_scaled": 1.0
+    },
+    {
+        "bassin_de_vie": "91223",
+        "weighted_score": 0.6193788212867869,
+        "population_bv": 39815,
+        "libgeo": "Étampes",
+        "communes": [
+            "91001",
+            "91022",
+            "91075",
+            "91079",
+            "91098",
+            "91100",
+            "91109",
+            "91130",
+            "91223",
+            "91240",
+            "91248",
+            "91294",
+            "91374",
+            "91393",
+            "91399",
+            "91433",
+            "91469",
+            "91495",
+            "91508",
+            "91526",
+            "91533",
+            "91544",
+            "91556"
+        ],
+        "inclusion_cat_score": 0.5028874026617226,
         "mob_epci_scaled": 0.0
     },
     {
         "bassin_de_vie": "78361",
-        "weighted_score": 0.6892808372858094,
+        "weighted_score": 0.6098338447238864,
         "population_bv": 118012,
         "libgeo": "Mantes-la-Jolie",
         "communes": [
@@ -516,41 +549,8 @@
         "mob_epci_scaled": 0.0
     },
     {
-        "bassin_de_vie": "91223",
-        "weighted_score": 0.6866528614735765,
-        "population_bv": 39815,
-        "libgeo": "Étampes",
-        "communes": [
-            "91001",
-            "91022",
-            "91075",
-            "91079",
-            "91098",
-            "91100",
-            "91109",
-            "91130",
-            "91223",
-            "91240",
-            "91248",
-            "91294",
-            "91374",
-            "91393",
-            "91399",
-            "91433",
-            "91469",
-            "91495",
-            "91508",
-            "91526",
-            "91533",
-            "91544",
-            "91556"
-        ],
-        "inclusion_cat_score": 0.5028874026617226,
-        "mob_epci_scaled": 0.0
-    },
-    {
         "bassin_de_vie": "77284",
-        "weighted_score": 0.6677404751273882,
+        "weighted_score": 0.5998113862327544,
         "population_bv": 116929,
         "libgeo": "Meaux",
         "communes": [
@@ -606,7 +606,7 @@
     },
     {
         "bassin_de_vie": "77379",
-        "weighted_score": 0.6481859905080685,
+        "weighted_score": 0.5871384359407956,
         "population_bv": 33943,
         "libgeo": "Provins",
         "communes": [
