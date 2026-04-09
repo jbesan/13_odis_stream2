@@ -8,10 +8,12 @@ try:
 except ImportError:
     from backports import zoneinfo 
 import streamlit as st
+from typing import Any
 from google.cloud import bigquery
 import os
 import logging
 from core.models import SearchCriterias, SearchResultsData
+from typing import Any
 
 # Use root logger for critical visibility in background threads
 logger = logging.getLogger(__name__)

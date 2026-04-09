@@ -8,6 +8,7 @@ except ImportError:
     from backports import zoneinfo
 from google.cloud import bigquery
 import streamlit as st
+from typing import Any
 from services.telemetry import get_interaction_id
 
 logger = logging.getLogger(__name__)
