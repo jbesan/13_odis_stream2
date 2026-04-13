@@ -119,7 +119,7 @@ def map_ui_config_to_search_criterias(config: SearchCriterias, app_data: Dict[st
         notes_qualitatives=[]
     )
 
-def launch_background_scorer(search_criterias: SearchCriterias, results_dict_ignored: dict, hash_val: str, top_cities: list = None, interaction_id: str = None, username: str = None):
+def launch_background_scorer(search_criterias: SearchCriterias, results_dict_ignored: dict, hash_val: str, top_cities: Optional[list] = None, interaction_id: Optional[str] = None, username: Optional[str] = None):
     """
     Launches a background thread to generate the SCORER AI pitch.
     Stores the result in the cached global store.
@@ -190,7 +190,7 @@ def launch_background_scorer(search_criterias: SearchCriterias, results_dict_ign
                     "Génère le résumé explicatif des résultats pour ce profil.", 
                     deps=deps, 
                     model=model, 
-                    model_settings=ModelSettings(max_output_tokens=4096)
+                    model_settings=ModelSettings(max_tokens=4096)
                 )
             
             try:
@@ -261,7 +261,7 @@ def launch_background_enrichment(engine: Any, codgeos: List[str], hash_val: str)
     thread.daemon = True
     thread.start()
 
-def launch_background_audit_log(config: Any, search_results: Any, h: str, interaction_id: str = None, username: str = None):
+def launch_background_audit_log(config: Any, search_results: Any, h: str, interaction_id: Optional[str] = None, username: Optional[str] = None):
     """
     Launches a background thread to log search results to Markdown and Telemetry.
     """
@@ -331,7 +331,7 @@ def launch_post_scoring_tasks(engine: Any, config: Any, search_results: Any, h: 
     # 5. Launch Logging & Telemetry
     launch_background_audit_log(config, search_results, h, interaction_id=interaction_id, username=username)
 
-def launch_background_city_analysis(nom: str, codgeo: str, search_criterias: Any, search_results: Any, h: str, messages: list = None, interaction_id: str = None, username: str = None):
+def launch_background_city_analysis(nom: str, codgeo: str, search_criterias: Any, search_results: Any, h: str, messages: Optional[list] = None, interaction_id: Optional[str] = None, username: Optional[str] = None):
     """
     Launches a background thread to generate the full ODIS synthesis (or answer a specific question) for a specific city.
     Stores the result in the cached global store under a unique key analysis_{h}_{codgeo}.

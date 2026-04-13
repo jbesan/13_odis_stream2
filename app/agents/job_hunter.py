@@ -24,7 +24,7 @@ class SearchQuery(BaseModel):
     domain: str = Field(..., description="Domaine de recherche possibles:['rome_codes', 'communes'].")
 
 class JobSearchQuery(BaseModel):
-    location: str = Field(None, description="Code INSEE de la commune (ex: 33063)")
+    location: Optional[str] = Field(None, description="Code INSEE de la commune (ex: 33063)")
     rome: Optional[str] = Field(None, description="Code métier ROME de 5 caractères (ex: D1102)")
 
 JOB_HUNTER_ANALYSIS_SYSTEM_PROMPT = """

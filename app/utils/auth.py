@@ -34,6 +34,10 @@ def check_password():
         st.session_state["password_correct"] = True
         return True
 
+    # 1b. Inject Idle Sleep monitor (10 mins timeout) - ONLY on Cloud Run
+    # We do this as early as possible to cover the login screen as well.
+    inject_idle_sleep(timeout_minutes=10)
+
     # 2. Initialize session state for auth
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
@@ -79,8 +83,5 @@ def check_password():
     else:
         # Password correct.
         st.sidebar.warning("ATTENTION: L'application est en phase de test. Vos interactions sont collectées pour améliorer l'outil. Merci d'anonymiser au maximum vos saisies libres.")
-        
-        # 3. Inject Idle Sleep monitor (10 mins timeout) - ONLY on Cloud Run
-        inject_idle_sleep(timeout_minutes=10)
         
         return True

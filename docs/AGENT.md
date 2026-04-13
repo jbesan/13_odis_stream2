@@ -1,6 +1,18 @@
-# AGENT.md - Project Context & Rules
+# 🤖 ODIS Agent Documentation
 
-This file serves as the primary context and rulebook for the AI Agent working on the ODIS Stream 2 project.
+The ODIS Graph uses a dynamic orchestration pattern where every node is aware of the current state consistency:
+
+1.  **Criteria Hashing**: Every set of `SearchCriterias` is fingerprinted with an MD5 hash.
+2.  **Cache Detection**: The `scorer_node` checks the state's `search_results.search_hash`. If it matches the current criteria, the heavy Scoring Engine is bypassed.
+3.  **Unified Node Pattern**: Expert nodes are shared between "Full Analysis" and "Solo Deep-Dive" paths, ensuring code consistency and easier maintenance.
+
+## 🏗️ Graph Architecture
+
+The graph follow a Dispatcher/Expert pattern:
+ to minimize redundant computations:
+- **Hash-Driven Bypassing**: The `scorer` node detects if search results are already fresh in the state (matching hash) and instructs the agent to use them directly.
+- **Unified & Solo Experts**: Expert nodes (`scout`, `web`, `job_hunter`) are unified and mode-aware, supporting both full search analysis and specific city deep-dives through intelligent graph wiring.
+- **Model-First Integrity**: Strict Pydantic enforcement ensures all payloads (`search_hash`, `current_geo`, `population`) are valid at every step.
 
 ## 🎯 Project Overview
 

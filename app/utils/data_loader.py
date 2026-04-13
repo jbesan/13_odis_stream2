@@ -589,7 +589,7 @@ def load_all_data_raw() -> Dict[str, Any]:
 
     # 4. Vertical Data
     # List to track all loading errors in this session
-    load_errors = []
+    load_errors: List[str] = []
 
 
     live_jobs_data = _load_parquet(os.path.join(base_path, cfg.LIVE_JOBS_FILE), error_list=load_errors)

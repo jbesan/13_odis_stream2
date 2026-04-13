@@ -98,6 +98,14 @@ Le cœur de l'application est un pipeline de scoring qui évalue les communes (o
 4.  **Agrégation par Catégorie :** Les scores des critères individuels sont moyennés pour former des scores de catégories. Pour un exemple concret du calcul et une explication détaillée de la logique de boost, consultez la [Documentation du Scoring](./SCORING.md).
 5.  **Score Pondéré Final :** Enfin, un `weighted_score` global est calculé pour chaque commune en appliquant les poids définis. Le moteur s'appuie sur le modèle `SearchCriterias` pour garantir la cohérence entre l'interface formulaire, le chatbot et l'export PDF. Les résultats sont ensuite classés selon ce score final.
 
+## 🛡️ Qualité et Robustesse (Spec-Driven Development)
+
+Le projet suit une approche rigoureuse de développement piloté par les spécifications (SDD) et le typage statique :
+
+- **Typage Stricte (Mypy)** : Le codebase est 100% conforme à `mypy` en mode strict. Toutes les fonctions sont annotées et les modèles Pydantic assurent la validation des données à l'exécution.
+- **Tests Automatisés (Pytest)** : Une suite de plus de 100 tests unitaires et d'intégration couvre le moteur de scoring, les agents LangGraph et les composants UI.
+- **Documentation Narrative** : Chaque changement majeur est documenté dans le `walkthrough.md` et les KIs du projet.
+
 ![Explication de la logique de scoring](./images/Screenshot-4.png)
 
 ### Critères de Scoring

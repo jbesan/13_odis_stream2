@@ -21,6 +21,7 @@ import warnings
 from agents.utils import launch_background_scorer, odis_get_bg_result, launch_background_enrichment, launch_post_scoring_tasks
 from core.models import SearchResultsData
 from utils import memory
+logger = logging.getLogger(__name__)
 
 st.set_page_config(layout="wide")
 

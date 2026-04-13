@@ -3,7 +3,7 @@ import asyncio
 import os
 import operator
 from datetime import datetime
-from typing import Literal, Dict, Any, List, Optional, Annotated
+from typing import Literal, Dict, Any, List, Optional, Annotated, Sequence
 from agents.agent_config import get_model, get_p_model
 
 # Loading LangGraph + Pydantic AI components
@@ -15,7 +15,7 @@ from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import ToolReturnPart
 
 # Loading each ODIS agent
-from agents.state import ODISDeps, ODISGraphState, UsageStats, FocusCity, compute_criteria_hash
+from agents.state import ODISDeps, ODISGraphState, UsageStats, FocusCity, compute_criteria_hash, CommuneResult, SearchResultsData
 from agents.router import router_agent, RoutingResult
 from agents.utils import sanitize_llm_markdown
 from agents.interviewer import interviewer_agent
@@ -40,8 +40,9 @@ def get_deps(config: RunnableConfig) -> ODISDeps:
 def capture_usage(result, node_name: str, model_id: str) -> UsageStats:
     try:
         u = result.usage()
-        # Pricing for Gemini 3 line (Flash Lite Preview approx)
-        rate_in, rate_out = (0.05, 3.00) if any(x in model_id.lower() for x in ["gemini-3", "gemini-4"]) else (0.10, 0.40)
+        # Pricing for Gemini 1.5 line (Flash Lite Preview approx)
+        print(f"model_id: {model_id}")
+        rate_in, rate_out = (0.25, 1.50) if any(x in model_id.lower() for x in ["google-gla:gemini-3.1-flash-lite-preview"]) else (0.10, 0.40)
         cost = (u.input_tokens * rate_in / 1_000_000) + (u.output_tokens * rate_out / 1_000_000)
         
         req_count = getattr(u, 'requests', 1)
@@ -121,7 +122,7 @@ async def router_node(state: ODISGraphState, config: RunnableConfig):
             user_msg, 
             deps=deps, 
             model=model,
-            model_settings=ModelSettings(max_output_tokens=4096),
+            model_settings=ModelSettings(max_tokens=4096),
             usage_limits=UsageLimits(request_limit=10)
         )
         decision = result.output
@@ -133,7 +134,7 @@ async def router_node(state: ODISGraphState, config: RunnableConfig):
         # Decide if we need Refiner (only for experts)
         # SOTA: Always launch the full trio to ensure LangGraph fan-in condition is met.
         # The cache-bypass logic in each node will prevent redundant LLM calls.
-        experts_mapping = {
+        experts_mapping: Dict[str, Dict[str, Any]] = {
             'scorer': {'pending': [], 'mode': 'full_analysis'},
             'analysis': {'pending': ['scout', 'web', 'job_hunter'], 'mode': 'full_analysis'},
             'scout': {'pending': ['scout_solo'], 'mode': 'specific_ask'},
@@ -142,19 +143,14 @@ async def router_node(state: ODISGraphState, config: RunnableConfig):
             'synthesizer': {'pending': ['synthesizer'], 'mode': 'specific_ask'},
         }
 
-        pending = []
-        mode = 'full_analysis'
+        pending: List[str] = []
+        mode: str = 'full_analysis'
         next_step = decision.target_agent
 
         if decision.target_agent in experts_mapping:
             pending = experts_mapping[decision.target_agent]['pending']
             mode = experts_mapping[decision.target_agent]['mode']
 
-        focus = state.focus_city
-        # if decision.focus_city:
-        #     # If router found a city name, we wrap it. Refiner will refine it later.
-        #     focus = FocusCity(name=decision.focus_city, codgeo="")
-        
         h = compute_criteria_hash(state.search_criteria)
         return {
             "next_node": decision.target_agent,
@@ -193,7 +189,7 @@ async def refiner_node(state: ODISGraphState, config: RunnableConfig):
             "Mise à jour du briefing", 
             deps=deps, 
             model=model,
-            model_settings=ModelSettings(max_output_tokens=4096),
+            model_settings=ModelSettings(max_tokens=4096),
             usage_limits=UsageLimits(request_limit=10)
         )
         log_agent_trace("refiner", mod_id, result)
@@ -206,7 +202,7 @@ async def refiner_node(state: ODISGraphState, config: RunnableConfig):
         logger.debug(f"📝 [REFINER-OUTPUT] Content:\n{briefing}")
         
         # Robust update: only override if not empty
-        updates = {"last_summarized_idx": len(state.messages)}
+        updates: Dict[str, Any] = {"last_summarized_idx": len(state.messages)}
         if result.output.odis_brief:
             updates["odis_brief"] = result.output.odis_brief
         
@@ -232,7 +228,7 @@ async def interviewer_node(state: ODISGraphState, config: RunnableConfig):
         model = get_p_model("interviewer", client=deps.client)
         result = await interviewer_agent.run(
             user_msg, deps=deps, model=model,
-            model_settings=ModelSettings(max_output_tokens=4096),
+            model_settings=ModelSettings(max_tokens=4096),
             usage_limits=UsageLimits(request_limit=10)
         )
         log_agent_trace("interviewer", mod_id, result)
@@ -256,7 +252,6 @@ async def scorer_node(state: ODISGraphState, config: RunnableConfig):
     deps = get_deps(config)
     deps.state = state
     
-    from datetime import datetime
     start_time = datetime.now()
     logger.info(f"🚀 [SCORER] Entering scorer_node at {start_time.strftime('%H:%M:%S.%f')[:-3]}")
 
@@ -267,7 +262,7 @@ async def scorer_node(state: ODISGraphState, config: RunnableConfig):
             "Start Scoring", 
             deps=deps, 
             model=model,
-            model_settings=ModelSettings(max_output_tokens=4096),
+            model_settings=ModelSettings(max_tokens=4096),
             usage_limits=UsageLimits(request_limit=10)
         ) 
         log_agent_trace("scorer", mod_id, result)
@@ -419,7 +414,7 @@ async def scout_node(state: ODISGraphState, config: RunnableConfig):
         user_msg, 
         deps=deps, 
         model=model,
-        model_settings=ModelSettings(max_output_tokens=4096),
+        model_settings=ModelSettings(max_tokens=4096),
         usage_limits=UsageLimits(request_limit=10)
     )
     log_agent_trace("scout", mod_id, result)
@@ -464,7 +459,7 @@ async def web_node(state: ODISGraphState, config: RunnableConfig):
         user_msg, 
         deps=deps, 
         model=model,
-        model_settings=ModelSettings(max_output_tokens=4096),
+        model_settings=ModelSettings(max_tokens=4096),
         usage_limits=UsageLimits(request_limit=15) # Web needs more for research
     )
     log_agent_trace("web", mod_id, result)
@@ -509,7 +504,7 @@ async def job_hunter_node(state: ODISGraphState, config: RunnableConfig):
         user_msg, 
         deps=deps, 
         model=model,
-        model_settings=ModelSettings(max_output_tokens=4096),
+        model_settings=ModelSettings(max_tokens=4096),
         usage_limits=UsageLimits(request_limit=15)
     )
     log_agent_trace("job_hunter", mod_id, result)
@@ -547,7 +542,7 @@ async def synthesizer_node(state: ODISGraphState, config: RunnableConfig):
             input_msg, 
             deps=deps, 
             model=model,
-            model_settings=ModelSettings(max_output_tokens=4096),
+            model_settings=ModelSettings(max_tokens=4096),
             usage_limits=UsageLimits(request_limit=10)
         )
         log_agent_trace("synthesizer", mod_id, result)
@@ -559,8 +554,6 @@ async def synthesizer_node(state: ODISGraphState, config: RunnableConfig):
             "next_node": END
         }
     logger.info(f"Synthesis complete for {city_name}.")
-    
-    result_msg = result.output
     
     usage = capture_usage(result, "synthesizer", mod_id)
     
@@ -586,11 +579,11 @@ async def synthesizer_node(state: ODISGraphState, config: RunnableConfig):
         if last_user_msg.get("role") == "user":
              new_odis_synthesis.append(last_user_msg)
     
-    new_odis_synthesis.append({"role": "assistant", "content": result.output})
+    new_odis_synthesis.append({"role": "assistant", "content": result.output.response})
 
     # Return both the chat message and the model update for single source of truth
     return {
-        "messages": [{"role": "assistant", "content": sanitize_llm_markdown(result.output)}],
+        "messages": [{"role": "assistant", "content": sanitize_llm_markdown(result.output.response)}],
         "search_results": {
             "results": [
                 {
@@ -602,12 +595,13 @@ async def synthesizer_node(state: ODISGraphState, config: RunnableConfig):
         },
         "next_node": END,
         "pending_experts": [], # Clear the pending list here now
-        "usage": capture_usage(result, "synthesizer", mod_id)
+        "usage": usage
     }
 
 # --- Graph Definition ---
 
 def create_odis_graph():
+    """Builds the LangGraph state machine."""
     builder = StateGraph(ODISGraphState)
     
     # 1. Add Nodes
@@ -627,9 +621,6 @@ def create_odis_graph():
     builder.add_node("job_hunter_solo", job_hunter_node)
     
     builder.add_node("synthesizer", synthesizer_node)
-    
-    # Logic nodes (No-ops for wiring)
-    # builder.add_node("joiner", joiner_node)
     
     # 2. Edges
     # --- 1. OPTIMIZED ENTRY POINT (Router Bypass) ---

@@ -83,7 +83,7 @@ with st.sidebar:
         breakdown = getattr(u, 'breakdown', {})
         if breakdown:
             with st.expander("💸 Détails par Modèle & Agent", expanded=False):
-                by_model = {}
+                by_model: Dict[str, Any] = {}
                 for node, data in breakdown.items():
                     mid = data['model']
                     if mid not in by_model:

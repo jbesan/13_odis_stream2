@@ -116,8 +116,8 @@ def log_search_results(
     config: SearchCriterias, 
     search_results: SearchResultsData,
     prefix: str = "search_results",
-    interaction_id: str = None,
-    username: str = None
+    interaction_id: Optional[str] = None,
+    username: Optional[str] = None
 ) -> None:
     """
     Logs the search configuration and the top results using the standard logger as a Markdown file in ./logs/.
@@ -134,7 +134,7 @@ def log_search_results(
         import zoneinfo
         paris_tz = zoneinfo.ZoneInfo("Europe/Paris")
         now_paris = datetime.now(paris_tz)
-    except:
+    except Exception:
         now_paris = datetime.now()
 
     timestamp_str = now_paris.strftime("%Y%m%d_%H%M%S")
@@ -273,13 +273,10 @@ def log_search_results(
 
 def log_agent_trace(agent_name: str, model_id: str, result: Any) -> None:
     """
-    Logs the full AI agent interaction to a Markdown file in ./logs/ (Local only)
-    and pushes a trace to BigQuery (Cloud).
+    Logs the full AI agent interaction to a Markdown file in ./.logs/ (Local only).
+    Skipped on Cloud Run (K_SERVICE env var).
     """
-    # 1. BigQuery Telemetry - Result level handled by graph or specialized functions
-    # No individual LLM trace to BQ anymore (simplified strategy)
-
-    # 2. Markdown Logging (Local only)
+    # Markdown Logging (Local only)
     if os.environ.get('K_SERVICE'):
         return
 
@@ -288,23 +285,44 @@ def log_agent_trace(agent_name: str, model_id: str, result: Any) -> None:
     os.makedirs(log_dir, exist_ok=True)
     log_file = os.path.join(log_dir, f"{timestamp}_trace_{agent_name}.md")
 
-    md_lines = []
+    try:
+        content = format_agent_result_to_md(agent_name, model_id, result)
+        with open(log_file, 'w', encoding='utf-8') as f:
+            f.write(content)
+    except Exception as e:
+        logger.error(f"Failed to write agent trace log file: {e}")
+
+
+def format_agent_result_to_md(agent_name: str, model_id: str, result: Any) -> str:
+    """
+    Formats a Pydantic-AI run result into a clean, readable Markdown audit trail.
+
+    Args:
+        agent_name: Name of the agent (e.g. 'scorer', 'scout').
+        model_id: The model identifier string.
+        result: The pydantic-ai RunResult object.
+
+    Returns:
+        A Markdown-formatted string.
+    """
+    from pydantic_ai.messages import ModelRequest, ModelResponse, SystemPromptPart, TextPart, ToolCallPart, ToolReturnPart
+
+    md_lines: List[str] = []
     md_lines.append(f"# Agent Trace: {agent_name} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     md_lines.append(f"* **Model**: `{model_id}`")
-    
-    usage = result.usage()
-    md_lines.append(f"* **Usage**: {usage.total_tokens} tokens (In: {usage.input_tokens}, Out: {usage.output_tokens})")
+
+    try:
+        usage = result.usage()
+        md_lines.append(f"* **Usage**: {usage.total_tokens} tokens (In: {usage.input_tokens}, Out: {usage.output_tokens})")
+    except Exception:
+        pass
     md_lines.append("")
 
     # --- Conversation History ---
     md_lines.append("## Conversation History")
-    
+
     for i, msg in enumerate(result.all_messages()):
-        role = "System"
-        from pydantic_ai.messages import ModelRequest, ModelResponse, SystemPromptPart, TextPart, ToolCallPart, ToolReturnPart
-        
         if isinstance(msg, ModelRequest):
-            # Request might contain SystemPrompt or User message Parts
             for part in msg.parts:
                 if isinstance(part, SystemPromptPart):
                     md_lines.append("### 💻 System Prompt")
@@ -315,7 +333,7 @@ def log_agent_trace(agent_name: str, model_id: str, result: Any) -> None:
                     md_lines.append(f"### 👤 User Message [{i}]")
                     md_lines.append(part.content)
                     md_lines.append("\n")
-        
+
         elif isinstance(msg, ModelResponse):
             md_lines.append(f"### 🤖 Assistant Response [{i}]")
             for part in msg.parts:
@@ -324,9 +342,9 @@ def log_agent_trace(agent_name: str, model_id: str, result: Any) -> None:
                 elif isinstance(part, ToolCallPart):
                     md_lines.append(f"\n> 🛠️ **Tool Call**: `{part.tool_name}`")
                     try:
-                        args = part.args.model_dump() if hasattr(part.args, 'model_dump') else part.args
+                        args = part.args.model_dump() if part.args is not None and hasattr(part.args, 'model_dump') else part.args
                         md_lines.append(f"```json\n{json.dumps(args, indent=2, ensure_ascii=False)}\n```")
-                    except:
+                    except Exception:
                         md_lines.append(f"```\n{part.args}\n```")
             md_lines.append("")
 
@@ -337,9 +355,10 @@ def log_agent_trace(agent_name: str, model_id: str, result: Any) -> None:
                     md_lines.append(f"### 📥 Tool Return: `{part.tool_name}`")
                     try:
                         content = part.content
-                        if hasattr(content, 'model_dump'): content = content.model_dump()
+                        if hasattr(content, 'model_dump'):
+                            content = content.model_dump()
                         md_lines.append(f"```json\n{json.dumps(content, indent=2, ensure_ascii=False)}\n```")
-                    except:
+                    except Exception:
                         md_lines.append(f"```\n{part.content}\n```")
                     md_lines.append("")
 
@@ -356,9 +375,25 @@ def log_agent_trace(agent_name: str, model_id: str, result: Any) -> None:
         md_lines.append(f"*(Serialization failed: {e})*")
         md_lines.append(str(result.output))
 
-    # Write to file
-    try:
-        with open(log_file, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(md_lines))
-    except Exception as e:
-        logger.error(f"Failed to write agent trace log file: {e}")
+    return '\n'.join(md_lines)
+
+
+def sanitize_for_json(obj: Any) -> Any:
+    """
+    Recursively convert an object to a JSON-serializable form.
+
+    Args:
+        obj: Any Python object.
+
+    Returns:
+        A JSON-serializable representation.
+    """
+    if isinstance(obj, (str, int, float, bool, type(None))):
+        return obj
+    if isinstance(obj, dict):
+        return {str(k): sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple, set)):
+        return [sanitize_for_json(i) for i in obj]
+    if hasattr(obj, 'model_dump'):
+        return obj.model_dump()
+    return str(obj)

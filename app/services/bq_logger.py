@@ -1,14 +1,15 @@
 import os
 import json
 import logging
+import sys
 from datetime import datetime, timezone
-try:
+if sys.version_info >= (3, 9):
     import zoneinfo
-except ImportError:
-    from backports import zoneinfo
+else:
+    from backports import zoneinfo as zoneinfo # type: ignore
 from google.cloud import bigquery
 import streamlit as st
-from typing import Any
+from typing import Any, Optional
 from services.telemetry import get_interaction_id
 
 logger = logging.getLogger(__name__)
@@ -26,7 +27,7 @@ def _safe_json_format(obj: Any) -> Any:
         return [_safe_json_format(i) for i in obj]
     return obj
 
-def log_agent_state_to_bq(user_input: str, agent_state: dict, interaction_id: str = None, username: str = None):
+def log_agent_state_to_bq(user_input: str, agent_state: dict, interaction_id: Optional[str] = None, username: Optional[str] = None):
     """
     Logs the structured agent state to BigQuery with dedicated columns.
     Uses the existing interaction_id for tracing.

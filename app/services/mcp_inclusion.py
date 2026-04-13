@@ -15,17 +15,17 @@ API_URL = "https://emplois.inclusion.beta.gouv.fr/api/v1/siaes/"
 AUTH_URL = "https://emplois.inclusion.beta.gouv.fr/api/v1/token-auth/"
 
 # Token Cache
-TOKEN_CACHE = {
+TOKEN_CACHE: Dict[str, Any] = {
     "token": None,
-    "last_refresh": 0
+    "last_refresh": 0.0
 }
 
 def _get_access_token() -> Optional[str]:
     """Retrieves or refreshes the API token."""
     now = time.time()
     # Refresh every 24h (token is usually long-lived but let's be safe)
-    if TOKEN_CACHE["token"] and now - TOKEN_CACHE["last_refresh"] < 86400:
-        return TOKEN_CACHE["token"]
+    if TOKEN_CACHE["token"] and now - float(TOKEN_CACHE["last_refresh"]) < 86400:
+        return str(TOKEN_CACHE["token"])
 
     login = os.environ.get("EMPLOIS_INCLUSION_LOGIN")
     password = os.environ.get("EMPLOIS_INCLUSION_PWD")
@@ -79,7 +79,7 @@ def _search_inclusion_jobs_logic(
         "Accept": "application/json"
     }
     
-    params = {
+    params: Dict[str, Any] = {
         "page_size": 20
     }
     

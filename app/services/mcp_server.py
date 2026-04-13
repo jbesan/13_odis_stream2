@@ -406,7 +406,9 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
     
     return sanitize_for_json({
         "cities": results,
-        "criteria_definitions": criteria_definitions
+        "criteria_definitions": criteria_definitions,
+        "search_hash": search_model.search_hash,
+        "current_geo": search_model.current_geo
     })
 
 @mcp.tool()
@@ -629,7 +631,7 @@ def _compute_routes_logic(origin: str, destination: str, mode: str = "transit") 
                  "steps": steps_summary
              }
 
-         body = {
+         body: Dict[str, Any] = {
              "origin": {"address": origin},
              "destination": {"address": destination},
              "travelMode": v1_mode,

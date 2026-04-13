@@ -1,9 +1,8 @@
-
 # coding: utf-8
 """
 Scoring module for the ODIS application.
 """
-from typing import List, Dict, Set, Any, Optional, Union, Tuple
+from typing import List, Dict, Set, Any, Optional, Union, Tuple, cast
 import string
 import geopandas as gpd
 import numpy as np
@@ -25,6 +24,29 @@ class ScoringEngine:
     """
     The engine responsible for running the ODIS scoring algorithm.
     """
+    df_all_communes: pd.DataFrame
+    df_bv_geo: gpd.GeoDataFrame
+    scores_cat: pd.DataFrame
+    incl_index: pd.DataFrame
+    associations_data: pd.DataFrame
+    formations_data: pd.DataFrame
+    codformations_index: Optional[pd.DataFrame]
+    waldec_index: Optional[pd.DataFrame]
+    global_stats: Optional[Dict[str, Any]]
+    bv_data: gpd.GeoDataFrame
+    annuaire_ecoles: pd.DataFrame
+    annuaire_sante: pd.DataFrame
+    annuaire_inclusion: pd.DataFrame
+    inclusion_services_index: pd.DataFrame
+    regio_referentiel: Optional[pd.DataFrame]
+    rome_index: pd.DataFrame
+    refugee_associations_data: pd.DataFrame
+    live_jobs_data: pd.DataFrame
+    siae_jobs_data: pd.DataFrame
+    rna_rag_service: Optional[RNARagService]
+    current_city_scored_row: Optional[pd.Series]
+    _associations_cache: Dict[str, Dict[str, Any]]
+
     @staticmethod
     def _filter_communes(df: pd.DataFrame, start_commune: pd.DataFrame, loc_type: str, loc_code: Union[str, List[str], None]) -> pd.DataFrame:
         if loc_type == 'departement': 
@@ -109,8 +131,8 @@ class ScoringEngine:
             
             if active_score_defs.empty: continue
             
-            scores_val = []
-            weights_val = []
+            scores_val: List[Any] = []
+            weights_val: List[Any] = []
             
             for _, s_row in active_score_defs.iterrows():
                  sid = s_row['score']
@@ -167,27 +189,30 @@ class ScoringEngine:
 
                  # Track valid weights per row (using non-nullity of original sources)
                  # If both are null, weight is 0
+                 has_data = None
                  if val_commune is not None and val_bdv is not None:
                       has_data = val_commune.notna() | val_bdv.notna()
                  elif val_commune is not None:
                       has_data = val_commune.notna()
-                 else:
+                 elif val_bdv is not None:
                       has_data = val_bdv.notna()
-                      
-                 valid_weight = weight * has_data.astype(float)
+                 
+                 valid_weight = weight * (has_data.astype(float) if has_data is not None else 1.0)
                  
                  # SKIP CURRENT COMMUNE FOR PROXIMITY SCORING
                  # The current commune should not be boosted by its own proximity, so we skip the criteria entirely for it.
                  if sid in ['mob_epci_scaled', 'mob_dist_current_loc_scaled']:
-                     current_codgeo = config.commune_actuelle.code if hasattr(config.commune_actuelle, 'code') else config.commune_actuelle
+                     c_act = getattr(config, 'commune_actuelle', None)
+                     c_code_val = c_act.code if c_act and hasattr(c_act, 'code') else c_act
+                     current_codgeo = str(c_code_val) if c_code_val else ""
                      is_current = (df.index == str(current_codgeo))
                      # Set weight to 0 so it's excluded from the denominator
-                     valid_weight = np.where(is_current, 0.0, valid_weight)
+                     valid_weight = cast(Any, np.where(is_current, 0.0, valid_weight))
                      # Set value to NaN so it doesn't appear in UI details as 100%
                      val = np.where(is_current, np.nan, val)
 
                  # Replace NaN with 0 for score addition (since valid_weight handles the skip)
-                 scores_val.append(np.nan_to_num(val, 0.0) * valid_weight) # Use valid_weight for per-row weighting
+                 scores_val.append(np.nan_to_num(val, nan=0.0) * valid_weight) # Use valid_weight for per-row weighting
                  weights_val.append(valid_weight)
                  
                  # IMPORTANT: save the combined value back to the dataframe 
@@ -354,7 +379,6 @@ class ScoringEngine:
         self.siae_jobs_data = siae_jobs_data
         
         # Initialize RNA RAG Service if not provided
-        # Initialize RNA RAG Service if not provided
         self.rna_rag_service = rna_rag_service
         if self.rna_rag_service is None:
             try:
@@ -363,7 +387,7 @@ class ScoringEngine:
                 logger.warning(f"Could not initialize RNARagService in ScoringEngine: {e}")
         
         # Batch cache for associations (Store for detailed results)
-        self._associations_cache: Dict[str, Dict[str, Any]] = {}
+        self._associations_cache = {}
 
     def _get_active_criteria(self, config: Optional[SearchCriterias]) -> Set[str]:
         """Centralized logic to determine which criteria are active based on config."""
@@ -576,8 +600,8 @@ class ScoringEngine:
                 cat_weights['sante'] = 0.0
         
         # 2. Identify displayed criteria and compute internal weights based on visibility
-        displayed_items = []
-        cat_internal_weights = {} # sum of w_crit for displayed items in each normalized cat
+        displayed_items: List[Dict[str, Any]] = []
+        cat_internal_weights: Dict[str, float] = {} # sum of w_crit for displayed items in each normalized cat
         active_norm_cats = set()
         
         for _, score_row in self.scores_cat.iterrows():
@@ -842,10 +866,6 @@ class ScoringEngine:
             refugee_list = cached_data.get("refugee", [])
             inclusion_list_by_cat = cached_data.get("inclusion", {})
             total_incl_count = sum(len(l) for l in inclusion_list_by_cat.values())
-        elif self.rna_rag_service and codgeo_str:
-            # Fallback (Sync) - only if we don't use the background enrichment or for single-city tests
-            # For now, we keep it empty to allow background enrichment to fill it.
-            pass
 
         incl_data.asso_refugee_list = refugee_list
         incl_data.asso_refugee_count = len(refugee_list)
@@ -997,7 +1017,7 @@ class ScoringEngine:
             config.active_categories = sorted(list(normalized))
         
         c_code_obj = getattr(config, 'commune_actuelle', None)
-        c_code = c_code_obj.code if hasattr(c_code_obj, 'code') else c_code_obj
+        c_code = c_code_obj.code if c_code_obj and hasattr(c_code_obj, 'code') else c_code_obj
         
         # Fallback to Paris
         if not c_code:
@@ -1043,11 +1063,7 @@ class ScoringEngine:
              # Ensure type consistency for merge
              odis_search = odis_search.assign(bassin_de_vie=odis_search['bassin_de_vie'].astype(str))
              
-             # Instead of copying the whole bv_data, we merge and then handle suffixes if needed
-             # Or even better, only merge the columns that are not already in odis_search
              bv_cols = [c for c in self.bv_data.columns if c not in odis_search.columns or c == 'bassin_de_vie']
-             # However, the engine logic expects '_bdv' suffix for everything.
-             # So we do need the suffix. Let's do it efficiently.
              
              odis_search = pd.merge(
                  odis_search, 
@@ -1057,41 +1073,29 @@ class ScoringEngine:
                  how='left'
              )
 
-        # logger.info(f"⚙️ [ENGINE] Computing criteria scores...")
         odis_scored = self._compute_criteria_scores(odis_search, config)
-        # logger.info(f"⚙️ [ENGINE] Computing category scores...")
         odis_exploded = self._compute_category_scores(odis_scored, config)
-        # logger.info(f"⚙️ [ENGINE] Computing final weighted scores...")
         odis_exploded['weighted_score'] = self._compute_weighted_score(odis_exploded, config)
 
-        # Final pruning of intermediates before return
-        # Note: We don't do aggressive pruning here yet because the caller might need details.
-        # Aggressive pruning happens in run() if needed.
+        # Final pruning
         self._prune_irrelevant_metrics(odis_exploded, config, aggressive=False)
 
         # Sort by weighted score
         odis_sorted = odis_exploded.sort_values(by='weighted_score', ascending=False)
         
-        # 🧪 SOTA: Limit the number of polygons for the map performance
+        # 🧪 SOTA: Limit the number of polygons
         if len(odis_sorted) > cfg.MAX_MAP_POLYGONS:
-            # We take the top K
             top_k = odis_sorted.head(cfg.MAX_MAP_POLYGONS)
             
-            # Always keep the current city in the results, even if poorly scored,
-            # to ensure it remains visible on the map for user reference.
             c_code_raw = config.commune_actuelle
             c_code = c_code_raw.code if hasattr(c_code_raw, 'code') else c_code_raw
             
             if c_code and c_code in odis_sorted.index and c_code not in top_k.index:
-                # Append the current city row to the top K (already sorted)
                 top_k = pd.concat([top_k, odis_sorted.loc[[c_code]]])
             
             return top_k
             
         return odis_sorted
-
-
-
 
     def _compute_employment_scores(self, df: pd.DataFrame, config: SearchCriterias) -> pd.DataFrame:
         # Operating in-place
@@ -1181,8 +1185,6 @@ class ScoringEngine:
                     # SIAE matching uses 3rd digit prefix
                     siae_prefixes = {c[:3] for c in adult_romes if len(c) >= 3}
                     
-                    # Filter SIAE jobs matching these prefixes
-                    # ROME column in siae_jobs_data is named 'rome'
                     siae_match = self.siae_jobs_data[
                         self.siae_jobs_data['rome'].str[:3].isin(siae_prefixes)
                     ]
@@ -1312,35 +1314,25 @@ class ScoringEngine:
         return df
 
     def _compute_education_scores(self, df: pd.DataFrame, config: SearchCriterias) -> pd.DataFrame:
-        # Placeholder for specific education logic if needed in future.
-        # Currently education scores are pre-computed in DB/DF.
         return df
 
     def _compute_housing_scores(self, df: pd.DataFrame, config: SearchCriterias) -> pd.DataFrame:
-        # Placeholder for specific housing logic if needed.
-        # Currently housing pruning handles most variation.
         return df
 
     def _compute_inclusion_scores(self, df: pd.DataFrame, config: SearchCriterias) -> pd.DataFrame:
         # Operating in-place
         
         # Population Score (F-50) - Dynamic re-calculation
-        # This overrides the precomputed 'inc_population_scaled' if mu/sigma are provided in config
         if 'inc_population_scaled' in self._get_active_criteria(config) and 'population' in df.columns:
             mu = getattr(config, 'target_population', 50000)
             sigma = getattr(config, 'target_population_sigma', 25000)
             
-            # Recompute gaussian score based on raw population
-            # We use _scale_series which handles 'gaussian' type
             df['inc_population_scaled'] = self._scale_series(
                 df['population'], 0, 0, 
                 scaling_type='gaussian', mu=mu, sigma=sigma
             )
             
             # --- F-13: BdV Saturation Check ---
-            # If population_bv_bdv is present, we compute the BdV level score s_b 
-            # using the same gaussian peak. A 1M+ population will yield ~0.0, 
-            # triggering the malus if bdv_factor is negative.
             if 'population_bv_bdv' in df.columns:
                  df['inc_population_scaled_bdv'] = self._scale_series(
                     df['population_bv_bdv'], 0, 0, 
@@ -1369,14 +1361,12 @@ class ScoringEngine:
                 affinite_assos = self.associations_data[self.associations_data['id_waldec'].astype(str).str.startswith(tuple(expanded_interests), na=False)]
                 affinite_counts = affinite_assos.groupby('codgeo')['count'].sum().reindex(df.index, fill_value=0)
                 
-                # Safety check for population column
                 if 'population' in df.columns:
                     df['affinite_density'] = (affinite_counts * 1000) / df['population']
                 else:
                     df['affinite_density'] = 0.0
                 min_b, max_b = self._get_bounds('inc_asso_add_scaled')
                 s_def_inc = self.scores_cat[self.scores_cat['score'] == 'inc_asso_add_scaled'].iloc[0] if not self.scores_cat[self.scores_cat['score'] == 'inc_asso_add_scaled'].empty else {}
-                min_b, max_b = self._get_bounds('inc_asso_add_scaled')
                 df['inc_asso_add_scaled'] = self._scale_series(
                     df['affinite_density'], min_b, max_b,
                     scaling_type=s_def_inc.get('scaling_type', 'linear'),
@@ -1396,7 +1386,6 @@ class ScoringEngine:
             needed.add(i.code if hasattr(i, 'code') else str(i))
             
         if needed:
-             # Optimize lookup
              def count_matches(available):
                  if not isinstance(available, set): return 0
                  return sum(1 for n in needed if any(n in a for a in available))
@@ -1404,7 +1393,6 @@ class ScoringEngine:
              if 'key' not in df.columns: 
                  df = df.join(self.incl_index, how='left')
              
-             # Direct calculation without intermediate column
              df['inc_services_incl_scaled'] = df['key'].apply(count_matches) / len(needed)
         else:
              if 'inc_services_incl_scaled' in df.columns: 
@@ -1451,12 +1439,11 @@ class ScoringEngine:
             codes = config.loc_search_code if isinstance(config.loc_search_code, list) else [config.loc_search_code]
             return str(current_dep) in [str(c) for c in codes]
             
-        # If searching France or another area, proximity is not a local search factor
         return False
 
     def prefetch_associations(self, codgeos: List[str]) -> Dict[str, Dict[str, Any]]:
         """
-        Fetches association details for multiple communes in a single BigQuery call.
+        Fetches association details for multiple communes.
         Updates self._associations_cache.
         """
         if not self.rna_rag_service or not codgeos:
@@ -1466,15 +1453,13 @@ class ScoringEngine:
             logger.info(f"📊 [PREFETCH] Fetching associations for {len(codgeos)} communes")
             all_assos = self.rna_rag_service.get_associations_by_codgeo(codgeos)
             
-            # Reset cache for these specific codgeos
-            temp_results = {cg: {"refugee": [], "inclusion": {}} for cg in codgeos}
+            temp_results: Dict[str, Dict[str, Any]] = {cg: {"refugee": [], "inclusion": {}} for cg in codgeos}
             
             for asso in all_assos:
                 codgeo = asso.get('codgeo')
                 if not codgeo or codgeo not in temp_results:
                     continue
                 
-                # Mapping logic (same as in format_city_details)
                 raw_code = str(asso.get('code_waldec', '')).strip()
                 desc = str(asso.get('description', '')).strip()
                 if desc.lower() in ["nan", "none"]: desc = ""
@@ -1503,7 +1488,6 @@ class ScoringEngine:
                     if len(temp_results[codgeo]["inclusion"][cat]) < 20:
                         temp_results[codgeo]["inclusion"][cat].append(asso_data)
             
-            # Bulk update cache
             self._associations_cache.update(temp_results)
             return temp_results
             

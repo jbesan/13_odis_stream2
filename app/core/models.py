@@ -95,7 +95,7 @@ class SearchCriterias(BaseModel):
         # Pattern to catch CriteriaItem(code='...', label='...')
         pattern = r"CriteriaItem\(code=['\"]([^'\"]+)['\"],\s*label=['\"]([^'\"]+)['\"]\)"
         
-        def _fix_value(v):
+        def _fix_value(v: Any) -> Any:
             if isinstance(v, str):
                 match = re.search(pattern, v)
                 if match:
@@ -139,53 +139,52 @@ class CommuneScoreDetail(BaseModel):
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 
 class EmploymentMetrics(BaseModel):
-    cat_score: float = Field(0.0, description="Score global de la catégorie Emploi (0-1)")
-    standard_jobs_total: int = Field(0, description="Nombre total d'offres d'emploi dans le bassin de vie")
-    standard_jobs_matching_total: int = Field(0, description="Nombre d'offres d'emploi correspondant aux métiers recherchés")
-    top_professions: List[str] = Field(default_factory=list, description="Liste des métiers les plus en tension localement")
-    inclusive_jobs_total: int = Field(0, description="Nombre total d'offres d'insertion (SIAE)")
-    inclusive_jobs_summary: Dict[str, int] = Field(default_factory=dict, description="Répartition des offres d'insertion par secteur")
-    inclusive_jobs_matching_total: int = Field(0, description="Nombre d'offres d'insertion correspondant au profil")
-    inclusive_jobs_matching_summary: Dict[str, int] = Field(default_factory=dict, description="Détail des offres d'insertion matchées")
-    training_programs: List[str] = Field(default_factory=list, description="Programmes de formation disponibles")
-    standard_jobs_summary: Dict[str, int] = Field(default_factory=dict, description="Répartition des offres standard par secteur")
-    standard_jobs_matching_summary: Dict[str, int] = Field(default_factory=dict, description="Détail des offres standard matchées")
+    cat_score: float = 0.0
+    standard_jobs_total: int = 0
+    standard_jobs_matching_total: int = 0
+    top_professions: List[str] = Field(default_factory=list)
+    inclusive_jobs_total: int = 0
+    inclusive_jobs_summary: Dict[str, int] = Field(default_factory=dict)
+    inclusive_jobs_matching_total: int = 0
+    inclusive_jobs_matching_summary: Dict[str, int] = Field(default_factory=dict)
+    training_programs: List[str] = Field(default_factory=list)
+    standard_jobs_summary: Dict[str, int] = Field(default_factory=dict)
+    standard_jobs_matching_summary: Dict[str, int] = Field(default_factory=dict)
 
 class HousingMetrics(BaseModel):
-    cat_score: float = Field(0.0, description="Score global de la catégorie Logement (0-1)")
-    host_count: int = Field(0, description="Nombre d'accueillants potentiels (réseau J'Accueille) dans le bassin")
-    price_per_sqm: Optional[float] = Field(None, description="Loyer moyen mensuel estimé au m²")
-    odace_all_variants: Dict[str, Dict[str, Optional[float]]] = Field(default_factory=dict, description="Données détaillées sur les prix localement")
-
+    cat_score: float = 0.0
+    host_count: int = 0
+    price_per_sqm: Optional[float] = None
+    odace_all_variants: Dict[str, Dict[str, Optional[float]]] = Field(default_factory=dict)
 
 class EducationMetrics(BaseModel):
-    cat_score: float = Field(0.0, description="Score global de la catégorie Éducation (0-1)")
-    facility_counts: Dict[str, int] = Field(default_factory=dict, description="Nombre d'établissements par niveau (Maternelle, Élémentaire, Collège, Lycée)")
-    facility_details: Dict[str, List[str]] = Field(default_factory=dict, description="Liste nominative des établissements")
+    cat_score: float = 0.0
+    facility_counts: Dict[str, int] = Field(default_factory=dict)
+    facility_details: Dict[str, List[str]] = Field(default_factory=dict)
 
 class HealthMetrics(BaseModel):
-    cat_score: float = Field(0.0, description="Score global de la catégorie Santé (0-1)")
-    facility_counts: Dict[str, int] = Field(default_factory=dict, description="Nombre d'établissements de santé par type")
-    facility_details: Dict[str, List[str]] = Field(default_factory=dict, description="Détails des infrastructures de santé")
+    cat_score: float = 0.0
+    facility_counts: Dict[str, int] = Field(default_factory=dict)
+    facility_details: Dict[str, List[str]] = Field(default_factory=dict)
 
 class InclusionMetrics(BaseModel):
-    cat_score: float = Field(0.0, description="Score global de la catégorie Inclusion (0-1)")
-    services_grouped: Dict[str, List[str]] = Field(default_factory=dict, description="Services d'inclusion disponibles par thématique (FLE, Mobilité, Emploi, etc.)")
-    asso_refugee_list: List[Dict[str, Any]] = Field(default_factory=list, description="Liste des associations spécialisées dans l'accueil des réfugiés")
-    asso_inclusion_count: int = Field(0, description="Nombre total d'associations d'inclusion identifiées")
-    asso_refugee_count: int = Field(0, description="Nombre d'associations spécialisées réfugiés identifiées")
-    asso_inclusion_list_by_cat: Dict[str, Any] = Field(default_factory=dict, description="Répartition des associations par domaine d'activité")
+    cat_score: float = 0.0
+    services_grouped: Dict[str, List[str]] = Field(default_factory=dict)
+    asso_refugee_list: List[Dict[str, Any]] = Field(default_factory=list)
+    asso_inclusion_count: int = 0
+    asso_refugee_count: int = 0
+    asso_inclusion_list_by_cat: Dict[str, Any] = Field(default_factory=dict)
 
 class MobilityMetrics(BaseModel):
-    cat_score: float = Field(0.0, description="Score global de la catégorie Mobilité (0-1)")
-    bus_stops: int = Field(0, description="Nombre d'arrêts de bus")
-    tram_stops: int = Field(0, description="Nombre d'arrêts de tramway")
-    metro_stops: int = Field(0, description="Nombre d'arrêts de métro")
-    train_stops: int = Field(0, description="Nombre d'arrêts de train/RER")
-    total_stops: int = Field(0, description="Nombre total d'arrêts de transports en commun")
-    stop_density: float = Field(0.0, description="Densité d'arrêts par km²")
-    is_same_epci: Optional[bool] = Field(None, description="Si la ville est dans le même EPCI que la commune actuelle")
-    distance_to_current_km: Optional[float] = Field(None, description="Distance à vol d'oiseau vers la commune actuelle (km)")
+    cat_score: float = 0.0
+    bus_stops: int = 0
+    tram_stops: int = 0
+    metro_stops: int = 0
+    train_stops: int = 0
+    total_stops: int = 0
+    stop_density: float = 0.0
+    is_same_epci: Optional[bool] = None
+    distance_to_current_km: Optional[float] = None
 
 class CommuneResult(BaseModel):
     """Encapsulates identity, scores, and metadata for a specific commune."""

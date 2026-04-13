@@ -86,14 +86,16 @@ To ensure scalability and prevent Out-Of-Memory (OOM) errors, ODIS uses a **Deco
 
 ---
 
-## 7. Post-Scoring Background Orchestration
+## 8. Resource Management & Eco-Mode
 
-To maintain a highly responsive UI, all "side-effect" operations (Logging, Telemetry) and heavy AI tasks are decoupled from the main scoring execution.
+To minimize costs on serverless environments (GCP Cloud Run), ODIS implements an aggressive **Eco-Mode** (Idle Sleep) strategy.
 
-### Unified Orchestrator (`app/agents/utils.py`)
-- **`launch_post_scoring_tasks`**: The central entry point called by the UI after `ScoringEngine.run_optimized`.
-- **Parallel Execution**: Uses `threading.Thread` to launch:
-    - **AI Scorer**: Generates personalized pitches.
-    - **Enrichment**: Fetches detailed association data (RAG).
-    - **Audit & Telemetry**: Writes local Markdown logs and BigQuery events without blocking.
-- **State Sync**: Results are stored in a `@st.cache_resource` singleton (`odis_bg_store`) and polled via fragments for JIT UI updates.
+### Global Monitor Pattern (`app/utils/auth.py`)
+- The Idle Sleep monitor is injected **at the entry point of every page** via `auth.check_password()`.
+- **Pre-Authentication Protection**: The monitor is injected *before* the password check. This ensures that a user who lands on the login page but never authenticates is still put to sleep after 10 minutes, preventing "orphaned" Cloud Run instances from billing.
+
+### Cross-Document Activity Detection (`app/ui/idle_sleep.py`)
+- Since the monitor runs in a Streamlit component iframe, it uses the **V2 Component API** to bridge the sandbox.
+- **Global Listeners**: It attaches event listeners (mouse, keyboard, scroll) to `window.top.document`. 
+- **Bidi-Sync**: This allows a hidden component in a sub-frame to sense activity on the main parent page, ensuring the session only expires when the user is truly inactive across the entire application window.
+- **Hard Kill**: Upon timeout, the monitor sabotages the browser's `fetch` and `XMLHttpRequest` APIs, stops all timers, and clears the DOM to ensure no further background requests are made to the server.

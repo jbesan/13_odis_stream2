@@ -126,75 +126,76 @@ def merge_search_results(left: Optional[SearchResultsData], right: Any) -> Optio
         raise e
     
     # 1. Merge results list by codgeo or name (robust matching)
+    # NOTE: Expert nodes emit partial dicts (codgeo + expert_analysis only).
+    # We MUST NOT coerce to CommuneResult here — required fields (population,
+    # global_score) will be absent. Work entirely at dict level.
     if "results" in right and right["results"]:
         from utils.common import normalize_text
-        
+
         # Build lookup maps for existing results
         existing_results = {str(r["codgeo"]): i for i, r in enumerate(new_data.get("results", []))}
-        existing_names = {normalize_text(str(r["name"])): i for i, r in enumerate(new_data.get("results", []))}
-        
+        existing_names = {normalize_text(str(r.get("name", ""))): i for i, r in enumerate(new_data.get("results", []))}
+
         for new_res in right["results"]:
-            cg = str(new_res.get("codgeo"))
+            # Normalise: accept both dicts and CommuneResult objects
+            if isinstance(new_res, CommuneResult):
+                new_res = new_res.model_dump()
+            elif not isinstance(new_res, dict):
+                logger.warning(f"Unexpected item type in reducer results: {type(new_res)}")
+                continue
+
+            cg = str(new_res.get("codgeo", ""))
             name_norm = normalize_text(str(new_res.get("name", "")))
-            
-            # Identify target index (Code first, then Name)
+
+            # Identify target index (Code first, then Name fallback)
             idx = existing_results.get(cg)
             if idx is None:
                 idx = existing_names.get(name_norm)
-            
+
             if idx is not None:
                 target = new_data["results"][idx]
-                
+
                 # Merge expert_analysis
                 if "expert_analysis" in new_res and new_res["expert_analysis"]:
                     if "expert_analysis" not in target or target["expert_analysis"] is None:
                         target["expert_analysis"] = {}
                     target["expert_analysis"].update(new_res["expert_analysis"])
-                
-                # Update other fields (scorer_pitch, global score, etc.)
-                for k, v in new_res.items():
-                    if k == "expert_analysis" or v is None:
-                        continue
-                    
-                    if k == "odis_synthesis":
-                        # Handle list merging (Append instead of Overwrite)
-                        existing_val = target.get("odis_synthesis", [])
-                        if isinstance(existing_val, str):
-                            existing_list = [{"role": "assistant", "content": existing_val}] if existing_val else []
-                        else:
-                            existing_list = list(existing_val)
 
-                        new_msgs = v if isinstance(v, list) else [{"role": "assistant", "content": v}]
-                        
-                        # Deduplicate by content to prevent double-appending on node retries or parallel runs
-                        seen_content = {m.get("content") for m in existing_list if isinstance(m, dict)}
-                        for msg in new_msgs:
-                            if isinstance(msg, dict) and msg.get("content") not in seen_content:
-                                existing_list.append(msg)
-                                seen_content.add(msg.get("content"))
-                        
-                        target["odis_synthesis"] = existing_list
+                # Merge odis_synthesis (append, deduplicate)
+                if "odis_synthesis" in new_res and new_res["odis_synthesis"]:
+                    existing_val = target.get("odis_synthesis", [])
+                    if isinstance(existing_val, str):
+                        existing_list = [{"role": "assistant", "content": existing_val}] if existing_val else []
                     else:
-                        target[k] = v
+                        existing_list = list(existing_val)
+                    new_msgs = new_res["odis_synthesis"] if isinstance(new_res["odis_synthesis"], list) else [{"role": "assistant", "content": new_res["odis_synthesis"]}]
+                    seen_content = {m.get("content") for m in existing_list if isinstance(m, dict)}
+                    for msg in new_msgs:
+                        if isinstance(msg, dict) and msg.get("content") not in seen_content:
+                            existing_list.append(msg)
+                            seen_content.add(msg.get("content"))
+                    target["odis_synthesis"] = existing_list
+
+                # Update all other scalar fields (skip None, expert_analysis, odis_synthesis already handled)
+                for k, v in new_res.items():
+                    if k in ("expert_analysis", "odis_synthesis") or v is None:
+                        continue
+                    target[k] = v
             else:
-                # If city not found, only append if it's a complete record (has population)
+                # City not found — only append if it's a complete record (has population)
                 # This prevents partial expert updates from creating invalid "skeleton" results
-                if "population" in new_res and new_res["population"]:
+                if new_res.get("population"):
                     new_data.setdefault("results", []).append(new_res)
-                    # Update maps for subsequent items in the same 'right' update
                     idx_new = len(new_data["results"]) - 1
                     existing_results[cg] = idx_new
                     existing_names[name_norm] = idx_new
                 else:
                     logger.debug(f"Dropped partial update for unknown city: {cg}")
-                
-    # 2. Update other top-level fields (global_pitch, current_geo, search_hash)
-    for k, v in right.items():
-        if k != "results" and v is not None:
-            if k == "current_geo" and isinstance(v, dict):
-                 new_data.setdefault("current_geo", {}).update(v)
-            else:
-                new_data[k] = v
+
+    # 2. Update other top-level fields (whitelist — prevents accidental overrides)
+    for k in ["global_pitch", "odis_brief", "current_geo", "search_hash"]:
+        if k in right and right[k]:
+            new_data[k] = right[k]
                 
     # Diagnostic logging before final creation
     try:
@@ -354,7 +355,7 @@ class ODISContextBuilder:
     @classmethod
     def _synthesizer_context(cls, state: "ODISGraphState") -> dict:
         """Focus City (full_thematic) + Baseline (scores_only) + Top 5 summary + Experts + Briefing."""
-        ctx = {}
+        ctx: Dict[str, Any] = {}
         if state.odis_brief:
             ctx["Résumé du dossier (Briefing)"] = state.odis_brief
             if state.search_criteria and state.search_criteria.notes_qualitatives:
@@ -388,7 +389,7 @@ class ODISContextBuilder:
     @classmethod
     def _refiner_context(cls, state: "ODISGraphState") -> dict:
         """Criteria labels + last messages + Top 5 summary + Briefing."""
-        ctx = {}
+        ctx: Dict[str, Any] = {}
         if state.odis_brief:
             ctx["Dernier Briefing"] = state.odis_brief
 
@@ -410,7 +411,7 @@ class ODISContextBuilder:
     @classmethod
     def _scorer_context(cls, state: "ODISGraphState") -> dict:
         """Criteria labels only + Briefing + Top 5 results if available."""
-        ctx = {}
+        ctx: Dict[str, Any] = {}
         if state.odis_brief:
             ctx["Résumé du dossier (Briefing)"] = state.odis_brief
         else:
@@ -435,7 +436,7 @@ class ODISContextBuilder:
     @classmethod
     def _scout_context(cls, state: "ODISGraphState") -> dict:
         """City identity + criteria labels + existing artifact + Briefing."""
-        ctx = {}
+        ctx: Dict[str, Any] = {}
         if state.odis_brief:
             ctx["Résumé du dossier (Briefing)"] = state.odis_brief
         else:
@@ -461,7 +462,7 @@ class ODISContextBuilder:
     @classmethod
     def _web_context(cls, state: "ODISGraphState") -> dict:
         """City identity + criteria labels + existing artifact + Briefing."""
-        ctx = {}
+        ctx: Dict[str, Any] = {}
         if state.odis_brief:
             ctx["Résumé du dossier (Briefing)"] = state.odis_brief
         else: 
@@ -487,7 +488,7 @@ class ODISContextBuilder:
     @classmethod
     def _job_hunter_context(cls, state: "ODISGraphState") -> dict:
         """City identity + ROME codes with labels + own existing artifact."""
-        ctx = {}
+        ctx: Dict[str, Any] = {}
         if state.odis_brief:
             ctx["Résumé du dossier (Briefing)"] = state.odis_brief
 
@@ -513,7 +514,7 @@ class ODISContextBuilder:
     @classmethod
     def _interviewer_context(cls, state: "ODISGraphState") -> dict:
         """Full criteria (with readable keys) + last user message."""
-        ctx = {}
+        ctx: Dict[str, Any] = {}
         if state.search_criteria:
             ctx["Critères identifiés"] = cls._criteria_full(state.search_criteria)
         if state.messages:
@@ -523,7 +524,7 @@ class ODISContextBuilder:
     @classmethod
     def _router_context(cls, state: "ODISGraphState") -> dict:
         """Specific context for the Router: Briefing + Identified Cities + Focus + Interview Status."""
-        ctx = {}
+        ctx: Dict[str, Any] = {}
         if state.odis_brief:
             ctx["Résumé du dossier (Briefing)"] = state.odis_brief
             
@@ -607,7 +608,7 @@ class ODISContextBuilder:
         """Returns a structured list of ROME codes per adult — for Job Hunter."""
         result = []
         for i, adult_codes in enumerate(sc.codes_metiers):
-            adult_entry = {"adulte": i + 1, "métiers": []}
+            adult_entry: Dict[str, Any] = {"adulte": i + 1, "métiers": []}
             for code in adult_codes:
                 if hasattr(code, "code"):
                     adult_entry["métiers"].append({"code": code.code, "libellé": code.label})

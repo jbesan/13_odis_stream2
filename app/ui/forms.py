@@ -5,7 +5,7 @@ import config as cfg
 from core.models import SearchCriterias, CriteriaItem
 from utils.data_loader import get_app_data
 from ui.components import inject_custom_css
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Set
 
 # Configure Logging
 logger = logging.getLogger("ui.forms")
@@ -389,6 +389,10 @@ def render_weight_profile_form() -> None:
         )
         st.toggle("Profil personalisé", key="ui_expert_weights", value=False)
     
+    def _invalidate_results():
+        st.session_state['processed_gdf'] = None
+        st.session_state['search_results'] = None
+
     with col2:
         for p_key in ["ui_poids_education", "ui_poids_emploi", "ui_poids_logement", "ui_poids_inclusion", "ui_poids_sante", "ui_poids_mobilite"]:
             if p_key not in st.session_state:
@@ -399,27 +403,27 @@ def render_weight_profile_form() -> None:
         st.select_slider("Education", cfg.POIDS_OPTIONS, 
                         format_func=format_pct,
                         disabled=not st.session_state.get('ui_expert_weights'),
-                        key="ui_poids_education", on_change=lambda: [st.session_state.setdefault('processed_gdf', None), st.session_state.setdefault('search_results', None)])
+                        key="ui_poids_education", on_change=_invalidate_results)
         st.select_slider("Projet Pro", cfg.POIDS_OPTIONS, 
                         format_func=format_pct,
                         disabled=not st.session_state.get('ui_expert_weights'),
-                        key="ui_poids_emploi", on_change=lambda: [st.session_state.setdefault('processed_gdf', None), st.session_state.setdefault('search_results', None)])
+                        key="ui_poids_emploi", on_change=_invalidate_results)
         st.select_slider("Logement", cfg.POIDS_OPTIONS, 
                         format_func=format_pct,
                         disabled=not st.session_state.get('ui_expert_weights'),
-                        key="ui_poids_logement", on_change=lambda: [st.session_state.setdefault('processed_gdf', None), st.session_state.setdefault('search_results', None)])
+                        key="ui_poids_logement", on_change=_invalidate_results)
         st.select_slider("Inclusion", cfg.POIDS_OPTIONS, 
                         format_func=format_pct,
                         disabled=not st.session_state.get('ui_expert_weights'),
-                        key="ui_poids_inclusion", on_change=lambda: [st.session_state.setdefault('processed_gdf', None), st.session_state.setdefault('search_results', None)])
+                        key="ui_poids_inclusion", on_change=_invalidate_results)
         st.select_slider("Santé", cfg.POIDS_OPTIONS, 
                         format_func=format_pct,
                         disabled=not st.session_state.get('ui_expert_weights'),
-                        key="ui_poids_sante", on_change=lambda: [st.session_state.setdefault('processed_gdf', None), st.session_state.setdefault('search_results', None)])
+                        key="ui_poids_sante", on_change=_invalidate_results)
         st.select_slider("Mobilité", cfg.POIDS_OPTIONS, 
                         format_func=format_pct,
                         disabled=not st.session_state.get('ui_expert_weights'),
-                        key="ui_poids_mobilite", on_change=lambda: [st.session_state.setdefault('processed_gdf', None), st.session_state.setdefault('search_results', None)])
+                        key="ui_poids_mobilite", on_change=_invalidate_results)
 
 def display_input_tabs() -> None:
     """Displays the main tabs for user input, composed of modular rendering functions."""
@@ -516,7 +520,7 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
     inc_services_core = st.session_state.get('ui_inc_services_core_selection', [])
     
     # Handle both list and set types gracefully
-    all_inc_services = set()
+    all_inc_services: Set[str] = set()
     if isinstance(inc_services_add, (list, set)): all_inc_services.update(inc_services_add)
     elif isinstance(inc_services_add, dict): all_inc_services.update(inc_services_add.keys()) # Robustness for test mocks
     

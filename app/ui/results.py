@@ -6,7 +6,7 @@ from core.models import CommuneResult, CommuneScoreDetail, SearchResultsData, Se
 from utils.data_loader import get_app_data
 from agents.utils import odis_get_bg_result, launch_background_city_analysis
 from ui.components import inject_custom_css
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Set
 import plotly.graph_objects as go
 from core import maps
 
@@ -56,7 +56,7 @@ def _merge_agent_results(final_state_results, codgeo: str, commune: CommuneResul
             break
 
 @st.fragment(run_every=2.0)
-def polling_synthesis_fragment(task_key: str, nom: str, codgeo: str, search_criterias: Any, results: SearchResultsData, h: str, commune: CommuneResult):
+def polling_synthesis_fragment(task_key: str, nom: str, codgeo: str, search_criterias: Any, results: SearchResultsData, h: Optional[str], commune: CommuneResult):
     from agents.utils import odis_get_bg_result, launch_background_city_analysis
     status_data = odis_get_bg_result(task_key)
     if not status_data:
@@ -222,7 +222,7 @@ def show_ia_analysis_dialog(index: Any):
     ia_analysis_content(nom, codgeo, search_criterias)
 
 @st.fragment(run_every=2.0)
-def ai_pitch_container(main_code: str, h: str):
+def ai_pitch_container(main_code: str, h: Optional[str]):
     # 1. Try unified state first (Single source of truth)
     if 'search_results' in st.session_state and st.session_state.search_results:
         commune = st.session_state.search_results.get_by_code(main_code)

@@ -5,8 +5,6 @@ from pydantic_ai import Agent, RunContext
 import config as cfg
 from .state import ODISGraphState, ODISDeps, FocusCity, compute_criteria_hash, ODISContextBuilder
 from .agent_config import get_model
-
-logger = logging.getLogger(__name__)
 from .tools import (
     search_places_batch, 
     compute_routes, 
@@ -14,6 +12,8 @@ from .tools import (
     search_ccas,
     search_rna_rag_batch,
 )
+
+logger = logging.getLogger(__name__)
 
 class ScoutResult(BaseModel):
     searched: str = Field(..., description="Résumé des outils et termes recherchés.")
@@ -92,7 +92,6 @@ async def scout_instructions(ctx: RunContext[ODISDeps]) -> str:
 
 # --- Tools ---
 
-
 @scout_agent.tool
 async def search_places_batch_tool(ctx: RunContext[ODISDeps], queries: List[str], location: str) -> Dict[str, Any]:
     """Recherche des lieux (POIs) en mode batch.
@@ -136,7 +135,7 @@ def search_refugee_associations_tool(ctx: RunContext[ODISDeps], codgeo: str) -> 
     return search_refugee_associations(codgeo)
 
 @scout_agent.tool
-async def search_rna_rag_batch_tool(ctx: RunContext[ODISDeps], queries: List[str], codgeo: str, top_k: int = 10) -> Dict[str, Any]:
+async def search_rna_rag_batch_tool(ctx: RunContext[ODISDeps], queries: List[str], codgeo: str, top_k: int = 10) -> List[Dict[str, Any]]:
     """Recherche sémantique d'associations en mode batch. 
     
     Permet d'effectuer plusieurs recherches distinctes en un seul appel.
@@ -148,7 +147,7 @@ async def search_rna_rag_batch_tool(ctx: RunContext[ODISDeps], queries: List[str
         top_k (int): Nombre de résultats par terme.
     
     Returns:
-        Dict[str, Any]: Dictionnaire mappant chaque requête à ses résultats.
+        List[Dict[str, Any]]: Liste unique d'associations dédoublées par ID.
     """
     return await search_rna_rag_batch(queries, codgeo, top_k=top_k)
 

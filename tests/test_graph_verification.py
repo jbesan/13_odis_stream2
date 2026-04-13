@@ -10,7 +10,7 @@ from typing import Any
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'app'))
 
 from agents.graph import create_odis_graph
-from agents.state import ODISGraphState, ODISDeps
+from agents.state import ODISGraphState, ODISDeps, FocusCity
 from google import genai
 
 # Path to the .env file in the app directory
@@ -20,8 +20,8 @@ load_dotenv(dotenv_path=env_path)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# @pytest.mark.asyncio
-@pytest.mark.skip(reason="This test costs tokens")
+@pytest.mark.asyncio
+# @pytest.mark.skip(reason="This test costs tokens")
 async def test_graph_execution_end_to_end():
     """
     Verifies that the ODIS graph can be instantiated and executed end-to-end.
@@ -32,10 +32,31 @@ async def test_graph_execution_end_to_end():
     
     logger.info("📝 Preparing State...")
     state = ODISGraphState()
-    # Simulate a user message prompting for details (Decoration Trigger)
-    # We pre-fill specific criteria to avoid Interviewer loop if possible
-    state.focus_city = "Bordeaux"
-    state.messages.append({"role": "user", "content": "Peux-tu me donner des détails sur Bordeaux ?"})
+    
+    # Simulate a user message prompting for details
+    from core.models import SearchCriterias, CommuneResult, SearchResultsData, CriteriaItem
+    
+    # 1. Setup criteria
+    state.search_criteria = SearchCriterias(
+        commune_actuelle=CriteriaItem(code="13001", label="Marseille"),
+        nb_adultes=1
+    )
+    
+    # 2. Compute hash (using the helper)
+    from agents.state import compute_criteria_hash
+    current_hash = compute_criteria_hash(state.search_criteria)
+    state.criteria_hash = current_hash # This is the state field for the criteria hash
+    
+    # 3. Setup mock results that match the hash
+    marseille = CommuneResult(codgeo="13001", name="Marseille", population=800000, global_score=0.9)
+    state.search_results = SearchResultsData(
+        search_hash=current_hash,
+        results=[marseille],
+        current_geo=marseille
+    )
+    
+    state.focus_city = FocusCity(name="Marseille", codgeo="13001")
+    state.messages.append({"role": "user", "content": "Peux-tu me donner des détails sur Marseille ?"})
     
     logger.info("▶️ Running Graph (ainvoke)...")
     

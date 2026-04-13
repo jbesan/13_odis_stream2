@@ -89,6 +89,8 @@ def compute_top_cities_tool(ctx: RunContext[ODISDeps]) -> Dict[str, Any]:
         cities_list = [c.model_dump(exclude={'geometry', 'centroid'}) for c in results[:20]]
         return {
             "cities": cities_list, 
+            "search_hash": sr.search_hash,
+            "current_geo": sr.current_geo,
             "source": "cache", 
             "message": "Results retrieved from internal state (already computed)."
         }

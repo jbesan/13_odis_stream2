@@ -12,6 +12,8 @@ def inject_idle_sleep(timeout_minutes: int = 10):
     # Double braces {{ }} are used for f-string escaping
     js_code = f"""
     export default function(component) {{
+        const targetWin = window.top;
+        const targetDoc = targetWin.document;
         const TIMEOUT = {timeout_ms};
         const STORAGE_KEY = 'odis_last_activity';
         let idleTimer;
@@ -19,10 +21,6 @@ def inject_idle_sleep(timeout_minutes: int = 10):
         console.log("Eco-Mode V2 (Bidi) Monitor Active.");
 
         function showSleepMode() {{
-            // Target the main application window (even if running in iframe)
-            const targetWin = window.top;
-            const targetDoc = targetWin.document;
-
             if (targetDoc.getElementById('idle-sleep-overlay')) return;
 
             const overlay = targetDoc.createElement('div');
@@ -76,8 +74,9 @@ def inject_idle_sleep(timeout_minutes: int = 10):
             }}
         }}
 
+        // --- KEY FIX: Listen to the PARENT document for activity! ---
         ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'].forEach(type => {{
-            document.addEventListener(type, updateActivity, true);
+            targetDoc.addEventListener(type, updateActivity, true);
         }});
 
         updateActivity();

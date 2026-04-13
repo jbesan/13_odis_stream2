@@ -3,17 +3,16 @@ import json
 import uuid
 import time
 from datetime import datetime, timezone
-try:
+import sys
+if sys.version_info >= (3, 9):
     import zoneinfo
-except ImportError:
-    from backports import zoneinfo 
+else:
+    from backports import zoneinfo as zoneinfo # type: ignore
 import streamlit as st
-from typing import Any
-from google.cloud import bigquery
 import os
-import logging
+from google.cloud import bigquery
 from core.models import SearchCriterias, SearchResultsData
-from typing import Any
+from typing import Any, Optional, Dict, List
 
 # Use root logger for critical visibility in background threads
 logger = logging.getLogger(__name__)
@@ -49,7 +48,7 @@ def reset_interaction_id():
     st.session_state.interaction_id = str(uuid.uuid4())[:8]
     return st.session_state.interaction_id
 
-def log_event(event_name: str, payload: dict = None, interaction_id: str = None, username: str = None):
+def log_event(event_name: str, payload: Optional[dict] = None, interaction_id: Optional[str] = None, username: Optional[str] = None):
     """Logs a succint technical event to stderr (Cloud Logging)."""
     if payload is None:
         payload = {}
@@ -82,7 +81,7 @@ def _safe_json_format(obj: Any) -> Any:
         return [_safe_json_format(i) for i in obj]
     return obj
 
-def log_search_complete(config: SearchCriterias, search_results: SearchResultsData, source_flow: str = 'classic', interaction_id: str = None, username: str = None):
+def log_search_complete(config: SearchCriterias, search_results: SearchResultsData, source_flow: str = 'classic', interaction_id: Optional[str] = None, username: Optional[str] = None):
     """
     Consolidated logging of a search event directly to BigQuery search_events table.
     """

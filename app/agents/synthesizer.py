@@ -6,6 +6,10 @@ from .agent_config import get_model
 
 logger = logging.getLogger("synthesizer_agent")
 
+class SynthesizerResult(BaseModel):
+    """Structured output for the ODIS Synthesizer."""
+    response: str = Field(..., description="La synthèse finale ou réponse argumentée pour le travailleur social.")
+
 # --- Synthesis Logic ---
 
 SYNTH_SYSTEM_PROMPT_ANALYSIS = """
@@ -21,13 +25,13 @@ SYNTH_SYSTEM_PROMPT_ANALYSIS = """
 1. Fais une synthèse structurée, argumentée et détaillée pour le Travailleur Social qui soit factuelle, actionnable et ultra-convaincante en FRANÇAIS.
     - Utilise les **DONNÉES CHIFFRÉES** (scores, points forts ODIS). Exprime les scores en pourcentage (80% plutôt que 0.8)
     - N'utilise JAMAIS les codes normatifs sans les intitulés.
-    - N'invente rien, utilise uniquement les éléments des Experts. Mets en gras les éléments importants.
+    - N'invente rien, utilise uniquement les éléments du brief et des experts. Mets en gras les éléments importants.
     - Sois le plus factuel possible et cite toujours le nom des entités identifiées (associations, entreprises, lieux etc.)
     - Longueur synthèse: minimum 750 mots, idéal 1000 mots. Utilise des listes à puces ou tableaux dès que pertinents.
 2. Structure ta réponse au format Markdown avec les sections suivantes :
     - ## 🏙️ Aperçu de `Ville analysée` : 3 à 5 phrases de description.
-    - ## ⚖️ Analyse comparative entre `Ville analysée` et `Ville actuelle` :
-        - Identifie les **3 à 5 points chiffrés les plus déterminants** en faveur de `Ville analysée` (ex: loyer plus bas, meilleures écoles, plus d'opportunités d'emploi spécifiques).
+    - ## ⚖️ Mini analyse comparative entre `Ville analysée` et `Ville actuelle` :
+        - Identifie et résume en quelques mots les **3 à 5 points chiffrés les plus déterminants** en faveur de `Ville analysée` (ex: loyer plus bas, meilleures écoles, plus d'opportunités d'emploi spécifiques).
     - ## 🧭 Synthèse thématique :
         - **Vie Quotidienne** : Synthèse (Logement, mobilité sur place, éducation, santé, affinités culturelles, sports, loisirs etc.)
         - **Inclusion** : Synthèse (associations, solidarité, insertion)
@@ -56,7 +60,7 @@ SYNTH_SYSTEM_PROMPT_SPECIFIC = """
 synthesizer_agent = Agent(
     get_model("synthesizer"),
     deps_type=ODISDeps,
-    output_type=str
+    output_type=SynthesizerResult
 )
 
 @synthesizer_agent.system_prompt
@@ -82,7 +86,7 @@ async def synth_instructions(ctx: RunContext[ODISDeps]) -> str:
     )
 
     logger.info(f"💎 [SYNTHESIZER-PROMPT] Mode: {mode}. Template: {'SPECIFIC' if mode == 'specific_ask' else 'ANALYSIS'}")
-    logger.debug(f"💎 [SYNTHESIZER-CONTEXT-SIZE] {len(prompt)} chars")
+    logger.info(f"💎 [SYNTHESIZER-CONTEXT-SIZE] {len(prompt)} chars")
     logger.debug(f"💎 [SYNTHESIZER-FULL-PROMPT-DUMP]\n{prompt}\n--- END DUMP ---")
 
     return prompt

@@ -66,7 +66,7 @@ class RNARagService:
             logger.error(f"Embedding generation failed: {e}")
             raise
 
-    def get_associations_semantic(self, query: str, codgeos: List[str] = None, bv_code: str = None, top_k: int = 10, inclusion_only: bool = True, threshold: float = 0.8) -> List[Dict[str, Any]]:
+    def get_associations_semantic(self, query: str, codgeos: Optional[List[str]] = None, bv_code: Optional[str] = None, top_k: int = 10, inclusion_only: bool = True, threshold: float = 0.8) -> List[Dict[str, Any]]:
         """
         Performs semantic lookup for associations in a specific commune or Bassin de Vie.
         Fetches vectors from BQ, computes similarity locally.
@@ -117,7 +117,7 @@ class RNARagService:
                 {"AND is_inclusion_relevant = TRUE" if inclusion_only else ""}
             """
             
-            params = [
+            params: List[bigquery.query.ArrayQueryParameter | bigquery.query.ScalarQueryParameter] = [
                 bigquery.ArrayQueryParameter("allowed_prefixes", "STRING", cfg.WALDEC_CATEGORIES)
             ]
             if bv_code:
