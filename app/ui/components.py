@@ -20,6 +20,25 @@ def inject_custom_css() -> None:
             }
             /* Custom styling for specific buttons if needed */
             .st-key-btn_recommencer .stButton p {color: white;}
+            
+            /* Org Badge Styling */
+            .org-badge {
+                padding: 10px;
+                border-radius: 8px;
+                background-color: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                margin-top: 20px;
+                text-align: center;
+            }
+            .org-name {
+                font-weight: bold;
+                font-size: 0.9em;
+                display: block;
+            }
+            .org-status {
+                font-size: 0.75em;
+                color: #888;
+            }
         </style>
     """, unsafe_allow_html=True)
 
@@ -50,3 +69,17 @@ def get_person_accompanied_str() -> str:
     if st.session_state.get('ui_nom'):
         return f"de {st.session_state.ui_nom}"
     return "de la personne accompagnée"
+
+def render_org_badge() -> None:
+    """Renders a subtle organization badge in the sidebar."""
+    import config as cfg
+    org_id = st.session_state.get('ui_org_context')
+    if not org_id:
+        return
+        
+    profile = cfg.ORGANIZATION_PROFILES.get(org_id)
+    if profile:
+        # st.text('Hello')
+        st.sidebar.info(f"Mode | {profile['name']}")#, color="blue", width="stretch")
+
+

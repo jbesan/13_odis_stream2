@@ -72,7 +72,7 @@ def polling_synthesis_fragment(task_key: str, nom: str, codgeo: str, search_crit
         st.error(f"Erreur d'analyse : {status_data.get('error')}")
         if st.button("Réessayer"):
             del st.session_state.odis_bg_store[task_key]
-            st.rerun(scope="fragment")
+            st.rerun()
     elif status_data.get("status") == "done":
         _merge_agent_results(status_data.get("result"), codgeo, commune)
         
@@ -80,7 +80,7 @@ def polling_synthesis_fragment(task_key: str, nom: str, codgeo: str, search_crit
         if not commune.odis_synthesis:
             commune.odis_synthesis = [{"role": "assistant", "content": "⚠️ *Synthèse introuvable ou erreur de génération.*"}]
             
-        st.rerun() # Full rerun to let parent draw the chat history
+        st.rerun(scope="app") # Full rerun to let parent draw the chat history
 
 @st.fragment(run_every=2.0)
 def polling_chat_fragment(task_key: str, chat_task_key: str, codgeo: str, commune: CommuneResult):
@@ -90,11 +90,11 @@ def polling_chat_fragment(task_key: str, chat_task_key: str, codgeo: str, commun
     if status_data and status_data.get("status") == "done":
         _merge_agent_results(status_data.get("result"), codgeo, commune)
         del st.session_state[chat_task_key]
-        st.rerun() # Full rerun because the chat container belongs to the parent!
+        st.rerun(scope="app") # Full rerun because the chat container belongs to the parent!
     elif status_data and status_data.get("status") == "error":
         st.error(f"Erreur de l'agent : {status_data.get('error')}")
         del st.session_state[chat_task_key]
-        st.rerun()
+        st.rerun(scope="app")
     else:
         with st.chat_message("assistant"):
             st.write("✨ _Recherche de la réponse en cours (Job Hunter / Scouts)..._")
@@ -114,7 +114,7 @@ def polling_associations_fragment(commune: CommuneResult, h: Optional[str]):
                 inc_data.asso_refugee_count = len(inc_data.asso_refugee_list)
                 inc_data.asso_inclusion_list_by_cat = enrich_data.get('inclusion', {})
                 inc_data.asso_inclusion_count = sum(len(l) for l in inc_data.asso_inclusion_list_by_cat.values())
-                st.rerun(scope="fragment")
+                st.rerun()
 
     if inc_data.asso_inclusion_count > 0:
         st.info(f"**{inc_data.asso_inclusion_count} associations** actives identifiées dans le bassin de vie.")
@@ -198,7 +198,7 @@ def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
             # Note: the actual graph run will return the full history including this message
             launch_background_city_analysis(nom, codgeo, search_criterias, results, h, messages=history + [{"role": "user", "content": question}])
             st.session_state[chat_task_key] = True 
-            st.rerun(scope="fragment")
+            st.rerun()
 
         # Shared Polling Fragment for Follow-up Chat
         if st.session_state.get(chat_task_key):
@@ -257,7 +257,7 @@ def ai_pitch_container(main_code: str, h: Optional[str]):
                     # Also update current_geo if needed
                     if st.session_state.search_results.current_geo and st.session_state.search_results.current_geo.codgeo == main_code:
                          st.session_state.search_results.current_geo.scorer_pitch = pitch_for_city
-                    st.rerun(scope="fragment")
+                    st.rerun()
             st.markdown(pitch_for_city)
         elif isinstance(scorer_res, dict) and "pitches_error" in scorer_res:
             pass # Keep silent or handle gracefully
@@ -267,7 +267,7 @@ def ai_pitch_container(main_code: str, h: Optional[str]):
                  c = st.session_state.search_results.get_by_code(main_code)
                  if c and not c.scorer_pitch:
                      c.scorer_pitch = "Aucun point fort spécifique généré pour cette commune."
-                     st.rerun(scope="fragment")
+                     st.rerun()
 
 def sync_background_data(commune: CommuneResult, h: Optional[str]):
     """

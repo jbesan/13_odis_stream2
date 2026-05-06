@@ -265,5 +265,5 @@ _(Most features omitted for brevity. Appending F-42)_
 * **Organization Badge**: A visual indicator (badge) in the bottom-center of the sidebar to confirm the active organization context (e.g., "Mode : J'Accueille").
 
 ### 📊 Status
-- In Progress
+- **April 2026**: Done. Implementation includes dynamic preamble page, organization badge, and scoring engine integration for strategic boosts.
 

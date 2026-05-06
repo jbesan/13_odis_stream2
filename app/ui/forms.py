@@ -362,77 +362,168 @@ def render_mobility_form() -> None:
     st.session_state["ui_target_population"] = mapping["mu"]
     st.session_state["ui_target_population_sigma"] = mapping["sigma"]
 
+def render_org_profile_form() -> None:
+    """Renders the organization-specific preamble component (F-54)."""
+    org_id = st.session_state.get('ui_org_context')
+    if not org_id:
+        st.info("Aucun profil d'organisation actif.")
+        return
+        
+    profile = cfg.ORGANIZATION_PROFILES.get(org_id)
+    if not profile:
+        st.error(f"Profil '{org_id}' non trouvé.")
+        return
+
+    st.subheader(f'Vous trouverez ci dessous les paramètres spécifiques pour {profile['name']} :')
+    
+    # st.divider()
+    
+    # --- Strategic Locations Multi-select ---
+    app_data = get_app_data()
+    zone_type = profile['zone_type']
+    
+    if zone_type == 'departement':
+        label = "Départements"
+        options = app_data['coddep_set']
+        dept_details = app_data.get('dept_details', {})
+        def format_func(x):
+            return f"{x} - {dept_details.get(x, {}).get('label', x)}"
+    else:
+        # Bassin de vie
+        label = "Bassins de vie"
+        odis = app_data['odis']
+        options = sorted(odis['bassin_de_vie'].unique().tolist())
+        bv_names = odis.groupby('bassin_de_vie')['libelle_bassin_de_vie'].first().to_dict()
+        def format_func(x):
+            return f"{x} - {bv_names.get(x, x)}"
+
+    
+    # Pre-fill with current session state or profile defaults
+    current_selection = st.session_state.get('ui_org_strategic_locations', profile['default_zones'])
+    
+    # Ensure all current selections are in options (safety)
+    valid_selection = [x for x in current_selection if x in options]
+    
+    selected_zones = st.multiselect(
+        f"**Zones d'intérêt stratégique ({label})**",
+        options=options,
+        default=valid_selection,
+        format_func=format_func,
+        key="ui_org_strategic_locations_multiselect",
+        help="Les communes situées dans ces zones recevront un bonus dans le score final."
+    )
+    
+    # Update the actual session state used by scoring
+    st.session_state['ui_org_strategic_locations'] = selected_zones
+    
+    # st.markdown("---")
+    # st.caption("Vous pouvez modifier ces paramètres manuellement dans les autres onglets si nécessaire.")
+
 def render_weight_profile_form() -> None:
     """Renders the UI for selecting the weighting profile and expert weights adjustment."""
     def _update_weights_from_profile():
         profile = st.session_state.ui_weight_profile
-        if profile in cfg.WEIGHT_PROFILES:
+        if profile == "Profil personnalisé":
+            st.session_state.ui_expert_weights = True
+        elif profile in cfg.WEIGHT_PROFILES:
+            st.session_state.ui_expert_weights = False
             weights = cfg.WEIGHT_PROFILES[profile]
             for key, value in weights.items():
                 st.session_state[f"ui_{key}"] = value
         
         st.session_state['processed_gdf'] = None
+        st.session_state['search_results'] = None
 
-    weight_profiles = list(cfg.WEIGHT_PROFILES.keys())
+    weight_profiles = list(cfg.WEIGHT_PROFILES.keys()) + ["Profil personnalisé"]
     if "ui_weight_profile" not in st.session_state or st.session_state["ui_weight_profile"] not in weight_profiles:
         st.session_state["ui_weight_profile"] = weight_profiles[0]
 
-    st.text('Pour améliorer la pertinence des résultats de la recherche, vous pouvez ajuster les poids des différentes catégories de critères de recherche en utilisant soit un profil pré-défini (recommandé) soit une pondération sur-mesure.')
+    if "ui_expert_weights" not in st.session_state:
+        st.session_state.ui_expert_weights = (st.session_state["ui_weight_profile"] == "Profil personnalisé")
+
+    st.text('Pour améliorer la pertinence des résultats de la recherche, vous pouvez ajuster les poids des différentes catégories de critères de recherche en utilisant soit un profil de pondération (recommandé) soit une pondération sur-mesure.')
 
     col1, col2 = st.columns(2)
     with col1:
         st.selectbox(
-            "Profils prédéfinis",
+            "Profil de pondération",
             options=weight_profiles,
             key="ui_weight_profile",
             on_change=_update_weights_from_profile
         )
-        st.toggle("Profil personalisé", key="ui_expert_weights", value=False)
     
     def _invalidate_results():
         st.session_state['processed_gdf'] = None
         st.session_state['search_results'] = None
 
     with col2:
-        for p_key in ["ui_poids_education", "ui_poids_emploi", "ui_poids_logement", "ui_poids_inclusion", "ui_poids_sante", "ui_poids_mobilite"]:
+        weight_keys = ["ui_poids_education", "ui_poids_emploi", "ui_poids_logement", "ui_poids_inclusion", "ui_poids_sante", "ui_poids_mobilite"]
+        
+        # Add Territory weight if org context is present
+        org_context = st.session_state.get('ui_org_context')
+        if org_context:
+            weight_keys.append("ui_poids_territoire")
+
+        for p_key in weight_keys:
             if p_key not in st.session_state:
                 st.session_state[p_key] = 0.5
 
         format_pct = lambda x: f"{int(x*100)}%"
         
+        sliders_disabled = not st.session_state.get('ui_expert_weights', False)
+
         st.select_slider("Education", cfg.POIDS_OPTIONS, 
                         format_func=format_pct,
-                        disabled=not st.session_state.get('ui_expert_weights'),
+                        disabled=sliders_disabled,
                         key="ui_poids_education", on_change=_invalidate_results)
         st.select_slider("Projet Pro", cfg.POIDS_OPTIONS, 
                         format_func=format_pct,
-                        disabled=not st.session_state.get('ui_expert_weights'),
+                        disabled=sliders_disabled,
                         key="ui_poids_emploi", on_change=_invalidate_results)
         st.select_slider("Logement", cfg.POIDS_OPTIONS, 
                         format_func=format_pct,
-                        disabled=not st.session_state.get('ui_expert_weights'),
+                        disabled=sliders_disabled,
                         key="ui_poids_logement", on_change=_invalidate_results)
         st.select_slider("Inclusion", cfg.POIDS_OPTIONS, 
                         format_func=format_pct,
-                        disabled=not st.session_state.get('ui_expert_weights'),
+                        disabled=sliders_disabled,
                         key="ui_poids_inclusion", on_change=_invalidate_results)
         st.select_slider("Santé", cfg.POIDS_OPTIONS, 
                         format_func=format_pct,
-                        disabled=not st.session_state.get('ui_expert_weights'),
+                        disabled=sliders_disabled,
                         key="ui_poids_sante", on_change=_invalidate_results)
         st.select_slider("Mobilité", cfg.POIDS_OPTIONS, 
                         format_func=format_pct,
-                        disabled=not st.session_state.get('ui_expert_weights'),
+                        disabled=sliders_disabled,
                         key="ui_poids_mobilite", on_change=_invalidate_results)
+        
+        if org_context:
+            st.select_slider("Territoire", cfg.POIDS_OPTIONS,
+                            format_func=format_pct,
+                            disabled=sliders_disabled,
+                            key="ui_poids_territoire", on_change=_invalidate_results)
 
 def display_input_tabs() -> None:
     """Displays the main tabs for user input, composed of modular rendering functions."""
     inject_custom_css()
     
-    tab_localisation, tab_foyer, tab_edu, tab_emploi, tab_logement, tab_sante, tab_autres, tab_notes, tab_profile = st.tabs([
-        'Localisation', 'Situation familiale', 'Education', 'Projet Professionnel', 'Logement', 'Santé', 'Inclusion', 'Autres', 'Profil'
-    ])
-    with tab_localisation:
+    tab_names = ['Localisation', 'Situation familiale', 'Education', 'Projet Professionnel', 'Logement', 'Santé', 'Inclusion', 'Autres', 'Profil']
+    
+    org_id = st.session_state.get('ui_org_context')
+    if org_id:
+        profile = cfg.ORGANIZATION_PROFILES.get(org_id)
+        if profile:
+            tab_names.insert(0, profile['name'])
+    
+    tabs = st.tabs(tab_names)
+    
+    current_tab_idx = 0
+    if org_id:
+        with tabs[current_tab_idx]:
+            render_org_profile_form()
+        current_tab_idx += 1
+        
+    with tabs[current_tab_idx]:
         col1, col2 = st.columns([1, 2])
         with col1:
             st.markdown("**Localisation actuelle**")
@@ -440,21 +531,37 @@ def display_input_tabs() -> None:
         with col2:
             st.markdown("**Zone de recherche**")
             render_mobility_form()
-    with tab_foyer:
+    current_tab_idx += 1
+    
+    with tabs[current_tab_idx]:
         render_family_form()
-    with tab_edu:
+    current_tab_idx += 1
+    
+    with tabs[current_tab_idx]:
         render_education_form()
-    with tab_emploi:
+    current_tab_idx += 1
+    
+    with tabs[current_tab_idx]:
         render_employment_form()
-    with tab_logement:
+    current_tab_idx += 1
+    
+    with tabs[current_tab_idx]:
         render_housing_form()
-    with tab_sante:
+    current_tab_idx += 1
+    
+    with tabs[current_tab_idx]:
         render_health_form()
-    with tab_autres:
+    current_tab_idx += 1
+    
+    with tabs[current_tab_idx]:
         render_other_needs_form()
-    with tab_notes:
+    current_tab_idx += 1
+    
+    with tabs[current_tab_idx]:
         render_other_notes_form()
-    with tab_profile:
+    current_tab_idx += 1
+    
+    with tabs[current_tab_idx]:
         render_weight_profile_form()
 
 def create_search_criterias_from_inputs() -> SearchCriterias:
@@ -659,5 +766,11 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
         inc_services_core_selection=[],
         inc_services_add_selection=inc_services_mapped,
         inc_asso_add_selection=inc_assos_mapped,
-        notes_qualitatives=[st.session_state.get('ui_notes_qualitatives', "")] if st.session_state.get('ui_notes_qualitatives') else []
+        notes_qualitatives=[st.session_state.get('ui_notes_qualitatives', "")] if st.session_state.get('ui_notes_qualitatives') else [],
+        
+        # Org Specifics
+        org_context=st.session_state.get('ui_org_context'),
+        org_strategic_locations=st.session_state.get('ui_org_strategic_locations', []),
+        org_strategic_locations_type=st.session_state.get('ui_org_strategic_locations_type', 'departement'),
+        poids_territoire=st.session_state.get('ui_poids_territoire', 0.5)
     )

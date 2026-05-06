@@ -123,8 +123,8 @@ scores:
     max_bound: null
     quantile_level: 0.05
 
-  - id: inc_pol_scaled
-    category: inclusion
+  - id: ter_pol_scaled
+    category: territoire
     source_metric: pol_num
     bdv_factor: 0.0
     computation: precomputed
@@ -139,10 +139,10 @@ scores:
     weight: 1.0
     min_bound: 0.0
     max_bound: 1.0
-  - id: inc_population_scaled
-    category: inclusion
+  - id: ter_population_scaled
+    category: territoire
     source_metric: population
-    bdv_factor: -0.5
+    bdv_factor: -0.8
     computation: live
     display:
       name: Population de la commune
@@ -661,6 +661,23 @@ scores:
       unit: ""
       display_factor: 1
       tooltip: Au moins un accueillant actif dans le bassin de vie (Source J'Accueille)
+    weight: 3.0
+    min_bound: 0.0
+    max_bound: 1.0
+
+  - id: ter_strategic_locations_scaled
+    category: territoire
+    source_metric: ter_strategic_locations_scaled
+    bdv_factor: 0.0
+    computation: live
+    display:
+      name: Zone Stratégique Partenaire
+      strong_point_text: Zone d'action privilégiée de l'organisation
+      high_value_adjective: oui
+      show: true
+      unit: ""
+      display_factor: 1
+      tooltip: Commune située dans une zone stratégique pour l'organisation
     weight: 3.0
     min_bound: 0.0
     max_bound: 1.0

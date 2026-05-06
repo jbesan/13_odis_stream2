@@ -38,6 +38,7 @@ Ce prototype a un triple objectif :
 - **Grounding Google Search :** Grâce à l'agent spécialisé WEB, accédez aux dernières actualités locales et au contexte social des communes visées.
 - **Moteur de Recherche RAG (RNA) :** Recherche sémantique et thématique sur l'ensemble du Répertoire National des Associations (RNA) via BigQuery et Vertex AI, permettant de classer les associations par catégories d'inclusion (FLE, Logement, Emploi, etc.) ou des recherches spécifiques (intégration des personnes réfugiées).
 - **Accueils Citoyens (J'Accueille) :** Intégration de la base de données de l'association J'Accueille pour valoriser les bassins de vie disposant déjà d'un réseau d'hébergement citoyen actif. (Données Mars 2026).
+- **Profils Partenaires & Zones Stratégiques :** Support de contextes d'organisations spécifiques (via `?org=`) permettant de pré-configurer l'outil (pondérations, zones prioritaires) tout en laissant le contrôle final à l'utilisateur.
 
 ## 📸 Aperçu de l'Application
 

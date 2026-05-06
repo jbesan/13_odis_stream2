@@ -1,7 +1,7 @@
 import warnings
 import os
 from dataclasses import dataclass
-from typing import List, Dict, Any, Union, Optional
+from typing import List, Dict, Any, Union, Optional, TypedDict, Literal
 
 # Suppress annoying warnings from third-party libraries (especially in Python 3.14+)
 warnings.filterwarnings("ignore", module="langchain_core.*")
@@ -94,27 +94,55 @@ DEFAULT_SIGMA = 25000
 WEIGHT_PROFILES = {
     "Équilibré": {
         "poids_emploi": 0.5, "poids_logement": 0.5, "poids_education": 0.5,
-        "poids_inclusion": 0.5, "poids_sante": 0.5, "poids_mobilite": 0.5
+        "poids_inclusion": 0.5, "poids_sante": 0.5, "poids_mobilite": 0.5, "poids_territoire": 0.5
     },
     "Famille": {
         "poids_emploi": 0.25, "poids_logement": 1.0, "poids_education": 1.0,
-        "poids_inclusion": 0.25, "poids_sante": 0.5, "poids_mobilite": 0.5
+        "poids_inclusion": 0.25, "poids_sante": 0.5, "poids_mobilite": 0.5, "poids_territoire": 0.25
     },
-    "Célibataire / Actif": {
-        "poids_emploi": 1.0, "poids_logement": 0.25, "poids_education": 0.25,
-        "poids_inclusion": 0.25, "poids_sante": 0.25, "poids_mobilite": 1.0
+    "Santé": {
+        "poids_emploi": 0.25, "poids_logement": 0.75, "poids_education": 0.0,
+        "poids_inclusion": 0.75, "poids_sante": 1.0, "poids_mobilite": 0.75, "poids_territoire": 0.75
     },
-    "Précaire": {
-        "poids_emploi": 0.5, "poids_logement": 0.75, "poids_education": 0.25,
-        "poids_inclusion": 1.0, "poids_sante": 0.5, "poids_mobilite": 0.75
-    },
-    "Sénior": {
-        "poids_emploi": 0.0, "poids_logement": 0.75, "poids_education": 0.0,
-        "poids_inclusion": 0.75, "poids_sante": 1.0, "poids_mobilite": 0.75
-    },
-    "Economique": {
+    "Économique": {
         "poids_emploi": 1.0, "poids_logement": 0.75, "poids_education": 0.25,
-        "poids_inclusion": 0.5, "poids_sante": 0.25, "poids_mobilite": 0.25
+        "poids_inclusion": 0.5, "poids_sante": 0.25, "poids_mobilite": 0.25, "poids_territoire": 0.5
+    }
+}
+
+# --- Organization Profiles (F-54) ---
+class OrgProfile(TypedDict):
+    name: str
+    description: str
+    zone_type: Literal["departement", "bassin_de_vie"]
+    default_zones: List[str]
+    defaults: Dict[str, Any]
+
+ORGANIZATION_PROFILES: Dict[str, OrgProfile] = {
+    "jaccueille": {
+        "name": "J'Accueille",
+        "description": "J'Accueille est un programme de cohabitation solidaire qui met en relation des personnes réfugiées à la recherche d'un logement et des particuliers disposant d'une chambre libre.",
+        "zone_type": "departement",
+        "default_zones": [
+            "01", "13", "22", "26", "30", "31", "33", "34", "35", "37", 
+            "38", "40", "42", "44", "64", "69", "72", "75", "76", "77", 
+            "78", "81", "91", "92", "93", "94", "95"
+        ],
+        "defaults": {
+            "hebergement_cible": ["Chez l'habitant"],
+            "poids_logement": 1.0,
+            "poids_territoire": 1.0
+        }
+    },
+    "emile_aura": {
+        "name": "EMILE Auvergne-Rhône-Alpes",
+        "description": "EMILE est un programme d’accompagnement renforcé à la mobilité géographique qui permet aux personnes en précarité de logement, volontaires et résidant en zones tendues, d’accéder à l’emploi et au logement dans un nouveau territoire d’accueil.",
+        "zone_type": "departement",
+        "default_zones": [
+            "01", "03","15","69"
+        ],
+        "defaults": {
+        }
     }
 }
 
@@ -161,7 +189,8 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     'poids_education': 0.5,
     'poids_inclusion': 0.5,
     'poids_mobilite': 0.5,
-    'poids_sante': 0.5, # Added default weight for sante
+    'poids_sante': 0.5,
+    'poids_territoire': 0.5,
     'departement_actuel': '33',
     'commune_actuelle': 'Bordeaux',
     'loc_search_area': 'departement',
@@ -184,7 +213,10 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     'notes_qualitatives': "",
     'freq_retour': '1 fois/mois',
     'target_population': DEFAULT_MU,
-    'target_population_sigma': DEFAULT_SIGMA
+    'target_population_sigma': DEFAULT_SIGMA,
+    'org_context': None,
+    'org_strategic_locations': [],
+    'org_strategic_locations_type': 'departement',
 }
 
 
@@ -197,7 +229,6 @@ DEMO_SCENARIOS = {
         'hebergement_cible': ["Chez l'habitant"],
         'nb_adultes': 1,
         'nb_enfants': 0,
-        'poids_mobilite': 0.5,
         'weight_profile': 'Équilibré',
         'notes_qualitatives': "Zacharie est un jeune homme dynamique."
     },
@@ -223,7 +254,7 @@ DEMO_SCENARIOS = {
         'nb_adultes': 1,
         'nb_enfants': 2,
         'commune_actuelle': 'Marseille',
-        'hebergement_cible': ["Location avec Intermédiation"],
+        'hebergement_cible': ["Location avec Intermédiation", "Chez l'habitant"],
         'logement': "Logement Social",
         'departement_actuel': '13',
         'freq_retour': '1 fois/an',
@@ -245,7 +276,7 @@ DEMO_SCENARIOS = {
         'freq_retour': '1 fois/an',
         'loc_search_area': 'departement',
         'loc_search_code': ['17', '33', '40'],
-        'hebergement_cible': ["Location avec Intermédiation", "Chez l'habitant"],
+        'hebergement_cible': ["Location avec Intermédiation"],
         'logement': 'Location',
         'type_logement': 'appt_all',
         'classe_enfants': ['Elémentaire'],
@@ -272,13 +303,13 @@ DEMO_SCENARIOS = {
         'freq_retour': '1 fois/an',
         'loc_search_area': 'departement',
         'loc_search_code': ['15', '03', '01', '69'],
-        'hebergement_cible': ["Location avec Intermédiation", "Chez l'habitant"],
+        'hebergement_cible': ["Location avec Intermédiation"],
         'logement': 'Logement Social',
         'type_logement': 'appt_all',
         'classe_enfants': ['Maternelle', 'Elémentaire'],
         'inc_services_add_selection': DEFAULT_INC_SERVICES_CORE + ['lecture-ecriture-calcul--maitriser-le-francais'],
         'inc_asso_add_selection': ['011075'],
-        'weight_profile': 'Expert',
+        'weight_profile': 'Profil personnalisé',
         'poids_emploi': 1.0,
         'poids_logement': 1.0,
         'poids_education': 0.5,

@@ -108,8 +108,8 @@ class TestScoringLogic:
         df_with_dist['taux_couverture'] = 50.0
         df_with_dist['met_scaled'] = 0.5
         df_with_dist['log_vac_scaled'] = 0.5
-        df_with_dist['inc_population_scaled'] = 0.5
-        df_with_dist['inc_pol_scaled'] = 0.5
+        df_with_dist['ter_population_scaled'] = 0.5
+        df_with_dist['ter_pol_scaled'] = 0.5
         df_with_dist['log_occup_scaled'] = 0.5
         df_with_dist['log_soc_inoc_scaled'] = 0.5
         df_with_dist['edu_classes_ferm_scaled'] = 0.5
@@ -134,7 +134,7 @@ class TestScoringLogic:
             'met_match_adult1_scaled', 
             'met_match_adult1_tension_scaled',
             'log_vac_scaled', 
-            'inc_population_scaled',
+            'ter_population_scaled',
             'inc_services_incl_scaled',
             'inc_asso_core_scaled',
             'inc_asso_add_scaled',
@@ -178,9 +178,9 @@ class TestScoringLogic:
         df_with_dist['log_vac_scaled'] = 0.5
         df_with_dist['edu_maternelle_scaled'] = 0.5 # Needed for partial selection test
         df_with_dist['edu_classes_ferm_scaled'] = 0.5
-        df_with_dist['inc_population_scaled'] = 0.5
-        df_with_dist['inc_population_scaled'] = 0.5
-        df_with_dist['inc_pol_scaled'] = 0.5
+        df_with_dist['ter_population_scaled'] = 0.5
+        df_with_dist['ter_population_scaled'] = 0.5
+        df_with_dist['ter_pol_scaled'] = 0.5
         df_with_dist['inc_asso_core_scaled'] = 0.5
         default_config.codes_metiers = [['A1234']]
         scored_df = engine._compute_criteria_scores(
@@ -434,9 +434,9 @@ class TestConditionalScoring:
         df_with_dist = engine._compute_distance_score(sample_data, default_config)
         df_with_dist['met_scaled'] = 0.5
         df_with_dist['log_vac_scaled'] = 0.5
-        df_with_dist['inc_population_scaled'] = 0.5
-        df_with_dist['inc_population_scaled'] = 0.5
-        df_with_dist['inc_pol_scaled'] = 0.5
+        df_with_dist['ter_population_scaled'] = 0.5
+        df_with_dist['ter_population_scaled'] = 0.5
+        df_with_dist['ter_pol_scaled'] = 0.5
         df_with_dist['inc_asso_core_scaled'] = 0.5
         df_with_dist['be_codfap_top'] = [['A1', 'B2'], ['A1'], [], [], []]
         df_with_dist['codes_formations'] = [['F1', 'F2'], ['F1'], [], [], []]
@@ -694,8 +694,8 @@ class TestHousingScoresLogic:
             'met_scaled': [0.5, 0.5], 
             'inc_services_incl_scaled': [0.0, 0.0],
             'inc_asso_core_scaled': [0.0, 0.0],
-            'inc_population_scaled': [0.0, 0.0],
-            'inc_pol_scaled': [0.0, 0.0],
+            'ter_population_scaled': [0.0, 0.0],
+            'ter_pol_scaled': [0.0, 0.0],
             'dist_current_loc': [1000, 1000],
             'epci_code': ['1', '2'],
             'reg_code': ['75', '75'],

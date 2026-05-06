@@ -59,6 +59,35 @@ def apply_demo_data_if_present(defaults: Dict[str, Any]) -> None:
         
         st.toast(f"Mode Démo activé (Scénario {demo_id if demo_id != 'true' else 'Défaut'})", icon="ℹ️")
 
+def apply_org_data_if_present(defaults: Dict[str, Any]) -> None:
+    """Checks query params for 'org' and updates defaults with organization profile using a smart merge."""
+    query_params = st.query_params
+    if 'org' in query_params:
+        org_id = query_params['org']
+        profile = cfg.ORGANIZATION_PROFILES.get(org_id)
+        
+        if profile:
+            defaults['org_context'] = org_id
+            defaults['org_strategic_locations'] = profile['default_zones']
+            defaults['org_strategic_locations_type'] = profile['zone_type']
+            
+            # Smart Merge of profile defaults (F-54 Expansion)
+            # - Lists: Union (Add partner-specific options to the global defaults)
+            # - Scalars: Override (Partner specific value takes precedence)
+            org_defaults = profile.get('defaults', {})
+            for key, val in org_defaults.items():
+                if key in defaults:
+                    if isinstance(defaults[key], list) and isinstance(val, list):
+                        # Union of lists to avoid duplicates while preserving existing defaults
+                        defaults[key] = list(set(defaults[key]) | set(val))
+                    else:
+                        # Direct override for strings, numbers, etc.
+                        defaults[key] = val
+            
+            st.toast(f"Profil Organisation activé : **{profile['name']}**", icon="🏢")
+        else:
+            logger.warning(f"Organization profile '{org_id}' not found in configuration.")
+
 def session_states_init(defaults: Dict[str, Any]) -> None:
     """Initializes session state with defaults if not already set."""
     if 'demo_data' not in st.session_state:
@@ -232,22 +261,25 @@ def apply_search_criteria_to_ui(criteria: Any) -> None:
 
 def ensure_data_initialized() -> None:
     """Ensures that the session state and datasets are initialized."""
-    # Force re-initialization IF a demo parameter is present in query string
-    # This allows Deep-linking scenarios like ?demo=3 to work even if already on the page.
-    force_demo_refresh = 'demo' in st.query_params
+    # Force re-initialization IF a demo or org parameter is present in query string
+    # This allows Deep-linking scenarios like ?org=jaccueille to work even if already on the page.
+    force_refresh = 'demo' in st.query_params or 'org' in st.query_params
     
-    if 'demo_data' not in st.session_state or force_demo_refresh:
+    if 'demo_data' not in st.session_state or force_refresh:
         defaults = copy.deepcopy(cfg.DEMO_DATA_DEFAULT)
-        # Only overwrite defaults if demo is in query params
+        # Apply org profile if present
+        apply_org_data_if_present(defaults)
+        # Apply demo scenario if present (Demos override/supplement orgs)
         apply_demo_data_if_present(defaults)
+        
         st.session_state['demo_data'] = defaults
         
     # Always ensure session states are initialized if missing
     session_states_init(st.session_state['demo_data'])
     
-    # If we just loaded a demo, or on first run, we dispatch the model to the UI
+    # If we just loaded a demo/org, or on first run, we dispatch the model to the UI
     # This is the "Model-First" injection point.
-    if force_demo_refresh:
+    if force_refresh:
         from core.models import SearchCriterias
         try:
             # We use SearchCriterias to benefit from its validators (strings -> CriteriaItems)

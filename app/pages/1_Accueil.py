@@ -4,6 +4,7 @@ import config as cfg
 import logging
 from ui import components as ui
 from utils import memory, auth, data_loader
+from utils import common as utils
 from agents.utils import run_async_safe
 
 
@@ -28,12 +29,21 @@ logging.info(f"--- App re-run at {time.ctime(time.time())} ---")
 # --- Main App Execution ---
 data_loader.ensure_data_initialized()
 
-# --- Demo Mode ---
-if len(st.query_params) > 0 and 'demo' in st.query_params:
-    with st.sidebar:
+# --- Sidebar / Org Context ---
+with st.sidebar:
+    if len(st.query_params) > 0 and 'demo' in st.query_params:
         if st.button('Quitter Mode Démo', key='quit_demo'):
             st.query_params.clear()
             st.rerun()
+            
+    # Always show logo and badge in sidebar if org is active
+    if st.session_state.get('ui_org_context'):
+        logo_path = utils.get_asset_path('logo-jaccueille-singa.png')
+        logo_b64 = utils.get_base64_image(logo_path)
+        if logo_b64:
+            st.markdown(f'<img src="data:image/png;base64,{logo_b64}" width="150" style="margin-bottom: 20px;">', unsafe_allow_html=True)
+        
+        ui.render_org_badge()
 
 # --- CSS / Styling (V3 Global Green) ---
 st.markdown("""
@@ -154,7 +164,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-from utils import common as utils
 
 # --- Header Section (With Included Base64 Logo) ---
 logo_path = utils.get_asset_path('logo-jaccueille-singa.png')
