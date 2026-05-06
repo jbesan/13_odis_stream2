@@ -374,7 +374,7 @@ def render_org_profile_form() -> None:
         st.error(f"Profil '{org_id}' non trouvé.")
         return
 
-    st.text('Vous trouverez ci dessous les paramètres spécifiques à votre organisation :')
+    st.subheader(f'Vous trouverez ci dessous les paramètres spécifiques pour {profile['name']} :')
     
     # st.divider()
     
@@ -383,12 +383,14 @@ def render_org_profile_form() -> None:
     zone_type = profile['zone_type']
     
     if zone_type == 'departement':
+        label = "Départements"
         options = app_data['coddep_set']
         dept_details = app_data.get('dept_details', {})
         def format_func(x):
             return f"{x} - {dept_details.get(x, {}).get('label', x)}"
     else:
         # Bassin de vie
+        label = "Bassins de vie"
         odis = app_data['odis']
         options = sorted(odis['bassin_de_vie'].unique().tolist())
         bv_names = odis.groupby('bassin_de_vie')['libelle_bassin_de_vie'].first().to_dict()
@@ -403,7 +405,7 @@ def render_org_profile_form() -> None:
     valid_selection = [x for x in current_selection if x in options]
     
     selected_zones = st.multiselect(
-        f"**Zones d'intérêt stratégique ({zone_type})**",
+        f"**Zones d'intérêt stratégique ({label})**",
         options=options,
         default=valid_selection,
         format_func=format_func,

@@ -60,7 +60,7 @@ def apply_demo_data_if_present(defaults: Dict[str, Any]) -> None:
         st.toast(f"Mode Démo activé (Scénario {demo_id if demo_id != 'true' else 'Défaut'})", icon="ℹ️")
 
 def apply_org_data_if_present(defaults: Dict[str, Any]) -> None:
-    """Checks query params for 'org' and updates defaults with organization profile."""
+    """Checks query params for 'org' and updates defaults with organization profile using a smart merge."""
     query_params = st.query_params
     if 'org' in query_params:
         org_id = query_params['org']
@@ -71,11 +71,18 @@ def apply_org_data_if_present(defaults: Dict[str, Any]) -> None:
             defaults['org_strategic_locations'] = profile['default_zones']
             defaults['org_strategic_locations_type'] = profile['zone_type']
             
-            # Apply weights from profile
-            if 'weights' in profile:
-                for w_key, w_val in profile['weights'].items():
-                    if w_key in defaults:
-                        defaults[w_key] = w_val
+            # Smart Merge of profile defaults (F-54 Expansion)
+            # - Lists: Union (Add partner-specific options to the global defaults)
+            # - Scalars: Override (Partner specific value takes precedence)
+            org_defaults = profile.get('defaults', {})
+            for key, val in org_defaults.items():
+                if key in defaults:
+                    if isinstance(defaults[key], list) and isinstance(val, list):
+                        # Union of lists to avoid duplicates while preserving existing defaults
+                        defaults[key] = list(set(defaults[key]) | set(val))
+                    else:
+                        # Direct override for strings, numbers, etc.
+                        defaults[key] = val
             
             st.toast(f"Profil Organisation activé : **{profile['name']}**", icon="🏢")
         else:

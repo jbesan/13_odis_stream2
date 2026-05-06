@@ -142,7 +142,7 @@ scores:
   - id: ter_population_scaled
     category: territoire
     source_metric: population
-    bdv_factor: -0.5
+    bdv_factor: -0.8
     computation: live
     display:
       name: Population de la commune
@@ -677,7 +677,7 @@ scores:
       show: true
       unit: ""
       display_factor: 1
-      tooltip: Commune située dans une zone de partenariat stratégique
+      tooltip: Commune située dans une zone stratégique pour l'organisation
     weight: 3.0
     min_bound: 0.0
     max_bound: 1.0

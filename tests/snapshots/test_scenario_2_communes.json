@@ -1,7 +1,7 @@
 [
     {
         "codgeo": "93010",
-        "inc_pol_scaled": 0.5,
+        "ter_pol_scaled": 0.5,
         "log_vac_scaled": 0.3231255114078522,
         "youth_growth_rate": -0.06275048106908798,
         "dep_code": "93",
@@ -136,8 +136,8 @@
         "mob_trans_pub_density_scaled": 0.09079731391279675,
         "mob_epci_scaled": 1.0,
         "sante_structures_scaled": 1.0,
-        "inc_population_scaled": 0.4967274664360134,
-        "inc_population_scaled_bdv": 0.0,
+        "ter_population_scaled": 0.4967274664360134,
+        "ter_population_scaled_bdv": 0.0,
         "key": [
             "sante--acces-aux-soins",
             "trouver-un-emploi--repondre-a-des-offres-demploi",
@@ -177,7 +177,7 @@
     },
     {
         "codgeo": "93072",
-        "inc_pol_scaled": 0.5,
+        "ter_pol_scaled": 0.5,
         "log_vac_scaled": 0.45230937004089355,
         "youth_growth_rate": 0.02689982019364834,
         "dep_code": "93",
@@ -308,8 +308,8 @@
         "mob_trans_pub_density_scaled": 0.08249690636601127,
         "mob_epci_scaled": 1.0,
         "sante_structures_scaled": 1.0,
-        "inc_population_scaled": 0.4309006350610601,
-        "inc_population_scaled_bdv": 0.0,
+        "ter_population_scaled": 0.4309006350610601,
+        "ter_population_scaled_bdv": 0.0,
         "key": [
             "sante--acces-aux-soins",
             "trouver-un-emploi--repondre-a-des-offres-demploi",
@@ -350,7 +350,7 @@
     },
     {
         "codgeo": "94081",
-        "inc_pol_scaled": 0.5,
+        "ter_pol_scaled": 0.5,
         "log_vac_scaled": 0.3167690336704254,
         "youth_growth_rate": -0.05859196186065674,
         "dep_code": "94",
@@ -483,8 +483,8 @@
         "mob_trans_pub_density_scaled": 0.06994171523730223,
         "mob_epci_scaled": 1.0,
         "sante_structures_scaled": 1.0,
-        "inc_population_scaled": 0.13835233705412261,
-        "inc_population_scaled_bdv": 0.0,
+        "ter_population_scaled": 0.13835233705412261,
+        "ter_population_scaled_bdv": 0.0,
         "key": [
             "sante--acces-aux-soins",
             "trouver-un-emploi--repondre-a-des-offres-demploi",
@@ -527,7 +527,7 @@
     },
     {
         "codgeo": "93066",
-        "inc_pol_scaled": 0.5,
+        "ter_pol_scaled": 0.5,
         "log_vac_scaled": 0.7229174971580505,
         "youth_growth_rate": -0.01839100569486618,
         "dep_code": "93",
@@ -662,8 +662,8 @@
         "mob_trans_pub_density_scaled": 0.11157550094656266,
         "mob_epci_scaled": 1.0,
         "sante_structures_scaled": 1.0,
-        "inc_population_scaled": 0.02988434543439896,
-        "inc_population_scaled_bdv": 0.0,
+        "ter_population_scaled": 0.02988434543439896,
+        "ter_population_scaled_bdv": 0.0,
         "key": [
             "se-former--monter-son-dossier-de-formation",
             "sante--acces-aux-soins",
@@ -718,7 +718,7 @@
     },
     {
         "codgeo": "92073",
-        "inc_pol_scaled": 0.5,
+        "ter_pol_scaled": 0.5,
         "log_vac_scaled": 0.22732530534267426,
         "youth_growth_rate": -0.05080900341272354,
         "dep_code": "92",
@@ -851,8 +851,8 @@
         "mob_trans_pub_density_scaled": 0.08321890733574669,
         "mob_epci_scaled": 1.0,
         "sante_structures_scaled": 1.0,
-        "inc_population_scaled": 0.49850609381106487,
-        "inc_population_scaled_bdv": 0.0,
+        "ter_population_scaled": 0.49850609381106487,
+        "ter_population_scaled_bdv": 0.0,
         "key": [
             "numerique--acceder-a-des-services-en-ligne",
             "creer-une-entreprise--definir-son-projet-de-creation-dentreprise",

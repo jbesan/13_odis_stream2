@@ -82,7 +82,7 @@ def sample_scores_cat():
             'met_match_adult2_scaled', 'met_match_adult2_bdv_scaled', 'met_match_adult2_tension_scaled',
             'inc_services_core_scaled', 'inc_asso_core_scaled', 'inc_asso_add_scaled',
             'log_vac_scaled', 'log_soc_inoc_scaled', 'log_5p_scaled',
-            'edu_classes_ferm_scaled', 'inc_pol_scaled', 'inc_population_scaled',
+            'edu_classes_ferm_scaled', 'ter_pol_scaled', 'ter_population_scaled',
             'form_match_adult1_scaled', 'form_match_adult1_bdv_scaled',
             'form_match_adult2_scaled', 'form_match_adult2_bdv_scaled',
             'mob_dist_current_loc_scaled', 'mob_epci_scaled',
@@ -180,6 +180,6 @@ def global_stats():
         'edu_classes_ferm_scaled': {'min': 0.0, 'max': 0.1},
         'inc_asso_core_scaled': {'min': 0.0, 'max': 10.0},
         'inc_asso_add_scaled': {'min': 0.0, 'max': 10.0},
-        'inc_population_scaled': {'min': 0.0, 'max': 100000.0},
+        'ter_population_scaled': {'min': 0.0, 'max': 100000.0},
         'edu_petite_enfance_scaled': {'min': 0.0, 'max': 100.0},
     }

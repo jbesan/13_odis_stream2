@@ -78,15 +78,22 @@ Voici l'intégralité des 40 critères configurés dans le moteur de soring OD&I
 
 ### 🤝 Inclusion & Lien Social
 
-| Critère                     | Poids | Boost BdV | Description                                |
-| :-------------------------- | :---- | :-------- | :----------------------------------------- |
-| **Lien Social (Général)**   | 1.0   | 0.8       | Densité associative globale (RNA).         |
-| **Accompagnement Réfugiés** | 1.0   | 0.8       | Associations spécialisées (RNA).           |
-| **SIAE (Densité)**          | 1.0   | 0.8       | Présence de structures d'insertion.        |
-| **Affinités (Thématiques)** | 1.0   | 0.8       | Assos correspondant aux loisirs/intérets.  |
-| **Services Inclusion**      | 1.0   | 0.8       | Match avec les services sélectionnés.      |
-| **Population Commune**      | 3.0   | -0.5      | Score basé sur la taille de ville (Gauss). |
-| **Couleur Politique**       | 1.0   | 0.0       | Affiliation politique (Si configuré).      |
+| Critère                     | Poids | Boost BdV | Description                               |
+| :-------------------------- | :---- | :-------- | :---------------------------------------- |
+| **Lien Social (Général)**   | 1.0   | 0.8       | Densité associative globale (RNA).        |
+| **Accompagnement Réfugiés** | 1.0   | 0.8       | Associations spécialisées (RNA).          |
+| **SIAE (Densité)**          | 1.0   | 0.8       | Présence de structures d'insertion.       |
+| **Affinités (Thématiques)** | 1.0   | 0.8       | Assos correspondant aux loisirs/intérets. |
+| **Services Inclusion**      | 1.0   | 0.8       | Match avec les services sélectionnés.     |
+
+### 🗺️ Territoire
+
+| Critère                | Poids | Boost BdV | Description                                |
+| :--------------------- | :---- | :-------- | :----------------------------------------- |
+| **Population Commune** | 3.0   | -0.5      | Score basé sur la taille de ville (Gauss). |
+| **Couleur Politique**  | 1.0   | 0.0       | Affiliation politique (Si configuré).      |
+| **Zone Stratégique**   | 3.0   | 0.0       | Zone d'action privilégiée partenaire.      |
+
 
 ### 🎓 Éducation
 

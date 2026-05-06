@@ -116,9 +116,8 @@ class ScoringEngine:
         # Use cached active criteria if available
         active = config.active_criteria if config.active_criteria is not None else self._get_active_criteria(config)
 
-        # Compute for all categories
-        categories = ['emploi', 'logement', 'education', 'inclusion', 'mobilite', 'sante', 'territoire']
-        for category in categories:
+        # Compute for all categories discovered in config
+        for category in self.categories:
             # Skip if category totally irrelevant
             if category == 'education' and getattr(config, 'nb_enfants', 1) == 0: continue
             if category == 'sante' and getattr(config, 'besoin_sante', 'Aucun') == 'Aucun': continue
@@ -232,20 +231,13 @@ class ScoringEngine:
         total_weight = 0.0
         
         weights = {
-            'emploi': config.poids_emploi,
-            'logement': config.poids_logement,
-            'education': config.poids_education,
-            'inclusion': config.poids_inclusion,
-            'mobilite': config.poids_mobilite,
-            'sante': config.poids_sante,
-            'territoire': config.poids_territoire
+            cat: getattr(config, f"poids_{cat}", 0.0) for cat in self.categories
         }
         
         for cat, weight in weights.items():
             # Robust Check: Force exclusion if conditions met, even if column exists
             if cat == 'education' and config.nb_enfants == 0: continue
             if cat == 'sante' and config.besoin_sante == 'Aucun': continue
-            if cat == 'territoire' and not getattr(config, 'org_strategic_locations', []): continue
 
             # Skip if category score not computed (e.g. no children)
             col = f"{cat}_cat_score"
@@ -391,6 +383,13 @@ class ScoringEngine:
         
         # Batch cache for associations (Store for detailed results)
         self._associations_cache = {}
+        
+        # Discover and normalize categories from the scoring definitions
+        self.categories = sorted([
+            cat.replace('é', 'e').replace('ê', 'e').replace('à', 'a').lower() 
+            for cat in self.scores_cat['cat'].unique()
+        ])
+        logger.info(f"ScoringEngine initialized with categories: {self.categories}")
 
     def _get_active_criteria(self, config: Optional[SearchCriterias]) -> Set[str]:
         """Centralized logic to determine which criteria are active based on config."""
@@ -496,7 +495,7 @@ class ScoringEngine:
         # 6. Inclusion
         active.add('ter_pol_scaled')
         active.add('ter_population_scaled')
-        if config.nb_enfants > 0:
+        if nb_enfants > 0:
             active.add('ter_population_scaled')
         active.add('inc_asso_core_scaled')
         # F-26: Refugee Associations
@@ -513,7 +512,7 @@ class ScoringEngine:
         
         # 7. Population Target (F-50)
         if hasattr(config, 'target_population'): # Only if explicitly requested or part of full model
-            active.add('inc_population_scaled')
+            active.add('ter_population_scaled')
 
         # 8. Territory (F-54)
         if getattr(config, 'org_strategic_locations', []):
@@ -593,15 +592,9 @@ class ScoringEngine:
         # Use cached active criteria if available
         active_ids = config.active_criteria if config and config.active_criteria is not None else self._get_active_criteria(config)
 
-        # 1. Normalize and aggregate category weights
+        # 🧪 SOTA: Dynamic category discovery for weights based on the poids_{cat} convention
         cat_weights = {
-            'emploi': config.poids_emploi if config else 1.0,
-            'logement': config.poids_logement if config else 1.0,
-            'education': config.poids_education if config else 1.0,
-            'inclusion': config.poids_inclusion if config else 1.0,
-            'mobilite': config.poids_mobilite if config else 1.0,
-            'sante': config.poids_sante if config else 1.0,
-            'territoire': config.poids_territoire if config else 1.0
+            cat: getattr(config, f"poids_{cat}", 1.0) for cat in self.categories
         }
         
         # Skip categories based on config
@@ -609,8 +602,6 @@ class ScoringEngine:
             if config.nb_enfants == 0: cat_weights['education'] = 0.0
             if config.besoin_sante == 'Aucun': 
                 cat_weights['sante'] = 0.0
-            if not config.org_strategic_locations:
-                cat_weights['territoire'] = 0.0
         
         # 2. Identify displayed criteria and compute internal weights based on visibility
         displayed_items: List[Dict[str, Any]] = []
@@ -626,13 +617,7 @@ class ScoringEngine:
                 continue
             
             cat = score_row['cat']
-            norm_cat = cat
-            if norm_cat in ['mobilité', 'mobilite']:
-                norm_cat = 'mobilite'
-            elif norm_cat in ['santé', 'sante']:
-                norm_cat = 'sante'
-            elif norm_cat == 'territoire':
-                norm_cat = 'territoire'
+            norm_cat = cat.replace('é', 'e').replace('ê', 'e').replace('à', 'a').lower()
             active_norm_cats.add(norm_cat)
             
             w_crit = float(score_row['weight'])
@@ -887,7 +872,6 @@ class ScoringEngine:
         incl_data.asso_inclusion_list_by_cat = inclusion_list_by_cat
         incl_data.asso_inclusion_count = total_incl_count
         # 8. Calculate dynamic category scores (weighted average of active criteria)
-        # This ensures the radar chart is populated even for reference cities not in the search pool.
         cat_final_scores = {}
         for norm_cat in active_norm_cats:
             cat_items = [it for it in displayed_items if it['norm_cat'] == norm_cat]
@@ -896,13 +880,20 @@ class ScoringEngine:
             else:
                 cat_final_scores[norm_cat] = 0.0
 
-        emploi_data.cat_score = float(cat_final_scores.get('emploi', 0.0))
-        logement_data.cat_score = float(cat_final_scores.get('logement', 0.0))
-        edu_data.cat_score = float(cat_final_scores.get('education', 0.0))
-        sante_data.cat_score = float(cat_final_scores.get('sante', 0.0))
-        incl_data.cat_score = float(cat_final_scores.get('inclusion', 0.0))
-        mob_data.cat_score = float(cat_final_scores.get('mobilite', 0.0))
-        territoire_data.cat_score = float(cat_final_scores.get('territoire', 0.0))
+        # Map discovered category scores to their respective metric data objects
+        # Note: variable names use slightly different slugs than the YAML categories
+        metrics_mapping = {
+            'emploi': emploi_data,
+            'logement': logement_data,
+            'education': edu_data,
+            'sante': sante_data,
+            'inclusion': incl_data,
+            'mobilite': mob_data,
+            'territoire': territoire_data
+        }
+        for cat_slug, score_val in cat_final_scores.items():
+            if cat_slug in metrics_mapping:
+                metrics_mapping[cat_slug].cat_score = float(score_val)
         territoire_data.is_strategic = bool(row.get('ter_strategic_locations_scaled', 0.0) == 1.0)
 
         return CommuneResult(
@@ -1429,6 +1420,7 @@ class ScoringEngine:
         df = self._compute_territory_scores(df, config)
         
         # Pruning
+        df = self._prune_irrelevant_metrics(df, config)
         return df
 
     def _compute_territory_scores(self, df: pd.DataFrame, config: SearchCriterias) -> pd.DataFrame:

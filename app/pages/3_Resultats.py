@@ -285,6 +285,8 @@ with st.sidebar:
         st.markdown(f'<img src="data:image/png;base64,{logo_b64}" width="150" style="margin-bottom: 20px;">', unsafe_allow_html=True)
     else:
         st.error("Logo not found")
+    
+    ui.render_org_badge()
     st.write("")
     st.markdown("Découvrez les lieux de vie correspondant le mieux au projet renseigné. Les scores vous permettent de comparer facilement leurs atouts.", unsafe_allow_html=True)
     st.divider()
@@ -293,8 +295,6 @@ with st.sidebar:
 
     # --- Bouton Feedback ---
     feedback.render_feedback_button()
-    
-    ui.render_org_badge()
 
     # --- Export to PDF ---
     if st.session_state.get('search_results') is not None:

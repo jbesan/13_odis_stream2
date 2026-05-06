@@ -1,7 +1,7 @@
 [
     {
         "codgeo": "13004",
-        "inc_pol_scaled": 0.5,
+        "ter_pol_scaled": 0.5,
         "log_vac_scaled": 0.49158719182014465,
         "youth_growth_rate": -0.04819061607122421,
         "dep_code": "13",
@@ -121,8 +121,8 @@
         "mob_trans_pub_density_scaled": 0.4280333295285927,
         "mob_epci_scaled": 0.0,
         "sante_structures_scaled": 1.0,
-        "inc_population_scaled": 0.9630198253884727,
-        "inc_population_scaled_bdv": 0.9362118026693129,
+        "ter_population_scaled": 0.9630198253884727,
+        "ter_population_scaled_bdv": 0.9362118026693129,
         "affinite_density": 1.94041776052962,
         "inc_asso_add_scaled": 1.0,
         "key": [
@@ -173,7 +173,7 @@
     },
     {
         "codgeo": "13103",
-        "inc_pol_scaled": 0.5,
+        "ter_pol_scaled": 0.5,
         "log_vac_scaled": 0.35411208868026733,
         "youth_growth_rate": -0.09354441612958908,
         "dep_code": "13",
@@ -293,8 +293,8 @@
         "mob_trans_pub_density_scaled": 0.3524388315297201,
         "mob_epci_scaled": 1.0,
         "sante_structures_scaled": 1.0,
-        "inc_population_scaled": 0.9388409012034179,
-        "inc_population_scaled_bdv": 0.927778815473175,
+        "ter_population_scaled": 0.9388409012034179,
+        "ter_population_scaled_bdv": 0.927778815473175,
         "affinite_density": 1.3329417346316337,
         "inc_asso_add_scaled": 1.0,
         "key": [
@@ -347,7 +347,7 @@
     },
     {
         "codgeo": "13056",
-        "inc_pol_scaled": 0.5,
+        "ter_pol_scaled": 0.5,
         "log_vac_scaled": 0.1885562390089035,
         "youth_growth_rate": 0.04011140763759613,
         "dep_code": "13",
@@ -467,8 +467,8 @@
         "mob_trans_pub_density_scaled": 0.49473947895791576,
         "mob_epci_scaled": 1.0,
         "sante_structures_scaled": 1.0,
-        "inc_population_scaled": 0.8485836802065447,
-        "inc_population_scaled_bdv": 0.7031426728396103,
+        "ter_population_scaled": 0.8485836802065447,
+        "ter_population_scaled_bdv": 0.7031426728396103,
         "affinite_density": 1.106379425517702,
         "inc_asso_add_scaled": 1.0,
         "key": [
@@ -524,7 +524,7 @@
     },
     {
         "codgeo": "13028",
-        "inc_pol_scaled": 0.5,
+        "ter_pol_scaled": 0.5,
         "log_vac_scaled": 0.3644048869609833,
         "youth_growth_rate": -0.022720616310834885,
         "dep_code": "13",
@@ -644,8 +644,8 @@
         "mob_trans_pub_density_scaled": 0.34627037945462413,
         "mob_epci_scaled": 1.0,
         "sante_structures_scaled": 1.0,
-        "inc_population_scaled": 0.41415192637264514,
-        "inc_population_scaled_bdv": 2.479613971010632e-99,
+        "ter_population_scaled": 0.41415192637264514,
+        "ter_population_scaled_bdv": 2.479613971010632e-99,
         "affinite_density": 1.2985139229548406,
         "inc_asso_add_scaled": 1.0,
         "key": [
@@ -693,7 +693,7 @@
     },
     {
         "codgeo": "13005",
-        "inc_pol_scaled": 0.5,
+        "ter_pol_scaled": 0.5,
         "log_vac_scaled": 0.3367987871170044,
         "youth_growth_rate": -0.0029290688689798117,
         "dep_code": "13",
@@ -813,8 +813,8 @@
         "mob_trans_pub_density_scaled": 0.3730437277884467,
         "mob_epci_scaled": 1.0,
         "sante_structures_scaled": 1.0,
-        "inc_population_scaled": 0.49125269600641946,
-        "inc_population_scaled_bdv": 0.0,
+        "ter_population_scaled": 0.49125269600641946,
+        "ter_population_scaled_bdv": 0.0,
         "affinite_density": 1.125753261373419,
         "inc_asso_add_scaled": 1.0,
         "key": [

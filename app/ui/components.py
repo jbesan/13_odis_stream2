@@ -79,10 +79,7 @@ def render_org_badge() -> None:
         
     profile = cfg.ORGANIZATION_PROFILES.get(org_id)
     if profile:
-        st.sidebar.markdown(f"""
-            <div class="org-badge">
-                <span class="org-name">🏢 {profile['name']}</span>
-                <span class="org-status">Mode Partenaire Actif</span>
-            </div>
-        """, unsafe_allow_html=True)
+        # st.text('Hello')
+        st.sidebar.info(f"Mode | {profile['name']}")#, color="blue", width="stretch")
+
 
