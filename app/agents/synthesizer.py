@@ -6,10 +6,6 @@ from .agent_config import get_model
 
 logger = logging.getLogger("synthesizer_agent")
 
-class SynthesizerResult(BaseModel):
-    """Structured output for the ODIS Synthesizer."""
-    response: str = Field(..., description="La synthèse finale ou réponse argumentée pour le travailleur social.")
-
 # --- Synthesis Logic ---
 
 SYNTH_SYSTEM_PROMPT_ANALYSIS = """
@@ -57,10 +53,11 @@ SYNTH_SYSTEM_PROMPT_SPECIFIC = """
 - N'invente rien, utilise uniquement les éléments des Experts. Mets en gras les éléments importants. Si les données des experts sont insuffisantes, mentionne-le clairement.
 """
 
+# No SynthesizerResult needed, using raw str for performance/stability on large outputs
 synthesizer_agent = Agent(
     get_model("synthesizer"),
     deps_type=ODISDeps,
-    output_type=SynthesizerResult
+    output_type=str
 )
 
 @synthesizer_agent.system_prompt

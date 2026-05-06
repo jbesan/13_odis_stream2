@@ -579,11 +579,10 @@ async def synthesizer_node(state: ODISGraphState, config: RunnableConfig):
         if last_user_msg.get("role") == "user":
              new_odis_synthesis.append(last_user_msg)
     
-    new_odis_synthesis.append({"role": "assistant", "content": result.output.response})
+    new_odis_synthesis.append({"role": "assistant", "content": result.output})
 
-    # Return both the chat message and the model update for single source of truth
     return {
-        "messages": [{"role": "assistant", "content": sanitize_llm_markdown(result.output.response)}],
+        "messages": [{"role": "assistant", "content": sanitize_llm_markdown(result.output)}],
         "search_results": {
             "results": [
                 {

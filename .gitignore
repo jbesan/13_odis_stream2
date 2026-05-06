@@ -1,4 +1,5 @@
 .agent/
+.agents/
 __pycache__
 .pytest_cache
 csv_large/
