@@ -5,7 +5,7 @@ from typing import Dict, Any, List, Optional
 from core.models import SearchCriterias
 from google.genai import types
 from pydantic_ai import Agent, RunContext
-from .state import ODISGraphState, ODISDeps, SearchCriterias, FocusCity, ODISContextBuilder
+from .state import GraphState, ODISDeps, SearchCriterias, FocusCity, ODISContextBuilder
 from .agent_config import get_model
 from pydantic import BaseModel, Field
 

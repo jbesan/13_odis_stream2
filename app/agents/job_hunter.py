@@ -3,7 +3,7 @@ import re
 from typing import List, Dict, Any, Optional
 from pydantic_ai import Agent, RunContext
 from pydantic import BaseModel, Field
-from .state import ODISGraphState, ODISDeps, compute_criteria_hash, ODISContextBuilder
+from .state import GraphState, ODISDeps, compute_criteria_hash, ODISContextBuilder
 from .agent_config import get_model
 from .tools import (
     search_job_offers_batch,

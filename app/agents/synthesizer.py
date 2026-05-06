@@ -1,7 +1,7 @@
 import logging
 from pydantic_ai import Agent, RunContext
 from pydantic import BaseModel, Field
-from .state import ODISGraphState, ODISDeps, ODISContextBuilder
+from .state import GraphState, ODISDeps, ODISContextBuilder
 from .agent_config import get_model
 
 logger = logging.getLogger("synthesizer_agent")

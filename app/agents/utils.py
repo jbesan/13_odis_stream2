@@ -139,7 +139,7 @@ def launch_background_scorer(search_criterias: SearchCriterias, results_dict_ign
         import os
         from google import genai
         from google.genai import types
-        from agents.state import ODISGraphState, ODISDeps
+        from agents.state import GraphState, ODISDeps
         from agents.scorer import scorer_agent
         from agents.agent_config import get_p_model
         from pydantic_ai import ModelSettings
@@ -179,15 +179,16 @@ def launch_background_scorer(search_criterias: SearchCriterias, results_dict_ign
                     "current_geo": results_objs[0] if results_objs else None
                 }
 
-            state_dict = {
-                "search_criteria": search_criterias.model_dump(),
-                "is_interview_complete": True,
-                "execution_mode": "full_analysis",
-                "search_results": search_results_data,
-                "interaction_id": interaction_id or "",
-                "username": username or "unknown"
-            }
-            state = ODISGraphState.model_validate(state_dict)
+            from core.models import SearchResultsData
+            sr_obj = SearchResultsData.model_validate(search_results_data) if search_results_data else None
+            
+            state = GraphState(
+                search_criteria=search_criterias,
+                execution_mode="full_analysis",
+                search_results=sr_obj,
+                interaction_id=interaction_id or "",
+                username=username or "unknown"
+            )
             deps = ODISDeps(state=state, client=client)
             model = get_p_model("scorer", client=client)
             
@@ -447,13 +448,29 @@ def run_async_safe(input_data: dict):
     # 4. Run without closing
     return loop.run_until_complete(run_logic(input_data))
 
+def run_autodetect_safe(text: str):
+    from agents.interviewer import interviewer_agent
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    if loop.is_closed():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    result = loop.run_until_complete(interviewer_agent.run(text))
+    return result.data
+
 async def run_logic(input_data: dict):
     """Logique asynchrone pure."""
     import os
     from google import genai
     from google.genai import types
-    from agents.state import ODISGraphState, ODISDeps
+    from agents.state import GraphState, ODISDeps, FocusCity
     from agents.graph import create_odis_graph
+    from core.models import SearchCriterias, SearchResultsData
     
     # 1. Client Local (Critique: Fresh instance per request)
     api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
@@ -471,20 +488,38 @@ async def run_logic(input_data: dict):
     )
     
     # 2. State & Deps
-    input_state = ODISGraphState.model_validate(input_data)
+    sc_data = input_data.get("search_criteria", {})
+    sc = SearchCriterias.model_validate(sc_data) if isinstance(sc_data, dict) else sc_data
+
+    sr_data = input_data.get("search_results")
+    sr = None
+    if sr_data:
+        sr = SearchResultsData.model_validate(sr_data) if isinstance(sr_data, dict) else sr_data
+             
+    fc_data = input_data.get("focus_city")
+    fc = None
+    if fc_data:
+         fc = FocusCity.model_validate(fc_data) if isinstance(fc_data, dict) else fc_data
+             
+    input_state = GraphState(
+        search_criteria=sc,
+        search_results=sr,
+        focus_city=fc,
+        execution_mode=input_data.get("execution_mode", "full_analysis"),
+        messages=input_data.get("messages", []),
+        interaction_id=input_data.get("interaction_id", "unknown"),
+        username=input_data.get("username", "unknown")
+    )
+    
     deps = ODISDeps(state=input_state, client=client)
     
     # 3. Graphe
     app = create_odis_graph() 
     
-    # 4. Config & Injection Deps
-    config = {
-        "configurable": {
-            "thread_id": "session_user",
-            "deps": deps 
-        }
-    }
-    
     # 5. Appel
-    final_state = await app.ainvoke(input_state, config=config)
-    return final_state
+    result = await app.run(state=input_state, deps=deps)
+    
+    return {
+        "search_results": input_state.search_results,
+        "messages": input_state.messages
+    }

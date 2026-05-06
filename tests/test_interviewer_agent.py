@@ -1,13 +1,13 @@
 import pytest
 from pydantic_ai.models.test import TestModel
 from unittest.mock import MagicMock, patch
-from agents.interviewer import interviewer_agent, InterviewerResult
-from agents.state import ODISGraphState, ODISDeps
+from agents.interviewer import interviewer_agent, AutoDetectionResult
+from agents.state import GraphState, ODISDeps
 from core.models import SearchCriterias
 
 @pytest.fixture
 def test_deps():
-    state = ODISGraphState()
+    state = GraphState()
     return ODISDeps(state=state, client=MagicMock())
 
 @pytest.mark.asyncio
@@ -34,6 +34,6 @@ async def test_interviewer_structured_output(test_deps):
                 "Je cherche un job à Paris",
                 deps=test_deps
             )
-            assert isinstance(result.output, InterviewerResult)
+            assert isinstance(result.output, AutoDetectionResult)
             assert result.output.response is not None
             assert isinstance(result.output.search_criteria, SearchCriterias)

@@ -10,7 +10,7 @@ from typing import Any
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'app'))
 
 from agents.graph import create_odis_graph
-from agents.state import ODISGraphState, ODISDeps, FocusCity
+from agents.state import GraphState, ODISDeps, FocusCity
 from google import genai
 
 # Path to the .env file in the app directory
@@ -31,7 +31,7 @@ async def test_graph_execution_end_to_end():
     graph = create_odis_graph()
     
     logger.info("📝 Preparing State...")
-    state = ODISGraphState()
+    state = GraphState()
     
     # Simulate a user message prompting for details
     from core.models import SearchCriterias, CommuneResult, SearchResultsData, CriteriaItem
@@ -58,7 +58,7 @@ async def test_graph_execution_end_to_end():
     state.focus_city = FocusCity(name="Marseille", codgeo="13001")
     state.messages.append({"role": "user", "content": "Peux-tu me donner des détails sur Marseille ?"})
     
-    logger.info("▶️ Running Graph (ainvoke)...")
+    logger.info("▶️ Running Graph (run)...")
     
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
@@ -68,21 +68,20 @@ async def test_graph_execution_end_to_end():
     deps = ODISDeps(state=state, client=client)
     
     try:
-        final_state = await graph.ainvoke(state, config={"configurable": {"deps": deps}})
+        final_response = await graph.run(state=state, deps=deps)
         logger.info("✅ Graph Execution Complete!")
         
         # assertions
-        assert 'messages' in final_state
-        assert len(final_state['messages']) > 0
+        assert final_response is not None
+        logger.info(f"🤖 Last Response: {final_response[:100]}...")
         
-        if 'experts_results' in final_state:
-            logger.info("🧩 Experts Results (Parallel Execution):")
-            for k, v in final_state['experts_results'].items():
-                logger.info(f"  - {k}: {v[:50]}...")
-        
-        last_msg = final_state['messages'][-1]
-        logger.info(f"🤖 Last Response: {last_msg['content'][:100]}...")
-        assert last_msg['content'] is not None
+        # Check if results were merged into state
+        if state.search_results:
+            city = state.search_results.get_by_code("13001")
+            if city and city.expert_analysis:
+                logger.info("🧩 Experts Results (Parallel Execution):")
+                for k, v in city.expert_analysis.items():
+                    logger.info(f"  - {k}: {v[:50]}...")
         
     except Exception as e:
         logger.error(f"❌ Graph Execution Failed: {e}", exc_info=True)

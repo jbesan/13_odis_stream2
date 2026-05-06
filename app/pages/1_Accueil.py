@@ -233,23 +233,14 @@ def show_unstructured_input_dialog():
             if not text_input.strip():
                 st.warning("Veuillez saisir du texte avant de lancer l'analyse.")
             else:
-                with st.spinner("Analyse en cours par l'agent Interviewer..."):
-                    # Prepare the state for the agent
-                    state_dict = {
-                        "messages": [{"role": "user", "content": text_input}],
-                        "is_interview_complete": False, # We want the interviewer to process it
-                        "execution_mode": "full_analysis"
-                    }
+                with st.spinner("Analyse en cours par l'agent Extracteur..."):
                     try:
-                        final_state = run_async_safe(state_dict)
-                        # The interviewer returns the response in the last message
-                        # and the extracted criteria in search_criteria
-                        response = final_state.get("messages", [])[-1]["content"] if final_state.get("messages") else "Erreur d'analyse."
-                        criteria = final_state.get("search_criteria")
+                        from agents.utils import run_autodetect_safe
+                        result_data = run_autodetect_safe(text_input)
                         
                         st.session_state[analysis_key] = {
-                            "response": response,
-                            "criteria": criteria
+                            "response": result_data.response,
+                            "criteria": result_data.search_criteria
                         }
                     except Exception as e:
                         st.error(f"Une erreur est survenue lors de l'analyse : {e}")

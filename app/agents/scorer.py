@@ -6,7 +6,7 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field, ConfigDict
 from pydantic_ai import Agent, RunContext
 
-from .state import ODISGraphState, ODISDeps, ODISContextBuilder
+from .state import GraphState, ODISDeps, ODISContextBuilder
 from .agent_config import get_model
 from .tools import compute_top_cities
 from core.models import SearchCriterias
