@@ -63,7 +63,11 @@ def polling_synthesis_fragment(task_key: str, nom: str, codgeo: str, search_crit
         launch_background_city_analysis(nom, codgeo, search_criterias, results, h)
         st.caption("Lancement de la synthèse...")
     elif status_data.get("status") == "running":
-        st.caption("Préparation de la synthèse (~30s)...")
+        import time
+        start_time = status_data.get("start_time", time.time())
+        elapsed = time.time() - start_time
+        progress = min(1.0, elapsed / 30.0)
+        st.progress(progress, text=f"Préparation de la synthèse (~30 secondes)...")
     elif status_data.get("status") == "error":
         st.error(f"Erreur d'analyse : {status_data.get('error')}")
         if st.button("Réessayer"):

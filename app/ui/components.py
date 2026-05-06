@@ -34,7 +34,7 @@ def confirm_reset_dialog():
             st.switch_page("pages/1_Accueil.py")
     with col2:
         if st.button("Annuler", width="stretch"):
-            st.rerun(scope="fragment")
+            st.rerun()
 
 def start_over() -> None:
     """Renders the 'Back to Home' button with a confirmation dialog if results exist."""

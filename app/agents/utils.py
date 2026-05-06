@@ -1,3 +1,4 @@
+import time
 from typing import Any, Dict, List, Optional
 import streamlit as st
 from pydantic_ai import Agent
@@ -343,7 +344,7 @@ def launch_background_city_analysis(nom: str, codgeo: str, search_criterias: Any
     if store.get(task_key, {}).get("status") == "running":
         return
         
-    store[task_key] = {"status": "running"}
+    store[task_key] = {"status": "running", "start_time": time.time()}
 
     def bg_analysis_task(results_store: dict):
         import asyncio

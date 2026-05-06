@@ -20,6 +20,7 @@ if "GOOGLE_API_KEY" not in os.environ and "GEMINI_API_KEY" in os.environ:
 
 from agents.graph import create_odis_graph
 from agents.state import ODISDeps, ODISGraphState
+from services.telemetry import get_interaction_id, reset_interaction_id
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,11 @@ with st.sidebar:
     if st.button("Nouvelle Discussion", type="primary", key="btn_recommencer", width="stretch"):
         print("="*150)
         st.session_state.chat_history = []
-        st.session_state.agent_state = ODISGraphState()
+        new_interaction_id = reset_interaction_id()  # Generate a fresh interaction ID
+        st.session_state.agent_state = ODISGraphState(
+            interaction_id=new_interaction_id,
+            username=st.session_state.get("username", "unknown")
+        )
         st.rerun()
 
     from ui import feedback
@@ -142,7 +147,10 @@ if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
 if "agent_state" not in st.session_state:
-    st.session_state.agent_state = ODISGraphState()
+    st.session_state.agent_state = ODISGraphState(
+        interaction_id=get_interaction_id(),
+        username=st.session_state.get("username", "unknown")
+    )
 
 # --- Chat Interface ---
 
@@ -162,10 +170,17 @@ if prompt := st.chat_input("Répondez ici...", key="chat_input"):
         try:
             # Préparation
             current_state = st.session_state.agent_state
+            # Refresh identifiers on every turn to ensure they are always current
+            current_state.interaction_id = get_interaction_id()
+            current_state.username = st.session_state.get("username", "unknown")
             current_state.messages.append({"role": "user", "content": prompt})
             
             logger.info(f"💁 [USER] message: {prompt[:50]}")
             
+            # Capture identifiers before async call (thread-safe snapshot)
+            _interaction_id = current_state.interaction_id
+            _username = current_state.username
+
             # 🚀 LANCEMENT ASYNC SECURISE
             final_output = run_async_safe(current_state.model_dump())
             
@@ -181,10 +196,14 @@ if prompt := st.chat_input("Répondez ici...", key="chat_input"):
             if not response_text:
                 response_text = "Je n'ai pas pu générer de réponse."
 
-            # Log State to BigQuery
+            # Log State to BigQuery — pass identifiers explicitly to avoid thread-safety issues
             try:
                 from services import bq_logger
-                bq_logger.log_agent_state_to_bq(prompt, final_output)
+                bq_logger.log_agent_state_to_bq(
+                    prompt, final_output,
+                    interaction_id=_interaction_id,
+                    username=_username
+                )
             except Exception as bq_e:
                 logging.warning(f"Failed to log BQ state: {str(bq_e)}")
 

@@ -37,14 +37,24 @@ def log_agent_state_to_bq(user_input: str, agent_state: dict, interaction_id: Op
          return
 
     try:
+        # Tier 1: Use explicit caller-supplied values (thread-safe)
+        # Tier 2: Fall back to values baked into the agent_state dict (thread-safe)
+        # Tier 3: Try Streamlit session_state (only safe on the main thread)
+        if not interaction_id:
+            interaction_id = agent_state.get("interaction_id", "") if isinstance(agent_state, dict) else ""
+        if not username or username == "unknown":
+            username = agent_state.get("username", "") if isinstance(agent_state, dict) else ""
+
         try:
             if not interaction_id:
                 interaction_id = get_interaction_id()
             if not username:
-                username = st.session_state.get('username', 'unknown')
-        except:
-            interaction_id = interaction_id or "unknown"
-            username = username or "unknown"
+                username = st.session_state.get("username", "unknown")
+        except Exception:
+            pass  # session_state is unavailable in background threads — that's expected
+
+        interaction_id = interaction_id or "unknown"
+        username = username or "unknown"
         
         paris_tz = zoneinfo.ZoneInfo("Europe/Paris")
         timestamp_paris = datetime.now(paris_tz).isoformat()

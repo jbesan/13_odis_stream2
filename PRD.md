@@ -249,3 +249,21 @@ _(Most features omitted for brevity. Appending F-42)_
 - **Persistance et Démo :** Mise à jour du chargement des critères et des scénarios de démo pour supporter le nouveau format de liste.
 
 - April 2026: Conception validée, implémentation en cours.
+
+## 🚀 Feature [F-54]: Custom Organization Profiles & Strategic Locations
+
+### 📝 User Stories
+- As a social worker from a specific organization (e.g., J'Accueille, AGIR), I want the tool to automatically prioritize zones where my organization has partnerships so that I can propose more relevant relocation options to beneficiaries.
+- As a product owner, I want to easily onboard new organizations by providing them with a custom URL that pre-configures weights and priority zones to match their specific mission.
+
+### 🔑 Key Features
+* **Organization Profiles Configuration**: Implementation of `ORGANIZATION_PROFILES` in `app/config.py` to store organization-specific default weights and a whitelist of strategic zones (Departments or Bassins de Vie).
+* **Strategic Locations Criterion**: New scoring criterion `ter_strategic_locations_scaled` under a new **"Territory"** category. This criterion provides a binary boost (1.0 or 0.0) based on whether the commune belongs to the organization's priority whitelist.
+* **URL-Driven Personalization**: Support for the `?org=...` query parameter to automatically load the corresponding organization profile (pre-filling weights and priority zones) upon arrival.
+* **Dedicated Organization Form Page**: When an organization is active, a new step is injected into the form workflow (e.g., a "J'Accueille" page). This page hosts the "Strategic Priority Zones" multiselect and other org-specific tweaks.
+* **Pre-fill with Full Control**: All values from the organization profile are used to pre-fill the form, but the user retains full control to modify or remove them.
+* **Organization Badge**: A visual indicator (badge) in the bottom-center of the sidebar to confirm the active organization context (e.g., "Mode : J'Accueille").
+
+### 📊 Status
+- In Progress
+

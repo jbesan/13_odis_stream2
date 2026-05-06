@@ -262,6 +262,33 @@ DEMO_SCENARIOS = {
         'notes_qualitatives': "Proximité d'une Mosquée et de la mer",
         'target_population': 20000,
         'target_population_sigma': 10000
+    },
+        "emile": {
+        'nb_adultes': 1,
+        'nb_enfants': 2,
+        'codes_metiers': [["I1604"]],
+        'commune_actuelle': 'Lyon',
+        'departement_actuel': '69',
+        'freq_retour': '1 fois/an',
+        'loc_search_area': 'departement',
+        'loc_search_code': ['15', '03', '01', '69'],
+        'hebergement_cible': ["Location avec Intermédiation", "Chez l'habitant"],
+        'logement': 'Logement Social',
+        'type_logement': 'appt_all',
+        'classe_enfants': ['Maternelle', 'Elémentaire'],
+        'inc_services_add_selection': DEFAULT_INC_SERVICES_CORE + ['lecture-ecriture-calcul--maitriser-le-francais'],
+        'inc_asso_add_selection': ['011075'],
+        'weight_profile': 'Expert',
+        'poids_emploi': 1.0,
+        'poids_logement': 1.0,
+        'poids_education': 0.5,
+        'poids_inclusion': 0.5,
+        'poids_sante': 0.25,
+        'poids_mobilite': 0.25,
+        'besoin_sante': "Soutien Psychologique & Addictologie",
+        'notes_qualitatives': "Peuvent se déplacer à vélo. Aiment les balades en montagne.",
+        'target_population': 20000,
+        'target_population_sigma': 10000
     }
 
 }

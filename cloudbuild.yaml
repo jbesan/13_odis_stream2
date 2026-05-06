@@ -45,6 +45,8 @@ steps:
       - "--platform"
       - "managed"
       - "--allow-unauthenticated"
+      - "--timeout=3600"
+      - "--session-affinity"
       - "--set-env-vars"
       - "STREAMLIT_CLIENT_TOOLBAR_MODE=minimal"
 images:
