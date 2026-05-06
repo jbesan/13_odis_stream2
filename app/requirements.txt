@@ -22,3 +22,5 @@ pydantic-ai==1.76.0
 google-cloud-bigquery
 db-dtypes
 fastparquet
+logfire[httpx]
+pydantic-ai[logfire]==1.76.0

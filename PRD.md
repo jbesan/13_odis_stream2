@@ -63,6 +63,7 @@ Liste en vrac d'idées d'amélioration
 - [x] Créer et exploiter un dataset des associations dédiés aux réfugiés / demandeurs d'asile
 - [x] [F-43] Upgrade to Gemini 3.1 Flash-Lite for all agents.
 - [x] [F-44] Standardize all agents to return Pydantic structured outputs instead of raw strings.
+- [x] [F-55] Pydantic-Graph Migration: Move from LangGraph to native pydantic-graph MapReduce.
 - [x] AI Bot: ajouter le contact CCAS (passer dans get_city_details? )
 
 ## 5. Recent / active Feature Developements
@@ -266,4 +267,21 @@ _(Most features omitted for brevity. Appending F-42)_
 
 ### 📊 Status
 - **April 2026**: Done. Implementation includes dynamic preamble page, organization badge, and scoring engine integration for strategic boosts.
+
+## 🚀 Feature [F-55]: Pydantic-Graph Migration & Architecture Refactor
+
+### 📝 User Story
+- En tant que développeur, je veux migrer l'orchestration des agents de LangGraph vers `pydantic-graph` natif pour simplifier le codebase, améliorer les performances (parallélisation native) et bénéficier d'une intégration plus fluide avec PydanticAI.
+- En tant qu'utilisateur, je veux une analyse plus rapide et fiable des territoires grâce à une exécution parallèle optimisée.
+
+### 🔑 Key Features
+- **Native MapReduce Topology** : Mise en œuvre du pattern "Spreading" de `pydantic-graph` pour le fan-out/fan-in des experts.
+- **Stateless GraphState** : Transition vers des dataclasses pures pour éviter les instabilités Streamlit liées aux re-définitions de modèles.
+- **One-shot Interviewer** : Découplage de l'interviewer en un agent standalone hors-graphe pour une extraction immédiate du profil.
+- **Cleanup Graphe** : Suppression des noeuds redondants (`_solo`) et des reducers LangGraph complexes.
+- **Tests de Non-Régression** : Mise à jour de la suite de tests pour valider le nouveau moteur d'exécution.
+
+### 📊 Status
+- **May 2026**: Done. Migration complete, documentation updated, and E2E tests verified.
+
 

@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from pydantic_ai import Agent, RunContext
 
 from .state import GraphState, ODISDeps, ODISContextBuilder
-from .agent_config import get_model
+from .agent_config import get_model, get_model_settings
 from .tools import compute_top_cities
 from core.models import SearchCriterias
 
@@ -50,6 +50,7 @@ Les critères de recherche sont injectés automatiquement dans le contexte JSON,
 # --- Agent Definition ---
 scorer_agent = Agent(
     get_model("scorer"),
+    model_settings=get_model_settings("scorer"),
     deps_type=ODISDeps,
     output_type=ScorerResult
 )

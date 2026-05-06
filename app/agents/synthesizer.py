@@ -2,7 +2,7 @@ import logging
 from pydantic_ai import Agent, RunContext
 from pydantic import BaseModel, Field
 from .state import GraphState, ODISDeps, ODISContextBuilder
-from .agent_config import get_model
+from .agent_config import get_model, get_model_settings
 
 logger = logging.getLogger("synthesizer_agent")
 
@@ -56,6 +56,7 @@ SYNTH_SYSTEM_PROMPT_SPECIFIC = """
 # No SynthesizerResult needed, using raw str for performance/stability on large outputs
 synthesizer_agent = Agent(
     get_model("synthesizer"),
+    model_settings=get_model_settings("synthesizer"),
     deps_type=ODISDeps,
     output_type=str
 )

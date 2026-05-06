@@ -13,7 +13,7 @@ Il s'inscrit en complément du projet principal [13_odis](https://github.com/dat
 L'innovation de ce prototyp### 🛠️ Key Features
 
 - **Reverse Search Algorithm**: Multi-criteria scoring engine with dynamic weights.
-- **AI Synthesis (Graph-based)**: Agentic workflow powered by LangGraph and Gemini for deep site analysis.
+- **AI Synthesis (Graph-based)**: Agentic workflow powered by pydantic-graph and Gemini for deep site analysis.
 - **Background Tasks**: Non-blocking AI execution for Cloud Run stability (Daemon threads + Fragment polling).
 - **Interactive Map**: Folium/Leaflet integration for spatial mediation.
 - **PDF Reports**: Automated generation of argued territorial summaries.
@@ -34,7 +34,7 @@ Ce prototype a un triple objectif :
 - **Scoring Intelligent :** Chaque commune de France est évaluée selon sa compatibilité avec le projet de vie via un modèle de données typé. Pour garantir une comparaison équitable, le moteur utilise un **Scaling par Quantiles (p1/p99)** qui neutralise l'impact des valeurs aberrantes (outliers) sur la distribution des scores.
 - **Carte Interactive :** Visualisez les localités les mieux notées, leur score, et superposez des couches d'informations additionnelles (écoles, établissements de santé, services d'inclusion).
 - **Résultats Détaillés & Export PDF :** Explorez les 5 meilleurs résultats avec une analyse comparative générée automatiquement par l'IA et exportez un rapport PDF complet incluant ces analyses.
-- **Assistant IA (Multi-Agent ODIS) :** Système multi-agent (LangGraph) capable de conduire l'entretien via l'agent **Interviewer**, de calculer les scores avec l'agent **Scorer**, et d'enrichir les résultats avec des infos terrain (**Scout**) et web (**Web**). voir la [documentation détaillée de l'architecture](app/agents/README.md).
+- **Assistant IA (Multi-Agent ODIS) :** Système multi-agent (pydantic-graph) capable de conduire l'entretien via l'agent **Interviewer** (en un coup), de calculer les scores avec l'agent **Scorer**, et d'enrichir les résultats avec des infos terrain (**Scout**) et web (**Web**). voir la [documentation détaillée de l'architecture](ARCHITECTURE.md).
 - **Grounding Google Search :** Grâce à l'agent spécialisé WEB, accédez aux dernières actualités locales et au contexte social des communes visées.
 - **Moteur de Recherche RAG (RNA) :** Recherche sémantique et thématique sur l'ensemble du Répertoire National des Associations (RNA) via BigQuery et Vertex AI, permettant de classer les associations par catégories d'inclusion (FLE, Logement, Emploi, etc.) ou des recherches spécifiques (intégration des personnes réfugiées).
 - **Accueils Citoyens (J'Accueille) :** Intégration de la base de données de l'association J'Accueille pour valoriser les bassins de vie disposant déjà d'un réseau d'hébergement citoyen actif. (Données Mars 2026).
@@ -104,8 +104,8 @@ Le cœur de l'application est un pipeline de scoring qui évalue les communes (o
 Le projet suit une approche rigoureuse de développement piloté par les spécifications (SDD) et le typage statique :
 
 - **Typage Stricte (Mypy)** : Le codebase est 100% conforme à `mypy` en mode strict. Toutes les fonctions sont annotées et les modèles Pydantic assurent la validation des données à l'exécution.
-- **Tests Automatisés (Pytest)** : Une suite de plus de 100 tests unitaires et d'intégration couvre le moteur de scoring, les agents LangGraph et les composants UI.
-- **Documentation Narrative** : Chaque changement majeur est documenté dans le `walkthrough.md` et les KIs du projet.
+- **Tests Automatisés (Pytest)** : Une suite de plus de 100 tests unitaires et d'intégration couvre le moteur de scoring, les agents pydantic-graph et les composants UI.
+- **Documentation Narrative** : Chaque changement majeur est documenté dans le `walkthrough.md` et le [guide d'architecture](./ARCHITECTURE.md).
 
 ![Explication de la logique de scoring](./images/Screenshot-4.png)
 
@@ -177,34 +177,32 @@ app/
 │   ├── data_loader.py      # Chargement et cache des données (Parquet/BigQuery)
 │   ├── auth.py             # Authentification simple
 │   └── common.py           # Fonctions utilitaires
-├── agents/                 # Écosystème Multi-Agent (LangGraph)
-│   ├── graph.py            # Graphe d'orchestration
-│   ├── interviewer.py      # Agent de conduite d'entretien
+├── agents/                 # Écosystème Multi-Agent (pydantic-graph)
+│   ├── graph.py            # Graphe d'orchestration (MapReduce)
+│   ├── interviewer.py      # Agent d'extraction de profil (One-shot)
 │   ├── scorer.py           # Agent d'analyse de scores
 │   ├── scout.py            # Agent de recherche locale (Maps)
 │   └── ...                 # Autres agents experts (Web, JobHunter, etc.)
 └── pages/                  # Pages Streamlit secondaires
     ├── 2_Formulaire.py     # Saisie manuelle du projet
-    ├── 3_Resultats.py      # Recherche et visualisation
-    └── 4_AI_Chatbot.py     # Interface de discussion
+    └── 3_Resultats.py      # Recherche et visualisation
 ```
 
 ## 🤖 Interface AI Agent (Assistant ODIS 2.0)
 
 L'Assistant ODIS 2.0 est une interface de conversation en langage naturel conçue pour simplifier le travail de diagnostic social. Il repose sur une architecture multi-agent innovante :
 
-### Architecture Multi-Agent (LangGraph)
+### Architecture Multi-Agent (pydantic-graph)
 
-Contrairement à un chatbot classique, l'Assistant ODIS est orchestré par un graphe d'états (LangGraph) qui coordonne plusieurs experts spécialisés (PydanticAI) :
+Contrairement à un chatbot classique, l'Assistant ODIS est orchestré par un pipeline de données (pydantic-graph) qui coordonne plusieurs experts spécialisés (PydanticAI) :
 
-1.  **Le Routeur :** Analyse la demande et décide de l'action à entreprendre.
-2.  **L'Interviewer :** Conduit l'entretien et affine le diagnostic.
-3.  **Le Scorer :** Calcule les scores ODIS et explique les résultats.
-4.  **Parallélisation des Experts :** Pour toute analyse de ville, le système lance simultanément :
+1.  **L'Auto-Détection (Interviewer) :** Un agent one-shot qui extrait les critères depuis votre texte initial.
+2.  **Le Triage :** Analyse la demande et planifie l'exécution parallèle des experts.
+3.  **Parallélisation des Experts (MapReduce) :** Pour toute analyse de ville, le système lance simultanément :
     - **Scout** : Analyse le terrain (Google Maps).
     - **WEB** : Recherche l'actualité et le contexte social (Google Search).
     - **Job Hunter** : Trouve les offres d'emploi réelles (France Travail).
-5.  **Synthétiseur** : Fusionne toutes les données en une réponse unique.
+4.  **Synthétiseur (Join) :** Fusionne toutes les données en une réponse unique et cohérente.
 
 ### Points Forts de l'Agent
 

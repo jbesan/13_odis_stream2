@@ -6,7 +6,7 @@ from core.models import SearchCriterias
 from google.genai import types
 from pydantic_ai import Agent, RunContext
 from .state import GraphState, ODISDeps, SearchCriterias, FocusCity, ODISContextBuilder
-from .agent_config import get_model
+from .agent_config import get_model, get_model_settings
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -38,6 +38,7 @@ RefinerResult.model_rebuild()
 
 refiner_agent = Agent(
     get_model("refiner"),
+    model_settings=get_model_settings("refiner"),
     deps_type=ODISDeps,
     output_type=RefinerResult
 )

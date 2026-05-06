@@ -1,5 +1,6 @@
 import logging
 import asyncio
+import logfire
 from datetime import datetime
 from typing import Literal, Dict, Any, List, Optional
 from dataclasses import dataclass
@@ -21,7 +22,7 @@ from agents.synthesizer import synthesizer_agent
 from utils.common import normalize_text
 from utils.logger import log_agent_trace
 import services.bq_logger as bq_logger
-from agents.agent_config import get_model, get_p_model
+from agents.agent_config import get_model, get_p_model, get_model_settings
 
 logger = logging.getLogger("odis_graph")
 
@@ -77,7 +78,7 @@ class DirectSynthesis:
     pass
 
 # --- Graph Nodes ---
-
+@logfire.instrument("Node: triage")
 async def triage_step(ctx: StepContext[GraphState, ODISDeps, None]) -> ExpertList | DirectSynthesis:
     """Decides which experts to trigger based on execution mode or Router LLM."""
     mode = ctx.state.execution_mode
@@ -95,7 +96,7 @@ async def triage_step(ctx: StepContext[GraphState, ODISDeps, None]) -> ExpertLis
             user_msg, 
             deps=ctx.deps, 
             model=model,
-            model_settings=ModelSettings(max_tokens=4096),
+            model_settings=get_model_settings("router"),
             usage_limits=UsageLimits(request_limit=10)
         )
         decision = result.output
@@ -121,6 +122,7 @@ async def extract_domains(ctx: StepContext[GraphState, ODISDeps, ExpertList]) ->
     """Helper to unwrap the DTO into a list of strings for mapping."""
     return ctx.inputs.experts
 
+@logfire.instrument("Expert Node: {ctx.inputs}")
 async def expert_worker_step(ctx: StepContext[GraphState, ODISDeps, str]) -> AgentArtifact:
     """Parallel worker that handles cache bypass and delegates to the appropriate agent."""
     domain = ctx.inputs
@@ -156,7 +158,7 @@ async def expert_worker_step(ctx: StepContext[GraphState, ODISDeps, str]) -> Age
             user_msg, 
             deps=ctx.deps, 
             model=model,
-            model_settings=ModelSettings(max_tokens=4096),
+            model_settings=get_model_settings(domain),
             usage_limits=UsageLimits(request_limit=15)
         )
         log_agent_trace(domain, mod_id, result)
@@ -169,6 +171,7 @@ async def expert_worker_step(ctx: StepContext[GraphState, ODISDeps, str]) -> Age
         logger.error(f"❌ [{domain.upper()}] Error: {e}")
         return AgentArtifact(domain=domain, result=f"Erreur d'analyse: {e}", usage=UsageStats())
 
+@logfire.instrument("Node: synthesizer")
 async def synthesizer_step(ctx: StepContext[GraphState, ODISDeps, list[AgentArtifact] | DirectSynthesis]) -> End[str]:
     """Merges artifacts into state and produces the final synthesis."""
     city_name = ctx.state.focus_city.name if ctx.state.focus_city else "Unknown"
@@ -194,7 +197,7 @@ async def synthesizer_step(ctx: StepContext[GraphState, ODISDeps, list[AgentArti
             input_msg, 
             deps=ctx.deps, 
             model=model,
-            model_settings=ModelSettings(max_tokens=4096),
+            model_settings=get_model_settings("synthesizer"),
             usage_limits=UsageLimits(request_limit=10)
         )
         log_agent_trace("synthesizer", mod_id, result)

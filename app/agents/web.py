@@ -3,7 +3,7 @@ from typing import Optional
 from pydantic_ai import Agent, RunContext, WebSearchTool
 from pydantic import BaseModel, Field
 from .state import GraphState, ODISDeps, compute_criteria_hash, ODISContextBuilder
-from .agent_config import get_model
+from .agent_config import get_model, get_model_settings
 
 logger = logging.getLogger("web_agent_v2")
 
@@ -58,6 +58,7 @@ WEB_SPECIFIC_SYSTEM_PROMPT = """
 
 web_agent = Agent(
     get_model("web"),
+    model_settings=get_model_settings("web"),
     deps_type=ODISDeps,
     builtin_tools=[WebSearchTool()],
     output_type=WebResult

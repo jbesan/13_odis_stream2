@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional
 from pydantic_ai import Agent, RunContext
 from pydantic import BaseModel, Field
 from .state import GraphState, ODISDeps, compute_criteria_hash, ODISContextBuilder
-from .agent_config import get_model
+from .agent_config import get_model, get_model_settings
 from .tools import (
     search_job_offers_batch,
     get_job_details, 
@@ -76,6 +76,7 @@ JOB_HUNTER_SPECIFIC_SYSTEM_PROMPT = """
 
 job_hunter_agent = Agent(
     get_model("job_hunter"),
+    model_settings=get_model_settings("job_hunter"),
     deps_type=ODISDeps,
     output_type=JobHunterResult
 )

@@ -4,7 +4,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field, ConfigDict
 from pydantic_ai import Agent, RunContext
 from .state import GraphState, ODISDeps, FocusCity, ODISContextBuilder
-from .agent_config import get_model
+from .agent_config import get_model, get_model_settings
 
 logger = logging.getLogger("router_agent")
 
@@ -43,6 +43,7 @@ class RoutingResult(BaseModel):
 
 router_agent = Agent(
     get_model("router"),
+    model_settings=get_model_settings("router"),
     deps_type=ODISDeps,
     output_type=RoutingResult
 )

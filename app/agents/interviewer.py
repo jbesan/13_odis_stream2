@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from pydantic_ai import Agent, RunContext
 import config as cfg
 from core.models import SearchCriterias
-from .agent_config import get_model
+from .agent_config import get_model, get_model_settings
 from .tools import search_referentiels_batch
 
 logger = logging.getLogger("autodetect_agent")
@@ -44,7 +44,8 @@ AUTODETECT_SYSTEM_PROMPT = """
 """
 
 interviewer_agent = Agent(
-    get_model("interviewer"), 
+    get_model("interviewer"),
+    model_settings=get_model_settings("interviewer"),
     output_type=AutoDetectionResult
 )
 

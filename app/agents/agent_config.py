@@ -1,61 +1,98 @@
 import os
+from typing import Literal
 from google import genai
-from dotenv import load_dotenv
+from pydantic import BaseModel, Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_ai.models import ModelSettings
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.providers.google import GoogleProvider
 
 
-# Ensure environment is loaded
-# base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# env_path = os.path.join(base_dir, ".env")
-# load_dotenv(env_path)
+# --- Configuration Models ---
 
+class NodeConfig(BaseModel):
+    """Configuration for a specific LLM agent node.
 
-# Defaults
-DEFAULT_MODEL = "google-gla:gemini-3.1-flash-lite-preview" #google-gla:gemini-2.5-flash-lite
+    Attributes:
+        model: Pydantic AI model identifier.
+        temperature: LLM temperature (0.0 to 1.0).
+        max_tokens: Maximum output tokens.
+        thinking: Optional thinking/reasoning effort level (Gemini 3+).
+    """
+    model: str = "google-gla:gemini-3.1-flash-lite-preview"
+    temperature: float = 0.0
+    max_tokens: int | None = None
+    thinking: Literal["minimal", "low", "medium", "high"] | None = None
 
-
-MODELS = {
-    "router": "google-gla:gemini-3.1-flash-lite-preview",
-    "interviewer": "google-gla:gemini-3.1-flash-lite-preview",
-    "scorer": "google-gla:gemini-2.5-flash-lite",
-    "scout": "google-gla:gemini-3.1-flash-lite-preview",
-    "web": "google-gla:gemini-3.1-flash-lite-preview",
-    "job_hunter": "google-gla:gemini-3.1-flash-lite-preview",
-    "synthesizer": "google-gla:gemini-3.1-flash-lite-preview",
-    "refiner": "google-gla:gemini-2.5-flash-lite"
-}
-
-
-def get_model(agent_name: str) -> str:
-    return MODELS.get(
-        agent_name,
-        DEFAULT_MODEL
+    @property
+    def model_settings(self) -> ModelSettings:
+        """Returns the Pydantic AI ModelSettings for this node."""
+        return ModelSettings(
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+            thinking=self.thinking,
         )
 
 
-def get_p_model(agent_name: str, client: genai.Client) -> GoogleModel:
+class AgentSettings(BaseSettings):
+    """Centralized Agent configuration with environment variable overrides.
     
-    mod_id = get_model(agent_name)
+    Settings can be overridden using the ODIS_AGENT_ prefix, e.g.:
+    ODIS_AGENT_SYNTHESIZER__TEMPERATURE=0.7
+    """
+    model_config = SettingsConfigDict(
+        env_prefix="ODIS_AGENT_",
+        env_file=".env",
+        env_nested_delimiter="__",
+        extra="ignore",
+    )
+
+    router: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite-preview"))
+    interviewer: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite-preview"))
+    scorer: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-2.5-flash-lite"))
+    scout: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite-preview"))
+    web: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite-preview"))
+    job_hunter: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite-preview"))
+    synthesizer: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite-preview", max_tokens=8192))
+    refiner: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-2.5-flash-lite"))
+
+    def get_config(self, agent_name: str) -> NodeConfig:
+        """Helper to get config by agent name, falling back to router if unknown."""
+        return getattr(self, agent_name, self.router)
+
+
+# Singleton instance
+agent_settings = AgentSettings()
+
+
+# --- Legacy Compatibility & Helpers ---
+
+DEFAULT_MODEL = "google-gla:gemini-3.1-flash-lite-preview"
+
+
+def get_model(agent_name: str) -> str:
+    """Returns the model string for a given agent."""
+    return agent_settings.get_config(agent_name).model
+
+
+def get_model_settings(agent_name: str) -> ModelSettings:
+    """Returns the ModelSettings for a given agent."""
+    return agent_settings.get_config(agent_name).model_settings
+
+
+def get_p_model(agent_name: str, client: genai.Client) -> GoogleModel:
+    """Returns a configured GoogleModel instance for Pydantic AI."""
+    config = agent_settings.get_config(agent_name)
+    mod_id = config.model
+    
     if ":" in mod_id:
         _, model_name = mod_id.split(":", 1)
     else:
         model_name = mod_id
     
-    api_key = os.getenv("GOOGLE_API_KEY")
-    
-    # Explicitly inject the fresh client (configured with retries)
+    # Explicitly inject the fresh client
     provider = GoogleProvider(client=client)
 
-    # grounding_tool = genai.types.Tool(
-    #     google_search=genai.types.GoogleSearch()
-    # )
-
-    # config = genai.types.GenerateContentConfig(
-    #     tools=[grounding_tool]
-    # )
-    
-    # Increase max_tokens for complex outputs (Refiner/Synthesizer)
     return GoogleModel(
         model_name, 
         provider=provider,

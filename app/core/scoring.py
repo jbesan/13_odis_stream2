@@ -15,11 +15,13 @@ from core.models import (
 )
 import logging
 import gc
+import logfire
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 from utils.common import project_point
 from services.rna_rag import RNARagService
 
+@logfire.instrument
 class ScoringEngine:
     """
     The engine responsible for running the ODIS scoring algorithm.
