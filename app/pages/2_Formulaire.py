@@ -1,5 +1,5 @@
 import streamlit as st
-
+import config as cfg
 
 
 
@@ -42,13 +42,23 @@ with st.sidebar:
     ui.start_over()
     from ui import feedback
     feedback.render_feedback_button()
+    
+    ui.render_org_badge()
 
     st.divider()
     
     if st.button("Passer aux résultats", type='secondary', width="stretch", icon=":material/fast_forward:"):
         st.switch_page("pages/3_Resultats.py") 
 
-PAGES = {
+PAGES = {}
+org_id = st.session_state.get('ui_org_context')
+if org_id:
+    profile = cfg.ORGANIZATION_PROFILES.get(org_id)
+    if profile:
+        logging.info(f"🏢 [UI] Organization profile detected: {org_id}")
+        PAGES["org"] = profile['name']
+
+PAGES.update({
     "localisation": "Localisation",
     "family": "Situation familiale",
     "education": "Éducation",
@@ -58,7 +68,7 @@ PAGES = {
     "other_needs": "Inclusion",
     "notes": "Autres",
     "profile": "Profil"
-}
+})
 PAGES_LIST = list(PAGES.keys())
 
 def get_person_accompanied_str():
@@ -112,13 +122,18 @@ def display_profile_page():
     st.subheader(f"Profil des priorités pour la recherche")
     ui_forms.render_weight_profile_form()
 
+def display_org_page():
+    # Title is handled by render_org_profile_form but we can add context here if needed
+    ui_forms.render_org_profile_form()
+
 if 'form_page' not in st.session_state:
-    st.session_state.form_page = 'localisation'
+    st.session_state.form_page = PAGES_LIST[0]
 
 current_page_index = PAGES_LIST.index(st.session_state.form_page)
 st.progress((current_page_index) / (len(PAGES_LIST)-1), text=f"Étape {current_page_index + 1}/{len(PAGES_LIST)}: {PAGES[st.session_state.form_page]}")
 
 page_function_map = {
+    "org": display_org_page,
     "localisation": display_localisation_actuelle_page,
     "family": display_family_situation_page,
     "education": display_education_page,

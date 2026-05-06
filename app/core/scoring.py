@@ -11,7 +11,7 @@ import config as cfg
 from core.models import (
     SearchCriterias, CommuneResult, CommuneScoreDetail, SearchResultsData,
     EmploymentMetrics, HousingMetrics, EducationMetrics, HealthMetrics, 
-    InclusionMetrics, MobilityMetrics
+    InclusionMetrics, MobilityMetrics, TerritoryMetrics
 )
 import logging
 import gc
@@ -117,11 +117,12 @@ class ScoringEngine:
         active = config.active_criteria if config.active_criteria is not None else self._get_active_criteria(config)
 
         # Compute for all categories
-        categories = ['emploi', 'logement', 'education', 'inclusion', 'mobilite', 'sante']
+        categories = ['emploi', 'logement', 'education', 'inclusion', 'mobilite', 'sante', 'territoire']
         for category in categories:
             # Skip if category totally irrelevant
             if category == 'education' and getattr(config, 'nb_enfants', 1) == 0: continue
             if category == 'sante' and getattr(config, 'besoin_sante', 'Aucun') == 'Aucun': continue
+            if category == 'territoire' and not getattr(config, 'org_strategic_locations', []): continue
 
             # Find columns for this category that are active
             cat_scores = self.scores_cat[self.scores_cat.cat == category]
@@ -236,13 +237,15 @@ class ScoringEngine:
             'education': config.poids_education,
             'inclusion': config.poids_inclusion,
             'mobilite': config.poids_mobilite,
-            'sante': config.poids_sante
+            'sante': config.poids_sante,
+            'territoire': config.poids_territoire
         }
         
         for cat, weight in weights.items():
             # Robust Check: Force exclusion if conditions met, even if column exists
             if cat == 'education' and config.nb_enfants == 0: continue
             if cat == 'sante' and config.besoin_sante == 'Aucun': continue
+            if cat == 'territoire' and not getattr(config, 'org_strategic_locations', []): continue
 
             # Skip if category score not computed (e.g. no children)
             col = f"{cat}_cat_score"
@@ -491,8 +494,10 @@ class ScoringEngine:
              active.add('sante_structures_scaled')
 
         # 6. Inclusion
-        active.add('inc_pol_scaled')
-        active.add('inc_population_scaled')
+        active.add('ter_pol_scaled')
+        active.add('ter_population_scaled')
+        if config.nb_enfants > 0:
+            active.add('ter_population_scaled')
         active.add('inc_asso_core_scaled')
         # F-26: Refugee Associations
         active.add('inc_asso_refug_scaled') 
@@ -509,6 +514,10 @@ class ScoringEngine:
         # 7. Population Target (F-50)
         if hasattr(config, 'target_population'): # Only if explicitly requested or part of full model
             active.add('inc_population_scaled')
+
+        # 8. Territory (F-54)
+        if getattr(config, 'org_strategic_locations', []):
+            active.add('ter_strategic_locations_scaled')
 
         return active
 
@@ -545,6 +554,7 @@ class ScoringEngine:
         incl_data = InclusionMetrics()
         mob_data = MobilityMetrics()
         logement_data = HousingMetrics()
+        territoire_data = TerritoryMetrics()
         
         # Populate mobility & static defaults from static_row
         mob_data.bus_stops = int(static_row.get('nb_stops_bus', 0))
@@ -590,7 +600,8 @@ class ScoringEngine:
             'education': config.poids_education if config else 1.0,
             'inclusion': config.poids_inclusion if config else 1.0,
             'mobilite': config.poids_mobilite if config else 1.0,
-            'sante': config.poids_sante if config else 1.0
+            'sante': config.poids_sante if config else 1.0,
+            'territoire': config.poids_territoire if config else 1.0
         }
         
         # Skip categories based on config
@@ -598,6 +609,8 @@ class ScoringEngine:
             if config.nb_enfants == 0: cat_weights['education'] = 0.0
             if config.besoin_sante == 'Aucun': 
                 cat_weights['sante'] = 0.0
+            if not config.org_strategic_locations:
+                cat_weights['territoire'] = 0.0
         
         # 2. Identify displayed criteria and compute internal weights based on visibility
         displayed_items: List[Dict[str, Any]] = []
@@ -618,6 +631,8 @@ class ScoringEngine:
                 norm_cat = 'mobilite'
             elif norm_cat in ['santé', 'sante']:
                 norm_cat = 'sante'
+            elif norm_cat == 'territoire':
+                norm_cat = 'territoire'
             active_norm_cats.add(norm_cat)
             
             w_crit = float(score_row['weight'])
@@ -887,6 +902,8 @@ class ScoringEngine:
         sante_data.cat_score = float(cat_final_scores.get('sante', 0.0))
         incl_data.cat_score = float(cat_final_scores.get('inclusion', 0.0))
         mob_data.cat_score = float(cat_final_scores.get('mobilite', 0.0))
+        territoire_data.cat_score = float(cat_final_scores.get('territoire', 0.0))
+        territoire_data.is_strategic = bool(row.get('ter_strategic_locations_scaled', 0.0) == 1.0)
 
         return CommuneResult(
             codgeo=str(row.name),
@@ -901,7 +918,8 @@ class ScoringEngine:
             education=edu_data,
             health=sante_data,
             inclusion=incl_data,
-            mobility=mob_data
+            mobility=mob_data,
+            territoire=territoire_data
         )
 
     def create_search_results(self, processed_gdf: gpd.GeoDataFrame, config: SearchCriterias) -> SearchResultsData:
@@ -1323,18 +1341,18 @@ class ScoringEngine:
         # Operating in-place
         
         # Population Score (F-50) - Dynamic re-calculation
-        if 'inc_population_scaled' in self._get_active_criteria(config) and 'population' in df.columns:
+        if 'ter_population_scaled' in self._get_active_criteria(config) and 'population' in df.columns:
             mu = getattr(config, 'target_population', 50000)
             sigma = getattr(config, 'target_population_sigma', 25000)
             
-            df['inc_population_scaled'] = self._scale_series(
+            df['ter_population_scaled'] = self._scale_series(
                 df['population'], 0, 0, 
                 scaling_type='gaussian', mu=mu, sigma=sigma
             )
             
             # --- F-13: BdV Saturation Check ---
             if 'population_bv_bdv' in df.columns:
-                 df['inc_population_scaled_bdv'] = self._scale_series(
+                 df['ter_population_scaled_bdv'] = self._scale_series(
                     df['population_bv_bdv'], 0, 0, 
                     scaling_type='gaussian', mu=mu, sigma=sigma
                 )
@@ -1408,10 +1426,23 @@ class ScoringEngine:
         df = self._compute_inclusion_scores(df, config)
         df = self._compute_housing_scores(df, config)
         df = self._compute_education_scores(df, config)
+        df = self._compute_territory_scores(df, config)
         
         # Pruning
-        df = self._prune_irrelevant_metrics(df, config)
-        
+        return df
+
+    def _compute_territory_scores(self, df: pd.DataFrame, config: SearchCriterias) -> pd.DataFrame:
+        """Computes binary boost for strategic locations."""
+        if getattr(config, 'org_strategic_locations', []):
+            zone_type = getattr(config, 'org_strategic_locations_type', 'departement')
+            col_to_check = 'dep_code' if zone_type == 'departement' else 'bassin_de_vie'
+            
+            if col_to_check in df.columns:
+                df['ter_strategic_locations_scaled'] = df[col_to_check].isin(config.org_strategic_locations).astype(float)
+            else:
+                df['ter_strategic_locations_scaled'] = 0.0
+        else:
+            df['ter_strategic_locations_scaled'] = 0.0
         return df
 
 

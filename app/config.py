@@ -1,7 +1,7 @@
 import warnings
 import os
 from dataclasses import dataclass
-from typing import List, Dict, Any, Union, Optional
+from typing import List, Dict, Any, Union, Optional, TypedDict, Literal
 
 # Suppress annoying warnings from third-party libraries (especially in Python 3.14+)
 warnings.filterwarnings("ignore", module="langchain_core.*")
@@ -100,21 +100,37 @@ WEIGHT_PROFILES = {
         "poids_emploi": 0.25, "poids_logement": 1.0, "poids_education": 1.0,
         "poids_inclusion": 0.25, "poids_sante": 0.5, "poids_mobilite": 0.5
     },
-    "Célibataire / Actif": {
-        "poids_emploi": 1.0, "poids_logement": 0.25, "poids_education": 0.25,
-        "poids_inclusion": 0.25, "poids_sante": 0.25, "poids_mobilite": 1.0
-    },
-    "Précaire": {
-        "poids_emploi": 0.5, "poids_logement": 0.75, "poids_education": 0.25,
-        "poids_inclusion": 1.0, "poids_sante": 0.5, "poids_mobilite": 0.75
-    },
-    "Sénior": {
-        "poids_emploi": 0.0, "poids_logement": 0.75, "poids_education": 0.0,
+    "Santé": {
+        "poids_emploi": 0.25, "poids_logement": 0.75, "poids_education": 0.0,
         "poids_inclusion": 0.75, "poids_sante": 1.0, "poids_mobilite": 0.75
     },
-    "Economique": {
+    "Économique": {
         "poids_emploi": 1.0, "poids_logement": 0.75, "poids_education": 0.25,
         "poids_inclusion": 0.5, "poids_sante": 0.25, "poids_mobilite": 0.25
+    }
+}
+
+# --- Organization Profiles (F-54) ---
+class OrgProfile(TypedDict):
+    name: str
+    description: str
+    zone_type: Literal["departement", "bassin_de_vie"]
+    default_zones: List[str]
+    weights: Dict[str, float]
+
+ORGANIZATION_PROFILES: Dict[str, OrgProfile] = {
+    "jaccueille": {
+        "name": "J'Accueille",
+        "description": "J'Accueille est un programme de cohabitation solidaire qui met en relation des personnes réfugiées à la recherche d'un logement et des particuliers disposant d'une chambre libre.",
+        "zone_type": "departement",
+        "default_zones": [
+            "01", "13", "22", "26", "30", "31", "33", "34", "35", "37", 
+            "38", "40", "42", "44", "64", "69", "72", "75", "76", "77", 
+            "78", "81", "91", "92", "93", "94", "95"
+        ],
+        "weights": {
+            "poids_territoire": 1.0
+        }
     }
 }
 
@@ -184,7 +200,11 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     'notes_qualitatives': "",
     'freq_retour': '1 fois/mois',
     'target_population': DEFAULT_MU,
-    'target_population_sigma': DEFAULT_SIGMA
+    'target_population_sigma': DEFAULT_SIGMA,
+    'org_context': None,
+    'org_strategic_locations': [],
+    'org_strategic_locations_type': 'departement',
+    'poids_territoire': 0.0
 }
 
 

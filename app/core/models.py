@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Dict, Any, Union, Optional, Set
+from typing import List, Dict, Any, Union, Optional, Set, Literal
 import hashlib
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 
@@ -62,6 +62,12 @@ class SearchCriterias(BaseModel):
     poids_inclusion: float = Field(0.0, description="Weight for inclusion criteria")
     poids_mobilite: float = Field(0.0, description="Weight for mobility")
     poids_sante: float = Field(0.0, description="Weight for health criteria")
+    poids_territoire: float = Field(0.0, description="Weight for organization strategic territory")
+    
+    # Organization Context (F-54)
+    org_context: Optional[str] = Field(None, description="Active organization profile key (e.g. 'jaccueille')")
+    org_strategic_locations: List[str] = Field(default_factory=list, description="Whitelist of strategic codes (Dep or BdV)")
+    org_strategic_locations_type: Literal["departement", "bassin_de_vie"] = Field("departement", description="Type of strategic zones")
     
     # Population target (F-50)
     target_population: int = Field(50000, description="Target population size for the city (mu)")
@@ -186,6 +192,10 @@ class MobilityMetrics(BaseModel):
     is_same_epci: Optional[bool] = None
     distance_to_current_km: Optional[float] = None
 
+class TerritoryMetrics(BaseModel):
+    cat_score: float = 0.0
+    is_strategic: bool = False
+
 class CommuneResult(BaseModel):
     """Encapsulates identity, scores, and metadata for a specific commune."""
     # Identity
@@ -208,6 +218,7 @@ class CommuneResult(BaseModel):
     health: HealthMetrics = Field(default_factory=HealthMetrics)
     inclusion: InclusionMetrics = Field(default_factory=InclusionMetrics)
     mobility: MobilityMetrics = Field(default_factory=MobilityMetrics)
+    territoire: TerritoryMetrics = Field(default_factory=TerritoryMetrics)
 
     # Agent-generated content
     scorer_pitch: str = Field(default="", description="Short pitch from Scorer Agent")

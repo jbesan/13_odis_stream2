@@ -34,6 +34,8 @@ if len(st.query_params) > 0 and 'demo' in st.query_params:
         if st.button('Quitter Mode Démo', key='quit_demo'):
             st.query_params.clear()
             st.rerun()
+            
+    ui.render_org_badge()
 
 # --- CSS / Styling (V3 Global Green) ---
 st.markdown("""

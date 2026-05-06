@@ -65,6 +65,9 @@ with st.sidebar:
     st.write("")
     feedback.render_feedback_button()
     
+    from ui import components as ui_comp
+    ui_comp.render_org_badge()
+    
     st.divider()
     st.checkbox("⚙️ Infos techniques", value=False, key="show_tech_info")
 

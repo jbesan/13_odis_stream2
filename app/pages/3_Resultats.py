@@ -293,6 +293,8 @@ with st.sidebar:
 
     # --- Bouton Feedback ---
     feedback.render_feedback_button()
+    
+    ui.render_org_badge()
 
     # --- Export to PDF ---
     if st.session_state.get('search_results') is not None:
