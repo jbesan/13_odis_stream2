@@ -8,13 +8,13 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'app')))
 
 from agents.job_hunter import job_hunter_agent
-from agents.state import ODISGraphState, ODISDeps
+from agents.state import GraphState, ODISDeps
 from agents.tools import search_job_offers_batch
 
 @pytest.fixture
 def test_deps():
-    state = ODISGraphState(
-        briefing="Projet: Boulanger et Pâtissier",
+    state = GraphState(
+        odis_brief="Projet: Boulanger et Pâtissier",
         focus_city="Paris",
         search_criteria={}
     )

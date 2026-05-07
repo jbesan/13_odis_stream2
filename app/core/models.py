@@ -72,6 +72,9 @@ class SearchCriterias(BaseModel):
     # Population target (F-50)
     target_population: int = Field(50000, description="Target population size for the city (mu)")
     target_population_sigma: int = Field(25000, description="Tolerance (sigma) for the population size")
+    
+    # Organization Specific Boosts (F-54 Expansion)
+    org_boosts: Dict[str, float] = Field(default_factory=dict, description="Multiplier boosts for specific criteria (e.g. {'heb_jaccueille_score': 3.0})")
 
 
 

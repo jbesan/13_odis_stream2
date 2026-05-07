@@ -2,12 +2,12 @@ import pytest
 from pydantic_ai.models.test import TestModel
 from unittest.mock import MagicMock, patch
 from agents.job_hunter import job_hunter_agent
-from agents.state import ODISGraphState, ODISDeps
+from agents.state import GraphState, ODISDeps
 
 @pytest.fixture
 def test_deps():
-    state = ODISGraphState(
-        briefing="Projet: Boulanger",
+    state = GraphState(
+        odis_brief="Projet: Boulanger",
         focus_city="Paris"
     )
     # We mock search_referentiels to return a dummy INSEE for Paris

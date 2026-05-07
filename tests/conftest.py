@@ -2,6 +2,8 @@ import sys
 import os
 import pytest
 
+# Disable Logfire for all tests
+os.environ["LOGFIRE_TOKEN"] = ""
 # Add app directory to sys.path to support app-rooted imports during tests
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../app')))
 

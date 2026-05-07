@@ -1,9 +1,9 @@
 [
     {
         "bassin_de_vie": "75056",
-        "weighted_score": 0.6881568898554709,
+        "weighted_score": 0.6863186433426671,
         "population_bv": 12543353,
-        "libgeo": "Bondy",
+        "libgeo": "Saint-Denis",
         "communes": [
             "75056",
             "75101",
@@ -465,45 +465,12 @@
             "95680",
             "95682"
         ],
-        "inclusion_cat_score": 0.424365462475317,
+        "inclusion_cat_score": 0.4984874369630336,
         "mob_epci_scaled": 1.0
     },
     {
-        "bassin_de_vie": "91223",
-        "weighted_score": 0.6193788212867869,
-        "population_bv": 39815,
-        "libgeo": "Étampes",
-        "communes": [
-            "91001",
-            "91022",
-            "91075",
-            "91079",
-            "91098",
-            "91100",
-            "91109",
-            "91130",
-            "91223",
-            "91240",
-            "91248",
-            "91294",
-            "91374",
-            "91393",
-            "91399",
-            "91433",
-            "91469",
-            "91495",
-            "91508",
-            "91526",
-            "91533",
-            "91544",
-            "91556"
-        ],
-        "inclusion_cat_score": 0.5028874026617226,
-        "mob_epci_scaled": 0.0
-    },
-    {
         "bassin_de_vie": "78361",
-        "weighted_score": 0.6098338447238864,
+        "weighted_score": 0.6125963430336865,
         "population_bv": 118012,
         "libgeo": "Mantes-la-Jolie",
         "communes": [
@@ -545,12 +512,45 @@
             "95656",
             "95676"
         ],
-        "inclusion_cat_score": 0.518388542698287,
+        "inclusion_cat_score": 0.5349635325570878,
+        "mob_epci_scaled": 0.0
+    },
+    {
+        "bassin_de_vie": "91223",
+        "weighted_score": 0.6110125582333158,
+        "population_bv": 39815,
+        "libgeo": "Étampes",
+        "communes": [
+            "91001",
+            "91022",
+            "91075",
+            "91079",
+            "91098",
+            "91100",
+            "91109",
+            "91130",
+            "91223",
+            "91240",
+            "91248",
+            "91294",
+            "91374",
+            "91393",
+            "91399",
+            "91433",
+            "91469",
+            "91495",
+            "91508",
+            "91526",
+            "91533",
+            "91544",
+            "91556"
+        ],
+        "inclusion_cat_score": 0.4526898243408959,
         "mob_epci_scaled": 0.0
     },
     {
         "bassin_de_vie": "77284",
-        "weighted_score": 0.5998113862327544,
+        "weighted_score": 0.5852382315346492,
         "population_bv": 116929,
         "libgeo": "Meaux",
         "communes": [
@@ -601,12 +601,12 @@
             "77515",
             "77526"
         ],
-        "inclusion_cat_score": 0.41672328047101287,
+        "inclusion_cat_score": 0.3292843522823816,
         "mob_epci_scaled": 0.0
     },
     {
         "bassin_de_vie": "77379",
-        "weighted_score": 0.5871384359407956,
+        "weighted_score": 0.5787701893082361,
         "population_bv": 33943,
         "libgeo": "Provins",
         "communes": [
@@ -648,7 +648,7 @@
             "77530",
             "77532"
         ],
-        "inclusion_cat_score": 0.29687187997335596,
+        "inclusion_cat_score": 0.24666240017799845,
         "mob_epci_scaled": 0.0
     }
 ]

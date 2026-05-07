@@ -47,14 +47,14 @@ class AgentSettings(BaseSettings):
         extra="ignore",
     )
 
-    router: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite-preview"))
-    interviewer: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite-preview"))
-    scorer: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-2.5-flash-lite"))
-    scout: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite-preview"))
-    web: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite-preview"))
-    job_hunter: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite-preview"))
-    synthesizer: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite-preview", max_tokens=8192))
-    refiner: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-2.5-flash-lite"))
+    router: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-2.5-flash-lite", temperature=0.1, thinking="medium"))
+    interviewer: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite-preview", temperature=0.5, thinking="high"))
+    scorer: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-2.5-flash-lite", temperature=0.1, thinking="medium"))
+    scout: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite-preview", temperature=0.3, thinking="high"))
+    web: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite-preview", temperature=0.3, thinking="high"))
+    job_hunter: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite-preview", temperature=0.3, thinking="medium"))
+    synthesizer: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite-preview", temperature=0.1, thinking="high", max_tokens=8192))
+    refiner: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-2.5-flash-lite", temperature=0.1, thinking="medium"))
 
     def get_config(self, agent_name: str) -> NodeConfig:
         """Helper to get config by agent name, falling back to router if unknown."""

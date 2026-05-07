@@ -284,4 +284,19 @@ _(Most features omitted for brevity. Appending F-42)_
 ### 📊 Status
 - **May 2026**: Done. Migration complete, documentation updated, and E2E tests verified.
 
+## 🚀 Feature [F-56]: Observabilité SOTA via Pydantic Logfire
+
+### 📝 User Story
+- En tant que développeur, je veux une visibilité totale sur les interactions LLM (prompts, tokens, coûts) et les performances du pipeline de scoring pour déboguer rapidement les anomalies.
+- En tant qu'administrateur, je veux pouvoir tracer une session utilisateur complète depuis le formulaire jusqu'à la synthèse finale.
+
+### 🔑 Key Features
+- **Tracing Hiérarchique** : Instrumentation complète du graphe d'agents et du `ScoringEngine`.
+- **Monitoring des Coûts** : Capture automatique de l'usage des tokens par agent.
+- **Diagnostics de Latence** : Mesure du temps passé dans les appels d'outils (Brave Search) vs calculs locaux.
+- **Graceful No-op** : Le système fonctionne normalement même si le token Logfire est absent (mode local/offline).
+
+### 📊 Status
+- **May 2026**: Done. Initial setup and instrumentation across all core modules.
+
 

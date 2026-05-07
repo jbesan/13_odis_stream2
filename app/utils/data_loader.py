@@ -223,6 +223,11 @@ def apply_search_criteria_to_ui(criteria: Any) -> None:
     if has_custom_weights:
         st.session_state['ui_expert_weights'] = True
 
+    # 6b. Handle Organization Boosts
+    if 'org_boosts' in flat_crit and isinstance(flat_crit['org_boosts'], dict):
+        for b_key, b_val in flat_crit['org_boosts'].items():
+            st.session_state[f"ui_org_boost_{b_key}"] = float(b_val)
+
     # 7. Town Size Reverse Lookup (Sync Radio Button with Mu/Sigma)
     target_pop = flat_crit.get('target_population')
     target_sigma = flat_crit.get('target_population_sigma')
@@ -267,11 +272,13 @@ def ensure_data_initialized() -> None:
     
     if 'demo_data' not in st.session_state or force_refresh:
         defaults = copy.deepcopy(cfg.DEMO_DATA_DEFAULT)
-        # Apply org profile if present
-        apply_org_data_if_present(defaults)
-        # Apply demo scenario if present (Demos override/supplement orgs)
+        
+        # Apply demo scenario if present 
         apply_demo_data_if_present(defaults)
         
+        # Apply org profile if present
+        apply_org_data_if_present(defaults)
+
         st.session_state['demo_data'] = defaults
         
     # Always ensure session states are initialized if missing

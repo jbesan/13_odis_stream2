@@ -1,4 +1,4 @@
-from agents.state import ODISGraphState, compute_criteria_hash, merge_search_results
+from agents.state import GraphState, compute_criteria_hash, merge_search_results
 from langgraph.graph import END
 from core.models import SearchCriterias, CriteriaItem, SearchResultsData, CommuneResult
 

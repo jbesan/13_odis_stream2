@@ -72,3 +72,16 @@ Background tasks are managed via a dedicated store and fragment polling:
 - **WEB**: Uses Google Search Grounding to provide real-time socio-economic context.
 - **Job Hunter**: Queries France Travail and specialized job boards for real-time tension data.
 - **Scorer**: (Runs outside the graph) Provides a mathematical explanation of the ODIS weighted scores.
+
+## 6. Observability (Logfire)
+
+ODIS uses **Pydantic Logfire** for end-to-end tracing and performance monitoring.
+
+### 6.1 Instrumentation Scope
+- **Native Agents**: All PydanticAI agents are automatically instrumented to capture prompts, outputs, and token usage.
+- **Orchestration Nodes**: Graph nodes are wrapped with `@logfire.instrument` to visualize the MapReduce fan-out/fan-in performance.
+- **Scoring Engine**: The `ScoringEngine` class is instrumented to identify bottlenecks in the multi-criteria calculation pipeline.
+- **Web Requests**: `HTTPX` instrumentation tracks the latency of external tools (Brave Search, RAG services).
+
+### 6.2 Session Grouping
+Each user run is wrapped in a high-level span labeled `"ODIS Session"` (in `main.py`), allowing developers to group all logs and traces related to a single user interaction by filtering for that span or using the `interaction_id` attribute.

@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 from utils.common import project_point
 from services.rna_rag import RNARagService
 
-@logfire.instrument
+
 class ScoringEngine:
     """
     The engine responsible for running the ODIS scoring algorithm.
@@ -387,10 +387,14 @@ class ScoringEngine:
         self._associations_cache = {}
         
         # Discover and normalize categories from the scoring definitions
-        self.categories = sorted([
-            cat.replace('é', 'e').replace('ê', 'e').replace('à', 'a').lower() 
-            for cat in self.scores_cat['cat'].unique()
-        ])
+        # Discover and normalize categories from the scoring definitions
+        if not self.scores_cat.empty and 'cat' in self.scores_cat.columns:
+            self.categories = sorted([
+                cat.replace('é', 'e').replace('ê', 'e').replace('à', 'a').lower() 
+                for cat in self.scores_cat['cat'].unique()
+            ])
+        else:
+            self.categories = []
         logger.info(f"ScoringEngine initialized with categories: {self.categories}")
 
     def _get_active_criteria(self, config: Optional[SearchCriterias]) -> Set[str]:
@@ -399,7 +403,9 @@ class ScoringEngine:
         
         # If no config provided, we default to all present scores
         if config is None:
-             return {c for c in self.scores_cat['score'] if c in self.df_all_communes.columns}
+             if not self.scores_cat.empty and 'score' in self.scores_cat.columns:
+                 return {c for c in self.scores_cat['score'] if c in self.df_all_communes.columns}
+             return set()
 
         # 1. Categories that are always active (even if partial)
         active.add('workclass_decline_scaled')

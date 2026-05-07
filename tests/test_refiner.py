@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 from agents.graph import refiner_node
-from agents.state import ODISGraphState, ODISDeps, SearchCriterias
+from agents.state import GraphState, ODISDeps, SearchCriterias
 from core.models import CriteriaItem
 from agents.refiner import RefinerResult
 from typing import Any
@@ -9,7 +9,7 @@ from typing import Any
 
 @pytest.fixture
 def state():
-    s = ODISGraphState()
+    s = GraphState()
     s.search_criteria = SearchCriterias(
         commune_actuelle=CriteriaItem(code='33063', label='Bordeaux'),
         codes_metiers=[[CriteriaItem(code='D1102', label='Boulangerie')]]

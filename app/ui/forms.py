@@ -403,18 +403,65 @@ def render_org_profile_form() -> None:
     
     # Ensure all current selections are in options (safety)
     valid_selection = [x for x in current_selection if x in options]
-    
+    st.write(f"**Zones d'intérêt stratégique ({label})**")
+
     selected_zones = st.multiselect(
         f"**Zones d'intérêt stratégique ({label})**",
         options=options,
         default=valid_selection,
         format_func=format_func,
+        label_visibility="collapsed",
         key="ui_org_strategic_locations_multiselect",
         help="Les communes situées dans ces zones recevront un bonus dans le score final."
     )
     
     # Update the actual session state used by scoring
     st.session_state['ui_org_strategic_locations'] = selected_zones
+    
+    # --- Criteria Boosts Sliders (F-54 Expansion) ---
+    org_defaults = profile.get('defaults', {})
+    if 'org_boosts' in org_defaults:
+        st.divider()
+        st.write("**Boosts de critères spécifiques**")
+        st.text("Ajustez l'importance de certains critères clés pour votre organisation (multiplicateur x1 à x5).")
+        
+        boost_config = org_defaults['org_boosts']
+        new_boosts = {}
+        
+        for criterion_id, default_val in boost_config.items():
+            # Get label from config
+            label = criterion_id
+            score_row = app_data['scores_cat'][app_data['scores_cat']['score'] == criterion_id]
+            if not score_row.empty:
+                label = score_row.iloc[0]['label']
+            
+            # Key for session state
+            ui_key = f"ui_org_boost_{criterion_id}"
+            
+            # Ensure session state is initialized if not present
+            if ui_key not in st.session_state:
+                st.session_state[ui_key] = float(default_val)
+            with st.container(horizontal=True):
+                # col1, col2 = st.columns([1, 2])
+                # with col1:
+                st.space(size="medium")
+                st.markdown(f"##### {label}")
+                # with col2:
+                val = st.slider(
+                    f"Boost pour : {label}",
+                    min_value=1,
+                    max_value=5,
+                    value=int(st.session_state[ui_key]),
+                    step=1,
+                    format="x%d",
+                    key=f"ui_org_boost_slider_{criterion_id}",
+                    width=100,
+                    label_visibility="collapsed",
+                    on_change=lambda k=ui_key, sk=f"ui_org_boost_slider_{criterion_id}": st.session_state.update({k: float(st.session_state[sk])})
+                )
+            new_boosts[criterion_id] = float(val)
+        
+        st.session_state['ui_org_boosts'] = new_boosts
     
     # st.markdown("---")
     # st.caption("Vous pouvez modifier ces paramètres manuellement dans les autres onglets si nécessaire.")
@@ -772,5 +819,6 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
         org_context=st.session_state.get('ui_org_context'),
         org_strategic_locations=st.session_state.get('ui_org_strategic_locations', []),
         org_strategic_locations_type=st.session_state.get('ui_org_strategic_locations_type', 'departement'),
+        org_boosts=st.session_state.get('ui_org_boosts', {}),
         poids_territoire=st.session_state.get('ui_poids_territoire', 0.5)
     )

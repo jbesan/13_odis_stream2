@@ -1,4 +1,5 @@
 import logging
+import logfire
 import json
 from datetime import datetime
 from typing import List, Dict, Any, Optional
@@ -67,6 +68,7 @@ async def scorer_instructions(ctx: RunContext[ODISDeps]) -> str:
 
 # --- Tool Wrapper ---
 
+@logfire.instrument
 @scorer_agent.tool
 def compute_top_cities_tool(ctx: RunContext[ODISDeps]) -> Dict[str, Any]:
     """

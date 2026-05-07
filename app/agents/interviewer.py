@@ -1,4 +1,5 @@
 import logging
+import logfire
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field, ConfigDict
 from pydantic_ai import Agent, RunContext
@@ -61,6 +62,7 @@ async def main_instructions(ctx: RunContext) -> str:
     )
     return prompt
 
+@logfire.instrument
 @interviewer_agent.tool
 async def search_referentiels_batch_tool(ctx: RunContext, searches: List[SearchQuery]) -> Dict[str, List[Dict[str, Any]]]:
     """

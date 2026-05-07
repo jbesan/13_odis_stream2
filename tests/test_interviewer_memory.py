@@ -2,12 +2,12 @@ import pytest
 from pydantic_ai.models.test import TestModel
 from unittest.mock import MagicMock, patch
 from agents.interviewer import interviewer_agent, InterviewerResult
-from agents.state import ODISGraphState, ODISDeps
+from agents.state import GraphState, ODISDeps
 from core.models import SearchCriterias, CriteriaItem
 
 @pytest.fixture
 def test_deps():
-    state = ODISGraphState()
+    state = GraphState()
     # Mock search_criteria with a commune_actuelle
     state.search_criteria.commune_actuelle = CriteriaItem(code='33063', label='Bordeaux')
     return ODISDeps(state=state, client=MagicMock())

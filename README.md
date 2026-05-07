@@ -14,6 +14,7 @@ L'innovation de ce prototyp### 🛠️ Key Features
 
 - **Reverse Search Algorithm**: Multi-criteria scoring engine with dynamic weights.
 - **AI Synthesis (Graph-based)**: Agentic workflow powered by pydantic-graph and Gemini for deep site analysis.
+- **Observability**: Hierarchical tracing and token usage monitoring via Pydantic Logfire.
 - **Background Tasks**: Non-blocking AI execution for Cloud Run stability (Daemon threads + Fragment polling).
 - **Interactive Map**: Folium/Leaflet integration for spatial mediation.
 - **PDF Reports**: Automated generation of argued territorial summaries.
@@ -152,6 +153,7 @@ Le score est calculé à partir d'une multitude de critères, regroupés en gran
 
 - **Framework Applicatif :** [Streamlit](https://streamlit.io/)
 - **Analyse de Données :** [Pandas](https://pandas.pydata.org/), [GeoPandas](https://geopandas.org/), [NumPy](https://numpy.org/)
+- **Observabilité :** [Pydantic Logfire](https://logfire.pydantic.dev/) (Tracing, Télémétrie, Monitoring LLM)
 - **Scoring & Normalisation :** [Scikit-learn](https://scikit-learn.org/)
 - **Cartographie Interactive :** [Folium](https://python-visualization.github.io/folium/) & [streamlit-folium](https://github.com/randyzwitch/streamlit-folium)
 - **Graphiques :** [Plotly Express](https://plotly.com/python/plotly-express/)
