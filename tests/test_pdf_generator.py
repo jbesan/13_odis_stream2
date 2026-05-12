@@ -8,7 +8,7 @@ from typing import Any
 
 from core.pdf_generator import generate_pdf_report
 import config as cfg
-from core.models import SearchCriterias, SearchResultsData, CommuneResult, CriteriaItem, EmploymentMetrics, HousingMetrics, EducationMetrics, HealthMetrics, InclusionMetrics, MobilityMetrics
+from core.models import SearchCriterias, SearchResultsData, CommuneResult, CriteriaItem, EmploymentMetrics, HousingMetrics, EducationMetrics, HealthMetrics, InclusionMetrics, MobilityMetrics, AssociationDetail
 
 @pytest.fixture
 def sample_session_state():
@@ -89,14 +89,16 @@ def sample_search_results():
             name='Paris',
             population=2200000,
             global_score=0.85,
-            geometry=Polygon([(2.224, 48.816), (2.469, 48.816), (2.469, 48.902), (2.224, 48.902)])
+            inclusion=InclusionMetrics(
+                asso_refugee_list=[AssociationDetail(id="1", name="Asso Refugee Paris", waldec_label="Social", description="Helping people")],
+                asso_inclusion_list_by_cat={"Culture": [AssociationDetail(id="2", name="Asso Culture Paris", description="Cultural activities")]}
+            )
         ),
         CommuneResult(
             codgeo='69123',
             name='Lyon',
             population=500000,
-            global_score=0.72,
-            geometry=Polygon([(4.8, 45.7), (4.9, 45.7), (4.9, 45.8), (4.8, 45.8)])
+            global_score=0.72
         )
     ]
     
@@ -104,8 +106,7 @@ def sample_search_results():
         codgeo='33063',
         name='Bordeaux',
         population=250000,
-        global_score=0.65,
-        geometry=Polygon([(-0.6, 44.8), (-0.5, 44.8), (-0.5, 44.9), (-0.6, 44.9)])
+        global_score=0.65
     )
     
     return SearchResultsData(

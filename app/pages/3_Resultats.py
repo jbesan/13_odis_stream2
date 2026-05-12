@@ -18,7 +18,7 @@ from shapely.geometry import mapping
 import logging
 import gc
 import warnings
-from agents.utils import launch_background_scorer, odis_get_bg_result, launch_background_enrichment, launch_post_scoring_tasks
+from agents.utils import launch_background_refiner, odis_get_bg_result, launch_background_enrichment, launch_post_scoring_tasks
 from core.models import SearchResultsData
 from utils import memory
 logger = logging.getLogger(__name__)
@@ -55,48 +55,6 @@ if 'active_details_index' not in st.session_state:
 if 'active_ccas_index' not in st.session_state:
     st.session_state['active_ccas_index'] = None
 
-# --- PDF Modal Logic ---
-@st.dialog("Export des résultats en PDF")
-def pdf_modal():
-    
-    # State 1: Loading / Generating
-    if 'pdf_modal_data' not in st.session_state or st.session_state.pdf_modal_data is None:
-        
-        with st.spinner("Veuillez patienter, nous générons votre document..."):
-            try:    
-                search_results = st.session_state.get('search_results')
-                
-                pdf_bytes = generate_pdf_report(
-                    search_results=search_results,
-                    config=st.session_state.config,
-                    processed_gdf=st.session_state.get('processed_gdf')
-                )
-                st.session_state.pdf_modal_data = pdf_bytes
-            except Exception as e:
-                st.error(f"Erreur lors de la génération du PDF : {e}")
-                if st.button("Fermer"):
-                    st.session_state.pdf_modal_data = None
-                    st.rerun()
-                return
-
-    # State 2: Download Ready
-    if st.session_state.get('pdf_modal_data'):
-        st.success("Votre document est prêt !")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.download_button(
-                label="Télécharger le PDF",
-                data=st.session_state.pdf_modal_data,
-                file_name="synthese_jaccueille.pdf",
-                mime="application/pdf",
-                icon=':material/picture_as_pdf:',
-                type='primary',
-                width='stretch'
-            )
-        with col2:
-            if st.button("Fermer", width="stretch"):
-                st.session_state.pdf_modal_data = None
-                st.rerun()
 
 
 # --- PDF Modal Execution (moved to bottom for reliability) ---
@@ -242,39 +200,15 @@ if st.session_state.get('processed_gdf') is None and st.session_state.get('form_
     run_search()
     st.session_state['form_completed'] = False
 
-# --- UI LAYOUT
-@st.fragment(run_every=3.0)
-def export_pdf_container(h: str):
-    """Module-level fragment to handle background status and PDF triggering."""
-    if not h:
-        return
+# --- UI LAYOUT ---
 
-    scorer_res = odis_get_bg_result(h)
-    
-    # 🧪 SOTA: Robust check for BOTH Scorer and Enrichment completion
-    has_pitches = isinstance(scorer_res, dict) and "pitches" in scorer_res
-    has_enrichment = isinstance(scorer_res, dict) and "enrichment" in scorer_res
-    
-    if has_pitches and has_enrichment:
-        if st.button(
-            "Exporter résultats", 
-            icon=':material/picture_as_pdf:',
-            type='secondary',
-            width="stretch",
-            key=f"pdf_btn_{h}" # Keyed by hash to ensure fresh button per search
-        ):
-            pdf_modal()
-    elif isinstance(scorer_res, dict) and "pitches_error" in scorer_res:
-        st.error(scorer_res["pitches_error"])
-    else:
-        # Still running or not started
-        st.button(
-            "Patientez...", 
-            disabled=True,
-            icon=':material/hourglass_empty:',
-            type='secondary',
-            width="stretch"
-        )
+# Fragment-based PDF container (polled while background tasks are running)
+@st.fragment(run_every=3.0)
+def export_pdf_container_polling(h: str):
+    ui_results.render_export_pdf_button(h)
+
+def export_pdf_container_static(h: str):
+    ui_results.render_export_pdf_button(h)
 
 # Sidebar
 with st.sidebar:
@@ -298,7 +232,15 @@ with st.sidebar:
 
     # --- Export to PDF ---
     if st.session_state.get('search_results') is not None:
-        export_pdf_container(st.session_state.search_results.search_hash)
+        h = st.session_state.search_results.search_hash
+        bg_res = odis_get_bg_result(h)
+        # Stop polling if both pitches and enrichment are done
+        is_done = isinstance(bg_res, dict) and "pitches" in bg_res and "enrichment" in bg_res
+        
+        if is_done:
+            export_pdf_container_static(h)
+        else:
+            export_pdf_container_polling(h)
     
     # st.divider()
 
@@ -322,9 +264,22 @@ with st.container(border=False, key='top_menu'):
     with col_button: 
         with st.container(height="stretch", horizontal_alignment="center", vertical_alignment="center"):
             st.button("Lancer la recherche", on_click=run_search, type="primary")
-    with st.expander('Modifier les critères de recherche', expanded=False):
+    with st.expander('🔎 Modifier les critères de recherche', expanded=False):
         ui_forms.display_input_tabs()
     
+    brief = st.session_state.config.odis_brief if st.session_state.get('config') else ""
+    if brief:
+        with st.expander("📝 Résumé du dossier", expanded=False):
+            st.markdown(brief)
+    
+# Global Pitch (Strategic intro + Loading state)
+# if st.session_state.get('search_results'):
+#     h = st.session_state.search_results.search_hash
+    # @st.fragment(run_every=3.0)
+    # def global_pitch_container(h: str):
+    #     ui_results.render_global_pitch(h)
+    # global_pitch_container(h)
+
 # Main two sections: results and map
 col_map, col_results = st.columns([2, 1])
 
@@ -334,11 +289,19 @@ with col_results:
         with st.container(height=40, vertical_alignment="center", border=False):
             st.caption("Cliquez sur un résultat ⬇ pour comprendre le détail du score", text_alignment='center', width='stretch')
         
-        try:
-            ui_results.display_results_list() # No args needed, it uses session_state.search_results internally
-        except Exception as e:
-            st.error(f"Erreur d'affichage des résultats : {e}")
-            logger.error(f"❌ [PAGE-CRASH] display_results_list: {e}", exc_info=True)
+        # State-aware Results Polling
+        h = st.session_state.search_results.search_hash
+        bg_res = odis_get_bg_result(h)
+        is_ready = isinstance(bg_res, dict) and bg_res.get("status_refiner") == "done"
+
+        if not is_ready:
+            @st.fragment(run_every=2.0)
+            def results_list_container_polling():
+                ui_results.display_results_list()
+            results_list_container_polling()
+        else:
+            # Static render when done (no more polling logs!)
+            ui_results.display_results_list()
 
 with col_map:
     if st.session_state.get('processed_gdf') is not None:

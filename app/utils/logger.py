@@ -3,6 +3,7 @@ import logging
 import json
 import sys
 import warnings
+import logfire
 from datetime import datetime
 from dataclasses import asdict
 from typing import Optional, Dict, Any, List
@@ -108,6 +109,30 @@ def setup_logging() -> None:
         f_logger = logging.getLogger(fragment_logger)
         f_logger.setLevel(logging.ERROR)
         f_logger.propagate = False
+
+    # --- Logfire Instrumentation ---
+    setup_logfire()
+
+def setup_logfire() -> None:
+    """
+    Initializes Logfire with project-specific settings and instruments PydanticAI/HTTPX.
+    """
+    if not os.getenv("LOGFIRE_TOKEN"):
+        # Graceful fallback if token is missing
+        return
+
+    try:
+        logfire.configure(
+            service_name="odis-stream2",
+            # token is automatically picked up from LOGFIRE_TOKEN env var
+        )
+        logfire.instrument_pydantic_ai()
+        logfire.instrument_httpx()
+        # Suppress BigQuery automatic tracing to reduce noise (as requested)
+        logfire.suppress_scopes('google.cloud.bigquery.opentelemetry_tracing')
+        logger.info("🔥 Logfire instrumentation enabled.")
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to initialize Logfire: {e}")
 
 # Initialize logging when module is imported
 setup_logging()
@@ -298,7 +323,7 @@ def format_agent_result_to_md(agent_name: str, model_id: str, result: Any) -> st
     Formats a Pydantic-AI run result into a clean, readable Markdown audit trail.
 
     Args:
-        agent_name: Name of the agent (e.g. 'scorer', 'scout').
+        agent_name: Name of the agent (e.g. 'refiner', 'scout').
         model_id: The model identifier string.
         result: The pydantic-ai RunResult object.
 

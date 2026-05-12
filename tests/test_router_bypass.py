@@ -10,7 +10,7 @@ from typing import Any
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'app'))
 
 from agents.graph import create_odis_graph
-from agents.state import ODISGraphState, ODISDeps
+from agents.state import GraphState, ODISDeps
 from google import genai
 import config
 
@@ -38,7 +38,7 @@ async def test_router_bypass_flow():
     graph = create_odis_graph()
     
     # --- Turn 1: Initialization ---
-    state = ODISGraphState()
+    state = GraphState()
     state.messages.append({"role": "user", "content": "Je suis un réfugié, je cherche une ville."})
     
     logger.info("--- TURN 1 (Normal Router) ---")
@@ -48,7 +48,7 @@ async def test_router_bypass_flow():
     # Verify Router sent us to Interviewer
     # Note: In our graph, the last node output might not show 'next_node' clearly if we don't save it to state effectively?
     # Our nodes RETURN a dict, but PydanticAI/LangGraph merges it into state?
-    # ODISGraphState has 'active_agent', let's check it.
+    # GraphState has 'active_agent', let's check it.
     
     assert res_1['active_agent'] == "interviewer"
     assert res_1['is_interview_complete'] == False
@@ -57,7 +57,7 @@ async def test_router_bypass_flow():
     # --- Turn 2: Sticky Bypass ---
     # We simulate a "Stateless" restart by creating a new state object from results of Turn 1
     # plus the new user message.
-    state_2 = ODISGraphState.model_validate(res_1)
+    state_2 = GraphState.model_validate(res_1)
     state_2.messages.append({"role": "user", "content": "Nous sommes 2 adultes et 1 enfant."})
     
     logger.info("--- TURN 2 (Router Bypass) ---")
@@ -78,7 +78,7 @@ async def test_router_bypass_flow():
 
 
     # --- Turn 3: Completion & Exit ---
-    state_3 = ODISGraphState.model_validate(res_2)
+    state_3 = GraphState.model_validate(res_2)
     # Give enough info or explicitly say "Yes scan" to trigger completion?
     # Interviewer needs to trigger 'is_complete'. This depends on its internal logic/prompt.
     # To force it, let's say "Oui c'est bon lance la recherche".

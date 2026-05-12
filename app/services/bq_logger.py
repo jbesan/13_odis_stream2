@@ -108,7 +108,7 @@ def log_agent_state_to_bq(user_input: str, agent_state: dict, interaction_id: Op
         if errors:
             logger.error(f"BQ Agent State Insert Errors: {errors}")
         else:
-            logger.info("Successfully logged Agent State to BigQuery with granular fields.")
+            logger.debug("Successfully logged Agent State to BigQuery with granular fields.")
             
     except Exception as e:
         logger.error(f"Failed to log agent state to BQ: {str(e)}")

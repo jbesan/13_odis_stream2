@@ -15,10 +15,12 @@ from core.models import (
 )
 import logging
 import gc
+import logfire
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 from utils.common import project_point
 from services.rna_rag import RNARagService
+
 
 class ScoringEngine:
     """
@@ -226,7 +228,10 @@ class ScoringEngine:
 
         return df
 
+    @logfire.instrument("_compute_weighted_score: {config}")
     def _compute_weighted_score(self, df: pd.DataFrame, config: SearchCriterias) -> pd.Series:
+        h = config.compute_hash()
+        logfire.info("Computing weighted score for hash: {search_hash}", search_hash=h)
         total_score = pd.Series(0.0, index=df.index)
         total_weight = 0.0
         
@@ -385,10 +390,14 @@ class ScoringEngine:
         self._associations_cache = {}
         
         # Discover and normalize categories from the scoring definitions
-        self.categories = sorted([
-            cat.replace('é', 'e').replace('ê', 'e').replace('à', 'a').lower() 
-            for cat in self.scores_cat['cat'].unique()
-        ])
+        # Discover and normalize categories from the scoring definitions
+        if not self.scores_cat.empty and 'cat' in self.scores_cat.columns:
+            self.categories = sorted([
+                cat.replace('é', 'e').replace('ê', 'e').replace('à', 'a').lower() 
+                for cat in self.scores_cat['cat'].unique()
+            ])
+        else:
+            self.categories = []
         logger.info(f"ScoringEngine initialized with categories: {self.categories}")
 
     def _get_active_criteria(self, config: Optional[SearchCriterias]) -> Set[str]:
@@ -397,7 +406,9 @@ class ScoringEngine:
         
         # If no config provided, we default to all present scores
         if config is None:
-             return {c for c in self.scores_cat['score'] if c in self.df_all_communes.columns}
+             if not self.scores_cat.empty and 'score' in self.scores_cat.columns:
+                 return {c for c in self.scores_cat['score'] if c in self.df_all_communes.columns}
+             return set()
 
         # 1. Categories that are always active (even if partial)
         active.add('workclass_decline_scaled')
@@ -691,7 +702,7 @@ class ScoringEngine:
                 relative_weight=round(rel_weight * 100, 1)
             ))
 
-        # 2. Housing Details (ODACE Specifics)
+        # 2. Housing Details (Pricing Specifics)
         housing_types = ['appt_all', 'appt_t1_t2', 'appt_t3_p', 'house_all']
         for ht in housing_types:
             raw_col = f"loyer_m2_moy_{ht}"
@@ -701,7 +712,7 @@ class ScoringEngine:
                 "raw": float(row[raw_col]) if raw_col in row and pd.notna(row[raw_col]) else None,
                 "scaled": float(row[scaled_col]) if scaled_col in row and pd.notna(row[scaled_col]) else None
             }
-            logement_data.odace_all_variants[ht] = variant_data
+            logement_data.housing_price_variants[ht] = variant_data
             
             # Set top-level raw value if it's the selected type
             type_log = None
@@ -798,13 +809,28 @@ class ScoringEngine:
             if not self.formations_data.empty:
                  city_forms = self.formations_data[self.formations_data['codgeo'] == c_code]
                  if not city_forms.empty:
-                     if self.codformations_index is not None and not self.codformations_index.empty:
-                         form_codes = city_forms['formation_code'].astype(str)
-                         merged_f = form_codes.to_frame('formation_code').merge(self.codformations_index, left_on='formation_code', right_index=True, how='left')
-                         merged_f['label'] = merged_f['label'].fillna(merged_f['formation_code'])
-                         emploi_data.training_programs = sorted(merged_f['label'].unique().tolist())
-                     else:
-                         emploi_data.training_programs = sorted(city_forms['formation_code'].unique().tolist())
+                    if self.codformations_index is not None and not self.codformations_index.empty:
+                        form_codes = city_forms['formation_code'].astype(str)
+                        merged_f = form_codes.to_frame('formation_code').merge(self.codformations_index, left_on='formation_code', right_index=True, how='left')
+                        merged_f['label'] = merged_f['label'].fillna(merged_f['formation_code'])
+                        emploi_data.training_programs = sorted(merged_f['label'].unique().tolist())
+                        
+                        # --- Matching Training Logic (F-33) ---
+                        if config and config.codes_formations:
+                            target_forms = set()
+                            for adult_forms in config.codes_formations:
+                                if isinstance(adult_forms, list):
+                                    for f in adult_forms:
+                                        val = f.code if hasattr(f, 'code') else f
+                                        target_forms.add(str(val))
+                            
+                            if target_forms:
+                                matching_f_codes = form_codes[form_codes.isin(target_forms)]
+                                if not matching_f_codes.empty:
+                                    matching_labels = self.codformations_index.loc[self.codformations_index.index.intersection(matching_f_codes.unique()), 'label']
+                                    emploi_data.training_programs_matching = sorted(matching_labels.tolist())
+                    else:
+                        emploi_data.training_programs = sorted(city_forms['formation_code'].unique().tolist())
 
         # 4. Education & Sante Counts & Grouped Etablissements
         for dom, mapping, annuaire, data_obj in [

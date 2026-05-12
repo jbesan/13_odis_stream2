@@ -3,8 +3,8 @@ import logging
 from typing import Literal, Optional
 from pydantic import BaseModel, Field, ConfigDict
 from pydantic_ai import Agent, RunContext
-from .state import ODISGraphState, ODISDeps, FocusCity, ODISContextBuilder
-from .agent_config import get_model
+from .state import GraphState, ODISDeps, FocusCity, ODISContextBuilder
+from .agent_config import get_model, get_model_settings
 
 logger = logging.getLogger("router_agent")
 
@@ -18,13 +18,10 @@ ROUTING_SYSTEM_PROMPT = """
 ```
 
 **Agents disponibles** :
+    1. **ANALYSIS** : Analyse conjuguée SEULEMENT pour une première exploration à 360° d'une commune de `Villes identifiées`.
+    2. **SYNTHESIZER** : Pour formuler une réponse argumentée au Travailleur Social SANS avoir besoin de faire de recherches supplémentaires.
 
-    1. **INTERVIEWER** : Pour modifier ou ajouter des critères de recherche.
-    2. **SCORER** : Lancer un calcul de score pour retourner un premier Top 5 communes selon les critères collectés.
-    3. **ANALYSIS** : Analyse conjuguée SEULEMENT pour une première exploration à 360° d'une commune de `Villes identifiées`.
-    4. **SYNTHESIZER** : Pour formuler une réponse argumentée au Travailleur Social
-
-Pour répondre à une question SPECIFIQUE sur la ville identifée 
+Pour répondre à une question SPECIFIQUE sur la ville identifée :
     1. **SCOUT** : Pour trouver les resources d'une ville (infrastructures, associations, temps de trajets).
     2. **JOB_HUNTER** : Pour trouver des données sur l'emploi (offres détaillées, recherches métiers précises).
     3. **WEB** : Pour toute autre question PRÉCISE  sur la ville (logement, actualités, contexte).
@@ -40,12 +37,13 @@ Pour répondre à une question SPECIFIQUE sur la ville identifée
 """
 
 class RoutingResult(BaseModel):
-    target_agent: Literal['interviewer', 'scorer', 'analysis', 'scout', 'web', 'job_hunter', 'synthesizer']
+    target_agent: Literal['analysis', 'scout', 'web', 'job_hunter', 'synthesizer']
     focus_city: Optional[FocusCity] = Field(None, description="La ville cible identifiée pour l'analyse")
     model_config = ConfigDict(populate_by_name=True)
 
 router_agent = Agent(
     get_model("router"),
+    model_settings=get_model_settings("router"),
     deps_type=ODISDeps,
     output_type=RoutingResult
 )

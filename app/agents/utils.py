@@ -4,6 +4,7 @@ import streamlit as st
 from pydantic_ai import Agent
 import threading
 import logging
+import logfire
 from utils.logger import log_search_results
 from services.telemetry import log_search_complete
 from core.models import SearchCriterias, SearchCriterias, CriteriaItem
@@ -126,31 +127,38 @@ def map_ui_config_to_search_criterias(config: SearchCriterias, app_data: Dict[st
         poids_territoire=getattr(config, 'poids_territoire', 0.5)
     )
 
-def launch_background_scorer(search_criterias: SearchCriterias, results_dict_ignored: dict, hash_val: str, top_cities: Optional[list] = None, interaction_id: Optional[str] = None, username: Optional[str] = None):
+def launch_background_refiner(search_criterias: SearchCriterias, results_dict_ignored: dict, hash_val: str, top_cities: Optional[list] = None, current_geo: Optional[dict] = None, interaction_id: Optional[str] = None, username: Optional[str] = None):
     """
-    Launches a background thread to generate the SCORER AI pitch.
+    Launches a background thread to generate the REFINER AI briefing and pitches.
     Stores the result in the cached global store.
     """
     # Get the store here (main thread) to ensure it's initialized in the cache
     store = get_odis_bg_store()
     
-    def bg_scorer_task(results_store: dict):
+    # Capture Logfire context to propagate it to the background thread
+    context = logfire.get_context()
+    
+    @logfire.instrument("Background Refiner: {hash_val}")
+    def bg_refiner_task(results_store: dict, hash_val: str):
+        # Attach the context from the main thread
+        logfire.attach_context(context)
+        
+        logfire.info("Refiner background task started for hash: {search_hash}", search_hash=hash_val)
         import asyncio
         import os
         from google import genai
         from google.genai import types
-        from agents.state import ODISGraphState, ODISDeps
-        from agents.scorer import scorer_agent
+        from agents.state import GraphState, ODISDeps
+        from agents.refiner import refiner_agent
         from agents.agent_config import get_p_model
         from pydantic_ai import ModelSettings
         
         try:
-            logging.debug(f"🚀 [BG] Starting background scorer for hash {hash_val}")
+            logging.debug(f"🚀 [BG] Starting background refiner for hash {hash_val}")
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             
             api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-            logging.debug(f"🚀 [BG] API Key present: {bool(api_key)}")
             
             client = genai.Client(
                 api_key=api_key, 
@@ -160,41 +168,28 @@ def launch_background_scorer(search_criterias: SearchCriterias, results_dict_ign
                 )
             )
             
-            # Prepare search_results for the background state
-            search_results_data = None
-            if top_cities:
-                results_objs = []
-                for c in top_cities:
-                    details = c.get("details", {})
-                    results_objs.append({
-                        "codgeo": str(c.get("codgeo")),
-                        "name": str(c.get("libgeo", c.get("name", ""))),
-                        "population": int(c.get("population", 0)),
-                        "global_score": float(c.get("weighted_score", 0.0)),
-                        "scores": c.get("scores", {}),
-                    })
-                search_results_data = {
+            # 3. Unified State Rehydration
+            input_data = {
+                "search_criteria": search_criterias,
+                "search_results": {
                     "search_hash": hash_val,
-                    "results": results_objs,
-                    "current_geo": results_objs[0] if results_objs else None
-                }
-
-            state_dict = {
-                "search_criteria": search_criterias.model_dump(),
-                "is_interview_complete": True,
+                    "results": top_cities,
+                    "current_geo": current_geo or (top_cities[0] if top_cities else None)
+                } if top_cities else None,
                 "execution_mode": "full_analysis",
-                "search_results": search_results_data,
-                "interaction_id": interaction_id or "",
+                "interaction_id": interaction_id or "unknown",
                 "username": username or "unknown"
             }
-            state = ODISGraphState.model_validate(state_dict)
+            
+            from agents.utils import rehydrate_graph_state
+            state = rehydrate_graph_state(input_data)
             deps = ODISDeps(state=state, client=client)
-            model = get_p_model("scorer", client=client)
+            model = get_p_model("refiner", client=client)
             
             async def run_agent():
-                logging.debug(f"🚀 [BG] Calling scorer_agent.run for hash {hash_val}")
-                return await scorer_agent.run(
-                    "Génère le résumé explicatif des résultats pour ce profil.", 
+                logging.debug(f"🚀 [BG] Calling refiner_agent.run for hash {hash_val}")
+                return await refiner_agent.run(
+                    "Génère le briefing du dossier et les explications des résultats.", 
                     deps=deps, 
                     model=model, 
                     model_settings=ModelSettings(max_tokens=4096)
@@ -203,12 +198,10 @@ def launch_background_scorer(search_criterias: SearchCriterias, results_dict_ign
             try:
                 result_run = loop.run_until_complete(run_agent())
                 response_obj = result_run.output
-                logging.debug(f"🚀 [BG] Agent call successful for hash {hash_val}")
-                for p in response_obj.pitches_per_city:
-                    logging.debug(f"💎 [DEBUG-SCORER-PITCH] codgeo={p.codgeo} pitch={repr(p.pitch)}")
+                logging.debug(f"🚀 [BG] Refiner Agent call successful for hash {hash_val}")
                 
                 pitches_dict = {
-                    "global": sanitize_llm_markdown(response_obj.response),
+                    "global": sanitize_llm_markdown(response_obj.global_pitch),
                     "pitches": {p.codgeo: sanitize_llm_markdown(p.pitch) for p in response_obj.pitches_per_city}
                 }
                 
@@ -216,27 +209,32 @@ def launch_background_scorer(search_criterias: SearchCriterias, results_dict_ign
                 current_val = results_store.get(hash_val, {})
                 if not isinstance(current_val, dict): current_val = {}
                 current_val["pitches"] = pitches_dict
+                current_val["odis_brief"] = sanitize_llm_markdown(response_obj.odis_brief)
+                current_val["status_refiner"] = "done"
                 results_store[hash_val] = current_val
                 
-                logging.debug(f"✅ [BG] Background Scorer fully finished for hash {hash_val}")
+                logging.debug(f"✅ [BG] Background Refiner fully finished for hash {hash_val}")
             except Exception as e:
-                logging.error(f"❌ [BG] Background Scorer Error for hash {hash_val}: {e}")
+                logging.error(f"❌ [BG] Background Refiner Error for hash {hash_val}: {e}")
                 current_val = results_store.get(hash_val, {})
                 if not isinstance(current_val, dict): current_val = {}
                 current_val["pitches_error"] = f"⚠️ L'analyse IA a échoué: {e}"
+                current_val["status_refiner"] = "error"
                 results_store[hash_val] = current_val
         except Exception as global_e:
-            logging.error(f"❌ [BG] Background Scorer Setup Error for hash {hash_val}: {global_e}")
+            logging.error(f"❌ [BG] Background Refiner Setup Error for hash {hash_val}: {global_e}")
             current_val = results_store.get(hash_val, {})
             if not isinstance(current_val, dict): current_val = {}
             current_val["pitches_error"] = f"⚠️ L'analyse IA a échoué (Setup): {global_e}"
+            current_val["status_refiner"] = "error"
             results_store[hash_val] = current_val
         finally:
             if 'loop' in locals():
                 loop.close()
-                logging.info(f"🚀 [SCORER] Loop closed for hash {hash_val}")
-            
-    thread = threading.Thread(target=bg_scorer_task, args=(store,))
+                
+    # 4. Threading (Non-blocking)
+    import threading
+    thread = threading.Thread(target=bg_refiner_task, args=(store, hash_val))
     thread.daemon = True # Ensure it doesn't block exit
     thread.start()
 
@@ -316,20 +314,12 @@ def launch_post_scoring_tasks(engine: Any, config: Any, search_results: Any, h: 
         interaction_id = "unknown"
         username = "unknown"
 
-    # 2. Extract city data for Scorer Agent
-    top_cities_full = [
-        {
-            "codgeo": str(c.codgeo), 
-            "libgeo": c.name, 
-            "weighted_score": c.global_score, 
-            "scores": c.scores,
-            "population": c.population
-        } 
-        for c in search_results.results
-    ]
+    # 2. Extract city data for Scorer Agent (using mode='json' for safe cross-thread serialization)
+    top_cities_full = [c.model_dump(mode='json') for c in search_results.results]
+    current_geo_full = search_results.current_geo.model_dump(mode='json') if search_results.current_geo else None
     
-    # 3. Launch Scorer (AI Pitch)
-    launch_background_scorer(config, {}, h, top_cities=top_cities_full, interaction_id=interaction_id, username=username)
+    # 3. Launch Refiner (AI Briefing & Pitch)
+    launch_background_refiner(config, {}, h, top_cities=top_cities_full, current_geo=current_geo_full, interaction_id=interaction_id, username=username)
     
     # 4. Launch Enrichment (Detailed Associations - BQ/RAG)
     target_codgeos = [c['codgeo'] for c in top_cities_full]
@@ -364,12 +354,11 @@ def launch_background_city_analysis(nom: str, codgeo: str, search_criterias: Any
             
             execution_mode = "specific_ask" if messages and len(messages) > 1 else "full_analysis"
             
-            state_dict = {
-                "search_criteria": search_criterias.model_dump() if hasattr(search_criterias, "model_dump") else search_criterias,
-                "is_interview_complete": True,
+            input_data = {
+                "search_criteria": search_criterias,
                 "execution_mode": execution_mode,
                 "focus_city": {"name": nom, "codgeo": codgeo},
-                "search_results": search_results.model_dump() if hasattr(search_results, "model_dump") else search_results,
+                "search_results": search_results,
                 "criteria_hash": h,
                 "messages": messages or [{"role": "user", "content": f"Fais une analyse complète pour {nom}."}],
                 "interaction_id": interaction_id or "unknown",
@@ -377,7 +366,7 @@ def launch_background_city_analysis(nom: str, codgeo: str, search_criterias: Any
             }
             
             try:
-                final_state = loop.run_until_complete(run_logic(state_dict))
+                final_state = loop.run_until_complete(run_logic(input_data))
                 
                 final_search_results = final_state.get("search_results")
                 current_val = results_store.get(task_key, {})
@@ -447,13 +436,80 @@ def run_async_safe(input_data: dict):
     # 4. Run without closing
     return loop.run_until_complete(run_logic(input_data))
 
+@logfire.instrument("Agent: Interviewer (Auto-Detect)")
+def run_autodetect_safe(text: str):
+    logfire.info("Interviewer Auto-Detect started")
+    from agents.interviewer import interviewer_agent
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    if loop.is_closed():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    result = loop.run_until_complete(interviewer_agent.run(text))
+    return result.data
+
+def rehydrate_graph_state(input_data: dict) -> "GraphState":
+    """
+    Rehydrates raw dictionary data into a rich GraphState object.
+    Ensures that all nested models (SearchResultsData, CommuneResult, etc.) 
+    are properly validated and instantiated.
+    """
+    from agents.state import GraphState, FocusCity
+    from core.models import SearchCriterias, SearchResultsData
+
+    # 1. Search Criteria
+    sc_data = input_data.get("search_criteria", {})
+    sc = SearchCriterias.model_validate(sc_data) if isinstance(sc_data, dict) else sc_data
+
+    # 2. Search Results (The most critical part for Scorer)
+    sr_data = input_data.get("search_results")
+    sr = None
+    if sr_data:
+        # Pydantic v2 recursive validation handles nested thematic data automatically
+        sr = SearchResultsData.model_validate(sr_data) if isinstance(sr_data, dict) else sr_data
+             
+    # 3. Focus City
+    fc_data = input_data.get("focus_city")
+    fc = None
+    if fc_data:
+         fc = FocusCity.model_validate(fc_data) if isinstance(fc_data, dict) else fc_data
+             
+    # 4. Construct Final State
+    return GraphState(
+        search_criteria=sc,
+        search_results=sr,
+        focus_city=fc,
+        execution_mode=input_data.get("execution_mode", "full_analysis"),
+        odis_brief=getattr(sc, 'odis_brief', ""),
+        messages=input_data.get("messages", []),
+        interaction_id=input_data.get("interaction_id", "unknown"),
+        username=input_data.get("username", "unknown")
+    )
+
+@logfire.instrument("ODIS Graph Logic")
 async def run_logic(input_data: dict):
     """Logique asynchrone pure."""
+    # Label the trace with metadata if available
+    h = input_data.get("criteria_hash")
+    iid = input_data.get("interaction_id")
+    
+    logfire.info(
+        "Processing ODIS Graph Logic for {search_hash}", 
+        search_hash=h or "unknown",
+        interaction_id=iid or "unknown"
+    )
+    
     import os
     from google import genai
     from google.genai import types
-    from agents.state import ODISGraphState, ODISDeps
+    from agents.state import GraphState, ODISDeps, FocusCity
     from agents.graph import create_odis_graph
+    from core.models import SearchCriterias, SearchResultsData
     
     # 1. Client Local (Critique: Fresh instance per request)
     api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
@@ -471,20 +527,16 @@ async def run_logic(input_data: dict):
     )
     
     # 2. State & Deps
-    input_state = ODISGraphState.model_validate(input_data)
+    input_state = rehydrate_graph_state(input_data)
     deps = ODISDeps(state=input_state, client=client)
     
     # 3. Graphe
     app = create_odis_graph() 
     
-    # 4. Config & Injection Deps
-    config = {
-        "configurable": {
-            "thread_id": "session_user",
-            "deps": deps 
-        }
-    }
-    
     # 5. Appel
-    final_state = await app.ainvoke(input_state, config=config)
-    return final_state
+    result = await app.run(state=input_state, deps=deps)
+    
+    return {
+        "search_results": input_state.search_results,
+        "messages": input_state.messages
+    }

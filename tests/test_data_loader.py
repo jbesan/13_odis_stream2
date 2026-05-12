@@ -92,3 +92,27 @@ def test_init_datasets(mock_get_data_path, mock_read_parquet, mock_exists, mock_
     assert 'rome_index' in data
     assert not data['rome_index'].empty
     assert 'Dev' in data['rome_index']['label'].values
+
+@patch('google.cloud.bigquery.Client')
+@patch('utils.data_loader.pd.read_parquet')
+@patch('utils.data_loader.os.path.exists')
+def test_fetch_jaccueille_data_bq(mock_exists, mock_read_parquet, mock_bq_client_class):
+    """Tests that J'Accueille data is fetched from BQ when cache is missing."""
+    mock_exists.return_value = False # No cache
+    mock_bq_client = mock_bq_client_class.return_value
+    mock_query_job = MagicMock()
+    mock_bq_client.query.return_value = mock_query_job
+    
+    mock_df = pd.DataFrame({'bassin_de_vie': ['BV1'], 'heb_accueillants_count': [5]})
+    mock_query_job.to_dataframe.return_value = mock_df
+    
+    # Act
+    df = data_loader._fetch_jaccueille_data_bq_logic()
+    
+    # Assert
+    assert mock_bq_client.query.called
+    assert mock_query_job.to_dataframe.called
+    # Check that create_bqstorage_client=True was passed
+    args, kwargs = mock_query_job.to_dataframe.call_args
+    assert kwargs.get('create_bqstorage_client') is True
+    assert df.loc[0, 'heb_accueillants_count'] == 5

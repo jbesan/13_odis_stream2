@@ -3,8 +3,8 @@ from typing import List, Dict, Any, Optional, Union
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 import config as cfg
-from .state import ODISGraphState, ODISDeps, FocusCity, compute_criteria_hash, ODISContextBuilder
-from .agent_config import get_model
+from .state import GraphState, ODISDeps, FocusCity, compute_criteria_hash, ODISContextBuilder
+from .agent_config import get_model, get_model_settings
 from .tools import (
     search_places_batch, 
     compute_routes, 
@@ -76,6 +76,7 @@ SCOUT_SPECIFIC_SYSTEM_PROMPT = """
 
 scout_agent = Agent(
     get_model("scout"),
+    model_settings=get_model_settings("scout"),
     deps_type=ODISDeps,
     output_type=ScoutResult
 )

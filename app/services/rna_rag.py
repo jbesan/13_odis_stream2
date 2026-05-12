@@ -127,10 +127,10 @@ class RNARagService:
 
             job_config = bigquery.QueryJobConfig(query_parameters=params)
             
-            df = self.bq_client.query(query_bq, job_config=job_config).to_dataframe()
+            df = self.bq_client.query(query_bq, job_config=job_config).to_dataframe(create_bqstorage_client=True)
             
             if df.empty:
-                logger.info(f"No associations found in BigQuery for the given criteria.")
+                logger.debug(f"No associations found in BigQuery for the given criteria.")
                 return []
             
             # 3. Vectorized Similarity Computation (Dot Product)
@@ -185,7 +185,7 @@ class RNARagService:
                 ]
             )
             
-            df = self.bq_client.query(query_bq, job_config=job_config).to_dataframe()
+            df = self.bq_client.query(query_bq, job_config=job_config).to_dataframe(create_bqstorage_client=True)
             return df.to_dict('records')
 
         except Exception as e:

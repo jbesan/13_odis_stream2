@@ -1,7 +1,7 @@
 [
     {
         "bassin_de_vie": "33243",
-        "weighted_score": 0.6000071924989745,
+        "weighted_score": 0.5350601795794829,
         "population_bv": 98828,
         "libgeo": "Saint-Émilion",
         "communes": [
@@ -73,14 +73,44 @@
             "33546",
             "33548"
         ],
-        "inclusion_cat_score": 0.22888030506761203,
+        "inclusion_cat_score": 0.26909225338964593,
+        "mob_epci_scaled": 0.0
+    },
+    {
+        "bassin_de_vie": "33506",
+        "weighted_score": 0.5029267753275827,
+        "population_bv": 6966,
+        "libgeo": "Martres",
+        "communes": [
+            "33057",
+            "33103",
+            "33105",
+            "33112",
+            "33117",
+            "33129",
+            "33131",
+            "33149",
+            "33175",
+            "33189",
+            "33275",
+            "33278",
+            "33379",
+            "33399",
+            "33419",
+            "33427",
+            "33446",
+            "33482",
+            "33506",
+            "33516"
+        ],
+        "inclusion_cat_score": 0.24154306146560708,
         "mob_epci_scaled": 0.0
     },
     {
         "bassin_de_vie": "33063",
-        "weighted_score": 0.5771212444226568,
+        "weighted_score": 0.5027704303861291,
         "population_bv": 866307,
-        "libgeo": "Saint-Louis-de-Montferrand",
+        "libgeo": "Margaux-Cantenac",
         "communes": [
             "33003",
             "33012",
@@ -141,12 +171,12 @@
             "33550",
             "33554"
         ],
-        "inclusion_cat_score": 0.16436944554249744,
-        "mob_epci_scaled": 1.0
+        "inclusion_cat_score": 0.30285635402254196,
+        "mob_epci_scaled": 0.0
     },
     {
         "bassin_de_vie": "33140",
-        "weighted_score": 0.5626443156912805,
+        "weighted_score": 0.4831614123838822,
         "population_bv": 19018,
         "libgeo": "Saint-Léon",
         "communes": [
@@ -174,56 +204,28 @@
             "33515",
             "33523"
         ],
-        "inclusion_cat_score": 0.1834324440393311,
+        "inclusion_cat_score": 0.1655008308097381,
         "mob_epci_scaled": 0.0
     },
     {
-        "bassin_de_vie": "33138",
-        "weighted_score": 0.5026421036277263,
-        "population_bv": 21802,
-        "libgeo": "Tayac",
+        "bassin_de_vie": "33314",
+        "weighted_score": 0.46647149482618183,
+        "population_bv": 20710,
+        "libgeo": "Saint-Estèphe",
         "communes": [
-            "33001",
-            "33088",
-            "33124",
-            "33138",
-            "33154",
-            "33166",
-            "33218",
-            "33315",
-            "33320",
-            "33385",
-            "33447",
-            "33472",
-            "33526"
+            "33010",
+            "33125",
+            "33146",
+            "33220",
+            "33314",
+            "33395",
+            "33423",
+            "33424",
+            "33471",
+            "33476",
+            "33545"
         ],
-        "inclusion_cat_score": 0.14114464931282542,
-        "mob_epci_scaled": 0.0
-    },
-    {
-        "bassin_de_vie": "33081",
-        "weighted_score": 0.4989753133454434,
-        "population_bv": 13913,
-        "libgeo": "Escoussans",
-        "communes": [
-            "33008",
-            "33030",
-            "33040",
-            "33081",
-            "33098",
-            "33120",
-            "33152",
-            "33156",
-            "33176",
-            "33231",
-            "33253",
-            "33288",
-            "33299",
-            "33308",
-            "33355",
-            "33464"
-        ],
-        "inclusion_cat_score": 0.16236256429203053,
+        "inclusion_cat_score": 0.3323184440245217,
         "mob_epci_scaled": 0.0
     }
 ]

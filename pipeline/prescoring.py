@@ -332,9 +332,9 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         process_scaling(communes_gdf, 'inc_siae_density', 'inc_siae_density_scaled')
         
         
-        # inc_pol_scaled (already 0-1)
+        # ter_pol_scaled (already 0-1)
         if 'pol_num' in communes_gdf.columns:
-            communes_gdf['inc_pol_scaled'] = communes_gdf['pol_num']
+            communes_gdf['ter_pol_scaled'] = communes_gdf['pol_num']
 
         process_scaling(communes_gdf, 'log_pp_occup', 'log_occup_scaled')
 

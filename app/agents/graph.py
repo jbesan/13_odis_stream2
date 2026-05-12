@@ -1,26 +1,20 @@
 import logging
 import asyncio
-import os
-import operator
+import logfire
 from datetime import datetime
-from typing import Literal, Dict, Any, List, Optional, Annotated, Sequence
-from agents.agent_config import get_model, get_p_model
+from typing import Literal, Dict, Any, List, Optional
+from dataclasses import dataclass
 
-# Loading LangGraph + Pydantic AI components
-from langgraph.graph import StateGraph, END, START
-from langchain_core.runnables import RunnableConfig
-from pydantic_ai import Agent, RunContext, ModelSettings
+from pydantic_graph import End
+from pydantic_graph.beta import GraphBuilder, Graph, StepContext
+from pydantic_graph.beta.join import reduce_list_append
+
+from pydantic_ai import ModelSettings
 from pydantic_ai.usage import UsageLimits
-from pydantic_ai.exceptions import UsageLimitExceeded
-from pydantic_ai.messages import ToolReturnPart
 
-# Loading each ODIS agent
-from agents.state import ODISDeps, ODISGraphState, UsageStats, FocusCity, compute_criteria_hash, CommuneResult, SearchResultsData
+from agents.state import ODISDeps, GraphState, UsageStats, compute_criteria_hash, CommuneResult, SearchResultsData, ExpertList
 from agents.router import router_agent, RoutingResult
 from agents.utils import sanitize_llm_markdown
-from agents.interviewer import interviewer_agent
-from agents.refiner import refiner_agent
-from agents.scorer import scorer_agent
 from agents.scout import scout_agent
 from agents.web import web_agent
 from agents.job_hunter import job_hunter_agent
@@ -28,20 +22,24 @@ from agents.synthesizer import synthesizer_agent
 from utils.common import normalize_text
 from utils.logger import log_agent_trace
 import services.bq_logger as bq_logger
-
+from agents.agent_config import get_model, get_p_model, get_model_settings
 
 logger = logging.getLogger("odis_graph")
 
-def get_deps(config: RunnableConfig) -> ODISDeps:
-    deps = config.get("configurable", {}).get("deps")
-    if not deps: raise ValueError("ODISDeps missing")
-    return deps
+def capture_usage(result: Any, node_name: str, model_id: str) -> UsageStats:
+    """
+    Captures usage metrics from an agent run result and returns a UsageStats object.
 
-def capture_usage(result, node_name: str, model_id: str) -> UsageStats:
+    Args:
+        result: The RunResult from pydantic-ai.
+        node_name: The name of the node where the agent was executed.
+        model_id: The ID of the model used for the execution.
+
+    Returns:
+        A UsageStats object containing tokens, cost, and breakdown.
+    """
     try:
         u = result.usage()
-        # Pricing for Gemini 1.5 line (Flash Lite Preview approx)
-        print(f"model_id: {model_id}")
         rate_in, rate_out = (0.25, 1.50) if any(x in model_id.lower() for x in ["google-gla:gemini-3.1-flash-lite-preview"]) else (0.10, 0.40)
         cost = (u.input_tokens * rate_in / 1_000_000) + (u.output_tokens * rate_out / 1_000_000)
         
@@ -68,638 +66,219 @@ def capture_usage(result, node_name: str, model_id: str) -> UsageStats:
         logger.warning(f"⚠️ [USAGE] capture_usage failed for {node_name}: {e}")
         return UsageStats()
 
+@dataclass
+class AgentArtifact:
+    domain: str
+    result: str # Markdown formatted string with the result
+    usage: UsageStats
 
+@dataclass
+class DirectSynthesis:
+    """DTO for cases where no experts are needed and we go straight to synthesis."""
+    pass
 
-# --- Routing Logic (Pure Python) ---
-
-def route_from_start(state: ODISGraphState):
-    """
-    SOTA Pattern: Router Bypass.
-    Force Discovery phase (Interviewer) until completion flag is set.
-    """
-    if not state.is_interview_complete:
-        logger.info("🎤 [DISCOVERY] Forcing Interviewer phase.")
-        return "interviewer"
+# --- Graph Nodes ---
+@logfire.instrument("Node: triage")
+async def triage_step(ctx: StepContext[GraphState, ODISDeps, None]) -> ExpertList | DirectSynthesis:
+    """Decides which experts to trigger based on execution mode or Router LLM."""
+    mode = ctx.state.execution_mode
+    if mode == "full_analysis":
+        return ExpertList(experts=["scout", "web", "job_hunter"])
     
-    # Default entry point for post-discovery
-    return "router"
-
-def route_from_interviewer(state: ODISGraphState):
-    """
-    SOTA Pattern: Autonomous Loop.
-    Decides whether to loop back or release control to Router.
-    """
-    if state.is_interview_complete:
-        # Release control: Go to Router (or END if you want to stop)
-        logger.info("🚩 [INTERVIEWER] Session complete. Returning control to Router.")
-        # Usually, after interview, we might want the Router to check if we go to Scorer
-        return "router" 
+    # specific_ask mode requires routing LLM
+    user_msg = ctx.state.messages[-1]["content"] if ctx.state.messages else ""
+    mod_id = get_model("router")
+    model = get_p_model("router", client=ctx.deps.client)
     
-    # Keep control: Loop back to handle user answer
-    return "interviewer"
-
-
-# --- Nodes ---
-
-async def router_node(state: ODISGraphState, config: RunnableConfig):
-    """Decides the next step based on user input and state."""
-    deps = get_deps(config)
-    deps.state = state
-    
-    from datetime import datetime
-    start_time = datetime.now()
-    logger.debug(f"🚀 [RELAY] Entering router_node")
-
-    # Input is the last message
-    user_msg = state.messages[-1]["content"] if state.messages else ""
-    
-    # Run Router Agent with bound model
     try:
-        # Inject client!
-        mod_id = get_model("router")
-        model = get_p_model("router", client=deps.client)
-        result = await router_agent.run(
+        from pydantic_ai.result import RunResult
+        result: RunResult[RoutingResult] = await router_agent.run(
             user_msg, 
-            deps=deps, 
+            deps=ctx.deps, 
             model=model,
-            model_settings=ModelSettings(max_tokens=4096),
+            model_settings=get_model_settings("router"),
             usage_limits=UsageLimits(request_limit=10)
         )
         decision = result.output
         log_agent_trace("router", mod_id, result)
         
-        end_time = datetime.now()
         logger.info(f"🧠 [ROUTER] Direction: {decision.target_agent}")
+        if decision.focus_city:
+            ctx.state.focus_city = decision.focus_city
         
-        # Decide if we need Refiner (only for experts)
-        # SOTA: Always launch the full trio to ensure LangGraph fan-in condition is met.
-        # The cache-bypass logic in each node will prevent redundant LLM calls.
-        experts_mapping: Dict[str, Dict[str, Any]] = {
-            'scorer': {'pending': [], 'mode': 'full_analysis'},
-            'analysis': {'pending': ['scout', 'web', 'job_hunter'], 'mode': 'full_analysis'},
-            'scout': {'pending': ['scout_solo'], 'mode': 'specific_ask'},
-            'web': {'pending': ['web_solo'], 'mode': 'specific_ask'},
-            'job_hunter': {'pending': ['job_hunter_solo'], 'mode': 'specific_ask'},
-            'synthesizer': {'pending': ['synthesizer'], 'mode': 'specific_ask'},
-        }
-
-        pending: List[str] = []
-        mode: str = 'full_analysis'
-        next_step = decision.target_agent
-
-        if decision.target_agent in experts_mapping:
-            pending = experts_mapping[decision.target_agent]['pending']
-            mode = experts_mapping[decision.target_agent]['mode']
-
-        h = compute_criteria_hash(state.search_criteria)
-        return {
-            "next_node": decision.target_agent,
-            "focus_city": (decision.focus_city if decision.focus_city and decision.focus_city.name else state.focus_city),
-            "criteria_hash": h,
-            "active_agent": decision.target_agent,
-            "pending_experts": pending,
-            "execution_mode": mode,
-            "usage": capture_usage(result, "router", mod_id)
-        }
+        if decision.target_agent == 'analysis':
+            return ExpertList(experts=["scout", "web", "job_hunter"])
+        elif decision.target_agent == 'synthesizer':
+            return DirectSynthesis()
+        else:
+            return ExpertList(experts=[decision.target_agent])
+            
     except Exception as e:
         logger.error(f"❌ [ROUTER] Failed: {e}")
-        raise e
+        # Graceful fallback: run all 3
+        return ExpertList(experts=["scout", "web", "job_hunter"])
 
-async def refiner_node(state: ODISGraphState, config: RunnableConfig):
-    """Updates the briefing in the state."""
-    deps = get_deps(config)
-    deps.state = state
-    from agents.refiner import refiner_agent
+async def extract_domains(ctx: StepContext[GraphState, ODISDeps, ExpertList]) -> list[str]:
+    """Helper to unwrap the DTO into a list of strings for mapping."""
+    return ctx.inputs.experts
+
+@logfire.instrument("Expert Node: {ctx.inputs}")
+async def expert_worker_step(ctx: StepContext[GraphState, ODISDeps, str]) -> AgentArtifact:
+    """Parallel worker that handles cache bypass and delegates to the appropriate agent."""
+    domain = ctx.inputs
+    user_msg = ctx.state.messages[-1]["content"] if ctx.state.messages else ""
+    focus = ctx.state.focus_city.name.lower().strip() if ctx.state.focus_city else "unknown"
+    h = compute_criteria_hash(ctx.state.search_criteria)
+    ctx.state.criteria_hash = h
+    logfire.info("Processing Expert Node for {search_hash}", search_hash=h)
     
-    try:
-        # 1. Skip if no new info to summarize
-        new_msgs_count = len(state.messages) - state.last_summarized_idx
-        if new_msgs_count <= 0 and not state.search_results and state.odis_brief:
-            logger.info("⏩ [REFINER] No new info, skipping synthesis.")
-            return {}
+    # 1. CACHE BYPASS
+    if ctx.state.execution_mode == 'full_analysis' and ctx.state.search_results and ctx.state.search_results.search_hash == h:
+        city_res = ctx.state.search_results.get_by_code(ctx.state.focus_city.codgeo if ctx.state.focus_city else "")
+        if city_res and city_res.expert_analysis.get(domain):
+            logger.info(f"⏭️ [{domain.upper()}] Artifact already exists for {focus}. Skipping LLM call.")
+            return AgentArtifact(domain=domain, result=city_res.expert_analysis.get(domain), usage=UsageStats())
+            
+    # 2. RUN EXPERT
+    logger.info(f"🚀 [{domain.upper()}] Node started for {focus}.")
+    mod_id = get_model(domain)
+    model = get_p_model(domain, client=ctx.deps.client)
+    
+    agent_map = {
+        "scout": scout_agent,
+        "web": web_agent,
+        "job_hunter": job_hunter_agent
+    }
+    agent = agent_map.get(domain)
+    
+    if not agent:
+        return AgentArtifact(domain=domain, result="Agent not found.", usage=UsageStats())
 
-        mod_id = get_model("refiner")
-        model =  get_p_model("refiner", client=deps.client)
-        
-        from datetime import datetime
-        t0 = datetime.now()
-        logger.debug(f"🚀 [REFINER] LLM call starting (model={mod_id}) at {t0.strftime('%H:%M:%S.%f')[:-3]}")
-        
-        result = await refiner_agent.run(
-            "Mise à jour du briefing", 
-            deps=deps, 
+    try:
+        result = await agent.run(
+            user_msg, 
+            deps=ctx.deps, 
             model=model,
-            model_settings=ModelSettings(max_tokens=4096),
-            usage_limits=UsageLimits(request_limit=10)
+            model_settings=get_model_settings(domain),
+            usage_limits=UsageLimits(request_limit=15)
         )
-        log_agent_trace("refiner", mod_id, result)
+        log_agent_trace(domain, mod_id, result)
+        logger.info(f"✅ [{domain.upper()}] Node finished for {focus}.")
         
-        t1 = datetime.now()
-        logger.debug(f"✅ [REFINER] LLM call done in {(t1 - t0).total_seconds():.2f}s at {t1.strftime('%H:%M:%S.%f')[:-3]}")
-        
-        briefing = result.output.odis_brief.strip()
-        logger.info(f"📝 [REFINER] Briefing updated.")
-        logger.debug(f"📝 [REFINER-OUTPUT] Content:\n{briefing}")
-        
-        # Robust update: only override if not empty
-        updates: Dict[str, Any] = {"last_summarized_idx": len(state.messages)}
-        if result.output.odis_brief:
-            updates["odis_brief"] = result.output.odis_brief
-        
-        updates["usage"] = capture_usage(result, "refiner", mod_id)
-        # Consolidate briefing into search_results for single source of truth (F-IA)
-        if result.output.odis_brief:
-            updates["search_results"] = {"odis_brief": result.output.odis_brief}
-        
-        return updates
+        artifact_str = f"### Recherches effectuees\n{result.output.searched}\n\n### Resultats\n{result.output.result}"
+        usage = capture_usage(result, domain, mod_id)
+        return AgentArtifact(domain=domain, result=artifact_str, usage=usage)
     except Exception as e:
-        logger.error(f"❌ [REFINER] Node failed: {e}", exc_info=True)
-        raise e
+        logger.error(f"❌ [{domain.upper()}] Error: {e}")
+        return AgentArtifact(domain=domain, result=f"Erreur d'analyse: {e}", usage=UsageStats())
 
-
-async def interviewer_node(state: ODISGraphState, config: RunnableConfig):
-    deps = get_deps(config)
-    deps.state = state
-    user_msg = state.messages[-1]["content"] if state.messages else ""
-    start_time = datetime.now()
+@logfire.instrument("Node: synthesizer")
+async def synthesizer_step(ctx: StepContext[GraphState, ODISDeps, list[AgentArtifact] | DirectSynthesis]) -> End[str]:
+    """Merges artifacts into state and produces the final synthesis."""
+    city_name = ctx.state.focus_city.name if ctx.state.focus_city else "Unknown"
+    logger.info(f"🚀 [SYNTHESIZER] starting for {city_name}...")
     
-    try:
-        mod_id = get_model("interviewer")
-        model = get_p_model("interviewer", client=deps.client)
-        result = await interviewer_agent.run(
-            user_msg, deps=deps, model=model,
-            model_settings=ModelSettings(max_tokens=4096),
-            usage_limits=UsageLimits(request_limit=10)
-        )
-        log_agent_trace("interviewer", mod_id, result)
-        
-        end_time = datetime.now()
-        logger.info(f"📊 [INTERVIEWER] Done in {(end_time - start_time).total_seconds():.3f}s")
-        
-        return {
-            "messages": [{"role": "assistant", "content": sanitize_llm_markdown(result.output.response)}],
-            "search_criteria": result.output.search_criteria,
-            "criteria_hash": compute_criteria_hash(result.output.search_criteria),
-            "active_agent": "interviewer",
-            "is_interview_complete": result.output.is_complete,
-            "usage": capture_usage(result, "interviewer", mod_id)
-        }
-    except Exception as e:
-        logger.error(f"❌ [INTERVIEWER] Failed: {e}", exc_info=True)
-        raise e
-
-async def scorer_node(state: ODISGraphState, config: RunnableConfig):
-    deps = get_deps(config)
-    deps.state = state
+    input_data = ctx.inputs
     
-    start_time = datetime.now()
-    logger.info(f"🚀 [SCORER] Entering scorer_node at {start_time.strftime('%H:%M:%S.%f')[:-3]}")
-
-    mod_id = get_model("scorer")
-    model =  get_p_model("scorer", client=deps.client)
-    try:
-        result = await scorer_agent.run(
-            "Start Scoring", 
-            deps=deps, 
-            model=model,
-            model_settings=ModelSettings(max_tokens=4096),
-            usage_limits=UsageLimits(request_limit=10)
-        ) 
-        log_agent_trace("scorer", mod_id, result)
-    except UsageLimitExceeded as e:
-        logger.error(f"🚨 [SCORER] Usage limit exceeded: {e}. Too many turns or tool calls.")
-        # Attempt to return a graceful failure message 
-        return {
-            "messages": [{"role": "assistant", "content": "Désolé, j'ai rencontré une erreur interne suite à une boucle de réflexion. Peux-tu reformuler ta demande ?"}],
-            "active_agent": "scorer",
-            "next_node": END
-        }
-
-    # We extract top_cities EXCLUSIVELY from the tool history to avoid LLM parroting lag
-    top_cities = []
+    # 1. MERGE ARTIFACTS INTO STATE (if any)
+    if isinstance(input_data, list) and input_data and ctx.state.search_results and ctx.state.focus_city:
+        city_res = ctx.state.search_results.get_by_code(ctx.state.focus_city.codgeo)
+        if city_res:
+            for artifact in input_data:
+                city_res.expert_analysis[artifact.domain] = artifact.result
     
-    for msg in reversed(result.all_messages()):
-        if hasattr(msg, 'parts'):
-            for part in msg.parts:
-                # In pydantic-ai, tool results are specifically in ToolReturnPart
-                if isinstance(part, ToolReturnPart) and part.tool_name == 'compute_top_cities_tool':
-                    if isinstance(part.content, dict) and "cities" in part.content:
-                        logger.info("✅ [GRAPH] Recovered full top_cities from tool output history")
-                        top_cities = part.content["cities"]
-                        break
-
-    end_time = datetime.now()
-    logger.debug(f"📊 [SCORER] Exiting scorer_node at {end_time.strftime('%H:%M:%S.%f')[:-3]} - Duration: {(end_time - start_time).total_seconds():.3f}s")
-
-    # --- Message Construction ---
-    # We combine the global response and individual pitches into a clean markdown message for the chat.
-    final_content = result.output.odis_brief or ""
-    logging.info(f"💎 [DEBUG-RAW-REFINER] response={repr(final_content)}")
-    
-    if result.output.pitches_per_city:
-        final_content += "\n\n### 📍 Top des communes recommandées\n"
-        for city in result.output.pitches_per_city:
-            logging.info(f"💎 [DEBUG-RAW-PITCH] city={city.codgeo} pitch={repr(city.pitch)}")
-            final_content += f"\n- **{city.name}** ({city.codgeo})\n  {sanitize_llm_markdown(city.pitch)}\n"
-    
-    final_content = sanitize_llm_markdown(final_content)
-    logging.info(f"✨ [DEBUG-SANITY-CHECK-FINAL] content={repr(final_content)}")
-    
-    logger.info(f"📤 [SCORER] Final message constructed (length: {len(final_content)})")
-
-    # --- Convert to Type SearchResultsData ---
-    search_results_payload = None
-    if top_cities:
-        results_objs = []
-        for c in top_cities:
-            # Reconstruct CommuneResult from top_cities tool output
-            details = c.get("details", {})
-            city_res = CommuneResult(
-                codgeo=str(c.get("codgeo")),
-                name=str(c.get("libgeo", c.get("name", ""))),
-                population=int(c.get("population", 0)),
-                global_score=float(c.get("weighted_score", 0.0)),
-                scores=details.get("scores", {}),
-                employment=details.get("employment", {}),
-                housing=details.get("housing", {}),
-                education=details.get("education", {}),
-                health=details.get("health", {}),
-                inclusion=details.get("inclusion", {}),
-                mobility=details.get("mobility", {}),
-                codgeo_bdv=details.get("codgeo_bdv", ""),
-                name_bdv=details.get("name_bdv", "")
-            )
-            # Find pitch in results (Robust matching: Code first, then Name fallback)
-            if result.output.pitches_per_city:
-                for p in result.output.pitches_per_city:
-                    p_codgeo = str(p.codgeo)
-                    p_name_norm = normalize_text(str(p.name or ""))
-                    target_name_norm = normalize_text(city_res.name)
-                    
-                    if p_codgeo == str(city_res.codgeo) or p_name_norm == target_name_norm:
-                        city_res.scorer_pitch = sanitize_llm_markdown(p.pitch)
-                        break
-            results_objs.append(city_res)
-        
-        # Determine Current Geo (Reference)
-        current_geo = results_objs[0] if results_objs else None
-        search_hash = compute_criteria_hash(state.search_criteria)
-        search_results_payload = SearchResultsData(
-            search_hash=search_hash,
-            results=results_objs,
-            current_geo=current_geo, 
-            global_pitch=sanitize_llm_markdown(result.output.response)
-        )
-
-        # --- Unified Telemetry Logging (BigQuery) ---
-        try:
-            from services import telemetry
-            await asyncio.to_thread(
-                 telemetry.log_search_complete,
-                 state.search_criteria, 
-                 search_results_payload, 
-                 'ia', # source_flow
-                 state.interaction_id,
-                 state.username
-            )
-        except Exception as tel_e:
-            logger.warning(f"⚠️ [SCORER] Telemetry fire-and-forget failed: {tel_e}")
-
-    if state.execution_mode == "quick_score":
-         try:
-              user_input = state.messages[-1].get("content", "Scoring Rapide") if state.messages else "Scoring Rapide"
-              await asyncio.to_thread(
-                   bq_logger.log_agent_state_to_bq,
-                   user_input, 
-                   state.model_dump(),
-                   state.interaction_id,
-                   state.username
-              )
-         except Exception as e:
-              logger.warning(f"⚠️ [BQ-LOG] Quick Score logging failed: {e}")
-
-    return {
-        "messages": [{"role": "assistant", "content": final_content}],
-        "search_results": search_results_payload,
-        "criteria_hash": compute_criteria_hash(state.search_criteria),
-        "next_node": END,
-        "usage": capture_usage(result, "scorer", mod_id)
-    }
-
-# -- Decoration Cascade Nodes --
-
-async def scout_node(state: ODISGraphState, config: RunnableConfig):
-    deps = get_deps(config)
-    deps.state = state
-    user_msg = state.messages[-1]["content"] 
-    
-    h = compute_criteria_hash(state.search_criteria)
-    focus = state.focus_city.name.lower().strip() if state.focus_city else "unknown"
-    
-    # --- CACHE BYPASS ---
-    # Bypass cache ONLY if in full_analysis mode. 
-    # specific_ask ALWAYS triggers the LLM to answer the user's question.
-    if state.execution_mode == 'full_analysis':
-        h_current = compute_criteria_hash(state.search_criteria)
-        if state.search_results and state.search_results.search_hash == h_current:
-             city_res = state.search_results.get_by_code(state.focus_city.codgeo if state.focus_city else "")
-             if city_res and city_res.expert_analysis.get("scout"):
-                logger.info(f"⏭️ [SCOUT] Artifact already exists for {focus}. Skipping LLM call.")
-                return {"criteria_hash": h} 
-
-    logger.info("🚀 [SCOUT] Node started.")
-    mod_id = get_model("scout")
-    model =  get_p_model("scout", client=deps.client)
-    result = await scout_agent.run(
-        user_msg, 
-        deps=deps, 
-        model=model,
-        model_settings=ModelSettings(max_tokens=4096),
-        usage_limits=UsageLimits(request_limit=10)
-    )
-    log_agent_trace("scout", mod_id, result)
-    
-    logger.info(f"✅ [SCOUT] Node finished for {focus}.")
-    
-    return {
-        "search_results": {
-            "results": [
-                {
-                    "codgeo": state.focus_city.codgeo if state.focus_city and state.focus_city.codgeo else "",
-                    "name": state.focus_city.name if state.focus_city else "",
-                    "expert_analysis": {"scout": f"### Recherches effectuees\n{result.output.searched}\n\n### Resultats\n{result.output.result}"}
-                }
-            ]
-        },
-        "criteria_hash": h,
-        "usage": capture_usage(result, "scout", mod_id)
-    }
-
-async def web_node(state: ODISGraphState, config: RunnableConfig):
-    deps = get_deps(config)
-    deps.state = state
-    user_msg = state.messages[-1]["content"]
-    
-    h = compute_criteria_hash(state.search_criteria)
-    focus = state.focus_city.name.lower().strip() if state.focus_city else "unknown"
-    
-    # --- CACHE BYPASS ---
-    if state.execution_mode == 'full_analysis':
-        h_current = compute_criteria_hash(state.search_criteria)
-        if state.search_results and state.search_results.search_hash == h_current:
-             city_res = state.search_results.get_by_code(state.focus_city.codgeo if state.focus_city else "")
-             if city_res and city_res.expert_analysis.get("web"):
-                logger.info(f"⏭️ [WEB] Artifact already exists for {focus}. Skipping LLM call.")
-                return {"criteria_hash": h}
-
-    logger.info("🚀 [WEB] Node started.")
-    mod_id = get_model("web")
-    model =  get_p_model("web", client=deps.client)
-    result = await web_agent.run(
-        user_msg, 
-        deps=deps, 
-        model=model,
-        model_settings=ModelSettings(max_tokens=4096),
-        usage_limits=UsageLimits(request_limit=15) # Web needs more for research
-    )
-    log_agent_trace("web", mod_id, result)
-    
-    logger.info(f"✅ [WEB] Node finished for {focus}.")
-    
-    return {
-        "search_results": {
-            "results": [
-                {
-                    "codgeo": state.focus_city.codgeo if state.focus_city and state.focus_city.codgeo else "",
-                    "name": state.focus_city.name if state.focus_city else "",
-                    "expert_analysis": {"web": f"### Recherches effectuees\n{result.output.searched}\n\n### Resultats\n{result.output.result}"}
-                }
-            ]
-        },
-        "criteria_hash": h,
-        "usage": capture_usage(result, "web", mod_id)
-    }
-
-async def job_hunter_node(state: ODISGraphState, config: RunnableConfig):
-    deps = get_deps(config)
-    deps.state = state
-    user_msg = state.messages[-1]["content"]
-    
-    h = compute_criteria_hash(state.search_criteria)
-    focus = state.focus_city.name.lower().strip() if state.focus_city else "unknown"
-    
-    # --- CACHE BYPASS ---
-    if state.execution_mode == 'full_analysis':
-        h_current = compute_criteria_hash(state.search_criteria)
-        if state.search_results and state.search_results.search_hash == h_current:
-             city_res = state.search_results.get_by_code(state.focus_city.codgeo if state.focus_city else "")
-             if city_res and city_res.expert_analysis.get("job_hunter"):
-                logger.info(f"⏭️ [JOB_HUNTER] Artifact already exists for {focus}. Skipping LLM call.")
-                return {"criteria_hash": h}
-
-    logger.info("🚀 [JOB_HUNTER] Node started.")
-    mod_id = get_model("job_hunter")
-    model =  get_p_model("job_hunter", client=deps.client)
-    result = await job_hunter_agent.run(
-        user_msg, 
-        deps=deps, 
-        model=model,
-        model_settings=ModelSettings(max_tokens=4096),
-        usage_limits=UsageLimits(request_limit=15)
-    )
-    log_agent_trace("job_hunter", mod_id, result)
-    
-    logger.info(f"✅ [JOB_HUNTER] Node finished for {focus}.")
-    
-    return {
-        "search_results": {
-            "results": [
-                {
-                    "codgeo": state.focus_city.codgeo if state.focus_city and state.focus_city.codgeo else "",
-                    "name": state.focus_city.name if state.focus_city else "",
-                    "expert_analysis": {"job_hunter": f"### Recherches effectuees\n{result.output.searched}\n\n### Resultats\n{result.output.result}"}
-                }
-            ]
-        },
-        "criteria_hash": h,
-        "usage": capture_usage(result, "job_hunter", mod_id)
-    }
-
-async def synthesizer_node(state: ODISGraphState, config: RunnableConfig):
-    deps = get_deps(config)
-    deps.state = state
-    
-    city_name = state.focus_city.name if state.focus_city else "Unknown"
-    logger.info(f"Synthesizer starting for {city_name}...")
-    
+    # 2. RUN SYNTHESIZER LLM
     input_msg = f"Synthèse demandée pour {city_name}."
-    
     mod_id = get_model("synthesizer")
-    model =  get_p_model("synthesizer", client=deps.client)
+    model = get_p_model("synthesizer", client=ctx.deps.client)
 
+    final_content = ""
     try:
         result = await synthesizer_agent.run(
             input_msg, 
-            deps=deps, 
+            deps=ctx.deps, 
             model=model,
-            model_settings=ModelSettings(max_tokens=4096),
+            model_settings=get_model_settings("synthesizer"),
             usage_limits=UsageLimits(request_limit=10)
         )
         log_agent_trace("synthesizer", mod_id, result)
+        final_content = sanitize_llm_markdown(result.output)
+        
+        # Merge Usage
+        usage = capture_usage(result, "synthesizer", mod_id)
+        # TODO: Add global usage merging logic here if necessary
+        
     except Exception as e:
         logger.error(f"❌ [SYNTHESIZER-FAILURE] Agent run failed: {e}", exc_info=True)
-        # return a graceful error to avoid hanging the graph
-        return {
-            "messages": [{"role": "assistant", "content": "⚠️ _Désolé, une erreur technique est survenue lors de la synthèse finale. Les experts ont cependant fini leur travail._"}],
-            "next_node": END
-        }
-    logger.info(f"Synthesis complete for {city_name}.")
+        final_content = "⚠️ _Désolé, une erreur technique est survenue lors de la synthèse finale. Les experts ont cependant fini leur travail._"
     
-    usage = capture_usage(result, "synthesizer", mod_id)
-    
-    # BQ Logging for result-level (Final IA Analysis)
+    # BQ Logging
     try:
-         # Use the user's prompt as the reference input
-         user_input = state.messages[-1].get("content", "Analyse IA") if state.messages else "Analyse IA"
-         await asyncio.to_thread(
-              bq_logger.log_agent_state_to_bq,
-              user_input, 
-              state.model_dump(),
-              state.interaction_id,
-              state.username
-         )
+        user_input = ctx.state.messages[-1].get("content", "Analyse IA") if ctx.state.messages else "Analyse IA"
+        # We need state to be dict
+        from dataclasses import asdict
+        state_dict = asdict(ctx.state)
+        # ensure focus_city is dict for BQ serialization
+        if ctx.state.focus_city:
+             state_dict["focus_city"] = ctx.state.focus_city.model_dump()
+        if ctx.state.search_criteria:
+             state_dict["search_criteria"] = ctx.state.search_criteria.model_dump()
+        if ctx.state.search_results:
+             state_dict["search_results"] = ctx.state.search_results.model_dump()
+
+        await asyncio.to_thread(
+            bq_logger.log_agent_state_to_bq,
+            user_input, 
+            state_dict,
+            ctx.state.interaction_id,
+            ctx.state.username
+        )
     except Exception as e:
-         logger.warning(f"⚠️ [BQ-LOG] Synthesis logging failed: {e}")
+        logger.warning(f"⚠️ [BQ-LOG] Synthesis logging failed: {e}")
 
-    # Build odis_synthesis as a list of new messages to append
-    # In specific_ask mode, we also want to persist the user's question for context
+    # Build odis_synthesis
     new_odis_synthesis = []
-    if state.execution_mode == 'specific_ask' and state.messages:
-        last_user_msg = state.messages[-1]
+    if ctx.state.execution_mode == 'specific_ask' and ctx.state.messages:
+        last_user_msg = ctx.state.messages[-1]
         if last_user_msg.get("role") == "user":
-             new_odis_synthesis.append(last_user_msg)
-    
-    new_odis_synthesis.append({"role": "assistant", "content": result.output})
-
-    return {
-        "messages": [{"role": "assistant", "content": sanitize_llm_markdown(result.output)}],
-        "search_results": {
-            "results": [
-                {
-                    "codgeo": state.focus_city.codgeo if state.focus_city and state.focus_city.codgeo else "",
-                    "name": state.focus_city.name if state.focus_city else "",
-                    "odis_synthesis": new_odis_synthesis
-                }
-            ]
-        },
-        "next_node": END,
-        "pending_experts": [], # Clear the pending list here now
-        "usage": usage
-    }
-
-# --- Graph Definition ---
-
-def create_odis_graph():
-    """Builds the LangGraph state machine."""
-    builder = StateGraph(ODISGraphState)
-    
-    # 1. Add Nodes
-    builder.add_node("router", router_node)
-    builder.add_node("refiner", refiner_node)
-    builder.add_node("interviewer", interviewer_node)
-    builder.add_node("scorer", scorer_node)
-    
-    # Expert Nodes (Parallel)
-    builder.add_node("scout", scout_node)
-    builder.add_node("web", web_node)
-    builder.add_node("job_hunter", job_hunter_node)
-    
-    # Expert Nodes (Solo)
-    builder.add_node("scout_solo", scout_node)
-    builder.add_node("web_solo", web_node)
-    builder.add_node("job_hunter_solo", job_hunter_node)
-    
-    builder.add_node("synthesizer", synthesizer_node)
-    
-    # 2. Edges
-    # --- 1. OPTIMIZED ENTRY POINT (Router Bypass) ---
-    builder.add_conditional_edges(
-        START,
-        route_from_start,
-        {
-            "interviewer": "interviewer",
-            "router": "router"
-        }
-    )
-    
-    # --- 2. INTERVIEWER LOOP ---
-    builder.add_conditional_edges(
-        "interviewer",
-        route_from_interviewer,
-        {
-            "interviewer": END,           # The Loop (Stop and wait for user)
-            "router": "router"            # The Exit Strategy
-        }
-    )
-    
-    # After Router: decide whether to go to Refiner (experts) or direct (interviewer)
-    def router_branch(state: ODISGraphState):
-        decision = state.next_node
-        # Analysis mode, solo experts or synthesizer go through Refiner
-        experts = ['scorer', 'analysis', 'scout', 'web', 'job_hunter', 'synthesizer']
-        if decision in experts:
-            return "refiner"
-        elif decision == "interviewer":
-            return "interviewer"
-        else:
-            return END
+            new_odis_synthesis.append(last_user_msg)
             
-    builder.add_conditional_edges(
-        "router", 
-        router_branch,
-        {
-            "refiner": "refiner",
-            "interviewer": "interviewer",
-            END: END
-        }
-    )
+    new_odis_synthesis.append({"role": "assistant", "content": final_content})
     
-    # After Refiner: the Experts or Scorer takes over (Fan-out)
-    def refiner_branch(state: ODISGraphState):
-        decision = state.next_node
-        if decision == "scorer":
-            return "scorer"
-        
-        # Everything else (analysis or solo) triggers parallel experts
-        logger.info(f"🔀 [REFINER] Launching experts: {state.pending_experts}")
-        return state.pending_experts or END
-            
-    builder.add_conditional_edges(
-        "refiner",
-        refiner_branch,
-        {
-            "scorer": "scorer",
-            "scout": "scout",
-            "web": "web",
-            "job_hunter": "job_hunter",
-            "scout_solo": "scout_solo",
-            "web_solo": "web_solo",
-            "job_hunter_solo": "job_hunter_solo",
-            "synthesizer": "synthesizer",
-            END: END
-        }
-    )
+    # Apply back to the city result if possible
+    if ctx.state.search_results and ctx.state.focus_city:
+        city_res = ctx.state.search_results.get_by_code(ctx.state.focus_city.codgeo)
+        if city_res:
+            if not city_res.odis_synthesis: city_res.odis_synthesis = []
+            city_res.odis_synthesis.extend(new_odis_synthesis)
+
+    return End(final_content)
+
+
+def create_odis_graph() -> Graph[GraphState, ODISDeps, None, str]:
+    """Builds the pydantic-graph state machine."""
+    g = GraphBuilder(state_type=GraphState, deps_type=ODISDeps, output_type=str)
     
-    # Fan-in: Parallel Expert nodes converge to synthesizer
-    builder.add_edge(["scout", "web", "job_hunter"], "synthesizer")
+    triage_node = g.step(triage_step)
+    extract_domains_node = g.step(extract_domains)
+    expert_worker_node = g.step(expert_worker_step)
+    synthesizer_node = g.step(synthesizer_step)
     
-    # Direct edges: Solo experts go straight to synthesizer
-    builder.add_edge("scout_solo", "synthesizer")
-    builder.add_edge("web_solo", "synthesizer")
-    builder.add_edge("job_hunter_solo", "synthesizer")
+    collect_experts = g.join(reduce_list_append, initial_factory=list)
     
-    # End Edges
-    builder.add_edge("synthesizer", END)
-    builder.add_edge("scorer", END)
+    # MapReduce Pipeline
+    g.add(g.edge_from(g.start_node).to(triage_node))
     
-    return builder.compile()
+    # Conditional branching from triage
+    decision = g.decision() \
+        .branch(g.match(ExpertList).to(extract_domains_node)) \
+        .branch(g.match(DirectSynthesis).to(synthesizer_node))
+    
+    g.add(g.edge_from(triage_node).to(decision))
+    
+    g.add_mapping_edge(extract_domains_node, expert_worker_node)
+    g.add(g.edge_from(expert_worker_node).to(collect_experts))
+    g.add(g.edge_from(collect_experts).to(synthesizer_node))
+    g.add(g.edge_from(synthesizer_node).to(g.end_node))
+    
+    return g.build()

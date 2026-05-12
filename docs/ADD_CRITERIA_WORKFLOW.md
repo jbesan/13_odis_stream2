@@ -28,12 +28,24 @@ C'est la source de vérité pour l'affichage et l'agrégation. Ajoutez l'entrée
 ---
 
 ## 3. Modèles de Données (`app/core/models.py`)
-Le typage strict est obligatoire pour assurer la cohérence entre le formulaire et le moteur.
-- **Input** : Ajoutez le champ correspondant dans `SearchCriterias` (avec types Pydantic et Field).
+Le typage strict et la décoration ACL sont obligatoires pour assurer la cohérence entre le formulaire, le moteur et l'injection de contexte dans les agents.
+
+### A. Décoration ACL (Obligatoire)
+Chaque champ ajouté doit impérativement comporter une description lisible et un bitmask de visibilité :
+- **description** : Sera utilisé comme clé JSON dans les prompts des agents LLM (ex: `"Commune actuelle de résidence"`).
+- **odis_visibility** : Liste des consommateurs autorisés. Valeurs possibles : `all`, `agent_refiner`, `agent_scout`, `agent_synthesizer`, `agent_web`, `agent_job_hunter`, `agent_interviewer`, `ui_details`, `pdf_report`.
+- **Note sur le Refiner** : L'agent **Refiner** est responsable de la synthèse globale ("Le Dossier"). Assurez-vous que tout critère structurant pour la situation de la personne possède le tag `agent_refiner` pour être inclus dans le `odis_brief`.
+
+### B. Structure
+- **Input** : Ajoutez le champ correspondant dans `SearchCriterias`.
+  ```python
+  mon_critere: str = Field(..., description="Libellé LLM", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "ui_details"]})
+  ```
 - **Output** : 
     - Ajoutez le champ dans la classe `*Metrics` concernée (ex: `EmploymentMetrics`).
-    - Créez une nouvelle classe `Metrics` si la catégorie est nouvelle.
-    - Enregistrez cette catégorie dans `CommuneResult`.
+    - **⚠️ IMPORTANT** : Si vous modifiez un sous-modèle (ex: `EmploymentMetrics`), vous devez aussi vérifier que le champ parent dans `CommuneResult` possède les tags `odis_visibility` appropriés pour propager la visibilité.
+    - Créez une nouvelle classe `Metrics` si la catégorie est nouvelle et enregistrez-la dans `CommuneResult`.
+
 
 ---
 

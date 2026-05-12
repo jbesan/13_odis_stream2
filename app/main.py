@@ -1,4 +1,5 @@
 import streamlit as st
+import logfire
 from utils import data_loader
 
 # --- Page Configuration (Standard ODIS) ---
@@ -16,7 +17,8 @@ if not auth.check_password():
     st.stop()
 
 # --- Initialize Data ---
-data_loader.ensure_data_initialized()
+with logfire.span("ODIS Session"):
+    data_loader.ensure_data_initialized()
 
 # --- Silent Redirect ---
 # This makes main.py purely an entry point that leads to the first page

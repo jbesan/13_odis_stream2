@@ -223,6 +223,11 @@ def apply_search_criteria_to_ui(criteria: Any) -> None:
     if has_custom_weights:
         st.session_state['ui_expert_weights'] = True
 
+    # 6b. Handle Organization Boosts
+    if 'org_boosts' in flat_crit and isinstance(flat_crit['org_boosts'], dict):
+        for b_key, b_val in flat_crit['org_boosts'].items():
+            st.session_state[f"ui_org_boost_{b_key}"] = float(b_val)
+
     # 7. Town Size Reverse Lookup (Sync Radio Button with Mu/Sigma)
     target_pop = flat_crit.get('target_population')
     target_sigma = flat_crit.get('target_population_sigma')
@@ -267,11 +272,13 @@ def ensure_data_initialized() -> None:
     
     if 'demo_data' not in st.session_state or force_refresh:
         defaults = copy.deepcopy(cfg.DEMO_DATA_DEFAULT)
-        # Apply org profile if present
-        apply_org_data_if_present(defaults)
-        # Apply demo scenario if present (Demos override/supplement orgs)
+        
+        # Apply demo scenario if present 
         apply_demo_data_if_present(defaults)
         
+        # Apply org profile if present
+        apply_org_data_if_present(defaults)
+
         st.session_state['demo_data'] = defaults
         
     # Always ensure session states are initialized if missing
@@ -338,8 +345,8 @@ def _fetch_jaccueille_data_bq_logic() -> pd.DataFrame:
         from google.cloud import bigquery
         client = bigquery.Client(project="odis-stream2")
         query = "SELECT bassin_de_vie, heb_accueillants_count FROM `odis-stream2.jaccueille.jaccueille_accueillants_bdv`"
-        logger.info("📡 [J'ACCUEILLE] Fetching host counts from BigQuery (Cache stale or missing)...")
-        df_jacc = client.query(query).to_dataframe()
+        logger.debug("📡 [J'ACCUEILLE] Fetching host counts from BigQuery (Cache stale or missing)...")
+        df_jacc = client.query(query).to_dataframe(create_bqstorage_client=True)
         
         # Save to local cache for future use
         if not df_jacc.empty:
@@ -403,7 +410,7 @@ def _enrich_rome_index(rome_index: pd.DataFrame, live_jobs_data: pd.DataFrame) -
     sorted index and the top items list.
     """
     if rome_index.empty or live_jobs_data.empty:
-        return rome_index, rome_index.head(200)
+        return rome_index, rome_index.head(1000)
 
     # 1. Aggregate total_postes by romeCode
     # Note: romeCode and romeLibelle are guaranteed in live_jobs_data as per user snippet

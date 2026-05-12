@@ -17,8 +17,10 @@ fastmcp
 google-genai==1.70.0
 pydantic
 python-dotenv
-langgraph
-pydantic-ai==1.76.0
+pydantic-ai-slim[google,logfire]==1.76.0
 google-cloud-bigquery
+google-cloud-bigquery-storage
+pyarrow
 db-dtypes
 fastparquet
+logfire[httpx]
