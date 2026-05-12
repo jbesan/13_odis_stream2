@@ -345,8 +345,8 @@ def _fetch_jaccueille_data_bq_logic() -> pd.DataFrame:
         from google.cloud import bigquery
         client = bigquery.Client(project="odis-stream2")
         query = "SELECT bassin_de_vie, heb_accueillants_count FROM `odis-stream2.jaccueille.jaccueille_accueillants_bdv`"
-        logger.info("📡 [J'ACCUEILLE] Fetching host counts from BigQuery (Cache stale or missing)...")
-        df_jacc = client.query(query).to_dataframe()
+        logger.debug("📡 [J'ACCUEILLE] Fetching host counts from BigQuery (Cache stale or missing)...")
+        df_jacc = client.query(query).to_dataframe(create_bqstorage_client=True)
         
         # Save to local cache for future use
         if not df_jacc.empty:
@@ -410,7 +410,7 @@ def _enrich_rome_index(rome_index: pd.DataFrame, live_jobs_data: pd.DataFrame) -
     sorted index and the top items list.
     """
     if rome_index.empty or live_jobs_data.empty:
-        return rome_index, rome_index.head(200)
+        return rome_index, rome_index.head(1000)
 
     # 1. Aggregate total_postes by romeCode
     # Note: romeCode and romeLibelle are guaranteed in live_jobs_data as per user snippet

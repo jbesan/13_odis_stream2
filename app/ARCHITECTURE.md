@@ -7,16 +7,16 @@ The ODIS application follows a **Model-First** architecture. All business logic,
 ### Primary Models (`app/core/models.py`)
 - **`SearchCriterias`**: Captures user input and intent.
 - **`SearchResultsData`**: The container for all scoring results and agent artifacts. Includes `odis_brief` for the user profile summary.
-- **`CommuneResult`**: Detailed data for a specific city, including specific agent analysis (`expert_analysis`), `odis_synthesis`, and `scorer_pitch`.
+- **`CommuneResult`**: Detailed data for a specific city, including specific agent analysis (`expert_analysis`), `odis_synthesis`, and `refiner_pitch`.
 
 > [!IMPORTANT]
 > **Single Source of Truth**: Never use untyped dictionaries (e.g., `st.session_state['app_data']`) for business-critical state. If it's a search result or an analysis, it belongs in the `SearchResultsData` model.
 
 ---
 
-## 2. State Machine: LangGraph + Reducers
+## 2. State Machine: Pydantic Graph + Reducers
 
-ODIS uses **LangGraph** to manage complex, multi-agent flows. The graph is **stateless** and relies on **functional updates (reducers)** to maintain the single source of truth.
+ODIS uses **Pydantic Graph** to manage complex, multi-agent flows. The graph is **stateless** and relies on **functional updates (reducers)** to maintain the single source of truth.
 
 ### The Reducer Pattern (`app/agents/state.py`)
 - When a node returns an update (e.g., a city analysis), it is merged into the global state via `merge_search_results`.
@@ -63,9 +63,10 @@ Before adding a new feature or agent, follow this checklist:
 
 To ensure scalability and prevent Out-Of-Memory (OOM) errors, ODIS uses a **Decoupled Data Architecture**.
 
-### Global Singleton (`@st.cache_resource`)
+### Global Singleton & BigQuery Optimization
 - Heavy datasets (Communes, POIs, Roman index, etc.) are loaded **once** into a global, immutable cache.
 - Access is centralized via `utils.data_loader.get_app_data()`.
+- **BigQuery Storage API**: For dynamic data fetches (J'Accueille, RAG), ODIS uses the `google-cloud-bigquery-storage` client and `pyarrow` to enable high-performance Arrow downloads, significantly reducing latency and CPU overhead.
 - This eliminates per-session copies of multi-megabyte DataFrames.
 
 ### Lean Scoring & JIT Hydration

@@ -50,7 +50,14 @@ with st.sidebar:
     if st.button("Passer aux résultats", type='secondary', width="stretch", icon=":material/fast_forward:"):
         st.switch_page("pages/3_Resultats.py") 
 
-PAGES = {
+org_id = st.session_state.get('ui_org_context')
+profile = cfg.ORGANIZATION_PROFILES.get(org_id) if org_id else None
+
+PAGES = {}
+if profile:
+    PAGES["org"] = profile['name']
+
+PAGES.update({
     "localisation": "Localisation",
     "family": "Situation familiale",
     "education": "Éducation",
@@ -60,14 +67,7 @@ PAGES = {
     "other_needs": "Inclusion",
     "notes": "Autres",
     "profile": "Profil"
-}
-
-org_id = st.session_state.get('ui_org_context')
-if org_id:
-    profile = cfg.ORGANIZATION_PROFILES.get(org_id)
-    if profile:
-        # logging.info(f"🏢 [UI] Organization profile detected: {org_id}")
-        PAGES["org"] = profile['name']
+})
 PAGES_LIST = list(PAGES.keys())
 
 def get_person_accompanied_str():

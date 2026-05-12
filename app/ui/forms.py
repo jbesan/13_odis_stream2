@@ -148,7 +148,7 @@ def render_housing_form() -> None:
             format_func=lambda x: cfg.HOUSING_TYPE_OPTIONS[x],
             width=300,
             key="ui_type_logement",
-            help="Permet d'utiliser les loyers spécifiques au type de logement choisi (Source ODACE 2024)"
+            help="Permet d'utiliser les loyers spécifiques au type de logement choisi (Source 2024)"
         )
 
 def render_health_form() -> None:
@@ -374,7 +374,7 @@ def render_org_profile_form() -> None:
         st.error(f"Profil '{org_id}' non trouvé.")
         return
 
-    st.subheader(f'Vous trouverez ci dessous les paramètres spécifiques pour {profile['name']} :')
+    st.subheader(f'Vous trouverez ci dessous les paramètres spécifiques pour {profile["name"]} :')
     
     # st.divider()
     

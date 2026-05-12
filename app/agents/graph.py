@@ -130,6 +130,7 @@ async def expert_worker_step(ctx: StepContext[GraphState, ODISDeps, str]) -> Age
     focus = ctx.state.focus_city.name.lower().strip() if ctx.state.focus_city else "unknown"
     h = compute_criteria_hash(ctx.state.search_criteria)
     ctx.state.criteria_hash = h
+    logfire.info("Processing Expert Node for {search_hash}", search_hash=h)
     
     # 1. CACHE BYPASS
     if ctx.state.execution_mode == 'full_analysis' and ctx.state.search_results and ctx.state.search_results.search_hash == h:

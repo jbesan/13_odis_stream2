@@ -73,7 +73,9 @@ async def test_graph_execution_end_to_end():
         
         # assertions
         assert final_response is not None
-        logger.info(f"🤖 Last Response: {final_response[:100]}...")
+        # Handle pydantic-graph End object
+        res_str = final_response.data if hasattr(final_response, "data") else str(final_response)
+        logger.info(f"🤖 Last Response: {res_str[:100]}...")
         
         # Check if results were merged into state
         if state.search_results:

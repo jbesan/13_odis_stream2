@@ -128,6 +128,8 @@ def setup_logfire() -> None:
         )
         logfire.instrument_pydantic_ai()
         logfire.instrument_httpx()
+        # Suppress BigQuery automatic tracing to reduce noise (as requested)
+        logfire.suppress_scopes('google.cloud.bigquery.opentelemetry_tracing')
         logger.info("🔥 Logfire instrumentation enabled.")
     except Exception as e:
         logger.warning(f"⚠️ Failed to initialize Logfire: {e}")
@@ -321,7 +323,7 @@ def format_agent_result_to_md(agent_name: str, model_id: str, result: Any) -> st
     Formats a Pydantic-AI run result into a clean, readable Markdown audit trail.
 
     Args:
-        agent_name: Name of the agent (e.g. 'scorer', 'scout').
+        agent_name: Name of the agent (e.g. 'refiner', 'scout').
         model_id: The model identifier string.
         result: The pydantic-ai RunResult object.
 

@@ -1,10 +1,10 @@
 import json
 import logging
-from typing import List, Dict, Any, Optional, Annotated, Literal
+from typing import List, Dict, Any, Optional, Literal
 from dataclasses import dataclass, field
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 from google import genai
-from core.models import SearchCriterias, SearchResultsData, CommuneResult
+from core.models import SearchCriterias, SearchResultsData, CommuneResult, CriteriaItem, CommuneScoreDetail
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +63,11 @@ class GraphState:
     interaction_id: str = "unknown"
     username: str = "unknown"
     usage: UsageStats = field(default_factory=UsageStats)
+    
+    def __post_init__(self):
+        # Sync briefing from criteria if not explicitly set
+        if not self.odis_brief and self.search_criteria and self.search_criteria.odis_brief:
+            self.odis_brief = self.search_criteria.odis_brief
 
 FocusCity.model_rebuild()
 
@@ -97,7 +102,7 @@ class ODISContextBuilder:
 
         Args:
             state: The current GraphState.
-            agent_name: One of 'synthesizer', 'refiner', 'scorer', 'scout',
+            agent_name: One of 'synthesizer', 'refiner', 'scout',
                         'web', 'job_hunter', 'interviewer'.
 
         Returns:
@@ -106,7 +111,6 @@ class ODISContextBuilder:
         builders = {
             "synthesizer": cls._synthesizer_context,
             "refiner":     cls._refiner_context,
-            "scorer":      cls._scorer_context,
             "scout":       cls._scout_context,
             "web":         cls._web_context,
             "job_hunter":  cls._job_hunter_context,
@@ -123,13 +127,98 @@ class ODISContextBuilder:
         logger.debug(f"[CTX] {agent_name} context assembled ({len(result)} chars)")
         return result
 
+    @classmethod
+    def _auto_build_context(cls, model: Any, visibility_key: str) -> Dict[str, Any]:
+        """
+        Recursively builds a context dict from a Pydantic model, filtered by ACL visibility.
+
+        Args:
+            model: The Pydantic BaseModel instance to inspect.
+            visibility_key: The consumer key to match against odis_visibility tags
+                            (e.g., 'agent_scout'). Fields tagged 'all' are always included.
+
+        Returns:
+            A flat or nested dict keyed by field descriptions, ready for JSON serialization.
+        """
+        if not isinstance(model, BaseModel):
+            return model
+
+        ctx = {}
+        # Access model_fields from the class to avoid Pydantic 2.11+ instance warning
+        for name, field in model.__class__.model_fields.items():
+            # 1. Check Visibility (ACL Bitmask)
+            extra = field.json_schema_extra
+            if not isinstance(extra, dict):
+                continue
+            
+            visibility = extra.get("odis_visibility", [])
+            if visibility_key not in visibility and "all" not in visibility:
+                continue
+
+            # 2. Get value and label
+            val = getattr(model, name)
+            label = field.description or name
+            
+            if val is None:
+                continue
+
+            # 3. Handle Special Types & Recursion
+            ctx[label] = cls._process_value(val, visibility_key)
+            
+        return ctx
+
+    @classmethod
+    def _process_value(cls, val: Any, visibility_key: str) -> Any:
+        """
+        Helper to process values based on type and handle recursion.
+
+        Args:
+            val: The value to process (can be a primitive, list, dict, or BaseModel).
+            visibility_key: The consumer key for visibility filtering.
+
+        Returns:
+            The processed value, simplified or recursed as needed.
+        """
+        # Handle CriteriaItem (Special Case: Simplify to Label for LLM)
+        if isinstance(val, CriteriaItem):
+             return val.label
+        
+        # Handle CommuneScoreDetail (Special Case: Compact string for LLM agents)
+        # We use class name check to avoid issues with double imports/re-definitions
+        if val.__class__.__name__ == "CommuneScoreDetail":
+            if visibility_key.startswith("agent_"):
+                # Use getattr to be safe with different Pydantic versions/proxies
+                label = getattr(val, 'label', 'N/A')
+                vkpi = getattr(val, 'valeur_kpi', None)
+                unit = getattr(val, 'unit', '')
+                score = getattr(val, 'score_normalise', 0.0)
+                weight = getattr(val, 'relative_weight', 0.0)
+                
+                kpi_str = f"{vkpi}{unit}" if vkpi is not None else "N/A"
+                return f"{label}: {kpi_str}, score: {round(float(score), 2)}, poids relatif: {weight}%"
+            # For UI/PDF, fall through to normal recursion
+
+        # Handle List of items (Recursive)
+        if isinstance(val, list):
+            return [cls._process_value(i, visibility_key) for i in val]
+        
+        # Handle Nested BaseModel (Recursive)
+        if isinstance(val, BaseModel):
+            return cls._auto_build_context(val, visibility_key)
+        
+        # Handle Dict (Recursive)
+        if isinstance(val, dict):
+            return {k: cls._process_value(v, visibility_key) for k, v in val.items()}
+            
+        return val
+
     # -------------------------------------------------------------------------
     # AGENT-SPECIFIC BUILDERS
     # -------------------------------------------------------------------------
 
     @classmethod
     def _synthesizer_context(cls, state: "GraphState") -> dict:
-        """Focus City (full_thematic) + Baseline (scores_only) + Top 5 summary + Experts + Briefing."""
+        """Focus City + Baseline (current_geo) + Expert Artifacts + Briefing."""
         ctx: Dict[str, Any] = {}
         if state.odis_brief:
             ctx["Résumé du dossier (Briefing)"] = state.odis_brief
@@ -137,25 +226,16 @@ class ODISContextBuilder:
                 ctx["Notes qualitatives"] = state.search_criteria.notes_qualitatives
         else: 
             if state.search_criteria:
-                ctx["Critères de recherche"] = cls._criteria_labels(state.search_criteria)
-
+                ctx["Critères de recherche"] = cls._auto_build_context(state.search_criteria, "agent_synthesizer")
 
         if state.focus_city and state.search_results:
             focus = state.search_results.get_by_code(state.focus_city.codgeo)
             if focus:
-                ctx["Ville analysée"] = cls._city_full_thematic(focus)
-                ctx["Artefacts experts"] = {
-                    "Scout (terrain)": focus.expert_analysis.get("scout", "Non disponible"),
-                    "Web (actualités)": focus.expert_analysis.get("web", "Non disponible"),
-                    "Job Hunter (emploi)": focus.expert_analysis.get("job_hunter", "Non disponible"),
-                }
+                ctx["Ville analysée"] = cls._auto_build_context(focus, "agent_synthesizer")
 
         if state.search_results and state.search_results.current_geo:
-            ctx["Ville actuelle (référence)"] = cls._city_full_thematic(state.search_results.current_geo)
+            ctx["Ville actuelle (référence)"] = cls._auto_build_context(state.search_results.current_geo, "agent_synthesizer")
 
-        # if state.search_results and state.search_results.results:
-        #     ctx["Top 5 communes recommandées"] = cls._top5_summary(state.search_results.results)
-        
         if state.messages:
             ctx["Dernier message"] = state.messages[-1].get("content", "")
 
@@ -163,68 +243,47 @@ class ODISContextBuilder:
 
     @classmethod
     def _refiner_context(cls, state: "GraphState") -> dict:
-        """Criteria labels + last messages + Top 5 summary + Briefing."""
-        ctx: Dict[str, Any] = {}
-        if state.odis_brief:
-            ctx["briefing_actuel"] = state.odis_brief
-        
-        # We only summarize if we have search results
-        if state.search_results and state.search_results.results:
-            top_5 = state.search_results.results[:5]
-            ctx["top_5_communes"] = [
-                {
-                    "nom": c.name,
-                    "code_insee": c.codgeo,
-                    "score_global": c.global_score,
-                    "points_forts": c.expert_analysis
-                } for c in top_5
-            ]
-        
-        ctx["messages_recents"] = state.messages
-        return ctx
-
-    @classmethod
-    def _scorer_context(cls, state: "GraphState") -> dict:
-        """Criteria labels only + Briefing + Top 5 results if available."""
+        """Briefing + Search Criteria + Top 5 results with full metrics for synthesis."""
         ctx: Dict[str, Any] = {}
         if state.odis_brief:
             ctx["Résumé du dossier (Briefing)"] = state.odis_brief
-        else:
-            if state.search_criteria and state.search_criteria.notes_qualitatives:
-                ctx["Notes qualitatives"] = state.search_criteria.notes_qualitatives
-            if state.search_criteria:
-                ctx["Critères de recherche"] = cls._criteria_labels(state.search_criteria)
         
-        # Include Top 5 results if they exist to avoid redundant tool calls
+        # 1. User Profile & Criteria
+        if state.search_criteria:
+            ctx["Situation & Critères"] = cls._auto_build_context(state.search_criteria, "agent_refiner")
+        
+        # 2. Results Analysis (Top 5)
         if state.search_results and state.search_results.results:
-            ctx["Top 5 communes identifiées (scores calculés)"] = [
+            ctx["Top 5 communes identifiées (Détails métriques)"] = [
                 {
                     "Rang": i + 1,
-                    "Code INSEE": r.codgeo,
-                    **cls._city_full_thematic(r)
+                    **cls._auto_build_context(r, "agent_refiner")
                 }
                 for i, r in enumerate(state.search_results.results[:5])
             ]
+        
+        # 3. Conversation History
+        if state.messages:
+            ctx["Historique récent"] = state.messages[-5:] # Last 5 messages for context
             
         return ctx
 
+
     @classmethod
     def _scout_context(cls, state: "GraphState") -> dict:
-        """City identity + criteria labels + existing artifact + Briefing."""
+        """City identity + criteria + existing artifact + Briefing."""
         ctx: Dict[str, Any] = {}
         if state.odis_brief:
             ctx["Résumé du dossier (Briefing)"] = state.odis_brief
-        else:
-            if state.search_criteria and state.search_criteria.notes_qualitatives:
-                ctx["Notes qualitatives"] = state.search_criteria.notes_qualitatives
-            if state.search_criteria:
-                ctx["Critères de recherche"] = cls._criteria_labels(state.search_criteria)
+
+        # Auto-build Criteria for Scout
+        if state.search_criteria:
+            ctx["Critères de recherche"] = cls._auto_build_context(state.search_criteria, "agent_scout")
 
         if state.focus_city and state.search_results:
             focus = state.search_results.get_by_code(state.focus_city.codgeo)
-            
             if focus:
-                ctx["Ville analysée"] = cls._city_identity(focus)
+                ctx["Ville analysée"] = cls._auto_build_context(focus, "agent_scout")
                 existing = focus.expert_analysis.get("scout")
                 if existing:
                     ctx["Connaissances actuelles (Scout)"] = existing
@@ -236,21 +295,19 @@ class ODISContextBuilder:
 
     @classmethod
     def _web_context(cls, state: "GraphState") -> dict:
-        """City identity + criteria labels + existing artifact + Briefing."""
+        """City identity + criteria + existing artifact + Briefing."""
         ctx: Dict[str, Any] = {}
         if state.odis_brief:
             ctx["Résumé du dossier (Briefing)"] = state.odis_brief
-        else: 
-            if state.search_criteria and state.search_criteria.notes_qualitatives:
-                ctx["Notes qualitatives"] = state.search_criteria.notes_qualitatives
-            if state.search_criteria:
-                ctx["Critères de recherche"] = cls._criteria_labels(state.search_criteria)
+
+        # Auto-build Criteria for Web
+        if state.search_criteria:
+            ctx["Critères de recherche"] = cls._auto_build_context(state.search_criteria, "agent_web")
 
         if state.focus_city and state.search_results:
             focus = state.search_results.get_by_code(state.focus_city.codgeo)
-                
             if focus:
-                ctx["Ville analysée"] = cls._city_identity(focus)
+                ctx["Ville analysée"] = cls._auto_build_context(focus, "agent_web")
                 existing = focus.expert_analysis.get("web")
                 if existing:
                     ctx["Connaissances actuelles (Web)"] = existing
@@ -262,21 +319,19 @@ class ODISContextBuilder:
 
     @classmethod
     def _job_hunter_context(cls, state: "GraphState") -> dict:
-        """City identity + ROME codes with labels + own existing artifact."""
+        """City identity + ROME codes + own existing artifact."""
         ctx: Dict[str, Any] = {}
         if state.odis_brief:
             ctx["Résumé du dossier (Briefing)"] = state.odis_brief
 
-            if state.search_criteria and state.search_criteria.notes_qualitatives:
-                ctx["Notes qualitatives"] = state.search_criteria.notes_qualitatives
+        # Auto-build Criteria for Job Hunter
         if state.search_criteria:
-            ctx["Codes ROME à rechercher"] = cls._criteria_rome_codes(state.search_criteria)
+            ctx["Critères de recherche (Emploi)"] = cls._auto_build_context(state.search_criteria, "agent_job_hunter")
 
         if state.focus_city and state.search_results:
             focus = state.search_results.get_by_code(state.focus_city.codgeo)
-                
             if focus:
-                ctx["Ville analysée"] = cls._city_identity(focus)
+                ctx["Ville analysée"] = cls._auto_build_context(focus, "agent_job_hunter")
                 existing = focus.expert_analysis.get("job_hunter")
                 if existing:
                     ctx["Connaissances actuelles (Job Hunter)"] = existing
@@ -288,24 +343,24 @@ class ODISContextBuilder:
 
     @classmethod
     def _interviewer_context(cls, state: "GraphState") -> dict:
-        """Full criteria (with readable keys) + last user message."""
+        """Full criteria + last user message."""
         ctx: Dict[str, Any] = {}
         if state.search_criteria:
-            ctx["Critères identifiés"] = cls._criteria_full(state.search_criteria)
+            ctx["Critères identifiés"] = cls._auto_build_context(state.search_criteria, "agent_interviewer")
         if state.messages:
             ctx["Dernier message utilisateur"] = state.messages[-1].get("content", "")
         return ctx
 
     @classmethod
     def _router_context(cls, state: "GraphState") -> dict:
-        """Specific context for the Router: Briefing + Identified Cities + Focus + Interview Status."""
+        """Specific context for the Router: Briefing + Identified Cities + Focus."""
         ctx: Dict[str, Any] = {}
         if state.odis_brief:
             ctx["Résumé du dossier (Briefing)"] = state.odis_brief
             
         if state.search_results and state.search_results.results:
             ctx["Villes identifiées"] = [
-                {"nom": r.name, "code_insee": r.codgeo} 
+                cls._auto_build_context(r, "agent_router")
                 for r in state.search_results.results[:5]
             ]
         
@@ -318,152 +373,4 @@ class ODISContextBuilder:
             ctx["Dernier message"] = state.messages[-1].get("content", "")
         return ctx
 
-    # -------------------------------------------------------------------------
-    # REUSABLE BUILDING BLOCKS
-    # -------------------------------------------------------------------------
-
-    @classmethod
-    def _criteria_labels(cls, sc: "SearchCriterias") -> dict:
-        """Returns a human-readable summary of search criteria (labels only, no codes)."""
-        def _labels(items):
-            if not items:
-                return []
-            flat = []
-            for item in items:
-                if isinstance(item, list):
-                    flat.extend([i.label if hasattr(i, "label") else str(i) for i in item if i])
-                elif hasattr(item, "label"):
-                    flat.append(item.label)
-                else:
-                    flat.append(str(item))
-            return flat
-
-        return {
-            "Commune actuelle": sc.commune_actuelle.label if sc.commune_actuelle else None,
-            "Zone de recherche": sc.loc_search_area,
-            "Nombre d'adultes": sc.nb_adultes,
-            "Nombre d'enfants": sc.nb_enfants,
-            "Niveaux scolaires": sc.classe_enfants,
-            "Métiers ciblés": _labels(sc.codes_metiers),
-            "Formations ciblées": _labels(sc.codes_formations),
-            "Hébergement cible": sc.hebergement_cible,
-            "Logement cible": sc.logement,
-            "Besoin santé": sc.besoin_sante,
-            "Profil de pondération": sc.weight_profile,
-            "Services d'inclusion": _labels(sc.inc_services_add_selection),
-            "Associations / centres d'intérêt": _labels(sc.inc_asso_add_selection),
-            "Fréquence de retour (attache)": getattr(sc, 'freq_retour', "Pas d'attache particulière") or "Pas d'attache particulière",
-            "Notes qualitatives": sc.notes_qualitatives,
-        }
-
-    @classmethod
-    def _criteria_full(cls, sc: "SearchCriterias") -> dict:
-        """Full criteria with readable keys — used by Interviewer."""
-        base = cls._criteria_labels(sc)
-        # Add codes for Interviewer's update logic
-        def _items_with_code(items):
-            if not items:
-                return []
-            flat = []
-            for item in items:
-                if isinstance(item, list):
-                    flat.extend([{"code": i.code, "label": i.label} for i in item if hasattr(i, "code")])
-                elif hasattr(item, "code"):
-                    flat.append({"code": item.code, "label": item.label})
-            return flat
-
-        base["Codes métiers (avec codes)"] = _items_with_code(sc.codes_metiers)
-        base["Codes formations (avec codes)"] = _items_with_code(sc.codes_formations)
-        base["Commune actuelle (code INSEE)"] = sc.commune_actuelle.code if sc.commune_actuelle else None
-        base["Zone de recherche (codes)"] = sc.loc_search_code
-        return base
-
-    @classmethod
-    def _criteria_rome_codes(cls, sc: "SearchCriterias") -> list:
-        """Returns a structured list of ROME codes per adult — for Job Hunter."""
-        result = []
-        for i, adult_codes in enumerate(sc.codes_metiers):
-            adult_entry: Dict[str, Any] = {"adulte": i + 1, "métiers": []}
-            for code in adult_codes:
-                if hasattr(code, "code"):
-                    adult_entry["métiers"].append({"code": code.code, "libellé": code.label})
-                else:
-                    adult_entry["métiers"].append({"code": str(code), "libellé": str(code)})
-            result.append(adult_entry)
-        return result
-
-    @classmethod
-    def _city_identity(cls, city: "CommuneResult") -> dict:
-        """Minimal city block — used by Scout, Web, Job Hunter."""
-        return {
-            "Nom": city.name,
-            "Code INSEE": city.codgeo,
-            "Population": city.population,
-            "Bassin de vie": city.name_bdv,
-        }
-
-    @classmethod
-    def _city_scores_only(cls, city: "CommuneResult") -> dict:
-        """Category scores only — used for Baseline City in Synthesizer."""
-        return {
-            "Nom": city.name,
-            "Score global": f"{round(city.global_score * 100, 1)}%",
-            "Scores par catégorie": {
-                "Emploi": f"{round(city.employment.cat_score * 100, 1)}%",
-                "Logement": f"{round(city.housing.cat_score * 100, 1)}%",
-                "Éducation": f"{round(city.education.cat_score * 100, 1)}%",
-                "Santé": f"{round(city.health.cat_score * 100, 1)}%",
-                "Inclusion": f"{round(city.inclusion.cat_score * 100, 1)}%",
-                "Mobilité": f"{round(city.mobility.cat_score * 100, 1)}%",
-            },
-        }
-
-    @classmethod
-    def _city_full_thematic(cls, city: "CommuneResult") -> dict:
-        """Full thematic snapshot — used for Focus City in Synthesizer."""
-        ctx = cls._city_identity(city) # Start with identity (INSEE, Pop, etc.)
-        ctx.update(cls._city_scores_only(city))
-        ctx["Emploi & Formation"] = {
-            "Offres standard (total bassin)": city.employment.standard_jobs_total,
-            "Offres correspondant au projet": city.employment.standard_jobs_matching_total,
-            "Top métiers en tension": city.employment.top_professions[:5],
-            "Offres SIAE correspondantes": city.employment.inclusive_jobs_matching_summary,
-        }
-        ctx["Logement"] = {
-            "Loyer moyen au m²": city.housing.price_per_sqm,
-            "Accueillants J'Accueille (bassin)": city.housing.host_count,
-        }
-        ctx["Éducation"] = {"Établissements par niveau": city.education.facility_counts}
-        ctx["Santé"] = {"Établissements de santé": city.health.facility_counts}
-        ctx["Inclusion"] = {
-            "Associations réfugiés identifiées": city.inclusion.asso_refugee_count,
-            "Associations d'inclusion (total)": city.inclusion.asso_inclusion_count,
-            # "Thématiques services d'inclusion": list(city.inclusion.services_grouped.keys()),
-        }
-        mobility_ctx = {"Arrêts transports en commun (total bassin)": city.mobility.total_stops}
-        
-        if city.mobility.is_same_epci is not None:
-            mobility_ctx["Même EPCI que commune actuelle"] = "Oui" if city.mobility.is_same_epci else "Non"
-            
-        if city.mobility.distance_to_current_km is not None:
-            mobility_ctx["Distance commune actuelle"] = f"{city.mobility.distance_to_current_km} km"
-
-        ctx["Mobilité"] = mobility_ctx
-
-        if city.scorer_pitch:
-            ctx["Points forts (Scorer)"] = city.scorer_pitch
-        return ctx
-
-    @classmethod
-    def _top5_summary(cls, results: list) -> list:
-        """Compact ranked list of the Top 5 communes."""
-        return [
-            {
-                "Rang": i + 1,
-                "Nom": city.name,
-                "Code INSEE": city.codgeo,
-                "Score global": f"{round(city.global_score * 100, 1)}%",
-                "Résumé expert": city.scorer_pitch or "—",
-            }
-            for i, city in enumerate(results[:5])
-        ]
+    # Legacy helper methods removed in favor of generic _auto_build_context

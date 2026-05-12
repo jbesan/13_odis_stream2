@@ -12,12 +12,13 @@ Instead of a stateful, multi-turn conversational loop, we treat the agentic work
 
 ## 2. Core Components
 
-### 2.1 One-Shot Interviewer (Auto-Detection)
-The legacy multi-turn `Interviewer` has been replaced by a standalone **one-shot PydanticAI agent**.
+### 2.1 One-Shot Interviewer (Memory Injection)
+The legacy multi-turn `Interviewer` has been replaced by a standalone **one-shot PydanticAI agent** that supports **state re-injection**.
 - **Role**: Extract `SearchCriterias` from unstructured text.
+- **Memory**: Supports memory injection via the `ODISContextBuilder`, allowing it to "see" previously identified criteria in its system prompt.
 - **Location**: `app/agents/interviewer.py`
 - **Trigger**: Direct UI call via `run_autodetect_safe`.
-- **Benefit**: Zero state management overhead for the UI.
+- **Benefit**: Zero state management overhead for the UI while maintaining context awareness.
 
 For technical details on the graph orchestration, see [GRAPH_ARCHITECTURE.md](app/agents/GRAPH_ARCHITECTURE.md).
 
@@ -80,8 +81,24 @@ ODIS uses **Pydantic Logfire** for end-to-end tracing and performance monitoring
 ### 6.1 Instrumentation Scope
 - **Native Agents**: All PydanticAI agents are automatically instrumented to capture prompts, outputs, and token usage.
 - **Orchestration Nodes**: Graph nodes are wrapped with `@logfire.instrument` to visualize the MapReduce fan-out/fan-in performance.
-- **Scoring Engine**: The `ScoringEngine` class is instrumented to identify bottlenecks in the multi-criteria calculation pipeline.
+- **Scoring Engine**: Methods within `ScoringEngine` are instrumented to identify bottlenecks in the multi-criteria calculation pipeline. (Note: Class-level instrumentation was removed to preserve classmethod access during testing).
 - **Web Requests**: `HTTPX` instrumentation tracks the latency of external tools (Brave Search, RAG services).
 
 ### 6.2 Session Grouping
 Each user run is wrapped in a high-level span labeled `"ODIS Session"` (in `main.py`), allowing developers to group all logs and traces related to a single user interaction by filtering for that span or using the `interaction_id` attribute.
+
+## 7. Metadata-Driven Context Injection (ACL)
+
+To avoid manual "cherry-picking" of fields for each agent, ODIS uses a dynamic, metadata-driven architecture for prompt context construction.
+
+### 7.1 Visibility Tags (`odis_visibility`)
+Pydantic models in `core/models.py` are decorated with visibility tags in `json_schema_extra`. This allows for a formal Access Control List (ACL) directly in the data models.
+
+### 7.2 Generic Recursive Builder
+The `ODISContextBuilder` in `agents/state.py` automatically generates context blocks by:
+1. Iterating over model fields recursively.
+2. Filtering fields based on the component's `visibility_key`.
+3. Using `Field.description` as the human-readable JSON key for the LLM.
+4. Automatically simplifying complex objects (like `CriteriaItem`) into plain strings.
+
+For the full visibility matrix and contract details, see [AGENT_CONTEXTS.md](app/agents/AGENT_CONTEXTS.md).

@@ -128,7 +128,7 @@ def log_search_complete(config: SearchCriterias, search_results: SearchResultsDa
             c_name = getattr(commune, "name", commune.get("name") if isinstance(commune, dict) else None)
             c_score = getattr(commune, "global_score", commune.get("global_score") if isinstance(commune, dict) else 0.0)
             c_scores = getattr(commune, "scores", commune.get("scores", {}) if isinstance(commune, dict) else {})
-            c_pitch = getattr(commune, "scorer_pitch", commune.get("scorer_pitch", "") if isinstance(commune, dict) else "")
+            c_pitch = getattr(commune, "refiner_pitch", commune.get("refiner_pitch", "") if isinstance(commune, dict) else "")
             c_expert = getattr(commune, "expert_analysis", commune.get("expert_analysis", {}) if isinstance(commune, dict) else {})
 
             top_5_results.append({
@@ -144,7 +144,7 @@ def log_search_complete(config: SearchCriterias, search_results: SearchResultsDa
             top_5_breakdown[str(c_codgeo)] = {
                 "libgeo": c_name,
                 "scores": commune_scores,
-                "scorer_pitch": c_pitch,
+                "refiner_pitch": c_pitch,
                 "expert_analysis": c_expert
             }
         
@@ -168,7 +168,7 @@ def log_search_complete(config: SearchCriterias, search_results: SearchResultsDa
         if errors:
             logger.error(f"❌ [TELEMETRY] BQ Insert Error for {interaction_id}: {errors}")
         else:
-            _telemetry_logger.info(f"✅ Successfully logged search event to BQ (ID: {interaction_id})")
+            _telemetry_logger.debug(f"✅ Successfully logged search event to BQ (ID: {interaction_id})")
             
     except Exception as e:
         logger.error(f"❌ [TELEMETRY] Failed to log search event to BQ: {str(e)}", exc_info=True)

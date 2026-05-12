@@ -385,9 +385,9 @@ def generate_pdf_report(
         pdf.ln(4)
 
         # --- Pitch (AI content as priority) ---
-        pitch = commune.scorer_pitch
+        pitch = commune.refiner_pitch
         if not pitch:
-            # Fallback to simple pitch logic if scorer_pitch is missing
+            # Fallback to simple pitch logic if refiner_pitch is missing
             pitch = f"{commune.name} se distingue particulièrement sur vos critères prioritaires."
             
         pdf.set_font("DejaVu", '', 10)
@@ -570,10 +570,10 @@ def generate_pdf_report(
         refugee_assos = commune.inclusion.asso_refugee_list[:10]
         if refugee_assos:
             for asso in refugee_assos:
-                name = html_escape(asso.get('name', 'Inconnu'))
-                cat = html_escape(asso.get('waldec_label', ''))
+                name = html_escape(asso.name or 'Inconnu')
+                cat = html_escape(asso.waldec_label or '')
                 cat_str = f" ({cat})" if cat else ""
-                desc = html_escape(asso.get('description', '').strip())
+                desc = html_escape((asso.description or '').strip())
                 line = f"• <b>{name}</b>{cat_str}"
                 if desc: line += f": {desc}"
                 pdf.write_html(line)
@@ -592,8 +592,8 @@ def generate_pdf_report(
                 pdf.cell(pdf.epw, 6, cat, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 pdf.set_font("DejaVu", '', 8)
                 for asso in assos[:5]:
-                    name = html_escape(asso.get('name', 'Inconnu'))
-                    desc = html_escape(asso.get('description', '').strip())
+                    name = html_escape(asso.name or 'Inconnu')
+                    desc = html_escape((asso.description or '').strip())
                     line = f"• <b>{name}</b>"
                     if desc: line += f": {desc}"
                     pdf.write_html(line)

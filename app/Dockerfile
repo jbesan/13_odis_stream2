@@ -19,10 +19,13 @@ COPY app/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # ---- Final Stage ----
-# Use a minimal Python image
 FROM python:3.11-slim-bookworm
 
-# Install system dependencies
+# Environment optimizations
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PATH="/opt/venv/bin:$PATH"
+
 # Install system dependencies (minimal)
 # We might need libgdal if binary wheels aren't self-contained, but usually they are.
 # Keeping it empty for now to minimize size.
@@ -31,6 +34,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libexpat1 \
     && rm -rf /var/lib/apt/lists/*
 
+# Create non-root user
+RUN groupadd -r odis && useradd -r -g odis odis
+
 # Set the working directory
 WORKDIR /app
 
@@ -38,19 +44,13 @@ WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv
 
 # Copy the data directory
-# We copy it to /data because config.py expects it at PROJECT_ROOT/data/
-# In the container:
-# WORKDIR /app
-# APP_DIR (where config.py is) = /app
-# PROJECT_ROOT = /
-# So we need data at /data
-COPY data/ /data/
+COPY --chown=odis:odis data/ /data/
 
 # Copy the application code
-COPY app/ .
+COPY --chown=odis:odis app/ .
 
-# Make the virtual environment's Python the default
-ENV PATH="/opt/venv/bin:$PATH"
+# Switch to non-root user
+USER odis
 
 # Expose the Streamlit port
 EXPOSE 8080

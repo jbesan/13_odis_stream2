@@ -143,6 +143,9 @@ ORGANIZATION_PROFILES: Dict[str, OrgProfile] = {
             "01", "03","15","69"
         ],
         "defaults": {
+            "org_boosts": {
+                "inc_siae_density_scaled": 3.0
+            }
         }
     }
 }

@@ -1,7 +1,7 @@
 [
     {
         "bassin_de_vie": "33243",
-        "weighted_score": 0.6090483203613587,
+        "weighted_score": 0.5350601795794829,
         "population_bv": 98828,
         "libgeo": "Saint-Émilion",
         "communes": [
@@ -73,12 +73,42 @@
             "33546",
             "33548"
         ],
-        "inclusion_cat_score": 0.26504481651714873,
+        "inclusion_cat_score": 0.26909225338964593,
+        "mob_epci_scaled": 0.0
+    },
+    {
+        "bassin_de_vie": "33506",
+        "weighted_score": 0.5029267753275827,
+        "population_bv": 6966,
+        "libgeo": "Martres",
+        "communes": [
+            "33057",
+            "33103",
+            "33105",
+            "33112",
+            "33117",
+            "33129",
+            "33131",
+            "33149",
+            "33175",
+            "33189",
+            "33275",
+            "33278",
+            "33379",
+            "33399",
+            "33419",
+            "33427",
+            "33446",
+            "33482",
+            "33506",
+            "33516"
+        ],
+        "inclusion_cat_score": 0.24154306146560708,
         "mob_epci_scaled": 0.0
     },
     {
         "bassin_de_vie": "33063",
-        "weighted_score": 0.5778858629298091,
+        "weighted_score": 0.5027704303861291,
         "population_bv": 866307,
         "libgeo": "Margaux-Cantenac",
         "communes": [
@@ -141,12 +171,12 @@
             "33550",
             "33554"
         ],
-        "inclusion_cat_score": 0.30331808419726225,
+        "inclusion_cat_score": 0.30285635402254196,
         "mob_epci_scaled": 0.0
     },
     {
         "bassin_de_vie": "33140",
-        "weighted_score": 0.5581614123838822,
+        "weighted_score": 0.4831614123838822,
         "population_bv": 19018,
         "libgeo": "Saint-Léon",
         "communes": [
@@ -178,56 +208,24 @@
         "mob_epci_scaled": 0.0
     },
     {
-        "bassin_de_vie": "33138",
-        "weighted_score": 0.5040054236588318,
-        "population_bv": 21802,
-        "libgeo": "Coutras",
+        "bassin_de_vie": "33314",
+        "weighted_score": 0.46647149482618183,
+        "population_bv": 20710,
+        "libgeo": "Saint-Estèphe",
         "communes": [
-            "33001",
-            "33088",
-            "33124",
-            "33138",
-            "33154",
-            "33166",
-            "33218",
-            "33315",
-            "33320",
-            "33385",
-            "33447",
-            "33472",
-            "33526"
+            "33010",
+            "33125",
+            "33146",
+            "33220",
+            "33314",
+            "33395",
+            "33423",
+            "33424",
+            "33471",
+            "33476",
+            "33545"
         ],
-        "inclusion_cat_score": 0.3157400366630889,
-        "mob_epci_scaled": 0.0
-    },
-    {
-        "bassin_de_vie": "33506",
-        "weighted_score": 0.5029267753275827,
-        "population_bv": 6966,
-        "libgeo": "Martres",
-        "communes": [
-            "33057",
-            "33103",
-            "33105",
-            "33112",
-            "33117",
-            "33129",
-            "33131",
-            "33149",
-            "33175",
-            "33189",
-            "33275",
-            "33278",
-            "33379",
-            "33399",
-            "33419",
-            "33427",
-            "33446",
-            "33482",
-            "33506",
-            "33516"
-        ],
-        "inclusion_cat_score": 0.24154306146560708,
+        "inclusion_cat_score": 0.3323184440245217,
         "mob_epci_scaled": 0.0
     }
 ]

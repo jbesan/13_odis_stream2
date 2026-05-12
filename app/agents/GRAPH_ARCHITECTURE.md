@@ -32,13 +32,13 @@ graph TD
         Synth --> GEnd((END))
     end
     
-    Engine --> Scorer[[AI Scorer Agent]]
+    Engine --> Refiner[[AI Refiner Agent]]
     GEnd --> UI[/Streamlit UI / PDF/]
-    Scorer -->|Result Pitch| UI
+    Refiner -->|Unified Briefing & Pitch| UI
     
     style Graph fill:#f9f9f9,stroke:#333,stroke-dasharray: 5 5
     style Interviewer fill:#e1f5fe,stroke:#01579b
-    style Scorer fill:#e1f5fe,stroke:#01579b
+    style Refiner fill:#e1f5fe,stroke:#01579b
     style Parallel fill:#fff,stroke:#333
 ```
 
@@ -56,17 +56,20 @@ graph TD
 
 ## 🧩 Decoupled AI Components
 
-While the `odis_graph` handles deep city analysis, other specialized tasks are decoupled for performance:
+While the `odis_graph` handles deep city analysis (on-demand), other specialized tasks are decoupled for performance and UX:
 
-### 1. The Interviewer (One-Shot)
-The legacy multi-turn Interviewer and Refiner have been replaced by a standalone **One-Shot Autodetect Agent** (`app/agents/interviewer.py`).
-- **Role**: Extracts `SearchCriterias` and generates a prose **"Dossier Summary"** (Briefing) from unstructured text.
-- **Flow**: Runs in the UI (`1_Accueil.py`) before the graph is even started. The resulting summary is stored in the user's project profile.
+### 1. The Interviewer (Technical Extraction)
+- **Role**: Extracts `SearchCriterias` from unstructured text (Auto-Detect) or conversation.
+- **Output**: A structured Pydantic model mapped to the UI session state.
+- **Flow**: Acts as the first gate. Its text response is minimal, confirming only the technical extraction.
 
-### 2. The Scorer (Post-Scoring explanation)
-- **Role**: Explains the mathematical scores calculated by the `ScoringEngine`.
-- **Location**: Triggered as a background task in `app/agents/utils.py` after the search is complete.
-- **Why outside the graph?** Because scoring is deterministic and performed programmatically. The Scorer agent only "pitches" the results to the user.
+### 2. The Refiner (Synthesis & Pitch)
+- **Role**: The "Brain" of the search results. It performs three critical syntheses:
+    - **Dossier Summary** (`odis_brief`) : A narrative summary of the user's situation.
+    - **Global Pitch** : An introduction to the search results.
+    - **City Pitches** : Narrative "pros/cons" for each city in the Top 5.
+- **Location**: Triggered as a background task in `app/agents/utils.py` immediately after the `ScoringEngine` runs.
+- **UI Interaction**: Blocks the UI (Guardrail) until the synthesis is ready to ensure data stability.
 
 ---
 

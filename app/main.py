@@ -20,6 +20,6 @@ if not auth.check_password():
 with logfire.span("ODIS Session"):
     data_loader.ensure_data_initialized()
 
-    # --- Silent Redirect ---
-    # This makes main.py purely an entry point that leads to the first page
-    st.switch_page("pages/1_Accueil.py")
+# --- Silent Redirect ---
+# This makes main.py purely an entry point that leads to the first page
+st.switch_page("pages/1_Accueil.py")

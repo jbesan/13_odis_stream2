@@ -27,31 +27,32 @@ AUTODETECT_SYSTEM_PROMPT = """
 **RÈGLES D'OR**:
 1. Utilise TOUJOURS le tool `search_referentiels_batch` pour normaliser les lieux et métiers en codes officiels (ex: ville -> code INSEE).
 2. Remplis UNIQUEMENT les champs du formulaire qui sont explicitement mentionnés dans le texte. Ne devine pas.
+3. **Réponse (`response`)** : Rédige un message très court et courtois pour confirmer que tu as bien extrait les critères (ex: "C'est noté, j'ai bien identifié votre projet de relocalisation à..."). La synthèse narrative complète sera générée ultérieurement par l'agent Refiner.
 
 **DOMAINES DE NORMALISATION** (pour search_referentiels_batch):
-- Départ: `Commune Actuelle` (domain: 'communes')
-- Cible: `Zone de Recherche` (domain: 'regions' ou 'departements')
-- Projet Pro: Métiers (domain: 'rome_codes') et Formations (domain: 'formation_codes')
-- Services d'inclusion: (domain: 'inclusion_services')
-- Associations: (domain: 'waldec_codes')
+- Départ: `Commune actuelle de résidence` (domain: 'communes')
+- Cible: `Zone de recherche (département, région, France)` (domain: 'regions' ou 'departements')
+- Projet Pro: `Métiers ciblés par adulte` (domain: 'rome_codes') et `Formations ciblées` (domain: 'formation_codes')
+- Services d'inclusion: `Services d'inclusion essentiels` ou `Services d'inclusion additionnels` (domain: 'inclusion_services')
+- Associations: `Associations et centres d'intérêt` (domain: 'waldec_codes')
 
 **Options Disponibles**:
-- Hébergement: {HEBERGEMENT_OPTIONS}
-- Logement: {LOGEMENT_OPTIONS}
-- Type de logement: {HOUSING_TYPE_OPTIONS}
-- Scolaire: {CLASSES_SCOLAIRES}
-- Santé: {SANTE_OPTIONS}
-- Profils de pondération: {WEIGHT_PROFILES}
+- Hébergement souhaité: {HEBERGEMENT_OPTIONS}
+- Type de logement (ex: Logement Social): {LOGEMENT_OPTIONS}
+- Type de bien (Appartement, Maison): {HOUSING_TYPE_OPTIONS}
+- Niveaux scolaires recherchés: {CLASSES_SCOLAIRES}
+- Besoin de santé spécifique: {SANTE_OPTIONS}
+- Profil de pondération: {WEIGHT_PROFILES}
 """
 
-interviewer_agent = Agent(
+interviewer_agent: Agent['ODISDeps', AutoDetectionResult] = Agent(
     get_model("interviewer"),
     model_settings=get_model_settings("interviewer"),
     output_type=AutoDetectionResult
 )
 
 @interviewer_agent.system_prompt
-async def main_instructions(ctx: RunContext) -> str:
+async def main_instructions(ctx: RunContext['ODISDeps']) -> str:
     prompt = AUTODETECT_SYSTEM_PROMPT.format(
         HEBERGEMENT_OPTIONS=str(cfg.HEBERGEMENT_OPTIONS),
         LOGEMENT_OPTIONS=str(cfg.LOGEMENT_OPTIONS),
@@ -60,6 +61,13 @@ async def main_instructions(ctx: RunContext) -> str:
         SANTE_OPTIONS=str(cfg.SANTE_OPTIONS),
         WEIGHT_PROFILES=str(list(cfg.WEIGHT_PROFILES.keys())),
     )
+    
+    from agents.state import ODISContextBuilder
+    # Interviewer might be called without full deps in some contexts, but here we expect GraphState in deps
+    if hasattr(ctx, 'deps') and hasattr(ctx.deps, 'state'):
+        context = ODISContextBuilder.agent_context(ctx.deps.state, "interviewer")
+        return f"{prompt}\n\n## Critères déjà identifiés\n{context}"
+        
     return prompt
 
 @logfire.instrument

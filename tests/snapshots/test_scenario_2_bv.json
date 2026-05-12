@@ -1,7 +1,7 @@
 [
     {
         "bassin_de_vie": "75056",
-        "weighted_score": 0.6863186433426671,
+        "weighted_score": 0.6862098164371782,
         "population_bv": 12543353,
         "libgeo": "Saint-Denis",
         "communes": [
@@ -465,12 +465,12 @@
             "95680",
             "95682"
         ],
-        "inclusion_cat_score": 0.4984874369630336,
+        "inclusion_cat_score": 0.4978344755300998,
         "mob_epci_scaled": 1.0
     },
     {
         "bassin_de_vie": "78361",
-        "weighted_score": 0.6125963430336865,
+        "weighted_score": 0.6108469423633568,
         "population_bv": 118012,
         "libgeo": "Mantes-la-Jolie",
         "communes": [
@@ -512,12 +512,12 @@
             "95656",
             "95676"
         ],
-        "inclusion_cat_score": 0.5349635325570878,
+        "inclusion_cat_score": 0.5244671285351095,
         "mob_epci_scaled": 0.0
     },
     {
         "bassin_de_vie": "91223",
-        "weighted_score": 0.6110125582333158,
+        "weighted_score": 0.6063470909660807,
         "population_bv": 39815,
         "libgeo": "Étampes",
         "communes": [
@@ -545,7 +545,7 @@
             "91544",
             "91556"
         ],
-        "inclusion_cat_score": 0.4526898243408959,
+        "inclusion_cat_score": 0.42469702073748516,
         "mob_epci_scaled": 0.0
     },
     {

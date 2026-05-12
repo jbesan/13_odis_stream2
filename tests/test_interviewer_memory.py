@@ -1,7 +1,7 @@
 import pytest
 from pydantic_ai.models.test import TestModel
 from unittest.mock import MagicMock, patch
-from agents.interviewer import interviewer_agent, InterviewerResult
+from agents.interviewer import interviewer_agent, AutoDetectionResult
 from agents.state import GraphState, ODISDeps
 from core.models import SearchCriterias, CriteriaItem
 
@@ -49,5 +49,5 @@ async def test_interviewer_memory_commune_actuelle(test_deps):
                                 full_prompt += part.content
             
             assert "Bordeaux" in full_prompt
-            assert '"Commune actuelle (code INSEE)": "33063"' in full_prompt
-            assert '"Critères identifiés"' in full_prompt
+            assert '"Commune actuelle de résidence": "Bordeaux"' in full_prompt
+            assert "Critères identifiés" in full_prompt
