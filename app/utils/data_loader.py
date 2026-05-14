@@ -39,7 +39,8 @@ def load_scores_config_as_df(config_path: str) -> pd.DataFrame:
             'unit': item.get('display', {}).get('unit', ''),
             'scaling_type': item.get('scaling_type', 'linear'),
             'mu': item.get('mu'),
-            'sigma': item.get('sigma')
+            'sigma': item.get('sigma'),
+            'baseline': item.get('baseline', False)
         })
     return pd.DataFrame(data)
 

@@ -404,24 +404,25 @@ class ScoringEngine:
         """Centralized logic to determine which criteria are active based on config."""
         active = set()
         
-        # If no config provided, we default to all present scores
+        # 1. Baseline Criteria: Always active (Dynamic discovery from config)
+        if not self.scores_cat.empty and 'baseline' in self.scores_cat.columns:
+            baseline_ids = self.scores_cat[self.scores_cat['baseline'] == True]['score'].tolist()
+            active.update(baseline_ids)
+            
+        # If no config provided, we default to baseline + any other present scores
         if config is None:
              if not self.scores_cat.empty and 'score' in self.scores_cat.columns:
-                 return {c for c in self.scores_cat['score'] if c in self.df_all_communes.columns}
-             return set()
+                 # Filter to only those present in the main dataset
+                 return {c for c in active if c in self.df_all_communes.columns}
+             return active
 
-        # 1. Categories that are always active (even if partial)
-        active.add('workclass_decline_scaled')
-        active.add('mob_gare_scaled')
-        active.add('mob_trans_pub_density_scaled')
-        
-        # Only add proximity scores if it's a local search and user has some attachment
+        # 2. Proximity scores (conditional on local search)
         freq_retour = getattr(config, 'freq_retour', "Pas d'attache particulière")
         if self._is_local_search(config) and freq_retour != "Pas d'attache particulière":
             active.add('mob_epci_scaled')
             active.add('mob_dist_current_loc_scaled')
         
-        # 2. Employment & Formations (Only if specific adult was searched)
+        # 3. Employment & Formations (Only if specific adult was searched)
         nb_adultes = getattr(config, 'nb_adultes', 0)
         codes_metiers = getattr(config, 'codes_metiers', [])
         codes_formations = getattr(config, 'codes_formations', [])
@@ -438,8 +439,7 @@ class ScoringEngine:
             if i < len(codes_formations) and codes_formations[i]:
                 active.add(f'form_match_adult{adult_idx}_scaled')
 
-        # 3. Logement
-        # F-42: Hebergement Refinements
+        # 4. Logement & Hébergement (Conditional activation)
         heb_sel = getattr(config, 'hebergement_cible', [])
         if "Location avec Intermédiation" in heb_sel:
             active.add('heb_loc_iml_scaled')
@@ -460,23 +460,17 @@ class ScoringEngine:
         logement_type = getattr(config, 'logement', 'Location')
         if logement_type == 'Location' or "Location avec Intermédiation" in heb_sel:
              active.add('log_vac_scaled')
-         # Handle both formats: log_loyer_moyen_appt_all_scaled and log_loyer_moyen_scaled_appartement_toutes
              type_log_attr = getattr(config, 'type_logement', 'appt_all')
              type_log = type_log_attr.code if hasattr(type_log_attr, 'code') else type_log_attr
              active.add(f'log_loyer_moyen_{type_log}_scaled')
-             if type_log == 'appartement_toutes':
-                 active.add('log_loyer_moyen_scaled_appartement_toutes')
-             elif type_log == 'appt_all':
-                 active.add('log_loyer_moyen_appt_all_scaled')
 
         if logement_type == 'Logement Social':
             active.add('log_soc_inoc_scaled')
             active.add('log_soc_dem_scaled')
 
-        # 4. Education
+        # 5. Education (Conditional on children)
         nb_enfants = getattr(config, 'nb_enfants', 0)
         if nb_enfants > 0:
-            active.add('youth_decline_scaled')
             active.add('edu_classes_ferm_scaled')
             edu_map = {
                 'Crèche / Assistante Maternelle': 'edu_petite_enfance_scaled',
@@ -490,7 +484,7 @@ class ScoringEngine:
             for level in getattr(config, 'classe_enfants', []):
                 if level in edu_map: active.add(edu_map[level])
 
-        # 5. Sante
+        # 6. Sante (Conditional on needs)
         besoin_sante = getattr(config, 'besoin_sante', 'Aucun')
         if besoin_sante != 'Aucun':
              sante_map = {
@@ -503,16 +497,7 @@ class ScoringEngine:
                  active.add(sante_map[besoin_sante])
              active.add('sante_structures_scaled')
 
-        # 6. Inclusion
-        active.add('ter_pol_scaled')
-        active.add('ter_population_scaled')
-        if nb_enfants > 0:
-            active.add('ter_population_scaled')
-        active.add('inc_asso_core_scaled')
-        # F-26: Refugee Associations
-        active.add('inc_asso_refug_scaled') 
-        active.add('inc_siae_density_scaled') # New F-39: SIAE Density
-        
+        # 7. Inclusion (Additional optional criteria)
         inc_services_add = getattr(config, 'inc_services_add_selection', [])
         inc_services_core = getattr(config, 'inc_services_core_selection', [])
         if inc_services_add or inc_services_core: 
@@ -521,11 +506,7 @@ class ScoringEngine:
         if getattr(config, 'inc_asso_add_selection', []): 
             active.add('inc_asso_add_scaled')
         
-        # 7. Population Target (F-50)
-        if hasattr(config, 'target_population'): # Only if explicitly requested or part of full model
-            active.add('ter_population_scaled')
-
-        # 8. Territory (F-54)
+        # 8. Territory (Partners & Strategic Locations)
         if getattr(config, 'org_strategic_locations', []):
             active.add('ter_strategic_locations_scaled')
 
@@ -566,6 +547,10 @@ class ScoringEngine:
         logement_data = HousingMetrics()
         territoire_data = TerritoryMetrics()
         
+        # Populate territory defaults
+        territoire_data.ter_insecurite = float(static_row.get('ter_insecurite_rate', 0.0))
+        territoire_data.is_strategic = bool(static_row.get('is_strategic', False))
+        
         # Populate mobility & static defaults from static_row
         mob_data.bus_stops = int(static_row.get('nb_stops_bus', 0))
         mob_data.tram_stops = int(static_row.get('nb_stops_tram', 0))
@@ -580,6 +565,8 @@ class ScoringEngine:
             if pd.notna(val):
                 mob_data.is_same_epci = bool(val == 1.0)
         
+        mob_data.mob_dur_share = float(static_row.get('mob_dur_share', 0.0))
+        
         if 'dist_current_loc' in row:
             val = row['dist_current_loc']
             if pd.notna(val):
@@ -588,6 +575,8 @@ class ScoringEngine:
         
         # Populate logement defaults
         logement_data.host_count = int(static_row.get('heb_accueillants_count', 0))
+        logement_data.log_soc_delay = float(static_row.get('log_soc_delay', 0.0))
+        sante_data.sante_rdv_delay = float(static_row.get('sante_apl', 0.0))
 
         # Extract lat/lon from geometry if available (Use static_row)
         lat, lon = 0.0, 0.0
@@ -610,9 +599,13 @@ class ScoringEngine:
         
         # Skip categories based on config
         if config:
-            if config.nb_enfants == 0: cat_weights['education'] = 0.0
-            if config.besoin_sante == 'Aucun': 
-                cat_weights['sante'] = 0.0
+            # Education remains optional (only if children are present)
+            if config.nb_enfants == 0: 
+                cat_weights['education'] = 0.0
+            
+            # Health is now mandatory because of the 'Health APL' baseline metric
+            # if config.besoin_sante == 'Aucun': 
+            #     cat_weights['sante'] = 0.0
         
         # 2. Identify displayed criteria and compute internal weights based on visibility
         displayed_items: List[Dict[str, Any]] = []

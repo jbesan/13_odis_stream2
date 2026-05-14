@@ -151,11 +151,13 @@ def render_housing_form() -> None:
             help="Permet d'utiliser les loyers spécifiques au type de logement choisi (Source 2024)"
         )
 
+
 def render_health_form() -> None:
     """Renders the UI for the 'Santé' form section."""
     options = ["Aucun", "Hopital", 'Maternité', "Soutien Psychologique & Addictologie"]
     # F-48: Consistent key with config.py
     st.radio('Support médical à proximité', options, key="ui_besoin_sante")
+
 
 def render_other_needs_form() -> None:
     """Renders the UI for the 'Autres Besoins' (Inclusion) section."""
@@ -198,6 +200,7 @@ def render_other_needs_form() -> None:
             ]
         else:
             st.warning("Référentiel WALDEC non chargé.")
+        
 
     with col1:
         st.subheader("Services d'Inclusion")
@@ -362,6 +365,7 @@ def render_mobility_form() -> None:
     st.session_state["ui_target_population"] = mapping["mu"]
     st.session_state["ui_target_population_sigma"] = mapping["sigma"]
 
+    
 def render_org_profile_form() -> None:
     """Renders the organization-specific preamble component (F-54)."""
     org_id = st.session_state.get('ui_org_context')
@@ -741,6 +745,12 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
     # Other Needs Priority (F-15)
     if st.session_state.get("ui_priority_other_needs", False):
         criteria_weights['inc_services_incl_scaled'] = 3.0
+
+    # New 2026 Metrics Weights (Hardcoded per USER agreement)
+    criteria_weights['log_soc_delay_scaled'] = 3.0
+    criteria_weights['sante_rdv_delay_scaled'] = 2.0
+    criteria_weights['mob_dur_share_scaled'] = 3.0
+    criteria_weights['ter_insecurite_scaled'] = 1.0
 
     # Enrich Inclusion Associations (WALDEC Logic F-48)
     waldec_index = app_data.get('waldec_index', pd.DataFrame())

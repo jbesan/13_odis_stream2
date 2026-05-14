@@ -83,6 +83,10 @@ To ensure scalability and prevent Out-Of-Memory (OOM) errors, ODIS uses a **Deco
     - `3_Resultats.py`: Merges WKB bytes into the top-N results using a simple `.join(odis_geo)`.
     - `maps.py`: Decodes WKB into Shapely objects using `gpd.GeoSeries.from_wkb()` only at the moment of drawing. 
 - **No Pre-computation**: Unused legacy pre-computations (like `area_geo` / dissolved department boundaries) have been removed to significantly speed up application startup.
+- **Baseline Criteria Pattern (2026)**:
+    - Territorial metrics (Insecurity, Housing Delay, Mobility Share, Health APL) are treated as **mandatory baselines**.
+    - These metrics are hardcoded as `active` in `ScoringEngine._get_active_criteria` and have fixed weights.
+    - This ensures a minimum territorial quality standard is evaluated even if the user provides no specific inputs for those categories.
 - **Isolation**: Each user session only stores ~1-5MB of computed data, even when scoring 36,000+ communes.
 
 ---

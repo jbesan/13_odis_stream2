@@ -359,6 +359,50 @@ sources:
       - type_transport_en_commun
       - valeur
 
+  logement_social_delay:
+    url: "file://pipeline/local/donnees_ush_stats_1_demande_attribution.xlsx"
+    format: "xlsx"
+    local_name: "logement_social_delay_ush.xlsx"
+    sheet_name: "Carte 1"
+    header: 2
+    description: "Délais d'attente logement social (USH)"
+    used_columns:
+      - "SIRET"
+      - "Délai d'attribution moyen"
+
+  sante_apl:
+    url: "https://data.drees.solidarites-sante.gouv.fr/api/datasets/1.0/530_l-accessibilite-potentielle-localisee-apl/attachments/indicateur_d_accessibilite_potentielle_localisee_apl_aux_medecins_generalistes_xlsx/"
+    format: "xlsx"
+    local_name: "sante_apl_drees.xlsx"
+    sheet_name: "APL 2023"
+    header: 8
+    description: "Accessibilité Potentielle Localisée (APL) aux médecins (DREES)"
+    used_columns:
+      - "Code commune INSEE"
+      - "APL aux médecins généralistes"
+
+  mob_durable_share:
+    url: "https://www.data.gouv.fr/api/1/datasets/r/f624e1db-8f22-4a96-9f5a-9f9ee2aae53e"
+    format: "csv"
+    local_name: "mob_durable_share_ecolab.csv"
+    description: "Part modale des transports durables (Ecolab)"
+    used_columns:
+      - "geocode_commune"
+      - "mode_transport"
+      - "valeur"
+    encoding: "latin-1"
+
+  ter_insecurite:
+    url: "https://www.data.gouv.fr/api/1/datasets/r/604d71b8-337d-4869-9226-49e01bae87df"
+    format: "parquet"
+    local_name: "ter_insecurite_ssmsi.parquet"
+    description: "Taux d'insécurité par commune (SSMSI)"
+    used_columns:
+      - "CODGEO_2025"
+      - "annee"
+      - "indicateur"
+      - "taux_pour_mille"
+
 local_files:
   finess:
     path: "pipeline/local/annuaire_sante_finess.parquet"

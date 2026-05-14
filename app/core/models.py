@@ -169,6 +169,7 @@ class HousingMetrics(BaseModel):
     host_count: int = Field(0, description="Nombre d'accueillants J'Accueille", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "agent_scout", "ui_details", "pdf_report"]})
     price_per_sqm: Optional[float] = Field(None, description="Loyer moyen au m²", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "agent_scout", "ui_details", "pdf_report"]})
     housing_price_variants: Dict[str, Dict[str, Optional[float]]] = Field(default_factory=dict, description="Détails des loyers par type", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "ui_details", "pdf_report"]})
+    log_soc_delay: Optional[float] = Field(None, description="Délai moyen d'attente (mois)", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "agent_scout", "ui_details", "pdf_report"]})
 
 class EducationMetrics(BaseModel):
     cat_score: float = Field(0.0, description="Score Éducation", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "ui_details", "pdf_report"]})
@@ -179,6 +180,7 @@ class HealthMetrics(BaseModel):
     cat_score: float = Field(0.0, description="Score Santé", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "ui_details", "pdf_report"]})
     facility_counts: Dict[str, int] = Field(default_factory=dict, description="Nombre d'établissements de santé", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "ui_details", "pdf_report"]})
     facility_details: Dict[str, List[str]] = Field(default_factory=dict, description="Noms des établissements de santé par type", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "agent_scout", "ui_details", "pdf_report"]})
+    sante_rdv_delay: Optional[float] = Field(None, description="Accessibilité Potentielle Localisée (APL)", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "agent_scout", "ui_details", "pdf_report"]})
 
 class AssociationDetail(BaseModel):
     """Represents a detailed association object from the enrichment process."""
@@ -208,10 +210,12 @@ class MobilityMetrics(BaseModel):
     stop_density: float = Field(0.0, description="Densité d'arrêts (pour 1000 hab.)", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "agent_scout", "ui_details", "pdf_report"]})
     is_same_epci: Optional[bool] = Field(None, description="Même EPCI que commune actuelle", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "ui_details", "pdf_report"]})
     distance_to_current_km: Optional[float] = Field(None, description="Distance commune actuelle (km)", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "ui_details", "pdf_report"]})
+    mob_dur_share: Optional[float] = Field(None, description="Part des transports durables", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "agent_scout", "ui_details", "pdf_report"]})
 
 class TerritoryMetrics(BaseModel):
     cat_score: float = Field(0.0, description="Score Territoire", json_schema_extra={"odis_visibility": ["agent_refiner", "ui_details", "pdf_report"]})
     is_strategic: bool = Field(False, description="Territoire stratégique", json_schema_extra={"odis_visibility": ["agent_refiner", "ui_details", "pdf_report"]})
+    ter_insecurite: Optional[float] = Field(None, description="Indice d'insécurité (taux cumulé)", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "agent_scout", "ui_details", "pdf_report"]})
 
 class CommuneResult(BaseModel):
     """Encapsulates identity, scores, and metadata for a specific commune."""
