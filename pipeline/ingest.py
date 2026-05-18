@@ -53,12 +53,31 @@ def fetch_source(name: str, source_cfg: Dict[str, Any], logger: PipelineLogger) 
                      raise FileNotFoundError(f"Source file not found: {src_path}")
             else:
                 verify_ssl = source_cfg.get('verify_ssl', True)
-                response = requests.get(url, stream=True, verify=verify_ssl)
-                response.raise_for_status()
-                with open(local_path, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        f.write(chunk)
-                logger.log_source(name, "DOWNLOADED", local_path)
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+                    "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
+                    "Cache-Control": "max-age=0",
+                    "Sec-Ch-Ua": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+                    "Sec-Ch-Ua-Mobile": "?0",
+                    "Sec-Ch-Ua-Platform": '"macOS"',
+                    "Sec-Fetch-Dest": "document",
+                    "Sec-Fetch-Mode": "navigate",
+                    "Sec-Fetch-Site": "none",
+                    "Sec-Fetch-User": "?1",
+                    "Upgrade-Insecure-Requests": "1"
+                }
+                try:
+                    response = requests.get(url, stream=True, verify=verify_ssl, headers=headers)
+                    response.raise_for_status()
+                    with open(local_path, 'wb') as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            f.write(chunk)
+                    logger.log_source(name, "DOWNLOADED", local_path)
+                except Exception as e:
+                    logging.error(f"[Fetch] {name} Failed: {e}")
+                    logger.log_source(name, "FAILED", str(e))
+                    return None
 
         # Handle Zip Extraction
         if source_cfg.get('format') == 'zip' and 'archive_file' in source_cfg:
@@ -1432,7 +1451,11 @@ def main(argv=None):
         'inclusion_jobs': clean_inclusion_jobs,
         'mob_transports_pub': clean_mob_transports_pub,
         'hebergement_rna': clean_hebergement_rna,
-        'jaccueille': clean_jaccueille
+        'jaccueille': clean_jaccueille,
+        'log_soc_delay': clean_log_soc_delay,
+        'sante_apl': clean_sante_apl,
+        'mob_durable': clean_mob_durable,
+        'ter_insecurite': clean_ter_insecurite
     }
 
     selected_steps = args.steps.split(',') if args.steps else steps_map.keys()
@@ -1869,6 +1892,111 @@ def clean_mob_transports_pub(config: Dict[str, Any], logger: PipelineLogger):
     output_path = CLEAN_DIR / "mob_transports_pub.parquet"
     df_pivot.to_parquet(output_path, engine='fastparquet')
     logger.log_step("clean_mob_transports_pub", "COMPLETED", {"path": str(output_path), "rows": len(df_pivot)})
+
+def clean_log_soc_delay(config: Dict[str, Any], logger: PipelineLogger):
+    """Cleans USH Housing Delay and saves to parquet."""
+    logger.log_step("clean_log_soc_delay", "STARTED")
+    source = config['sources']['logement_social_delay']
+    path = CACHE_DIR / source['local_name']
+    if not path.exists(): return
+
+    # USH range A3:B1263. load_dataset uses header=2 (row 3)
+    df = load_dataset(path, source)
+    
+    if len(df) > 1260:
+        df = df.iloc[:1260] 
+        
+    if "SIRET" in df.columns and "Délai d'attribution moyen" in df.columns:
+        df.rename(columns={
+            "SIRET": "epci_code",
+            "Délai d'attribution moyen": "log_soc_delay"
+        }, inplace=True)
+        df["epci_code"] = df["epci_code"].astype(str).str.strip()
+        df["log_soc_delay"] = pd.to_numeric(df["log_soc_delay"], errors='coerce').fillna(0)
+        
+        output_path = CLEAN_DIR / "log_soc_delay.parquet"
+        df.to_parquet(output_path, engine='fastparquet')
+        logger.log_step("clean_log_soc_delay", "COMPLETED", {"rows": len(df)})
+
+def clean_sante_apl(config: Dict[str, Any], logger: PipelineLogger):
+    """Cleans DREES APL and saves to parquet."""
+    logger.log_step("clean_sante_apl", "STARTED")
+    source = config['sources']['sante_apl']
+    path = CACHE_DIR / source['local_name']
+    if not path.exists(): return
+
+    df = load_dataset(path, source)
+    
+    codgeo_col = "Code commune INSEE"
+    val_col = "APL aux médecins généralistes"
+    
+    if codgeo_col in df.columns and val_col in df.columns:
+        df = df[[codgeo_col, val_col]].rename(columns={
+            codgeo_col: "codgeo",
+            val_col: "sante_apl"
+        })
+        df["codgeo"] = df["codgeo"].astype(str).str.zfill(5)
+        df["sante_apl"] = pd.to_numeric(df["sante_apl"], errors='coerce').fillna(0)
+        
+        output_path = CLEAN_DIR / "sante_apl.parquet"
+        df.to_parquet(output_path, engine='fastparquet')
+        logger.log_step("clean_sante_apl", "COMPLETED", {"rows": len(df)})
+
+def clean_mob_durable(config: Dict[str, Any], logger: PipelineLogger):
+    """Cleans Ecolab Mobility and saves to parquet."""
+    logger.log_step("clean_mob_durable", "STARTED")
+    source = config['sources']['mob_durable_share']
+    path = CACHE_DIR / source['local_name']
+    if not path.exists(): return
+
+    df = load_dataset(path, source)
+    
+    if all(c in df.columns for c in ["geocode_commune", "mode_transport", "valeur"]):
+        if "date_mesure" in df.columns:
+            latest = df["date_mesure"].max()
+            df = df[df["date_mesure"] == latest]
+            
+        df_pivot = df.pivot_table(index='geocode_commune', columns='mode_transport', values='valeur', aggfunc='sum').reset_index()
+        df_pivot.rename(columns={'geocode_commune': 'codgeo'}, inplace=True)
+        df_pivot['codgeo'] = df_pivot['codgeo'].astype(str).str.zfill(5)
+        
+        durable_modes = ["Transports en commun", "Marche", "Vélo", "V\u00e9lo"]
+        present_durable = [m for m in durable_modes if m in df_pivot.columns]
+        
+        mode_cols = [c for c in df_pivot.columns if c != 'codgeo']
+        df_pivot['total_valeur'] = df_pivot[mode_cols].sum(axis=1)
+        
+        df_pivot['mob_dur_share'] = np.where(
+            df_pivot['total_valeur'] > 0,
+            df_pivot[present_durable].sum(axis=1) / df_pivot['total_valeur'],
+            0.0
+        )
+        
+        df_out = df_pivot[['codgeo', 'mob_dur_share']]
+        output_path = CLEAN_DIR / "mob_durable.parquet"
+        df_out.to_parquet(output_path, engine='fastparquet')
+        logger.log_step("clean_mob_durable", "COMPLETED", {"rows": len(df_out)})
+
+def clean_ter_insecurite(config: Dict[str, Any], logger: PipelineLogger):
+    """Cleans SSMSI Insecurity and saves to parquet."""
+    logger.log_step("clean_ter_insecurite", "STARTED")
+    source = config['sources']['ter_insecurite']
+    path = CACHE_DIR / source['local_name']
+    if not path.exists(): return
+
+    df = load_dataset(path, source)
+    
+    if all(c in df.columns for c in ["CODGEO_2025", "annee", "indicateur", "taux_pour_mille"]):
+        latest = df["annee"].max()
+        df = df[df["annee"] == latest]
+        
+        df_agg = df.groupby('CODGEO_2025')['taux_pour_mille'].sum().reset_index()
+        df_agg.rename(columns={'CODGEO_2025': 'codgeo', 'taux_pour_mille': 'ter_insecurite'}, inplace=True)
+        df_agg['codgeo'] = df_agg['codgeo'].astype(str).str.zfill(5)
+        
+        output_path = CLEAN_DIR / "ter_insecurite.parquet"
+        df_agg.to_parquet(output_path, engine='fastparquet')
+        logger.log_step("clean_ter_insecurite", "COMPLETED", {"rows": len(df_agg)})
 
 def clean_jaccueille(config: Dict[str, Any], logger: PipelineLogger):
     """Cleans J'Accueille data and aggregates by Bassin de Vie."""

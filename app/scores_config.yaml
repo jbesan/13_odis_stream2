@@ -127,6 +127,7 @@ scores:
     category: territoire
     source_metric: pol_num
     bdv_factor: 0.0
+    baseline: true
     computation: precomputed
     display:
       name: Couleur Politique de la commmue
@@ -143,6 +144,7 @@ scores:
     category: territoire
     source_metric: population
     bdv_factor: -0.8
+    baseline: true
     computation: live
     display:
       name: Population de la commune
@@ -228,10 +230,11 @@ scores:
     category: inclusion
     source_metric: lien_social_density
     bdv_factor: 0.8
+    baseline: true
     computation: precomputed
     display:
       name: Lien Social
-      strong_point_text: Tissu associatif dense favorisant le lien social
+      strong_point_text: Présence d'associations favorisant le lien social
       high_value_adjective: dense
       show: true
       unit: assos/1000 hab.
@@ -244,6 +247,7 @@ scores:
     category: inclusion
     source_metric: inc_asso_refug_density
     bdv_factor: 0.8
+    baseline: true
     computation: precomputed
     display:
       name: Accompagnement Réfugiés
@@ -254,15 +258,16 @@ scores:
       display_factor: 1
       tooltip: Densité d'associations spécialisées réfugiés (Source RNA)
     weight: 1.0
-    min_bound: 0.0
-    max_bound: 0.3
+    min_bound: null
+    max_bound: null
   - id: inc_siae_density_scaled
     category: inclusion
     source_metric: inc_siae_density
     bdv_factor: 0.8
+    baseline: true
     computation: precomputed
     display:
-      name: SIAE (Insertion par l'A.E)
+      name: Densité SIAE
       strong_point_text: Présence de structures d'insertion par l'activité économique (SIAE)
       high_value_adjective: dense
       show: true
@@ -270,8 +275,8 @@ scores:
       display_factor: 1
       tooltip: Densité de structures d'insertion (ACI, AI, EI, ETTI, EITI)
     weight: 1.0
-    min_bound: 0.0
-    max_bound: 0.5
+    min_bound: null
+    max_bound: null
   - id: inc_asso_add_scaled
     category: inclusion
     source_metric: affinite_density
@@ -325,9 +330,9 @@ scores:
     quantile_level: 0.05
   - id: edu_maternelle_scaled
     category: education
-    source_metric: edu_maternelle_ct
+    source_metric: edu_maternelle
     bdv_factor: 0.0
-    computation: precomputed
+    computation: live
     display:
       name: Ecole Maternelle
       strong_point_text: Présence d'une école maternelle
@@ -338,12 +343,12 @@ scores:
       tooltip: Présence d'une école maternelle
     weight: 2.0
     min_bound: 0.0
-    max_bound: 1.0
+    max_bound: null
   - id: edu_elementaire_scaled
     category: education
-    source_metric: edu_elementaire_ct
+    source_metric: edu_elementaire
     bdv_factor: 0.0
-    computation: precomputed
+    computation: live
     display:
       name: Ecole Elémentaire
       strong_point_text: Présence d'une école élémentaire
@@ -354,12 +359,12 @@ scores:
       tooltip: Présence d'une école élémentaire
     weight: 2.0
     min_bound: 0.0
-    max_bound: 1.0
+    max_bound: null
   - id: edu_college_scaled
     category: education
-    source_metric: edu_college_ct
+    source_metric: edu_college
     bdv_factor: 0.5
-    computation: precomputed
+    computation: live
     display:
       name: Collège
       strong_point_text: Présence d'un collège
@@ -370,12 +375,12 @@ scores:
       tooltip: Présence d'un collège
     weight: 1.0
     min_bound: 0.0
-    max_bound: 1.0
+    max_bound: null
   - id: edu_lycee_scaled
     category: education
-    source_metric: edu_lycee_ct
+    source_metric: edu_lycee
     bdv_factor: 0.8
-    computation: precomputed
+    computation: live
     display:
       name: Lycée
       strong_point_text: Présence d'un lycée
@@ -386,10 +391,10 @@ scores:
       tooltip: Présence d'un lycée
     weight: 1.0
     min_bound: 0.0
-    max_bound: 1.0
+    max_bound: null
   - id: edu_classes_ferm_scaled
     category: education
-    source_metric: risky_schools_count
+    source_metric: risque_fermeture_ratio
     bdv_factor: 0.5
     computation: precomputed
     display:
@@ -408,9 +413,9 @@ scores:
     category: sante
     source_metric: sante_structures_scaled
     bdv_factor: 0.5
-    computation: precomputed
+    computation: live
     display:
-      name: Structure de sante recherchée
+      name: Structure de sante spécifique
       strong_point_text: L'établissement de sante recherché est présent
       high_value_adjective: présent
       show: true
@@ -422,23 +427,26 @@ scores:
     max_bound: 1.0
   - id: mob_gare_scaled
     category: mobilite
-    source_metric: mob_gare_scaled
+    source_metric: has_gare
     bdv_factor: 0.0
+    baseline: true
     computation: precomputed
     display:
-      name: Gare ferroviaire
-      strong_point_text: Présence d'une gare SNCF
+      name: Présence d'une gare SNCF
+      strong_point_text: Présence d'une gare ferroviaire dans la commune
       high_value_adjective: présente
       show: true
       unit: ""
       display_factor: 1
       tooltip: "Présence d'une gare ferroviaire dans la commune"
     weight: 1.0
+    min_bound: 0.0
     max_bound: 1.0
   - id: mob_trans_pub_density_scaled
     category: mobilite
     source_metric: mob_trans_pub_stop_density
     bdv_factor: 0.0
+    baseline: true
     computation: live
     display:
       name: Densité des transports en commun
@@ -471,17 +479,18 @@ scores:
     category: emploi
     source_metric: workclass_growth_rate
     bdv_factor: 0.0
+    baseline: true
     computation: precomputed
     display:
-      name: Déclin Démographique Actif
-      strong_point_text: Baisse de la population active (Faible score = Opportunité d'accueil = positif)
+      name: Dynamisme Population Active
+      strong_point_text: Tissu économique local avec une population active stable ou croissante
       high_value_adjective: forte
       show: true
-      unit: "% (Evol. 2016-2022)"
+      unit: "%"
       display_factor: 100
-      tooltip: Evolution de la population des 25-54 ans entre 2016 et 2022
-    weight: 1.0
-    min_bound: -0.1
+      tooltip: "Évolution de la population active (Source Insee)"
+    weight: 3.0
+    min_bound: 0.0
     max_bound: 0.1
   - id: met_match_adult1_scaled
     category: emploi
@@ -681,3 +690,67 @@ scores:
     weight: 3.0
     min_bound: 0.0
     max_bound: 1.0
+
+  - id: log_soc_delay_scaled
+    category: logement
+    source_metric: log_soc_delay
+    bdv_factor: 0.0
+    baseline: true
+    computation: precomputed
+    display:
+      name: Délai moyen Logement Social
+      strong_point_text: Délai d'attente pour un logement social réduit
+      high_value_adjective: réduit
+      show: true
+      unit: "mois"
+      display_factor: 1
+      tooltip: Délai moyen entre la demande et l'attribution (Source USH)
+    weight: 5.0
+
+  - id: sante_rdv_delay_scaled
+    category: sante
+    source_metric: sante_apl
+    bdv_factor: 0.0
+    baseline: true
+    computation: precomputed
+    display:
+      name: Accessibilité Médicale (APL)
+      strong_point_text: Excellente accessibilité aux médecins généralistes
+      high_value_adjective: excellente
+      show: true
+      unit: "APL"
+      display_factor: 1
+      tooltip: Indicateur d'Accessibilité Potentielle Localisée (Source DREES)
+    weight: 2.0
+
+  - id: mob_dur_share_scaled
+    category: mobilite
+    source_metric: mob_dur_share
+    bdv_factor: 0.5
+    baseline: true
+    computation: precomputed
+    display:
+      name: Part des Transports Durables
+      strong_point_text: Forte utilisation des modes de transport durables (Marche, Vélo, TC)
+      high_value_adjective: forte
+      show: true
+      unit: "%"
+      display_factor: 100
+      tooltip: Part modale des transports durables (Source Ecolab / RP Insee)
+    weight: 3.0
+
+  - id: ter_insecurite_scaled
+    category: territoire
+    source_metric: ter_insecurite
+    bdv_factor: 0.5
+    baseline: true
+    computation: precomputed
+    display:
+      name: Indice de Sécurité
+      strong_point_text: Faible taux de criminalité et délits
+      high_value_adjective: élevé
+      show: true
+      unit: "taux"
+      display_factor: 1
+      tooltip: Taux cumulé des crimes et délits pour 1000 hab. (Source SSMSI)
+    weight: 1.0

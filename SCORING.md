@@ -35,7 +35,14 @@ Pour chaque critère (Emploi, Santé, Éducation), nous appliquons une logique d
   - **Bonus de proximité** : Si des opportunités existent à proximité, elles viennent combler le "manque" local.
   - **Factor** : Chaque critère a un facteur de pondération (ex: 0.5 pour l'emploi, 0.8 pour les formations) qui réduit le poids du Bassin de Vie s'il est jugé plus éloigné.
 
-### 4. Agrégation et Pondération
+### 4. Le Pattern "Baseline Criteria" (Mandatory Metrics) 🛡️
+
+Depuis 2026, ODIS intègre des **critères de référence (Baselines)**. Contrairement aux critères classiques qui s'activent selon les besoins de l'utilisateur, les Baselines sont **systématiquement actives** et contribuent au score global avec des poids fixes.
+
+- **Objectif** : Garantir qu'un standard minimum de qualité territoriale (sécurité, accès aux soins, mobilité durable) soit évalué pour chaque dossier.
+- **Visibilité** : Ces critères sont visibles dans les rapports détaillés et utilisés par l'IA pour justifier ses recommandations.
+
+### 5. Agrégation et Pondération
 
 Enfin, les scores sont regroupés par catégories (Emploi, Logement, Santé, etc.) puis pondérés selon les préférences de l'utilisateur (Profil Expert ou Prédéfini).
 
@@ -47,80 +54,83 @@ Voici l'intégralité des 40 critères configurés dans le moteur de soring OD&I
 
 ### 🏠 Logement
 
-| Critère                       | Poids | Boost BdV | Description                                     |
-| :---------------------------- | :---- | :-------- | :---------------------------------------------- |
-| **Vacance Structurelle**      | 1.0   | 0.0       | Taux de vacance (> 2 ans) sur le parc total.    |
-| **Logements Sociaux Vacants** | 3.0   | 0.0       | Taux de logements sociaux inoccupés.            |
-| **Sous-occupation**           | 1.0   | 0.0       | Part des logements sous-occupés.                |
-| **Loyer Moyen (Tous Appt)**   | 3.0   | 0.0       | Loyer moyen d'annonce au m² (Ensemble).         |
-| **Loyer Moyen (T1/T2)**       | 3.0   | 0.0       | Loyer spécifiquement pour petits appartements.  |
-| **Loyer Moyen (T3+)**         | 3.0   | 0.0       | Loyer spécifiquement pour grands appartements.  |
-| **Loyer Moyen (Maisons)**     | 3.0   | 0.0       | Loyer moyen pour les maisons.                   |
-| **Associations IML**          | 1.0   | 0.8       | Location avec Intermédiation (Solibail, etc.).  |
-| **Centres d'Hébergement**     | 2.0   | 0.5       | Capacité en CHRS / CPH.                         |
-| **Foyers & Pensions**         | 2.0   | 0.5       | Densité FJT, Pensions de famille, Migrants.     |
-| **Hébergement Citoyen**       | 2.0   | 0.8       | Associations d'accueil chez l'habitant.         |
-| **Accueils J'Accueille**      | 3.0   | 1.0       | Présence active d'accueillants (Bassin de Vie). |
+| Critère                       | Poids | Baseline | Boost BdV | Description                                     |
+| :---------------------------- | :---- | :------- | :-------- | :---------------------------------------------- |
+| **Vacance Structurelle**      | 1.0   | Non      | 0.0       | Taux de vacance (> 2 ans) sur le parc total.    |
+| **Logements Sociaux Vacants** | 3.0   | Non      | 0.0       | Taux de logements sociaux inoccupés.            |
+| **Délai Logement Social**     | 3.0   | **Oui**  | 0.0       | Délai moyen d'attente (Demande/Attribution).    |
+| **Sous-occupation**           | 1.0   | Non      | 0.0       | Part des logements sous-occupés.                |
+| **Loyer Moyen (Tous Appt)**   | 3.0   | Non      | 0.0       | Loyer moyen d'annonce au m² (Ensemble).         |
+| **Loyer Moyen (T1/T2)**       | 3.0   | Non      | 0.0       | Loyer spécifiquement pour petits appartements.  |
+| **Loyer Moyen (T3+)**         | 3.0   | Non      | 0.0       | Loyer spécifiquement pour grands appartements.  |
+| **Loyer Moyen (Maisons)**     | 3.0   | Non      | 0.0       | Loyer moyen pour les maisons.                   |
+| **Associations IML**          | 1.0   | Non      | 0.8       | Location avec Intermédiation (Solibail, etc.).  |
+| **Centres d'Hébergement**     | 2.0   | Non      | 0.5       | Capacité en CHRS / CPH.                         |
+| **Foyers & Pensions**         | 2.0   | Non      | 0.5       | Densité FJT, Pensions de famille, Migrants.     |
+| **Hébergement Citoyen**       | 2.0   | Non      | 0.8       | Associations d'accueil chez l'habitant.         |
+| **Accueils J'Accueille**      | 3.0   | Non      | 1.0       | Présence active d'accueillants (Bassin de Vie). |
 
 ### 💼 Emploi & Formation
 
-| Critère                       | Poids | Boost BdV | Description                         |
-| :---------------------------- | :---- | :-------- | :---------------------------------- |
-| **Opportunités Emploi (A1)**  | 3.0   | 0.5       | Match direct métiers Adulte 1 (FT). |
-| **Opportunités Emploi (A2)**  | 3.0   | 0.5       | Match direct métiers Adulte 2 (FT). |
-| **Tension recrutement (A1)**  | 1.0   | 0.0       | Métiers en tension Adulte 1.        |
-| **Tension recrutement (A2)**  | 1.0   | 0.0       | Métiers en tension Adulte 2.        |
-| **Offres SIAE (A1)**          | 3.0   | 0.5       | Insertion (SIAE) Adulte 1.          |
-| **Offres SIAE (A2)**          | 3.0   | 0.5       | Insertion (SIAE) Adulte 2.          |
-| **Centres de Formation (A1)** | 2.0   | 0.8       | Formations recherchées Adulte 1.    |
-| **Centres de Formation (A2)** | 2.0   | 0.8       | Formations recherchées Adulte 2.    |
-| **Déclin Population Active**  | 3.0   | 0.0       | Baisse de la population des actifs. |
+| Critère                       | Poids | Baseline | Boost BdV | Description                         |
+| :---------------------------- | :---- | :------- | :-------- | :---------------------------------- |
+| **Opportunités Emploi (A1)**  | 3.0   | Non      | 0.5       | Match direct métiers Adulte 1 (FT). |
+| **Opportunités Emploi (A2)**  | 3.0   | Non      | 0.5       | Match direct métiers Adulte 2 (FT). |
+| **Tension recrutement (A1)**  | 1.0   | Non      | 0.0       | Métiers en tension Adulte 1.        |
+| **Tension recrutement (A2)**  | 1.0   | Non      | 0.0       | Métiers en tension Adulte 2.        |
+| **Offres SIAE (A1)**          | 3.0   | Non      | 0.5       | Insertion (SIAE) Adulte 1.          |
+| **Offres SIAE (A2)**          | 3.0   | Non      | 0.5       | Insertion (SIAE) Adulte 2.          |
+| **Centres de Formation (A1)** | 2.0   | Non      | 0.8       | Formations recherchées Adulte 1.    |
+| **Centres de Formation (A2)** | 2.0   | Non      | 0.8       | Formations recherchées Adulte 2.    |
+| **Déclin Population Active**  | 3.0   | **Oui**  | 0.0       | Baisse de la population des actifs. |
 
 ### 🤝 Inclusion & Lien Social
 
-| Critère                     | Poids | Boost BdV | Description                               |
-| :-------------------------- | :---- | :-------- | :---------------------------------------- |
-| **Lien Social (Général)**   | 1.0   | 0.8       | Densité associative globale (RNA).        |
-| **Accompagnement Réfugiés** | 1.0   | 0.8       | Associations spécialisées (RNA).          |
-| **SIAE (Densité)**          | 1.0   | 0.8       | Présence de structures d'insertion.       |
-| **Affinités (Thématiques)** | 1.0   | 0.8       | Assos correspondant aux loisirs/intérets. |
-| **Services Inclusion**      | 1.0   | 0.8       | Match avec les services sélectionnés.     |
+| Critère                     | Poids | Baseline | Boost BdV | Description                               |
+| :-------------------------- | :---- | :------- | :-------- | :---------------------------------------- |
+| **Lien Social (Général)**   | 1.0   | **Oui**  | 0.8       | Densité associative globale (RNA).        |
+| **Accompagnement Réfugiés** | 1.0   | **Oui**  | 0.8       | Associations spécialisées (RNA).          |
+| **SIAE (Densité)**          | 1.0   | **Oui**  | 0.8       | Présence de structures d'insertion.       |
+| **Affinités (Thématiques)** | 1.0   | Non      | 0.8       | Assos correspondant aux loisirs/intérets. |
+| **Services Inclusion**      | 1.0   | Non      | 0.8       | Match avec les services sélectionnés.     |
 
 ### 🗺️ Territoire
 
-| Critère                | Poids | Boost BdV | Description                                |
-| :--------------------- | :---- | :-------- | :----------------------------------------- |
-| **Population Commune** | 3.0   | -0.5      | Score basé sur la taille de ville (Gauss). |
-| **Couleur Politique**  | 1.0   | 0.0       | Affiliation politique (Si configuré).      |
-| **Zone Stratégique**   | 3.0   | 0.0       | Zone d'action privilégiée partenaire.      |
+| Critère                | Poids | Baseline | Boost BdV | Description                                |
+| :--------------------- | :---- | :------- | :-------- | :----------------------------------------- |
+| **Population Commune** | 3.0   | **Oui**  | -0.5      | Score basé sur la taille de ville (Gauss). |
+| **Sécurité (Taux)**    | 1.0   | **Oui**  | 0.5       | Indice d'insécurité (Vols/Dégradations).   |
+| **Zone Stratégique**   | 3.0   | Non      | 0.0       | Zone d'action privilégiée partenaire.      |
 
 
 ### 🎓 Éducation
 
-| Critère                    | Poids | Boost BdV | Description                               |
-| :------------------------- | :---- | :-------- | :---------------------------------------- |
-| **Petite Enfance**         | 3.0   | 0.0       | Taux de couverture Crèches/Assmat.        |
-| **Ecole Maternelle**       | 2.0   | 0.0       | Présence locale ou à proximité.           |
-| **Ecole Elémentaire**      | 2.0   | 0.0       | Présence locale ou à proximité.           |
-| **Collège**                | 1.0   | 0.5       | Présence locale ou à proximité.           |
-| **Lycée**                  | 1.0   | 0.8       | Présence locale ou à proximité.           |
-| **Classes à risque**       | 1.0   | 0.5       | Écoles avec un besoin de nouveaux élèves. |
-| **Evolution Démog. Jeune** | 2.0   | 0.0       | Baisse de la population des -15 ans.      |
+| Critère                    | Poids | Baseline | Boost BdV | Description                               |
+| :------------------------- | :---- | :------- | :-------- | :---------------------------------------- |
+| **Petite Enfance**         | 3.0   | Non      | 0.0       | Taux de couverture Crèches/Assmat.        |
+| **Ecole Maternelle**       | 2.0   | Non      | 0.0       | Présence locale ou à proximité.           |
+| **Ecole Elémentaire**      | 2.0   | Non      | 0.0       | Présence locale ou à proximité.           |
+| **Collège**                | 1.0   | Non      | 0.5       | Présence locale ou à proximité.           |
+| **Lycée**                  | 1.0   | Non      | 0.8       | Présence locale ou à proximité.           |
+| **Classes à risque**       | 1.0   | Non      | 0.5       | Écoles avec un besoin de nouveaux élèves. |
+| **Evolution Démog. Jeune** | 2.0   | Non      | 0.0       | Baisse de la population des -15 ans.      |
 
 ### 🩺 Santé
 
-| Critère                | Poids | Boost BdV | Description                                 |
-| :--------------------- | :---- | :-------- | :------------------------------------------ |
-| **Structure de Santé** | 1.0   | 0.5       | Match spécifique (Hôpital, Maternité, Psy). |
+| Critère                | Poids | Baseline | Boost BdV | Description                                 |
+| :--------------------- | :---- | :------- | :-------- | :------------------------------------------ |
+| **Accessibilité Soins** | 2.0   | **Oui**  | 0.0       | Potentiel de RDV médicaux (APL DREES).      |
+| **Structure de Santé** | 1.0   | Non      | 0.5       | Match spécifique (Hôpital, Maternité, Psy). |
 
 ### 🧭 Mobilité
 
-| Critère                | Poids | Boost BdV | Description                               |
-| :--------------------- | :---- | :-------- | :---------------------------------------- |
-| **Densité Transports** | 2.0   | 0.0       | Nombre d'arrêts de transport / 1000 hab.  |
-| **Gare SNCF**          | 1.0   | 0.0       | Présence d'une gare dans la commune.      |
-| **Bonus EPCI**         | 1.0   | 0.0       | Appartenance à la même agglomération.     |
-| **Distance Proximité** | 1.0   | 0.0       | Décroissance linéaire (Proximité réelle). |
+| Critère                | Poids | Baseline | Boost BdV | Description                               |
+| :--------------------- | :---- | :------- | :-------- | :---------------------------------------- |
+| **Mobilité Durable**   | 3.0   | **Oui**  | 0.5       | Part des déplacements durables (Ecolab).  |
+| **Densité Transports** | 2.0   | **Oui**  | 0.0       | Nombre d'arrêts de transport / 1000 hab.  |
+| **Gare SNCF**          | 1.0   | **Oui**  | 0.0       | Présence d'une gare dans la commune.      |
+| **Bonus EPCI**         | 1.0   | Non      | 0.0       | Appartenance à la même agglomération.     |
+| **Distance Proximité** | 1.0   | Non      | 0.0       | Décroissance linéaire (Proximité réelle). |
 
 ---
 

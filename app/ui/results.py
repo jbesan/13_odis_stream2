@@ -461,7 +461,8 @@ def show_details_dialog(index: Any):
         "🏠 Logement", 
         "🎓 Éducation", 
         "🏥 Santé", 
-        "🤝 Vie Sociale & Inclusion"
+        "🤝 Vie Sociale & Inclusion",
+        "🚉 Mobilité & Contexte"
     ])
 
     with tab_emploi:
@@ -526,9 +527,11 @@ def show_details_dialog(index: Any):
             render_scores_for_category('logement')
         with c1:
             st.markdown("#### :material/info: Données Complémentaires")
-            j_count = housing_data.host_count
             if j_count > 0:
                  st.info(f"**{int(j_count)} accueillants** J'Accueille identifiés dans le bassin de vie.")
+            
+            if housing_data.log_soc_delay:
+                st.markdown(f"⏱️ **Délai Logement Social** : {housing_data.log_soc_delay} mois")
 
     with tab_edu:
         education_data = commune.education
@@ -566,6 +569,9 @@ def show_details_dialog(index: Any):
                                     st.write(f"• {name}")
                 else:
                     st.info("Aucune information détaillée sur les structures de santé.")
+                
+                if health_data.sante_rdv_delay:
+                    st.markdown(f"🩺 **Accessibilité Médicale (APL)** : {health_data.sante_rdv_delay:.1f}")
         with c2:
             st.markdown("#### :material/medical_services: Indicateurs Santé")
             render_scores_for_category('sante')
@@ -595,6 +601,19 @@ def show_details_dialog(index: Any):
         with c2:
             st.markdown("#### :material/diversity_3: Indicateurs Inclusion")
             render_scores_for_category('inclusion')
+    
+    with tab_ter:
+        c1, c2 = st.columns([1, 1], gap="medium")
+        with c1:
+            st.markdown("#### :material/commute: Mobilité")
+            if commune.mobility.mob_dur_share:
+                st.markdown(f"🚲 **Transports Durables** : {commune.mobility.mob_dur_share*100:.1f}%")
+            render_scores_for_category('mobilite')
+        with c2:
+            st.markdown("#### :material/security: Sécurité & Contexte")
+            if commune.territoire.ter_insecurite:
+                st.markdown(f"🛡️ **Indice d'insécurité** : {commune.territoire.ter_insecurite:.1f}")
+            render_scores_for_category('territoire')
 
 def _result_highlight_callback(index: int) -> None:
     """Callback to handle highlighting a result by its index in the top results."""
@@ -743,19 +762,20 @@ def _display_result_details(commune: CommuneResult, is_ready: bool = False) -> N
                 st.rerun()
 
         # --- Radar Chart with Comparison ---
-        all_cats = ['emploi', 'logement', 'education', 'sante', 'inclusion', 'mobilite']
+        all_cats = ['emploi', 'logement', 'education', 'sante', 'inclusion', 'mobilite', 'territoire']
         cat_map = {
             'emploi': 'employment',
             'logement': 'housing',
             'education': 'education',
             'sante': 'health',
             'inclusion': 'inclusion',
-            'mobilite': 'mobility'
+            'mobilite': 'mobility',
+            'territoire': 'territoire'
         }
         
         config = st.session_state.get('config')
         if config and hasattr(config, 'active_categories') and config.active_categories:
-            active_cats = [cat for cat in all_cats if cat in config.active_categories]
+            active_cats = [cat for cat in all_cats if cat in config.active_categories or cat in ['mobilite', 'territoire']]
         else:
             active_cats = all_cats
 
@@ -766,7 +786,8 @@ def _display_result_details(commune: CommuneResult, is_ready: bool = False) -> N
                 'education': 'Éducation',
                 'sante': 'Santé',
                 'inclusion': 'Inclusion',
-                'mobilite': 'Mobilité'
+                'mobilite': 'Mobilité',
+                'territoire': 'Territoire'
             }
             labels = [label_map.get(cat, cat.capitalize()) for cat in active_cats]
             

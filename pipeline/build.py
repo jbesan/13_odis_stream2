@@ -126,6 +126,24 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         # Merge mobility metrics
         merge_clean("mob_transports_pub", ['nb_stops_bus', 'nb_stops_tram', 'nb_stops_metro', 'nb_stops_train', 'nb_stops_total'])
 
+        # Merge USH Logement Social Delay (EPCI level)
+        path_ush = CLEAN_DIR / "log_soc_delay.parquet"
+        if path_ush.exists():
+            df_ush = pd.read_parquet(path_ush, engine='fastparquet')
+            communes_gdf = communes_gdf.merge(df_ush, left_on='epci', right_on='epci_code', how='left')
+            if 'epci_code' in communes_gdf.columns:
+                 communes_gdf.drop(columns=['epci_code'], inplace=True)
+            logging.info("USH Housing delay merged at EPCI level.")
+
+        # Merge Santé APL
+        merge_clean("sante_apl", ["sante_apl"])
+        
+        # Merge Mobilité Durable
+        merge_clean("mob_durable", ["mob_dur_share"])
+        
+        # Merge Insécurité
+        merge_clean("ter_insecurite", ["ter_insecurite"])
+
         # Merge RNA RAG Inclusion Stats (New)
         # This brings in inc_rna_{category}_count columns
         merge_clean("rna_inclusion_agg")
@@ -308,7 +326,8 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
             'bpe_creches_count', 'heb_centres_heb_cap', 'heb_foyers_count',
             'heb_loc_iml_count', 'heb_habitant_count',
             'nb_stops_bus', 'nb_stops_tram', 'nb_stops_metro', 'nb_stops_train', 'nb_stops_total',
-            'inc_siae_count'
+            'inc_siae_count',
+            'log_soc_delay', 'sante_apl', 'mob_dur_share', 'ter_insecurite'
         ]
         for col in numeric_cols:
             if col in communes_gdf.columns:

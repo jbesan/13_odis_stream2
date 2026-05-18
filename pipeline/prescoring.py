@@ -344,6 +344,12 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         process_scaling(communes_gdf, 'heb_loc_iml_density', 'heb_loc_iml_scaled')
         process_scaling(communes_gdf, 'heb_habitant_density', 'heb_asso_habitant_scaled')
 
+        # New 2026 Metrics
+        process_scaling(communes_gdf, 'log_soc_delay', 'log_soc_delay_scaled', inverted=True)
+        process_scaling(communes_gdf, 'sante_apl', 'sante_rdv_delay_scaled', inverted=False)
+        process_scaling(communes_gdf, 'mob_dur_share', 'mob_dur_share_scaled', inverted=False)
+        process_scaling(communes_gdf, 'ter_insecurite', 'ter_insecurite_scaled', inverted=True)
+
         # Population Decline (Inverted logic handled in process_scaling)
         if 'pop_jeune_2016' in communes_gdf.columns and 'pop_jeune_2022' in communes_gdf.columns:
              communes_gdf['youth_growth_rate'] = np.where(
@@ -643,7 +649,8 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
             'edu_maternelle_scaled', 'edu_elementaire_scaled',
             'youth_decline_scaled', 'workclass_decline_scaled',
             'heb_centres_heb_scaled', 'heb_foyers_scaled', 
-            'heb_loc_iml_scaled', 'heb_asso_habitant_scaled'
+            'heb_loc_iml_scaled', 'heb_asso_habitant_scaled',
+            'log_soc_delay_scaled', 'sante_rdv_delay_scaled', 'mob_dur_share_scaled', 'ter_insecurite_scaled'
         ]
         
         # Idempotency: Drop existing metrics to prevent duplication during merge

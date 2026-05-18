@@ -227,3 +227,32 @@
 - Données: https://www.data.gouv.fr/datasets/nombre-de-stations-de-transports-en-commun-selon-le-type-de-reseau?resource_id=501ac60d-246d-45bf-8dcf-ab43e1b1a736
 - URL Stable: https://object.files.data.gouv.fr/hydra-parquet/hydra-parquet/501ac60d-246d-45bf-8dcf-ab43e1b1a736.parquet
 - Type de fichier: parquet
+
+# Territoire
+
+## Délai d'attente logement social
+- Page: https://www.union-habitat.org/donnees-ush
+- Source Locale: pipeline/local/donnees_ush_stats_1_demande_attribution.xlsx (Utilisé car blocage WAF USH)
+- Type de fichier: xlsx
+- Onglet: Carte 1
+- Description: Délai moyen d'attribution par EPCI (SIREN).
+
+## Accessibilité Potentielle Localisée (APL) aux médecins
+- Page: https://data.drees.solidarites-sante.gouv.fr/explore/dataset/530_l-accessibilite-potentielle-localisee-apl
+- Lien direct: https://data.drees.solidarites-sante.gouv.fr/api/datasets/1.0/530_l-accessibilite-potentielle-localisee-apl/attachments/indicateur_d_accessibilite_potentielle_localisee_apl_aux_medecins_generalistes_xlsx/
+- Type de fichier: xlsx
+- Onglet: APL 2023
+- Colonne: APL aux médecins généralistes
+- Description: Indicateur d'accessibilité aux soins à l'échelle communale.
+
+## Part modale Mobilité Durable
+- Page: https://www.data.gouv.fr/datasets/part-modale-de-la-mobilite-durable/
+- Lien direct: https://www.data.gouv.fr/api/1/datasets/r/f624e1db-8f22-4a96-9f5a-9f9ee2aae53e
+- Type de fichier: csv (Latin-1)
+- Description: Flux domicile-travail RP 2022 (Ecolab).
+
+## Taux d'insécurité par commune
+- Page: https://www.data.gouv.fr/datasets/chiffres-cles-de-la-delinquance-au-niveau-communal-a-partir-de-2016/
+- Lien direct: https://www.data.gouv.fr/api/1/datasets/r/604d71b8-337d-4869-9226-49e01bae87df
+- Type de fichier: parquet
+- Source: SSMSI (Service Statistique Ministériel de la Sécurité Intérieure).

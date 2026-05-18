@@ -127,7 +127,23 @@ def sample_scores_cat():
         'incl_binome': [True] * 28, # Simplify for tests
         'weight': [1.0] * 28,
         'min_bound': [0.0] * 28,
-        'max_bound': [1.0] * 28
+        'max_bound': [1.0] * 28,
+        'baseline': [
+            False, False, False,
+            False, False, False,
+            False, True, False,
+            False, False, False,
+            False, True, True,
+            False, False,
+            False, False,
+            False, False,
+            False, False,
+            False,
+            False,
+            False,
+            False,
+            False
+        ]
     }
     return pd.DataFrame(data).copy()
 

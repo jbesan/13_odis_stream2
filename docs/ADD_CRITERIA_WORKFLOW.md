@@ -14,6 +14,18 @@ Avant de toucher au code, clarifiez ces points avec l'utilisateur :
 
 ---
 
+## 1.5. Phase d'Acquisition (Pipeline Ingest)
+Avant d'implémenter le scoring, la donnée brute doit être intégrée dans le pipeline ETL.
+1. **Sources (`pipeline/sources.yaml`)** : Enregistrez la source (URL, format, colonnes utilisées).
+2. **Documentation (`pipeline/DATASOURCES.md`)** : Ajoutez une fiche descriptive pour la nouvelle source (Origine, URL stable, Format, Description).
+3. **Nettoyage (`pipeline/ingest.py`)** : Créez une fonction `clean_mon_critere(config, logger)` pour normaliser la donnée brute (codgeo, valeurs, types) et la sauvegarder en `.parquet` dans `pipeline/cache/clean/`.
+4. **Intégration (`pipeline/build.py`)** : Ajoutez l'appel à `merge_clean("mon_critere", ["col1", "col2"])` dans `build_communes`.
+
+> [!TIP]
+> **Gestion des Blocages (WAF/Akamai)** : Si une source URL est bloquée (ex: 403 Forbidden), déposez manuellement le fichier dans `pipeline/local/` et utilisez une URL de type `file://pipeline/local/nom_fichier.xlsx` dans `sources.yaml`. Documentez impérativement ce contournement manuel dans `pipeline/DATASOURCES.md`.
+
+---
+
 ## 2. Configuration (`app/scores_config.yaml`)
 C'est la source de vérité pour l'affichage et l'agrégation. Ajoutez l'entrée du critère :
 - **id** : Le nom exact de la colonne (ex: `mon_critere_scaled`).
