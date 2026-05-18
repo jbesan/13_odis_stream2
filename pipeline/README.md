@@ -52,7 +52,7 @@ The pipeline is split into several main stages:
 2.  **Build (`build.py`)**: Aggregates cleaned data into final ODIS artifacts (joins, geometry operations).
 3.  **Prescoring (`prescoring.py`)**: Calculates ratios, densities, and pre-scales scores for performance.
 4.  **Live Ingest (`ft_live_ingest.py`)**: Fetches real-time job offers from France Travail API and aggregates them.
-5.  **Inclusion Ingest (`emplois_inclusion_ingest.py`)**: Authenticates via API Token (using `EMPLOIS_INCLUSION_LOGIN` and `EMPLOIS_INCLUSION_PWD` in `.env`) to fetch granular job openings from Les emplois de l'inclusion API.
+5.  **Inclusion Ingest (`emplois_inclusion_ingest.py`)**: Authenticates via API Token (using `EMPLOIS_INCLUSION_TOKEN` or dynamic fallback `EMPLOIS_INCLUSION_LOGIN` and `EMPLOIS_INCLUSION_PWD` in `.env`) to fetch granular job openings from Les emplois de l'inclusion API.
 6.  **RAG Enrichment**: The `fetch_rna_rag_stats` step queries BigQuery to find associations relevant to social inclusion (using the `is_inclusion_relevant` flag) and groups them by RAG categories.
 7.  **J'Accueille Upload (`upload_jaccueille_bq.py`)**: A utility script to upload sensitive host counts to BigQuery (`odis-stream2.jaccueille.jaccueille_accueillants_bdv`). This data is then fetched dynamically by the app.
 8.  **Deploy (`etl.py`)**: Copies final artifacts to the application's data directory.

@@ -80,54 +80,8 @@ def process_scaling(df, col_name, output_col, inverted=False):
     df[output_col] = scale_series(df[col_name], min_b, max_b, inverted)
 
 
-def aggregate_plm(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """Aggregates data from arrondissements to the global commune for PLM."""
-    plm_mapping = {
-        '75056': [str(x) for x in range(75101, 75121)], # Paris
-        '13055': [str(x) for x in range(13201, 13217)], # Marseille
-        '69123': [str(x) for x in range(69381, 69390)]  # Lyon
-    }
-    
-    # Columns to aggregate (sum)
-    cols_to_sum = [
-        'population', 'pop_active', 'pop_chomeurs', 'pop_employes',
-        'edu_maternelle_ct', 'edu_elementaire_ct', 'edu_college_ct', 'edu_lycee_ct',
-        'count_hopital', 'count_maternite', 'count_psy',
-        'lien_social_count', 'inc_asso_refug_count', 'bpe_creches_count', 'risky_schools_count',
-        'log_priv_total', 'log_priv_vacant_plus_2ans',
-        'log_soc_total', 'log_soc_inoccupes',
-        'total_eleves', 'ecoles_count',
-        'socle_match_count',
-        'heb_centres_heb_cap', 'heb_foyers_count', 
-        'heb_loc_iml_count', 'heb_habitant_count'
-    ]
-    
-    # Socle calculation is done AFTER this function in apply_prescoring (lines 350+).
-    # So we don't need to aggregate socle_match_count here because it's not yet calculated!
-    # Correct. aggregate_plm is called at the TOP.
-    
-    for global_code, arrondissements in plm_mapping.items():
-        if global_code in gdf['codgeo'].values:
-            # Check if we have data for arrondissements
-            mask_arr = gdf['codgeo'].isin(arrondissements)
-            if mask_arr.any():
-                # For each column, sum values from arrondissements
-                for col in cols_to_sum:
-                    if col in gdf.columns:
-                        # Sum, treating NaN as 0
-                        total_val = gdf.loc[mask_arr, col].sum(min_count=0) # min_count=0 -> 0 if all nan? No, sum returns 0 if empty.
-                        # Update global row
-                        # Only update if > 0 or if we want to force 0?
-                        # If arrondissements have data, we want the sum.
-                        gdf.loc[gdf['codgeo'] == global_code, col] = total_val
-                        
-                logging.info(f"Aggregated PLM for {global_code} from {mask_arr.sum()} arrondissements.")
-            else:
-                logging.warning(f"No arrdt data found for {global_code}")
-        else:
-             logging.warning(f"Global code {global_code} not found in GDF")
-             
-    return gdf
+# PLM consolidation is now fully handled in the build phase (pipeline/build.py)
+# so that prescoring operates directly on clean commune-level data.
 
 def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
     """Applies pre-scoring logic (ratios, densities, scaling) to odis_communes."""
@@ -154,9 +108,6 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
 
         logger.log_step("apply_prescoring_load", "LOADED", {"rows": len(communes_gdf)})
 
-        # --- PLM Aggregation ---
-        communes_gdf = aggregate_plm(communes_gdf)
-        
         # --- Calculated Columns ---
         
         # --- Fill NaNs for Raw Metrics (Fix N/A display) ---

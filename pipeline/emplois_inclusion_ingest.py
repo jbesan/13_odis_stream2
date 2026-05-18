@@ -25,6 +25,7 @@ SIAE_TYPES_RELEVANT = {"ACI", "AI", "EI", "ETTI", "EITI"}
 # Auth Credentials
 LOGIN = os.getenv("EMPLOIS_INCLUSION_LOGIN")
 PASSWORD = os.getenv("EMPLOIS_INCLUSION_PWD")
+STATIC_TOKEN = os.getenv("EMPLOIS_INCLUSION_TOKEN")
 
 # Scope: Metropolitan France (01 to 95) + Overseas
 DEPARTEMENTS = [str(i).zfill(2) for i in range(1, 96)] + ["2A", "2B", "971", "972", "973", "974", "976"]
@@ -48,9 +49,12 @@ def get_inclusion_jobs_status():
     }
 
 def get_token() -> Optional[str]:
-    """Obtains an API token using login/password credentials."""
+    """Obtains an API token, prioritizing static token then fallback to login/password."""
+    if STATIC_TOKEN:
+        return STATIC_TOKEN
+
     if not LOGIN or not PASSWORD:
-        print("  [Error] EMPLOIS_INCLUSION_LOGIN or EMPLOIS_INCLUSION_PWD missing in .env")
+        print("  [Error] EMPLOIS_INCLUSION_TOKEN or EMPLOIS_INCLUSION_LOGIN/PWD missing in .env")
         return None
     
     try:

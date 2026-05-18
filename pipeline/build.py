@@ -36,6 +36,117 @@ import app.config as cfg
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+def consolidate_plm_communes(df: pd.DataFrame) -> pd.DataFrame:
+    """Consolidates PLM arrondissements metrics to parent codes."""
+    plm_mapping = {
+        '75056': [str(x) for x in range(75101, 75121)], # Paris
+        '13055': [str(x) for x in range(13201, 13217)], # Marseille
+        '69123': [str(x) for x in range(69381, 69390)]  # Lyon
+    }
+    
+    # Identify columns to sum vs average
+    rate_cols = [
+        'sante_apl', 'edu_pe_tx_couverture', 'mob_dur_share', 'ter_insecurite',
+        'log_soc_delay', 'sante_rdv_delay', 'loyer_app_m2'
+    ]
+    special_cols = ['codgeo', 'epci_code', 'dep_code', 'reg_code', 'bassin_de_vie', 'plm', 'has_gare']
+    
+    cols_to_sum = []
+    cols_to_avg = []
+    for col in df.columns:
+        if col in rate_cols:
+            cols_to_avg.append(col)
+        elif col not in special_cols and pd.api.types.is_numeric_dtype(df[col]):
+            cols_to_sum.append(col)
+
+    # Cast to ensure float/int operations are safe
+    df = df.copy()
+    
+    for parent, children in plm_mapping.items():
+        if not (df['codgeo'] == parent).any():
+            logging.warning(f"Parent code {parent} not found in communes data.")
+            continue
+            
+        family_mask = df['codgeo'].isin([parent] + children)
+        
+        # 1. Sum absolute counts
+        for col in cols_to_sum:
+            if col in df.columns:
+                df.loc[df['codgeo'] == parent, col] = df.loc[family_mask, col].sum()
+                
+        # 2. Population-weighted averages for rates
+        parent_pop = df.loc[df['codgeo'] == parent, 'population'].values[0]
+        if parent_pop > 0:
+            for col in cols_to_avg:
+                if col in df.columns:
+                    weighted_sum = (df.loc[family_mask, col] * df.loc[family_mask, 'population']).sum()
+                    df.loc[df['codgeo'] == parent, col] = weighted_sum / parent_pop
+                    
+        # 3. Special logical flags
+        # PLM parents (Paris, Lyon, Marseille) always have major railway stations (gares)
+        if 'has_gare' in df.columns:
+            df.loc[df['codgeo'] == parent, 'has_gare'] = 1.0
+        if 'gare_count' in df.columns:
+            parent_gare_count = df.loc[df['codgeo'] == parent, 'gare_count'].values[0]
+            df.loc[df['codgeo'] == parent, 'gare_count'] = max(parent_gare_count, 1.0)
+            
+    # 4. Filter out child arrondissements
+    all_children = []
+    for children in plm_mapping.values():
+        all_children.extend(children)
+    df = df[~df['codgeo'].isin(all_children)].copy()
+    
+    return df
+
+def consolidate_plm_vertical(df: pd.DataFrame, codgeo_col: str, group_cols: list, sum_col: str) -> pd.DataFrame:
+    """Aggregates and sums count-based vertical tables (e.g. associations, formations) to PLM parents."""
+    plm_mapping = {
+        '75056': [str(x) for x in range(75101, 75121)], # Paris
+        '13055': [str(x) for x in range(13201, 13217)], # Marseille
+        '69123': [str(x) for x in range(69381, 69390)]  # Lyon
+    }
+    
+    df = df.copy()
+    df[codgeo_col] = df[codgeo_col].astype(str)
+    
+    new_rows = []
+    for global_code, arrondissements in plm_mapping.items():
+        arr_df = df[df[codgeo_col].isin(arrondissements)]
+        if not arr_df.empty:
+            grouped = arr_df.groupby(group_cols)[sum_col].sum().reset_index()
+            grouped[codgeo_col] = global_code
+            new_rows.append(grouped)
+            
+    if new_rows:
+        df = pd.concat([df] + new_rows, ignore_index=True)
+    return df
+
+def consolidate_plm_detail_list(df: pd.DataFrame, codgeo_col: str, parent_bdvs: dict = None) -> pd.DataFrame:
+    """Duplicates details list records from child arrondissements to PLM parent codes."""
+    plm_mapping = {
+        '75056': [str(x) for x in range(75101, 75121)], # Paris
+        '13055': [str(x) for x in range(13201, 13217)], # Marseille
+        '69123': [str(x) for x in range(69381, 69390)]  # Lyon
+    }
+    
+    df = df.copy()
+    df[codgeo_col] = df[codgeo_col].astype(str)
+    if 'bassin_de_vie' in df.columns:
+        df['bassin_de_vie'] = df['bassin_de_vie'].astype(str)
+    
+    new_rows = []
+    for global_code, arrondissements in plm_mapping.items():
+        arr_df = df[df[codgeo_col].isin(arrondissements)].copy()
+        if not arr_df.empty:
+            arr_df[codgeo_col] = global_code
+            if 'bassin_de_vie' in arr_df.columns and parent_bdvs:
+                arr_df['bassin_de_vie'] = parent_bdvs.get(global_code, global_code)
+            new_rows.append(arr_df)
+            
+    if new_rows:
+        df = pd.concat([df] + new_rows, ignore_index=True)
+    return df
+
 def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDataFrame:
     """Builds the main ODIS Communes dataset."""
     logger.log_step("build_communes", "STARTED")
@@ -437,6 +548,11 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         # LOGGING CRS STATE
         # logger.log_step("build_communes", "DEBUG", {"crs": str(communes_gdf.crs)})
         
+        # Apply PLM Consolidation and arrondissement filtering
+        original_crs = communes_gdf.crs
+        consolidated_df = consolidate_plm_communes(communes_gdf)
+        communes_gdf = gpd.GeoDataFrame(consolidated_df, geometry='geometry', crs=original_crs)
+
         # Save polygons as WKB in WGS84 (4326) for direct map rendering
         # We ensure we are in 4326 before converting to WKB
         if communes_gdf.crs != 'EPSG:4326':
@@ -594,32 +710,33 @@ def build_vertical_tables(config: Dict[str, Any], logger: PipelineLogger):
         assoc_path = CLEAN_DIR / "associations_vertical.parquet"
         if assoc_path.exists():
             df = pd.read_parquet(assoc_path, engine='fastparquet')
+            df = consolidate_plm_vertical(df, 'codgeo', ['id_waldec'], 'count')
+            plm_arr = [str(x) for x in range(75101, 75121)] + [str(x) for x in range(13201, 13217)] + [str(x) for x in range(69381, 69390)]
+            df = df[~df['codgeo'].isin(plm_arr)].copy()
             out = OUTPUT_DIR / "odis_associations_agg.parquet"
             df.to_parquet(out, compression='brotli', index=False, engine='fastparquet')
             logger.log_step("build_vertical_tables", "ASSOCIATIONS", {"path": str(out)})
             
-            # Copy raw vertical file to output as well if requested -> Replaced by odis_associations_agg
-            # shutil.copy2(assoc_path, OUTPUT_DIR / "associations_vertical.parquet")
-            
         # 3. Structures Inclusion (CCAS/CIAS)
         struct_path = CLEAN_DIR / "structures_inclusion.parquet"
         if struct_path.exists():
+             df = pd.read_parquet(struct_path, engine='fastparquet')
+             parent_bdvs = {'75056': '75056', '13055': '13055', '69123': '69123'}
+             df = consolidate_plm_detail_list(df, 'codgeo', parent_bdvs)
+             plm_arr = [str(x) for x in range(75101, 75121)] + [str(x) for x in range(13201, 13217)] + [str(x) for x in range(69381, 69390)]
+             df = df[~df['codgeo'].isin(plm_arr)].copy()
              out = OUTPUT_DIR / "odis_ccas.parquet"
-             shutil.copy2(struct_path, out)
+             df.to_parquet(out, compression='brotli', index=False, engine='fastparquet')
              logger.log_step("build_vertical_tables", "STRUCTURES", {"path": str(out)})
             
         # 4. Formations
         form_path = CLEAN_DIR / "formations_annuaire.parquet"
         if form_path.exists():
             df = pd.read_parquet(form_path, engine='fastparquet')
-            # Aggregate count by codgeo and formation_code
-            # The file has 'codgeo', 'formation_code' (one row per entity)
-            # We want count of entities per formation type per commune?
-            # Or just list of available formations?
-            # User said: "aggregations count of avaliable formation codes by codgeo"
-            # So we group by codgeo, formation_code and count.
-            
             df_agg = df.groupby(['codgeo', 'formation_code']).size().rename('count').reset_index()
+            df_agg = consolidate_plm_vertical(df_agg, 'codgeo', ['formation_code'], 'count')
+            plm_arr = [str(x) for x in range(75101, 75121)] + [str(x) for x in range(13201, 13217)] + [str(x) for x in range(69381, 69390)]
+            df_agg = df_agg[~df_agg['codgeo'].isin(plm_arr)].copy()
             
             out = OUTPUT_DIR / "odis_formations_agg.parquet"
             df_agg.to_parquet(out, compression='brotli', index=False, engine='fastparquet')
@@ -628,8 +745,13 @@ def build_vertical_tables(config: Dict[str, Any], logger: PipelineLogger):
         # 5. Refugee Associations (Detailed List)
         refug_path = CLEAN_DIR / "refugee_associations.parquet"
         if refug_path.exists():
+             df = pd.read_parquet(refug_path, engine='fastparquet')
+             parent_bdvs = {'75056': '75056', '13055': '13055', '69123': '69123'}
+             df = consolidate_plm_detail_list(df, 'codgeo', parent_bdvs)
+             plm_arr = [str(x) for x in range(75101, 75121)] + [str(x) for x in range(13201, 13217)] + [str(x) for x in range(69381, 69390)]
+             df = df[~df['codgeo'].isin(plm_arr)].copy()
              out = OUTPUT_DIR / "odis_refugee_associations.parquet"
-             shutil.copy2(refug_path, out)
+             df.to_parquet(out, compression='brotli', index=False, engine='fastparquet')
              logger.log_step("build_vertical_tables", "REFUGEE_ASSOCIATIONS", {"path": str(out)})
             
     except Exception as e:
@@ -876,6 +998,12 @@ def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
 
         if pois_list:
             all_pois = pd.concat(pois_list, ignore_index=True)
+            
+            if 'codgeo' in all_pois.columns:
+                parent_bdvs = {'75056': '75056', '13055': '13055', '69123': '69123'}
+                all_pois = consolidate_plm_detail_list(all_pois, 'codgeo', parent_bdvs)
+                plm_arr = [str(x) for x in range(75101, 75121)] + [str(x) for x in range(13201, 13217)] + [str(x) for x in range(69381, 69390)]
+                all_pois = all_pois[~all_pois['codgeo'].isin(plm_arr)].copy()
             
             # Optimize types
             all_pois['category'] = all_pois['category'].astype('category')

@@ -27,11 +27,18 @@ def _get_access_token() -> Optional[str]:
     if TOKEN_CACHE["token"] and now - float(TOKEN_CACHE["last_refresh"]) < 86400:
         return str(TOKEN_CACHE["token"])
 
+    # 1. Prioritize static token if available
+    static_token = os.environ.get("EMPLOIS_INCLUSION_TOKEN")
+    if static_token:
+        TOKEN_CACHE["token"] = static_token
+        TOKEN_CACHE["last_refresh"] = now
+        return static_token
+
     login = os.environ.get("EMPLOIS_INCLUSION_LOGIN")
     password = os.environ.get("EMPLOIS_INCLUSION_PWD")
 
     if not login or not password:
-        logger.error("❌ [Inclusion] Missing EMPLOIS_INCLUSION_LOGIN or EMPLOIS_INCLUSION_PWD.")
+        logger.error("❌ [Inclusion] Missing EMPLOIS_INCLUSION_TOKEN or EMPLOIS_INCLUSION_LOGIN/PWD combination.")
         return None
 
     try:
