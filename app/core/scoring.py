@@ -471,6 +471,7 @@ class ScoringEngine:
         # 5. Education (Conditional on children)
         nb_enfants = getattr(config, 'nb_enfants', 0)
         if nb_enfants > 0:
+            active.add('youth_decline_scaled')
             active.add('edu_classes_ferm_scaled')
             edu_map = {
                 'Crèche / Assistante Maternelle': 'edu_petite_enfance_scaled',
