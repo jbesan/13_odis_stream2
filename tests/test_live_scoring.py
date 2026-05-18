@@ -101,10 +101,11 @@ def test_live_jobs_scoring_aicha_scenario():
     config = SearchCriterias(**data)
     
     # Override for test specificity
-    config.commune_actuelle = '99999'
+    from app.core.models import CriteriaItem
+    config.commune_actuelle = CriteriaItem(code='99999', label='Start')
     config.loc_search_code = ['13']
     config.classe_enfants = ['Petite Enfance/Crêche', 'Collège']
-    config.inc_services_core_selection = DEFAULT_INC_SERVICES_CORE
+    config.inc_services_core_selection = [CriteriaItem(code=s, label=s) for s in DEFAULT_INC_SERVICES_CORE]
 
     # 4. Run Scoring
     scored = engine.run(config)

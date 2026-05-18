@@ -1,9 +1,9 @@
 [
     {
         "bassin_de_vie": "13055",
-        "weighted_score": 0.6151968990721538,
-        "population_bv": 1878132,
-        "libgeo": "Marseille 6e Arrondissement",
+        "weighted_score": 0.6026115166582837,
+        "population_bv": 1022739,
+        "libgeo": "Marseille",
         "communes": [
             "13002",
             "13005",
@@ -21,30 +21,14 @@
             "13075",
             "13086",
             "13101",
-            "13106",
-            "13201",
-            "13202",
-            "13203",
-            "13204",
-            "13205",
-            "13206",
-            "13207",
-            "13208",
-            "13209",
-            "13210",
-            "13211",
-            "13212",
-            "13213",
-            "13214",
-            "13215",
-            "13216"
+            "13106"
         ],
-        "inclusion_cat_score": 0.4286322492211694,
-        "mob_epci_scaled": 0.0
+        "inclusion_cat_score": 0.7229596645198209,
+        "mob_epci_scaled": 1.0
     },
     {
         "bassin_de_vie": "13001",
-        "weighted_score": 0.5943032597417475,
+        "weighted_score": 0.5900718576517586,
         "population_bv": 334487,
         "libgeo": "Aix-en-Provence",
         "communes": [
@@ -76,24 +60,24 @@
             "13117",
             "13118"
         ],
-        "inclusion_cat_score": 0.6361428579349712,
+        "inclusion_cat_score": 0.6482421955127909,
         "mob_epci_scaled": 1.0
     },
     {
         "bassin_de_vie": "13004",
-        "weighted_score": 0.5810843119685257,
+        "weighted_score": 0.5855749883503671,
         "population_bv": 56202,
         "libgeo": "Arles",
         "communes": [
             "13004",
             "13038"
         ],
-        "inclusion_cat_score": 0.6817848829771649,
+        "inclusion_cat_score": 0.6965655355002057,
         "mob_epci_scaled": 0.0
     },
     {
         "bassin_de_vie": "13103",
-        "weighted_score": 0.576358190481883,
+        "weighted_score": 0.581800191092295,
         "population_bv": 59680,
         "libgeo": "Salon-de-Provence",
         "communes": [
@@ -103,19 +87,19 @@
             "13069",
             "13103"
         ],
-        "inclusion_cat_score": 0.612340143231546,
+        "inclusion_cat_score": 0.6281289964000335,
         "mob_epci_scaled": 1.0
     },
     {
         "bassin_de_vie": "83137",
-        "weighted_score": 0.5724245508456595,
+        "weighted_score": 0.5710691382386994,
         "population_bv": 38937,
         "libgeo": "La Ciotat",
         "communes": [
             "13023",
             "13028"
         ],
-        "inclusion_cat_score": 0.5149878553310543,
+        "inclusion_cat_score": 0.5158404498556762,
         "mob_epci_scaled": 1.0
     }
 ]

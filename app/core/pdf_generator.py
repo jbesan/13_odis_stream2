@@ -34,10 +34,10 @@ def _setup_unicode_font(pdf: FPDF) -> None:
         pdf.add_font("DejaVu", "BI", os.path.join(font_dir, "DejaVuSans-BoldOblique.ttf"))
         pdf.set_font("DejaVu", size=12)
     except Exception as e:
-        logging.warning(f"--- WARNING: Could not load local Unicode font. Falling back to Arial. Error: {e} ---")
+        logging.warning(f"--- WARNING: Could not load local Unicode font. Falling back to Helvetica. Error: {e} ---")
         logging.warning("--- Please ensure you have downloaded the font files as per the instructions. ---")
-        # Fallback to Arial if font setup fails
-    pdf.set_font("Arial", size=12)
+        # Fallback to Helvetica if font setup fails
+        pdf.set_font("Helvetica", size=12)
 
 
 def _render_markdown_as_blocks(pdf: FPDF, text: str):

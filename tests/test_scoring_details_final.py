@@ -2,7 +2,7 @@ import pytest
 import pandas as pd
 import geopandas as gpd
 from core import scoring
-from app.core.models import SearchCriterias
+from app.core.models import SearchCriterias, CriteriaItem
 
 @pytest.fixture
 def scoring_engine(sample_data, sample_scores_cat, sample_incl_index, global_stats):
@@ -47,7 +47,7 @@ def base_config():
         poids_mobilite=1.0,
         poids_sante=1.0,
         criteria_weights={},
-        commune_actuelle='33063',
+        commune_actuelle=CriteriaItem(code='33063', label='Bordeaux'),
         loc_search_area='departement',
         nb_adultes=1,
         nb_enfants=0,
@@ -60,7 +60,7 @@ def base_config():
         inc_services_add_selection=[],
         inc_services_core_selection=[],
         inc_asso_add_selection=[],
-        type_logement='appt_all'
+        type_logement=CriteriaItem(code='appt_all', label='Appartement (Tous types)')
     )
 
 def test_format_city_details_consistency(scoring_engine, base_df, base_config):
@@ -69,7 +69,7 @@ def test_format_city_details_consistency(scoring_engine, base_df, base_config):
     config.nb_enfants = 1
     config.classe_enfants = ['Maternelle']
     config.besoin_sante = 'Hôpital'
-    config.type_logement = 'appt_all'
+    config.type_logement = CriteriaItem(code='appt_all', label='Appartement (Tous types)')
     
     # 1. Run engine steps on base_df to ensure preparation columns stay
     # We use Bordeaux as the target row

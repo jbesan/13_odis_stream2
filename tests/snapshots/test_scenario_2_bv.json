@@ -1,31 +1,11 @@
 [
     {
         "bassin_de_vie": "75056",
-        "weighted_score": 0.7344012800783332,
-        "population_bv": 12543353,
-        "libgeo": "Créteil",
+        "weighted_score": 0.7313468208789357,
+        "population_bv": 10313732,
+        "libgeo": "Paris",
         "communes": [
             "75056",
-            "75101",
-            "75102",
-            "75103",
-            "75104",
-            "75105",
-            "75106",
-            "75107",
-            "75108",
-            "75109",
-            "75110",
-            "75111",
-            "75112",
-            "75113",
-            "75114",
-            "75115",
-            "75116",
-            "75117",
-            "75118",
-            "75119",
-            "75120",
             "77055",
             "77058",
             "77059",
@@ -465,12 +445,12 @@
             "95680",
             "95682"
         ],
-        "inclusion_cat_score": 0.5582886302670103,
+        "inclusion_cat_score": 0.6792413095240434,
         "mob_epci_scaled": 1.0
     },
     {
         "bassin_de_vie": "78361",
-        "weighted_score": 0.6400738077337421,
+        "weighted_score": 0.6378449211069291,
         "population_bv": 118012,
         "libgeo": "Mantes-la-Jolie",
         "communes": [
@@ -512,12 +492,12 @@
             "95656",
             "95676"
         ],
-        "inclusion_cat_score": 0.727618533392745,
+        "inclusion_cat_score": 0.7273533597787198,
         "mob_epci_scaled": 0.0
     },
     {
         "bassin_de_vie": "78517",
-        "weighted_score": 0.6200742205718327,
+        "weighted_score": 0.6158409324753478,
         "population_bv": 30729,
         "libgeo": "Rambouillet",
         "communes": [
@@ -528,35 +508,12 @@
             "78497",
             "78517"
         ],
-        "inclusion_cat_score": 0.6212003190821442,
-        "mob_epci_scaled": 0.0
-    },
-    {
-        "bassin_de_vie": "77186",
-        "weighted_score": 0.5777965714305692,
-        "population_bv": 53864,
-        "libgeo": "Fontainebleau",
-        "communes": [
-            "77014",
-            "77037",
-            "77048",
-            "77096",
-            "77179",
-            "77186",
-            "77202",
-            "77226",
-            "77266",
-            "77312",
-            "77441",
-            "77442",
-            "77533"
-        ],
-        "inclusion_cat_score": 0.3533457528661337,
+        "inclusion_cat_score": 0.6326827813690934,
         "mob_epci_scaled": 0.0
     },
     {
         "bassin_de_vie": "77379",
-        "weighted_score": 0.5754663705911133,
+        "weighted_score": 0.5801096344331117,
         "population_bv": 33943,
         "libgeo": "Provins",
         "communes": [
@@ -599,6 +556,23 @@
             "77532"
         ],
         "inclusion_cat_score": 0.24666240017799845,
+        "mob_epci_scaled": 0.0
+    },
+    {
+        "bassin_de_vie": "77316",
+        "weighted_score": 0.570065970186289,
+        "population_bv": 23834,
+        "libgeo": "Moret-Loing-et-Orvanne",
+        "communes": [
+            "77079",
+            "77316",
+            "77419",
+            "77463",
+            "77494",
+            "77501",
+            "77506"
+        ],
+        "inclusion_cat_score": 0.6101829117013607,
         "mob_epci_scaled": 0.0
     }
 ]
