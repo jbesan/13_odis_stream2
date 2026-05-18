@@ -64,7 +64,7 @@ scores:
       unit: "€/m²"
       display_factor: 1
       tooltip: "Loyer moyen d'annonce par m² pour tous les appartements"
-    weight: 3.0
+    weight: 5.0
     min_bound: null
     max_bound: null
     quantile_level: 0.05
@@ -82,7 +82,7 @@ scores:
       unit: "€/m²"
       display_factor: 1
       tooltip: "Loyer moyen d'annonce par m² pour les appartements T1 et T2"
-    weight: 3.0
+    weight: 5.0
     min_bound: null
     max_bound: null
     quantile_level: 0.05
@@ -100,7 +100,7 @@ scores:
       unit: "€/m²"
       display_factor: 1
       tooltip: "Loyer moyen d'annonce par m² pour les appartements T3 et plus"
-    weight: 3.0
+    weight: 5.0
     min_bound: null
     max_bound: null
     quantile_level: 0.05
@@ -118,7 +118,7 @@ scores:
       unit: "€/m²"
       display_factor: 1
       tooltip: "Loyer moyen d'annonce par m² pour les maisons"
-    weight: 3.0
+    weight: 5.0
     min_bound: null
     max_bound: null
     quantile_level: 0.05
@@ -456,7 +456,7 @@ scores:
       unit: "arrêts / 1000 hab."
       display_factor: 1
       tooltip: "Nombre d'arrêts de transports en commun (bus, tram, métro, train) pour 1000 habitants"
-    weight: 2.0
+    weight: 3.0
     min_bound: 0.0
     max_bound: 10.0
   - id: youth_decline_scaled
@@ -706,6 +706,8 @@ scores:
       display_factor: 1
       tooltip: Délai moyen entre la demande et l'attribution (Source USH)
     weight: 5.0
+    min_bound: 6.0
+    max_bound: 24.0
 
   - id: sante_rdv_delay_scaled
     category: sante
