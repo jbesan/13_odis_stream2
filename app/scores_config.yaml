@@ -655,7 +655,7 @@ scores:
       tooltip: Nombre d'associations proposant de l'hébergement citoyen (Source RNA/RNAG)
     weight: 2.0
     min_bound: 0.0
-    max_bound: 0.2
+    max_bound: 0.1
 
   - id: heb_jaccueille_score
     category: logement
@@ -663,7 +663,7 @@ scores:
     bdv_factor: 1.0
     computation: precomputed
     display:
-      name: Accueilants J'Accueille dans le bassin de vie
+      name: Accueillants J'Accueille dans le bassin de vie
       strong_point_text: Des particuliers accueillent déjà dans ce bassin de vie
       high_value_adjective: présents
       show: true
@@ -732,13 +732,13 @@ scores:
     baseline: true
     computation: precomputed
     display:
-      name: Part des Transports Durables
-      strong_point_text: Forte utilisation des modes de transport durables (Marche, Vélo, TC)
+      name: Part des actifs effectuant leurs trajets domicile-travail sans voiture
+      strong_point_text: Forte utilisation des transports en commun, marche ou vélo pour les trajets domicile-travail
       high_value_adjective: forte
       show: true
       unit: "%"
       display_factor: 100
-      tooltip: Part modale des transports durables (Source Ecolab / RP Insee)
+      tooltip: Part modale des transports domicile-travail sans voiture (Source Ecolab / RP Insee)
     weight: 3.0
 
   - id: ter_insecurite_scaled
@@ -752,7 +752,7 @@ scores:
       strong_point_text: Faible taux de criminalité et délits
       high_value_adjective: élevé
       show: true
-      unit: "taux"
+      unit: "crimes+délits/1000 hab."
       display_factor: 1
       tooltip: Taux cumulé des crimes et délits pour 1000 hab. (Source SSMSI)
     weight: 1.0

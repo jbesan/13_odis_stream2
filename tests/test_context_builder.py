@@ -74,3 +74,43 @@ def test_auto_build_context_empty_list_handling():
     # Empty lists should be included if they are not None
     assert "Empty List" in ctx
     assert ctx["Empty List"] == []
+
+def test_auto_build_context_commune_score_detail_formatting():
+    from core.models import CommuneScoreDetail
+    
+    # Test case 1: Unit with no leading space
+    detail1 = CommuneScoreDetail(
+        label="Test metric 1",
+        score_id="m1",
+        score_normalise=0.85,
+        relative_weight=1.5,
+        valeur_kpi=2,
+        unit="associations"
+    )
+    val1 = ODISContextBuilder._process_value(detail1, "agent_scout")
+    assert val1 == "Test metric 1: 2 associations, score: 0.85, poids relatif: 1.5%"
+
+    # Test case 2: Unit with leading space (should not result in double spaces)
+    detail2 = CommuneScoreDetail(
+        label="Test metric 2",
+        score_id="m2",
+        score_normalise=0.5,
+        relative_weight=2.0,
+        valeur_kpi=3,
+        unit=" offres"
+    )
+    val2 = ODISContextBuilder._process_value(detail2, "agent_scout")
+    assert val2 == "Test metric 2: 3 offres, score: 0.5, poids relatif: 2.0%"
+
+    # Test case 3: Empty unit
+    detail3 = CommuneScoreDetail(
+        label="Test metric 3",
+        score_id="m3",
+        score_normalise=0.99,
+        relative_weight=1.0,
+        valeur_kpi=4.5,
+        unit=""
+    )
+    val3 = ODISContextBuilder._process_value(detail3, "agent_scout")
+    assert val3 == "Test metric 3: 4.5, score: 0.99, poids relatif: 1.0%"
+

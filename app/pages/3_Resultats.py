@@ -81,6 +81,7 @@ def run_search():
     
     # Clear any previously generated PDF data on new search
     st.session_state['pdf_data'] = None
+    st.session_state['pdf_modal_data'] = None
 
     from services import telemetry
     telemetry.reset_interaction_id()
@@ -346,7 +347,7 @@ with col_map:
         selected_ids = {obj["id"] for obj in selected_objs} if selected_objs else set()
         legend_items = [{'color': 'red', 'text': 'Top 5', 'icon':'circle'}]
         if search_results and search_results.commune_pressentie:
-            legend_items.append({'color': 'yellow', 'text': 'Ville Pressentie'})
+            legend_items.append({'color': 'yellow', 'text': 'Ville Souhaitée'})
 
         # C. POI & Top 5 Rendering
         if config and search_results:

@@ -46,6 +46,7 @@ def render_localisation_form() -> None:
         ]
         freq_disabled = False
 
+    st.markdown("##### Ancrage au lieu de vie actuel")
     st.selectbox(
         "A quelle fréquence pense-t-il/elle revenir dans son lieu de vie actuel ?", 
         options=freq_options,
@@ -350,6 +351,7 @@ def render_mobility_form() -> None:
         default_label = next((l for l in target_options if "Petite Ville" in l), target_options[2])
         st.session_state["ui_target_city_size_label"] = default_label
 
+    st.markdown("##### Taille de la ville recherchée")
     with st.container(horizontal=True, width='stretch', horizontal_alignment='center'):
         st.radio(
             "Taille de la ville recherchée",
@@ -357,7 +359,7 @@ def render_mobility_form() -> None:
             key="ui_target_city_size_label",
             horizontal=True,
             help="Définit la taille idéale de la commune recherchée. Le score de population sera maximal pour cette catégorie.",
-            label_visibility="visible"
+            label_visibility="collapsed"
         )
     
     selected_label = st.session_state["ui_target_city_size_label"]
@@ -367,18 +369,20 @@ def render_mobility_form() -> None:
 
     st.divider()
     
-    st.markdown("**Une idée de ville en tête ?**")
+    st.markdown("##### Une idée de ville en tête ?")
+    if "ui_has_commune_pressentie" not in st.session_state:
+        st.session_state["ui_has_commune_pressentie"] = False
+        
     has_pressentie = st.checkbox(
-        "Je souhaite comparer les résultats avec une ville pressentie",
+        "Je souhaite comparer les résultats avec une ville déjà identifiée",
         key="ui_has_commune_pressentie",
-        value=st.session_state.get("ui_has_commune_pressentie", False),
         help="Permet d'évaluer et de comparer une ville spécifique en dehors du Top 5."
     )
     
     if has_pressentie:
         # Get top 100 communes by population
         odis_df = app_data['odis']
-        top_100 = odis_df.dropna(subset=['population', 'libgeo']).sort_values(by='population', ascending=False).head(500)
+        top_100 = odis_df.dropna(subset=['population', 'libgeo']).sort_values(by='population', ascending=False).head(1000)
         communes_list = []
         for codgeo, row in top_100.iterrows():
             dep = row.get('dep_code', '')
@@ -397,7 +401,7 @@ def render_mobility_form() -> None:
                     break
         
         selected_pair = st.selectbox(
-            "Ville pressentie",
+            "Ville souhaitée",
             options=communes_list,
             format_func=lambda x: x[1],
             index=default_index,
@@ -538,7 +542,7 @@ def render_weight_profile_form() -> None:
 
     st.text('Pour améliorer la pertinence des résultats de la recherche, vous pouvez ajuster les poids des différentes catégories de critères de recherche en utilisant soit un profil de pondération (recommandé) soit une pondération sur-mesure.')
 
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
         st.selectbox(
             "Profil de pondération",
@@ -551,52 +555,49 @@ def render_weight_profile_form() -> None:
         st.session_state['processed_gdf'] = None
         st.session_state['search_results'] = None
 
-    with col2:
-        weight_keys = ["ui_poids_education", "ui_poids_emploi", "ui_poids_logement", "ui_poids_inclusion", "ui_poids_sante", "ui_poids_mobilite"]
-        
-        # Add Territory weight if org context is present
-        org_context = st.session_state.get('ui_org_context')
-        if org_context:
-            weight_keys.append("ui_poids_territoire")
+    weight_keys = ["ui_poids_education", "ui_poids_emploi", "ui_poids_logement", "ui_poids_inclusion", "ui_poids_sante", "ui_poids_mobilite"]
+    
+    # Add Territory weight if org context is present
+    org_context = st.session_state.get('ui_org_context')
+    if org_context:
+        weight_keys.append("ui_poids_territoire")
 
-        for p_key in weight_keys:
-            if p_key not in st.session_state:
-                st.session_state[p_key] = 0.5
+    for p_key in weight_keys:
+        if p_key not in st.session_state:
+            st.session_state[p_key] = 0.5
 
-        format_pct = lambda x: f"{int(x*100)}%"
-        
-        sliders_disabled = not st.session_state.get('ui_expert_weights', False)
+    format_pct = lambda x: f"{int(x*100)}%"
+    
+    sliders_disabled = not st.session_state.get('ui_expert_weights', False)
 
-        st.select_slider("Education", cfg.POIDS_OPTIONS, 
-                        format_func=format_pct,
-                        disabled=sliders_disabled,
-                        key="ui_poids_education", on_change=_invalidate_results)
-        st.select_slider("Projet Pro", cfg.POIDS_OPTIONS, 
-                        format_func=format_pct,
-                        disabled=sliders_disabled,
-                        key="ui_poids_emploi", on_change=_invalidate_results)
-        st.select_slider("Logement", cfg.POIDS_OPTIONS, 
-                        format_func=format_pct,
-                        disabled=sliders_disabled,
-                        key="ui_poids_logement", on_change=_invalidate_results)
-        st.select_slider("Inclusion", cfg.POIDS_OPTIONS, 
-                        format_func=format_pct,
-                        disabled=sliders_disabled,
-                        key="ui_poids_inclusion", on_change=_invalidate_results)
-        st.select_slider("Santé", cfg.POIDS_OPTIONS, 
-                        format_func=format_pct,
-                        disabled=sliders_disabled,
-                        key="ui_poids_sante", on_change=_invalidate_results)
-        st.select_slider("Mobilité", cfg.POIDS_OPTIONS, 
-                        format_func=format_pct,
-                        disabled=sliders_disabled,
-                        key="ui_poids_mobilite", on_change=_invalidate_results)
-        
-        if org_context:
-            st.select_slider("Territoire", cfg.POIDS_OPTIONS,
-                            format_func=format_pct,
-                            disabled=sliders_disabled,
-                            key="ui_poids_territoire", on_change=_invalidate_results)
+    labels_map = {
+        "ui_poids_education": "Education",
+        "ui_poids_emploi": "Projet Pro",
+        "ui_poids_logement": "Logement",
+        "ui_poids_inclusion": "Inclusion",
+        "ui_poids_sante": "Santé",
+        "ui_poids_mobilite": "Mobilité",
+        "ui_poids_territoire": "Territoire"
+    }
+
+    # Render sliders inline alternately in col2 and col3 for a flat 3-column [1, 1, 1] layout
+    for idx, p_key in enumerate(weight_keys):
+        target_col = col2 if idx % 2 == 0 else col3
+        with target_col:
+            # Sub-columns to make the label and the slider render inline
+            lbl_col, sld_col = st.columns([1, 2.2], vertical_alignment="center")
+            with lbl_col:
+                st.markdown(f"**{labels_map.get(p_key, p_key)}**")
+            with sld_col:
+                st.select_slider(
+                    labels_map.get(p_key, p_key),
+                    options=cfg.POIDS_OPTIONS,
+                    format_func=format_pct,
+                    disabled=sliders_disabled,
+                    key=p_key,
+                    label_visibility="collapsed",
+                    on_change=_invalidate_results
+                )
 
 def display_input_tabs() -> None:
     """Displays the main tabs for user input, composed of modular rendering functions."""
@@ -621,10 +622,10 @@ def display_input_tabs() -> None:
     with tabs[current_tab_idx]:
         col1, col2 = st.columns([1, 2])
         with col1:
-            st.markdown("**Localisation actuelle**")
+            st.markdown("##### Localisation actuelle")
             render_localisation_form()
         with col2:
-            st.markdown("**Zone de recherche**")
+            st.markdown("##### Zone de recherche")
             render_mobility_form()
     current_tab_idx += 1
     

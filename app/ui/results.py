@@ -421,27 +421,45 @@ def show_details_dialog(index: Any):
             st.metric("Score Global", f"{commune.global_score*100:.1f}%", help="Adéquation globale avec votre projet de vie")
 
     # --- Helper to render scores table ---
-    def render_scores_for_category(category_key: str):
+    def render_scores_for_category(category_key: str, scores_list: Optional[List[CommuneScoreDetail]] = None):
         # category_key: emploi, logement, education, sante, inclusion, mobilite
-        scores: List[CommuneScoreDetail] = commune.scores.get(category_key, [])
+        scores: List[CommuneScoreDetail] = scores_list if scores_list is not None else commune.scores.get(category_key, [])
         if not scores:
             st.info("Aucun indicateur spécifique pour cette catégorie.")
             return
         
         # Filter out redundant education presence scores if we have the counts tab
-        if category_key == 'education':
+        if category_key == 'education' and scores_list is None:
             scores = [s for s in scores if not s.label.startswith('Présence')]
 
         # Sort by score_normalise desc to show strengths
-        scores = sorted(scores, key=lambda x: x.score_normalise, reverse=True)
+        if scores_list is None:
+            scores = sorted(scores, key=lambda x: x.score_normalise, reverse=True)
         
         with st.container(border=False):
             for s in scores:
                 c_label, c_val = st.columns([3, 1])
                 with c_label:
                     st.markdown(f"**{s.label}**")
-                    p_val = s.score_normalise
-                    st.progress(float(max(0.0, min(1.0, p_val))))
+                    p_val_raw = s.score_normalise
+                    p_val = float(max(0.0, min(1.0, p_val_raw))) if p_val_raw is not None and pd.notna(p_val_raw) else 0.0
+                    
+                    # Auto color based on score value
+                    if p_val < 0.35:
+                        bar_color = "linear-gradient(90deg, #f87171, #ef4444)"  # Soft to dark Red
+                    elif p_val < 0.65:
+                        bar_color = "linear-gradient(90deg, #fbbf24, #f59e0b)"  # Warm Orange/Yellow
+                    else:
+                        bar_color = "linear-gradient(90deg, #34d399, #10b981)"  # Emerald Green
+                    
+                    st.markdown(
+                        f"""
+                        <div style="width: 100%; background-color: rgba(128, 128, 128, 0.15); border-radius: 4px; height: 8px; margin-top: 4px; overflow: hidden;">
+                            <div style="width: {p_val * 100}%; background: {bar_color}; height: 100%; border-radius: 4px;"></div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
                 with c_val:
                     val_display = s.valeur_kpi
                     if isinstance(val_display, (int, float)) and pd.notna(val_display):
@@ -522,17 +540,25 @@ def show_details_dialog(index: Any):
     with tab_logement:
         housing_data = commune.housing
         c1, c2 = st.columns([1, 1], gap="medium")
-        with c2:
-            st.markdown("#### :material/home: Indicateurs Logement")
-            render_scores_for_category('logement')
+        
+        # Split housing indicators equally
+        housing_scores = commune.scores.get('logement', [])
+        housing_scores = sorted(housing_scores, key=lambda x: x.score_normalise, reverse=True)
+        
+        mid = (len(housing_scores) + 1) // 2
+        scores_left = housing_scores[:mid]
+        scores_right = housing_scores[mid:]
+        
         with c1:
-            st.markdown("#### :material/info: Données Complémentaires")
+            st.markdown("#### :material/home: Indicateurs Logement")
             j_count = housing_data.host_count
             if j_count > 0:
                  st.info(f"**{int(j_count)} accueillants** J'Accueille identifiés dans le bassin de vie.")
+            render_scores_for_category('logement', scores_list=scores_left)
             
-            if housing_data.log_soc_delay:
-                st.markdown(f"⏱️ **Délai Logement Social** : {housing_data.log_soc_delay} mois")
+        with c2:
+            st.markdown("#### :material/home: Indicateurs Logement")
+            render_scores_for_category('logement', scores_list=scores_right)
 
     with tab_edu:
         education_data = commune.education
@@ -570,9 +596,6 @@ def show_details_dialog(index: Any):
                                     st.write(f"• {name}")
                 else:
                     st.info("Aucune information détaillée sur les structures de santé.")
-                
-                if health_data.sante_rdv_delay:
-                    st.markdown(f"🩺 **Accessibilité Médicale (APL)** : {health_data.sante_rdv_delay:.1f}")
         with c2:
             st.markdown("#### :material/medical_services: Indicateurs Santé")
             render_scores_for_category('sante')
@@ -607,8 +630,6 @@ def show_details_dialog(index: Any):
         c1, c2 = st.columns([1, 1], gap="medium")
         with c1:
             st.markdown("#### :material/commute: Mobilité")
-            if commune.mobility.mob_dur_share:
-                st.markdown(f"🚲 **Transports Durables** : {commune.mobility.mob_dur_share*100:.1f}%")
             render_scores_for_category('mobilite')
         with c2:
             st.markdown("#### :material/security: Sécurité & Contexte")
@@ -728,9 +749,13 @@ def display_results_list(display_gdf: Optional[pd.DataFrame] = None) -> None:
                 st.rerun() 
     # Shortlisted City (Ville Pressentie) Button (Feature F-61)
     if search_results.commune_pressentie:
-        st.markdown('<style> [class*="st-key-btn_pressentie"] .stButton button div, [class*="st-key-btn_pressentie"] .stButton button p { justify-content: flex-start !important; text-align: left !important; width: 100%; } </style>', unsafe_allow_html=True)
         st.markdown("""
         <style>
+        [class*="st-key-btn_pressentie"] .stButton button div, [class*="st-key-btn_pressentie"] .stButton button p {
+            justify-content: flex-start !important; 
+            text-align: left !important; 
+            width: 100%;
+        }
         div[class*="st-key-btn_pressentie"] button {
             background-color: #F5D819 !important;
             color: #1B4429 !important;
@@ -745,7 +770,7 @@ def display_results_list(display_gdf: Optional[pd.DataFrame] = None) -> None:
         """, unsafe_allow_html=True)
         
         p_commune = search_results.commune_pressentie
-        title_p = f"**{p_commune.global_score * 100:.1f}%**  |  {p_commune.name} (Ville Pressentie)"
+        title_p = f"**{p_commune.global_score * 100:.1f}%**  |  {p_commune.name} (Ville Souhaitée)"
         
         st.button(
             title_p,
@@ -760,7 +785,8 @@ def display_results_list(display_gdf: Optional[pd.DataFrame] = None) -> None:
         
         if is_highlighted and highlighted_rank == -1:
             _display_result_details(p_commune, is_ready)
-        st.space()
+        
+        st.text("Alternatives : ")    
 
     for i, commune in enumerate(search_results.results):
         title = f"**{commune.global_score * 100:.1f}%**  |  {commune.name}"

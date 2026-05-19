@@ -109,4 +109,8 @@ Liste en vrac d'idées d'amélioration
   - Le `Refiner` reçoit les métriques complètes de la ville pressentie pour générer un pitch comparatif ciblé s'il n'est pas déjà dans le Top 5.
   - La ville pressentie bénéficie de l'activation des agents experts d'analyse avancée et de l'export PDF.
 
+### 📊 Status
+- **May 2026**: Complete. Fully integrated, tested with 100% green test pass, premium visual outlines, custom SVG Material pushpins, and validated live Refiner agent structured output.
+
+
 

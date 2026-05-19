@@ -180,7 +180,6 @@ def _generate_static_map_image(search_results: SearchResultsData, processed_gdf:
     
     # Plot outlines for top results (Red)
     top_5 = gdf_results_plot.head(5)
-    # Plot outlines for top results (Red)
     # We use codgeos from search_results to ensure consistency with the list
     top_codgeos = [c.codgeo for c in search_results.results[:5]]
     top_5_gdf = gdf_results_plot[gdf_results_plot.index.isin(top_codgeos)]
@@ -191,6 +190,31 @@ def _generate_static_map_image(search_results: SearchResultsData, processed_gdf:
         edgecolor='red',
         linewidth=2
     )
+    
+    # Highlight Commune Pressentie if present (Yellow/Gold outline)
+    if search_results.commune_pressentie:
+        p_codgeo = search_results.commune_pressentie.codgeo
+        if p_codgeo in gdf_results_plot.index:
+            p_gdf = gdf_results_plot[gdf_results_plot.index == p_codgeo]
+            p_gdf.plot(
+                ax=ax,
+                facecolor='none',
+                edgecolor='#e0a800',  # Distinct gold/yellow color
+                linewidth=3
+            )
+            
+            row = gdf_results_plot.loc[p_codgeo]
+            centroid = row.geometry.centroid
+            ax.annotate(
+                "📌",
+                xy=(centroid.x, centroid.y),
+                xytext=(0, 0),
+                textcoords="offset points",
+                ha='center',
+                va='center',
+                fontsize=10,
+                bbox=dict(boxstyle="circle,pad=0.2", fc="#e0a800", ec="none")
+            )
     
     # Add numbered markers for top results
     for i, codgeo in enumerate(top_codgeos):
@@ -272,6 +296,11 @@ def generate_pdf_report(
         # Dynamically build the full criteria list
         criteria = {
             "Lieu de départ": config.commune_actuelle.label if config.commune_actuelle else "N/A",
+        }
+        if getattr(config, 'commune_pressentie', None):
+            criteria["Commune pressentie"] = config.commune_pressentie.label
+
+        criteria.update({
             "Zone de recherche": cfg.LOC_SEARCH_AREA_OPTIONS.get(config.loc_search_area, str(config.loc_search_area)),
             "Métiers recherchés": metiers_str,
             "Formations recherchées": formations_str,
@@ -283,7 +312,7 @@ def generate_pdf_report(
             "Population cible": f"{config.target_population:,} hab. (+/- {config.target_population_sigma:,})".replace(",", " "),
             "Fréquence retour": config.freq_retour if config.freq_retour else "N/A",
             "Autres besoins": ", ".join([c.label for c in config.inc_services_add_selection]) if config.inc_services_add_selection else "Aucun",
-        }
+        })
 
         # Add Associations Locales
         if config.inc_asso_add_selection:
@@ -362,16 +391,30 @@ def generate_pdf_report(
     for rank, commune in enumerate(search_results.results, start=1):
         score_percent = f"{commune.global_score * 100:.1f}%"
         pdf.cell(pdf.epw, 5, f"  {rank}. {commune.name} - {score_percent}", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    
+    if search_results.commune_pressentie:
+        p_commune = search_results.commune_pressentie
+        score_percent = f"{p_commune.global_score * 100:.1f}%"
+        pdf.ln(2)
+        pdf.set_font("DejaVu", 'B', 9)
+        pdf.cell(pdf.epw, 5, f"  📌 Ville pressentie : {p_commune.name} - {score_percent}", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_font("DejaVu", '', 9)
+        
     pdf.ln(5)
 
     # --- INDIVIDUAL RESULT PAGES ---
-
+    pages_to_render = []
     for rank, commune in enumerate(search_results.results, start=1):
+        pages_to_render.append((f"Top {rank}", commune))
+    if search_results.commune_pressentie:
+        pages_to_render.append(("📌 Ville Pressentie", search_results.commune_pressentie))
+
+    for prefix, commune in pages_to_render:
         pdf.add_page()
         
         # --- Header (Identity) ---
         population = f"{commune.population:,}".replace(",", " ")
-        title = f"Top {rank} | {commune.name} ({population} hab.)"
+        title = f"{prefix} | {commune.name} ({population} hab.)"
         pdf.set_font("DejaVu", 'B', 14)
         pdf.cell(pdf.epw, 8, title, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         

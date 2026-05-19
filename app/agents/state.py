@@ -194,7 +194,11 @@ class ODISContextBuilder:
                 score = getattr(val, 'score_normalise', 0.0)
                 weight = getattr(val, 'relative_weight', 0.0)
                 
-                kpi_str = f"{vkpi}{unit}" if vkpi is not None else "N/A"
+                if vkpi is not None:
+                    unit_clean = unit.strip()
+                    kpi_str = f"{vkpi} {unit_clean}" if unit_clean else f"{vkpi}"
+                else:
+                    kpi_str = "N/A"
                 return f"{label}: {kpi_str}, score: {round(float(score), 2)}, poids relatif: {weight}%"
             # For UI/PDF, fall through to normal recursion
 

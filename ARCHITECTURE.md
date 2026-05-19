@@ -122,3 +122,23 @@ To maintain strict architectural separation between user-customized priority set
 - **No Hardcoded UI Multipliers**: The scoring weights for all baseline and active criteria flow purely and dynamically from [scores_config.yaml](file:///Users/jacques/dev/13_odis_stream2/app/scores_config.yaml).
 - **Expert Tuning Abstraction**: Priority settings are handled cleanly through `criteria_weights` and are never hardcoded inside forms or engine defaults, ensuring maximum configurability and transparency for E2E reports.
 
+## 10. Shortlisted City (Ville Pressentie) Comparison Architecture
+
+To allow Social Workers to evaluate and compare a pre-conceived city (e.g., Le Mans) directly against Paris (current city) and the Top 5 recommended results, ODIS implements a **shortlisted city comparison flow (Feature F-61)**:
+
+### 10.1 Unified Force-Scoring Pattern
+The shortlisted city is treated with the exact same scoring pipeline as the current city:
+1. **Force-Scoring**: It is force-included in the `communes_to_score` DataFrame inside `ScoringEngine.run` regardless of geographic boundaries (department/region filters).
+2. **Identical Submetrics**: It passes through the exact same scoring rules (`_compute_scores`), receiving identical thimatic scores, sub-metrics, and statistics as all other candidate communes.
+3. **Top 5 Exclusion**: In the post-scoring phase, it is excluded from the final Top 5 recommended list (`self.results`) so that the recommendations remain pure, and is stored in `SearchResultsData.commune_pressentie`.
+
+### 10.2 Structured AI Pitch Generation
+- **Context Injection**: The `ODISContextBuilder` recursively builds and injects the scored metrics of `commune_pressentie` into the Refiner agent's prompt under `"Commune pressentie à évaluer"`.
+- **Structured Output**: The Refiner agent's Pydantic `RefinerResult` schema has an explicit `pitches_per_city` field description that mandates the inclusion of both the Top 5 recommended cities and the shortlisted city.
+- **Unified Retrieval**: The `SearchResultsData.get_by_code` helper is extended to look up the INSEE code across both `commune_pressentie` and `current_geo`, enabling seamless UI detail renderings, CCAS actions, and semantic analysis.
+
+### 10.3 Premium Visual Layering
+- **UI Button**: The shortlisted city is featured at the top of the search results with a distinct **J'Accueille Yellow (`#F5D819`)** theme.
+- **Map Highlights**: The Folium map layer highlights the shortlisted city's boundary using a yellow border (rank `-1`), and positions a premium, self-contained **Material Design push_pin SVG icon** at the centroid of its polygon.
+
+
