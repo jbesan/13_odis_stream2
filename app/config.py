@@ -94,19 +94,19 @@ DEFAULT_SIGMA = 25000
 WEIGHT_PROFILES = {
     "Équilibré": {
         "poids_emploi": 0.5, "poids_logement": 0.5, "poids_education": 0.5,
-        "poids_inclusion": 0.5, "poids_sante": 0.5, "poids_mobilite": 0.5, "poids_territoire": 0.5
+        "poids_inclusion": 0.5, "poids_sante": 0.5, "poids_mobilite": 0.5, "poids_territoire": 1.0
     },
     "Famille": {
         "poids_emploi": 0.25, "poids_logement": 1.0, "poids_education": 1.0,
-        "poids_inclusion": 0.25, "poids_sante": 0.5, "poids_mobilite": 0.5, "poids_territoire": 0.25
+        "poids_inclusion": 0.25, "poids_sante": 0.5, "poids_mobilite": 0.5, "poids_territoire": 1.0
     },
     "Santé": {
         "poids_emploi": 0.25, "poids_logement": 0.75, "poids_education": 0.0,
-        "poids_inclusion": 0.75, "poids_sante": 1.0, "poids_mobilite": 0.75, "poids_territoire": 0.75
+        "poids_inclusion": 0.75, "poids_sante": 1.0, "poids_mobilite": 0.75, "poids_territoire": 1.0
     },
     "Économique": {
         "poids_emploi": 1.0, "poids_logement": 0.75, "poids_education": 0.25,
-        "poids_inclusion": 0.5, "poids_sante": 0.25, "poids_mobilite": 0.25, "poids_territoire": 0.5
+        "poids_inclusion": 0.5, "poids_sante": 0.25, "poids_mobilite": 0.25, "poids_territoire": 1.0
     }
 }
 

@@ -246,7 +246,7 @@
     },
     "apply_prescoring": {
       "status": "COMPLETED",
-      "timestamp": "2026-05-19T11:25:08.310772",
+      "timestamp": "2026-05-19T15:46:27.066007",
       "details": {
         "columns": 107,
         "path": "pipeline/cache/output/odis_communes.parquet",
@@ -271,7 +271,7 @@
     },
     "score_bassins_de_vie": {
       "status": "COMPLETED",
-      "timestamp": "2026-05-19T11:25:11.821570",
+      "timestamp": "2026-05-19T15:46:30.502647",
       "details": {
         "rows": 1707
       }
@@ -332,7 +332,7 @@
     },
     "apply_prescoring_load": {
       "status": "LOADED",
-      "timestamp": "2026-05-19T11:24:45.758874",
+      "timestamp": "2026-05-19T15:46:04.549174",
       "details": {
         "rows": 34968
       }
@@ -347,7 +347,7 @@
     },
     "inc_services_core_scaled": {
       "status": "CALCULATED",
-      "timestamp": "2026-05-19T11:24:49.226681",
+      "timestamp": "2026-05-19T15:46:08.288911",
       "details": {}
     },
     "clean_regions": {

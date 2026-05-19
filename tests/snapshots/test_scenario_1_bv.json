@@ -1,7 +1,7 @@
 [
     {
         "bassin_de_vie": "33243",
-        "weighted_score": 0.8654026217228464,
+        "weighted_score": 0.8714887640449438,
         "population_bv": 98828,
         "libgeo": "Saint-Émilion",
         "communes": [
@@ -106,8 +106,31 @@
         "mob_epci_scaled": 0.0
     },
     {
+        "bassin_de_vie": "33138",
+        "weighted_score": 0.8213951310861424,
+        "population_bv": 21802,
+        "libgeo": "Coutras",
+        "communes": [
+            "33001",
+            "33088",
+            "33124",
+            "33138",
+            "33154",
+            "33166",
+            "33218",
+            "33315",
+            "33320",
+            "33385",
+            "33447",
+            "33472",
+            "33526"
+        ],
+        "inclusion_cat_score": 0.9400749063670412,
+        "mob_epci_scaled": 0.0
+    },
+    {
         "bassin_de_vie": "33506",
-        "weighted_score": 0.8110955056179775,
+        "weighted_score": 0.8092228464419475,
         "population_bv": 6966,
         "libgeo": "Martres",
         "communes": [
@@ -133,29 +156,6 @@
             "33516"
         ],
         "inclusion_cat_score": 0.8408239700374532,
-        "mob_epci_scaled": 0.0
-    },
-    {
-        "bassin_de_vie": "33138",
-        "weighted_score": 0.7998595505617977,
-        "population_bv": 21802,
-        "libgeo": "Coutras",
-        "communes": [
-            "33001",
-            "33088",
-            "33124",
-            "33138",
-            "33154",
-            "33166",
-            "33218",
-            "33315",
-            "33320",
-            "33385",
-            "33447",
-            "33472",
-            "33526"
-        ],
-        "inclusion_cat_score": 0.9400749063670412,
         "mob_epci_scaled": 0.0
     },
     {
