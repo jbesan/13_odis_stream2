@@ -1,7 +1,7 @@
 [
     {
         "bassin_de_vie": "13055",
-        "weighted_score": 0.5658325406552536,
+        "weighted_score": 0.9207683073229292,
         "population_bv": 1022739,
         "libgeo": "Marseille",
         "communes": [
@@ -23,49 +23,12 @@
             "13101",
             "13106"
         ],
-        "inclusion_cat_score": 0.7229596645198209,
-        "mob_epci_scaled": 1.0
-    },
-    {
-        "bassin_de_vie": "13001",
-        "weighted_score": 0.5615464357128727,
-        "population_bv": 334487,
-        "libgeo": "Aix-en-Provence",
-        "communes": [
-            "13001",
-            "13012",
-            "13014",
-            "13015",
-            "13019",
-            "13025",
-            "13032",
-            "13040",
-            "13041",
-            "13046",
-            "13060",
-            "13062",
-            "13072",
-            "13079",
-            "13081",
-            "13087",
-            "13090",
-            "13095",
-            "13107",
-            "13109",
-            "13110",
-            "13111",
-            "13112",
-            "13113",
-            "13114",
-            "13117",
-            "13118"
-        ],
-        "inclusion_cat_score": 0.6482421955127909,
+        "inclusion_cat_score": 1.0,
         "mob_epci_scaled": 1.0
     },
     {
         "bassin_de_vie": "13103",
-        "weighted_score": 0.533533451559874,
+        "weighted_score": 0.8865546218487396,
         "population_bv": 59680,
         "libgeo": "Salon-de-Provence",
         "communes": [
@@ -75,31 +38,44 @@
             "13069",
             "13103"
         ],
-        "inclusion_cat_score": 0.6281289964000335,
+        "inclusion_cat_score": 0.9411764705882353,
         "mob_epci_scaled": 1.0
     },
     {
         "bassin_de_vie": "13004",
-        "weighted_score": 0.5292117771985024,
+        "weighted_score": 0.8601440576230492,
         "population_bv": 56202,
         "libgeo": "Arles",
         "communes": [
             "13004",
             "13038"
         ],
-        "inclusion_cat_score": 0.6965655355002057,
+        "inclusion_cat_score": 0.9831932773109243,
         "mob_epci_scaled": 0.0
     },
     {
         "bassin_de_vie": "83137",
-        "weighted_score": 0.523059916820624,
+        "weighted_score": 0.8199279711884753,
         "population_bv": 38937,
         "libgeo": "La Ciotat",
         "communes": [
             "13023",
             "13028"
         ],
-        "inclusion_cat_score": 0.5158404498556762,
+        "inclusion_cat_score": 0.8571428571428571,
+        "mob_epci_scaled": 1.0
+    },
+    {
+        "bassin_de_vie": "13056",
+        "weighted_score": 0.81062424969988,
+        "population_bv": 70982,
+        "libgeo": "Martigues",
+        "communes": [
+            "13056",
+            "13077",
+            "13098"
+        ],
+        "inclusion_cat_score": 0.9663865546218487,
         "mob_epci_scaled": 1.0
     }
 ]
