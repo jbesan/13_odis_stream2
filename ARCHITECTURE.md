@@ -102,3 +102,23 @@ The `ODISContextBuilder` in `agents/state.py` automatically generates context bl
 4. Automatically simplifying complex objects (like `CriteriaItem`) into plain strings.
 
 For the full visibility matrix and contract details, see [AGENT_CONTEXTS.md](app/agents/AGENT_CONTEXTS.md).
+
+## 8. Data Integrity & PLM Commune Consolidation
+
+To prevent administrative discrepancies for Paris, Lyon, and Marseille, ODIS enforces a strict **Commune-Level Only** standard. 
+
+### 8.1 ETL Aggregation Pipeline
+During the build phase (`pipeline/build.py`), all individual arrondissement-level data points (e.g., Paris 1er, Lyon 3e, Marseille 8e) are programmatically consolidated into their parent commune codes:
+- **Summing**: Counts and capacities (e.g., POIs, schools, places in nurseries, number of associations) are summed up.
+- **Population Weighting**: Rates and ratios (e.g., housing vacancy, wait times, coverages, average rents) are calculated as a population-weighted average of their component arrondissements.
+- **Filtering**: All sub-arrondissement codes are filtered out of the final parquet files.
+
+### 8.2 Descendant Cascade Filtering
+All vertical and reference tables (including CCAS lists, refugee associations, formations, and POIs) are consolidated at the parent level. Any references to child arrondissements are mapped to parent INSEE codes, ensuring that descriptive details, E2E scoring, maps, and PDF exports only reference global parent communes.
+
+## 9. Configuration-Driven Scoring Weights
+
+To maintain strict architectural separation between user-customized priority settings and global domain standards:
+- **No Hardcoded UI Multipliers**: The scoring weights for all baseline and active criteria flow purely and dynamically from [scores_config.yaml](file:///Users/jacques/dev/13_odis_stream2/app/scores_config.yaml).
+- **Expert Tuning Abstraction**: Priority settings are handled cleanly through `criteria_weights` and are never hardcoded inside forms or engine defaults, ensuring maximum configurability and transparency for E2E reports.
+

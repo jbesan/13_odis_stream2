@@ -1,7 +1,7 @@
 [
     {
         "bassin_de_vie": "75056",
-        "weighted_score": 0.7313468208789357,
+        "weighted_score": 0.7465541451514827,
         "population_bv": 10313732,
         "libgeo": "Paris",
         "communes": [
@@ -450,7 +450,7 @@
     },
     {
         "bassin_de_vie": "78361",
-        "weighted_score": 0.6378449211069291,
+        "weighted_score": 0.6348815088404179,
         "population_bv": 118012,
         "libgeo": "Mantes-la-Jolie",
         "communes": [
@@ -497,7 +497,7 @@
     },
     {
         "bassin_de_vie": "78517",
-        "weighted_score": 0.6158409324753478,
+        "weighted_score": 0.6204707842256767,
         "population_bv": 30729,
         "libgeo": "Rambouillet",
         "communes": [
@@ -513,7 +513,7 @@
     },
     {
         "bassin_de_vie": "77379",
-        "weighted_score": 0.5801096344331117,
+        "weighted_score": 0.5813801401426375,
         "population_bv": 33943,
         "libgeo": "Provins",
         "communes": [
@@ -560,7 +560,7 @@
     },
     {
         "bassin_de_vie": "77316",
-        "weighted_score": 0.570065970186289,
+        "weighted_score": 0.5730804276668093,
         "population_bv": 23834,
         "libgeo": "Moret-Loing-et-Orvanne",
         "communes": [

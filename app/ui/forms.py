@@ -746,11 +746,7 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
     if st.session_state.get("ui_priority_other_needs", False):
         criteria_weights['inc_services_incl_scaled'] = 3.0
 
-    # New 2026 Metrics Weights (Hardcoded per USER agreement)
-    criteria_weights['log_soc_delay_scaled'] = 3.0
-    criteria_weights['sante_rdv_delay_scaled'] = 2.0
-    criteria_weights['mob_dur_share_scaled'] = 3.0
-    criteria_weights['ter_insecurite_scaled'] = 1.0
+
 
     # Enrich Inclusion Associations (WALDEC Logic F-48)
     waldec_index = app_data.get('waldec_index', pd.DataFrame())

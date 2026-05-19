@@ -1,7 +1,7 @@
 [
     {
         "bassin_de_vie": "33063",
-        "weighted_score": 0.6185731093318307,
+        "weighted_score": 0.6227232542629789,
         "population_bv": 866307,
         "libgeo": "Artigues-près-Bordeaux",
         "communes": [
@@ -69,7 +69,7 @@
     },
     {
         "bassin_de_vie": "33402",
-        "weighted_score": 0.558135569447993,
+        "weighted_score": 0.5650611630567277,
         "population_bv": 13818,
         "libgeo": "Sainte-Foy-la-Grande",
         "communes": [
@@ -98,7 +98,7 @@
     },
     {
         "bassin_de_vie": "33243",
-        "weighted_score": 0.5505690882829586,
+        "weighted_score": 0.5504817207588397,
         "population_bv": 98828,
         "libgeo": "Saint-Émilion",
         "communes": [
@@ -175,7 +175,7 @@
     },
     {
         "bassin_de_vie": "33240",
-        "weighted_score": 0.5205906651801148,
+        "weighted_score": 0.5239450714200544,
         "population_bv": 19431,
         "libgeo": "Lesparre-Médoc",
         "communes": [
@@ -201,7 +201,7 @@
     },
     {
         "bassin_de_vie": "33081",
-        "weighted_score": 0.5190935268027496,
+        "weighted_score": 0.5206799297846385,
         "population_bv": 13913,
         "libgeo": "Barsac",
         "communes": [

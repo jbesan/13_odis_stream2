@@ -1,7 +1,7 @@
 [
     {
         "bassin_de_vie": "13055",
-        "weighted_score": 0.6026115166582837,
+        "weighted_score": 0.6015589857657302,
         "population_bv": 1022739,
         "libgeo": "Marseille",
         "communes": [
@@ -28,7 +28,7 @@
     },
     {
         "bassin_de_vie": "13001",
-        "weighted_score": 0.5900718576517586,
+        "weighted_score": 0.5924851115908719,
         "population_bv": 334487,
         "libgeo": "Aix-en-Provence",
         "communes": [
@@ -65,7 +65,7 @@
     },
     {
         "bassin_de_vie": "13004",
-        "weighted_score": 0.5855749883503671,
+        "weighted_score": 0.5860274584127377,
         "population_bv": 56202,
         "libgeo": "Arles",
         "communes": [
@@ -77,7 +77,7 @@
     },
     {
         "bassin_de_vie": "13103",
-        "weighted_score": 0.581800191092295,
+        "weighted_score": 0.5808096468962354,
         "population_bv": 59680,
         "libgeo": "Salon-de-Provence",
         "communes": [
@@ -92,7 +92,7 @@
     },
     {
         "bassin_de_vie": "83137",
-        "weighted_score": 0.5710691382386994,
+        "weighted_score": 0.5714075407284139,
         "population_bv": 38937,
         "libgeo": "La Ciotat",
         "communes": [

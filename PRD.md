@@ -72,4 +72,21 @@ Liste en vrac d'idées d'amélioration
 - **Cascading Context** : Le briefing généré par le Refiner est injecté dans le graphe MapReduce pour un grounding de haute qualité.
 
 ### 📊 Status
-- **May 2026**: In Progress. Plan submitted for review.
+- **May 2026**: Complete.
+
+---
+
+## 🚀 Feature [F-59]: PLM Arrondissement Consolidation & Filtering
+
+### 📝 User Story
+- En tant que travailleur social, je veux que les résultats pour Paris, Lyon et Marseille soient présentés au niveau global de la commune et non par arrondissement, afin d'éviter la pollution visuelle sur la carte et de garantir que les scores reflètent les services consolidés du territoire entier.
+- En tant qu'administrateur de données, je veux que toutes les fiches détaillées (CCAS, POIs, associations, formations) soient agrégées au niveau de la commune parente globale pour assurer la cohérence et l'exhaustivité des informations.
+
+### 🔑 Key Features
+- **ETL Aggregation**: Somme et moyenne pondérée par la population de toutes les variables et ratios d'arrondissements PLM dans le script de build.
+- **Reference Table Cascade**: Regroupement des tables CCAS, POIs, RNA, Formations sur les codes INSEE parents (`75056`, `69123`, `13055`) et filtrage complet des arrondissements.
+- **Pure Configuration-Driven Weights**: Retrait de tous les multiplicateurs hardcodés dans l'interface formulaire pour s'assurer que les calculs de scoring reposent uniquement sur les poids définis dans `scores_config.yaml`.
+
+### 📊 Status
+- **May 2026**: Complete. Fully integrated, tested (100% green pytest suite), and E2E snapshots updated.
+
