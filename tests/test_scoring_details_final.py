@@ -71,6 +71,20 @@ def test_format_city_details_consistency(scoring_engine, base_df, base_config):
     config.besoin_sante = 'Hôpital'
     config.type_logement = CriteriaItem(code='appt_all', label='Appartement (Tous types)')
     
+    # Add mob_gare_scaled dynamically to test fallback and premium Oui/Non formatting
+    gare_row = pd.DataFrame([{
+        'score': 'mob_gare_scaled',
+        'cat': 'mobilite',
+        'metric': 'has_gare',
+        'incl_binome': True,
+        'weight': 1.0,
+        'min_bound': 0.0,
+        'max_bound': 1.0,
+        'baseline': True
+    }])
+    scoring_engine.scores_cat = pd.concat([scoring_engine.scores_cat, gare_row], ignore_index=True)
+    base_df['mob_gare_scaled'] = 1.0
+    
     # 1. Run engine steps on base_df to ensure preparation columns stay
     # We use Bordeaux as the target row
     scored_df = scoring_engine._compute_criteria_scores(base_df, config)
@@ -91,6 +105,7 @@ def test_format_city_details_consistency(scoring_engine, base_df, base_config):
     # Note: 'sante_hopital_scaled' is not in mock, use 'sante_structures_scaled'
     assert 'sante_structures_scaled' in all_scores
     assert 'log_vac_scaled' in all_scores
+    assert 'mob_gare_scaled' in all_scores
     
     # Inactive/Pruned
     # In mock, edu_petite_enfance_scaled is not present anyway, 
@@ -111,6 +126,10 @@ def test_format_city_details_consistency(scoring_engine, base_df, base_config):
     vac_item = next(item for item in details.scores['logement'] if item.score_id == 'log_vac_scaled')
     # Since d_factor is 1.0 in mock, it should be "6"
     assert vac_item.valeur_kpi == 6.0
+    
+    # Check that mob_gare_scaled fell back to scaled score and formatted to "Oui"
+    gare_item = next(item for item in details.scores['mobilite'] if item.score_id == 'mob_gare_scaled')
+    assert gare_item.valeur_kpi == "Oui"
 
 def test_format_city_details_no_config(scoring_engine, base_df):
     """Verifies that format_city_details works without config (defaulting to include many things)."""

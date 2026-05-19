@@ -474,13 +474,14 @@ def show_details_dialog(index: Any):
             st.markdown("<br>", unsafe_allow_html=True) # Minor spacing
 
     # --- Tabs ---
-    tab_emploi, tab_logement, tab_edu, tab_sante, tab_vie, tab_ter = st.tabs([
+    tab_emploi, tab_logement, tab_edu, tab_sante, tab_vie, tab_mob, tab_ter = st.tabs([
         "💼 Emploi & Formation", 
         "🏠 Logement", 
         "🎓 Éducation", 
         "🏥 Santé", 
         "🤝 Vie Sociale & Inclusion",
-        "🚉 Mobilité & Contexte"
+        "🚉 Mobilité",
+        "🛡️ Contexte Territorial"
     ])
 
     with tab_emploi:
@@ -626,15 +627,29 @@ def show_details_dialog(index: Any):
             st.markdown("#### :material/diversity_3: Indicateurs Inclusion")
             render_scores_for_category('inclusion')
     
+    with tab_mob:
+        c1, c2 = st.columns([1, 1], gap="medium")
+        mob_scores = commune.scores.get('mobilite', [])
+        mob_scores = sorted(mob_scores, key=lambda x: x.score_normalise, reverse=True)
+        mid = (len(mob_scores) + 1) // 2
+        scores_left = mob_scores[:mid]
+        scores_right = mob_scores[mid:]
+        
+        with c1:
+            st.markdown("#### :material/commute: Mobilité")
+            render_scores_for_category('mobilite', scores_list=scores_left)
+        with c2:
+            st.markdown("#### :material/commute: Mobilité")
+            render_scores_for_category('mobilite', scores_list=scores_right)
+            
     with tab_ter:
         c1, c2 = st.columns([1, 1], gap="medium")
         with c1:
-            st.markdown("#### :material/commute: Mobilité")
-            render_scores_for_category('mobilite')
-        with c2:
-            st.markdown("#### :material/security: Sécurité & Contexte")
+            st.markdown("#### :material/security: Contexte Territorial")
             if commune.territoire.ter_insecurite:
-                st.markdown(f"🛡️ **Indice d'insécurité** : {commune.territoire.ter_insecurite:.1f}")
+                 st.info(f"🚨 **Sécurité** : {commune.territoire.ter_insecurite:.1f} crimes+délits pour 1000 hab. (Moyenne départementale).")
+        with c2:
+            st.markdown("#### :material/security: Indicateurs Territoriaux")
             render_scores_for_category('territoire')
 
 def _result_highlight_callback(index: int) -> None:

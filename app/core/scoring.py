@@ -671,10 +671,21 @@ class ScoringEngine:
                          val_raw = float(val) * d_factor
                     except:
                          val_raw = val
+            elif score_id in row and pd.notna(row[score_id]):
+                # Fallback to the scaled score itself if the raw metric is missing from the dataset (e.g. for precomputed indicators like has_gare)
+                val = row[score_id]
+                d_factor = float(score_row.get('display_factor', 1.0))
+                if pd.api.types.is_number(val):
+                    val_raw = float(val * d_factor)
+                else:
+                    val_raw = val
             
             # Format val_raw for display (preserving underlying type logic)
             unit = score_row.get('unit', score_row.get('description', ''))
-            if isinstance(val_raw, (int, float)):
+            if score_id == 'mob_gare_scaled':
+                # Convert the binary/scaled score to a human-friendly "Oui"/"Non" indicator
+                val_raw = "Oui" if val_scaled == 1.0 else "Non"
+            elif isinstance(val_raw, (int, float)):
                 if unit == "habitants":
                     val_raw = int(round(float(val_raw) / 1000) * 1000)
                 elif unit == "%" or unit == "assos/1000 hab.":
