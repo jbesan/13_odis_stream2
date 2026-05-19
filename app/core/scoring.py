@@ -671,10 +671,21 @@ class ScoringEngine:
                          val_raw = float(val) * d_factor
                     except:
                          val_raw = val
+            elif score_id in row and pd.notna(row[score_id]):
+                # Fallback to the scaled score itself if the raw metric is missing from the dataset (e.g. for precomputed indicators like has_gare)
+                val = row[score_id]
+                d_factor = float(score_row.get('display_factor', 1.0))
+                if pd.api.types.is_number(val):
+                    val_raw = float(val * d_factor)
+                else:
+                    val_raw = val
             
             # Format val_raw for display (preserving underlying type logic)
             unit = score_row.get('unit', score_row.get('description', ''))
-            if isinstance(val_raw, (int, float)):
+            if score_id == 'mob_gare_scaled':
+                # Convert the binary/scaled score to a human-friendly "Oui"/"Non" indicator
+                val_raw = "Oui" if val_scaled == 1.0 else "Non"
+            elif isinstance(val_raw, (int, float)):
                 if unit == "habitants":
                     val_raw = int(round(float(val_raw) / 1000) * 1000)
                 elif unit == "%" or unit == "assos/1000 hab.":
@@ -936,9 +947,12 @@ class ScoringEngine:
     def create_search_results(self, processed_gdf: gpd.GeoDataFrame, config: SearchCriterias) -> SearchResultsData:
         """Helper to create a SearchResultsData object from the scoring results."""
         
-        # 1. Identify the current city
+        # 1. Identify the current city and shortlisted city
         c_code_raw = config.commune_actuelle
         c_code = c_code_raw.code if hasattr(c_code_raw, 'code') else c_code_raw
+        
+        p_code_raw = getattr(config, 'commune_pressentie', None)
+        p_code = p_code_raw.code if p_code_raw and hasattr(p_code_raw, 'code') else p_code_raw
         
         # 2. Extract current location data for comparison
         current_geo = None
@@ -956,12 +970,23 @@ class ScoringEngine:
         
         # Fallback to base data if it was filtered out early (e.g. by region/dept filter)
         if current_geo is None and self.current_city_scored_row is not None:
-             current_geo = self.format_city_details(self.current_city_scored_row, config)
+            current_geo = self.format_city_details(self.current_city_scored_row, config)
         elif current_geo is None and c_code in self.df_all_communes.index:
-             # Basic static data without search context scores
-             current_geo = self.format_city_details(self.df_all_communes.loc[c_code], config)
+            # Basic static data without search context scores
+            current_geo = self.format_city_details(self.df_all_communes.loc[c_code], config)
              
-        # 3. Filter out current city and its PLM family from the results list
+        # Extract commune pressentie details if present
+        commune_pressentie_details = None
+        if p_code and p_code in processed_gdf.index:
+            try:
+                p_row = processed_gdf.loc[p_code]
+                if isinstance(p_row, pd.DataFrame):
+                    p_row = p_row.iloc[0]
+                commune_pressentie_details = self.format_city_details(p_row, config)
+            except Exception as e:
+                logger.error(f"Failed to format scored shortlisted city {p_code}: {e}")
+             
+        # 3. Filter out current city, PLM family, and shortlisted city from the results list
         # Detect PLM family (either parent or arrondissement)
         plm_prefix = None
         parent_c = None
@@ -980,10 +1005,15 @@ class ScoringEngine:
             if parent_c:
                 mask = mask & (processed_gdf.index != parent_c)
             mask = mask & (processed_gdf.index != c_code)
+            if p_code:
+                mask = mask & (processed_gdf.index != str(p_code))
             display_gdf = processed_gdf[mask]
         else:
-            display_gdf = processed_gdf[processed_gdf.index != c_code]
-
+            mask = processed_gdf.index != c_code
+            if p_code:
+                mask = mask & (processed_gdf.index != str(p_code))
+            display_gdf = processed_gdf[mask]
+ 
         # 4. Generate Top 5 Communes
         top_5 = display_gdf.head(5)
         results = []
@@ -994,11 +1024,11 @@ class ScoringEngine:
                 results.append(details)
             except Exception as e:
                 logger.error(f"Error formatting details for city {idx}: {e}")
-            
         return SearchResultsData(
             search_hash=config.compute_hash(),
             results=results,
-            current_geo=current_geo
+            current_geo=current_geo,
+            commune_pressentie=commune_pressentie_details
         )
 
     def get_city_details(self, codgeo: str) -> CommuneResult:
@@ -1070,6 +1100,12 @@ class ScoringEngine:
         # Always include current commune
         if c_code in self.df_all_communes.index and c_code not in communes_to_score.index:
             communes_to_score = pd.concat([communes_to_score, self.df_all_communes.loc[[c_code]]])
+            
+        # Always include commune pressentie (Feature F-61)
+        p_code_obj = getattr(config, 'commune_pressentie', None)
+        p_code = p_code_obj.code if p_code_obj and hasattr(p_code_obj, 'code') else p_code_obj
+        if p_code and p_code in self.df_all_communes.index and p_code not in communes_to_score.index:
+            communes_to_score = pd.concat([communes_to_score, self.df_all_communes.loc[[p_code]]])
         
         # Early conservative pruning
         communes_to_score = self._prune_irrelevant_metrics(communes_to_score, config, aggressive=False)

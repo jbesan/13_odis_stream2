@@ -421,27 +421,45 @@ def show_details_dialog(index: Any):
             st.metric("Score Global", f"{commune.global_score*100:.1f}%", help="Adéquation globale avec votre projet de vie")
 
     # --- Helper to render scores table ---
-    def render_scores_for_category(category_key: str):
+    def render_scores_for_category(category_key: str, scores_list: Optional[List[CommuneScoreDetail]] = None):
         # category_key: emploi, logement, education, sante, inclusion, mobilite
-        scores: List[CommuneScoreDetail] = commune.scores.get(category_key, [])
+        scores: List[CommuneScoreDetail] = scores_list if scores_list is not None else commune.scores.get(category_key, [])
         if not scores:
             st.info("Aucun indicateur spécifique pour cette catégorie.")
             return
         
         # Filter out redundant education presence scores if we have the counts tab
-        if category_key == 'education':
+        if category_key == 'education' and scores_list is None:
             scores = [s for s in scores if not s.label.startswith('Présence')]
 
         # Sort by score_normalise desc to show strengths
-        scores = sorted(scores, key=lambda x: x.score_normalise, reverse=True)
+        if scores_list is None:
+            scores = sorted(scores, key=lambda x: x.score_normalise, reverse=True)
         
         with st.container(border=False):
             for s in scores:
                 c_label, c_val = st.columns([3, 1])
                 with c_label:
                     st.markdown(f"**{s.label}**")
-                    p_val = s.score_normalise
-                    st.progress(float(max(0.0, min(1.0, p_val))))
+                    p_val_raw = s.score_normalise
+                    p_val = float(max(0.0, min(1.0, p_val_raw))) if p_val_raw is not None and pd.notna(p_val_raw) else 0.0
+                    
+                    # Auto color based on score value
+                    if p_val < 0.35:
+                        bar_color = "linear-gradient(90deg, #f87171, #ef4444)"  # Soft to dark Red
+                    elif p_val < 0.65:
+                        bar_color = "linear-gradient(90deg, #fbbf24, #f59e0b)"  # Warm Orange/Yellow
+                    else:
+                        bar_color = "linear-gradient(90deg, #34d399, #10b981)"  # Emerald Green
+                    
+                    st.markdown(
+                        f"""
+                        <div style="width: 100%; background-color: rgba(128, 128, 128, 0.15); border-radius: 4px; height: 8px; margin-top: 4px; overflow: hidden;">
+                            <div style="width: {p_val * 100}%; background: {bar_color}; height: 100%; border-radius: 4px;"></div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
                 with c_val:
                     val_display = s.valeur_kpi
                     if isinstance(val_display, (int, float)) and pd.notna(val_display):
@@ -456,13 +474,14 @@ def show_details_dialog(index: Any):
             st.markdown("<br>", unsafe_allow_html=True) # Minor spacing
 
     # --- Tabs ---
-    tab_emploi, tab_logement, tab_edu, tab_sante, tab_vie = st.tabs([
+    tab_emploi, tab_logement, tab_edu, tab_sante, tab_vie, tab_mob, tab_ter = st.tabs([
         "💼 Emploi & Formation", 
         "🏠 Logement", 
         "🎓 Éducation", 
         "🏥 Santé", 
         "🤝 Vie Sociale & Inclusion",
-        "🚉 Mobilité & Contexte"
+        "🚉 Mobilité",
+        "🛡️ Contexte Territorial"
     ])
 
     with tab_emploi:
@@ -522,16 +541,25 @@ def show_details_dialog(index: Any):
     with tab_logement:
         housing_data = commune.housing
         c1, c2 = st.columns([1, 1], gap="medium")
-        with c2:
-            st.markdown("#### :material/home: Indicateurs Logement")
-            render_scores_for_category('logement')
+        
+        # Split housing indicators equally
+        housing_scores = commune.scores.get('logement', [])
+        housing_scores = sorted(housing_scores, key=lambda x: x.score_normalise, reverse=True)
+        
+        mid = (len(housing_scores) + 1) // 2
+        scores_left = housing_scores[:mid]
+        scores_right = housing_scores[mid:]
+        
         with c1:
-            st.markdown("#### :material/info: Données Complémentaires")
+            st.markdown("#### :material/home: Indicateurs Logement")
+            j_count = housing_data.host_count
             if j_count > 0:
                  st.info(f"**{int(j_count)} accueillants** J'Accueille identifiés dans le bassin de vie.")
+            render_scores_for_category('logement', scores_list=scores_left)
             
-            if housing_data.log_soc_delay:
-                st.markdown(f"⏱️ **Délai Logement Social** : {housing_data.log_soc_delay} mois")
+        with c2:
+            st.markdown("#### :material/home: Indicateurs Logement")
+            render_scores_for_category('logement', scores_list=scores_right)
 
     with tab_edu:
         education_data = commune.education
@@ -569,9 +597,6 @@ def show_details_dialog(index: Any):
                                     st.write(f"• {name}")
                 else:
                     st.info("Aucune information détaillée sur les structures de santé.")
-                
-                if health_data.sante_rdv_delay:
-                    st.markdown(f"🩺 **Accessibilité Médicale (APL)** : {health_data.sante_rdv_delay:.1f}")
         with c2:
             st.markdown("#### :material/medical_services: Indicateurs Santé")
             render_scores_for_category('sante')
@@ -602,24 +627,45 @@ def show_details_dialog(index: Any):
             st.markdown("#### :material/diversity_3: Indicateurs Inclusion")
             render_scores_for_category('inclusion')
     
+    with tab_mob:
+        c1, c2 = st.columns([1, 1], gap="medium")
+        mob_scores = commune.scores.get('mobilite', [])
+        mob_scores = sorted(mob_scores, key=lambda x: x.score_normalise, reverse=True)
+        mid = (len(mob_scores) + 1) // 2
+        scores_left = mob_scores[:mid]
+        scores_right = mob_scores[mid:]
+        
+        with c1:
+            st.markdown("#### :material/commute: Mobilité")
+            render_scores_for_category('mobilite', scores_list=scores_left)
+        with c2:
+            st.markdown("#### :material/commute: Mobilité")
+            render_scores_for_category('mobilite', scores_list=scores_right)
+            
     with tab_ter:
         c1, c2 = st.columns([1, 1], gap="medium")
         with c1:
-            st.markdown("#### :material/commute: Mobilité")
-            if commune.mobility.mob_dur_share:
-                st.markdown(f"🚲 **Transports Durables** : {commune.mobility.mob_dur_share*100:.1f}%")
-            render_scores_for_category('mobilite')
-        with c2:
-            st.markdown("#### :material/security: Sécurité & Contexte")
+            st.markdown("#### :material/security: Contexte Territorial")
             if commune.territoire.ter_insecurite:
-                st.markdown(f"🛡️ **Indice d'insécurité** : {commune.territoire.ter_insecurite:.1f}")
+                 st.info(f"🚨 **Sécurité** : {commune.territoire.ter_insecurite:.1f} crimes+délits pour 1000 hab. (Moyenne départementale).")
+        with c2:
+            st.markdown("#### :material/security: Indicateurs Territoriaux")
             render_scores_for_category('territoire')
 
 def _result_highlight_callback(index: int) -> None:
     """Callback to handle highlighting a result by its index in the top results."""
     search_results: SearchResultsData = st.session_state.get('search_results')
-    if not search_results or index >= len(search_results.results):
+    if not search_results:
         return
+
+    if index == -1:
+        if not search_results.commune_pressentie:
+            return
+        commune = search_results.commune_pressentie
+    else:
+        if index < 0 or index >= len(search_results.results):
+            return
+        commune = search_results.results[index]
 
     is_highlighted, highlighted_rank = st.session_state.highlighted_result
     
@@ -628,7 +674,6 @@ def _result_highlight_callback(index: int) -> None:
         st.session_state.highlighted_result = [False, None]
         st.session_state.zoom = None
     else:
-        commune = search_results.results[index]
         st.session_state.highlighted_result = [True, index]
         c_pt = maps._get_geom(commune, 'centroid', gdf_context=st.session_state.processed_gdf)
         if c_pt:
@@ -717,6 +762,47 @@ def display_results_list(display_gdf: Optional[pd.DataFrame] = None) -> None:
             if not st.session_state.config.odis_brief:
                 st.session_state.config.odis_brief = bg_res['odis_brief']
                 st.rerun() 
+    # Shortlisted City (Ville Pressentie) Button (Feature F-61)
+    if search_results.commune_pressentie:
+        st.markdown("""
+        <style>
+        [class*="st-key-btn_pressentie"] .stButton button div, [class*="st-key-btn_pressentie"] .stButton button p {
+            justify-content: flex-start !important; 
+            text-align: left !important; 
+            width: 100%;
+        }
+        div[class*="st-key-btn_pressentie"] button {
+            background-color: #F5D819 !important;
+            color: #1B4429 !important;
+            font-weight: bold !important;
+            border: 1px solid #F5D819 !important;
+        }
+        div[class*="st-key-btn_pressentie"] button:hover {
+            background-color: #E2C617 !important;
+            color: #1B4429 !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        p_commune = search_results.commune_pressentie
+        title_p = f"**{p_commune.global_score * 100:.1f}%**  |  {p_commune.name} (Ville Souhaitée)"
+        
+        st.button(
+            title_p,
+            on_click=_result_highlight_callback,
+            args=(-1,),
+            width='stretch',
+            key='btn_pressentie',
+            type='primary',
+            icon=":material/push_pin:",
+            disabled=not is_ready
+        )
+        
+        if is_highlighted and highlighted_rank == -1:
+            _display_result_details(p_commune, is_ready)
+        
+        st.text("Alternatives : ")    
+
     for i, commune in enumerate(search_results.results):
         title = f"**{commune.global_score * 100:.1f}%**  |  {commune.name}"
 

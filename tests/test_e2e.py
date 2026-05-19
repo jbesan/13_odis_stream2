@@ -189,17 +189,7 @@ def run_test_scenario(scenario_id, app_data):
         print(f"DEBUG Scenario {scenario_id}: {scoring_config}")
 
     # 5. Instantiate ScoringEngine
-    # We pass empty global_stats as in the app page
-    engine = scoring.ScoringEngine(
-            df_all_communes=app_data['odis'],
-        df_bv_geo=app_data['bv_geo'],
-        scores_cat=app_data['scores_cat'],
-        incl_index=app_data['incl_index'],
-        associations_data=app_data['associations_data'],
-        formations_data=app_data['formations_data'],
-        codformations_index=app_data['codformations_index'],
-        global_stats={} 
-    )
+    engine = scoring.ScoringEngine.from_app_data(app_data)
 
     # 6. Run the engine
     processed_gdf = engine.run(scoring_config)

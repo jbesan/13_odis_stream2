@@ -127,7 +127,7 @@ def map_ui_config_to_search_criterias(config: SearchCriterias, app_data: Dict[st
         poids_territoire=getattr(config, 'poids_territoire', 0.5)
     )
 
-def launch_background_refiner(search_criterias: SearchCriterias, results_dict_ignored: dict, hash_val: str, top_cities: Optional[list] = None, current_geo: Optional[dict] = None, interaction_id: Optional[str] = None, username: Optional[str] = None):
+def launch_background_refiner(search_criterias: SearchCriterias, results_dict_ignored: dict, hash_val: str, top_cities: Optional[list] = None, current_geo: Optional[dict] = None, commune_pressentie: Optional[dict] = None, interaction_id: Optional[str] = None, username: Optional[str] = None):
     """
     Launches a background thread to generate the REFINER AI briefing and pitches.
     Stores the result in the cached global store.
@@ -174,7 +174,8 @@ def launch_background_refiner(search_criterias: SearchCriterias, results_dict_ig
                 "search_results": {
                     "search_hash": hash_val,
                     "results": top_cities,
-                    "current_geo": current_geo or (top_cities[0] if top_cities else None)
+                    "current_geo": current_geo or (top_cities[0] if top_cities else None),
+                    "commune_pressentie": commune_pressentie
                 } if top_cities else None,
                 "execution_mode": "full_analysis",
                 "interaction_id": interaction_id or "unknown",
@@ -183,6 +184,8 @@ def launch_background_refiner(search_criterias: SearchCriterias, results_dict_ig
             
             from agents.utils import rehydrate_graph_state
             state = rehydrate_graph_state(input_data)
+            logging.info(f"🔍 [REFINER-DEBUG] commune_pressentie in input_data: {commune_pressentie is not None}")
+            logging.info(f"🔍 [REFINER-DEBUG] commune_pressentie in rehydrated state: {state.search_results.commune_pressentie is not None if state.search_results else False}")
             deps = ODISDeps(state=state, client=client)
             model = get_p_model("refiner", client=client)
             
@@ -317,12 +320,15 @@ def launch_post_scoring_tasks(engine: Any, config: Any, search_results: Any, h: 
     # 2. Extract city data for Scorer Agent (using mode='json' for safe cross-thread serialization)
     top_cities_full = [c.model_dump(mode='json') for c in search_results.results]
     current_geo_full = search_results.current_geo.model_dump(mode='json') if search_results.current_geo else None
+    commune_pressentie_full = search_results.commune_pressentie.model_dump(mode='json') if search_results.commune_pressentie else None
     
     # 3. Launch Refiner (AI Briefing & Pitch)
-    launch_background_refiner(config, {}, h, top_cities=top_cities_full, current_geo=current_geo_full, interaction_id=interaction_id, username=username)
+    launch_background_refiner(config, {}, h, top_cities=top_cities_full, current_geo=current_geo_full, commune_pressentie=commune_pressentie_full, interaction_id=interaction_id, username=username)
     
     # 4. Launch Enrichment (Detailed Associations - BQ/RAG)
     target_codgeos = [c['codgeo'] for c in top_cities_full]
+    if commune_pressentie_full:
+        target_codgeos.append(commune_pressentie_full['codgeo'])
     launch_background_enrichment(engine, target_codgeos, h)
     
     # 5. Launch Logging & Telemetry

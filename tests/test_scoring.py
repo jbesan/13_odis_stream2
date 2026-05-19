@@ -908,3 +908,70 @@ class TestOrganizationBoosts:
         assert 'log_loyer_moyen_appt_t1_t2_scaled' not in res2.columns
         assert 'log_loyer_moyen_house_all_scaled' in res2.columns
 
+
+@pytest.mark.unit
+class TestShortlistCity:
+    def test_scoring_with_commune_pressentie(self, sample_data, sample_scores_cat, sample_incl_index, global_stats):
+        """
+        Tests that when a commune_pressentie is set:
+        1. It is explicitly forced to be scored and included in the results payload.
+        2. It is strictly excluded from the Top 5 recommended results list.
+        """
+        # We will use '33063' (Bordeaux) as commune_actuelle
+        # We will set '64445' (Pau) as commune_pressentie (shortlisted city)
+        config = SearchCriterias(
+             commune_actuelle=CriteriaItem(code='33063', label='Bordeaux'),
+             commune_pressentie=CriteriaItem(code='64445', label='Pau'),
+             loc_search_area='departement', # Restricts search to Gironde (33)
+             loc_search_code=['33'],
+             poids_emploi=1.0,
+             poids_logement=1.0,
+             poids_education=0.0,
+             poids_sante=0.0,
+             poids_inclusion=0.0,
+             poids_mobilite=0.0,
+             nb_adultes=1,
+             nb_enfants=0,
+             hebergement_cible=[],
+             logement='Location',
+             codes_metiers=[[]],
+             codes_formations=[[]],
+             classe_enfants=[],
+             besoin_sante='Aucun',
+             inc_services_add_selection=[],
+             inc_services_core_selection=[],
+             inc_asso_add_selection=[],
+             criteria_weights={}
+        )
+
+        engine = scoring.ScoringEngine(
+            df_all_communes=sample_data,
+            df_bv_geo=gpd.GeoDataFrame(),
+            scores_cat=sample_scores_cat,
+            incl_index=sample_incl_index,
+            associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']),
+            formations_data=pd.DataFrame(columns=['codgeo', 'formation_code']),
+            codformations_index=pd.DataFrame(columns=['label']),
+            global_stats=global_stats
+        )
+
+        # 1. Run scoring
+        processed_gdf = engine.run(config)
+
+        # Bordeaux is current city (33063). Pau is commune_pressentie (64445).
+        # In department mode '33', only Bordeaux would naturally be in the candidate list.
+        # But we force-score commune_pressentie, so Pau (64445) MUST be in processed_gdf.index!
+        assert '64445' in processed_gdf.index, "Shortlisted city must be scored even if outside the search area"
+
+        # 2. Test results payload creation
+        results_data = engine.create_search_results(processed_gdf, config)
+
+        # The commune_pressentie field in SearchResultsData must hold Pau (64445)
+        assert results_data.commune_pressentie is not None
+        assert results_data.commune_pressentie.codgeo == '64445'
+
+        # The results list (Top 5) must NOT contain Pau (64445)
+        top5_codes = [c.codgeo for c in results_data.results]
+        assert '64445' not in top5_codes, "Shortlisted city must be strictly excluded from the Top 5 recommended results"
+
+
