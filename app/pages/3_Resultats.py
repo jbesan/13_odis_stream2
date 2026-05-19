@@ -345,10 +345,14 @@ with col_map:
             
         selected_ids = {obj["id"] for obj in selected_objs} if selected_objs else set()
         legend_items = [{'color': 'red', 'text': 'Top 5', 'icon':'circle'}]
+        if search_results and search_results.commune_pressentie:
+            legend_items.append({'color': 'yellow', 'text': 'Ville Pressentie'})
 
         # C. POI & Top 5 Rendering
         if config and search_results:
             target_codgeos = {str(c.codgeo) for c in search_results.results}
+            if search_results.commune_pressentie:
+                target_codgeos.add(str(search_results.commune_pressentie.codgeo))
             
             if "edu" in selected_ids:
                 maps.build_ecoles_layer(data_loader.get_app_data()['pois'], target_codgeos, config).add_to(fg_dynamic)
@@ -366,10 +370,16 @@ with col_map:
             if show_top_5:
                 for i, commune_result in enumerate(search_results.results[:5]):
                     maps.build_top_result_layer(commune_result, i, gdf_context=st.session_state.processed_gdf).add_to(fg_dynamic)
+                if search_results.commune_pressentie:
+                    maps.build_top_result_layer(search_results.commune_pressentie, -1, gdf_context=st.session_state.processed_gdf).add_to(fg_dynamic)
 
             if is_highlighted:
-                commune_result = search_results.results[highlighted_index]
-                maps.build_top_result_layer(commune_result, highlighted_index, gdf_context=st.session_state.processed_gdf).add_to(fg_dynamic)
+                if highlighted_index == -1:
+                    commune_result = search_results.commune_pressentie
+                else:
+                    commune_result = search_results.results[highlighted_index]
+                if commune_result:
+                    maps.build_top_result_layer(commune_result, highlighted_index, gdf_context=st.session_state.processed_gdf).add_to(fg_dynamic)
 
         # 4. Legend Rendering
         if legend_items:

@@ -95,13 +95,13 @@
       }
     },
     "ingest_all": {
-      "status": "COMPLETED",
-      "timestamp": "2026-05-18T16:31:53.643845",
+      "status": "STARTED",
+      "timestamp": "2026-05-19T11:13:41.723772",
       "details": {}
     },
     "clean_communes": {
       "status": "COMPLETED",
-      "timestamp": "2026-05-18T16:30:57.403458",
+      "timestamp": "2026-05-19T11:13:42.353184",
       "details": {
         "path": "pipeline/cache/clean/communes.parquet"
       }
@@ -116,42 +116,42 @@
     },
     "clean_population": {
       "status": "COMPLETED",
-      "timestamp": "2026-05-18T16:30:59.076215",
+      "timestamp": "2026-05-19T11:13:43.923712",
       "details": {
         "path": "pipeline/cache/clean/population.parquet"
       }
     },
     "clean_population_active": {
       "status": "COMPLETED",
-      "timestamp": "2026-05-18T16:31:04.161194",
+      "timestamp": "2026-05-19T11:13:50.430514",
       "details": {
         "path": "pipeline/cache/clean/population_active.parquet"
       }
     },
     "clean_lovac": {
       "status": "COMPLETED",
-      "timestamp": "2026-05-18T16:31:04.448164",
+      "timestamp": "2026-05-19T11:13:50.699781",
       "details": {
         "rows": 34912
       }
     },
     "clean_rpls": {
       "status": "COMPLETED",
-      "timestamp": "2026-05-18T16:31:07.451133",
+      "timestamp": "2026-05-19T11:13:53.637381",
       "details": {
         "path": "pipeline/cache/clean/rpls.parquet"
       }
     },
     "clean_caf": {
       "status": "COMPLETED",
-      "timestamp": "2026-05-18T16:31:07.524196",
+      "timestamp": "2026-05-19T11:13:53.686676",
       "details": {
         "path": "pipeline/cache/clean/caf.parquet"
       }
     },
     "clean_education": {
       "status": "COMPLETED",
-      "timestamp": "2026-05-18T16:31:07.669885",
+      "timestamp": "2026-05-19T11:13:53.832448",
       "details": {
         "path": "pipeline/cache/clean/education.parquet"
       }
@@ -165,11 +165,9 @@
       }
     },
     "clean_associations": {
-      "status": "COMPLETED",
-      "timestamp": "2026-05-18T16:31:12.132448",
-      "details": {
-        "path": "pipeline/cache/clean/associations_vertical.parquet"
-      }
+      "status": "STARTED",
+      "timestamp": "2026-05-19T11:13:53.833103",
+      "details": {}
     },
     "build_communes": {
       "status": "CREATED",
@@ -303,7 +301,7 @@
     },
     "clean_services_inclusion": {
       "status": "COMPLETED",
-      "timestamp": "2026-05-18T16:30:58.265258",
+      "timestamp": "2026-05-19T11:13:43.144529",
       "details": {
         "path": "pipeline/cache/clean/services_inclusion.parquet",
         "rows": 234090
@@ -311,7 +309,7 @@
     },
     "clean_structures_inclusion": {
       "status": "COMPLETED",
-      "timestamp": "2026-05-18T16:30:58.645776",
+      "timestamp": "2026-05-19T11:13:43.504625",
       "details": {
         "path": "pipeline/cache/clean/structures_inclusion.parquet",
         "rows": 13093
@@ -472,12 +470,12 @@
   "sources": {
     "communes": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.765422",
+      "timestamp": "2026-05-19T11:13:41.725696",
       "file": "pipeline/cache/raw/communes.geojson"
     },
     "population": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.766338",
+      "timestamp": "2026-05-19T11:13:41.726522",
       "file": "pipeline/cache/raw/population.xlsx"
     },
     "voisins": {
@@ -487,32 +485,32 @@
     },
     "bassins_de_vie": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.767150",
+      "timestamp": "2026-05-19T11:13:41.727299",
       "file": "pipeline/cache/raw/bassins_de_vie.zip"
     },
     "services_inclusion": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.767945",
+      "timestamp": "2026-05-19T11:13:41.728095",
       "file": "pipeline/cache/raw/services_inclusion.parquet"
     },
     "associations": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.769603",
+      "timestamp": "2026-05-19T11:13:41.729753",
       "file": "pipeline/cache/raw/associations.parquet"
     },
     "logement_vacant": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.770265",
+      "timestamp": "2026-05-19T11:13:41.730501",
       "file": "pipeline/cache/raw/logement_vacant.csv"
     },
     "logement_social": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.771582",
+      "timestamp": "2026-05-19T11:13:41.731870",
       "file": "pipeline/cache/raw/logement_social.xlsx"
     },
     "maternites": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.772280",
+      "timestamp": "2026-05-19T11:13:41.732540",
       "file": "pipeline/cache/raw/maternites_drees.json"
     },
     "bmo_rome": {
@@ -522,17 +520,17 @@
     },
     "caf": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.775422",
+      "timestamp": "2026-05-19T11:13:41.735197",
       "file": "pipeline/cache/raw/caf_taux_couverture.json"
     },
     "education_effectifs": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.776480",
+      "timestamp": "2026-05-19T11:13:41.735854",
       "file": "pipeline/cache/raw/education_effectifs.parquet"
     },
     "education_annuaire": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.777126",
+      "timestamp": "2026-05-19T11:13:41.736516",
       "file": "pipeline/cache/raw/education_annuaire.parquet"
     },
     "formations": {
@@ -542,27 +540,27 @@
     },
     "finess_national": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.779685",
+      "timestamp": "2026-05-19T11:13:41.739026",
       "file": "pipeline/cache/raw/finess_national.parquet"
     },
     "rome": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.780286",
+      "timestamp": "2026-05-19T11:13:41.739654",
       "file": "pipeline/cache/raw/rome.zip"
     },
     "population_active": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.781487",
+      "timestamp": "2026-05-19T11:13:41.740908",
       "file": "pipeline/cache/raw/population_active.zip"
     },
     "bmo": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.772978",
+      "timestamp": "2026-05-19T11:13:41.733212",
       "file": "pipeline/cache/raw/bmo_2025.xlsx"
     },
     "communes_bassins_emploi": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.773716",
+      "timestamp": "2026-05-19T11:13:41.733872",
       "file": "pipeline/cache/raw/communes_bassins_emploi_2021.xlsx"
     },
     "referentiel_fap": {
@@ -572,37 +570,37 @@
     },
     "political_nuance": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.768743",
+      "timestamp": "2026-05-19T11:13:41.728848",
       "file": "pipeline/cache/raw/political_nuance.csv"
     },
     "housing_occupation": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.770920",
+      "timestamp": "2026-05-19T11:13:41.731180",
       "file": "pipeline/cache/raw/housing_occupation.zip"
     },
     "codes_postaux": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.777772",
+      "timestamp": "2026-05-19T11:13:41.737133",
       "file": "pipeline/cache/raw/codes_postaux.parquet"
     },
     "formations_annuaire": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.778416",
+      "timestamp": "2026-05-19T11:13:41.737755",
       "file": "pipeline/cache/raw/formations_annuaire.csv"
     },
     "formations_referentiel": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.779060",
+      "timestamp": "2026-05-19T11:13:41.738389",
       "file": "pipeline/cache/raw/formations_referentiel.xlsx"
     },
     "referentiel_services_inclusion": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.782091",
+      "timestamp": "2026-05-19T11:13:41.741524",
       "file": "pipeline/cache/raw/referentiel_services_inclusion.csv"
     },
     "bpe": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.780887",
+      "timestamp": "2026-05-19T11:13:41.740302",
       "file": "pipeline/cache/raw/BPE24.parquet"
     },
     "epci_mapping": {
@@ -617,32 +615,32 @@
     },
     "loyers_apparts": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.782686",
+      "timestamp": "2026-05-19T11:13:41.742132",
       "file": "pipeline/cache/raw/loyers_apparts_2023.csv"
     },
     "structures_inclusion": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.783286",
+      "timestamp": "2026-05-19T11:13:41.742714",
       "file": "pipeline/cache/raw/structures_inclusion.parquet"
     },
     "population_details": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.783878",
+      "timestamp": "2026-05-19T11:13:41.743285",
       "file": "pipeline/cache/raw/population_details.zip"
     },
     "nomenclature_waldec": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.774651",
+      "timestamp": "2026-05-19T11:13:41.734538",
       "file": "pipeline/cache/raw/nomenclature_waldec.json"
     },
     "regions_ref": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.784480",
+      "timestamp": "2026-05-19T11:13:41.743856",
       "file": "pipeline/cache/raw/referentiel_regions.json"
     },
     "departements_ref": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.785088",
+      "timestamp": "2026-05-19T11:13:41.744415",
       "file": "pipeline/cache/raw/referentiel_departements.json"
     },
     "fap_rome_mapping": {
@@ -662,7 +660,7 @@
     },
     "mob_transports_pub": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.785658",
+      "timestamp": "2026-05-19T11:13:41.744971",
       "file": "pipeline/cache/raw/mob_transports_pub.parquet"
     },
     "odace_ref_logement_profil": {
@@ -672,22 +670,22 @@
     },
     "logement_social_delay": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.786218",
+      "timestamp": "2026-05-19T11:13:41.745534",
       "file": "pipeline/cache/raw/logement_social_delay_ush.xlsx"
     },
     "sante_apl": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.786775",
+      "timestamp": "2026-05-19T11:13:41.746091",
       "file": "pipeline/cache/raw/sante_apl_drees.xlsx"
     },
     "mob_durable_share": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.787327",
+      "timestamp": "2026-05-19T11:13:41.746650",
       "file": "pipeline/cache/raw/mob_durable_share_ecolab.csv"
     },
     "ter_insecurite": {
       "status": "CACHED",
-      "timestamp": "2026-05-18T16:30:56.787877",
+      "timestamp": "2026-05-19T11:13:41.747209",
       "file": "pipeline/cache/raw/ter_insecurite_ssmsi.parquet"
     }
   }

@@ -365,6 +365,50 @@ def render_mobility_form() -> None:
     st.session_state["ui_target_population"] = mapping["mu"]
     st.session_state["ui_target_population_sigma"] = mapping["sigma"]
 
+    st.divider()
+    
+    st.markdown("**Une idée de ville en tête ?**")
+    has_pressentie = st.checkbox(
+        "Je souhaite comparer les résultats avec une ville pressentie",
+        key="ui_has_commune_pressentie",
+        value=st.session_state.get("ui_has_commune_pressentie", False),
+        help="Permet d'évaluer et de comparer une ville spécifique en dehors du Top 5."
+    )
+    
+    if has_pressentie:
+        # Get top 100 communes by population
+        odis_df = app_data['odis']
+        top_100 = odis_df.dropna(subset=['population', 'libgeo']).sort_values(by='population', ascending=False).head(500)
+        communes_list = []
+        for codgeo, row in top_100.iterrows():
+            dep = row.get('dep_code', '')
+            label = f"{row['libgeo']} ({dep})"
+            communes_list.append((str(codgeo), label))
+        communes_list.sort(key=lambda x: x[1])
+        
+        # Default value index
+        current_val = st.session_state.get("ui_commune_pressentie")
+        default_index = 0
+        if current_val:
+            curr_code = current_val.code if hasattr(current_val, 'code') else current_val
+            for idx, (code, _) in enumerate(communes_list):
+                if code == curr_code:
+                    default_index = idx
+                    break
+        
+        selected_pair = st.selectbox(
+            "Ville pressentie",
+            options=communes_list,
+            format_func=lambda x: x[1],
+            index=default_index,
+            key="ui_commune_pressentie_pair",
+            help="Sélectionnez la ville avec laquelle vous souhaitez comparer les résultats."
+        )
+        if selected_pair:
+            st.session_state["ui_commune_pressentie"] = selected_pair[0]
+    else:
+        st.session_state["ui_commune_pressentie"] = None
+
     
 def render_org_profile_form() -> None:
     """Renders the organization-specific preamble component (F-54)."""
@@ -630,6 +674,13 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
     
     commune_actuelle = CriteriaItem(code=str(commune_codgeo), label=str(commune_lib))
 
+    # Shortlisted city
+    commune_pressentie = None
+    if st.session_state.get('ui_has_commune_pressentie') and st.session_state.get('ui_commune_pressentie'):
+        p_code = st.session_state.get('ui_commune_pressentie')
+        p_lib = app_data['odis'].loc[p_code, 'libgeo'] if p_code in app_data['odis'].index else p_code
+        commune_pressentie = CriteriaItem(code=str(p_code), label=str(p_lib))
+
     # New Mobility Logic (F-53)
     if st.session_state.get('ui_france_search'):
         loc_search_area = 'france'
@@ -800,6 +851,7 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
         target_population_sigma=target_sigma,
         
         commune_actuelle=commune_actuelle,
+        commune_pressentie=commune_pressentie,
         loc_search_area=loc_search_area,
         loc_search_code=loc_search_code,
         nb_adultes=nb_adultes,

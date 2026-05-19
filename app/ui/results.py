@@ -456,7 +456,7 @@ def show_details_dialog(index: Any):
             st.markdown("<br>", unsafe_allow_html=True) # Minor spacing
 
     # --- Tabs ---
-    tab_emploi, tab_logement, tab_edu, tab_sante, tab_vie = st.tabs([
+    tab_emploi, tab_logement, tab_edu, tab_sante, tab_vie, tab_ter = st.tabs([
         "💼 Emploi & Formation", 
         "🏠 Logement", 
         "🎓 Éducation", 
@@ -527,6 +527,7 @@ def show_details_dialog(index: Any):
             render_scores_for_category('logement')
         with c1:
             st.markdown("#### :material/info: Données Complémentaires")
+            j_count = housing_data.host_count
             if j_count > 0:
                  st.info(f"**{int(j_count)} accueillants** J'Accueille identifiés dans le bassin de vie.")
             
@@ -618,8 +619,17 @@ def show_details_dialog(index: Any):
 def _result_highlight_callback(index: int) -> None:
     """Callback to handle highlighting a result by its index in the top results."""
     search_results: SearchResultsData = st.session_state.get('search_results')
-    if not search_results or index >= len(search_results.results):
+    if not search_results:
         return
+
+    if index == -1:
+        if not search_results.commune_pressentie:
+            return
+        commune = search_results.commune_pressentie
+    else:
+        if index < 0 or index >= len(search_results.results):
+            return
+        commune = search_results.results[index]
 
     is_highlighted, highlighted_rank = st.session_state.highlighted_result
     
@@ -628,7 +638,6 @@ def _result_highlight_callback(index: int) -> None:
         st.session_state.highlighted_result = [False, None]
         st.session_state.zoom = None
     else:
-        commune = search_results.results[index]
         st.session_state.highlighted_result = [True, index]
         c_pt = maps._get_geom(commune, 'centroid', gdf_context=st.session_state.processed_gdf)
         if c_pt:
@@ -717,6 +726,42 @@ def display_results_list(display_gdf: Optional[pd.DataFrame] = None) -> None:
             if not st.session_state.config.odis_brief:
                 st.session_state.config.odis_brief = bg_res['odis_brief']
                 st.rerun() 
+    # Shortlisted City (Ville Pressentie) Button (Feature F-61)
+    if search_results.commune_pressentie:
+        st.markdown('<style> [class*="st-key-btn_pressentie"] .stButton button div, [class*="st-key-btn_pressentie"] .stButton button p { justify-content: flex-start !important; text-align: left !important; width: 100%; } </style>', unsafe_allow_html=True)
+        st.markdown("""
+        <style>
+        div[class*="st-key-btn_pressentie"] button {
+            background-color: #F5D819 !important;
+            color: #1B4429 !important;
+            font-weight: bold !important;
+            border: 1px solid #F5D819 !important;
+        }
+        div[class*="st-key-btn_pressentie"] button:hover {
+            background-color: #E2C617 !important;
+            color: #1B4429 !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        p_commune = search_results.commune_pressentie
+        title_p = f"**{p_commune.global_score * 100:.1f}%**  |  {p_commune.name} (Ville Pressentie)"
+        
+        st.button(
+            title_p,
+            on_click=_result_highlight_callback,
+            args=(-1,),
+            width='stretch',
+            key='btn_pressentie',
+            type='primary',
+            icon=":material/push_pin:",
+            disabled=not is_ready
+        )
+        
+        if is_highlighted and highlighted_rank == -1:
+            _display_result_details(p_commune, is_ready)
+        st.space()
+
     for i, commune in enumerate(search_results.results):
         title = f"**{commune.global_score * 100:.1f}%**  |  {commune.name}"
 

@@ -90,3 +90,23 @@ Liste en vrac d'idées d'amélioration
 ### 📊 Status
 - **May 2026**: Complete. Fully integrated, tested (100% green pytest suite), and E2E snapshots updated.
 
+---
+
+## 🚀 Feature [F-61]: Comparaison avec une Ville Pressentie
+
+### 📝 User Story
+- En tant que travailleur social, je veux pouvoir indiquer une commune spécifique ("ville pressentie") en amont de ma recherche afin de pouvoir la comparer aux 5 communes recommandées ainsi qu'à la commune actuelle de résidence, indépendamment de son score brut.
+- En tant qu'utilisateur, je veux voir cette ville pressentie affichée en tête de ma liste de résultats avec une coloration distinctive (jaune "J'accueille") afin de faciliter la discussion comparative avec le bénéficiaire.
+
+### 🔑 Key Features
+- **Form Selection UI**: Une case à cocher "Une idée de ville en tête ?" (décochée par défaut) dans l'onglet **Localisation / Zone de recherche**, qui dévoile un sélecteur unique des 100 villes les plus peuplées de France.
+- **Scoring Integration**: La ville pressentie est injectée dans `SearchCriterias.commune_pressentie` et est explicitement forcée dans la liste des communes évaluées par le `ScoringEngine`, lui appliquant les mêmes pondérations pour une comparaison radar intègre.
+- **Distinctive UI Presentation**:
+  - Affichée tout en haut de la liste de résultats (avant le Top 5) avec un style spécifique (fond jaune `#F5D819`, texte sombre `#1B4429`).
+  - Si elle fait partie du Top 5 naturel, elle reste à son rang de classement naturel dans le Top 5 mais adopte cette même charte graphique distinctive jaune/noire.
+- **AI & Context Grounding**:
+  - `SearchResultsData.commune_pressentie` stocke le résultat de scoring complet de la ville pressentie.
+  - Le `Refiner` reçoit les métriques complètes de la ville pressentie pour générer un pitch comparatif ciblé s'il n'est pas déjà dans le Top 5.
+  - La ville pressentie bénéficie de l'activation des agents experts d'analyse avancée et de l'export PDF.
+
+

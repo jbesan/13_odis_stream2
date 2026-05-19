@@ -25,6 +25,7 @@ class SearchCriterias(BaseModel):
     This model forces the use of enriched items (CriteriaItem) for key fields.
     """
     commune_actuelle: Optional[CriteriaItem] = Field(None, description="Commune actuelle de résidence", json_schema_extra={"odis_visibility": ["all"]})
+    commune_pressentie: Optional[CriteriaItem] = Field(None, description="Commune pressentie à titre de comparaison", json_schema_extra={"odis_visibility": ["all"]})
     loc_search_area: str = Field("", description="Zone de recherche (département, région, France)", json_schema_extra={"odis_visibility": ["all"]})
     loc_search_code: List[str] = Field(default_factory=list, description="Codes géographiques de la zone de recherche", json_schema_extra={"odis_visibility": ["all"]})
     
@@ -119,7 +120,7 @@ class SearchCriterias(BaseModel):
             return v
             
         fields_to_fix = [
-            'commune_actuelle', 'codes_metiers', 'codes_formations', 
+            'commune_actuelle', 'commune_pressentie', 'codes_metiers', 'codes_formations', 
             'inc_services_add_selection', 'inc_asso_add_selection', 
             'inc_services_core_selection', 'type_logement'
         ]
@@ -291,10 +292,15 @@ class SearchResultsData(BaseModel):
     search_hash: str = Field(description="MD5 hash of the criteria used", json_schema_extra={"odis_visibility": ["all"]})
     results: List[CommuneResult] = Field(default_factory=list, description="Top recommended communes in rank order", json_schema_extra={"odis_visibility": ["all"]})
     current_geo: CommuneResult = Field(..., description="Reference data for the user current location", json_schema_extra={"odis_visibility": ["all"]})
+    commune_pressentie: Optional[CommuneResult] = Field(None, description="Données de la commune pressentie", json_schema_extra={"odis_visibility": ["all"]})
     global_pitch: str = Field(default="", description="Global introduction from Scorer Agent", json_schema_extra={"odis_visibility": ["all"]})
     
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 
     def get_by_code(self, codgeo: str) -> Optional[CommuneResult]:
         """Helper to find a result by its INSEE code."""
+        if self.commune_pressentie and self.commune_pressentie.codgeo == codgeo:
+            return self.commune_pressentie
+        if self.current_geo and self.current_geo.codgeo == codgeo:
+            return self.current_geo
         return next((c for c in self.results if c.codgeo == codgeo), None)

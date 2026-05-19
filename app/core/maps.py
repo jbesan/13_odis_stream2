@@ -167,19 +167,22 @@ def _get_geom(row: Union[pd.Series, Any], field: str = 'polygon', gdf_context: O
     return None
 
 def build_top_result_layer(row: Union[pd.Series, Any], rank: int, gdf_context: Optional[pd.DataFrame] = None) -> flm.FeatureGroup:
-    """Builds a FeatureGroup to highlight a single top result (commune + binome)."""
-    fg = flm.FeatureGroup(name=f"Top {rank + 1}")
+    """Builds a FeatureGroup to highlight a single top result (commune + binome) or shortlisted city (rank=-1)."""
+    is_pressentie = (rank == -1)
+    fg_name = "Ville Pressentie" if is_pressentie else f"Top {rank + 1}"
+    fg = flm.FeatureGroup(name=fg_name)
 
     poly = _get_geom(row, 'polygon', gdf_context=gdf_context)
     if poly is None:
-        logging.warning(f"No polygon found for Top {rank+1}")
+        logging.warning(f"No polygon found for {fg_name}")
         return fg
 
-    # Main commune outline
-    # 🧪 SOTA: Standardized in 4326 already
+    # Outline color: yellow #F5D819 for pressentie, red for top 5
+    border_color = "#F5D819" if is_pressentie else "red"
+
     flm.GeoJson(
         mapping(poly),
-        style_function=lambda x: {"color": "red", "fillOpacity": 0, "weight": 3}
+        style_function=lambda x: {"color": border_color, "fillOpacity": 0, "weight": 3}
     ).add_to(fg)
 
 
@@ -190,12 +193,28 @@ def build_top_result_layer(row: Union[pd.Series, Any], rank: int, gdf_context: O
 
     cx, cy = c.x, c.y # Longitude, Latitude
     
+    if is_pressentie:
+        # Yellow background, premium Material Design push_pin SVG
+        marker_html = """
+        <div style="background-color: #F5D819; border: 2px solid #1B4429; border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 5px rgba(0,0,0,0.3);">
+            <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="#1B4429">
+                <path d="m640-480 80 80v80H520v240l-40 40-40-40v-240H240v-80l80-80v-280h-40v-80h400v80h-40v280Z"/>
+            </svg>
+        </div>
+        """
+        icon_size = (32, 32)
+        icon_anchor = (16, 16)
+    else:
+        marker_html = f'<div style="font-size: 12pt; font-weight: bold; color: white; background-color: #D63E2A; border-radius: 50%; text-align: center; line-height: 25px;">{rank + 1}</div>'
+        icon_size = (25, 25)
+        icon_anchor = (12, 12)
+
     flm.Marker(
         location=[cy, cx], # Folium expects [lat, lon]
         icon=flm.features.DivIcon(
-            icon_size=(25, 25),
-            icon_anchor=(12, 12),
-            html=f'<div style="font-size: 12pt; font-weight: bold; color: white; background-color: #D63E2A; border-radius: 50%; text-align: center; line-height: 25px;">{rank + 1}</div>',
+            icon_size=icon_size,
+            icon_anchor=icon_anchor,
+            html=marker_html,
         )
     ).add_to(fg)
         
@@ -226,7 +245,7 @@ def build_legend(items_list: List[Dict[str, str]]) -> str:
     """Builds an HTML legend for the map."""
     leaflet_colors = {
         "red": "#D63E2A", "blue": "#38A9DC", "green": "#72B026", "purple": "#5B396B",
-        "orange": "#F69730", "grey": "#A3A3A3"
+        "orange": "#F69730", "grey": "#A3A3A3", "yellow": "#F5D819"
     }
     
     legend_html = """
