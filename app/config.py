@@ -194,7 +194,7 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     'poids_inclusion': 0.5,
     'poids_mobilite': 0.5,
     'poids_sante': 0.5,
-    'poids_territoire': 0.5,
+    'poids_territoire': 1.0,
     'departement_actuel': '33',
     'commune_actuelle': 'Bordeaux',
     'loc_search_area': 'departement',

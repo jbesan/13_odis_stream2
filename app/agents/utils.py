@@ -124,7 +124,7 @@ def map_ui_config_to_search_criterias(config: SearchCriterias, app_data: Dict[st
         org_context=getattr(config, 'org_context', None),
         org_strategic_locations=getattr(config, 'org_strategic_locations', []),
         org_strategic_locations_type=getattr(config, 'org_strategic_locations_type', 'departement'),
-        poids_territoire=getattr(config, 'poids_territoire', 0.5)
+        poids_territoire=getattr(config, 'poids_territoire', 1.0)
     )
 
 def launch_background_refiner(search_criterias: SearchCriterias, results_dict_ignored: dict, hash_val: str, top_cities: Optional[list] = None, current_geo: Optional[dict] = None, commune_pressentie: Optional[dict] = None, interaction_id: Optional[str] = None, username: Optional[str] = None):
