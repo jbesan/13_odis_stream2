@@ -29,13 +29,15 @@ def extract_polygonal(geom):
 
 from pipeline.common import (
     PipelineLogger, load_config, load_dataset,
-    PipelineLogger, load_config, load_dataset,
     CONFIG_FILE, CACHE_DIR, CLEAN_DIR, OUTPUT_DIR, STATUS_FILE
 )
 import app.config as cfg
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# Constants
+PLM_ARRONDISSEMENTS = [str(x) for x in range(75101, 75121)] + \
+                      [str(x) for x in range(13201, 13217)] + \
+                      [str(x) for x in range(69381, 69390)]
+
 
 def consolidate_plm_communes(df: pd.DataFrame) -> pd.DataFrame:
     """Consolidates PLM arrondissements metrics to parent codes."""
@@ -708,8 +710,7 @@ def build_vertical_tables(config: Dict[str, Any], logger: PipelineLogger):
         if assoc_path.exists():
             df = pd.read_parquet(assoc_path, engine='fastparquet')
             df = consolidate_plm_vertical(df, 'codgeo', ['id_waldec'], 'count')
-            plm_arr = [str(x) for x in range(75101, 75121)] + [str(x) for x in range(13201, 13217)] + [str(x) for x in range(69381, 69390)]
-            df = df[~df['codgeo'].isin(plm_arr)].copy()
+            df = df[~df['codgeo'].isin(PLM_ARRONDISSEMENTS)].copy()
             out = OUTPUT_DIR / "odis_associations_agg.parquet"
             df.to_parquet(out, compression='brotli', index=False, engine='fastparquet')
             logger.log_step("build_vertical_tables", "ASSOCIATIONS", {"path": str(out)})
@@ -720,8 +721,7 @@ def build_vertical_tables(config: Dict[str, Any], logger: PipelineLogger):
              df = pd.read_parquet(struct_path, engine='fastparquet')
              parent_bdvs = {'75056': '75056', '13055': '13055', '69123': '69123'}
              df = consolidate_plm_detail_list(df, 'codgeo', parent_bdvs)
-             plm_arr = [str(x) for x in range(75101, 75121)] + [str(x) for x in range(13201, 13217)] + [str(x) for x in range(69381, 69390)]
-             df = df[~df['codgeo'].isin(plm_arr)].copy()
+             df = df[~df['codgeo'].isin(PLM_ARRONDISSEMENTS)].copy()
              out = OUTPUT_DIR / "odis_ccas.parquet"
              df.to_parquet(out, compression='brotli', index=False, engine='fastparquet')
              logger.log_step("build_vertical_tables", "STRUCTURES", {"path": str(out)})
@@ -732,8 +732,7 @@ def build_vertical_tables(config: Dict[str, Any], logger: PipelineLogger):
             df = pd.read_parquet(form_path, engine='fastparquet')
             df_agg = df.groupby(['codgeo', 'formation_code']).size().rename('count').reset_index()
             df_agg = consolidate_plm_vertical(df_agg, 'codgeo', ['formation_code'], 'count')
-            plm_arr = [str(x) for x in range(75101, 75121)] + [str(x) for x in range(13201, 13217)] + [str(x) for x in range(69381, 69390)]
-            df_agg = df_agg[~df_agg['codgeo'].isin(plm_arr)].copy()
+            df_agg = df_agg[~df_agg['codgeo'].isin(PLM_ARRONDISSEMENTS)].copy()
             
             out = OUTPUT_DIR / "odis_formations_agg.parquet"
             df_agg.to_parquet(out, compression='brotli', index=False, engine='fastparquet')
@@ -745,8 +744,7 @@ def build_vertical_tables(config: Dict[str, Any], logger: PipelineLogger):
              df = pd.read_parquet(refug_path, engine='fastparquet')
              parent_bdvs = {'75056': '75056', '13055': '13055', '69123': '69123'}
              df = consolidate_plm_detail_list(df, 'codgeo', parent_bdvs)
-             plm_arr = [str(x) for x in range(75101, 75121)] + [str(x) for x in range(13201, 13217)] + [str(x) for x in range(69381, 69390)]
-             df = df[~df['codgeo'].isin(plm_arr)].copy()
+             df = df[~df['codgeo'].isin(PLM_ARRONDISSEMENTS)].copy()
              out = OUTPUT_DIR / "odis_refugee_associations.parquet"
              df.to_parquet(out, compression='brotli', index=False, engine='fastparquet')
              logger.log_step("build_vertical_tables", "REFUGEE_ASSOCIATIONS", {"path": str(out)})
@@ -999,8 +997,7 @@ def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
             if 'codgeo' in all_pois.columns:
                 parent_bdvs = {'75056': '75056', '13055': '13055', '69123': '69123'}
                 all_pois = consolidate_plm_detail_list(all_pois, 'codgeo', parent_bdvs)
-                plm_arr = [str(x) for x in range(75101, 75121)] + [str(x) for x in range(13201, 13217)] + [str(x) for x in range(69381, 69390)]
-                all_pois = all_pois[~all_pois['codgeo'].isin(plm_arr)].copy()
+                all_pois = all_pois[~all_pois['codgeo'].isin(PLM_ARRONDISSEMENTS)].copy()
             
             # Optimize types
             all_pois['category'] = all_pois['category'].astype('category')
@@ -1226,9 +1223,7 @@ def main(argv=None):
                 else:
                     steps_map[step_name](config, logger)
             except Exception as e:
-                print(f"ERROR running build step {step_name}: {e}")
-                import traceback
-                traceback.print_exc()
+                logging.exception(f"❌ [BUILD FAILURE] Error running build step '{step_name}'")
         else:
             logging.warning(f"Unknown build step: {step_name}")
 

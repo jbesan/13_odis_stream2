@@ -22,8 +22,7 @@ from pipeline.odace_client import get_odace_client
 from pipeline.ft_live_ingest import run_etl, get_token as get_ft_token
 from pipeline.emplois_inclusion_ingest import run_ingestion as run_inclusion_ingest
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
 
 def fetch_source(name: str, source_cfg: Dict[str, Any], logger: PipelineLogger) -> Optional[Path]:
     """Downloads and prepares a single source with caching, metadata checks, and staging."""
@@ -336,33 +335,6 @@ def clean_rpls(config: Dict[str, Any], logger: PipelineLogger):
         output_path = CLEAN_DIR / "rpls.parquet"
         df_out.to_parquet(output_path, engine='fastparquet')
         logger.log_step("clean_rpls", "COMPLETED", {"path": str(output_path)})
-
-def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
-    """Extracts points of interest and aggregated counts from BPE."""
-    output_heb_cols = CLEAN_DIR / "bpe_hebergement_cols.parquet"
-    output_creches_cols = CLEAN_DIR / "bpe_petite_enfance_cols.parquet"
-    output_pois = CLEAN_DIR / "bpe_pois.parquet"
-
-    # 1-Year TTL Check for hebergement part
-    heb_needs_refresh = True
-    if output_heb_cols.exists():
-        mtime = datetime.fromtimestamp(output_heb_cols.stat().st_mtime)
-        age_days = (datetime.now() - mtime).days
-        if age_days < 365:
-            logging.info(f"[BPE] Hebergement stats are {age_days} days old. Cache is valid (TTL=1 year).")
-            heb_needs_refresh = False
-
-    if not heb_needs_refresh and output_creches_cols.exists() and output_pois.exists():
-        logging.info("[BPE] All BPE outputs are within TTL. Skipping.")
-        return
-
-    logger.log_step("clean_bpe", "STARTED")
-    source = config['sources']['bpe']
-    path = CACHE_DIR / source['local_name']
-    if not path.exists(): return
-
-    df = load_dataset(path, source)
-    df.columns = [c.strip() for c in df.columns]
 
 def clean_caf(config: Dict[str, Any], logger: PipelineLogger):
     """Cleans CAF and saves to parquet."""
@@ -1450,6 +1422,19 @@ def clean_live_jobs(config: Dict[str, Any], logger: PipelineLogger, skip: bool =
     else:
         logger.log_step("clean_live_jobs", "SKIPPED")
 
+class MutedPipelineLogger:
+    """Wrapper to prevent duplicate log_step calls from inside individual clean_* cleaners."""
+    def __init__(self, real_logger: PipelineLogger):
+        self.real_logger = real_logger
+        self.status = real_logger.status
+
+    def log_step(self, step_name: str, status: str, details: Optional[Dict[str, Any]] = None):
+        pass
+
+    def log_source(self, source_name: str, status: str, file_path: Optional[str] = None):
+        self.real_logger.log_source(source_name, status, file_path)
+
+
 def run_clean_step_safely(step_name: str, clean_func, config: Dict[str, Any], logger: PipelineLogger, *args, **kwargs):
     """
     Executes a step cleaning function under the Blue-Green staging-and-restore pattern.
@@ -1468,8 +1453,18 @@ def run_clean_step_safely(step_name: str, clean_func, config: Dict[str, Any], lo
     source_cfg = config['sources'].get(step_name) or config.get('local_files', {}).get(step_name)
     if not source_cfg:
         # Fallback if no configuration is defined for this step name
-        clean_func(config, logger, *args, **kwargs)
+        logger.log_step(f"clean_{step_name}", "STARTED")
+        try:
+            clean_func(config, logger, *args, **kwargs)
+            logger.log_step(f"clean_{step_name}", "COMPLETED")
+        except Exception as e:
+            logger.log_step(f"clean_{step_name}", "ERROR", {"error": str(e)})
+            logging.exception(f"Error running step clean_{step_name}")
+            raise e
         return
+
+    logger.log_step(f"clean_{step_name}", "STARTED")
+    muted_logger = MutedPipelineLogger(logger)
 
     local_name = source_cfg.get('local_name')
     path_str = source_cfg.get('path')
@@ -1514,15 +1509,24 @@ def run_clean_step_safely(step_name: str, clean_func, config: Dict[str, Any], lo
 
     if not is_staging:
         # No staging files exist, run the clean function directly
-        clean_func(config, logger, *args, **kwargs)
-        # Validate that the active clean parquet is non-empty for basic sanity
-        if active_clean.exists():
-            try:
-                df_clean = pd.read_parquet(active_clean, engine='fastparquet')
-                if len(df_clean) == 0:
-                    logging.warning(f"⚠️ [SANITY WARNING] Active clean file for '{step_name}' is empty.")
-            except Exception as e:
-                logging.warning(f"⚠️ [SANITY WARNING] Failed to read active clean file for '{step_name}': {e}")
+        try:
+            clean_func(config, muted_logger, *args, **kwargs)
+            
+            # Validate that the active clean parquet is non-empty for basic sanity
+            details = {}
+            if active_clean.exists():
+                try:
+                    df_clean = pd.read_parquet(active_clean, engine='fastparquet')
+                    details = {"rows": len(df_clean), "path": str(active_clean)}
+                    if len(df_clean) == 0:
+                        logging.warning(f"⚠️ [SANITY WARNING] Active clean file for '{step_name}' is empty.")
+                except Exception as e:
+                    logging.warning(f"⚠️ [SANITY WARNING] Failed to read active clean file for '{step_name}': {e}")
+            
+            logger.log_step(f"clean_{step_name}", "COMPLETED", details)
+        except Exception as e:
+            logger.log_step(f"clean_{step_name}", "ERROR", {"error": str(e)})
+            logging.exception(f"Error running step clean_{step_name}")
         return
 
     # Blue-Green: validate RAW, back up, and swap staging files into place
@@ -1538,6 +1542,7 @@ def run_clean_step_safely(step_name: str, clean_func, config: Dict[str, Any], lo
                 raise ValueError("Raw schema contract validation failed.")
         except Exception as e:
             logging.error(f"❌ [INGEST FAILURE] '{step_name}' raw schema validation failed: {e}")
+            logger.log_step(f"clean_{step_name}", "ERROR", {"error": f"Raw validation failed: {str(e)}"})
             # Discard staging files and abort
             if staging_raw and staging_raw.exists():
                 try: os.remove(staging_raw)
@@ -1582,7 +1587,7 @@ def run_clean_step_safely(step_name: str, clean_func, config: Dict[str, Any], lo
             moved_staging.append((active_ext, staging_ext))
 
         # 5. Run the clean function (it will read the staging data and output to active_clean)
-        clean_func(config, logger, *args, **kwargs)
+        clean_func(config, muted_logger, *args, **kwargs)
 
         # 6. Validate the resulting clean parquet file is non-empty
         if not active_clean.exists():
@@ -1597,9 +1602,11 @@ def run_clean_step_safely(step_name: str, clean_func, config: Dict[str, Any], lo
             try: os.remove(bak_path)
             except: pass
         logging.info(f"✅ [SUCCESS] Ingested and verified '{step_name}' successfully. Staging committed.")
+        logger.log_step(f"clean_{step_name}", "COMPLETED", {"rows": len(df_clean), "path": str(active_clean)})
 
     except Exception as e:
         logging.error(f"❌ [INGEST FAILURE] '{step_name}' failed validation/cleaning: {e}")
+        logger.log_step(f"clean_{step_name}", "ERROR", {"error": str(e)})
 
         # Rollback!
         # Delete failed active clean parquet
@@ -1695,9 +1702,7 @@ def main(argv=None):
                 else:
                     run_clean_step_safely(step_name, steps_map[step_name], config, logger)
             except Exception as e:
-                print(f"ERROR running step {step_name}: {e}")
-                import traceback
-                traceback.print_exc()
+                logging.exception(f"❌ [INGEST FAILURE] Error running step '{step_name}'")
         else:
             logging.warning(f"Unknown step: {step_name}")
 

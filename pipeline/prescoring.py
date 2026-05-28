@@ -451,10 +451,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
                     communes_gdf['inc_services_core_scaled'] = 0.0
                     
             except Exception as e:
-                tb_line = e.__traceback__.tb_lineno if e.__traceback__ is not None else "unknown"
-                logging.error(f"Failed to calculate socle admin score at line {tb_line}: {e}")
-                import traceback
-                traceback.print_exc()
+                logging.exception("❌ [PRESCORING FAILURE] Failed to calculate socle admin score")
                 communes_gdf['inc_services_core_scaled'] = 0.0
         else:
              logging.warning("pois.parquet not found, skipping socle admin score")

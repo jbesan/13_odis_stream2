@@ -27,8 +27,7 @@ FILES_TO_COPY = [
     'odis_inclusion_jobs.parquet'
 ]
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
 
 def main():
     parser = argparse.ArgumentParser(description="ODIS Data Pipeline ETL")

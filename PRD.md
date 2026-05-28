@@ -128,7 +128,25 @@ Liste en vrac d'idées d'amélioration
 - **Declarative Schema Validation**: Validation automatique basée sur la configuration (présence obligatoire des colonnes de `used_columns` et contrôles d'intégrité de base) avant le remplacement effectif des fichiers en cache.
 
 ### 📊 Status
-- In Progress
+- **May 2026**: Complete. Fully integrated, tested with a comprehensive green test suite (Blue-Green staging-and-restore, schema contracts, lightweight data.gouv update checks, and complex API TTL limits), and validated in the ETL CLI.
+
+---
+
+## 🚀 Feature [F-63]: Pipeline v2 Codebase Hardening, DRY Refactoring, and Consolidated Logging
+
+### 📝 User Story
+- En tant que développeur et mainteneur d'ODIS, je veux que le codebase du pipeline d'ingestion soit propre, sans code mort ni dupliqué, afin d'en faciliter la maintenance et les évolutions.
+- En tant qu'opérateur du pipeline, je veux des logs de console homogènes, clairs et moins verbeux, avec un format de journalisation standard pour toutes les phases (Ingest, Build, Prescoring, Deploy), afin de diagnostiquer rapidement les erreurs de production.
+
+### 🔑 Key Features
+- **Dead Code Eradication**: Retrait de la définition tronquée et inutile de `clean_bpe` dans `ingest.py`.
+- **Centralized Orchestration Logging (DRY)**: Centralisation des appels de début (`STARTED`), succès (`COMPLETED`), et d'erreur (`ERROR`) de chaque cleaner au niveau du gestionnaire de cycle de vie `run_clean_step_safely`, éliminant plus de 50 lignes de code redondant.
+- **Unified Global Logging Settings**: Centralisation de la configuration `logging.basicConfig` dans `common.py` pour un format homogène, avec mise en sourdine des bibliothèques externes verbeuses (comme `requests` ou `fastparquet`).
+- **Clean PLM Arrondissement Reference (DRY)**: Déclaration de la liste des arrondissements PLM sous forme de constante réutilisable unique `PLM_ARRONDISSEMENTS` au lieu de listes dupliquées.
+- **Standardized Exception Capturing**: Remplacement de tous les formats de trace d'exception manuels et des `print()` par `logging.exception()` ou `exc_info=True`.
+
+### 📊 Status
+- **May 2026**: Complete. Codebase fully audited, dead code eradicated, clean orchestration logging centralized via a muted step cleaner wrapper, PLM lists consolidated, and exceptions unified under standard logging formats. Tested and verified.
 
 
 

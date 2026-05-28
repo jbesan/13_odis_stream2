@@ -20,8 +20,14 @@ CLEAN_DIR = Path("pipeline/cache/clean")
 OUTPUT_DIR = Path("pipeline/cache/output")
 STATUS_FILE = Path("pipeline/status.json")
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# Configure logging centrally
+def configure_logging(level=logging.INFO):
+    logging.basicConfig(level=level, format='%(asctime)s - %(levelname)s - %(message)s')
+    # Silence extremely verbose third-party loggers
+    for logger_name in ["fastparquet", "requests", "urllib3", "pyarrow", "geopandas", "fiona", "shapely"]:
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
+
+configure_logging()
 
 class PipelineLogger:
     def __init__(self, status_file: Path):
