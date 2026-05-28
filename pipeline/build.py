@@ -9,7 +9,8 @@ import numpy as np
 from pathlib import Path
 import warnings
 from shapely.geometry import Polygon, MultiPolygon
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
+from shapely import wkb
 
 def extract_polygonal(geom):
     """Keep only Polygon/MultiPolygon parts of a geometry."""
@@ -121,7 +122,7 @@ def consolidate_plm_vertical(df: pd.DataFrame, codgeo_col: str, group_cols: list
         df = pd.concat([df] + new_rows, ignore_index=True)
     return df
 
-def consolidate_plm_detail_list(df: pd.DataFrame, codgeo_col: str, parent_bdvs: dict = None) -> pd.DataFrame:
+def consolidate_plm_detail_list(df: pd.DataFrame, codgeo_col: str, parent_bdvs: Optional[Dict[Any, Any]] = None) -> pd.DataFrame:
     """Duplicates details list records from child arrondissements to PLM parent codes."""
     plm_mapping = {
         '75056': [str(x) for x in range(75101, 75121)], # Paris
@@ -161,17 +162,16 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         # Read with pandas (WKB) and reconstruct GDF
         communes_df = pd.read_parquet(communes_path, engine='fastparquet')
         if 'polygon' in communes_df.columns:
-            from shapely import wkb
-            communes_df['geometry'] = communes_df['polygon'].apply(lambda x: wkb.loads(bytes(x)))
+            geoms = [wkb.loads(bytes(x)) for x in communes_df['polygon']]
             # Initialize with the native CRS (4326)
-            communes_gdf = gpd.GeoDataFrame(communes_df, geometry='geometry', crs='EPSG:4326')
+            communes_gdf = gpd.GeoDataFrame(communes_df, geometry=geoms, crs='EPSG:4326')
         else:
             communes_gdf = gpd.GeoDataFrame(communes_df, geometry='geometry')
 
         
         # 2. Merge Indicators
         # Helper to merge
-        def merge_clean(name: str, cols: list = None):
+        def merge_clean(name: str, cols: Optional[List[Any]] = None):
             nonlocal communes_gdf
             path = CLEAN_DIR / f"{name}.parquet"
             if path.exists():
@@ -341,7 +341,7 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
                 if 'commune_sk' in communes_gdf.columns:
                     communes_gdf = communes_gdf.merge(df_pivot, on='commune_sk', how='left')
                     logging.info(f"Odace Rent: Merged pivoted data. Columns added: {list(df_pivot.columns)}")
-                    logging.info(f"DEBUG: communes_gdf cols after merge: {[c for c in communes_gdf.columns if 'loyer' in c]}")
+                    # logging.info(f"DEBUG: communes_gdf cols after merge: {[c for c in communes_gdf.columns if 'loyer' in c]}")
             else:
                 logging.warning("Odace Rent clean files missing.")
         except Exception as e:
@@ -572,7 +572,7 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         df_to_save = communes_gdf.drop(columns=cols_to_drop).copy()
         
         output_path = OUTPUT_DIR / "odis_communes_pre.parquet"
-        logging.info(f"DEBUG: Saving to {output_path}. Columns: {[c for c in df_to_save.columns if 'loyer' in c]}")
+        # logging.info(f"DEBUG: Saving to {output_path}. Columns: {[c for c in df_to_save.columns if 'loyer' in c]}")
         df_to_save.to_parquet(output_path, compression='brotli', index=False, engine='fastparquet')
         logger.log_step("build_communes", "CREATED", {"path": str(output_path), "rows": len(df_to_save)})
         
@@ -598,13 +598,10 @@ def build_bassins_de_vie(communes_gdf: gpd.GeoDataFrame, config: Dict[str, Any],
             # Only set geometry to 'polygon' if it's not already the active geometry
             # AND if it seems to contain geometry objects (not bytes)
             if communes_gdf.geometry.name != 'polygon':
-                if not isinstance(communes_gdf['polygon'].iloc[0], bytes):
-                     communes_gdf['geometry'] = communes_gdf['polygon'].apply(lambda x: make_valid(wkb.loads(x)))
+                 if not isinstance(communes_gdf['polygon'].iloc[0], bytes):
+                     geoms = [make_valid(wkb.loads(x)) for x in communes_gdf['polygon']]
+                     communes_gdf = communes_gdf.set_geometry(geoms)
         communes_gdf = communes_gdf.set_geometry('geometry')
-                # If bytes, we assume active geometry is already correct (from build_communes)
-                # or we would need to load it. Since build_communes returns valid GDF, we do nothing.
-        # communes_gdf['geometry'] = communes_gdf.geometry.buffer(0)
-        # communes_gdf['geometry'] = communes_gdf.geometry.make_valid()
         
         from shapely.validation import make_valid
         communes_gdf['geometry'] = communes_gdf.geometry.apply(make_valid)
@@ -1024,7 +1021,7 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
     """Generates referentiels."""
     logger.log_step("generate_referentiels", "STARTED")
     try:
-        refs_list = []
+        refs_list: List[Any] = []
 
             
         if refs_list:

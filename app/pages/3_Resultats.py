@@ -395,7 +395,7 @@ with col_map:
                 zoom=st.session_state.get("zoom"),
                 feature_group_to_add=fg_dynamic,
                 key="odis_main_map",
-                # width="stretch",
+                use_container_width=True,
                 returned_objects=[]
             )
         except Exception as e:

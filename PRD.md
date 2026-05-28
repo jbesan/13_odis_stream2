@@ -112,5 +112,23 @@ Liste en vrac d'idées d'amélioration
 ### 📊 Status
 - **May 2026**: Complete. Fully integrated, tested with 100% green test pass, premium visual outlines, custom SVG Material pushpins, and validated live Refiner agent structured output.
 
+---
+
+## 🚀 Feature [F-62]: Pipeline v2 - Dynamic API Ingestion, Caching, and Resilient Validation
+
+### 📝 User Stories
+- En tant que développeur et mainteneur d'ODIS, je veux que le pipeline d'ETL soit déclaratif et centralisé en termes de politiques de cache (TTL), afin de simplifier la maintenance et l'ajout de nouvelles sources de données.
+- En tant qu'opérateur du pipeline, je veux que les téléchargements depuis data.gouv.fr effectuent une vérification de version en amont via l'API de métadonnées, afin d'économiser la bande passante et le temps d'exécution.
+- En tant qu'utilisateur final d'ODIS, je veux que le pipeline d'ingestion soit ultra-résilient et utilise une stratégie de staging "Blue-Green" pour rejeter automatiquement les données corrompues et préserver les caches existants sans casser l'application.
+
+### 🔑 Key Features
+- **Config-Driven TTL & Caching Policies**: Déclaration de `ttl_days` directement dans `sources.yaml` pour tous les jeux de données (fichiers statiques et appels d'API complexes comme France Travail ou Odace).
+- **Lightweight Update Check (data.gouv.fr API)**: Extraction automatique du Resource ID pour les URLs `data.gouv.fr` et interrogation de l'API de métadonnées (`/api/1/datasets/r/{id}/`) pour comparer la date de dernière modification sans télécharger le fichier complet.
+- **Shadow Staging Ingestion (Option A Fallback)**: Téléchargement sous forme de fichier `.staging` et exécution isolée du cleaning. En cas d'anomalie ou d'échec de validation, le pipeline émet une alerte console et conserve la dernière version stable en cache.
+- **Declarative Schema Validation**: Validation automatique basée sur la configuration (présence obligatoire des colonnes de `used_columns` et contrôles d'intégrité de base) avant le remplacement effectif des fichiers en cache.
+
+### 📊 Status
+- In Progress
+
 
 

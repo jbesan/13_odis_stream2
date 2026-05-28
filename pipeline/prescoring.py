@@ -4,7 +4,7 @@ import geopandas as gpd
 import numpy as np
 import yaml
 from shapely import wkb
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from pathlib import Path
 
 from pipeline.common import (
@@ -14,7 +14,7 @@ from pipeline.common import (
 import app.config as cfg
 
 # Global Scores Config cache
-_scores_config_cache = {}
+_scores_config_cache: Dict[str, Any] = {}
 
 def get_scores_config():
     global _scores_config_cache
@@ -91,7 +91,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         output_path = OUTPUT_DIR / "odis_communes.parquet"
         
         if not input_path.exists():
-             logger.error(f"Input file not found: {input_path}")
+             logging.error(f"Input file not found: {input_path}")
              logger.log_step("apply_prescoring", "FAILED", {"reason": "Input file not found"})
              return
 
@@ -100,8 +100,8 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         
         # Convert WKB to Geometry
         if 'polygon' in communes_df.columns:
-            communes_df['geometry'] = communes_df['polygon'].apply(lambda x: wkb.loads(bytes(x)))
-            communes_gdf = gpd.GeoDataFrame(communes_df, geometry='geometry', crs='EPSG:4326')
+            geoms = [wkb.loads(bytes(x)) for x in communes_df['polygon']]
+            communes_gdf = gpd.GeoDataFrame(communes_df, geometry=geoms, crs='EPSG:4326')
         else:
             # Fallback
             communes_gdf = gpd.GeoDataFrame(communes_df, geometry='geometry')
@@ -257,13 +257,13 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         
         # Load App Config for Scores (Source of Truth)
         scores_config = get_scores_config()
-        socle_admin_list = []
+        socle_admin_list: List[Any] = []
         
         
         # Updated Housing Rent Scaling (ODACE source)
         # Using concise names as per user request: appt_all, appt_t1_t2, appt_t3_p, house_all
         # We KEEP the raw data (euros/m2) and add the _scaled suffix
-        logging.info(f"DEBUG: communes_gdf cols before scaling: {[c for c in communes_gdf.columns if 'loyer' in c]}")
+        # logging.info(f"DEBUG: communes_gdf cols before scaling: {[c for c in communes_gdf.columns if 'loyer' in c]}")
         for col, target in [
             ('loyer_m2_moy_appt_all', 'log_loyer_moyen_appt_all_scaled'),
             ('loyer_m2_moy_appt_t1_t2', 'log_loyer_moyen_appt_t1_t2_scaled'),
@@ -451,7 +451,8 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
                     communes_gdf['inc_services_core_scaled'] = 0.0
                     
             except Exception as e:
-                logging.error(f"Failed to calculate socle admin score at line {e.__traceback__.tb_lineno}: {e}")
+                tb_line = e.__traceback__.tb_lineno if e.__traceback__ is not None else "unknown"
+                logging.error(f"Failed to calculate socle admin score at line {tb_line}: {e}")
                 import traceback
                 traceback.print_exc()
                 communes_gdf['inc_services_core_scaled'] = 0.0
@@ -521,8 +522,8 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
         # Read as standard Parquet (WKB) - BV
         bv_df = pd.read_parquet(bv_path, engine='fastparquet')
         if 'polygon' in bv_df.columns:
-             bv_df['geometry'] = bv_df['polygon'].apply(lambda x: wkb.loads(bytes(x)))
-             bv_gdf = gpd.GeoDataFrame(bv_df, geometry='geometry', crs=cfg.PROJECTED_CRS)
+             geoms = [wkb.loads(bytes(x)) for x in bv_df['polygon']]
+             bv_gdf = gpd.GeoDataFrame(bv_df, geometry=geoms, crs=cfg.PROJECTED_CRS)
         else:
              bv_gdf = gpd.GeoDataFrame(bv_df, geometry='geometry')
 

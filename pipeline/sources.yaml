@@ -1,8 +1,9 @@
 sources:
   communes:
-    url: "https://www.data.gouv.fr/api/1/datasets/r/12f8cdc9-5844-4666-a4b5-6385d5415f67"
+    datagouv_resource_id: "12f8cdc9-5844-4666-a4b5-6385d5415f67"
     format: "geojson"
     local_name: "communes.geojson"
+    ttl_days: 90
     description: "Contours administratifs des communes (simplifiés)"
     used_columns:
       - INSEE_COM
@@ -10,10 +11,11 @@ sources:
       - geometry
 
   population:
-    url: "https://www.data.gouv.fr/api/1/datasets/r/630e7917-02db-4838-8856-09235719551c"
+    datagouv_resource_id: "630e7917-02db-4838-8856-09235719551c"
     format: "xlsx"
     local_name: "population.xlsx"
-    sheet_name: 0 # Default sheet
+    sheet_name: 0
+    ttl_days: 180
     description: "Population municipale 2024"
     used_columns:
       - population
@@ -24,9 +26,10 @@ sources:
     url: "https://www.insee.fr/fr/statistiques/fichier/6676988/BV2022_au_01-01-2025.zip"
     format: "zip"
     local_name: "bassins_de_vie.zip"
-    archive_file: "BV2022_au_01-01-2025.xlsx" # File to extract
+    archive_file: "BV2022_au_01-01-2025.xlsx"
     sheet_name: "Composition_communale"
-    header: 4 # Skip metadata rows
+    header: 4
+    ttl_days: 365
     description: "Bassins de vie 2022 (INSEE)"
     used_columns:
       - Code géographique
@@ -34,9 +37,10 @@ sources:
       - Libellé géographique du bassin de vie 2022
 
   services_inclusion:
-    url: "https://www.data.gouv.fr/api/1/datasets/r/de4856b8-bb67-4b79-83bd-038e846a1774"
+    datagouv_resource_id: "de4856b8-bb67-4b79-83bd-038e846a1774"
     format: "parquet"
     local_name: "services_inclusion.parquet"
+    ttl_days: 30
     description: "Services de l'inclusion (Data Inclusion)"
     used_columns:
       - id
@@ -47,9 +51,10 @@ sources:
       - code_insee
 
   political_nuance:
-    url: "https://www.data.gouv.fr/api/1/datasets/r/ea5d6bc3-37d0-4884-a437-155a90c3e05f"
+    datagouv_resource_id: "ea5d6bc3-37d0-4884-a437-155a90c3e05f"
     format: "csv"
     local_name: "political_nuance.csv"
+    ttl_days: 365
     description: "Nuance politique des communes (France)"
     used_columns:
       - Code Insee Commune
@@ -58,9 +63,10 @@ sources:
       - nuance_politique
 
   associations:
-    url: "https://www.data.gouv.fr/api/1/datasets/r/cc7b8f0c-45ea-4444-8b55-55d30bc34ac5"
+    datagouv_resource_id: "cc7b8f0c-45ea-4444-8b55-55d30bc34ac5"
     format: "parquet"
     local_name: "associations.parquet"
+    ttl_days: 90
     description: "RNA agrégé (Associations)"
     used_columns:
       - adrs_codeinsee
@@ -72,10 +78,11 @@ sources:
       - adrs_libcommune
 
   logement_vacant:
-    url: "https://www.data.gouv.fr/api/1/datasets/r/2e0417b4-902d-4c60-90e7-bf5df148cb87"
+    datagouv_resource_id: "2e0417b4-902d-4c60-90e7-bf5df148cb87"
     format: "csv"
     local_name: "logement_vacant.csv"
     encoding: "iso-8859-1"
+    ttl_days: 180
     description: "Logements vacants du parc privé (LOVAC)"
     used_columns:
       - CODGEO
@@ -83,10 +90,11 @@ sources:
       - pp_total_24
 
   housing_occupation:
-    url: "https://www.data.gouv.fr/api/1/datasets/r/cae4e8a4-15e0-40ff-88fe-087b9e206514"
+    datagouv_resource_id: "cae4e8a4-15e0-40ff-88fe-087b9e206514"
     format: "zip"
     archive_file: "DS_RP_LOGEMENT_COMPL_2022_data.csv"
     local_name: "housing_occupation.zip"
+    ttl_days: 365
     description: "Logements : Taux d'occupation (INSEE)"
     used_columns:
       - TIME_PERIOD
@@ -101,6 +109,7 @@ sources:
     local_name: "logement_social.xlsx"
     sheet_name: "COMMUNES"
     header: 5
+    ttl_days: 365
     description: "Parc locatif social (RPLS)"
     used_columns:
       - CODGEO
@@ -112,18 +121,20 @@ sources:
       - nb_lgt_tot
 
   maternites:
-    url: "https://www.data.gouv.fr/api/1/datasets/r/a822f7ae-7c46-42c0-86e1-ad7d381c1ad2"
+    datagouv_resource_id: "a822f7ae-7c46-42c0-86e1-ad7d381c1ad2"
     format: "json"
     local_name: "maternites_drees.json"
+    ttl_days: 365
     description: "Liste des maternités (DREES)"
     used_columns:
       - FI_ET
       - fi_et
 
   bmo:
-    url: "https://www.data.gouv.fr/api/1/datasets/r/54478315-aafd-4070-b8df-a5647297e0c0"
+    datagouv_resource_id: "54478315-aafd-4070-b8df-a5647297e0c0"
     format: "xlsx"
     local_name: "bmo_2025.xlsx"
+    ttl_days: 365
     description: "Enquête Besoins en Main d'Oeuvre 2025"
     used_columns:
       - Code
@@ -135,6 +146,7 @@ sources:
     url: "https://statistiques.pole-emploi.org/bmo/Handlers/HTFile.ashx?MEDIAID=156688&SITEKEY=620c8132-d522-44fa-8efa-27a62c26702c"
     format: "xlsx"
     local_name: "communes_bassins_emploi_2021.xlsx"
+    ttl_days: 365
     description: "Référentiel Communes -> Bassins d'Emploi 2021"
     used_columns:
       - Code Insee
@@ -143,9 +155,10 @@ sources:
       - LIBBE21
 
   nomenclature_waldec:
-    url: "https://www.data.gouv.fr/api/1/datasets/r/d65d5cae-399f-4150-804f-493026645fd5"
+    datagouv_resource_id: "d65d5cae-399f-4150-804f-493026645fd5"
     format: "json"
     local_name: "nomenclature_waldec.json"
+    ttl_days: 365
     description: "Nomenclature WALDEC (Associations)"
     used_columns:
       - code
@@ -159,9 +172,10 @@ sources:
       - objet_social_lib
 
   caf:
-    url: "https://www.data.gouv.fr/api/1/datasets/r/6d3b1cf8-cbef-4f30-96c3-0b63a2b0502c"
+    datagouv_resource_id: "6d3b1cf8-cbef-4f30-96c3-0b63a2b0502c"
     format: "json"
     local_name: "caf_taux_couverture.json"
+    ttl_days: 180
     description: "Taux de couverture petite enfance (CAF)"
     used_columns:
       - codgeo
@@ -172,9 +186,10 @@ sources:
       - txcouv_com
 
   education_effectifs:
-    url: "https://www.data.gouv.fr/api/1/datasets/r/b4642552-6777-4265-a263-f190621ec40f"
+    datagouv_resource_id: "b4642552-6777-4265-a263-f190621ec40f"
     format: "parquet"
     local_name: "education_effectifs.parquet"
+    ttl_days: 365
     description: "Effectifs d'élèves par niveau"
     used_columns:
       - rentree_scolaire
@@ -183,9 +198,10 @@ sources:
       - nombre_total_classes
 
   education_annuaire:
-    url: "https://www.data.gouv.fr/api/1/datasets/r/9af76efc-51a6-4659-87ba-82c02652613a"
+    datagouv_resource_id: "9af76efc-51a6-4659-87ba-82c02652613a"
     format: "parquet"
     local_name: "education_annuaire.parquet"
+    ttl_days: 365
     description: "Annuaire de l'éducation (Premier et Second degré)"
     used_columns:
       - numero_uai
@@ -200,15 +216,17 @@ sources:
     url: "https://object.files.data.gouv.fr/hydra-parquet/hydra-parquet/008a2dda-2c60-4b63-b910-998f6f818089.parquet"
     format: "parquet"
     local_name: "codes_postaux.parquet"
+    ttl_days: 365
     description: "Base officielle des codes postaux"
     used_columns:
       - Code_postal
       - Code_commune_INSEE
 
   formations_annuaire:
-    url: "https://www.data.gouv.fr/api/1/datasets/r/ac59a0f5-fa83-4b82-bf12-3c5806d4f19f"
+    datagouv_resource_id: "ac59a0f5-fa83-4b82-bf12-3c5806d4f19f"
     format: "csv"
     local_name: "formations_annuaire.csv"
+    ttl_days: 365
     description: "Annuaire des organismes de formation"
     verify_ssl: false
     used_columns:
@@ -219,9 +237,10 @@ sources:
       - informationsDeclarees.specialitesDeFormation.codeSpecialite3
 
   formations_referentiel:
-    url: "https://www.data.gouv.fr/api/1/datasets/r/803121dd-1acf-423d-b7d8-8511f1c607c1"
+    datagouv_resource_id: "803121dd-1acf-423d-b7d8-8511f1c607c1"
     format: "xlsx"
     local_name: "formations_referentiel.xlsx"
+    ttl_days: 365
     description: "Référentiel des organismes de formation"
     used_columns:
       - code
@@ -231,6 +250,7 @@ sources:
     url: "file:///Users/jacques/dev/13_odis_stream2/csv/annuaire_sante_finess.parquet"
     format: "parquet"
     local_name: "finess_national.parquet"
+    ttl_days: 365
     description: "FINESS National (Local Clean Copy)"
     used_columns:
       - Departement
@@ -243,10 +263,11 @@ sources:
       - RaisonSociale
 
   rome:
-    url: "https://www.data.gouv.fr/api/1/datasets/r/1c893376-8476-4262-9a0e-8df519883e1e"
+    datagouv_resource_id: "1c893376-8476-4262-9a0e-8df519883e1e"
     format: "zip"
     archive_file: "unix_referentiel_code_rome_v460.json"
     local_name: "rome.zip"
+    ttl_days: 365
     description: "Référentiel ROME v4.60 (JSON)"
     used_columns:
       - code
@@ -256,6 +277,7 @@ sources:
     url: "https://www.insee.fr/fr/statistiques/fichier/8217525/BPE24.parquet"
     format: "parquet"
     local_name: "BPE24.parquet"
+    ttl_days: 365
     description: "Base Permanente des Équipements 2024"
     used_columns:
       - DEPCOM
@@ -267,10 +289,11 @@ sources:
       - NOMRS
 
   population_active:
-    url: "https://www.data.gouv.fr/api/1/datasets/r/f43b668d-251e-472a-9385-3d006d1ca6b8"
+    datagouv_resource_id: "f43b668d-251e-472a-9385-3d006d1ca6b8"
     format: "zip"
     archive_file: "DS_RP_EMPLOI_LR_COMP_2022_data.csv"
     local_name: "population_active.zip"
+    ttl_days: 365
     description: "Population active et chômage (INSEE)"
     used_columns:
       - TIME_PERIOD
@@ -284,6 +307,7 @@ sources:
     url: "file:///Users/jacques/dev/13_odis_stream2/pipeline/local/referentiel_services_inclusion.csv"
     format: "csv"
     local_name: "referentiel_services_inclusion.csv"
+    ttl_days: 365
     description: "Référentiel des services d'inclusion (Local)"
     used_columns:
       - code
@@ -291,20 +315,22 @@ sources:
       - thematique
 
   loyers_apparts:
-    url: "https://www.data.gouv.fr/api/1/datasets/r/43618998-3b37-4a69-bb25-f321f1a93ed1"
+    datagouv_resource_id: "43618998-3b37-4a69-bb25-f321f1a93ed1"
     format: "csv"
     local_name: "loyers_apparts_2023.csv"
     encoding: "iso-8859-1"
     sep: ";"
+    ttl_days: 365
     description: "Carte des loyers 2023 - Appartements (Ensemble)"
     used_columns:
       - INSEE_C
       - loypredm2
 
   structures_inclusion:
-    url: "https://www.data.gouv.fr/api/1/datasets/r/915c05e8-77ea-44f6-9837-0f1eff897a54"
+    datagouv_resource_id: "915c05e8-77ea-44f6-9837-0f1eff897a54"
     format: "parquet"
     local_name: "structures_inclusion.parquet"
+    ttl_days: 30
     description: "Annuaire des structures de l'inclusion (Data Inclusion)"
     used_columns:
       - reseaux_porteurs
@@ -315,13 +341,13 @@ sources:
       - telephone
       - site_web
       - adresse
-      - commune
 
   population_details:
-    url: "https://www.data.gouv.fr/api/1/datasets/r/7e3937bb-e815-4e58-92d4-d7ef478abcc0"
+    datagouv_resource_id: "7e3937bb-e815-4e58-92d4-d7ef478abcc0"
     format: "zip"
     archive_file: "DS_RP_POPULATION_PRINC_2022_data.csv"
     local_name: "population_details.zip"
+    ttl_days: 365
     description: "Population détaillée 2022 (Historique 2011, 2016)"
     used_columns:
       - AGE
@@ -335,6 +361,7 @@ sources:
     url: "https://tabular-api.data.gouv.fr/api/resources/2486b351-5d85-4e1a-8d12-5df082c75104/data/json/"
     format: "json"
     local_name: "referentiel_regions.json"
+    ttl_days: 365
     description: "Référentiel des Régions (COG)"
     used_columns:
       - REG
@@ -344,15 +371,18 @@ sources:
     url: "https://tabular-api.data.gouv.fr/api/resources/54a8263d-6e2d-48d5-b214-aa17cc13f7a0/data/json/"
     format: "json"
     local_name: "referentiel_departements.json"
+    ttl_days: 365
     description: "Référentiel des Départements (COG)"
     used_columns:
       - DEP
       - LIBELLE
       - REG
+
   mob_transports_pub:
     url: "https://object.files.data.gouv.fr/hydra-parquet/hydra-parquet/501ac60d-246d-45bf-8dcf-ab43e1b1a736.parquet"
     format: "parquet"
     local_name: "mob_transports_pub.parquet"
+    ttl_days: 180
     description: "Nombre de stations de transports en commun par commune (Data Gouv)"
     used_columns:
       - geocode_commune
@@ -365,6 +395,7 @@ sources:
     local_name: "logement_social_delay_ush.xlsx"
     sheet_name: "Carte 1"
     header: 2
+    ttl_days: 365
     description: "Délais d'attente logement social (USH)"
     used_columns:
       - "SIRET"
@@ -376,15 +407,17 @@ sources:
     local_name: "sante_apl_drees.xlsx"
     sheet_name: "APL 2023"
     header: 8
+    ttl_days: 365
     description: "Accessibilité Potentielle Localisée (APL) aux médecins (DREES)"
     used_columns:
       - "Code commune INSEE"
       - "APL aux médecins généralistes"
 
   mob_durable_share:
-    url: "https://www.data.gouv.fr/api/1/datasets/r/f624e1db-8f22-4a96-9f5a-9f9ee2aae53e"
+    datagouv_resource_id: "f624e1db-8f22-4a96-9f5a-9f9ee2aae53e"
     format: "csv"
     local_name: "mob_durable_share_ecolab.csv"
+    ttl_days: 365
     description: "Part modale des transports durables (Ecolab)"
     used_columns:
       - "geocode_commune"
@@ -393,9 +426,10 @@ sources:
     encoding: "latin-1"
 
   ter_insecurite:
-    url: "https://www.data.gouv.fr/api/1/datasets/r/604d71b8-337d-4869-9226-49e01bae87df"
+    datagouv_resource_id: "604d71b8-337d-4869-9226-49e01bae87df"
     format: "parquet"
     local_name: "ter_insecurite_ssmsi.parquet"
+    ttl_days: 180
     description: "Taux d'insécurité par commune (SSMSI)"
     used_columns:
       - "CODGEO_2025"
@@ -407,6 +441,7 @@ local_files:
   finess:
     path: "pipeline/local/annuaire_sante_finess.parquet"
     format: "parquet"
+    ttl_days: 365
     description: "Fichier FINESS local (nettoyé)"
     used_columns:
       - Departement
@@ -421,6 +456,7 @@ local_files:
   france_travail_live:
     url: "https://api.francetravail.io/partenaire/offresemploi/v2/offres/emploi/search"
     format: "api"
+    ttl_days: 7
     description: "API France Travail - Recherche d'offres d'emploi en direct (F-28)"
     used_columns:
       - id
@@ -434,7 +470,22 @@ local_files:
     url: "file:///Users/jacques/dev/13_odis_stream2/pipeline/local/odis_accueillants_jaccueil_code_postal_clean_Mars2026.csv"
     format: "csv"
     local_name: "odis_accueillants_jaccueil_code_postal_clean_Mars2026.csv"
+    ttl_days: 30
     description: "Nombre d'accueillants J'Accueille par code postal"
     used_columns:
       - "Code postal"
       - "Nombre d'enregistrements"
+
+  inclusion_jobs:
+    format: "api"
+    ttl_days: 7
+    description: "Les emplois de l'inclusion API - Offres d'emploi"
+    used_columns:
+      - id
+      - structure_siret
+      - code_insee_commune
+
+  odace:
+    format: "api"
+    ttl_days: 30
+    description: "API Odace - Équipements et gares"
