@@ -27,8 +27,7 @@ FILES_TO_COPY = [
     'odis_inclusion_jobs.parquet'
 ]
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
 
 def main():
     parser = argparse.ArgumentParser(description="ODIS Data Pipeline ETL")
@@ -79,6 +78,31 @@ def main():
             print("="*50 + "\n")
 
     if args.step in ["ingest", "all"]:
+        # Print reminders for non-datagouv sources that have expired caches
+        try:
+            from pipeline.common import load_config, CONFIG_FILE, CACHE_DIR, is_cache_valid
+            from datetime import datetime
+            config = load_config(CONFIG_FILE)
+            expired_reminders = []
+            for name, source_cfg in config['sources'].items():
+                if not source_cfg.get('datagouv_resource_id'):
+                    local_name = source_cfg.get('local_name')
+                    if local_name:
+                        local_path = CACHE_DIR / local_name
+                        if local_path.exists() and not is_cache_valid(name, source_cfg):
+                            mtime = datetime.fromtimestamp(local_path.stat().st_mtime)
+                            age_days = (datetime.now() - mtime).days
+                            ttl = source_cfg.get('ttl_days', 30)
+                            expired_reminders.append(f"  - {name}: age={age_days} days (TTL={ttl} days)")
+            if expired_reminders:
+                print("\n" + "🔔" * 15 + " CACHE EXPIRATION REMINDERS " + "🔔" * 15)
+                for reminder in expired_reminders:
+                    print(reminder)
+                print("Please check manually if new versions of these datasets are available.")
+                print("🔔" * 58 + "\n")
+        except Exception as e:
+            logging.debug(f"Failed to compile early reminders: {e}")
+
         logging.info("=== Starting Ingestion Phase ===")
         ingest_args = []
         if skip_live_jobs:

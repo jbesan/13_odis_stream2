@@ -9,7 +9,8 @@ import numpy as np
 from pathlib import Path
 import warnings
 from shapely.geometry import Polygon, MultiPolygon
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
+from shapely import wkb
 
 def extract_polygonal(geom):
     """Keep only Polygon/MultiPolygon parts of a geometry."""
@@ -28,13 +29,15 @@ def extract_polygonal(geom):
 
 from pipeline.common import (
     PipelineLogger, load_config, load_dataset,
-    PipelineLogger, load_config, load_dataset,
     CONFIG_FILE, CACHE_DIR, CLEAN_DIR, OUTPUT_DIR, STATUS_FILE
 )
 import app.config as cfg
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# Constants
+PLM_ARRONDISSEMENTS = [str(x) for x in range(75101, 75121)] + \
+                      [str(x) for x in range(13201, 13217)] + \
+                      [str(x) for x in range(69381, 69390)]
+
 
 def consolidate_plm_communes(df: pd.DataFrame) -> pd.DataFrame:
     """Consolidates PLM arrondissements metrics to parent codes."""
@@ -121,7 +124,7 @@ def consolidate_plm_vertical(df: pd.DataFrame, codgeo_col: str, group_cols: list
         df = pd.concat([df] + new_rows, ignore_index=True)
     return df
 
-def consolidate_plm_detail_list(df: pd.DataFrame, codgeo_col: str, parent_bdvs: dict = None) -> pd.DataFrame:
+def consolidate_plm_detail_list(df: pd.DataFrame, codgeo_col: str, parent_bdvs: Optional[Dict[Any, Any]] = None) -> pd.DataFrame:
     """Duplicates details list records from child arrondissements to PLM parent codes."""
     plm_mapping = {
         '75056': [str(x) for x in range(75101, 75121)], # Paris
@@ -161,17 +164,16 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         # Read with pandas (WKB) and reconstruct GDF
         communes_df = pd.read_parquet(communes_path, engine='fastparquet')
         if 'polygon' in communes_df.columns:
-            from shapely import wkb
-            communes_df['geometry'] = communes_df['polygon'].apply(lambda x: wkb.loads(bytes(x)))
+            geoms = [wkb.loads(bytes(x)) for x in communes_df['polygon']]
             # Initialize with the native CRS (4326)
-            communes_gdf = gpd.GeoDataFrame(communes_df, geometry='geometry', crs='EPSG:4326')
+            communes_gdf = gpd.GeoDataFrame(communes_df, geometry=geoms, crs='EPSG:4326')
         else:
             communes_gdf = gpd.GeoDataFrame(communes_df, geometry='geometry')
 
         
         # 2. Merge Indicators
         # Helper to merge
-        def merge_clean(name: str, cols: list = None):
+        def merge_clean(name: str, cols: Optional[List[Any]] = None):
             nonlocal communes_gdf
             path = CLEAN_DIR / f"{name}.parquet"
             if path.exists():
@@ -341,7 +343,7 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
                 if 'commune_sk' in communes_gdf.columns:
                     communes_gdf = communes_gdf.merge(df_pivot, on='commune_sk', how='left')
                     logging.info(f"Odace Rent: Merged pivoted data. Columns added: {list(df_pivot.columns)}")
-                    logging.info(f"DEBUG: communes_gdf cols after merge: {[c for c in communes_gdf.columns if 'loyer' in c]}")
+                    # logging.info(f"DEBUG: communes_gdf cols after merge: {[c for c in communes_gdf.columns if 'loyer' in c]}")
             else:
                 logging.warning("Odace Rent clean files missing.")
         except Exception as e:
@@ -572,7 +574,7 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         df_to_save = communes_gdf.drop(columns=cols_to_drop).copy()
         
         output_path = OUTPUT_DIR / "odis_communes_pre.parquet"
-        logging.info(f"DEBUG: Saving to {output_path}. Columns: {[c for c in df_to_save.columns if 'loyer' in c]}")
+        # logging.info(f"DEBUG: Saving to {output_path}. Columns: {[c for c in df_to_save.columns if 'loyer' in c]}")
         df_to_save.to_parquet(output_path, compression='brotli', index=False, engine='fastparquet')
         logger.log_step("build_communes", "CREATED", {"path": str(output_path), "rows": len(df_to_save)})
         
@@ -598,13 +600,10 @@ def build_bassins_de_vie(communes_gdf: gpd.GeoDataFrame, config: Dict[str, Any],
             # Only set geometry to 'polygon' if it's not already the active geometry
             # AND if it seems to contain geometry objects (not bytes)
             if communes_gdf.geometry.name != 'polygon':
-                if not isinstance(communes_gdf['polygon'].iloc[0], bytes):
-                     communes_gdf['geometry'] = communes_gdf['polygon'].apply(lambda x: make_valid(wkb.loads(x)))
+                 if not isinstance(communes_gdf['polygon'].iloc[0], bytes):
+                     geoms = [make_valid(wkb.loads(x)) for x in communes_gdf['polygon']]
+                     communes_gdf = communes_gdf.set_geometry(geoms)
         communes_gdf = communes_gdf.set_geometry('geometry')
-                # If bytes, we assume active geometry is already correct (from build_communes)
-                # or we would need to load it. Since build_communes returns valid GDF, we do nothing.
-        # communes_gdf['geometry'] = communes_gdf.geometry.buffer(0)
-        # communes_gdf['geometry'] = communes_gdf.geometry.make_valid()
         
         from shapely.validation import make_valid
         communes_gdf['geometry'] = communes_gdf.geometry.apply(make_valid)
@@ -711,8 +710,7 @@ def build_vertical_tables(config: Dict[str, Any], logger: PipelineLogger):
         if assoc_path.exists():
             df = pd.read_parquet(assoc_path, engine='fastparquet')
             df = consolidate_plm_vertical(df, 'codgeo', ['id_waldec'], 'count')
-            plm_arr = [str(x) for x in range(75101, 75121)] + [str(x) for x in range(13201, 13217)] + [str(x) for x in range(69381, 69390)]
-            df = df[~df['codgeo'].isin(plm_arr)].copy()
+            df = df[~df['codgeo'].isin(PLM_ARRONDISSEMENTS)].copy()
             out = OUTPUT_DIR / "odis_associations_agg.parquet"
             df.to_parquet(out, compression='brotli', index=False, engine='fastparquet')
             logger.log_step("build_vertical_tables", "ASSOCIATIONS", {"path": str(out)})
@@ -723,8 +721,7 @@ def build_vertical_tables(config: Dict[str, Any], logger: PipelineLogger):
              df = pd.read_parquet(struct_path, engine='fastparquet')
              parent_bdvs = {'75056': '75056', '13055': '13055', '69123': '69123'}
              df = consolidate_plm_detail_list(df, 'codgeo', parent_bdvs)
-             plm_arr = [str(x) for x in range(75101, 75121)] + [str(x) for x in range(13201, 13217)] + [str(x) for x in range(69381, 69390)]
-             df = df[~df['codgeo'].isin(plm_arr)].copy()
+             df = df[~df['codgeo'].isin(PLM_ARRONDISSEMENTS)].copy()
              out = OUTPUT_DIR / "odis_ccas.parquet"
              df.to_parquet(out, compression='brotli', index=False, engine='fastparquet')
              logger.log_step("build_vertical_tables", "STRUCTURES", {"path": str(out)})
@@ -735,8 +732,7 @@ def build_vertical_tables(config: Dict[str, Any], logger: PipelineLogger):
             df = pd.read_parquet(form_path, engine='fastparquet')
             df_agg = df.groupby(['codgeo', 'formation_code']).size().rename('count').reset_index()
             df_agg = consolidate_plm_vertical(df_agg, 'codgeo', ['formation_code'], 'count')
-            plm_arr = [str(x) for x in range(75101, 75121)] + [str(x) for x in range(13201, 13217)] + [str(x) for x in range(69381, 69390)]
-            df_agg = df_agg[~df_agg['codgeo'].isin(plm_arr)].copy()
+            df_agg = df_agg[~df_agg['codgeo'].isin(PLM_ARRONDISSEMENTS)].copy()
             
             out = OUTPUT_DIR / "odis_formations_agg.parquet"
             df_agg.to_parquet(out, compression='brotli', index=False, engine='fastparquet')
@@ -748,8 +744,7 @@ def build_vertical_tables(config: Dict[str, Any], logger: PipelineLogger):
              df = pd.read_parquet(refug_path, engine='fastparquet')
              parent_bdvs = {'75056': '75056', '13055': '13055', '69123': '69123'}
              df = consolidate_plm_detail_list(df, 'codgeo', parent_bdvs)
-             plm_arr = [str(x) for x in range(75101, 75121)] + [str(x) for x in range(13201, 13217)] + [str(x) for x in range(69381, 69390)]
-             df = df[~df['codgeo'].isin(plm_arr)].copy()
+             df = df[~df['codgeo'].isin(PLM_ARRONDISSEMENTS)].copy()
              out = OUTPUT_DIR / "odis_refugee_associations.parquet"
              df.to_parquet(out, compression='brotli', index=False, engine='fastparquet')
              logger.log_step("build_vertical_tables", "REFUGEE_ASSOCIATIONS", {"path": str(out)})
@@ -1002,8 +997,7 @@ def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
             if 'codgeo' in all_pois.columns:
                 parent_bdvs = {'75056': '75056', '13055': '13055', '69123': '69123'}
                 all_pois = consolidate_plm_detail_list(all_pois, 'codgeo', parent_bdvs)
-                plm_arr = [str(x) for x in range(75101, 75121)] + [str(x) for x in range(13201, 13217)] + [str(x) for x in range(69381, 69390)]
-                all_pois = all_pois[~all_pois['codgeo'].isin(plm_arr)].copy()
+                all_pois = all_pois[~all_pois['codgeo'].isin(PLM_ARRONDISSEMENTS)].copy()
             
             # Optimize types
             all_pois['category'] = all_pois['category'].astype('category')
@@ -1024,7 +1018,7 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
     """Generates referentiels."""
     logger.log_step("generate_referentiels", "STARTED")
     try:
-        refs_list = []
+        refs_list: List[Any] = []
 
             
         if refs_list:
@@ -1229,9 +1223,7 @@ def main(argv=None):
                 else:
                     steps_map[step_name](config, logger)
             except Exception as e:
-                print(f"ERROR running build step {step_name}: {e}")
-                import traceback
-                traceback.print_exc()
+                logging.exception(f"❌ [BUILD FAILURE] Error running build step '{step_name}'")
         else:
             logging.warning(f"Unknown build step: {step_name}")
 

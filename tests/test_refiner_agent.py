@@ -61,7 +61,7 @@ async def test_refiner_agent_live_shortlisted_city():
     
     # Check that we have a pitch for both Nantes (recommended) and Le Mans (pressentie)
     codgeos_received = {p.codgeo for p in response_obj.pitches_per_city}
-    print(f"DEBUG: Codgeos received: {codgeos_received}")
+    # print(f"DEBUG: Codgeos received: {codgeos_received}")
     
     assert "44055" in codgeos_received, "Should contain Nantes (recommended city)"
     assert "72181" in codgeos_received, "Should contain Le Mans (shortlisted city)"

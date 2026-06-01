@@ -28,10 +28,22 @@ class OdaceClient:
         
         # Check cache
         if cache_file.exists():
+            config_ttl_seconds = ttl_seconds
+            try:
+                from pipeline.common import load_config, CONFIG_FILE
+                config = load_config(CONFIG_FILE)
+                odace_cfg = config.get('local_files', {}).get('odace', {})
+                if odace_cfg and 'ttl_days' in odace_cfg:
+                    config_ttl_seconds = odace_cfg['ttl_days'] * 24 * 60 * 60
+            except:
+                pass
+            
+            effective_ttl = min(ttl_seconds, config_ttl_seconds) if ttl_seconds != 7 * 24 * 60 * 60 else config_ttl_seconds
+            
             file_age = time.time() - cache_file.stat().st_mtime
-            if file_age < ttl_seconds:
+            if file_age < effective_ttl:
                 try:
-                    logging.info(f"OdaceClient: Loading {table_name} from cache (age: {file_age/3600:.1f}h)")
+                    logging.info(f"OdaceClient: Loading {table_name} from cache (age: {file_age/3600:.1f}h, TTL: {effective_ttl/(24*3600):.1f} days)")
                     with open(cache_file, "r") as f:
                         return json.load(f)
                 except Exception as e:

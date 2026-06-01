@@ -223,8 +223,20 @@ class ScoringEngine:
             
             if weights_val:
                  denom = sum(weights_val)
-                 # Avoid division by zero
-                 df[f"{category}_cat_score"] = np.where(denom > 0, sum(scores_val) / denom, 0.0)
+                 raw_scores = np.where(denom > 0, sum(scores_val) / denom, 0.0)
+                 s = pd.Series(raw_scores, index=df.index)
+                 
+                 # Only normalize if we have variation in the scores to avoid zero-variance compression
+                 if s.nunique() > 1:
+                     non_zero_mask = s > 0
+                     if non_zero_mask.any():
+                         ranked = s.rank(pct=True)
+                         ranked[~non_zero_mask] = 0.0
+                         df[f"{category}_cat_score"] = ranked
+                     else:
+                         df[f"{category}_cat_score"] = 0.0
+                 else:
+                     df[f"{category}_cat_score"] = s
 
         return df
 

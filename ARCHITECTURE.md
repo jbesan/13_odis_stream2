@@ -116,11 +116,17 @@ During the build phase (`pipeline/build.py`), all individual arrondissement-leve
 ### 8.2 Descendant Cascade Filtering
 All vertical and reference tables (including CCAS lists, refugee associations, formations, and POIs) are consolidated at the parent level. Any references to child arrondissements are mapped to parent INSEE codes, ensuring that descriptive details, E2E scoring, maps, and PDF exports only reference global parent communes.
 
-## 9. Configuration-Driven Scoring Weights
+## 9. Configuration-Driven Scoring Weights & Normalization
 
 To maintain strict architectural separation between user-customized priority settings and global domain standards:
 - **No Hardcoded UI Multipliers**: The scoring weights for all baseline and active criteria flow purely and dynamically from [scores_config.yaml](file:///Users/jacques/dev/13_odis_stream2/app/scores_config.yaml).
 - **Expert Tuning Abstraction**: Priority settings are handled cleanly through `criteria_weights` and are never hardcoded inside forms or engine defaults, ensuring maximum configurability and transparency for E2E reports.
+
+### 9.1 Category-Level Normalization (Percentile-Based)
+To eliminate implicit weight biases across categories (e.g., categories with low raw score distributions being dominated by others), ODIS normalizes each category score using a **percentile ranker** before applying the final global weights.
+- **Ranks Centiles**: All valid category scores are dynamically mapped to a uniform distribution in $[0, 1]$ using `.rank(pct=True)`.
+- **Preserves Absolute Zeroes**: Any commune with a category score of exactly `0.0` (i.e. meeting zero active indicators) remains strictly at `0.0` post-ranking to prevent artificial inflation.
+- **Robust Variance Protection**: If all communes share the identical category score, ranking is automatically bypassed to avoid compression.
 
 ## 10. Shortlisted City (Ville Pressentie) Comparison Architecture
 

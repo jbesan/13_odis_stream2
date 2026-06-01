@@ -756,3 +756,5 @@ scores:
       display_factor: 1
       tooltip: Taux cumulé des crimes et délits pour 1000 hab. (Source SSMSI)
     weight: 1.0
+    min_bound: 0.0
+    max_bound: 100.0

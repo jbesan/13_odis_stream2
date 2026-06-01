@@ -14,18 +14,24 @@ from google.cloud import bigquery
 
 from pipeline.common import (
     PipelineLogger, load_config, load_dataset, extract_zip,
-    CONFIG_FILE, CACHE_DIR, CLEAN_DIR, OUTPUT_DIR, STATUS_FILE
+    CONFIG_FILE, CACHE_DIR, CLEAN_DIR, OUTPUT_DIR, STATUS_FILE,
+    is_cache_valid, fetch_remote_metadata_datagouv, validate_dataset_contract,
+    atomic_swap, get_ingest_paths, finalize_ingest
 )
 from pipeline.odace_client import get_odace_client
 from pipeline.ft_live_ingest import run_etl, get_token as get_ft_token
 from pipeline.emplois_inclusion_ingest import run_ingestion as run_inclusion_ingest
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
 
 def fetch_source(name: str, source_cfg: Dict[str, Any], logger: PipelineLogger) -> Optional[Path]:
-    """Downloads and prepares a single source."""
+    """Downloads and prepares a single source with caching, metadata checks, and staging."""
+    import os
+    resource_id = source_cfg.get('datagouv_resource_id')
     url = source_cfg.get('url')
+    if not url and resource_id:
+        url = f"https://www.data.gouv.fr/api/1/datasets/r/{resource_id}"
+
     if not url:
         logger.log_source(name, "SKIPPED", "No URL provided")
         return None
@@ -36,62 +42,95 @@ def fetch_source(name: str, source_cfg: Dict[str, Any], logger: PipelineLogger) 
     # Create cache dir
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-    try:
-        if local_path.exists():
-            logging.info(f"[Fetch] {name}: File exists. Skipping download.")
-            logger.log_source(name, "CACHED", local_path)
-        else:
-            logging.info(f"[Fetch] {name}: Downloading from {url}...")
-            
-            if url.startswith("file://"):
-                import shutil
-                src_path = Path(url.replace("file://", ""))
-                if src_path.exists():
-                    shutil.copy(src_path, local_path)
-                    logger.log_source(name, "COPIED", local_path)
-                else:
-                     raise FileNotFoundError(f"Source file not found: {src_path}")
-            else:
-                verify_ssl = source_cfg.get('verify_ssl', True)
-                headers = {
-                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-                    "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
-                    "Cache-Control": "max-age=0",
-                    "Sec-Ch-Ua": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-                    "Sec-Ch-Ua-Mobile": "?0",
-                    "Sec-Ch-Ua-Platform": '"macOS"',
-                    "Sec-Fetch-Dest": "document",
-                    "Sec-Fetch-Mode": "navigate",
-                    "Sec-Fetch-Site": "none",
-                    "Sec-Fetch-User": "?1",
-                    "Upgrade-Insecure-Requests": "1"
-                }
-                try:
-                    response = requests.get(url, stream=True, verify=verify_ssl, headers=headers)
-                    response.raise_for_status()
-                    with open(local_path, 'wb') as f:
-                        for chunk in response.iter_content(chunk_size=8192):
-                            f.write(chunk)
-                    logger.log_source(name, "DOWNLOADED", local_path)
-                except Exception as e:
-                    logging.error(f"[Fetch] {name} Failed: {e}")
-                    logger.log_source(name, "FAILED", str(e))
-                    return None
-
-        # Handle Zip Extraction
+    # 1. Check if cache is still valid
+    ttl_days = source_cfg.get('ttl_days', 30)
+    if is_cache_valid(name, source_cfg):
+        logging.info(f"[Fetch] {name}: Local cache is valid (TTL={ttl_days} days). Skipping fetch.")
+        logger.log_source(name, "CACHED", local_path)
         if source_cfg.get('format') == 'zip' and 'archive_file' in source_cfg:
-            extracted_file = source_cfg['archive_file']
-            extracted_path = CACHE_DIR / extracted_file
-            if not extracted_path.exists():
-                logging.info(f"[Fetch] {name}: Extracting {extracted_file}...")
-                extract_zip(local_path, extracted_file)
+            extracted_path = CACHE_DIR / source_cfg['archive_file']
             return extracted_path
-            
         return local_path
+
+    # Cache is expired or missing. Check if we can do data.gouv.fr remote metadata validation.
+    staging_local_path = CACHE_DIR / f"staging_{local_name}"
+    download_url = url
+
+    if local_path.exists() and resource_id:
+        # We can query remote metadata to check if the remote resource is newer than our local cache.
+        meta = fetch_remote_metadata_datagouv(resource_id)
+        if meta and 'last_modified' in meta:
+            try:
+                # Remove timezone offset or make naive to compare
+                remote_mtime = datetime.fromisoformat(meta['last_modified'].replace('Z', '+00:00')).replace(tzinfo=None)
+                local_mtime = datetime.fromtimestamp(local_path.stat().st_mtime)
+                if remote_mtime <= local_mtime:
+                    logging.info(f"[Fetch] {name} is up-to-date on data.gouv.fr (remote: {remote_mtime}, local: {local_mtime}). Skipping download and resetting TTL.")
+                    # Touch local file to refresh its modification time (reset TTL window)
+                    os.utime(local_path, None)
+                    logger.log_source(name, "CACHED", local_path)
+                    if source_cfg.get('format') == 'zip' and 'archive_file' in source_cfg:
+                        extracted_path = CACHE_DIR / source_cfg['archive_file']
+                        return extracted_path
+                    return local_path
+                else:
+                    logging.info(f"[Fetch] {name}: Remote version is newer (remote: {remote_mtime}, local: {local_mtime}). Downloading updated data...")
+                    if meta.get('url'):
+                        download_url = meta['url']
+            except Exception as e:
+                logging.warning(f"⚠️ Error parsing metadata for {name}: {e}")
+
+    # Fallback to reminder alert for other expired non-datagouv sources
+    if local_path.exists() and not resource_id:
+        mtime = datetime.fromtimestamp(local_path.stat().st_mtime)
+        age_days = (datetime.now() - mtime).days
+        logging.info(f"🔔 [REMINDER] Cache for dataset '{name}' is {age_days} days old (TTL={ttl_days}). Please check manually if a new version is available on the provider's site.")
+
+    # Download to staging path
+    logging.info(f"[Fetch] {name}: Downloading to staging file from {download_url}...")
+    try:
+        if download_url.startswith("file://"):
+            import shutil
+            src_path = Path(download_url.replace("file://", ""))
+            if src_path.exists():
+                shutil.copy(src_path, staging_local_path)
+                logger.log_source(name, "STAGING_COPIED", staging_local_path)
+            else:
+                raise FileNotFoundError(f"Source file not found: {src_path}")
+        else:
+            verify_ssl = source_cfg.get('verify_ssl', True)
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+            }
+            response = requests.get(download_url, stream=True, verify=verify_ssl, headers=headers)
+            response.raise_for_status()
+            with open(staging_local_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            logger.log_source(name, "STAGING_DOWNLOADED", staging_local_path)
+
+        # Handle Zip Extraction in staging mode
+        if source_cfg.get('format') == 'zip' and 'archive_file' in source_cfg:
+            import zipfile
+            extracted_file = source_cfg['archive_file']
+            staging_extracted_path = CACHE_DIR / f"staging_{extracted_file}"
+            logging.info(f"[Fetch] {name}: Extracting zip member '{extracted_file}' to staging path...")
+            with zipfile.ZipFile(staging_local_path, 'r') as z:
+                with open(staging_extracted_path, 'wb') as f_out:
+                    f_out.write(z.read(extracted_file))
+            return staging_extracted_path
+
+        return staging_local_path
     except Exception as e:
-        logging.error(f"[{name}] Failed: {e}")
-        logger.log_source(name, "ERROR", str(e))
+        logging.error(f"[Fetch] {name} Failed: {e}")
+        logger.log_source(name, "FAILED", str(e))
+        # If download failed, but we have an active cached file, return the active file so we can fall back to it
+        if local_path.exists():
+            logging.warning(f"⚠️ Failed to download updated version of {name}. Falling back to cached copy.")
+            if source_cfg.get('format') == 'zip' and 'archive_file' in source_cfg:
+                return CACHE_DIR / source_cfg['archive_file']
+            return local_path
         return None
 
 def fetch_rome_referential(logger: PipelineLogger) -> Optional[Path]:
@@ -296,33 +335,6 @@ def clean_rpls(config: Dict[str, Any], logger: PipelineLogger):
         output_path = CLEAN_DIR / "rpls.parquet"
         df_out.to_parquet(output_path, engine='fastparquet')
         logger.log_step("clean_rpls", "COMPLETED", {"path": str(output_path)})
-
-def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
-    """Extracts points of interest and aggregated counts from BPE."""
-    output_heb_cols = CLEAN_DIR / "bpe_hebergement_cols.parquet"
-    output_creches_cols = CLEAN_DIR / "bpe_petite_enfance_cols.parquet"
-    output_pois = CLEAN_DIR / "bpe_pois.parquet"
-
-    # 1-Year TTL Check for hebergement part
-    heb_needs_refresh = True
-    if output_heb_cols.exists():
-        mtime = datetime.fromtimestamp(output_heb_cols.stat().st_mtime)
-        age_days = (datetime.now() - mtime).days
-        if age_days < 365:
-            logging.info(f"[BPE] Hebergement stats are {age_days} days old. Cache is valid (TTL=1 year).")
-            heb_needs_refresh = False
-
-    if not heb_needs_refresh and output_creches_cols.exists() and output_pois.exists():
-        logging.info("[BPE] All BPE outputs are within TTL. Skipping.")
-        return
-
-    logger.log_step("clean_bpe", "STARTED")
-    source = config['sources']['bpe']
-    path = CACHE_DIR / source['local_name']
-    if not path.exists(): return
-
-    df = load_dataset(path, source)
-    df.columns = [c.strip() for c in df.columns]
 
 def clean_caf(config: Dict[str, Any], logger: PipelineLogger):
     """Cleans CAF and saves to parquet."""
@@ -1326,8 +1338,14 @@ def get_live_jobs_status() -> Dict[str, Any]:
     """Checks the age of Live Jobs data in cache and deployed data."""
     cache_path = OUTPUT_DIR / "odis_ft_jobs_agg.parquet"
     data_path = Path("data/odis_ft_jobs_agg.parquet")
-    ttl_days = 7
     
+    # Dynamic TTL check
+    try:
+        config = load_config(CONFIG_FILE)
+        ttl_days = config.get('local_files', {}).get('france_travail_live', {}).get('ttl_days', 7)
+    except:
+        ttl_days = 7
+        
     files = [cache_path, data_path]
     mtimes = []
     for f in files:
@@ -1335,7 +1353,7 @@ def get_live_jobs_status() -> Dict[str, Any]:
             mtimes.append(f.stat().st_mtime)
     
     if not mtimes:
-        return {"age_days": None, "within_ttl": False, "exists": False}
+        return {"age_days": None, "within_ttl": False, "exists": False, "ttl_days": ttl_days}
     
     newest_mtime = max(mtimes)
     age_days = (time.time() - newest_mtime) / (24 * 3600)
@@ -1351,8 +1369,14 @@ def get_inclusion_jobs_status() -> Dict[str, Any]:
     """Checks the age of Inclusion Jobs data in cache and deployed data."""
     cache_path = OUTPUT_DIR / "odis_inclusion_jobs.parquet"
     data_path = Path("data/odis_inclusion_jobs.parquet")
-    ttl_days = 7
     
+    # Dynamic TTL check
+    try:
+        config = load_config(CONFIG_FILE)
+        ttl_days = config.get('local_files', {}).get('inclusion_jobs', {}).get('ttl_days', 7)
+    except:
+        ttl_days = 7
+        
     files = [cache_path, data_path]
     mtimes = []
     for f in files:
@@ -1397,6 +1421,212 @@ def clean_live_jobs(config: Dict[str, Any], logger: PipelineLogger, skip: bool =
             logger.log_step("clean_live_jobs", "FAILED")
     else:
         logger.log_step("clean_live_jobs", "SKIPPED")
+
+class MutedPipelineLogger:
+    """Wrapper to prevent duplicate log_step calls from inside individual clean_* cleaners."""
+    def __init__(self, real_logger: PipelineLogger):
+        self.real_logger = real_logger
+        self.status = real_logger.status
+
+    def log_step(self, step_name: str, status: str, details: Optional[Dict[str, Any]] = None):
+        pass
+
+    def log_source(self, source_name: str, status: str, file_path: Optional[str] = None):
+        self.real_logger.log_source(source_name, status, file_path)
+
+
+def run_clean_step_safely(step_name: str, clean_func, config: Dict[str, Any], logger: PipelineLogger, *args, **kwargs):
+    """
+    Executes a step cleaning function under the Blue-Green staging-and-restore pattern.
+    Checks if any staging file exists (e.g. staging_{local_name} or staging_{archive_file}).
+    If they exist:
+      1. Validates the RAW staging dataset against config-defined schema contracts.
+      2. Backs up active raw, extracted, and clean files (renaming them to .active_bak).
+      3. Renames staging files to their active paths.
+      4. Executes the original clean function.
+      5. Validates that the resulting clean parquet file is non-empty.
+      6. Commits (deletes backups) on success, or rolls back (restores backups) on failure/exception.
+    """
+    import os
+    from pathlib import Path
+    
+    source_cfg = config['sources'].get(step_name) or config.get('local_files', {}).get(step_name)
+    if not source_cfg:
+        # Fallback if no configuration is defined for this step name
+        logger.log_step(f"clean_{step_name}", "STARTED")
+        try:
+            clean_func(config, logger, *args, **kwargs)
+            logger.log_step(f"clean_{step_name}", "COMPLETED")
+        except Exception as e:
+            logger.log_step(f"clean_{step_name}", "ERROR", {"error": str(e)})
+            logging.exception(f"Error running step clean_{step_name}")
+            raise e
+        return
+
+    logger.log_step(f"clean_{step_name}", "STARTED")
+    muted_logger = MutedPipelineLogger(logger)
+
+    local_name = source_cfg.get('local_name')
+    path_str = source_cfg.get('path')
+    
+    if path_str:
+        active_raw = Path(path_str)
+        staging_raw = active_raw.parent / f"staging_{active_raw.name}"
+    elif local_name:
+        active_raw = CACHE_DIR / local_name
+        staging_raw = CACHE_DIR / f"staging_{local_name}"
+    else:
+        active_raw = None
+        staging_raw = None
+
+    # Check zip extracted path if archive_file exists
+    archive_file = source_cfg.get('archive_file')
+    if archive_file:
+        active_ext = CACHE_DIR / archive_file
+        staging_ext = CACHE_DIR / f"staging_{archive_file}"
+    else:
+        active_ext = None
+        staging_ext = None
+
+    # Dynamic Clean Filename Resolver
+    clean_filenames = {
+        'associations': 'associations_vertical.parquet',
+        'nomenclature_waldec': 'referentiel_waldec.parquet',
+        'hebergement_rna': 'hebergement_rna_cols.parquet',
+        'jaccueille': 'jaccueille_bdv.parquet',
+        'bpe': 'bpe_pois.parquet',
+        'odace_rent': 'odace_loyer_annonce.parquet',
+    }
+    clean_filename = clean_filenames.get(step_name, f"{step_name}.parquet")
+    active_clean = CLEAN_DIR / clean_filename
+
+    # Determine if we are in staging mode
+    is_staging = False
+    if staging_raw and staging_raw.exists():
+        is_staging = True
+    if staging_ext and staging_ext.exists():
+        is_staging = True
+
+    if not is_staging:
+        # No staging files exist, run the clean function directly
+        try:
+            clean_func(config, muted_logger, *args, **kwargs)
+            
+            # Validate that the active clean parquet is non-empty for basic sanity
+            details = {}
+            if active_clean.exists():
+                try:
+                    df_clean = pd.read_parquet(active_clean, engine='fastparquet')
+                    details = {"rows": len(df_clean), "path": str(active_clean)}
+                    if len(df_clean) == 0:
+                        logging.warning(f"⚠️ [SANITY WARNING] Active clean file for '{step_name}' is empty.")
+                except Exception as e:
+                    logging.warning(f"⚠️ [SANITY WARNING] Failed to read active clean file for '{step_name}': {e}")
+            
+            logger.log_step(f"clean_{step_name}", "COMPLETED", details)
+        except Exception as e:
+            logger.log_step(f"clean_{step_name}", "ERROR", {"error": str(e)})
+            logging.exception(f"Error running step clean_{step_name}")
+        return
+
+    # Blue-Green: validate RAW, back up, and swap staging files into place
+    logging.info(f"🔄 [Staging Mode] Staging files detected for '{step_name}'. Performing safe dry-run.")
+    
+    # 1. Validate RAW schema contract
+    raw_data_path = staging_ext if (archive_file and staging_ext and staging_ext.exists()) else staging_raw
+    if raw_data_path and raw_data_path.exists():
+        try:
+            logging.info(f"📋 Validating raw schema contract for '{step_name}' using {raw_data_path.name}")
+            df_raw = load_dataset(raw_data_path, source_cfg)
+            if not validate_dataset_contract(df_raw, step_name, source_cfg):
+                raise ValueError("Raw schema contract validation failed.")
+        except Exception as e:
+            logging.error(f"❌ [INGEST FAILURE] '{step_name}' raw schema validation failed: {e}")
+            logger.log_step(f"clean_{step_name}", "ERROR", {"error": f"Raw validation failed: {str(e)}"})
+            # Discard staging files and abort
+            if staging_raw and staging_raw.exists():
+                try: os.remove(staging_raw)
+                except: pass
+            if staging_ext and staging_ext.exists():
+                try: os.remove(staging_ext)
+                except: pass
+            logging.warning(f"⚠️ [ABORTED] Retained existing cache for '{step_name}'.")
+            return
+
+    backups = {}  # Map of active_path -> backup_path
+    moved_staging = []  # List of (active_path, staging_path)
+
+    try:
+        # 2. Back up active raw files
+        if active_raw and active_raw.exists():
+            bak_raw = active_raw.with_name(active_raw.name + ".active_bak")
+            if bak_raw.exists(): os.remove(bak_raw)
+            os.replace(active_raw, bak_raw)
+            backups[active_raw] = bak_raw
+            
+        if active_ext and active_ext.exists():
+            bak_ext = active_ext.with_name(active_ext.name + ".active_bak")
+            if bak_ext.exists(): os.remove(bak_ext)
+            os.replace(active_ext, bak_ext)
+            backups[active_ext] = bak_ext
+
+        # 3. Back up active clean parquet
+        if active_clean.exists():
+            bak_clean = active_clean.with_name(active_clean.name + ".active_bak")
+            if bak_clean.exists(): os.remove(bak_clean)
+            os.replace(active_clean, bak_clean)
+            backups[active_clean] = bak_clean
+
+        # 4. Swap staging raw files to active names
+        if staging_raw and staging_raw.exists():
+            os.replace(staging_raw, active_raw)
+            moved_staging.append((active_raw, staging_raw))
+            
+        if staging_ext and staging_ext.exists():
+            os.replace(staging_ext, active_ext)
+            moved_staging.append((active_ext, staging_ext))
+
+        # 5. Run the clean function (it will read the staging data and output to active_clean)
+        clean_func(config, muted_logger, *args, **kwargs)
+
+        # 6. Validate the resulting clean parquet file is non-empty
+        if not active_clean.exists():
+            raise FileNotFoundError(f"Clean step did not generate the clean parquet file: {active_clean}")
+
+        df_clean = pd.read_parquet(active_clean, engine='fastparquet')
+        if len(df_clean) == 0:
+            raise ValueError("Cleaned output dataset is empty.")
+
+        # Success! Commit changes (delete backups)
+        for bak_path in backups.values():
+            try: os.remove(bak_path)
+            except: pass
+        logging.info(f"✅ [SUCCESS] Ingested and verified '{step_name}' successfully. Staging committed.")
+        logger.log_step(f"clean_{step_name}", "COMPLETED", {"rows": len(df_clean), "path": str(active_clean)})
+
+    except Exception as e:
+        logging.error(f"❌ [INGEST FAILURE] '{step_name}' failed validation/cleaning: {e}")
+        logger.log_step(f"clean_{step_name}", "ERROR", {"error": str(e)})
+
+        # Rollback!
+        # Delete failed active clean parquet
+        if active_clean.exists():
+            try: os.remove(active_clean)
+            except: pass
+
+        # Move active files back to staging (re-create staging files if we want to preserve them, or delete them)
+        # To match Option A "discards staging files", we can delete any active files that were staging
+        for active_path, _ in moved_staging:
+            if active_path.exists():
+                try: os.remove(active_path)
+                except: pass
+
+        # Restore original active files from backups
+        for active_path, bak_path in backups.items():
+            if bak_path.exists():
+                os.replace(bak_path, active_path)
+
+        logging.warning(f"⚠️ [ROLLBACK COMPLETE] Reverted '{step_name}' to last known good cache.")
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="ODIS Ingest Pipeline")
@@ -1465,13 +1695,14 @@ def main(argv=None):
             try:
                 if step_name == 'live_jobs':
                     skip_live = getattr(args, 'skip_live_jobs', False)
-                    steps_map[step_name](config, logger, skip=skip_live)
+                    run_clean_step_safely(step_name, steps_map[step_name], config, logger, skip=skip_live)
+                elif step_name == 'inclusion_jobs':
+                    skip_inc = getattr(args, 'skip_inclusion_jobs', False)
+                    run_clean_step_safely(step_name, steps_map[step_name], config, logger, skip=skip_inc)
                 else:
-                    steps_map[step_name](config, logger)
+                    run_clean_step_safely(step_name, steps_map[step_name], config, logger)
             except Exception as e:
-                print(f"ERROR running step {step_name}: {e}")
-                import traceback
-                traceback.print_exc()
+                logging.exception(f"❌ [INGEST FAILURE] Error running step '{step_name}'")
         else:
             logging.warning(f"Unknown step: {step_name}")
 

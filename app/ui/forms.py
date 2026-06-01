@@ -564,7 +564,7 @@ def render_weight_profile_form() -> None:
 
     for p_key in weight_keys:
         if p_key not in st.session_state:
-            st.session_state[p_key] = 0.5
+            st.session_state[p_key] = 1.0 if p_key == "ui_poids_territoire" else 0.5
 
     format_pct = lambda x: f"{int(x*100)}%"
     
@@ -879,5 +879,5 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
         org_strategic_locations=st.session_state.get('ui_org_strategic_locations', []),
         org_strategic_locations_type=st.session_state.get('ui_org_strategic_locations_type', 'departement'),
         org_boosts=st.session_state.get('ui_org_boosts', {}),
-        poids_territoire=st.session_state.get('ui_poids_territoire', 0.5)
+        poids_territoire=st.session_state.get('ui_poids_territoire', 1.0)
     )

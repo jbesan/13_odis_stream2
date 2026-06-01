@@ -42,9 +42,18 @@ Depuis 2026, ODIS intègre des **critères de référence (Baselines)**. Contrai
 - **Objectif** : Garantir qu'un standard minimum de qualité territoriale (sécurité, accès aux soins, mobilité durable) soit évalué pour chaque dossier.
 - **Visibilité** : Ces critères sont visibles dans les rapports détaillés et utilisés par l'IA pour justifier ses recommandations.
 
-### 5. Agrégation et Pondération
+### 5. Normalisation des Scores par Catégorie (Percentile Ranking) 📊
 
-Enfin, les scores sont regroupés par catégories (Emploi, Logement, Santé, etc.) puis pondérés selon les préférences de l'utilisateur (Profil Expert ou Prédéfini).
+Depuis mai 2026, afin de résoudre le problème des disparités d'écarts de scores entre les catégories (par exemple, la catégorie Logement qui avait historiquement des scores bruts faibles, tandis que la Santé ou l'Éducation avaient des scores très élevés, créant un biais de pondération implicite), ODIS applique une **normalisation par centiles (percentile ranking)** au niveau de chaque catégorie :
+
+- **Principe** : Les scores bruts agrégés d'une catégorie pour toutes les communes qualifiées sont convertis en rangs centiles uniformes dans l'intervalle $[0, 1]$.
+- **Protection Zéro Absolu** : Les communes obtenant un score brut de exactement `0.0` (aucun indicateur actif rencontré) sont exclues de l'opération de classement et restent fixées à `0.0` pour éviter une inflation artificielle.
+- **Protection Variance Nulle** : Si toutes les communes qualifiées obtiennent le même score de catégorie (cas de recherche sur un ensemble minuscule ou mocké), le classement est ignoré et le score brut uniforme est conservé.
+- **Résultat** : Toutes les catégories actives ont désormais une distribution uniforme centrée autour de 0.5. Les coefficients de pondération (ex: Famille, Économique) choisis par l'utilisateur sont ainsi parfaitement respectés.
+
+### 6. Agrégation et Pondération
+
+Enfin, les scores normalisés de chaque catégorie sont regroupés puis pondérés selon les préférences de l'utilisateur (Profil Expert ou Prédéfini) pour obtenir le score final global.
 
 ---
 
@@ -144,7 +153,7 @@ Avant d'être utilisés dans l'application, les scores passent par une phase de 
 2.  **Harmonisation (Scaling)** : Les données sont normalisées entre 0.0 (le moins favorable) et 1.0 (le plus favorable). Pour garantir la robustesse face aux données aberrantes (ouliers), ODIS utilise un **Scaling par Quantiles** (`get_min_max_quant`) :
     - **Cas Standard (1%)** : Par défaut, si aucune borne n'est fixée dans la configuration, le moteur utilise les quantiles **p1** et **p99** comme bornes Min/Max.
     - **Cas Sensibles (5%)** : Pour les données très dispersées comme le **Logement** (Suroccupation, Loyers) ou l'**Éducation** (Petite Enfance, Classes à risque), le filtrage est plus agressif avec les quantiles **p5** et **p95**.
-    - **Bornes Fixes** : Si `min_bound` et `max_bound` sont définis dans `scores_config.yaml`, ils priment sur le calcul par quantiles.
+    - **Bornes Fixes** : Si `min_bound` et `max_bound` sont définis dans `scores_config.yaml`, ils priment sur le calcul par quantiles. Par exemple, l'**Indice de Sécurité** (`ter_insecurite_scaled`) utilise des bornes fixes de `min_bound=0` (sécurité maximale) à `max_bound=100` (insécurité/délinquance maximale, correspondant aux 0.5% de communes les moins sûres de France) afin de ne pas artificiellement pénaliser les villes moyennes et grandes par rapport aux très petits villages ruraux.
 3.  **Filtrage Qualité** : Les valeurs aberrantes extrêmes sont ainsi écrêtées (clipping) entre 0 et 1.
 4.  **Consolidation des Métropoles PLM (Paris, Lyon, Marseille)** : 
     Pour éviter que les arrondissements de Paris, Lyon et Marseille apparaissent comme des communes individuelles (ce qui fausse la visualisation cartographique et l'analyse), l'ETL consolide les données au niveau de la commune parente globale (codes INSEE `75056`, `69123`, `13055`) :

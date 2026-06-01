@@ -395,7 +395,7 @@ with col_map:
                 zoom=st.session_state.get("zoom"),
                 feature_group_to_add=fg_dynamic,
                 key="odis_main_map",
-                width='stretch',
+                use_container_width=True,
                 returned_objects=[]
             )
         except Exception as e:
@@ -408,7 +408,8 @@ with col_map:
 
 # Do not remove, useful to debug states
 # Detect Cloud Run environment
-is_cloud_run = os.environ.get("K_SERVICE") is not None
+# is_cloud_run = os.environ.get("K_SERVICE") is not None
+# st.dataframe(st.session_state.processed_gdf[["ter_insecurite_scaled"]])
 
 # 1. Skip if not running on Cloud Run (Local Dev)
 # if not is_cloud_run:
