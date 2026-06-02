@@ -148,5 +148,24 @@ Liste en vrac d'idées d'amélioration
 ### 📊 Status
 - **May 2026**: Complete. Codebase fully audited, dead code eradicated, clean orchestration logging centralized via a muted step cleaner wrapper, PLM lists consolidated, and exceptions unified under standard logging formats. Tested and verified.
 
+---
+
+## 🚀 Feature [F-64]: Employment Post-Scoring Hydration
+
+### 📝 User Stories
+- En tant que travailleur social, je veux pouvoir consulter des offres d'emploi réelles et actualisées correspondant aux codes ROME recherchés directement dans les détails de chaque commune recommandée ("En savoir plus"), afin de faciliter la discussion concrète sur l'insertion professionnelle du bénéficiaire.
+- En tant qu'architecte, je veux que ces offres soient récupérées de manière asynchrone après le scoring (post-scoring) et stockées de manière structurée dans le modèle de données afin de ne pas ralentir le calcul initial et de permettre leur réutilisation par les agents experts.
+
+### 🔑 Key Features
+* **Background Post-Scoring Ingestion**: Lancement d'un thread asynchrone après le scoring pour requêter l'API de France Travail pour chaque commune recommandée (Top 5 + ville pressentie).
+* **Smart ROME-based Querying**: Pour chaque commune, recherche des offres d'emploi correspondant aux codes ROME spécifiés dans le profil de recherche (`codes_metiers`), avec une limite maximale de 3 offres par code ROME et de 10 offres totales par commune pour garantir la diversité des propositions.
+* **Structured Model Serialization**: Création d'un modèle Pydantic `JobOfferDetail` et ajout d'un champ `matching_job_offers` dans le modèle `EmploymentMetrics` afin de sérialiser proprement les offres au sein de `CommuneResult`.
+* **Graceful Fallback & Logging**: Gestion robuste des cas de credentials manquants ou d'erreurs d'API France Travail en affichant un message de repli clair dans l'UI sans bloquer ni faire planter l'application.
+* **Premium UI Display**: Intégration d'un nouvel expandeur "Offres d'emploi disponibles" au sein de l'onglet "💼 Emploi & Formation" de la modale "En savoir plus", affichant de manière lisible le titre de l'offre, l'entreprise, le type de contrat (CDD/CDI), le lieu et un lien/bouton direct pour postuler.
+
+### 📊 Status
+- In Progress
+
+
 
 
