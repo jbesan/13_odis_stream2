@@ -269,6 +269,123 @@ def launch_background_enrichment(engine: Any, codgeos: List[str], hash_val: str)
     thread.daemon = True
     thread.start()
 
+def launch_background_jobs_enrichment(codgeos: List[str], codes_metiers: List[List[Any]], hash_val: str):
+    """
+    Launches a background thread to fetch detailed job offers from France Travail.
+    """
+    store = get_odis_bg_store()
+    
+    def bg_jobs_enrichment_task(results_store: dict):
+        try:
+            logging.info(f"🚀 [JOBS-ENRICH] Starting background job enrichment for {len(codgeos)} communes (hash: {hash_val})")
+            
+            # 1. Extract unique valid ROME codes per adult
+            adult_romes_list = []
+            for adult_list in codes_metiers:
+                adult_romes = []
+                for item in adult_list:
+                    code = None
+                    label = None
+                    if hasattr(item, "code"):
+                        code = item.code
+                        label = item.label
+                    elif isinstance(item, dict) and "code" in item:
+                        code = item["code"]
+                        label = item.get("label")
+                    elif isinstance(item, str):
+                        code = item
+                        label = item
+                    
+                    if code and len(code) == 5 and code[0].isalpha() and code[1:].isdigit():
+                        if not any(r["code"] == code for r in adult_romes):
+                            adult_romes.append({"code": code, "label": label or code})
+                adult_romes_list.append(adult_romes)
+            
+            # If no ROME codes are present at all, return empty results
+            if not any(adult_romes_list):
+                logging.info(f"ℹ️ [JOBS-ENRICH] No valid ROME codes to search.")
+                current_val = results_store.get(hash_val, {})
+                if not isinstance(current_val, dict): current_val = {}
+                current_val["jobs_enrichment"] = {cg: {"status": "done", "jobs": [[] for _ in adult_romes_list]} for cg in codgeos}
+                results_store[hash_val] = current_val
+                return
+
+            from services.mcp_france_travail import _search_job_offers_logic
+            
+            jobs_data = {}
+            for cg in codgeos:
+                city_results = []
+                total_city_count = 0
+                
+                # Fetch up to 5 offers per ROME code, capped at 10 total per commune
+                for i, adult_romes in enumerate(adult_romes_list):
+                    adult_jobs = []
+                    for rome_entry in adult_romes:
+                        rome = rome_entry["code"]
+                        rome_label = rome_entry["label"]
+                        
+                        if total_city_count >= 10:
+                            break
+                        
+                        try:
+                            # sort=2 (distance ascending), distance=20 (radius in km)
+                            res = _search_job_offers_logic(
+                                rome=rome,
+                                location=cg,
+                                distance=20,
+                                sort=2,
+                                range_start=0,
+                                range_end=4
+                            )
+                            offres = res.get("offres", [])[:5]  # Strictly slice to enforce top 5 per ROME code
+                            for o in offres:
+                                if total_city_count >= 10:
+                                    break
+                                
+                                job_detail = {
+                                    "id": str(o.get("id", "")),
+                                    "title": str(o.get("intitule", "Poste sans titre")),
+                                    "company": o.get("entreprise", {}).get("nom") if o.get("entreprise") else None,
+                                    "contract_type": str(o.get("typeContrat", "")),
+                                    "contract_label": o.get("typeContratLibelle"),
+                                    "description": o.get("description_sh"),
+                                    "location": o.get("lieuTravail", {}).get("libelle") if o.get("lieuTravail") else None,
+                                    "location_insee": o.get("lieuTravail", {}).get("codeINSEE") if o.get("lieuTravail") else None,
+                                    "salary": o.get("salaire", {}).get("libelle") if o.get("salaire") else None,
+                                    "url": o.get("origineOffre", {}).get("urlOrigine") if o.get("origineOffre") else None,
+                                    "rome_code": rome,
+                                    "rome_label": rome_label
+                                }
+                                adult_jobs.append(job_detail)
+                                total_city_count += 1
+                        except Exception as e:
+                            logging.warning(f"⚠️ [JOBS-ENRICH] API error for {cg} ROME {rome}: {e}")
+                    
+                    city_results.append(adult_jobs)
+                
+                jobs_data[str(cg)] = {
+                    "status": "done",
+                    "jobs": city_results
+                }
+            
+            # Merge into harmonized storage
+            current_val = results_store.get(hash_val, {})
+            if not isinstance(current_val, dict): current_val = {}
+            current_val["jobs_enrichment"] = jobs_data
+            results_store[hash_val] = current_val
+            
+            logging.info(f"✅ [JOBS-ENRICH] Background job enrichment finished for hash {hash_val}")
+        except Exception as e:
+            logging.error(f"❌ [JOBS-ENRICH] Background job enrichment error for {hash_val}: {e}")
+            current_val = results_store.get(hash_val, {})
+            if not isinstance(current_val, dict): current_val = {}
+            current_val["jobs_enrichment"] = {cg: {"status": "error", "error": str(e), "jobs": []} for cg in codgeos}
+            results_store[hash_val] = current_val
+            
+    thread = threading.Thread(target=bg_jobs_enrichment_task, args=(store,))
+    thread.daemon = True
+    thread.start()
+
 def launch_background_audit_log(config: Any, search_results: Any, h: str, interaction_id: Optional[str] = None, username: Optional[str] = None):
     """
     Launches a background thread to log search results to Markdown and Telemetry.
@@ -330,6 +447,9 @@ def launch_post_scoring_tasks(engine: Any, config: Any, search_results: Any, h: 
     if commune_pressentie_full:
         target_codgeos.append(commune_pressentie_full['codgeo'])
     launch_background_enrichment(engine, target_codgeos, h)
+    
+    # 4b. Launch Employment Enrichment (Detailed Jobs - France Travail)
+    launch_background_jobs_enrichment(target_codgeos, config.codes_metiers, h)
     
     # 5. Launch Logging & Telemetry
     launch_background_audit_log(config, search_results, h, interaction_id=interaction_id, username=username)

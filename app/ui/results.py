@@ -208,6 +208,94 @@ def polling_associations_fragment(commune: CommuneResult, h: Optional[str]):
     else:
         st.info("Aucune association répertoriée.")
 
+@st.fragment(run_every=3.0)
+def polling_jobs_fragment(commune: CommuneResult, h: Optional[str]):
+    """Fragment that automatically polls for France Travail job enrichment every 3s."""
+    emp_data = commune.employment
+    matching_total = emp_data.standard_jobs_matching_total
+    
+    if h and not emp_data.matching_job_offers:
+        bg_res = odis_get_bg_result(h)
+        if isinstance(bg_res, dict) and 'jobs_enrichment' in bg_res:
+            jobs_city_data = bg_res['jobs_enrichment'].get(str(commune.codgeo))
+            if jobs_city_data:
+                if jobs_city_data.get("status") == "done":
+                    # We deserialize the nested list structure List[List[JobOfferDetail]]
+                    from core.models import JobOfferDetail
+                    raw_jobs = jobs_city_data.get('jobs', [])
+                    emp_data.matching_job_offers = [
+                        [JobOfferDetail.model_validate(o) for o in adult_list]
+                        for adult_list in raw_jobs
+                    ]
+                    st.rerun() # Trigger dialog rerun to reveal content
+                elif jobs_city_data.get("status") == "error":
+                    # Put a dummy empty list to stop polling on error
+                    emp_data.matching_job_offers = [[]]
+                    st.rerun()
+
+    bg_res = odis_get_bg_result(h) if h else None
+    jobs_city_data = bg_res.get('jobs_enrichment', {}).get(str(commune.codgeo)) if isinstance(bg_res, dict) and 'jobs_enrichment' in bg_res else None
+
+    # Helper function to render a single job offer in the premium style
+    def render_job_card(offer):
+        company_display = f" chez **{offer.company}**" if offer.company else ""
+        st.markdown(f"**{offer.title}**{company_display}")
+        
+        # Badges line
+        badges = []
+        if offer.contract_label or offer.contract_type:
+            badges.append(f"💼 {offer.contract_label or offer.contract_type}")
+        if offer.location:
+            badges.append(f"📍 {offer.location}")
+        loc_insee = getattr(offer, "location_insee", None)
+        if loc_insee and str(loc_insee) == str(commune.codgeo):
+            badges.append("🟢 **Même commune**")
+        if offer.salary:
+            badges.append(f"💰 {offer.salary}")
+        
+        if badges:
+            st.markdown(" | ".join(badges))
+        
+        if offer.description:
+            st.caption(offer.description)
+            
+        if offer.url:
+            st.link_button("Voir l'Offre", offer.url, type="secondary")
+        st.divider()
+
+    if emp_data.matching_job_offers and any(emp_data.matching_job_offers):
+        for i, adult_jobs in enumerate(emp_data.matching_job_offers):
+            if not adult_jobs:
+                continue
+            matching_total_adult = len(adult_jobs)
+            title = f"💼 {matching_total_adult} correspondance{'s' if matching_total_adult > 1 else ''} directe{'s' if matching_total_adult > 1 else ''} avec le projet de l'Adulte {i + 1}"
+            with st.expander(title, expanded=True):
+                # Group offers by ROME label
+                from collections import defaultdict
+                grouped = defaultdict(list)
+                for offer in adult_jobs:
+                    r_label = getattr(offer, "rome_label", None) or "Autre"
+                    grouped[r_label].append(offer)
+                
+                # If we have results for more than 1 ROME code, group in nested expanders
+                if len(grouped) > 1:
+                    for rome_label, rome_offers in grouped.items():
+                        with st.expander(f"💼 {rome_label} ({len(rome_offers)})", expanded=False):
+                            for offer in rome_offers:
+                                render_job_card(offer)
+                else:
+                    # Otherwise, list them directly
+                    for offer in adult_jobs:
+                        render_job_card(offer)
+                        
+    elif jobs_city_data and jobs_city_data.get("status") == "error":
+        with st.expander("💼 Offres d'emploi directes", expanded=True):
+            st.info("⚠️ Offres d'emploi temporairement indisponibles.")
+    elif h and (not bg_res or 'jobs_enrichment' not in bg_res or not jobs_city_data):
+        st.write("⌛ _Chargement des offres d'emploi en cours..._")
+    else:
+        st.info("Aucune offre d'emploi directe répertoriée dans le rayon de recherche.")
+
 def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
     """Main component for AI synthesis, rendered inside a @st.dialog."""
     
@@ -311,6 +399,19 @@ def sync_background_data(commune: CommuneResult, h: Optional[str]):
                 for cat, asso_list in raw_inclusion.items()
             }
             inc_data.asso_inclusion_count = sum(len(l) for l in inc_data.asso_inclusion_list_by_cat.values())
+            
+    # 1b. Sync Enrichment (Job Offers)
+    if 'jobs_enrichment' in bg_res:
+        jobs_city_data = bg_res['jobs_enrichment'].get(str(commune.codgeo))
+        if jobs_city_data and jobs_city_data.get("status") == "done" and not commune.employment.matching_job_offers:
+            logging.debug(f"✨ [SYNC] Jobs sync for {commune.codgeo}")
+            emp_data = commune.employment
+            from core.models import JobOfferDetail
+            raw_jobs = jobs_city_data.get('jobs', [])
+            emp_data.matching_job_offers = [
+                [JobOfferDetail.model_validate(o) for o in adult_list]
+                for adult_list in raw_jobs
+            ]
             
     # 2. Sync Pitches (AI analysis)
     if 'pitches' in bg_res:
@@ -496,17 +597,11 @@ def show_details_dialog(index: Any):
                 
                 if live_total > 0:
                     st.info(f"**{live_total} postes** à pourvoir actuellement dans le bassin de vie.")
-                    if matching_total > 0:
-                        st.success(f"**{matching_total} correspondances** directes avec votre projet !")
                 
-                with st.expander("Métiers les plus recherchés", expanded=False):
-                    top_professions = employment_data.top_professions
-                    if top_professions:
-                        for m in top_professions:
-                            st.write(f"• {m}")
-                    else:
-                        st.write("Pas de données détaillées.")
+                # 1. Hydrated live France Travail job offers first
+                polling_jobs_fragment(commune, h)
                 
+                # 2. SIAE matching or local listings second
                 matching_siae = employment_data.inclusive_jobs_matching_summary
                 if matching_siae:
                     with st.expander(f"Offres par les SIAE correspondant au projet ({employment_data.inclusive_jobs_matching_total})", expanded=True):
@@ -517,6 +612,16 @@ def show_details_dialog(index: Any):
                         for label, count in employment_data.inclusive_jobs_summary.items():
                             st.write(f"• **{label}** : {count} offre{'s' if count > 1 else ''}")
                 
+                # 3. Métiers recherchés at the bottom
+                with st.expander("Métiers les plus recherchés", expanded=False):
+                    top_professions = employment_data.top_professions
+                    if top_professions:
+                        for m in top_professions:
+                            st.write(f"• {m}")
+                    else:
+                        st.write("Pas de données détaillées.")
+                
+                # 4. Formations proposées at the bottom
                 with st.expander("Formations proposées", expanded=False):
                     training_programs = employment_data.training_programs
                     if training_programs:

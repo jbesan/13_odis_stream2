@@ -46,6 +46,7 @@ JOB_HUNTER_ANALYSIS_SYSTEM_PROMPT = """
     - Tu DOIS retourner un objet `JobHunterResult`.
     - `searched` : Liste TOUS les codes ROME + libellés recherchés.
     - `result` : Pour chaque catégorie `rome`, présente les **3 offres les plus pertinentes** (mélange FT et SIAE). Pour les offres SIAE, précise EXPLICITEMENT qu'il s'agit d'offres d'insertion (SIAE). Indique : Intitulé, ID, lieu, type de contrat, et une phrase d'explication.
+5. **UTILISATION DU CACHE D'OFFRES D'EMPLOI** : Avant d'appeler l'outil de recherche, vérifie TOUJOURS si des offres correspondantes pré-chargées sont déjà disponibles sous `Ville analysée` -> `Liste des offres d'emploi correspondantes séparées par adulte du ménage`. Si ces offres sont présentes et correspondent aux métiers ciblés, utilise-les DIRECTEMENT sans appeler l'outil `search_job_offers_batch_tool` de nouveau pour économiser du temps et des requêtes API.
 """
 
 JOB_HUNTER_SPECIFIC_SYSTEM_PROMPT = """

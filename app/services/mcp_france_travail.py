@@ -91,7 +91,10 @@ def _prune_job_offer(offer: Dict[str, Any]) -> Dict[str, Any]:
         "typeContratLibelle": offer.get("typeContratLibelle"),
         "description_sh": (offer.get("description", "")[:300] + "...") if offer.get("description") else None,
         "dateCreation": offer.get("dateCreation"),
-        "lieuTravail": {"libelle": offer.get("lieuTravail", {}).get("libelle")},
+        "lieuTravail": {
+            "libelle": offer.get("lieuTravail", {}).get("libelle"),
+            "codeINSEE": offer.get("lieuTravail", {}).get("codeINSEE")
+        },
         "entreprise": {"nom": offer.get("entreprise", {}).get("nom")},
         "salaire": {"libelle": offer.get("salaire", {}).get("libelle")},
         "dureeTravailLibelle": offer.get("dureeTravailLibelle"),

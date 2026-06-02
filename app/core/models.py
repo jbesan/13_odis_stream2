@@ -151,6 +151,23 @@ class CommuneScoreDetail(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 
+class JobOfferDetail(BaseModel):
+    """Represents a detailed job offer object from France Travail."""
+    id: str = Field(..., description="Identifiant unique de l'offre", json_schema_extra={"odis_visibility": ["ui_details", "pdf_report", "agent_job_hunter"]})
+    title: str = Field(..., description="Intitulé du poste", json_schema_extra={"odis_visibility": ["ui_details", "pdf_report", "agent_job_hunter"]})
+    company: Optional[str] = Field(None, description="Nom de l'entreprise", json_schema_extra={"odis_visibility": ["ui_details", "pdf_report", "agent_job_hunter"]})
+    contract_type: str = Field(..., description="Type de contrat (code CDD/CDI etc)", json_schema_extra={"odis_visibility": ["ui_details", "pdf_report", "agent_job_hunter"]})
+    contract_label: Optional[str] = Field(None, description="Libellé du type de contrat", json_schema_extra={"odis_visibility": ["ui_details", "pdf_report", "agent_job_hunter"]})
+    description: Optional[str] = Field(None, description="Description courte de l'offre", json_schema_extra={"odis_visibility": ["ui_details", "pdf_report", "agent_job_hunter"]})
+    location: Optional[str] = Field(None, description="Lieu de travail (libellé)", json_schema_extra={"odis_visibility": ["ui_details", "pdf_report", "agent_job_hunter"]})
+    location_insee: Optional[str] = Field(None, description="Code INSEE du lieu de travail", json_schema_extra={"odis_visibility": ["ui_details", "pdf_report", "agent_job_hunter"]})
+    salary: Optional[str] = Field(None, description="Salaire proposé", json_schema_extra={"odis_visibility": ["ui_details", "pdf_report", "agent_job_hunter"]})
+    url: Optional[str] = Field(None, description="Lien pour postuler", json_schema_extra={"odis_visibility": ["ui_details", "pdf_report", "agent_job_hunter"]})
+    rome_code: Optional[str] = Field(None, description="Code ROME de l'offre", json_schema_extra={"odis_visibility": ["ui_details", "pdf_report", "agent_job_hunter"]})
+    rome_label: Optional[str] = Field(None, description="Libellé ROME de l'offre", json_schema_extra={"odis_visibility": ["ui_details", "pdf_report", "agent_job_hunter"]})
+
+    model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
+
 class EmploymentMetrics(BaseModel):
     cat_score: float = Field(0.0, description="Score Emploi", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "ui_details", "pdf_report"]})
     standard_jobs_total: int = Field(0, description="Total offres d'emploi", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "ui_details", "pdf_report"]})
@@ -164,6 +181,8 @@ class EmploymentMetrics(BaseModel):
     inclusive_jobs_matching_summary: Dict[str, Any] = Field(default_factory=dict, description="Résumé des offres d'inclusion", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "agent_job_hunter", "ui_details", "pdf_report"]})
     training_programs: List[str] = Field(default_factory=list, description="Formations disponibles", json_schema_extra={"odis_visibility": ["agent_job_hunter", "ui_details", "pdf_report"]})
     training_programs_matching: List[str] = Field(default_factory=list, description="Formations correspondant au projet", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "agent_job_hunter", "ui_details", "pdf_report"]})
+    matching_job_offers: List[List[JobOfferDetail]] = Field(default_factory=list, description="Liste des offres d'emploi correspondantes séparées par adulte du ménage", json_schema_extra={"odis_visibility": ["ui_details", "pdf_report", "agent_job_hunter"]})
+
 
 class HousingMetrics(BaseModel):
     cat_score: float = Field(0.0, description="Score Logement", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "ui_details", "pdf_report"]})
