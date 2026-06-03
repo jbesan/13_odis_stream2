@@ -1426,7 +1426,7 @@ class MutedPipelineLogger:
     """Wrapper to prevent duplicate log_step calls from inside individual clean_* cleaners."""
     def __init__(self, real_logger: PipelineLogger):
         self.real_logger = real_logger
-        self.status = real_logger.status
+        self.status = getattr(real_logger, 'status', None)
 
     def log_step(self, step_name: str, status: str, details: Optional[Dict[str, Any]] = None):
         pass

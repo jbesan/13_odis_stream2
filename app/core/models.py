@@ -38,19 +38,19 @@ class SearchCriterias(BaseModel):
     codes_metiers: List[List[CriteriaItem]] = Field(default_factory=list, description="Métiers ciblés par adulte", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_job_hunter", "agent_synthesizer", "ui_details", "pdf_report"]})
     codes_formations: List[List[CriteriaItem]] = Field(default_factory=list, description="Formations ciblées", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_job_hunter", "agent_synthesizer", "ui_details", "pdf_report"]})
     
-    inc_services_core_selection: List[CriteriaItem] = Field(default_factory=list, description="Services d'inclusion essentiels", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "ui_details", "pdf_report"]})
-    inc_services_add_selection: List[CriteriaItem] = Field(default_factory=list, description="Services d'inclusion additionnels", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "ui_details", "pdf_report"]})
+    inc_services_core_selection: List[CriteriaItem] = Field(default_factory=list, description="Services d'inclusion essentiels", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_job_hunter", "agent_synthesizer", "ui_details", "pdf_report"]})
+    inc_services_add_selection: List[CriteriaItem] = Field(default_factory=list, description="Services d'inclusion additionnels", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_job_hunter", "agent_synthesizer", "ui_details", "pdf_report"]})
     inc_asso_add_selection: List[CriteriaItem] = Field(default_factory=list, description="Associations et centres d'intérêt", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "ui_details", "pdf_report"]})
     
-    hebergement_cible: List[str] = Field(default_factory=list, description="Hébergement souhaité", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_scout", "agent_synthesizer", "ui_details", "pdf_report"]})
+    hebergement_cible: List[str] = Field(default_factory=list, description="Hébergement souhaité", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_scout", "agent_job_hunter", "agent_synthesizer", "ui_details", "pdf_report"]})
     logement: Optional[str] = Field(None, description="Type de logement (ex: Logement Social)", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_scout", "agent_synthesizer", "ui_details", "pdf_report"]})
     type_logement: Optional[CriteriaItem] = Field(None, description="Type de bien (Appartement, Maison)", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_scout", "agent_synthesizer", "ui_details", "pdf_report"]})
-    besoin_sante: Optional[str] = Field(None, description="Besoin de santé spécifique", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_scout", "agent_synthesizer", "ui_details", "pdf_report"]})
+    besoin_sante: Optional[str] = Field(None, description="Besoin de santé spécifique", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_scout", "agent_job_hunter", "agent_synthesizer", "ui_details", "pdf_report"]})
     freq_retour: str = Field("1 fois/mois", description="Fréquence de retour vers la commune actuelle", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_scout", "agent_synthesizer", "ui_details", "pdf_report"]})
 
 
     # Qualitative notes (free text indices for Scout and Synthesis)
-    notes_qualitatives: List[str] = Field(default_factory=list, description="Notes qualitatives sur le projet de vie", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_web", "agent_scout", "agent_synthesizer", "pdf_report"]})
+    notes_qualitatives: List[str] = Field(default_factory=list, description="Notes qualitatives sur le projet de vie", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_web", "agent_scout", "agent_job_hunter", "agent_synthesizer", "pdf_report"]})
 
     # Final scoring priority
     weight_profile: str = Field("", description="Profil de pondération", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "pdf_report"]})
@@ -165,6 +165,7 @@ class JobOfferDetail(BaseModel):
     url: Optional[str] = Field(None, description="Lien pour postuler", json_schema_extra={"odis_visibility": ["ui_details", "pdf_report", "agent_job_hunter"]})
     rome_code: Optional[str] = Field(None, description="Code ROME de l'offre", json_schema_extra={"odis_visibility": ["ui_details", "pdf_report", "agent_job_hunter"]})
     rome_label: Optional[str] = Field(None, description="Libellé ROME de l'offre", json_schema_extra={"odis_visibility": ["ui_details", "pdf_report", "agent_job_hunter"]})
+    job_brief: Optional[str] = Field(None, description="Synthèse de l'offre et pourquoi elle correspond au candidat", json_schema_extra={"odis_visibility": ["ui_details", "pdf_report", "agent_job_hunter"]})
 
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 

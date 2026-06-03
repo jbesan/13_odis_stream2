@@ -256,7 +256,10 @@ def polling_jobs_fragment(commune: CommuneResult, h: Optional[str]):
         if badges:
             st.markdown(" | ".join(badges))
         
-        if offer.description:
+        brief = getattr(offer, "job_brief", None)
+        if brief:
+            st.caption(f"💡 **Pourquoi ce choix :** {brief}")
+        elif offer.description:
             st.caption(offer.description)
             
         if offer.url:

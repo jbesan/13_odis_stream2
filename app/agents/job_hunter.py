@@ -15,6 +15,7 @@ from .tools import (
 
 logger = logging.getLogger("job_hunter_agent_v2")
 
+
 class JobHunterResult(BaseModel):
     searched: str = Field(..., description="Liste des codes ROME et lieux recherchés.")
     result: str = Field(..., description="Synthèse des offres d'emploi pertinentes trouvées.")
@@ -148,4 +149,51 @@ async def search_referentiels_batch_tool(ctx: RunContext[ODISDeps], searches: Li
         searches (List[SearchQuery]): Liste d'objets {query, domain}
     """
     return await search_referentiels_batch([s.model_dump() for s in searches])
+
+
+# --- Job Curation Skill ---
+
+class CuratedJob(BaseModel):
+    job_id: str = Field(
+        ...,
+        description="L'identifiant de l'offre d'emploi"
+    )
+    job_brief: str = Field(
+        ...,
+        description="Une phrase concise et claire (sans saut de ligne) décrivant l'offre et justifiant pourquoi elle correspond particulièrement bien au profil et aux contraintes du candidat (langue, mobilité, expérience)."
+    )
+
+class JobCurationResult(BaseModel):
+    selected_jobs: List[CuratedJob] = Field(
+        ...,
+        description="Liste des offres d'emploi sélectionnées par ordre de pertinence décroissante (maximum 5)"
+    )
+
+job_curator_agent = Agent(
+    get_model("job_hunter"),
+    model_settings=get_model_settings("job_hunter"),
+    output_type=JobCurationResult
+)
+
+JOB_CURATOR_SYSTEM_PROMPT = """
+Tu es un expert en accompagnement social et en insertion professionnelle. Ton rôle est de sélectionner et résumer les 5 offres d'emploi les plus pertinentes pour un candidat de type réfugié BPI à partir d'une liste d'offres déjà récupérées.
+
+Voici la situation et le profil du candidat :
+- Résumé de la situation (Briefing) : {briefing}
+
+Voici les offres d'emploi disponibles (triées par distance croissante) :
+{jobs_list}
+
+Consignes de sélection, d'ordonnancement et de justification :
+1. Évalue attentivement chaque offre par rapport aux contraintes et critères du candidat en prenant en compte les dimensions suivantes :
+   - Maîtrise de la langue : Si le candidat a des difficultés avec le français (ex: débutant, maîtrise partielle, réfugié récemment arrivé), privilégie les offres manuelles, techniques ou nécessitant peu de communication verbale/écrite.
+   - Mobilité : Si le candidat n'a pas de permis de conduire ou de voiture, évite les offres exigeant explicitement le permis ou un véhicule personnel, et privilégie les offres situées en centre ville.
+   - Niveau d'expérience : Aligne l'expérience demandée dans l'offre avec le profil du candidat (débutant souvent préférable).
+   - Adéquation avec le projet de vie : Priorise les offres qui s'alignent le mieux avec les aspirations et les contraintes mentionnées dans son dossier (ex: travail en journée si enfants).
+2. Pour chaque offre d'emploi sélectionnée, tu dois rédiger un court résumé de deux phrases (`job_brief`) qui décrit:
+    Phrase 1: l'offre et notamment l'employeur, le type de poste, la localisation
+    Phrase 2: explique concrètement pourquoi cette offre est pertinente pour le profil accompagné.
+3. Sélectionne et retourne au maximum 5 offres (ou toutes s'il y en a moins de 5) ordonnées par pertinence décroissante dans le champ `selected_jobs`.
+"""
+
 
