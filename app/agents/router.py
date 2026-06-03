@@ -3,7 +3,8 @@ import logging
 from typing import Literal, Optional
 from pydantic import BaseModel, Field, ConfigDict
 from pydantic_ai import Agent, RunContext
-from .state import GraphState, ODISDeps, FocusCity, ODISContextBuilder
+from core.models import CommuneResult
+from .state import GraphState, ODISDeps, ODISContextBuilder
 from .agent_config import get_model, get_model_settings
 
 logger = logging.getLogger("router_agent")
@@ -31,14 +32,14 @@ Pour répondre à une question SPECIFIQUE sur la ville identifée :
 **Extraction de la ville cible** :
 - Si l'utilisateur exprime l'intention d'analyser une ville spécifique ou pose une question sur une ville, identifie-la.
 - Recoupe-la avec les `Villes identifiées` fournies dans le contexte pour obtenir le NOM et le CODE INSEE exacts.
-- Retourne l'objet `FocusCity` avec `name` et `codgeo` remplis.
+- Retourne l'objet `CommuneResult` avec `name` et `codgeo` remplis.
 - IMPORTANT : Ne propose d'analyse QUE pour les villes présentes dans `Villes identifiées`.
 - Si le contexte contient déjà une `Ville cible` et que l'utilisateur n'en change pas explicitement, conserve la ville actuelle.
 """
 
 class RoutingResult(BaseModel):
     target_agent: Literal['analysis', 'scout', 'web', 'job_hunter', 'synthesizer']
-    focus_city: Optional[FocusCity] = Field(None, description="La ville cible identifiée pour l'analyse")
+    focus_city: Optional[CommuneResult] = Field(None, description="La ville cible identifiée pour l'analyse")
     model_config = ConfigDict(populate_by_name=True)
 
 router_agent = Agent(

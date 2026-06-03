@@ -272,7 +272,8 @@ def launch_background_enrichment(engine: Any, codgeos: List[str], hash_val: str)
 def _curate_jobs_with_llm(
     jobs: List[Dict[str, Any]], 
     odis_brief: str, 
-    notes_qualitatives: List[str]
+    notes_qualitatives: List[str],
+    target_city: Optional[Any] = None
 ) -> List[Dict[str, Any]]:
     """Curates a list of job offers using job_curator_agent based on candidate context.
 
@@ -280,6 +281,7 @@ def _curate_jobs_with_llm(
         jobs: List of job offer details dictionaries.
         odis_brief: Narrative summary of candidate's situation.
         notes_qualitatives: List of qualitative project notes.
+        target_city: Optional CommuneResult representing the city ciblée.
 
     Returns:
         List of curated top 5 job offer details dictionaries.
@@ -291,6 +293,7 @@ def _curate_jobs_with_llm(
     try:
         from agents.job_hunter import job_curator_agent, JOB_CURATOR_SYSTEM_PROMPT
         import asyncio
+        import json
 
         # Format jobs for the LLM prompt
         jobs_list_str = ""
@@ -305,8 +308,19 @@ def _curate_jobs_with_llm(
                 f"  Salaire: {job.get('salary') or 'Non spécifié'}\n\n"
             )
 
+        # Build target city context using metadata-driven builder
+        target_city_context = "Non spécifiée"
+        if target_city:
+            from agents.state import ODISContextBuilder
+            city_ctx = ODISContextBuilder._auto_build_context(target_city, "agent_job_hunter")
+            if isinstance(city_ctx, dict):
+                target_city_context = json.dumps(city_ctx, ensure_ascii=False, indent=2)
+            else:
+                target_city_context = str(city_ctx)
+
         prompt = JOB_CURATOR_SYSTEM_PROMPT.format(
             briefing=odis_brief,
+            target_city_context=target_city_context,
             notes_qualitatives=", ".join(notes_qualitatives) if notes_qualitatives else "Aucune",
             jobs_list=jobs_list_str
         )
@@ -350,13 +364,14 @@ def _curate_jobs_with_llm(
         return jobs[:5]
 
 
-def launch_background_jobs_enrichment(codgeos: List[str], config: Any, hash_val: str):
+def launch_background_jobs_enrichment(codgeos: List[str], config: Any, hash_val: str, search_results: Optional[Any] = None):
     """Launches background threads in parallel (one per target commune) to fetch and curate job offers.
 
     Args:
         codgeos: List of geographic INSEE codes of target communes.
         config: The SearchCriterias configuration object or a list of ROME codes for legacy compatibility.
         hash_val: Unique MD5 search criteria hash.
+        search_results: Optional SearchResultsData container for target city lookup.
     """
     store = get_odis_bg_store()
     
@@ -480,7 +495,24 @@ def launch_background_jobs_enrichment(codgeos: List[str], config: Any, hash_val:
                 if len(adult_pooled_jobs) <= 5:
                     curated_jobs = adult_pooled_jobs
                 else:
-                    curated_jobs = _curate_jobs_with_llm(adult_pooled_jobs, odis_brief, notes_qualitatives)
+                    # Resolve target city CommuneResult for this specific city
+                    target_city = None
+                    if search_results:
+                        if hasattr(search_results, "get_by_code"):
+                            target_city = search_results.get_by_code(cg)
+                        elif isinstance(search_results, dict):
+                            results = search_results.get("results", [])
+                            for r in results:
+                                r_code = r.get("codgeo") if isinstance(r, dict) else getattr(r, "codgeo", None)
+                                if r_code == cg:
+                                    target_city = r
+                                    break
+                    curated_jobs = _curate_jobs_with_llm(
+                        adult_pooled_jobs, 
+                        odis_brief, 
+                        notes_qualitatives,
+                        target_city=target_city
+                    )
                     
                 city_results.append(curated_jobs)
             
@@ -576,7 +608,7 @@ def launch_post_scoring_tasks(engine: Any, config: Any, search_results: Any, h: 
     launch_background_enrichment(engine, target_codgeos, h)
     
     # 4b. Launch Employment Enrichment (Detailed Jobs - France Travail)
-    launch_background_jobs_enrichment(target_codgeos, config, h)
+    launch_background_jobs_enrichment(target_codgeos, config, h, search_results)
     
     # 5. Launch Logging & Telemetry
     launch_background_audit_log(config, search_results, h, interaction_id=interaction_id, username=username)
@@ -712,8 +744,8 @@ def rehydrate_graph_state(input_data: dict) -> "GraphState":
     Ensures that all nested models (SearchResultsData, CommuneResult, etc.) 
     are properly validated and instantiated.
     """
-    from agents.state import GraphState, FocusCity
-    from core.models import SearchCriterias, SearchResultsData
+    from agents.state import GraphState
+    from core.models import SearchCriterias, SearchResultsData, CommuneResult
 
     # 1. Search Criteria
     sc_data = input_data.get("search_criteria", {})
@@ -730,7 +762,7 @@ def rehydrate_graph_state(input_data: dict) -> "GraphState":
     fc_data = input_data.get("focus_city")
     fc = None
     if fc_data:
-         fc = FocusCity.model_validate(fc_data) if isinstance(fc_data, dict) else fc_data
+         fc = CommuneResult.model_validate(fc_data) if isinstance(fc_data, dict) else fc_data
              
     # 4. Construct Final State
     return GraphState(
@@ -760,7 +792,7 @@ async def run_logic(input_data: dict):
     import os
     from google import genai
     from google.genai import types
-    from agents.state import GraphState, ODISDeps, FocusCity
+    from agents.state import GraphState, ODISDeps
     from agents.graph import create_odis_graph
     from core.models import SearchCriterias, SearchResultsData
     

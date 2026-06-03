@@ -10,7 +10,7 @@ from typing import Any
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'app'))
 
 from agents.graph import create_odis_graph
-from agents.state import GraphState, ODISDeps, FocusCity
+from agents.state import GraphState, ODISDeps
 from google import genai
 
 # Path to the .env file in the app directory
@@ -55,7 +55,7 @@ async def test_graph_execution_end_to_end():
         current_geo=marseille
     )
     
-    state.focus_city = FocusCity(name="Marseille", codgeo="13001")
+    state.focus_city = CommuneResult(name="Marseille", codgeo="13001")
     state.messages.append({"role": "user", "content": "Peux-tu me donner des détails sur Marseille ?"})
     
     logger.info("▶️ Running Graph (run)...")

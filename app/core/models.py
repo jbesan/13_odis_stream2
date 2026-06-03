@@ -78,7 +78,7 @@ class SearchCriterias(BaseModel):
     org_boosts: Dict[str, float] = Field(default_factory=dict, description="Multiplier boosts for specific criteria (e.g. {'heb_jaccueille_score': 3.0})", json_schema_extra={"odis_visibility": ["agent_refiner", "pdf_report"]})
 
     # Unified Briefing (F-58)
-    odis_brief: str = Field(default="", description="Synthèse narrative du dossier (Briefing)", json_schema_extra={"odis_visibility": ["ui_details", "pdf_report"]})
+    odis_brief: str = Field(default="", description="Synthèse narrative du dossier (Briefing)", json_schema_extra={"odis_visibility": ["all"]})
 
 
 
@@ -195,7 +195,7 @@ class HousingMetrics(BaseModel):
 class EducationMetrics(BaseModel):
     cat_score: float = Field(0.0, description="Score Éducation", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "ui_details", "pdf_report"]})
     facility_counts: Dict[str, int] = Field(default_factory=dict, description="Nombre d'établissements scolaires", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "ui_details", "pdf_report"]})
-    facility_details: Dict[str, List[str]] = Field(default_factory=dict, description="Noms des établissements par type", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "agent_scout", "ui_details", "pdf_report"]})
+    facility_details: Dict[str, List[str]] = Field(default_factory=dict, description="Noms des établissements par type", json_schema_extra={"odis_visibility": ["ui_details"]})
 
 class HealthMetrics(BaseModel):
     cat_score: float = Field(0.0, description="Score Santé", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "ui_details", "pdf_report"]})
@@ -241,59 +241,59 @@ class TerritoryMetrics(BaseModel):
 class CommuneResult(BaseModel):
     """Encapsulates identity, scores, and metadata for a specific commune."""
     # Identity
-    codgeo: str = Field(description="Code INSEE", json_schema_extra={"odis_visibility": ["all"]})
+    codgeo: str = Field(description="Code INSEE de la commune", json_schema_extra={"odis_visibility": ["all"]})
     name: str = Field(description="Nom de la commune", json_schema_extra={"odis_visibility": ["all"]})
-    population: int = Field(description="Population", json_schema_extra={"odis_visibility": ["all"]})
-    codgeo_bdv: str = Field(default="", description="Code Bassin de Vie", json_schema_extra={"odis_visibility": ["agent_synthesizer"]})
-    name_bdv: str = Field(default="", description="Nom Bassin de Vie", json_schema_extra={"odis_visibility": ["all"]})
+    population: int = Field(default=0, description="Population de la commune", json_schema_extra={"odis_visibility": ["all"]})
+    codgeo_bdv: str = Field(default="", description="Code Bassin de Vie de la commune", json_schema_extra={"odis_visibility": ["all"]})
+    name_bdv: str = Field(default="", description="Nom Bassin de Vie de la commune", json_schema_extra={"odis_visibility": ["all"]})
     
     # Global score
-    global_score: float = Field(description="Score global", json_schema_extra={"odis_visibility": ["all"]})
+    global_score: float = Field(default=0.0, description="Score global", json_schema_extra={"odis_visibility": ["all"]})
     
     # Thematic scores (grouped by category)
-    scores: Dict[str, List[CommuneScoreDetail]] = Field(default_factory=dict, description="Details grouped by category", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "ui_details", "pdf_report"]})
+    scores: Dict[str, List[CommuneScoreDetail]] = Field(default_factory=dict, description="Details grouped by category", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer"]})
     
     # Domain specific aggregations (Strongly typed)
     employment: EmploymentMetrics = Field(
         default_factory=EmploymentMetrics,
         description="Données emploi et formation",
-        json_schema_extra={"odis_visibility": ["agent_synthesizer", "agent_job_hunter", "ui_details", "pdf_report"]}
+        json_schema_extra={"odis_visibility": ["all"]}
     )
     housing: HousingMetrics = Field(
         default_factory=HousingMetrics,
         description="Données logement",
-        json_schema_extra={"odis_visibility": ["agent_synthesizer", "ui_details", "pdf_report"]}
+        json_schema_extra={"odis_visibility": ["all"]}
     )
     education: EducationMetrics = Field(
         default_factory=EducationMetrics,
         description="Données éducation",
-        json_schema_extra={"odis_visibility": ["agent_synthesizer", "ui_details", "pdf_report"]}
+        json_schema_extra={"odis_visibility": ["all"]}
     )
     health: HealthMetrics = Field(
         default_factory=HealthMetrics,
         description="Données santé",
-        json_schema_extra={"odis_visibility": ["agent_synthesizer", "ui_details", "pdf_report"]}
+        json_schema_extra={"odis_visibility": ["all"]}
     )
     inclusion: InclusionMetrics = Field(
         default_factory=InclusionMetrics,
         description="Données inclusion",
-        json_schema_extra={"odis_visibility": ["agent_synthesizer", "ui_details", "pdf_report"]}
+        json_schema_extra={"odis_visibility": ["all"]}
     )
     mobility: MobilityMetrics = Field(
         default_factory=MobilityMetrics,
         description="Données mobilité",
-        json_schema_extra={"odis_visibility": ["agent_synthesizer", "ui_details", "pdf_report"]}
+        json_schema_extra={"odis_visibility": ["all"]}
     )
     territoire: TerritoryMetrics = Field(
         default_factory=TerritoryMetrics,
         description="Données territoire",
-        json_schema_extra={"odis_visibility": ["agent_refiner", "ui_details", "pdf_report"]}
+        json_schema_extra={"odis_visibility": ["all"]}
     )
 
     # Agent-generated content
-    refiner_pitch: str = Field(default="", description="Résumé du Refiner", json_schema_extra={"odis_visibility": ["agent_synthesizer", "ui_details", "pdf_report"]})
-    expert_analysis: Dict[str, str] = Field(default_factory=dict, description="Analyses experts", json_schema_extra={"odis_visibility": ["agent_synthesizer", "ui_details", "pdf_report"]})
-    odis_synthesis: List[Dict[str, str]] = Field(default_factory=list, description="List of messages (conversation thread) for the city analysis", json_schema_extra={"odis_visibility": ["agent_synthesizer", "ui_details", "pdf_report"]})
+    refiner_pitch: str = Field(default="", description="Résumé du Refiner", json_schema_extra={"odis_visibility": ["all"]})
+    expert_analysis: Dict[str, str] = Field(default_factory=dict, description="Analyses experts", json_schema_extra={"odis_visibility": ["all"]})
+    odis_synthesis: List[Dict[str, str]] = Field(default_factory=list, description="List of messages (conversation thread) for the city analysis", json_schema_extra={"odis_visibility": ["all"]})
     
     @model_validator(mode='before')
     @classmethod
@@ -310,7 +310,7 @@ class CommuneResult(BaseModel):
 class SearchResultsData(BaseModel):
     """Main payload container for search results."""
     search_hash: str = Field(description="MD5 hash of the criteria used", json_schema_extra={"odis_visibility": ["all"]})
-    results: List[CommuneResult] = Field(default_factory=list, description="Top recommended communes in rank order", json_schema_extra={"odis_visibility": ["all"]})
+    results: List[CommuneResult] = Field(default_factory=list, description="Top recommended communes in rank order", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_router"]})
     current_geo: CommuneResult = Field(..., description="Reference data for the user current location", json_schema_extra={"odis_visibility": ["all"]})
     commune_pressentie: Optional[CommuneResult] = Field(None, description="Données de la commune pressentie", json_schema_extra={"odis_visibility": ["all"]})
     global_pitch: str = Field(default="", description="Global introduction from Scorer Agent", json_schema_extra={"odis_visibility": ["all"]})

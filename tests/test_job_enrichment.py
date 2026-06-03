@@ -110,9 +110,18 @@ def test_background_jobs_enrichment_success(mock_curator_run, mock_search):
     
     codgeos = ["33063"]
     hash_val = "stable_test_hash"
+
+    # Setup SearchResultsData with CommuneResult
+    from core.models import CommuneResult, SearchResultsData
+    bordeaux = CommuneResult(codgeo="33063", name="Bordeaux", population=250000, global_score=0.85)
+    search_results = SearchResultsData(
+        search_hash=hash_val,
+        results=[bordeaux],
+        current_geo=bordeaux
+    )
     
     # Trigger background hydration
-    launch_background_jobs_enrichment(codgeos, config, hash_val)
+    launch_background_jobs_enrichment(codgeos, config, hash_val, search_results)
     
     # Wait briefly for background thread to complete
     timeout = 2.0
@@ -139,6 +148,14 @@ def test_background_jobs_enrichment_success(mock_curator_run, mock_search):
     assert city_data["jobs"][0][0]["job_brief"] == "Brief for job J8"
     assert city_data["jobs"][0][1]["id"] == "J6"
     assert city_data["jobs"][0][4]["id"] == "J0"
+
+    # Assert that mock_curator_run was called with prompt containing Bordeaux's context
+    mock_curator_run.assert_called()
+    called_prompt = mock_curator_run.call_args[0][0]
+    assert "Ville analysée" in called_prompt
+    assert "Bordeaux" in called_prompt
+    assert "33063" in called_prompt
+    assert "250000" in called_prompt
     
     # Assert correct parameters were sent: sort=2, distance=20, range_end=9 (10 jobs limit)
     mock_search.assert_any_call(

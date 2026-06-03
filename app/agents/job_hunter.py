@@ -172,6 +172,7 @@ class JobCurationResult(BaseModel):
 job_curator_agent = Agent(
     get_model("job_hunter"),
     model_settings=get_model_settings("job_hunter"),
+    name="job_curator_agent",
     output_type=JobCurationResult
 )
 
@@ -180,6 +181,9 @@ Tu es un expert en accompagnement social et en insertion professionnelle. Ton r�
 
 Voici la situation et le profil du candidat :
 - Résumé de la situation (Briefing) : {briefing}
+
+Voici les informations sur la commune ciblée :
+- Ville analysée : {target_city_context}
 
 Voici les offres d'emploi disponibles (triées par distance croissante) :
 {jobs_list}

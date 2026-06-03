@@ -31,20 +31,6 @@ def compute_criteria_hash(criteria: SearchCriterias) -> str:
         return ""
     return criteria.compute_hash()
 
-class FocusCity(BaseModel):
-    """Structured representation of the focus city."""
-    name: str = Field("", description="Nom de la commune")
-    codgeo: str = Field("", description="Code INSEE de la commune")
-
-    model_config = ConfigDict(revalidate_instances='never')
-
-    @model_validator(mode='before')
-    @classmethod
-    def handle_redefinition(cls, data: Any) -> Any:
-        if data.__class__.__name__ == cls.__name__ and not isinstance(data, cls):
-            return data.model_dump() if hasattr(data, 'model_dump') else data.__dict__
-        return data
-
 @dataclass
 class ExpertList:
     """DTO for the Spreading pattern to route to parallel experts."""
@@ -55,7 +41,7 @@ class GraphState:
     """Global Graph State for the pydantic-graph MapReduce pipeline."""
     search_criteria: SearchCriterias = field(default_factory=SearchCriterias)
     search_results: Optional[SearchResultsData] = None
-    focus_city: Optional[FocusCity] = None
+    focus_city: Optional[CommuneResult] = None
     criteria_hash: Optional[str] = None
     execution_mode: Literal['full_analysis', 'specific_ask'] = 'full_analysis'
     odis_brief: str = ""
@@ -69,7 +55,10 @@ class GraphState:
         if not self.odis_brief and self.search_criteria and self.search_criteria.odis_brief:
             self.odis_brief = self.search_criteria.odis_brief
 
-FocusCity.model_rebuild()
+        # Convert string focus_city to CommuneResult for robustness
+        if isinstance(self.focus_city, str):
+            from core.models import CommuneResult
+            self.focus_city = CommuneResult(name=self.focus_city, codgeo="")
 
 @dataclass
 class ODISDeps:
@@ -103,96 +92,101 @@ class ODISContextBuilder:
         Args:
             state: The current GraphState.
             agent_name: One of 'synthesizer', 'refiner', 'scout',
-                        'web', 'job_hunter', 'interviewer'.
+                        'web', 'job_hunter', 'interviewer', 'router'.
 
         Returns:
             A formatted JSON string ready to inject into a system prompt.
         """
-        builders = {
-            "synthesizer": cls._synthesizer_context,
-            "refiner":     cls._refiner_context,
-            "scout":       cls._scout_context,
-            "web":         cls._web_context,
-            "job_hunter":  cls._job_hunter_context,
-            "interviewer": cls._interviewer_context,
-            "router":      cls._router_context,
-        }
-        builder_fn = builders.get(agent_name)
-        if not builder_fn:
-            logger.warning(f"[CTX] Unknown agent '{agent_name}' — returning empty context.")
-            return "{}"
+        visibility_key = f"agent_{agent_name}"
+        
+        # 1. Resolve raw Pydantic instances from GraphState
+        criteria = state.search_criteria
+        
+        focus_city = None
+        if state.focus_city and state.search_results:
+            focus_city = state.search_results.get_by_code(state.focus_city.codgeo)
+            
+        current_geo = state.search_results.current_geo if state.search_results else None
+        commune_pressentie = state.search_results.commune_pressentie if state.search_results else None
+        
+        ctx = {}
+        
+        # 2. Build filtered contexts using _auto_build_context
+        if agent_name == "synthesizer" and state.odis_brief:
+            ctx["Résumé du dossier (Briefing)"] = state.odis_brief
+            if criteria and criteria.notes_qualitatives:
+                ctx["Notes qualitatives"] = criteria.notes_qualitatives
+        else:
+            if criteria:
+                key = "Critères identifiés" if agent_name == "interviewer" else "Critères de recherche"
+                ctx[key] = cls._auto_build_context(criteria, visibility_key)
+            
+        if focus_city:
+            ctx["Ville analysée"] = cls._auto_build_context(focus_city, visibility_key)
+        elif state.focus_city:
+            ctx["Ville analysée"] = cls._auto_build_context(state.focus_city, visibility_key)
+            
+        if current_geo:
+            ctx["Ville actuelle (référence)"] = cls._auto_build_context(current_geo, visibility_key)
+            
+        if commune_pressentie and (not focus_city or commune_pressentie.codgeo != focus_city.codgeo):
+            ctx["Commune pressentie (pour comparaison)"] = cls._auto_build_context(commune_pressentie, visibility_key)
 
-        ctx = builder_fn(state)
+        # 3. Handle specific collections
+        results_field = SearchResultsData.model_fields.get("results")
+        if results_field and state.search_results and state.search_results.results:
+            extra = results_field.json_schema_extra or {}
+            visibility = extra.get("odis_visibility", [])
+            if visibility_key in visibility or "all" in visibility:
+                ctx["Top 5 communes identifiées (Détails métriques)"] = [
+                    {
+                        "Rang": i + 1,
+                        **cls._auto_build_context(r, visibility_key)
+                    }
+                    for i, r in enumerate(state.search_results.results[:5])
+                ]
+
+        # 4. Handle Router specific target city name
+        if agent_name == "router":
+            if state.focus_city:
+                ctx["Ville cible"] = f"{state.focus_city.name} ({state.focus_city.codgeo})"
+            else:
+                ctx["Ville cible"] = "Non définie"
+
+        # 5. Handle conversation messages
+        if state.messages:
+            if agent_name == "refiner":
+                ctx["Historique récent"] = state.messages[-5:]
+            elif agent_name == "interviewer":
+                ctx["Dernier message utilisateur"] = state.messages[-1].get("content", "")
+            else:
+                ctx["Dernière question"] = state.messages[-1].get("content", "")
+
         result = json.dumps(ctx, ensure_ascii=False, indent=2)
         logger.debug(f"[CTX] {agent_name} context assembled ({len(result)} chars)")
         return result
 
     @classmethod
-    def _auto_build_context(cls, model: Any, visibility_key: str) -> Dict[str, Any]:
+    def _auto_build_context(cls, model: Any, visibility_key: str) -> Any:
         """
-        Recursively builds a context dict from a Pydantic model, filtered by ACL visibility.
-
-        Args:
-            model: The Pydantic BaseModel instance to inspect.
-            visibility_key: The consumer key to match against odis_visibility tags
-                            (e.g., 'agent_scout'). Fields tagged 'all' are always included.
-
-        Returns:
-            A flat or nested dict keyed by field descriptions, ready for JSON serialization.
+        Recursively builds context, filtering Pydantic models by visibility.
+        Handles dicts, lists, Pydantic BaseModels, and specific special types.
         """
-        if not isinstance(model, BaseModel):
-            return model
+        if model is None:
+            return None
 
-        ctx = {}
-        # Access model_fields from the class to avoid Pydantic 2.11+ instance warning
-        for name, field in model.__class__.model_fields.items():
-            # 1. Check Visibility (ACL Bitmask)
-            extra = field.json_schema_extra
-            if not isinstance(extra, dict):
-                continue
-            
-            visibility = extra.get("odis_visibility", [])
-            if visibility_key not in visibility and "all" not in visibility:
-                continue
+        # 1. Special Case: CriteriaItem (Simplify to Label for LLM)
+        if isinstance(model, CriteriaItem):
+            return model.label
 
-            # 2. Get value and label
-            val = getattr(model, name)
-            label = field.description or name
-            
-            if val is None:
-                continue
-
-            # 3. Handle Special Types & Recursion
-            ctx[label] = cls._process_value(val, visibility_key)
-            
-        return ctx
-
-    @classmethod
-    def _process_value(cls, val: Any, visibility_key: str) -> Any:
-        """
-        Helper to process values based on type and handle recursion.
-
-        Args:
-            val: The value to process (can be a primitive, list, dict, or BaseModel).
-            visibility_key: The consumer key for visibility filtering.
-
-        Returns:
-            The processed value, simplified or recursed as needed.
-        """
-        # Handle CriteriaItem (Special Case: Simplify to Label for LLM)
-        if isinstance(val, CriteriaItem):
-             return val.label
-        
-        # Handle CommuneScoreDetail (Special Case: Compact string for LLM agents)
-        # We use class name check to avoid issues with double imports/re-definitions
-        if val.__class__.__name__ == "CommuneScoreDetail":
+        # 2. Special Case: CommuneScoreDetail (Compact representation for agents)
+        if model.__class__.__name__ == "CommuneScoreDetail":
             if visibility_key.startswith("agent_"):
-                # Use getattr to be safe with different Pydantic versions/proxies
-                label = getattr(val, 'label', 'N/A')
-                vkpi = getattr(val, 'valeur_kpi', None)
-                unit = getattr(val, 'unit', '')
-                score = getattr(val, 'score_normalise', 0.0)
-                weight = getattr(val, 'relative_weight', 0.0)
+                label = getattr(model, 'label', 'N/A')
+                vkpi = getattr(model, 'valeur_kpi', None)
+                unit = getattr(model, 'unit', '')
+                score = getattr(model, 'score_normalise', 0.0)
+                weight = getattr(model, 'relative_weight', 0.0)
                 
                 if vkpi is not None:
                     unit_clean = unit.strip()
@@ -200,191 +194,40 @@ class ODISContextBuilder:
                 else:
                     kpi_str = "N/A"
                 return f"{label}: {kpi_str}, score: {round(float(score), 2)}, poids relatif: {weight}%"
-            # For UI/PDF, fall through to normal recursion
+            # For non-agent visibility (like UI/PDF), fall through to normal recursion
 
-        # Handle List of items (Recursive)
-        if isinstance(val, list):
-            return [cls._process_value(i, visibility_key) for i in val]
-        
-        # Handle Nested BaseModel (Recursive)
-        if isinstance(val, BaseModel):
-            return cls._auto_build_context(val, visibility_key)
-        
-        # Handle Dict (Recursive)
-        if isinstance(val, dict):
-            return {k: cls._process_value(v, visibility_key) for k, v in val.items()}
-            
-        return val
+        # 3. Handle Pydantic BaseModel
+        if isinstance(model, BaseModel):
+            ctx = {}
+            for name, field in model.__class__.model_fields.items():
+                extra = field.json_schema_extra
+                if not isinstance(extra, dict):
+                    continue
+                
+                visibility = extra.get("odis_visibility", [])
+                if visibility_key not in visibility and "all" not in visibility:
+                    continue
 
-    # -------------------------------------------------------------------------
-    # AGENT-SPECIFIC BUILDERS
-    # -------------------------------------------------------------------------
+                val = getattr(model, name)
+                label = field.description or name
+                
+                if val is None:
+                    continue
 
-    @classmethod
-    def _synthesizer_context(cls, state: "GraphState") -> dict:
-        """Focus City + Baseline (current_geo) + Expert Artifacts + Briefing."""
-        ctx: Dict[str, Any] = {}
-        if state.odis_brief:
-            ctx["Résumé du dossier (Briefing)"] = state.odis_brief
-            if state.search_criteria and state.search_criteria.notes_qualitatives:
-                ctx["Notes qualitatives"] = state.search_criteria.notes_qualitatives
-        else: 
-            if state.search_criteria:
-                ctx["Critères de recherche"] = cls._auto_build_context(state.search_criteria, "agent_synthesizer")
+                ctx[label] = cls._auto_build_context(val, visibility_key)
+            return ctx
 
-        if state.focus_city and state.search_results:
-            focus = state.search_results.get_by_code(state.focus_city.codgeo)
-            if focus:
-                ctx["Ville analysée"] = cls._auto_build_context(focus, "agent_synthesizer")
+        # 4. Handle List
+        if isinstance(model, list):
+            return [cls._auto_build_context(item, visibility_key) for item in model]
 
-        if state.search_results and state.search_results.current_geo:
-            ctx["Ville actuelle (référence)"] = cls._auto_build_context(state.search_results.current_geo, "agent_synthesizer")
+        # 5. Handle Dict
+        if isinstance(model, dict):
+            return {k: cls._auto_build_context(v, visibility_key) for k, v in model.items()}
 
-        if state.messages:
-            ctx["Dernier message"] = state.messages[-1].get("content", "")
-
-        return ctx
+        return model
 
     @classmethod
-    def _refiner_context(cls, state: "GraphState") -> dict:
-        """Briefing + Search Criteria + Top 5 results with full metrics for synthesis."""
-        ctx: Dict[str, Any] = {}
-        if state.odis_brief:
-            ctx["Résumé du dossier (Briefing)"] = state.odis_brief
-        
-        # 1. User Profile & Criteria
-        if state.search_criteria:
-            ctx["Situation & Critères"] = cls._auto_build_context(state.search_criteria, "agent_refiner")
-        
-        # 2. Results Analysis (Top 5)
-        if state.search_results and state.search_results.results:
-            ctx["Top 5 communes identifiées (Détails métriques)"] = [
-                {
-                    "Rang": i + 1,
-                    **cls._auto_build_context(r, "agent_refiner")
-                }
-                for i, r in enumerate(state.search_results.results[:5])
-            ]
-        
-        # Shortlisted City (Ville Pressentie) details if present
-        if state.search_results and state.search_results.commune_pressentie:
-            ctx["Commune pressentie à évaluer (Hors Top 5, pour comparaison)"] = cls._auto_build_context(
-                state.search_results.commune_pressentie, "agent_refiner"
-            )
-        
-        # 3. Conversation History
-        if state.messages:
-            ctx["Historique récent"] = state.messages[-5:] # Last 5 messages for context
-            
-        return ctx
-
-
-    @classmethod
-    def _scout_context(cls, state: "GraphState") -> dict:
-        """City identity + criteria + existing artifact + Briefing."""
-        ctx: Dict[str, Any] = {}
-        if state.odis_brief:
-            ctx["Résumé du dossier (Briefing)"] = state.odis_brief
-
-        # Auto-build Criteria for Scout
-        if state.search_criteria:
-            ctx["Critères de recherche"] = cls._auto_build_context(state.search_criteria, "agent_scout")
-
-        if state.focus_city and state.search_results:
-            focus = state.search_results.get_by_code(state.focus_city.codgeo)
-            if focus:
-                ctx["Ville analysée"] = cls._auto_build_context(focus, "agent_scout")
-                existing = focus.expert_analysis.get("scout")
-                if existing:
-                    ctx["Connaissances actuelles (Scout)"] = existing
-
-        if state.messages:
-            ctx["Dernière question"] = state.messages[-1].get("content", "")
-
-        return ctx
-
-    @classmethod
-    def _web_context(cls, state: "GraphState") -> dict:
-        """City identity + criteria + existing artifact + Briefing."""
-        ctx: Dict[str, Any] = {}
-        if state.odis_brief:
-            ctx["Résumé du dossier (Briefing)"] = state.odis_brief
-
-        # Auto-build Criteria for Web
-        if state.search_criteria:
-            ctx["Critères de recherche"] = cls._auto_build_context(state.search_criteria, "agent_web")
-
-        if state.focus_city and state.search_results:
-            focus = state.search_results.get_by_code(state.focus_city.codgeo)
-            if focus:
-                ctx["Ville analysée"] = cls._auto_build_context(focus, "agent_web")
-                existing = focus.expert_analysis.get("web")
-                if existing:
-                    ctx["Connaissances actuelles (Web)"] = existing
-
-        if state.messages:
-            ctx["Dernière question"] = state.messages[-1].get("content", "")
-
-        return ctx
-
-    @classmethod
-    def _job_hunter_context(cls, state: "GraphState") -> dict:
-        """City identity + ROME codes + own existing artifact."""
-        ctx: Dict[str, Any] = {}
-        if state.odis_brief:
-            ctx["Résumé du dossier (Briefing)"] = state.odis_brief
-
-        # Auto-build Criteria for Job Hunter
-        if state.search_criteria:
-            ctx["Critères de recherche (Emploi)"] = cls._auto_build_context(state.search_criteria, "agent_job_hunter")
-
-        if state.focus_city and state.search_results:
-            focus = state.search_results.get_by_code(state.focus_city.codgeo)
-            if focus:
-                # Note: matching_job_offers is pre-loaded during background scoring hydration (launch_post_scoring_tasks).
-                # The UI disables the "Analyse Avancée" button until hydration is fully complete, guaranteeing
-                # that these offers are already resident in CommuneResult.employment for Job Hunter.
-
-                ctx["Ville analysée"] = cls._auto_build_context(focus, "agent_job_hunter")
-                existing = focus.expert_analysis.get("job_hunter")
-                if existing:
-                    ctx["Connaissances actuelles (Job Hunter)"] = existing
-
-        if state.messages:
-            ctx["Dernière question"] = state.messages[-1].get("content", "")
-
-        return ctx
-
-    @classmethod
-    def _interviewer_context(cls, state: "GraphState") -> dict:
-        """Full criteria + last user message."""
-        ctx: Dict[str, Any] = {}
-        if state.search_criteria:
-            ctx["Critères identifiés"] = cls._auto_build_context(state.search_criteria, "agent_interviewer")
-        if state.messages:
-            ctx["Dernier message utilisateur"] = state.messages[-1].get("content", "")
-        return ctx
-
-    @classmethod
-    def _router_context(cls, state: "GraphState") -> dict:
-        """Specific context for the Router: Briefing + Identified Cities + Focus."""
-        ctx: Dict[str, Any] = {}
-        if state.odis_brief:
-            ctx["Résumé du dossier (Briefing)"] = state.odis_brief
-            
-        if state.search_results and state.search_results.results:
-            ctx["Villes identifiées"] = [
-                cls._auto_build_context(r, "agent_router")
-                for r in state.search_results.results[:5]
-            ]
-        
-        if state.focus_city:
-            ctx["Ville cible"] = f"{state.focus_city.name} ({state.focus_city.codgeo})"
-        else:
-            ctx["Ville cible"] = "Non définie"
-        
-        if state.messages:
-            ctx["Dernier message"] = state.messages[-1].get("content", "")
-        return ctx
-
-    # Legacy helper methods removed in favor of generic _auto_build_context
+    def _process_value(cls, val: Any, visibility_key: str) -> Any:
+        """Redirects to _auto_build_context for backward compatibility and testing."""
+        return cls._auto_build_context(val, visibility_key)
