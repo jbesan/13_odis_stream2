@@ -171,7 +171,7 @@ class JobOfferDetail(BaseModel):
 class EmploymentMetrics(BaseModel):
     cat_score: float = Field(0.0, description="Score Emploi", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "ui_details", "pdf_report"]})
     standard_jobs_total: int = Field(0, description="Total offres d'emploi", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "ui_details", "pdf_report"]})
-    standard_jobs_summary: Dict[str, int] = Field(default_factory=dict, description="Résumé des offres par métier", json_schema_extra={"odis_visibility": ["agent_job_hunter", "ui_details", "pdf_report"]})
+    standard_jobs_summary: Dict[str, int] = Field(default_factory=dict, description="Résumé des offres par métier", json_schema_extra={"odis_visibility": ["ui_details", "pdf_report"]})
     standard_jobs_matching_total: int = Field(0, description="Offres correspondant au projet", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "agent_job_hunter", "ui_details", "pdf_report"]})
     standard_jobs_matching_summary: Dict[str, int] = Field(default_factory=dict, description="Résumé des offres correspondantes", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "agent_job_hunter", "ui_details", "pdf_report"]})
     top_professions: List[str] = Field(default_factory=list, description="Top métiers en tension", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "agent_job_hunter", "ui_details", "pdf_report"]})
@@ -199,7 +199,7 @@ class EducationMetrics(BaseModel):
 class HealthMetrics(BaseModel):
     cat_score: float = Field(0.0, description="Score Santé", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "ui_details", "pdf_report"]})
     facility_counts: Dict[str, int] = Field(default_factory=dict, description="Nombre d'établissements de santé", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "ui_details", "pdf_report"]})
-    facility_details: Dict[str, List[str]] = Field(default_factory=dict, description="Noms des établissements de santé par type", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "agent_scout", "ui_details", "pdf_report"]})
+    facility_details: Dict[str, List[str]] = Field(default_factory=dict, description="Noms des établissements de santé par type", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_scout", "ui_details", "pdf_report"]})
     sante_rdv_delay: Optional[float] = Field(None, description="Accessibilité Potentielle Localisée (APL)", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "agent_scout", "ui_details", "pdf_report"]})
 
 class AssociationDetail(BaseModel):
@@ -256,7 +256,7 @@ class CommuneResult(BaseModel):
     employment: EmploymentMetrics = Field(
         default_factory=EmploymentMetrics,
         description="Données emploi et formation",
-        json_schema_extra={"odis_visibility": ["agent_synthesizer", "ui_details", "pdf_report"]}
+        json_schema_extra={"odis_visibility": ["agent_synthesizer", "agent_job_hunter", "ui_details", "pdf_report"]}
     )
     housing: HousingMetrics = Field(
         default_factory=HousingMetrics,

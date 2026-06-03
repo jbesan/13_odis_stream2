@@ -341,6 +341,10 @@ class ODISContextBuilder:
         if state.focus_city and state.search_results:
             focus = state.search_results.get_by_code(state.focus_city.codgeo)
             if focus:
+                # Note: matching_job_offers is pre-loaded during background scoring hydration (launch_post_scoring_tasks).
+                # The UI disables the "Analyse Avancée" button until hydration is fully complete, guaranteeing
+                # that these offers are already resident in CommuneResult.employment for Job Hunter.
+
                 ctx["Ville analysée"] = cls._auto_build_context(focus, "agent_job_hunter")
                 existing = focus.expert_analysis.get("job_hunter")
                 if existing:

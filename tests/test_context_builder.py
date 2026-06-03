@@ -114,3 +114,57 @@ def test_auto_build_context_commune_score_detail_formatting():
     val3 = ODISContextBuilder._process_value(detail3, "agent_scout")
     assert val3 == "Test metric 3: 4.5, score: 0.99, poids relatif: 1.0%"
 
+
+def test_job_hunter_context_includes_matching_jobs():
+    """Verifies that CommuneResult's matching_job_offers are correctly extracted in the context built for agent_job_hunter."""
+    from core.models import CommuneResult, JobOfferDetail, EmploymentMetrics
+    
+    offer = JobOfferDetail(
+        id="OFFER_MOCK_123",
+        title="Conseiller Clientèle",
+        company="Banque Populaire",
+        contract_type="CDI",
+        contract_label="Contrat à durée indéterminée",
+        description="Gestion d'un portefeuille de clients.",
+        location="Paris",
+        location_insee="75056",
+        salary="30K-35K",
+        url="https://example.com/apply-conseiller",
+        rome_code="C1201",
+        rome_label="Conseil clientèle en assurances"
+    )
+    
+    commune = CommuneResult(
+        codgeo="75056",
+        name="Paris",
+        population=2148271,
+        global_score=0.88,
+        employment=EmploymentMetrics(
+            cat_score=0.9,
+            matching_job_offers=[[offer]]
+        )
+    )
+    
+    ctx = ODISContextBuilder._auto_build_context(commune, "agent_job_hunter")
+    
+    # Assert employment metrics are present
+    assert "Données emploi et formation" in ctx
+    emp_ctx = ctx["Données emploi et formation"]
+    
+    # Assert matching job offers are present
+    assert "Liste des offres d'emploi correspondantes séparées par adulte du ménage" in emp_ctx
+    offers_list = emp_ctx["Liste des offres d'emploi correspondantes séparées par adulte du ménage"]
+    
+    assert len(offers_list) == 1
+    assert len(offers_list[0]) == 1
+    
+    job_ctx = offers_list[0][0]
+    assert job_ctx["Identifiant unique de l'offre"] == "OFFER_MOCK_123"
+    assert job_ctx["Intitulé du poste"] == "Conseiller Clientèle"
+    assert job_ctx["Code INSEE du lieu de travail"] == "75056"
+    assert job_ctx["Code ROME de l'offre"] == "C1201"
+    assert job_ctx["Libellé ROME de l'offre"] == "Conseil clientèle en assurances"
+
+
+
+

@@ -948,7 +948,34 @@ def _display_result_details(commune: CommuneResult, is_ready: bool = False) -> N
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             st.markdown('<style> [class*="st-key-btn_ia"] .stButton button { background-color: #F5D819; color: #1B4429; } </style>', unsafe_allow_html=True)
-            if st.button("Analyse Avancée", key=f"btn_ia_comm_{commune.codgeo}", icon=':material/bolt:', width="content", type="primary", disabled=not is_ready):
+            
+            # Premium Guardrail (F-IA): Verify if background hydrations (jobs & associations) are completed
+            jobs_ready = False
+            assos_ready = False
+            if h:
+                bg_res = odis_get_bg_result(h)
+                if isinstance(bg_res, dict):
+                    # Check jobs hydration status
+                    jobs_city_data = bg_res.get('jobs_enrichment', {}).get(str(commune.codgeo))
+                    if jobs_city_data and jobs_city_data.get("status") in ["done", "error"]:
+                        jobs_ready = True
+                    
+                    # Check associations hydration status
+                    enrich_data = bg_res.get('enrichment', {}).get(str(commune.codgeo))
+                    if enrich_data is not None:
+                        assos_ready = True
+            
+            if not is_ready:
+                btn_label = "Analyse Avancée (Calcul...)"
+                btn_disabled = True
+            elif not jobs_ready or not assos_ready:
+                btn_label = "Analyse Avancée (Préparation...)"
+                btn_disabled = True
+            else:
+                btn_label = "Analyse Avancée"
+                btn_disabled = False
+
+            if st.button(btn_label, key=f"btn_ia_comm_{commune.codgeo}", icon=':material/bolt:', width="content", type="primary", disabled=btn_disabled):
                 st.session_state.active_ia_city_index = commune.codgeo
                 st.rerun()
 
