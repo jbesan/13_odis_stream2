@@ -238,11 +238,11 @@ def apply_search_criteria_to_ui(criteria: Any) -> None:
                 break
 
     # 8. Inclusion Services Sync (Checkboxes + Multiselect)
-    # inc_services_add_selection in flat_crit is a list of CODES
-    inc_codes = flat_crit.get('inc_services_add_selection', [])
+    # inc_services_selection in flat_crit is a list of CODES
+    inc_codes = flat_crit.get('inc_services_selection', [])
     if inc_codes:
         # Standard list for the composite key
-        st.session_state['ui_inc_services_add_selection'] = inc_codes
+        st.session_state['ui_inc_services_selection'] = inc_codes
         
         # Checkboxes sync
         checkbox_slugs = set(cfg.INC_SERVICES_CHECKBOX_MAPPING.keys())

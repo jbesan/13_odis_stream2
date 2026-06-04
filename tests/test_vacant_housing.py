@@ -44,8 +44,7 @@ def test_vacant_housing_criterion():
         nb_adultes=1, nb_enfants=0,
         hebergement_cible=[], logement='Location',
         codes_metiers=[[]], codes_formations=[[]], classe_enfants=[],
-        besoin_sante='Aucun', inc_services_add_selection=[],
-        inc_services_core_selection=[], inc_asso_add_selection=[],
+        besoin_sante='Aucun', inc_services_selection=[], inc_asso_add_selection=[],
         criteria_weights={}
     )
     

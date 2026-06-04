@@ -311,7 +311,7 @@ def generate_pdf_report(
             "Besoin de santé": config.besoin_sante,
             "Population cible": f"{config.target_population:,} hab. (+/- {config.target_population_sigma:,})".replace(",", " "),
             "Fréquence retour": config.freq_retour if config.freq_retour else "N/A",
-            "Autres besoins": ", ".join([c.label for c in config.inc_services_add_selection]) if config.inc_services_add_selection else "Aucun",
+            "Autres besoins": ", ".join([c.label for c in config.inc_services_selection]) if config.inc_services_selection else "Aucun",
         })
 
         # Add Associations Locales

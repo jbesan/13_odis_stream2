@@ -16,8 +16,7 @@ def mock_config():
         hebergement_cible=[], logement='Location',
         codes_metiers=[], codes_formations=[], classe_enfants=[],
         besoin_sante='Aucun',
-        inc_services_add_selection=[],
-        inc_services_core_selection=[],
+        inc_services_selection=[],
         inc_asso_add_selection=[],
         criteria_weights={},
         active_criteria={'crit1', 'crit2', 'crit3', 'crit4', 'crit5'}

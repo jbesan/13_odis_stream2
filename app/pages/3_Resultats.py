@@ -337,7 +337,7 @@ with col_map:
         if config:
             if config.nb_enfants > 0: pill_options.append({"id": "edu", "label": "🎓 Éducation"})
             if config.besoin_sante != "Aucun": pill_options.append({"id": "sante", "label": "🏥 Santé"})
-            if config.inc_services_add_selection: pill_options.append({"id": "inc", "label": "🤝 Inclusion"})
+            if config.inc_services_selection: pill_options.append({"id": "inc", "label": "🤝 Inclusion"})
         
         with st.container(horizontal=True, horizontal_alignment="center"):
             st.text("Afficher")

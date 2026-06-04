@@ -511,9 +511,8 @@ class ScoringEngine:
              active.add('sante_structures_scaled')
 
         # 7. Inclusion (Additional optional criteria)
-        inc_services_add = getattr(config, 'inc_services_add_selection', [])
-        inc_services_core = getattr(config, 'inc_services_core_selection', [])
-        if inc_services_add or inc_services_core: 
+        inc_services = getattr(config, 'inc_services_selection', [])
+        if inc_services: 
             active.add('inc_services_incl_scaled')
             
         if getattr(config, 'inc_asso_add_selection', []): 
@@ -1455,11 +1454,9 @@ class ScoringEngine:
         else: 
             if 'inc_asso_add_scaled' in df.columns: df.drop(columns=['inc_asso_add_scaled'], inplace=True)
 
-        # Inclusion Services (F-48: Merged Selection)
+        # Inclusion Services (Merged Selection)
         needed = set()
-        for i in getattr(config, 'inc_services_core_selection', []):
-            needed.add(i.code if hasattr(i, 'code') else str(i))
-        for i in getattr(config, 'inc_services_add_selection', []):
+        for i in getattr(config, 'inc_services_selection', []):
             needed.add(i.code if hasattr(i, 'code') else str(i))
             
         if needed:

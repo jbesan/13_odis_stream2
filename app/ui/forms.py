@@ -208,10 +208,10 @@ def render_other_needs_form() -> None:
         st.text("Sélectionnez des services pertinents pour faciliter leur installation une fois sur place.")
         st.text("Services courants:")
 
-        if 'ui_inc_services_add_selection' not in st.session_state:
-            st.session_state.ui_inc_services_add_selection = st.session_state.get('demo_data', {}).get('inc_services_add_selection', cfg.DEFAULT_INC_SERVICES_CORE)
+        if 'ui_inc_services_selection' not in st.session_state:
+            st.session_state.ui_inc_services_selection = st.session_state.get('demo_data', {}).get('inc_services_selection', cfg.DEFAULT_INC_SERVICES_CORE)
 
-        current_selection = set(st.session_state.ui_inc_services_add_selection)
+        current_selection = set(st.session_state.ui_inc_services_selection)
         checkbox_selection = set()
 
         for slug, label in cfg.INC_SERVICES_CHECKBOX_MAPPING.items():
@@ -263,8 +263,8 @@ def render_other_needs_form() -> None:
             if label in options_map:
                 final_selection.append(options_map[label])
         
-        st.session_state.ui_inc_services_add_selection = sorted(list(set(final_selection)))
-        st.session_state['ui_inc_services_add_selection_map'] = options_map
+        st.session_state.ui_inc_services_selection = sorted(list(set(final_selection)))
+        st.session_state['ui_inc_services_selection_map'] = options_map
 
 def render_other_notes_form() -> None:
     """Renders the UI for entering free-text qualitative notes (F-48 update)."""
@@ -725,17 +725,13 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
     # F-48 Logic: Consolidate Inclusion Services (Checkbox + Multiselect)
     inc_index = app_data.get('inclusion_services_index', pd.DataFrame())
     
-    # Get lists from both UI fields (consolidated in UI but might be split in mocked session state)
-    inc_services_add = st.session_state.get('ui_inc_services_add_selection', [])
-    inc_services_core = st.session_state.get('ui_inc_services_core_selection', [])
+    # Get list from UI field
+    inc_services = st.session_state.get('ui_inc_services_selection', [])
     
-    # Handle both list and set types gracefully
+    # Handle both list, set, and dict types gracefully
     all_inc_services: Set[str] = set()
-    if isinstance(inc_services_add, (list, set)): all_inc_services.update(inc_services_add)
-    elif isinstance(inc_services_add, dict): all_inc_services.update(inc_services_add.keys()) # Robustness for test mocks
-    
-    if isinstance(inc_services_core, (list, set)): all_inc_services.update(inc_services_core)
-    elif isinstance(inc_services_core, dict): all_inc_services.update(inc_services_core.keys())
+    if isinstance(inc_services, (list, set)): all_inc_services.update(inc_services)
+    elif isinstance(inc_services, dict): all_inc_services.update(inc_services.keys()) # Robustness for test mocks
 
     inc_services_mapped = []
     for code in sorted(list(all_inc_services)):
@@ -868,9 +864,8 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
         classe_enfants=classe_enfants,
         besoin_sante=st.session_state.get('ui_besoin_sante', 'Aucun'),
         
-        # F-48: Consolidated inclusion services field
-        inc_services_core_selection=[],
-        inc_services_add_selection=inc_services_mapped,
+        # Consolidated inclusion services field
+        inc_services_selection=inc_services_mapped,
         inc_asso_add_selection=inc_assos_mapped,
         notes_qualitatives=[st.session_state.get('ui_notes_qualitatives', "")] if st.session_state.get('ui_notes_qualitatives') else [],
         

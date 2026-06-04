@@ -145,8 +145,8 @@ def run_test_scenario(scenario_id, app_data):
             mock_session_state[f"ui_{key}"] = value
     
     # Ensure other necessary defaults are present
-    if 'ui_inc_services_add_selection' not in mock_session_state:
-        mock_session_state['ui_inc_services_add_selection'] = {}
+    if 'ui_inc_services_selection' not in mock_session_state:
+        mock_session_state['ui_inc_services_selection'] = {}
 
     # Ensure dynamic keys for adults and children are present, even if empty,
     # to prevent KeyErrors in the list comprehensions in create_search_criterias_from_inputs.
@@ -318,7 +318,7 @@ def test_result_details_display(app_data):
         'ui_hebergement': 'Location',
         'ui_logement': 'Location',
         'ui_besoin_sante': 'Aucun',
-        'ui_inc_services_add_selection': {},
+        'ui_inc_services_selection': {},
         'ui_poids_emploi': 1.0,
         'ui_poids_logement': 1.0,
         'ui_poids_education': 1.0,

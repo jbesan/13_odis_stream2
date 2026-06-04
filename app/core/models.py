@@ -38,8 +38,7 @@ class SearchCriterias(BaseModel):
     codes_metiers: List[List[CriteriaItem]] = Field(default_factory=list, description="Métiers ciblés par adulte", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_job_hunter", "agent_synthesizer", "ui_details", "pdf_report"]})
     codes_formations: List[List[CriteriaItem]] = Field(default_factory=list, description="Formations ciblées", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_job_hunter", "agent_synthesizer", "ui_details", "pdf_report"]})
     
-    inc_services_core_selection: List[CriteriaItem] = Field(default_factory=list, description="Services d'inclusion essentiels", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_job_hunter", "agent_synthesizer", "ui_details", "pdf_report"]})
-    inc_services_add_selection: List[CriteriaItem] = Field(default_factory=list, description="Services d'inclusion additionnels", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_job_hunter", "agent_synthesizer", "ui_details", "pdf_report"]})
+    inc_services_selection: List[CriteriaItem] = Field(default_factory=list, description="Services d'inclusion sélectionnés", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_job_hunter", "agent_synthesizer", "ui_details", "pdf_report"]})
     inc_asso_add_selection: List[CriteriaItem] = Field(default_factory=list, description="Associations et centres d'intérêt", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "ui_details", "pdf_report"]})
     
     hebergement_cible: List[str] = Field(default_factory=list, description="Hébergement souhaité", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_scout", "agent_job_hunter", "agent_synthesizer", "ui_details", "pdf_report"]})
@@ -121,8 +120,7 @@ class SearchCriterias(BaseModel):
             
         fields_to_fix = [
             'commune_actuelle', 'commune_pressentie', 'codes_metiers', 'codes_formations', 
-            'inc_services_add_selection', 'inc_asso_add_selection', 
-            'inc_services_core_selection', 'type_logement'
+            'inc_services_selection', 'inc_asso_add_selection', 'type_logement'
         ]
         
         for f in fields_to_fix:

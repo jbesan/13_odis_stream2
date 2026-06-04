@@ -91,7 +91,7 @@ def test_compute_top_cities_execution_complex(mcp_data_context):
         'logement': 'Logement Social',
         'codes_metiers': [[{'code': 'M1805', 'label': 'Informatique'}]], 
         'classe_enfants': ['Maternelle', 'Collège'],
-        'inc_services_add_selection': [{'code': 'lecture-ecriture-calcul--maitriser-le-francais', 'label': 'Français'}],
+        'inc_services_selection': [{'code': 'lecture-ecriture-calcul--maitriser-le-francais', 'label': 'Français'}],
         'besoin_sante': 'Maternité',
         'inc_asso_add_selection': [{'code': '123', 'label': 'Entraide / Bénévolat'}]
     }

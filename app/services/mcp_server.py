@@ -244,7 +244,7 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
     
     # Normalize filters for the engine
     for k in ['commune_actuelle', 'codes_metiers', 'codes_formations', 
-              'inc_services_add_selection', 'inc_asso_add_selection', 'type_logement']:
+              'inc_services_selection', 'inc_asso_add_selection', 'type_logement']:
         if k in filters:
             filters[k] = get_code(filters[k])
 
@@ -274,8 +274,18 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
     loc_search_area = filters.get('loc_search_area', 'departement')
     loc_search_code = filters.get('loc_search_code')
 
-    socle_sel = filters.get('inc_services_core_selection', filters.get('codes_inclusion', []))
-    if not socle_sel: socle_sel = cfg.DEFAULT_INC_SERVICES_CORE
+    # Resolve consolidated inclusion services selection
+    if 'inc_services_selection' in filters:
+        inc_services = filters.get('inc_services_selection')
+    else:
+        # Reconstruct from legacy filters
+        core_sel = filters.get('inc_services_core_selection', filters.get('codes_inclusion', []))
+        if not core_sel and 'inc_services_add_selection' not in filters and 'besoins_autres' not in filters:
+            core_sel = cfg.DEFAULT_INC_SERVICES_CORE
+        add_sel = filters.get('inc_services_add_selection', filters.get('besoins_autres', []))
+        inc_services = list(set(core_sel + add_sel))
+    
+    inc_services = get_code(inc_services)
 
     nb_adultes = int(filters.get('nb_adultes', 1))
 
@@ -288,11 +298,6 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
         
     c_metiers = pad_list(filters.get('codes_metiers', []), nb_adultes)
     c_formations = pad_list(filters.get('codes_formations', []), nb_adultes)
-
-    specific_needs = filters.get('inc_services_add_selection', filters.get('besoins_autres', []))
-    # Alias Fallback
-    if not specific_needs and 'codes_inclusion' in filters and filters.get('codes_inclusion') != socle_sel:
-        specific_needs = filters.get('codes_inclusion')
 
     def get_weight(key_suffix, default=50):
         if key_suffix in weights: return int(weights[key_suffix])
@@ -320,8 +325,7 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
         classe_enfants=filters.get('classe_enfants', []),
         besoin_sante=filters.get('besoin_sante', 'Aucun'),
         type_logement=filters.get('type_logement') or "appt_all",
-        inc_services_add_selection=specific_needs,
-        inc_services_core_selection=socle_sel,
+        inc_services_selection=inc_services,
         inc_asso_add_selection=filters.get('inc_asso_add_selection', [])
     )
     

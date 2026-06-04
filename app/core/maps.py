@@ -389,7 +389,7 @@ def build_services_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], confi
     """Builds the map layer for inclusion services using unified POIs."""
     fg = flm.FeatureGroup(name="Services d'inclusion")
     
-    if not config.inc_services_add_selection:
+    if not config.inc_services_selection:
         return fg
         
     filtered = pois[
@@ -413,12 +413,12 @@ def build_services_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], confi
     # mask = filtered['categorie'].isin(config.besoins_autres.keys())
     
     # New logic: check if 'type' (slug) is in the list of selected slugs
-    if isinstance(config.inc_services_add_selection, list):
+    if isinstance(config.inc_services_selection, list):
         slugs = []
-        for item in config.inc_services_add_selection:
+        for item in config.inc_services_selection:
             slugs.append(item.code if hasattr(item, 'code') else item)
         mask = filtered['type'].isin(slugs)
-    elif isinstance(config.inc_services_add_selection, dict):
+    elif isinstance(config.inc_services_selection, dict):
         # Backward compatibility if it's still a dict (keys are categories?)
         # Or keys are slugs? The old code used keys() as categories.
         # Let's assume keys are categories if it's a dict, but user said it's a list of slugs.
@@ -426,8 +426,8 @@ def build_services_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], confi
         # But old code split type to get category.
         # Let's just try to match type against keys if it's a dict, or split.
         # Safest is to log warning and try exact match.
-        logging.warning("build_services_layer: inc_services_add_selection is a dict, using keys as slugs.")
-        mask = filtered['type'].isin(config.inc_services_add_selection.keys())
+        logging.warning("build_services_layer: inc_services_selection is a dict, using keys as slugs.")
+        mask = filtered['type'].isin(config.inc_services_selection.keys())
     else:
         mask = pd.Series(False, index=filtered.index)
         

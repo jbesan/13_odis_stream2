@@ -82,7 +82,7 @@ class TestScoringLogic:
         config.nb_enfants = 1 # Enable education scoring
         config.classe_enfants = ['Crèche / Assistante Maternelle', 'Maternelle', 'Elémentaire', 'Collège', 'Lycée'] # Select all for full coverage
         config.inc_asso_add_selection = ['Sport (Général)'] # Enable association scoring
-        config.inc_services_add_selection = ['social_aide'] # Enable specific services scoring
+        config.inc_services_selection = ['social_aide'] # Enable specific services scoring
         
         engine = scoring.ScoringEngine(
             df_all_communes=sample_data,
@@ -333,8 +333,7 @@ class TestConditionalScoring:
             codes_formations=[],
             classe_enfants=[],
             besoin_sante='Aucun', # Condition to ignore sante
-            inc_services_add_selection=[],
-            inc_services_core_selection=[],
+            inc_services_selection=[],
             inc_asso_add_selection=[],
             criteria_weights={}
         )
@@ -386,8 +385,7 @@ class TestConditionalScoring:
             codes_formations=[],
             classe_enfants=['Maternelle'],
             besoin_sante='Hopital', # Condition to include sante
-            inc_services_add_selection=[],
-            inc_services_core_selection=[],
+            inc_services_selection=[],
             inc_asso_add_selection=[],
             criteria_weights={}
         )
@@ -487,8 +485,7 @@ class TestMCPScenario:
              codes_formations=[[]],
              classe_enfants=[],
              besoin_sante='Aucun',
-             inc_services_add_selection=[],
-             inc_services_core_selection=[],
+             inc_services_selection=[],
              inc_asso_add_selection=[],
              criteria_weights={}
         )
@@ -591,8 +588,7 @@ class TestInclusionScoringLogic:
         """Tests Socle Administratif score calculation."""
         from types import SimpleNamespace
         prefs = SimpleNamespace(
-            inc_services_core_selection=[],
-            inc_services_add_selection=['social_aide', 'admin_mairie'],
+            inc_services_selection=['social_aide', 'admin_mairie'],
             inc_asso_add_selection=[]
         )
         engine = scoring.ScoringEngine(
@@ -614,9 +610,8 @@ class TestInclusionScoringLogic:
         """Tests Affinité score calculation."""
         from types import SimpleNamespace
         prefs = SimpleNamespace(
-            inc_services_core_selection=[],
             inc_asso_add_selection=['009'],
-            inc_services_add_selection=[]
+            inc_services_selection=[]
         )
         engine = scoring.ScoringEngine(
             df_all_communes=gpd.GeoDataFrame(), 
@@ -634,9 +629,8 @@ class TestInclusionScoringLogic:
         assert scores.loc['64445', 'inc_asso_add_scaled'] >= 0
         
         prefs_sport = SimpleNamespace(
-            inc_services_core_selection=[],
             inc_asso_add_selection=['011'],
-            inc_services_add_selection=[]
+            inc_services_selection=[]
         )
         engine_sport = scoring.ScoringEngine(
             df_all_communes=gpd.GeoDataFrame(), 
@@ -655,8 +649,7 @@ class TestInclusionScoringLogic:
         """Tests that all inclusion components are present."""
         from types import SimpleNamespace
         prefs = SimpleNamespace(
-            inc_services_core_selection=[],
-            inc_services_add_selection=['social_aide'], 
+            inc_services_selection=['social_aide'], 
             inc_asso_add_selection=['Bricolage / Création']
         )
         engine = scoring.ScoringEngine(
@@ -744,8 +737,7 @@ class TestHousingScoresLogic:
                 codes_formations=[[]],
                 classe_enfants=[],
                 besoin_sante="Aucun",
-                inc_services_add_selection=[],
-                inc_services_core_selection=[],
+                inc_services_selection=[],
                 inc_asso_add_selection=[]
             )
             df_copy = df.copy()
@@ -821,8 +813,7 @@ class TestHousingScoresLogic:
                 codes_formations=[[]],
                 classe_enfants=[],
                 besoin_sante="Aucun",
-                inc_services_add_selection=[],
-                inc_services_core_selection=[],
+                inc_services_selection=[],
                 inc_asso_add_selection=[],
                 type_logement=type_logement
             )
@@ -842,7 +833,7 @@ class TestHousingScoresLogic:
             nb_adultes=1, nb_enfants=0, hebergement_cible=[], logement='Location',
             type_logement=CriteriaItem(code="appartement_t1_t2", label="Appartement (T1/T2)"),
             codes_metiers=[[]], codes_formations=[[]], classe_enfants=[], besoin_sante="Aucun",
-            inc_services_add_selection=[], inc_services_core_selection=[], inc_asso_add_selection=[]
+            inc_services_selection=[], inc_asso_add_selection=[]
         )
         res2 = engine._compute_criteria_scores(df.copy(), config2)
         assert 'log_loyer_moyen_appt_t1_t2_scaled' in res2.columns
@@ -938,8 +929,7 @@ class TestShortlistCity:
              codes_formations=[[]],
              classe_enfants=[],
              besoin_sante='Aucun',
-             inc_services_add_selection=[],
-             inc_services_core_selection=[],
+             inc_services_selection=[],
              inc_asso_add_selection=[],
              criteria_weights={}
         )

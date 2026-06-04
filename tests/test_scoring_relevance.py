@@ -53,8 +53,7 @@ def base_config():
         codes_formations=[[]],
         classe_enfants=[],
         besoin_sante='Aucun',
-        inc_services_add_selection=[],
-        inc_services_core_selection=[],
+        inc_services_selection=[],
         inc_asso_add_selection=[]
     )
 
@@ -131,10 +130,10 @@ def test_association_pruning(scoring_engine, base_df, base_config):
     assert 'inc_asso_add_scaled' not in scored_df.columns
 
 def test_service_pruning(scoring_engine, base_df, base_config):
-    """Scenario 5: empty inc_services_add_selection -> Verify inc_services_add_scaled is removed."""
+    """Scenario 5: empty inc_services_selection -> Verify inc_services_incl_scaled is removed."""
     config = base_config
-    config.inc_services_add_selection = []
+    config.inc_services_selection = []
     
     scored_df = scoring_engine._compute_criteria_scores(base_df, config)
     
-    assert 'inc_services_add_scaled' not in scored_df.columns
+    assert 'inc_services_incl_scaled' not in scored_df.columns

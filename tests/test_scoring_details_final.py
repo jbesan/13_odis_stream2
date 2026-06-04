@@ -57,8 +57,7 @@ def base_config():
         codes_formations=[[]],
         classe_enfants=[],
         besoin_sante='Aucun',
-        inc_services_add_selection=[],
-        inc_services_core_selection=[],
+        inc_services_selection=[],
         inc_asso_add_selection=[],
         type_logement=CriteriaItem(code='appt_all', label='Appartement (Tous types)')
     )

@@ -76,7 +76,7 @@ def map_ui_config_to_search_criterias(config: SearchCriterias, app_data: Dict[st
     # 4. Inclusion Services
     inc_index = app_data.get('inclusion_services_index', pd.DataFrame())
     inc_services = []
-    for code in config.inc_services_add_selection:
+    for code in config.inc_services_selection:
         label = inc_index.loc[code, 'label'] if not inc_index.empty and code in inc_index.index else str(code)
         inc_services.append(CriteriaItem(code=str(code), label=str(label)))
         
@@ -110,7 +110,7 @@ def map_ui_config_to_search_criterias(config: SearchCriterias, app_data: Dict[st
         classe_enfants=config.classe_enfants,
         codes_metiers=codes_metiers,
         codes_formations=codes_formations,
-        inc_services_add_selection=inc_services,
+        inc_services_selection=inc_services,
         inc_asso_add_selection=inc_assos,
         hebergement_cible=config.hebergement_cible,
         logement=config.logement,

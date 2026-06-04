@@ -111,7 +111,7 @@ def log_search_complete(config: SearchCriterias, search_results: SearchResultsDa
         if not isinstance(full_config, dict):
             full_config = {}
 
-        criteria_keys = ['commune_actuelle', 'loc_search_area', 'situation_famille', 'nb_enfants', 'besoin_emploi', 'besoin_sante', 'inc_services_add_selection', 'freq_retour', 'active_criteria']
+        criteria_keys = ['commune_actuelle', 'loc_search_area', 'situation_famille', 'nb_enfants', 'besoin_emploi', 'besoin_sante', 'inc_services_selection', 'freq_retour', 'active_criteria']
         search_criteria = {k: full_config.get(k) for k in criteria_keys if k in full_config}
         weights = {k: v for k, v in full_config.items() if k.startswith('poids_')}
         
