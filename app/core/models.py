@@ -135,7 +135,7 @@ class SearchCriterias(BaseModel):
 
     def compute_hash(self) -> str:
         """Computes a stable MD5 hash for search criteria to detect changes."""
-        criteria_json = self.model_dump_json()
+        criteria_json = self.model_dump_json(exclude={'active_criteria', 'active_categories', 'odis_brief'})
         return hashlib.md5(criteria_json.encode()).hexdigest()
 
 class CommuneScoreDetail(BaseModel):

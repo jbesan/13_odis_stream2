@@ -120,16 +120,22 @@ def render_housing_form() -> None:
     with col1:
         st.subheader("Hébergement cible à court terme")
         current_heb = st.session_state.get('ui_hebergement_cible', [])
-        selected_heb = []
+        
+        # Callback to compile selected checkboxes into ui_hebergement_cible list
+        def on_heb_change():
+            selected = []
+            for opt in cfg.HEBERGEMENT_OPTIONS:
+                cb_key = f"ui_heb_cb_{opt.replace(' ', '_').lower()}"
+                if st.session_state.get(cb_key):
+                    selected.append(opt)
+            st.session_state['ui_hebergement_cible'] = selected
+            
         for opt in cfg.HEBERGEMENT_OPTIONS:
             cb_key = f"ui_heb_cb_{opt.replace(' ', '_').lower()}"
             if cb_key not in st.session_state:
                 st.session_state[cb_key] = opt in current_heb
             
-            if st.checkbox(opt, key=cb_key):
-                selected_heb.append(opt)
-        
-        st.session_state['ui_hebergement_cible'] = selected_heb
+            st.checkbox(opt, key=cb_key, on_change=on_heb_change)
         
     with col2:
         st.subheader("Logement cible à long terme")
@@ -167,8 +173,8 @@ def render_other_needs_form() -> None:
     
     col1, col2 = st.columns(2)
     with col2:
-        st.subheader("Associations Locales (Solidarité, Loisirs, Culture)")
-        st.text("Sélectionnez vos centres d'intérêt pour identifier les territoires avec un tissu associatif correspondant.")
+        st.subheader("Associations Locales")
+        st.text("Sélectionnez vos centres d'intérêt pour identifier les territoires avec un tissu associatif correspondant (Solidarité, Loisirs, Culture...).")
         
         if 'waldec_index' in app_data:
             waldec_index = app_data['waldec_index']
@@ -205,66 +211,59 @@ def render_other_needs_form() -> None:
 
     with col1:
         st.subheader("Services d'Inclusion")
-        st.text("Sélectionnez des services pertinents pour faciliter leur installation une fois sur place.")
-        st.text("Services courants:")
+        st.text("Sélectionnez les services d'accompagnement social requis pour la personne ou la famille.")
 
-        if 'ui_inc_services_selection' not in st.session_state:
-            st.session_state.ui_inc_services_selection = st.session_state.get('demo_data', {}).get('inc_services_selection', cfg.DEFAULT_INC_SERVICES_CORE)
+        # Ensure raw selection list is initialized in session state
+        if 'ui_inc_services_selection_raw' not in st.session_state:
+            current_selection = st.session_state.get('ui_inc_services_selection', [])
+            raw_list = []
+            for x in current_selection:
+                raw_list.append(x.code if hasattr(x, 'code') else str(x))
+            st.session_state['ui_inc_services_selection_raw'] = raw_list
 
-        current_selection = set(st.session_state.ui_inc_services_selection)
-        checkbox_selection = set()
-
-        for slug, label in cfg.INC_SERVICES_CHECKBOX_MAPPING.items():
-            cb_key = f"ui_cb_inc_{slug.replace('-', '_')}"
-            
-            if cb_key not in st.session_state:
-                st.session_state[cb_key] = slug in current_selection
-                if slug in cfg.DEFAULT_INC_SERVICES_CORE:
-                    st.session_state[cb_key] = True
-                else:
-                    st.session_state[cb_key] = False
-            
-            if st.checkbox(label, key=cb_key):
-                checkbox_selection.add(slug)
-
-        st.markdown("\n")
-        st.text("Services plus spécifiques:")
-        
+        # Build ordered options (common pinned at top, others alphabetical)
+        common_slugs = list(cfg.INC_SERVICES_CHECKBOX_MAPPING.keys())
         inclusion_index = app_data.get('inclusion_services_index', pd.DataFrame())
-        checkbox_slugs = set(cfg.INC_SERVICES_CHECKBOX_MAPPING.keys())
         
-        options_map = {} 
+        all_slugs = []
         if not inclusion_index.empty:
-            for code, row in inclusion_index.iterrows():
-                if code not in checkbox_slugs:
-                    label = row['label']
-                    options_map[label] = code
-        
-        options_list = sorted(list(options_map.keys()))
-        
-        if 'ui_inc_services_multi_only' not in st.session_state:
-            initial_multi = []
-            if not inclusion_index.empty:
-                for s in current_selection:
-                    if s in inclusion_index.index and s not in checkbox_slugs:
-                        initial_multi.append(inclusion_index.loc[s, 'label'])
-            st.session_state.ui_inc_services_multi_only = initial_multi
+            all_slugs = list(inclusion_index.index)
+            
+        other_slugs = [slug for slug in all_slugs if slug not in common_slugs]
+        if not inclusion_index.empty:
+            other_slugs.sort(key=lambda s: str(inclusion_index.loc[s, 'label'] if s in inclusion_index.index else s))
+            
+        options = common_slugs + other_slugs
 
-        selected_labels = st.multiselect(
-            "Autres services d'inclusion",
-            options=options_list,
-            key="ui_inc_services_multi_only",
-            help="Recherchez et ajoutez des services spécifiques.",
+        # Label formatter mapping
+        def format_service_label(slug):
+            if slug in cfg.INC_SERVICES_CHECKBOX_MAPPING:
+                return cfg.INC_SERVICES_CHECKBOX_MAPPING[slug]
+            if not inclusion_index.empty and slug in inclusion_index.index:
+                val = inclusion_index.loc[slug, 'label']
+                return str(val.iloc[0] if isinstance(val, pd.Series) else val)
+            return slug
+
+        selected_raw = st.multiselect(
+            "Services d'inclusion requis",
+            options=options,
+            format_func=format_service_label,
+            key="ui_inc_services_selection_raw",
+            help="Sélectionnez un ou plusieurs services d'inclusion. Les services recommandés/courants sont placés en tête de liste.",
             label_visibility="collapsed"
         )
         
-        final_selection = list(checkbox_selection)
-        for label in selected_labels:
-            if label in options_map:
-                final_selection.append(options_map[label])
-        
-        st.session_state.ui_inc_services_selection = sorted(list(set(final_selection)))
-        st.session_state['ui_inc_services_selection_map'] = options_map
+        # Keep ui_inc_services_selection in sync
+        inc_services_mapped = []
+        for code in selected_raw:
+            if not inclusion_index.empty and code in inclusion_index.index:
+                val = inclusion_index.loc[code, 'label']
+                label = str(val.iloc[0] if isinstance(val, pd.Series) else val)
+            else:
+                label = str(code)
+            inc_services_mapped.append(CriteriaItem(code=str(code), label=label))
+            
+        st.session_state.ui_inc_services_selection = inc_services_mapped
 
 def render_other_notes_form() -> None:
     """Renders the UI for entering free-text qualitative notes (F-48 update)."""
@@ -725,13 +724,16 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
     # F-48 Logic: Consolidate Inclusion Services (Checkbox + Multiselect)
     inc_index = app_data.get('inclusion_services_index', pd.DataFrame())
     
-    # Get list from UI field
-    inc_services = st.session_state.get('ui_inc_services_selection', [])
-    
-    # Handle both list, set, and dict types gracefully
-    all_inc_services: Set[str] = set()
-    if isinstance(inc_services, (list, set)): all_inc_services.update(inc_services)
-    elif isinstance(inc_services, dict): all_inc_services.update(inc_services.keys()) # Robustness for test mocks
+    # Read the raw multiselect state if present, fallback to ui_inc_services_selection
+    raw_services = st.session_state.get('ui_inc_services_selection_raw')
+    if raw_services is not None:
+        all_inc_services = set(raw_services)
+    else:
+        # Fallback for API / tests / init
+        inc_services = st.session_state.get('ui_inc_services_selection', [])
+        all_inc_services = set()
+        for x in inc_services:
+            all_inc_services.add(x.code if hasattr(x, 'code') else str(x))
 
     inc_services_mapped = []
     for code in sorted(list(all_inc_services)):

@@ -10,7 +10,7 @@ from agents.utils import run_async_safe
 
 # --- Page Configuration ---
 st.set_page_config(
-    page_title="J'accueille",
+    page_title="OD&IS",
     page_icon="👋",
     layout="wide"
 )

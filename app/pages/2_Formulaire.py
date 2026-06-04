@@ -1,6 +1,12 @@
 import streamlit as st
 import config as cfg
 
+st.set_page_config(
+    page_title="OD&IS",
+    page_icon="👋",
+    layout="wide"
+)
+
 
 
 

@@ -4,7 +4,7 @@ from utils import data_loader
 
 # --- Page Configuration (Standard ODIS) ---
 st.set_page_config(
-    page_title="ODIS",
+    page_title="OD&IS",
     page_icon="👋",
     layout="wide"
 )

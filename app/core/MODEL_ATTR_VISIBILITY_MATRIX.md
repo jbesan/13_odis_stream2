@@ -27,8 +27,7 @@ This matrix defines data access rights across all agents and interfaces based on
 | `classe_enfants` | ✅ | ✅ | ✅ | | | ✅ | ✅ |
 | `codes_metiers` | ✅ | ✅ | | ✅ | | ✅ | ✅ |
 | `codes_formations` | ✅ | ✅ | | ✅ | | ✅ | ✅ |
-| `inc_services_core` | ✅ | ✅ | | | | ✅ | ✅ |
-| `inc_services_add` | ✅ | ✅ | | | | ✅ | ✅ |
+| `inc_services_selection` | ✅ | ✅ | | | | ✅ | ✅ |
 | `inc_asso_add` | ✅ | ✅ | | | | ✅ | ✅ |
 | `hebergement_cible` | ✅ | ✅ | ✅ | | | ✅ | ✅ |
 | `logement` | ✅ | ✅ | ✅ | | | ✅ | ✅ |

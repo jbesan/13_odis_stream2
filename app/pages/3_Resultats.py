@@ -24,7 +24,11 @@ from core.models import SearchResultsData
 from utils import memory
 logger = logging.getLogger(__name__)
 
-st.set_page_config(layout="wide")
+st.set_page_config(
+    page_title="OD&IS",
+    page_icon="👋",
+    layout="wide"
+)
 
 # Reduce padding around results
 st.markdown("""
@@ -263,9 +267,18 @@ with st.container(border=False, key='top_menu'):
     col_tabs, col_button = st.columns([5,1])
     with col_tabs:
         st.markdown(f"## Projet de vie {ui.get_person_accompanied_str()}")    
+    
+    # Compute if criteria have changed since the last search
+    current_config = ui_forms.create_search_criterias_from_inputs()
+    last_results = st.session_state.get('search_results')
+    if last_results is not None:
+        disable_search = current_config.compute_hash() == last_results.search_hash
+    else:
+        disable_search = False
+
     with col_button: 
         with st.container(height="stretch", horizontal_alignment="center", vertical_alignment="center"):
-            st.button("Lancer la recherche", on_click=run_search, type="primary")
+            st.button("Lancer la recherche", on_click=run_search, type="primary", disabled=disable_search)
     with st.expander('🔎 Modifier les critères de recherche', expanded=False):
         ui_forms.display_input_tabs()
     
