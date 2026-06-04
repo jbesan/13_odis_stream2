@@ -3,7 +3,8 @@ import time
 import streamlit as st
 from unittest.mock import patch, MagicMock
 from core.models import JobOfferDetail, EmploymentMetrics, CommuneResult
-from agents.utils import launch_background_jobs_enrichment, get_odis_bg_store
+from agents.utils import get_odis_bg_store
+from core.postscoring import launch_background_job_curation
 
 @pytest.fixture(autouse=True)
 def clean_streamlit_session():
@@ -121,7 +122,7 @@ def test_background_jobs_enrichment_success(mock_curator_run, mock_search):
     )
     
     # Trigger background hydration
-    launch_background_jobs_enrichment(codgeos, config, hash_val, search_results)
+    launch_background_job_curation(codgeos, config, hash_val, search_results)
     
     # Wait briefly for background thread to complete
     timeout = 2.0
@@ -197,7 +198,7 @@ def test_background_jobs_enrichment_bypass(mock_curator_run, mock_search):
     hash_val = "bypass_test_hash"
     
     # Trigger background hydration
-    launch_background_jobs_enrichment(codgeos, config, hash_val)
+    launch_background_job_curation(codgeos, config, hash_val)
     
     # Wait briefly for background thread to complete
     timeout = 2.0
@@ -252,7 +253,7 @@ def test_background_jobs_enrichment_graceful_fallback(mock_curator_run, mock_sea
     hash_val = "fallback_test_hash"
     
     # Trigger background hydration
-    launch_background_jobs_enrichment(codgeos, config, hash_val)
+    launch_background_job_curation(codgeos, config, hash_val)
     
     # Wait briefly for background thread to complete
     timeout = 2.0

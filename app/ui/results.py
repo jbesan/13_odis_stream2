@@ -227,6 +227,8 @@ def polling_jobs_fragment(commune: CommuneResult, h: Optional[str]):
                         [JobOfferDetail.model_validate(o) for o in adult_list]
                         for adult_list in raw_jobs
                     ]
+                    if "total" in jobs_city_data:
+                        emp_data.standard_jobs_matching_total = jobs_city_data["total"]
                     st.rerun() # Trigger dialog rerun to reveal content
                 elif jobs_city_data.get("status") == "error":
                     # Put a dummy empty list to stop polling on error
@@ -258,7 +260,7 @@ def polling_jobs_fragment(commune: CommuneResult, h: Optional[str]):
         
         brief = getattr(offer, "job_brief", None)
         if brief:
-            st.caption(f"💡 **Pourquoi ce choix :** {brief}")
+            st.markdown(f"{brief}")
         elif offer.description:
             st.caption(offer.description)
             
@@ -271,7 +273,7 @@ def polling_jobs_fragment(commune: CommuneResult, h: Optional[str]):
             if not adult_jobs:
                 continue
             matching_total_adult = len(adult_jobs)
-            title = f"💼 {matching_total_adult} correspondance{'s' if matching_total_adult > 1 else ''} directe{'s' if matching_total_adult > 1 else ''} avec le projet de l'Adulte {i + 1}"
+            title = f"💼 Meilleures correspondances avec le projet de l'Adulte {i + 1}"
             with st.expander(title, expanded=True):
                 # Group offers by ROME label
                 from collections import defaultdict
@@ -415,6 +417,8 @@ def sync_background_data(commune: CommuneResult, h: Optional[str]):
                 [JobOfferDetail.model_validate(o) for o in adult_list]
                 for adult_list in raw_jobs
             ]
+            if "total" in jobs_city_data:
+                emp_data.standard_jobs_matching_total = jobs_city_data["total"]
             
     # 2. Sync Pitches (AI analysis)
     if 'pitches' in bg_res:
@@ -599,7 +603,7 @@ def show_details_dialog(index: Any):
                 matching_total = employment_data.standard_jobs_matching_total
                 
                 if live_total > 0:
-                    st.info(f"**{live_total} postes** à pourvoir actuellement dans le bassin de vie.")
+                    st.info(f"**{matching_total} postes** correspondent à votre recherche sur cette zone.")
                 
                 # 1. Hydrated live France Travail job offers first
                 polling_jobs_fragment(commune, h)

@@ -18,7 +18,8 @@ from shapely.geometry import mapping
 import logging
 import gc
 import warnings
-from agents.utils import launch_background_refiner, odis_get_bg_result, launch_background_enrichment, launch_post_scoring_tasks
+from agents.utils import odis_get_bg_result
+from core.postscoring import launch_post_scoring_tasks
 from core.models import SearchResultsData
 from utils import memory
 logger = logging.getLogger(__name__)

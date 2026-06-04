@@ -21,7 +21,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 @pytest.mark.asyncio
-# @pytest.mark.skip(reason="This test costs tokens")
+@pytest.mark.skip(reason="This test costs tokens")
 async def test_graph_execution_end_to_end():
     """
     Verifies that the ODIS graph can be instantiated and executed end-to-end.
