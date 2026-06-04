@@ -1,7 +1,7 @@
 [
     {
         "bassin_de_vie": "75056",
-        "weighted_score": 0.9690626645602949,
+        "weighted_score": 0.9686677198525538,
         "population_bv": 10313732,
         "libgeo": "Paris",
         "communes": [
@@ -445,7 +445,7 @@
             "95680",
             "95682"
         ],
-        "inclusion_cat_score": 0.9976303317535545,
+        "inclusion_cat_score": 0.995260663507109,
         "mob_epci_scaled": 1.0
     },
     {
@@ -496,8 +496,24 @@
         "mob_epci_scaled": 0.0
     },
     {
+        "bassin_de_vie": "78517",
+        "weighted_score": 0.7825829383886256,
+        "population_bv": 30729,
+        "libgeo": "Rambouillet",
+        "communes": [
+            "78164",
+            "78269",
+            "78464",
+            "78470",
+            "78497",
+            "78517"
+        ],
+        "inclusion_cat_score": 0.9984202211690363,
+        "mob_epci_scaled": 0.0
+    },
+    {
         "bassin_de_vie": "91223",
-        "weighted_score": 0.7825171142706688,
+        "weighted_score": 0.7821221695629279,
         "population_bv": 39815,
         "libgeo": "Étampes",
         "communes": [
@@ -525,70 +541,24 @@
             "91544",
             "91556"
         ],
-        "inclusion_cat_score": 0.9928909952606635,
+        "inclusion_cat_score": 0.990521327014218,
         "mob_epci_scaled": 0.0
     },
     {
-        "bassin_de_vie": "78517",
-        "weighted_score": 0.7813981042654028,
-        "population_bv": 30729,
-        "libgeo": "Rambouillet",
+        "bassin_de_vie": "77316",
+        "weighted_score": 0.7691548183254344,
+        "population_bv": 23834,
+        "libgeo": "Moret-Loing-et-Orvanne",
         "communes": [
-            "78164",
-            "78269",
-            "78464",
-            "78470",
-            "78497",
-            "78517"
+            "77079",
+            "77316",
+            "77419",
+            "77463",
+            "77494",
+            "77501",
+            "77506"
         ],
-        "inclusion_cat_score": 0.9913112164296999,
-        "mob_epci_scaled": 0.0
-    },
-    {
-        "bassin_de_vie": "77379",
-        "weighted_score": 0.7709320695102685,
-        "population_bv": 33943,
-        "libgeo": "Provins",
-        "communes": [
-            "77020",
-            "77026",
-            "77033",
-            "77073",
-            "77076",
-            "77080",
-            "77090",
-            "77109",
-            "77134",
-            "77174",
-            "77208",
-            "77227",
-            "77242",
-            "77246",
-            "77256",
-            "77260",
-            "77262",
-            "77275",
-            "77289",
-            "77301",
-            "77319",
-            "77341",
-            "77368",
-            "77379",
-            "77391",
-            "77396",
-            "77403",
-            "77404",
-            "77414",
-            "77418",
-            "77444",
-            "77446",
-            "77456",
-            "77459",
-            "77519",
-            "77530",
-            "77532"
-        ],
-        "inclusion_cat_score": 0.7322274881516587,
+        "inclusion_cat_score": 0.9873617693522907,
         "mob_epci_scaled": 0.0
     }
 ]

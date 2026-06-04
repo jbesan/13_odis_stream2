@@ -1,7 +1,7 @@
 [
     {
         "bassin_de_vie": "33243",
-        "weighted_score": 0.8714887640449438,
+        "weighted_score": 0.8639981273408239,
         "population_bv": 98828,
         "libgeo": "Saint-Émilion",
         "communes": [
@@ -73,7 +73,7 @@
             "33546",
             "33548"
         ],
-        "inclusion_cat_score": 0.8820224719101124,
+        "inclusion_cat_score": 0.8520599250936329,
         "mob_epci_scaled": 0.0
     },
     {
@@ -106,31 +106,8 @@
         "mob_epci_scaled": 0.0
     },
     {
-        "bassin_de_vie": "33138",
-        "weighted_score": 0.8213951310861424,
-        "population_bv": 21802,
-        "libgeo": "Coutras",
-        "communes": [
-            "33001",
-            "33088",
-            "33124",
-            "33138",
-            "33154",
-            "33166",
-            "33218",
-            "33315",
-            "33320",
-            "33385",
-            "33447",
-            "33472",
-            "33526"
-        ],
-        "inclusion_cat_score": 0.9400749063670412,
-        "mob_epci_scaled": 0.0
-    },
-    {
         "bassin_de_vie": "33506",
-        "weighted_score": 0.8092228464419475,
+        "weighted_score": 0.8279494382022472,
         "population_bv": 6966,
         "libgeo": "Martres",
         "communes": [
@@ -155,12 +132,12 @@
             "33506",
             "33516"
         ],
-        "inclusion_cat_score": 0.8408239700374532,
+        "inclusion_cat_score": 0.9157303370786517,
         "mob_epci_scaled": 0.0
     },
     {
         "bassin_de_vie": "47052",
-        "weighted_score": 0.7935393258426967,
+        "weighted_score": 0.8227996254681648,
         "population_bv": 2006,
         "libgeo": "Marions",
         "communes": [
@@ -172,7 +149,30 @@
             "33276",
             "33513"
         ],
-        "inclusion_cat_score": 0.5870786516853933,
+        "inclusion_cat_score": 0.704119850187266,
+        "mob_epci_scaled": 0.0
+    },
+    {
+        "bassin_de_vie": "33138",
+        "weighted_score": 0.8195224719101123,
+        "population_bv": 21802,
+        "libgeo": "Coutras",
+        "communes": [
+            "33001",
+            "33088",
+            "33124",
+            "33138",
+            "33154",
+            "33166",
+            "33218",
+            "33315",
+            "33320",
+            "33385",
+            "33447",
+            "33472",
+            "33526"
+        ],
+        "inclusion_cat_score": 0.9325842696629213,
         "mob_epci_scaled": 0.0
     }
 ]

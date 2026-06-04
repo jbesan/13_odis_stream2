@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import geopandas as gpd
@@ -478,6 +477,7 @@ def load_all_data_raw() -> Dict[str, Any]:
             'centroid_lon', 'centroid_lat',
             'youth_growth_rate', 'workclass_growth_rate',
             'count_hopital', 'count_maternite', 'count_psy',
+            'edu_maternelle_ct', 'edu_elementaire_ct', 'edu_college_ct', 'edu_lycee_ct',
             'log_priv_vacant_plus_2ans', 'log_total', # For vacancy tests
             'nb_stops_bus', 'nb_stops_tram', 'nb_stops_metro', 'nb_stops_train', 'nb_stops_total'
         }

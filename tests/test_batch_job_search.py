@@ -11,11 +11,13 @@ from agents.job_hunter import job_hunter_agent
 from agents.state import GraphState, ODISDeps
 from agents.tools import search_job_offers_batch
 
+from core.models import CommuneResult
+
 @pytest.fixture
 def test_deps():
     state = GraphState(
         odis_brief="Projet: Boulanger et Pâtissier",
-        focus_city="Paris",
+        focus_city=CommuneResult(name="Paris", codgeo="75056"),
         search_criteria={}
     )
     mock_client = MagicMock()

@@ -15,6 +15,7 @@ from .tools import (
 
 logger = logging.getLogger("job_hunter_agent_v2")
 
+
 class JobHunterResult(BaseModel):
     searched: str = Field(..., description="Liste des codes ROME et lieux recherchés.")
     result: str = Field(..., description="Synthèse des offres d'emploi pertinentes trouvées.")
@@ -40,11 +41,15 @@ JOB_HUNTER_ANALYSIS_SYSTEM_PROMPT = """
 
 **DIRECTIVES CRITIQUES (NE PAS DEMANDER, AGIR)** :
 1. **UTILISATION DU CODE INSEE** : Ne cherche pas le code, utilise celui fourni dans `Ville analysée` (`Code INSEE`).
-2. **RECHERCHE D'OFFRES (FT & SIAE)** : Lance `search_job_offers_batch_tool` (France Travail) ET `search_inclusion_jobs_batch_tool` pour TOUS les métiers identifiés.
+2. **RECHERCHE D'OFFRES (FT & SIAE)** :
+   - **France Travail** : Vérifie TOUJOURS si des offres d'emploi correspondantes pré-chargées sont déjà disponibles sous `Ville analysée` -> `Données emploi et formation` -> `Liste des offres d'emploi correspondantes séparées par adulte du ménage`.
+     * Si elles sont présentes, **n'appelle JAMAIS** `search_job_offers_batch_tool`. Utilise-les DIRECTEMENT comme source de vérité !
+     * Si elles sont absentes ou vides, lance l'outil `search_job_offers_batch_tool` pour les métiers identifiés.
+   - **SIAE (Inclusion)** : Lance `search_inclusion_jobs_batch_tool` pour récupérer des offres d'insertion s'il n'y a pas d'offres SIAE déjà listées dans `Données emploi et formation`.
 3. **NE DEMANDE PAS DE PRÉCISIONS** : Tu as les informations sur les métiers dans les critères. AGIS IMMÉDIATEMENT sans attendre de confirmation.
 4. **Réponse (STRUCTURED)** : 
     - Tu DOIS retourner un objet `JobHunterResult`.
-    - `searched` : Liste TOUS les codes ROME + libellés recherchés.
+    - `searched` : Liste TOUS les codes ROME + libellés recherchés. Mentionne s'il s'agit d'offres pré-chargées du cache (ex: "[Cache] ROME D1102").
     - `result` : Pour chaque catégorie `rome`, présente les **3 offres les plus pertinentes** (mélange FT et SIAE). Pour les offres SIAE, précise EXPLICITEMENT qu'il s'agit d'offres d'insertion (SIAE). Indique : Intitulé, ID, lieu, type de contrat, et une phrase d'explication.
 """
 
@@ -144,4 +149,57 @@ async def search_referentiels_batch_tool(ctx: RunContext[ODISDeps], searches: Li
         searches (List[SearchQuery]): Liste d'objets {query, domain}
     """
     return await search_referentiels_batch([s.model_dump() for s in searches])
+
+
+# --- Job Curation Skill ---
+
+class CuratedJob(BaseModel):
+    job_id: str = Field(
+        ...,
+        description="L'identifiant de l'offre d'emploi"
+    )
+    job_brief: str = Field(
+        ...,
+        description="Une phrase concise et claire (sans saut de ligne) décrivant l'offre et justifiant pourquoi elle correspond particulièrement bien au profil et aux contraintes du candidat (langue, mobilité, expérience)."
+    )
+
+class JobCurationResult(BaseModel):
+    selected_jobs: List[CuratedJob] = Field(
+        ...,
+        description="Liste des offres d'emploi sélectionnées par ordre de pertinence décroissante (maximum 5)"
+    )
+
+job_curator_agent = Agent(
+    get_model("job_hunter"),
+    model_settings=get_model_settings("job_hunter"),
+    name="job_curator_agent",
+    output_type=JobCurationResult
+)
+
+JOB_CURATOR_SYSTEM_PROMPT = """
+Tu es un CIP expert en insertion professionnelle qui accompagne des réfugiés engagés dans une démarche de relocalisation dans une nouvelle ville. 
+Ton rôle est de sélectionner et résumer les 5 meilleures offres d'emploi à partir d'une liste d'offres déjà récupérées.
+
+
+- Résumé de la situation (Briefing) : 
+{briefing}
+
+- Informations sur la ville envisagée pour la relocalisation : 
+{target_city_context}
+
+- Offres d'emploi récupérées sur France Travail pour les codes ROME recherchés et triées par distance croissante :
+{jobs_list}
+
+Consignes de sélection, d'ordonnancement et de justification :
+1. Évalue attentivement chaque offre par rapport aux contraintes et critères du candidat en prenant en compte les dimensions suivantes :
+   - Mobilité : Privilégie fortement les offres les plus proches de la ville envisagée (même commune et si possible centre ville) surtout si le candidat n'a pas de permis de conduire ou de voiture.
+   - Maîtrise de la langue : Si le candidat a des difficultés avec le français (ex: débutant, maîtrise partielle, réfugié récemment arrivé), privilégie les offres manuelles, techniques ou nécessitant peu de communication verbale/écrite.
+   - Niveau d'expérience : Aligne l'expérience demandée dans l'offre avec le profil du candidat (débutant souvent préférable), évite l'intérim.
+   - Adéquation avec le projet de vie : Equilibre ton et les contraintes mentionnées dans son dossier (ex: travail en journée si enfants).
+2. Ordonne les offres par pertinence décroissante pour le profil accompagné et sélectionne les 5 meilleures.
+3. Pour chaque offre d'emploi sélectionnée, tu dois rédiger un court résumé de deux phrases (`job_brief`) qui :
+    Phrase 1: décrit l'offre et notamment l'employeur, le type de poste, la localisation
+    Phrase 2: explique pourquoi cette offre est pertinente pour le profil accompagné (proximité, horaires, expériences demandées etc.).
+"""
+
 

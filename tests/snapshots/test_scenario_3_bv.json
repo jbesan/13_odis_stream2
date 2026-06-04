@@ -43,14 +43,14 @@
     },
     {
         "bassin_de_vie": "83137",
-        "weighted_score": 0.8775510204081632,
+        "weighted_score": 0.8769507803121248,
         "population_bv": 38937,
         "libgeo": "La Ciotat",
         "communes": [
             "13023",
             "13028"
         ],
-        "inclusion_cat_score": 0.8571428571428571,
+        "inclusion_cat_score": 0.8487394957983193,
         "mob_epci_scaled": 1.0
     },
     {

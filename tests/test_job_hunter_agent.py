@@ -4,11 +4,13 @@ from unittest.mock import MagicMock, patch
 from agents.job_hunter import job_hunter_agent
 from agents.state import GraphState, ODISDeps
 
+from core.models import CommuneResult
+
 @pytest.fixture
 def test_deps():
     state = GraphState(
         odis_brief="Projet: Boulanger",
-        focus_city="Paris"
+        focus_city=CommuneResult(name="Paris", codgeo="75056")
     )
     # We mock search_referentiels to return a dummy INSEE for Paris
     mock_client = MagicMock()
