@@ -255,6 +255,14 @@ def polling_jobs_fragment(commune: CommuneResult, h: Optional[str]):
         if offer.salary:
             badges.append(f"💰 {offer.salary}")
         
+        # New context badges (experience and work duration)
+        experience = getattr(offer, "experience", None)
+        if experience:
+            badges.append(f"🎓 {experience}")
+        work_duration = getattr(offer, "work_duration", None)
+        if work_duration:
+            badges.append(f"⏱️ {work_duration}")
+        
         if badges:
             st.markdown(" | ".join(badges))
         
@@ -263,6 +271,12 @@ def polling_jobs_fragment(commune: CommuneResult, h: Optional[str]):
             st.markdown(f"{brief}")
         elif offer.description:
             st.caption(offer.description)
+            
+        # Display publication date
+        date_creation = getattr(offer, "date_creation", None)
+        if date_creation:
+            date_str = date_creation.split("T")[0] if "T" in date_creation else date_creation
+            st.caption(f"Publiée le : {date_str}")
             
         if offer.url:
             st.link_button("Voir l'Offre", offer.url, type="secondary")

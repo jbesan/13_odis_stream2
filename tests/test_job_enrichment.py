@@ -153,7 +153,7 @@ def test_background_jobs_enrichment_success(mock_curator_run, mock_search):
     # Assert that mock_curator_run was called with prompt containing Bordeaux's context
     mock_curator_run.assert_called()
     called_prompt = mock_curator_run.call_args[0][0]
-    assert "Ville analysée" in called_prompt
+    assert "Informations sur la ville envisagée pour la relocalisation" in called_prompt
     assert "Bordeaux" in called_prompt
     assert "33063" in called_prompt
     assert "250000" in called_prompt

@@ -166,6 +166,9 @@ class JobOfferDetail(BaseModel):
     rome_code: Optional[str] = Field(None, description="Code ROME de l'offre", json_schema_extra={"odis_visibility": ["ui_details", "pdf_report", "agent_job_hunter"]})
     rome_label: Optional[str] = Field(None, description="Libellé ROME de l'offre", json_schema_extra={"odis_visibility": ["ui_details", "pdf_report", "agent_job_hunter"]})
     job_brief: Optional[str] = Field(None, description="Synthèse de l'offre et pourquoi elle correspond au candidat", json_schema_extra={"odis_visibility": ["ui_details", "pdf_report", "agent_job_hunter"]})
+    date_creation: Optional[str] = Field(None, description="Date de création de l'offre", json_schema_extra={"odis_visibility": ["ui_details", "pdf_report", "agent_job_hunter"]})
+    work_duration: Optional[str] = Field(None, description="Durée de travail (libellé)", json_schema_extra={"odis_visibility": ["ui_details", "pdf_report", "agent_job_hunter"]})
+    experience: Optional[str] = Field(None, description="Expérience requise (libellé)", json_schema_extra={"odis_visibility": ["ui_details", "pdf_report", "agent_job_hunter"]})
 
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 

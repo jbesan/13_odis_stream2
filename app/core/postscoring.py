@@ -181,7 +181,10 @@ def _curate_jobs_with_agent(
                 f"  Type de contrat: {job.get('contract_label') or job.get('contract_type') or 'N/A'}\n"
                 f"  Lieu: {job.get('location') or 'Non spécifié'}\n"
                 f"  Description: {job.get('description') or 'Aucune'}\n"
-                f"  Salaire: {job.get('salary') or 'Non spécifié'}\n\n"
+                f"  Salaire: {job.get('salary') or 'Non spécifié'}\n"
+                f"  Expérience requise: {job.get('experience') or 'Non spécifiée'}\n"
+                f"  Durée de travail: {job.get('work_duration') or 'Non spécifiée'}\n"
+                f"  Date de création: {job.get('date_creation') or 'Non spécifiée'}\n\n"
             )
 
         # Build target city context using metadata-driven builder
@@ -377,7 +380,10 @@ def launch_background_job_curation(codgeos: List[str], config: Any, hash_val: st
                                 "salary": o.get("salaire", {}).get("libelle") if o.get("salaire") else None,
                                 "url": o.get("origineOffre", {}).get("urlOrigine") if o.get("origineOffre") else None,
                                 "rome_code": rome,
-                                "rome_label": rome_label
+                                "rome_label": rome_label,
+                                "date_creation": o.get("dateCreation"),
+                                "work_duration": o.get("dureeTravailLibelle"),
+                                "experience": o.get("experienceLibelle")
                             }
                             adult_pooled_jobs.append(job_detail)
                     except Exception as e:
