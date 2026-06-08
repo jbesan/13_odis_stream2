@@ -301,8 +301,7 @@ col_map, col_results = st.columns([2, 1])
 with col_results:
     if st.session_state.get('search_results') is not None:
         # st.subheader("Meilleurs résultats")
-        with st.container(height=40, vertical_alignment="center", border=False):
-            st.caption("Cliquez sur un résultat ⬇ pour comprendre le détail du score", text_alignment='center', width='stretch')
+        st.space()
         
         # State-aware Results Polling
         h = st.session_state.search_results.search_hash
@@ -317,6 +316,9 @@ with col_results:
         else:
             # Static render when done (no more polling logs!)
             ui_results.display_results_list()
+
+        with st.container(height=40, vertical_alignment="center", border=False):
+            st.caption("Cliquez sur un résultat ⬆ pour le détail du score", text_alignment='center', width='stretch')
 
 with col_map:
     if st.session_state.get('processed_gdf') is not None:

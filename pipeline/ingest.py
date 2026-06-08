@@ -24,9 +24,43 @@ from pipeline.emplois_inclusion_ingest import run_ingestion as run_inclusion_ing
 
 
 
+def resolve_codgeo(insee_code, dept_code) -> str:
+    """Helper to cleanly resolve 5-digit INSEE commune codes from raw inputs."""
+    if pd.isna(insee_code):
+        return ""
+    insee_str = str(insee_code).split('.')[0].strip()
+    if not insee_str or insee_str.lower() == 'nan':
+        return ""
+    
+    dept_str = str(dept_code).split('.')[0].strip().zfill(2) if not pd.isna(dept_code) else ""
+    
+    # Strip dept from the start of insee_str if present
+    comm_str = insee_str
+    if dept_str:
+        if comm_str.startswith(dept_str):
+            comm_str = comm_str[len(dept_str):]
+        elif dept_str.startswith('0') and comm_str.startswith(dept_str[1:]):
+            comm_str = comm_str[len(dept_str)-1:]
+            
+    # Clean up comm_str and pad to 3 digits
+    comm_str = comm_str.strip()
+    if comm_str:
+        comm_str = comm_str.zfill(3)
+    else:
+        comm_str = "000"
+        
+    return dept_str + comm_str
+
 def fetch_source(name: str, source_cfg: Dict[str, Any], logger: PipelineLogger) -> Optional[Path]:
     """Downloads and prepares a single source with caching, metadata checks, and staging."""
     import os
+    if source_cfg.get('use_odace', False):
+        logging.info(f"[Fetch] {name}: use_odace is enabled. Skipping remote download.")
+        local_name = source_cfg.get('local_name')
+        if local_name:
+            return CACHE_DIR / local_name
+        return None
+
     resource_id = source_cfg.get('datagouv_resource_id')
     url = source_cfg.get('url')
     if not url and resource_id:
@@ -180,8 +214,57 @@ def clean_population_active(config: Dict[str, Any], logger: PipelineLogger):
     """Cleans Population Active and saves to parquet."""
     logger.log_step("clean_population_active", "STARTED")
     source = config['sources']['population_active']
-    path = CACHE_DIR / source['archive_file']
     
+    if source.get('use_odace', False):
+        try:
+            client = get_odace_client(logger)
+            df_odace = client.fetch_table(source.get('odace_table', 'fact_population_active'))
+            if not df_odace.empty:
+                # Map columns to look like the legacy dataset
+                df_mapped = df_odace.rename(columns={
+                    'annee': 'TIME_PERIOD',
+                    'commune_insee_code': 'GEO',
+                    'code_pcs': 'PCS',
+                    'statut_emploi': 'EMPSTA_ENQ',
+                    'valeur': 'OBS_VALUE'
+                })
+                
+                # Re-use legacy logic directly on mapped DataFrame
+                max_year = df_mapped['TIME_PERIOD'].max()
+                actif_2022 = df_mapped[
+                    (df_mapped.TIME_PERIOD == max_year) & 
+                    (df_mapped.PCS == "_T") & 
+                    (df_mapped.EMPSTA_ENQ.astype(str).isin(["1T2", "1"]))
+                ].pivot_table(
+                    index="GEO", 
+                    columns="EMPSTA_ENQ", 
+                    values="OBS_VALUE", 
+                    aggfunc="sum"
+                )
+                
+                # Align columns to strings
+                actif_2022.columns = [str(c) for c in actif_2022.columns]
+                
+                if "1T2" in actif_2022.columns and "1" in actif_2022.columns:
+                    actif_2022["pop_chomeurs"] = actif_2022["1T2"] - actif_2022["1"]
+                    actif_2022.rename(columns={"1T2": "pop_active", "1": "pop_employes"}, inplace=True)
+                    actif_2022 = actif_2022[["pop_active", "pop_employes", "pop_chomeurs"]]
+                    actif_2022.index.name = 'codgeo'
+                    actif_2022 = actif_2022.reset_index()
+                    actif_2022['codgeo'] = actif_2022['codgeo'].astype(str).str.zfill(5)
+                    
+                    output_path = CLEAN_DIR / "population_active.parquet"
+                    actif_2022.to_parquet(output_path, engine='fastparquet')
+                    logger.log_step("clean_population_active", "COMPLETED", {"path": str(output_path), "rows": len(actif_2022), "source": "odace"})
+                    return
+                else:
+                    logging.warning("Population Active pivot failed on Odace data.")
+            else:
+                logging.warning("Odace fetch returned empty data for population_active.")
+        except Exception as e:
+            logging.error(f"Failed to fetch population_active from Odace: {e}. Falling back to legacy.")
+
+    path = CACHE_DIR / source['archive_file']
     if not path.exists():
             logging.warning("Population Active file not found.")
             return
@@ -226,6 +309,35 @@ def clean_lovac(config: Dict[str, Any], logger: PipelineLogger):
     """Cleans LOVAC and saves to parquet."""
     logger.log_step("clean_lovac", "STARTED")
     source = config['sources']['logement_vacant']
+    
+    if source.get('use_odace', False):
+        try:
+            client = get_odace_client(logger)
+            df_odace = client.fetch_table(source.get('odace_table', 'fact_logement_vacant'))
+            if not df_odace.empty:
+                rename_dict = {
+                    'commune_insee_code': 'codgeo',
+                    'nb_logements_vacants_2ans': 'pp_vacant_plus_2ans_25',
+                    'nb_logements_prives_total': 'log_priv_total_24'
+                }
+                df_out = df_odace.rename(columns=rename_dict)
+                for col in ['codgeo', 'pp_vacant_plus_2ans_25', 'log_priv_total_24']:
+                    if col not in df_out.columns:
+                        df_out[col] = 0
+                df_out = df_out[['codgeo', 'pp_vacant_plus_2ans_25', 'log_priv_total_24']].copy()
+                df_out['codgeo'] = df_out['codgeo'].astype(str).str.zfill(5)
+                df_out['pp_vacant_plus_2ans_25'] = pd.to_numeric(df_out['pp_vacant_plus_2ans_25'], errors='coerce').fillna(0)
+                df_out['log_priv_total_24'] = pd.to_numeric(df_out['log_priv_total_24'], errors='coerce').fillna(0)
+                
+                output_path = CLEAN_DIR / "lovac.parquet"
+                df_out.to_parquet(output_path, engine='fastparquet')
+                logger.log_step("clean_lovac", "COMPLETED", {"rows": len(df_out), "source": "odace"})
+                return
+            else:
+                logging.warning("Odace fetch returned empty data for logement_vacant. Falling back to legacy.")
+        except Exception as e:
+            logging.error(f"Failed to fetch logement_vacant from Odace: {e}. Falling back to legacy.")
+
     path = CACHE_DIR / source['local_name']
     if not path.exists(): return
 
@@ -302,8 +414,41 @@ def clean_lovac(config: Dict[str, Any], logger: PipelineLogger):
 def clean_rpls(config: Dict[str, Any], logger: PipelineLogger):
     """Cleans RPLS and saves to parquet."""
     logger.log_step("clean_rpls", "STARTED")
-
     source = config['sources']['logement_social']
+    
+    if source.get('use_odace', False):
+        try:
+            client = get_odace_client(logger)
+            df_odace = client.fetch_table(source.get('odace_table', 'fact_logement_social_rpls'))
+            if not df_odace.empty:
+                df_commune = client.fetch_dim_commune()
+                if not df_commune.empty:
+                    merged = df_odace.merge(df_commune[['commune_sk', 'commune_insee_code']], on='commune_sk', how='inner')
+                    rename_dict = {
+                        'commune_insee_code': 'codgeo',
+                        'nb_logements_total_sociaux': 'log_soc_total',
+                        'nb_logements_vacants': 'log_soc_inoccupes'
+                    }
+                    df_out = merged.rename(columns=rename_dict)
+                    for col in ['codgeo', 'log_soc_total', 'log_soc_inoccupes']:
+                        if col not in df_out.columns:
+                            df_out[col] = 0
+                    df_out = df_out[['codgeo', 'log_soc_total', 'log_soc_inoccupes']].copy()
+                    df_out['codgeo'] = df_out['codgeo'].astype(str).str.zfill(5)
+                    df_out['log_soc_total'] = pd.to_numeric(df_out['log_soc_total'], errors='coerce').fillna(0)
+                    df_out['log_soc_inoccupes'] = pd.to_numeric(df_out['log_soc_inoccupes'], errors='coerce').fillna(0)
+                    
+                    output_path = CLEAN_DIR / "rpls.parquet"
+                    df_out.to_parquet(output_path, engine='fastparquet')
+                    logger.log_step("clean_rpls", "COMPLETED", {"rows": len(df_out), "source": "odace"})
+                    return
+                else:
+                    logging.warning("Odace dim_commune empty for RPLS. Falling back to legacy.")
+            else:
+                logging.warning("Odace fetch returned empty data for RPLS. Falling back to legacy.")
+        except Exception as e:
+            logging.error(f"Failed to fetch RPLS from Odace: {e}. Falling back to legacy.")
+
     path = CACHE_DIR / source['local_name']
     if not path.exists(): return
 
@@ -374,6 +519,31 @@ def clean_education(config: Dict[str, Any], logger: PipelineLogger):
     source = config['sources']['education_annuaire']
     path = CACHE_DIR / source['local_name']
     
+    if source.get('use_odace', False):
+        try:
+            client = get_odace_client(logger)
+            df_odace = client.fetch_table(source.get('odace_table', 'dim_etablissement_scolaire'))
+            if not df_odace.empty:
+                # Map to raw format and write to CACHE_DIR/education_annuaire.parquet
+                rename_dict = {
+                    'uai_code': 'numero_uai',
+                    'commune_insee_code': 'code_commune',
+                    'nature_etablissement': 'nature_uai_libe',
+                    'etablissement_label': 'appellation_officielle'
+                }
+                df_raw = df_odace.rename(columns=rename_dict)
+                for col in ['numero_uai', 'code_commune', 'nature_uai_libe', 'appellation_officielle', 'latitude', 'longitude', 'code_postal']:
+                    if col not in df_raw.columns:
+                        df_raw[col] = ""
+                
+                df_raw = df_raw[['numero_uai', 'code_commune', 'nature_uai_libe', 'appellation_officielle', 'latitude', 'longitude', 'code_postal']].copy()
+                df_raw.to_parquet(path, engine='fastparquet')
+                logging.info(f"Education: Written mapped Odace data to cache path {path}")
+            else:
+                logging.warning("Odace fetch returned empty data for education_annuaire. Falling back to legacy.")
+        except Exception as e:
+            logging.error(f"Failed to fetch education_annuaire from Odace: {e}. Falling back to legacy.")
+
     if not path.exists(): return
 
     df = load_dataset(path, source)
@@ -426,6 +596,76 @@ def clean_education(config: Dict[str, Any], logger: PipelineLogger):
     output_path = CLEAN_DIR / "education.parquet"
     df_agg.to_parquet(output_path, engine='fastparquet')
     logger.log_step("clean_education", "COMPLETED", {"path": str(output_path)})
+
+def clean_finess_national(config: Dict[str, Any], logger: PipelineLogger):
+    """Cleans FINESS National data and saves to parquet.
+
+    Args:
+        config (Dict[str, Any]): Global pipeline configuration dictionary.
+        logger (PipelineLogger): central logging utility.
+    """
+    logger.log_step("clean_finess_national", "STARTED")
+    source = config['sources']['finess_national']
+    
+    if source.get('use_odace', False):
+        try:
+            client = get_odace_client(logger)
+            df_odace = client.fetch_table(source.get('odace_table', 'dim_etablissement_sante'))
+            if not df_odace.empty:
+                rename_dict = {
+                    'raison_sociale': 'RaisonSociale',
+                    'categorie_agregat': 'LibelleCategorieAgregat',
+                    'finess_etablissement_code': 'nofinesset',
+                    'libelle_sph': 'LibelleSph'
+                }
+                df_out = df_odace.rename(columns=rename_dict)
+                
+                # Resolve codgeo
+                df_out['codgeo'] = df_out.apply(
+                    lambda r: resolve_codgeo(r.get('commune_insee_code'), r.get('departement_code')),
+                    axis=1
+                )
+                
+                # Drop rows with invalid/empty codgeo
+                df_out = df_out[df_out['codgeo'] != ""].copy()
+                
+                # Reconstruct Departement and Commune
+                df_out['Departement'] = df_out['codgeo'].str[:-3]
+                df_out['Commune'] = df_out['codgeo'].str[-3:]
+                
+                # Add dummy coordinates since Odace table lacks them
+                df_out['coordxet'] = np.nan
+                df_out['coordyet'] = np.nan
+                
+                # Keep only the used columns + codgeo (which build.py might use/recreate)
+                expected_cols = [
+                    'Departement', 'Commune', 'LibelleCategorieAgregat', 'nofinesset',
+                    'LibelleSph', 'coordxet', 'coordyet', 'RaisonSociale', 'codgeo'
+                ]
+                # Ensure all exist
+                for col in expected_cols:
+                    if col not in df_out.columns:
+                        if col in ['coordxet', 'coordyet']:
+                            df_out[col] = np.nan
+                        elif col == 'LibelleSph':
+                            df_out[col] = 'nan'
+                        else:
+                            df_out[col] = ""
+                            
+                df_out = df_out[expected_cols].copy()
+                
+                output_path = CACHE_DIR / source['local_name']
+                df_out.to_parquet(output_path, engine='fastparquet')
+                logger.log_step("clean_finess_national", "COMPLETED", {"rows": len(df_out), "source": "odace"})
+                return
+            else:
+                logging.warning("Odace fetch returned empty data for dim_etablissement_sante. Falling back to legacy.")
+        except Exception as e:
+            logging.error(f"Failed to fetch dim_etablissement_sante from Odace: {e}. Falling back to legacy.")
+
+    # Legacy ingestion path (do nothing because fetch_source already copied it to CACHE_DIR / finess_national.parquet)
+    logging.info("finess_national: use_odace is False or Odace fetch failed. Reverting to legacy local copy.")
+    logger.log_step("clean_finess_national", "COMPLETED", {"source": "legacy"})
         
 def clean_services_inclusion(config: Dict[str, Any], logger: PipelineLogger):
     """Cleans Inclusion (Services) and saves to parquet (one row per service)."""
@@ -717,6 +957,33 @@ def clean_population(config: Dict[str, Any], logger: PipelineLogger):
     """Cleans Population and saves to parquet."""
     logger.log_step("clean_population", "STARTED")
     source = config['sources']['population']
+    
+    if source.get('use_odace', False):
+        try:
+            client = get_odace_client(logger)
+            df_odace = client.fetch_table(source.get('odace_table', 'fact_population_municipale'))
+            if not df_odace.empty:
+                pop_cols = [c for c in df_odace.columns if c.startswith('pop_')]
+                if pop_cols:
+                    latest_pop_col = sorted(pop_cols)[-1]
+                    df_out = df_odace[['commune_insee_code', latest_pop_col]].rename(columns={
+                        'commune_insee_code': 'codgeo',
+                        latest_pop_col: 'population'
+                    })
+                    df_out['codgeo'] = df_out['codgeo'].astype(str).str.zfill(5)
+                    df_out['population'] = pd.to_numeric(df_out['population'], errors='coerce').fillna(0)
+                    
+                    output_path = CLEAN_DIR / "population.parquet"
+                    df_out.to_parquet(output_path, engine='fastparquet')
+                    logger.log_step("clean_population", "COMPLETED", {"rows": len(df_out), "source": "odace"})
+                    return
+                else:
+                    logging.warning("No pop_ columns found in Odace population table.")
+            else:
+                logging.warning("Odace fetch returned empty data for population.")
+        except Exception as e:
+            logging.error(f"Failed to fetch population from Odace: {e}. Falling back to legacy.")
+
     path = CACHE_DIR / source['local_name']
     if not path.exists(): return
 
@@ -1177,14 +1444,66 @@ def clean_loyers(config: Dict[str, Any], logger: PipelineLogger):
     df_out.to_parquet(output_path, engine='fastparquet')
     logger.log_step("clean_loyers", "COMPLETED", {"path": str(output_path)})
 
-
-
 def clean_population_details(config: Dict[str, Any], logger: PipelineLogger):
     """Cleans Population Details (Age Breakdown) and saves to parquet."""
     logger.log_step("clean_population_details", "STARTED")
     source = config['sources']['population_details']
-    path = CACHE_DIR / source['archive_file']
     
+    if source.get('use_odace', False):
+        try:
+            client = get_odace_client(logger)
+            df_odace = client.fetch_table(source.get('odace_table', 'fact_demographie'))
+            if not df_odace.empty:
+                # Map columns to look like the legacy dataset
+                df_mapped = df_odace.rename(columns={
+                    'annee': 'TIME_PERIOD',
+                    'commune_insee_code': 'GEO',
+                    'tranche_age': 'AGE',
+                    'sexe': 'SEX',
+                    'valeur': 'OBS_VALUE'
+                })
+                
+                df_filtered = df_mapped[
+                    (df_mapped['SEX'] == '_T') &
+                    (df_mapped['AGE'].isin(['Y_LT15', 'Y25T39', 'Y40T54']))
+                ]
+                
+                df_filtered = df_filtered.rename(columns={'GEO': 'codgeo'})
+                df_filtered['codgeo'] = df_filtered['codgeo'].astype(str).str.zfill(5)
+                df_filtered['year'] = df_filtered['TIME_PERIOD'].astype(str)
+                df_filtered['count'] = pd.to_numeric(df_filtered['OBS_VALUE'], errors='coerce').fillna(0)
+                
+                age_mapping = {
+                    'Y_LT15': 'jeune',
+                    'Y25T39': 'active',
+                    'Y40T54': 'active'
+                }
+                df_filtered['age_group'] = df_filtered['AGE'].map(age_mapping)
+                
+                df_pivot = df_filtered.pivot_table(
+                    index='codgeo',
+                    columns=['age_group', 'year'],
+                    values='count',
+                    aggfunc='sum'
+                )
+                df_pivot.columns = [f"pop_{c[0]}_{c[1]}" for c in df_pivot.columns]
+                df_pivot = df_pivot.reset_index()
+                
+                expected_cols = ['pop_jeune_2016', 'pop_jeune_2022', 'pop_active_2016', 'pop_active_2022']
+                for col in expected_cols:
+                    if col not in df_pivot.columns:
+                        df_pivot[col] = 0.0
+                        
+                output_path = CLEAN_DIR / "population_details.parquet"
+                df_pivot.to_parquet(output_path, engine='fastparquet')
+                logger.log_step("clean_population_details", "COMPLETED", {"rows": len(df_pivot), "source": "odace"})
+                return
+            else:
+                logging.warning("Odace fetch returned empty data for population_details.")
+        except Exception as e:
+            logging.error(f"Failed to fetch population_details from Odace: {e}. Falling back to legacy.")
+
+    path = CACHE_DIR / source['archive_file']
     if not path.exists():
         logging.warning("Population Details file not found.")
         return
@@ -1663,6 +1982,7 @@ def main(argv=None):
         'rpls': clean_rpls,
         'caf': clean_caf,
         'education': clean_education,
+        'finess_national': clean_finess_national,
         'associations': clean_associations,
         'refugee_associations': clean_refugee_associations,
         'political': clean_political,
@@ -2077,6 +2397,46 @@ def clean_mob_transports_pub(config: Dict[str, Any], logger: PipelineLogger):
     """Cleans Public Transport Stations data and saves to parquet."""
     logger.log_step("clean_mob_transports_pub", "STARTED")
     source = config['sources']['mob_transports_pub']
+    
+    if source.get('use_odace', False):
+        try:
+            client = get_odace_client(logger)
+            df_odace = client.fetch_table(source.get('odace_table', 'fact_transport_commun'))
+            if not df_odace.empty:
+                # Normalize type_transport values and pivot
+                df_odace['type_transport'] = df_odace['type_transport'].astype(str).str.lower().str.strip()
+                df_pivot = df_odace.pivot_table(
+                    index='commune_insee_code',
+                    columns='type_transport',
+                    values='nb_stations',
+                    aggfunc='sum'
+                ).reset_index().fillna(0)
+                
+                col_mapping = {
+                    'commune_insee_code': 'codgeo',
+                    'bus': 'nb_stops_bus',
+                    'tramway': 'nb_stops_tram',
+                    'métro': 'nb_stops_metro',
+                    'train': 'nb_stops_train'
+                }
+                df_pivot.rename(columns=col_mapping, inplace=True)
+                
+                for col in ['nb_stops_bus', 'nb_stops_tram', 'nb_stops_metro', 'nb_stops_train']:
+                    if col not in df_pivot.columns:
+                        df_pivot[col] = 0.0
+                        
+                df_pivot['codgeo'] = df_pivot['codgeo'].astype(str).str.zfill(5)
+                df_pivot['nb_stops_total'] = df_pivot['nb_stops_bus'] + df_pivot['nb_stops_tram'] + df_pivot['nb_stops_metro'] + df_pivot['nb_stops_train']
+                
+                output_path = CLEAN_DIR / "mob_transports_pub.parquet"
+                df_pivot.to_parquet(output_path, engine='fastparquet')
+                logger.log_step("clean_mob_transports_pub", "COMPLETED", {"rows": len(df_pivot), "source": "odace"})
+                return
+            else:
+                logging.warning("Odace fetch returned empty data for transports. Falling back to legacy.")
+        except Exception as e:
+            logging.error(f"Failed to fetch transports from Odace: {e}. Falling back to legacy.")
+
     path = CACHE_DIR / source['local_name']
     if not path.exists():
         logging.warning("Public Transport Stations file not found.")
@@ -2239,6 +2599,53 @@ def clean_jaccueille(config: Dict[str, Any], logger: PipelineLogger):
     if not source:
         logging.warning("J'Accueille source config not found.")
         return
+
+    if source.get('use_odace', False):
+        try:
+            client = get_odace_client(logger)
+            df_odace = client.fetch_table(source.get('odace_table', 'dim_accueillant'))
+            if not df_odace.empty:
+                # Group by commune_sk to count hosts
+                df_counts = df_odace.groupby('commune_sk').size().rename('heb_jaccueille_count').reset_index()
+                
+                # Join with dim_commune to get commune_insee_code
+                df_commune = client.fetch_dim_commune()
+                if not df_commune.empty:
+                    merged = df_counts.merge(df_commune[['commune_sk', 'commune_insee_code']], on='commune_sk', how='inner')
+                    merged.rename(columns={'commune_insee_code': 'codgeo'}, inplace=True)
+                    merged['codgeo'] = merged['codgeo'].astype(str).str.zfill(5)
+                    
+                    # Merge with Bassin de Vie mapping
+                    bdv_cfg = config['sources']['bassins_de_vie']
+                    bdv_path = CACHE_DIR / bdv_cfg['archive_file']
+                    
+                    if bdv_path.exists():
+                        df_bdv = load_dataset(bdv_path, bdv_cfg)
+                        codgeo_col = next((c for c in df_bdv.columns if 'Code géographique' in c or 'CODGEO' in c), None)
+                        bdv_col = next((c for c in df_bdv.columns if 'Bassin de vie' in c), None)
+                        
+                        if codgeo_col and bdv_col:
+                            df_bdv = df_bdv[[codgeo_col, bdv_col]].rename(columns={codgeo_col: 'codgeo', bdv_col: 'bassin_de_vie'})
+                            df_bdv['codgeo'] = df_bdv['codgeo'].astype(str).str.zfill(5)
+                            df_bdv['bassin_de_vie'] = df_bdv['bassin_de_vie'].astype(str).str.replace(r'\.0$', '', regex=True)
+                            
+                            merged_bdv = merged.merge(df_bdv, on='codgeo', how='inner')
+                            df_agg = merged_bdv.groupby('bassin_de_vie')['heb_jaccueille_count'].sum().reset_index()
+                            
+                            output_path = CLEAN_DIR / "jaccueille_bdv.parquet"
+                            df_agg.to_parquet(output_path, engine='fastparquet')
+                            logger.log_step("clean_jaccueille", "COMPLETED", {"rows": len(df_agg), "source": "odace"})
+                            return
+                        else:
+                            logging.warning("Bassin de vie columns not identified for Odace J'Accueille mapping.")
+                    else:
+                        logging.warning("Bassin de vie file not found for Odace J'Accueille mapping.")
+                else:
+                    logging.warning("Odace dim_commune empty for J'Accueille. Falling back to legacy.")
+            else:
+                logging.warning("Odace fetch returned empty data for J'Accueille. Falling back to legacy.")
+        except Exception as e:
+            logging.error(f"Failed to fetch J'Accueille from Odace: {e}. Falling back to legacy.")
 
     path = CACHE_DIR / source['local_name']
     if not path.exists():

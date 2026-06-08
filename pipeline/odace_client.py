@@ -153,6 +153,14 @@ class OdaceClient:
         df = pd.DataFrame(resp["data"])
         return df
 
+    def fetch_table(self, table_name: str, limit: int = 150000, ttl_days: int = 30, sort_by: str = None) -> pd.DataFrame:
+        """Generic fetch for any silver table from Odace API."""
+        resp = self._get_preview(table_name, limit=limit, ttl_seconds=ttl_days * 24 * 60 * 60, sort_by=sort_by)
+        if not resp or not resp.get("data"):
+            return pd.DataFrame()
+        df = pd.DataFrame(resp["data"])
+        return df
+
 
 
 def get_odace_client(logger: Optional[PipelineLogger] = None) -> OdaceClient:

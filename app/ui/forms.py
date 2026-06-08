@@ -695,7 +695,14 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
 
     # Education
     nb_enfants = st.session_state.get('ui_nb_enfants', 0)
-    classe_enfants = [st.session_state.get(f"ui_classe_enfant_{i}") for i in range(nb_enfants)]
+    classe_enfants = []
+    for i in range(nb_enfants):
+        val = st.session_state.get(f"ui_classe_enfant_{i}")
+        if val is not None:
+            classe_enfants.append(str(val))
+        else:
+            # Fallback to the first class option if not rendered yet
+            classe_enfants.append(cfg.CLASSES_SCOLAIRES[0] if cfg.CLASSES_SCOLAIRES else "")
 
     # Employment (Enrich with CriteriaItem)
     nb_adultes = st.session_state.get('ui_nb_adultes', 1)

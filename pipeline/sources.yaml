@@ -12,6 +12,8 @@ sources:
 
   population:
     datagouv_resource_id: "630e7917-02db-4838-8856-09235719551c"
+    use_odace: false
+    odace_table: "fact_population_municipale"
     format: "xlsx"
     local_name: "population.xlsx"
     sheet_name: 0
@@ -79,6 +81,8 @@ sources:
 
   logement_vacant:
     datagouv_resource_id: "2e0417b4-902d-4c60-90e7-bf5df148cb87"
+    use_odace: true
+    odace_table: "fact_logement_vacant"
     format: "csv"
     local_name: "logement_vacant.csv"
     encoding: "iso-8859-1"
@@ -105,6 +109,8 @@ sources:
 
   logement_social:
     url: "https://www.statistiques.developpement-durable.gouv.fr/media/7970/download?inline"
+    use_odace: true
+    odace_table: "fact_logement_social_rpls"
     format: "xlsx"
     local_name: "logement_social.xlsx"
     sheet_name: "COMMUNES"
@@ -178,11 +184,8 @@ sources:
     ttl_days: 180
     description: "Taux de couverture petite enfance (CAF)"
     used_columns:
-      - codgeo
-      - insee
       - numcom
       - annee
-      - taux_accueil_total
       - txcouv_com
 
   education_effectifs:
@@ -199,6 +202,8 @@ sources:
 
   education_annuaire:
     datagouv_resource_id: "9af76efc-51a6-4659-87ba-82c02652613a"
+    use_odace: false
+    odace_table: "dim_etablissement_scolaire"
     format: "parquet"
     local_name: "education_annuaire.parquet"
     ttl_days: 365
@@ -248,6 +253,8 @@ sources:
 
   finess_national:
     url: "file:///Users/jacques/dev/13_odis_stream2/csv/annuaire_sante_finess.parquet"
+    use_odace: false
+    odace_table: "dim_etablissement_sante"
     format: "parquet"
     local_name: "finess_national.parquet"
     ttl_days: 365
@@ -290,6 +297,8 @@ sources:
 
   population_active:
     datagouv_resource_id: "f43b668d-251e-472a-9385-3d006d1ca6b8"
+    use_odace: false
+    odace_table: "fact_population_active"
     format: "zip"
     archive_file: "DS_RP_EMPLOI_LR_COMP_2022_data.csv"
     local_name: "population_active.zip"
@@ -344,6 +353,8 @@ sources:
 
   population_details:
     datagouv_resource_id: "7e3937bb-e815-4e58-92d4-d7ef478abcc0"
+    use_odace: false
+    odace_table: "fact_demographie"
     format: "zip"
     archive_file: "DS_RP_POPULATION_PRINC_2022_data.csv"
     local_name: "population_details.zip"
@@ -380,6 +391,8 @@ sources:
 
   mob_transports_pub:
     url: "https://object.files.data.gouv.fr/hydra-parquet/hydra-parquet/501ac60d-246d-45bf-8dcf-ab43e1b1a736.parquet"
+    use_odace: false
+    odace_table: "fact_transport_commun"
     format: "parquet"
     local_name: "mob_transports_pub.parquet"
     ttl_days: 180
@@ -468,6 +481,8 @@ local_files:
 
   jaccueille:
     url: "file:///Users/jacques/dev/13_odis_stream2/pipeline/local/odis_accueillants_jaccueil_code_postal_clean_Mars2026.csv"
+    use_odace: false
+    odace_table: "dim_accueillant"
     format: "csv"
     local_name: "odis_accueillants_jaccueil_code_postal_clean_Mars2026.csv"
     ttl_days: 30
