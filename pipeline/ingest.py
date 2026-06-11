@@ -1160,6 +1160,88 @@ def clean_communes(config: Dict[str, Any], logger: PipelineLogger):
     """Cleans Communes and saves to parquet."""
     logger.log_step("clean_communes", "STARTED")
     source = config['sources']['communes']
+    output_path = CLEAN_DIR / "communes.parquet"
+
+    # Odace pathway
+    if source.get('use_odace', False):
+        try:
+            client = get_odace_client(logger)
+            df_odace = client.fetch_table(source.get('odace_table', 'ref_commune_geo'))
+            if not df_odace.empty:
+                from shapely.geometry import shape
+                
+                # 1. Fetch and build EPCI mapping
+                epci_cfg = config['sources'].get('ref_epci', {
+                    'datagouv_resource_id': '4f02ce39-2a91-4a8b-85cb-c6a0f912516b',
+                    'local_name': 'ref_epci.json',
+                    'ttl_days': 90
+                })
+                epci_path = fetch_source('ref_epci', epci_cfg, logger)
+                epci_map = {}
+                if epci_path and epci_path.exists():
+                    try:
+                        with open(epci_path, 'r', encoding='utf-8') as f:
+                            epci_data = json.load(f)
+                        for epci in epci_data:
+                            epci_code = epci.get('code')
+                            for m in epci.get('membres', []):
+                                if m.get('code'):
+                                    epci_map[str(m['code']).zfill(5)] = str(epci_code).zfill(9)
+                    except Exception as e:
+                        logging.error(f"Error parsing ref_epci mapping: {e}")
+                
+                # 2. Fetch dim_commune for labels, departement, and region
+                df_commune = client.fetch_table('dim_commune')
+                
+                df_odace.rename(columns={'commune_insee_code': 'codgeo'}, inplace=True)
+                df_odace['codgeo'] = df_odace['codgeo'].astype(str).str.zfill(5)
+                
+                # Merge with dim_commune attributes
+                if not df_commune.empty:
+                    df_commune.rename(columns={'commune_insee_code': 'codgeo'}, inplace=True)
+                    df_commune['codgeo'] = df_commune['codgeo'].astype(str).str.zfill(5)
+                    df_odace = df_odace.merge(
+                        df_commune[['codgeo', 'commune_label', 'departement_code', 'region_code']], 
+                        on='codgeo', 
+                        how='left'
+                    )
+                    df_odace.rename(columns={
+                        'commune_label': 'nom',
+                        'departement_code': 'departement',
+                        'region_code': 'region'
+                    }, inplace=True)
+                else:
+                    df_odace['nom'] = ""
+                    df_odace['departement'] = ""
+                    df_odace['region'] = ""
+                
+                # Add commune name duplicate and plm flag
+                df_odace['commune'] = df_odace['nom']
+                df_odace['plm'] = np.where(df_odace['codgeo'].isin(['75056', '13055', '69123']), 1.0, np.nan)
+                
+                # Map EPCI
+                df_odace['epci'] = df_odace['codgeo'].map(epci_map)
+                
+                # Parse GeoJSON into geometries
+                geoms = df_odace['geometrie_geojson'].apply(lambda x: shape(json.loads(x)) if x else None)
+                gdf = gpd.GeoDataFrame(df_odace, geometry=geoms)
+                
+                # Convert geometry to WKB polygon
+                gdf['polygon'] = gdf.geometry.to_wkb()
+                
+                # Filter to only the required output columns to maintain exact compat
+                out_cols = ['codgeo', 'nom', 'departement', 'region', 'commune', 'plm', 'epci', 'polygon']
+                df_final = pd.DataFrame(gdf[[c for c in out_cols if c in gdf.columns]])
+                
+                df_final.to_parquet(output_path, engine='fastparquet')
+                logger.log_step("clean_communes", "COMPLETED", {"path": str(output_path), "rows": len(df_final), "source": "odace"})
+                return
+            else:
+                logging.warning("Odace fetch returned empty data for ref_commune_geo. Falling back to legacy.")
+        except Exception as e:
+            logging.error(f"Failed to fetch ref_commune_geo from Odace: {e}. Falling back to legacy.")
+
+    # Legacy pathway
     path = CACHE_DIR / source['local_name']
     if not path.exists(): return
 
@@ -1167,19 +1249,16 @@ def clean_communes(config: Dict[str, Any], logger: PipelineLogger):
     
     if 'codgeo' not in gdf.columns:
         if 'INSEE_COM' in gdf.columns:
-                gdf.rename(columns={'INSEE_COM': 'codgeo'}, inplace=True)
+            gdf.rename(columns={'INSEE_COM': 'codgeo'}, inplace=True)
         elif 'code' in gdf.columns:
-                gdf.rename(columns={'code': 'codgeo'}, inplace=True)
+            gdf.rename(columns={'code': 'codgeo'}, inplace=True)
     
     if 'codgeo' in gdf.columns:
-        output_path = CLEAN_DIR / "communes.parquet"
         if 'geometry' in gdf.columns:
             gdf['polygon'] = gdf.geometry.to_wkb()
             gdf.drop(columns=['geometry'], inplace=True)
         pd.DataFrame(gdf).to_parquet(output_path, engine='fastparquet')
         logger.log_step("clean_communes", "COMPLETED", {"path": str(output_path)})
-    # except Exception as e:
-    #     logger.log_step("clean_communes", "ERROR", {"error": str(e)})
 
 def clean_political(config: Dict[str, Any], logger: PipelineLogger):
     """Cleans Political Nuance and saves to parquet."""

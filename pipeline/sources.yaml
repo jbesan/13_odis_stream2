@@ -1,6 +1,8 @@
 sources:
   communes:
     datagouv_resource_id: "12f8cdc9-5844-4666-a4b5-6385d5415f67"
+    use_odace: true
+    odace_table: "ref_commune_geo"
     format: "geojson"
     local_name: "communes.geojson"
     ttl_days: 90
@@ -9,6 +11,13 @@ sources:
       - INSEE_COM
       - code
       - geometry
+
+  ref_epci:
+    datagouv_resource_id: "4f02ce39-2a91-4a8b-85cb-c6a0f912516b"
+    format: "json"
+    local_name: "ref_epci.json"
+    ttl_days: 90
+    description: "Référentiel des EPCI (Data.gouv)"
 
   population:
     datagouv_resource_id: "630e7917-02db-4838-8856-09235719551c"
