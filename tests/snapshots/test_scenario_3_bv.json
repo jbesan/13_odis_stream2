@@ -1,8 +1,8 @@
 [
     {
         "bassin_de_vie": "13055",
-        "weighted_score": 0.9303721488595438,
-        "population_bv": 1022739,
+        "weighted_score": 0.9627851140456183,
+        "population_bv": 1035994,
         "libgeo": "Marseille",
         "communes": [
             "13002",
@@ -28,8 +28,8 @@
     },
     {
         "bassin_de_vie": "13103",
-        "weighted_score": 0.8961584633853541,
-        "population_bv": 59680,
+        "weighted_score": 0.9081632653061223,
+        "population_bv": 62191,
         "libgeo": "Salon-de-Provence",
         "communes": [
             "13008",
@@ -42,40 +42,40 @@
         "mob_epci_scaled": 1.0
     },
     {
-        "bassin_de_vie": "83137",
-        "weighted_score": 0.8769507803121248,
-        "population_bv": 38937,
-        "libgeo": "La Ciotat",
-        "communes": [
-            "13023",
-            "13028"
-        ],
-        "inclusion_cat_score": 0.8487394957983193,
-        "mob_epci_scaled": 1.0
-    },
-    {
         "bassin_de_vie": "13004",
-        "weighted_score": 0.8649459783913566,
-        "population_bv": 56202,
+        "weighted_score": 0.879951980792317,
+        "population_bv": 55382,
         "libgeo": "Arles",
         "communes": [
             "13004",
             "13038"
         ],
-        "inclusion_cat_score": 0.9831932773109243,
+        "inclusion_cat_score": 0.9915966386554622,
         "mob_epci_scaled": 0.0
     },
     {
         "bassin_de_vie": "13056",
-        "weighted_score": 0.7986194477791116,
-        "population_bv": 70982,
+        "weighted_score": 0.8004201680672269,
+        "population_bv": 70275,
         "libgeo": "Martigues",
         "communes": [
             "13056",
             "13077",
             "13098"
         ],
-        "inclusion_cat_score": 0.9663865546218487,
+        "inclusion_cat_score": 0.9747899159663865,
+        "mob_epci_scaled": 1.0
+    },
+    {
+        "bassin_de_vie": "83137",
+        "weighted_score": 0.7677070828331332,
+        "population_bv": 43340,
+        "libgeo": "La Ciotat",
+        "communes": [
+            "13023",
+            "13028"
+        ],
+        "inclusion_cat_score": 0.8319327731092437,
         "mob_epci_scaled": 1.0
     }
 ]

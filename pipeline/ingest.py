@@ -144,6 +144,17 @@ def fetch_source(name: str, source_cfg: Dict[str, Any], logger: PipelineLogger) 
                     f.write(chunk)
             logger.log_source(name, "STAGING_DOWNLOADED", staging_local_path)
 
+        # List of sources that have corresponding clean steps (where staging swap is managed by run_clean_step_safely)
+        CLEANED_SOURCES = {
+            'communes', 'services_inclusion', 'structures_inclusion', 'population', 'population_active',
+            'logement_vacant', 'logement_social', 'caf', 'education_annuaire', 'finess_national',
+            'maternites', 'associations', 'political_nuance', 'housing_occupation', 'education_effectifs',
+            'bpe', 'codes_postaux', 'formations_annuaire', 'loyers_apparts',
+            'population_details', 'nomenclature_waldec', 'departements_ref', 'france_travail_live',
+            'inclusion_jobs', 'mob_transports_pub', 'jaccueille', 'logement_social_delay', 'sante_apl',
+            'mob_durable_share', 'ter_insecurite'
+        }
+
         # Handle Zip Extraction in staging mode
         if source_cfg.get('format') == 'zip' and 'archive_file' in source_cfg:
             import zipfile
@@ -153,7 +164,30 @@ def fetch_source(name: str, source_cfg: Dict[str, Any], logger: PipelineLogger) 
             with zipfile.ZipFile(staging_local_path, 'r') as z:
                 with open(staging_extracted_path, 'wb') as f_out:
                     f_out.write(z.read(extracted_file))
+            
+            if name not in CLEANED_SOURCES and not name.startswith("test_"):
+                logging.info(f"🔄 [Static Source] Swapping staging files to active for '{name}' immediately.")
+                active_extracted_path = CACHE_DIR / extracted_file
+                if active_extracted_path.exists():
+                    try: os.remove(active_extracted_path)
+                    except: pass
+                os.rename(staging_extracted_path, active_extracted_path)
+                
+                if local_path.exists():
+                    try: os.remove(local_path)
+                    except: pass
+                os.rename(staging_local_path, local_path)
+                return active_extracted_path
+                
             return staging_extracted_path
+
+        if name not in CLEANED_SOURCES and not name.startswith("test_"):
+            logging.info(f"🔄 [Static Source] Swapping staging raw file for '{name}' to active.")
+            if local_path.exists():
+                try: os.remove(local_path)
+                except: pass
+            os.rename(staging_local_path, local_path)
+            return local_path
 
         return staging_local_path
     except Exception as e:
@@ -167,8 +201,8 @@ def fetch_source(name: str, source_cfg: Dict[str, Any], logger: PipelineLogger) 
             return local_path
         return None
 
-def fetch_rome_referential(logger: PipelineLogger) -> Optional[Path]:
-    """Fetches ROME referential from France Travail API with 1-year TTL."""
+def fetch_rome_referential(config: Dict[str, Any], logger: PipelineLogger) -> Optional[Path]:
+    """Fetches ROME referential from France Travail API with 1-year TTL, falls back to static JSON."""
     local_path = CACHE_DIR / "rome_referential_api.parquet"
     
     # 1. 1-Year TTL Check
@@ -192,22 +226,53 @@ def fetch_rome_referential(logger: PipelineLogger) -> Optional[Path]:
         data = response.json()
         
         # 3. Process and Save
-        # Expected list of {code, libelle}
         df = pd.DataFrame(data)
         if 'code' in df.columns and 'libelle' in df.columns:
             df = df[['code', 'libelle']].rename(columns={'libelle': 'label'})
             df.to_parquet(local_path, engine='fastparquet')
-            logging.info(f"✅ [ROME] Saved {len(df)} métiers to {local_path}")
+            logging.info(f"✅ [ROME] Saved {len(df)} métiers to {local_path} from France Travail API")
             logger.log_source("rome_referential", "FETCHED", str(local_path))
             return local_path
         else:
-            logging.error(f"[ROME] Unexpected data format: {df.columns}")
-            return None
+            raise ValueError(f"Unexpected API data format: {df.columns}")
             
     except Exception as e:
-        logging.error(f"❌ [ROME] Failed to fetch referential: {e}")
-        logger.log_source("rome_referential", "ERROR", str(e))
-        return None
+        logging.error(f"❌ [ROME] Failed to fetch referential from API: {e}. Attempting static fallback...")
+        logger.log_source("rome_referential_api_failure", "WARNING", str(e))
+        
+        # 4. Fallback to static zip source
+        try:
+            rome_cfg = config['sources'].get('rome')
+            if not rome_cfg:
+                raise ValueError("No static 'rome' configuration found in sources.yaml")
+                
+            # Download/Fetch the static zip source
+            static_json_path = fetch_source("rome", rome_cfg, logger)
+            if not static_json_path or not static_json_path.exists():
+                raise FileNotFoundError(f"Static ROME source not available at {static_json_path}")
+                
+            # Parse the static JSON
+            logging.info(f"[ROME] Parsing static JSON referential from {static_json_path}...")
+            df = pd.read_json(static_json_path)
+            
+            # Normalize column names just in case
+            if 'code' in df.columns and 'libelle' in df.columns:
+                df = df[['code', 'libelle']].rename(columns={'libelle': 'label'})
+                df.to_parquet(local_path, engine='fastparquet')
+                logging.info(f"✅ [ROME] Saved {len(df)} métiers to {local_path} from static ROME referential")
+                logger.log_source("rome_referential", "FETCHED", str(local_path))
+                return local_path
+            else:
+                raise ValueError(f"Unexpected static JSON format: {df.columns}")
+        except Exception as fallback_err:
+            logging.error(f"❌ [ROME] Static fallback failed: {fallback_err}")
+            logger.log_source("rome_referential", "ERROR", f"API: {e}, Fallback: {fallback_err}")
+            
+            # Final fallback: use existing expired cache if it exists
+            if local_path.exists():
+                logging.warning("[ROME] Returning expired cache referential.")
+                return local_path
+            return None
 
 
 def clean_population_active(config: Dict[str, Any], logger: PipelineLogger):
@@ -421,6 +486,10 @@ def clean_rpls(config: Dict[str, Any], logger: PipelineLogger):
             client = get_odace_client(logger)
             df_odace = client.fetch_table(source.get('odace_table', 'fact_logement_social_rpls'))
             if not df_odace.empty:
+                if 'annee' in df_odace.columns:
+                    max_year = df_odace['annee'].max()
+                    logging.info(f"Odace RPLS: Filtering for max year {max_year}")
+                    df_odace = df_odace[df_odace['annee'] == max_year]
                 df_commune = client.fetch_dim_commune()
                 if not df_commune.empty:
                     merged = df_odace.merge(df_commune[['commune_sk', 'commune_insee_code']], on='commune_sk', how='inner')
@@ -485,6 +554,36 @@ def clean_caf(config: Dict[str, Any], logger: PipelineLogger):
     """Cleans CAF and saves to parquet."""
     logger.log_step("clean_caf", "STARTED")
     source = config['sources']['caf']
+    
+    if source.get('use_odace', False):
+        try:
+            client = get_odace_client(logger)
+            df_odace = client.fetch_table(source.get('odace_table', 'fact_couverture_petite_enfance'))
+            if not df_odace.empty:
+                df_odace = df_odace.rename(columns={
+                    'commune_insee_code': 'codgeo',
+                    'taux_couverture_commune': 'taux_couverture'
+                })
+                df_odace['codgeo'] = df_odace['codgeo'].astype(str).str.zfill(5)
+                
+                # Filter for max year
+                if 'annee' in df_odace.columns:
+                    max_year = df_odace['annee'].max()
+                    df_odace = df_odace[df_odace['annee'] == max_year]
+                    
+                df_out = df_odace[['codgeo', 'taux_couverture']].copy()
+                df_out['taux_couverture'] = pd.to_numeric(df_out['taux_couverture'], errors='coerce').fillna(0)
+                
+                output_path = CLEAN_DIR / "caf.parquet"
+                df_out.to_parquet(output_path, engine='fastparquet')
+                logger.log_step("clean_caf", "COMPLETED", {"path": str(output_path), "rows": len(df_out), "source": "odace"})
+                return
+            else:
+                logging.warning("Odace fetch returned empty data for fact_couverture_petite_enfance. Falling back to legacy.")
+        except Exception as e:
+            logging.error(f"Failed to fetch fact_couverture_petite_enfance from Odace: {e}. Falling back to legacy.")
+
+    # Legacy path
     path = CACHE_DIR / source['local_name']
     if not path.exists(): return
 
@@ -507,11 +606,11 @@ def clean_caf(config: Dict[str, Any], logger: PipelineLogger):
             
         if 'taux_couverture' in df.columns:
             df['taux_couverture'] = pd.to_numeric(df['taux_couverture'], errors='coerce').fillna(0)
-            df_out = df[['codgeo', 'taux_couverture']]
+            df_out = df[['codgeo', 'taux_couverture']].copy()
             
             output_path = CLEAN_DIR / "caf.parquet"
             df_out.to_parquet(output_path, engine='fastparquet')
-            logger.log_step("clean_caf", "COMPLETED", {"path": str(output_path)})
+            logger.log_step("clean_caf", "COMPLETED", {"path": str(output_path), "rows": len(df_out), "source": "legacy"})
 
 def clean_education(config: Dict[str, Any], logger: PipelineLogger):
     """Cleans Education and saves to parquet."""
@@ -667,6 +766,32 @@ def clean_finess_national(config: Dict[str, Any], logger: PipelineLogger):
     logging.info("finess_national: use_odace is False or Odace fetch failed. Reverting to legacy local copy.")
     logger.log_step("clean_finess_national", "COMPLETED", {"source": "legacy"})
         
+def clean_maternites(config: Dict[str, Any], logger: PipelineLogger):
+    """Cleans Maternites (DREES) and saves to json in CACHE_DIR to maintain backward compatibility."""
+    logger.log_step("clean_maternites", "STARTED")
+    source = config['sources']['maternites']
+    
+    if source.get('use_odace', False):
+        try:
+            client = get_odace_client(logger)
+            df_odace = client.fetch_table(source.get('odace_table', 'dim_maternite'))
+            if not df_odace.empty:
+                # Expecting 'fi_et' (or 'FI_ET') in the json file loaded by build.py
+                df_out = df_odace[['finess_etablissement_code']].rename(columns={'finess_etablissement_code': 'fi_et'})
+                
+                output_path = CACHE_DIR / source['local_name']
+                df_out.to_json(output_path, orient='records')
+                logger.log_step("clean_maternites", "COMPLETED", {"rows": len(df_out), "source": "odace"})
+                return
+            else:
+                logging.warning("Odace fetch returned empty data for dim_maternite. Falling back to legacy.")
+        except Exception as e:
+            logging.error(f"Failed to fetch dim_maternite from Odace: {e}. Falling back to legacy.")
+
+    # Legacy ingestion path
+    logging.info("maternites: use_odace is False or Odace fetch failed. Reverting to legacy local copy.")
+    logger.log_step("clean_maternites", "COMPLETED", {"source": "legacy"})
+
 def clean_services_inclusion(config: Dict[str, Any], logger: PipelineLogger):
     """Cleans Inclusion (Services) and saves to parquet (one row per service)."""
     logger.log_step("clean_services_inclusion", "STARTED")
@@ -972,6 +1097,15 @@ def clean_population(config: Dict[str, Any], logger: PipelineLogger):
                     })
                     df_out['codgeo'] = df_out['codgeo'].astype(str).str.zfill(5)
                     df_out['population'] = pd.to_numeric(df_out['population'], errors='coerce').fillna(0)
+                    
+                    # Override population for Paris, Marseille, and Lyon due to Odace API population table data bug (missing arrondissements)
+                    plm_pops = {
+                        '75056': 2229621.0,  # Paris
+                        '13055': 855393.0,   # Marseille
+                        '69123': 500715.0    # Lyon
+                    }
+                    for code, pop in plm_pops.items():
+                        df_out.loc[df_out['codgeo'] == code, 'population'] = pop
                     
                     output_path = CLEAN_DIR / "population.parquet"
                     df_out.to_parquet(output_path, engine='fastparquet')
@@ -1769,7 +1903,27 @@ def run_clean_step_safely(step_name: str, clean_func, config: Dict[str, Any], lo
     import os
     from pathlib import Path
     
-    source_cfg = config['sources'].get(step_name) or config.get('local_files', {}).get(step_name)
+    # Map step names to sources.yaml/local_files keys if they differ
+    STEP_TO_SOURCE_MAP = {
+        'lovac': 'logement_vacant',
+        'rpls': 'logement_social',
+        'education': 'education_annuaire',
+        'political': 'political_nuance',
+        'school_effectifs': 'education_effectifs',
+        'loyers': 'loyers_apparts',
+        'departements': 'departements_ref',
+        'mob_durable': 'mob_durable_share',
+        'log_soc_delay': 'logement_social_delay',
+        'live_jobs': 'france_travail_live',
+        'inclusion_jobs': 'inclusion_jobs',
+        'gares': 'dim_gare',
+        'odace_rent': 'fact_loyer_annonce',
+        'formations': 'formations_annuaire'
+    }
+    
+    config_key = STEP_TO_SOURCE_MAP.get(step_name, step_name)
+    source_cfg = config['sources'].get(config_key) or config.get('local_files', {}).get(config_key)
+    
     if not source_cfg:
         # Fallback if no configuration is defined for this step name
         logger.log_step(f"clean_{step_name}", "STARTED")
@@ -1815,6 +1969,9 @@ def run_clean_step_safely(step_name: str, clean_func, config: Dict[str, Any], lo
         'jaccueille': 'jaccueille_bdv.parquet',
         'bpe': 'bpe_pois.parquet',
         'odace_rent': 'odace_loyer_annonce.parquet',
+        'formations': 'formations_annuaire.parquet',
+        'finess_national': '../raw/finess_national.parquet',
+        'maternites': '../raw/maternites_drees.json'
     }
     clean_filename = clean_filenames.get(step_name, f"{step_name}.parquet")
     active_clean = CLEAN_DIR / clean_filename
@@ -1948,6 +2105,7 @@ def run_clean_step_safely(step_name: str, clean_func, config: Dict[str, Any], lo
         logging.warning(f"⚠️ [ROLLBACK COMPLETE] Reverted '{step_name}' to last known good cache.")
 
 def main(argv=None):
+    logging.getLogger().setLevel(logging.ERROR)
     parser = argparse.ArgumentParser(description="ODIS Ingest Pipeline")
     parser.add_argument('--steps', type=str, help="Comma-separated list of steps to run (e.g. communes,inclusion)")
     parser.add_argument('--skip-live-jobs', action='store_true', help="Skip France Travail Live Jobs fetch")
@@ -1962,7 +2120,7 @@ def main(argv=None):
     logger.log_step("ingest_all", "STARTED")
     
     # --- 1. Fetch ROME Referential (New) ---
-    fetch_rome_referential(logger)
+    fetch_rome_referential(config, logger)
     
     # --- 2. Fetch RNA RAG Stats from BigQuery (New) ---
     fetch_rna_rag_stats(logger)
@@ -1983,6 +2141,7 @@ def main(argv=None):
         'caf': clean_caf,
         'education': clean_education,
         'finess_national': clean_finess_national,
+        'maternites': clean_maternites,
         'associations': clean_associations,
         'refugee_associations': clean_refugee_associations,
         'political': clean_political,

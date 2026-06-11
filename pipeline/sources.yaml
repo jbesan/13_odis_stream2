@@ -12,7 +12,7 @@ sources:
 
   population:
     datagouv_resource_id: "630e7917-02db-4838-8856-09235719551c"
-    use_odace: false
+    use_odace: true
     odace_table: "fact_population_municipale"
     format: "xlsx"
     local_name: "population.xlsx"
@@ -128,6 +128,8 @@ sources:
 
   maternites:
     datagouv_resource_id: "a822f7ae-7c46-42c0-86e1-ad7d381c1ad2"
+    use_odace: true
+    odace_table: "dim_maternite"
     format: "json"
     local_name: "maternites_drees.json"
     ttl_days: 365
@@ -179,6 +181,8 @@ sources:
 
   caf:
     datagouv_resource_id: "6d3b1cf8-cbef-4f30-96c3-0b63a2b0502c"
+    use_odace: true
+    odace_table: "fact_couverture_petite_enfance"
     format: "json"
     local_name: "caf_taux_couverture.json"
     ttl_days: 180
@@ -189,9 +193,9 @@ sources:
       - txcouv_com
 
   education_effectifs:
-    datagouv_resource_id: "b4642552-6777-4265-a263-f190621ec40f"
-    format: "parquet"
-    local_name: "education_effectifs.parquet"
+    url: "https://data.education.gouv.fr/explore/dataset/fr-en-ecoles-effectifs-nb_classes/download?format=csv&timezone=Europe/Berlin&use_labels_for_header=false"
+    format: "csv"
+    local_name: "education_effectifs.csv"
     ttl_days: 365
     description: "Effectifs d'élèves par niveau"
     used_columns:
@@ -202,7 +206,7 @@ sources:
 
   education_annuaire:
     datagouv_resource_id: "9af76efc-51a6-4659-87ba-82c02652613a"
-    use_odace: false
+    use_odace: true
     odace_table: "dim_etablissement_scolaire"
     format: "parquet"
     local_name: "education_annuaire.parquet"
@@ -252,8 +256,8 @@ sources:
       - label
 
   finess_national:
-    url: "file:///Users/jacques/dev/13_odis_stream2/csv/annuaire_sante_finess.parquet"
-    use_odace: false
+    url: "file:///Users/jacques/dev/13_odis_stream2/pipeline/local/annuaire_sante_finess.parquet"
+    use_odace: true
     odace_table: "dim_etablissement_sante"
     format: "parquet"
     local_name: "finess_national.parquet"

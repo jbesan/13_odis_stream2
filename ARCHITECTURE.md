@@ -147,4 +147,22 @@ The shortlisted city is treated with the exact same scoring pipeline as the curr
 - **UI Button**: The shortlisted city is featured at the top of the search results with a distinct **J'Accueille Yellow (`#F5D819`)** theme.
 - **Map Highlights**: The Folium map layer highlights the shortlisted city's boundary using a yellow border (rank `-1`), and positions a premium, self-contained **Material Design push_pin SVG icon** at the centroid of its polygon.
 
+---
+
+## 11. Odace Dataplatform Ingestion Architecture
+
+To transition from downloading raw Open Data files to retrieving clean, pre-processed datasets while maintaining high availability, ODIS implements a **dual-path ingestion architecture**:
+
+### 11.1 Ingest-Only Boundary
+The integration of the Odace platform replaces *only* the `ingest` phase for migrated datasets (such as `logement_vacant`, `logement_social`, `mob_transports_pub`, `population_details`, `caf`, and `maternites`). Downstream builders (`build.py` and `prescoring.py`) continue executing on the generated parquets to consolidate geographic codes, compute ratios, and scale uniform percentile scores.
+
+### 11.2 Granular Fallback Mechanism (Soft Fallback)
+Each dataset contains a `use_odace` toggle in `sources.yaml`. If enabled:
+1. The pipeline queries the new Odace D4G API (`https://odace.services.d4g.fr`).
+2. If the API returns a network error, timeout, or authentication failure (e.g. `501 Not Implemented` for read-only developer keys), the pipeline automatically intercepts the exception.
+3. It prints a console warning and **falls back immediately to the legacy parsing path** (directly loading/downloading the raw data), ensuring that ingestion never blocks the overall ETL.
+
+### 11.3 Database Schema & Downstream Neutrality
+The cleaned parquet files committed to `pipeline/cache/clean/` are identical in schema, column names, types, and geographic padding regardless of the chosen ingestion pathway. For `maternites`, the cleaner converts the Odace `dim_maternite` rows back into a backward-compatible JSON file (`maternites_drees.json`) in `CACHE_DIR` to avoid modifying `build.py`.
+
 

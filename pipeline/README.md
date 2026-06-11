@@ -13,13 +13,19 @@ The pipeline implements an advanced, resilient data architecture designed for pe
 - A virtual environment set up and active
 
 ### Installation
-```bash
-# Activate your virtual environment
-source .venv/bin/activate
-
-# Install pipeline dependencies
-pip install -r pipeline/requirements.txt
-```
+1. Activate your virtual environment:
+   ```bash
+   source .venv/bin/activate
+   ```
+2. Install pipeline dependencies:
+   ```bash
+   pip install -r pipeline/requirements.txt
+   ```
+3. Configure environment variables in `pipeline/.env`:
+   ```env
+   ODACE_API_URL=https://odace.services.d4g.fr
+   ODACE_API_KEY=sk_live_...
+   ```
 
 ### Usage
 Run the pipeline using the `etl.py` script from the project root:
@@ -107,6 +113,10 @@ The validation engine ensures incoming files conform to strict schemas prior to 
 4. **Odace Equipment & Gares API (`clean_odace_gares` / `clean_odace_rent`)**:
    - Interfaces with Odace APIs to fetch railway/transport stats and historical rental indices.
    - Implements advanced joins on `commune_sk` with normalized commune labels as a secondary fallback.
+5. **Odace Silver Ingestion Datasets (Dual-Path Fallback)**:
+   - Configured dynamically via `use_odace: true` in [sources.yaml](file:///Users/jacques/dev/13_odis_stream2/pipeline/sources.yaml) for datasets like `maternites`, `caf`, `logement_vacant`, `logement_social`, `mob_transports_pub`, and `population_details`.
+   - Fetches silver-layer data directly from the Odace D4G API (`https://odace.services.d4g.fr`) using `ODACE_API_KEY` and `ODACE_API_URL`.
+   - On network failure or API limitations (e.g. read-only key restrictions returning `501 Not Implemented` for SQL query requests), the cleaner functions catch the error and automatically fall back to the legacy open data files or cached templates, ensuring ingestion execution is never blocked.
 
 ---
 

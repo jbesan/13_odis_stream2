@@ -1,8 +1,8 @@
 [
     {
         "bassin_de_vie": "75056",
-        "weighted_score": 0.9686677198525538,
-        "population_bv": 10313732,
+        "weighted_score": 0.9726171669299631,
+        "population_bv": 10885913,
         "libgeo": "Paris",
         "communes": [
             "75056",
@@ -445,13 +445,13 @@
             "95680",
             "95682"
         ],
-        "inclusion_cat_score": 0.995260663507109,
+        "inclusion_cat_score": 0.9960505529225908,
         "mob_epci_scaled": 1.0
     },
     {
         "bassin_de_vie": "78361",
-        "weighted_score": 0.8526856240126383,
-        "population_bv": 118012,
+        "weighted_score": 0.8591363875724065,
+        "population_bv": 123286,
         "libgeo": "Mantes-la-Jolie",
         "communes": [
             "78020",
@@ -497,8 +497,8 @@
     },
     {
         "bassin_de_vie": "78517",
-        "weighted_score": 0.7825829383886256,
-        "population_bv": 30729,
+        "weighted_score": 0.7898894154818326,
+        "population_bv": 32883,
         "libgeo": "Rambouillet",
         "communes": [
             "78164",
@@ -513,8 +513,8 @@
     },
     {
         "bassin_de_vie": "91223",
-        "weighted_score": 0.7821221695629279,
-        "population_bv": 39815,
+        "weighted_score": 0.7869931542917326,
+        "population_bv": 42205,
         "libgeo": "Étampes",
         "communes": [
             "91001",
@@ -541,24 +541,54 @@
             "91544",
             "91556"
         ],
-        "inclusion_cat_score": 0.990521327014218,
+        "inclusion_cat_score": 0.9913112164296999,
         "mob_epci_scaled": 0.0
     },
     {
-        "bassin_de_vie": "77316",
-        "weighted_score": 0.7691548183254344,
-        "population_bv": 23834,
-        "libgeo": "Moret-Loing-et-Orvanne",
+        "bassin_de_vie": "77379",
+        "weighted_score": 0.7563191153238545,
+        "population_bv": 33726,
+        "libgeo": "Provins",
         "communes": [
-            "77079",
-            "77316",
-            "77419",
-            "77463",
-            "77494",
-            "77501",
-            "77506"
+            "77020",
+            "77026",
+            "77033",
+            "77073",
+            "77076",
+            "77080",
+            "77090",
+            "77109",
+            "77134",
+            "77174",
+            "77208",
+            "77227",
+            "77242",
+            "77246",
+            "77256",
+            "77260",
+            "77262",
+            "77275",
+            "77289",
+            "77301",
+            "77319",
+            "77341",
+            "77368",
+            "77379",
+            "77391",
+            "77396",
+            "77403",
+            "77404",
+            "77414",
+            "77418",
+            "77444",
+            "77446",
+            "77456",
+            "77459",
+            "77519",
+            "77530",
+            "77532"
         ],
-        "inclusion_cat_score": 0.9873617693522907,
+        "inclusion_cat_score": 0.6011058451816745,
         "mob_epci_scaled": 0.0
     }
 ]

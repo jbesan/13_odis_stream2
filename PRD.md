@@ -164,7 +164,25 @@ Liste en vrac d'idées d'amélioration
 * **Premium UI Display**: Intégration d'un nouvel expandeur "Offres d'emploi disponibles" au sein de l'onglet "💼 Emploi & Formation" de la modale "En savoir plus", affichant de manière lisible le titre de l'offre, l'entreprise, le type de contrat (CDD/CDI), le lieu et un lien/bouton direct pour postuler.
 
 ### 📊 Status
-- In Progress
+- **June 2026**: Complete. Fully integrated async fetching, model schemas, caching, fallback logic, test suite, and premium Streamlit UI results presentation.
+
+---
+
+## 🚀 Feature [F-65]: Odace D4G API Ingestion & Fallback Integration
+
+### 📝 User Stories
+- En tant que développeur, je veux intégrer le pipeline d'ingestion de données avec la nouvelle plateforme d'API Odace Silver (`https://odace.services.d4g.fr`), afin de charger directement des données qualifiées plutôt que d'exécuter du scraping lourd et fragile de fichiers Open Data bruts.
+- En tant qu'opérateur système, je veux qu'en cas d'indisponibilité de l'API Odace ou de restriction des droits d'accès (ex. erreur `501 Not Implemented` sur les requêtes SQL complexes avec une clé de développement standard), le pipeline bascule de manière transparente sur les fichiers open-data ou caches locaux sans interrompre l'ETL globale.
+
+### 🔑 Key Features
+- **Config-Driven Ingestion**: Paramétrage dynamique de `use_odace` et `odace_table` dans `sources.yaml`.
+- **API silver Client Integration**: Ingestion des tables d'intérêt (`dim_maternite`, `fact_couverture_petite_enfance`, etc.) via `OdaceClient`.
+- **Transparent Dual-Path Fallback**: Interception gracieuse des erreurs de réseau ou API avec bascule automatique vers les fichiers open data locaux correspondants.
+- **Backward-Compatible Ingestion Boundary**: Isolement complet de la structure des parquets et formats intermédiaires en sortie du cleaner (ex: ré-écriture de `maternites_drees.json` en local pour `build.py`) pour préserver les moteurs de scoring et l'UI sans changement aval.
+
+### 📊 Status
+- **June 2026**: Complete. Fully implemented for Wave 1 and Wave 2 (`caf`, `maternites`), E2E builds executed, snapshots updated, and unit tests passing green.
+
 
 
 

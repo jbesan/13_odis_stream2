@@ -79,11 +79,23 @@ def consolidate_plm_communes(df: pd.DataFrame) -> pd.DataFrame:
                 
         # 2. Population-weighted averages for rates
         parent_pop = df.loc[df['codgeo'] == parent, 'population'].values[0]
-        if parent_pop > 0:
-            for col in cols_to_avg:
-                if col in df.columns:
+        for col in cols_to_avg:
+            if col in df.columns:
+                children_mask = df['codgeo'].isin(children)
+                children_pop = df.loc[children_mask, 'population'].sum()
+                if children_pop > 0:
+                    total_pop = df.loc[family_mask, 'population'].sum()
                     weighted_sum = (df.loc[family_mask, col] * df.loc[family_mask, 'population']).sum()
-                    df.loc[df['codgeo'] == parent, col] = weighted_sum / parent_pop
+                    df.loc[df['codgeo'] == parent, col] = weighted_sum / total_pop
+                else:
+                    # Fallback to simple average of children values if child populations are zero
+                    # Only use non-zero children values (since NaNs are filled with 0 before consolidation)
+                    non_zero_children = df.loc[children_mask, col][df.loc[children_mask, col] > 0]
+                    if not non_zero_children.empty:
+                        df.loc[df['codgeo'] == parent, col] = non_zero_children.mean()
+                    else:
+                        # Use parent value if no children have non-zero values
+                        pass
                     
         # 3. Special logical flags
         # PLM parents (Paris, Lyon, Marseille) always have major railway stations (gares)

@@ -90,6 +90,10 @@ Ce prototype a un triple objectif :
     python3 -m pytest tests
     ```
 
+6.  **Mettre à jour/Exécuter le pipeline d'ingestion (Optionnel) :**
+    Pour recharger et mettre à jour les données (notamment depuis l'API Odace), consultez la documentation détaillée dans le [README du pipeline](file:///Users/jacques/dev/13_odis_stream2/pipeline/README.md).
+
+
 ## ⚙️ Fonctionnement : Le Moteur de Scoring
 
 Le cœur de l'application est un pipeline de scoring qui évalue les communes (ou les bassins de vie) en fonction du profil utilisateur.

@@ -128,9 +128,13 @@ def test_validate_dataset_contract():
     df_empty = pd.DataFrame()
     assert not validate_dataset_contract(df_empty, "test_set", source_cfg)
 
-    # Case 2: Missing required columns
-    df_missing = pd.DataFrame({"col_a": [1, 2], "col_c": [3, 4]})
-    assert not validate_dataset_contract(df_missing, "test_set", source_cfg)
+    # Case 2: Missing some columns (should return True under resilient contract)
+    df_missing_some = pd.DataFrame({"col_a": [1, 2], "col_c": [3, 4]})
+    assert validate_dataset_contract(df_missing_some, "test_set", source_cfg)
+
+    # Case 2b: Missing all columns (should return False)
+    df_missing_all = pd.DataFrame({"col_c": [1, 2], "col_d": [3, 4]})
+    assert not validate_dataset_contract(df_missing_all, "test_set", source_cfg)
 
     # Case 3: High null rate in primary identifier (codgeo)
     df_high_null = pd.DataFrame({
