@@ -66,6 +66,8 @@ sources:
 
   associations:
     datagouv_resource_id: "cc7b8f0c-45ea-4444-8b55-55d30bc34ac5"
+    use_odace: true
+    odace_table: "dim_association"
     format: "parquet"
     local_name: "associations.parquet"
     ttl_days: 90
@@ -149,18 +151,6 @@ sources:
       - Famillon
       - Métier
       - xmet
-
-  communes_bassins_emploi:
-    url: "https://statistiques.pole-emploi.org/bmo/Handlers/HTFile.ashx?MEDIAID=156688&SITEKEY=620c8132-d522-44fa-8efa-27a62c26702c"
-    format: "xlsx"
-    local_name: "communes_bassins_emploi_2021.xlsx"
-    ttl_days: 365
-    description: "Référentiel Communes -> Bassins d'Emploi 2021"
-    used_columns:
-      - Code Insee
-      - Libellé commune
-      - BE21
-      - LIBBE21
 
   nomenclature_waldec:
     datagouv_resource_id: "d65d5cae-399f-4150-804f-493026645fd5"
@@ -408,6 +398,8 @@ sources:
 
   logement_social_delay:
     url: "file://pipeline/local/donnees_ush_stats_1_demande_attribution.xlsx"
+    use_odace: false
+    odace_table: "fact_delai_attribution_logement"
     format: "xlsx"
     local_name: "logement_social_delay_ush.xlsx"
     sheet_name: "Carte 1"
@@ -420,6 +412,8 @@ sources:
 
   sante_apl:
     url: "https://data.drees.solidarites-sante.gouv.fr/api/datasets/1.0/530_l-accessibilite-potentielle-localisee-apl/attachments/indicateur_d_accessibilite_potentielle_localisee_apl_aux_medecins_generalistes_xlsx/"
+    use_odace: true
+    odace_table: "fact_apl_medecin"
     format: "xlsx"
     local_name: "sante_apl_drees.xlsx"
     sheet_name: "APL 2023"
@@ -432,6 +426,8 @@ sources:
 
   mob_durable_share:
     datagouv_resource_id: "f624e1db-8f22-4a96-9f5a-9f9ee2aae53e"
+    use_odace: true
+    odace_table: "fact_mobilite_durable"
     format: "csv"
     local_name: "mob_durable_share_ecolab.csv"
     ttl_days: 365
@@ -444,6 +440,8 @@ sources:
 
   ter_insecurite:
     datagouv_resource_id: "604d71b8-337d-4869-9226-49e01bae87df"
+    use_odace: true
+    odace_table: "fact_insecurite_commune"
     format: "parquet"
     local_name: "ter_insecurite_ssmsi.parquet"
     ttl_days: 180

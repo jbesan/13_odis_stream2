@@ -988,6 +988,29 @@ def clean_associations(config: Dict[str, Any], logger: PipelineLogger):
     """Cleans Associations and saves to parquet."""
     logger.log_step("clean_associations", "STARTED")
     source = config['sources']['associations']
+    output_path = CLEAN_DIR / "associations_vertical.parquet"
+
+    # Odace pathway
+    if source.get('use_odace', False):
+        try:
+            client = get_odace_client(logger)
+            df_odace = client.fetch_table(source.get('odace_table', 'dim_association'))
+            if not df_odace.empty:
+                df_odace['id_waldec'] = df_odace['objet_social_code'].astype(str).str.zfill(6)
+                df_odace['codgeo'] = df_odace['commune_insee_code'].astype(str).str.zfill(5)
+                
+                df_out = df_odace.groupby(['codgeo', 'id_waldec']).size().rename('count').reset_index()
+                
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                df_out.to_parquet(output_path, engine='fastparquet')
+                logger.log_step("clean_associations", "COMPLETED", {"path": str(output_path), "rows": len(df_out), "source": "odace"})
+                return
+            else:
+                logging.warning("Odace fetch returned empty data for dim_association. Falling back to legacy.")
+        except Exception as e:
+            logging.error(f"Failed to fetch associations from Odace: {e}. Falling back to legacy.")
+
+    # Legacy pathway
     path = CACHE_DIR / source['local_name']
     if not path.exists(): return
 
@@ -1014,7 +1037,6 @@ def clean_associations(config: Dict[str, Any], logger: PipelineLogger):
         # We aggregate by codgeo and id_waldec to save space and provide a count
         df_out = df.groupby(['codgeo', 'id_waldec']).size().rename('count').reset_index()
         
-        output_path = CLEAN_DIR / "associations_vertical.parquet"
         df_out.to_parquet(output_path, engine='fastparquet')
         logger.log_step("clean_associations", "COMPLETED", {"path": str(output_path)})
 
@@ -2105,7 +2127,7 @@ def run_clean_step_safely(step_name: str, clean_func, config: Dict[str, Any], lo
         logging.warning(f"⚠️ [ROLLBACK COMPLETE] Reverted '{step_name}' to last known good cache.")
 
 def main(argv=None):
-    logging.getLogger().setLevel(logging.ERROR)
+    logging.getLogger().setLevel(logging.INFO)
     parser = argparse.ArgumentParser(description="ODIS Ingest Pipeline")
     parser.add_argument('--steps', type=str, help="Comma-separated list of steps to run (e.g. communes,inclusion)")
     parser.add_argument('--skip-live-jobs', action='store_true', help="Skip France Travail Live Jobs fetch")
@@ -2647,6 +2669,38 @@ def clean_log_soc_delay(config: Dict[str, Any], logger: PipelineLogger):
     """Cleans USH Housing Delay and saves to parquet."""
     logger.log_step("clean_log_soc_delay", "STARTED")
     source = config['sources']['logement_social_delay']
+    output_path = CLEAN_DIR / "log_soc_delay.parquet"
+
+    # Odace pathway
+    if source.get('use_odace', False):
+        try:
+            client = get_odace_client(logger)
+            df_odace = client.fetch_table(source.get('odace_table', 'fact_delai_attribution_logement'))
+            if not df_odace.empty:
+                # Filter out header/footer metadata lines (delay is NaN)
+                df_odace = df_odace.dropna(subset=['delai_attribution_moyen_mois'])
+                
+                # Format columns
+                df_odace = df_odace[['siret', 'delai_attribution_moyen_mois']].rename(columns={
+                    'siret': 'epci_code',
+                    'delai_attribution_moyen_mois': 'log_soc_delay'
+                })
+                df_odace['epci_code'] = df_odace['epci_code'].astype(str).str.strip().str.zfill(9)
+                df_odace['log_soc_delay'] = pd.to_numeric(df_odace['log_soc_delay'], errors='coerce').fillna(0)
+                
+                # Group by epci_code and average
+                df_clean = df_odace.groupby('epci_code')['log_soc_delay'].mean().reset_index()
+                
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                df_clean.to_parquet(output_path, engine='fastparquet')
+                logger.log_step("clean_log_soc_delay", "COMPLETED", {"rows": len(df_clean), "source": "odace"})
+                return
+            else:
+                logging.warning("Odace fetch returned empty data for logement_social_delay. Falling back to legacy.")
+        except Exception as e:
+            logging.error(f"Failed to fetch logement_social_delay from Odace: {e}. Falling back to legacy.")
+
+    # Legacy pathway
     path = CACHE_DIR / source['local_name']
     if not path.exists(): return
 
@@ -2661,17 +2715,49 @@ def clean_log_soc_delay(config: Dict[str, Any], logger: PipelineLogger):
             "SIRET": "epci_code",
             "Délai d'attribution moyen": "log_soc_delay"
         }, inplace=True)
-        df["epci_code"] = df["epci_code"].astype(str).str.strip()
+        df["epci_code"] = df["epci_code"].astype(str).str.strip().str.zfill(9)
         df["log_soc_delay"] = pd.to_numeric(df["log_soc_delay"], errors='coerce').fillna(0)
         
-        output_path = CLEAN_DIR / "log_soc_delay.parquet"
-        df.to_parquet(output_path, engine='fastparquet')
-        logger.log_step("clean_log_soc_delay", "COMPLETED", {"rows": len(df)})
+        # Group by epci_code and average
+        df_clean = df.groupby('epci_code')['log_soc_delay'].mean().reset_index()
+        
+        df_clean.to_parquet(output_path, engine='fastparquet')
+        logger.log_step("clean_log_soc_delay", "COMPLETED", {"rows": len(df_clean)})
 
 def clean_sante_apl(config: Dict[str, Any], logger: PipelineLogger):
     """Cleans DREES APL and saves to parquet."""
     logger.log_step("clean_sante_apl", "STARTED")
     source = config['sources']['sante_apl']
+    output_path = CLEAN_DIR / "sante_apl.parquet"
+
+    # Odace pathway
+    if source.get('use_odace', False):
+        try:
+            client = get_odace_client(logger)
+            df_odace = client.fetch_table(source.get('odace_table', 'fact_apl_medecin'))
+            if not df_odace.empty:
+                # Filter latest year if multiple years exist
+                if 'annee' in df_odace.columns:
+                    latest = df_odace['annee'].max()
+                    df_odace = df_odace[df_odace['annee'] == latest]
+                    
+                df_out = df_odace[['commune_insee_code', 'apl_medecin_generaliste']].rename(columns={
+                    'commune_insee_code': 'codgeo',
+                    'apl_medecin_generaliste': 'sante_apl'
+                })
+                df_out['codgeo'] = df_out['codgeo'].astype(str).str.zfill(5)
+                df_out['sante_apl'] = pd.to_numeric(df_out['sante_apl'], errors='coerce').fillna(0)
+                
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                df_out.to_parquet(output_path, engine='fastparquet')
+                logger.log_step("clean_sante_apl", "COMPLETED", {"rows": len(df_out), "source": "odace"})
+                return
+            else:
+                logging.warning("Odace fetch returned empty data for sante_apl. Falling back to legacy.")
+        except Exception as e:
+            logging.error(f"Failed to fetch sante_apl from Odace: {e}. Falling back to legacy.")
+
+    # Legacy pathway
     path = CACHE_DIR / source['local_name']
     if not path.exists(): return
 
@@ -2688,7 +2774,6 @@ def clean_sante_apl(config: Dict[str, Any], logger: PipelineLogger):
         df["codgeo"] = df["codgeo"].astype(str).str.zfill(5)
         df["sante_apl"] = pd.to_numeric(df["sante_apl"], errors='coerce').fillna(0)
         
-        output_path = CLEAN_DIR / "sante_apl.parquet"
         df.to_parquet(output_path, engine='fastparquet')
         logger.log_step("clean_sante_apl", "COMPLETED", {"rows": len(df)})
 
@@ -2696,6 +2781,47 @@ def clean_mob_durable(config: Dict[str, Any], logger: PipelineLogger):
     """Cleans Ecolab Mobility and saves to parquet."""
     logger.log_step("clean_mob_durable", "STARTED")
     source = config['sources']['mob_durable_share']
+    output_path = CLEAN_DIR / "mob_durable.parquet"
+
+    # Odace pathway
+    if source.get('use_odace', False):
+        try:
+            client = get_odace_client(logger)
+            df_odace = client.fetch_table(source.get('odace_table', 'fact_mobilite_durable'))
+            if not df_odace.empty:
+                # Pivot
+                df_pivot = df_odace.pivot_table(
+                    index='commune_insee_code',
+                    columns='mode_transport',
+                    values='part_modale',
+                    aggfunc='sum'
+                ).reset_index()
+                df_pivot.rename(columns={'commune_insee_code': 'codgeo'}, inplace=True)
+                df_pivot['codgeo'] = df_pivot['codgeo'].astype(str).str.zfill(5)
+                
+                durable_modes = ["Transports en commun", "Marche", "Vélo", "V\u00e9lo"]
+                present_durable = [m for m in durable_modes if m in df_pivot.columns]
+                
+                mode_cols = [c for c in df_pivot.columns if c != 'codgeo']
+                df_pivot['total_valeur'] = df_pivot[mode_cols].sum(axis=1)
+                
+                df_pivot['mob_dur_share'] = np.where(
+                    df_pivot['total_valeur'] > 0,
+                    df_pivot[present_durable].sum(axis=1) / df_pivot['total_valeur'],
+                    0.0
+                )
+                
+                df_out = df_pivot[['codgeo', 'mob_dur_share']]
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                df_out.to_parquet(output_path, engine='fastparquet')
+                logger.log_step("clean_mob_durable", "COMPLETED", {"rows": len(df_out), "source": "odace"})
+                return
+            else:
+                logging.warning("Odace fetch returned empty data for mob_durable_share. Falling back to legacy.")
+        except Exception as e:
+            logging.error(f"Failed to fetch mob_durable_share from Odace: {e}. Falling back to legacy.")
+
+    # Legacy pathway
     path = CACHE_DIR / source['local_name']
     if not path.exists(): return
 
@@ -2723,7 +2849,6 @@ def clean_mob_durable(config: Dict[str, Any], logger: PipelineLogger):
         )
         
         df_out = df_pivot[['codgeo', 'mob_dur_share']]
-        output_path = CLEAN_DIR / "mob_durable.parquet"
         df_out.to_parquet(output_path, engine='fastparquet')
         logger.log_step("clean_mob_durable", "COMPLETED", {"rows": len(df_out)})
 
@@ -2731,6 +2856,32 @@ def clean_ter_insecurite(config: Dict[str, Any], logger: PipelineLogger):
     """Cleans SSMSI Insecurity and saves to parquet."""
     logger.log_step("clean_ter_insecurite", "STARTED")
     source = config['sources']['ter_insecurite']
+    output_path = CLEAN_DIR / "ter_insecurite.parquet"
+
+    # Odace pathway
+    if source.get('use_odace', False):
+        try:
+            client = get_odace_client(logger)
+            df_odace = client.fetch_table(source.get('odace_table', 'fact_insecurite_commune'))
+            if not df_odace.empty:
+                # Filter for latest year
+                latest = df_odace["annee"].max()
+                df_odace = df_odace[df_odace["annee"] == latest]
+                
+                df_agg = df_odace.groupby('commune_insee_code')['taux_pour_mille'].sum().reset_index()
+                df_agg.rename(columns={'commune_insee_code': 'codgeo', 'taux_pour_mille': 'ter_insecurite'}, inplace=True)
+                df_agg['codgeo'] = df_agg['codgeo'].astype(str).str.zfill(5)
+                
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                df_agg.to_parquet(output_path, engine='fastparquet')
+                logger.log_step("clean_ter_insecurite", "COMPLETED", {"rows": len(df_agg), "source": "odace"})
+                return
+            else:
+                logging.warning("Odace fetch returned empty data for ter_insecurite. Falling back to legacy.")
+        except Exception as e:
+            logging.error(f"Failed to fetch ter_insecurite from Odace: {e}. Falling back to legacy.")
+
+    # Legacy pathway
     path = CACHE_DIR / source['local_name']
     if not path.exists(): return
 
@@ -2744,7 +2895,6 @@ def clean_ter_insecurite(config: Dict[str, Any], logger: PipelineLogger):
         df_agg.rename(columns={'CODGEO_2025': 'codgeo', 'taux_pour_mille': 'ter_insecurite'}, inplace=True)
         df_agg['codgeo'] = df_agg['codgeo'].astype(str).str.zfill(5)
         
-        output_path = CLEAN_DIR / "ter_insecurite.parquet"
         df_agg.to_parquet(output_path, engine='fastparquet')
         logger.log_step("clean_ter_insecurite", "COMPLETED", {"rows": len(df_agg)})
 
