@@ -1120,14 +1120,7 @@ def clean_population(config: Dict[str, Any], logger: PipelineLogger):
                     df_out['codgeo'] = df_out['codgeo'].astype(str).str.zfill(5)
                     df_out['population'] = pd.to_numeric(df_out['population'], errors='coerce').fillna(0)
                     
-                    # Override population for Paris, Marseille, and Lyon due to Odace API population table data bug (missing arrondissements)
-                    plm_pops = {
-                        '75056': 2229621.0,  # Paris
-                        '13055': 855393.0,   # Marseille
-                        '69123': 500715.0    # Lyon
-                    }
-                    for code, pop in plm_pops.items():
-                        df_out.loc[df_out['codgeo'] == code, 'population'] = pop
+                    # No longer overriding population for Paris, Marseille, and Lyon as Odace API now returns correct populations for parent codes
                     
                     output_path = CLEAN_DIR / "population.parquet"
                     df_out.to_parquet(output_path, engine='fastparquet')

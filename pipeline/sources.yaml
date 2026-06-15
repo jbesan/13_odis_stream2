@@ -407,7 +407,7 @@ sources:
 
   logement_social_delay:
     url: "file://pipeline/local/donnees_ush_stats_1_demande_attribution.xlsx"
-    use_odace: false
+    use_odace: true
     odace_table: "fact_delai_attribution_logement"
     format: "xlsx"
     local_name: "logement_social_delay_ush.xlsx"
