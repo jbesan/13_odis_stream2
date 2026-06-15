@@ -181,7 +181,7 @@ Liste en vrac d'idées d'amélioration
 - **Backward-Compatible Ingestion Boundary**: Isolement complet de la structure des parquets et formats intermédiaires en sortie du cleaner (ex: ré-écriture de `maternites_drees.json` en local pour `build.py`) pour préserver les moteurs de scoring et l'UI sans changement aval.
 
 ### 📊 Status
-- **June 2026**: Complete. Fully implemented for Wave 1 and Wave 2 (`caf`, `maternites`), E2E builds executed, snapshots updated, and unit tests passing green.
+- **June 2026**: Complete. Fully migrated all target datasets (including CAF, maternities, housing delay, insecurity, mobility, APL, RNA, loyers, and BPE). Resolved the PLM population hierarchy and BPE capacity metadata challenges. E2E pipeline runs successfully, and all 130 tests pass green.
 
 
 

@@ -113,10 +113,15 @@ The validation engine ensures incoming files conform to strict schemas prior to 
 4. **Odace Equipment & Gares API (`clean_odace_gares` / `clean_odace_rent`)**:
    - Interfaces with Odace APIs to fetch railway/transport stats and historical rental indices.
    - Implements advanced joins on `commune_sk` with normalized commune labels as a secondary fallback.
-5. **Odace Silver Ingestion Datasets (Dual-Path Fallback)**:
-   - Configured dynamically via `use_odace: true` in [sources.yaml](file:///Users/jacques/dev/13_odis_stream2/pipeline/sources.yaml) for datasets like `maternites`, `caf`, `logement_vacant`, `logement_social`, `mob_transports_pub`, and `population_details`.
-   - Fetches silver-layer data directly from the Odace D4G API (`https://odace.services.d4g.fr`) using `ODACE_API_KEY` and `ODACE_API_URL`.
-   - On network failure or API limitations (e.g. read-only key restrictions returning `501 Not Implemented` for SQL query requests), the cleaner functions catch the error and automatically fall back to the legacy open data files or cached templates, ensuring ingestion execution is never blocked.
+5. **Odace Silver Ingestion Datasets (Dual-Path Ingestion & Fallback)**:
+   - **Active Datasets**: Dynamically controlled via `use_odace: true` in [sources.yaml](file:///Users/jacques/dev/13_odis_stream2/pipeline/sources.yaml) for a major portion of the pipeline, including: `communes`, `population`, `associations`, `logement_vacant`, `logement_social`, `maternites`, `caf`, `education_annuaire`, `finess_national`, `bpe`, `logement_social_delay`, `sante_apl`, `mob_durable_share`, and `ter_insecurite`.
+   - **Ingestion Pathways**:
+     - *Paginated Query API*: `OdaceClient` auto-paginates queries to `/api/data/query` using loops on `offset` and `has_more` to bypass the 10,000-row limit (crucial for compiling the complete 34,998 rows of the updated `fact_population_municipale` which now includes both communes and arrondissements).
+     - *Export Parquet Streaming*: Large tables like BPE (`dim_equipement_territoire`) and RNA (`dim_association`) stream pre-compiled Parquet export files. This avoids database timeout errors (500) on the server.
+   - **Specific Optimizations**:
+     - *BPE Local Filtering*: To handle BPE's 2.78M rows, the cleaner streams the parquet export file and filters locally for ODIS-relevant equipment codes (`D502`, `D703`, `D704`, `D710`), reducing the dataset to 18,401 rows while mapping `capacite_hebergement` to `CAPACITE` correctly.
+     - *PLM Consolidation*: With child arrondissement populations fully populated in the cleaned `fact_population_municipale` export, `build.py` automatically uses population-weighted averages to compute parent metrics (removing simple average fallbacks).
+   - **Resiliency**: On network failure or API errors, the cleaners catch the exception and fall back to the legacy open data files or cached templates, ensuring pipeline runs are never blocked.
 
 ---
 

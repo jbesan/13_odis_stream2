@@ -165,4 +165,12 @@ Each dataset contains a `use_odace` toggle in `sources.yaml`. If enabled:
 ### 11.3 Database Schema & Downstream Neutrality
 The cleaned parquet files committed to `pipeline/cache/clean/` are identical in schema, column names, types, and geographic padding regardless of the chosen ingestion pathway. For `maternites`, the cleaner converts the Odace `dim_maternite` rows back into a backward-compatible JSON file (`maternites_drees.json`) in `CACHE_DIR` to avoid modifying `build.py`.
 
+### 11.4 Paginated Querying & BPE Ingestion Optimization
+
+To retrieve very large tables or handle hierarchical updates (like PLM arrondissements in `fact_population_municipale` and BPE in `dim_equipement_territoire`) without hitting server timeouts or limits:
+1. **API Pagination Support**: The query endpoint (`/api/data/query`) enforces a hard limit of 10,000 rows per request. `OdaceClient` implements automatic pagination by checking `has_more` and looping with `offset` increments to safely compile large tables (such as the 34,998 communes/arrondissements) into a single DataFrame.
+2. **Standard Export with Local Filtering (BPE)**: To bypass BPE table complexity (>2.78M rows in `dim_equipement_territoire`), the pipeline streams the pre-compiled Parquet export file using standard caching. The ingestion cleaner then filters the dataset locally for ODIS-relevant equipment types (`D502`, `D703`, `D704`, `D710`), reducing processing down to 18,401 rows while mapping `capacite_hebergement` to `CAPACITE` for the downstream build.
+3. **PLM Consolidation Alignment**: With arrondissement populations fully populated in the cleaned population dataset, `build.py` automatically uses population-weighted averages to compute indicators for Paris, Lyon, and Marseille (removing the simple average fallbacks).
+
+
 
