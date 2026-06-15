@@ -1110,24 +1110,20 @@ def clean_population(config: Dict[str, Any], logger: PipelineLogger):
             client = get_odace_client(logger)
             df_odace = client.fetch_table(source.get('odace_table', 'fact_population_municipale'))
             if not df_odace.empty:
-                pop_cols = [c for c in df_odace.columns if c.startswith('pop_')]
-                if pop_cols:
-                    latest_pop_col = sorted(pop_cols)[-1]
-                    df_out = df_odace[['commune_insee_code', latest_pop_col]].rename(columns={
-                        'commune_insee_code': 'codgeo',
-                        latest_pop_col: 'population'
-                    })
-                    df_out['codgeo'] = df_out['codgeo'].astype(str).str.zfill(5)
-                    df_out['population'] = pd.to_numeric(df_out['population'], errors='coerce').fillna(0)
-                    
-                    # No longer overriding population for Paris, Marseille, and Lyon as Odace API now returns correct populations for parent codes
-                    
-                    output_path = CLEAN_DIR / "population.parquet"
-                    df_out.to_parquet(output_path, engine='fastparquet')
-                    logger.log_step("clean_population", "COMPLETED", {"rows": len(df_out), "source": "odace"})
-                    return
-                else:
-                    logging.warning("No pop_ columns found in Odace population table.")
+                # The export Parquet now has all columns including geo_code and pop_2023 (including arrondissements)
+                df_out = df_odace[['geo_code', 'pop_2023']].rename(columns={
+                    'geo_code': 'codgeo',
+                    'pop_2023': 'population'
+                })
+                df_out['codgeo'] = df_out['codgeo'].astype(str).str.zfill(5)
+                df_out['population'] = pd.to_numeric(df_out['population'], errors='coerce').fillna(0)
+                
+                # No longer overriding population for Paris, Marseille, and Lyon as Odace API now returns correct populations for parent codes
+                
+                output_path = CLEAN_DIR / "population.parquet"
+                df_out.to_parquet(output_path, engine='fastparquet')
+                logger.log_step("clean_population", "COMPLETED", {"rows": len(df_out), "source": "odace"})
+                return
             else:
                 logging.warning("Odace fetch returned empty data for population.")
         except Exception as e:
@@ -1474,10 +1470,34 @@ def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
 
     logger.log_step("clean_bpe", "STARTED")
     source = config['sources']['bpe']
-    path = CACHE_DIR / source['local_name']
-    if not path.exists(): return
+    
+    df = None
+    if source.get('use_odace', False):
+        try:
+            client = get_odace_client(logger)
+            df_odace = client.fetch_table(source.get('odace_table', 'dim_equipement_territoire'))
+            if not df_odace.empty:
+                # Filter for the relevant types
+                df_filtered = df_odace[df_odace['type_equipement_code'].isin(['D502', 'D703', 'D704', 'D710'])].copy()
+                df = df_filtered.rename(columns={
+                    'commune_insee_code': 'CODGEO',
+                    'type_equipement_code': 'TYPEQU',
+                    'coord_x_lambert': 'LAMBERT_X',
+                    'coord_y_lambert': 'LAMBERT_Y',
+                    'equipement_label': 'NOMRS',
+                    'capacite_hebergement': 'CAPACITE'
+                })
+            else:
+                logging.warning("Odace BPE fetch returned empty data. Falling back to legacy.")
+                df = None
+        except Exception as e:
+            logging.error(f"Failed to fetch BPE from Odace: {e}. Falling back to legacy.")
+            df = None
 
-    df = load_dataset(path, source)
+    if df is None:
+        path = CACHE_DIR / source['local_name']
+        if not path.exists(): return
+        df = load_dataset(path, source)
     
     # Check columns: DEP, COM, TYPEQU, LAMBERT_X, LAMBERT_Y
     # Construct CODGEO

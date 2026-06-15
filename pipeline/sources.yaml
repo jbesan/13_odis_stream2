@@ -285,6 +285,8 @@ sources:
 
   bpe:
     url: "https://www.insee.fr/fr/statistiques/fichier/8217525/BPE24.parquet"
+    use_odace: true
+    odace_table: "dim_equipement_territoire"
     format: "parquet"
     local_name: "BPE24.parquet"
     ttl_days: 365
