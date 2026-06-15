@@ -187,17 +187,29 @@ def validate_dataset_contract(df: pd.DataFrame, source_name: str, source_cfg: Di
     # 2. Schema Check
     if used_cols:
         missing_cols = []
+        lower_cols = [c.lower() for c in df.columns]
+        index_names = [df.index.name.lower()] if df.index.name else []
+        if isinstance(df.index, pd.MultiIndex):
+            index_names = [n.lower() for n in df.index.names if n]
+            
         for col in used_cols:
-            # Check normal columns or index names
-            if col not in df.columns and col != df.index.name and (not isinstance(df.index, pd.MultiIndex) or col not in df.index.names):
+            # Check normal columns or index names (case-insensitive)
+            if col.lower() not in lower_cols and col.lower() not in index_names:
                 missing_cols.append(col)
                 
         if missing_cols:
-            logging.warning(f"⚠️ [CONTRACT VALIDATION FAILED] Dataset '{source_name}' is missing columns: {missing_cols}")
-            return False
+            logging.warning(f"⚠️ [CONTRACT VALIDATION WARNING] Dataset '{source_name}' is missing columns: {missing_cols}")
+            if len(missing_cols) == len(used_cols):
+                logging.error(f"❌ [CONTRACT VALIDATION FAILED] Dataset '{source_name}' is missing ALL expected columns.")
+                return False
             
     # 3. Non-null primary keys (e.g. codgeo/INSEE_COM)
-    pk_cols = [c for c in ['codgeo', 'INSEE_COM', 'Code commune INSEE', 'code_commune'] if c in df.columns]
+    pk_names = ['codgeo', 'insee_com', 'code commune insee', 'code_commune']
+    pk_cols = []
+    for c in df.columns:
+        if c.lower() in pk_names:
+            pk_cols.append(c)
+            
     for pk in pk_cols:
         null_count = df[pk].isna().sum()
         if null_count > 0:

@@ -264,6 +264,7 @@ DEMO_SCENARIOS = {
         'loc_search_area': 'departement',
         'loc_search_code': ['13'],
         'codes_metiers': [["M1607", "M1602"]],
+        'classe_enfants': ['Crèche / Assistante Maternelle', 'Elémentaire'],
         'weight_profile': 'Famille',
         'besoin_sante': "Maternité",
         'inc_services_selection': DEFAULT_INC_SERVICES_CORE + ['lecture-ecriture-calcul--maitriser-le-francais'],

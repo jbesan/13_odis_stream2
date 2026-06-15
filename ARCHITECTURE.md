@@ -147,4 +147,30 @@ The shortlisted city is treated with the exact same scoring pipeline as the curr
 - **UI Button**: The shortlisted city is featured at the top of the search results with a distinct **J'Accueille Yellow (`#F5D819`)** theme.
 - **Map Highlights**: The Folium map layer highlights the shortlisted city's boundary using a yellow border (rank `-1`), and positions a premium, self-contained **Material Design push_pin SVG icon** at the centroid of its polygon.
 
+---
+
+## 11. Odace Dataplatform Ingestion Architecture
+
+To transition from downloading raw Open Data files to retrieving clean, pre-processed datasets while maintaining high availability, ODIS implements a **dual-path ingestion architecture**:
+
+### 11.1 Ingest-Only Boundary
+The integration of the Odace platform replaces *only* the `ingest` phase for migrated datasets (such as `logement_vacant`, `logement_social`, `mob_transports_pub`, `population_details`, `caf`, and `maternites`). Downstream builders (`build.py` and `prescoring.py`) continue executing on the generated parquets to consolidate geographic codes, compute ratios, and scale uniform percentile scores.
+
+### 11.2 Granular Fallback Mechanism (Soft Fallback)
+Each dataset contains a `use_odace` toggle in `sources.yaml`. If enabled:
+1. The pipeline queries the new Odace D4G API (`https://odace.services.d4g.fr`).
+2. If the API returns a network error, timeout, or authentication failure (e.g. `501 Not Implemented` for read-only developer keys), the pipeline automatically intercepts the exception.
+3. It prints a console warning and **falls back immediately to the legacy parsing path** (directly loading/downloading the raw data), ensuring that ingestion never blocks the overall ETL.
+
+### 11.3 Database Schema & Downstream Neutrality
+The cleaned parquet files committed to `pipeline/cache/clean/` are identical in schema, column names, types, and geographic padding regardless of the chosen ingestion pathway. For `maternites`, the cleaner converts the Odace `dim_maternite` rows back into a backward-compatible JSON file (`maternites_drees.json`) in `CACHE_DIR` to avoid modifying `build.py`.
+
+### 11.4 Paginated Querying & BPE Ingestion Optimization
+
+To retrieve very large tables or handle hierarchical updates (like PLM arrondissements in `fact_population_municipale` and BPE in `dim_equipement_territoire`) without hitting server timeouts or limits:
+1. **API Pagination Support**: The query endpoint (`/api/data/query`) enforces a hard limit of 10,000 rows per request. `OdaceClient` implements automatic pagination by checking `has_more` and looping with `offset` increments to safely compile large tables (such as the 34,998 communes/arrondissements) into a single DataFrame.
+2. **Standard Export with Local Filtering (BPE)**: To bypass BPE table complexity (>2.78M rows in `dim_equipement_territoire`), the pipeline streams the pre-compiled Parquet export file using standard caching. The ingestion cleaner then filters the dataset locally for ODIS-relevant equipment types (`D502`, `D703`, `D704`, `D710`), reducing processing down to 18,401 rows while mapping `capacite_hebergement` to `CAPACITE` for the downstream build.
+3. **PLM Consolidation Alignment**: With arrondissement populations fully populated in the cleaned population dataset, `build.py` automatically uses population-weighted averages to compute indicators for Paris, Lyon, and Marseille (removing the simple average fallbacks).
+
+
 

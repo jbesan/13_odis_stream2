@@ -22,136 +22,144 @@ class OdaceClient:
             "Content-Type": "application/json"
         }
 
-    def _get_preview(self, table_name: str, limit: int = 50000, ttl_seconds: int = 7 * 24 * 60 * 60, sort_by: str = None) -> Optional[Dict[str, Any]]:
-        """Fetches table data from Odace /api/data/query with robust SQL pagination."""
-        cache_file = CACHE_DIR / f"odace_{table_name}.json"
+    def _fetch_table_export(self, table_name: str, ttl_seconds: int = 30 * 24 * 60 * 60) -> pd.DataFrame:
+        """Downloads table data via the new export endpoint and reads the Parquet file."""
+        cache_file = CACHE_DIR / f"odace_{table_name}.parquet"
         
         # Check cache
         if cache_file.exists():
-            config_ttl_seconds = ttl_seconds
-            try:
-                from pipeline.common import load_config, CONFIG_FILE
-                config = load_config(CONFIG_FILE)
-                odace_cfg = config.get('local_files', {}).get('odace', {})
-                if odace_cfg and 'ttl_days' in odace_cfg:
-                    config_ttl_seconds = odace_cfg['ttl_days'] * 24 * 60 * 60
-            except:
-                pass
-            
-            effective_ttl = min(ttl_seconds, config_ttl_seconds) if ttl_seconds != 7 * 24 * 60 * 60 else config_ttl_seconds
-            
             file_age = time.time() - cache_file.stat().st_mtime
-            if file_age < effective_ttl:
+            if file_age < ttl_seconds:
                 try:
-                    logging.info(f"OdaceClient: Loading {table_name} from cache (age: {file_age/3600:.1f}h, TTL: {effective_ttl/(24*3600):.1f} days)")
-                    with open(cache_file, "r") as f:
-                        return json.load(f)
+                    logging.info(f"OdaceClient: Loading {table_name} from Parquet cache (age: {file_age/3600:.1f}h, TTL: {ttl_seconds/(24*3600):.1f} days)")
+                    return pd.read_parquet(cache_file, engine='fastparquet')
                 except Exception as e:
-                    logging.warning(f"OdaceClient: Failed to read cache for {table_name}: {e}")
-
-        # Implementation of chunked fetching using SQL OFFSET/LIMIT
-        url = f"{self.api_url}/api/data/query"
-        all_data = []
-        chunk_size = 50000
-        offset = 0
-        
-        try:
-            logging.info(f"OdaceClient: Starting chunked fetch for silver_{table_name} via SQL...")
-            order_clause = f" ORDER BY {sort_by}" if sort_by else ""
-            
-            while True:
-                fetch_limit = min(chunk_size, limit - len(all_data)) if limit else chunk_size
-                sql = f"SELECT * FROM silver_{table_name}{order_clause} LIMIT {fetch_limit} OFFSET {offset}"
-                
-                payload = {
-                    "sql": sql,
-                    "limit": fetch_limit
-                }
-                
-                response = requests.post(url, headers=self.headers, json=payload, timeout=60)
-                response.raise_for_status()
-                chunk_resp = response.json()
-                
-                chunk_data = chunk_resp.get("data", [])
-                all_data.extend(chunk_data)
-                
-                logging.info(f"OdaceClient: Fetched {len(all_data)} rows...")
-                
-                if not chunk_data or len(chunk_data) < fetch_limit or (limit and len(all_data) >= limit):
-                    break
+                    logging.warning(f"OdaceClient: Failed to read Parquet cache for {table_name}: {e}")
                     
-                offset += chunk_size
-                time.sleep(0.5)
-
-            full_resp = {
-                "data": all_data,
-                "columns": chunk_resp.get("columns", []),
-                "total_rows": len(all_data)
-            }
+        # Download from export endpoint
+        url = f"{self.api_url}/api/data/export/{table_name}?format=parquet"
+        try:
+            logging.info(f"OdaceClient: Downloading {table_name} via export API...")
+            response = requests.get(url, headers=self.headers, stream=True, timeout=120)
+            response.raise_for_status()
             
-            # Save to cache
+            # Save directly to cache parquet file
             CACHE_DIR.mkdir(parents=True, exist_ok=True)
-            try:
-                with open(cache_file, "w") as f:
-                    json.dump(full_resp, f)
-                logging.info(f"OdaceClient: Cached {table_name} to {cache_file} ({len(all_data)} rows)")
-            except Exception as e:
-                logging.warning(f"OdaceClient: Failed to write cache for {table_name}: {e}")
-                
-            return full_resp
+            with open(cache_file, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=65536):
+                    f.write(chunk)
+            
+            logging.info(f"OdaceClient: Cached {table_name} to {cache_file}")
+            return pd.read_parquet(cache_file, engine='fastparquet')
             
         except Exception as e:
-            error_msg = f"Failed to fetch {table_name} via query: {str(e)}"
+            error_msg = f"Failed to export {table_name} from Odace: {str(e)}"
             logging.error(error_msg)
             
             # Fallback to expired cache if available
             if cache_file.exists():
-                logging.warning(f"OdaceClient: API failed for silver_{table_name}, falling back to existing cache ({cache_file.name})")
+                logging.warning(f"OdaceClient: API failed for {table_name}, falling back to expired Parquet cache ({cache_file.name})")
                 try:
-                    with open(cache_file, "r") as f:
-                        return json.load(f)
+                    return pd.read_parquet(cache_file, engine='fastparquet')
                 except:
                     pass
-
+                    
             if self.logger:
                 self.logger.log_source(f"odace_{table_name}", "ERROR", error_msg)
-            return None
+            return pd.DataFrame()
 
     def fetch_dim_commune(self) -> pd.DataFrame:
         """Fetches dim_commune and returns as DataFrame (1 year TTL)."""
-        resp = self._get_preview("dim_commune", ttl_seconds=365 * 24 * 60 * 60, sort_by="commune_sk")
-        if not resp or not resp.get("data"):
-            return pd.DataFrame()
-        
-        df = pd.DataFrame(resp["data"])
-        return df
+        return self._fetch_table_export("dim_commune", ttl_seconds=365 * 24 * 60 * 60)
 
     def fetch_dim_gare(self) -> pd.DataFrame:
         """Fetches dim_gare and returns as DataFrame (1 year TTL)."""
-        resp = self._get_preview("dim_gare", ttl_seconds=365 * 24 * 60 * 60, sort_by="gare_sk")
-        if not resp or not resp.get("data"):
-            return pd.DataFrame()
-            
-        df = pd.DataFrame(resp["data"])
-        return df
+        return self._fetch_table_export("dim_gare", ttl_seconds=365 * 24 * 60 * 60)
 
     def fetch_fact_loyer_annonce(self, limit: int = 200000) -> pd.DataFrame:
         """Fetches fact_loyer_annonce and returns as DataFrame (1 month TTL)."""
-        resp = self._get_preview("fact_loyer_annonce", limit=limit, ttl_seconds=30 * 24 * 60 * 60, sort_by="commune_sk")
-        if not resp or not resp.get("data"):
-            return pd.DataFrame()
-            
-        df = pd.DataFrame(resp["data"])
-        return df
+        return self._fetch_table_export("fact_loyer_annonce", ttl_seconds=30 * 24 * 60 * 60)
 
     def fetch_ref_logement_profil(self) -> pd.DataFrame:
         """Fetches ref_logement_profil and returns as DataFrame."""
-        resp = self._get_preview("ref_logement_profil", sort_by="logement_profil_sk")
-        if not resp or not resp.get("data"):
-            return pd.DataFrame()
+        return self._fetch_table_export("ref_logement_profil", ttl_seconds=365 * 24 * 60 * 60)
+
+    def fetch_table(self, table_name: str, limit: int = 150000, ttl_days: int = 30, sort_by: str = None) -> pd.DataFrame:
+        """Generic fetch for any silver table from Odace API."""
+        return self._fetch_table_export(table_name, ttl_seconds=ttl_days * 24 * 60 * 60)
+
+    def execute_query(self, sql: str, cache_name: str, ttl_seconds: int = 30 * 24 * 60 * 60) -> pd.DataFrame:
+        """Executes a custom SQL query via the Odace query API (with pagination) and caches the result."""
+        cache_file = CACHE_DIR / f"{cache_name}.parquet"
+        
+        # Check cache
+        if cache_file.exists():
+            file_age = time.time() - cache_file.stat().st_mtime
+            if file_age < ttl_seconds:
+                try:
+                    logging.info(f"OdaceClient: Loading query '{cache_name}' from Parquet cache (age: {file_age/3600:.1f}h, TTL: {ttl_seconds/(24*3600):.1f} days)")
+                    return pd.read_parquet(cache_file, engine='fastparquet')
+                except Exception as e:
+                    logging.warning(f"OdaceClient: Failed to read Parquet cache for query '{cache_name}': {e}")
+                    
+        # Run query with pagination
+        url = f"{self.api_url}/api/data/query"
+        try:
+            logging.info(f"OdaceClient: Running custom query for '{cache_name}' via query API...")
+            all_data = []
+            columns = []
+            offset = 0
+            has_more = True
             
-        df = pd.DataFrame(resp["data"])
-        return df
+            while has_more:
+                payload = {
+                    "sql": sql,
+                    "limit": 10000,
+                    "offset": offset
+                }
+                response = requests.post(url, headers=self.headers, json=payload, timeout=60)
+                response.raise_for_status()
+                
+                result = response.json()
+                if not columns:
+                    columns = result.get("columns", [])
+                
+                page_data = result.get("data", [])
+                all_data.extend(page_data)
+                
+                has_more = result.get("has_more", False)
+                row_count = len(page_data)
+                offset += row_count
+                
+                logging.info(f"OdaceClient: Fetched page (offset={offset-row_count}, rows={row_count}, has_more={has_more})")
+                if row_count == 0:
+                    break
+            
+            df = pd.DataFrame(all_data, columns=columns)
+            
+            # Save to cache parquet file
+            CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            df.to_parquet(cache_file, engine='fastparquet')
+            
+            logging.info(f"OdaceClient: Cached query '{cache_name}' to {cache_file} (total rows: {len(df)})")
+            return df
+            
+        except Exception as e:
+            error_msg = f"Failed to execute query for '{cache_name}' on Odace: {str(e)}"
+            logging.error(error_msg)
+            
+            # Fallback to expired cache if available
+            if cache_file.exists():
+                logging.warning(f"OdaceClient: Query failed for '{cache_name}', falling back to expired Parquet cache ({cache_file.name})")
+                try:
+                    return pd.read_parquet(cache_file, engine='fastparquet')
+                except:
+                    pass
+                    
+            if self.logger:
+                self.logger.log_source(f"odace_query_{cache_name}", "ERROR", error_msg)
+            return pd.DataFrame()
+
 
 
 

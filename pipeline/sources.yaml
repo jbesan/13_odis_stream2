@@ -1,6 +1,8 @@
 sources:
   communes:
     datagouv_resource_id: "12f8cdc9-5844-4666-a4b5-6385d5415f67"
+    use_odace: true
+    odace_table: "ref_commune_geo"
     format: "geojson"
     local_name: "communes.geojson"
     ttl_days: 90
@@ -10,8 +12,17 @@ sources:
       - code
       - geometry
 
+  ref_epci:
+    datagouv_resource_id: "4f02ce39-2a91-4a8b-85cb-c6a0f912516b"
+    format: "json"
+    local_name: "ref_epci.json"
+    ttl_days: 90
+    description: "Référentiel des EPCI (Data.gouv)"
+
   population:
     datagouv_resource_id: "630e7917-02db-4838-8856-09235719551c"
+    use_odace: true
+    odace_table: "fact_population_municipale"
     format: "xlsx"
     local_name: "population.xlsx"
     sheet_name: 0
@@ -64,6 +75,8 @@ sources:
 
   associations:
     datagouv_resource_id: "cc7b8f0c-45ea-4444-8b55-55d30bc34ac5"
+    use_odace: true
+    odace_table: "dim_association"
     format: "parquet"
     local_name: "associations.parquet"
     ttl_days: 90
@@ -79,6 +92,8 @@ sources:
 
   logement_vacant:
     datagouv_resource_id: "2e0417b4-902d-4c60-90e7-bf5df148cb87"
+    use_odace: true
+    odace_table: "fact_logement_vacant"
     format: "csv"
     local_name: "logement_vacant.csv"
     encoding: "iso-8859-1"
@@ -105,6 +120,8 @@ sources:
 
   logement_social:
     url: "https://www.statistiques.developpement-durable.gouv.fr/media/7970/download?inline"
+    use_odace: true
+    odace_table: "fact_logement_social_rpls"
     format: "xlsx"
     local_name: "logement_social.xlsx"
     sheet_name: "COMMUNES"
@@ -122,6 +139,8 @@ sources:
 
   maternites:
     datagouv_resource_id: "a822f7ae-7c46-42c0-86e1-ad7d381c1ad2"
+    use_odace: true
+    odace_table: "dim_maternite"
     format: "json"
     local_name: "maternites_drees.json"
     ttl_days: 365
@@ -142,18 +161,6 @@ sources:
       - Métier
       - xmet
 
-  communes_bassins_emploi:
-    url: "https://statistiques.pole-emploi.org/bmo/Handlers/HTFile.ashx?MEDIAID=156688&SITEKEY=620c8132-d522-44fa-8efa-27a62c26702c"
-    format: "xlsx"
-    local_name: "communes_bassins_emploi_2021.xlsx"
-    ttl_days: 365
-    description: "Référentiel Communes -> Bassins d'Emploi 2021"
-    used_columns:
-      - Code Insee
-      - Libellé commune
-      - BE21
-      - LIBBE21
-
   nomenclature_waldec:
     datagouv_resource_id: "d65d5cae-399f-4150-804f-493026645fd5"
     format: "json"
@@ -173,22 +180,21 @@ sources:
 
   caf:
     datagouv_resource_id: "6d3b1cf8-cbef-4f30-96c3-0b63a2b0502c"
+    use_odace: true
+    odace_table: "fact_couverture_petite_enfance"
     format: "json"
     local_name: "caf_taux_couverture.json"
     ttl_days: 180
     description: "Taux de couverture petite enfance (CAF)"
     used_columns:
-      - codgeo
-      - insee
       - numcom
       - annee
-      - taux_accueil_total
       - txcouv_com
 
   education_effectifs:
-    datagouv_resource_id: "b4642552-6777-4265-a263-f190621ec40f"
-    format: "parquet"
-    local_name: "education_effectifs.parquet"
+    url: "https://data.education.gouv.fr/explore/dataset/fr-en-ecoles-effectifs-nb_classes/download?format=csv&timezone=Europe/Berlin&use_labels_for_header=false"
+    format: "csv"
+    local_name: "education_effectifs.csv"
     ttl_days: 365
     description: "Effectifs d'élèves par niveau"
     used_columns:
@@ -199,6 +205,8 @@ sources:
 
   education_annuaire:
     datagouv_resource_id: "9af76efc-51a6-4659-87ba-82c02652613a"
+    use_odace: true
+    odace_table: "dim_etablissement_scolaire"
     format: "parquet"
     local_name: "education_annuaire.parquet"
     ttl_days: 365
@@ -247,7 +255,9 @@ sources:
       - label
 
   finess_national:
-    url: "file:///Users/jacques/dev/13_odis_stream2/csv/annuaire_sante_finess.parquet"
+    url: "file:///Users/jacques/dev/13_odis_stream2/pipeline/local/annuaire_sante_finess.parquet"
+    use_odace: true
+    odace_table: "dim_etablissement_sante"
     format: "parquet"
     local_name: "finess_national.parquet"
     ttl_days: 365
@@ -275,6 +285,8 @@ sources:
 
   bpe:
     url: "https://www.insee.fr/fr/statistiques/fichier/8217525/BPE24.parquet"
+    use_odace: true
+    odace_table: "dim_equipement_territoire"
     format: "parquet"
     local_name: "BPE24.parquet"
     ttl_days: 365
@@ -290,6 +302,8 @@ sources:
 
   population_active:
     datagouv_resource_id: "f43b668d-251e-472a-9385-3d006d1ca6b8"
+    use_odace: false
+    odace_table: "fact_population_active"
     format: "zip"
     archive_file: "DS_RP_EMPLOI_LR_COMP_2022_data.csv"
     local_name: "population_active.zip"
@@ -344,6 +358,8 @@ sources:
 
   population_details:
     datagouv_resource_id: "7e3937bb-e815-4e58-92d4-d7ef478abcc0"
+    use_odace: false
+    odace_table: "fact_demographie"
     format: "zip"
     archive_file: "DS_RP_POPULATION_PRINC_2022_data.csv"
     local_name: "population_details.zip"
@@ -380,6 +396,8 @@ sources:
 
   mob_transports_pub:
     url: "https://object.files.data.gouv.fr/hydra-parquet/hydra-parquet/501ac60d-246d-45bf-8dcf-ab43e1b1a736.parquet"
+    use_odace: false
+    odace_table: "fact_transport_commun"
     format: "parquet"
     local_name: "mob_transports_pub.parquet"
     ttl_days: 180
@@ -391,6 +409,8 @@ sources:
 
   logement_social_delay:
     url: "file://pipeline/local/donnees_ush_stats_1_demande_attribution.xlsx"
+    use_odace: true
+    odace_table: "fact_delai_attribution_logement"
     format: "xlsx"
     local_name: "logement_social_delay_ush.xlsx"
     sheet_name: "Carte 1"
@@ -403,6 +423,8 @@ sources:
 
   sante_apl:
     url: "https://data.drees.solidarites-sante.gouv.fr/api/datasets/1.0/530_l-accessibilite-potentielle-localisee-apl/attachments/indicateur_d_accessibilite_potentielle_localisee_apl_aux_medecins_generalistes_xlsx/"
+    use_odace: true
+    odace_table: "fact_apl_medecin"
     format: "xlsx"
     local_name: "sante_apl_drees.xlsx"
     sheet_name: "APL 2023"
@@ -415,6 +437,8 @@ sources:
 
   mob_durable_share:
     datagouv_resource_id: "f624e1db-8f22-4a96-9f5a-9f9ee2aae53e"
+    use_odace: true
+    odace_table: "fact_mobilite_durable"
     format: "csv"
     local_name: "mob_durable_share_ecolab.csv"
     ttl_days: 365
@@ -427,6 +451,8 @@ sources:
 
   ter_insecurite:
     datagouv_resource_id: "604d71b8-337d-4869-9226-49e01bae87df"
+    use_odace: true
+    odace_table: "fact_insecurite_commune"
     format: "parquet"
     local_name: "ter_insecurite_ssmsi.parquet"
     ttl_days: 180
@@ -468,6 +494,8 @@ local_files:
 
   jaccueille:
     url: "file:///Users/jacques/dev/13_odis_stream2/pipeline/local/odis_accueillants_jaccueil_code_postal_clean_Mars2026.csv"
+    use_odace: false
+    odace_table: "dim_accueillant"
     format: "csv"
     local_name: "odis_accueillants_jaccueil_code_postal_clean_Mars2026.csv"
     ttl_days: 30
