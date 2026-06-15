@@ -2,8 +2,30 @@ import sys
 import os
 import pytest
 
-# Disable Logfire for all tests
-os.environ["LOGFIRE_TOKEN"] = ""
+# Mock Logfire to disable it completely for all tests
+from types import ModuleType
+
+class MockLogfireModule(ModuleType):
+    def instrument(self, *args, **kwargs):
+        if len(args) == 1 and callable(args[0]):
+            return args[0]
+        def decorator(func):
+            return func
+        return decorator
+
+    def span(self, *args, **kwargs):
+        class MockSpan:
+            def __enter__(self): return self
+            def __exit__(self, *a): pass
+        return MockSpan()
+
+    def __getattr__(self, name):
+        if name.startswith('__'):
+            raise AttributeError(name)
+        def noop(*args, **kwargs): pass
+        return noop
+
+sys.modules['logfire'] = MockLogfireModule('logfire')
 # Add app directory to sys.path to support app-rooted imports during tests
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../app')))
 
