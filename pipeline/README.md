@@ -1,169 +1,83 @@
-# ODIS Data Ingestion & Build Pipeline (Pipeline v2)
+# ODIS Data Ingestion & Build Pipeline (Pipeline v3)
 
-This directory contains the **offline ETL (Extract, Transform, Load) pipeline** for the ODIS application. Its purpose is to fetch, clean, validate, and aggregate static and live open datasets into optimized Parquet stores that the Streamlit application loads instantly.
+This directory contains the **offline ETL (Extract, Transform, Load) pipeline** for ODIS. It retrieves, sanitizes, and consolidates static and live open datasets into optimized Parquet stores loaded by the Streamlit application.
 
-The pipeline implements an advanced, resilient data architecture designed for performance, high availability, and robustness against upstream changes.
+Pipeline v3 migrates ingestion to the new **Odace Silver API** (`https://odace.services.d4g.fr`) while keeping robust shadow-staging and legacy Open Data fallbacks for maximum resilience.
 
 ---
 
 ## 🚀 Quick Start
 
-### Prerequisites
-- Python 3.10+
-- A virtual environment set up and active
+### 1. Setup Environment
+Configure the Odace credentials in `pipeline/.env`:
+```env
+ODACE_API_URL=https://odace.services.d4g.fr
+ODACE_API_KEY=sk_live_...
+```
 
-### Installation
-1. Activate your virtual environment:
-   ```bash
-   source .venv/bin/activate
-   ```
-2. Install pipeline dependencies:
-   ```bash
-   pip install -r pipeline/requirements.txt
-   ```
-3. Configure environment variables in `pipeline/.env`:
-   ```env
-   ODACE_API_URL=https://odace.services.d4g.fr
-   ODACE_API_KEY=sk_live_...
-   ```
-
-### Usage
-Run the pipeline using the `etl.py` script from the project root:
+### 2. Execution
+Run steps from the project root:
 ```bash
 # Run the full pipeline (Ingest + Build + Prescoring + Deploy)
 python -m pipeline.etl --step all
 
-# Run only the Ingest step (Fetch & Clean under Shadow Staging)
+# Run specific steps (ingest, build, prescoring, deploy)
 python -m pipeline.etl --step ingest
-
-# Run only the Build step (Aggregate & Export)
-python -m pipeline.etl --step build
-
-# Run only the Prescoring step (Ratios & Percentile Scaling)
-python -m pipeline.etl --step prescoring
-
-# Run only the Deploy step (Copy to app data directory)
-python -m pipeline.etl --step deploy
 ```
-
-#### Optional Ingestion Flags
-- `--skip-live-jobs`: Skip fetching live job offers from the France Travail API.
-- `--skip-inclusion-jobs`: Skip fetching job openings from *Les emplois de l'inclusion* API.
 
 ---
 
-## 📐 Pipeline v2 Architecture & Resiliency Invariants
-
-Pipeline v2 introduces robust mechanisms to prevent bad raw data from corrupting active application caches.
+## 📐 Pipeline v3 Architecture
 
 ```mermaid
 graph TD
-    A[sources.yaml Config] -->|Resource ID / TTL| B[fetch_source ingest.py]
-    B -->|Metadata API Call| C{Has Remote Changed?}
-    C -->|No| D[Touch Local Cache & Skip Download]
-    C -->|Yes| E[Download as .staging]
-    E -->|run_clean_step_safely| F[Execute clean_* Ingestion]
-    F -->|used_columns & null-rates Check| G{Data Contract Valid?}
-    G -->|No - Error| H[Soft Fallback: Alert Console & Revert to Cache]
-    G -->|Yes| I[Commit: Atomic Swap to Live Cache]
+    A[sources.yaml Config] -->|use_odace toggle| B[ingest.py]
+    B -->|API/Export| C{Odace Available?}
+    C -->|Yes| D[Fetch Silver Data]
+    C -->|No / Error| E[Fallback: Legacy Open Data / Local Cache]
+    D & E -->|run_clean_step_safely| F[Verify Data Contract]
+    F -->|Passed| G[Atomic Swap to Live Cache]
+    F -->|Failed| H[Rollback to Last Good Cache]
 ```
 
-### 1. Config-Driven Caching & TTL Policies
-Caching is governed declaratively in [sources.yaml](file:///Users/jacques/dev/13_odis_stream2/pipeline/sources.yaml) under the `ttl_days` key for each source. At launch, the pipeline compares the file's last modified timestamp (`st_mtime`) against this TTL.
-- **Cache Expiration Checklist**: The pipeline prints a clear warning in the console at startup indicating which non-datagouv datasets have expired TTLs, guiding operators to manual updates if necessary.
+### 1. Shadow Staging & Atomic Swaps
+All ingestion tasks run in isolated staging buffers (`staging_*`) wrapping cleaners in `run_clean_step_safely`. If a cleaner fails or verification crashes, the pipeline rolls back and restores active backups (`*.active_bak`), protecting running app processes.
 
-### 2. Lightweight Update Checks (data.gouv.fr API)
-To conserve bandwidth and speed up runs, the pipeline automatically extracts the `datagouv_resource_id` from sources. Before downloading:
-- It queries the stable `data.gouv.fr` API (`/api/1/datasets/r/{resource_id}`) for the `Last-Modified` header.
-- If the remote modification date is older than or equal to the local cache's modification date, the pipeline **skips the download** and touches the local cache to reset its TTL countdown.
-
-### 3. Blue-Green "Shadow Staging" Ingestion
-Ingestion processes run entirely in isolated **staging buffers** (`staging_*`) to protect active data:
-- Raw downloads are saved as `staging_<local_name>`.
-- Any cleaning scripts wrap their executions in `run_clean_step_safely` (defined in [ingest.py](file:///Users/jacques/dev/13_odis_stream2/pipeline/ingest.py)).
-- **Safety Backups**: Before the cleaning script executes, all existing active raw and clean Parquet files are moved to `<filename>.active_bak` backups.
-- **Commit Phase**: If the cleaning script runs successfully and validation passes, staging files are atomically swapped into place (`atomic_swap`) and backups are deleted.
-- **Soft Fallback / Rollback**: If the clean function crashes or validation fails, active files are restored from `.active_bak`, staging files are purged, and the system reverts smoothly to the last known good cache, warning the operator.
-
-### 4. Declarative Data Contract Validation
-The validation engine ensures incoming files conform to strict schemas prior to committing them:
-- **Non-Empty Check**: Verifies that the ingested/cleaned DataFrames are not `None` or empty.
-- **Schema Conformity**: Assures that all fields declared under the `used_columns` configuration key in [sources.yaml](file:///Users/jacques/dev/13_odis_stream2/pipeline/sources.yaml) are present in the final dataset (supporting standard index and multi-index name matching).
-- **Null-Rate Guardrails**: Checks critical geographic identifier columns (e.g. `codgeo`, `INSEE_COM`, `Code commune INSEE`, etc.) to ensure null records do not exceed $5\%$. If they exceed this, validation fails.
+### 2. Declarative Schema Verification
+Each dataset specifies `used_columns` in `sources.yaml`. The validation engine checks:
+*   DataFrame non-emptiness.
+*   Required columns and indices availability.
+*   Geographical identifiers null rates (must be $< 5\%$).
 
 ---
 
-## 🔄 Core Ingestion Flows & Datasets
+## 🔄 Odace Integration & Ingestion Flows
 
-### A. Static & Semi-Static Datasets
-- **Communes Base (`communes.geojson`)**: Administrative boundaries projected to Lambert-93 (`EPSG:2154`) for spatial indexing.
-- **Demographics & Socioeconomics**: Demographics (`population`), age structures (`population_details`), active employment/unemployment counts (`population_active`), housing vacancy (`lovac` - LOVAC), social housing counts (`rpls` - RPLS), over-occupancy metrics (`housing_occupation`), and child-care coverage (`caf`).
-- **Education (`education_annuaire` / `education_effectifs`)**: School geolocations, student counts, and school size risk indicators.
-- **Formations (`formations_annuaire` / `formations_referentiel`)**: Lists UAI educational entities mapped to `codgeo` using a clean codes postaux index (`codes_postaux`).
+### 1. Odace Silver Ingestion (`use_odace: true`)
+The pipeline integrates 14 primary datasets directly from the Odace platform. To support large datasets and complex schemas without server timeouts:
+*   **Paginated Query API (`/api/data/query`)**: `OdaceClient` auto-paginates queries by looping over `offset` and `has_more` to safely pull tables exceeding the 10,000-row API limit (e.g. `fact_population_municipale` at 34,998 rows).
+*   **Parquet Export Streaming (`/api/data/export`)**: Heavy tables like BPE (`dim_equipement_territoire` >2.78M rows) and RNA (`dim_association`) stream pre-compiled Parquet export files directly.
+*   **BPE Capacity Optimization**: BPE parquet is filtered locally in Python for ODIS-relevant codes (`D502`, `D703`, `D704`, `D710`), reducing rows to ~18k, and maps `capacite_hebergement` to `CAPACITE`.
+*   **PLM Population Alignment**: Arrondissement populations (Paris, Lyon, Marseille) are fully populated in the cleaned population dataset. The build pipeline uses standard population-weighted average consolidation (removing simple mean fallbacks).
 
-### B. Special API & Remote Integrations
-1. **BigQuery RNA RAG Ingestion (`fetch_rna_rag_stats`)**:
-   - Queries semantic inclusion-relevant association counts from BigQuery using vector similarity/cosine distance matching on embedding vectors (`ML.DISTANCE` query).
-   - Segregates counts by thematic queries (`Bail solidaire et Intermediation Locative (IML)` and `hébergement citoyen chez l'habitant`).
-   - Uses a dedicated **1-year cache TTL** for RNA data, checking age local-first.
-2. **Les emplois de l'inclusion API (`clean_inclusion_jobs`)**:
-   - Fetches and processes granular employment opportunities using token authentication (`EMPLOIS_INCLUSION_TOKEN` with login fallbacks in `.env`).
-3. **France Travail Live Jobs API (`clean_live_jobs`)**:
-   - Connects live to France Travail APIs to retrieve real-time job openings and computes territorial stress metrics.
-4. **Odace Equipment & Gares API (`clean_odace_gares` / `clean_odace_rent`)**:
-   - Interfaces with Odace APIs to fetch railway/transport stats and historical rental indices.
-   - Implements advanced joins on `commune_sk` with normalized commune labels as a secondary fallback.
-5. **Odace Silver Ingestion Datasets (Dual-Path Ingestion & Fallback)**:
-   - **Active Datasets**: Dynamically controlled via `use_odace: true` in [sources.yaml](file:///Users/jacques/dev/13_odis_stream2/pipeline/sources.yaml) for a major portion of the pipeline, including: `communes`, `population`, `associations`, `logement_vacant`, `logement_social`, `maternites`, `caf`, `education_annuaire`, `finess_national`, `bpe`, `logement_social_delay`, `sante_apl`, `mob_durable_share`, and `ter_insecurite`.
-   - **Ingestion Pathways**:
-     - *Paginated Query API*: `OdaceClient` auto-paginates queries to `/api/data/query` using loops on `offset` and `has_more` to bypass the 10,000-row limit (crucial for compiling the complete 34,998 rows of the updated `fact_population_municipale` which now includes both communes and arrondissements).
-     - *Export Parquet Streaming*: Large tables like BPE (`dim_equipement_territoire`) and RNA (`dim_association`) stream pre-compiled Parquet export files. This avoids database timeout errors (500) on the server.
-   - **Specific Optimizations**:
-     - *BPE Local Filtering*: To handle BPE's 2.78M rows, the cleaner streams the parquet export file and filters locally for ODIS-relevant equipment codes (`D502`, `D703`, `D704`, `D710`), reducing the dataset to 18,401 rows while mapping `capacite_hebergement` to `CAPACITE` correctly.
-     - *PLM Consolidation*: With child arrondissement populations fully populated in the cleaned `fact_population_municipale` export, `build.py` automatically uses population-weighted averages to compute parent metrics (removing simple average fallbacks).
-   - **Resiliency**: On network failure or API errors, the cleaners catch the exception and fall back to the legacy open data files or cached templates, ensuring pipeline runs are never blocked.
+### 2. Live & Remote APIs
+*   **France Travail Live Jobs**: Fetches real-time jobs and computes territorial stress metrics.
+*   **Les emplois de l'inclusion**: Fetches SIAE jobs using token authentication.
+*   **BigQuery RNA RAG Semantic Ingestion**: Queries vector-similarity association counts from BigQuery using cosine distance matching on inclusion embeddings.
 
 ---
 
-## 💾 Decoupled Data & "WKB-until-Render" Optimization
-
-To prevent Out-Of-Memory (OOM) situations on low-resource container deployments (e.g. GCP Cloud Run), the pipeline implements a decoupled storage model:
-
-1. **Numeric vs Spatial Data Split**:
-   - **`odis_communes.parquet`** holds the metadata and scores. It does *not* contain heavy GeoPandas geometries.
-   - All spatial boundaries are pre-projected to Lambert-93 internally, but saved strictly as **WKB (Well-Known Binary) bytes** under the `polygon` column.
-2. **Shapely Serialization Bypass**:
-   - Saving geometries as raw WKB bytes avoids complex GeoParquet serializations and prevents coordinate CRS discrepancies at the file system layer.
-3. **Just-in-Time (JIT) Hydration**:
-   - Geometries remain in WKB bytes throughout the ingestion and scoring flows.
-   - Deserialization into Shapely polygons occurs **only at the moment of drawing maps** in `maps.py` using `gpd.GeoSeries.from_wkb()`, optimizing application memory and starting speed.
+## 💾 Decoupled Data & Spatial Optimization
+To prevent Out-Of-Memory (OOM) failures in cloud environments, the pipeline implements a **WKB-until-render** architecture:
+*   **`odis_communes.parquet`** contains metadata and scoring ranks. Polygons are stored strictly as **WKB (Well-Known Binary)** bytes.
+*   Deserialization into Shapely/GeoPandas geometries occurs **Just-in-Time** (JIT) only when drawing maps in `maps.py` using `gpd.GeoSeries.from_wkb()`, minimizing start-up memory usage.
 
 ---
 
-## 📦 Generated Outputs
-
-The pipeline produces the following Parquet files in `pipeline/cache/output/` and deploys them to `data/`:
-
-| File | Description | Primary Key / Key Columns |
-| :--- | :--- | :--- |
-| **`odis_communes.parquet`** | Main scoring dataset at Commune level (includes normalized ranks & criteria scores). | `codgeo` (primary), `population`, `pop_active`, `loyer_app_m2`, `polygon` (WKB) |
-| **`odis_bassins_de_vie.parquet`** | Aggregated dataset at Bassin de Vie level with dissolved geometries (holes removed). | `bassin_de_vie` (primary), `population_bv`, `pop_chomage_ratio`, `polygon` (WKB) |
-| **`odis_associations_agg.parquet`** | Aggregated social inclusion association counts from RNA database. | `codgeo`, `id_waldec` (thematic codes) |
-| **`odis_pois.parquet`** | Points of Interest for visual mapping (CCAS, schools, health facilities). | `id`, `type`, `lat`, `lon` |
-| **`odis_referentiels.parquet`** | Unified lookups for dropdown lists and labels (removes duplicate names). | `type`, `code`, `label` |
-| **`odis_formations_agg.parquet`** | Aggregated education/training counts. | `codgeo`, `formation_code` |
-| **`odis_ccas.parquet`** | CCAS & SIAE contact points. | `codgeo`, `nom`, `telephone`, `courriel`, `site_web`, `adresse` |
-| **`odis_refugee_associations.parquet`** | Detailed contact lists for local integration partners. | `id`, `codgeo`, `name`, `description` |
-| **`odis_ft_jobs_agg.parquet`** | France Travail Live Job offers aggregated counts. | `commune` (INSEE code), `romeCode`, `total_postes` |
-| **`odis_inclusion_jobs.parquet`** | SIAE granular employment openings. | `codgeo`, `siae_siret`, `siae_name`, `postes` |
-
----
-
-## 🛠 File Structure & Roles
-
-- [etl.py](file:///Users/jacques/dev/13_odis_stream2/pipeline/etl.py): Orchestrates pipeline runs, implements interactive France Travail / Inclusion jobs confirmations, prints TTL expiration checklists, and copies outputs to `data/`.
-- [ingest.py](file:///Users/jacques/dev/13_odis_stream2/pipeline/ingest.py): Downloads all static and API sources under shadow staging, parses raw structures, and contains the `run_clean_step_safely` staging engine.
-- [build.py](file:///Users/jacques/dev/13_odis_stream2/pipeline/build.py): Performs PLM parent-commune consolidation, joins all cleaned datasets, dissolves geometries for Bassins de Vie (removing enclaves/holes), and aggregates detail tables.
-- [prescoring.py](file:///Users/jacques/dev/13_odis_stream2/pipeline/prescoring.py): Calculates final indicators and performs uniform percentile ranking (`.rank(pct=True)`) to scale metrics evenly.
-- [common.py](file:///Users/jacques/dev/13_odis_stream2/pipeline/common.py): Houses central validation utilities (`validate_dataset_contract`), `sources.yaml` parsing, cache status logger, and atomic file swap engines.
-- [sources.yaml](file:///Users/jacques/dev/13_odis_stream2/pipeline/sources.yaml): Configuration catalog mapping URL, Resource ID, schema contracts (`used_columns`), and custom TTL rules.
+## 🛠 File Roles
+*   [etl.py](file:///Users/jacques/dev/13_odis_stream2/pipeline/etl.py): Main orchestrator for steps.
+*   [ingest.py](file:///Users/jacques/dev/13_odis_stream2/pipeline/ingest.py): Downloads, page-loops, and cleans API/raw sources in staging.
+*   [build.py](file:///Users/jacques/dev/13_odis_stream2/pipeline/build.py): Integrates clean tables, resolves PLM hierarchies, and dissolves spatial enclaves.
+*   [prescoring.py](file:///Users/jacques/dev/13_odis_stream2/pipeline/prescoring.py): Scales final metrics using quantile rank scaling.
+*   [common.py](file:///Users/jacques/dev/13_odis_stream2/pipeline/common.py): Caching, validation rules, and atomic file swap engines.
+*   [sources.yaml](file:///Users/jacques/dev/13_odis_stream2/pipeline/sources.yaml): Configuration catalog for URLs, resource IDs, and schemas.
