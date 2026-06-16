@@ -6,18 +6,21 @@ from typing import Literal, Dict, Any, List, Optional
 from dataclasses import dataclass
 
 from pydantic_graph import End
-from pydantic_graph.beta import GraphBuilder, Graph, StepContext
+from pydantic_graph.beta import GraphBuilder, Graph, StepContext, TypeExpression
 from pydantic_graph.beta.join import reduce_list_append
 
 from pydantic_ai import ModelSettings
 from pydantic_ai.usage import UsageLimits
 
 from agents.state import ODISDeps, GraphState, UsageStats, compute_criteria_hash, CommuneResult, SearchResultsData, ExpertList
-from agents.router import router_agent, RoutingResult
+from agents.ts_agent import ts_agent, SwarmPlan
 from agents.utils import sanitize_llm_markdown
-from agents.scout import scout_agent
-from agents.web import web_agent
 from agents.job_hunter import job_hunter_agent
+from agents.housing_expert import housing_expert_agent
+from agents.mobility_expert import mobility_expert_agent
+from agents.healthcare_expert import healthcare_expert_agent
+from agents.education_expert import education_expert_agent
+from agents.social_integration_expert import social_integration_expert_agent
 from agents.synthesizer import synthesizer_agent
 from utils.common import normalize_text
 from utils.logger import log_agent_trace
@@ -72,51 +75,122 @@ class AgentArtifact:
     result: str # Markdown formatted string with the result
     usage: UsageStats
 
-@dataclass
-class DirectSynthesis:
-    """DTO for cases where no experts are needed and we go straight to synthesis."""
-    pass
-
 # --- Graph Nodes ---
 @logfire.instrument("Node: triage")
-async def triage_step(ctx: StepContext[GraphState, ODISDeps, None]) -> ExpertList | DirectSynthesis:
-    """Decides which experts to trigger based on execution mode or Router LLM."""
-    mode = ctx.state.execution_mode
-    if mode == "full_analysis":
-        return ExpertList(experts=["scout", "web", "job_hunter"])
-    
-    # specific_ask mode requires routing LLM
+async def triage_step(ctx: StepContext[GraphState, ODISDeps, None]) -> ExpertList | End[str]:
+    """Runs the TS_AGENT (planner) to identify the tasks and active Skill Cards, or outputs direct answers."""
     user_msg = ctx.state.messages[-1]["content"] if ctx.state.messages else ""
-    mod_id = get_model("router")
-    model = get_p_model("router", client=ctx.deps.client)
+    mod_id = get_model("ts_agent")
+    model = get_p_model("ts_agent", client=ctx.deps.client)
     
     try:
-        from pydantic_ai.result import RunResult
-        result: RunResult[RoutingResult] = await router_agent.run(
+        from pydantic_ai import AgentRunResult as RunResult
+        result: RunResult[SwarmPlan] = await ts_agent.run(
             user_msg, 
             deps=ctx.deps, 
             model=model,
-            model_settings=get_model_settings("router"),
-            usage_limits=UsageLimits(request_limit=10)
+            model_settings=get_model_settings("ts_agent"),
+            usage_limits=UsageLimits(request_limit=5)
         )
-        decision = result.output
-        log_agent_trace("router", mod_id, result)
+        plan = result.output
+        log_agent_trace("ts_agent", mod_id, result)
         
-        logger.info(f"🧠 [ROUTER] Direction: {decision.target_agent}")
-        if decision.focus_city:
-            ctx.state.focus_city = decision.focus_city
+        # Capture usage and merge it
+        usage = capture_usage(result, "ts_agent", mod_id)
+        ctx.state.usage.merge(usage)
         
-        if decision.target_agent == 'analysis':
-            return ExpertList(experts=["scout", "web", "job_hunter"])
-        elif decision.target_agent == 'synthesizer':
-            return DirectSynthesis()
-        else:
-            return ExpertList(experts=[decision.target_agent])
+        # 1. DIRECT ANSWER BYPASS (Bypassing Swarm & Synthesizer)
+        if plan.direct_answer:
+            logger.info(f"🧠 [TS_AGENT] Direct Answer generated: {plan.direct_answer[:100]}...")
+            
+            # Build odis_synthesis
+            new_odis_synthesis = []
+            if ctx.state.execution_mode == 'specific_ask' and ctx.state.messages:
+                last_user_msg = ctx.state.messages[-1]
+                if last_user_msg.get("role") == "user":
+                    new_odis_synthesis.append(last_user_msg)
+            new_odis_synthesis.append({"role": "assistant", "content": plan.direct_answer})
+            
+            # Apply back to the city result if possible
+            if ctx.state.search_results and ctx.state.focus_city:
+                city_res = ctx.state.search_results.get_by_code(ctx.state.focus_city.codgeo)
+                if city_res:
+                    if not city_res.odis_synthesis: city_res.odis_synthesis = []
+                    city_res.odis_synthesis.extend(new_odis_synthesis)
+            
+            return End(plan.direct_answer)
+        
+        # 2. POPULATE Swarm Tasks and Skill Cards
+        ctx.state.active_skills = []
+        ctx.state.expert_tasks = {}
+        ctx.state.expert_skill_instructions = {}
+        
+        from services.knowledge_store import KnowledgeStore
+        store = KnowledgeStore()
+        
+        experts_to_run = []
+        for task in plan.tasks:
+            experts_to_run.append(task.expert)
+            ctx.state.expert_tasks[task.expert] = task.task_description
+            ctx.state.active_skills.extend(task.skill_cards)
+            
+            # Load instructions for this expert's skill cards
+            skill_insts = []
+            for skill_id in task.skill_cards:
+                card = store.get_skill_card(skill_id)
+                if card and card.get("instructions"):
+                    skill_insts.append(f"--- Skill Card: {skill_id} ---\n{card.get('instructions')}")
+            
+            if skill_insts:
+                ctx.state.expert_skill_instructions[task.expert] = "\n\n".join(skill_insts)
+            else:
+                ctx.state.expert_skill_instructions[task.expert] = "Aucune consigne spécifique de Skill Card active."
+        
+        # Deduplicate active skills
+        ctx.state.active_skills = list(set(ctx.state.active_skills))
+        
+        logger.info(f"🧠 [TS_AGENT] Swarm Plan: experts={experts_to_run}, skills={ctx.state.active_skills}")
+        return ExpertList(experts=experts_to_run)
             
     except Exception as e:
-        logger.error(f"❌ [ROUTER] Failed: {e}")
-        # Graceful fallback: run all 3
-        return ExpertList(experts=["scout", "web", "job_hunter"])
+        logger.error(f"❌ [TS_AGENT] Planning failed: {e}", exc_info=True)
+        # Fallback list of experts
+        default_experts = ["housing_expert", "mobility_expert", "social_integration_expert"]
+        if ctx.state.search_criteria.nb_adultes > 0:
+            default_experts.append("job_hunter")
+        if ctx.state.search_criteria.nb_enfants > 0 or ctx.state.search_criteria.classe_enfants:
+            default_experts.append("education_expert")
+        if ctx.state.search_criteria.besoin_sante:
+            default_experts.append("healthcare_expert")
+            
+        fallback_skills = {
+            "housing_expert": ["basic_housing"],
+            "mobility_expert": ["basic_mobility"],
+            "healthcare_expert": ["basic_healthcare"],
+            "education_expert": ["basic_education"],
+            "social_integration_expert": ["basic_social"],
+            "job_hunter": ["basic_jobs"]
+        }
+        
+        ctx.state.expert_skill_instructions = {}
+        from services.knowledge_store import KnowledgeStore
+        store = KnowledgeStore()
+        
+        for exp in default_experts:
+            ctx.state.expert_tasks[exp] = "Analyse de terrain standard."
+            # Load default skill instructions
+            skill_insts = []
+            for skill_id in fallback_skills.get(exp, []):
+                card = store.get_skill_card(skill_id)
+                if card and card.get("instructions"):
+                    skill_insts.append(f"--- Skill Card: {skill_id} ---\n{card.get('instructions')}")
+            
+            if skill_insts:
+                ctx.state.expert_skill_instructions[exp] = "\n\n".join(skill_insts)
+            else:
+                ctx.state.expert_skill_instructions[exp] = "Aucune consigne spécifique de Skill Card active."
+            
+        return ExpertList(experts=default_experts)
 
 async def extract_domains(ctx: StepContext[GraphState, ODISDeps, ExpertList]) -> list[str]:
     """Helper to unwrap the DTO into a list of strings for mapping."""
@@ -124,7 +198,7 @@ async def extract_domains(ctx: StepContext[GraphState, ODISDeps, ExpertList]) ->
 
 @logfire.instrument("Expert Node: {ctx.inputs}")
 async def expert_worker_step(ctx: StepContext[GraphState, ODISDeps, str]) -> AgentArtifact:
-    """Parallel worker that handles cache bypass and delegates to the appropriate agent."""
+    """Parallel worker that delegates to the appropriate domain expert agent."""
     domain = ctx.inputs
     user_msg = ctx.state.messages[-1]["content"] if ctx.state.messages else ""
     focus = ctx.state.focus_city.name.lower().strip() if ctx.state.focus_city else "unknown"
@@ -145,9 +219,12 @@ async def expert_worker_step(ctx: StepContext[GraphState, ODISDeps, str]) -> Age
     model = get_p_model(domain, client=ctx.deps.client)
     
     agent_map = {
-        "scout": scout_agent,
-        "web": web_agent,
-        "job_hunter": job_hunter_agent
+        "job_hunter": job_hunter_agent,
+        "housing_expert": housing_expert_agent,
+        "mobility_expert": mobility_expert_agent,
+        "healthcare_expert": healthcare_expert_agent,
+        "education_expert": education_expert_agent,
+        "social_integration_expert": social_integration_expert_agent
     }
     agent = agent_map.get(domain)
     
@@ -165,7 +242,7 @@ async def expert_worker_step(ctx: StepContext[GraphState, ODISDeps, str]) -> Age
         log_agent_trace(domain, mod_id, result)
         logger.info(f"✅ [{domain.upper()}] Node finished for {focus}.")
         
-        artifact_str = f"### Recherches effectuees\n{result.output.searched}\n\n### Resultats\n{result.output.result}"
+        artifact_str = f"### Recherches effectuées\n{result.output.searched}\n\n### Resultats\n{result.output.result}"
         usage = capture_usage(result, domain, mod_id)
         return AgentArtifact(domain=domain, result=artifact_str, usage=usage)
     except Exception as e:
@@ -173,7 +250,7 @@ async def expert_worker_step(ctx: StepContext[GraphState, ODISDeps, str]) -> Age
         return AgentArtifact(domain=domain, result=f"Erreur d'analyse: {e}", usage=UsageStats())
 
 @logfire.instrument("Node: synthesizer")
-async def synthesizer_step(ctx: StepContext[GraphState, ODISDeps, list[AgentArtifact] | DirectSynthesis]) -> End[str]:
+async def synthesizer_step(ctx: StepContext[GraphState, ODISDeps, list[AgentArtifact]]) -> End[str]:
     """Merges artifacts into state and produces the final synthesis."""
     city_name = ctx.state.focus_city.name if ctx.state.focus_city else "Unknown"
     logger.info(f"🚀 [SYNTHESIZER] starting for {city_name}...")
@@ -186,6 +263,9 @@ async def synthesizer_step(ctx: StepContext[GraphState, ODISDeps, list[AgentArti
         if city_res:
             for artifact in input_data:
                 city_res.expert_analysis[artifact.domain] = artifact.result
+                # Accumulate experts token usage
+                if artifact.usage:
+                    ctx.state.usage.merge(artifact.usage)
     
     # 2. RUN SYNTHESIZER LLM
     input_msg = f"Synthèse demandée pour {city_name}."
@@ -206,7 +286,7 @@ async def synthesizer_step(ctx: StepContext[GraphState, ODISDeps, list[AgentArti
         
         # Merge Usage
         usage = capture_usage(result, "synthesizer", mod_id)
-        # TODO: Add global usage merging logic here if necessary
+        ctx.state.usage.merge(usage)
         
     except Exception as e:
         logger.error(f"❌ [SYNTHESIZER-FAILURE] Agent run failed: {e}", exc_info=True)
@@ -215,10 +295,8 @@ async def synthesizer_step(ctx: StepContext[GraphState, ODISDeps, list[AgentArti
     # BQ Logging
     try:
         user_input = ctx.state.messages[-1].get("content", "Analyse IA") if ctx.state.messages else "Analyse IA"
-        # We need state to be dict
         from dataclasses import asdict
         state_dict = asdict(ctx.state)
-        # ensure focus_city is dict for BQ serialization
         if ctx.state.focus_city:
              state_dict["focus_city"] = ctx.state.focus_city.model_dump()
         if ctx.state.search_criteria:
@@ -266,16 +344,15 @@ def create_odis_graph() -> Graph[GraphState, ODISDeps, None, str]:
     
     collect_experts = g.join(reduce_list_append, initial_factory=list)
     
-    # MapReduce Pipeline
+    # MapReduce Pipeline (Start -> Triage -> Map -> Parallel Experts -> Join -> Synthesizer -> End)
     g.add(g.edge_from(g.start_node).to(triage_node))
-    
-    # Conditional branching from triage
-    decision = g.decision() \
-        .branch(g.match(ExpertList).to(extract_domains_node)) \
-        .branch(g.match(DirectSynthesis).to(synthesizer_node))
-    
-    g.add(g.edge_from(triage_node).to(decision))
-    
+    g.add(
+        g.edge_from(triage_node).to(
+            g.decision()
+            .branch(g.match(TypeExpression[ExpertList]).to(extract_domains_node))
+            .branch(g.match(TypeExpression[End]).to(g.end_node))
+        )
+    )
     g.add_mapping_edge(extract_domains_node, expert_worker_node)
     g.add(g.edge_from(expert_worker_node).to(collect_experts))
     g.add(g.edge_from(collect_experts).to(synthesizer_node))

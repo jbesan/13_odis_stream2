@@ -15,15 +15,28 @@ class MockLogfireModule(ModuleType):
 
     def span(self, *args, **kwargs):
         class MockSpan:
-            def __enter__(self): return self
+            def __enter__(self): return None
             def __exit__(self, *a): pass
         return MockSpan()
 
     def __getattr__(self, name):
         if name.startswith('__'):
             raise AttributeError(name)
-        def noop(*args, **kwargs): pass
-        return noop
+        class MockAttr:
+            def __init__(self, *args, **kwargs):
+                pass
+            def __call__(self, *args, **kwargs):
+                return self
+            def __getattr__(self, attr):
+                if attr.startswith('__'):
+                    raise AttributeError(attr)
+                return self
+            def span(self, *args, **kwargs):
+                class MockSpan:
+                    def __enter__(self): return None
+                    def __exit__(self, *a): pass
+                return MockSpan()
+        return MockAttr
 
 sys.modules['logfire'] = MockLogfireModule('logfire')
 # Add app directory to sys.path to support app-rooted imports during tests

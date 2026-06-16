@@ -23,33 +23,34 @@ The legacy multi-turn `Interviewer` has been replaced by a standalone **one-shot
 For technical details on the graph orchestration, see [GRAPH_ARCHITECTURE.md](app/agents/GRAPH_ARCHITECTURE.md).
 
 ### 2.2 Orchestration Graph (`pydantic-graph`)
-The background analysis is orchestrated by a MapReduce pipeline built with `GraphBuilder`.
+The background analysis is orchestrated by a PM-driven MapReduce pipeline built with `GraphBuilder`.
 
 ```mermaid
 graph TD
-    Start((Start)) --> Triage[Triage Node]
-    Triage --> |ExpertList| Map[Extract Domains]
-    Triage --> |DirectSynthesis| Synthesizer[Synthesizer Node]
+    Start((Start)) --> Triage[1. Triage Node / TS_AGENT]
+    Triage --> |ExpertList| Map[2. Extract Domains Map]
+    Triage --> |End: Direct Answer| End((End))
     
-    subgraph MapReduce
-        Map --> Worker1[Expert: Scout]
-        Map --> Worker2[Expert: Web]
-        Map --> Worker3[Expert: Job Hunter]
+    subgraph MapReduce Swarm
+        Map --> Worker1[job_hunter]
+        Map --> Worker2[housing_expert]
+        Map --> Worker3[mobility_expert]
+        Map --> Worker4[healthcare_expert]
+        Map --> Worker5[education_expert]
+        Map --> Worker6[social_integration_expert]
         
-        Worker1 --> Join[Collect Experts Join]
-        Worker2 --> Join
-        Worker3 --> Join
+        Worker1 & Worker2 & Worker3 & Worker4 & Worker5 & Worker6 --> Join[3. Collect Experts Reduce]
     end
     
-    Join --> Synthesizer
-    Synthesizer --> End((End))
+    Join --> Synthesizer[4. Synthesizer Node]
+    Synthesizer --> End
 ```
 
 ### 2.3 Graph Nodes
-- **Triage**: Uses a Routing LLM (or static rules) to decide which experts to trigger. It returns either an `ExpertList` (for fan-out) or `DirectSynthesis` (for immediate response).
+- **Triage (Project Manager)**: Runs `ts_agent` (LLM) to plan the swarm. Resolves skill card instructions from SQLite in a single pass to save connections. Can yield `End(direct_answer)` immediately to bypass the swarm if context holds the answer.
 - **Map (Extract Domains)**: Fans out the `ExpertList` into parallel worker instances.
-- **Expert Worker**: Executes a specialized PydanticAI agent (`scout`, `web`, or `job_hunter`) for the focus city.
-- **Join (Collect Experts)**: Accumulates artifacts from all workers into a single list using `reduce_list_append`.
+- **Expert Workers**: Parallel nodes running the active domain experts (`job_hunter`, `housing_expert`, `mobility_expert`, `healthcare_expert`, `education_expert`, `social_integration_expert`) using state-injected skill instructions.
+- **Join (Collect Experts)**: Accumulates artifacts and merges cumulative usage statistics into `state.usage` via `.merge()`.
 - **Synthesizer**: Consumes the aggregated artifacts and generates the final markdown summary for the UI and PDF.
 
 ## 3. State & Persistence
@@ -67,11 +68,14 @@ Background tasks are managed via a dedicated store and fragment polling:
 2. **Worker (`utils.py`)**: Runs the `pydantic-graph` in a separate thread.
 3. **Synchronization**: Results are written back to the store, triggering a UI refresh via Streamlit fragments.
 
-## 5. Expert Agents
+## 5. Expert Swarm Agents
 
-- **Scout**: Uses Google Maps and local referentials to analyze territory amenities.
-- **WEB**: Uses Google Search Grounding to provide real-time socio-economic context.
-- **Job Hunter**: Queries France Travail and specialized job boards for real-time tension data.
+- **Job Hunter**: Queries France Travail and specialized job boards for job tension data.
+- **Housing Expert**: Analyzes rent indexes, J'Accueille hosts, and CCAS structures.
+- **Mobility Expert**: Measures stop densities and public transit solidarity prices.
+- **Healthcare Expert**: Checks PMI centers, hospitals, and local APL doctor access.
+- **Education Expert**: Evaluates nursery capacities and local schools listing.
+- **Social Integration Expert**: Identifies local refugee support associations and RNA entries.
 - **Scorer**: (Runs outside the graph) Provides a mathematical explanation of the ODIS weighted scores.
 
 ## 6. Observability (Logfire)

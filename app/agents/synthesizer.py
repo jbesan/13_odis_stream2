@@ -17,6 +17,14 @@ SYNTH_SYSTEM_PROMPT_ANALYSIS = """
 {DATA_CONTEXT}
 ```
 
+Tu trouveras dans ces données de contexte, sous la clé `"Analyses experts"`, les contributions détaillées des experts thématiques :
+- `housing_expert` (Logement, loyers, hébergement temporaire)
+- `mobility_expert` (Transports locaux, abonnements, trajets)
+- `healthcare_expert` (Besoins de santé, PMI, hôpitaux, médecins)
+- `education_expert` (Crèches, scolarité, inscription école)
+- `social_integration_expert` (Accompagnement social, CCAS, associations d'aide aux réfugiés)
+- `job_hunter` (Emplois correspondants, SIAE)
+
 # Instructions :
 1. Fais une synthèse structurée, argumentée et détaillée pour le Travailleur Social qui soit factuelle, actionnable et ultra-convaincante en FRANÇAIS.
     - Utilise les **DONNÉES CHIFFRÉES** (scores, points forts ODIS). Exprime les scores en pourcentage (80% plutôt que 0.8)
@@ -25,16 +33,16 @@ SYNTH_SYSTEM_PROMPT_ANALYSIS = """
     - Sois le plus factuel possible et cite toujours le nom des entités identifiées (associations, entreprises, lieux etc.)
     - Longueur synthèse: minimum 750 mots, idéal 1000 mots. Utilise des listes à puces ou tableaux dès que pertinents.
 2. Structure ta réponse au format Markdown avec les sections suivantes :
-    - ## 🏙️ Aperçu de `Ville analysée` : 3 à 5 phrases de description.
-    - ## ⚖️ Mini analyse comparative entre `Ville analysée` et `Ville actuelle` :
-        - Identifie et résume dans un tableau Markdown les **3 à 5 points chiffrés les plus déterminants** en faveur de `Ville analysée` vs `Ville actuelle` (ex: loyer plus bas, meilleures écoles, plus d'opportunités d'emploi spécifiques).
+    - ## 🏙️ Aperçu de {FOCUS_CITY} : 3 à 5 phrases de description.
+    - ## ⚖️ Mini analyse comparative entre {FOCUS_CITY} et {CURRENT_CITY_NAME} :
+        - Identifie et résume dans un tableau Markdown les **3 à 5 points chiffrés les plus déterminants** en faveur de {FOCUS_CITY} vs {CURRENT_CITY_NAME} (ex: loyer plus bas, meilleures écoles, plus d'opportunités d'emploi spécifiques).
     - ## 🧭 Synthèse thématique :
         - **Vie Quotidienne** : Synthèse (Logement, mobilité sur place, éducation, santé, affinités culturelles, sports, loisirs etc.)
         - **Inclusion** : Synthèse (associations, solidarité, insertion)
         - **Opportunités Emploi** : Synthèse (marché du travail, secteurs porteurs, emploi)
         - **Actualités** : Synthèse des actualités pertinentes des dernières années.
     - ## ✅ Forces & ⚠️ Vigilances : Tableau Markdown.
-    - ## 💡 Contact du CCAS de `Ville analysée`
+    - ## 💡 Contact du CCAS de {FOCUS_CITY}
     - ## ❓ Et ensuite ? : Propose d'analyser une autre ville du Top 5 ou d'approfondir un point sur la ville en cours.
 """
 
@@ -47,8 +55,16 @@ SYNTH_SYSTEM_PROMPT_SPECIFIC = """
 {DATA_CONTEXT}
 ```
 
+Tu trouveras dans ces données de contexte, sous la clé `"Analyses experts"`, les contributions détaillées des experts thématiques :
+- `housing_expert` (Logement, loyers, hébergement temporaire)
+- `mobility_expert` (Transports locaux, abonnements, trajets)
+- `healthcare_expert` (Besoins de santé, PMI, hôpitaux, médecins)
+- `education_expert` (Crèches, scolarité, inscription école)
+- `social_integration_expert` (Accompagnement social, CCAS, associations d'aide aux réfugiés)
+- `job_hunter` (Emplois correspondants, SIAE)
+
 # Instructions :
-- Réponds UNIQUEMENT et de manière détaillée à la question de l'utilisateur `Dernier message`
+- Réponds UNIQUEMENT et de manière détaillée à la question de l'utilisateur : "{LAST_MESSAGE}"
 - Sois factuel et précis et mentionne les codes & identifiants des éléments trouvés. Si pertinent, utilise un tableau Markdown.
 - N'invente rien, utilise uniquement les éléments des Experts. Mets en gras les éléments importants. Si les données des experts sont insuffisantes, mentionne-le clairement.
 """
