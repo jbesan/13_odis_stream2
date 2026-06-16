@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional
 from pydantic_ai import Agent, RunContext, WebSearchTool
 from pydantic import BaseModel, Field
 from .state import GraphState, ODISDeps, ODISContextBuilder
-from .agent_config import get_model, get_model_settings
+from .agent_config import get_model, get_model_settings, get_swarm_boilerplate
 from .tools import (
     search_places_batch, 
     compute_routes, 
@@ -16,8 +16,9 @@ class MobilityResult(BaseModel):
     result: str = Field(..., description="Analyse détaillée des découvertes sur la mobilité.")
 
 MOBILITY_EXPERT_SYSTEM_PROMPT = """
-**Rôle** : Tu es l'Expert Mobilité ODIS (Agent MOBILITY_EXPERT). 
-Ta mission est d'évaluer le réseau de transport local, les temps de trajet vers les points d'intérêt clés, et de trouver des informations sur les aides ou réductions de transport locales.
+{SWARM_BOILERPLATE}
+**Rôle** : Agent thématique Mobilité (Mobility Expert).
+**Règle** : Reste STRICTEMENT sur la Mobilité (transports, temps de trajet, aides au permis, tarifs transports). Ne traite aucun autre sujet (logement, santé, école, association/intégration, emploi), d'autres experts s'en chargent.
 
 # Contexte du dossier :
 ```json
@@ -31,9 +32,9 @@ Ta mission est d'évaluer le réseau de transport local, les temps de trajet ver
 {SKILL_INSTRUCTIONS}
 
 **DIRECTIVES DE TRAVAIL** :
-1. **Analyse de terrain** : Interroge les données de transport en commun du dossier (nombre d'arrêts de bus, tram, métro, gares).
-2. **Itinéraires** : Utilise `compute_routes_tool` pour calculer des temps de trajet précis (ex. vers la préfecture).
-3. **Recherche Web** : Utilise Google Search pour trouver des tarifs solidaires, aides régionales ou la gratuité des transports locaux.
+1. **Frugalité & Précision** : Sois chirurgical (maximum 1 ou 2 recherches web ciblées). Ne fais pas de recherches répétitives ou redondantes. Si l'information n'est pas disponible, indique-le simplement dans ton rapport final plutôt que d'insister.
+2. **Priorisation des outils** : Utilise en priorité `compute_routes_tool` et `search_places_batch_tool` pour les itinéraires et infrastructures de transport locaux. N'utilise Google Search qu'en dernier recours pour des tarifs ou aides spécifiques.
+3. **Analyse de terrain** : Interroge les données de transport en commun du dossier (nombre d'arrêts de bus, tram, métro, gares).
 4. **Réponse (Structured)** : Tu DOIS retourner un objet `MobilityResult`.
    - `searched` : Liste concise des requêtes ou outils utilisés.
    - `result` : Ton analyse factuelle et argumentée sur la mobilité locale, incluant les temps de parcours calculés et les aides tarifaires identifiées.
@@ -53,12 +54,15 @@ async def mobility_expert_instructions(ctx: RunContext[ODISDeps]) -> str:
     data_context = ODISContextBuilder.agent_context(state, "mobility_expert")
     mission = state.expert_tasks.get("mobility_expert", "Analyse générale de la mobilité et des réseaux de transport.")
     skill_inst = state.expert_skill_instructions.get("mobility_expert", "Aucune consigne spécifique de Skill Card active.")
+    boilerplate = get_swarm_boilerplate("expert")
 
     return MOBILITY_EXPERT_SYSTEM_PROMPT.format(
+        SWARM_BOILERPLATE=boilerplate,
         DATA_CONTEXT=data_context,
         MISSION=mission,
         SKILL_INSTRUCTIONS=skill_inst
     )
+
 
 @mobility_expert_agent.tool
 async def search_places_batch_tool(ctx: RunContext[ODISDeps], queries: List[str], location: str) -> Dict[str, Any]:

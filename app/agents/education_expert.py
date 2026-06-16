@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional
 from pydantic_ai import Agent, RunContext, WebSearchTool
 from pydantic import BaseModel, Field
 from .state import GraphState, ODISDeps, ODISContextBuilder
-from .agent_config import get_model, get_model_settings
+from .agent_config import get_model, get_model_settings, get_swarm_boilerplate
 from .tools import (
     search_places_batch, 
     search_rna_rag_batch,
@@ -16,8 +16,9 @@ class EducationResult(BaseModel):
     result: str = Field(..., description="Analyse détaillée des découvertes sur l'éducation.")
 
 EDUCATION_EXPERT_SYSTEM_PROMPT = """
-**Rôle** : Tu es l'Expert Éducation ODIS (Agent EDUCATION_EXPERT). 
-Ta mission est de lister les établissements scolaires et d'accueil locaux (crèches, maternelles, écoles primaires, collèges, lycées) correspondants aux besoins de la famille, et d'expliquer les modalités administratives d'inscription.
+{SWARM_BOILERPLATE}
+**Rôle** : Agent thématique Éducation (Education Expert).
+**Règle** : Reste STRICTEMENT sur l'Éducation (crèches, écoles, collèges, lycées, modalités scolaires). Ne traite aucun autre sujet (logement, transport, santé, association/intégration, emploi), d'autres experts s'en chargent.
 
 # Contexte du dossier :
 ```json
@@ -31,9 +32,9 @@ Ta mission est de lister les établissements scolaires et d'accueil locaux (crè
 {SKILL_INSTRUCTIONS}
 
 **DIRECTIVES DE TRAVAIL** :
-1. **Analyse de terrain** : Identifie les niveaux scolaires des enfants dans le dossier.
-2. **Recherches scolaires** : Utilise `search_places_batch_tool` pour trouver les adresses des établissements de la commune (ex: écoles, crèches).
-3. **Modalités d'inscription** : Fais une recherche Google Search pour extraire les démarches spécifiques de la mairie locale (guichet famille, pré-inscriptions scolaires).
+1. **Frugalité & Précision** : Sois chirurgical (maximum 1 ou 2 recherches web ciblées). Ne fais pas de recherches répétitives. Si l'information n'est pas disponible, indique-le simplement dans ton rapport final plutôt que d'insister.
+2. **Priorisation des outils** : Utilise en priorité `search_places_batch_tool` pour localiser les crèches et établissements scolaires. N'utilise Google Search qu'en dernier recours (ex. pour les modalités d'inscription spécifiques du site internet de la mairie).
+3. **Analyse de terrain** : Identifie les niveaux scolaires des enfants dans le dossier.
 4. **Réponse (Structured)** : Tu DOIS retourner un objet `EducationResult`.
    - `searched` : Liste concise des requêtes ou outils utilisés.
    - `result` : Ton analyse détaillée et factuelle des écoles locales, avec les coordonnées principales des structures et les étapes d'inscription parentale.
@@ -53,12 +54,15 @@ async def education_expert_instructions(ctx: RunContext[ODISDeps]) -> str:
     data_context = ODISContextBuilder.agent_context(state, "education_expert")
     mission = state.expert_tasks.get("education_expert", "Analyse générale de l'accès à l'éducation et infrastructures scolaires.")
     skill_inst = state.expert_skill_instructions.get("education_expert", "Aucune consigne spécifique de Skill Card active.")
+    boilerplate = get_swarm_boilerplate("expert")
 
     return EDUCATION_EXPERT_SYSTEM_PROMPT.format(
+        SWARM_BOILERPLATE=boilerplate,
         DATA_CONTEXT=data_context,
         MISSION=mission,
         SKILL_INSTRUCTIONS=skill_inst
     )
+
 
 @education_expert_agent.tool
 async def search_places_batch_tool(ctx: RunContext[ODISDeps], queries: List[str], location: str) -> Dict[str, Any]:
@@ -71,7 +75,18 @@ async def search_places_batch_tool(ctx: RunContext[ODISDeps], queries: List[str]
 
 @education_expert_agent.tool
 async def search_rna_rag_batch_tool(ctx: RunContext[ODISDeps], queries: List[str], codgeo: str, top_k: int = 10) -> List[Dict[str, Any]]:
-    """Recherche sémantique d'associations d'accompagnement scolaire ou de parents d'élèves (RNA)."""
+    """
+    Recherche sémantique d'associations d'accompagnement scolaire ou de parents d'élèves (RNA).
+    
+    Args:
+        queries: Liste de termes de recherche.
+                 ATTENTION : Ne mets JAMAIS le nom de la ville dans ces requêtes car le filtrage géographique est déjà géré par l'outil via `codgeo`.
+                 Exemple correct : ['cours de langue FLE', 'accompagnement administratif'].
+                 Exemple incorrect : ['FLE Aix-en-Provence'].
+        codgeo: Code INSEE de la commune.
+        top_k: Nombre maximum de résultats.
+    """
     return await search_rna_rag_batch(queries, codgeo, top_k=top_k)
+
 
 

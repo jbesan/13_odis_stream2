@@ -206,11 +206,11 @@ class HealthMetrics(BaseModel):
 
 class AssociationDetail(BaseModel):
     """Represents a detailed association object from the enrichment process."""
-    id: str = Field(..., description="Identifiant unique (WALDEC)", json_schema_extra={"odis_visibility": ["ui_details", "pdf_report"]})
-    name: str = Field(..., description="Nom de l'association", json_schema_extra={"odis_visibility": ["ui_details", "pdf_report"]})
-    description: Optional[str] = Field(None, description="Description de l'activité", json_schema_extra={"odis_visibility": ["ui_details", "pdf_report"]})
-    waldec_label: Optional[str] = Field(None, description="Libellé de la catégorie WALDEC", json_schema_extra={"odis_visibility": ["ui_details", "pdf_report"]})
-    refugee_focused: bool = Field(False, description="Si l'association est dédiée aux réfugiés", json_schema_extra={"odis_visibility": ["ui_details", "pdf_report"]})
+    id: str = Field(..., description="Identifiant unique (WALDEC)", json_schema_extra={"odis_visibility": ["agent_social_integration_expert", "ui_details", "pdf_report"]})
+    name: str = Field(..., description="Nom de l'association", json_schema_extra={"odis_visibility": ["agent_social_integration_expert", "ui_details", "pdf_report"]})
+    description: Optional[str] = Field(None, description="Description de l'activité", json_schema_extra={"odis_visibility": ["agent_social_integration_expert", "ui_details", "pdf_report"]})
+    waldec_label: Optional[str] = Field(None, description="Libellé de la catégorie WALDEC", json_schema_extra={"odis_visibility": ["agent_social_integration_expert", "ui_details", "pdf_report"]})
+    refugee_focused: bool = Field(False, description="Si l'association est dédiée aux réfugiés", json_schema_extra={"odis_visibility": ["agent_social_integration_expert", "ui_details", "pdf_report"]})
 
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 

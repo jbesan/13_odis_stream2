@@ -75,7 +75,29 @@ This matrix defines which data "contracts" are visible to which components.
 
 ---
 
-## 4. Benefits
+---
+
+## 4. Tools Availability Matrix
+
+This table lists the specific tools and external capabilities equipped for each agent in the swarm.
+
+| Agent | Module / File Path | Registered Tools | Built-in Capabilities |
+| :--- | :--- | :--- | :--- |
+| **Interviewer / Router** | [interviewer.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/interviewer.py) | `search_referentiels_batch_tool` | None |
+| **TS Agent (Coordinator)** | [ts_agent.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/ts_agent.py) | None (Pure Orchestrator) | None |
+| **Housing Expert** | [housing_expert.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/housing_expert.py) | `search_places_batch_tool`, `compute_routes_tool`, `search_ccas_tool` | `WebSearchTool` (Google Search) |
+| **Mobility Expert** | [mobility_expert.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/mobility_expert.py) | `search_places_batch_tool`, `compute_routes_tool` | `WebSearchTool` (Google Search) |
+| **Healthcare Expert** | [healthcare_expert.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/healthcare_expert.py) | `search_places_batch_tool`, `search_rna_rag_batch_tool` | `WebSearchTool` (Google Search) |
+| **Education Expert** | [education_expert.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/education_expert.py) | `search_places_batch_tool`, `search_rna_rag_batch_tool` | `WebSearchTool` (Google Search) |
+| **Social Integration Expert** | [social_integration_expert.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/social_integration_expert.py) | `search_refugee_associations_tool`, `search_rna_rag_batch_tool`, `search_ccas_tool`, `search_places_batch_tool` | `WebSearchTool` (Google Search) |
+| **Job Hunter** | [job_hunter.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/job_hunter.py) | `search_job_offers_batch_tool`, `get_job_details_tool`, `search_inclusion_jobs_batch_tool`, `get_inclusion_job_details_tool`, `search_referentiels_batch_tool` | None (API/Database only) |
+| **Synthesizer** | [synthesizer.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/synthesizer.py) | None (Pure Synthesizer) | None |
+| **Refiner** | [refiner.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/refiner.py) | None (Pure Briefing/Pitch Generator) | None |
+
+---
+
+## 5. Benefits
 1. **Zero-Maintenance**: Adding a field with its label and proper visibility tag automatically updates all authorized agents.
 2. **Single Source of Truth**: Data definition (model) and its representation (prompt/UI) are co-located.
 3. **Security & Data Isolation**: Experts only receive data relevant to their domain (e.g., `education_expert` never receives job-hunting or health detail variables, preserving model attention).
+

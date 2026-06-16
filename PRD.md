@@ -201,8 +201,22 @@ Liste en vrac d'idées d'amélioration
 ### 📊 Status
 - **June 2026**: Complete. Fully implemented the 6 experts, PM planning routing, SQLite skill card decoupling, Direct Answer bypass logic, and cumulative telemetry usage tracking. Upgraded `pydantic-ai` to 1.107.0 to natively support combining custom python functions and native Gemini search tools on expert agents. Verified with green test suites (E2E graph execution and DB stores).
 
+---
 
+## 🚀 Feature [F-67]: Swarm Prompt Optimization, BQ Native RAG Search, and ACL Visibility Hardening
 
+### 📝 User Stories
+- En tant que travailleur social, je veux que les rapports générés par les agents soient clairs, succincts et n'exposent pas d'acronymes de conception interne (ex. "ODIS").
+- En tant que développeur, je veux que la construction des prompts du swarm d'agents suive le principe DRY (Don't Repeat Yourself) via un configurateur centralisé de boilerplate.
+- En tant que travailleur social, je veux voir les détails complets des associations (missions, coordonnées, etc.) dans l'onglet Intégration Sociale, sans qu'ils soient masqués ou vides.
+- En tant qu'architecte, je veux que la recherche sémantique d'associations (RAG) soit performante, consistante avec l'ingestion, et déléguée nativement à BigQuery sans dilution de score géographique.
 
+### 🔑 Key Features
+* **Swarm Boilerplate Builder (DRY)**: Centralisation des instructions de collaboration au sein de `get_swarm_boilerplate` dans `agent_config.py` pour unifier le contexte (agent coordinateur, experts thématiques, travailleur social humain comme utilisateur final) et éradiquer les acronymes internes.
+* **ACL Visibility Hardening**: Ajout de la clé `"agent_social_integration_expert"` dans le schéma d'exposition `odis_visibility` des champs de `AssociationDetail` dans `app/core/models.py`, débloquant l'accès aux données textuelles pour le social integration expert.
+* **Native BQ Vector Search (`ML.DISTANCE`)**: Migration complète du calcul de similarité cosinus de la mémoire locale (NumPy/Pandas) vers BigQuery à l'aide de la fonction native `ML.DISTANCE` sur l'index d'embedding 128 dimensions.
+* **L2-Normalized Query Embeddings**: Normalisation explicite du vecteur d'embedding de la requête dans `rna_rag.py` avant de l'envoyer à BigQuery pour assurer des scores de similarité fidèles.
+* **Geographical Search Query Optimization**: Ajustement des schémas d'outils RAG des experts pour instruire explicitement les LLM de ne pas injecter le nom de la ville dans les termes de recherche, le filtrage géographique étant déjà géré nativement par les codes INSEE (`codgeo`).
 
-
+### 📊 Status
+- **June 2026**: Complete. Swarm prompts refactored, ACL exposures updated, BigQuery vector search optimized, and RAG search query instructions integrated. Checked with all 135 passing unit and E2E tests.

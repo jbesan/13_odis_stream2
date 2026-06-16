@@ -61,15 +61,17 @@ class RNARagService:
                 contents=[text],
                 config={'output_dimensionality': 128}
             )
-            return np.array(response.embeddings[0].values)
+            v = np.array(response.embeddings[0].values)
+            norm = np.linalg.norm(v)
+            return v / norm if norm > 0 else v
         except Exception as e:
             logger.error(f"Embedding generation failed: {e}")
             raise
 
-    def get_associations_semantic(self, query: str, codgeos: Optional[List[str]] = None, bv_code: Optional[str] = None, top_k: int = 10, inclusion_only: bool = True, threshold: float = 0.8) -> List[Dict[str, Any]]:
+    def get_associations_semantic(self, query: str, codgeos: Optional[List[str]] = None, bv_code: Optional[str] = None, top_k: int = 10, inclusion_only: bool = True, threshold: float = 0.65) -> List[Dict[str, Any]]:
         """
         Performs semantic lookup for associations in a specific commune or Bassin de Vie.
-        Fetches vectors from BQ, computes similarity locally.
+        Uses BigQuery ML.DISTANCE natively for cosine similarity.
         
         Args:
             query: The search term (e.g. 'football', 'hébergement')
@@ -77,13 +79,12 @@ class RNARagService:
             bv_code: Optional Bassin de Vie code for broader search
             top_k: Number of results to return
             inclusion_only: If True, filters for is_inclusion_relevant associations
-            threshold: Minimum similarity score (default 0.8)
+            threshold: Minimum similarity score (default 0.65)
             
         Returns:
             List of matching associations with scores > threshold, sorted by score DESC.
             Includes 'codgeo' for each result.
         """
-        # Support single codgeo for backward compatibility or singular input
         if isinstance(codgeos, str):
             codgeos = [codgeos]
         elif codgeos is None:
@@ -91,34 +92,34 @@ class RNARagService:
 
         codgeos = [str(c) for c in codgeos]
         
-        # log_msg = f"Searching associations for query='{query}'"
-        # if bv_code:
-        #     log_msg += f" in BV {bv_code}"
-        # else:
-        #     log_msg += f" in {len(codgeos)} codgeos"
-        # logger.info(log_msg)
-        
         try:
             # 1. Generate query embedding
             query_vector = self._get_embedding(query)
             
-            # 2. Fetch vectors from BigQuery
+            # 2. Query BigQuery using native ML.DISTANCE
             table_id = "odis-stream2.rna_rag.rna_rag"
             import config as cfg
             
-            # Build WHERE clause dynamically
             where_geo = "code_bdv = @bv_code" if bv_code else "codgeo IN UNNEST(@codgeos)"
             
             query_bq = f"""
-                SELECT id, titre_court as name, primary_category, code_waldec, categorie, embedding_128 as embedding, description, codgeo
+                SELECT id, titre_court as name, primary_category, code_waldec, categorie, description, codgeo,
+                       (1.0 - ML.DISTANCE(ARRAY(SELECT element FROM UNNEST(embedding_128.list)), @query_vec, 'COSINE')) as score
                 FROM `{table_id}`
                 WHERE {where_geo}
                   AND SUBSTR(code_waldec, 1, 3) IN UNNEST(@allowed_prefixes)
-                {"AND is_inclusion_relevant = TRUE" if inclusion_only else ""}
+                  {"AND is_inclusion_relevant = TRUE" if inclusion_only else ""}
+                  AND (1.0 - ML.DISTANCE(ARRAY(SELECT element FROM UNNEST(embedding_128.list)), @query_vec, 'COSINE')) > @threshold
+                ORDER BY score DESC
+                LIMIT @top_k
             """
             
-            params: List[bigquery.query.ArrayQueryParameter | bigquery.query.ScalarQueryParameter] = [
-                bigquery.ArrayQueryParameter("allowed_prefixes", "STRING", cfg.WALDEC_CATEGORIES)
+            from google.cloud import bigquery
+            params = [
+                bigquery.ArrayQueryParameter("allowed_prefixes", "STRING", cfg.WALDEC_CATEGORIES),
+                bigquery.ArrayQueryParameter("query_vec", "FLOAT64", query_vector.tolist()),
+                bigquery.ScalarQueryParameter("threshold", "FLOAT64", threshold),
+                bigquery.ScalarQueryParameter("top_k", "INT64", top_k)
             ]
             if bv_code:
                 params.append(bigquery.ScalarQueryParameter("bv_code", "STRING", bv_code))
@@ -126,33 +127,17 @@ class RNARagService:
                 params.append(bigquery.ArrayQueryParameter("codgeos", "STRING", codgeos))
 
             job_config = bigquery.QueryJobConfig(query_parameters=params)
-            
-            df = self.bq_client.query(query_bq, job_config=job_config).to_dataframe(create_bqstorage_client=True)
+            df = self.bq_client.query(query_bq, job_config=job_config).to_dataframe()
             
             if df.empty:
-                logger.debug(f"No associations found in BigQuery for the given criteria.")
                 return []
-            
-            # 3. Vectorized Similarity Computation (Dot Product)
-            # Flatten all embeddings into a matrix (N x 128)
-            embeddings_matrix = np.stack(df['embedding'].apply(self._flatten_embedding).values)
-            
-            # Compute similarity scores for all rows at once
-            dot_products = np.dot(embeddings_matrix, query_vector)
-            df['score'] = np.round(dot_products.astype(float), 4)
-            
-            # 4. Filter, Sort and Format
-            results_df = df[df['score'] > threshold].sort_values(by='score', ascending=False)
-            
-            # Rename/select columns for output
-            output_cols = ['id', 'name', 'primary_category', 'code_waldec', 'categorie', 'description', 'score', 'codgeo']
-            results = results_df[output_cols].head(top_k).to_dict(orient='records')
-            
-            return results
+                
+            return df.to_dict(orient='records')
 
         except Exception as e:
             logger.error(f"get_associations_semantic failed: {e}")
-            raise RuntimeError(f"BigQuery/Vertex connection failed: {e}")
+            raise RuntimeError(f"BigQuery native vector search failed: {e}")
+
 
     def get_associations_by_codgeo(self, codgeos: List[str]) -> List[Dict[str, Any]]:
         """

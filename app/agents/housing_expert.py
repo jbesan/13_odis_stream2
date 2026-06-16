@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional
 from pydantic_ai import Agent, RunContext, WebSearchTool
 from pydantic import BaseModel, Field
 from .state import GraphState, ODISDeps, ODISContextBuilder
-from .agent_config import get_model, get_model_settings
+from .agent_config import get_model, get_model_settings, get_swarm_boilerplate
 from .tools import (
     search_places_batch, 
     compute_routes, 
@@ -17,8 +17,9 @@ class HousingResult(BaseModel):
     result: str = Field(..., description="Analyse détaillée des découvertes sur le logement.")
 
 HOUSING_EXPERT_SYSTEM_PROMPT = """
-**Rôle** : Tu es l'Expert Logement ODIS (Agent HOUSING_EXPERT). 
-Ta mission est d'évaluer les conditions de logement de la ville analysée (loyer moyen m², délais de logement social) et d'identifier les structures locales d'hébergement ou d'accueil pertinentes pour le profil.
+{SWARM_BOILERPLATE}
+**Rôle** : Agent thématique Logement (Housing Expert).
+**Règle** : Reste STRICTEMENT sur le Logement (loyer m², logement social, hébergements). Ne traite aucun autre sujet (transport, santé, école, association/intégration, emploi), d'autres experts s'en chargent.
 
 # Contexte du dossier :
 ```json
@@ -32,11 +33,11 @@ Ta mission est d'évaluer les conditions de logement de la ville analysée (loye
 {SKILL_INSTRUCTIONS}
 
 **DIRECTIVES DE TRAVAIL** :
-1. **Analyse de terrain** : Interroge en priorité les données chiffrées de logement du dossier. S'il manque des éléments (ex: structures d'hébergement comme CADA, CHRS, CPH), appelle `search_places_batch_tool` ou fais une recherche web avec Google Search.
-2. **CCAS** : Utilise `search_ccas_tool` pour obtenir les coordonnées du CCAS de la commune.
-3. **Réponse (Structured)** : Tu DOIS retourner un objet `HousingResult`.
-   - `searched` : Liste concise des mots-clés ou outils utilisés.
-   - `result` : Ton analyse détaillée, factuelle et argumentée sur le logement dans la commune (loyer moyen, logement social, hébergements d'urgence pertinents). Cite les adresses ou noms des structures trouvées.
+1. **Frugalité & Précision** : Sois chirurgical (maximum 1 ou 2 recherches web ciblées). Ne fais pas de recherches répétitives ou redondantes. Si l'information n'est pas disponible, indique-le simplement dans ton rapport final plutôt que d'insister.
+2. **Analyse de terrain** : Interroge en priorité les données chiffrées de logement du dossier. S'il manque des éléments (ex: structures d'hébergement comme CADA, CHRS, CPH), appelle `search_places_batch_tool` ou fais une recherche web avec Google Search.
+3. **CCAS** : Utilise `search_ccas_tool` pour obtenir les coordonnées du CCAS de la commune.
+4. **Réponse (Structured)** : Tu DOIS retourner un objet `HousingResult`.
+5. **Formatage** : Sois clair et concis dans tes réponses.
 """
 
 housing_expert_agent = Agent(
@@ -53,12 +54,15 @@ async def housing_expert_instructions(ctx: RunContext[ODISDeps]) -> str:
     data_context = ODISContextBuilder.agent_context(state, "housing_expert")
     mission = state.expert_tasks.get("housing_expert", "Analyse générale des conditions de logement.")
     skill_inst = state.expert_skill_instructions.get("housing_expert", "Aucune consigne spécifique de Skill Card active.")
+    boilerplate = get_swarm_boilerplate("expert")
 
     return HOUSING_EXPERT_SYSTEM_PROMPT.format(
+        SWARM_BOILERPLATE=boilerplate,
         DATA_CONTEXT=data_context,
         MISSION=mission,
         SKILL_INSTRUCTIONS=skill_inst
     )
+
 
 @housing_expert_agent.tool
 async def search_places_batch_tool(ctx: RunContext[ODISDeps], queries: List[str], location: str) -> Dict[str, Any]:

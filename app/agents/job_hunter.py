@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional
 from pydantic_ai import Agent, RunContext
 from pydantic import BaseModel, Field
 from .state import GraphState, ODISDeps, compute_criteria_hash, ODISContextBuilder
-from .agent_config import get_model, get_model_settings
+from .agent_config import get_model, get_model_settings, get_swarm_boilerplate
 from .tools import (
     search_job_offers_batch,
     get_job_details, 
@@ -29,7 +29,9 @@ class JobSearchQuery(BaseModel):
     rome: Optional[str] = Field(None, description="Code métier ROME de 5 caractères (ex: D1102)")
 
 JOB_HUNTER_ANALYSIS_SYSTEM_PROMPT = """
-**Rôle** : Tu es le Job Hunter ODIS. Expert ultra-proactif du marché de l'emploi.
+{SWARM_BOILERPLATE}
+**Rôle** : Agent thématique Emploi (Job Hunter).
+**Règle** : Reste STRICTEMENT sur l'Emploi (offres France Travail/SIAE, adéquation métier). Ne traite aucun autre sujet (logement, transport, santé, école, association/intégration générale), d'autres experts s'en chargent.
 
 # Contexte du dossier :
 ```json
@@ -40,6 +42,7 @@ JOB_HUNTER_ANALYSIS_SYSTEM_PROMPT = """
 **Note** : Les offres de Structures d'insertion par l'activité Economique (SIAE) sont particulièrement pertinentes même si les codes ROME ne correspondent pas exactement.
 
 **DIRECTIVES CRITIQUES (NE PAS DEMANDER, AGIR)** :
+0. **Frugalité & Précision** : Sois chirurgical (maximum 1 ou 2 recherches d'offres en batch). Ne fais pas de recherches répétitives.
 1. **UTILISATION DU CODE INSEE** : Ne cherche pas le code, utilise celui fourni dans `Ville analysée` (`Code INSEE`).
 2. **RECHERCHE D'OFFRES (FT & SIAE)** :
    - **France Travail** : Vérifie TOUJOURS si des offres d'emploi correspondantes pré-chargées sont déjà disponibles sous `Ville analysée` -> `Données emploi et formation` -> `Liste des offres d'emploi correspondantes séparées par adulte du ménage`.
@@ -54,7 +57,8 @@ JOB_HUNTER_ANALYSIS_SYSTEM_PROMPT = """
 """
 
 JOB_HUNTER_SPECIFIC_SYSTEM_PROMPT = """
-**Rôle** : Tu es le Job Hunter ODIS. Expert ultra-proactif du marché de l'emploi.
+{SWARM_BOILERPLATE}
+**Rôle** : Agent thématique Emploi (Job Hunter). Expert du marché de l'emploi.
 **Objectif** : Faire d'éventuelles recherches supplémentaires pour répondre à une question spécifique de l'utilisateur.
 
 # Contexte du dossier :
@@ -92,9 +96,14 @@ async def job_hunter_instructions(ctx: RunContext[ODISDeps]) -> str:
     data_context = ODISContextBuilder.agent_context(ctx.deps.state, "job_hunter")
     mode = ctx.deps.state.execution_mode
     prompt_template = JOB_HUNTER_ANALYSIS_SYSTEM_PROMPT if mode in ["analysis", "full_analysis"] else JOB_HUNTER_SPECIFIC_SYSTEM_PROMPT
+    boilerplate = get_swarm_boilerplate("expert")
 
-    prompt = prompt_template.format(DATA_CONTEXT=data_context)
+    prompt = prompt_template.format(
+        SWARM_BOILERPLATE=boilerplate,
+        DATA_CONTEXT=data_context
+    )
     return prompt
+
 
 # Tools wrapped for PydanticAI
 @job_hunter_agent.tool

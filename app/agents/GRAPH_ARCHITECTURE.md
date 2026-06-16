@@ -61,6 +61,24 @@ graph TD
 
 ---
 
+## 🔀 Swarm Routing & Execution Paths
+
+The triage node (`ts_agent`) dynamically determines how the user query should be processed, selecting one of three execution paths:
+
+1. **Initial Full Analysis (`full_analysis`)**
+   - **Trigger**: Occurs when the user initiates a search/analysis for a recommended city (e.g., initial page load) or when the user explicitly requests it (e.g., queries starting with or containing *"Fais une analyse complète de"*). This is also triggered if the focus city's expert report cache (`expert_analysis` / `"Analyses experts"`) is empty or missing.
+   - **Flow**: The `ts_agent` evaluates criteria and plans individual missions (`ExpertTask`) for all relevant experts. Direct answer generation is strictly forbidden here. The graph fans out to run the parallel expert swarm, and then passes their responses to the `synthesizer` to build the full city briefing.
+
+2. **Follow-up Specific Ask (`specific_ask`)**
+   - **Trigger**: Subsequent conversational questions about a city where expert analysis reports are already present in the context.
+   - **Flow (Swarm Route)**: If the follow-up question requires new external queries (e.g., asking for specific jobs or live transit/housing queries not covered in the cached report), the `ts_agent` plans specific expert tasks, executing the MapReduce swarm for only those thématiques before synthesizing.
+
+3. **Direct Answer Bypass (`direct_answer`)**
+   - **Trigger**: A follow-up conversational question that can be answered entirely using the existing expert reports and metrics already cached in the dossier's context.
+   - **Flow**: The `ts_agent` generates the final answer in French inside the `direct_answer` field, leaving the `tasks` list empty. The graph detects this bypass and returns `End(direct_answer)` immediately, completely skipping the expert swarm and synthesizer nodes.
+
+---
+
 ## 💾 State & Data Flow
 
 ### ⚛️ `GraphState` (Dataclass)

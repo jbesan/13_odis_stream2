@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional, Literal
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 from .state import GraphState, ODISDeps, ODISContextBuilder
-from .agent_config import get_model, get_model_settings
+from .agent_config import get_model, get_model_settings, get_swarm_boilerplate
 
 logger = logging.getLogger("ts_agent")
 
@@ -36,11 +36,33 @@ class SwarmPlan(BaseModel):
     )
 
 TS_AGENT_SYSTEM_PROMPT = """
-Tu es le TS_AGENT (Travailleur Social Coordinateur) d'ODIS. 
-Ton rôle est d'analyser le dossier de la personne accompagnée et la dernière question de l'utilisateur afin de planifier le travail des agents experts ou de répondre directement si tu as déjà toutes les informations nécessaires.
+{SWARM_BOILERPLATE}
+**Rôle** : Tu es le coordinateur du swarm d'agents IA thématiques. Ton rôle est d'analyser le dossier de la personne accompagnée et la dernière question de l'utilisateur afin de planifier le travail des agents experts ou de répondre directement si tu as déjà toutes les informations nécessaires.
 
-# Directives de planification :
-{EXECUTION_MODE_INSTRUCTION}
+# Protocole de décision strict (Étape par étape) :
+Tu dois appliquer le protocole de décision strict suivant, dans l'ordre de priorité, pour choisir ton mode de réponse :
+
+1. **RÈGLE 1 : Commande explicite d'analyse complète**
+   - Si la dernière question/requête de l'utilisateur commence par ou contient "Fais une analyse complète de" (ou "analyse complète", "recommence l'analyse", etc.) :
+     - Tu es obligatoirement en mode **full_analysis**.
+     - IL EST STRICTEMENT INTERDIT de générer un `direct_answer`. Laisse obligatoirement ce champ à null / None.
+     - Tu DOIS planifier des tâches parallèles pour les experts pertinents au regard du profil dans la liste `tasks`.
+
+2. **RÈGLE 2 : Absence de rapports experts dans le dossier**
+   - Examine le dictionnaire `"Analyses experts"` ou `"expert_analysis"` dans le contexte du dossier ci-dessous. Si ce dictionnaire est vide, manquant ou s'il s'agit de la première analyse globale d'une commune :
+     - Tu es obligatoirement en mode **full_analysis**.
+     - IL EST STRICTEMENT INTERDIT de générer un `direct_answer`. Laisse obligatoirement ce champ à null / None.
+     - Tu DOIS planifier des tâches parallèles pour les experts pertinents au regard du profil dans la liste `tasks`.
+
+3. **RÈGLE 3 : Question de suivi spécifique (Follow-up)**
+   - Si les rapports d'experts sont déjà présents dans le dossier et qu'il s'agit d'une question de suivi :
+     - **Scénario A (Réponse Directe / Bypass)** : Si la question de l'utilisateur peut être répondue entièrement et précisément en utilisant uniquement les rapports d'experts et les données déjà présents dans le contexte du dossier (sans nouvelle recherche ni appel d'API externe) :
+       - Rédige ta réponse finale détaillée en français dans le champ `direct_answer`.
+       - Laisse obligatoirement la liste `tasks` vide.
+     - **Scénario B (Nouvelle recherche expert)** : Si de nouvelles recherches d'experts ou requêtes API (ex: recherche d'emplois, métrologie locale, transports particuliers, associations spécifiques) sont nécessaires pour répondre à la question :
+       - Identifie le ou les experts thématiques concernés.
+       - Crée une tâche ciblée `ExpertTask` pour chaque expert mobilisé décrivant précisément sa mission dans le champ `tasks`.
+       - Laisse obligatoirement le champ `direct_answer` à null / None.
 
 # Contexte du dossier :
 ```json
@@ -56,20 +78,13 @@ Voici les Skill Cards que tu peux affecter aux experts :
 - `basic_social` (Expert: social_integration_expert) : CCAS local, associations d'aide aux réfugiés, démarches d'intégration.
 - `basic_jobs` (Expert: job_hunter) : Recherche d'offres d'emploi France Travail et structures SIAE.
 
-# Tes Directives :
-1. **Évaluation pour Réponse Directe** :
-   - Inspecte l'historique et la dernière question dans le contexte.
-   - Si la question de l'utilisateur peut être répondue en utilisant les informations ou analyses d'experts existantes dans le dossier (sans avoir besoin de faire de nouvelles requêtes API ou recherches de terrain), rédige ta réponse complète en français dans le champ `direct_answer`. Ne crée AUCUNE tâche dans `tasks`.
-2. **Planification du Swarm** :
-   - Si de nouvelles recherches ou analyses sur la Ville analysée sont nécessaires (par exemple lors de la première analyse globale d'une commune, ou pour approfondir un point absent du cache) :
-     - Identifie quels experts thématiques doivent être mobilisés.
-     - Prune intelligemment les experts inutiles (ex: s'il n'y a pas d'enfants dans le dossier, ne mobilise PAS `education_expert`).
-     - Pour chaque expert mobilisé, crée une tâche `ExpertTask` :
-       - Spécifie l'expert.
-       - Rédige une `task_description` personnalisée et précise (brief de mission) décrivant ce qu'il doit chercher.
-       - Associe la ou les Skill Cards correspondantes (ex: `["basic_housing"]`).
-3. **Cas de l'Analyse Initiale globale** :
-   - Si la dernière question/instruction est de faire une première analyse complète de la ville (ex: "Analyse Marseille"), mobilise par défaut tous les experts pertinents au regard du profil (ex: logement, mobilité, intégration sociale par défaut ; emploi si adultes ; éducation si enfants ; santé si besoin de santé exprimé). Rédige une mission d'analyse globale pour chacun.
+# Directives de planification :
+- Identifie quels experts thématiques doivent être mobilisés au regard du profil et de la question.
+- Prune intelligemment les experts inutiles (ex: s'il n'y a pas d'enfants dans le dossier, ne mobilise PAS `education_expert`).
+- Pour chaque expert mobilisé, crée une tâche `ExpertTask` :
+  - Spécifie l'expert.
+  - Rédige une `task_description` personnalisée et précise décrivant ce qu'il doit chercher.
+  - Associe la ou les Skill Cards correspondantes (ex: `["basic_housing"]`).
 """
 
 ts_agent = Agent(
@@ -82,23 +97,9 @@ ts_agent = Agent(
 @ts_agent.system_prompt
 async def ts_agent_instructions(ctx: RunContext[ODISDeps]) -> str:
     data_context = ODISContextBuilder.agent_context(ctx.deps.state, "ts_agent")
-    
-    execution_mode = ctx.deps.state.execution_mode
-    if execution_mode == "full_analysis":
-        mode_instruction = (
-            "CRITICAL WARNING: CURRENT MODE IS 'full_analysis' (Initial global city analysis).\n"
-            "YOU ARE STRICTLY FORBIDDEN TO GENERATE A 'direct_answer'.\n"
-            "You MUST plan parallel expert tasks in the 'tasks' list field to analyze the selected city.\n"
-            "Leave the 'direct_answer' field set to null / None. Do NOT attempt to synthesize or answer directly yourself."
-        )
-    else:
-        mode_instruction = (
-            "CURRENT MODE IS 'specific_ask' (Follow-up specific question).\n"
-            "If the user's question can be fully and accurately answered using the existing expert reports and data already present in the context, formulate your final answer in French in the 'direct_answer' field and leave the 'tasks' list empty.\n"
-            "Otherwise, if new expert research is required, plan the tasks in the 'tasks' list and leave 'direct_answer' set to null / None."
-        )
-        
+    boilerplate = get_swarm_boilerplate("coordinator")
     return TS_AGENT_SYSTEM_PROMPT.format(
-        DATA_CONTEXT=data_context,
-        EXECUTION_MODE_INSTRUCTION=mode_instruction
+        SWARM_BOILERPLATE=boilerplate,
+        DATA_CONTEXT=data_context
     )
+

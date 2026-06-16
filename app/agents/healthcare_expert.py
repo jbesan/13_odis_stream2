@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional
 from pydantic_ai import Agent, RunContext, WebSearchTool
 from pydantic import BaseModel, Field
 from .state import GraphState, ODISDeps, ODISContextBuilder
-from .agent_config import get_model, get_model_settings
+from .agent_config import get_model, get_model_settings, get_swarm_boilerplate
 from .tools import (
     search_places_batch, 
     search_rna_rag_batch,
@@ -16,8 +16,9 @@ class HealthcareResult(BaseModel):
     result: str = Field(..., description="Analyse détaillée des découvertes sur la santé.")
 
 HEALTHCARE_EXPERT_SYSTEM_PROMPT = """
-**Rôle** : Tu es l'Expert Santé ODIS (Agent HEALTHCARE_EXPERT). 
-Ta mission est d'évaluer l'accès aux soins de la ville (APL index, hôpitaux, centres médicaux) et d'identifier des structures ou des associations d'accompagnement médical spécialisées.
+{SWARM_BOILERPLATE}
+**Rôle** : Agent thématique Santé (Healthcare Expert).
+**Règle** : Reste STRICTEMENT sur la Santé (accès aux soins, hôpitaux, PMI, spécialistes). Ne traite aucun autre sujet (logement, transport, école, association/intégration générale, emploi), d'autres experts s'en chargent.
 
 # Contexte du dossier :
 ```json
@@ -31,9 +32,9 @@ Ta mission est d'évaluer l'accès aux soins de la ville (APL index, hôpitaux, 
 {SKILL_INSTRUCTIONS}
 
 **DIRECTIVES DE TRAVAIL** :
-1. **Analyse de terrain** : Interroge les données de santé pré-chargées (APL, liste des établissements de santé).
-2. **Recherches de proximité** : Si des structures clés manquent (ex. hôpital, cabinet médical, Protection Maternelle et Infantile - PMI), appelle `search_places_batch_tool`.
-3. **Associations médicales** : Si le candidat a un besoin d'accompagnement social/médical spécifique (ex: handicap, addiction), appelle `search_rna_rag_batch_tool` ou fais une recherche web avec Google Search pour trouver des relais locaux.
+1. **Frugalité & Précision** : Sois chirurgical (maximum 1 ou 2 recherches web/RAG ciblées). Ne fais pas de recherches répétitives. Si l'information n'est pas disponible, indique-le simplement dans ton rapport final plutôt que d'insister.
+2. **Priorisation des outils** : Utilise en priorité `search_places_batch_tool` (pour PMI, hôpitaux, cabinets) et `search_rna_rag_batch_tool` (pour les associations). N'utilise Google Search qu'en dernier recours pour des structures introuvables.
+3. **Analyse de terrain** : Interroge les données de santé pré-chargées (APL, liste des établissements de santé).
 4. **Réponse (Structured)** : Tu DOIS retourner un objet `HealthcareResult`.
    - `searched` : Liste concise des requêtes ou outils utilisés.
    - `result` : Ton analyse factuelle et argumentée sur l'accès aux soins locaux, avec les structures de santé de référence et contacts d'associations d'entraide si pertinents.
@@ -53,12 +54,15 @@ async def healthcare_expert_instructions(ctx: RunContext[ODISDeps]) -> str:
     data_context = ODISContextBuilder.agent_context(state, "healthcare_expert")
     mission = state.expert_tasks.get("healthcare_expert", "Analyse générale de l'accès aux soins et infrastructures médicales.")
     skill_inst = state.expert_skill_instructions.get("healthcare_expert", "Aucune consigne spécifique de Skill Card active.")
+    boilerplate = get_swarm_boilerplate("expert")
 
     return HEALTHCARE_EXPERT_SYSTEM_PROMPT.format(
+        SWARM_BOILERPLATE=boilerplate,
         DATA_CONTEXT=data_context,
         MISSION=mission,
         SKILL_INSTRUCTIONS=skill_inst
     )
+
 
 @healthcare_expert_agent.tool
 async def search_places_batch_tool(ctx: RunContext[ODISDeps], queries: List[str], location: str) -> Dict[str, Any]:
@@ -71,7 +75,18 @@ async def search_places_batch_tool(ctx: RunContext[ODISDeps], queries: List[str]
 
 @healthcare_expert_agent.tool
 async def search_rna_rag_batch_tool(ctx: RunContext[ODISDeps], queries: List[str], codgeo: str, top_k: int = 10) -> List[Dict[str, Any]]:
-    """Recherche sémantique d'associations de santé locales (RNA)."""
+    """
+    Recherche sémantique d'associations de santé locales (RNA).
+    
+    Args:
+        queries: Liste de termes de recherche.
+                 ATTENTION : Ne mets JAMAIS le nom de la ville dans ces requêtes car le filtrage géographique est déjà géré par l'outil via `codgeo`.
+                 Exemple correct : ['cours de langue FLE', 'accompagnement administratif'].
+                 Exemple incorrect : ['FLE Aix-en-Provence'].
+        codgeo: Code INSEE de la commune.
+        top_k: Nombre maximum de résultats.
+    """
     return await search_rna_rag_batch(queries, codgeo, top_k=top_k)
+
 
 

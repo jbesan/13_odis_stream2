@@ -3,11 +3,12 @@ from typing import List, Dict, Any, Optional
 from pydantic_ai import Agent, RunContext, WebSearchTool
 from pydantic import BaseModel, Field
 from .state import GraphState, ODISDeps, ODISContextBuilder
-from .agent_config import get_model, get_model_settings
+from .agent_config import get_model, get_model_settings, get_swarm_boilerplate
 from .tools import (
     search_refugee_associations,
     search_rna_rag_batch,
     search_ccas,
+    search_places_batch,
 )
 
 logger = logging.getLogger("social_integration_expert")
@@ -17,8 +18,9 @@ class SocialIntegrationResult(BaseModel):
     result: str = Field(..., description="Analyse détaillée des découvertes sur l'intégration sociale.")
 
 SOCIAL_INTEGRATION_EXPERT_SYSTEM_PROMPT = """
-**Rôle** : Tu es l'Expert Intégration Sociale ODIS (Agent SOCIAL_INTEGRATION_EXPERT). 
-Ta mission est d'identifier les ressources d'inclusion et d'accompagnement social local (CCAS de la commune, associations d'aide aux réfugiés, cours de français, clubs de loisirs/sport).
+{SWARM_BOILERPLATE}
+**Rôle** : Agent thématique Accompagnement Social & Intégration (Social Integration Expert).
+**Règle** : Reste STRICTEMENT sur l'Intégration Sociale (CCAS local, associations d'aide, cours de français/FLE, loisirs/sports). Ne traite aucun autre sujet (logement, transport, santé, écoles, emploi), d'autres experts s'en chargent.
 
 # Contexte du dossier :
 ```json
@@ -32,9 +34,9 @@ Ta mission est d'identifier les ressources d'inclusion et d'accompagnement socia
 {SKILL_INSTRUCTIONS}
 
 **DIRECTIVES DE TRAVAIL** :
-1. **CCAS** : Appelle obligatoirement `search_ccas_tool` pour obtenir les détails du CCAS local.
-2. **Associations Réfugiés** : Appelle `search_refugee_associations_tool` pour identifier les associations spécifiques d'accueil des réfugiés.
-3. **Accompagnement et Loisirs (RAG)** : Appelle `search_rna_rag_batch_tool` pour chercher s'il y a des clubs sportifs, cours de français (FLE) ou associations de solidarité locale correspondant au dossier.
+1. **Frugalité & Précision** : Sois chirurgical (maximum 1 ou 2 recherches web/RAG/structures ciblées). Ne fais pas de recherches répétitives. Si l'information n'est pas disponible, indique-le simplement dans ton rapport final plutôt que d'insister.
+2. **Priorisation des outils** : Utilise en priorité `search_ccas_tool`, `search_refugee_associations_tool`, `search_rna_rag_batch_tool` et `search_places_batch_tool` (FLE, sports, centres sociaux, mairies). N'utilise Google Search qu'en dernier recours si aucune structure/association n'est trouvée via les outils locaux.
+3. **CCAS** : Appelle obligatoirement `search_ccas_tool` pour obtenir les détails du CCAS local.
 4. **Réponse (Structured)** : Tu DOIS retourner un objet `SocialIntegrationResult`.
    - `searched` : Liste concise des requêtes ou outils utilisés.
    - `result` : Ton analyse détaillée et factuelle des opportunités d'intégration locale, incluant le CCAS et les associations trouvées avec leurs missions respectives.
@@ -54,12 +56,15 @@ async def social_integration_expert_instructions(ctx: RunContext[ODISDeps]) -> s
     data_context = ODISContextBuilder.agent_context(state, "social_integration_expert")
     mission = state.expert_tasks.get("social_integration_expert", "Analyse générale de l'intégration sociale et du tissu associatif.")
     skill_inst = state.expert_skill_instructions.get("social_integration_expert", "Aucune consigne spécifique de Skill Card active.")
+    boilerplate = get_swarm_boilerplate("expert")
 
     return SOCIAL_INTEGRATION_EXPERT_SYSTEM_PROMPT.format(
+        SWARM_BOILERPLATE=boilerplate,
         DATA_CONTEXT=data_context,
         MISSION=mission,
         SKILL_INSTRUCTIONS=skill_inst
     )
+
 
 @social_integration_expert_agent.tool
 def search_refugee_associations_tool(ctx: RunContext[ODISDeps], codgeo: str) -> List[Dict[str, Any]]:
@@ -68,10 +73,30 @@ def search_refugee_associations_tool(ctx: RunContext[ODISDeps], codgeo: str) -> 
 
 @social_integration_expert_agent.tool
 async def search_rna_rag_batch_tool(ctx: RunContext[ODISDeps], queries: List[str], codgeo: str, top_k: int = 10) -> List[Dict[str, Any]]:
-    """Recherche sémantique d'associations d'inclusion, sport, loisirs ou solidarité locale (RNA)."""
+    """
+    Recherche sémantique d'associations d'inclusion, sport, loisirs ou solidarité locale (RNA).
+    
+    Args:
+        queries: Liste de termes de recherche.
+                 ATTENTION : Ne mets JAMAIS le nom de la ville dans ces requêtes car le filtrage géographique est déjà géré par l'outil via `codgeo`.
+                 Exemple correct : ['cours de langue FLE', 'accompagnement administratif'].
+                 Exemple incorrect : ['FLE Aix-en-Provence'].
+        codgeo: Code INSEE de la commune.
+        top_k: Nombre maximum de résultats.
+    """
     return await search_rna_rag_batch(queries, codgeo, top_k=top_k)
+
 
 @social_integration_expert_agent.tool
 def search_ccas_tool(ctx: RunContext[ODISDeps], codgeo: str) -> List[Dict[str, Any]]:
     """Recherche les coordonnées du CCAS pour une commune."""
     return search_ccas(codgeo)
+
+@social_integration_expert_agent.tool
+async def search_places_batch_tool(ctx: RunContext[ODISDeps], queries: List[str], location: str) -> Dict[str, Any]:
+    """Recherche des centres sociaux, mairies, bibliothèques ou autres équipements en mode batch.
+    Args:
+        queries: Liste de requêtes (ex: ['centre social', 'mairie', 'MJC']).
+        location: Ville cible (ex: 'Bordeaux, Nouvelle-Aquitaine').
+    """
+    return await search_places_batch(queries, location)

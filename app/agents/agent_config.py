@@ -47,17 +47,17 @@ class AgentSettings(BaseSettings):
         extra="ignore",
     )
 
-    router: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.1, thinking="medium"))
-    interviewer: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.5, thinking="high"))
-    ts_agent: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.1, thinking="minimal"))
-    housing_expert: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.3, thinking="medium"))
-    mobility_expert: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.3, thinking="medium"))
-    healthcare_expert: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.3, thinking="medium"))
-    education_expert: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.3, thinking="medium"))
-    social_integration_expert: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.3, thinking="medium"))
+    router: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.1, thinking="low"))
+    interviewer: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.5, thinking="medium"))
+    ts_agent: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.1, thinking="low"))
+    housing_expert: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
+    mobility_expert: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
+    healthcare_expert: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
+    education_expert: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
+    social_integration_expert: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
     job_hunter: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
-    synthesizer: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.1, thinking="medium", max_tokens=8192))
-    refiner: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.1, thinking="medium", max_tokens=4096))
+    synthesizer: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.1, thinking="medium"))#, max_tokens=8192))
+    refiner: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.1, thinking="minimal", max_tokens=4096))
 
     def get_config(self, agent_name: str) -> NodeConfig:
         """Helper to get config by agent name, falling back to router if unknown."""
@@ -100,3 +100,29 @@ def get_p_model(agent_name: str, client: genai.Client) -> GoogleModel:
         model_name, 
         provider=provider,
     )
+
+
+def get_swarm_boilerplate(agent_type: Literal["expert", "coordinator", "synthesizer"]) -> str:
+    """Returns the standardized swarm collaboration boilerplate context prompt."""
+    if agent_type == "expert":
+        return (
+            "**Contexte de collaboration (Swarm d'agents IA)** :\n"
+            "- Tu es un expert thématique faisant partie d'un swarm d'agents IA. La demande provient de l'agent coordinateur.\n"
+            "- L'utilisateur final est un **Travailleur Social humain** qui accompagne un bénéficiaire (généralement une personne réfugiée et sa famille) dans sa relocalisation.\n"
+            "- Formule tes analyses et réponses à partir du dossier JSON pour l'aider dans son accompagnement.\n"
+        )
+    elif agent_type == "coordinator":
+        return (
+            "**Contexte de collaboration (Swarm d'agents IA)** :\n"
+            "- Tu es le coordinateur d'un swarm d'agents IA thématiques.\n"
+            "- L'utilisateur final est un **Travailleur Social humain** qui accompagne un bénéficiaire (généralement une personne réfugiée et sa famille) dans sa relocalisation.\n"
+            "- Planifie le travail ou réponds directement à partir du dossier JSON pour l'aider dans son accompagnement.\n"
+        )
+    elif agent_type == "synthesizer":
+        return (
+            "**Contexte de collaboration (Swarm d'agents IA)** :\n"
+            "- Tu es le synthétiseur final d'un swarm d'agents IA thématiques.\n"
+            "- L'utilisateur final est un **Travailleur Social humain** qui accompagne un bénéficiaire (généralement une personne réfugiée et sa famille) dans sa relocalisation.\n"
+            "- Synthétise les retours des experts et du dossier JSON pour l'aider dans son accompagnement.\n"
+        )
+    return ""
