@@ -53,50 +53,29 @@ def _auto_build_context(model: BaseModel, visibility_key: str) -> dict:
 
 ---
 
-## 3. Visibility Matrix (Bitmask ACL)
+## 3. Agent Capabilities & Visibility Matrix (ACL)
 
-This matrix defines which data "contracts" are visible to which components.
+This matrix defines which data "contracts" (ACL) are visible to each component, alongside their module file paths and registered tools/capabilities.
 
-| Component Key | Description | Typical Data Included |
-| :--- | :--- | :--- |
-| `all` | Global visibility | Identity (Nom, INSEE), Population, Adults/Children counts |
-| `agent_ts_agent` | Project Manager (Triage) | Bounded union of all field visibilities to evaluate plan |
-| `agent_housing_expert` | Housing Expert | Rent m², housing Delay, J'Accueille hosts, CCAS |
-| `agent_mobility_expert` | Transport Expert | Bus/tram/train stops, solidary transit prices, distance |
-| `agent_healthcare_expert` | Healthcare Expert | Health needs, APL health access index, hospitals, PMI |
-| `agent_education_expert` | Education Expert | Kids levels, schools, nursery registration |
-| `agent_social_integration_expert` | Social Integration | Refugee associations, CCAS details, RNA, insecurity index |
-| `agent_job_hunter` | Job Hunter | ROME codes, France Travail jobs list, SIAE offers |
-| `agent_synthesizer` | Final Synthesis | Full Metrics, All Experts summaries, Briefing, History |
-| `agent_refiner` | Global Synthesis & Pitch | Global situation, Top 5 results, User History |
-| `agent_interviewer` | Criteria Extraction | Full User Profile (Codes + Labels) |
-| `ui_details` | "En savoir plus" (Streamlit) | Detailed thematic metrics, raw KPI values |
-| `pdf_report` | PDF Synthesis | Expert summaries, category scores, identity |
-
----
+| Component Key | Role / Description | Module / File Path | Typical Data Included (ACL) | Registered Tools & Capabilities |
+| :--- | :--- | :--- | :--- | :--- |
+| `all` | Global visibility | - | Identity (Nom, INSEE), Population, Adults/Children counts | - |
+| `agent_interviewer` | Criteria Extraction | [interviewer.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/interviewer.py) | Full User Profile (Codes + Labels) | `search_referentiels_batch_tool` |
+| `agent_ts_agent` | Project Manager (Triage) | [ts_agent.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/ts_agent.py) | Bounded union of all field visibilities to evaluate plan | None (Pure Orchestrator) |
+| `agent_housing_expert` | Housing Expert | [housing_expert.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/housing_expert.py) | Rent m², housing Delay, J'Accueille hosts, CCAS | `search_places_batch_tool`, `compute_routes_tool`, `search_ccas_tool`<br>• `WebSearchTool` (Google Search) |
+| `agent_mobility_expert` | Transport Expert | [mobility_expert.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/mobility_expert.py) | Bus/tram/train stops, solidary transit prices, distance | `search_places_batch_tool`, `compute_routes_tool`<br>• `WebSearchTool` (Google Search) |
+| `agent_healthcare_expert` | Healthcare Expert | [healthcare_expert.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/healthcare_expert.py) | Health needs, APL health access index, hospitals, PMI | `search_places_batch_tool`, `search_rna_rag_batch_tool`<br>• `WebSearchTool` (Google Search) |
+| `agent_education_expert` | Education Expert | [education_expert.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/education_expert.py) | Kids levels, schools, nursery registration | `search_places_batch_tool`, `search_rna_rag_batch_tool`<br>• `WebSearchTool` (Google Search) |
+| `agent_social_integration_expert` | Social Integration | [social_integration_expert.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/social_integration_expert.py) | Refugee associations, CCAS details, RNA, insecurity index | `search_refugee_associations_tool`, `search_rna_rag_batch_tool`, `search_ccas_tool`, `search_places_batch_tool`<br>• `WebSearchTool` (Google Search) |
+| `agent_job_hunter` | Job Hunter | [job_hunter.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/job_hunter.py) | ROME codes, France Travail jobs list, SIAE offers | `search_job_offers_batch_tool`, `get_job_details_tool`, `search_inclusion_jobs_batch_tool`, `get_inclusion_job_details_tool`, `search_referentiels_batch_tool` |
+| `agent_synthesizer` | Final Synthesis | [synthesizer.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/synthesizer.py) | Full Metrics, All Experts summaries, Briefing, History | None (Pure Synthesizer) |
+| `agent_refiner` | Global Synthesis & Pitch | [refiner.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/refiner.py) | Global situation, Top 5 results, User History | None (Pure Briefing/Pitch Generator) |
+| `ui_details` | "En savoir plus" (Streamlit) | - | Detailed thematic metrics, raw KPI values | - |
+| `pdf_report` | PDF Synthesis | - | Expert summaries, category scores, identity | - |
 
 ---
 
-## 4. Tools Availability Matrix
-
-This table lists the specific tools and external capabilities equipped for each agent in the swarm.
-
-| Agent | Module / File Path | Registered Tools | Built-in Capabilities |
-| :--- | :--- | :--- | :--- |
-| **Interviewer / Router** | [interviewer.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/interviewer.py) | `search_referentiels_batch_tool` | None |
-| **TS Agent (Coordinator)** | [ts_agent.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/ts_agent.py) | None (Pure Orchestrator) | None |
-| **Housing Expert** | [housing_expert.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/housing_expert.py) | `search_places_batch_tool`, `compute_routes_tool`, `search_ccas_tool` | `WebSearchTool` (Google Search) |
-| **Mobility Expert** | [mobility_expert.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/mobility_expert.py) | `search_places_batch_tool`, `compute_routes_tool` | `WebSearchTool` (Google Search) |
-| **Healthcare Expert** | [healthcare_expert.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/healthcare_expert.py) | `search_places_batch_tool`, `search_rna_rag_batch_tool` | `WebSearchTool` (Google Search) |
-| **Education Expert** | [education_expert.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/education_expert.py) | `search_places_batch_tool`, `search_rna_rag_batch_tool` | `WebSearchTool` (Google Search) |
-| **Social Integration Expert** | [social_integration_expert.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/social_integration_expert.py) | `search_refugee_associations_tool`, `search_rna_rag_batch_tool`, `search_ccas_tool`, `search_places_batch_tool` | `WebSearchTool` (Google Search) |
-| **Job Hunter** | [job_hunter.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/job_hunter.py) | `search_job_offers_batch_tool`, `get_job_details_tool`, `search_inclusion_jobs_batch_tool`, `get_inclusion_job_details_tool`, `search_referentiels_batch_tool` | None (API/Database only) |
-| **Synthesizer** | [synthesizer.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/synthesizer.py) | None (Pure Synthesizer) | None |
-| **Refiner** | [refiner.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/refiner.py) | None (Pure Briefing/Pitch Generator) | None |
-
----
-
-## 5. Benefits
+## 4. Benefits
 1. **Zero-Maintenance**: Adding a field with its label and proper visibility tag automatically updates all authorized agents.
 2. **Single Source of Truth**: Data definition (model) and its representation (prompt/UI) are co-located.
 3. **Security & Data Isolation**: Experts only receive data relevant to their domain (e.g., `education_expert` never receives job-hunting or health detail variables, preserving model attention).

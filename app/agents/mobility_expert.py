@@ -32,7 +32,7 @@ MOBILITY_EXPERT_SYSTEM_PROMPT = """
 {SKILL_INSTRUCTIONS}
 
 **DIRECTIVES DE TRAVAIL** :
-1. **Frugalité & Précision** : Sois chirurgical (maximum 1 ou 2 recherches web ciblées). Ne fais pas de recherches répétitives ou redondantes. Si l'information n'est pas disponible, indique-le simplement dans ton rapport final plutôt que d'insister.
+1. **Frugalité & Précision (Recherche Web)** : Limite au MAXIMUM tes appels à Google Search. Fais au maximum 1 seule requête par objet de recherche/sujet distinct. Ne fais JAMAIS de requêtes similaires, de reformulations ou de variations pour un même sujet. Si l'information est introuvable après un essai, n'insiste pas et signale-le.
 2. **Priorisation des outils** : Utilise en priorité `compute_routes_tool` et `search_places_batch_tool` pour les itinéraires et infrastructures de transport locaux. N'utilise Google Search qu'en dernier recours pour des tarifs ou aides spécifiques.
 3. **Analyse de terrain** : Interroge les données de transport en commun du dossier (nombre d'arrêts de bus, tram, métro, gares).
 4. **Réponse (Structured)** : Tu DOIS retourner un objet `MobilityResult`.

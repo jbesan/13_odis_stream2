@@ -32,7 +32,7 @@ HEALTHCARE_EXPERT_SYSTEM_PROMPT = """
 {SKILL_INSTRUCTIONS}
 
 **DIRECTIVES DE TRAVAIL** :
-1. **Frugalité & Précision** : Sois chirurgical (maximum 1 ou 2 recherches web/RAG ciblées). Ne fais pas de recherches répétitives. Si l'information n'est pas disponible, indique-le simplement dans ton rapport final plutôt que d'insister.
+1. **Frugalité & Précision (Recherche Web)** : Limite au MAXIMUM tes appels à Google Search. Fais au maximum 1 seule requête par objet de recherche/sujet distinct. Ne fais JAMAIS de requêtes similaires, de reformulations ou de variations pour un même sujet. Si l'information est introuvable après un essai, n'insiste pas et signale-le.
 2. **Priorisation des outils** : Utilise en priorité `search_places_batch_tool` (pour PMI, hôpitaux, cabinets) et `search_rna_rag_batch_tool` (pour les associations). N'utilise Google Search qu'en dernier recours pour des structures introuvables.
 3. **Analyse de terrain** : Interroge les données de santé pré-chargées (APL, liste des établissements de santé).
 4. **Réponse (Structured)** : Tu DOIS retourner un objet `HealthcareResult`.
