@@ -216,7 +216,16 @@ class ODISContextBuilder:
                 return f"{label}: {kpi_str}, score: {round(float(score), 2)}, poids relatif: {weight}%"
             # For non-agent visibility (like UI/PDF), fall through to normal recursion
 
-        # 3. Handle Pydantic BaseModel
+        # 3. Special Case: AssociationDetail (Compact representation for agents)
+        if model.__class__.__name__ == "AssociationDetail":
+            if visibility_key.startswith("agent_"):
+                asso_id = getattr(model, 'id', '')
+                name = getattr(model, 'name', '')
+                desc = getattr(model, 'description', '') or ''
+                return f"{asso_id} | {name} | {desc}"
+            # For non-agent visibility, fall through to normal recursion
+
+        # 4. Handle Pydantic BaseModel
         if isinstance(model, BaseModel):
             ctx = {}
             for name, field in model.__class__.model_fields.items():
@@ -237,11 +246,11 @@ class ODISContextBuilder:
                 ctx[label] = cls._auto_build_context(val, visibility_key)
             return ctx
 
-        # 4. Handle List
+        # 5. Handle List
         if isinstance(model, list):
             return [cls._auto_build_context(item, visibility_key) for item in model]
 
-        # 5. Handle Dict
+        # 6. Handle Dict
         if isinstance(model, dict):
             return {k: cls._auto_build_context(v, visibility_key) for k, v in model.items()}
 

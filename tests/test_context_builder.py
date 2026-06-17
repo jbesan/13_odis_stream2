@@ -219,6 +219,33 @@ def test_ts_agent_context_excludes_unwanted_sections():
     assert "Top 5 communes identifiées (Détails métriques)" in refiner_ctx
 
 
+def test_association_detail_context_formatting():
+    """Verifies that AssociationDetail objects are formatted as pipe-separated strings for agents, but normal dicts for UI."""
+    from core.models import AssociationDetail
+
+    asso = AssociationDetail(
+        id="W123456789",
+        name="Test Association",
+        description="Providing test assistance and social support.",
+        waldec_label="Action Sociale",
+        refugee_focused=True
+    )
+
+    # For an agent, it should be simplified to a pipe-separated string
+    agent_ctx = ODISContextBuilder._auto_build_context(asso, "agent_social_integration_expert")
+    assert agent_ctx == "W123456789 | Test Association | Providing test assistance and social support."
+
+    # For UI, it should remain a dictionary with all visible fields
+    ui_ctx = ODISContextBuilder._auto_build_context(asso, "ui_details")
+    assert isinstance(ui_ctx, dict)
+    assert ui_ctx["Identifiant unique (WALDEC)"] == "W123456789"
+    assert ui_ctx["Nom de l'association"] == "Test Association"
+    assert ui_ctx["Description de l'activité"] == "Providing test assistance and social support."
+    assert ui_ctx["Libellé de la catégorie WALDEC"] == "Action Sociale"
+    assert ui_ctx["Si l'association est dédiée aux réfugiés"] is True
+
+
+
 
 
 

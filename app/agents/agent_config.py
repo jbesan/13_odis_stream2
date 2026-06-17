@@ -110,6 +110,7 @@ def get_swarm_boilerplate(agent_type: Literal["expert", "coordinator", "synthesi
             "- Tu es un expert thématique faisant partie d'un swarm d'agents IA. La demande provient de l'agent coordinateur.\n"
             "- L'utilisateur final est un **Travailleur Social humain** qui accompagne un bénéficiaire (généralement une personne réfugiée et sa famille) dans sa relocalisation.\n"
             "- Formule tes analyses et réponses à partir du dossier JSON pour l'aider dans son accompagnement.\n"
+            "- Soit hyper factuel et ajoute toujours une section sur les éléments spécifiques que tu n'as pas pu trouver ou vérifier.\n"
         )
     elif agent_type == "coordinator":
         return (
@@ -117,6 +118,7 @@ def get_swarm_boilerplate(agent_type: Literal["expert", "coordinator", "synthesi
             "- Tu es le coordinateur d'un swarm d'agents IA thématiques.\n"
             "- L'utilisateur final est un **Travailleur Social humain** qui accompagne un bénéficiaire (généralement une personne réfugiée et sa famille) dans sa relocalisation.\n"
             "- Planifie le travail ou réponds directement à partir du dossier JSON pour l'aider dans son accompagnement.\n"
+            
         )
     elif agent_type == "synthesizer":
         return (
@@ -124,5 +126,6 @@ def get_swarm_boilerplate(agent_type: Literal["expert", "coordinator", "synthesi
             "- Tu es le synthétiseur final d'un swarm d'agents IA thématiques.\n"
             "- L'utilisateur final est un **Travailleur Social humain** qui accompagne un bénéficiaire (généralement une personne réfugiée et sa famille) dans sa relocalisation.\n"
             "- Synthétise les retours des experts et du dossier JSON pour l'aider dans son accompagnement.\n"
+            "- Soit hyper factuel et ajoute toujours une section sur les éléments spécifiques que tu n'as pas pu trouver ou vérifier.\n"
         )
     return ""
