@@ -100,8 +100,9 @@ async def triage_step(ctx: StepContext[GraphState, ODISDeps, None]) -> ExpertLis
         ctx.state.usage.merge(usage)
         
         # 1. DIRECT ANSWER BYPASS (Bypassing Swarm & Synthesizer)
-        if plan.direct_answer:
-            logger.info(f"🧠 [TS_AGENT] Direct Answer generated: {plan.direct_answer[:100]}...")
+        if plan.swarm_mode == 'direct_answer':
+            direct_ans = plan.direct_answer or "Pas de réponse directe générée."
+            logger.info(f"🧠 [TS_AGENT] Direct Answer generated: {direct_ans[:100]}...")
             
             # Build odis_synthesis
             new_odis_synthesis = []
@@ -109,7 +110,7 @@ async def triage_step(ctx: StepContext[GraphState, ODISDeps, None]) -> ExpertLis
                 last_user_msg = ctx.state.messages[-1]
                 if last_user_msg.get("role") == "user":
                     new_odis_synthesis.append(last_user_msg)
-            new_odis_synthesis.append({"role": "assistant", "content": plan.direct_answer})
+            new_odis_synthesis.append({"role": "assistant", "content": direct_ans})
             
             # Apply back to the city result if possible
             if ctx.state.search_results and ctx.state.focus_city:
@@ -118,7 +119,7 @@ async def triage_step(ctx: StepContext[GraphState, ODISDeps, None]) -> ExpertLis
                     if not city_res.odis_synthesis: city_res.odis_synthesis = []
                     city_res.odis_synthesis.extend(new_odis_synthesis)
             
-            return End(plan.direct_answer)
+            return End(direct_ans)
         
         # 2. POPULATE Swarm Tasks and Skill Cards
         ctx.state.active_skills = []

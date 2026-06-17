@@ -23,6 +23,7 @@ class NodeConfig(BaseModel):
     temperature: float = 0.0
     max_tokens: int | None = None
     thinking: Literal["minimal", "low", "medium", "high"] | None = None
+    timeout: float | None = 30.0
 
     @property
     def model_settings(self) -> ModelSettings:
@@ -31,6 +32,7 @@ class NodeConfig(BaseModel):
             temperature=self.temperature,
             max_tokens=self.max_tokens,
             thinking=self.thinking,
+            timeout=self.timeout,
         )
 
 

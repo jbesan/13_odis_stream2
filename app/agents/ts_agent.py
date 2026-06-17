@@ -26,13 +26,17 @@ class ExpertTask(BaseModel):
     )
 
 class SwarmPlan(BaseModel):
+    swarm_mode: Literal['full_analysis', 'specific_ask', 'direct_answer'] = Field(
+        ...,
+        description="Le mode de fonctionnement du swarm déterminé par le protocole de décision."
+    )
     direct_answer: Optional[str] = Field(
         None, 
-        description="Si la dernière question de l'utilisateur peut être résolue avec les données existantes. Laisser obligatoirement vide (null/None) si le mode actuel est 'full_analysis' ou si des tâches d'experts sont planifiées."
+        description="Si la dernière question de l'utilisateur peut être résolue avec les données existantes. Requis uniquement si swarm_mode est 'direct_answer'. Laisser obligatoirement vide (null/None) sinon."
     )
     tasks: List[ExpertTask] = Field(
         default_factory=list, 
-        description="Liste des tâches à exécuter en parallèle par les agents experts. Laisse vide si 'direct_answer' est fourni."
+        description="Liste des tâches à exécuter en parallèle par les agents experts. Requis uniquement si swarm_mode est 'full_analysis' ou 'specific_ask'. Laisser vide si swarm_mode est 'direct_answer'."
     )
 
 TS_AGENT_SYSTEM_PROMPT = """
@@ -42,15 +46,18 @@ Dans de rares cas tu pourras répondre directement (voir protocole ci-dessous).
 
 # Protocole de décision strict (Étape par étape) :
 - SI la dernière question/requête de l'utilisateur commence par ou contient "Fais une analyse complète de" (ou "analyse complète", "recommence l'analyse", etc.) :
-    - Tu es obligatoirement en mode `full_analysis`.
-    - Planifie le travail du Swarm d'experts (Voir directives de planifications)
-- SINON, SI tu es certain que la question de l'utilisateur peut être répondue entièrement et précisément en utilisant uniquement les rapports d'experts et les données déjà présents dans le contexte du dossier (sans nouvelle recherche ni appel d'API externe) :
-    - Tu es obligatoirement en mode `direct_answer`.
+    - Détermine le `swarm_mode` comme `full_analysis`.
+    - Planifie le travail du Swarm d'experts (Voir directives de planifications).
+    - Laisse `direct_answer` vide (null).
+- SINON SI de nouvelles recherches d'experts sont nécessaires pour répondre à la question ou approfondir une analyse :
+    - Détermine le `swarm_mode` comme `specific_ask`.
+    - Planifie le travail du Swarm d'experts (Voir directives de planifications).
+    - Laisse `direct_answer` vide (null).
+- SINON, SI tu es ABSOLUMENT CERTAIN que la question de l'utilisateur peut être répondue entièrement et précisément en utilisant uniquement les rapports d'experts et les données déjà présents dans le contexte du dossier (sans nouvelle recherche ni appel d'API externe) :
+    - Détermine le `swarm_mode` comme `direct_answer`.
     - Rédige ta réponse finale détaillée en français dans le champ `direct_answer`.
     - Laisse obligatoirement la liste `tasks` vide.
-- SINON, de nouvelles recherches d'experts sont nécessaires pour répondre à la question
-    - Tu es obligatoirement en mode `specific_ask`.
-    - Planifie le travail du Swarm d'experts (Voir directives de planifications).
+
 
 # Directives de planification du swarm d'experts:
 1. Identifie quels experts thématiques doivent être mobilisés au regard du profil et de la question (ex: s'il n'y a pas d'enfants dans le dossier, ne mobilise PAS `education_expert`).

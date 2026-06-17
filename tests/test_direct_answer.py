@@ -34,7 +34,7 @@ async def test_direct_answer_bypass(mock_deps):
     graph = create_odis_graph()
     mock_deps.state.execution_mode = 'specific_ask'
     
-    ts_plan = SwarmPlan(direct_answer="Le loyer moyen à Marseille est de 15€/m².", tasks=[])
+    ts_plan = SwarmPlan(swarm_mode="direct_answer", direct_answer="Le loyer moyen à Marseille est de 15€/m².", tasks=[])
     mock_ts_res = MagicMock()
     mock_ts_res.output = ts_plan
     # Mocking usage to return values
@@ -66,6 +66,7 @@ async def test_swarm_and_synthesis_flow(mock_deps):
     graph = create_odis_graph()
     
     ts_plan = SwarmPlan(
+        swarm_mode="specific_ask",
         direct_answer=None,
         tasks=[
             ExpertTask(

@@ -75,7 +75,7 @@ The triage node (`ts_agent`) dynamically determines how the user query should be
 
 3. **Direct Answer Bypass (`direct_answer`)**
    - **Trigger**: A follow-up conversational question that can be answered entirely using the existing expert reports and metrics already cached in the dossier's context.
-   - **Flow**: The `ts_agent` generates the final answer in French inside the `direct_answer` field, leaving the `tasks` list empty. The graph detects this bypass and returns `End(direct_answer)` immediately, completely skipping the expert swarm and synthesizer nodes.
+   - **Flow**: The `ts_agent` sets `swarm_mode` to `'direct_answer'` and generates the final answer in French inside the `direct_answer` field, leaving the `tasks` list empty. The graph detects this bypass and returns `End(direct_answer)` immediately, completely skipping the expert swarm and synthesizer nodes.
 
 ---
 
