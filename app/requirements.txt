@@ -24,3 +24,4 @@ pyarrow
 db-dtypes
 fastparquet
 logfire[httpx]
+python-frontmatter

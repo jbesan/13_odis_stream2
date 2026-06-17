@@ -47,7 +47,7 @@ graph TD
 ```
 
 ### 2.3 Graph Nodes
-- **Triage (Project Manager)**: Runs `ts_agent` (LLM) to plan the swarm. Resolves skill card instructions from SQLite in a single pass to save connections. Can yield `End(direct_answer)` immediately to bypass the swarm if context holds the answer.
+- **Triage (Project Manager)**: Runs `ts_agent` (LLM) to plan the swarm. Resolves skill card instructions from Markdown files in `app/agents/skills/` in a single pass to save I/O overhead. Can yield `End(direct_answer)` immediately to bypass the swarm if context holds the answer.
 - **Map (Extract Domains)**: Fans out the `ExpertList` into parallel worker instances.
 - **Expert Workers**: Parallel nodes running the active domain experts (`job_hunter`, `housing_expert`, `mobility_expert`, `healthcare_expert`, `education_expert`, `social_integration_expert`) using state-injected skill instructions.
 - **Join (Collect Experts)**: Accumulates artifacts and merges cumulative usage statistics into `state.usage` via `.merge()`.

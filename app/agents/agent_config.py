@@ -109,7 +109,7 @@ def get_swarm_boilerplate(agent_type: Literal["expert", "coordinator", "synthesi
             "**Contexte de collaboration (Swarm d'agents IA)** :\n"
             "- Tu es un expert thématique faisant partie d'un swarm d'agents IA. La demande provient de l'agent coordinateur.\n"
             "- L'utilisateur final est un **Travailleur Social humain** qui accompagne un bénéficiaire (généralement une personne réfugiée et sa famille) dans sa relocalisation.\n"
-            "- Formule tes analyses et réponses à partir du dossier JSON pour l'aider dans son accompagnement.\n"
+            "- Formule tes analyses à partir de tes recherches qualitatives en plus des données quantitatives du dossier JSON joint.\n"
             "- Soit hyper factuel et ajoute toujours une section sur les éléments spécifiques que tu n'as pas pu trouver ou vérifier.\n"
         )
     elif agent_type == "coordinator":

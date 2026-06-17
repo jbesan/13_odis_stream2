@@ -7,8 +7,8 @@ class CriteriaItem(BaseModel):
     """
     Representation of a criteria item with both code and label.
     """
-    code: str = Field(..., description="Technical code (e.g. INSEE, ROME, WALDEC)", json_schema_extra={"odis_visibility": ["all"]})
-    label: str = Field(..., description="Human-readable label (e.g. 'Bordeaux', 'Boulangerie')", json_schema_extra={"odis_visibility": ["all"]})
+    code: str = Field(..., description="Technical ID", json_schema_extra={"odis_visibility": ["all"]})
+    label: str = Field(..., description="Human-readable label", json_schema_extra={"odis_visibility": ["all"]})
 
     model_config = ConfigDict(populate_by_name=True, revalidate_instances='never', frozen=True)
 

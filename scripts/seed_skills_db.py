@@ -17,8 +17,11 @@ def seed_database():
     seed_cards = [
         {
             "id": "basic_housing",
-            "description": "Basic housing rules, social housing, and local shelter prioritization.",
+            "name": "Priorisation et Règles de Logement",
+            "description": "Consignes pour l'analyse des loyers moyens, du logement social et de l'hébergement d'urgence.",
             "domain": "housing_expert",
+            "version": "1.0.0",
+            "tags": ["logement", "hébergement", "social"],
             "instructions": """Tu es l'expert logement d'ODIS.
 Consignes :
 1. Analyse le loyer moyen au m² et le délai d'attente pour un logement social.
@@ -27,8 +30,11 @@ Consignes :
         },
         {
             "id": "basic_mobility",
-            "description": "Basic public transit networks, stops count, and transport cost reductions.",
+            "name": "Transports et Tarification Solidaire",
+            "description": "Consignes pour analyser les réseaux de transports en commun locaux et les réductions tarifaires.",
             "domain": "mobility_expert",
+            "version": "1.0.0",
+            "tags": ["transports", "mobilité", "bus", "train"],
             "instructions": """Tu es l'expert mobilité d'ODIS.
 Consignes :
 1. Présente le réseau de transport en commun local (arrêts de bus, tram, métro, gares).
@@ -37,8 +43,11 @@ Consignes :
         },
         {
             "id": "basic_healthcare",
-            "description": "Basic healthcare monitoring, access to doctors, and specialized clinics.",
+            "name": "Accès aux Soins et Structures de Santé",
+            "description": "Consignes pour évaluer l'indice d'accessibilité aux médecins et identifier les hôpitaux ou PMI.",
             "domain": "healthcare_expert",
+            "version": "1.0.0",
+            "tags": ["santé", "médecin", "hôpital", "pmi"],
             "instructions": """Tu es l'expert santé d'ODIS.
 Consignes :
 1. Évalue l'accessibilité potentielle localisée (APL index) aux professionnels de santé.
@@ -47,8 +56,11 @@ Consignes :
         },
         {
             "id": "basic_education",
-            "description": "Basic schooling enrollment, schools listing, and childcare/creche registration.",
+            "name": "Scolarisation et Modes de Garde",
+            "description": "Consignes pour identifier les écoles par tranches d'âges et les modalités d'inscription locales.",
             "domain": "education_expert",
+            "version": "1.0.0",
+            "tags": ["éducation", "école", "crèche", "scolarisation"],
             "instructions": """Tu es l'expert éducation d'ODIS.
 Consignes :
 1. Identifie les établissements scolaires locaux correspondants aux âges des enfants de la famille (crèches, écoles maternelles, primaires, collèges, lycées).
@@ -57,8 +69,11 @@ Consignes :
         },
         {
             "id": "basic_social",
-            "description": "Basic refugee integration support, CCAS contact, and social associations.",
+            "name": "Accompagnement Social et Intégration",
+            "description": "Consignes pour localiser le CCAS, les cours de FLE et les associations d'intégration.",
             "domain": "social_integration_expert",
+            "version": "1.0.0",
+            "tags": ["social", "intégration", "ccas", "fle", "réfugiés"],
             "instructions": """Tu es l'expert intégration sociale d'ODIS.
 Consignes :
 1. Fournis les coordonnées et missions du CCAS (Centre Communal d'Action Sociale) de la commune.
@@ -67,8 +82,11 @@ Consignes :
         },
         {
             "id": "basic_jobs",
-            "description": "Basic job seeking, France Travail offers, and inclusion programs (SIAE).",
+            "name": "Emploi et Insertion Professionnelle",
+            "description": "Consignes pour analyser les opportunités France Travail, les codes ROME et les structures d'insertion (SIAE).",
             "domain": "job_hunter",
+            "version": "1.0.0",
+            "tags": ["emploi", "siae", "recrutement", "insertion"],
             "instructions": """Tu es le Job Hunter d'ODIS.
 Consignes :
 1. Examine les opportunités d'emploi pré-chargées ou issues de France Travail correspondant aux métiers recherchés (codes ROME).
@@ -83,7 +101,10 @@ Consignes :
             skill_id=card["id"],
             description=card["description"],
             instructions=card["instructions"],
-            domain=card["domain"]
+            domain=card["domain"],
+            name=card["name"],
+            version=card["version"],
+            tags=card["tags"]
         )
     logger.info("Database seeding completed successfully.")
 

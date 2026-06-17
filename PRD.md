@@ -194,12 +194,12 @@ Liste en vrac d'idées d'amélioration
 
 ### 🔑 Key Features
 - **Project Manager Triage & Direct Answer Bypass**: Lancement de l'agent `ts_agent` comme premier nœud de graphe. Si le dossier contient déjà la réponse, il retourne directement le résultat finale en court-circuitant le swarm.
-- **Dynamic Swarm Planning & Decoupled Skill Cards**: Analyse de la requête et des critères par le PM pour allouer des missions spécifiques et des Skill Cards (lues en base SQLite de manière centralisée pour éviter le blocage d'I/O).
+- **Dynamic Swarm Planning & Decoupled Skill Cards**: Analyse de la requête et des critères par le PM pour allouer des missions spécifiques et des Skill Cards (chargées depuis des fichiers Markdown pour simplifier l'édition).
 - **6 Specialized Expert Agents**: Division de la recherche sur Marseille en 6 agents thématiques isolés : logement (`housing_expert`), transports (`mobility_expert`), santé (`healthcare_expert`), éducation (`education_expert`), social (`social_integration_expert`) et emploi (`job_hunter`).
 - **Cumulative Token and Cost Merging**: Consolidation en temps réel des statistiques d'usage de tous les agents pour une journalisation intègre dans BigQuery.
 
 ### 📊 Status
-- **June 2026**: Complete. Fully implemented the 6 experts, PM planning routing, SQLite skill card decoupling, Direct Answer bypass logic, and cumulative telemetry usage tracking. Upgraded `pydantic-ai` to 1.107.0 to natively support combining custom python functions and native Gemini search tools on expert agents. Verified with green test suites (E2E graph execution and DB stores).
+- **June 2026**: Complete. Fully implemented the 6 experts, PM planning routing, Markdown skill card decoupling (migrated from SQLite), Direct Answer bypass logic, and cumulative telemetry usage tracking. Upgraded `pydantic-ai` to 1.107.0 to natively support combining custom python functions and native Gemini search tools on expert agents. Verified with green test suites (E2E graph execution and file-based stores).
 
 ---
 

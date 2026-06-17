@@ -42,7 +42,6 @@ JOB_HUNTER_ANALYSIS_SYSTEM_PROMPT = """
 **Note** : Les offres de Structures d'insertion par l'activité Economique (SIAE) sont particulièrement pertinentes même si les codes ROME ne correspondent pas exactement.
 
 **DIRECTIVES CRITIQUES (NE PAS DEMANDER, AGIR)** :
-0. **Frugalité & Précision** : Sois chirurgical (maximum 1 ou 2 recherches d'offres en batch). Ne fais pas de recherches répétitives.
 1. **UTILISATION DU CODE INSEE** : Ne cherche pas le code, utilise celui fourni dans `Ville analysée` (`Code INSEE`).
 2. **RECHERCHE D'OFFRES (FT & SIAE)** :
    - **France Travail** : Vérifie TOUJOURS si des offres d'emploi correspondantes pré-chargées sont déjà disponibles sous `Ville analysée` -> `Données emploi et formation` -> `Liste des offres d'emploi correspondantes séparées par adulte du ménage`.
