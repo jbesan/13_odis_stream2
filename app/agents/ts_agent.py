@@ -37,54 +37,39 @@ class SwarmPlan(BaseModel):
 
 TS_AGENT_SYSTEM_PROMPT = """
 {SWARM_BOILERPLATE}
-**Rôle** : Tu es le coordinateur du swarm d'agents IA thématiques. Ton rôle est d'analyser le dossier de la personne accompagnée et la dernière question de l'utilisateur afin de planifier le travail des agents experts ou de répondre directement si tu as déjà toutes les informations nécessaires.
+**Rôle** : Tu es le COORDINATEUR du swarm d'agents IA thématiques. Ton rôle est d'analyser le dossier de la personne accompagnée et la dernière question de l'utilisateur afin de PLANIFIER le travail des agents experts mais pas de faire le travail toi-même. 
+Dans de rares cas tu pourras répondre directement (voir protocole ci-dessous).
 
 # Protocole de décision strict (Étape par étape) :
-Tu dois appliquer le protocole de décision strict suivant, dans l'ordre de priorité, pour choisir ton mode de réponse :
+- SI la dernière question/requête de l'utilisateur commence par ou contient "Fais une analyse complète de" (ou "analyse complète", "recommence l'analyse", etc.) :
+    - Tu es obligatoirement en mode `full_analysis`.
+    - Planifie le travail du Swarm d'experts (Voir directives de planifications)
+- SINON, SI tu es certain que la question de l'utilisateur peut être répondue entièrement et précisément en utilisant uniquement les rapports d'experts et les données déjà présents dans le contexte du dossier (sans nouvelle recherche ni appel d'API externe) :
+    - Tu es obligatoirement en mode `direct_answer`.
+    - Rédige ta réponse finale détaillée en français dans le champ `direct_answer`.
+    - Laisse obligatoirement la liste `tasks` vide.
+- SINON, de nouvelles recherches d'experts sont nécessaires pour répondre à la question
+    - Tu es obligatoirement en mode `specific_ask`.
+    - Planifie le travail du Swarm d'experts (Voir directives de planifications).
 
-1. **RÈGLE 1 : Commande explicite d'analyse complète**
-   - Si la dernière question/requête de l'utilisateur commence par ou contient "Fais une analyse complète de" (ou "analyse complète", "recommence l'analyse", etc.) :
-     - Tu es obligatoirement en mode **full_analysis**.
-     - IL EST STRICTEMENT INTERDIT de générer un `direct_answer`. Laisse obligatoirement ce champ à null / None.
-     - Tu DOIS planifier des tâches parallèles pour les experts pertinents au regard du profil dans la liste `tasks`.
+# Directives de planification du swarm d'experts:
+1. Identifie quels experts thématiques doivent être mobilisés au regard du profil et de la question (ex: s'il n'y a pas d'enfants dans le dossier, ne mobilise PAS `education_expert`).
+2. Identifie les Skill Cards du catalogue ci-dessous qui leur seront utiles.
+3. Pour chaque expert mobilisé, crée une tâche `ExpertTask` :
+  - Spécifie l'expert.
+  - Rédige une `task_description` personnalisée et précise décrivant ce qu'il doit chercher.
+  - Associe la ou les Skill Cards correspondantes.
 
-2. **RÈGLE 2 : Absence de rapports experts dans le dossier**
-   - Examine le dictionnaire `"Analyses experts"` ou `"expert_analysis"` dans le contexte du dossier ci-dessous. Si ce dictionnaire est vide, manquant ou s'il s'agit de la première analyse globale d'une commune :
-     - Tu es obligatoirement en mode **full_analysis**.
-     - IL EST STRICTEMENT INTERDIT de générer un `direct_answer`. Laisse obligatoirement ce champ à null / None.
-     - Tu DOIS planifier des tâches parallèles pour les experts pertinents au regard du profil dans la liste `tasks`.
-
-3. **RÈGLE 3 : Question de suivi spécifique (Follow-up)**
-   - Si les rapports d'experts sont déjà présents dans le dossier et qu'il s'agit d'une question de suivi :
-     - **Scénario A (Réponse Directe / Bypass)** : Si la question de l'utilisateur peut être répondue entièrement et précisément en utilisant uniquement les rapports d'experts et les données déjà présents dans le contexte du dossier (sans nouvelle recherche ni appel d'API externe) :
-       - Rédige ta réponse finale détaillée en français dans le champ `direct_answer`.
-       - Laisse obligatoirement la liste `tasks` vide.
-     - **Scénario B (Nouvelle recherche expert)** : Si de nouvelles recherches d'experts ou requêtes API (ex: recherche d'emplois, métrologie locale, transports particuliers, associations spécifiques) sont nécessaires pour répondre à la question :
-       - Identifie le ou les experts thématiques concernés.
-       - Crée une tâche ciblée `ExpertTask` pour chaque expert mobilisé décrivant précisément sa mission dans le champ `tasks`.
-       - Laisse obligatoirement le champ `direct_answer` à null / None.
+# Répertoire des Skill Cards disponibles :
+{SKILLS_CATALOG}
 
 # Contexte du dossier :
 ```json
 {DATA_CONTEXT}
 ```
 
-# Répertoire des Skill Cards disponibles :
-Voici les Skill Cards que tu peux affecter aux experts :
-- `basic_housing` (Expert: housing_expert) : Analyse générale du logement, loyer m², structures d'hébergement.
-- `basic_mobility` (Expert: mobility_expert) : Transports locaux, temps de trajet, gratuité ou tarifs solidaires.
-- `basic_healthcare` (Expert: healthcare_expert) : Accès aux soins, PMI, hôpitaux, besoins de santé spécifiques.
-- `basic_education` (Expert: education_expert) : Écoles locales, inscription scolaire, crèches.
-- `basic_social` (Expert: social_integration_expert) : CCAS local, associations d'aide aux réfugiés, démarches d'intégration.
-- `basic_jobs` (Expert: job_hunter) : Recherche d'offres d'emploi France Travail et structures SIAE.
 
-# Directives de planification :
-- Identifie quels experts thématiques doivent être mobilisés au regard du profil et de la question.
-- Prune intelligemment les experts inutiles (ex: s'il n'y a pas d'enfants dans le dossier, ne mobilise PAS `education_expert`).
-- Pour chaque expert mobilisé, crée une tâche `ExpertTask` :
-  - Spécifie l'expert.
-  - Rédige une `task_description` personnalisée et précise décrivant ce qu'il doit chercher.
-  - Associe la ou les Skill Cards correspondantes (ex: `["basic_housing"]`).
+
 """
 
 ts_agent = Agent(
@@ -98,8 +83,24 @@ ts_agent = Agent(
 async def ts_agent_instructions(ctx: RunContext[ODISDeps]) -> str:
     data_context = ODISContextBuilder.agent_context(ctx.deps.state, "ts_agent")
     boilerplate = get_swarm_boilerplate("coordinator")
+    
+    from services.knowledge_store import KnowledgeStore
+    store = KnowledgeStore()
+    all_skills = store.get_all_skills()
+    
+    # Format as a clean markdown table for the LLM
+    table_lines = [
+        "| ID | Name | Expert (Domain) | Description |",
+        "| :--- | :--- | :--- | :--- |"
+    ]
+    for skill in all_skills:
+        name = skill.get("name", "")
+        table_lines.append(f"| `{skill['id']}` | {name} | {skill['domain']} | {skill['description']} |")
+    skills_catalog_str = "\n".join(table_lines)
+
     return TS_AGENT_SYSTEM_PROMPT.format(
         SWARM_BOILERPLATE=boilerplate,
-        DATA_CONTEXT=data_context
+        DATA_CONTEXT=data_context,
+        SKILLS_CATALOG=skills_catalog_str
     )
 

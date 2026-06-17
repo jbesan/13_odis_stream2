@@ -66,7 +66,7 @@ def test_employment_metrics_matching_job_offers():
     assert dump["matching_job_offers"][0][0]["id"] == "OFFER1"
 
 @patch("services.mcp_france_travail._search_job_offers_logic")
-@patch("agents.job_hunter.job_curator_agent.run")
+@patch("agents.job_curator.job_curator_agent.run")
 def test_background_jobs_enrichment_success(mock_curator_run, mock_search):
     """Verifies that background jobs enrichment queries ROME codes, pools them, curates via LLM, and preserves order."""
     # 1. Mock search API response returning 10 offers per ROME code
@@ -88,7 +88,7 @@ def test_background_jobs_enrichment_success(mock_curator_run, mock_search):
     }
     
     # 2. Mock LLM curation return value (selecting even numbered IDs in reverse)
-    from agents.job_hunter import JobCurationResult, CuratedJob
+    from agents.job_curator import JobCurationResult, CuratedJob
     from unittest.mock import AsyncMock
     mock_result = MagicMock()
     mock_result.output = JobCurationResult(selected_jobs=[
@@ -153,10 +153,15 @@ def test_background_jobs_enrichment_success(mock_curator_run, mock_search):
     # Assert that mock_curator_run was called with prompt containing Bordeaux's context
     mock_curator_run.assert_called()
     called_prompt = mock_curator_run.call_args[0][0]
-    assert "Informations sur la ville envisagée pour la relocalisation" in called_prompt
-    assert "Bordeaux" in called_prompt
-    assert "33063" in called_prompt
-    assert "250000" in called_prompt
+    called_deps = mock_curator_run.call_args[1].get("deps")
+    
+    assert "Voici la liste des offres d'emploi" in called_prompt
+    assert "J8" in called_prompt
+    assert called_deps is not None
+    assert "Candidat motivé recherchant un emploi." in called_deps.state.odis_brief
+    assert called_deps.state.focus_city.name == "Bordeaux"
+    assert called_deps.state.focus_city.codgeo == "33063"
+    assert called_deps.state.search_criteria.notes_qualitatives == ["Permis B", "Maitrise du français"]
     
     # Assert correct parameters were sent: sort=2, distance=20, range_end=9 (10 jobs limit)
     mock_search.assert_any_call(
@@ -168,7 +173,7 @@ def test_background_jobs_enrichment_success(mock_curator_run, mock_search):
 
 
 @patch("services.mcp_france_travail._search_job_offers_logic")
-@patch("agents.job_hunter.job_curator_agent.run")
+@patch("agents.job_curator.job_curator_agent.run")
 def test_background_jobs_enrichment_bypass(mock_curator_run, mock_search):
     """Verifies that if retrieved jobs count <= 5, LLM curation is bypassed and jobs are returned directly."""
     # 1. Mock search API returning 3 offers
@@ -221,7 +226,7 @@ def test_background_jobs_enrichment_bypass(mock_curator_run, mock_search):
 
 
 @patch("services.mcp_france_travail._search_job_offers_logic")
-@patch("agents.job_hunter.job_curator_agent.run")
+@patch("agents.job_curator.job_curator_agent.run")
 def test_background_jobs_enrichment_graceful_fallback(mock_curator_run, mock_search):
     """Verifies that background task handles API exceptions and LLM failures gracefully."""
     # 1. Mock search API returning 10 offers

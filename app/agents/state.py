@@ -106,7 +106,7 @@ class ODISContextBuilder:
             state: The current GraphState.
             agent_name: One of 'synthesizer', 'refiner', 'ts_agent', 'job_hunter',
                         'housing_expert', 'mobility_expert', 'healthcare_expert',
-                        'education_expert', 'social_integration_expert', 'interviewer', 'router'.
+                        'education_expert', 'social_integration_expert', 'interviewer', 'router', 'job_curator'.
 
         Returns:
             A formatted JSON string ready to inject into a system prompt.
@@ -179,7 +179,7 @@ class ODISContextBuilder:
                 ctx["Historique récent"] = state.messages[-5:]
             elif agent_name == "interviewer":
                 ctx["Dernier message utilisateur"] = state.messages[-1].get("content", "")
-            else:
+            elif agent_name != "job_curator":
                 ctx["Dernière question"] = state.messages[-1].get("content", "")
 
         result = json.dumps(ctx, ensure_ascii=False, indent=2)

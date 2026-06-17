@@ -167,7 +167,9 @@ def _curate_jobs_with_agent(
         List of curated top 5 job offer details dictionaries.
     """
     try:
-        from agents.job_hunter import job_curator_agent, JOB_CURATOR_SYSTEM_PROMPT
+        from agents.job_curator import job_curator_agent
+        from agents.state import GraphState, ODISDeps
+        from core.models import SearchCriterias
         import asyncio
         import json
 
@@ -187,23 +189,6 @@ def _curate_jobs_with_agent(
                 f"  Date de création: {job.get('date_creation') or 'Non spécifiée'}\n\n"
             )
 
-        # Build target city context using metadata-driven builder
-        target_city_context = "Non spécifiée"
-        if target_city:
-            from agents.state import ODISContextBuilder
-            city_ctx = ODISContextBuilder._auto_build_context(target_city, "agent_job_hunter")
-            if isinstance(city_ctx, dict):
-                target_city_context = json.dumps(city_ctx, ensure_ascii=False, indent=2)
-            else:
-                target_city_context = str(city_ctx)
-
-        prompt = JOB_CURATOR_SYSTEM_PROMPT.format(
-            briefing=profile_brief,
-            target_city_context=target_city_context,
-            notes_qualitatives=", ".join(notes_qualitatives) if notes_qualitatives else "Aucune",
-            jobs_list=jobs_list_str
-        )
-
         try:
             loop = asyncio.get_event_loop()
         except RuntimeError:
@@ -213,7 +198,7 @@ def _curate_jobs_with_agent(
         import os
         from google import genai
         from google.genai import types
-        from agents.agent_config import get_p_model
+        from agents.agent_config import get_p_model, get_model_settings
 
         api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
         client = genai.Client(
@@ -223,10 +208,26 @@ def _curate_jobs_with_agent(
                 retry_options=types.HttpRetryOptions(attempts=1)
             )
         )
-        model = get_p_model("job_hunter", client=client)
+        model = get_p_model("job_curator", client=client)
+
+        # Construct a lightweight GraphState to carry context
+        state = GraphState()
+        state.odis_brief = profile_brief
+        state.focus_city = target_city
+        state.search_criteria = SearchCriterias(notes_qualitatives=notes_qualitatives)
+        
+        deps = ODISDeps(state=state, client=client)
+        prompt = f"Voici la liste des offres d'emploi récupérées à trier et curer :\n\n{jobs_list_str}"
 
         # Run the curator agent synchronously within the background thread
-        result = loop.run_until_complete(job_curator_agent.run(prompt, model=model))
+        result = loop.run_until_complete(
+            job_curator_agent.run(
+                prompt, 
+                deps=deps, 
+                model=model,
+                model_settings=get_model_settings("job_curator")
+            )
+        )
         selected_jobs_list = getattr(result.output, "selected_jobs", [])
 
         # Map selected IDs back to job dicts, keeping LLM relevance order

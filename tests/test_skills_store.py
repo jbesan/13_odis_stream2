@@ -25,6 +25,7 @@ def test_knowledge_store_lifecycle(tmp_path):
     card = store.get_skill_card("basic_housing_test")
     assert card is not None
     assert card["id"] == "basic_housing_test"
+    assert card["name"] == "Basic Housing Test"
     assert card["description"] == "Housing instructions for testing"
     assert card["instructions"] == "Look up local rent index and shelters."
     assert card["domain"] == "housing_expert"

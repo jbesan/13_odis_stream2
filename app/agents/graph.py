@@ -164,12 +164,12 @@ async def triage_step(ctx: StepContext[GraphState, ODISDeps, None]) -> ExpertLis
             default_experts.append("healthcare_expert")
             
         fallback_skills = {
-            "housing_expert": ["basic_housing"],
-            "mobility_expert": ["basic_mobility"],
-            "healthcare_expert": ["basic_healthcare"],
-            "education_expert": ["basic_education"],
-            "social_integration_expert": ["basic_social"],
-            "job_hunter": ["basic_jobs"]
+            "housing_expert": ["housing_full_analysis"],
+            "mobility_expert": ["mobility_full_analysis"],
+            "healthcare_expert": ["healthcare_full_analysis"],
+            "education_expert": ["education_full_analysis"],
+            "social_integration_expert": ["social_full_analysis"],
+            "job_hunter": ["job_full_analysis"]
         }
         
         ctx.state.expert_skill_instructions = {}

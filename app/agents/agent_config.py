@@ -56,6 +56,7 @@ class AgentSettings(BaseSettings):
     education_expert: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
     social_integration_expert: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
     job_hunter: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
+    job_curator: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.1, thinking="low"))
     synthesizer: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.1, thinking="medium"))#, max_tokens=8192))
     refiner: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.1, thinking="minimal", max_tokens=4096))
 
@@ -102,7 +103,7 @@ def get_p_model(agent_name: str, client: genai.Client) -> GoogleModel:
     )
 
 
-def get_swarm_boilerplate(agent_type: Literal["expert", "coordinator", "synthesizer"]) -> str:
+def get_swarm_boilerplate(agent_type: Literal["expert", "coordinator", "synthesizer", "job_curator"]) -> str:
     """Returns the standardized swarm collaboration boilerplate context prompt."""
     if agent_type == "expert":
         return (
@@ -127,5 +128,11 @@ def get_swarm_boilerplate(agent_type: Literal["expert", "coordinator", "synthesi
             "- L'utilisateur final est un **Travailleur Social humain** qui accompagne un bénéficiaire (généralement une personne réfugiée et sa famille) dans sa relocalisation.\n"
             "- Synthétise les retours des experts et du dossier JSON pour l'aider dans son accompagnement.\n"
             "- Soit hyper factuel et ajoute toujours une section sur les éléments spécifiques que tu n'as pas pu trouver ou vérifier.\n"
+        )
+    elif agent_type == "job_curator":
+        return (
+            "**Contexte de collaboration (CIP / Insertion)** :\n"
+            "- Tu es un CIP (Conseiller en Insertion Professionnelle) expert en insertion professionnelle de réfugiés.\n"
+            "- Sélectionne de manière factuelle et rigoureuse les 5 meilleures offres d'emploi pour aider le Travailleur Social humain.\n"
         )
     return ""

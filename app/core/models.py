@@ -49,7 +49,7 @@ class SearchCriterias(BaseModel):
 
 
     # Qualitative notes (free text indices for Scout and Synthesis)
-    notes_qualitatives: List[str] = Field(default_factory=list, description="Notes qualitatives sur le projet de vie", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_job_hunter", "agent_housing_expert", "agent_mobility_expert", "agent_healthcare_expert", "agent_education_expert", "agent_social_integration_expert", "agent_synthesizer", "pdf_report", "agent_ts_agent"]})
+    notes_qualitatives: List[str] = Field(default_factory=list, description="Notes qualitatives sur le projet de vie", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_job_hunter", "agent_housing_expert", "agent_mobility_expert", "agent_healthcare_expert", "agent_education_expert", "agent_social_integration_expert", "agent_synthesizer", "pdf_report", "agent_ts_agent", "agent_job_curator"]})
 
     # Final scoring priority
     weight_profile: str = Field("", description="Profil de pondération", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "pdf_report"]})

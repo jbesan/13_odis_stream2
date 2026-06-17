@@ -49,8 +49,10 @@ class KnowledgeStore:
                 post = frontmatter.load(f)
             return {
                 "id": skill_id,
+                "name": post.get("name", ""),
                 "description": post.get("description", ""),
                 "domain": post.get("domain", ""),
+                "tools": post.get("tools", []),
                 "instructions": post.content.strip()
             }
         except Exception as e:
@@ -91,7 +93,7 @@ class KnowledgeStore:
             logger.error(f"Error fetching all skills: {e}")
             return []
 
-    def insert_or_update_skill(self, skill_id: str, description: str, instructions: str, domain: str, name: Optional[str] = None, version: Optional[str] = None, tags: Optional[List[str]] = None):
+    def insert_or_update_skill(self, skill_id: str, description: str, instructions: str, domain: str, name: Optional[str] = None, version: Optional[str] = None, tags: Optional[List[str]] = None, tools: Optional[List[str]] = None):
         """Inserts a new Skill Card or updates an existing one as a Markdown file."""
         try:
             file_path = os.path.join(self.skills_dir, f"{skill_id}.md")
@@ -128,6 +130,11 @@ class KnowledgeStore:
                 metadata["tags"] = tags
             elif "tags" not in metadata:
                 metadata["tags"] = []
+
+            if tools is not None:
+                metadata["tools"] = tools
+            elif "tools" not in metadata:
+                metadata["tools"] = []
 
             post = frontmatter.Post(content=instructions, **metadata)
             
