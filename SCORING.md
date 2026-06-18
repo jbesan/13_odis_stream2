@@ -6,7 +6,47 @@ Ce document détaille le fonctionnement interne du moteur de scoring de l'applic
 
 ## 🏗️ L'Architecture du Score
 
-Le score final d'une commune est le résultat d'un processus en quatre étapes :
+![Explication de la logique de scoring](./images/Screenshot-4.png)
+
+### Flux Global du Score (Pre-scoring vs Live-scoring)
+
+Le flux de données et de calculs se décompose entre la phase de préparation offline (ETL) et la phase d'évaluation live (Streamlit) :
+
+```mermaid
+graph TD
+    %% Offline Pipeline (Pre-scoring)
+    subgraph Offline ["⚡ Pipeline de Prescoring (Offline ETL)"]
+        A["Données Brutes (INSEE, RNA, SSMSI, USH, CAF, etc.)"] --> B["pipeline/prescoring.py"]
+        B --> C["Calcul des Ratios & Indicateurs"]
+        C --> D["Scaling & Bornage (Standard p1/p99, Sensible p5/p95, Bornes fixes)"]
+        D --> E["Consolidation PLM (Paris, Lyon, Marseille)"]
+        E --> F[("Dataset final (odis_communes.parquet)")]
+    end
+
+    %% Online Engine (Live-scoring)
+    subgraph Online ["🟢 Moteur de Scoring Dynamique (Live Streamlit)"]
+        G["Profil Utilisateur & Critères (SearchCriterias)"] --> H["Moteur de Scoring (app/core/scoring.py)"]
+        F --> H
+        
+        %% Dynamic Calculations
+        H --> I["Calculs Live / Dynamiques"]
+        I --> I1["Proximité Géographique (Décroissance linéaire)"]
+        I --> I2["Taille de Ville (Courbe Gaussienne)"]
+        I --> I3["Matchs Directs & Live (Emploi FT, Formations, Santé, Affinités)"]
+        
+        %% BdV Boost
+        I1 & I2 & I3 --> J["Application du Boost Bassin de Vie (BdV)"]
+        
+        %% Category aggregation & Percentile normalisation
+        J --> K["Agrégation & Normalisation par Centiles (Percentile Ranking par Catégorie)"]
+        
+        %% Weighted Sum & Map limit
+        K --> L["Somme Pondérée Finale (weighted_score)"]
+        L --> M["Cutoff Map (Top 1000 pour la Carte Folium)"]
+    end
+```
+
+Le score final d'une commune est le résultat d'un processus en six étapes :
 
 ### 1. Filtrage et Proximité Géographique
 
@@ -59,7 +99,7 @@ Enfin, les scores normalisés de chaque catégorie sont regroupés puis pondér�
 
 ## 📊 Synthèse de la Configuration (Tous les Critères)
 
-Voici l'intégralité des 40 critères configurés dans le moteur de soring OD&IS (`scores_config.yaml` + Distance).
+Voici l'intégralité des 45 critères configurés dans le moteur de scoring OD&IS (`scores_config.yaml` + Distance).
 
 ### 🏠 Logement
 
@@ -109,6 +149,7 @@ Voici l'intégralité des 40 critères configurés dans le moteur de soring OD&I
 | :--------------------- | :----- | :---- | :------- | :-------- | :----------------------------------------- |
 | **Population Commune** | Live-scoring | 3.0   | **Oui**  | -0.5      | Score basé sur la taille de ville (Gauss). |
 | **Sécurité (Taux)**    | Pre-scoring | 1.0   | **Oui**  | 0.5       | Indice d'insécurité (Vols/Dégradations).   |
+| **Couleur Politique**  | Pre-scoring | 1.0   | **Oui**  | 0.0       | Orientation politique locale de la commune. |
 | **Zone Stratégique**   | Live-scoring | 3.0   | Non      | 0.0       | Zone d'action privilégiée partenaire.      |
 
 

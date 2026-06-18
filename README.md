@@ -96,13 +96,13 @@ Ce prototype a un triple objectif :
 
 ## ⚙️ Fonctionnement : Le Moteur de Scoring
 
-Le cœur de l'application est un pipeline de scoring qui évalue les communes (ou les bassins de vie) en fonction du profil utilisateur.
+Le cœur de l'application est un pipeline de scoring multi-critères qui évalue la compatibilité de chaque commune avec le projet de vie de l'utilisateur.
 
-1.  **Filtrage Géographique :** Le moteur délimite la zone de recherche selon le périmètre choisi (Département, Région, France Métropolitaine) ou une zone spécifique (Custom). Il n'utilise plus de rayon en km mais des limites administratives réelles.
-2.  **Calcul des Critères :** Il calcule des dizaines de scores individuels pour chaque commune (Emploi, Logement, Santé, etc.).
-3.  **Enrichissement par le Bassin de Vie :** Pour certains critères (ex: Éducation, Santé), le score d'une commune est bonifié par les opportunités du Bassin de Vie via une logique de Boost non-pénalisante. Si une commune n'a pas de lycée mais qu'il y en a un dans son Bassin de Vie, elle reçoit un bonus (via le `bdv_factor` défini dans [scores_config.yaml](./app/scores_config.yaml)). Cela permet de valoriser les communes qui bénéficient des services de leur territoire proche.
-4.  **Agrégation par Catégorie :** Les scores des critères individuels sont moyennés pour former des scores de catégories. Pour un exemple concret du calcul et une explication détaillée de la logique de boost, consultez la [Documentation du Scoring](./SCORING.md).
-5.  **Score Pondéré Final :** Enfin, un `weighted_score` global est calculé pour chaque commune en appliquant les poids définis. Le moteur s'appuie sur le modèle `SearchCriterias` pour garantir la cohérence entre l'interface formulaire, le chatbot et l'export PDF. Les résultats sont ensuite classés selon ce score final.
+Le calcul s'effectue en deux phases principales :
+1. **Pre-scoring (Offline) :** Calcul et normalisation (scaling par quantiles) des indicateurs territoriaux statiques (logement, démographie, équipements).
+2. **Live-scoring (Online) :** Calcul dynamique en fonction du profil saisi (opportunités d'emploi directes, centres de formation, structures de santé spécifiques, proximité et bonus EPCI).
+
+Pour plus de détails sur la logique d'enrichissement par bassin de vie (Boost opportunité), les baselines obligatoires, la normalisation par centiles ou la liste complète des 45 indicateurs, consultez la [Documentation du Scoring](./SCORING.md).
 
 ## 🛡️ Qualité et Robustesse (Spec-Driven Development)
 
@@ -111,47 +111,6 @@ Le projet suit une approche rigoureuse de développement piloté par les spécif
 - **Typage Stricte (Mypy)** : Le codebase est 100% conforme à `mypy` en mode strict. Toutes les fonctions sont annotées et les modèles Pydantic assurent la validation des données à l'exécution.
 - **Tests Automatisés (Pytest)** : Une suite de plus de 100 tests unitaires et d'intégration couvre le moteur de scoring, les agents pydantic-graph et les composants UI.
 - **Documentation Narrative** : Chaque changement majeur est documenté dans le `walkthrough.md` et le [guide d'architecture](./ARCHITECTURE.md).
-
-![Explication de la logique de scoring](./images/Screenshot-4.png)
-
-### Critères de Scoring
-
-Le score est calculé à partir d'une multitude de critères, regroupés en grandes catégories. Chaque critère est normalisé pour permettre une comparaison équitable. Voici la liste des critères utilisés :
-
-**Catégorie : Emploi**
-
-- **Opportunités Emploi (Match direct)** : Mesure le nombre réel d'offres d'emploi disponibles dans la commune pour les métiers recherchés (Source: API France Travail).
-- **Tension de recrutement** : Identifie les offres signalées comme difficiles à pourvoir, signalant un fort besoin de main-d'œuvre immédiat.
-- **Offres SIAE** : Identification des offres d'insertion par l'activité économique correspondant au profil (Source: Les emplois de l'inclusion).
-- **Centres de Formation** : Mesure la présence de centres de formation proposant les cursus recherchés par les adultes du foyer.
-- **Déclin Démographique Actif** : Valorise les communes perdant leur population active (25-54 ans), signalant un besoin de main-d'œuvre.
-
-**Catégorie : Logement**
-
-- **Taux de Logements Vacants** : Calcule le pourcentage de logements vacants structurels (> 2 ans), un indicateur de la disponibilité sur le marché locatif privé.
-- **Taux de Logements Sociaux Inoccupés** : Mesure la part des logements sociaux vacants ou vides, indiquant une disponibilité potentielle dans le parc social.
-- **Sous-occupation** : Évalue le potentiel de cohabitation et d'accueil chez l'habitant via le taux de sous-occupation des résidences principales.
-- **Loyer Moyen** : Intégration des loyers moyens (Appartements et Maisons) pour évaluer l'accessibilité financière (Source: ODACE 2024).
-
-**Catégorie : Éducation**
-
-- **Taux de Classes à Risque de Fermeture** : Identifie les écoles où des classes risquent de fermer faute d'élèves, ce qui peut être une opportunité pour de nouvelles familles.
-- **Taux de Couverture Petite Enfance** : Évalue la disponibilité des modes de garde (crèches, assistantes maternelles) pour les jeunes enfants (< 3 ans), basé sur les données de la CAF.
-- **Proximité Scolaire** : Vérifie la présence de structures d'enseignement (Maternelle, Elémentaire, Collège, Lycée) dans la commune ou à proximité immédiate.
-- **Déclin Démographique Jeune** : Valorise les communes perdant leur population jeune (-15 ans), indicateur d'un besoin de repeuplement scolaire.
-
-**Catégorie : Inclusion & Vie Locale**
-
-- **Accueils J'Accueille** : Valorise les bassins de vie disposant d'un réseau actif d'hébergement citoyen.
-- **Accompagnement Réfugiés** : Évalue la présence d'associations spécialisées dans l'accueil des personnes réfugiées (Source: RNA).
-- **Lien Social & Associations** : Mesure la densité associative globale et thématique (Loisirs, Sport, Culture) pour favoriser l'intégration.
-- **Services d'Inclusion** : Mesure la présence de services dédiés (Français Langue Étrangère, aide administrative, etc.).
-- **Taille de la Population** : Utilisé via une fonction Gaussienne dynamique (cible réglable entre 5k et 200k habitants) pour favoriser les communes correspondant au projet de vie.
-
-**Catégorie : Mobilité**
-
-- **Appartenance à la même agglomération (EPCI)** : Vérifie si la commune proposée est dans le même Établissement Public de Coopération Intercommunale (EPCI) que la commune de départ.
-- **Présence d'une Gare et Transports** : Bonifie les communes disposant d'une gare ferroviaire et d'une bonne densité d'arrêts de transports en commun.
 
 ## 🛠️ Stack Technique
 
@@ -196,25 +155,36 @@ app/
 
 ## 🤖 Interface AI Agent (Assistant ODIS 2.0)
 
-L'Assistant ODIS 2.0 est une interface de conversation en langage naturel conçue pour simplifier le travail de diagnostic social. Il repose sur une architecture multi-agent innovante :
+L'Assistant ODIS 2.0 est une interface de conversation en langage naturel conçue pour simplifier le travail de diagnostic social. Il repose sur une architecture multi-agent innovante (v6.0) :
 
 ### Architecture Multi-Agent (pydantic-graph)
 
-Contrairement à un chatbot classique, l'Assistant ODIS est orchestré par un pipeline de données (pydantic-graph) qui coordonne plusieurs experts spécialisés (PydanticAI) :
+Orchestré par `pydantic-graph`, le système suit un pattern **MapReduce (Swarm) piloté par un chef de projet (PM)** :
 
-1.  **L'Auto-Détection (Interviewer) :** Un agent one-shot qui extrait les critères depuis votre texte initial.
-2.  **Le Triage :** Analyse la demande et planifie l'exécution parallèle des experts.
-3.  **Parallélisation des Experts (MapReduce) :** Pour toute analyse de ville, le système lance simultanément :
-    - **Scout** : Analyse le terrain (Google Maps).
-    - **WEB** : Recherche l'actualité et le contexte social (Google Search).
-    - **Job Hunter** : Trouve les offres d'emploi réelles (France Travail).
-4.  **Synthétiseur (Join) :** Fusionne toutes les données en une réponse unique et cohérente.
+1. **Le Chef de Projet (Triage / `ts_agent`) :** Reçoit la question et le contexte de l'utilisateur. Il évalue le dossier, sélectionne les instructions des experts (Skill Cards) et planifie des missions sur-mesure pour chaque domaine.
+2. **Le Swarm Parallèle (6 Experts Métiers) :** Le système lance en parallèle uniquement les experts pertinents requis pour la mission :
+   - **Job Hunter** : Offres ROME et insertion (France Travail / SIAE).
+   - **Housing Expert** : Loyers au m², délais d'attente HLM, CCAS.
+   - **Mobility Expert** : Réseau de transport en commun et tarification solidaire.
+   - **Healthcare Expert** : Indicateur APL, hôpitaux et maternités.
+   - **Education Expert** : Écoles, crèches et démarches d'inscription.
+   - **Social Integration Expert** : Associations de réfugiés, RNA et accompagnement.
+3. **Le Join & Synthétiseur :** Fusionne les analyses des experts actifs et génère le rapport ou la réponse finale argumentée.
+
+### Routage & Modes d'Exécution du Swarm
+
+Le chef de projet (`ts_agent`) oriente dynamiquement la requête selon 3 modes :
+* **Full Analysis (`full_analysis`)** : Lancé au début ou à la demande pour réaliser l'analyse complète de la commune (exécute les 6 experts).
+* **Specific Ask (`specific_ask`)** : Lancé pour des questions de suivi nécessitant de nouvelles requêtes externes (exécute uniquement les experts concernés).
+* **Direct Answer Bypass (`direct_answer`)** : Si la réponse est déjà présente dans le contexte ou les rapports d'experts déjà générés, le PM génère la réponse directement et court-circuite complètement le swarm d'experts et le synthétiseur pour une réponse instantanée.
+
+Pour plus de détails techniques, consultez la [documentation technique de l'architecture des agents](./app/agents/GRAPH_ARCHITECTURE.md).
 
 ### Points Forts de l'Agent
 
-- **Raisonnement Métier :** Il comprend les codes ROME, les types de logement et les besoins spécifiques (santé, inclusion).
-- **Transparence :** Chaque affirmation est sourcée, que ce soit via les données ODIS, Google Maps ou des recherches Web citées.
-- **Proactivité :** L'agent cherche à compléter votre dossier sans que vous ayez besoin de remplir des dizaines de champs manuellement.
+- **Raisonnement Métier & Outils Hybrides :** Il comprend les codes ROME, les structures d'insertion et d'accueil. Il combine des outils Python locaux et la recherche en ligne en temps réel (Gemini Google Search Grounding).
+- **Transparence :** Chaque affirmation est rigoureusement sourcée (données ODIS locales, APIs ou liens web réels).
+- **Proactivité :** L'agent cherche à compléter le dossier social à partir du dialogue pour éviter les saisies de formulaires fastidieuses.
 
 ## 🔮 Feuille de Route et Améliorations Futures
 
