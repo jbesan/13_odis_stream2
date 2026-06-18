@@ -23,33 +23,34 @@ The legacy multi-turn `Interviewer` has been replaced by a standalone **one-shot
 For technical details on the graph orchestration, see [GRAPH_ARCHITECTURE.md](app/agents/GRAPH_ARCHITECTURE.md).
 
 ### 2.2 Orchestration Graph (`pydantic-graph`)
-The background analysis is orchestrated by a MapReduce pipeline built with `GraphBuilder`.
+The background analysis is orchestrated by a PM-driven MapReduce pipeline built with `GraphBuilder`.
 
 ```mermaid
 graph TD
-    Start((Start)) --> Triage[Triage Node]
-    Triage --> |ExpertList| Map[Extract Domains]
-    Triage --> |DirectSynthesis| Synthesizer[Synthesizer Node]
+    Start((Start)) --> Triage[1. Triage Node / TS_AGENT]
+    Triage --> |ExpertList| Map[2. Extract Domains Map]
+    Triage --> |End: Direct Answer| End((End))
     
-    subgraph MapReduce
-        Map --> Worker1[Expert: Scout]
-        Map --> Worker2[Expert: Web]
-        Map --> Worker3[Expert: Job Hunter]
+    subgraph MapReduce Swarm
+        Map --> Worker1[job_hunter]
+        Map --> Worker2[housing_expert]
+        Map --> Worker3[mobility_expert]
+        Map --> Worker4[healthcare_expert]
+        Map --> Worker5[education_expert]
+        Map --> Worker6[social_integration_expert]
         
-        Worker1 --> Join[Collect Experts Join]
-        Worker2 --> Join
-        Worker3 --> Join
+        Worker1 & Worker2 & Worker3 & Worker4 & Worker5 & Worker6 --> Join[3. Collect Experts Reduce]
     end
     
-    Join --> Synthesizer
-    Synthesizer --> End((End))
+    Join --> Synthesizer[4. Synthesizer Node]
+    Synthesizer --> End
 ```
 
 ### 2.3 Graph Nodes
-- **Triage**: Uses a Routing LLM (or static rules) to decide which experts to trigger. It returns either an `ExpertList` (for fan-out) or `DirectSynthesis` (for immediate response).
+- **Triage (Project Manager)**: Runs `ts_agent` (LLM) to plan the swarm. Resolves skill card instructions from Markdown files in `app/agents/skills/` in a single pass to save I/O overhead. Can yield `End(direct_answer)` immediately to bypass the swarm if context holds the answer.
 - **Map (Extract Domains)**: Fans out the `ExpertList` into parallel worker instances.
-- **Expert Worker**: Executes a specialized PydanticAI agent (`scout`, `web`, or `job_hunter`) for the focus city.
-- **Join (Collect Experts)**: Accumulates artifacts from all workers into a single list using `reduce_list_append`.
+- **Expert Workers**: Parallel nodes running the active domain experts (`job_hunter`, `housing_expert`, `mobility_expert`, `healthcare_expert`, `education_expert`, `social_integration_expert`) using state-injected skill instructions.
+- **Join (Collect Experts)**: Accumulates artifacts and merges cumulative usage statistics into `state.usage` via `.merge()`.
 - **Synthesizer**: Consumes the aggregated artifacts and generates the final markdown summary for the UI and PDF.
 
 ## 3. State & Persistence
@@ -67,11 +68,14 @@ Background tasks are managed via a dedicated store and fragment polling:
 2. **Worker (`utils.py`)**: Runs the `pydantic-graph` in a separate thread.
 3. **Synchronization**: Results are written back to the store, triggering a UI refresh via Streamlit fragments.
 
-## 5. Expert Agents
+## 5. Expert Swarm Agents
 
-- **Scout**: Uses Google Maps and local referentials to analyze territory amenities.
-- **WEB**: Uses Google Search Grounding to provide real-time socio-economic context.
-- **Job Hunter**: Queries France Travail and specialized job boards for real-time tension data.
+- **Job Hunter**: Queries France Travail and specialized job boards for job tension data.
+- **Housing Expert**: Analyzes rent indexes, J'Accueille hosts, and CCAS structures.
+- **Mobility Expert**: Measures stop densities and public transit solidarity prices.
+- **Healthcare Expert**: Checks PMI centers, hospitals, and local APL doctor access.
+- **Education Expert**: Evaluates nursery capacities and local schools listing.
+- **Social Integration Expert**: Identifies local refugee support associations and RNA entries.
 - **Scorer**: (Runs outside the graph) Provides a mathematical explanation of the ODIS weighted scores.
 
 ## 6. Observability (Logfire)
@@ -172,5 +176,19 @@ To retrieve very large tables or handle hierarchical updates (like PLM arrondiss
 2. **Standard Export with Local Filtering (BPE)**: To bypass BPE table complexity (>2.78M rows in `dim_equipement_territoire`), the pipeline streams the pre-compiled Parquet export file using standard caching. The ingestion cleaner then filters the dataset locally for ODIS-relevant equipment types (`D502`, `D703`, `D704`, `D710`), reducing processing down to 18,401 rows while mapping `capacite_hebergement` to `CAPACITE` for the downstream build.
 3. **PLM Consolidation Alignment**: With arrondissement populations fully populated in the cleaned population dataset, `build.py` automatically uses population-weighted averages to compute indicators for Paris, Lyon, and Marseille (removing the simple average fallbacks).
 
+---
 
+## 12. Swarm Prompt DRY Design & BQ Native Vector Search
 
+To ensure high performance, maintainability, and clean user-facing telemetry:
+
+### 12.1 Standardized Prompt Boilerplate (DRY)
+To prevent prompt duplication and avoid exposing internal system code names (like `ODIS`), agent prompt generation is centralized via `get_swarm_boilerplate(agent_type)` in [agent_config.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/agent_config.py). 
+- **Roles & Context**: It unifies system prompts by family (expert, coordinator, synthesizer), explicitly establishing the context of collaboration where the final user is a human Social Worker accompanying a beneficiary.
+- **Token Efficiency**: It keeps agent prompts clean and concise, avoiding redundant context and reducing token usage.
+
+### 12.2 Native BigQuery Vector Search (`ML.DISTANCE`)
+For RAG-based search of inclusion-relevant associations, ODIS uses native BigQuery vector distance metrics instead of local Python-side calculations:
+- **Database-Level Distance**: In `get_associations_semantic` in [rna_rag.py](file:///Users/jacques/dev/13_odis_stream2/app/services/rna_rag.py), the query embedding is generated via Vertex AI, L2-normalized, and passed to BigQuery, which calculates similarity natively using `1.0 - ML.DISTANCE(..., 'COSINE')`.
+- **Minimal Network Overhead**: This avoids transferring large float arrays (representing candidate embeddings) over the network for local NumPy dot-product comparisons, minimizing memory footprint and network latency.
+- **Search Query Optimization**: To prevent geographical words from diluting semantic match scores, expert tools enforce a strict rule instructing LLMs not to include the city name in the query. Partitioning and filtering are handled via `codgeo` at the SQL level.

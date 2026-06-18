@@ -25,6 +25,16 @@ class UsageStats(BaseModel):
             return data.model_dump() if hasattr(data, 'model_dump') else data.__dict__
         return data
 
+    def merge(self, other: "UsageStats") -> None:
+        """Merges other usage statistics into this instance."""
+        self.input_tokens += other.input_tokens
+        self.output_tokens += other.output_tokens
+        self.total_tokens += other.total_tokens
+        self.cost_usd += other.cost_usd
+        if other.breakdown:
+            for k, v in other.breakdown.items():
+                self.breakdown[k] = v
+
 def compute_criteria_hash(criteria: SearchCriterias) -> str:
     """Helper to compute a stable hash for search criteria."""
     if not criteria:
@@ -49,6 +59,9 @@ class GraphState:
     interaction_id: str = "unknown"
     username: str = "unknown"
     usage: UsageStats = field(default_factory=UsageStats)
+    active_skills: List[str] = field(default_factory=list)
+    expert_tasks: Dict[str, str] = field(default_factory=dict) # Maps expert domain -> tailored task/mission
+    expert_skill_instructions: Dict[str, str] = field(default_factory=dict) # Maps expert domain -> skill cards instructions
     
     def __post_init__(self):
         # Sync briefing from criteria if not explicitly set
@@ -91,8 +104,9 @@ class ODISContextBuilder:
 
         Args:
             state: The current GraphState.
-            agent_name: One of 'synthesizer', 'refiner', 'scout',
-                        'web', 'job_hunter', 'interviewer', 'router'.
+            agent_name: One of 'synthesizer', 'refiner', 'ts_agent', 'job_hunter',
+                        'housing_expert', 'mobility_expert', 'healthcare_expert',
+                        'education_expert', 'social_integration_expert', 'interviewer', 'router', 'job_curator'.
 
         Returns:
             A formatted JSON string ready to inject into a system prompt.
@@ -112,22 +126,28 @@ class ODISContextBuilder:
         ctx = {}
         
         # 2. Build filtered contexts using _auto_build_context
-        if agent_name == "synthesizer" and state.odis_brief:
+        if state.odis_brief and agent_name != "interviewer":
             ctx["Résumé du dossier (Briefing)"] = state.odis_brief
+
+        if agent_name == "synthesizer":
             if criteria and criteria.notes_qualitatives:
                 ctx["Notes qualitatives"] = criteria.notes_qualitatives
-        else:
-            if criteria:
-                key = "Critères identifiés" if agent_name == "interviewer" else "Critères de recherche"
-                ctx[key] = cls._auto_build_context(criteria, visibility_key)
+
+        if criteria:
+            key = "Critères identifiés" if agent_name == "interviewer" else "Critères de recherche"
+            ctx[key] = cls._auto_build_context(criteria, visibility_key)
             
         if focus_city:
             ctx["Ville analysée"] = cls._auto_build_context(focus_city, visibility_key)
         elif state.focus_city:
             ctx["Ville analysée"] = cls._auto_build_context(state.focus_city, visibility_key)
             
-        if current_geo:
-            ctx["Ville actuelle (référence)"] = cls._auto_build_context(current_geo, visibility_key)
+        current_geo_field = SearchResultsData.model_fields.get("current_geo")
+        if current_geo and current_geo_field:
+            extra = current_geo_field.json_schema_extra or {}
+            visibility = extra.get("odis_visibility", [])
+            if visibility_key in visibility or "all" in visibility:
+                ctx["Ville actuelle (référence)"] = cls._auto_build_context(current_geo, visibility_key)
             
         if commune_pressentie and (not focus_city or commune_pressentie.codgeo != focus_city.codgeo):
             ctx["Commune pressentie (pour comparaison)"] = cls._auto_build_context(commune_pressentie, visibility_key)
@@ -146,8 +166,8 @@ class ODISContextBuilder:
                     for i, r in enumerate(state.search_results.results[:5])
                 ]
 
-        # 4. Handle Router specific target city name
-        if agent_name == "router":
+        # 4. Handle Router / TS_AGENT specific target city name
+        if agent_name in ("router", "ts_agent"):
             if state.focus_city:
                 ctx["Ville cible"] = f"{state.focus_city.name} ({state.focus_city.codgeo})"
             else:
@@ -159,7 +179,7 @@ class ODISContextBuilder:
                 ctx["Historique récent"] = state.messages[-5:]
             elif agent_name == "interviewer":
                 ctx["Dernier message utilisateur"] = state.messages[-1].get("content", "")
-            else:
+            elif agent_name != "job_curator":
                 ctx["Dernière question"] = state.messages[-1].get("content", "")
 
         result = json.dumps(ctx, ensure_ascii=False, indent=2)
@@ -196,7 +216,16 @@ class ODISContextBuilder:
                 return f"{label}: {kpi_str}, score: {round(float(score), 2)}, poids relatif: {weight}%"
             # For non-agent visibility (like UI/PDF), fall through to normal recursion
 
-        # 3. Handle Pydantic BaseModel
+        # 3. Special Case: AssociationDetail (Compact representation for agents)
+        if model.__class__.__name__ == "AssociationDetail":
+            if visibility_key.startswith("agent_"):
+                asso_id = getattr(model, 'id', '')
+                name = getattr(model, 'name', '')
+                desc = getattr(model, 'description', '') or ''
+                return f"{asso_id} | {name} | {desc}"
+            # For non-agent visibility, fall through to normal recursion
+
+        # 4. Handle Pydantic BaseModel
         if isinstance(model, BaseModel):
             ctx = {}
             for name, field in model.__class__.model_fields.items():
@@ -217,11 +246,11 @@ class ODISContextBuilder:
                 ctx[label] = cls._auto_build_context(val, visibility_key)
             return ctx
 
-        # 4. Handle List
+        # 5. Handle List
         if isinstance(model, list):
             return [cls._auto_build_context(item, visibility_key) for item in model]
 
-        # 5. Handle Dict
+        # 6. Handle Dict
         if isinstance(model, dict):
             return {k: cls._auto_build_context(v, visibility_key) for k, v in model.items()}
 

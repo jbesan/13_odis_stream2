@@ -670,7 +670,7 @@ scores:
       unit: ""
       display_factor: 1
       tooltip: Au moins un accueillant actif dans le bassin de vie (Source J'Accueille)
-    weight: 3.0
+    weight: 2.0
     min_bound: 0.0
     max_bound: 1.0
 

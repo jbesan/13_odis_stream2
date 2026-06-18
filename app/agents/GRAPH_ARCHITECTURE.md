@@ -1,114 +1,117 @@
-# ODIS Graph Architecture (v5.0)
+# ODIS Graph Architecture (v6.0)
 
 This document defines the technical architecture of the ODIS multi-agent orchestration, powered by `pydantic-graph`.
 
-## 🏗️ Pipeline Topology (MapReduce)
+## 🏗️ Pipeline Topology (PM-Driven MapReduce Swarm)
 
-ODIS follows a native **MapReduce (Spreading)** pattern for high-performance territorial analysis. The graph is designed to be a unidirectional data processing pipe.
+ODIS follows a PM-driven **MapReduce (Spreading)** pattern for high-performance territorial analysis. The graph is designed to process user requests via a Project Manager (`ts_agent`) triage step that plans the swarm execution.
 
 ```mermaid
 graph TD
-    Input([Notes/Projet de vie]) --> Interviewer[[Interviewer Agent]]
-    Interviewer -->|SearchCriteria| Engine[Scoring Engine]
-    Engine -->|Top 5 Cities| Graph
+    Input([SearchCriterias + User Question]) --> Graph
     
-    subgraph Graph [pydantic-graph: Deep Analysis]
+    subgraph Graph [pydantic-graph: PM-Driven Swarm]
         direction TB
-        GStart((START)) --> Triage[TRIAGE Node]
-        Triage -->|Route: Specific Ask| Router{Router LLM}
-        Triage -->|Route: Full Analysis| Map[Map: Domains]
+        GStart((START)) --> Triage[1. TRIAGE / TS_AGENT Node]
         
-        Router -->|Action: Analysis| Map
-        Router -->|Action: Direct Answer| Synth[SYNTHESIZER Node]
+        %% PM Planning / Routing
+        Triage -.->|1. Lookup instructions by ID| Db[(Skills: Markdown Files)]
+        Triage -->|2. Route: Direct Answer| GEnd((END))
+        Triage -->|2. Route: Expert Tasks| Map[2. MAP: Domains to Run]
         
-        subgraph Parallel [MapReduce Spreading]
-            Map --> S[Expert: Scout]
-            Map --> W[Expert: Web]
-            Map --> J[Expert: Job Hunter]
-            S & W & J --> Join[Join: Collect Results]
+        subgraph ParallelSwarm [Parallel Expert Swarm]
+            direction LR
+            Map --> JH[job_hunter]
+            Map --> HE[housing_expert]
+            Map --> ME[mobility_expert]
+            Map --> HC[healthcare_expert]
+            Map --> EE[education_expert]
+            Map --> SI[social_integration_expert]
+            
+            JH & HE & ME & HC & EE & SI --> Join[3. REDUCE: Join Results]
         end
         
-        Join --> Synth
-        Synth --> GEnd((END))
+        Join --> Synth[4. SYNTHESIZER Node]
+        Synth --> GEnd
     end
     
-    Engine --> Refiner[[AI Refiner Agent]]
     GEnd --> UI[/Streamlit UI / PDF/]
-    Refiner -->|Unified Briefing & Pitch| UI
     
     style Graph fill:#f9f9f9,stroke:#333,stroke-dasharray: 5 5
-    style Interviewer fill:#e1f5fe,stroke:#01579b
-    style Refiner fill:#e1f5fe,stroke:#01579b
-    style Parallel fill:#fff,stroke:#333
+    style ParallelSwarm fill:#fff,stroke:#333
 ```
 
 ### 🧠 Core Orchestration Nodes
 
-1.  **Triage Node (The Router)**: The entry point. 
-    - **Logic**: If `execution_mode` is `full_analysis`, it automatically triggers all experts. If `specific_ask`, it calls the **Router Agent** (LLM) to analyze the user's intent.
-    - **Decision**: Returns either an `ExpertList` (for parallel fan-out) or a `DirectSynthesis` DTO (if the LLM can answer using existing context).
-2.  **Extract Domains (Map)**: A standard mapping node that fans out the `ExpertList` into parallel worker instances.
-3.  **Expert Worker**: A generic node instance that delegates to specialized agents (`scout`, `web`, `job_hunter`).
-4.  **Join Node**: A `g.join()` node that merges `AgentArtifacts` into a single list.
-5.  **Synthesizer Node**: The final stage. It merges expert findings into the state and generates the final user-facing Markdown response.
+1.  **Triage Node / TS_AGENT (The Project Manager)**:
+    *   **Planning**: Receives the user question, search criteria, and context. Runs a fast LLM (`ts_agent`) to evaluate the dossier, identify which experts to run, formulate custom task missions for each domain, and select the relevant **Skill Cards** by ID from the database.
+    *   **Decoupled File Fetching**: In a single synchronous pass, triage loads the selected skill card instructions from Markdown files using `KnowledgeStore`, storing them in `GraphState.expert_skill_instructions` to prevent concurrent file I/O during parallel worker runs.
+    *   **Direct Answer Bypass**: If the user's question can be answered completely using the existing context, `ts_agent` generates a `direct_answer` and the triage node returns `End(direct_answer)` immediately, completely bypassing the MapReduce swarm and the Synthesizer.
+2.  **Extract Domains (Map)**: Fans out the chosen list of active domains into parallel worker nodes.
+3.  **Expert Workers (6 Domain Experts)**:
+    *   `job_hunter`: Finds ROME job offers (France Travail / SIAE).
+    *   `housing_expert`: Evaluates rent m², housing delay, and CCAS.
+    *   `mobility_expert`: Examines bus/tram networks and transit solidary pricing.
+    *   `healthcare_expert`: Analyzes APL access indexes, hospitals, and PMI.
+    *   `education_expert`: Lists local schools, kindergartens, and registration processes.
+    *   `social_integration_expert`: Identifies refugee support associations, CCAS, and RNA resources.
+    *   Each active expert runs in a **single turn** (no ReAct tool calling loops), reading its specific instructions directly from `GraphState.expert_skill_instructions` and querying its specific APIs/tools.
+4.  **Join Node (Reduce)**: Accumulates `AgentArtifact` payloads from all parallel worker threads, merging their results and cumulative usage.
+5.  **Synthesizer Node**: Consumes the aggregated expert analysis and user situation to compile the final markdown response (global pitch or targeted chatbot answer).
 
 ---
 
-## 🧩 Decoupled AI Components
+## 🔀 Swarm Routing & Execution Paths
 
-While the `odis_graph` handles deep city analysis (on-demand), other specialized tasks are decoupled for performance and UX:
+The triage node (`ts_agent`) dynamically determines how the user query should be processed, selecting one of three execution paths:
 
-### 1. The Interviewer (Technical Extraction)
-- **Role**: Extracts `SearchCriterias` from unstructured text (Auto-Detect) or conversation.
-- **Output**: A structured Pydantic model mapped to the UI session state.
-- **Flow**: Acts as the first gate. Its text response is minimal, confirming only the technical extraction.
+1. **Initial Full Analysis (`full_analysis`)**
+   - **Trigger**: Occurs when the user initiates a search/analysis for a recommended city (e.g., initial page load) or when the user explicitly requests it (e.g., queries starting with or containing *"Fais une analyse complète de"*). This is also triggered if the focus city's expert report cache (`expert_analysis` / `"Analyses experts"`) is empty or missing.
+   - **Flow**: The `ts_agent` evaluates criteria and plans individual missions (`ExpertTask`) for all relevant experts. Direct answer generation is strictly forbidden here. The graph fans out to run the parallel expert swarm, and then passes their responses to the `synthesizer` to build the full city briefing.
 
-### 2. The Refiner (Synthesis & Pitch)
-- **Role**: The "Brain" of the search results. It performs three critical syntheses:
-    - **Dossier Summary** (`odis_brief`) : A narrative summary of the user's situation.
-    - **Global Pitch** : An introduction to the search results.
-    - **City Pitches** : Narrative "pros/cons" for each city in the Top 5.
-- **Location**: Triggered as a background task in `app/agents/utils.py` immediately after the `ScoringEngine` runs.
-- **UI Interaction**: Blocks the UI (Guardrail) until the synthesis is ready to ensure data stability.
+2. **Follow-up Specific Ask (`specific_ask`)**
+   - **Trigger**: Subsequent conversational questions about a city where expert analysis reports are already present in the context.
+   - **Flow (Swarm Route)**: If the follow-up question requires new external queries (e.g., asking for specific jobs or live transit/housing queries not covered in the cached report), the `ts_agent` plans specific expert tasks, executing the MapReduce swarm for only those thématiques before synthesizing.
+
+3. **Direct Answer Bypass (`direct_answer`)**
+   - **Trigger**: A follow-up conversational question that can be answered entirely using the existing expert reports and metrics already cached in the dossier's context.
+   - **Flow**: The `ts_agent` sets `swarm_mode` to `'direct_answer'` and generates the final answer in French inside the `direct_answer` field, leaving the `tasks` list empty. The graph detects this bypass and returns `End(direct_answer)` immediately, completely skipping the expert swarm and synthesizer nodes.
 
 ---
 
 ## 💾 State & Data Flow
 
 ### ⚛️ `GraphState` (Dataclass)
-Unlike legacy versions, we use a pure Python `@dataclass` for state. This ensures:
-- **Streamlit Stability**: Avoids `PydanticRedefinitionError` during code changes.
-- **Statelessness**: The graph is instantiated and run from scratch for every request, with state passed explicitly.
+We use a pure Python `@dataclass` for graph state to ensure compatibility with Streamlit's serialization. New fields include:
+- `expert_tasks`: Maps active experts to custom task instructions generated by `ts_agent`.
+- `expert_skill_instructions`: Holds the resolved skill cards instructions retrieved by the triage node from Markdown files.
+- `usage`: Tracks cumulative token counts, requests, costs, and breakdown details.
 
 ### 🧩 Result Aggregation
 Expert findings are encapsulated in `AgentArtifact` objects:
 - `domain`: The expert name.
-- `result`: Markdown content.
-- `usage`: Captured token metrics.
-
-Merging happens in the `synthesizer_step` by matching the `focus_city` codgeo in the `search_results`.
+- `result`: Markdown analysis.
+- `usage`: Token and cost breakdown.
 
 ---
 
 ## ⚡ Production Patterns
 
-### 🔀 Decision Branching (SOTA)
-We use `g.decision().branch()` for clean, type-safe routing. This replaces legacy complex edge functions and ensures the graph topology is visible in the code.
+### 🔀 Type-Safe Decision Branching
+We use `g.decision().branch()` to route flows based on the return type of the triage step (`ExpertList` vs `End`), ensuring the topology is clean and robust.
 
-### 📊 Usage Instrumentation
-Every node (Triage, Expert, Synthesizer) captures `pydantic-ai` `UsageStats`. These are merged into the global state to provide accurate cost and token tracking for the session.
+### 📊 Cumulative Usage & Cost Tracking
+*   Every node execution captures `pydantic-ai` `UsageStats`.
+*   A custom `.merge()` method on `UsageStats` accumulates inputs, outputs, request counts, cost USD, and breakdown mappings.
+*   Merged usage is stored in `ctx.state.usage` at every step, ensuring BigQuery logs and token reports are complete.
 
 ### 🧪 Integration Testing
-The architecture is verified via:
-- `test_graph_verification.py`: End-to-end execution of the full MapReduce flow.
-- `test_interviewer_agent.py`: Testing the one-shot extraction logic.
+Tested and verified via:
+- [test_direct_answer.py](file:///Users/jacques/dev/13_odis_stream2/tests/test_direct_answer.py): Asserts the Direct Answer bypass, swarm map-reduce, and synthesizer integration.
+- [test_skills_store.py](file:///Users/jacques/dev/13_odis_stream2/tests/test_skills_store.py): Verifies file-based Markdown store CRUD and domain search operations.
 
----
+### 🔧 Pydantic AI Upgrade & Tool Grounding Support
+* **Native Tool Combination**: ODIS leverages Gemini's native tools (e.g. Google Search Grounding for web searches) alongside custom Python function tools defined via `@agent.tool` on the expert agents.
+* **Library Upgrade**: The project was upgraded to `pydantic-ai-slim[google,logfire]==1.107.0` (from `1.76.0`) to resolve a critical runtime validation error where the Google GenAI provider would throw `UserError: Google does not support function tools and built-in tools at the same time` when both types of tools were attached to the same agent.
+* **Seamless Integration**: With version `1.107.0`+, `pydantic-ai` natively manages combining custom function tools and native Gemini tools on the Google provider, allowing expert agents to perform local tool lookups while concurrently utilizing the native `WebSearchTool`.
 
-## 📝 Configuration Standard
-
-- **Model Mapping**: 
-    - `router`: GPT-4o-mini or Gemini Flash (Fast).
-    - `experts`: Gemini Flash (Multimodal/Search capability).
-    - `synthesizer`: Gemini Flash (Context handling).
-- **Tooling**: Experts leverage `GoogleSearchGrounding` (Web) and `BraveSearch` / `GoogleMaps` (Scout) for real-time data.

@@ -19,10 +19,11 @@ class NodeConfig(BaseModel):
         max_tokens: Maximum output tokens.
         thinking: Optional thinking/reasoning effort level (Gemini 3+).
     """
-    model: str = "google-gla:gemini-3.1-flash-lite-preview"
+    model: str = "google:gemini-3.1-flash-lite-preview"
     temperature: float = 0.0
     max_tokens: int | None = None
     thinking: Literal["minimal", "low", "medium", "high"] | None = None
+    timeout: float | None = 30.0
 
     @property
     def model_settings(self) -> ModelSettings:
@@ -31,6 +32,7 @@ class NodeConfig(BaseModel):
             temperature=self.temperature,
             max_tokens=self.max_tokens,
             thinking=self.thinking,
+            timeout=self.timeout,
         )
 
 
@@ -47,13 +49,18 @@ class AgentSettings(BaseSettings):
         extra="ignore",
     )
 
-    router: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.1, thinking="medium"))
-    interviewer: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.5, thinking="high"))
-    scout: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.3, thinking="medium"))
-    web: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.3, thinking="medium"))
-    job_hunter: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
-    synthesizer: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.1, thinking="medium", max_tokens=8192))
-    refiner: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.1, thinking="medium", max_tokens=4096))
+    router: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.1, thinking="low"))
+    interviewer: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.5, thinking="medium"))
+    ts_agent: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.1, thinking="low"))
+    housing_expert: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
+    mobility_expert: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
+    healthcare_expert: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
+    education_expert: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
+    social_integration_expert: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
+    job_hunter: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
+    job_curator: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.1, thinking="low"))
+    synthesizer: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.1, thinking="medium"))#, max_tokens=8192))
+    refiner: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.1, thinking="minimal", max_tokens=4096))
 
     def get_config(self, agent_name: str) -> NodeConfig:
         """Helper to get config by agent name, falling back to router if unknown."""
@@ -66,7 +73,7 @@ agent_settings = AgentSettings()
 
 # --- Legacy Compatibility & Helpers ---
 
-DEFAULT_MODEL = "google-gla:gemini-3.1-flash-lite"
+DEFAULT_MODEL = "google:gemini-3.1-flash-lite"
 
 
 def get_model(agent_name: str) -> str:
@@ -96,3 +103,38 @@ def get_p_model(agent_name: str, client: genai.Client) -> GoogleModel:
         model_name, 
         provider=provider,
     )
+
+
+def get_swarm_boilerplate(agent_type: Literal["expert", "coordinator", "synthesizer", "job_curator"]) -> str:
+    """Returns the standardized swarm collaboration boilerplate context prompt."""
+    if agent_type == "expert":
+        return (
+            "**Contexte de collaboration (Swarm d'agents IA)** :\n"
+            "- Tu es un expert thématique faisant partie d'un swarm d'agents IA. La demande provient de l'agent coordinateur.\n"
+            "- L'utilisateur final est un **Travailleur Social humain** qui accompagne un bénéficiaire (généralement une personne réfugiée et sa famille) dans sa relocalisation.\n"
+            "- Formule tes analyses à partir de tes recherches qualitatives en plus des données quantitatives du dossier JSON joint.\n"
+            "- Soit hyper factuel et ajoute toujours une section sur les éléments spécifiques que tu n'as pas pu trouver ou vérifier.\n"
+        )
+    elif agent_type == "coordinator":
+        return (
+            "**Contexte de collaboration (Swarm d'agents IA)** :\n"
+            "- Tu es le coordinateur d'un swarm d'agents IA thématiques.\n"
+            "- L'utilisateur final est un **Travailleur Social humain** qui accompagne un bénéficiaire (généralement une personne réfugiée et sa famille) dans sa relocalisation.\n"
+            "- Planifie le travail ou réponds directement à partir du dossier JSON pour l'aider dans son accompagnement.\n"
+            
+        )
+    elif agent_type == "synthesizer":
+        return (
+            "**Contexte de collaboration (Swarm d'agents IA)** :\n"
+            "- Tu es le synthétiseur final d'un swarm d'agents IA thématiques.\n"
+            "- L'utilisateur final est un **Travailleur Social humain** qui accompagne un bénéficiaire (généralement une personne réfugiée et sa famille) dans sa relocalisation.\n"
+            "- Synthétise les retours des experts et du dossier JSON pour l'aider dans son accompagnement.\n"
+            "- Soit hyper factuel et ajoute toujours une section sur les éléments spécifiques que tu n'as pas pu trouver ou vérifier.\n"
+        )
+    elif agent_type == "job_curator":
+        return (
+            "**Contexte de collaboration (CIP / Insertion)** :\n"
+            "- Tu es un CIP (Conseiller en Insertion Professionnelle) expert en insertion professionnelle de réfugiés.\n"
+            "- Sélectionne de manière factuelle et rigoureuse les 5 meilleures offres d'emploi pour aider le Travailleur Social humain.\n"
+        )
+    return ""

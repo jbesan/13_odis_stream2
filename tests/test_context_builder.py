@@ -166,5 +166,86 @@ def test_job_hunter_context_includes_matching_jobs():
     assert job_ctx["Libellé ROME de l'offre"] == "Conseil clientèle en assurances"
 
 
+def test_ts_agent_context_explicit_visibility():
+    """Verifies that ts_agent's context only contains fields explicitly tagged with 'agent_ts_agent' or 'all'."""
+    class ExpertData(BaseModel):
+        all_field: str = Field("all", description="All field", json_schema_extra={"odis_visibility": ["all"]})
+        ts_field: str = Field("ts", description="TS field", json_schema_extra={"odis_visibility": ["agent_ts_agent"]})
+        synth_field: str = Field("synth", description="Synthesizer field", json_schema_extra={"odis_visibility": ["agent_synthesizer"]})
+        
+    model = ExpertData()
+    ctx = ODISContextBuilder._auto_build_context(model, "agent_ts_agent")
+    
+    assert "All field" in ctx
+    assert "TS field" in ctx
+    assert "Synthesizer field" not in ctx
+    assert ctx["All field"] == "all"
+    assert ctx["TS field"] == "ts"
+
+
+
+def test_ts_agent_context_excludes_unwanted_sections():
+    """Verifies that the generated context for ts_agent excludes 'Ville actuelle (référence)' and 'Top 5 communes identifiées (Détails métriques)'."""
+    from agents.state import GraphState, ODISContextBuilder, SearchResultsData, CommuneResult
+    from core.models import SearchCriterias
+    import json
+    
+    criteria = SearchCriterias()
+    current = CommuneResult(codgeo="75056", name="Paris", population=2148271)
+    rec1 = CommuneResult(codgeo="13055", name="Marseille", population=870018)
+    
+    results_data = SearchResultsData(
+        search_hash="abc",
+        current_geo=current,
+        results=[rec1]
+    )
+    
+    state = GraphState(
+        search_criteria=criteria,
+        search_results=results_data
+    )
+    
+    # Context for ts_agent
+    ts_ctx_str = ODISContextBuilder.agent_context(state, "ts_agent")
+    ts_ctx = json.loads(ts_ctx_str)
+    
+    assert "Ville actuelle (référence)" not in ts_ctx
+    assert "Top 5 communes identifiées (Détails métriques)" not in ts_ctx
+    
+    # Context for refiner should include them
+    refiner_ctx_str = ODISContextBuilder.agent_context(state, "refiner")
+    refiner_ctx = json.loads(refiner_ctx_str)
+    assert "Ville actuelle (référence)" in refiner_ctx
+    assert "Top 5 communes identifiées (Détails métriques)" in refiner_ctx
+
+
+def test_association_detail_context_formatting():
+    """Verifies that AssociationDetail objects are formatted as pipe-separated strings for agents, but normal dicts for UI."""
+    from core.models import AssociationDetail
+
+    asso = AssociationDetail(
+        id="W123456789",
+        name="Test Association",
+        description="Providing test assistance and social support.",
+        waldec_label="Action Sociale",
+        refugee_focused=True
+    )
+
+    # For an agent, it should be simplified to a pipe-separated string
+    agent_ctx = ODISContextBuilder._auto_build_context(asso, "agent_social_integration_expert")
+    assert agent_ctx == "W123456789 | Test Association | Providing test assistance and social support."
+
+    # For UI, it should remain a dictionary with all visible fields
+    ui_ctx = ODISContextBuilder._auto_build_context(asso, "ui_details")
+    assert isinstance(ui_ctx, dict)
+    assert ui_ctx["Identifiant unique (WALDEC)"] == "W123456789"
+    assert ui_ctx["Nom de l'association"] == "Test Association"
+    assert ui_ctx["Description de l'activité"] == "Providing test assistance and social support."
+    assert ui_ctx["Libellé de la catégorie WALDEC"] == "Action Sociale"
+    assert ui_ctx["Si l'association est dédiée aux réfugiés"] is True
+
+
+
+
 
 

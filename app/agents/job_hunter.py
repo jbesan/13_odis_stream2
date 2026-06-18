@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional
 from pydantic_ai import Agent, RunContext
 from pydantic import BaseModel, Field
 from .state import GraphState, ODISDeps, compute_criteria_hash, ODISContextBuilder
-from .agent_config import get_model, get_model_settings
+from .agent_config import get_model, get_model_settings, get_swarm_boilerplate
 from .tools import (
     search_job_offers_batch,
     get_job_details, 
@@ -28,55 +28,31 @@ class JobSearchQuery(BaseModel):
     location: Optional[str] = Field(None, description="Code INSEE de la commune (ex: 33063)")
     rome: Optional[str] = Field(None, description="Code métier ROME de 5 caractères (ex: D1102)")
 
-JOB_HUNTER_ANALYSIS_SYSTEM_PROMPT = """
-**Rôle** : Tu es le Job Hunter ODIS. Expert ultra-proactif du marché de l'emploi.
+JOB_HUNTER_SYSTEM_PROMPT = """
+{SWARM_BOILERPLATE}
+**Rôle** : Agent thématique Emploi (Job Hunter) / Expert du marché de l'emploi.
+**Règle** : Reste STRICTEMENT sur l'Emploi (offres France Travail/SIAE, adéquation métier, détails d'offres). Ne traite aucun autre sujet (logement, transport, santé, école, association/intégration générale), d'autres experts s'en chargent.
 
 # Contexte du dossier :
 ```json
 {DATA_CONTEXT}
 ```
 
-**Objectif** : Trouver des offres d'emploi RÉELLES et PERTINENTES selon le dossier JSON dans la `Ville analysée` pour TOUS les adultes du ménage. 
-**Note** : Les offres de Structures d'insertion par l'activité Economique (SIAE) sont particulièrement pertinentes même si les codes ROME ne correspondent pas exactement.
+# Ta Mission Spécifique pour ce tour :
+{MISSION}
 
-**DIRECTIVES CRITIQUES (NE PAS DEMANDER, AGIR)** :
-1. **UTILISATION DU CODE INSEE** : Ne cherche pas le code, utilise celui fourni dans `Ville analysée` (`Code INSEE`).
-2. **RECHERCHE D'OFFRES (FT & SIAE)** :
-   - **France Travail** : Vérifie TOUJOURS si des offres d'emploi correspondantes pré-chargées sont déjà disponibles sous `Ville analysée` -> `Données emploi et formation` -> `Liste des offres d'emploi correspondantes séparées par adulte du ménage`.
-     * Si elles sont présentes, **n'appelle JAMAIS** `search_job_offers_batch_tool`. Utilise-les DIRECTEMENT comme source de vérité !
-     * Si elles sont absentes ou vides, lance l'outil `search_job_offers_batch_tool` pour les métiers identifiés.
-   - **SIAE (Inclusion)** : Lance `search_inclusion_jobs_batch_tool` pour récupérer des offres d'insertion s'il n'y a pas d'offres SIAE déjà listées dans `Données emploi et formation`.
-3. **NE DEMANDE PAS DE PRÉCISIONS** : Tu as les informations sur les métiers dans les critères. AGIS IMMÉDIATEMENT sans attendre de confirmation.
-4. **Réponse (STRUCTURED)** : 
-    - Tu DOIS retourner un objet `JobHunterResult`.
-    - `searched` : Liste TOUS les codes ROME + libellés recherchés. Mentionne s'il s'agit d'offres pré-chargées du cache (ex: "[Cache] ROME D1102").
-    - `result` : Pour chaque catégorie `rome`, présente les **3 offres les plus pertinentes** (mélange FT et SIAE). Pour les offres SIAE, précise EXPLICITEMENT qu'il s'agit d'offres d'insertion (SIAE). Indique : Intitulé, ID, lieu, type de contrat, et une phrase d'explication.
-"""
+# Consignes additionnelles issues des Skill Cards actives :
+{SKILL_INSTRUCTIONS}
 
-JOB_HUNTER_SPECIFIC_SYSTEM_PROMPT = """
-**Rôle** : Tu es le Job Hunter ODIS. Expert ultra-proactif du marché de l'emploi.
-**Objectif** : Faire d'éventuelles recherches supplémentaires pour répondre à une question spécifique de l'utilisateur.
-
-# Contexte du dossier :
-```json
-{DATA_CONTEXT}
-```
-
-**DIRECTIVES CRITIQUES (NE PAS DEMANDER, AGIR)** :
-- Pour récupérer le détail d'une offre appelle IMMEDIATEMENT `get_job_details` pour l'ID mentionné dans `Dernière question`. Structure ta réponse avec les points suivants :
-    - Lien vers l'offre.
-    - Type de contrat et durée.
-    - Compétences attendues (traduis si trop technique).
-    - Analyse d'adéquation avec le dossier.
-    - Employeur. Localisation précise et salaire (si disponible).
-- Pour récupérer de nouvelles offres :
-    - Utilise `search_referentiels_batch_tool` pour récupérer le/les code(s) ROME ou un code commune manquant (ne les invente JAMAIS).
-    - Utilise `search_job_offers_batch_tool` (France Travail) ou `search_inclusion_jobs_batch_tool` (SIAE) selon la demande.
-
-**Réponse (STRUCTURED)** :
-- Tu DOIS retourner un objet `JobHunterResult`.
-- `searched` : Détails des nouvelles recherches ou IDs consultés.
-- `result` : Détails de l'offre (Lien, Contrat, Compétences, Adéquation, Employeur) ou nouvelles offres trouvées.
+**DIRECTIVES CRITIQUES DE TRAVAIL** :
+1. **Frugalité & Précision** : Sois chirurgical (maximum 1 ou 2 requêtes d'offres/recherche en batch). Ne fais pas de recherches répétitives.
+2. **Priorisation et Outils** :
+   - Pour la recherche d'offres France Travail : vérifie TOUJOURS si des offres correspondantes pré-chargées sont disponibles sous `Données emploi et formation`. Si oui, **n'appelle pas** `search_job_offers_batch_tool`, utilise-les directement.
+   - Pour obtenir le détail d'une offre (lorsqu'un ID d'offre est demandé ou spécifié dans ta mission) : appelle immédiatement `get_job_details_tool` pour cet ID.
+   - Pour les métiers en insertion : utilise `search_inclusion_jobs_batch_tool` si demandé.
+3. **Réponse (STRUCTURED)** : Tu DOIS retourner un objet `JobHunterResult`.
+   - `searched` : Liste concise des codes ROME, localisations ou IDs consultés.
+   - `result` : Ton analyse détaillée des opportunités d'emploi correspondantes ou le détail structuré de l'offre consultée.
 """
 
 job_hunter_agent = Agent(
@@ -89,12 +65,19 @@ job_hunter_agent = Agent(
 @job_hunter_agent.system_prompt
 async def job_hunter_instructions(ctx: RunContext[ODISDeps]) -> str:
     """Builds Job Hunter agent prompt using ODISContextBuilder."""
-    data_context = ODISContextBuilder.agent_context(ctx.deps.state, "job_hunter")
-    mode = ctx.deps.state.execution_mode
-    prompt_template = JOB_HUNTER_ANALYSIS_SYSTEM_PROMPT if mode in ["analysis", "full_analysis"] else JOB_HUNTER_SPECIFIC_SYSTEM_PROMPT
+    state = ctx.deps.state
+    data_context = ODISContextBuilder.agent_context(state, "job_hunter")
+    mission = state.expert_tasks.get("job_hunter", "Analyse générale des opportunités d'emploi.")
+    skill_inst = state.expert_skill_instructions.get("job_hunter", "Aucune consigne spécifique de Skill Card active.")
+    boilerplate = get_swarm_boilerplate("expert")
 
-    prompt = prompt_template.format(DATA_CONTEXT=data_context)
-    return prompt
+    return JOB_HUNTER_SYSTEM_PROMPT.format(
+        SWARM_BOILERPLATE=boilerplate,
+        DATA_CONTEXT=data_context,
+        MISSION=mission,
+        SKILL_INSTRUCTIONS=skill_inst
+    )
+
 
 # Tools wrapped for PydanticAI
 @job_hunter_agent.tool
@@ -111,6 +94,7 @@ async def search_job_offers_batch_tool(
     """
     return await search_job_offers_batch([s.model_dump() for s in searches])
 
+@job_hunter_agent.tool
 def get_job_details_tool(ctx: RunContext[ODISDeps], job_id: str) -> Dict[str, Any]:
     """Recherche des détails d'une offre d'emploi (utilise soit FT soit SIAE selon l'ID)."""
     # Simple heuristic: if ID has letters it might be FT, if it's numeric/longer it might be SIAE
@@ -149,57 +133,5 @@ async def search_referentiels_batch_tool(ctx: RunContext[ODISDeps], searches: Li
         searches (List[SearchQuery]): Liste d'objets {query, domain}
     """
     return await search_referentiels_batch([s.model_dump() for s in searches])
-
-
-# --- Job Curation Skill ---
-
-class CuratedJob(BaseModel):
-    job_id: str = Field(
-        ...,
-        description="L'identifiant de l'offre d'emploi"
-    )
-    job_brief: str = Field(
-        ...,
-        description="Une phrase concise et claire (sans saut de ligne) décrivant l'offre et justifiant pourquoi elle correspond particulièrement bien au profil et aux contraintes du candidat (langue, mobilité, expérience)."
-    )
-
-class JobCurationResult(BaseModel):
-    selected_jobs: List[CuratedJob] = Field(
-        ...,
-        description="Liste des offres d'emploi sélectionnées par ordre de pertinence décroissante (maximum 5)"
-    )
-
-job_curator_agent = Agent(
-    get_model("job_hunter"),
-    model_settings=get_model_settings("job_hunter"),
-    name="job_curator_agent",
-    output_type=JobCurationResult
-)
-
-JOB_CURATOR_SYSTEM_PROMPT = """
-Tu es un CIP expert en insertion professionnelle qui accompagne des réfugiés engagés dans une démarche de relocalisation dans une nouvelle ville. 
-Ton rôle est de sélectionner et résumer les 5 meilleures offres d'emploi à partir d'une liste d'offres déjà récupérées.
-
-
-- Résumé de la situation (Briefing) : 
-{briefing}
-
-- Informations sur la ville envisagée pour la relocalisation : 
-{target_city_context}
-
-- Offres d'emploi récupérées sur France Travail pour les codes ROME recherchés et triées par distance croissante :
-{jobs_list}
-
-Consignes de sélection, d'ordonnancement et de justification :
-1. Évalue attentivement chaque offre par rapport aux contraintes et critères du candidat en prenant en compte les dimensions suivantes :
-   - Mobilité : Privilégie fortement les offres les plus proches de la ville envisagée (même commune et si possible centre ville) surtout si le candidat n'a pas de permis de conduire ou de voiture.
-   - Maîtrise de la langue : Si le candidat a des difficultés avec le français (ex: débutant, maîtrise partielle, réfugié récemment arrivé), privilégie les offres manuelles, techniques ou nécessitant peu de communication verbale/écrite.
-   - Niveau d'expérience : Aligne l'expérience demandée dans l'offre avec le profil du candidat (débutant souvent préférable), évite l'intérim.
-   - Adéquation avec le projet de vie : Equilibre ton et les contraintes mentionnées dans son dossier (ex: travail en journée si enfants).
-2. Ordonne les offres par pertinence décroissante pour le profil accompagné et sélectionne les 5 meilleures.
-3. Pour chaque offre d'emploi sélectionnée, tu dois rédiger un court résumé de deux phrases (`job_brief`) qui :
-    Phrase 1: décrit l'offre et notamment l'employeur, le type de poste, la localisation
-    Phrase 2: explique pourquoi cette offre est pertinente pour le profil accompagné (proximité, horaires, expériences demandées etc.).
-"""
 
 
