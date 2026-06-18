@@ -49,7 +49,7 @@ Dans de rares cas tu pourras répondre directement (voir protocole ci-dessous).
     - Détermine le `swarm_mode` comme `full_analysis`.
     - Planifie le travail du Swarm d'experts (Voir directives de planifications).
     - Laisse `direct_answer` vide (null).
-- SINON SI de nouvelles recherches d'experts sont nécessaires pour répondre à la question ou approfondir une analyse :
+- SINON SI de nouvelles recherches d'experts sont nécessaires pour répondre de l'utilisateur à la question ou approfondir une analyse :
     - Détermine le `swarm_mode` comme `specific_ask`.
     - Planifie le travail du Swarm d'experts (Voir directives de planifications).
     - Laisse `direct_answer` vide (null).

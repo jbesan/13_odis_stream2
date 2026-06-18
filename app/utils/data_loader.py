@@ -331,14 +331,14 @@ def _fetch_jaccueille_data_bq_logic() -> pd.DataFrame:
 
 
     # 1. Try to load from persistent local cache
-    if os.path.exists(cache_path):
-        mtime = os.path.getmtime(cache_path)
-        if (time.time() - mtime) < ttl_seconds:
-            try:
+    try:
+        if os.path.exists(cache_path):
+            mtime = os.path.getmtime(cache_path)
+            if (time.time() - mtime) < ttl_seconds:
                 # logger.info("📂 [J'ACCUEILLE] Loading host counts from local cache...")
                 return pd.read_parquet(cache_path, engine='fastparquet')
-            except Exception as e:
-                logger.warning(f"Failed to read J'Accueille cache: {e}")
+    except Exception as e:
+        logger.warning(f"Failed to read J'Accueille cache: {e}")
 
     # 2. Fetch from BigQuery if cache is missing or stale
     try:

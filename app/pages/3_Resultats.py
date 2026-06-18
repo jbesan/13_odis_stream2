@@ -284,7 +284,7 @@ with st.container(border=False, key='top_menu'):
     
     brief = st.session_state.config.odis_brief if st.session_state.get('config') else ""
     if brief:
-        with st.expander("📝 Résumé du dossier", expanded=False):
+        with st.expander("📝 Résumé de la situation", expanded=False):
             st.markdown(brief)
     
 # Global Pitch (Strategic intro + Loading state)

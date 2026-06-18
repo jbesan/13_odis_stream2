@@ -1,6 +1,7 @@
 import logging
 from typing import List, Dict, Any, Optional
-from pydantic_ai import Agent, RunContext, WebSearchTool
+from pydantic_ai import Agent, RunContext
+from pydantic_ai.capabilities import WebSearch
 from pydantic import BaseModel, Field
 from .state import GraphState, ODISDeps, ODISContextBuilder
 from .agent_config import get_model, get_model_settings, get_swarm_boilerplate
@@ -44,7 +45,7 @@ education_expert_agent = Agent(
     get_model("education_expert"),
     model_settings=get_model_settings("education_expert"),
     deps_type=ODISDeps,
-    builtin_tools=[WebSearchTool()],
+    capabilities=[WebSearch()],
     output_type=EducationResult
 )
 

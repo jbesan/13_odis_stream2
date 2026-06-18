@@ -19,7 +19,7 @@ class NodeConfig(BaseModel):
         max_tokens: Maximum output tokens.
         thinking: Optional thinking/reasoning effort level (Gemini 3+).
     """
-    model: str = "google-gla:gemini-3.1-flash-lite-preview"
+    model: str = "google:gemini-3.1-flash-lite-preview"
     temperature: float = 0.0
     max_tokens: int | None = None
     thinking: Literal["minimal", "low", "medium", "high"] | None = None
@@ -49,18 +49,18 @@ class AgentSettings(BaseSettings):
         extra="ignore",
     )
 
-    router: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.1, thinking="low"))
-    interviewer: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.5, thinking="medium"))
-    ts_agent: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.1, thinking="low"))
-    housing_expert: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
-    mobility_expert: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
-    healthcare_expert: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
-    education_expert: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
-    social_integration_expert: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
-    job_hunter: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
-    job_curator: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.1, thinking="low"))
-    synthesizer: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.1, thinking="medium"))#, max_tokens=8192))
-    refiner: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google-gla:gemini-3.1-flash-lite", temperature=0.1, thinking="minimal", max_tokens=4096))
+    router: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.1, thinking="low"))
+    interviewer: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.5, thinking="medium"))
+    ts_agent: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.1, thinking="low"))
+    housing_expert: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
+    mobility_expert: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
+    healthcare_expert: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
+    education_expert: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
+    social_integration_expert: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
+    job_hunter: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
+    job_curator: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.1, thinking="low"))
+    synthesizer: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.1, thinking="medium"))#, max_tokens=8192))
+    refiner: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.1, thinking="minimal", max_tokens=4096))
 
     def get_config(self, agent_name: str) -> NodeConfig:
         """Helper to get config by agent name, falling back to router if unknown."""
@@ -73,7 +73,7 @@ agent_settings = AgentSettings()
 
 # --- Legacy Compatibility & Helpers ---
 
-DEFAULT_MODEL = "google-gla:gemini-3.1-flash-lite"
+DEFAULT_MODEL = "google:gemini-3.1-flash-lite"
 
 
 def get_model(agent_name: str) -> str:

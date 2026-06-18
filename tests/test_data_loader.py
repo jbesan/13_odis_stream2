@@ -43,13 +43,15 @@ def mock_parquet_data():
     
     return odis_df, pois_df, ref_df
 
+@patch('utils.data_loader.fetch_jaccueille_data_bq')
 @patch('utils.data_loader.os.path.exists')
 @patch('utils.data_loader.pd.read_parquet')
 @patch('config.get_data_path')
-def test_init_datasets(mock_get_data_path, mock_read_parquet, mock_exists, mock_parquet_data):
+def test_init_datasets(mock_get_data_path, mock_read_parquet, mock_exists, mock_fetch_jaccueille, mock_parquet_data):
     """Tests the initialization of datasets."""
     mock_exists.return_value = True
     mock_get_data_path.return_value = '/mock/path'
+    mock_fetch_jaccueille.return_value = pd.DataFrame(columns=['bassin_de_vie', 'heb_accueillants_count'])
     odis_df, pois_df, ref_df = mock_parquet_data
     
     # Configure mock side effects for different files

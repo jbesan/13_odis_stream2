@@ -6,8 +6,10 @@ from typing import Literal, Dict, Any, List, Optional
 from dataclasses import dataclass
 
 from pydantic_graph import End
-from pydantic_graph.beta import GraphBuilder, Graph, StepContext, TypeExpression
-from pydantic_graph.beta.join import reduce_list_append
+from pydantic_graph.graph_builder import GraphBuilder, Graph
+from pydantic_graph.step import StepContext
+from pydantic_graph.util import TypeExpression
+from pydantic_graph.join import reduce_list_append
 
 from pydantic_ai import ModelSettings
 from pydantic_ai.usage import UsageLimits
@@ -43,7 +45,7 @@ def capture_usage(result: Any, node_name: str, model_id: str) -> UsageStats:
     """
     try:
         u = result.usage()
-        rate_in, rate_out = (0.25, 1.50) if any(x in model_id.lower() for x in ["google-gla:gemini-3.1-flash-lite-preview"]) else (0.10, 0.40)
+        rate_in, rate_out = (0.25, 1.50) if any(x in model_id.lower() for x in ["google:gemini-3.1-flash-lite-preview", "google-gla:gemini-3.1-flash-lite-preview"]) else (0.10, 0.40)
         cost = (u.input_tokens * rate_in / 1_000_000) + (u.output_tokens * rate_out / 1_000_000)
         
         req_count = getattr(u, 'requests', 1)
