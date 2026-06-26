@@ -301,21 +301,8 @@ def log_agent_trace(agent_name: str, model_id: str, result: Any) -> None:
     Logs the full AI agent interaction to a Markdown file in ./.logs/ (Local only).
     Skipped on Cloud Run (K_SERVICE env var).
     """
-    # Markdown Logging (Local only)
-    if os.environ.get('K_SERVICE'):
-        return
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.logs'))
-    os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, f"{timestamp}_trace_{agent_name}.md")
-
-    try:
-        content = format_agent_result_to_md(agent_name, model_id, result)
-        with open(log_file, 'w', encoding='utf-8') as f:
-            f.write(content)
-    except Exception as e:
-        logger.error(f"Failed to write agent trace log file: {e}")
+    # Disabled: Agent traces are monitored via Logfire
+    return
 
 
 def format_agent_result_to_md(agent_name: str, model_id: str, result: Any) -> str:
