@@ -55,10 +55,7 @@ import config as cfg
 from core.models import SearchCriterias, CriteriaItem
 import copy
 
-def pytest_addoption(parser):
-    parser.addoption(
-        "--update-snapshots", action="store_true", default=False, help="Update snapshot files."
-    )
+
 
 @pytest.fixture
 def sample_data():
@@ -112,76 +109,10 @@ def sample_data():
     return gdf.copy()
 
 @pytest.fixture
-def sample_scores_cat():
-    """Creates a sample scores_cat DataFrame for testing."""
-    data = {
-        'score': [
-            'met_match_adult1_scaled', 'met_match_adult1_bdv_scaled', 'met_match_adult1_tension_scaled',
-            'met_match_adult2_scaled', 'met_match_adult2_bdv_scaled', 'met_match_adult2_tension_scaled',
-            'inc_services_core_scaled', 'inc_asso_core_scaled', 'inc_asso_add_scaled',
-            'log_vac_scaled', 'log_soc_inoc_scaled', 'log_5p_scaled',
-            'edu_classes_ferm_scaled', 'ter_pol_scaled', 'ter_population_scaled',
-            'form_match_adult1_scaled', 'form_match_adult1_bdv_scaled',
-            'form_match_adult2_scaled', 'form_match_adult2_bdv_scaled',
-            'mob_dist_current_loc_scaled', 'mob_epci_scaled',
-            'edu_structures_scaled', 'sante_structures_scaled',
-            'besoins_match_scaled',
-            'log_loyer_moyen_appt_all_scaled',
-            'log_loyer_moyen_appt_t1_t2_scaled',
-            'log_loyer_moyen_appt_t3_p_scaled',
-            'log_loyer_moyen_house_all_scaled'
-        ],
-        'cat': [
-            'emploi', 'emploi', 'emploi',
-            'emploi', 'emploi', 'emploi',
-            'inclusion', 'inclusion', 'inclusion',
-            'logement', 'logement', 'logement',
-            'education', 'inclusion', 'inclusion',
-            'emploi', 'emploi',
-            'emploi', 'emploi',
-            'mobilite', 'mobilite',
-            'education', 'sante',
-            'inclusion',
-            'logement', 'logement', 'logement', 'logement'
-        ],
-        'metric': [
-            'met_match_adult1', 'met_match_adult1_bdv', 'met_match_adult1_tension',
-            'met_match_adult2', 'met_match_adult2_bdv', 'met_match_adult2_tension',
-            'socle_match_count', 'lien_social_density', 'affinite_density',
-            'log_vac_ratio', 'log_soc_inoc_ratio', 'log_5p_ratio',
-            'risque_fermeture_ratio', 'pol_num', 'population',
-            'form_match_adult1', 'form_match_adult1_bdv',
-            'form_match_adult2', 'form_match_adult2_bdv',
-            'dist_current_loc', 'epci_code',
-            'edu_structures_count', 'sante_structures_scaled',
-            'besoins_match',
-            'loyer_m2_moy_appartement_toutes',
-            'loyer_m2_moy_appartement_t1_t2',
-            'loyer_m2_moy_appartement_t3_plus',
-            'loyer_m2_moy_maison_toutes'
-        ],
-        'incl_binome': [True] * 28, # Simplify for tests
-        'weight': [1.0] * 28,
-        'min_bound': [0.0] * 28,
-        'max_bound': [1.0] * 28,
-        'baseline': [
-            False, False, False,
-            False, False, False,
-            False, True, False,
-            False, False, False,
-            False, True, True,
-            False, False,
-            False, False,
-            False, False,
-            False, False,
-            False,
-            False,
-            False,
-            False,
-            False
-        ]
-    }
-    return pd.DataFrame(data).copy()
+def live_scores_cat():
+    """Loads the live scores configuration from scores_config.yaml."""
+    from utils.data_loader import load_scores_config_as_df
+    return load_scores_config_as_df(os.path.join(cfg.APP_DIR, cfg.SCORES_CAT_FILE))
 
 @pytest.fixture
 def sample_incl_index():

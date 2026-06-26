@@ -4,11 +4,11 @@ import geopandas as gpd
 from core import scoring
 from core.models import SearchCriterias
 
-def get_engine(sample_data, sample_scores_cat=None, sample_incl_index=None):
+def get_engine(sample_data, live_scores_cat=None, sample_incl_index=None):
     return scoring.ScoringEngine(
             df_all_communes=sample_data,
         df_bv_geo=gpd.GeoDataFrame(),
-        scores_cat=sample_scores_cat if sample_scores_cat is not None else pd.DataFrame(),
+        scores_cat=live_scores_cat if live_scores_cat is not None else pd.DataFrame(),
         incl_index=sample_incl_index if sample_incl_index is not None else pd.DataFrame(),
         associations_data=pd.DataFrame(),
         formations_data=pd.DataFrame()
@@ -29,8 +29,8 @@ def test_is_local_search_france_is_not_local(sample_data, default_config):
     default_config.loc_search_area = 'france'
     assert engine._is_local_search(default_config) is False
 
-def test_active_criteria_relocation_search(sample_data, default_config, sample_scores_cat, sample_incl_index):
-    engine = get_engine(sample_data, sample_scores_cat, sample_incl_index)
+def test_active_criteria_relocation_search(sample_data, default_config, live_scores_cat, sample_incl_index):
+    engine = get_engine(sample_data, live_scores_cat, sample_incl_index)
     default_config.loc_search_area = 'departement'
     default_config.loc_search_code = '75'
     
@@ -38,8 +38,8 @@ def test_active_criteria_relocation_search(sample_data, default_config, sample_s
     assert 'mob_dist_current_loc_scaled' not in active
     assert 'mob_epci_scaled' not in active
 
-def test_active_criteria_local_search(sample_data, default_config, sample_scores_cat, sample_incl_index):
-    engine = get_engine(sample_data, sample_scores_cat, sample_incl_index)
+def test_active_criteria_local_search(sample_data, default_config, live_scores_cat, sample_incl_index):
+    engine = get_engine(sample_data, live_scores_cat, sample_incl_index)
     default_config.loc_search_area = 'departement'
     default_config.loc_search_code = ['33']
     default_config.freq_retour = "1 fois/semaine"

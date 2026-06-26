@@ -4,7 +4,7 @@ import geopandas as gpd
 from core import scoring
 from app.core.models import SearchCriterias
 
-def test_format_city_details_rna_rag_summary(sample_data, sample_scores_cat, default_config):
+def test_format_city_details_rna_rag_summary(sample_data, live_scores_cat, default_config):
     """Verifies that format_city_details correctly extracts RNA RAG counts."""
     # 1. Setup row with RNA RAG columns
     row = sample_data.iloc[0].copy()
@@ -15,7 +15,7 @@ def test_format_city_details_rna_rag_summary(sample_data, sample_scores_cat, def
     engine = scoring.ScoringEngine(
             df_all_communes=sample_data,
         df_bv_geo=gpd.GeoDataFrame(),
-        scores_cat=sample_scores_cat,
+        scores_cat=live_scores_cat,
         incl_index=pd.DataFrame(),
         associations_data=pd.DataFrame(),
         formations_data=pd.DataFrame()
@@ -58,13 +58,13 @@ def test_build_communes_rna_count_logic():
     assert df.loc[0, 'lien_social_count'] == 15
     assert df.loc[1, 'lien_social_count'] == 2
 
-def test_scoring_engine_init_with_missing_data(sample_data, sample_scores_cat):
+def test_scoring_engine_init_with_missing_data(sample_data, live_scores_cat):
     """Verifies that ScoringEngine handles empty associations_data without crashing."""
     # This simulates the state after cleaning up legacy files
     engine = scoring.ScoringEngine(
             df_all_communes=sample_data,
         df_bv_geo=gpd.GeoDataFrame(),
-        scores_cat=sample_scores_cat,
+        scores_cat=live_scores_cat,
         incl_index=pd.DataFrame(),
         associations_data=pd.DataFrame(), # EMPTY
         formations_data=pd.DataFrame()

@@ -12,13 +12,21 @@ def mock_session_state():
     state.__contains__.side_effect = lambda k: k in state.__dict__
     return state
 
-def test_interaction_id_persistence():
+def test_interaction_id_persistence(mock_session_state):
     """Test that interaction_id is generated and remains stable."""
-    mock_state = {}
-    with patch("streamlit.session_state", mock_state):
-        # We use dict access in the service if needed, but the service uses attribute access
-        # Let's fix the service or the mock. The service uses st.session_state.interaction_id
-        pass
+    with patch("streamlit.session_state", mock_session_state):
+        # First call should generate it
+        first_id = telemetry.get_interaction_id()
+        assert len(first_id) == 8
+        
+        # Second call should return the same ID
+        second_id = telemetry.get_interaction_id()
+        assert second_id == first_id
+        
+        # Reset should change it
+        reset_id = telemetry.reset_interaction_id()
+        assert reset_id != first_id
+        assert len(reset_id) == 8
 
 def test_interaction_id_logic():
     """Test that interaction_id is generated and remains stable."""

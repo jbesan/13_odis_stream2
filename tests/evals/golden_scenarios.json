@@ -1,0 +1,26 @@
+[
+  {
+    "scenario_name": "Full Analysis Saint-Jean-d'Angely (Refugee Relocation)",
+    "input_query": "Fais une analyse complète pour Saint-Jean-d'Angély.",
+    "expected_swarm_mode": "full_analysis",
+    "expected_experts": [
+      "job_hunter",
+      "housing_expert",
+      "education_expert",
+      "healthcare_expert",
+      "mobility_expert",
+      "social_integration_expert"
+    ],
+    "expected_rome_code": "I1604",
+    "expected_focus_city": "Saint-Jean-d'Angély",
+    "required_insee_code": "17347",
+    "synthesis_keywords": [
+      "Saint-Jean-d'Angély",
+      "Charente-Maritime",
+      "logement",
+      "emploi",
+      "santé",
+      "éducation"
+    ]
+  }
+]
