@@ -76,7 +76,7 @@ class GraphState:
 @dataclass
 class ODISDeps:
     state: GraphState  # Shared States/Data
-    client: genai.Client         # Shared Client
+    client: genai.Client | None = None         # Shared Client
     
     # Allow arbitrary types for genai.Client
     class Meta:

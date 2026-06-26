@@ -40,10 +40,30 @@ HOUSING_EXPERT_SYSTEM_PROMPT = """
 4. **Formatage** : Sois hyper concis dans tes réponses.
 """
 
+async def search_places_batch_tool(queries: List[str], location: str) -> Dict[str, Any]:
+    """Recherche des lieux (POIs), structures ou services de logement en mode batch.
+    Args:
+        queries: Liste de requêtes (ex: ['CHRS', 'CADA', 'CPH']).
+        location: Ville cible (ex: 'Bordeaux, Nouvelle-Aquitaine').
+    """
+    return await search_places_batch(queries, location)
+
+
+def compute_routes_tool(origin: str, destination: str, mode: str = "transit") -> Dict[str, Any]:
+    """Calcule des itinéraires et temps de trajet."""
+    return compute_routes(origin, destination, mode)
+
+
+def search_ccas_tool(codgeo: str) -> List[Dict[str, Any]]:
+    """Recherche les coordonnées du CCAS pour une commune."""
+    return search_ccas(codgeo)
+
+
 housing_expert_agent = Agent(
     get_model("housing_expert"),
     model_settings=get_model_settings("housing_expert"),
     deps_type=ODISDeps,
+    tools=[search_places_batch_tool, compute_routes_tool, search_ccas_tool],
     capabilities=[WebSearch()],
     output_type=HousingResult
 )
@@ -62,25 +82,5 @@ async def housing_expert_instructions(ctx: RunContext[ODISDeps]) -> str:
         MISSION=mission,
         SKILL_INSTRUCTIONS=skill_inst
     )
-
-
-@housing_expert_agent.tool
-async def search_places_batch_tool(ctx: RunContext[ODISDeps], queries: List[str], location: str) -> Dict[str, Any]:
-    """Recherche des lieux (POIs), structures ou services de logement en mode batch.
-    Args:
-        queries: Liste de requêtes (ex: ['CHRS', 'CADA', 'CPH']).
-        location: Ville cible (ex: 'Bordeaux, Nouvelle-Aquitaine').
-    """
-    return await search_places_batch(queries, location)
-
-@housing_expert_agent.tool
-def compute_routes_tool(ctx: RunContext[ODISDeps], origin: str, destination: str, mode: str = "transit") -> Dict[str, Any]:
-    """Calcule des itinéraires et temps de trajet."""
-    return compute_routes(origin, destination, mode)
-
-@housing_expert_agent.tool
-def search_ccas_tool(ctx: RunContext[ODISDeps], codgeo: str) -> List[Dict[str, Any]]:
-    """Recherche les coordonnées du CCAS pour une commune."""
-    return search_ccas(codgeo)
 
 

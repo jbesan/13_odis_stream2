@@ -41,10 +41,35 @@ EDUCATION_EXPERT_SYSTEM_PROMPT = """
    - `result` : Ton analyse détaillée et factuelle des écoles locales, avec les coordonnées principales des structures et les étapes d'inscription parentale.
 """
 
+async def search_places_batch_tool(queries: List[str], location: str) -> Dict[str, Any]:
+    """Recherche des crèches, écoles maternelles, primaires, collèges ou lycées en mode batch.
+    Args:
+        queries: Liste de requêtes (ex: ['école primaire', 'collège', 'crèche']).
+        location: Ville cible (ex: 'Bordeaux, Nouvelle-Aquitaine').
+    """
+    return await search_places_batch(queries, location)
+
+
+async def search_rna_rag_batch_tool(queries: List[str], codgeo: str, top_k: int = 10) -> List[Dict[str, Any]]:
+    """
+    Recherche sémantique d'associations d'accompagnement scolaire ou de parents d'élèves (RNA).
+    
+    Args:
+        queries: Liste de termes de recherche.
+                 ATTENTION : Ne mets JAMAIS le nom de la ville dans ces requêtes car le filtrage géographique est déjà géré par l'outil via `codgeo`.
+                 Exemple correct : ['cours de langue FLE', 'accompagnement administratif'].
+                 Exemple incorrect : ['FLE Aix-en-Provence'].
+        codgeo: Code INSEE de la commune.
+        top_k: Nombre maximum de résultats.
+    """
+    return await search_rna_rag_batch(queries, codgeo, top_k=top_k)
+
+
 education_expert_agent = Agent(
     get_model("education_expert"),
     model_settings=get_model_settings("education_expert"),
     deps_type=ODISDeps,
+    tools=[search_places_batch_tool, search_rna_rag_batch_tool],
     capabilities=[WebSearch()],
     output_type=EducationResult
 )
@@ -63,31 +88,6 @@ async def education_expert_instructions(ctx: RunContext[ODISDeps]) -> str:
         MISSION=mission,
         SKILL_INSTRUCTIONS=skill_inst
     )
-
-
-@education_expert_agent.tool
-async def search_places_batch_tool(ctx: RunContext[ODISDeps], queries: List[str], location: str) -> Dict[str, Any]:
-    """Recherche des crèches, écoles maternelles, primaires, collèges ou lycées en mode batch.
-    Args:
-        queries: Liste de requêtes (ex: ['école primaire', 'collège', 'crèche']).
-        location: Ville cible (ex: 'Bordeaux, Nouvelle-Aquitaine').
-    """
-    return await search_places_batch(queries, location)
-
-@education_expert_agent.tool
-async def search_rna_rag_batch_tool(ctx: RunContext[ODISDeps], queries: List[str], codgeo: str, top_k: int = 10) -> List[Dict[str, Any]]:
-    """
-    Recherche sémantique d'associations d'accompagnement scolaire ou de parents d'élèves (RNA).
-    
-    Args:
-        queries: Liste de termes de recherche.
-                 ATTENTION : Ne mets JAMAIS le nom de la ville dans ces requêtes car le filtrage géographique est déjà géré par l'outil via `codgeo`.
-                 Exemple correct : ['cours de langue FLE', 'accompagnement administratif'].
-                 Exemple incorrect : ['FLE Aix-en-Provence'].
-        codgeo: Code INSEE de la commune.
-        top_k: Nombre maximum de résultats.
-    """
-    return await search_rna_rag_batch(queries, codgeo, top_k=top_k)
 
 
 

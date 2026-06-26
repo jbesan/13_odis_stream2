@@ -330,14 +330,14 @@ def format_agent_result_to_md(agent_name: str, model_id: str, result: Any) -> st
     Returns:
         A Markdown-formatted string.
     """
-    from pydantic_ai.messages import ModelRequest, ModelResponse, SystemPromptPart, TextPart, ToolCallPart, ToolReturnPart
+    from pydantic_ai.messages import ModelRequest, ModelResponse, SystemPromptPart, TextPart, ToolCallPart, ToolReturnPart, NativeToolCallPart, NativeToolReturnPart
 
     md_lines: List[str] = []
     md_lines.append(f"# Agent Trace: {agent_name} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     md_lines.append(f"* **Model**: `{model_id}`")
 
     try:
-        usage = result.usage()
+        usage = result.usage
         md_lines.append(f"* **Usage**: {usage.total_tokens} tokens (In: {usage.input_tokens}, Out: {usage.output_tokens})")
     except Exception:
         pass
@@ -364,7 +364,7 @@ def format_agent_result_to_md(agent_name: str, model_id: str, result: Any) -> st
             for part in msg.parts:
                 if isinstance(part, TextPart):
                     md_lines.append(part.content)
-                elif isinstance(part, ToolCallPart):
+                elif isinstance(part, (ToolCallPart, NativeToolCallPart)):
                     md_lines.append(f"\n> 🛠️ **Tool Call**: `{part.tool_name}`")
                     try:
                         args = part.args.model_dump() if part.args is not None and hasattr(part.args, 'model_dump') else part.args
@@ -376,7 +376,7 @@ def format_agent_result_to_md(agent_name: str, model_id: str, result: Any) -> st
         # Handle tool returns (usually grouped in ModelRequest in the next turn)
         if hasattr(msg, 'parts'):
             for part in msg.parts:
-                if isinstance(part, ToolReturnPart):
+                if isinstance(part, (ToolReturnPart, NativeToolReturnPart)):
                     md_lines.append(f"### 📥 Tool Return: `{part.tool_name}`")
                     try:
                         content = part.content

@@ -40,10 +40,50 @@ SOCIAL_INTEGRATION_EXPERT_SYSTEM_PROMPT = """
 3. **Formatage** : Sois hyper concis dans tes réponses.
 """
 
+def search_refugee_associations_tool(codgeo: str) -> List[Dict[str, Any]]:
+    """Recherche les associations dédiées à l'aide aux réfugiés pour une commune."""
+    return search_refugee_associations(codgeo)
+
+
+async def search_rna_rag_batch_tool(queries: List[str], codgeo: str, top_k: int = 10) -> List[Dict[str, Any]]:
+    """
+    Recherche sémantique d'associations d'inclusion, sport, loisirs ou solidarité locale (RNA).
+    
+    Args:
+        queries: Liste de termes de recherche.
+                 ATTENTION : Ne mets JAMAIS le nom de la ville dans ces requêtes car le filtrage géographique est déjà géré par l'outil via `codgeo`.
+                 Exemple correct : ['cours de langue FLE', 'accompagnement administratif'].
+                 Exemple incorrect : ['FLE Aix-en-Provence'].
+        codgeo: Code INSEE de la commune.
+        top_k: Nombre maximum de résultats.
+    """
+    return await search_rna_rag_batch(queries, codgeo, top_k=top_k)
+
+
+def search_ccas_tool(codgeo: str) -> List[Dict[str, Any]]:
+    """Recherche les coordonnées du CCAS pour une commune."""
+    return search_ccas(codgeo)
+
+
+async def search_places_batch_tool(queries: List[str], location: str) -> Dict[str, Any]:
+    """Recherche des centres sociaux, mairies, bibliothèques ou autres équipements en mode batch.
+    Args:
+        queries: Liste de requêtes (ex: ['centre social', 'mairie', 'MJC']).
+        location: Ville cible (ex: 'Bordeaux, Nouvelle-Aquitaine').
+    """
+    return await search_places_batch(queries, location)
+
+
 social_integration_expert_agent = Agent(
     get_model("social_integration_expert"),
     model_settings=get_model_settings("social_integration_expert"),
     deps_type=ODISDeps,
+    tools=[
+        search_refugee_associations_tool,
+        search_rna_rag_batch_tool,
+        search_ccas_tool,
+        search_places_batch_tool
+    ],
     capabilities=[WebSearch()],
     output_type=SocialIntegrationResult
 )
@@ -62,39 +102,3 @@ async def social_integration_expert_instructions(ctx: RunContext[ODISDeps]) -> s
         MISSION=mission,
         SKILL_INSTRUCTIONS=skill_inst
     )
-
-
-@social_integration_expert_agent.tool
-def search_refugee_associations_tool(ctx: RunContext[ODISDeps], codgeo: str) -> List[Dict[str, Any]]:
-    """Recherche les associations dédiées à l'aide aux réfugiés pour une commune."""
-    return search_refugee_associations(codgeo)
-
-@social_integration_expert_agent.tool
-async def search_rna_rag_batch_tool(ctx: RunContext[ODISDeps], queries: List[str], codgeo: str, top_k: int = 10) -> List[Dict[str, Any]]:
-    """
-    Recherche sémantique d'associations d'inclusion, sport, loisirs ou solidarité locale (RNA).
-    
-    Args:
-        queries: Liste de termes de recherche.
-                 ATTENTION : Ne mets JAMAIS le nom de la ville dans ces requêtes car le filtrage géographique est déjà géré par l'outil via `codgeo`.
-                 Exemple correct : ['cours de langue FLE', 'accompagnement administratif'].
-                 Exemple incorrect : ['FLE Aix-en-Provence'].
-        codgeo: Code INSEE de la commune.
-        top_k: Nombre maximum de résultats.
-    """
-    return await search_rna_rag_batch(queries, codgeo, top_k=top_k)
-
-
-@social_integration_expert_agent.tool
-def search_ccas_tool(ctx: RunContext[ODISDeps], codgeo: str) -> List[Dict[str, Any]]:
-    """Recherche les coordonnées du CCAS pour une commune."""
-    return search_ccas(codgeo)
-
-@social_integration_expert_agent.tool
-async def search_places_batch_tool(ctx: RunContext[ODISDeps], queries: List[str], location: str) -> Dict[str, Any]:
-    """Recherche des centres sociaux, mairies, bibliothèques ou autres équipements en mode batch.
-    Args:
-        queries: Liste de requêtes (ex: ['centre social', 'mairie', 'MJC']).
-        location: Ville cible (ex: 'Bordeaux, Nouvelle-Aquitaine').
-    """
-    return await search_places_batch(queries, location)

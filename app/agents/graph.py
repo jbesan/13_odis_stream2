@@ -44,7 +44,7 @@ def capture_usage(result: Any, node_name: str, model_id: str) -> UsageStats:
         A UsageStats object containing tokens, cost, and breakdown.
     """
     try:
-        u = result.usage()
+        u = result.usage
         rate_in, rate_out = (0.25, 1.50) if any(x in model_id.lower() for x in ["google:gemini-3.1-flash-lite-preview", "google-gla:gemini-3.1-flash-lite-preview"]) else (0.10, 0.40)
         cost = (u.input_tokens * rate_in / 1_000_000) + (u.output_tokens * rate_out / 1_000_000)
         

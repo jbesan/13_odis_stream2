@@ -21,11 +21,8 @@ class RNARagService:
             self.bq_client = bigquery.Client(project="odis-stream2")
             # Vertex-based GenAI Client for embeddings
             # (Ensures compatibility with text-multilingual-embedding-002)
-            self.genai_client = genai.Client(
-                vertexai=True, 
-                project="odis-stream2", 
-                location="europe-west1"
-            )
+            from agents.agent_config import get_gemini_client
+            self.genai_client = get_gemini_client(location="europe-west1")
             self.embedding_model = "text-multilingual-embedding-002"
         except Exception as e:
             logger.error(f"Failed to initialize RNARagService: {e}")

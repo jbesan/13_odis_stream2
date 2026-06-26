@@ -30,11 +30,9 @@ async def test_router_bypass_flow():
     2. Turn 2 (Bypass): Router Skipped. Interviewer runs directly.
     3. Turn 3 (Exit): Interviewer Complete -> Router runs again -> Scorer.
     """
-    api_key = os.getenv("GOOGLE_API_KEY")
-    if not api_key:
-        pytest.skip("GOOGLE_API_KEY not set")
+    from agents.agent_config import get_gemini_client
 
-    client = genai.Client(api_key=api_key)
+    client = get_gemini_client()
     graph = create_odis_graph()
     
     # --- Turn 1: Initialization ---

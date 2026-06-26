@@ -45,9 +45,22 @@ AUTODETECT_SYSTEM_PROMPT = """
 - Profil de pondération: {WEIGHT_PROFILES}
 """
 
+@logfire.instrument
+async def search_referentiels_batch_tool(searches: List[SearchQuery]) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Version optimisée pour effectuer plusieurs recherches de référentiels en UN SEUL tour.
+    Utilise cet outil si tu as plusieurs informations à normaliser (ex: ville + métier).
+    
+    Args:
+        searches (List[SearchQuery]): Liste d'objets {query, domain}. Domaine de recherche possibles:['formation_codes', 'inclusion_services', 'waldec_codes', 'rome_codes', 'regions', 'departements', 'communes', 'housing_types'].
+    """
+    return await search_referentiels_batch([s.model_dump() for s in searches])
+
+
 interviewer_agent: Agent['ODISDeps', AutoDetectionResult] = Agent(
     get_model("interviewer"),
     model_settings=get_model_settings("interviewer"),
+    tools=[search_referentiels_batch_tool],
     output_type=AutoDetectionResult
 )
 
@@ -69,15 +82,3 @@ async def main_instructions(ctx: RunContext['ODISDeps']) -> str:
         return f"{prompt}\n\n## Critères déjà identifiés\n{context}"
         
     return prompt
-
-@logfire.instrument
-@interviewer_agent.tool
-async def search_referentiels_batch_tool(ctx: RunContext, searches: List[SearchQuery]) -> Dict[str, List[Dict[str, Any]]]:
-    """
-    Version optimisée pour effectuer plusieurs recherches de référentiels en UN SEUL tour.
-    Utilise cet outil si tu as plusieurs informations à normaliser (ex: ville + métier).
-    
-    Args:
-        searches (List[SearchQuery]): Liste d'objets {query, domain}. Domaine de recherche possibles:['formation_codes', 'inclusion_services', 'waldec_codes', 'rome_codes', 'regions', 'departements', 'communes', 'housing_types'].
-    """
-    return await search_referentiels_batch([s.model_dump() for s in searches])
