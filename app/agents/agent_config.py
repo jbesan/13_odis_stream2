@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic_ai.models import ModelSettings
 from pydantic_ai.models.google import GoogleModel
-from pydantic_ai.providers.google import GoogleProvider
+from pydantic_ai.providers.google_cloud import GoogleCloudProvider
 
 
 # --- Configuration Models ---
@@ -23,7 +23,7 @@ class NodeConfig(BaseModel):
     temperature: float = 0.0
     max_tokens: int | None = None
     thinking: Literal["minimal", "low", "medium", "high"] | None = None
-    timeout: float | None = 30.0
+    timeout: float | None = 60.0
 
     @property
     def model_settings(self) -> ModelSettings:
@@ -62,6 +62,10 @@ class AgentSettings(BaseSettings):
     synthesizer: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.1, thinking="medium"))#, max_tokens=8192))
     refiner: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.1, thinking="minimal", max_tokens=4096))
 
+    # Vertex AI configuration
+    gcp_project: str | None = Field(default=None)
+    gcp_location: str = Field(default="europe-west9")
+
     def get_config(self, agent_name: str) -> NodeConfig:
         """Helper to get config by agent name, falling back to router if unknown."""
         return getattr(self, agent_name, self.router)
@@ -86,22 +90,78 @@ def get_model_settings(agent_name: str) -> ModelSettings:
     return agent_settings.get_config(agent_name).model_settings
 
 
-def get_p_model(agent_name: str, client: genai.Client) -> GoogleModel:
+def get_p_model(agent_name: str, client: genai.Client | None = None) -> GoogleModel:
     """Returns a configured GoogleModel instance for Pydantic AI."""
-    config = agent_settings.get_config(agent_name)
-    mod_id = config.model
+    mod_id = get_model(agent_name)
     
     if ":" in mod_id:
         _, model_name = mod_id.split(":", 1)
     else:
         model_name = mod_id
     
-    # Explicitly inject the fresh client
-    provider = GoogleProvider(client=client)
+    project = agent_settings.gcp_project or os.getenv("GOOGLE_CLOUD_PROJECT") or "odis-stream2"
+    location = agent_settings.gcp_location or "europe-west9"
+
+    if client is not None:
+        provider = GoogleCloudProvider(client=client)
+    else:
+        base_url = None
+        if location == "eu":
+            base_url = "https://aiplatform.eu.rep.googleapis.com"
+        provider = GoogleCloudProvider(project=project, location=location, base_url=base_url)
+
+    profile = None
+    try:
+        default_profile = provider.model_profile(model_name)
+        if default_profile:
+            profile = {
+                **default_profile,
+                "google_supports_server_side_tool_invocations": False
+            }
+    except Exception:
+        pass
 
     return GoogleModel(
         model_name, 
         provider=provider,
+        profile=profile,
+    )
+
+
+def get_gemini_client(attempts: int = 3, location: str | None = None) -> genai.Client:
+    """Returns a configured Google GenAI client based on settings.
+    
+    Uses Vertex AI on the configured location unconditionally.
+    """
+    import os
+    from google import genai
+    from google.genai import types
+
+    project = agent_settings.gcp_project or os.getenv("GOOGLE_CLOUD_PROJECT") or "odis-stream2"
+    loc = location or agent_settings.gcp_location or "eu"
+
+    # For Vertex AI in 'eu' multi-region, we must specify the correct endpoint URL
+    base_url = None
+    if loc == "eu":
+        base_url = "https://aiplatform.eu.rep.googleapis.com"
+
+    # Retry and HTTP options
+    retry_opts = types.HttpRetryOptions(
+        attempts=attempts,
+        initial_delay=1.0,
+        max_delay=10.0,
+        http_status_codes=[429, 503]
+    )
+    http_opts = types.HttpOptions(
+        retry_options=retry_opts,
+        base_url=base_url
+    )
+
+    return genai.Client(
+        vertexai=True,
+        project=project,
+        location=loc,
+        http_options=http_opts
     )
 
 

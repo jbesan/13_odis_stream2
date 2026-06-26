@@ -55,10 +55,64 @@ JOB_HUNTER_SYSTEM_PROMPT = """
    - `result` : Ton analyse détaillée des opportunités d'emploi correspondantes ou le détail structuré de l'offre consultée.
 """
 
+async def search_job_offers_batch_tool(searches: List[JobSearchQuery]) -> Dict[str, Any]:
+    """
+    Version optimisée pour effectuer plusieurs recherches d'offres d'emploi en UN SEUL tour.
+    Utilise cet outil pour trouver des opportunités concrètes pour tous les métiers identifiés.
+    
+    Args:
+        searches: Liste d'objets JobSearchQuery {location, rome}
+    """
+    return await search_job_offers_batch([s.model_dump() for s in searches])
+
+
+def get_job_details_tool(job_id: str) -> Dict[str, Any]:
+    """Recherche des détails d'une offre d'emploi (utilise soit FT soit SIAE selon l'ID)."""
+    # Simple heuristic: if ID has letters it might be FT, if it's numeric/longer it might be SIAE
+    # Better: try both if unsure, or Job Hunter can decide based on previous results.
+    if len(job_id) < 10: # France Travail IDs are usually 7-8 chars
+        return get_job_details(job_id)
+    return get_inclusion_job_details(job_id)
+
+
+async def search_inclusion_jobs_batch_tool(searches: List[JobSearchQuery]) -> Dict[str, Any]:
+    """
+    Recherche d'offres d'insertion (SIAE) en mode Batch.
+    À utiliser spécifiquement pour les publics en insertion.
+    
+    Args:
+        searches: Liste d'objets JobSearchQuery {location, rome}
+    """
+    return await search_inclusion_jobs_batch([s.model_dump() for s in searches])
+
+
+def get_inclusion_job_details_tool(siae_id: str) -> Dict[str, Any]:
+    """Détails d'une structure SIAE et ses offres."""
+    return get_inclusion_job_details(siae_id)
+
+
+async def search_referentiels_batch_tool(searches: List[SearchQuery]) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Version optimisée pour effectuer plusieurs recherches de référentiels en UN SEUL tour.
+    Utilise cet outil si tu as plusieurs informations à normaliser (ex: ville + métier).
+    
+    Args:
+        searches (List[SearchQuery]): Liste d'objets {query, domain}
+    """
+    return await search_referentiels_batch([s.model_dump() for s in searches])
+
+
 job_hunter_agent = Agent(
     get_model("job_hunter"),
     model_settings=get_model_settings("job_hunter"),
     deps_type=ODISDeps,
+    tools=[
+        search_job_offers_batch_tool,
+        get_job_details_tool,
+        search_inclusion_jobs_batch_tool,
+        get_inclusion_job_details_tool,
+        search_referentiels_batch_tool
+    ],
     output_type=JobHunterResult
 )
 
@@ -77,61 +131,5 @@ async def job_hunter_instructions(ctx: RunContext[ODISDeps]) -> str:
         MISSION=mission,
         SKILL_INSTRUCTIONS=skill_inst
     )
-
-
-# Tools wrapped for PydanticAI
-@job_hunter_agent.tool
-async def search_job_offers_batch_tool(
-    ctx: RunContext[ODISDeps], 
-    searches: List[JobSearchQuery]
-) -> Dict[str, Any]:
-    """
-    Version optimisée pour effectuer plusieurs recherches d'offres d'emploi en UN SEUL tour.
-    Utilise cet outil pour trouver des opportunités concrètes pour tous les métiers identifiés.
-    
-    Args:
-        searches: Liste d'objets JobSearchQuery {location, rome}
-    """
-    return await search_job_offers_batch([s.model_dump() for s in searches])
-
-@job_hunter_agent.tool
-def get_job_details_tool(ctx: RunContext[ODISDeps], job_id: str) -> Dict[str, Any]:
-    """Recherche des détails d'une offre d'emploi (utilise soit FT soit SIAE selon l'ID)."""
-    # Simple heuristic: if ID has letters it might be FT, if it's numeric/longer it might be SIAE
-    # Better: try both if unsure, or Job Hunter can decide based on previous results.
-    if len(job_id) < 10: # France Travail IDs are usually 7-8 chars
-        return get_job_details(job_id)
-    return get_inclusion_job_details(job_id)
-
-@job_hunter_agent.tool
-async def search_inclusion_jobs_batch_tool(
-    ctx: RunContext[ODISDeps], 
-    searches: List[JobSearchQuery]
-) -> Dict[str, Any]:
-    """
-    Recherche d'offres d'insertion (SIAE) en mode Batch.
-    À utiliser spécifiquement pour les publics en insertion.
-    
-    Args:
-        searches: Liste d'objets JobSearchQuery {location, rome}
-    """
-    return await search_inclusion_jobs_batch([s.model_dump() for s in searches])
-
-@job_hunter_agent.tool
-def get_inclusion_job_details_tool(ctx: RunContext[ODISDeps], siae_id: str) -> Dict[str, Any]:
-    """Détails d'une structure SIAE et ses offres."""
-    return get_inclusion_job_details(siae_id)
-
-
-@job_hunter_agent.tool
-async def search_referentiels_batch_tool(ctx: RunContext[ODISDeps], searches: List[SearchQuery]) -> Dict[str, List[Dict[str, Any]]]:
-    """
-    Version optimisée pour effectuer plusieurs recherches de référentiels en UN SEUL tour.
-    Utilise cet outil si tu as plusieurs informations à normaliser (ex: ville + métier).
-    
-    Args:
-        searches (List[SearchQuery]): Liste d'objets {query, domain}
-    """
-    return await search_referentiels_batch([s.model_dump() for s in searches])
 
 

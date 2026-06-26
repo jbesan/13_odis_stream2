@@ -1574,8 +1574,11 @@ def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
 
 def compute_rna_rag_counts(query_text: str, threshold: float = 0.65) -> pd.DataFrame:
     """Computes semantic counts for a query using BigQuery Vector Search (ML.DISTANCE)."""
-    client = bigquery.Client(project="odis-stream2")
-    genai_client = genai.Client(vertexai=True, project="odis-stream2", location="europe-west1")
+    import os
+    project = os.getenv("GOOGLE_CLOUD_PROJECT", "odis-stream2")
+    location = os.getenv("GOOGLE_CLOUD_LOCATION", "europe-west1")
+    client = bigquery.Client(project=project)
+    genai_client = genai.Client(vertexai=True, project=project, location=location)
     
     # Generate Embedding
     response = genai_client.models.embed_content(

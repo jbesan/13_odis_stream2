@@ -39,10 +39,25 @@ MOBILITY_EXPERT_SYSTEM_PROMPT = """
 4. **Formatage** : Sois hyper concis dans tes réponses.
 """
 
+async def search_places_batch_tool(queries: List[str], location: str) -> Dict[str, Any]:
+    """Recherche des infrastructures de transport ou des POIs en mode batch.
+    Args:
+        queries: Liste de requêtes (ex: ['gare routière', 'gare SNCF']).
+        location: Ville cible (ex: 'Bordeaux, Nouvelle-Aquitaine').
+    """
+    return await search_places_batch(queries, location)
+
+
+def compute_routes_tool(origin: str, destination: str, mode: str = "transit") -> Dict[str, Any]:
+    """Calcule des itinéraires et temps de trajet entre 2 localisations."""
+    return compute_routes(origin, destination, mode)
+
+
 mobility_expert_agent = Agent(
     get_model("mobility_expert"),
     model_settings=get_model_settings("mobility_expert"),
     deps_type=ODISDeps,
+    tools=[search_places_batch_tool, compute_routes_tool],
     capabilities=[WebSearch()],
     output_type=MobilityResult
 )
@@ -61,20 +76,5 @@ async def mobility_expert_instructions(ctx: RunContext[ODISDeps]) -> str:
         MISSION=mission,
         SKILL_INSTRUCTIONS=skill_inst
     )
-
-
-@mobility_expert_agent.tool
-async def search_places_batch_tool(ctx: RunContext[ODISDeps], queries: List[str], location: str) -> Dict[str, Any]:
-    """Recherche des infrastructures de transport ou des POIs en mode batch.
-    Args:
-        queries: Liste de requêtes (ex: ['gare routière', 'gare SNCF']).
-        location: Ville cible (ex: 'Bordeaux, Nouvelle-Aquitaine').
-    """
-    return await search_places_batch(queries, location)
-
-@mobility_expert_agent.tool
-def compute_routes_tool(ctx: RunContext[ODISDeps], origin: str, destination: str, mode: str = "transit") -> Dict[str, Any]:
-    """Calcule des itinéraires et temps de trajet entre 2 localisations."""
-    return compute_routes(origin, destination, mode)
 
 

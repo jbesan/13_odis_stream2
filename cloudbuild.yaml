@@ -2,6 +2,7 @@ substitutions:
   _REGION: europe-west1
   _REPOSITORY: odis-stream2-repo
   _IMAGE: odis-app
+  _PROJECT_ID: odis-stream2
 
 steps:
   # 1. Quality Gates (Install + Mypy + Pytest)
@@ -22,7 +23,7 @@ steps:
       [
         "build",
         "--build-arg", "BUILDKIT_INLINE_CACHE=1",
-        "-t", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_IMAGE}",
+        "-t", "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/${_IMAGE}",
         "-f", "app/Dockerfile",
         ".",
       ]
@@ -32,7 +33,7 @@ steps:
     args:
       [
         "push",
-        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_IMAGE}",
+        "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/${_IMAGE}",
       ]
 
   # 6. Deploy to Cloud Run
@@ -43,7 +44,7 @@ steps:
       - "deploy"
       - "${_IMAGE}"
       - "--image"
-      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_IMAGE}"
+      - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/${_IMAGE}"
       - "--region"
       - "${_REGION}"
       - "--platform"
@@ -51,9 +52,11 @@ steps:
       - "--allow-unauthenticated"
       - "--timeout=3600"
       - "--session-affinity"
+      - "--project"
+      - "${_PROJECT_ID}"
       - "--set-env-vars"
       - "STREAMLIT_CLIENT_TOOLBAR_MODE=minimal"
 images:
-  - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_IMAGE}"
+  - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/${_IMAGE}"
 # Jacques note: To re-deploy use
 # gcloud builds submit --config cloudbuild.yaml .

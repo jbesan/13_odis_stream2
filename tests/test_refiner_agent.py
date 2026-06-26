@@ -17,11 +17,9 @@ async def test_refiner_agent_live_shortlisted_city():
     Live integration test to prove that refiner_agent generates pitches for both
     the Top 5 recommended results AND the shortlisted commune_pressentie.
     """
-    api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        pytest.skip("GOOGLE_API_KEY or GEMINI_API_KEY not set, skipping live integration test")
+    from agents.agent_config import get_gemini_client
 
-    client = genai.Client(api_key=api_key)
+    client = get_gemini_client()
     
     # 1. Prepare State with a current city, top recommendation, and shortlisted city
     state = GraphState()

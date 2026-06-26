@@ -239,6 +239,8 @@ def run_async_safe(input_data: dict):
 def run_autodetect_safe(text: str):
     logfire.info("Interviewer Auto-Detect started")
     from agents.interviewer import interviewer_agent
+    from agents.agent_config import get_gemini_client, get_p_model
+    from agents.state import ODISDeps, GraphState
     try:
         loop = asyncio.get_event_loop()
     except RuntimeError:
@@ -249,7 +251,13 @@ def run_autodetect_safe(text: str):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-    result = loop.run_until_complete(interviewer_agent.run(text))
+    client = get_gemini_client()
+    deps = ODISDeps(state=GraphState(), client=client)
+    model = get_p_model("interviewer", client=client)
+
+    result = loop.run_until_complete(
+        interviewer_agent.run(text, deps=deps, model=model)
+    )
     return result.output
 
 def rehydrate_graph_state(input_data: dict) -> "GraphState":
@@ -309,21 +317,10 @@ async def run_logic(input_data: dict):
     from agents.state import GraphState, ODISDeps
     from agents.graph import create_odis_graph
     from core.models import SearchCriterias, SearchResultsData
+    from agents.agent_config import get_gemini_client
     
-    # 1. Client Local (Critique: Fresh instance per request)
-    api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-    client = genai.Client(
-        api_key=api_key, 
-        http_options=types.HttpOptions(
-            api_version="v1beta",
-            retry_options=types.HttpRetryOptions(
-                attempts=3,
-                initial_delay=1.0,
-                max_delay=10.0,
-                http_status_codes=[429, 503]
-            )
-        )
-    )
+    # 1. Client Local (Centralized helper)
+    client = get_gemini_client()
     
     # 2. State & Deps
     input_state = rehydrate_graph_state(input_data)

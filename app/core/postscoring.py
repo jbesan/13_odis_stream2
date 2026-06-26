@@ -40,15 +40,8 @@ def launch_background_refining(search_criterias: Any, results_dict_ignored: dict
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             
-            api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-            
-            client = genai.Client(
-                api_key=api_key, 
-                http_options=types.HttpOptions(
-                    api_version="v1beta",
-                    retry_options=types.HttpRetryOptions(attempts=2)
-                )
-            )
+            from agents.agent_config import get_gemini_client
+            client = get_gemini_client(attempts=2)
             
             # 3. Unified State Rehydration
             input_data = {
@@ -198,16 +191,9 @@ def _curate_jobs_with_agent(
         import os
         from google import genai
         from google.genai import types
-        from agents.agent_config import get_p_model, get_model_settings
+        from agents.agent_config import get_p_model, get_model_settings, get_gemini_client
 
-        api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-        client = genai.Client(
-            api_key=api_key, 
-            http_options=types.HttpOptions(
-                api_version="v1beta",
-                retry_options=types.HttpRetryOptions(attempts=1)
-            )
-        )
+        client = get_gemini_client(attempts=1)
         model = get_p_model("job_curator", client=client)
 
         # Construct a lightweight GraphState to carry context
