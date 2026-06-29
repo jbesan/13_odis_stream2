@@ -2,43 +2,73 @@ import sys
 import os
 import pytest
 
-# Mock Logfire to disable it completely for all tests
 from types import ModuleType
+import opentelemetry.trace as otel_trace
 
-class MockLogfireModule(ModuleType):
-    def instrument(self, *args, **kwargs):
-        if len(args) == 1 and callable(args[0]):
-            return args[0]
-        def decorator(func):
-            return func
-        return decorator
+# Check if logfire should be enabled (e.g. during live evaluations or if explicitly requested)
+run_evals = os.getenv("RUN_EVALS", "false").lower() == "true"
+enable_logfire = os.getenv("ENABLE_LOGFIRE", "false").lower() == "true" or run_evals
 
-    def span(self, *args, **kwargs):
-        class MockSpan:
-            def __enter__(self): return None
-            def __exit__(self, *a): pass
-        return MockSpan()
+if enable_logfire:
+    os.environ["LOGFIRE_SEND_TO_LOGFIRE"] = "true"
+    import logfire
+    print("\n🔥 [LOGFIRE-TEST] Initializing Logfire configuration for tests (environment='test', send_to_logfire=True)...")
+    logfire.configure(environment='test', service_name="odis-stream2", send_to_logfire=True)
+    logfire.instrument_pydantic_ai()
+    logfire.instrument_httpx()
+    print("🔥 [LOGFIRE-TEST] Logfire configuration and instrumentation complete.")
+else:
+    class MockLogfireModule(ModuleType):
+        def instrument(self, *args, **kwargs):
+            if len(args) == 1 and callable(args[0]):
+                return args[0]
+            def decorator(func):
+                return func
+            return decorator
 
-    def __getattr__(self, name):
-        if name.startswith('__'):
-            raise AttributeError(name)
-        class MockAttr:
-            def __init__(self, *args, **kwargs):
-                pass
-            def __call__(self, *args, **kwargs):
-                return self
-            def __getattr__(self, attr):
-                if attr.startswith('__'):
-                    raise AttributeError(attr)
-                return self
-            def span(self, *args, **kwargs):
-                class MockSpan:
-                    def __enter__(self): return None
-                    def __exit__(self, *a): pass
-                return MockSpan()
-        return MockAttr
+        def span(self, *args, **kwargs):
+            class MockSpan:
+                _span = otel_trace.INVALID_SPAN
+                context = otel_trace.INVALID_SPAN.get_span_context()
+                def __enter__(self): return self
+                def __exit__(self, *a): pass
+                def set_attribute(self, *a, **kw): pass
+                def record_exception(self, *a, **kw): pass
+                def __getattr__(self, name):
+                    if name.startswith('__'):
+                        raise AttributeError(name)
+                    return lambda *a, **kw: None
+            return MockSpan()
 
-sys.modules['logfire'] = MockLogfireModule('logfire')
+        def __getattr__(self, name):
+            if name.startswith('__'):
+                raise AttributeError(name)
+            class MockAttr:
+                def __init__(self, *args, **kwargs):
+                    pass
+                def __call__(self, *args, **kwargs):
+                    return self
+                def __getattr__(self, attr):
+                    if attr.startswith('__'):
+                        raise AttributeError(attr)
+                    return self
+                def span(self, *args, **kwargs):
+                    class MockSpan:
+                        _span = otel_trace.INVALID_SPAN
+                        context = otel_trace.INVALID_SPAN.get_span_context()
+                        def __enter__(self): return self
+                        def __exit__(self, *a): pass
+                        def set_attribute(self, *a, **kw): pass
+                        def record_exception(self, *a, **kw): pass
+                        def __getattr__(self, name):
+                            if name.startswith('__'):
+                                raise AttributeError(name)
+                            return lambda *a, **kw: None
+                    return MockSpan()
+            return MockAttr
+
+    sys.modules['logfire'] = MockLogfireModule('logfire')
+
 # Add project root and app directory to sys.path to support imports during tests
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../app')))
@@ -167,3 +197,19 @@ def global_stats():
         'ter_population_scaled': {'min': 0.0, 'max': 100000.0},
         'edu_petite_enfance_scaled': {'min': 0.0, 'max': 100.0},
     }
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Ensure all logfire spans are flushed before the python process exits."""
+    import sys
+    try:
+        import logfire
+        print(f"\n🔥 [LOGFIRE-TEST] logfire class: {type(logfire)}, file: {getattr(logfire, '__file__', None)}", file=sys.stderr, flush=True)
+        print(f"🔥 [LOGFIRE-TEST] attributes: {dir(logfire)}", file=sys.stderr, flush=True)
+        # Flush if possible, or try alternative names
+        if hasattr(logfire, 'flush'):
+            logfire.flush()
+        elif hasattr(logfire, 'force_flush'):
+            logfire.force_flush()
+    except Exception as e:
+        print(f"\n⚠️ [LOGFIRE-TEST] Failed to flush Logfire spans: {e}", file=sys.stderr, flush=True)

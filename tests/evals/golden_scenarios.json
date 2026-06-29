@@ -1,6 +1,6 @@
 [
   {
-    "scenario_name": "Full Analysis Saint-Jean-d'Angely (Refugee Relocation)",
+    "scenario_name": "Full Analysis Saint-Jean-d'Angely (Refugee Relocation - Deep)",
     "input_query": "Fais une analyse complète pour Saint-Jean-d'Angély.",
     "expected_swarm_mode": "full_analysis",
     "expected_experts": [
@@ -11,16 +11,492 @@
       "mobility_expert",
       "social_integration_expert"
     ],
-    "expected_rome_code": "I1604",
-    "expected_focus_city": "Saint-Jean-d'Angély",
-    "required_insee_code": "17347",
-    "synthesis_keywords": [
-      "Saint-Jean-d'Angély",
-      "Charente-Maritime",
-      "logement",
-      "emploi",
-      "santé",
-      "éducation"
-    ]
+    "odis_brief": "Personne réfugiée avec deux enfants en bas âge, en recherche d'un emploi de mécanicien automobile et d'un logement en location. Le projet nécessite un accès aux services de petite enfance, un soutien en santé mentale, ainsi qu'un environnement favorisant l'inclusion sociale, avec une préférence pour la proximité de la mer et d'un lieu de culte.",
+    "search_criteria": {
+      "commune_actuelle": {
+        "code": "33063",
+        "label": "Bordeaux"
+      },
+      "commune_pressentie": null,
+      "loc_search_area": "departement",
+      "loc_search_code": ["17", "33", "40"],
+      "nb_adultes": 1,
+      "nb_enfants": 2,
+      "classe_enfants": ["Elémentaire", "Crèche / Assistante Maternelle"],
+      "codes_metiers": [
+        [
+          {
+            "code": "I1604",
+            "label": "Mécanicien / Mécanicienne automobile"
+          }
+        ]
+      ],
+      "codes_formations": [[]],
+      "inc_services_selection": [
+        {
+          "code": "difficultes-administratives-ou-juridiques--accompagnement-aux-demarches-administratives",
+          "label": "Accompagnement aux démarches administratives"
+        },
+        {
+          "code": "lecture-ecriture-calcul--maitriser-le-francais",
+          "label": "Maîtriser le français"
+        },
+        {
+          "code": "logement-hebergement--sinformer-sur-les-demarches-liees-a-lacces-au-logement",
+          "label": "S’informer sur les démarches liées à l’accès au logement"
+        },
+        {
+          "code": "preparer-sa-candidature--organiser-ses-demarches-de-recherche-demploi",
+          "label": "Organiser ses démarches de recherche d’emploi"
+        }
+      ],
+      "inc_asso_add_selection": [
+        {
+          "code": "011075",
+          "label": "football (football, futsal)"
+        }
+      ],
+      "hebergement_cible": ["Location avec Intermédiation"],
+      "logement": "Location",
+      "type_logement": {
+        "code": "appt_all",
+        "label": "Appartement (Tous types)"
+      },
+      "besoin_sante": "Soutien Psychologique & Addictologie",
+      "freq_retour": "1 fois/an",
+      "notes_qualitatives": ["Proximité d'une Mosquée et de la mer"],
+      "weight_profile": "Équilibré",
+      "criteria_weights": {
+        "mob_epci_scaled": 0.5,
+        "mob_dist_current_loc_scaled": 0.5
+      },
+      "poids_emploi": 1.0,
+      "poids_logement": 0.75,
+      "poids_education": 0.5,
+      "poids_inclusion": 0.5,
+      "poids_mobilite": 0.25,
+      "poids_sante": 0.25,
+      "poids_territoire": 1.0,
+      "org_context": null,
+      "org_strategic_locations": [],
+      "org_strategic_locations_type": "departement",
+      "target_population": 150000,
+      "target_population_sigma": 75000,
+      "org_boosts": {},
+      "odis_brief": "Personne réfugiée avec deux enfants en bas âge, en recherche d'un emploi de mécanicien automobile et d'un logement en location. Le projet nécessite un accès aux services de petite enfance, un soutien en santé mentale, ainsi qu'un environnement favorisant l'inclusion sociale, avec une préférence pour la proximité de la mer et d'un lieu de culte.",
+      "active_criteria": [
+        "edu_classes_ferm_scaled",
+        "edu_elementaire_scaled",
+        "edu_petite_enfance_scaled",
+        "heb_loc_iml_scaled",
+        "inc_asso_add_scaled",
+        "inc_asso_core_scaled",
+        "inc_asso_refug_scaled",
+        "inc_services_incl_scaled",
+        "inc_siae_density_scaled",
+        "log_loyer_moyen_appt_all_scaled",
+        "log_soc_delay_scaled",
+        "log_vac_scaled",
+        "met_match_adult1_scaled",
+        "met_match_adult1_tension_scaled",
+        "met_siae_match_adult1_scaled",
+        "mob_dist_current_loc_scaled",
+        "mob_dur_share_scaled",
+        "mob_epci_scaled",
+        "mob_gare_scaled",
+        "mob_trans_pub_density_scaled",
+        "sante_psy_scaled",
+        "sante_rdv_delay_scaled",
+        "sante_structures_scaled",
+        "ter_insecurite_scaled",
+        "ter_pol_scaled",
+        "ter_population_scaled",
+        "workclass_decline_scaled",
+        "youth_decline_scaled"
+      ],
+      "active_categories": [
+        "education",
+        "emploi",
+        "inclusion",
+        "logement",
+        "mobilite",
+        "sante",
+        "territoire"
+      ]
+    },
+    "search_results": {
+      "search_hash": "9dcc6239942d9d155ff51f93cfa72681",
+      "results": [
+        {
+          "codgeo": "17347",
+          "name": "Saint-Jean-d'Angély",
+          "population": 6784,
+          "codgeo_bdv": "17347",
+          "name_bdv": "Saint-Jean-d'Angély",
+          "global_score": 0.9391243676957964,
+          "scores": {
+            "logement": [
+              {
+                "label": "Taux Vacance Structurelle (> 2 ans)",
+                "score_id": "log_vac_scaled",
+                "valeur_kpi": 7.5,
+                "score_normalise": 0.7528344392776489,
+                "unit": "%",
+                "relative_weight": 1.5
+              },
+              {
+                "label": "Loyer Moyen - Appartement (Ensemble)",
+                "score_id": "log_loyer_moyen_appt_all_scaled",
+                "valeur_kpi": 10.8,
+                "score_normalise": 0.6398496627807617,
+                "unit": "€/m²",
+                "relative_weight": 7.4
+              },
+              {
+                "label": "Location avec Intermédiation",
+                "score_id": "heb_loc_iml_scaled",
+                "valeur_kpi": 0.0,
+                "score_normalise": 0.0,
+                "unit": "associations",
+                "relative_weight": 1.5
+              },
+              {
+                "label": "Délai moyen Logement Social",
+                "score_id": "log_soc_delay_scaled",
+                "valeur_kpi": 10.9,
+                "score_normalise": 0.7260366678237915,
+                "unit": "mois",
+                "relative_weight": 7.4
+              }
+            ],
+            "territoire": [
+              {
+                "label": "Couleur Politique de la commmue",
+                "score_id": "ter_pol_scaled",
+                "valeur_kpi": 0.5,
+                "score_normalise": 0.5,
+                "unit": "None",
+                "relative_weight": 4.7
+              },
+              {
+                "label": "Population de la commune",
+                "score_id": "ter_population_scaled",
+                "valeur_kpi": 7000.0,
+                "score_normalise": 0.16151064323792377,
+                "unit": "habitants",
+                "relative_weight": 14.1
+              },
+              {
+                "label": "Indice de Sécurité",
+                "score_id": "ter_insecurite_scaled",
+                "valeur_kpi": 83.7,
+                "score_normalise": 0.16345126926898956,
+                "unit": "crimes+délits/1000 hab.",
+                "relative_weight": 4.7
+              }
+            ],
+            "mobilite": [
+              {
+                "label": "Même agglomération que la localisation actuelle",
+                "score_id": "mob_epci_scaled",
+                "valeur_kpi": 0.0,
+                "score_normalise": 0.0,
+                "unit": "",
+                "relative_weight": 0.4
+              },
+              {
+                "label": "Proximité avec la commune actuelle",
+                "score_id": "mob_dist_current_loc_scaled",
+                "valeur_kpi": 120.9,
+                "score_normalise": 0.0,
+                "unit": "km",
+                "relative_weight": 0.4
+              },
+              {
+                "label": "Présence d'une gare SNCF",
+                "score_id": "mob_gare_scaled",
+                "valeur_kpi": "Oui",
+                "score_normalise": 1.0,
+                "unit": "",
+                "relative_weight": 0.7
+              },
+              {
+                "label": "Densité des transports en commun",
+                "score_id": "mob_trans_pub_density_scaled",
+                "valeur_kpi": 1.0,
+                "score_normalise": 0.10318396226415094,
+                "unit": "arrêts / 1000 hab.",
+                "relative_weight": 2.2
+              },
+              {
+                "label": "Part des actifs effectuant leurs trajets domicile-travail sans voiture",
+                "score_id": "mob_dur_share_scaled",
+                "valeur_kpi": 12.5,
+                "score_normalise": 0.3519721031188965,
+                "unit": "%",
+                "relative_weight": 2.2
+              }
+            ],
+            "inclusion": [
+              {
+                "label": "Lien Social",
+                "score_id": "inc_asso_core_scaled",
+                "valeur_kpi": 2.2,
+                "score_normalise": 0.45178813613778784,
+                "unit": "assos/1000 hab.",
+                "relative_weight": 2.4
+              },
+              {
+                "label": "Accompagnement Réfugiés",
+                "score_id": "inc_asso_refug_scaled",
+                "valeur_kpi": 0.0,
+                "score_normalise": 0.0,
+                "unit": "assos/1000 hab.",
+                "relative_weight": 2.4
+              },
+              {
+                "label": "Densité SIAE",
+                "score_id": "inc_siae_density_scaled",
+                "valeur_kpi": 0.3,
+                "score_normalise": 0.9458042979240416,
+                "unit": "SIAE/1000 hab.",
+                "relative_weight": 2.4
+              },
+              {
+                "label": "Affinités",
+                "score_id": "inc_asso_add_scaled",
+                "valeur_kpi": 0.3,
+                "score_normalise": 1.0,
+                "unit": "assos/1000 hab.",
+                "relative_weight": 2.4
+              },
+              {
+                "label": "Services Inclusion",
+                "score_id": "inc_services_incl_scaled",
+                "valeur_kpi": 75.0,
+                "score_normalise": 0.75,
+                "unit": "%",
+                "relative_weight": 2.4
+              }
+            ],
+            "education": [
+              {
+                "label": "Accueil Petite Enfance",
+                "score_id": "edu_petite_enfance_scaled",
+                "valeur_kpi": 0.0,
+                "score_normalise": 0.0,
+                "unit": "places/100 enfants",
+                "relative_weight": 5.0
+              },
+              {
+                "label": "Ecole Elémentaire",
+                "score_id": "edu_elementaire_scaled",
+                "valeur_kpi": 1.0,
+                "score_normalise": 1.0,
+                "unit": "",
+                "relative_weight": 3.4
+              },
+              {
+                "label": "Nombre de classes à risque de fermeture",
+                "score_id": "edu_classes_ferm_scaled",
+                "valeur_kpi": 1.0,
+                "score_normalise": 0.1979030668735504,
+                "unit": "écoles",
+                "relative_weight": 1.7
+              },
+              {
+                "label": "Evolution Démographique Jeune",
+                "score_id": "youth_decline_scaled",
+                "valeur_kpi": -21.5,
+                "score_normalise": 1.0,
+                "unit": "% (Evol. 2016-2022)",
+                "relative_weight": 1.7
+              }
+            ],
+            "sante": [
+              {
+                "label": "Structure de sante spécifique",
+                "score_id": "sante_structures_scaled",
+                "valeur_kpi": 100.0,
+                "score_normalise": 1.0,
+                "unit": "",
+                "relative_weight": 2.0
+              },
+              {
+                "label": "Accessibilité Médicale (APL)",
+                "score_id": "sante_rdv_delay_scaled",
+                "valeur_kpi": 3.3,
+                "score_normalise": 0.4936243295669556,
+                "unit": "APL",
+                "relative_weight": 3.9
+              }
+            ],
+            "emploi": [
+              {
+                "label": "Dynamisme Population Active",
+                "score_id": "workclass_decline_scaled",
+                "valeur_kpi": -13.0,
+                "score_normalise": 1.0,
+                "unit": "%",
+                "relative_weight": 7.1
+              },
+              {
+                "label": "Opportunités Emploi - Adulte 1",
+                "score_id": "met_match_adult1_scaled",
+                "valeur_kpi": 3.0,
+                "score_normalise": 0.6499999999999999,
+                "unit": "offres",
+                "relative_weight": 7.1
+              },
+              {
+                "label": "Tension de recrutement - Adulte 1",
+                "score_id": "met_match_adult1_tension_scaled",
+                "valeur_kpi": 1.0,
+                "score_normalise": 0.2,
+                "unit": "offres en tension",
+                "relative_weight": 2.4
+              },
+              {
+                "label": "Offres SIAE - Adulte 1",
+                "score_id": "met_siae_match_adult1_scaled",
+                "valeur_kpi": 2.0,
+                "score_normalise": 0.4,
+                "unit": "offres",
+                "relative_weight": 7.1
+              }
+            ]
+          },
+          "employment": {
+            "cat_score": 0.635,
+            "standard_jobs_total": 182,
+            "standard_jobs_summary": {
+              "Mécanicien / Mécanicienne automobile": 3
+            },
+            "standard_jobs_matching_total": 24,
+            "standard_jobs_matching_summary": {
+              "Mécanicien / Mécanicienne automobile": 3
+            },
+            "top_professions": [
+              "Poissonnier / Poissonnière (13 postes)",
+              "Employé / Employée de rayon libre-service (9 postes)"
+            ],
+            "inclusive_jobs_total": 7,
+            "inclusive_jobs_summary": {
+              "Mécanicien / Mécanicienne automobile": 1,
+              "Mécanicien / Mécanicienne motocycles": 1
+            },
+            "inclusive_jobs_matching_total": 2,
+            "inclusive_jobs_matching_summary": {
+              "Mécanicien / Mécanicienne automobile": 1,
+              "Mécanicien / Mécanicienne motocycles": 1
+            },
+            "training_programs": ["Comptabilité, gestion"],
+            "training_programs_matching": [],
+            "matching_job_offers": [
+              [
+                {
+                  "id": "5415902",
+                  "title": "MECANICIEN CONFIRME (H/F)",
+                  "company": "Roady",
+                  "contract_type": "CDI",
+                  "contract_label": "CDI",
+                  "description": "Nous recherchons pour notre centre Roady de SAINT JEAN D'ANGELY un mécanicien automobile...",
+                  "location": "17 - Saint-Jean-d'Angély",
+                  "location_insee": null,
+                  "salary": null,
+                  "url": "https://candidat.francetravail.fr/offres/recherche/detail/5415902",
+                  "rome_code": "I1604",
+                  "rome_label": "Mécanicien / Mécanicienne automobile",
+                  "job_brief": "Poste de mécanicien automobile en CDI chez Roady...",
+                  "date_creation": "2025-11-18T14:21:56.000Z",
+                  "work_duration": "\nTravail en journée",
+                  "experience": "Débutant accepté"
+                }
+              ]
+            ]
+          },
+          "housing": {
+            "cat_score": 0.6318,
+            "host_count": 0,
+            "price_per_sqm": 10.78,
+            "housing_price_variants": {
+              "appt_all": {
+                "raw": 10.78,
+                "scaled": 0.6398
+              }
+            },
+            "log_soc_delay": 10.9
+          },
+          "education": {
+            "cat_score": 0.4568,
+            "facility_counts": {
+              "maternelle": 2,
+              "elementaire": 3,
+              "college": 2,
+              "lycee": 3
+            },
+            "facility_details": {
+              "Collège": [
+                "Collège Georges Texier",
+                "Collège privé Sainte Sophie"
+              ],
+              "Creche": [
+                "MA CROQUE SOLEIL ST JEAN D Y"
+              ],
+              "Elémentaire": [
+                "Ecole primaire privée Sainte Sophie",
+                "Ecole élémentaire Joseph Lair"
+              ]
+            }
+          },
+          "health": {
+            "cat_score": 0.6624,
+            "facility_counts": {
+              "hopital": 3,
+              "maternite": 1,
+              "psy": 1
+            },
+            "facility_details": {},
+            "sante_rdv_delay": 3.25
+          },
+          "inclusion": {
+            "cat_score": 0.6295,
+            "asso_inclusion_count": 15,
+            "asso_inclusion_list_by_cat": {
+              "Emploi/IAE": [
+                {
+                  "id": "W175000622",
+                  "name": "Envol Formation",
+                  "description": "insertion sociale professionnelle...",
+                  "waldec_label": "AIDE À L'EMPLOI...",
+                  "refugee_focused": false
+                }
+              ]
+            },
+            "asso_refugee_count": 0,
+            "asso_refugee_list": [],
+            "services_grouped": {
+              "Confirmer son choix de métier": [
+                "ATELIER CHANTIER D'INSERTION"
+              ]
+            }
+          }
+        }
+      ],
+      "current_geo": {
+        "codgeo": "17347",
+        "name": "Saint-Jean-d'Angély",
+        "population": 6784,
+        "codgeo_bdv": "17347",
+        "name_bdv": "Saint-Jean-d'Angély",
+        "global_score": 0.9391243676957964,
+        "scores": {},
+        "employment": {},
+        "housing": {},
+        "education": {},
+        "health": {},
+        "inclusion": {}
+      }
+    }
   }
 ]

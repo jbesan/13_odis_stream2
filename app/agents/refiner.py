@@ -38,12 +38,12 @@ REFINER_SYSTEM_PROMPT = """
 ```
 
 **Instructions** :
-1. **Génère le `odis_brief`** : Rédige une synthèse hyper concise et factuelle (2-3 phrases) qui décrit la situation de la personne, son projet de vie et ses contraintes. Ce briefing servira de base de connaissance pour d'autres agents experts.
-2. **Génère le `global_pitch`** : Rédige une introduction engageant en une phrase pour présenter les 5 résultats au travailleur social.
-3. **Analyse le Top 5** des meilleures communes identifiées, ainsi que la commune pressentie si elle est fournie dans le contexte.
+1. **Génère le `odis_brief`** : Rédige une synthèse hyper concise, factuelle et complète (2-3 phrases) qui décrit la situation de la personne, son projet de vie et TOUTES ses contraintes et préférences spécifiques (y compris les besoins de santé, de garde d'enfants, la proximité souhaitée de la mer, d'un lieu de culte comme une mosquée, etc.). Ce briefing servira de base de connaissance unique pour d'autres agents experts, il ne doit donc omettre aucune de ces préférences qualitatives.
+2. **Génère le `global_pitch`** : Rédige une introduction engageante en une phrase pour présenter les 5 résultats au travailleur social.
+3. **Analyse le Top 5** des meilleures communes identifiées, ainsi que la commune pressentie si elle est fournie dans le contexte, au regard de ces critères et contraintes.
 4. Pour chaque ville du Top 5 et pour la commune pressentie si présente retourne `pitches_per_city`:
     a. Fournis le code INSEE exact (`codgeo`) et le nom (`name`).
-    b. Rédige une liste à puces markdown de 3 à 5 points forts pertinents au regard du dossier. Utilise les chiffres et statistiques présents dans le contexte pour être concret.
+    b. Rédige une liste à puces markdown de 3 à 5 points forts pertinents au regard du dossier (si la ville présente une contrainte, par exemple si elle est éloignée de la mer alors que c'est demandé, mentionne-le de manière neutre ou explique comment la mobilité compense). Utilise les chiffres et statistiques présents dans le contexte pour être concret.
 5. **IMPORTANT** : Ne retourne jamais les références des données techniques internes (ex: %{{log_soc_inoc_scaled}}). Utilise un langage naturel et professionnel.
 """
 

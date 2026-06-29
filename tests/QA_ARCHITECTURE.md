@@ -29,7 +29,8 @@ tests/
 
 ### 1. Level 1: Unit Tests (`tests/unit/`)
 *   **Scope**: Validates individual functions, mathematical scoring sub-methods, CCAS matching rules, and proximity calculations.
-*   **Offline Agent Contracts**: Contains offline tests for Pydantic AI agents (e.g. `education_expert_agent`, `healthcare_expert_agent`) utilizing `FunctionModel`. These mock the LLM output to assert that agents correctly interpret user queries and call tools with the expected parameters (e.g. correct query terms and location formats) without making live LLM calls.
+*   **Offline Agent Contracts**: Contains offline tests for ODIS Pydantic AI agents (the coordinator `ts_agent` and all 6 expert agents) utilizing `FunctionModel`. These mock the LLM output to assert that agents correctly interpret user queries and call tools with the expected parameters (e.g. correct query terms and location formats) without making live LLM calls.
+*   **Service & Utility Hardening**: Fully covers core caching/garbage collection lifecycle (`memory.py`), query input sanitization and UI configuration mapping (`agents/utils.py`), offline semantic RAG search mock lookups (`rna_rag.py`), and telemetry logging format mapping (`telemetry.py`).
 *   **Execution Time**: Extremely fast (<0.1s per test).
 
 ### 2. Level 2: Integration Tests (`tests/integration/`)
@@ -49,7 +50,11 @@ tests/
 
 ### 4. Level 4: AI Quality Evaluation (`tests/evals/`)
 *   **Scope**: Tests live LLM agent graph runs against golden datasets to evaluate routing, expert capabilities, and synthesis quality.
-*   **Golden Dataset Harness**: Loads queries from `golden_scenarios.json` (bootstrapped from real Logfire traces), executes the live `pydantic-graph` MapReduce pipeline, and asserts routing decisions, expert output generation, and narrative safety.
+*   **Two Evaluation Sub-suites**:
+    - **Full Analysis Evaluation (`test_golden_evals.py`)**: Runs the entire multi-agent LangGraph map-reduce swarm. Programmatically validates graph state routing, token count aggregation, and asserts that each expert successfully generated its specific qualitative report. Evaluated via `LLMJudge` to ensure the final synthesized report meets the target user needs.
+    - **Brief Refinement Evaluation (`test_brief_evals.py`)**: Runs the isolated `refiner_agent` directly. This bypasses the expensive map-reduce swarm and evaluates the single agent briefing logic in 2-3 seconds at a cost of ~$0.0016 per run, enabling rapid iterations.
+*   **Pydantic Evals Integration**: Utilizes the official `pydantic_evals` framework (`Dataset`, `Case`, `LLMJudge`) to run evaluation datasets.
+*   **LLM-as-a-Judge (Rubric-Based)**: Instead of using brittle string asserts, `LLMJudge` is instantiated with a semantic rubric to evaluate whether the generated synthesis covers all specific constraints in the candidate's profile (job, housing, education, health, inclusion, and proximity preferences).
 *   **Skipping Condition**: Because these tests make live Vertex AI calls and cost money/tokens, they are skipped by default and must be run explicitly.
 
 ---
@@ -57,12 +62,17 @@ tests/
 ## 🛠️ Key Design Patterns
 
 ### 1. The Safe Divisor Pattern
-*   **Problem**: Float divisions on dynamically computed metrics can trigger `RuntimeWarning: divide by zero` or populate dataframes with `NaN` / `inf`.
-*   **Solution**: In [app/core/scoring.py](file:///Users/jacques/dev/13_odis_stream2/app/core/scoring.py), wrap dynamic divisors using NumPy's conditional divisor replacement:
+*   **Problem**: Float divisions on dynamically computed metrics (such as category score aggregation) can trigger `RuntimeWarning: divide by zero` or populate dataframes with `NaN` / `inf`.
+*   **Solution**: In [app/core/scoring.py](file:///Users/jacques/dev/13_odis_stream2/app/core/scoring.py), avoid hardcoded replacements (like substituting 0 with 1) that can lead to misleading or skewed scoring distributions. Instead, use NumPy's `np.divide` with a conditional `where` mask:
     ```python
-    np.where(divisor == 0, 1.0, divisor)
+    raw_scores = np.divide(
+        numerator,
+        denominator,
+        out=np.zeros_like(denominator, dtype=float),
+        where=denominator > 0
+    )
     ```
-    This ensures that when a value is zero, division is bypassed safely.
+    This mathematically bypasses division where the denominator is zero, returning a clean `0.0` output safely.
 
 ### 2. Dynamic Fixtures (Anti-Drift)
 *   **Problem**: Hardcoding expected criteria scores in unit tests causes tests to drift and fail whenever production YAML configuration changes.
@@ -73,8 +83,8 @@ tests/
 *   **Solution**: Use Pydantic AI's `FunctionModel` in unit tests to mock the LLM's response. The mock model intercepts the request, asserts that the agent is sending the expected prompt/messages, returns a deterministic `ToolCallPart`, and validates that the agent successfully executes the local Python tool.
 
 ### 4. Streamlit AppTest & Page Navigation
-*   **Problem**: In Streamlit's test runner, testing a sub-page directly (e.g., `AppTest.from_file("app/pages/2_Formulaire.py")`) prevents relative page switching (`st.switch_page`) from resolving correctly, throwing `StreamlitAPIException` because the page paths are evaluated relative to the initial entrypoint script.
-*   **Solution**: Always initialize `AppTest` from the root entrypoint (`app/main.py`). This establishes the correct execution directory, allowing manual or button-triggered redirections to resolve correctly (e.g., `at.switch_page("pages/2_Formulaire.py")`).
+*   **Problem**: In Streamlit's test runner, testing a sub-page directly (e.g., `AppTest.from_file("app/pages/2_Formulaire.py")`) prevents relative page switching (`st.switch_page`) from resolving correctly, throwing `StreamlitAPIException` because the page paths are evaluated relative to the initial entrypoint script. Additionally, custom Javascript/HTML bidirectional components (like `inject_idle_sleep` or Leaflet maps) lack a rendering DOM browser environment and crash when executed in a raw python process.
+*   **Solution**: Always initialize `AppTest` from the root entrypoint (`app/main.py`). This establishes the correct execution directory, allowing manual or button-triggered redirections to resolve correctly (e.g., `at.switch_page("pages/2_Formulaire.py")`). Mock or patch custom frontend components (e.g., mocking `inject_idle_sleep` with `@patch`) to bypass browser-bound serialization and focus testing on execution flow, widgets inputs, and session state transitions.
 
 ### 5. Multi-Threaded Code Coverage
 *   **Problem**: Because Streamlit's `AppTest` runs the target script inside a separate thread runner, standard coverage collection can miss the executed code lines in the sub-thread.
@@ -83,6 +93,32 @@ tests/
 ### 6. Spelling & Value Alignment
 *   **Problem**: String-matching indicators (e.g., health needs selection) can drift between UI radio options (`config.py`) and scoring logic keys (`scoring.py`), causing critical score columns (like `sante_hopital_scaled`) to silently fail to activate.
 *   **Solution**: Enforce strict alignment using correct human-readable spellings (e.g. `"Hôpital"` with the French accent) in the UI options, while supporting robust alias lookups (e.g. both `"Hôpital"` and `"Hopital"`) inside map loaders and scoring functions to maintain compatibility with ETL datasets and historical tests.
+
+### 7. LLM-as-a-Judge Evaluation (`pydantic_evals`)
+*   **Problem**: Stochastically generated LLM text outputs are highly fluid, making direct string matching (e.g. `assert "éducation" in output`) extremely fragile and prone to false negatives.
+*   **Solution**: We run the evaluation using `pydantic_evals.Dataset`. We define evaluation cases using the candidate's `odis_brief` as input. We attach `LLMJudge` from `pydantic_evals.evaluators` to assess the actual output against a structured rubric using the live GCP Vertex AI model configuration, printing the detailed reasoning and pass/fail results.
+
+### 8. Hooking Live Evaluations Dynamically
+*   **Problem**: Standard batch/offline evaluations run via `Dataset.evaluate()` only populate the offline "Evals" tab in the Logfire UI. They do not populate Logfire's dedicated "Live Evals" (Online Evaluations) panel, which requires registering the `OnlineEvaluation` capability on target agents.
+*   **Solution**: Inside the evaluation task closure, we dynamically hook the `OnlineEvaluation` capability to the target agent (e.g., `refiner_agent` or `synthesizer_agent`) inside a `try...finally` block. This ensures that the evaluation is registered as a live online evaluation in the Logfire UI without leaking or mutating the production agent's definition globally:
+    ```python
+    from pydantic_evals.online_capability import OnlineEvaluation
+    online_eval = OnlineEvaluation(evaluators=[judge])
+    agent.root_capability.capabilities.append(online_eval)
+    try:
+        result_run = await agent.run(...)
+    finally:
+        agent.root_capability.capabilities.remove(online_eval)
+    ```
+
+### 9. Programmatic Verification of Expert Swarm Outputs
+*   **Problem**: We must confirm that the map-reduce swarm actually invokes the requested expert agents and that they each produce valid outputs, rather than failing silently or returning empty analyses.
+*   **Solution**: During evaluation runs of the full swarm (in `test_golden_evals.py`), we programmatically verify that all expected experts (e.g., jobs, housing, health) successfully generated a report. We do this by checking the dictionary of generated expert reports inside the state and asserting a minimum character length:
+    ```python
+    for expert in scenario["expected_experts"]:
+        assert expert in city_res.expert_analysis, f"Expert analysis for '{expert}' was not generated"
+        assert len(city_res.expert_analysis[expert]) > 50, f"Analysis for '{expert}' is too short/empty"
+    ```
 
 ---
 
@@ -108,9 +144,17 @@ Always run tests using the local virtual environment executable to avoid system-
 ```
 
 ### Run Live AI Evaluations (Level 4)
-Evaluating live graphs requires the `RUN_EVALS` environment variable to be set to `true` (along with active Google Cloud Vertex AI credentials in your terminal):
+Evaluating live graphs requires the `RUN_EVALS` environment variable to be set to `true` (along with active Google Cloud Vertex AI credentials in your terminal). To prevent Pytest's default plugin from blocking Logfire's cloud telemetry export, run with `-p no:logfire` and `-s`:
+
 ```bash
-RUN_EVALS=true .venv/bin/pytest tests/evals/
+# Run all evaluations (both brief refiner and full graph)
+RUN_EVALS=true .venv/bin/pytest tests/evals/ -s -p no:logfire
+
+# Run ONLY the fast & cheap brief refiner evaluations (~3s, $0.001)
+RUN_EVALS=true .venv/bin/pytest tests/evals/test_brief_evals.py -s -p no:logfire
+
+# Run ONLY the full map-reduce swarm graph evaluations (~80s)
+RUN_EVALS=true .venv/bin/pytest tests/evals/test_golden_evals.py -s -p no:logfire
 ```
 
 ---
