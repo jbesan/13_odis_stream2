@@ -1,10 +1,17 @@
+import os
 import pytest
 from pydantic_ai import Agent
 from agents.agent_config import get_gemini_client, get_p_model
 from pydantic_ai.capabilities import WebSearch
 
+run_evals = os.getenv("RUN_EVALS", "false").lower() == "true"
+
+pytestmark = [
+    pytest.mark.eval,
+    pytest.mark.skipif(not run_evals, reason="Evaluation tests are skipped by default. Set RUN_EVALS=true to run them.")
+]
+
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Skipped by default to save tokens. Verified to pass on 2026-06-25.")
 async def test_vertex_ai_live_execution():
     """
     Live integration test verifying that an agent configured with WebSearch

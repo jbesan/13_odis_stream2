@@ -373,7 +373,7 @@ def build_sante_layer(pois: gpd.GeoDataFrame, target_codgeos: Set[str], config: 
     mask = pd.Series(False, index=filtered.index)
     if config.besoin_sante == 'Maternité':
         mask = filtered['type'] == 'Maternité'
-    elif config.besoin_sante == "Hopital":
+    elif config.besoin_sante in ["Hôpital", "Hopital"]:
         mask = filtered['type'] == 'Hopital'
     elif config.besoin_sante == "Soutien Psychologique & Addictologie":
         mask = filtered['type'] == 'Soutien Psychologique & Addictologie'

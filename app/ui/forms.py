@@ -161,9 +161,8 @@ def render_housing_form() -> None:
 
 def render_health_form() -> None:
     """Renders the UI for the 'Santé' form section."""
-    options = ["Aucun", "Hopital", 'Maternité', "Soutien Psychologique & Addictologie"]
     # F-48: Consistent key with config.py
-    st.radio('Support médical à proximité', options, key="ui_besoin_sante")
+    st.radio('Support médical à proximité', cfg.SANTE_OPTIONS, key="ui_besoin_sante")
 
 
 def render_other_needs_form() -> None:

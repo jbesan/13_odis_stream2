@@ -72,7 +72,7 @@ class TestFilterCommunes:
 
 @pytest.mark.unit
 class TestScoringLogic:
-    def test_compute_criteria_scores_structure(self, sample_data, default_config, sample_incl_index, sample_scores_cat, global_stats):
+    def test_compute_criteria_scores_structure(self, sample_data, default_config, sample_incl_index, live_scores_cat, global_stats):
         """Tests that criteria scores are added as columns."""
         # Prerequisite: distance (Engine checks it internally or we call it)
         
@@ -87,7 +87,7 @@ class TestScoringLogic:
         engine = scoring.ScoringEngine(
             df_all_communes=sample_data,
             df_bv_geo=gpd.GeoDataFrame(),
-            scores_cat=sample_scores_cat,
+            scores_cat=live_scores_cat,
             incl_index=sample_incl_index,
             associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']),
             formations_data=pd.DataFrame(columns=['codgeo', 'formation_code']),
@@ -147,7 +147,7 @@ class TestScoringLogic:
         for col in expected_cols:
             assert col in scored_df.columns
 
-    def test_compute_criteria_scores_partial_selection(self, sample_data, default_config, sample_incl_index, sample_scores_cat, global_stats):
+    def test_compute_criteria_scores_partial_selection(self, sample_data, default_config, sample_incl_index, live_scores_cat, global_stats):
         """Tests that only selected education criteria are added."""
         config = default_config
         config.nb_enfants = 1
@@ -157,7 +157,7 @@ class TestScoringLogic:
         engine = scoring.ScoringEngine(
             df_all_communes=sample_data,
             df_bv_geo=gpd.GeoDataFrame(),
-            scores_cat=sample_scores_cat,
+            scores_cat=live_scores_cat,
             incl_index=sample_incl_index,
             associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']),
             formations_data=pd.DataFrame(columns=['codgeo', 'formation_code']),
@@ -197,7 +197,7 @@ class TestScoringLogic:
         assert 'edu_college_scaled' not in scored_df.columns
         assert 'edu_lycee_scaled' not in scored_df.columns
 
-    def test_compute_category_scores_aggregation(self, sample_data, sample_scores_cat, default_config):
+    def test_compute_category_scores_aggregation(self, sample_data, live_scores_cat, default_config):
         """Tests that category scores are correctly aggregated from criteria scores."""
         df = sample_data.copy()
         # Mock criteria scores
@@ -205,7 +205,7 @@ class TestScoringLogic:
         
         # Filter scores_cat to only this one for 'emploi'
         # Filter scores_cat to only this one for 'emploi'
-        scores_cat_subset = sample_scores_cat[sample_scores_cat['score'] == 'met_match_adult1_scaled'].copy()
+        scores_cat_subset = live_scores_cat[live_scores_cat['score'] == 'met_match_adult1_scaled'].copy()
         
         engine = scoring.ScoringEngine(
             df_all_communes=pd.DataFrame(),
@@ -222,7 +222,7 @@ class TestScoringLogic:
         assert 'emploi_cat_score' in df_cat.columns
         assert df_cat.iloc[0]['emploi_cat_score'] == 1.0
 
-    def test_compute_weighted_score_nan_handling(self, sample_data, default_config, sample_scores_cat):
+    def test_compute_weighted_score_nan_handling(self, sample_data, default_config, live_scores_cat):
         """Tests that NaN scores are excluded from the weighted average."""
         df = sample_data.copy()
         
@@ -247,7 +247,7 @@ class TestScoringLogic:
         engine = scoring.ScoringEngine(
             df_all_communes=pd.DataFrame(),
             df_bv_geo=gpd.GeoDataFrame(),
-            scores_cat=sample_scores_cat, # Not used for weighted_score directly
+            scores_cat=live_scores_cat, # Not used for weighted_score directly
             associations_data=pd.DataFrame(),
             formations_data=pd.DataFrame(),
             incl_index=pd.DataFrame()
@@ -264,7 +264,7 @@ class TestScoringLogic:
         weighted_score_zero = engine._compute_weighted_score(df, config)
         assert weighted_score_zero.iloc[0] == pytest.approx(0.6666, rel=1e-3)
 
-    def test_compute_weighted_score(self, default_config, sample_scores_cat):
+    def test_compute_weighted_score(self, default_config, live_scores_cat):
         """Tests the final weighted score calculation."""
         df = pd.DataFrame({
             'emploi_cat_score': [1.0],
@@ -287,7 +287,7 @@ class TestScoringLogic:
         engine = scoring.ScoringEngine(
             df_all_communes=pd.DataFrame(),
             df_bv_geo=gpd.GeoDataFrame(),
-            scores_cat=sample_scores_cat,
+            scores_cat=live_scores_cat,
             associations_data=pd.DataFrame(),
             formations_data=pd.DataFrame(),
             incl_index=pd.DataFrame()
@@ -301,7 +301,7 @@ class TestScoringLogic:
 
 @pytest.mark.unit
 class TestConditionalScoring:
-    def test_compute_weighted_score_conditional_exclusion(self, sample_scores_cat):
+    def test_compute_weighted_score_conditional_exclusion(self, live_scores_cat):
         """
         Tests that 'education' and 'sante' categories are excluded from the weighted score
         calculation when specific conditions are met (no kids, no health needs).
@@ -345,7 +345,7 @@ class TestConditionalScoring:
         engine = scoring.ScoringEngine(
             df_all_communes=pd.DataFrame(),
             df_bv_geo=gpd.GeoDataFrame(),
-            scores_cat=sample_scores_cat, # Not needed for weighted score
+            scores_cat=live_scores_cat, # Not needed for weighted score
             associations_data=pd.DataFrame(),
             formations_data=pd.DataFrame(),
             incl_index=pd.DataFrame()
@@ -355,7 +355,7 @@ class TestConditionalScoring:
         # Assert
         assert weighted_score.iloc[0] == 1.0, f"Expected 1.0, got {weighted_score.iloc[0]}"
 
-    def test_compute_weighted_score_inclusion_when_relevant(self, sample_scores_cat):
+    def test_compute_weighted_score_inclusion_when_relevant(self, live_scores_cat):
         """
         Tests that 'education' and 'sante' categories ARE included when conditions are met.
         """
@@ -395,7 +395,7 @@ class TestConditionalScoring:
         engine = scoring.ScoringEngine(
             df_all_communes=pd.DataFrame(),
             df_bv_geo=gpd.GeoDataFrame(),
-            scores_cat=sample_scores_cat,
+            scores_cat=live_scores_cat,
             incl_index=pd.DataFrame(),
             associations_data=pd.DataFrame(),
             formations_data=pd.DataFrame(),
@@ -406,13 +406,13 @@ class TestConditionalScoring:
         # Assert
         assert abs(weighted_score.iloc[0] - 0.666666) < 0.0001
 
-    def test_compute_criteria_scores_dynamic_bounds(self, sample_data, default_config, sample_incl_index, sample_scores_cat, global_stats):
+    def test_compute_criteria_scores_dynamic_bounds(self, sample_data, default_config, sample_incl_index, live_scores_cat, global_stats):
         """Tests that match scores use dynamic max bounds based on preference length."""
         # Prerequisite: distance
         engine = scoring.ScoringEngine(
             df_all_communes=sample_data,
             df_bv_geo=gpd.GeoDataFrame(),
-            scores_cat=sample_scores_cat,
+            scores_cat=live_scores_cat,
             incl_index=sample_incl_index,
             associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']),
             formations_data=pd.DataFrame({
@@ -460,7 +460,7 @@ class TestMCPScenario:
     and receiving structured results.
     """
     
-    def test_mcp_stateless_execution(self, sample_data, sample_scores_cat, sample_incl_index, global_stats):
+    def test_mcp_stateless_execution(self, sample_data, live_scores_cat, sample_incl_index, global_stats):
         """
         Simulates an MCP call where the agent constructs a SearchCriterias 
         and invokes the engine without any Streamlit session state context.
@@ -495,7 +495,7 @@ class TestMCPScenario:
         engine = scoring.ScoringEngine(
             df_all_communes=sample_data,
             df_bv_geo=gpd.GeoDataFrame(), # Not using BV view here
-            scores_cat=sample_scores_cat,
+            scores_cat=live_scores_cat,
             incl_index=sample_incl_index,
             associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']),
             formations_data=pd.DataFrame(columns=['codgeo', 'formation_code', 'count']),
@@ -584,7 +584,7 @@ class TestInclusionScoringLogic:
         }
         return gpd.GeoDataFrame(data).set_index('codgeo')
 
-    def test_compute_inclusion_score_socle_admin(self, mock_geo_df, mock_incl_index, mock_associations_data, sample_scores_cat, global_stats):
+    def test_compute_inclusion_score_socle_admin(self, mock_geo_df, mock_incl_index, mock_associations_data, live_scores_cat, global_stats):
         """Tests Socle Administratif score calculation."""
         from types import SimpleNamespace
         prefs = SimpleNamespace(
@@ -594,7 +594,7 @@ class TestInclusionScoringLogic:
         engine = scoring.ScoringEngine(
             df_all_communes=gpd.GeoDataFrame(), 
             df_bv_geo=gpd.GeoDataFrame(), 
-            scores_cat=sample_scores_cat, 
+            scores_cat=live_scores_cat, 
             incl_index=mock_incl_index, 
             associations_data=mock_associations_data, 
             formations_data=pd.DataFrame(), 
@@ -606,7 +606,7 @@ class TestInclusionScoringLogic:
         # 64445: one match out of two needed -> 0.5
         assert scores.loc['64445', 'inc_services_incl_scaled'] == 0.5
 
-    def test_compute_inclusion_score_affinite(self, mock_geo_df, mock_incl_index, mock_associations_data, sample_scores_cat, global_stats):
+    def test_compute_inclusion_score_affinite(self, mock_geo_df, mock_incl_index, mock_associations_data, live_scores_cat, global_stats):
         """Tests Affinité score calculation."""
         from types import SimpleNamespace
         prefs = SimpleNamespace(
@@ -616,7 +616,7 @@ class TestInclusionScoringLogic:
         engine = scoring.ScoringEngine(
             df_all_communes=gpd.GeoDataFrame(), 
             df_bv_geo=gpd.GeoDataFrame(), 
-            scores_cat=sample_scores_cat, 
+            scores_cat=live_scores_cat, 
             incl_index=mock_incl_index, 
             associations_data=mock_associations_data, 
             formations_data=pd.DataFrame(), 
@@ -635,7 +635,7 @@ class TestInclusionScoringLogic:
         engine_sport = scoring.ScoringEngine(
             df_all_communes=gpd.GeoDataFrame(), 
             df_bv_geo=gpd.GeoDataFrame(), 
-            scores_cat=sample_scores_cat, 
+            scores_cat=live_scores_cat, 
             incl_index=mock_incl_index, 
             associations_data=mock_associations_data, 
             formations_data=pd.DataFrame(), 
@@ -645,7 +645,7 @@ class TestInclusionScoringLogic:
         
         assert scores_sport.loc['33063', 'inc_asso_add_scaled'] > scores_sport.loc['64445', 'inc_asso_add_scaled']
 
-    def test_compute_inclusion_score_components(self, mock_geo_df, mock_incl_index, mock_associations_data, sample_scores_cat, global_stats):
+    def test_compute_inclusion_score_components(self, mock_geo_df, mock_incl_index, mock_associations_data, live_scores_cat, global_stats):
         """Tests that all inclusion components are present."""
         from types import SimpleNamespace
         prefs = SimpleNamespace(
@@ -655,7 +655,7 @@ class TestInclusionScoringLogic:
         engine = scoring.ScoringEngine(
             df_all_communes=gpd.GeoDataFrame(), 
             df_bv_geo=gpd.GeoDataFrame(), 
-            scores_cat=sample_scores_cat, 
+            scores_cat=live_scores_cat, 
             incl_index=mock_incl_index, 
             associations_data=mock_associations_data, 
             formations_data=pd.DataFrame(), 
@@ -755,7 +755,6 @@ class TestHousingScoresLogic:
         assert 'log_occup_scaled' in res2.columns
         assert 'log_soc_inoc_scaled' in res2.columns
 
-    @pytest.mark.xfail(reason="_compute_housing_scores is currently empty in ScoringEngine, columns are expected to be pre-computed.")
     def test_housing_rent_selection_logic(self):
         """
         Verifies that only the selected housing type rent column is kept.
@@ -831,7 +830,7 @@ class TestHousingScoresLogic:
             poids_emploi=0.0, poids_logement=1.0, poids_education=0.0, poids_inclusion=0.0, poids_sante=0.0, poids_mobilite=0.0,
             commune_actuelle='A', loc_search_area='departement', loc_search_code=[],
             nb_adultes=1, nb_enfants=0, hebergement_cible=[], logement='Location',
-            type_logement=CriteriaItem(code="appartement_t1_t2", label="Appartement (T1/T2)"),
+            type_logement=CriteriaItem(code="appt_t1_t2", label="Appartement (T1/T2)"),
             codes_metiers=[[]], codes_formations=[[]], classe_enfants=[], besoin_sante="Aucun",
             inc_services_selection=[], inc_asso_add_selection=[]
         )
@@ -844,8 +843,7 @@ class TestHousingScoresLogic:
 class TestOrganizationBoosts:
     """Tests for organization-specific criteria boosts (F-54 expansion)."""
 
-    @pytest.mark.xfail(reason="org_boosts has been replaced by the smart-merge system and is no longer directly supported in ScoringEngine.")
-    def test_org_boost_impact(self, sample_data, sample_scores_cat, default_config):
+    def test_org_boost_impact(self, sample_data, live_scores_cat, default_config):
         """Tests that org_boosts correctly multiplies the criterion weight in category aggregation."""
         df = sample_data.copy()
         # Mock criteria scores: 
@@ -855,7 +853,7 @@ class TestOrganizationBoosts:
         df['met_match_adult1_tension_scaled'] = 0.0
         
         # Prepare scores_cat with these two in 'emploi' category, both weight 1.0
-        scores_cat = sample_scores_cat.copy()
+        scores_cat = live_scores_cat.copy()
         scores_cat.loc[scores_cat['score'] == 'met_match_adult1_scaled', 'weight'] = 1.0
         scores_cat.loc[scores_cat['score'] == 'met_match_adult1_tension_scaled', 'weight'] = 1.0
         
@@ -893,16 +891,10 @@ class TestOrganizationBoosts:
         df_boost_b = engine._compute_category_scores(df.copy(), config_boost_b)
         assert df_boost_b.iloc[0]['emploi_cat_score'] == 0.25
 
-        # 2. Test: Chọn house_all
-        res2 = run_scoring('house_all')
-        assert 'log_loyer_moyen_appt_all_scaled' not in res2.columns
-        assert 'log_loyer_moyen_appt_t1_t2_scaled' not in res2.columns
-        assert 'log_loyer_moyen_house_all_scaled' in res2.columns
-
 
 @pytest.mark.unit
 class TestShortlistCity:
-    def test_scoring_with_commune_pressentie(self, sample_data, sample_scores_cat, sample_incl_index, global_stats):
+    def test_scoring_with_commune_pressentie(self, sample_data, live_scores_cat, sample_incl_index, global_stats):
         """
         Tests that when a commune_pressentie is set:
         1. It is explicitly forced to be scored and included in the results payload.
@@ -938,7 +930,7 @@ class TestShortlistCity:
         engine = scoring.ScoringEngine(
             df_all_communes=sample_data,
             df_bv_geo=gpd.GeoDataFrame(),
-            scores_cat=sample_scores_cat,
+            scores_cat=live_scores_cat,
             incl_index=sample_incl_index,
             associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']),
             formations_data=pd.DataFrame(columns=['codgeo', 'formation_code']),
