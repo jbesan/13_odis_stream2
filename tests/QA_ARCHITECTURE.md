@@ -61,36 +61,23 @@ tests/
 
 ## 🛠️ Key Design Patterns
 
-### 1. The Safe Divisor Pattern
-*   **Problem**: Float divisions on dynamically computed metrics (such as category score aggregation) can trigger `RuntimeWarning: divide by zero` or populate dataframes with `NaN` / `inf`.
-*   **Solution**: In [app/core/scoring.py](file:///Users/jacques/dev/13_odis_stream2/app/core/scoring.py), avoid hardcoded replacements (like substituting 0 with 1) that can lead to misleading or skewed scoring distributions. Instead, use NumPy's `np.divide` with a conditional `where` mask:
-    ```python
-    raw_scores = np.divide(
-        numerator,
-        denominator,
-        out=np.zeros_like(denominator, dtype=float),
-        where=denominator > 0
-    )
-    ```
-    This mathematically bypasses division where the denominator is zero, returning a clean `0.0` output safely.
-
-### 2. Dynamic Fixtures (Anti-Drift)
+### 1. Dynamic Fixtures (Anti-Drift)
 *   **Problem**: Hardcoding expected criteria scores in unit tests causes tests to drift and fail whenever production YAML configuration changes.
 *   **Solution**: Load active configuration directly in tests. In [tests/conftest.py](file:///Users/jacques/dev/13_odis_stream2/tests/conftest.py), `live_scores_cat` dynamically parses the production [scores_config.yaml](file:///Users/jacques/dev/13_odis_stream2/app/scores_config.yaml), keeping tests completely in sync with configuration.
 
-### 3. FunctionModel Contract Testing
+### 2. FunctionModel Contract Testing
 *   **Problem**: We need to verify that AI agents invoke tools correctly, but invoking live LLM endpoints in unit tests is slow, non-deterministic, and expensive.
 *   **Solution**: Use Pydantic AI's `FunctionModel` in unit tests to mock the LLM's response. The mock model intercepts the request, asserts that the agent is sending the expected prompt/messages, returns a deterministic `ToolCallPart`, and validates that the agent successfully executes the local Python tool.
 
-### 4. Streamlit AppTest & Page Navigation
-*   **Problem**: In Streamlit's test runner, testing a sub-page directly (e.g., `AppTest.from_file("app/pages/2_Formulaire.py")`) prevents relative page switching (`st.switch_page`) from resolving correctly, throwing `StreamlitAPIException` because the page paths are evaluated relative to the initial entrypoint script. Additionally, custom Javascript/HTML bidirectional components (like `inject_idle_sleep` or Leaflet maps) lack a rendering DOM browser environment and crash when executed in a raw python process.
-*   **Solution**: Always initialize `AppTest` from the root entrypoint (`app/main.py`). This establishes the correct execution directory, allowing manual or button-triggered redirections to resolve correctly (e.g., `at.switch_page("pages/2_Formulaire.py")`). Mock or patch custom frontend components (e.g., mocking `inject_idle_sleep` with `@patch`) to bypass browser-bound serialization and focus testing on execution flow, widgets inputs, and session state transitions.
+### 3. Streamlit AppTest & Page Navigation
+*   **Problem**: In Streamlit's test runner, testing a sub-page directly (e.g., `AppTest.from_file("app/pages/2_Formulaire.py")`) prevents relative page switching (`st.switch_page`) from resolving correctly, throwing `StreamlitAPIException` because the page paths are evaluated relative to the initial entrypoint script.
+*   **Solution**: Always initialize `AppTest` from the root entrypoint (`app/main.py`). This establishes the correct execution directory, allowing manual or button-triggered redirections to resolve correctly (e.g., `at.switch_page("pages/2_Formulaire.py")`).
 
-### 5. Multi-Threaded Code Coverage
+### 4. Multi-Threaded Code Coverage
 *   **Problem**: Because Streamlit's `AppTest` runs the target script inside a separate thread runner, standard coverage collection can miss the executed code lines in the sub-thread.
 *   **Solution**: We run coverage profiling using standard thread tracing (supported natively by `pytest-cov`), which automatically captures the lines executed in `AppTest` threads, ensuring we report accurate coverage metrics (e.g. **90%** on `2_Formulaire.py` and **87%** on `3_Resultats.py`).
 
-### 6. Spelling & Value Alignment
+### 5. Spelling & Value Alignment
 *   **Problem**: String-matching indicators (e.g., health needs selection) can drift between UI radio options (`config.py`) and scoring logic keys (`scoring.py`), causing critical score columns (like `sante_hopital_scaled`) to silently fail to activate.
 *   **Solution**: Enforce strict alignment using correct human-readable spellings (e.g. `"Hôpital"` with the French accent) in the UI options, while supporting robust alias lookups (e.g. both `"Hôpital"` and `"Hopital"`) inside map loaders and scoring functions to maintain compatibility with ETL datasets and historical tests.
 

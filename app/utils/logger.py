@@ -117,20 +117,26 @@ def setup_logfire() -> None:
     """
     Initializes Logfire with project-specific settings and instruments PydanticAI/HTTPX.
     """
-    if not os.getenv("LOGFIRE_TOKEN"):
-        # Graceful fallback if token is missing
+    # If already configured (e.g. in test environment), avoid overriding the config
+    if getattr(logfire.DEFAULT_LOGFIRE_INSTANCE, "config", None) and logfire.DEFAULT_LOGFIRE_INSTANCE.config.environment == "test":
+        logger.info("🔥 Logfire already configured for test environment.")
         return
 
     try:
+        # Determine environment dynamically: 'prod' on Cloud Run, 'local' on developer machine
+        is_cloud_run = os.environ.get("K_SERVICE") is not None
+        logfire_env = "prod" if is_cloud_run else "local"
+
         logfire.configure(
             service_name="odis-stream2",
-            # token is automatically picked up from LOGFIRE_TOKEN env var
+            environment=logfire_env,
+            send_to_logfire="if-token-present",
         )
         logfire.instrument_pydantic_ai()
         logfire.instrument_httpx()
         # Suppress BigQuery automatic tracing to reduce noise (as requested)
         logfire.suppress_scopes('google.cloud.bigquery.opentelemetry_tracing')
-        logger.info("🔥 Logfire instrumentation enabled.")
+        logger.info(f"🔥 Logfire instrumentation enabled in '{logfire_env}' environment.")
     except Exception as e:
         logger.warning(f"⚠️ Failed to initialize Logfire: {e}")
 
