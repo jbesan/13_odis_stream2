@@ -755,7 +755,6 @@ class TestHousingScoresLogic:
         assert 'log_occup_scaled' in res2.columns
         assert 'log_soc_inoc_scaled' in res2.columns
 
-    @pytest.mark.xfail(reason="_compute_housing_scores is currently empty in ScoringEngine, columns are expected to be pre-computed.")
     def test_housing_rent_selection_logic(self):
         """
         Verifies that only the selected housing type rent column is kept.
@@ -831,7 +830,7 @@ class TestHousingScoresLogic:
             poids_emploi=0.0, poids_logement=1.0, poids_education=0.0, poids_inclusion=0.0, poids_sante=0.0, poids_mobilite=0.0,
             commune_actuelle='A', loc_search_area='departement', loc_search_code=[],
             nb_adultes=1, nb_enfants=0, hebergement_cible=[], logement='Location',
-            type_logement=CriteriaItem(code="appartement_t1_t2", label="Appartement (T1/T2)"),
+            type_logement=CriteriaItem(code="appt_t1_t2", label="Appartement (T1/T2)"),
             codes_metiers=[[]], codes_formations=[[]], classe_enfants=[], besoin_sante="Aucun",
             inc_services_selection=[], inc_asso_add_selection=[]
         )
@@ -844,7 +843,6 @@ class TestHousingScoresLogic:
 class TestOrganizationBoosts:
     """Tests for organization-specific criteria boosts (F-54 expansion)."""
 
-    @pytest.mark.xfail(reason="org_boosts has been replaced by the smart-merge system and is no longer directly supported in ScoringEngine.")
     def test_org_boost_impact(self, sample_data, live_scores_cat, default_config):
         """Tests that org_boosts correctly multiplies the criterion weight in category aggregation."""
         df = sample_data.copy()
@@ -892,12 +890,6 @@ class TestOrganizationBoosts:
         
         df_boost_b = engine._compute_category_scores(df.copy(), config_boost_b)
         assert df_boost_b.iloc[0]['emploi_cat_score'] == 0.25
-
-        # 2. Test: Chọn house_all
-        res2 = run_scoring('house_all')
-        assert 'log_loyer_moyen_appt_all_scaled' not in res2.columns
-        assert 'log_loyer_moyen_appt_t1_t2_scaled' not in res2.columns
-        assert 'log_loyer_moyen_house_all_scaled' in res2.columns
 
 
 @pytest.mark.unit

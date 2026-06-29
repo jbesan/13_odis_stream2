@@ -177,6 +177,11 @@ class ScoringEngine:
                  else:
                       weight *= float(s_row['weight'])
 
+                 # Apply organization specific boosts if present (F-54 Expansion)
+                 org_boosts = getattr(config, 'org_boosts', None)
+                 if config and org_boosts and sid in org_boosts:
+                      weight *= float(org_boosts[sid])
+
                  # APPLY FREQUENCY MULTIPLIER (F-60)
                  if sid in ['mob_epci_scaled', 'mob_dist_current_loc_scaled']:
                       freq = getattr(config, 'freq_retour', "Pas d'attache particulière")
@@ -222,7 +227,12 @@ class ScoringEngine:
             
             if weights_val:
                  denom = sum(weights_val)
-                 raw_scores = np.where(denom > 0, sum(scores_val) / denom, 0.0)
+                 raw_scores = np.divide(
+                     sum(scores_val),
+                     denom,
+                     out=np.zeros_like(denom, dtype=float),
+                     where=denom > 0
+                 )
                  s = pd.Series(raw_scores, index=df.index)
                  
                  # Only normalize if we have variation in the scores to avoid zero-variance compression
@@ -288,7 +298,7 @@ class ScoringEngine:
         
         if aggressive:
             # SOTA Optimization: Keep identifiers, scores, AND essential geometries for the filtered subset.
-            # We only keep geometries for the search area (e.g. results for 1 department),
+            # We only keep geometries for the search area (e.g. 1 department),
             # which is lightweight enough (~1MB) for the session state.
             keep_cols = {'libgeo', 'weighted_score', 'population', 'dep_code', 'reg_code', 'epci_code', 'bassin_de_vie', 'libelle_bassin_de_vie', 'polygon', 'centroid'}
             to_drop = [c for c in df.columns if c not in keep_cols]
@@ -400,7 +410,6 @@ class ScoringEngine:
         # Batch cache for associations (Store for detailed results)
         self._associations_cache = {}
         
-        # Discover and normalize categories from the scoring definitions
         # Discover and normalize categories from the scoring definitions
         if not self.scores_cat.empty and 'cat' in self.scores_cat.columns:
             self.categories = sorted([
@@ -613,10 +622,6 @@ class ScoringEngine:
             # Education remains optional (only if children are present)
             if config.nb_enfants == 0: 
                 cat_weights['education'] = 0.0
-            
-            # Health is now mandatory because of the 'Health APL' baseline metric
-            # if config.besoin_sante == 'Aucun': 
-            #     cat_weights['sante'] = 0.0
         
         # 2. Identify displayed criteria and compute internal weights based on visibility
         displayed_items: List[Dict[str, Any]] = []
@@ -637,6 +642,8 @@ class ScoringEngine:
             
             w_crit = float(score_row['weight'])
             if config and score_id in config.criteria_weights: w_crit *= config.criteria_weights[score_id]
+            org_boosts = getattr(config, 'org_boosts', None)
+            if config and org_boosts and score_id in org_boosts: w_crit *= float(org_boosts[score_id])
             
             cat_internal_weights[norm_cat] = cat_internal_weights.get(norm_cat, 0.0) + w_crit
             displayed_items.append({
@@ -1389,9 +1396,21 @@ class ScoringEngine:
         return df
 
     def _compute_education_scores(self, df: pd.DataFrame, config: SearchCriterias) -> pd.DataFrame:
+        """
+        Placeholder function. Education scores (e.g. school capacities) are static metrics 
+        that do not depend on dynamic user input. They are pre-computed and pre-scaled offline 
+        in pipeline/prescoring.py and stored directly in the commune Parquet files.
+        They are dynamically aggregated by category in ScoringEngine._compute_category_scores.
+        """
         return df
 
     def _compute_housing_scores(self, df: pd.DataFrame, config: SearchCriterias) -> pd.DataFrame:
+        """
+        Placeholder function. Housing scores (e.g. rent costs, vacancy ratios) are static metrics 
+        that do not depend on dynamic user input. They are pre-computed and pre-scaled offline 
+        in pipeline/prescoring.py and stored directly in the commune Parquet files.
+        They are dynamically aggregated by category in ScoringEngine._compute_category_scores.
+        """
         return df
 
     def _compute_inclusion_scores(self, df: pd.DataFrame, config: SearchCriterias) -> pd.DataFrame:
