@@ -5,11 +5,11 @@ from core import scoring
 from app.core.models import SearchCriterias, CriteriaItem
 
 @pytest.fixture
-def scoring_engine(sample_data, sample_scores_cat, sample_incl_index, global_stats):
+def scoring_engine(sample_data, live_scores_cat, sample_incl_index, global_stats):
     return scoring.ScoringEngine(
             df_all_communes=sample_data,
         df_bv_geo=gpd.GeoDataFrame(),
-        scores_cat=sample_scores_cat,
+        scores_cat=live_scores_cat,
         incl_index=sample_incl_index,
         associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']),
         formations_data=pd.DataFrame(columns=['codgeo', 'formation_code', 'count']),
@@ -79,7 +79,9 @@ def test_format_city_details_consistency(scoring_engine, base_df, base_config):
         'weight': 1.0,
         'min_bound': 0.0,
         'max_bound': 1.0,
-        'baseline': True
+        'baseline': True,
+        'label': 'Gare',
+        'unit': ''
     }])
     scoring_engine.scores_cat = pd.concat([scoring_engine.scores_cat, gare_row], ignore_index=True)
     base_df['mob_gare_scaled'] = 1.0
@@ -119,12 +121,10 @@ def test_format_city_details_consistency(scoring_engine, base_df, base_config):
     assert 99.0 <= total_rel_weight <= 130.0
     
     # Check KPI Formatting (valeur_kpi)
-    # Find a score with a display_factor. In sample_scores_cat, all are 1.0.
-    # Let's check log_vac_scaled (metric: log_vac_ratio)
-    # In sample_data, Bordeaux has log_vac = 6
+    # Let's check log_vac_scaled (using live config display factor 100)
     vac_item = next(item for item in details.scores['logement'] if item.score_id == 'log_vac_scaled')
-    # Since d_factor is 1.0 in mock, it should be "6"
-    assert vac_item.valeur_kpi == 6.0
+    # Since display_factor is 100 in the live config and scaled score is 0.5, it should be 50.0
+    assert vac_item.valeur_kpi == 50.0
     
     # Check that mob_gare_scaled fell back to scaled score and formatted to "Oui"
     gare_item = next(item for item in details.scores['mobilite'] if item.score_id == 'mob_gare_scaled')

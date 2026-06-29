@@ -7,7 +7,7 @@ from core.models import SearchCriterias, CriteriaItem
 import geopandas as gpd
 from shapely.geometry import Point
 
-def test_scoring_limit_and_current_city_preservation(sample_scores_cat, default_config):
+def test_scoring_limit_and_current_city_preservation(live_scores_cat, default_config):
     """
     Test that ScoringEngine limits results to MAX_MAP_POLYGONS (1000)
     but preserves the current city.
@@ -34,7 +34,7 @@ def test_scoring_limit_and_current_city_preservation(sample_scores_cat, default_
     }
     
     # Add some score columns to avoid warnings
-    for score_id in sample_scores_cat['score']:
+    for score_id in live_scores_cat['score']:
         data[score_id] = np.random.rand(n_rows)
         data[f"{score_id}_bdv"] = np.random.rand(n_rows)
 
@@ -49,7 +49,7 @@ def test_scoring_limit_and_current_city_preservation(sample_scores_cat, default_
     engine = ScoringEngine(
         df_all_communes=df_all,
         df_bv_geo=pd.DataFrame(),
-        scores_cat=sample_scores_cat,
+        scores_cat=live_scores_cat,
         incl_index=pd.DataFrame(index=df_all.index),
         associations_data=pd.DataFrame(),
         formations_data=pd.DataFrame(),

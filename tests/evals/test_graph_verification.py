@@ -20,8 +20,14 @@ load_dotenv(dotenv_path=env_path)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+run_evals = os.getenv("RUN_EVALS", "false").lower() == "true"
+
+pytestmark = [
+    pytest.mark.eval,
+    pytest.mark.skipif(not run_evals, reason="Evaluation tests are skipped by default. Set RUN_EVALS=true to run them.")
+]
+
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="This test costs tokens")
 async def test_graph_execution_end_to_end():
     """
     Verifies that the ODIS graph can be instantiated and executed end-to-end.

@@ -5,11 +5,11 @@ from core import scoring
 from app.core.models import SearchCriterias
 
 @pytest.fixture
-def scoring_engine(sample_data, sample_scores_cat, sample_incl_index, global_stats):
+def scoring_engine(sample_data, live_scores_cat, sample_incl_index, global_stats):
     return scoring.ScoringEngine(
             df_all_communes=sample_data,
         df_bv_geo=gpd.GeoDataFrame(),
-        scores_cat=sample_scores_cat,
+        scores_cat=live_scores_cat,
         incl_index=sample_incl_index,
         associations_data=pd.DataFrame(columns=['codgeo', 'id_waldec', 'count']),
         formations_data=pd.DataFrame(columns=['codgeo', 'formation_code', 'count']),

@@ -70,7 +70,7 @@ HEBERGEMENT_OPTIONS = [
     "Chez l'habitant"
 ]
 LOGEMENT_OPTIONS = ['Location', 'Logement Social']
-SANTE_OPTIONS = ["Aucun", "Hopital", 'Maternité', "Soutien Psychologique & Addictologie"]
+SANTE_OPTIONS = ["Aucun", "Hôpital", 'Maternité', "Soutien Psychologique & Addictologie"]
 POIDS_OPTIONS = [0.0, 0.25, 0.5, 0.75, 1.0]
 HOUSING_TYPE_OPTIONS = {
     "appt_all": "Appartement (Tous types)",

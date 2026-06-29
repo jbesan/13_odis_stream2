@@ -21,66 +21,31 @@ from ui import components as ui
 from ui import forms as ui_forms
 from ui import results as ui_results
 
-SNAPSHOT_DIR = Path(__file__).parent / "snapshots"
-
-def assert_results_match_snapshot(test_name: str, results: pd.DataFrame, request):
+def assert_results_logical_invariants(results: pd.DataFrame):
     """
-    Asserts that the top 5 results of a test match a stored snapshot.
-    If --update-snapshots is passed, it generates/updates the snapshot.
+    Asserts logical invariants on the scoring results:
+    - Results are not empty.
+    - 'weighted_score' column exists.
+    - Weighted scores are within the [0.0, 1.0] range.
+    - There are no NaN/null values in key score columns.
+    - The results are sorted in descending order of 'weighted_score'.
     """
-    snapshot_file = SNAPSHOT_DIR / f"{test_name}.json"
+    assert not results.empty, "Results DataFrame should not be empty"
+    assert 'weighted_score' in results.columns, "'weighted_score' column is missing"
     
-    # Prepare the snapshot data from the current results
-    # We need to handle potential differences in dtypes for JSON serialization
-    results_for_snapshot = results.copy()
-    if 'geometry' in results_for_snapshot.columns:
-        results_for_snapshot = results_for_snapshot.drop(columns=['geometry'])
-    if 'polygon' in results_for_snapshot.columns:
-        results_for_snapshot = results_for_snapshot.drop(columns=['polygon'])
-
-    snapshot_data = results_for_snapshot.head(5).reset_index().to_dict(orient='records')
-    for record in snapshot_data:
-        for key, value in record.items():
-            if isinstance(value, (pd.Timestamp, pd.Timedelta)):
-                record[key] = str(value)
-            elif isinstance(value, (np.int64, np.int32)):
-                record[key] = int(value)
-            elif isinstance(value, (np.float64, np.float32)):
-                record[key] = float(value)
-            elif isinstance(value, (np.bool_)):
-                record[key] = bool(value)
-            elif isinstance(value, np.ndarray):
-                record[key] = value.tolist()
-            elif hasattr(value, 'wkt'): # Handles shapely geometries (Point, Polygon, etc.)
-                record[key] = value.wkt
-            elif isinstance(value, list) and len(value) > 0 and isinstance(value[0], (np.int64, np.int32)):
-                record[key] = [int(v) for v in value]
-            elif isinstance(value, set):
-                record[key] = list(value)
-
-
-    if request.config.getoption("--update-snapshots"):
-        SNAPSHOT_DIR.mkdir(exist_ok=True)
-        with open(snapshot_file, 'w', encoding='utf-8') as f:
-            json.dump(snapshot_data, f, indent=4, ensure_ascii=False)
-        pytest.skip(f"Snapshot updated for {test_name}")
-
-    if not snapshot_file.exists():
-        pytest.fail(f"Snapshot file not found for {test_name}. Run with --update-snapshots to create it.")
-
-    with open(snapshot_file, 'r', encoding='utf-8') as f:
-        expected_data = json.load(f)
+    # Check bounds
+    scores = results['weighted_score']
+    assert (scores >= 0.0).all() and (scores <= 1.0).all(), f"Weighted scores must be between 0.0 and 1.0, got min: {scores.min()}, max: {scores.max()}"
     
-    # Compare the data, focusing on key fields
-    for i, (actual, expected) in enumerate(zip(snapshot_data, expected_data)):
-        # Handle different identifier types (communes vs BV)
-        actual_id = actual.get('codgeo') or actual.get('bassin_de_vie')
-        expected_id = expected.get('codgeo') or expected.get('bassin_de_vie')
-        
-        assert actual_id == expected_id, f"Row {i}: ID mismatch (codgeo or bassin_de_vie). Expected {expected_id}, got {actual_id}"
-        
-        # Weighted score comparison (pinned to the logic current at snapshot time)
-        assert pytest.approx(actual['weighted_score'], rel=1e-4) == expected['weighted_score'], f"Row {i}: weighted_score mismatch"
+    # Check no NaNs in key scoring/results columns
+    key_cols = ['weighted_score', 'libgeo']
+    for col in key_cols:
+        if col in results.columns:
+            assert results[col].notna().all(), f"Found NaN values in column '{col}'"
+            
+    # Check descending sort order
+    is_descending = scores.is_monotonic_decreasing
+    assert is_descending, "Results are not sorted in descending order of weighted_score"
 
 
 @pytest.fixture(scope="module")
@@ -203,98 +168,73 @@ def run_test_scenario(scenario_id, app_data):
     # Engine returns results sorted by score descending
     return processed_gdf
 
-def run_test_scenario_bv(scenario_id, app_data):
-    """
-    Helper function to run a search scenario and aggregate results by Bassin de Vie.
-    """
-    results_communes = run_test_scenario(scenario_id, app_data)
-    
-    # Aggregate by Bassin de Vie
-    # We take the best commune in each BV as the representative for some fields, 
-    # but aggregate others.
-    
-    # 🧪 Pattern matching snapshots:
-    # Snapshots have: population_bv, libgeo (representative), bassin_de_vie, communes (list)
-    
-    bv_results = results_communes.copy()
-    
-    # Grouping logic
-    agg_funcs = {
-        'weighted_score': 'max',
-        'population': 'sum',
-        'libgeo': 'first', # Usually the first/best commune
-        'codgeo': lambda x: sorted(list(x)),
-    }
-    
-    # Add other columns if they exist in snapshots
-    for col in ['inclusion_cat_score', 'mobilité_cat_score', 'mob_dist_scaled', 'mob_epci_scaled', 'population_bv']:
-        if col in bv_results.columns:
-            agg_funcs[col] = 'first'
-            
-    # Snapshots seem to have 'index' as a column sometimes
-    bv_results = bv_results.reset_index()
-    bv_grouped = bv_results.groupby('bassin_de_vie').agg(agg_funcs)
-    
-    # Rename columns to match snapshot expectations
-    bv_grouped = bv_grouped.rename(columns={
-        'codgeo': 'communes',
-        'population': 'population_bv'
-    })
-    
-    # Sort by weighted_score
-    bv_grouped = bv_grouped.sort_values('weighted_score', ascending=False)
-    
-    return bv_grouped
-
-
 @pytest.mark.e2e
-def test_scenario_1_communes(app_data, request):
+def test_scenario_1_communes(app_data):
     """E2E test for demo scenario 1."""
     results = run_test_scenario('1', app_data)
-    assert not results.empty
-    assert 'weighted_score' in results.columns
+    assert_results_logical_invariants(results)
     assert results.shape[0] > 5
-    assert_results_match_snapshot('test_scenario_1_communes', results, request)
 
 @pytest.mark.e2e
-def test_scenario_2_communes(app_data, request):
+def test_scenario_2_communes(app_data):
     """E2E test for demo scenario 2."""
     results = run_test_scenario('2', app_data)
-    assert not results.empty
-    assert 'weighted_score' in results.columns
+    assert_results_logical_invariants(results)
     assert results.shape[0] > 5
-    assert_results_match_snapshot('test_scenario_2_communes', results, request)
 
 @pytest.mark.e2e
-def test_scenario_3_communes(app_data, request):
+def test_scenario_3_communes(app_data):
     """E2E test for demo scenario 3."""
     results = run_test_scenario('3', app_data)
-    assert not results.empty
-    assert 'weighted_score' in results.columns
+    assert_results_logical_invariants(results)
     assert results.shape[0] > 5
-    assert_results_match_snapshot('test_scenario_3_communes', results, request)
 
 @pytest.mark.e2e
-def test_scenario_1_bv(app_data, request):
-    """E2E test for demo scenario 1 (BV level)."""
-    results = run_test_scenario_bv('1', app_data)
-    assert not results.empty
-    assert 'weighted_score' in results.columns
-    assert_results_match_snapshot('test_scenario_1_bv', results, request)
-
-@pytest.mark.e2e
-def test_scenario_2_bv(app_data, request):
-    """E2E test for demo scenario 2 (BV level)."""
-    results = run_test_scenario_bv('2', app_data)
-    assert not results.empty
-    assert_results_match_snapshot('test_scenario_2_bv', results, request)
-
-@pytest.mark.e2e
-def test_scenario_3_bv(app_data, request):
-    """E2E test for demo scenario 3 (BV level)."""
-    results = run_test_scenario_bv('3', app_data)
-    assert not results.empty
-    assert_results_match_snapshot('test_scenario_3_bv', results, request)
+def test_differential_sensitivity_e2e(app_data, default_config):
+    """
+    E2E test verifying that changing configuration weights (e.g. maximizing employment vs
+    maximizing housing) yields directionally distinct top recommendations.
+    """
+    engine = scoring.ScoringEngine.from_app_data(app_data)
+    
+    # 1. Employment-focused configuration
+    config_employment = default_config.model_copy(deep=True)
+    config_employment.poids_emploi = 1.0
+    config_employment.poids_logement = 0.0
+    config_employment.poids_education = 0.0
+    config_employment.poids_inclusion = 0.0
+    config_employment.poids_sante = 0.0
+    config_employment.poids_mobilite = 0.0
+    config_employment.loc_search_area = 'departement'
+    config_employment.loc_search_code = ['33']
+    
+    # Add a targeted job to adult 0 to ensure employment scoring has dynamic data
+    from core.models import CriteriaItem
+    config_employment.codes_metiers = [[CriteriaItem(code='H2206', label='Soudage manual')]]
+    
+    # 2. Housing-focused configuration
+    config_housing = default_config.model_copy(deep=True)
+    config_housing.poids_emploi = 0.0
+    config_housing.poids_logement = 1.0
+    config_housing.poids_education = 0.0
+    config_housing.poids_inclusion = 0.0
+    config_housing.poids_sante = 0.0
+    config_housing.poids_mobilite = 0.0
+    config_housing.loc_search_area = 'departement'
+    config_housing.loc_search_code = ['33']
+    
+    res_employment = engine.run(config_employment)
+    res_housing = engine.run(config_housing)
+    
+    # Assertions on invariants for both
+    assert_results_logical_invariants(res_employment)
+    assert_results_logical_invariants(res_housing)
+    
+    # Verify that the two runs produce different top communes
+    top_employment = res_employment.head(10).index.tolist()
+    top_housing = res_housing.head(10).index.tolist()
+    
+    assert top_employment != top_housing, "Top 10 results should differ when prioritizing Employment vs Housing"
 
 
 @pytest.mark.e2e

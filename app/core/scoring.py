@@ -123,7 +123,6 @@ class ScoringEngine:
             # Skip if category totally irrelevant
             if category == 'education' and getattr(config, 'nb_enfants', 1) == 0: continue
             if category == 'sante' and getattr(config, 'besoin_sante', 'Aucun') == 'Aucun': continue
-            if category == 'territoire' and not getattr(config, 'org_strategic_locations', []): continue
 
             # Find columns for this category that are active
             cat_scores = self.scores_cat[self.scores_cat.cat == category]
@@ -178,6 +177,11 @@ class ScoringEngine:
                  else:
                       weight *= float(s_row['weight'])
 
+                 # Apply organization specific boosts if present (F-54 Expansion)
+                 org_boosts = getattr(config, 'org_boosts', None)
+                 if config and org_boosts and sid in org_boosts:
+                      weight *= float(org_boosts[sid])
+
                  # APPLY FREQUENCY MULTIPLIER (F-60)
                  if sid in ['mob_epci_scaled', 'mob_dist_current_loc_scaled']:
                       freq = getattr(config, 'freq_retour', "Pas d'attache particulière")
@@ -223,7 +227,12 @@ class ScoringEngine:
             
             if weights_val:
                  denom = sum(weights_val)
-                 raw_scores = np.where(denom > 0, sum(scores_val) / denom, 0.0)
+                 raw_scores = np.divide(
+                     sum(scores_val),
+                     denom,
+                     out=np.zeros_like(denom, dtype=float),
+                     where=denom > 0
+                 )
                  s = pd.Series(raw_scores, index=df.index)
                  
                  # Only normalize if we have variation in the scores to avoid zero-variance compression
@@ -289,7 +298,7 @@ class ScoringEngine:
         
         if aggressive:
             # SOTA Optimization: Keep identifiers, scores, AND essential geometries for the filtered subset.
-            # We only keep geometries for the search area (e.g. results for 1 department),
+            # We only keep geometries for the search area (e.g. 1 department),
             # which is lightweight enough (~1MB) for the session state.
             keep_cols = {'libgeo', 'weighted_score', 'population', 'dep_code', 'reg_code', 'epci_code', 'bassin_de_vie', 'libelle_bassin_de_vie', 'polygon', 'centroid'}
             to_drop = [c for c in df.columns if c not in keep_cols]
@@ -402,7 +411,6 @@ class ScoringEngine:
         self._associations_cache = {}
         
         # Discover and normalize categories from the scoring definitions
-        # Discover and normalize categories from the scoring definitions
         if not self.scores_cat.empty and 'cat' in self.scores_cat.columns:
             self.categories = sorted([
                 cat.replace('é', 'e').replace('ê', 'e').replace('à', 'a').lower() 
@@ -502,6 +510,7 @@ class ScoringEngine:
         if besoin_sante != 'Aucun':
              sante_map = {
                  'Hôpital': 'sante_hopital_scaled',
+                 'Hopital': 'sante_hopital_scaled',
                  'Maternité': 'sante_maternite_scaled',
                  'Soutien Psychologique & Addictologie': 'sante_psy_scaled',
                  'Psychiatrie': 'sante_psy_scaled'
@@ -614,10 +623,6 @@ class ScoringEngine:
             # Education remains optional (only if children are present)
             if config.nb_enfants == 0: 
                 cat_weights['education'] = 0.0
-            
-            # Health is now mandatory because of the 'Health APL' baseline metric
-            # if config.besoin_sante == 'Aucun': 
-            #     cat_weights['sante'] = 0.0
         
         # 2. Identify displayed criteria and compute internal weights based on visibility
         displayed_items: List[Dict[str, Any]] = []
@@ -638,6 +643,8 @@ class ScoringEngine:
             
             w_crit = float(score_row['weight'])
             if config and score_id in config.criteria_weights: w_crit *= config.criteria_weights[score_id]
+            org_boosts = getattr(config, 'org_boosts', None)
+            if config and org_boosts and score_id in org_boosts: w_crit *= float(org_boosts[score_id])
             
             cat_internal_weights[norm_cat] = cat_internal_weights.get(norm_cat, 0.0) + w_crit
             displayed_items.append({
@@ -1390,9 +1397,21 @@ class ScoringEngine:
         return df
 
     def _compute_education_scores(self, df: pd.DataFrame, config: SearchCriterias) -> pd.DataFrame:
+        """
+        Placeholder function. Education scores (e.g. school capacities) are static metrics 
+        that do not depend on dynamic user input. They are pre-computed and pre-scaled offline 
+        in pipeline/prescoring.py and stored directly in the commune Parquet files.
+        They are dynamically aggregated by category in ScoringEngine._compute_category_scores.
+        """
         return df
 
     def _compute_housing_scores(self, df: pd.DataFrame, config: SearchCriterias) -> pd.DataFrame:
+        """
+        Placeholder function. Housing scores (e.g. rent costs, vacancy ratios) are static metrics 
+        that do not depend on dynamic user input. They are pre-computed and pre-scaled offline 
+        in pipeline/prescoring.py and stored directly in the commune Parquet files.
+        They are dynamically aggregated by category in ScoringEngine._compute_category_scores.
+        """
         return df
 
     def _compute_inclusion_scores(self, df: pd.DataFrame, config: SearchCriterias) -> pd.DataFrame:
@@ -1529,56 +1548,3 @@ class ScoringEngine:
             
         return False
 
-    def prefetch_associations(self, codgeos: List[str]) -> Dict[str, Dict[str, Any]]:
-        """
-        Fetches association details for multiple communes.
-        Updates self._associations_cache.
-        """
-        if not self.rna_rag_service or not codgeos:
-            return {}
-            
-        try:
-            logger.info(f"📊 [PREFETCH] Fetching associations for {len(codgeos)} communes")
-            all_assos = self.rna_rag_service.get_associations_by_codgeo(codgeos)
-            
-            temp_results: Dict[str, Dict[str, Any]] = {cg: {"refugee": [], "inclusion": {}} for cg in codgeos}
-            
-            for asso in all_assos:
-                codgeo = asso.get('codgeo')
-                if not codgeo or codgeo not in temp_results:
-                    continue
-                
-                raw_code = str(asso.get('code_waldec', '')).strip()
-                desc = str(asso.get('description', '')).strip()
-                if desc.lower() in ["nan", "none"]: desc = ""
-                if len(desc) > 250: desc = desc[:250] + "..."
-                
-                name = string.capwords(str(asso.get('name', 'Inconnu')).lower())
-                
-                asso_data = {
-                    "id": asso.get('id', ''),
-                    "name": name,
-                    "description": desc,
-                    "waldec_code": raw_code,
-                    "waldec_label": asso.get('categorie', 'Action Sociale'),
-                    "categorie_odis": asso.get('primary_category', ''),
-                    "codgeo": codgeo,
-                    "is_refugee_focused": bool(asso.get('is_refugee_focused', False))
-                }
-                
-                if asso_data["is_refugee_focused"]:
-                    temp_results[codgeo]["refugee"].append(asso_data)
-                else:
-                    cat = asso_data["categorie_odis"] or "Inclusion"
-                    if cat not in temp_results[codgeo]["inclusion"]:
-                        temp_results[codgeo]["inclusion"][cat] = []
-                    
-                    if len(temp_results[codgeo]["inclusion"][cat]) < 20:
-                        temp_results[codgeo]["inclusion"][cat].append(asso_data)
-            
-            self._associations_cache.update(temp_results)
-            return temp_results
-            
-        except Exception as e:
-            logger.error(f"❌ [PREFETCH] Failed associations fetch: {e}")
-            return {}

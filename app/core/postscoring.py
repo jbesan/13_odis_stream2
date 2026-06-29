@@ -114,6 +114,61 @@ def launch_background_refining(search_criterias: Any, results_dict_ignored: dict
     thread.daemon = True # Ensure it doesn't block exit
     thread.start()
 
+def prefetch_associations(self, codgeos: List[str]) -> Dict[str, Dict[str, Any]]:
+        """
+        Fetches association details for multiple communes.
+        Updates self._associations_cache.
+        """
+        if not self.rna_rag_service or not codgeos:
+            return {}
+            
+        try:
+            logger.info(f"📊 [PREFETCH] Fetching associations for {len(codgeos)} communes")
+            all_assos = self.rna_rag_service.get_associations_by_codgeo(codgeos)
+            
+            temp_results: Dict[str, Dict[str, Any]] = {cg: {"refugee": [], "inclusion": {}} for cg in codgeos}
+            
+            for asso in all_assos:
+                codgeo = asso.get('codgeo')
+                if not codgeo or codgeo not in temp_results:
+                    continue
+                
+                raw_code = str(asso.get('code_waldec', '')).strip()
+                desc = str(asso.get('description', '')).strip()
+                if desc.lower() in ["nan", "none"]: desc = ""
+                if len(desc) > 250: desc = desc[:250] + "..."
+                
+                name = string.capwords(str(asso.get('name', 'Inconnu')).lower())
+                
+                asso_data = {
+                    "id": asso.get('id', ''),
+                    "name": name,
+                    "description": desc,
+                    "waldec_code": raw_code,
+                    "waldec_label": asso.get('categorie', 'Action Sociale'),
+                    "categorie_odis": asso.get('primary_category', ''),
+                    "codgeo": codgeo,
+                    "is_refugee_focused": bool(asso.get('is_refugee_focused', False))
+                }
+                
+                if asso_data["is_refugee_focused"]:
+                    temp_results[codgeo]["refugee"].append(asso_data)
+                else:
+                    cat = asso_data["categorie_odis"] or "Inclusion"
+                    if cat not in temp_results[codgeo]["inclusion"]:
+                        temp_results[codgeo]["inclusion"][cat] = []
+                    
+                    if len(temp_results[codgeo]["inclusion"][cat]) < 20:
+                        temp_results[codgeo]["inclusion"][cat].append(asso_data)
+            
+            self._associations_cache.update(temp_results)
+            return temp_results
+            
+        except Exception as e:
+            logger.error(f"❌ [PREFETCH] Failed associations fetch: {e}")
+            return {}
+
+
 def launch_background_association_enrichment(engine: Any, codgeos: List[str], hash_val: str):
     """
     Launches a background thread to fetch detailed associations for the search results.
@@ -126,7 +181,7 @@ def launch_background_association_enrichment(engine: Any, codgeos: List[str], ha
             
             # Use the provided engine to prefetch
             # Note: engine is likely a ScoringEngine instance
-            enrichment_data = engine.prefetch_associations(codgeos)
+            enrichment_data = prefetch_associations(codgeos)
             
             # Merge into harmonized storage
             current_val = results_store.get(hash_val, {})
