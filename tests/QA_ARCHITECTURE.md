@@ -45,6 +45,7 @@ tests/
     - Results are sorted in descending order of compatibility score.
 *   **Differential Sensitivity**: Validates that changes to weight profiles (e.g., prioritizing Employment vs Housing) directionally shift recommended communes.
 *   **UI Test Optimization**: UI/auth tests are optimized to bypass large Parquet data loaders. They use `unittest.mock.patch` to mock `streamlit.session_state` and Streamlit widgets, allowing complete interface flows to execute in milliseconds.
+*   **Streamlit AppTest Happy Path**: In [test_apptest_happy_path.py](file:///Users/jacques/dev/13_odis_stream2/tests/e2e/test_apptest_happy_path.py), we simulate the complete user journey through the 9 wizard steps of `2_Formulaire.py` and submission to `3_Resultats.py`. We mock expensive background AI agent tasks and BigQuery calls to run the test in under 4 seconds, verifying config propagation and scoring criteria activation.
 
 ### 4. Level 4: AI Quality Evaluation (`tests/evals/`)
 *   **Scope**: Tests live LLM agent graph runs against golden datasets to evaluate routing, expert capabilities, and synthesis quality.
@@ -70,6 +71,18 @@ tests/
 ### 3. FunctionModel Contract Testing
 *   **Problem**: We need to verify that AI agents invoke tools correctly, but invoking live LLM endpoints in unit tests is slow, non-deterministic, and expensive.
 *   **Solution**: Use Pydantic AI's `FunctionModel` in unit tests to mock the LLM's response. The mock model intercepts the request, asserts that the agent is sending the expected prompt/messages, returns a deterministic `ToolCallPart`, and validates that the agent successfully executes the local Python tool.
+
+### 4. Streamlit AppTest & Page Navigation
+*   **Problem**: In Streamlit's test runner, testing a sub-page directly (e.g., `AppTest.from_file("app/pages/2_Formulaire.py")`) prevents relative page switching (`st.switch_page`) from resolving correctly, throwing `StreamlitAPIException` because the page paths are evaluated relative to the initial entrypoint script.
+*   **Solution**: Always initialize `AppTest` from the root entrypoint (`app/main.py`). This establishes the correct execution directory, allowing manual or button-triggered redirections to resolve correctly (e.g., `at.switch_page("pages/2_Formulaire.py")`).
+
+### 5. Multi-Threaded Code Coverage
+*   **Problem**: Because Streamlit's `AppTest` runs the target script inside a separate thread runner, standard coverage collection can miss the executed code lines in the sub-thread.
+*   **Solution**: We run coverage profiling using standard thread tracing (supported natively by `pytest-cov`), which automatically captures the lines executed in `AppTest` threads, ensuring we report accurate coverage metrics (e.g. **90%** on `2_Formulaire.py` and **87%** on `3_Resultats.py`).
+
+### 6. Spelling & Value Alignment
+*   **Problem**: String-matching indicators (e.g., health needs selection) can drift between UI radio options (`config.py`) and scoring logic keys (`scoring.py`), causing critical score columns (like `sante_hopital_scaled`) to silently fail to activate.
+*   **Solution**: Enforce strict alignment using correct human-readable spellings (e.g. `"Hôpital"` with the French accent) in the UI options, while supporting robust alias lookups (e.g. both `"Hôpital"` and `"Hopital"`) inside map loaders and scoring functions to maintain compatibility with ETL datasets and historical tests.
 
 ---
 

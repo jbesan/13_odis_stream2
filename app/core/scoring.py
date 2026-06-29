@@ -510,6 +510,7 @@ class ScoringEngine:
         if besoin_sante != 'Aucun':
              sante_map = {
                  'Hôpital': 'sante_hopital_scaled',
+                 'Hopital': 'sante_hopital_scaled',
                  'Maternité': 'sante_maternite_scaled',
                  'Soutien Psychologique & Addictologie': 'sante_psy_scaled',
                  'Psychiatrie': 'sante_psy_scaled'
