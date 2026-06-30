@@ -7,7 +7,8 @@ import logging
 import logfire
 import pandas as pd
 
-# Core utilities imported from agents.utils
+import config as cfg
+from core.models import CommuneResult
 from agents.utils import get_odis_bg_store, sanitize_llm_markdown, rehydrate_graph_state
 
 logger = logging.getLogger(__name__)
@@ -215,8 +216,10 @@ def _curate_jobs_with_agent(
         target_city: Optional CommuneResult representing the city ciblée.
 
     Returns:
-        List of curated top 5 job offer details dictionaries.
+        List of curated job offer details dictionaries (top 10 in AI-free mode, top 5 otherwise).
     """
+    if cfg.is_ai_free_mode():
+        return jobs[:10]
     try:
         from agents.job_curator import job_curator_agent
         from agents.state import GraphState, ODISDeps
@@ -435,7 +438,10 @@ def launch_background_job_curation(codgeos: List[str], config: Any, hash_val: st
                         logging.warning(f"⚠️ [JOBS-ENRICH-CITY] API error for {cg} ROME {rome}: {e}")
                 
                 # Apply post-curation to the pooled jobs list for this adult
-                if len(adult_pooled_jobs) <= 5:
+                # Note: cfg.is_ai_free_mode() is checked here as an outer guard, returning 10 raw jobs directly.
+                if cfg.is_ai_free_mode():
+                    curated_jobs = adult_pooled_jobs[:10]
+                elif len(adult_pooled_jobs) <= 5:
                     curated_jobs = adult_pooled_jobs
                 else:
                     # Resolve target city CommuneResult for this specific city
@@ -517,6 +523,79 @@ def launch_background_audit_log(config: Any, search_results: Any, h: str, intera
     thread.daemon = True
     thread.start()
 
+from typing import Union
+
+def generate_static_pitch(commune: Union[CommuneResult, Dict[str, Any]]) -> str:
+    """Generates a static pitch list showing the top 3 contributing score indicators.
+
+    Ranks all score details by their weighted contribution (score_normalise * relative_weight)
+    and formats the top 3 as a bulleted markdown string. Used as an AI-free fallback for
+    the refiner pitch.
+
+    Args:
+        commune: A CommuneResult instance or dictionary containing a populated `scores` dict.
+
+    Returns:
+        A markdown-formatted string listing the top 3 score contributors.
+    """
+    all_details = []
+    if hasattr(commune, 'scores') and commune.scores:
+        for cat, details in commune.scores.items():
+            for detail in details:
+                if hasattr(detail, 'score_normalise') and hasattr(detail, 'relative_weight'):
+                    score_norm = detail.score_normalise
+                    rel_weight = detail.relative_weight
+                    label = detail.label
+                    valeur = detail.valeur_kpi
+                    unit = detail.unit
+                    score_id = detail.score_id
+                    strong_point = getattr(detail, 'strong_point_text', '')
+                    adj = getattr(detail, 'high_value_adjective', '')
+                elif isinstance(detail, dict):
+                    score_norm = detail.get('score_normalise', 0.0)
+                    rel_weight = detail.get('relative_weight', 0.0)
+                    label = detail.get('label', '')
+                    valeur = detail.get('valeur_kpi')
+                    unit = detail.get('unit', '')
+                    score_id = detail.get('score_id', '')
+                    strong_point = detail.get('strong_point_text', '')
+                    adj = detail.get('high_value_adjective', '')
+                else:
+                    continue
+                
+                contrib = float(score_norm or 0.0) * float(rel_weight or 0.0)
+                all_details.append((contrib, label, valeur, unit, rel_weight, score_id, strong_point, adj))
+                
+    all_details.sort(key=lambda x: x[0], reverse=True)
+    top_3 = all_details[:3]
+    if not top_3:
+        name = getattr(commune, 'name', commune.get('name', 'La commune')) if commune else 'La commune'
+        return f"{name} se distingue particulièrement sur vos critères prioritaires."
+        
+    pitch_lines = ["**Points forts du territoire :**"]
+    for contrib, label, valeur, unit, rel_weight, score_id, strong_point, adj in top_3:
+        val_str = str(valeur) if valeur is not None else "N/A"
+        unit_str = f" {unit}" if unit and unit not in ["description", ""] else ""
+        
+        if strong_point:
+            display_title = strong_point
+        elif adj:
+            display_title = f"{label} ({adj})"
+        else:
+            display_title = label
+            
+        # Clean multiline spaces
+        display_title = " ".join(display_title.split())
+
+        if score_id == 'mob_gare_scaled':
+            val_str = "Gare SNCF présente" if valeur == "Oui" else "Pas de gare SNCF"
+            unit_str = ""
+            pitch_lines.append(f"- **{display_title}** : {val_str}")
+        else:
+            pitch_lines.append(f"- **{display_title}** : {val_str}{unit_str}")
+            
+    return "\n".join(pitch_lines)
+
 def launch_post_scoring_tasks(engine: Any, config: Any, search_results: Any, h: str):
     """
     Orchestrator for all background tasks triggered after scoring.
@@ -525,8 +604,36 @@ def launch_post_scoring_tasks(engine: Any, config: Any, search_results: Any, h: 
     store = get_odis_bg_store()
     if h not in store:
         store[h] = {}
-    store[h]["status_refiner"] = "running"
 
+    if cfg.is_ai_free_mode():
+        # Compute static pitches for results
+        pitches = {}
+        for c in search_results.results:
+            pitch_text = generate_static_pitch(c)
+            c.refiner_pitch = pitch_text
+            pitches[str(c.codgeo)] = pitch_text
+            
+        store[h]["pitches"] = {
+            "global": "",
+            "pitches": pitches
+        }
+        store[h]["odis_brief"] = ""
+        store[h]["status_refiner"] = "done"
+
+        # Launch non-AI background hydrations
+        top_cities_full = [c.model_dump(mode='json') for c in search_results.results]
+        commune_pressentie_full = search_results.commune_pressentie.model_dump(mode='json') if search_results.commune_pressentie else None
+        target_codgeos = [c['codgeo'] for c in top_cities_full]
+        if commune_pressentie_full:
+            target_codgeos.append(commune_pressentie_full['codgeo'])
+            
+        launch_background_association_enrichment(engine, target_codgeos, h)
+        launch_background_job_curation(target_codgeos, config, h, search_results)
+        launch_background_audit_log(config, search_results, h)
+        return
+
+    store[h]["status_refiner"] = "running"
+    
     # 1. Capture session metadata FROM THE MAIN THREAD
     try:
         from services.telemetry import get_interaction_id

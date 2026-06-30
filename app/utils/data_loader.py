@@ -31,6 +31,7 @@ def load_scores_config_as_df(config_path: str) -> pd.DataFrame:
             'min_bound': item.get('min_bound'),
             'max_bound': item.get('max_bound'),
             'score_affichage': item.get('display', {}).get('strong_point_text', ''),
+            'high_value_adjective': item.get('display', {}).get('high_value_adjective', ''),
             'bdv_factor': item.get('bdv_factor', 0.0),
             'metric': item.get('source_metric'),
             'computation': item.get('computation', 'live'),

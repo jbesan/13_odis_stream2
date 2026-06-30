@@ -182,103 +182,113 @@ st.markdown(header_html, unsafe_allow_html=True)
 
 
 # --- Input & Navigation Section ---
-st.subheader("Un outil, deux ambiances (votre choix)", divider="yellow",  width="stretch")
-
-col_form, col_ia = st.columns(2, gap="large")
-
-with col_form:
+if cfg.is_ai_free_mode():
+    st.subheader("Entrée de données", divider="yellow", width="stretch")
+    
     st.markdown("""
         <div class="step-card" style="min-height: 250px; justify-content: space-between; padding: 30px;">
             <div>
                 <div style="font-size: 3rem; margin-bottom: 15px;">📋</div>
                 <h3 style="font-weight: bold; font-size: 1.5rem; margin-bottom: 10px;">Entretien Classique</h3>
                 <div style="font-size: 1.1rem; margin-bottom: 20px;">
-                    Remplissez un formulaire détaillé étape par étape pour construire le profil et affiner le projet de vie avec la personne.
+                    Renseignez les informations de la personne accompagnée à l'aide d'un formulaire structuré.
                 </div>
             </div>
         </div>
     """, unsafe_allow_html=True)
     
-    # We place the inputs and buttons outside the custom HTML card to use Streamlit's native interactivity easily,
-    # but we can wrap it in a container to visually attach it if needed, or simply place it right below.
     with st.container(border=True):
-        # person_name_input = st.text_input(
-        #     "Nom (optionnel)", 
-        #     placeholder="Ex: Jean",
-        #     value=st.session_state.get('ui_nom', ''),
-        #     label_visibility="collapsed"
-        # )
         if st.button("Démarrer l'entretien", type="primary", width="stretch", key="btn_classic"):
-            # st.session_state.ui_nom = person_name_input
             st.switch_page("pages/2_Formulaire.py")
+else:
+    st.subheader("Un outil, deux ambiances (votre choix)", divider="yellow",  width="stretch")
 
-@st.dialog('Analyse de votre document', width="large")
-def show_unstructured_input_dialog():
-    st.text("Collez ici un texte décrivant la situation (email, notes d'entretien, export CRM...) :")
-    
-    text_input = st.text_area(
-        "Texte source", 
-        height="content", 
-        width="stretch",
-        placeholder="Ex: J'accompagne une famille de 4 personnes (2 adultes, 2 enfants en primaire). Ils cherchent un logement social à Bordeaux...",
-        label_visibility="collapsed"
-    )
-    
-    col1, col2 = st.columns([3, 1])
-    
-    analysis_key = "unstructured_analysis_result"
-    
-    with col1:
-        if st.button("Détecter les critères de recherche", type="primary", width="content"):
-            if not text_input.strip():
-                st.warning("Veuillez saisir du texte avant de lancer l'analyse.")
-            else:
-                with st.spinner("Analyse en cours par l'agent Extracteur..."):
-                    try:
-                        from agents.utils import run_autodetect_safe
-                        result_data = run_autodetect_safe(text_input)
-                        
-                        st.session_state[analysis_key] = {
-                            "response": result_data.response,
-                            "criteria": result_data.search_criteria
-                        }
-                    except Exception as e:
-                        st.error(f"Une erreur est survenue lors de l'analyse : {e}")
+    col_form, col_ia = st.columns(2, gap="large")
 
-    if analysis_key in st.session_state:
-        st.divider()
-        st.text("Données pertinentes identifiées")
-        st.info(st.session_state[analysis_key]["response"])
-        
-        if st.button("✅ Confirmer et Pré-remplir le formulaire", type="primary", width="stretch"):
-            # Apply the criteria to the UI session states
-            data_loader.apply_search_criteria_to_ui(st.session_state[analysis_key]["criteria"])
-            
-            # Reset the dialog state for next time
-            del st.session_state[analysis_key]
-            
-            # Switch to form
-            st.switch_page("pages/2_Formulaire.py")
-
-with col_ia:
-    st.markdown("""
-        <div class="step-card" style="min-height: 250px; justify-content: space-between; padding: 30px;">
-            <div>
-                <div style="font-size: 3rem; margin-bottom: 15px;">⚡️</div>
-                <h3 style="font-weight: bold; font-size: 1.5rem; margin-bottom: 10px;">Auto Détection</h3>
-                <div style="font-size: 1.1rem; margin-bottom: 20px;">
-                    Copiez-collez un email ou un document texte décrivant la situation et les besoins de la personne accompagnée, on essaiera de pré-remplire le fomulaire pour vous.
+    with col_form:
+        st.markdown("""
+            <div class="step-card" style="min-height: 250px; justify-content: space-between; padding: 30px;">
+                <div>
+                    <div style="font-size: 3rem; margin-bottom: 15px;">📋</div>
+                    <h3 style="font-weight: bold; font-size: 1.5rem; margin-bottom: 10px;">Entretien Classique</h3>
+                    <div style="font-size: 1.1rem; margin-bottom: 20px;">
+                        Remplissez un formulaire détaillé étape par étape pour construire le profil et affiner le projet de vie avec la personne.
+                    </div>
                 </div>
             </div>
-        </div>
-    """, unsafe_allow_html=True)
-    
-    with st.container(border=True):
-        #  st.write("") # Alignment spacer to match the input height on the left
-         if st.button("Démarrer Auto-Detect", type="primary", width="stretch", key="btn_ia"):
+        """, unsafe_allow_html=True)
+        
+        # We place the inputs and buttons outside the custom HTML card to use Streamlit's native interactivity easily,
+        # but we can wrap it in a container to visually attach it if needed, or simply place it right below.
+        with st.container(border=True):
+            if st.button("Démarrer l'entretien", type="primary", width="stretch", key="btn_classic_two_col"):
+                st.switch_page("pages/2_Formulaire.py")
 
-            show_unstructured_input_dialog()
-            #  st.switch_page("pages/4_AI_Chatbot.py")
+    @st.dialog('Analyse de votre document', width="large")
+    def show_unstructured_input_dialog():
+        st.text("Collez ici un texte décrivant la situation (email, notes d'entretien, export CRM...) :")
+        
+        text_input = st.text_area(
+            "Texte source", 
+            height="content", 
+            width="stretch",
+            placeholder="Ex: J'accompagne une famille de 4 personnes (2 adultes, 2 enfants en primaire). Ils cherchent un logement social à Bordeaux...",
+            label_visibility="collapsed"
+        )
+        
+        col1, col2 = st.columns([3, 1])
+        
+        analysis_key = "unstructured_analysis_result"
+        
+        with col1:
+            if st.button("Détecter les critères de recherche", type="primary", width="content"):
+                if not text_input.strip():
+                    st.warning("Veuillez saisir du texte avant de lancer l'analyse.")
+                else:
+                    with st.spinner("Analyse en cours par l'agent Extracteur..."):
+                        try:
+                            from agents.utils import run_autodetect_safe
+                            result_data = run_autodetect_safe(text_input)
+                            
+                            st.session_state[analysis_key] = {
+                                "response": result_data.response,
+                                "criteria": result_data.search_criteria
+                            }
+                        except Exception as e:
+                            st.error(f"Une erreur est survenue lors de l'analyse : {e}")
+
+        if analysis_key in st.session_state:
+            st.divider()
+            st.text("Données pertinentes identifiées")
+            st.info(st.session_state[analysis_key]["response"])
+            
+            if st.button("✅ Confirmer et Pré-remplir le formulaire", type="primary", width="stretch"):
+                # Apply the criteria to the UI session states
+                data_loader.apply_search_criteria_to_ui(st.session_state[analysis_key]["criteria"])
+                
+                # Reset the dialog state for next time
+                del st.session_state[analysis_key]
+                
+                # Switch to form
+                st.switch_page("pages/2_Formulaire.py")
+
+    with col_ia:
+        st.markdown("""
+            <div class="step-card" style="min-height: 250px; justify-content: space-between; padding: 30px;">
+                <div>
+                    <div style="font-size: 3rem; margin-bottom: 15px;">⚡️</div>
+                    <h3 style="font-weight: bold; font-size: 1.5rem; margin-bottom: 10px;">Auto Détection</h3>
+                    <div style="font-size: 1.1rem; margin-bottom: 20px;">
+                        Copiez-collez un email ou un document texte décrivant la situation et les besoins de la personne accompagnée, on essaiera de pré-remplire le fomulaire pour vous.
+                    </div>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        with st.container(border=True):
+             if st.button("Démarrer Auto-Detect", type="primary", width="stretch", key="btn_ia"):
+                show_unstructured_input_dialog()
+
 
 # st.markdown("<br><br>", unsafe_allow_html=True)
 # col_skip1, col_skip2, col_skip3 = st.columns([1,2,1])

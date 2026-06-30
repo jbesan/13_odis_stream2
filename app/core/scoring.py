@@ -722,7 +722,9 @@ class ScoringEngine:
                 valeur_kpi=val_raw,
                 score_normalise=val_scaled,
                 unit=unit,
-                relative_weight=round(rel_weight * 100, 1)
+                relative_weight=round(rel_weight * 100, 1),
+                strong_point_text=str(score_row.get('score_affichage')) if pd.notna(score_row.get('score_affichage')) else "",
+                high_value_adjective=str(score_row.get('high_value_adjective')) if pd.notna(score_row.get('high_value_adjective')) else ""
             ))
 
         # 2. Housing Details (Pricing Specifics)

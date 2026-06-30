@@ -96,6 +96,17 @@ Because background threads and the `pydantic-graph` swarm run outside the main S
 - It matches the target city within `st.session_state.search_results` (using the INSEE `codgeo` or normalized name).
 - It merges the qualitative fields into the active `CommuneResult` in-place, triggering a clean reactive UI refresh.
 
+### 3.4 AI-Free Fallback Mode
+ODIS implements a degraded execution mode ("AI-free" mode) where all Vertex AI / Gemini LLM interactions are completely bypassed.
+- **Activation**: Enabled globally when the environment variable `ODIS_AI_FREE_MODE=True` (or `1`, `yes`) is set, or session-specifically when the active organization profile in `ORGANIZATION_PROFILES` has `"ai_free_mode": True`. Checked using the `is_ai_free_mode()` utility in `app/config.py`.
+- **UI Impacts**:
+  - **Accueil Page**: Completely hides the "Auto Détection" option column and renders a single full-width "Entretien Classique" card.
+  - **Results Page**: Hides the "Analyse Avancée" button. (Note: The "Résumé de la situation" expander has been completely removed from the results page).
+- **Pipeline & Integration Fallbacks**:
+  - **Post-Scoring**: Bypasses launching the background refiner agent. Instead, it immediately generates a static pitch showing the top 3 contributing score indicators sorted by their relative weight contribution (`score_normalise * relative_weight`) and updates the state cache with `status_refiner = "done"`.
+  - **Job Curation**: Bypasses the LLM curator agent and returns the top 10 raw France Travail job offers directly (sorted by distance).
+  - **RAG Lookup**: BigQuery-based SQL lookups for local associations ("the RAG piece") remain active as they do not require LLMs.
+
 ---
 
 ## 4. Key App Components
