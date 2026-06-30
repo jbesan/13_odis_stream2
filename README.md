@@ -35,7 +35,7 @@ Ce prototype a un triple objectif :
 - **Scoring Intelligent :** Chaque commune de France est évaluée selon sa compatibilité avec le projet de vie via un modèle de données typé. Pour garantir une comparaison équitable, le moteur utilise un **Scaling par Quantiles (p1/p99)** qui neutralise l'impact des valeurs aberrantes (outliers) sur la distribution des scores.
 - **Carte Interactive :** Visualisez les localités les mieux notées, leur score, et superposez des couches d'informations additionnelles (écoles, établissements de santé, services d'inclusion).
 - **Résultats Détaillés & Export PDF :** Explorez les 5 meilleurs résultats avec une analyse comparative générée automatiquement par l'IA et exportez un rapport PDF complet incluant ces analyses.
-- **Assistant IA (Multi-Agent ODIS) :** Système multi-agent (pydantic-graph) orchestré par un agent chef de projet (Project Manager / `ts_agent`) qui pilote un swarm de 6 experts thématiques (logement, transport, santé, éducation, insertion et emploi) pour réaliser une analyse de terrain et web parallélisée. voir la [documentation détaillée de l'architecture](ARCHITECTURE.md).
+- **Assistant IA (Multi-Agent ODIS) :** Système multi-agent (pydantic-graph) orchestré par un agent chef de projet (Project Manager / `ts_agent`) qui pilote un swarm de 6 experts thématiques (logement, transport, santé, éducation, insertion et emploi) pour réaliser une analyse de terrain et web parallélisée. voir la [documentation détaillée de l'architecture](PROJECT_ARCHITECTURE.md).
 - **Grounding Google Search :** Recherche en ligne temps réel par les agents experts pour extraire des actualités locales, des aides régionales ou des démarches administratives.
 - **Moteur de Recherche RAG (RNA) :** Recherche sémantique et thématique sur l'ensemble du Répertoire National des Associations (RNA) via BigQuery et Vertex AI, permettant de classer les associations par catégories d'inclusion (FLE, Logement, Emploi, etc.) ou des recherches spécifiques (intégration des personnes réfugiées).
 - **Accueils Citoyens (J'Accueille) :** Intégration de la base de données de l'association J'Accueille pour valoriser les bassins de vie disposant déjà d'un réseau d'hébergement citoyen actif. (Données Mars 2026).
@@ -91,7 +91,7 @@ Ce prototype a un triple objectif :
     ```
 
 6.  **Mettre à jour/Exécuter le pipeline d'ingestion (Optionnel) :**
-    Pour recharger et mettre à jour les données (notamment depuis l'API Odace), consultez la documentation détaillée dans le [README du pipeline](file:///Users/jacques/dev/13_odis_stream2/pipeline/README.md).
+    Pour recharger et mettre à jour les données (notamment depuis l'API Odace), consultez la documentation détaillée dans le [README du pipeline](file:///Users/jacques/dev/13_odis_stream2/pipeline/PIPELINE_ARCHITECTURE.md).
 
 
 ## ⚙️ Fonctionnement : Le Moteur de Scoring
@@ -110,7 +110,7 @@ Le projet suit une approche rigoureuse de développement piloté par les spécif
 
 - **Typage Stricte (Mypy)** : Le codebase est 100% conforme à `mypy` en mode strict. Toutes les fonctions sont annotées et les modèles Pydantic assurent la validation des données à l'exécution.
 - **Tests Automatisés (Pytest)** : Une suite de plus de 100 tests unitaires et d'intégration couvre le moteur de scoring, les agents pydantic-graph et les composants UI.
-- **Documentation Narrative** : Chaque changement majeur est documenté dans le `walkthrough.md` et le [guide d'architecture](./ARCHITECTURE.md).
+- **Documentation Narrative** : Chaque changement majeur est documenté dans le `walkthrough.md` et le [guide d'architecture](./PROJECT_ARCHITECTURE.md).
 
 ## 🛠️ Stack Technique
 

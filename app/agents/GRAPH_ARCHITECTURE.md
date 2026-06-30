@@ -115,3 +115,37 @@ Tested and verified via:
 * **Library Upgrade**: The project was upgraded to `pydantic-ai-slim[google,logfire]==1.107.0` (from `1.76.0`) to resolve a critical runtime validation error where the Google GenAI provider would throw `UserError: Google does not support function tools and built-in tools at the same time` when both types of tools were attached to the same agent.
 * **Seamless Integration**: With version `1.107.0`+, `pydantic-ai` natively manages combining custom function tools and native Gemini tools on the Google provider, allowing expert agents to perform local tool lookups while concurrently utilizing the native `WebSearchTool`.
 
+---
+
+## 🧠 Dynamic Context & Agent Support Subsystems
+
+### 1. One-Shot Interviewer (Memory Injection)
+The legacy multi-turn Interviewer has been replaced by a standalone **one-shot PydanticAI agent** that supports **state re-injection**.
+- **Role**: Extract `SearchCriterias` from unstructured text.
+- **Memory**: Supports memory injection via the `ODISContextBuilder`, allowing it to "see" previously identified criteria in its system prompt.
+- **Location**: [interviewer.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/interviewer.py)
+- **Trigger**: Direct UI call via `run_autodetect_safe`.
+- **Benefit**: Zero state management overhead for the UI while maintaining context awareness.
+
+### 2. Metadata-Driven Context Injection (ACL)
+To avoid manual "cherry-picking" of fields for each agent, ODIS uses a dynamic, metadata-driven architecture for prompt context construction.
+- **Visibility Tags (`odis_visibility`)**: Pydantic models in `core/models.py` are decorated with visibility tags in `json_schema_extra`. This allows for a formal Access Control List (ACL) directly in the data models.
+- **Generic Recursive Builder**: The `ODISContextBuilder` in `agents/state.py` automatically generates context blocks by:
+  1. Iterating over model fields recursively.
+  2. Filtering fields based on the component's `visibility_key`.
+  3. Using `Field.description` as the human-readable JSON key for the LLM.
+  4. Automatically simplifying complex objects (like `CriteriaItem`) into plain strings.
+
+For the full visibility matrix and contract details, see [AGENT_CONTEXTS.md](file:///Users/jacques/dev/13_odis_stream2/app/agents/AGENT_CONTEXTS.md).
+
+### 3. Swarm Prompt DRY Design
+To prevent prompt duplication and avoid exposing internal system code names (like `ODIS`), agent prompt generation is centralized via `get_swarm_boilerplate(agent_type)` in [agent_config.py](file:///Users/jacques/dev/13_odis_stream2/app/agents/agent_config.py). 
+- **Roles & Context**: It unifies system prompts by family (expert, coordinator, synthesizer), explicitly establishing the context of collaboration where the final user is a human Social Worker accompanying a beneficiary.
+- **Token Efficiency**: It keeps agent prompts clean and concise, avoiding redundant context and reducing token usage.
+
+### 4. Native BigQuery Vector Search (`ML.DISTANCE`)
+For RAG-based search of inclusion-relevant associations, ODIS uses native BigQuery vector distance metrics instead of local Python-side calculations:
+- **Database-Level Distance**: In `get_associations_semantic` in [rna_rag.py](file:///Users/jacques/dev/13_odis_stream2/app/services/rna_rag.py), the query embedding is generated via Vertex AI, L2-normalized, and passed to BigQuery, which calculates similarity natively using `1.0 - ML.DISTANCE(..., 'COSINE')`.
+- **Minimal Network Overhead**: This avoids transferring large float arrays (representing candidate embeddings) over the network for local NumPy dot-product comparisons, minimizing memory footprint and network latency.
+- **Search Query Optimization**: To prevent geographical words from diluting semantic match scores, expert tools enforce a strict rule instructing LLMs not to include the city name in the query. Partitioning and filtering are handled via `codgeo` at the SQL level.
+
