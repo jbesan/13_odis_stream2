@@ -93,6 +93,31 @@ Ce prototype a un triple objectif :
 6.  **Mettre à jour/Exécuter le pipeline d'ingestion (Optionnel) :**
     Pour recharger et mettre à jour les données (notamment depuis l'API Odace), consultez la documentation détaillée dans le [README du pipeline](file:///Users/jacques/dev/13_odis_stream2/pipeline/PIPELINE_ARCHITECTURE.md).
 
+### 🔐 Authentification et Profils Partenaires
+
+L'application intègre une gestion d'utilisateurs et de profils d'organisations partenaires (ex. *J'Accueille*, *EMILE*).
+
+* **Développement local (Bypass) :** Par défaut, l'authentification est désactivée en local pour simplifier le développement (un utilisateur `local-dev` de l'organisation `local` est injecté).
+* **Forcer l'authentification en local :** Pour tester la mire de connexion en local, lancez l'application avec la variable d'environnement `ODIS_FORCE_AUTH` :
+  ```bash
+  ODIS_FORCE_AUTH=True streamlit run app/1_Accueil.py
+  ```
+* **Configuration des utilisateurs (`ODIS_USERS_CONFIG`) :** La liste des utilisateurs autorisés est définie via la variable d'environnement (ou secret) `ODIS_USERS_CONFIG` sous format JSON :
+  ```json
+  {
+    "users": {
+      "user1": {
+        "password_hash": "pbkdf2_sha256$20000$salt$hash",
+        "org_id": "jaccueille"
+      }
+    }
+  }
+  ```
+* **Génération de mots de passe hashés :** Utilisez le script CLI fourni pour générer des mots de passe sécurisés à insérer dans la configuration :
+  ```bash
+  python3 scripts/hash_password.py
+  ```
+
 
 ## ⚙️ Fonctionnement : Le Moteur de Scoring
 

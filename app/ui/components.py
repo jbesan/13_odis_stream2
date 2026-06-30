@@ -70,16 +70,5 @@ def get_person_accompanied_str() -> str:
         return f"de {st.session_state.ui_nom}"
     return "de la personne accompagnée"
 
-def render_org_badge() -> None:
-    """Renders a subtle organization badge in the sidebar."""
-    import config as cfg
-    org_id = st.session_state.get('ui_org_context')
-    if not org_id:
-        return
-        
-    profile = cfg.ORGANIZATION_PROFILES.get(org_id)
-    if profile:
-        # st.text('Hello')
-        st.sidebar.info(f"Mode | {profile['name']}")#, color="blue", width="stretch")
 
 

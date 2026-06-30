@@ -3,7 +3,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 from app.config import is_ai_free_mode, ORGANIZATION_PROFILES
 from app.core.postscoring import generate_static_pitch, _curate_jobs_with_agent
-from app.core.models import CommuneResult, CommuneScoreDetail
+from app.core.models import CommuneResult, CommuneScoreDetail, Org
 
 def test_is_ai_free_mode_env():
     # 1. Test when env variable is not set
@@ -24,22 +24,20 @@ def test_is_ai_free_mode_env():
 
 @patch("streamlit.session_state")
 def test_is_ai_free_mode_org(mock_session_state):
-    # Mock active organization profile that has ai_free_mode=True
-    with patch.dict(ORGANIZATION_PROFILES, {
-        "test_org": {
-            "name": "Test Org",
-            "description": "Test",
-            "zone_type": "departement",
-            "default_zones": ["33"],
-            "defaults": {},
-            "ai_free_mode": True
-        }
-    }):
-        # Mock session state returns the org ID
-        mock_session_state.get.side_effect = lambda key, default=None: "test_org" if key == "ui_org_context" else default
-        
-        with patch.dict(os.environ, {}, clear=True):
-            assert is_ai_free_mode()
+    # Mock session state returns the Org Pydantic object
+    test_org = Org(
+        id="test_org",
+        name="Test Org",
+        description="Test",
+        zone_type="departement",
+        default_zones=["33"],
+        defaults={},
+        ai_free_mode=True
+    )
+    mock_session_state.get.side_effect = lambda key, default=None: test_org if key == "org" else default
+    
+    with patch.dict(os.environ, {}, clear=True):
+        assert is_ai_free_mode()
 
 def test_generate_static_pitch():
     # Create mock score details

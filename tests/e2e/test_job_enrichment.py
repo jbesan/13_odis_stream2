@@ -10,7 +10,9 @@ from core.postscoring import launch_background_job_curation
 def clean_streamlit_session():
     """Cleans up streamlit session state before and after each test."""
     st.session_state.clear()
-    yield
+    import os
+    with patch.dict(os.environ, {"ODIS_AI_FREE_MODE": "False"}):
+        yield
     st.session_state.clear()
 
 def test_job_offer_detail_model_validation():

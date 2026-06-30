@@ -327,3 +327,42 @@ class SearchResultsData(BaseModel):
         if self.current_geo and self.current_geo.codgeo == codgeo:
             return self.current_geo
         return next((c for c in self.results if c.codgeo == codgeo), None)
+
+
+class Org(BaseModel):
+    """Represents an organization profile with its default configurations and settings.
+
+    Attributes:
+        id: Unique identifier for the organization.
+        name: Human-readable name of the organization.
+        description: A description of the organization's purpose.
+        zone_type: The geographical level of target regions (e.g. departement).
+        default_zones: Initial targeted zone codes.
+        defaults: Default feature or filter overrides for the organization.
+        ai_free_mode: Flag specifying whether the organization operates in AI-free mode.
+    """
+
+    id: str
+    name: str
+    description: Optional[str] = None
+    zone_type: Literal["departement", "bassin_de_vie"] = "departement"
+    default_zones: List[str] = Field(default_factory=list)
+    defaults: Dict[str, Any] = Field(default_factory=dict)
+    ai_free_mode: bool = False
+
+    model_config = ConfigDict(populate_by_name=True, revalidate_instances="never")
+
+
+class User(BaseModel):
+    """Represents a logged-in user and their associated organization profile.
+
+    Attributes:
+        username: The user's unique identifier.
+        org_id: The ID of the organization the user belongs to.
+    """
+
+    username: str
+    org_id: str
+
+    model_config = ConfigDict(populate_by_name=True, revalidate_instances="never")
+

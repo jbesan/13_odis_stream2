@@ -392,7 +392,7 @@ def launch_background_job_curation(codgeos: List[str], config: Any, hash_val: st
     # Define the worker task for a single city
     def bg_jobs_enrichment_for_city_task(cg: str, results_store: dict):
         try:
-            logging.info(f"🚀 [JOBS-ENRICH-CITY] Starting background job enrichment for commune {cg} (hash: {hash_val})")
+            logging.debug(f"🚀 [JOBS-ENRICH-CITY] Starting background job enrichment for commune {cg} (hash: {hash_val})")
             city_results = []
             api_total_count = 0
             
@@ -475,7 +475,7 @@ def launch_background_job_curation(codgeos: List[str], config: Any, hash_val: st
                 }
                 results_store[hash_val] = current_val
             
-            logging.info(f"✅ [JOBS-ENRICH-CITY] Background job enrichment finished for commune {cg} (hash: {hash_val})")
+            logging.debug(f"✅ [JOBS-ENRICH-CITY] Background job enrichment finished for commune {cg} (hash: {hash_val})")
         except Exception as e:
             logging.error(f"❌ [JOBS-ENRICH-CITY] Error for commune {cg}: {e}", exc_info=True)
             current_val = results_store.get(hash_val, {})

@@ -29,6 +29,6 @@ def test_main_app_blocks_unauthenticated(mock_idle, mock_ensure_init):
         
         # Verify it didn't switch page, and rendered the login header/form instead
         assert len(at.exception) == 0
-        # Since it blocks and shows the login container, it will render "Accès ODIS (Test)" subheader
+        # Since it blocks and shows the login container, it will render "Accès ODIS" subheader
         subheaders = [s.value for s in at.subheader]
-        assert "Accès ODIS (Test)" in subheaders
+        assert "Accès ODIS" in subheaders

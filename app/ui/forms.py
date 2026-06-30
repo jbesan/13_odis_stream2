@@ -414,23 +414,18 @@ def render_mobility_form() -> None:
     
 def render_org_profile_form() -> None:
     """Renders the organization-specific preamble component (F-54)."""
-    org_id = st.session_state.get('ui_org_context')
-    if not org_id:
+    org = st.session_state.get('org')
+    if not org:
         st.info("Aucun profil d'organisation actif.")
         return
-        
-    profile = cfg.ORGANIZATION_PROFILES.get(org_id)
-    if not profile:
-        st.error(f"Profil '{org_id}' non trouvé.")
-        return
 
-    st.subheader(f'Vous trouverez ci dessous les paramètres spécifiques pour {profile["name"]} :')
+    st.subheader(f'Vous trouverez ci dessous les paramètres spécifiques pour {org.name} :')
     
     # st.divider()
     
     # --- Strategic Locations Multi-select ---
     app_data = get_app_data()
-    zone_type = profile['zone_type']
+    zone_type = org.zone_type
     
     if zone_type == 'departement':
         label = "Départements"
@@ -449,7 +444,7 @@ def render_org_profile_form() -> None:
 
     
     # Pre-fill with current session state or profile defaults
-    current_selection = st.session_state.get('ui_org_strategic_locations', profile['default_zones'])
+    current_selection = st.session_state.get('ui_org_strategic_locations', org.default_zones)
     
     # Ensure all current selections are in options (safety)
     valid_selection = [x for x in current_selection if x in options]
@@ -469,7 +464,7 @@ def render_org_profile_form() -> None:
     st.session_state['ui_org_strategic_locations'] = selected_zones
     
     # --- Criteria Boosts Sliders (F-54 Expansion) ---
-    org_defaults = profile.get('defaults', {})
+    org_defaults = org.defaults
     if 'org_boosts' in org_defaults:
         st.divider()
         st.write("**Boosts de critères spécifiques**")
@@ -556,8 +551,8 @@ def render_weight_profile_form() -> None:
     weight_keys = ["ui_poids_education", "ui_poids_emploi", "ui_poids_logement", "ui_poids_inclusion", "ui_poids_sante", "ui_poids_mobilite"]
     
     # Add Territory weight if org context is present
-    org_context = st.session_state.get('ui_org_context')
-    if org_context:
+    org = st.session_state.get('org')
+    if org:
         weight_keys.append("ui_poids_territoire")
 
     for p_key in weight_keys:
@@ -603,16 +598,14 @@ def display_input_tabs() -> None:
     
     tab_names = ['Localisation', 'Situation familiale', 'Education', 'Projet Professionnel', 'Logement', 'Santé', 'Inclusion', 'Autres', 'Profil']
     
-    org_id = st.session_state.get('ui_org_context')
-    if org_id:
-        profile = cfg.ORGANIZATION_PROFILES.get(org_id)
-        if profile:
-            tab_names.insert(0, profile['name'])
+    org = st.session_state.get('org')
+    if org:
+        tab_names.insert(0, org.name)
     
     tabs = st.tabs(tab_names)
     
     current_tab_idx = 0
-    if org_id:
+    if org:
         with tabs[current_tab_idx]:
             render_org_profile_form()
         current_tab_idx += 1
@@ -878,7 +871,7 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
         notes_qualitatives=[st.session_state.get('ui_notes_qualitatives', "")] if st.session_state.get('ui_notes_qualitatives') else [],
         
         # Org Specifics
-        org_context=st.session_state.get('ui_org_context'),
+        org_context=st.session_state.get('org').id if st.session_state.get('org') else None,
         org_strategic_locations=st.session_state.get('ui_org_strategic_locations', []),
         org_strategic_locations_type=st.session_state.get('ui_org_strategic_locations_type', 'departement'),
         org_boosts=st.session_state.get('ui_org_boosts', {}),
