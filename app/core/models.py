@@ -146,6 +146,8 @@ class CommuneScoreDetail(BaseModel):
     score_normalise: float = Field(description="Score de 0.0 à 1.0 issu du ScoringEngine", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "ui_details", "pdf_report"]})
     unit: str = Field(description="Unité de la valeur brute (ex: 'habitants', '%')", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "ui_details", "pdf_report"]})
     relative_weight: float = Field(description="Poids relatif en % dans sa catégorie", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "ui_details", "pdf_report"]})
+    strong_point_text: Optional[str] = Field("", description="Phrase décrivant le point fort", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "ui_details", "pdf_report"]})
+    high_value_adjective: Optional[str] = Field("", description="Adjectif pour les valeurs élevées", json_schema_extra={"odis_visibility": ["agent_refiner", "agent_synthesizer", "ui_details", "pdf_report"]})
 
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 

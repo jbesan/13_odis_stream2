@@ -111,12 +111,13 @@ WEIGHT_PROFILES = {
 }
 
 # --- Organization Profiles (F-54) ---
-class OrgProfile(TypedDict):
+class OrgProfile(TypedDict, total=False):
     name: str
     description: str
     zone_type: Literal["departement", "bassin_de_vie"]
     default_zones: List[str]
     defaults: Dict[str, Any]
+    ai_free_mode: bool
 
 ORGANIZATION_PROFILES: Dict[str, OrgProfile] = {
     "jaccueille": {
@@ -343,3 +344,25 @@ WALDEC_REFUGEE_LABELS = {
     "019": "Action sociale",
     "020": "Associations caritatives, humanitaires"
 }
+
+def is_ai_free_mode() -> bool:
+    """
+    Checks if the application is running in 'AI-free' mode.
+    Returns True if ODIS_AI_FREE_MODE is set to 'true', '1' or 'yes' in environment,
+    or if the active organization setting has 'ai_free_mode' set to True.
+    """
+    if os.environ.get("ODIS_AI_FREE_MODE", "False").lower() in ("true", "1", "yes"):
+        return True
+    
+    import streamlit as st
+    try:
+        org_id = st.session_state.get('ui_org_context')
+        if org_id:
+            profile = ORGANIZATION_PROFILES.get(org_id)
+            if profile and profile.get("ai_free_mode"):
+                return True
+    except Exception:
+        pass
+    
+    return False
+

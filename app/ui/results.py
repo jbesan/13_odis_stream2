@@ -452,9 +452,10 @@ def sync_background_data(commune: CommuneResult, h: Optional[str]):
 
     # 3. Sync Unified Briefing (Profile Summary)
     if 'odis_brief' in bg_res and st.session_state.get('config'):
-        if not st.session_state.config.odis_brief:
+        brief_val = bg_res['odis_brief']
+        if brief_val and st.session_state.config.odis_brief != brief_val:
             logging.debug("✨ [SYNC] Unified Briefing sync")
-            st.session_state.config.odis_brief = bg_res['odis_brief']
+            st.session_state.config.odis_brief = brief_val
 
 @st.dialog("Centre Communal d'Action Sociale", width="large", on_dismiss=_on_ccas_dialog_dismiss)
 def show_ccas_dialog(index: Any):
@@ -885,8 +886,9 @@ def display_results_list(display_gdf: Optional[pd.DataFrame] = None) -> None:
     if is_ready:
         # Sync global data once (handled in render_global_pitch now, but keeping brief sync here for safety)
         if bg_res and 'odis_brief' in bg_res and st.session_state.get('config'):
-            if not st.session_state.config.odis_brief:
-                st.session_state.config.odis_brief = bg_res['odis_brief']
+            brief_val = bg_res['odis_brief']
+            if brief_val and st.session_state.config.odis_brief != brief_val:
+                st.session_state.config.odis_brief = brief_val
                 st.rerun() 
     # Shortlisted City (Ville Pressentie) Button (Feature F-61)
     if search_results.commune_pressentie:
@@ -966,39 +968,40 @@ def _display_result_details(commune: CommuneResult, is_ready: bool = False) -> N
         ai_pitch_container(commune.codgeo, h)
         
         # F-IA: AI Dialog Trigger (Session State based)
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            st.markdown('<style> [class*="st-key-btn_ia"] .stButton button { background-color: #F5D819; color: #1B4429; } </style>', unsafe_allow_html=True)
-            
-            # Premium Guardrail (F-IA): Verify if background hydrations (jobs & associations) are completed
-            jobs_ready = False
-            assos_ready = False
-            if h:
-                bg_res = odis_get_bg_result(h)
-                if isinstance(bg_res, dict):
-                    # Check jobs hydration status
-                    jobs_city_data = bg_res.get('jobs_enrichment', {}).get(str(commune.codgeo))
-                    if jobs_city_data and jobs_city_data.get("status") in ["done", "error"]:
-                        jobs_ready = True
-                    
-                    # Check associations hydration status
-                    enrich_data = bg_res.get('enrichment', {}).get(str(commune.codgeo))
-                    if enrich_data is not None:
-                        assos_ready = True
-            
-            if not is_ready:
-                btn_label = "Analyse Avancée (Calcul...)"
-                btn_disabled = True
-            elif not jobs_ready or not assos_ready:
-                btn_label = "Analyse Avancée (Préparation...)"
-                btn_disabled = True
-            else:
-                btn_label = "Analyse Avancée"
-                btn_disabled = False
+        if not cfg.is_ai_free_mode():
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                st.markdown('<style> [class*="st-key-btn_ia"] .stButton button { background-color: #F5D819; color: #1B4429; } </style>', unsafe_allow_html=True)
+                
+                # Premium Guardrail (F-IA): Verify if background hydrations (jobs & associations) are completed
+                jobs_ready = False
+                assos_ready = False
+                if h:
+                    bg_res = odis_get_bg_result(h)
+                    if isinstance(bg_res, dict):
+                        # Check jobs hydration status
+                        jobs_city_data = bg_res.get('jobs_enrichment', {}).get(str(commune.codgeo))
+                        if jobs_city_data and jobs_city_data.get("status") in ["done", "error"]:
+                            jobs_ready = True
+                        
+                        # Check associations hydration status
+                        enrich_data = bg_res.get('enrichment', {}).get(str(commune.codgeo))
+                        if enrich_data is not None:
+                            assos_ready = True
+                
+                if not is_ready:
+                    btn_label = "Analyse Avancée (Calcul...)"
+                    btn_disabled = True
+                elif not jobs_ready or not assos_ready:
+                    btn_label = "Analyse Avancée (Préparation...)"
+                    btn_disabled = True
+                else:
+                    btn_label = "Analyse Avancée"
+                    btn_disabled = False
 
-            if st.button(btn_label, key=f"btn_ia_comm_{commune.codgeo}", icon=':material/bolt:', width="content", type="primary", disabled=btn_disabled):
-                st.session_state.active_ia_city_index = commune.codgeo
-                st.rerun()
+                if st.button(btn_label, key=f"btn_ia_comm_{commune.codgeo}", icon=':material/bolt:', width="content", type="primary", disabled=btn_disabled):
+                    st.session_state.active_ia_city_index = commune.codgeo
+                    st.rerun()
 
         # --- Radar Chart with Comparison ---
         all_cats = ['emploi', 'logement', 'education', 'sante', 'inclusion', 'mobilite', 'territoire']

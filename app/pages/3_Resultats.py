@@ -282,10 +282,7 @@ with st.container(border=False, key='top_menu'):
     with st.expander('🔎 Modifier les critères de recherche', expanded=False):
         ui_forms.display_input_tabs()
     
-    brief = st.session_state.config.odis_brief if st.session_state.get('config') else ""
-    if brief:
-        with st.expander("📝 Résumé de la situation", expanded=False):
-            st.markdown(brief)
+
     
 # Global Pitch (Strategic intro + Loading state)
 # if st.session_state.get('search_results'):
