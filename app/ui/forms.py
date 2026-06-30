@@ -448,20 +448,18 @@ def render_org_profile_form() -> None:
     
     # Ensure all current selections are in options (safety)
     valid_selection = [x for x in current_selection if x in options]
+    st.session_state['ui_org_strategic_locations'] = valid_selection
+    
     st.write(f"**Zones d'intérêt stratégique ({label})**")
 
-    selected_zones = st.multiselect(
+    st.multiselect(
         f"**Zones d'intérêt stratégique ({label})**",
         options=options,
-        default=valid_selection,
         format_func=format_func,
         label_visibility="collapsed",
-        key="ui_org_strategic_locations_multiselect",
+        key="ui_org_strategic_locations",
         help="Les communes situées dans ces zones recevront un bonus dans le score final."
     )
-    
-    # Update the actual session state used by scoring
-    st.session_state['ui_org_strategic_locations'] = selected_zones
     
     # --- Criteria Boosts Sliders (F-54 Expansion) ---
     org_defaults = org.defaults
