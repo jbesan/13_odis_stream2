@@ -29,3 +29,6 @@ app/.logs
 # app/tests
 app/*.pyc
 app/.DS_Store
+app/.env
+**/.env
+
