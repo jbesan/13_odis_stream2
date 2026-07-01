@@ -1,41 +1,162 @@
 import streamlit as st
 import hmac
 import os
+import hashlib
+import secrets
+import json
+import logging
+from typing import Dict, Any, Optional
 from ui.idle_sleep import inject_idle_sleep
+from core.models import User, Org
+import config as cfg
 
-def verify_credentials(username, password, secrets):
+logger = logging.getLogger(__name__)
+
+# Constant for fallback local development user
+LOCAL_DEV_USERNAME = "local-dev"
+
+
+def hash_password(password: str, iterations: int = 20000) -> str:
+    """Hashes a password using PBKDF2-HMAC-SHA256 with a random salt.
+
+    Format: pbkdf2_sha256$iterations$salt$hash
+
+    Args:
+        password: The plain text password to hash.
+        iterations: The number of hashing iterations to perform.
+
+    Returns:
+        The formatted string representing the hashed password containing the algorithm,
+        iterations, salt, and key hash.
     """
-    Verifies username and password against the secrets dictionary.
-    Returns True if valid, False otherwise.
+    salt = secrets.token_hex(16)
+    pw_bytes = password.encode("utf-8")
+    salt_bytes = salt.encode("utf-8")
+    hash_bytes = hashlib.pbkdf2_hmac("sha256", pw_bytes, salt_bytes, iterations)
+    return f"pbkdf2_sha256${iterations}${salt}${hash_bytes.hex()}"
+
+
+def verify_password(password: str, hashed: str) -> bool:
+    """Verifies a password against a PBKDF2-HMAC-SHA256 hash.
+
+    Args:
+        password: The plain text password to verify.
+        hashed: The PBKDF2 hash to compare against.
+
+    Returns:
+        True if the password matches the hash, False otherwise.
     """
-    if "passwords" not in secrets:
+    if not hashed or not hashed.startswith("pbkdf2_sha256$"):
         return False
-        
-    if username in secrets["passwords"]:
-        # Secure comparison
-        if hmac.compare_digest(password, secrets["passwords"][username]):
-            return True
-            
+    try:
+        parts = hashed.split("$")
+        if len(parts) != 4:
+            return False
+        _, iterations_str, salt, hash_hex = parts
+        iterations = int(iterations_str)
+        pw_bytes = password.encode("utf-8")
+        salt_bytes = salt.encode("utf-8")
+        hash_bytes = hashlib.pbkdf2_hmac("sha256", pw_bytes, salt_bytes, iterations)
+        return hmac.compare_digest(hash_bytes.hex(), hash_hex)
+    except Exception as e:
+        logger.error(f"Error verifying password: {e}")
+        return False
+
+
+def load_users_config() -> Dict[str, Any]:
+    """Loads user credential dictionary from environment variable or Streamlit secrets.
+
+    Returns:
+        A dictionary mapping usernames to user details like password hash and org ID.
+        Example: {"username": {"password_hash": "...", "org_id": "..."}}
+    """
+    config_str = os.environ.get("ODIS_USERS_CONFIG")
+    if not config_str:
+        try:
+            config_str = st.secrets.get("ODIS_USERS_CONFIG")
+        except Exception:
+            pass
+
+    if not config_str:
+        return {}
+
+    try:
+        data = json.loads(config_str)
+        return data.get("users", {})
+    except Exception as e:
+        logger.error(f"Error loading ODIS_USERS_CONFIG: {e}")
+        return {}
+
+
+def verify_credentials(
+    username: str, password: str, secrets_dict: Optional[Dict[str, Any]] = None
+) -> bool:
+    """Verifies username and password against credentials config.
+
+    Supports backward compatibility for testing using secrets_dict injection.
+
+    Args:
+        username: The username trying to authenticate.
+        password: The password to check.
+        secrets_dict: Optional dictionary containing backward compatible credentials.
+
+    Returns:
+        True if credentials are valid, False otherwise.
+    """
+    # 1. Use the injected/provided secrets dict if it has passwords mapping (backward compatibility)
+    if secrets_dict and "passwords" in secrets_dict:
+        if username in secrets_dict["passwords"]:
+            hashed = secrets_dict["passwords"][username]
+            # If the secret in test is plaintext, do secure check; if pbkdf2, verify properly
+            if hashed.startswith("pbkdf2_sha256$"):
+                return verify_password(password, hashed)
+            return hmac.compare_digest(password, hashed)
+        return False
+
+    # 2. Standard flow: load from environment config
+    users_config = load_users_config()
+    if username in users_config:
+        user_data = users_config[username]
+        pw_hash = user_data.get("password_hash")
+        if pw_hash:
+            return verify_password(password, pw_hash)
+
     return False
 
-def check_password():
+
+def check_password() -> bool:
+    """Checks if the user has authenticated with a correct password.
+
+    Bypasses authentication in local development unless ODIS_FORCE_AUTH is enabled.
+
+    Returns:
+        True if the user is authenticated (or bypass is active), False otherwise.
     """
-    Returns `True` if the user had a correct password.
-    Skips authentication and Idle Sleep when running locally.
-    """
-    # Detect Cloud Run environment
+    # Detect Cloud Run environment or forced auth flag
     is_cloud_run = os.environ.get("K_SERVICE") is not None
-    
-    # 1. Skip if not running on Cloud Run (Local Dev)
-    if not is_cloud_run:
-        # Default user for local logging/telemetry
-        if "username" not in st.session_state:
-            st.session_state["username"] = "jacques-local"
+    force_auth = (
+        os.environ.get("ODIS_FORCE_AUTH", "False").lower()
+        in ("true", "1", "yes")
+    )
+
+    # 1. Skip if not running on Cloud Run and not forced (Local Dev)
+    if not is_cloud_run and not force_auth:
+        if "user" not in st.session_state or "org" not in st.session_state:
+            st.session_state["user"] = User(
+                username=LOCAL_DEV_USERNAME, org_id="local"
+            )
+            st.session_state["org"] = Org(
+                id="local",
+                name="Local Dev",
+                zone_type="departement",
+                default_zones=["33"],
+            )
+            # For compatibility
+            st.session_state["username"] = LOCAL_DEV_USERNAME
         st.session_state["password_correct"] = True
         return True
 
     # 1b. Inject Idle Sleep monitor (10 mins timeout) - ONLY on Cloud Run
-    # We do this as early as possible to cover the login screen as well.
     inject_idle_sleep(timeout_minutes=10)
 
     # 2. Initialize session state for auth
@@ -43,45 +164,67 @@ def check_password():
         st.session_state["password_correct"] = False
 
     if not st.session_state["password_correct"]:
-        # Show simplified email-only input for known orgs
-        with st.container(width='stretch', horizontal_alignment="center"):
-            with st.container(width=400, border=True, horizontal_alignment="center"):
-                st.subheader("Accès ODIS (Test)")
-                st.info("👋 Bienvenue ! Utilisez votre email professionnel pour accéder à l'application.")
-                
+        # Show username/password login container
+        with st.container(width="stretch", horizontal_alignment="center"):
+            with st.container(
+                width=400, border=True, horizontal_alignment="center"
+            ):
+                st.subheader("Accès ODIS")
+                st.info(
+                    "👋 Bienvenue ! Veuillez vous connecter avec vos identifiants."
+                )
+
                 with st.form("login_form"):
-                    email = st.text_input("Email professionnel", placeholder="votre@email.org")
-                    submit = st.form_submit_button("Accéder", width="stretch")
-                    
+                    username = st.text_input(
+                        "Identifiant (Email / Nom d'utilisateur)",
+                        autocomplete="username",
+                    )
+                    password = st.text_input(
+                        "Mot de passe",
+                        type="password",
+                        autocomplete="current-password",
+                    )
+                    submit = st.form_submit_button(
+                        "Se connecter", width="stretch"
+                    )
+
                     if submit:
-                        if not email or "@" not in email:
-                            st.error("❌ Veuillez saisir une adresse email valide.")
+                        if not username or not password:
+                            st.error("❌ Veuillez remplir tous les champs.")
+                        elif verify_credentials(username, password):
+                            # Resolve user and org
+                            users_config = load_users_config()
+                            user_data = users_config[username]
+                            org_id = user_data["org_id"]
+
+                            # Get org properties from ORGANIZATION_PROFILES, or construct default
+                            org = cfg.ORGANIZATION_PROFILES.get(org_id)
+                            if not org:
+                                org = Org(
+                                    id=org_id,
+                                    name=org_id.capitalize(),
+                                    zone_type="departement",
+                                    default_zones=[],
+                                )
+
+                            st.session_state["password_correct"] = True
+                            st.session_state["user"] = User(
+                                username=username, org_id=org_id
+                            )
+                            st.session_state["org"] = org
+                            st.session_state["username"] = username
+                            st.rerun()
                         else:
-                            domain = email.split("@")[-1].lower().strip()
-                            allowed_domains = st.secrets.get("allowed_domains", [])
-                            if domain in [d.strip().lower() for d in allowed_domains]:
-                                st.session_state["password_correct"] = True
-                                st.session_state["username"] = email
-                                st.rerun()
-                            else:
-                                st.error("❌ Ce domaine n'est pas autorisé pour la phase de test.")
-                
-                # --- Legacy Password Login (Commented out as requested) ---
-                # with st.expander("Admin Login"):
-                #     with st.form("admin_login_form"):
-                #         username = st.text_input("Username", autocomplete="username")
-                #         password = st.text_input("Password", type="password", autocomplete="current-password")
-                #         admin_submit = st.form_submit_button("Se connecter")
-                #         if admin_submit:
-                #             if verify_credentials(username, password, st.secrets):
-                #                 st.session_state["password_correct"] = True
-                #                 st.session_state["username"] = username
-                #                 st.rerun()
-                #             else:
-                #                 st.error("❌ Identifiants incorrects")
+                            st.error("❌ Identifiants incorrects.")
         return False
     else:
         # Password correct.
-        st.sidebar.warning("ATTENTION: L'application est en phase de test. Vos interactions sont collectées pour améliorer l'outil. Merci d'anonymiser au maximum vos saisies libres.")
-        
+        org_name = (
+            st.session_state.get("org").name
+            if st.session_state.get("org")
+            else "Test"
+        )
+        st.sidebar.warning(
+            f"**{org_name}**. \n Vos interactions sont collectées pour améliorer l'outil. Merci d'anonymiser au maximum vos saisies libres."
+        )
         return True

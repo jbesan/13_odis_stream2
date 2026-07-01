@@ -226,7 +226,6 @@ with st.sidebar:
     else:
         st.error("Logo not found")
     
-    ui.render_org_badge()
     st.write("")
     st.markdown("Découvrez les lieux de vie correspondant le mieux au projet renseigné. Les scores vous permettent de comparer facilement leurs atouts.", unsafe_allow_html=True)
     st.divider()

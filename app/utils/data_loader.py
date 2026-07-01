@@ -60,34 +60,31 @@ def apply_demo_data_if_present(defaults: Dict[str, Any]) -> None:
         
         st.toast(f"Mode Démo activé (Scénario {demo_id if demo_id != 'true' else 'Défaut'})", icon="ℹ️")
 
-def apply_org_data_if_present(defaults: Dict[str, Any]) -> None:
-    """Checks query params for 'org' and updates defaults with organization profile using a smart merge."""
-    query_params = st.query_params
-    if 'org' in query_params:
-        org_id = query_params['org']
-        profile = cfg.ORGANIZATION_PROFILES.get(org_id)
+def apply_logged_in_org_defaults(defaults: Dict[str, Any]) -> None:
+    """Updates defaults with organization profile from st.session_state['org'] using a smart merge."""
+    org = st.session_state.get('org')
+    if org:
+        defaults['org_context'] = org.id
+        defaults['org_strategic_locations'] = org.default_zones
+        defaults['org_strategic_locations_type'] = org.zone_type
         
-        if profile:
-            defaults['org_context'] = org_id
-            defaults['org_strategic_locations'] = profile['default_zones']
-            defaults['org_strategic_locations_type'] = profile['zone_type']
-            
-            # Smart Merge of profile defaults (F-54 Expansion)
-            # - Lists: Union (Add partner-specific options to the global defaults)
-            # - Scalars: Override (Partner specific value takes precedence)
-            org_defaults = profile.get('defaults', {})
-            for key, val in org_defaults.items():
-                if key in defaults:
-                    if isinstance(defaults[key], list) and isinstance(val, list):
-                        # Union of lists to avoid duplicates while preserving existing defaults
-                        defaults[key] = list(set(defaults[key]) | set(val))
-                    else:
-                        # Direct override for strings, numbers, etc.
-                        defaults[key] = val
-            
-            st.toast(f"Profil Organisation activé : **{profile['name']}**", icon="🏢")
-        else:
-            logger.warning(f"Organization profile '{org_id}' not found in configuration.")
+        # Smart Merge of profile defaults (F-54 Expansion)
+        # - Lists: Union (Add partner-specific options to the global defaults)
+        # - Scalars: Override (Partner specific value takes precedence)
+        org_defaults = org.defaults
+        for key, val in org_defaults.items():
+            if key in defaults:
+                if isinstance(defaults[key], list) and isinstance(val, list):
+                    # Union of lists to avoid duplicates while preserving existing defaults
+                    defaults[key] = list(set(defaults[key]) | set(val))
+                else:
+                    # Direct override for strings, numbers, etc.
+                    defaults[key] = val
+        
+        # Toast gating to avoid showing on every page load/re-run
+        if st.session_state.get('org_defaults_applied') != org.id:
+            st.toast(f"Profil Organisation activé : **{org.name}**", icon="🏢")
+            st.session_state['org_defaults_applied'] = org.id
 
 def session_states_init(defaults: Dict[str, Any]) -> None:
     """Initializes session state with defaults if not already set."""
@@ -268,8 +265,8 @@ def apply_search_criteria_to_ui(criteria: Any) -> None:
 def ensure_data_initialized() -> None:
     """Ensures that the session state and datasets are initialized."""
     # Force re-initialization IF a demo or org parameter is present in query string
-    # This allows Deep-linking scenarios like ?org=jaccueille to work even if already on the page.
-    force_refresh = 'demo' in st.query_params or 'org' in st.query_params
+    # Force re-initialization IF a demo parameter is present in query string
+    force_refresh = 'demo' in st.query_params
     
     if 'demo_data' not in st.session_state or force_refresh:
         defaults = copy.deepcopy(cfg.DEMO_DATA_DEFAULT)
@@ -277,8 +274,8 @@ def ensure_data_initialized() -> None:
         # Apply demo scenario if present 
         apply_demo_data_if_present(defaults)
         
-        # Apply org profile if present
-        apply_org_data_if_present(defaults)
+        # Apply logged in org defaults
+        apply_logged_in_org_defaults(defaults)
 
         st.session_state['demo_data'] = defaults
         

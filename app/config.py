@@ -1,7 +1,8 @@
 import warnings
 import os
 from dataclasses import dataclass
-from typing import List, Dict, Any, Union, Optional, TypedDict, Literal
+from typing import List, Dict, Any, Union, Optional, Literal
+from core.models import Org
 
 # Suppress annoying warnings from third-party libraries (especially in Python 3.14+)
 warnings.filterwarnings("ignore", module="langchain_core.*")
@@ -111,44 +112,38 @@ WEIGHT_PROFILES = {
 }
 
 # --- Organization Profiles (F-54) ---
-class OrgProfile(TypedDict, total=False):
-    name: str
-    description: str
-    zone_type: Literal["departement", "bassin_de_vie"]
-    default_zones: List[str]
-    defaults: Dict[str, Any]
-    ai_free_mode: bool
-
-ORGANIZATION_PROFILES: Dict[str, OrgProfile] = {
-    "jaccueille": {
-        "name": "J'Accueille",
-        "description": "J'Accueille est un programme de cohabitation solidaire qui met en relation des personnes réfugiées à la recherche d'un logement et des particuliers disposant d'une chambre libre.",
-        "zone_type": "departement",
-        "default_zones": [
+ORGANIZATION_PROFILES: Dict[str, Org] = {
+    "jaccueille": Org(
+        id="jaccueille",
+        name="J'Accueille",
+        description="J'Accueille est un programme de cohabitation solidaire qui met en relation des personnes réfugiées à la recherche d'un logement et des particuliers disposant d'une chambre libre.",
+        zone_type="departement",
+        default_zones=[
             "01", "13", "22", "26", "30", "31", "33", "34", "35", "37", 
             "38", "40", "42", "44", "64", "69", "72", "75", "76", "77", 
             "78", "81", "91", "92", "93", "94", "95"
         ],
-        "defaults": {
+        defaults={
             "hebergement_cible": ["Chez l'habitant"],
             "org_boosts": {
                 "heb_jaccueille_score": 3.0
             }
         }
-    },
-    "emile_aura": {
-        "name": "EMILE Auvergne-Rhône-Alpes",
-        "description": "EMILE est un programme d’accompagnement renforcé à la mobilité géographique qui permet aux personnes en précarité de logement, volontaires et résidant en zones tendues, d’accéder à l’emploi et au logement dans un nouveau territoire d’accueil.",
-        "zone_type": "departement",
-        "default_zones": [
+    ),
+    "emile_aura": Org(
+        id="emile_aura",
+        name="EMILE Auvergne-Rhône-Alpes",
+        description="EMILE est un programme d’accompagnement renforcé à la mobilité géographique qui permet aux personnes en précarité de logement, volontaires et résidant en zones tendues, d’accéder à l’emploi et au logement dans un nouveau territoire d’accueil.",
+        zone_type="departement",
+        default_zones=[
             "01", "03","15","69"
         ],
-        "defaults": {
+        defaults={
             "org_boosts": {
                 "inc_siae_density_scaled": 3.0
             }
         }
-    }
+    )
 }
 
 # --- Map Defaults ---
@@ -356,11 +351,9 @@ def is_ai_free_mode() -> bool:
     
     import streamlit as st
     try:
-        org_id = st.session_state.get('ui_org_context')
-        if org_id:
-            profile = ORGANIZATION_PROFILES.get(org_id)
-            if profile and profile.get("ai_free_mode"):
-                return True
+        org = st.session_state.get('org')
+        if org and getattr(org, 'ai_free_mode', False):
+            return True
     except Exception:
         pass
     

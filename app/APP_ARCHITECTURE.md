@@ -37,11 +37,40 @@ graph TD
     AIAnalysis -->|Reducer Merge| Results
 ```
 
+### 1.5 Authentification & Organization Profiles (ACL)
+
+ODIS implements a secure, role-based organizational profile context enforced immediately upon app startup.
+
+1.  **Security Gate (`app/utils/auth.py`)**:
+    *   Every page calls `auth.check_password()` before rendering.
+    *   **Local Development**: By default (when Cloud Run environment variable `K_SERVICE` is not detected), the app auto-logins with a fallback developer user (`local-dev`) belonging to the `local` organization.
+    *   **Forced Auth Override**: Setting `ODIS_FORCE_AUTH=True` in environment variables disables this bypass, forcing the Streamlit login screen to render even during local development.
+    *   **Production Authentication**: On Cloud Run, users must authenticate. Credentials are loaded from the `ODIS_USERS_CONFIG` JSON environment variable or Streamlit secrets:
+        ```json
+        {
+          "users": {
+            "user@domaine.fr": {
+              "password_hash": "pbkdf2_sha256$20000$...",
+              "org_id": "myorg"
+            }
+          }
+        }
+        ```
+    *   Passwords are encrypted using timing-safe `PBKDF2-HMAC-SHA256` password hashing.
+
+2.  **Organization Defaults & Smart Merge (`app/utils/data_loader.py`)**:
+    *   Upon successful authentication, the active user context is stored as a Pydantic `User` model, and their organization context is loaded from `config.ORGANIZATION_PROFILES` as a Pydantic `Org` model in `st.session_state['org']`.
+    *   During state initialization (`ensure_data_initialized`), `apply_logged_in_org_defaults()` merges organization settings into the session defaults:
+        *   **Strategic Zones**: Binds default search zones (`org_strategic_locations`) and target geographic resolution (`org_strategic_locations_type`).
+        *   **Lists**: Performs a Union of default arrays (e.g. adding partner-specific housing lists to global defaults).
+        *   **Scalars**: Performs a direct override of scalars (e.g. strategic weight boosts take precedence).
+    *   **Toast Gating**: Gated in session state via `org_defaults_applied` to ensure the activation notification toast is only displayed once per login/session.
+
 ---
 
 ## 2. Core Data Models (`app/core/models.py`)
 
-ODIS operates on a strict **Model-First** architecture. The entire state of a user's session is encapsulated in three primary Pydantic models.
+ODIS operates on a strict **Model-First** architecture. The entire state of a user's session and identity is encapsulated in five primary Pydantic models.
 
 ### 2.1 `SearchCriterias`
 This model represents the user's situation and preferences. All UI inputs and agent context structures stem from this object.
@@ -71,6 +100,19 @@ The parent wrapper containing the global session results.
 - `current_geo`: Reference `CommuneResult` for the user's starting city.
 - `commune_pressentie`: Optional comparison `CommuneResult` for the user's shortlisted city.
 - `get_by_code(codgeo)`: Centralized lookup helper that searches across recommendations, current geo, and the pressentie city to prevent index errors.
+
+### 2.4 `Org`
+Represents a partner organization's identity, default targets, and custom scoring profile.
+- **Identity & Resolution**: Holds unique `id` and descriptive metadata.
+- **Targets**: Holds `zone_type` (e.g., `departement`) and list of target strategic codes `default_zones`.
+- **Defaults**: Holds unstructured key-value dictionary `defaults` merged into the starting session state.
+- **AI Free Mode flag**: Controls whether the organization is restricted to AI-free fallback executions.
+
+### 2.5 `User`
+Encapsulates a logged-in user profile.
+- **Identity**: Holds the `username` (usually email address).
+- **Membership**: Ties the user to an organization profile via `org_id`.
+
 
 ---
 
