@@ -1,0 +1,17 @@
+[environment]
+python-version = "3.11"
+extra-paths = ["app"]
+
+[rules]
+unresolved-import = "ignore"
+no-matching-overload = "ignore"
+invalid-argument-type = "ignore"
+invalid-assignment = "ignore"
+unresolved-attribute = "ignore"
+unused-type-ignore-comment = "ignore"
+call-non-callable = "ignore"
+unsupported-operator = "ignore"
+unknown-argument = "ignore"
+invalid-parameter-default = "ignore"
+not-subscriptable = "ignore"
+possibly-missing-submodule = "ignore"

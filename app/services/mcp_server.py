@@ -3,10 +3,7 @@ from typing import Dict, Any, List, Optional, Union
 import asyncio
 import threading
 
-import json
 import pandas as pd
-import geopandas as gpd
-import numpy as np
 from utils.data_loader import load_all_data_raw
 from core.scoring import ScoringEngine
 from core.models import SearchCriterias, CriteriaItem
@@ -16,7 +13,10 @@ import logging
 from utils.common import normalize_text, calculate_fuzzy_match_score, sanitize_for_json
 import os
 import requests
-from services.mcp_inclusion import _search_inclusion_jobs_logic, _get_inclusion_job_details_logic
+from services.mcp_inclusion import (
+    _search_inclusion_jobs_logic,
+    _get_inclusion_job_details_logic,
+)
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO)
@@ -43,6 +43,7 @@ def set_data_context(context: Dict[str, Any]) -> None:
     DATA_CONTEXT = context
     # logger.info("Data Context injected externally.")
 
+
 def ensure_data_context() -> None:
     """
     Ensures data context is loaded, sharing the Streamlit @st.cache_resource.
@@ -59,12 +60,17 @@ def ensure_data_context() -> None:
                 try:
                     # Try to reuse the Streamlit @st.cache_resource first (zero I/O)
                     from utils.data_loader import get_app_data
+
                     DATA_CONTEXT = get_app_data()
-                    logger.info("⚙️ [MCP] Data context loaded from Streamlit cache (shared).")
-                except Exception as e:
+                    logger.info(
+                        "⚙️ [MCP] Data context loaded from Streamlit cache (shared)."
+                    )
+                except Exception:
                     # Fallback: standalone MCP mode (e.g. running as separate process)
                     try:
-                        logger.info("⚙️ [MCP] Loading full data context (fallback direct load)...")
+                        logger.info(
+                            "⚙️ [MCP] Loading full data context (fallback direct load)..."
+                        )
                         DATA_CONTEXT = load_all_data_raw()
                     except Exception as e2:
                         logger.error(f"Failed to load data context: {e2}")
@@ -76,21 +82,24 @@ def get_scoring_engine() -> ScoringEngine:
     Lazy loads the data and returns the ScoringEngine instance.
     """
     ensure_data_context()
-            
+
     return ScoringEngine(
-        df_all_communes=DATA_CONTEXT['odis'],
-        df_bv_geo=DATA_CONTEXT['bv_geo'],
-        scores_cat=DATA_CONTEXT['scores_cat'],
-        incl_index=DATA_CONTEXT['incl_index'],
-        associations_data=DATA_CONTEXT['associations_data'],
-        formations_data=DATA_CONTEXT['formations_data'],
-        codformations_index=DATA_CONTEXT['codformations_index'],
-        rome_index=DATA_CONTEXT.get('rome_index', pd.DataFrame()),
+        df_all_communes=DATA_CONTEXT["odis"],
+        df_bv_geo=DATA_CONTEXT["bv_geo"],
+        scores_cat=DATA_CONTEXT["scores_cat"],
+        incl_index=DATA_CONTEXT["incl_index"],
+        associations_data=DATA_CONTEXT["associations_data"],
+        formations_data=DATA_CONTEXT["formations_data"],
+        codformations_index=DATA_CONTEXT["codformations_index"],
+        rome_index=DATA_CONTEXT.get("rome_index", pd.DataFrame()),
         global_stats={},
-        refugee_associations_data=DATA_CONTEXT.get('refugee_associations_data', pd.DataFrame()),
-        live_jobs_data=DATA_CONTEXT.get('live_jobs_data', pd.DataFrame()),
-        siae_jobs_data=DATA_CONTEXT.get('siae_jobs_data', pd.DataFrame())
+        refugee_associations_data=DATA_CONTEXT.get(
+            "refugee_associations_data", pd.DataFrame()
+        ),
+        live_jobs_data=DATA_CONTEXT.get("live_jobs_data", pd.DataFrame()),
+        siae_jobs_data=DATA_CONTEXT.get("siae_jobs_data", pd.DataFrame()),
     )
+
 
 def _search_referentiels_logic(query: str, domain: str) -> List[Dict[str, Any]]:
     """Recherche des codes officiels (Formations, ROME, Services d'inclusion, WALDEC, etc.) dans les référentiels."""
@@ -98,62 +107,94 @@ def _search_referentiels_logic(query: str, domain: str) -> List[Dict[str, Any]]:
     ensure_data_context()
     # print(f"Search Referentiels for Query: {query}, Domain: {domain}")
 
-    if 'referentiels_raw' not in DATA_CONTEXT:
+    if "referentiels_raw" not in DATA_CONTEXT:
         logger.warning("   ⚠️ Referentiels data not available.")
         return []
 
-    df = DATA_CONTEXT['referentiels_raw']
+    df = DATA_CONTEXT["referentiels_raw"]
     if df.empty:
         return []
 
     # 1. Filter by Domain
-    if domain == 'housing_types':
+    if domain == "housing_types":
         # Synthetic domain for housing choice refinement
-        df = pd.DataFrame([
-            {"code": "appt_all", "label": "Appartement (Tous types)", "key": "housing_types"},
-            {"code": "appt_t1_t2", "label": "Appartement (T1 & T2)", "key": "housing_types"},
-            {"code": "appt_t3_p", "label": "Appartement (T3+)", "key": "housing_types"},
-            {"code": "house_all", "label": "Maison", "key": "housing_types"},
-        ])
+        df = pd.DataFrame(
+            [
+                {
+                    "code": "appt_all",
+                    "label": "Appartement (Tous types)",
+                    "key": "housing_types",
+                },
+                {
+                    "code": "appt_t1_t2",
+                    "label": "Appartement (T1 & T2)",
+                    "key": "housing_types",
+                },
+                {
+                    "code": "appt_t3_p",
+                    "label": "Appartement (T3+)",
+                    "key": "housing_types",
+                },
+                {"code": "house_all", "label": "Maison", "key": "housing_types"},
+            ]
+        )
     elif domain:
-        df = df[df['key'] == domain]
+        df = df[df["key"] == domain]
     else:
         logger.error("   ⚠️ No domain specified.")
-    
+
     # 2. Robust Search Logic
     STOP_WORDS = {
-        "le", "la", "les", "l", "d", "de", "du", "des", 
-        "un", "une", "et", "ou", "au", "aux", "en", 
-        "par", "pour", "sur", "dans", "a", "à"
+        "le",
+        "la",
+        "les",
+        "l",
+        "d",
+        "de",
+        "du",
+        "des",
+        "un",
+        "une",
+        "et",
+        "ou",
+        "au",
+        "aux",
+        "en",
+        "par",
+        "pour",
+        "sur",
+        "dans",
+        "a",
+        "à",
     }
-    
+
     query_norm = normalize_text(query)
     # Filter early to avoid processing huge DF? No, we scan all
-    if 'label' not in df.columns:
+    if "label" not in df.columns:
         return []
 
     # Prepare DataFrame for scoring
     work_df = df.copy()
-    work_df['label_norm'] = work_df['label'].apply(normalize_text)
-    work_df['code_norm'] = work_df['code'].apply(normalize_text)
-    
+    work_df["label_norm"] = work_df["label"].apply(normalize_text)
+    work_df["code_norm"] = work_df["code"].apply(normalize_text)
+
     query_tokens = set(query_norm.split())
-    
-    weights = {'exact': 100, 'token_overlap': 20, 'contains': 20, 'starts_with': 50}
+
+    weights = {"exact": 100, "token_overlap": 20, "contains": 20, "starts_with": 50}
 
     def calculate_relevance(row):
         score = calculate_fuzzy_match_score(
-            query_norm, 
-            row['label_norm'], 
-            query_tokens, 
-            set(row['label_norm'].split()), 
+            query_norm,
+            row["label_norm"],
+            query_tokens,
+            set(row["label_norm"].split()),
             STOP_WORDS,
-            weights
+            weights,
         )
         # Match in Code (Specific)
-        if query_norm in row['code_norm']:
+        if query_norm in row["code_norm"]:
             score += 50
-        
+
         return score
 
     # 1. Calculate relevance score - ensure scalar float
@@ -164,24 +205,21 @@ def _search_referentiels_logic(query: str, domain: str) -> List[Dict[str, Any]]:
         except:
             return 0.0
 
-    work_df['score'] = work_df.apply(_safe_score, axis=1)
-    
+    work_df["score"] = work_df.apply(_safe_score, axis=1)
+
     # 2. Sort by relevance score descending
-    results_df = work_df[work_df['score'] > 0].sort_values(by='score', ascending=False)
-    
+    results_df = work_df[work_df["score"] > 0].sort_values(by="score", ascending=False)
+
     # 3. Format Output
-    results_df = results_df.head(5) # Returns the top 5
+    results_df = results_df.head(5)  # Returns the top 5
     results = []
     for _, row in results_df.iterrows():
-        results.append({
-            "code": row['code'],
-            "label": row['label']
-        })
-        
+        results.append({"code": row["code"], "label": row["label"]})
+
     if results:
-         top_summary = [f"{r['label']}" for r in results[:3]]
-        #  logger.info(f"   Top matches: {top_summary}")
-    
+        top_summary = [f"{r['label']}" for r in results[:3]]
+    #  logger.info(f"   Top matches: {top_summary}")
+
     # print(f"✅ [MCP] Response: Found {len(results)} matches.")
     # print(results)
 
@@ -192,11 +230,11 @@ def _search_referentiels_logic(query: str, domain: str) -> List[Dict[str, Any]]:
 def search_referentiels(query: str, domain: Optional[str] = None) -> Dict[str, Any]:
     """
     Recherche des codes officiels (Communes, Formations, ROME, Services d'inclusion, WALDEC, etc.) dans les référentiels.
-    
+
     Args:
         query (str): Mot clé de recherche.
         domain (str): Domaine de recherche possibles:['formation_codes', 'inclusion_services', 'waldec_codes', 'rome_codes', 'regions', 'departements', 'communes'].
-    
+
     Returns:
         List[Dict[str, Any]]: Liste des codes + labels officiels correspondants.
     """
@@ -204,10 +242,21 @@ def search_referentiels(query: str, domain: Optional[str] = None) -> Dict[str, A
     try:
         if not query:
             return {"error": "Missing 'query' parameter."}
-        
-        valid_domains = ['rome_codes', 'formation_codes', 'inclusion_services', 'waldec_codes', 'regions', 'departements', 'communes', 'housing_types']
+
+        valid_domains = [
+            "rome_codes",
+            "formation_codes",
+            "inclusion_services",
+            "waldec_codes",
+            "regions",
+            "departements",
+            "communes",
+            "housing_types",
+        ]
         if domain and domain not in valid_domains:
-            return {"error": f"Invalid domain: {domain}. Must be one of {valid_domains}"}
+            return {
+                "error": f"Invalid domain: {domain}. Must be one of {valid_domains}"
+            }
 
         results = _search_referentiels_logic(query, domain)
         return {"results": results}
@@ -216,7 +265,9 @@ def search_referentiels(query: str, domain: Optional[str] = None) -> Dict[str, A
         return {"error": str(e)}
 
 
-def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) -> Dict[str, Any]:
+def _compute_top_cities_logic(
+    criteria: Union[SearchCriterias, Dict[str, Any]],
+) -> Dict[str, Any]:
     """
     Computes scores for all communes in search area and returns the top 5 cities (communes) based on user criteria.
     Weights are resolved internally based on the weight_profile.
@@ -230,131 +281,162 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
     # 0. Resolve Weights from Profile
     profile_name = criteria_obj.weight_profile or "Équilibré"
     weights = cfg.WEIGHT_PROFILES.get(profile_name, cfg.WEIGHT_PROFILES["Équilibré"])
-    
+
     # User-requested LOUD logging
-    
+
     # filters is the dictionary representation of criteria_obj for internal engine mapping
     filters = criteria_obj.model_dump()
-    
+
     # Robustness: Extract codes if they are enriched objects (dict with 'code')
     def get_code(v):
-        if isinstance(v, dict) and 'code' in v: return v['code']
-        if isinstance(v, list): return [get_code(i) for i in v]
+        if isinstance(v, dict) and "code" in v:
+            return v["code"]
+        if isinstance(v, list):
+            return [get_code(i) for i in v]
         return v
-    
+
     # Normalize filters for the engine
-    for k in ['commune_actuelle', 'codes_metiers', 'codes_formations', 
-              'inc_services_selection', 'inc_asso_add_selection', 'type_logement']:
+    for k in [
+        "commune_actuelle",
+        "codes_metiers",
+        "codes_formations",
+        "inc_services_selection",
+        "inc_asso_add_selection",
+        "type_logement",
+    ]:
         if k in filters:
             filters[k] = get_code(filters[k])
 
     from datetime import datetime
+
     start_logic = datetime.now()
-    logger.debug(f"⚙️  [MCP] Entering _compute_top_cities_logic at {start_logic.strftime('%H:%M:%S.%f')[:-3]}")
+    logger.debug(
+        f"⚙️  [MCP] Entering _compute_top_cities_logic at {start_logic.strftime('%H:%M:%S.%f')[:-3]}"
+    )
 
     engine = get_scoring_engine()
-    
+
     # 1. Resolve Commune
-    commune_input = filters.get('commune_actuelle')
+    commune_input = filters.get("commune_actuelle")
     # Use 'Paris' (75056) as the absolute fallback if input is missing or None
-    resolved_commune = '75056' 
-    
+    resolved_commune = "75056"
+
     if engine and isinstance(commune_input, (str, dict, CriteriaItem)):
-         c_code = get_code(commune_input)
-         if c_code and c_code in engine.df_all_communes.index:
-             resolved_commune = c_code
-         elif isinstance(commune_input, str) and commune_input.strip():
-             matches = engine.df_all_communes[engine.df_all_communes['libgeo'].str.lower() == commune_input.lower()]
-             if not matches.empty:
-                 resolved_commune = str(matches.index[0])
-             else:
-                 logger.warning(f"   ⚠️ City '{commune_input}' not found. Falling back to Paris (75056).")
+        c_code = get_code(commune_input)
+        if c_code and c_code in engine.df_all_communes.index:
+            resolved_commune = c_code
+        elif isinstance(commune_input, str) and commune_input.strip():
+            matches = engine.df_all_communes[
+                engine.df_all_communes["libgeo"].str.lower() == commune_input.lower()
+            ]
+            if not matches.empty:
+                resolved_commune = str(matches.index[0])
+            else:
+                logger.warning(
+                    f"   ⚠️ City '{commune_input}' not found. Falling back to Paris (75056)."
+                )
 
     # 2. Map Inputs (Geography)
-    loc_search_area = filters.get('loc_search_area', 'departement')
-    loc_search_code = filters.get('loc_search_code')
+    loc_search_area = filters.get("loc_search_area", "departement")
+    loc_search_code = filters.get("loc_search_code")
 
     # Resolve consolidated inclusion services selection
-    if 'inc_services_selection' in filters:
-        inc_services = filters.get('inc_services_selection')
+    if "inc_services_selection" in filters:
+        inc_services = filters.get("inc_services_selection")
     else:
         # Reconstruct from legacy filters
-        core_sel = filters.get('inc_services_core_selection', filters.get('codes_inclusion', []))
-        if not core_sel and 'inc_services_add_selection' not in filters and 'besoins_autres' not in filters:
+        core_sel = filters.get(
+            "inc_services_core_selection", filters.get("codes_inclusion", [])
+        )
+        if (
+            not core_sel
+            and "inc_services_add_selection" not in filters
+            and "besoins_autres" not in filters
+        ):
             core_sel = cfg.DEFAULT_INC_SERVICES_CORE
-        add_sel = filters.get('inc_services_add_selection', filters.get('besoins_autres', []))
+        add_sel = filters.get(
+            "inc_services_add_selection", filters.get("besoins_autres", [])
+        )
         inc_services = list(set(core_sel + add_sel))
-    
+
     inc_services = get_code(inc_services)
 
-    nb_adultes = int(filters.get('nb_adultes', 1))
+    nb_adultes = int(filters.get("nb_adultes", 1))
 
     # Helper to pad lists
     def pad_list(l, size):
-        if not isinstance(l, list): return [[]]*size
-        if l and isinstance(l[0], str): return [l] + [[]]*(size-1)
-        if len(l) < size: return l + [[]]*(size-len(l))
+        if not isinstance(l, list):
+            return [[]] * size
+        if l and isinstance(l[0], str):
+            return [l] + [[]] * (size - 1)
+        if len(l) < size:
+            return l + [[]] * (size - len(l))
         return l
-        
-    c_metiers = pad_list(filters.get('codes_metiers', []), nb_adultes)
-    c_formations = pad_list(filters.get('codes_formations', []), nb_adultes)
+
+    c_metiers = pad_list(filters.get("codes_metiers", []), nb_adultes)
+    c_formations = pad_list(filters.get("codes_formations", []), nb_adultes)
 
     def get_weight(key_suffix, default=50):
-        if key_suffix in weights: return int(weights[key_suffix])
-        if f"poids_{key_suffix}" in weights: return int(weights[f"poids_{key_suffix}"])
+        if key_suffix in weights:
+            return int(weights[key_suffix])
+        if f"poids_{key_suffix}" in weights:
+            return int(weights[f"poids_{key_suffix}"])
         return default
 
     config = SearchCriterias(
-        poids_emploi=get_weight('emploi'),
-        poids_logement=get_weight('logement'),
-        poids_education=get_weight('education'),
-        poids_inclusion=get_weight('inclusion'),
-        poids_mobilite=get_weight('mobilité'),
-        poids_sante=get_weight('sante'),
+        poids_emploi=get_weight("emploi"),
+        poids_logement=get_weight("logement"),
+        poids_education=get_weight("education"),
+        poids_inclusion=get_weight("inclusion"),
+        poids_mobilite=get_weight("mobilité"),
+        poids_sante=get_weight("sante"),
         criteria_weights=criteria_obj.criteria_weights,
         weight_profile=profile_name,
         commune_actuelle=resolved_commune,
         loc_search_area=loc_search_area,
         loc_search_code=loc_search_code,
         nb_adultes=nb_adultes,
-        nb_enfants=int(filters.get('nb_enfants', 0)),
-        hebergement_cible=filters.get('hebergement_cible', []),
-        logement=filters.get('logement', 'Location'),
+        nb_enfants=int(filters.get("nb_enfants", 0)),
+        hebergement_cible=filters.get("hebergement_cible", []),
+        logement=filters.get("logement", "Location"),
         codes_metiers=c_metiers,
         codes_formations=c_formations,
-        classe_enfants=filters.get('classe_enfants', []),
-        besoin_sante=filters.get('besoin_sante', 'Aucun'),
-        type_logement=filters.get('type_logement') or "appt_all",
+        classe_enfants=filters.get("classe_enfants", []),
+        besoin_sante=filters.get("besoin_sante", "Aucun"),
+        type_logement=filters.get("type_logement") or "appt_all",
         inc_services_selection=inc_services,
-        inc_asso_add_selection=filters.get('inc_asso_add_selection', [])
+        inc_asso_add_selection=filters.get("inc_asso_add_selection", []),
     )
-    
+
     # 3. Run Engine (Optimized)
     try:
         start_engine = datetime.now()
         # run_optimized returns (model: SearchResultsData, pruned_gdf: GeoDataFrame)
         search_model, processed_gdf = engine.run_optimized(config, log_prefix="chatbot")
         end_engine = datetime.now()
-        logger.debug(f"⏱️  [ENGINE] run_optimized() took {(end_engine - start_engine).total_seconds():.3f}s")
+        logger.debug(
+            f"⏱️  [ENGINE] run_optimized() took {(end_engine - start_engine).total_seconds():.3f}s"
+        )
     except Exception as e:
         logger.error(f"❌ [MCP] Error: {e}")
         return {"error": str(e)}
-    
+
     if not search_model.results:
         logger.info("   [MCP] No results found.")
         return {"cities": [], "criteria_definitions": {}}
-        
+
     # 4. Criteria Definitions
     criteria_definitions: Dict[str, Any] = {}
     if not engine.scores_cat.empty:
         for idx, row in engine.scores_cat.iterrows():
-            score_id = row['score']
-            cat = row['cat']
-            if cat not in criteria_definitions: criteria_definitions[cat] = {}
+            score_id = row["score"]
+            cat = row["cat"]
+            if cat not in criteria_definitions:
+                criteria_definitions[cat] = {}
             criteria_definitions[cat][score_id] = {
-                "label": row.get('label', score_id),
-                "description": row.get('score_affichage', ''),
-                "tooltip": row.get('description', '')
+                "label": row.get("label", score_id),
+                "description": row.get("score_affichage", ""),
+                "tooltip": row.get("description", ""),
             }
 
         # Build results
@@ -371,9 +453,9 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
             "education": city.education.cat_score,
             "sante": city.health.cat_score,
             "inclusion": city.inclusion.cat_score,
-            "mobilite": city.mobility.cat_score
+            "mobilite": city.mobility.cat_score,
         }
-        
+
         # Build detailed_scores
         detailed_scores = {}
         for cat, score_val in cat_scores.items():
@@ -382,67 +464,83 @@ def _compute_top_cities_logic(criteria: Union[SearchCriterias, Dict[str, Any]]) 
                 for item in city.scores[cat]:
                     detailed_scores[cat][item.score_id] = item.score_normalise
 
-        results.append({
-            "codgeo": city.codgeo,
-            "name": city.name,
-            "bassin_de_vie": city.name_bdv,
-            "population": city.population,
-            "score": city.global_score,
-            "detailed_scores": detailed_scores,
-            "details": {
-                "identity": {"name": city.name, "population": city.population, "bassin_de_vie": city.name_bdv},
-                "scores": city.scores,
-                "education": city.education,
-                "employment": {
-                    "top_professions": city.employment.top_professions,
-                    "training_programs": city.employment.training_programs
-                }
+        results.append(
+            {
+                "codgeo": city.codgeo,
+                "name": city.name,
+                "bassin_de_vie": city.name_bdv,
+                "population": city.population,
+                "score": city.global_score,
+                "detailed_scores": detailed_scores,
+                "details": {
+                    "identity": {
+                        "name": city.name,
+                        "population": city.population,
+                        "bassin_de_vie": city.name_bdv,
+                    },
+                    "scores": city.scores,
+                    "education": city.education,
+                    "employment": {
+                        "top_professions": city.employment.top_professions,
+                        "training_programs": city.employment.training_programs,
+                    },
+                },
             }
-        })
-        
+        )
+
     # Explicitly clear the pruned DataFrame reference as we only return the dict
     del processed_gdf
     import gc
+
     gc.collect()
 
     end_logic = datetime.now()
-    logger.debug(f"🏁 [MCP] Exiting _compute_top_cities_logic at {end_logic.strftime('%H:%M:%S.%f')[:-3]} - Full duration: {(end_logic - start_logic).total_seconds():.3f}s")
-    
-    return sanitize_for_json({
-        "cities": results,
-        "criteria_definitions": criteria_definitions,
-        "search_hash": search_model.search_hash,
-        "current_geo": search_model.current_geo
-    })
+    logger.debug(
+        f"🏁 [MCP] Exiting _compute_top_cities_logic at {end_logic.strftime('%H:%M:%S.%f')[:-3]} - Full duration: {(end_logic - start_logic).total_seconds():.3f}s"
+    )
+
+    return sanitize_for_json(
+        {
+            "cities": results,
+            "criteria_definitions": criteria_definitions,
+            "search_hash": search_model.search_hash,
+            "current_geo": search_model.current_geo,
+        }
+    )
+
 
 @mcp.tool()
 def compute_top_cities(criteria: SearchCriterias) -> Dict[str, Any]:
     """
     Computes scores for all communes in search area and returns the top 10 cities (communes) based on user criteria.
-    
+
     Args:
-        criteria: Search criteria including location, weights profile (Famille, Santé, Economique, Équilibré), 
+        criteria: Search criteria including location, weights profile (Famille, Santé, Economique, Équilibré),
                  and specific needs (metiers, formations, etc.).
     """
 
     return _compute_top_cities_logic(criteria)
 
 
-def _call_google_v1(endpoint: str, body: Dict[str, Any], field_mask: str) -> Dict[str, Any]:
+def _call_google_v1(
+    endpoint: str, body: Dict[str, Any], field_mask: str
+) -> Dict[str, Any]:
     """Helper for Google Maps Platform V1 REST calls."""
     gmaps_key = os.environ.get("GOOGLE_MAPS_API_KEY")
     if not gmaps_key:
         return {"error": "Clé Maps manquante."}
-    
+
     headers = {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": gmaps_key,
-        "X-Goog-FieldMask": field_mask
+        "X-Goog-FieldMask": field_mask,
     }
     try:
         response = requests.post(endpoint, json=body, headers=headers)
         if response.status_code != 200:
-            logger.error(f"❌ [REST] Google V1 call failed ({response.status_code}): {response.text}")
+            logger.error(
+                f"❌ [REST] Google V1 call failed ({response.status_code}): {response.text}"
+            )
         response.raise_for_status()
         return response.json()
     except Exception as e:
@@ -456,45 +554,52 @@ async def _search_places_logic(queries: List[str], location: str) -> Dict[str, A
         # Google Places V1 - Text Search (New)
         endpoint = "https://places.googleapis.com/v1/places:searchText"
         field_mask = "places.displayName,places.types,places.editorialSummary,places.formattedAddress,places.id"
-        
-        logger.info(f"🚀 [MCP] search_places parallel start: {len(queries)} queries for {location}")
-        
+
+        logger.info(
+            f"🚀 [MCP] search_places parallel start: {len(queries)} queries for {location}"
+        )
+
         async def _single_place_search(q: str):
             body = {
                 "textQuery": f"{q} near {location}, France",
                 "languageCode": "fr",
-                "maxResultCount": 5
+                "maxResultCount": 5,
             }
             # REST call -> wrap in to_thread
             return await asyncio.to_thread(_call_google_v1, endpoint, body, field_mask)
 
-        tasks = [_single_place_search(q) for q in queries[:20]] # Reasonable limit
+        tasks = [_single_place_search(q) for q in queries[:20]]  # Reasonable limit
         batch_responses = await asyncio.gather(*tasks)
-        
+
         all_places = []
         for res in batch_responses:
             if "error" in res:
                 # Log but continue with other results
                 logger.warning(f"  ⚠️ Place search sub-query failed: {res['error']}")
                 continue
-            
-            places = res.get('places', [])
+
+            places = res.get("places", [])
             for p in places:
                 name = p.get("displayName", {}).get("text")
                 summary = p.get("editorialSummary", {}).get("text")
-                all_places.append({
-                    "name": name,
-                    "description": summary,
-                    "types": p.get("types"),
-                    "address": p.get("formattedAddress"),
-                    "place_id": p.get("id")
-                })
-            
-        logger.info(f"✅ [MCP] search_places (V1) finished. Total results: {len(all_places)}")
+                all_places.append(
+                    {
+                        "name": name,
+                        "description": summary,
+                        "types": p.get("types"),
+                        "address": p.get("formattedAddress"),
+                        "place_id": p.get("id"),
+                    }
+                )
+
+        logger.info(
+            f"✅ [MCP] search_places (V1) finished. Total results: {len(all_places)}"
+        )
         return sanitize_for_json({"type": "places", "data": all_places})
     except Exception as e:
         logger.error(f"❌ [MCP] search_places failed: {e}")
         return {"error": str(e)}
+
 
 @mcp.tool()
 async def search_places(queries: List[str], location: str) -> Dict[str, Any]:
@@ -504,7 +609,9 @@ async def search_places(queries: List[str], location: str) -> Dict[str, Any]:
     """
     try:
         if not queries or not location:
-            return {"error": "Both 'queries' (list) and 'location' (string) must be provided."}
+            return {
+                "error": "Both 'queries' (list) and 'location' (string) must be provided."
+            }
         return await _search_places_logic(queries, location)
     except Exception as e:
         logger.exception(f"❌ [MCP] search_places failed: {e}")
@@ -517,150 +624,178 @@ def _search_refugee_associations_logic(codgeo: str) -> List[Dict[str, Any]]:
     Accepts INSEE code.
     """
     ensure_data_context()
-    if 'refugee_associations_data' not in DATA_CONTEXT or DATA_CONTEXT['refugee_associations_data'].empty:
-        logger.warning(f"⚠️ [MCP] refugee_associations_data not available or empty in DATA_CONTEXT.")
+    if (
+        "refugee_associations_data" not in DATA_CONTEXT
+        or DATA_CONTEXT["refugee_associations_data"].empty
+    ):
+        logger.warning(
+            "⚠️ [MCP] refugee_associations_data not available or empty in DATA_CONTEXT."
+        )
         return []
-    
-    df = DATA_CONTEXT['refugee_associations_data']
-    odis = DATA_CONTEXT['odis']
-    
+
+    df = DATA_CONTEXT["refugee_associations_data"]
+    odis = DATA_CONTEXT["odis"]
 
     # 2. Filter by Bassin de Vie (Requirement F-26)
     # Get the BV for the target commune
     mask = pd.Series(False, index=df.index)
     if codgeo in odis.index:
-        bv = odis.loc[codgeo, 'bassin_de_vie']
+        bv = odis.loc[codgeo, "bassin_de_vie"]
         if pd.notna(bv):
-             bv_str = str(bv).replace('.0', '')
-             # Return all associations in the same Bassin de Vie
-             # Robust comparison: handle potential float/string mixture in df
-             mask = (df['bassin_de_vie'].astype(str).str.replace(r'\.0$', '', regex=True) == bv_str)
+            bv_str = str(bv).replace(".0", "")
+            # Return all associations in the same Bassin de Vie
+            # Robust comparison: handle potential float/string mixture in df
+            mask = (
+                df["bassin_de_vie"].astype(str).str.replace(r"\.0$", "", regex=True)
+                == bv_str
+            )
         else:
-             # Fallback to city-only if BV is unknown
-             mask = (df['codgeo'].astype(str) == str(codgeo))
+            # Fallback to city-only if BV is unknown
+            mask = df["codgeo"].astype(str) == str(codgeo)
     else:
         # Last fallback: direct match on code in the vertical table
-        mask = (df['codgeo'].astype(str) == str(codgeo))
-    
+        mask = df["codgeo"].astype(str) == str(codgeo)
+
     results = df[mask].copy()
-    
+
     if results.empty:
         return []
-    
+
     # Format for agent
-    return results.to_dict(orient='records')
+    return results.to_dict(orient="records")
+
 
 @mcp.tool()
-def search_refugee_associations(codgeo: str) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+def search_refugee_associations(
+    codgeo: str,
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """
     Recherche les associations spécialisées dans l'accueil des réfugiés (RNA).
     L'outil identifie le Bassin de Vie de la commune et retourne TOUTES les associations de cette zone.
-    
+
     Args:
         codgeo: Code INSEE de la commune (ex: '33063').
     """
     try:
         if not codgeo or not (isinstance(codgeo, str) and len(codgeo) == 5):
-            return {"error": f"Invalid INSEE code (codgeo): {codgeo}. Must be 5 characters."}
+            return {
+                "error": f"Invalid INSEE code (codgeo): {codgeo}. Must be 5 characters."
+            }
         return _search_refugee_associations_logic(codgeo)
     except Exception as e:
         logger.exception(f"❌ [MCP] search_refugee_associations failed: {e}")
         return {"error": str(e)}
 
 
-
-
-def _compute_routes_logic(origin: str, destination: str, mode: str = "transit") -> Dict[str, Any]:
+def _compute_routes_logic(
+    origin: str, destination: str, mode: str = "transit"
+) -> Dict[str, Any]:
     ensure_data_context()
     try:
-         # Routes V1 mapping
-         mode_map = {
-             "transit": "TRANSIT",
-             "walking": "WALK",
-             "driving": "DRIVE",
-             "bicycling": "BICYCLE"
-         }
-         v1_mode = mode_map.get(mode.lower(), "TRANSIT")
-         
-         endpoint = "https://routes.googleapis.com/directions/v2:computeRoutes"
-         # Field mask: geocodingResults for addresses, routes for the rest.
-         field_mask = "routes.distanceMeters,routes.duration,routes.legs.steps.distanceMeters,routes.legs.steps.staticDuration,routes.legs.steps.transitDetails,routes.legs.steps.navigationInstruction,geocodingResults"
+        # Routes V1 mapping
+        mode_map = {
+            "transit": "TRANSIT",
+            "walking": "WALK",
+            "driving": "DRIVE",
+            "bicycling": "BICYCLE",
+        }
+        v1_mode = mode_map.get(mode.lower(), "TRANSIT")
 
-         def prune_v1_routes(data):
-             if not data.get('routes'): return None
-             route = data['routes'][0]
-             leg = route['legs'][0]
-             
-             transit_summary = []
-             steps_summary = []
-             
-             # Resolve addresses from geocodingResults if available
-             geo = data.get('geocodingResults', {})
-             origin_addr = geo.get('origin', {}).get('formattedAddress')
-             dest_addr = geo.get('destination', {}).get('formattedAddress')
-             
-             for s in leg.get('steps', []):
-                 # V1 durations are strings like "120s"
-                 def parse_dur(d): return f"{int(d.replace('s', '')) // 60} min" if d else "0 min"
-                 
-                 step_info = {
-                     "distance": f"{s.get('distanceMeters', 0)} m",
-                     "duration": parse_dur(s.get('staticDuration')),
-                     "instruction": s.get('navigationInstruction', {}).get('instructions')
-                 }
-                 
-                 td = s.get('transitDetails')
-                 if td:
-                     step_info["mode"] = "TRANSIT"
-                     line_info = td.get('transitLine', {})
-                     line_name = line_info.get('nameShort') or line_info.get('name')
-                     vehicle_name = line_info.get('vehicle', {}).get('name', {}).get('text', 'Transit')
-                     step_info["details"] = f"{vehicle_name} {line_name}"
-                     if line_name: transit_summary.append(line_name)
-                 else:
-                     step_info["mode"] = "WALK"
-                 
-                 steps_summary.append(step_info)
-             
-             # Main duration parsing
-             total_dur_s = int(route.get('duration', '0s').replace('s', ''))
-             total_dur_min = total_dur_s // 60
-             
-             return {
-                 "origin": origin_addr,
-                 "destination": dest_addr,
-                 "distance": f"{route.get('distanceMeters', 0) / 1000:.1f} km",
-                 "duration": f"{total_dur_min} min",
-                 "transit_summary": ", ".join(transit_summary) if transit_summary else None,
-                 "steps": steps_summary
-             }
+        endpoint = "https://routes.googleapis.com/directions/v2:computeRoutes"
+        # Field mask: geocodingResults for addresses, routes for the rest.
+        field_mask = "routes.distanceMeters,routes.duration,routes.legs.steps.distanceMeters,routes.legs.steps.staticDuration,routes.legs.steps.transitDetails,routes.legs.steps.navigationInstruction,geocodingResults"
 
-         body: Dict[str, Any] = {
-             "origin": {"address": origin},
-             "destination": {"address": destination},
-             "travelMode": v1_mode,
-             "computeAlternativeRoutes": False,
-             "languageCode": "fr",
-             "units": "METRIC"
-         }
+        def prune_v1_routes(data):
+            if not data.get("routes"):
+                return None
+            route = data["routes"][0]
+            leg = route["legs"][0]
 
-         # Attempt 1
-         res = _call_google_v1(endpoint, body, field_mask)
-         if "routes" in res:
-             return sanitize_for_json({"type": "directions", "data": prune_v1_routes(res)})
-         
-         # Attempt 2: Heuristic fallback for generic origins
-         if len(origin) < 15 and "," not in origin:
-             body["origin"]["address"] = f"{origin} near {destination}"
-             res = _call_google_v1(endpoint, body, field_mask)
-             if "routes" in res:
-                 return sanitize_for_json({"type": "directions", "data": prune_v1_routes(res)})
+            transit_summary = []
+            steps_summary = []
 
-         return {"error": "Aucun itinéraire trouvé (V1)."}
+            # Resolve addresses from geocodingResults if available
+            geo = data.get("geocodingResults", {})
+            origin_addr = geo.get("origin", {}).get("formattedAddress")
+            dest_addr = geo.get("destination", {}).get("formattedAddress")
+
+            for s in leg.get("steps", []):
+                # V1 durations are strings like "120s"
+                def parse_dur(d):
+                    return f"{int(d.replace('s', '')) // 60} min" if d else "0 min"
+
+                step_info = {
+                    "distance": f"{s.get('distanceMeters', 0)} m",
+                    "duration": parse_dur(s.get("staticDuration")),
+                    "instruction": s.get("navigationInstruction", {}).get(
+                        "instructions"
+                    ),
+                }
+
+                td = s.get("transitDetails")
+                if td:
+                    step_info["mode"] = "TRANSIT"
+                    line_info = td.get("transitLine", {})
+                    line_name = line_info.get("nameShort") or line_info.get("name")
+                    vehicle_name = (
+                        line_info.get("vehicle", {})
+                        .get("name", {})
+                        .get("text", "Transit")
+                    )
+                    step_info["details"] = f"{vehicle_name} {line_name}"
+                    if line_name:
+                        transit_summary.append(line_name)
+                else:
+                    step_info["mode"] = "WALK"
+
+                steps_summary.append(step_info)
+
+            # Main duration parsing
+            total_dur_s = int(route.get("duration", "0s").replace("s", ""))
+            total_dur_min = total_dur_s // 60
+
+            return {
+                "origin": origin_addr,
+                "destination": dest_addr,
+                "distance": f"{route.get('distanceMeters', 0) / 1000:.1f} km",
+                "duration": f"{total_dur_min} min",
+                "transit_summary": ", ".join(transit_summary)
+                if transit_summary
+                else None,
+                "steps": steps_summary,
+            }
+
+        body: Dict[str, Any] = {
+            "origin": {"address": origin},
+            "destination": {"address": destination},
+            "travelMode": v1_mode,
+            "computeAlternativeRoutes": False,
+            "languageCode": "fr",
+            "units": "METRIC",
+        }
+
+        # Attempt 1
+        res = _call_google_v1(endpoint, body, field_mask)
+        if "routes" in res:
+            return sanitize_for_json(
+                {"type": "directions", "data": prune_v1_routes(res)}
+            )
+
+        # Attempt 2: Heuristic fallback for generic origins
+        if len(origin) < 15 and "," not in origin:
+            body["origin"]["address"] = f"{origin} near {destination}"
+            res = _call_google_v1(endpoint, body, field_mask)
+            if "routes" in res:
+                return sanitize_for_json(
+                    {"type": "directions", "data": prune_v1_routes(res)}
+                )
+
+        return {"error": "Aucun itinéraire trouvé (V1)."}
 
     except Exception as e:
-         logger.error(f"❌ [MCP] compute_routes (V1) failed: {e}")
-         return {"error": str(e)}
+        logger.error(f"❌ [MCP] compute_routes (V1) failed: {e}")
+        return {"error": str(e)}
+
 
 def _search_ccas_logic(codgeo: str) -> List[Dict[str, Any]]:
     """
@@ -668,89 +803,107 @@ def _search_ccas_logic(codgeo: str) -> List[Dict[str, Any]]:
     Accepts INSEE code, falls back to Bassin de Vie if no local CCAS.
     """
     ensure_data_context()
-    if 'structures_ccas' not in DATA_CONTEXT or DATA_CONTEXT['structures_ccas'].empty:
-        logger.warning(f"⚠️ [MCP] structures_ccas not available or empty in DATA_CONTEXT.")
+    if "structures_ccas" not in DATA_CONTEXT or DATA_CONTEXT["structures_ccas"].empty:
+        logger.warning(
+            "⚠️ [MCP] structures_ccas not available or empty in DATA_CONTEXT."
+        )
         return []
-    
-    df = DATA_CONTEXT['structures_ccas']
-    odis = DATA_CONTEXT['odis']
-    
+
+    df = DATA_CONTEXT["structures_ccas"]
+    odis = DATA_CONTEXT["odis"]
+
     # 1. Direct match on Commune
-    mask = (df['codgeo'].astype(str) == str(codgeo))
+    mask = df["codgeo"].astype(str) == str(codgeo)
     results = df[mask].copy()
-    
+
     # 2. Fallback to Bassin de Vie (Requirement F-26)
     if results.empty and codgeo in odis.index:
-        bv = odis.loc[codgeo, 'bassin_de_vie']
+        bv = odis.loc[codgeo, "bassin_de_vie"]
         if pd.notna(bv):
-             bv_str = str(bv).replace('.0', '')
-             # Get all communes in the same BV
-             bv_communes = odis[odis['bassin_de_vie'] == bv].index
-             mask = (df['codgeo'].isin(bv_communes))
-             results = df[mask].copy()
-    
-    return results.to_dict(orient='records')
+            bv_str = str(bv).replace(".0", "")
+            # Get all communes in the same BV
+            bv_communes = odis[odis["bassin_de_vie"] == bv].index
+            mask = df["codgeo"].isin(bv_communes)
+            results = df[mask].copy()
+
+    return results.to_dict(orient="records")
+
 
 @mcp.tool()
 def search_ccas(codgeo: str) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """
     Recherche les informations du CCAS (Centre Communal d'Action Sociale) pour une commune.
     Si aucun CCAS n'est trouvé dans la commune, l'outil retourne les CCAS du Bassin de Vie.
-    
+
     Args:
         codgeo: Code INSEE de la commune (ex: '33063').
     """
     try:
         if not codgeo or not (isinstance(codgeo, str) and len(codgeo) == 5):
-            return {"error": f"Invalid INSEE code (codgeo): {codgeo}. Must be 5 characters."}
+            return {
+                "error": f"Invalid INSEE code (codgeo): {codgeo}. Must be 5 characters."
+            }
         return _search_ccas_logic(codgeo)
     except Exception as e:
         logger.exception(f"❌ [MCP] search_ccas failed: {e}")
         return {"error": str(e)}
 
+
 @mcp.tool()
-def compute_routes(origin: str, destination: str, mode: str = "transit") -> Dict[str, Any]:
+def compute_routes(
+    origin: str, destination: str, mode: str = "transit"
+) -> Dict[str, Any]:
     """
     Calcule des itinéraires et temps de trajet entre deux points.
     Si un lieu est vague (ex: 'Préfecture'), précise la ville si possible.
     """
     try:
         if not origin or not destination:
-             return {"error": "Both 'origin' and 'destination' must be provided."}
+            return {"error": "Both 'origin' and 'destination' must be provided."}
         return _compute_routes_logic(origin, destination, mode)
     except Exception as e:
         logger.exception(f"❌ [MCP] compute_routes failed: {e}")
         return {"error": str(e)}
 
-def _search_rna_rag_logic(query: str, codgeo: str, top_k: int = 10) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+
+def _search_rna_rag_logic(
+    query: str, codgeo: str, top_k: int = 10
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """
     Internal logic for looking up associations via RAG.
     Resolves the Bassin de Vie code for the given commune to perform a broader search.
     """
     if not rna_rag_service:
-        return {"error": "RNARagService not initialized. Check BigQuery authentication."}
-    
+        return {
+            "error": "RNARagService not initialized. Check BigQuery authentication."
+        }
+
     ensure_data_context()
     bv_code = None
-    odis = DATA_CONTEXT.get('odis')
-    
+    odis = DATA_CONTEXT.get("odis")
+
     if odis is not None and codgeo in odis.index:
-        bv = odis.loc[codgeo, 'bassin_de_vie']
+        bv = odis.loc[codgeo, "bassin_de_vie"]
         if not pd.isna(bv):
-            bv_code = str(bv).replace('.0', '')
-    
+            bv_code = str(bv).replace(".0", "")
+
     try:
-        return rna_rag_service.get_associations_semantic(query, codgeos=[codgeo], bv_code=bv_code, top_k=top_k)
+        return rna_rag_service.get_associations_semantic(
+            query, codgeos=[codgeo], bv_code=bv_code, top_k=top_k
+        )
     except Exception as e:
         logger.exception(f"❌ [MCP] _search_rna_rag_logic failed: {e}")
         return {"error": str(e)}
 
+
 @mcp.tool()
-def search_rna_rag(query: str, codgeo: str, top_k: int = 10) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+def search_rna_rag(
+    query: str, codgeo: str, top_k: int = 10
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """
     Recherche sémantique d'associations dans une commune spécifique (RAG).
     Retourne les associations les plus pertinentes (score > 0.8) triées par pertinence.
-    
+
     Args:
         query: Terme de recherche (ex: 'football', 'hébergement d'urgence').
         codgeo: Code INSEE de la commune (5 chiffres).
@@ -758,35 +911,40 @@ def search_rna_rag(query: str, codgeo: str, top_k: int = 10) -> Union[List[Dict[
     """
     return _search_rna_rag_logic(query, codgeo, top_k=top_k)
 
+
 @mcp.tool()
 def search_inclusion_jobs_batch(queries: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Recherche d'offres SIAE (Insertion par l'Activité Économique) en mode Batch.
-    
+
     Args:
         queries: Liste de dictionnaires {'location': '...', 'rome': '...', 'query': '...'}
     """
     results = {}
     for q in queries:
-        loc = q.get('location')
-        rome = q.get('rome')
-        query_text = q.get('query')
+        loc = q.get("location")
+        rome = q.get("rome")
+        query_text = q.get("query")
         key = f"{rome or ''}|{loc or ''}|{query_text or ''}"
         try:
-            results[key] = _search_inclusion_jobs_logic(location=loc, rome=rome, query=query_text)
+            results[key] = _search_inclusion_jobs_logic(
+                location=loc, rome=rome, query=query_text
+            )
         except Exception as e:
             results[key] = {"error": str(e), "offres": [], "total": 0}
     return results
+
 
 @mcp.tool()
 def get_inclusion_job_details(siae_id: str) -> Dict[str, Any]:
     """
     Récupère les détails d'une structure SIAE et ses offres.
-    
+
     Args:
         siae_id: L'identifiant (SIRET ou ID interne) de la structure.
     """
     return _get_inclusion_job_details_logic(siae_id)
+
 
 if __name__ == "__main__":
     mcp.run()

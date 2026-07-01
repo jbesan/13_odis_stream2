@@ -1,9 +1,9 @@
 import os
-import pytest
 from unittest.mock import patch, MagicMock
-from app.config import is_ai_free_mode, ORGANIZATION_PROFILES
+from app.config import is_ai_free_mode
 from app.core.postscoring import generate_static_pitch, _curate_jobs_with_agent
-from app.core.models import CommuneResult, CommuneScoreDetail, Org
+from app.core.models import CommuneScoreDetail, Org
+
 
 def test_is_ai_free_mode_env():
     # 1. Test when env variable is not set
@@ -22,6 +22,7 @@ def test_is_ai_free_mode_env():
     with patch.dict(os.environ, {"ODIS_AI_FREE_MODE": "False"}):
         assert not is_ai_free_mode()
 
+
 @patch("streamlit.session_state")
 def test_is_ai_free_mode_org(mock_session_state):
     # Mock session state returns the Org Pydantic object
@@ -32,12 +33,15 @@ def test_is_ai_free_mode_org(mock_session_state):
         zone_type="departement",
         default_zones=["33"],
         defaults={},
-        ai_free_mode=True
+        ai_free_mode=True,
     )
-    mock_session_state.get.side_effect = lambda key, default=None: test_org if key == "org" else default
-    
+    mock_session_state.get.side_effect = lambda key, default=None: (
+        test_org if key == "org" else default
+    )
+
     with patch.dict(os.environ, {}, clear=True):
         assert is_ai_free_mode()
+
 
 def test_generate_static_pitch():
     # Create mock score details
@@ -48,7 +52,7 @@ def test_generate_static_pitch():
         score_normalise=0.8,
         unit="mois",
         relative_weight=15.0,
-        strong_point_text="Délai d'attente pour un logement social réduit"
+        strong_point_text="Délai d'attente pour un logement social réduit",
     )
     detail_2 = CommuneScoreDetail(
         label="Crèches",
@@ -57,7 +61,7 @@ def test_generate_static_pitch():
         score_normalise=0.9,
         unit="places",
         relative_weight=20.0,
-        strong_point_text="Bonne couverture en crèches et assistantes maternelles"
+        strong_point_text="Bonne couverture en crèches et assistantes maternelles",
     )
     detail_3 = CommuneScoreDetail(
         label="Emplois en tension",
@@ -66,7 +70,7 @@ def test_generate_static_pitch():
         score_normalise=0.4,
         unit="offres",
         relative_weight=30.0,
-        strong_point_text="Recrutements difficiles pour l'adulte 1 (Fort besoin de main d'oeuvre)"
+        strong_point_text="Recrutements difficiles pour l'adulte 1 (Fort besoin de main d'oeuvre)",
     )
     detail_4 = CommuneScoreDetail(
         label="Gare SNCF",
@@ -75,7 +79,7 @@ def test_generate_static_pitch():
         score_normalise=1.0,
         unit="",
         relative_weight=5.0,
-        strong_point_text="Présence d'une gare ferroviaire dans la commune"
+        strong_point_text="Présence d'une gare ferroviaire dans la commune",
     )
 
     # Calculate contributions:
@@ -90,27 +94,32 @@ def test_generate_static_pitch():
         "logement": [detail_1],
         "education": [detail_2],
         "emploi": [detail_3],
-        "mobilite": [detail_4]
+        "mobilite": [detail_4],
     }
-    
+
     pitch = generate_static_pitch(mock_commune)
-    
+
     assert "**Points forts du territoire :**" in pitch
-    assert "- **Bonne couverture en crèches et assistantes maternelles** : 25 places" in pitch
+    assert (
+        "- **Bonne couverture en crèches et assistantes maternelles** : 25 places"
+        in pitch
+    )
     assert "- **Délai d'attente pour un logement social réduit** : 10 mois" in pitch
-    assert "- **Recrutements difficiles pour l'adulte 1 (Fort besoin de main d'oeuvre)** : 100 offres" in pitch
-    assert "Gare SNCF" not in pitch # Since it contributes 5.0, not in top 3
+    assert (
+        "- **Recrutements difficiles pour l'adulte 1 (Fort besoin de main d'oeuvre)** : 100 offres"
+        in pitch
+    )
+    assert "Gare SNCF" not in pitch  # Since it contributes 5.0, not in top 3
+
 
 def test_curate_jobs_fallback():
     # Construct list of 15 mock jobs
     mock_jobs = [{"id": f"job_{i}", "title": f"Job {i}"} for i in range(15)]
-    
+
     # Enable AI-free mode via env variable
     with patch.dict(os.environ, {"ODIS_AI_FREE_MODE": "True"}):
         curated = _curate_jobs_with_agent(
-            jobs=mock_jobs,
-            profile_brief="test candidate",
-            notes_qualitatives=[]
+            jobs=mock_jobs, profile_brief="test candidate", notes_qualitatives=[]
         )
         # Should directly return top 10 raw jobs without calling LLM agent
         assert len(curated) == 10

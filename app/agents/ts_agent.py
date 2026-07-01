@@ -1,43 +1,46 @@
 import logging
-from typing import List, Dict, Any, Optional, Literal
+from typing import List, Optional, Literal
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
-from .state import GraphState, ODISDeps, ODISContextBuilder
+from .state import ODISDeps, ODISContextBuilder
 from .agent_config import get_model, get_model_settings, get_swarm_boilerplate
 
 logger = logging.getLogger("ts_agent")
 
+
 class ExpertTask(BaseModel):
     expert: Literal[
-        'job_hunter', 
-        'housing_expert', 
-        'mobility_expert', 
-        'healthcare_expert', 
-        'education_expert', 
-        'social_integration_expert'
+        "job_hunter",
+        "housing_expert",
+        "mobility_expert",
+        "healthcare_expert",
+        "education_expert",
+        "social_integration_expert",
     ] = Field(..., description="L'expert thématique ciblé.")
     task_description: str = Field(
-        ..., 
-        description="Description très spécifique et ciblée de la mission de l'expert pour cette étape. Exemple : 'Recherche les structures CADA de la ville et les associations locales pour une personne réfugiée seule.'"
+        ...,
+        description="Description très spécifique et ciblée de la mission de l'expert pour cette étape. Exemple : 'Recherche les structures CADA de la ville et les associations locales pour une personne réfugiée seule.'",
     )
     skill_cards: List[str] = Field(
-        default_factory=list, 
-        description="Liste des identifiants de Skill Cards à charger pour cette mission (ex: ['basic_housing'])."
+        default_factory=list,
+        description="Liste des identifiants de Skill Cards à charger pour cette mission (ex: ['basic_housing']).",
     )
 
+
 class SwarmPlan(BaseModel):
-    swarm_mode: Literal['full_analysis', 'specific_ask', 'direct_answer'] = Field(
+    swarm_mode: Literal["full_analysis", "specific_ask", "direct_answer"] = Field(
         ...,
-        description="Le mode de fonctionnement du swarm déterminé par le protocole de décision."
+        description="Le mode de fonctionnement du swarm déterminé par le protocole de décision.",
     )
     direct_answer: Optional[str] = Field(
-        None, 
-        description="Si la dernière question de l'utilisateur peut être résolue avec les données existantes. Requis uniquement si swarm_mode est 'direct_answer'. Laisser obligatoirement vide (null/None) sinon."
+        None,
+        description="Si la dernière question de l'utilisateur peut être résolue avec les données existantes. Requis uniquement si swarm_mode est 'direct_answer'. Laisser obligatoirement vide (null/None) sinon.",
     )
     tasks: List[ExpertTask] = Field(
-        default_factory=list, 
-        description="Liste des tâches à exécuter en parallèle par les agents experts. Requis uniquement si swarm_mode est 'full_analysis' ou 'specific_ask'. Laisser vide si swarm_mode est 'direct_answer'."
+        default_factory=list,
+        description="Liste des tâches à exécuter en parallèle par les agents experts. Requis uniquement si swarm_mode est 'full_analysis' ou 'specific_ask'. Laisser vide si swarm_mode est 'direct_answer'.",
     )
+
 
 TS_AGENT_SYSTEM_PROMPT = """
 {SWARM_BOILERPLATE}
@@ -83,31 +86,34 @@ ts_agent = Agent(
     get_model("ts_agent"),
     model_settings=get_model_settings("ts_agent"),
     deps_type=ODISDeps,
-    output_type=SwarmPlan
+    output_type=SwarmPlan,
 )
+
 
 @ts_agent.system_prompt
 async def ts_agent_instructions(ctx: RunContext[ODISDeps]) -> str:
     data_context = ODISContextBuilder.agent_context(ctx.deps.state, "ts_agent")
     boilerplate = get_swarm_boilerplate("coordinator")
-    
+
     from services.knowledge_store import KnowledgeStore
+
     store = KnowledgeStore()
     all_skills = store.get_all_skills()
-    
+
     # Format as a clean markdown table for the LLM
     table_lines = [
         "| ID | Name | Expert (Domain) | Description |",
-        "| :--- | :--- | :--- | :--- |"
+        "| :--- | :--- | :--- | :--- |",
     ]
     for skill in all_skills:
         name = skill.get("name", "")
-        table_lines.append(f"| `{skill['id']}` | {name} | {skill['domain']} | {skill['description']} |")
+        table_lines.append(
+            f"| `{skill['id']}` | {name} | {skill['domain']} | {skill['description']} |"
+        )
     skills_catalog_str = "\n".join(table_lines)
 
     return TS_AGENT_SYSTEM_PROMPT.format(
         SWARM_BOILERPLATE=boilerplate,
         DATA_CONTEXT=data_context,
-        SKILLS_CATALOG=skills_catalog_str
+        SKILLS_CATALOG=skills_catalog_str,
     )
-

@@ -134,17 +134,16 @@ def check_password() -> bool:
     """
     # Detect Cloud Run environment or forced auth flag
     is_cloud_run = os.environ.get("K_SERVICE") is not None
-    force_auth = (
-        os.environ.get("ODIS_FORCE_AUTH", "False").lower()
-        in ("true", "1", "yes")
+    force_auth = os.environ.get("ODIS_FORCE_AUTH", "False").lower() in (
+        "true",
+        "1",
+        "yes",
     )
 
     # 1. Skip if not running on Cloud Run and not forced (Local Dev)
     if not is_cloud_run and not force_auth:
         if "user" not in st.session_state or "org" not in st.session_state:
-            st.session_state["user"] = User(
-                username=LOCAL_DEV_USERNAME, org_id="local"
-            )
+            st.session_state["user"] = User(username=LOCAL_DEV_USERNAME, org_id="local")
             st.session_state["org"] = Org(
                 id="local",
                 name="Local Dev",
@@ -166,13 +165,9 @@ def check_password() -> bool:
     if not st.session_state["password_correct"]:
         # Show username/password login container
         with st.container(width="stretch", horizontal_alignment="center"):
-            with st.container(
-                width=400, border=True, horizontal_alignment="center"
-            ):
+            with st.container(width=400, border=True, horizontal_alignment="center"):
                 st.subheader("Accès ODIS")
-                st.info(
-                    "👋 Bienvenue ! Veuillez vous connecter avec vos identifiants."
-                )
+                st.info("👋 Bienvenue ! Veuillez vous connecter avec vos identifiants.")
 
                 with st.form("login_form"):
                     username = st.text_input(
@@ -184,9 +179,7 @@ def check_password() -> bool:
                         type="password",
                         autocomplete="current-password",
                     )
-                    submit = st.form_submit_button(
-                        "Se connecter", width="stretch"
-                    )
+                    submit = st.form_submit_button("Se connecter", width="stretch")
 
                     if submit:
                         if not username or not password:
@@ -220,9 +213,7 @@ def check_password() -> bool:
     else:
         # Password correct.
         org_name = (
-            st.session_state.get("org").name
-            if st.session_state.get("org")
-            else "Test"
+            st.session_state.get("org").name if st.session_state.get("org") else "Test"
         )
         st.sidebar.warning(
             f"**{org_name}**. \n Vos interactions sont collectées pour améliorer l'outil. Merci d'anonymiser au maximum vos saisies libres."

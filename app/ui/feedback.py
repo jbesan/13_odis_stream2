@@ -10,27 +10,28 @@ logger = logging.getLogger(__name__)
 DATASET_ID = "odis_logs"
 TABLE_ID = "user_feedback"
 
+
 def _submit_to_bq(feedback_type, comment, context=None):
     if not os.getenv("GOOGLE_CLOUD_PROJECT") and not os.getenv("GCP_PROJECT"):
-         logger.warning("No Google Cloud Project found. Skipping BQ feedback insert.")
-         # Return True so the UI doesn't block local dev
-         return True
+        logger.warning("No Google Cloud Project found. Skipping BQ feedback insert.")
+        # Return True so the UI doesn't block local dev
+        return True
     try:
         client = bigquery.Client()
         table_ref = f"{client.project}.{DATASET_ID}.{TABLE_ID}"
         interaction_id = get_interaction_id()
-        username = st.session_state.get('username', 'unknown')
-        
+        username = st.session_state.get("username", "unknown")
+
         row = {
             "interaction_id": interaction_id,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "username": username,
             "feedback_type": feedback_type,
-            "comment": comment
+            "comment": comment,
         }
         if context is not None:
             row["context"] = context
-            
+
         errors = client.insert_rows_json(table_ref, [row])
         if errors:
             logger.error(f"BQ Feedback Insert Error: {errors}")
@@ -40,12 +41,17 @@ def _submit_to_bq(feedback_type, comment, context=None):
         logger.error(f"Failed to submit feedback: {str(e)}")
         return False
 
+
 @st.dialog("💬 Donner mon avis")
 def feedback_dialog():
-    st.write("Merci de nous aider à améliorer l'outil en mode test ! (N'incluez pas de données personnelles).")
-    feedback_type = st.selectbox("Type de retour", ["Bug", "Question", "Suggestion"], key="fb_type")
+    st.write(
+        "Merci de nous aider à améliorer l'outil en mode test ! (N'incluez pas de données personnelles)."
+    )
+    feedback_type = st.selectbox(
+        "Type de retour", ["Bug", "Question", "Suggestion"], key="fb_type"
+    )
     comment = st.text_area("Votre message", height=150, key="fb_comment")
-    
+
     if st.button("Envoyer", type="primary"):
         if not comment.strip():
             st.error("Le message ne peut pas être vide.")
@@ -53,9 +59,12 @@ def feedback_dialog():
             with st.spinner("Envoi..."):
                 success = _submit_to_bq(feedback_type, comment)
             if success:
-                st.success("Merci ! Votre retour a bien été enregistré. Vous pouvez fermer cette fenêtre.")
+                st.success(
+                    "Merci ! Votre retour a bien été enregistré. Vous pouvez fermer cette fenêtre."
+                )
             else:
                 st.error("Erreur lors de l'envoi. Veuillez réessayer plus tard.")
+
 
 def render_feedback_button():
     """Renders the feedback button, usually in the sidebar."""

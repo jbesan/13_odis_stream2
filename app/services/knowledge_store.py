@@ -6,6 +6,7 @@ import config as cfg
 
 logger = logging.getLogger("KnowledgeStore")
 
+
 class KnowledgeStore:
     """
     Service to manage ODIS Skill Cards using Markdown files with YAML frontmatter.
@@ -21,9 +22,11 @@ class KnowledgeStore:
             else:
                 # Default path: app/agents/skills/ relative to the project root
                 skills_dir = os.path.join(cfg.PROJECT_ROOT, "app", "agents", "skills")
-        
+
         self.skills_dir = skills_dir
-        self.db_path = db_path  # Keep for backward compatibility / tests checking store.db_path
+        self.db_path = (
+            db_path  # Keep for backward compatibility / tests checking store.db_path
+        )
         self._init_db()
 
     def _init_db(self):
@@ -53,7 +56,7 @@ class KnowledgeStore:
                 "description": post.get("description", ""),
                 "domain": post.get("domain", ""),
                 "tools": post.get("tools", []),
-                "instructions": post.content.strip()
+                "instructions": post.content.strip(),
             }
         except Exception as e:
             logger.error(f"Error fetching skill card '{skill_id}': {e}")
@@ -93,11 +96,21 @@ class KnowledgeStore:
             logger.error(f"Error fetching all skills: {e}")
             return []
 
-    def insert_or_update_skill(self, skill_id: str, description: str, instructions: str, domain: str, name: Optional[str] = None, version: Optional[str] = None, tags: Optional[List[str]] = None, tools: Optional[List[str]] = None):
+    def insert_or_update_skill(
+        self,
+        skill_id: str,
+        description: str,
+        instructions: str,
+        domain: str,
+        name: Optional[str] = None,
+        version: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        tools: Optional[List[str]] = None,
+    ):
         """Inserts a new Skill Card or updates an existing one as a Markdown file."""
         try:
             file_path = os.path.join(self.skills_dir, f"{skill_id}.md")
-            
+
             # Create a Post object with metadata frontmatter and instructions body
             # If the file already exists, we preserve extra metadata fields like name, version, tags
             existing_metadata = {}
@@ -108,14 +121,14 @@ class KnowledgeStore:
                         existing_metadata = post.metadata
                 except Exception:
                     pass
-            
+
             metadata = {
                 **existing_metadata,
                 "id": skill_id,
                 "description": description,
-                "domain": domain
+                "domain": domain,
             }
-            
+
             if name is not None:
                 metadata["name"] = name
             elif "name" not in metadata:
@@ -137,10 +150,10 @@ class KnowledgeStore:
                 metadata["tools"] = []
 
             post = frontmatter.Post(content=instructions, **metadata)
-            
+
             with open(file_path, "w", encoding="utf-8") as f:
                 frontmatter.dump(post, f)
-                
+
             logger.debug(f"Skill '{skill_id}' stored successfully at {file_path}.")
         except Exception as e:
             logger.error(f"Error inserting/updating skill '{skill_id}': {e}")

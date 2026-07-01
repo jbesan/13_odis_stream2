@@ -1,20 +1,24 @@
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.capabilities import WebSearch
 from pydantic import BaseModel, Field
-from .state import GraphState, ODISDeps, ODISContextBuilder
+from .state import ODISDeps, ODISContextBuilder
 from .agent_config import get_model, get_model_settings, get_swarm_boilerplate
 from .tools import (
-    search_places_batch, 
+    search_places_batch,
     search_rna_rag_batch,
 )
 
 logger = logging.getLogger("healthcare_expert")
 
+
 class HealthcareResult(BaseModel):
     searched: str = Field(..., description="Résumé des outils et termes recherchés.")
-    result: str = Field(..., description="Analyse détaillée des découvertes sur la santé.")
+    result: str = Field(
+        ..., description="Analyse détaillée des découvertes sur la santé."
+    )
+
 
 HEALTHCARE_EXPERT_SYSTEM_PROMPT = """
 {SWARM_BOILERPLATE}
@@ -39,6 +43,7 @@ HEALTHCARE_EXPERT_SYSTEM_PROMPT = """
 4. **Formatage** : Sois hyper concis dans tes réponses.
 """
 
+
 async def search_places_batch_tool(queries: List[str], location: str) -> Dict[str, Any]:
     """Recherche des hôpitaux, centres médicaux ou PMI en mode batch.
     Args:
@@ -48,10 +53,12 @@ async def search_places_batch_tool(queries: List[str], location: str) -> Dict[st
     return await search_places_batch(queries, location)
 
 
-async def search_rna_rag_batch_tool(queries: List[str], codgeo: str, top_k: int = 10) -> List[Dict[str, Any]]:
+async def search_rna_rag_batch_tool(
+    queries: List[str], codgeo: str, top_k: int = 10
+) -> List[Dict[str, Any]]:
     """
     Recherche sémantique d'associations de santé locales (RNA).
-    
+
     Args:
         queries: Liste de termes de recherche.
                  ATTENTION : Ne mets JAMAIS le nom de la ville dans ces requêtes car le filtrage géographique est déjà géré par l'outil via `codgeo`.
@@ -69,23 +76,26 @@ healthcare_expert_agent = Agent(
     deps_type=ODISDeps,
     tools=[search_places_batch_tool, search_rna_rag_batch_tool],
     capabilities=[WebSearch()],
-    output_type=HealthcareResult
+    output_type=HealthcareResult,
 )
+
 
 @healthcare_expert_agent.system_prompt
 async def healthcare_expert_instructions(ctx: RunContext[ODISDeps]) -> str:
     state = ctx.deps.state
     data_context = ODISContextBuilder.agent_context(state, "healthcare_expert")
-    mission = state.expert_tasks.get("healthcare_expert", "Analyse générale de l'accès aux soins et infrastructures médicales.")
-    skill_inst = state.expert_skill_instructions.get("healthcare_expert", "Aucune consigne spécifique de Skill Card active.")
+    mission = state.expert_tasks.get(
+        "healthcare_expert",
+        "Analyse générale de l'accès aux soins et infrastructures médicales.",
+    )
+    skill_inst = state.expert_skill_instructions.get(
+        "healthcare_expert", "Aucune consigne spécifique de Skill Card active."
+    )
     boilerplate = get_swarm_boilerplate("expert")
 
     return HEALTHCARE_EXPERT_SYSTEM_PROMPT.format(
         SWARM_BOILERPLATE=boilerplate,
         DATA_CONTEXT=data_context,
         MISSION=mission,
-        SKILL_INSTRUCTIONS=skill_inst
+        SKILL_INSTRUCTIONS=skill_inst,
     )
-
-
-

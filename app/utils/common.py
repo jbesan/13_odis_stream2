@@ -1,5 +1,5 @@
 import unicodedata
-from typing import Set, Tuple, List, Optional, Any
+from typing import Set, Tuple, Optional, Any
 import pandas as pd
 import numpy as np
 import os
@@ -10,19 +10,22 @@ import config as cfg
 
 logger = logging.getLogger(__name__)
 
+
 def normalize_text(text: str) -> str:
     """
     Normalizes text by removing accents and lowercasing.
     """
     if not isinstance(text, str):
         return str(text)
-    return ''.join(c for c in unicodedata.normalize('NFD', text)
-                   if unicodedata.category(c) != 'Mn').lower()
+    return "".join(
+        c for c in unicodedata.normalize("NFD", text) if unicodedata.category(c) != "Mn"
+    ).lower()
+
 
 def calculate_token_overlap(
-    query_tokens: Set[str], 
+    query_tokens: Set[str],
     target_tokens: Set[str],
-    stop_words: Optional[Set[str]] = None
+    stop_words: Optional[Set[str]] = None,
 ) -> int:
     """
     Calculates the number of overlapping tokens between query and target.
@@ -38,14 +41,13 @@ def calculate_token_overlap(
     return len(q_tokens.intersection(target_tokens))
 
 
-
 def calculate_fuzzy_match_score(
     query_norm: str,
     target_norm: str,
     query_tokens: Set[str],
     target_tokens: Set[str],
     stop_words: Optional[Set[str]] = None,
-    weights: Optional[dict] = None
+    weights: Optional[dict] = None,
 ) -> int:
     """
     Generic fuzzy match scoring helper.
@@ -53,30 +55,31 @@ def calculate_fuzzy_match_score(
     """
     if weights is None:
         weights = {
-            'exact': 100,
-            'starts_with': 50,
-            'contains': 20,
-            'token_overlap': 10,
-            'substring_match': 0
+            "exact": 100,
+            "starts_with": 50,
+            "contains": 20,
+            "token_overlap": 10,
+            "substring_match": 0,
         }
 
     score = 0
-    
+
     # A. Exact Match
     if query_norm == target_norm:
-        score += weights.get('exact', 0)
+        score += weights.get("exact", 0)
     # B. Starts With
     elif target_norm.startswith(query_norm):
-        score += weights.get('starts_with', 0)
+        score += weights.get("starts_with", 0)
     # C. Contains
     elif query_norm in target_norm:
-        score += weights.get('contains', 0)
-        
+        score += weights.get("contains", 0)
+
     # D. Token Overlap
     overlap = calculate_token_overlap(query_tokens, target_tokens, stop_words)
-    score += overlap * weights.get('token_overlap', 0)
-    
+    score += overlap * weights.get("token_overlap", 0)
+
     return score
+
 
 def sanitize_for_json(obj: Any) -> Any:
     """
@@ -100,25 +103,28 @@ def sanitize_for_json(obj: Any) -> Any:
         return obj
     elif isinstance(obj, (np.integer, np.floating)):
         if pd.isna(obj):
-             return None
+            return None
         return obj.item()
-    elif pd.isna(obj): # Catch-all for other NA types
+    elif pd.isna(obj):  # Catch-all for other NA types
         return None
     return obj
+
 
 def get_asset_path(filename: str) -> str:
     """Returns the absolute path to an asset file."""
     return os.path.join(cfg.ASSETS_DIR, filename)
 
+
 def get_base64_image(image_path: str) -> str:
     """Encodes an image to base64 for embedding in Markdown."""
-    if not image_path: return ""
-    
+    if not image_path:
+        return ""
+
     p = Path(image_path)
     if not p.exists():
         logger.warning(f"Image not found: {p}")
         return ""
-    
+
     try:
         with open(p, "rb") as f:
             data = f.read()
@@ -126,9 +132,14 @@ def get_base64_image(image_path: str) -> str:
     except Exception as e:
         logger.error(f"Error encoding image {image_path}: {e}")
         return ""
+
+
 from pyproj import Transformer
 
-def project_point(lon: float, lat: float, from_crs: str = "EPSG:4326", to_crs: str = "EPSG:2154") -> Tuple[float, float]:
+
+def project_point(
+    lon: float, lat: float, from_crs: str = "EPSG:4326", to_crs: str = "EPSG:2154"
+) -> Tuple[float, float]:
     """
     Transforms a single coordinate point using scalars to avoid NumPy 1.25+ DeprecationWarning.
     """

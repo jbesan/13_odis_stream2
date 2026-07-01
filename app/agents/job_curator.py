@@ -1,5 +1,5 @@
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List
 from pydantic_ai import Agent, RunContext
 from pydantic import BaseModel, Field
 from .state import ODISDeps, ODISContextBuilder
@@ -7,21 +7,21 @@ from .agent_config import get_model, get_model_settings, get_swarm_boilerplate
 
 logger = logging.getLogger("job_curator")
 
+
 class CuratedJob(BaseModel):
-    job_id: str = Field(
-        ...,
-        description="L'identifiant unique de l'offre d'emploi."
-    )
+    job_id: str = Field(..., description="L'identifiant unique de l'offre d'emploi.")
     job_brief: str = Field(
         ...,
-        description="Un court résumé en français de deux phrases. Phrase 1: décrit l'offre (employeur, poste, lieu). Phrase 2: explique la pertinence pour le candidat."
+        description="Un court résumé en français de deux phrases. Phrase 1: décrit l'offre (employeur, poste, lieu). Phrase 2: explique la pertinence pour le candidat.",
     )
+
 
 class JobCurationResult(BaseModel):
     selected_jobs: List[CuratedJob] = Field(
         ...,
-        description="Liste des offres d'emploi sélectionnées par ordre de pertinence décroissante (maximum 5)."
+        description="Liste des offres d'emploi sélectionnées par ordre de pertinence décroissante (maximum 5).",
     )
+
 
 JOB_CURATOR_SYSTEM_PROMPT = """
 {SWARM_BOILERPLATE}
@@ -47,8 +47,9 @@ job_curator_agent = Agent(
     get_model("job_curator"),
     model_settings=get_model_settings("job_curator"),
     deps_type=ODISDeps,
-    output_type=JobCurationResult
+    output_type=JobCurationResult,
 )
+
 
 @job_curator_agent.system_prompt
 async def job_curator_instructions(ctx: RunContext[ODISDeps]) -> str:
@@ -57,6 +58,5 @@ async def job_curator_instructions(ctx: RunContext[ODISDeps]) -> str:
     boilerplate = get_swarm_boilerplate("job_curator")
 
     return JOB_CURATOR_SYSTEM_PROMPT.format(
-        SWARM_BOILERPLATE=boilerplate,
-        DATA_CONTEXT=data_context
+        SWARM_BOILERPLATE=boilerplate, DATA_CONTEXT=data_context
     )

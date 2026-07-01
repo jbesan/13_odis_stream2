@@ -1,31 +1,36 @@
 import logging
-import logfire
-import json
-from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import List
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 
-from .state import GraphState, ODISDeps, ODISContextBuilder
+from .state import ODISDeps, ODISContextBuilder
 from .agent_config import get_model, get_model_settings
-from core.models import SearchCriterias
 
 logger = logging.getLogger("refiner_agent")
+
 
 # --- Structured Output ---
 class CityPitch(BaseModel):
     codgeo: str = Field(description="Code INSEE de la commune (5 chiffres)")
     name: str = Field(description="Nom de la commune")
-    pitch: str = Field(description="Résumé explicatif très concis des points forts de la commune pour le projet.")
+    pitch: str = Field(
+        description="Résumé explicatif très concis des points forts de la commune pour le projet."
+    )
+
 
 class RefinerResult(BaseModel):
-    odis_brief: str = Field(description="Synthèse narrative du dossier (Briefing). Décris la personne, sa situation et ses besoins de manière fluide.")
-    global_pitch: str = Field(description="Réponse textuelle globale à afficher dans le chat (introduction des résultats).")
-    pitches_per_city: List[CityPitch] = Field(
-        default_factory=list, 
-        description="Liste des points forts pour chaque commune du Top 5 ainsi que pour la commune pressentie de comparaison (hors Top 5) si elle est présente dans le contexte."
+    odis_brief: str = Field(
+        description="Synthèse narrative du dossier (Briefing). Décris la personne, sa situation et ses besoins de manière fluide."
     )
+    global_pitch: str = Field(
+        description="Réponse textuelle globale à afficher dans le chat (introduction des résultats)."
+    )
+    pitches_per_city: List[CityPitch] = Field(
+        default_factory=list,
+        description="Liste des points forts pour chaque commune du Top 5 ainsi que pour la commune pressentie de comparaison (hors Top 5) si elle est présente dans le contexte.",
+    )
+
 
 # --- System Prompt ---
 REFINER_SYSTEM_PROMPT = """
@@ -52,15 +57,14 @@ refiner_agent = Agent(
     get_model("refiner"),
     model_settings=get_model_settings("refiner"),
     deps_type=ODISDeps,
-    output_type=RefinerResult
+    output_type=RefinerResult,
 )
+
 
 @refiner_agent.system_prompt
 async def refiner_instructions(ctx: RunContext[ODISDeps]) -> str:
     """Builds Refiner agent prompt using ODISContextBuilder."""
     data_context = ODISContextBuilder.agent_context(ctx.deps.state, "refiner")
-    
-    prompt = REFINER_SYSTEM_PROMPT.format(
-        DATA_CONTEXT=data_context
-    )
+
+    prompt = REFINER_SYSTEM_PROMPT.format(DATA_CONTEXT=data_context)
     return prompt

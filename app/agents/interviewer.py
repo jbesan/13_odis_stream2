@@ -1,6 +1,6 @@
 import logging
 import logfire
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, TYPE_CHECKING
 from pydantic import BaseModel, Field, ConfigDict
 from pydantic_ai import Agent, RunContext
 import config as cfg
@@ -8,16 +8,27 @@ from core.models import SearchCriterias
 from .agent_config import get_model, get_model_settings
 from .tools import search_referentiels_batch
 
+if TYPE_CHECKING:
+    from .state import ODISDeps
+
 logger = logging.getLogger("autodetect_agent")
+
 
 class SearchQuery(BaseModel):
     query: str = Field(..., description="Mot clé de recherche")
-    domain: str = Field(..., description="Domaine de recherche possibles:['formation_codes', 'inclusion_services', 'waldec_codes', 'rome_codes', 'regions', 'departements', 'communes', 'housing_types'].")
+    domain: str = Field(
+        ...,
+        description="Domaine de recherche possibles:['formation_codes', 'inclusion_services', 'waldec_codes', 'rome_codes', 'regions', 'departements', 'communes', 'housing_types'].",
+    )
+
 
 class AutoDetectionResult(BaseModel):
-    response: str = Field(..., description="Un résumé court et courtois des éléments identifiés.")
+    response: str = Field(
+        ..., description="Un résumé court et courtois des éléments identifiés."
+    )
     search_criteria: SearchCriterias
     model_config = ConfigDict(populate_by_name=True)
+
 
 # --- Prompt ---
 AUTODETECT_SYSTEM_PROMPT = """
@@ -45,27 +56,31 @@ AUTODETECT_SYSTEM_PROMPT = """
 - Profil de pondération: {WEIGHT_PROFILES}
 """
 
+
 @logfire.instrument
-async def search_referentiels_batch_tool(searches: List[SearchQuery]) -> Dict[str, List[Dict[str, Any]]]:
+async def search_referentiels_batch_tool(
+    searches: List[SearchQuery],
+) -> Dict[str, List[Dict[str, Any]]]:
     """
     Version optimisée pour effectuer plusieurs recherches de référentiels en UN SEUL tour.
     Utilise cet outil si tu as plusieurs informations à normaliser (ex: ville + métier).
-    
+
     Args:
         searches (List[SearchQuery]): Liste d'objets {query, domain}. Domaine de recherche possibles:['formation_codes', 'inclusion_services', 'waldec_codes', 'rome_codes', 'regions', 'departements', 'communes', 'housing_types'].
     """
     return await search_referentiels_batch([s.model_dump() for s in searches])
 
 
-interviewer_agent: Agent['ODISDeps', AutoDetectionResult] = Agent(
+interviewer_agent: Agent["ODISDeps", AutoDetectionResult] = Agent(
     get_model("interviewer"),
     model_settings=get_model_settings("interviewer"),
     tools=[search_referentiels_batch_tool],
-    output_type=AutoDetectionResult
+    output_type=AutoDetectionResult,
 )
 
+
 @interviewer_agent.system_prompt
-async def main_instructions(ctx: RunContext['ODISDeps']) -> str:
+async def main_instructions(ctx: RunContext["ODISDeps"]) -> str:
     prompt = AUTODETECT_SYSTEM_PROMPT.format(
         HEBERGEMENT_OPTIONS=str(cfg.HEBERGEMENT_OPTIONS),
         LOGEMENT_OPTIONS=str(cfg.LOGEMENT_OPTIONS),
@@ -74,11 +89,12 @@ async def main_instructions(ctx: RunContext['ODISDeps']) -> str:
         SANTE_OPTIONS=str(cfg.SANTE_OPTIONS),
         WEIGHT_PROFILES=str(list(cfg.WEIGHT_PROFILES.keys())),
     )
-    
+
     from agents.state import ODISContextBuilder
+
     # Interviewer might be called without full deps in some contexts, but here we expect GraphState in deps
-    if hasattr(ctx, 'deps') and hasattr(ctx.deps, 'state'):
+    if hasattr(ctx, "deps") and hasattr(ctx.deps, "state"):
         context = ODISContextBuilder.agent_context(ctx.deps.state, "interviewer")
         return f"{prompt}\n\n## Critères déjà identifiés\n{context}"
-        
+
     return prompt

@@ -1,9 +1,9 @@
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.capabilities import WebSearch
 from pydantic import BaseModel, Field
-from .state import GraphState, ODISDeps, ODISContextBuilder
+from .state import ODISDeps, ODISContextBuilder
 from .agent_config import get_model, get_model_settings, get_swarm_boilerplate
 from .tools import (
     search_refugee_associations,
@@ -14,9 +14,13 @@ from .tools import (
 
 logger = logging.getLogger("social_integration_expert")
 
+
 class SocialIntegrationResult(BaseModel):
     searched: str = Field(..., description="Résumé des outils et termes recherchés.")
-    result: str = Field(..., description="Analyse détaillée des découvertes sur l'intégration sociale.")
+    result: str = Field(
+        ..., description="Analyse détaillée des découvertes sur l'intégration sociale."
+    )
+
 
 SOCIAL_INTEGRATION_EXPERT_SYSTEM_PROMPT = """
 {SWARM_BOILERPLATE}
@@ -40,15 +44,18 @@ SOCIAL_INTEGRATION_EXPERT_SYSTEM_PROMPT = """
 3. **Formatage** : Sois hyper concis dans tes réponses.
 """
 
+
 def search_refugee_associations_tool(codgeo: str) -> List[Dict[str, Any]]:
     """Recherche les associations dédiées à l'aide aux réfugiés pour une commune."""
     return search_refugee_associations(codgeo)
 
 
-async def search_rna_rag_batch_tool(queries: List[str], codgeo: str, top_k: int = 10) -> List[Dict[str, Any]]:
+async def search_rna_rag_batch_tool(
+    queries: List[str], codgeo: str, top_k: int = 10
+) -> List[Dict[str, Any]]:
     """
     Recherche sémantique d'associations d'inclusion, sport, loisirs ou solidarité locale (RNA).
-    
+
     Args:
         queries: Liste de termes de recherche.
                  ATTENTION : Ne mets JAMAIS le nom de la ville dans ces requêtes car le filtrage géographique est déjà géré par l'outil via `codgeo`.
@@ -82,23 +89,29 @@ social_integration_expert_agent = Agent(
         search_refugee_associations_tool,
         search_rna_rag_batch_tool,
         search_ccas_tool,
-        search_places_batch_tool
+        search_places_batch_tool,
     ],
     capabilities=[WebSearch()],
-    output_type=SocialIntegrationResult
+    output_type=SocialIntegrationResult,
 )
+
 
 @social_integration_expert_agent.system_prompt
 async def social_integration_expert_instructions(ctx: RunContext[ODISDeps]) -> str:
     state = ctx.deps.state
     data_context = ODISContextBuilder.agent_context(state, "social_integration_expert")
-    mission = state.expert_tasks.get("social_integration_expert", "Analyse générale de l'intégration sociale et du tissu associatif.")
-    skill_inst = state.expert_skill_instructions.get("social_integration_expert", "Aucune consigne spécifique de Skill Card active.")
+    mission = state.expert_tasks.get(
+        "social_integration_expert",
+        "Analyse générale de l'intégration sociale et du tissu associatif.",
+    )
+    skill_inst = state.expert_skill_instructions.get(
+        "social_integration_expert", "Aucune consigne spécifique de Skill Card active."
+    )
     boilerplate = get_swarm_boilerplate("expert")
 
     return SOCIAL_INTEGRATION_EXPERT_SYSTEM_PROMPT.format(
         SWARM_BOILERPLATE=boilerplate,
         DATA_CONTEXT=data_context,
         MISSION=mission,
-        SKILL_INSTRUCTIONS=skill_inst
+        SKILL_INSTRUCTIONS=skill_inst,
     )

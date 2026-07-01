@@ -5,10 +5,12 @@ from agents.interviewer import interviewer_agent, AutoDetectionResult
 from agents.state import GraphState, ODISDeps
 from core.models import SearchCriterias
 
+
 @pytest.fixture
 def test_deps():
     state = GraphState()
     return ODISDeps(state=state, client=MagicMock())
+
 
 @pytest.mark.asyncio
 async def test_interviewer_agent_prompt_construction(test_deps):
@@ -16,23 +18,29 @@ async def test_interviewer_agent_prompt_construction(test_deps):
     mock_model = TestModel()
     with interviewer_agent.override(model=mock_model):
         from unittest.mock import AsyncMock
-        with patch('agents.interviewer.search_referentiels_batch', new_callable=AsyncMock) as mock_ref:
+
+        with patch(
+            "agents.interviewer.search_referentiels_batch", new_callable=AsyncMock
+        ) as mock_ref:
             mock_ref.return_value = {}
             # We just need to check if it runs, which triggers prompt construction
             await interviewer_agent.run("Bonjour", deps=test_deps)
+
 
 @pytest.mark.asyncio
 async def test_interviewer_structured_output(test_deps):
     """Verify that the interviewer returns the expected Structured Output."""
     mock_model = TestModel()
-    
+
     with interviewer_agent.override(model=mock_model):
         from unittest.mock import AsyncMock
-        with patch('agents.interviewer.search_referentiels_batch', new_callable=AsyncMock) as mock_ref:
+
+        with patch(
+            "agents.interviewer.search_referentiels_batch", new_callable=AsyncMock
+        ) as mock_ref:
             mock_ref.return_value = {}
             result = await interviewer_agent.run(
-                "Je cherche un job à Paris",
-                deps=test_deps
+                "Je cherche un job à Paris", deps=test_deps
             )
             assert isinstance(result.output, AutoDetectionResult)
             assert result.output.response is not None

@@ -1,20 +1,24 @@
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.capabilities import WebSearch
 from pydantic import BaseModel, Field
-from .state import GraphState, ODISDeps, ODISContextBuilder
+from .state import ODISDeps, ODISContextBuilder
 from .agent_config import get_model, get_model_settings, get_swarm_boilerplate
 from .tools import (
-    search_places_batch, 
+    search_places_batch,
     search_rna_rag_batch,
 )
 
 logger = logging.getLogger("education_expert")
 
+
 class EducationResult(BaseModel):
     searched: str = Field(..., description="Résumé des outils et termes recherchés.")
-    result: str = Field(..., description="Analyse détaillée des découvertes sur l'éducation.")
+    result: str = Field(
+        ..., description="Analyse détaillée des découvertes sur l'éducation."
+    )
+
 
 EDUCATION_EXPERT_SYSTEM_PROMPT = """
 {SWARM_BOILERPLATE}
@@ -41,6 +45,7 @@ EDUCATION_EXPERT_SYSTEM_PROMPT = """
    - `result` : Ton analyse détaillée et factuelle des écoles locales, avec les coordonnées principales des structures et les étapes d'inscription parentale.
 """
 
+
 async def search_places_batch_tool(queries: List[str], location: str) -> Dict[str, Any]:
     """Recherche des crèches, écoles maternelles, primaires, collèges ou lycées en mode batch.
     Args:
@@ -50,10 +55,12 @@ async def search_places_batch_tool(queries: List[str], location: str) -> Dict[st
     return await search_places_batch(queries, location)
 
 
-async def search_rna_rag_batch_tool(queries: List[str], codgeo: str, top_k: int = 10) -> List[Dict[str, Any]]:
+async def search_rna_rag_batch_tool(
+    queries: List[str], codgeo: str, top_k: int = 10
+) -> List[Dict[str, Any]]:
     """
     Recherche sémantique d'associations d'accompagnement scolaire ou de parents d'élèves (RNA).
-    
+
     Args:
         queries: Liste de termes de recherche.
                  ATTENTION : Ne mets JAMAIS le nom de la ville dans ces requêtes car le filtrage géographique est déjà géré par l'outil via `codgeo`.
@@ -71,23 +78,26 @@ education_expert_agent = Agent(
     deps_type=ODISDeps,
     tools=[search_places_batch_tool, search_rna_rag_batch_tool],
     capabilities=[WebSearch()],
-    output_type=EducationResult
+    output_type=EducationResult,
 )
+
 
 @education_expert_agent.system_prompt
 async def education_expert_instructions(ctx: RunContext[ODISDeps]) -> str:
     state = ctx.deps.state
     data_context = ODISContextBuilder.agent_context(state, "education_expert")
-    mission = state.expert_tasks.get("education_expert", "Analyse générale de l'accès à l'éducation et infrastructures scolaires.")
-    skill_inst = state.expert_skill_instructions.get("education_expert", "Aucune consigne spécifique de Skill Card active.")
+    mission = state.expert_tasks.get(
+        "education_expert",
+        "Analyse générale de l'accès à l'éducation et infrastructures scolaires.",
+    )
+    skill_inst = state.expert_skill_instructions.get(
+        "education_expert", "Aucune consigne spécifique de Skill Card active."
+    )
     boilerplate = get_swarm_boilerplate("expert")
 
     return EDUCATION_EXPERT_SYSTEM_PROMPT.format(
         SWARM_BOILERPLATE=boilerplate,
         DATA_CONTEXT=data_context,
         MISSION=mission,
-        SKILL_INSTRUCTIONS=skill_inst
+        SKILL_INSTRUCTIONS=skill_inst,
     )
-
-
-

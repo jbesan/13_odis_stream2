@@ -1,26 +1,30 @@
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from agents.tools import compute_top_cities
-from core.models import SearchCriterias, SearchCriterias
+from core.models import SearchCriterias
+
 
 def test_compute_top_cities_wrapper():
     # Use context managers for patching to avoid pytest fixture conflicts
-    with patch("agents.tools._compute_top_cities_logic") as mock_logic, \
-         patch("agents.tools.cfg.WEIGHT_PROFILES", {"Équilibré": {"mock": "weights"}, "Famille": {"mock": "famille_weights"}}):
-        
+    with (
+        patch("agents.tools._compute_top_cities_logic") as mock_logic,
+        patch(
+            "agents.tools.cfg.WEIGHT_PROFILES",
+            {"Équilibré": {"mock": "weights"}, "Famille": {"mock": "famille_weights"}},
+        ),
+    ):
         # Setup mock return
         mock_logic.return_value = {"status": "success"}
-        
+
         # 1. Test with default profile (Equilibre)
         criteria_equilibre = SearchCriterias(
             commune_actuelle="75056",
             loc_search_area="departement",
             nb_adultes=1,
-            weight_profile="Équilibré"
+            weight_profile="Équilibré",
         )
-        
+
         result = compute_top_cities(criteria_equilibre)
-        
+
         # Check that logic was called with correct criteria
         args, _ = mock_logic.call_args
         called_criteria = args[0]
@@ -33,11 +37,11 @@ def test_compute_top_cities_wrapper():
             commune_actuelle="75056",
             loc_search_area="departement",
             nb_adultes=2,
-            weight_profile="Famille"
+            weight_profile="Famille",
         )
-        
+
         compute_top_cities(criteria_famille)
-        
+
         args, _ = mock_logic.call_args
         called_criteria = args[0]
         assert called_criteria.nb_adultes == 2
@@ -47,11 +51,11 @@ def test_compute_top_cities_wrapper():
         criteria_empty = SearchCriterias(
             commune_actuelle="75056",
             loc_search_area="departement",
-            weight_profile="" # Empty string
+            weight_profile="",  # Empty string
         )
-        
+
         compute_top_cities(criteria_empty)
-        
+
         args, _ = mock_logic.call_args
         called_criteria = args[0]
         assert called_criteria.weight_profile == ""

@@ -1,17 +1,11 @@
 import streamlit as st
-import config as cfg
 
-st.set_page_config(
-    page_title="OD&IS",
-    page_icon="👋",
-    layout="wide"
-)
-
-
+st.set_page_config(page_title="OD&IS", page_icon="👋", layout="wide")
 
 
 # --- Authentication ---
 from utils import auth
+
 if not auth.check_password():
     st.stop()
 
@@ -24,7 +18,7 @@ data_loader.ensure_data_initialized()
 
 # DO NOT REMOVE: This makes sure the ui_ form state persists as expected
 for k, v in st.session_state.items():
-    if str(k).startswith('ui_'):
+    if str(k).startswith("ui_"):
         st.session_state[k] = v
 app_data = data_loader.get_app_data()
 
@@ -33,55 +27,70 @@ from utils import common as utils
 
 # Sidebar
 with st.sidebar:
-    logo_path = utils.get_asset_path('logo-jaccueille-singa.png')
+    logo_path = utils.get_asset_path("logo-jaccueille-singa.png")
     logo_b64 = utils.get_base64_image(logo_path)
     if logo_b64:
-        st.markdown(f'<img src="data:image/png;base64,{logo_b64}" width="150" style="margin-bottom: 20px;">', unsafe_allow_html=True)
+        st.markdown(
+            f'<img src="data:image/png;base64,{logo_b64}" width="150" style="margin-bottom: 20px;">',
+            unsafe_allow_html=True,
+        )
     else:
         st.error("Logo not found")
 
-    st.space('medium')
-    st.text("Remplissez ce formulaire afin de préciser le projet de vie de la ou des personnes accompagnées.")
+    st.space("medium")
+    st.text(
+        "Remplissez ce formulaire afin de préciser le projet de vie de la ou des personnes accompagnées."
+    )
 
     st.divider()
-    
+
     ui.start_over()
     from ui import feedback
+
     feedback.render_feedback_button()
 
     st.divider()
-    
-    if st.button("Passer aux résultats", type='secondary', width="stretch", icon=":material/fast_forward:"):
-        st.switch_page("pages/3_Resultats.py") 
 
-org = st.session_state.get('org')
+    if st.button(
+        "Passer aux résultats",
+        type="secondary",
+        width="stretch",
+        icon=":material/fast_forward:",
+    ):
+        st.switch_page("pages/3_Resultats.py")
+
+org = st.session_state.get("org")
 
 PAGES = {}
 if org:
     PAGES["org"] = org.name
 
-PAGES.update({
-    "localisation": "Localisation",
-    "family": "Situation familiale",
-    "education": "Éducation",
-    "professional_project": "Projet professionnel",
-    "housing": "Logement",
-    "health": "Santé",
-    "other_needs": "Inclusion",
-    "notes": "Autres",
-    "profile": "Profil"
-})
+PAGES.update(
+    {
+        "localisation": "Localisation",
+        "family": "Situation familiale",
+        "education": "Éducation",
+        "professional_project": "Projet professionnel",
+        "housing": "Logement",
+        "health": "Santé",
+        "other_needs": "Inclusion",
+        "notes": "Autres",
+        "profile": "Profil",
+    }
+)
 PAGES_LIST = list(PAGES.keys())
 
+
 def get_person_accompanied_str():
-    if st.session_state.get('ui_nom'):
+    if st.session_state.get("ui_nom"):
         return f"de {st.session_state.ui_nom}"
     return "de la personne accompagnée"
+
 
 # These functions now act as simple wrappers, calling the centralized UI components.
 def display_localisation_actuelle_page():
     st.subheader(f"Localisation {get_person_accompanied_str()}")
-    col1, col2, col3 = st.columns([3,1,5])
+    col1, col2, col3 = st.columns([3, 1, 5])
     with col1:
         st.markdown("**Localisation actuelle**")
         ui_forms.render_localisation_form()
@@ -92,47 +101,60 @@ def display_localisation_actuelle_page():
         st.markdown("**Zone de recherche**")
         ui_forms.render_mobility_form()
 
+
 def display_family_situation_page():
     st.subheader(f"Composition du foyer {get_person_accompanied_str()}")
     ui_forms.render_family_form()
+
 
 def display_education_page():
     st.subheader(f"Niveau d'étude des enfants {get_person_accompanied_str()}")
     ui_forms.render_education_form()
 
+
 def display_professional_project_page():
     st.subheader(f"Métiers et formations {get_person_accompanied_str()}")
     ui_forms.render_employment_form()
+
 
 def display_housing_page():
     st.subheader(f"Logement et hébergement {get_person_accompanied_str()}")
     ui_forms.render_housing_form()
 
+
 def display_health_page():
     st.subheader(f"Besoin en santé {get_person_accompanied_str()}")
     ui_forms.render_health_form()
+
 
 def display_other_needs_page():
     st.subheader(f"Inclusion et vie sociale {get_person_accompanied_str()}")
     ui_forms.render_other_needs_form()
 
+
 def display_other_notes_page():
     st.subheader(f"Autres informations {get_person_accompanied_str()}")
     ui_forms.render_other_notes_form()
 
+
 def display_profile_page():
-    st.subheader(f"Profil des priorités pour la recherche")
+    st.subheader("Profil des priorités pour la recherche")
     ui_forms.render_weight_profile_form()
+
 
 def display_org_page():
     # Title is handled by render_org_profile_form but we can add context here if needed
     ui_forms.render_org_profile_form()
 
-if 'form_page' not in st.session_state:
+
+if "form_page" not in st.session_state:
     st.session_state.form_page = PAGES_LIST[0]
 
 current_page_index = PAGES_LIST.index(st.session_state.form_page)
-st.progress((current_page_index) / (len(PAGES_LIST)-1), text=f"Étape {current_page_index + 1}/{len(PAGES_LIST)}: {PAGES[st.session_state.form_page]}")
+st.progress(
+    (current_page_index) / (len(PAGES_LIST) - 1),
+    text=f"Étape {current_page_index + 1}/{len(PAGES_LIST)}: {PAGES[st.session_state.form_page]}",
+)
 
 page_function_map = {
     "org": display_org_page,
@@ -150,7 +172,7 @@ page_function_map[st.session_state.form_page]()
 
 st.divider()
 
-col1, col2 = st.columns([1,1])
+col1, col2 = st.columns([1, 1])
 
 with col1:
     with st.container(horizontal_alignment="left"):
@@ -168,5 +190,5 @@ with col2:
                 st.rerun()
         else:
             if st.button("Voir les résultats", type="primary"):
-                st.session_state['form_completed'] = True
+                st.session_state["form_completed"] = True
                 st.switch_page("pages/3_Resultats.py")

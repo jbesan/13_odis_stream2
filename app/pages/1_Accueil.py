@@ -2,22 +2,16 @@ import time
 import streamlit as st
 import config as cfg
 import logging
-from ui import components as ui
 from utils import memory, auth, data_loader
 from utils import common as utils
-from agents.utils import run_async_safe
 
 
 # --- Page Configuration ---
-st.set_page_config(
-    page_title="OD&IS",
-    page_icon="👋",
-    layout="wide"
-)
+st.set_page_config(page_title="OD&IS", page_icon="👋", layout="wide")
 
 # --- RESET: Clear search memory when returning to home ---
-if 'search_results' in st.session_state:
-    memory.reset_app_state()    
+if "search_results" in st.session_state:
+    memory.reset_app_state()
 
 # --- Authentication ---
 
@@ -31,23 +25,27 @@ data_loader.ensure_data_initialized()
 
 # --- Sidebar / Org Context ---
 with st.sidebar:
-    if len(st.query_params) > 0 and 'demo' in st.query_params:
-        if st.button('Quitter Mode Démo', key='quit_demo'):
+    if len(st.query_params) > 0 and "demo" in st.query_params:
+        if st.button("Quitter Mode Démo", key="quit_demo"):
             st.query_params.clear()
             st.rerun()
-            
+
     # Always show logo and badge in sidebar if org is active
-    org = st.session_state.get('org')
+    org = st.session_state.get("org")
     if org:
-        if org.id == 'jaccueille':
-            logo_path = utils.get_asset_path('logo-jaccueille-singa.png')
+        if org.id == "jaccueille":
+            logo_path = utils.get_asset_path("logo-jaccueille-singa.png")
             logo_b64 = utils.get_base64_image(logo_path)
             if logo_b64:
-                st.markdown(f'<img src="data:image/png;base64,{logo_b64}" width="150" style="margin-bottom: 20px;">', unsafe_allow_html=True)
-        
+                st.markdown(
+                    f'<img src="data:image/png;base64,{logo_b64}" width="150" style="margin-bottom: 20px;">',
+                    unsafe_allow_html=True,
+                )
+
 
 # --- CSS / Styling (V3 Global Green) ---
-st.markdown("""
+st.markdown(
+    """
 <style>
     /* Global App Styling */
     .stApp {
@@ -163,14 +161,20 @@ st.markdown("""
         border-color: rgba(255,255,255,0.2);
     }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 
 # --- Header Section (With Included Base64 Logo) ---
-logo_path = utils.get_asset_path('logo-jaccueille-singa.png')
+logo_path = utils.get_asset_path("logo-jaccueille-singa.png")
 logo_b64 = utils.get_base64_image(logo_path)
 # Increased width to 240px (3x original 80px)
-logo_img_tag = f'<img src="data:image/png;base64,{logo_b64}" width="240" style="margin-bottom: 15px;">' if logo_b64 else ''
+logo_img_tag = (
+    f'<img src="data:image/png;base64,{logo_b64}" width="240" style="margin-bottom: 15px;">'
+    if logo_b64
+    else ""
+)
 
 header_html = f"""
 <div class="header-container">
@@ -185,8 +189,9 @@ st.markdown(header_html, unsafe_allow_html=True)
 # --- Input & Navigation Section ---
 if cfg.is_ai_free_mode():
     st.subheader("Entrée de données", divider="yellow", width="stretch")
-    
-    st.markdown("""
+
+    st.markdown(
+        """
         <div class="step-card" style="min-height: 250px; justify-content: space-between; padding: 30px;">
             <div>
                 <div style="font-size: 3rem; margin-bottom: 15px;">📋</div>
@@ -196,18 +201,25 @@ if cfg.is_ai_free_mode():
                 </div>
             </div>
         </div>
-    """, unsafe_allow_html=True)
-    
+    """,
+        unsafe_allow_html=True,
+    )
+
     with st.container(border=True):
-        if st.button("Démarrer l'entretien", type="primary", width="stretch", key="btn_classic"):
+        if st.button(
+            "Démarrer l'entretien", type="primary", width="stretch", key="btn_classic"
+        ):
             st.switch_page("pages/2_Formulaire.py")
 else:
-    st.subheader("Un outil, deux ambiances (votre choix)", divider="yellow",  width="stretch")
+    st.subheader(
+        "Un outil, deux ambiances (votre choix)", divider="yellow", width="stretch"
+    )
 
     col_form, col_ia = st.columns(2, gap="large")
 
     with col_form:
-        st.markdown("""
+        st.markdown(
+            """
             <div class="step-card" style="min-height: 250px; justify-content: space-between; padding: 30px;">
                 <div>
                     <div style="font-size: 3rem; margin-bottom: 15px;">📋</div>
@@ -217,43 +229,55 @@ else:
                     </div>
                 </div>
             </div>
-        """, unsafe_allow_html=True)
-        
+        """,
+            unsafe_allow_html=True,
+        )
+
         # We place the inputs and buttons outside the custom HTML card to use Streamlit's native interactivity easily,
         # but we can wrap it in a container to visually attach it if needed, or simply place it right below.
         with st.container(border=True):
-            if st.button("Démarrer l'entretien", type="primary", width="stretch", key="btn_classic_two_col"):
+            if st.button(
+                "Démarrer l'entretien",
+                type="primary",
+                width="stretch",
+                key="btn_classic_two_col",
+            ):
                 st.switch_page("pages/2_Formulaire.py")
 
-    @st.dialog('Analyse de votre document', width="large")
+    @st.dialog("Analyse de votre document", width="large")
     def show_unstructured_input_dialog():
-        st.text("Collez ici un texte décrivant la situation (email, notes d'entretien, export CRM...) :")
-        
+        st.text(
+            "Collez ici un texte décrivant la situation (email, notes d'entretien, export CRM...) :"
+        )
+
         text_input = st.text_area(
-            "Texte source", 
-            height="content", 
+            "Texte source",
+            height="content",
             width="stretch",
             placeholder="Ex: J'accompagne une famille de 4 personnes (2 adultes, 2 enfants en primaire). Ils cherchent un logement social à Bordeaux...",
-            label_visibility="collapsed"
+            label_visibility="collapsed",
         )
-        
+
         col1, col2 = st.columns([3, 1])
-        
+
         analysis_key = "unstructured_analysis_result"
-        
+
         with col1:
-            if st.button("Détecter les critères de recherche", type="primary", width="content"):
+            if st.button(
+                "Détecter les critères de recherche", type="primary", width="content"
+            ):
                 if not text_input.strip():
                     st.warning("Veuillez saisir du texte avant de lancer l'analyse.")
                 else:
                     with st.spinner("Analyse en cours par l'agent Extracteur..."):
                         try:
                             from agents.utils import run_autodetect_safe
+
                             result_data = run_autodetect_safe(text_input)
-                            
+
                             st.session_state[analysis_key] = {
                                 "response": result_data.response,
-                                "criteria": result_data.search_criteria
+                                "criteria": result_data.search_criteria,
                             }
                         except Exception as e:
                             st.error(f"Une erreur est survenue lors de l'analyse : {e}")
@@ -262,19 +286,26 @@ else:
             st.divider()
             st.text("Données pertinentes identifiées")
             st.info(st.session_state[analysis_key]["response"])
-            
-            if st.button("✅ Confirmer et Pré-remplir le formulaire", type="primary", width="stretch"):
+
+            if st.button(
+                "✅ Confirmer et Pré-remplir le formulaire",
+                type="primary",
+                width="stretch",
+            ):
                 # Apply the criteria to the UI session states
-                data_loader.apply_search_criteria_to_ui(st.session_state[analysis_key]["criteria"])
-                
+                data_loader.apply_search_criteria_to_ui(
+                    st.session_state[analysis_key]["criteria"]
+                )
+
                 # Reset the dialog state for next time
                 del st.session_state[analysis_key]
-                
+
                 # Switch to form
                 st.switch_page("pages/2_Formulaire.py")
 
     with col_ia:
-        st.markdown("""
+        st.markdown(
+            """
             <div class="step-card" style="min-height: 250px; justify-content: space-between; padding: 30px;">
                 <div>
                     <div style="font-size: 3rem; margin-bottom: 15px;">⚡️</div>
@@ -284,10 +315,14 @@ else:
                     </div>
                 </div>
             </div>
-        """, unsafe_allow_html=True)
-        
+        """,
+            unsafe_allow_html=True,
+        )
+
         with st.container(border=True):
-             if st.button("Démarrer Auto-Detect", type="primary", width="stretch", key="btn_ia"):
+            if st.button(
+                "Démarrer Auto-Detect", type="primary", width="stretch", key="btn_ia"
+            ):
                 show_unstructured_input_dialog()
 
 
@@ -296,7 +331,6 @@ else:
 # with col_skip2:
 #     if st.button("Passer directement aux résultats ➞", type="secondary", width="stretch"):
 #         st.switch_page("pages/3_Resultats.py")
-
 
 
 st.markdown("---")
@@ -311,32 +345,35 @@ steps = [
         "num": "1",
         "title": "Identifier les besoins",
         "icon": "👤",
-        "text": "Renseignez le profil et les besoins spécifiques de la personne."
+        "text": "Renseignez le profil et les besoins spécifiques de la personne.",
     },
     {
         "num": "2",
         "title": "Calcul des scores",
         "icon": "⚙️",
-        "text": "Identifiez les territoires les plus pertinents au regard du projet de vie."
+        "text": "Identifiez les territoires les plus pertinents au regard du projet de vie.",
     },
     {
         "num": "3",
         "title": "Exploration & Synthèse",
         "icon": "🗺️",
-        "text": "Découvrez les territoires les plus accueillants correspondant au profil."
-    }
+        "text": "Découvrez les territoires les plus accueillants correspondant au profil.",
+    },
 ]
 
 for col, step in zip(step_cols, steps):
     with col:
-        st.markdown(f"""
+        st.markdown(
+            f"""
         <div class="step-card">
-            <div class="step-number">{step['num']}</div>
-            <div style="font-size: 2.5rem; margin-bottom: 10px;">{step['icon']}</div>
-            <div class="step-title">{step['title']}</div>
-            <p class="step-text">{step['text']}</p>
+            <div class="step-number">{step["num"]}</div>
+            <div style="font-size: 2.5rem; margin-bottom: 10px;">{step["icon"]}</div>
+            <div class="step-title">{step["title"]}</div>
+            <p class="step-text">{step["text"]}</p>
         </div>
-        """, unsafe_allow_html=True)
+        """,
+            unsafe_allow_html=True,
+        )
 
 st.divider()
 
@@ -348,5 +385,5 @@ st.markdown(
         Les données collectées sont utilisées uniquement pour cette session.
     </div>
     """,
-    unsafe_allow_html=True
+    unsafe_allow_html=True,
 )

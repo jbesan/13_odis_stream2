@@ -10,6 +10,7 @@ from pydantic_ai.providers.google_cloud import GoogleCloudProvider
 
 # --- Configuration Models ---
 
+
 class NodeConfig(BaseModel):
     """Configuration for a specific LLM agent node.
 
@@ -19,6 +20,7 @@ class NodeConfig(BaseModel):
         max_tokens: Maximum output tokens.
         thinking: Optional thinking/reasoning effort level (Gemini 3+).
     """
+
     model: str = "google:gemini-3.1-flash-lite-preview"
     temperature: float = 0.0
     max_tokens: int | None = None
@@ -38,10 +40,11 @@ class NodeConfig(BaseModel):
 
 class AgentSettings(BaseSettings):
     """Centralized Agent configuration with environment variable overrides.
-    
+
     Settings can be overridden using the ODIS_AGENT_ prefix, e.g.:
     ODIS_AGENT_SYNTHESIZER__TEMPERATURE=0.7
     """
+
     model_config = SettingsConfigDict(
         env_prefix="ODIS_AGENT_",
         env_file=".env",
@@ -49,18 +52,69 @@ class AgentSettings(BaseSettings):
         extra="ignore",
     )
 
-    router: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.1, thinking="low"))
-    interviewer: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.5, thinking="medium"))
-    ts_agent: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.1, thinking="low"))
-    housing_expert: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
-    mobility_expert: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
-    healthcare_expert: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
-    education_expert: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
-    social_integration_expert: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
-    job_hunter: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"))
-    job_curator: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.1, thinking="low"))
-    synthesizer: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.1, thinking="medium"))#, max_tokens=8192))
-    refiner: NodeConfig = Field(default_factory=lambda: NodeConfig(model="google:gemini-3.1-flash-lite", temperature=0.1, thinking="minimal", max_tokens=4096))
+    router: NodeConfig = Field(
+        default_factory=lambda: NodeConfig(
+            model="google:gemini-3.1-flash-lite", temperature=0.1, thinking="low"
+        )
+    )
+    interviewer: NodeConfig = Field(
+        default_factory=lambda: NodeConfig(
+            model="google:gemini-3.1-flash-lite", temperature=0.5, thinking="medium"
+        )
+    )
+    ts_agent: NodeConfig = Field(
+        default_factory=lambda: NodeConfig(
+            model="google:gemini-3.1-flash-lite", temperature=0.1, thinking="low"
+        )
+    )
+    housing_expert: NodeConfig = Field(
+        default_factory=lambda: NodeConfig(
+            model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"
+        )
+    )
+    mobility_expert: NodeConfig = Field(
+        default_factory=lambda: NodeConfig(
+            model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"
+        )
+    )
+    healthcare_expert: NodeConfig = Field(
+        default_factory=lambda: NodeConfig(
+            model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"
+        )
+    )
+    education_expert: NodeConfig = Field(
+        default_factory=lambda: NodeConfig(
+            model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"
+        )
+    )
+    social_integration_expert: NodeConfig = Field(
+        default_factory=lambda: NodeConfig(
+            model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"
+        )
+    )
+    job_hunter: NodeConfig = Field(
+        default_factory=lambda: NodeConfig(
+            model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"
+        )
+    )
+    job_curator: NodeConfig = Field(
+        default_factory=lambda: NodeConfig(
+            model="google:gemini-3.1-flash-lite", temperature=0.1, thinking="low"
+        )
+    )
+    synthesizer: NodeConfig = Field(
+        default_factory=lambda: NodeConfig(
+            model="google:gemini-3.1-flash-lite", temperature=0.1, thinking="medium"
+        )
+    )  # , max_tokens=8192))
+    refiner: NodeConfig = Field(
+        default_factory=lambda: NodeConfig(
+            model="google:gemini-3.1-flash-lite",
+            temperature=0.1,
+            thinking="minimal",
+            max_tokens=4096,
+        )
+    )
 
     # Vertex AI configuration
     gcp_project: str | None = Field(default=None)
@@ -93,13 +147,17 @@ def get_model_settings(agent_name: str) -> ModelSettings:
 def get_p_model(agent_name: str, client: genai.Client | None = None) -> GoogleModel:
     """Returns a configured GoogleModel instance for Pydantic AI."""
     mod_id = get_model(agent_name)
-    
+
     if ":" in mod_id:
         _, model_name = mod_id.split(":", 1)
     else:
         model_name = mod_id
-    
-    project = agent_settings.gcp_project or os.getenv("GOOGLE_CLOUD_PROJECT") or "odis-stream2"
+
+    project = (
+        agent_settings.gcp_project
+        or os.getenv("GOOGLE_CLOUD_PROJECT")
+        or "odis-stream2"
+    )
     location = agent_settings.gcp_location or "europe-west9"
 
     if client is not None:
@@ -108,7 +166,9 @@ def get_p_model(agent_name: str, client: genai.Client | None = None) -> GoogleMo
         base_url = None
         if location == "eu":
             base_url = "https://aiplatform.eu.rep.googleapis.com"
-        provider = GoogleCloudProvider(project=project, location=location, base_url=base_url)
+        provider = GoogleCloudProvider(
+            project=project, location=location, base_url=base_url
+        )
 
     profile = None
     try:
@@ -116,13 +176,13 @@ def get_p_model(agent_name: str, client: genai.Client | None = None) -> GoogleMo
         if default_profile:
             profile = {
                 **default_profile,
-                "google_supports_server_side_tool_invocations": False
+                "google_supports_server_side_tool_invocations": False,
             }
     except Exception:
         pass
 
     return GoogleModel(
-        model_name, 
+        model_name,
         provider=provider,
         profile=profile,
     )
@@ -130,14 +190,18 @@ def get_p_model(agent_name: str, client: genai.Client | None = None) -> GoogleMo
 
 def get_gemini_client(attempts: int = 3, location: str | None = None) -> genai.Client:
     """Returns a configured Google GenAI client based on settings.
-    
+
     Uses Vertex AI on the configured location unconditionally.
     """
     import os
     from google import genai
     from google.genai import types
 
-    project = agent_settings.gcp_project or os.getenv("GOOGLE_CLOUD_PROJECT") or "odis-stream2"
+    project = (
+        agent_settings.gcp_project
+        or os.getenv("GOOGLE_CLOUD_PROJECT")
+        or "odis-stream2"
+    )
     loc = location or agent_settings.gcp_location or "eu"
 
     # For Vertex AI in 'eu' multi-region, we must specify the correct endpoint URL
@@ -150,22 +214,18 @@ def get_gemini_client(attempts: int = 3, location: str | None = None) -> genai.C
         attempts=attempts,
         initial_delay=1.0,
         max_delay=10.0,
-        http_status_codes=[429, 503]
+        http_status_codes=[429, 503],
     )
-    http_opts = types.HttpOptions(
-        retry_options=retry_opts,
-        base_url=base_url
-    )
+    http_opts = types.HttpOptions(retry_options=retry_opts, base_url=base_url)
 
     return genai.Client(
-        vertexai=True,
-        project=project,
-        location=loc,
-        http_options=http_opts
+        vertexai=True, project=project, location=loc, http_options=http_opts
     )
 
 
-def get_swarm_boilerplate(agent_type: Literal["expert", "coordinator", "synthesizer", "job_curator"]) -> str:
+def get_swarm_boilerplate(
+    agent_type: Literal["expert", "coordinator", "synthesizer", "job_curator"],
+) -> str:
     """Returns the standardized swarm collaboration boilerplate context prompt."""
     if agent_type == "expert":
         return (
@@ -181,7 +241,6 @@ def get_swarm_boilerplate(agent_type: Literal["expert", "coordinator", "synthesi
             "- Tu es le coordinateur d'un swarm d'agents IA thématiques.\n"
             "- L'utilisateur final est un **Travailleur Social humain** qui accompagne un bénéficiaire (généralement une personne réfugiée et sa famille) dans sa relocalisation.\n"
             "- Planifie le travail ou réponds directement à partir du dossier JSON pour l'aider dans son accompagnement.\n"
-            
         )
     elif agent_type == "synthesizer":
         return (

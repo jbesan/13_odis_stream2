@@ -1,7 +1,6 @@
 import logging
 from pydantic_ai import Agent, RunContext
-from pydantic import BaseModel, Field
-from .state import GraphState, ODISDeps, ODISContextBuilder
+from .state import ODISDeps, ODISContextBuilder
 from .agent_config import get_model, get_model_settings, get_swarm_boilerplate
 
 logger = logging.getLogger("synthesizer_agent")
@@ -74,8 +73,9 @@ synthesizer_agent = Agent(
     get_model("synthesizer"),
     model_settings=get_model_settings("synthesizer"),
     deps_type=ODISDeps,
-    output_type=str
+    output_type=str,
 )
+
 
 @synthesizer_agent.system_prompt
 async def synth_instructions(ctx: RunContext[ODISDeps]) -> str:
@@ -87,10 +87,18 @@ async def synth_instructions(ctx: RunContext[ODISDeps]) -> str:
         current_city_name = state.search_results.current_geo.name
 
     data_context = ODISContextBuilder.agent_context(state, "synthesizer")
-    last_message = state.messages[-1].get("content", "Non disponible") if state.messages else "Non disponible"
+    last_message = (
+        state.messages[-1].get("content", "Non disponible")
+        if state.messages
+        else "Non disponible"
+    )
 
     mode = state.execution_mode
-    prompt_template = SYNTH_SYSTEM_PROMPT_SPECIFIC if mode == "specific_ask" else SYNTH_SYSTEM_PROMPT_ANALYSIS
+    prompt_template = (
+        SYNTH_SYSTEM_PROMPT_SPECIFIC
+        if mode == "specific_ask"
+        else SYNTH_SYSTEM_PROMPT_ANALYSIS
+    )
     boilerplate = get_swarm_boilerplate("synthesizer")
 
     prompt = prompt_template.format(
@@ -101,9 +109,10 @@ async def synth_instructions(ctx: RunContext[ODISDeps]) -> str:
         LAST_MESSAGE=last_message,
     )
 
-    logger.info(f"💎 [SYNTHESIZER-PROMPT] Mode: {mode}. Template: {'SPECIFIC' if mode == 'specific_ask' else 'ANALYSIS'}")
+    logger.info(
+        f"💎 [SYNTHESIZER-PROMPT] Mode: {mode}. Template: {'SPECIFIC' if mode == 'specific_ask' else 'ANALYSIS'}"
+    )
     logger.info(f"💎 [SYNTHESIZER-CONTEXT-SIZE] {len(prompt)} chars")
     logger.debug(f"💎 [SYNTHESIZER-FULL-PROMPT-DUMP]\n{prompt}\n--- END DUMP ---")
 
     return prompt
-

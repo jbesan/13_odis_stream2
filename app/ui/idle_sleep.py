@@ -1,13 +1,14 @@
 import streamlit as st
 
+
 def inject_idle_sleep(timeout_minutes: int = 10):
     """
     Injects the Idle Sleep monitor using the new V2 Component API (Streamlit 1.51+).
     This API allows JS to interact directly with the main document.
     """
-    
+
     timeout_ms = int(timeout_minutes * 60 * 1000)
-    
+
     # JavaScript using the st.components.v2 contract
     # Double braces {{ }} are used for f-string escaping
     js_code = f"""
@@ -83,15 +84,13 @@ def inject_idle_sleep(timeout_minutes: int = 10):
         setInterval(check, 2000);
     }}
     """
-    
+
     # 1. Declare the component
     # We set isolate_styles=False to ensure we can reach out of the component container easily.
     # Note: Streamlit 1.51.0 confirmed having st.components.v2.
     eco_comp = st.components.v2.component(
-        "eco_mode_v2",
-        js=js_code,
-        isolate_styles=False
+        "eco_mode_v2", js=js_code, isolate_styles=False
     )
-    
+
     # 2. Mount the component
     eco_comp()
