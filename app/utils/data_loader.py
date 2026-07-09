@@ -354,7 +354,7 @@ def _fetch_jaccueille_data_bq_logic() -> pd.DataFrame:
     import time
 
     # Use a private data folder to avoid tracking in git
-    cache_dir = os.path.join(cfg.PROJECT_ROOT, "data_private")
+    cache_dir = os.path.join(cfg.APP_DIR, "data_private")
     cache_path = os.path.join(cache_dir, "jaccueille_hosts_cache.parquet")
     ttl_seconds = 30 * 24 * 3600  # 30 days (1 month)
 

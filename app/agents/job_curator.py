@@ -3,7 +3,7 @@ from typing import List
 from pydantic_ai import Agent, RunContext
 from pydantic import BaseModel, Field
 from .state import ODISDeps, ODISContextBuilder
-from .agent_config import get_model, get_model_settings, get_swarm_boilerplate
+from .agent_config import create_agent, get_swarm_boilerplate
 
 logger = logging.getLogger("job_curator")
 
@@ -43,9 +43,8 @@ JOB_CURATOR_SYSTEM_PROMPT = """
    - Phrase 2 : Explique la pertinence pour ce candidat spécifique (proximité, horaires, expériences, etc.).
 """
 
-job_curator_agent = Agent(
-    get_model("job_curator"),
-    model_settings=get_model_settings("job_curator"),
+job_curator_agent: Agent[ODISDeps, JobCurationResult] = create_agent(
+    "job_curator",
     deps_type=ODISDeps,
     output_type=JobCurationResult,
 )

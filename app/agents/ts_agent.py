@@ -3,7 +3,7 @@ from typing import List, Optional, Literal
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 from .state import ODISDeps, ODISContextBuilder
-from .agent_config import get_model, get_model_settings, get_swarm_boilerplate
+from .agent_config import create_agent, get_swarm_boilerplate
 
 logger = logging.getLogger("ts_agent")
 
@@ -81,10 +81,8 @@ Dans de rares cas tu pourras répondre directement (voir protocole ci-dessous).
 
 
 """
-
-ts_agent = Agent(
-    get_model("ts_agent"),
-    model_settings=get_model_settings("ts_agent"),
+ts_agent: Agent[ODISDeps, SwarmPlan] = create_agent(
+    "ts_agent",
     deps_type=ODISDeps,
     output_type=SwarmPlan,
 )

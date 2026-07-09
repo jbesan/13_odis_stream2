@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional
 from pydantic_ai import Agent, RunContext
 from pydantic import BaseModel, Field
 from .state import ODISDeps, ODISContextBuilder
-from .agent_config import get_model, get_model_settings, get_swarm_boilerplate
+from .agent_config import create_agent, get_swarm_boilerplate
 from .tools import (
     search_job_offers_batch,
     get_job_details,
@@ -119,9 +119,8 @@ async def search_referentiels_batch_tool(
     return await search_referentiels_batch([s.model_dump() for s in searches])
 
 
-job_hunter_agent = Agent(
-    get_model("job_hunter"),
-    model_settings=get_model_settings("job_hunter"),
+job_hunter_agent: Agent[ODISDeps, JobHunterResult] = create_agent(
+    "job_hunter",
     deps_type=ODISDeps,
     tools=[
         search_job_offers_batch_tool,

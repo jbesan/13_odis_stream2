@@ -1,5 +1,6 @@
 import os
-from typing import Literal
+from typing import Literal, Any
+from pydantic_ai import Agent
 from google import genai
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -118,7 +119,7 @@ class AgentSettings(BaseSettings):
 
     # Vertex AI configuration
     gcp_project: str | None = Field(default=None)
-    gcp_location: str = Field(default="europe-west9")
+    gcp_location: str = Field(default="eu")
 
     def get_config(self, agent_name: str) -> NodeConfig:
         """Helper to get config by agent name, falling back to router if unknown."""
@@ -158,7 +159,7 @@ def get_p_model(agent_name: str, client: genai.Client | None = None) -> GoogleMo
         or os.getenv("GOOGLE_CLOUD_PROJECT")
         or "odis-stream2"
     )
-    location = agent_settings.gcp_location or "europe-west9"
+    location = agent_settings.gcp_location
 
     if client is not None:
         provider = GoogleCloudProvider(client=client)
@@ -257,3 +258,22 @@ def get_swarm_boilerplate(
             "- Sélectionne de manière factuelle et rigoureuse les 5 meilleures offres d'emploi pour aider le Travailleur Social humain.\n"
         )
     return ""
+
+
+def create_agent(agent_name: str, **kwargs: Any) -> Agent[Any, Any]:
+    """Centralized factory to instantiate an Agent with configured models,
+    settings, trace naming, and deferred model checks for production.
+    """
+    model = get_model(agent_name)
+    model_settings = get_model_settings(agent_name)
+
+    # Enforce standard defaults
+    kwargs.setdefault("name", agent_name)            # Ensures proper Logfire trace names
+    kwargs.setdefault("defer_model_check", True)      # Bypasses Cloud Run startup API key errors
+
+    return Agent(
+        model=model,
+        model_settings=model_settings,
+        **kwargs
+    )
+

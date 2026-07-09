@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 
 from .state import ODISDeps, ODISContextBuilder
-from .agent_config import get_model, get_model_settings
+from .agent_config import create_agent
 
 logger = logging.getLogger("refiner_agent")
 
@@ -53,9 +53,8 @@ REFINER_SYSTEM_PROMPT = """
 """
 
 # --- Agent Definition ---
-refiner_agent = Agent(
-    get_model("refiner"),
-    model_settings=get_model_settings("refiner"),
+refiner_agent: Agent[ODISDeps, RefinerResult] = create_agent(
+    "refiner",
     deps_type=ODISDeps,
     output_type=RefinerResult,
 )

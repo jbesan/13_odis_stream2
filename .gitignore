@@ -20,5 +20,5 @@ GEMINI.md
 pipeline/.env
 app/.env
 app/.streamlit/secrets.toml
-data_private/
+app/data_private/
 .antigravityignore

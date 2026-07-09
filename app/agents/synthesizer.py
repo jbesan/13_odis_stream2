@@ -1,7 +1,7 @@
 import logging
 from pydantic_ai import Agent, RunContext
 from .state import ODISDeps, ODISContextBuilder
-from .agent_config import get_model, get_model_settings, get_swarm_boilerplate
+from .agent_config import create_agent, get_swarm_boilerplate
 
 logger = logging.getLogger("synthesizer_agent")
 
@@ -69,9 +69,8 @@ Tu trouveras dans ces données de contexte, sous la clé `"Analyses experts"`, l
 """
 
 # No SynthesizerResult needed, using raw str for performance/stability on large outputs
-synthesizer_agent = Agent(
-    get_model("synthesizer"),
-    model_settings=get_model_settings("synthesizer"),
+synthesizer_agent: Agent[ODISDeps, str] = create_agent(
+    "synthesizer",
     deps_type=ODISDeps,
     output_type=str,
 )

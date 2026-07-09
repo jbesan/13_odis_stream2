@@ -4,7 +4,7 @@ from pydantic_ai import Agent, RunContext
 from pydantic_ai.capabilities import WebSearch
 from pydantic import BaseModel, Field
 from .state import ODISDeps, ODISContextBuilder
-from .agent_config import get_model, get_model_settings, get_swarm_boilerplate
+from .agent_config import create_agent, get_swarm_boilerplate
 from .tools import (
     search_places_batch,
     compute_routes,
@@ -60,9 +60,8 @@ def compute_routes_tool(
     return compute_routes(origin, destination, mode)
 
 
-mobility_expert_agent = Agent(
-    get_model("mobility_expert"),
-    model_settings=get_model_settings("mobility_expert"),
+mobility_expert_agent: Agent[ODISDeps, MobilityResult] = create_agent(
+    "mobility_expert",
     deps_type=ODISDeps,
     tools=[search_places_batch_tool, compute_routes_tool],
     capabilities=[WebSearch()],

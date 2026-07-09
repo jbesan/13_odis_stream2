@@ -3,10 +3,12 @@ import logfire
 from typing import List, Dict, Any, TYPE_CHECKING
 from pydantic import BaseModel, Field, ConfigDict
 from pydantic_ai import Agent, RunContext
+from .state import ODISDeps
+from .agent_config import create_agent
+from .tools import search_referentiels_batch
 import config as cfg
 from core.models import SearchCriterias
-from .agent_config import get_model, get_model_settings
-from .tools import search_referentiels_batch
+
 
 if TYPE_CHECKING:
     from .state import ODISDeps
@@ -71,9 +73,9 @@ async def search_referentiels_batch_tool(
     return await search_referentiels_batch([s.model_dump() for s in searches])
 
 
-interviewer_agent: Agent["ODISDeps", AutoDetectionResult] = Agent(
-    get_model("interviewer"),
-    model_settings=get_model_settings("interviewer"),
+interviewer_agent: Agent[ODISDeps, AutoDetectionResult] = create_agent(
+    "interviewer",
+    deps_type=ODISDeps,
     tools=[search_referentiels_batch_tool],
     output_type=AutoDetectionResult,
 )

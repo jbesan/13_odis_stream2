@@ -76,7 +76,7 @@ def setup_logging() -> None:
 
     # --- Reduce verbosity of third-party libraries ---
     loggers_to_silence = [
-        "google_genai",
+        "google.genai",
         "httpx",
         "google",
         "FPDF",
@@ -93,14 +93,18 @@ def setup_logging() -> None:
 
     for logger_name in loggers_to_silence:
         l = logging.getLogger(logger_name)
-        l.setLevel(logging.WARNING)
+        # Set google.genai to ERROR to silence non-critical warnings like AFC compatibility
+        if logger_name == "google.genai":
+            l.setLevel(logging.ERROR)
+        else:
+            l.setLevel(logging.WARNING)
         l.propagate = False  # Prevent leaking to root/streamlit handlers
         if l.hasHandlers():
             l.handlers.clear()
 
-    # Specifically for google_genai.models which is very chatty
-    m_logger = logging.getLogger("google_genai.models")
-    m_logger.setLevel(logging.WARNING)
+    # Specifically for google.genai.models which is very chatty (e.g. AFC warnings)
+    m_logger = logging.getLogger("google.genai.models")
+    m_logger.setLevel(logging.ERROR)
     m_logger.propagate = False
     if m_logger.hasHandlers():
         m_logger.handlers.clear()

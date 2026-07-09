@@ -4,7 +4,7 @@ from pydantic_ai import Agent, RunContext
 from pydantic_ai.capabilities import WebSearch
 from pydantic import BaseModel, Field
 from .state import ODISDeps, ODISContextBuilder
-from .agent_config import get_model, get_model_settings, get_swarm_boilerplate
+from .agent_config import create_agent, get_swarm_boilerplate
 from .tools import (
     search_places_batch,
     compute_routes,
@@ -66,9 +66,8 @@ def search_ccas_tool(codgeo: str) -> List[Dict[str, Any]]:
     return search_ccas(codgeo)
 
 
-housing_expert_agent = Agent(
-    get_model("housing_expert"),
-    model_settings=get_model_settings("housing_expert"),
+housing_expert_agent: Agent[ODISDeps, HousingResult] = create_agent(
+    "housing_expert",
     deps_type=ODISDeps,
     tools=[search_places_batch_tool, compute_routes_tool, search_ccas_tool],
     capabilities=[WebSearch()],

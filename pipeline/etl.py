@@ -11,7 +11,7 @@ import shutil
 import os
 
 SOURCE_DIR = 'pipeline/cache/output'
-DEST_DIR = 'data'
+DEST_DIR = 'app/data'
 
 FILES_TO_COPY = [
     'odis_communes.parquet',

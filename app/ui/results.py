@@ -233,20 +233,23 @@ def polling_associations_fragment(commune: CommuneResult, h: Optional[str]):
                 )
                 st.rerun()  # Trigger dialog rerun to reveal content
 
-    if inc_data.asso_inclusion_count > 0:
-        st.info(f"**{inc_data.asso_inclusion_count} associations** actives.")
+    total_assos = (inc_data.asso_refugee_count or 0) + (inc_data.asso_inclusion_count or 0)
+    if total_assos > 0:
+        st.info(f"**{total_assos} associations** actives.")
+        categories_to_show = {}
         if inc_data.asso_refugee_list:
-            with st.expander("Intégration des réfugiés & migrants", expanded=True):
-                for asso in inc_data.asso_refugee_list:
+            categories_to_show["Intégration des réfugiés & migrants"] = inc_data.asso_refugee_list
+        if inc_data.asso_inclusion_list_by_cat:
+            for cat, asso_list in inc_data.asso_inclusion_list_by_cat.items():
+                categories_to_show[cat] = asso_list
+
+        for cat, asso_list in sorted(categories_to_show.items()):
+            with st.expander(f"**{cat}** ({len(asso_list)})", expanded=False):
+                for asso in asso_list:
                     url = f"https://www.assoce.fr/waldec/{asso.id}" if asso.id else "#"
                     st.markdown(
                         f"**{asso.name}**: {asso.description or ''} [Détails]({url})"
                     )
-        if inc_data.asso_inclusion_list_by_cat:
-            for cat, asso_list in sorted(inc_data.asso_inclusion_list_by_cat.items()):
-                with st.expander(f"**{cat}** ({len(asso_list)})", expanded=False):
-                    for asso in asso_list:
-                        st.markdown(f"**{asso.name}**: {asso.description or ''}")
     elif h and (not odis_get_bg_result(h) or "enrichment" not in odis_get_bg_result(h)):
         st.write("⌛ _Chargement des associations..._")
     else:

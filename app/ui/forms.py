@@ -679,7 +679,8 @@ def render_weight_profile_form() -> None:
     }
 
     # Render sliders inline alternately in col2 and col3 for a flat 3-column [1, 1, 1] layout
-    for idx, p_key in enumerate(weight_keys):
+    displayed_weight_keys = [k for k in weight_keys if k != "ui_poids_territoire"]
+    for idx, p_key in enumerate(displayed_weight_keys):
         target_col = col2 if idx % 2 == 0 else col3
         with target_col:
             # Sub-columns to make the label and the slider render inline

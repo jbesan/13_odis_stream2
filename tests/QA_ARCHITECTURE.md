@@ -144,6 +144,25 @@ RUN_EVALS=true .venv/bin/pytest tests/evals/test_brief_evals.py -s -p no:logfire
 RUN_EVALS=true .venv/bin/pytest tests/evals/test_golden_evals.py -s -p no:logfire
 ```
 
+### Code Quality, Linting & Type Checking
+
+Before committing or pushing changes, verify linting, formatting, and type correctness using:
+
+```bash
+# Run Ruff lint checks
+.venv/bin/ruff check app tests
+
+# Run Ruff format check
+.venv/bin/ruff format --check app tests
+
+# Run Ruff auto-fix and code formatting
+.venv/bin/ruff format app tests
+.venv/bin/ruff check --fix app tests
+
+# Run Ty semantic type checker
+.venv/bin/ty check app
+```
+
 ---
 
 ## 📈 Extension Guidelines

@@ -348,7 +348,7 @@ def _curate_jobs_with_agent(
                     curated_jobs.append({**j, "job_brief": None})
                     seen_ids.add(j_id)
 
-        logging.info(
+        logging.debug(
             f"✅ [JOBS-CURATE] LLM successfully curated {len(curated_jobs)} jobs."
         )
         return curated_jobs[:5]

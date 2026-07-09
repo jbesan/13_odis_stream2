@@ -35,16 +35,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
-RUN groupadd -r odis && useradd -r -g odis odis
+RUN groupadd -r odis && useradd -r -m -g odis odis
 
 # Set the working directory
 WORKDIR /app
 
 # Copy the virtual environment from the builder stage
 COPY --from=builder /opt/venv /opt/venv
-
-# Copy the data directory
-COPY --chown=odis:odis data/ /data/
 
 # Copy the application code
 COPY --chown=odis:odis app/ .

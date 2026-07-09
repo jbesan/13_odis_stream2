@@ -90,3 +90,23 @@ Cloud Run containers are ephemeral and can scale to zero or reboot at any time.
 - **Static Configuration**: All configuration files, baseline parquets, and skill card Markdown instructions must be baked into the Docker image at build time. 
 - **Graceful Termination**: In-progress graph executions are vulnerable to SIGTERM events during container scaling/reboots. The system recovers by letting the client detect the WebSocket drop and automatically re-triggering the analysis, initiating a fresh graph run on the new container instance. Detailed in [app/APP_ARCHITECTURE.md#7-cloud-run-&-statelessness-quirks](file:///Users/jacques/dev/13_odis_stream2/app/APP_ARCHITECTURE.md#7-cloud-run-&-statelessness-quirks).
 - **External Caching**: Telemetry is logged synchronously to BigQuery at the end of the graph execution to guarantee persistence outside the container lifecycle.
+
+---
+
+## 4. Development Tooling & Code Quality
+
+ODIS leverages high-performance, Rust-based developer tools to enforce code style and verify type correctness across the codebase:
+
+### 4.1 Ruff (Linter & Formatter)
+- **Rules & Standards**: Project-wide formatting and lint checking are managed by **Ruff** (configured in [ruff.toml](file:///Users/jacques/dev/13_odis_stream2/ruff.toml)), targeting Python 3.11.
+- **Ignores**: To maintain compatibility with dynamic runtime behaviors and path overrides (e.g. `sys.path` injection), specific rules like `E402` (module imports not at top), style conventions, and unused variables are ignored.
+
+### 4.2 Ty (Type Checker)
+- **Modern Generic Support**: **Ty** (Astral's Rust-based type checker, configured in [ty.toml](file:///Users/jacques/dev/13_odis_stream2/ty.toml)) is used for semantic type checking. Ty natively supports PEP 695 and resolves modern typing constructs like `pydantic-graph`'s generic `StepContext[State, Deps, Input]` without errors.
+- **Search Paths**: The `extra-paths = ["app"]` setting registers first-party code paths, enabling proper import resolution.
+- **Permissive Mode**: Specific strict syntax/overload checks and third-party library warning diagnostics are ignored to prevent build breakages on pandas or streamlit data types.
+
+### 4.3 CI/CD Quality Gates
+- **Automation**: Code quality gates are executed automatically as part of the Google Cloud Build workflow (defined in [cloudbuild.yaml](file:///Users/jacques/dev/13_odis_stream2/cloudbuild.yaml)).
+- **Build Sequence**: The build pipeline installs dependencies, then runs `ruff check`, `ruff format --check`, and `ty check` sequentially before proceeding to execute `pytest` and compiling the Docker container.
+

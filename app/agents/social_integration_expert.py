@@ -4,7 +4,7 @@ from pydantic_ai import Agent, RunContext
 from pydantic_ai.capabilities import WebSearch
 from pydantic import BaseModel, Field
 from .state import ODISDeps, ODISContextBuilder
-from .agent_config import get_model, get_model_settings, get_swarm_boilerplate
+from .agent_config import create_agent, get_swarm_boilerplate
 from .tools import (
     search_refugee_associations,
     search_rna_rag_batch,
@@ -81,9 +81,8 @@ async def search_places_batch_tool(queries: List[str], location: str) -> Dict[st
     return await search_places_batch(queries, location)
 
 
-social_integration_expert_agent = Agent(
-    get_model("social_integration_expert"),
-    model_settings=get_model_settings("social_integration_expert"),
+social_integration_expert_agent: Agent[ODISDeps, SocialIntegrationResult] = create_agent(
+    "social_integration_expert",
     deps_type=ODISDeps,
     tools=[
         search_refugee_associations_tool,

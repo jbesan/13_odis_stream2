@@ -4,7 +4,7 @@ from pydantic_ai import Agent, RunContext
 from pydantic_ai.capabilities import WebSearch
 from pydantic import BaseModel, Field
 from .state import ODISDeps, ODISContextBuilder
-from .agent_config import get_model, get_model_settings, get_swarm_boilerplate
+from .agent_config import create_agent, get_swarm_boilerplate
 from .tools import (
     search_places_batch,
     search_rna_rag_batch,
@@ -72,9 +72,8 @@ async def search_rna_rag_batch_tool(
     return await search_rna_rag_batch(queries, codgeo, top_k=top_k)
 
 
-education_expert_agent = Agent(
-    get_model("education_expert"),
-    model_settings=get_model_settings("education_expert"),
+education_expert_agent: Agent[ODISDeps, EducationResult] = create_agent(
+    "education_expert",
     deps_type=ODISDeps,
     tools=[search_places_batch_tool, search_rna_rag_batch_tool],
     capabilities=[WebSearch()],

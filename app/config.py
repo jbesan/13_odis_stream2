@@ -20,7 +20,7 @@ load_dotenv(os.path.join(APP_DIR, ".env"))
 # Try loading from root .env (Fallback/Override depending on behavior, but good to have both)
 load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
 
-LOCAL_DATA_PATH: str = os.path.join(PROJECT_ROOT, "data/")
+LOCAL_DATA_PATH: str = os.path.join(APP_DIR, "data/")
 ASSETS_DIR: str = os.path.join(APP_DIR, "ui", "assets")
 
 
