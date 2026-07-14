@@ -347,22 +347,32 @@ def render_mobility_form() -> None:
         st.session_state["ui_france_search"] = False
     if "ui_region_search" not in st.session_state:
         st.session_state["ui_region_search"] = False
-    if (
-        "ui_mobility_region" not in st.session_state
-        or st.session_state["ui_mobility_region"] not in region_codes
-    ):
+    if "ui_mobility_region" not in st.session_state:
         st.session_state["ui_mobility_region"] = (
-            current_reg_code if current_reg_code in region_codes else region_codes[0]
+            [current_reg_code] if current_reg_code in region_codes else [region_codes[0]]
         )
+    elif isinstance(st.session_state["ui_mobility_region"], str):
+        st.session_state["ui_mobility_region"] = [st.session_state["ui_mobility_region"]]
+
+    # Ensure all elements in the list are valid region codes
+    valid_selected_regions = [
+        r for r in st.session_state["ui_mobility_region"] if r in region_codes
+    ]
+    if not valid_selected_regions:
+        valid_selected_regions = (
+            [current_reg_code] if current_reg_code in region_codes else [region_codes[0]]
+        )
+    st.session_state["ui_mobility_region"] = valid_selected_regions
 
     col_reg_1, col_reg_2 = st.columns([3, 1])
     with col_reg_1:
-        selected_region_code = st.selectbox(
-            "Région",
+        selected_regions = st.multiselect(
+            "Régions",
             region_codes,
             format_func=lambda x: regions_dict.get(x, x),
             key="ui_mobility_region",
             disabled=st.session_state.ui_france_search,
+            placeholder="Sélectionnez une ou plusieurs régions",
         )
     with col_reg_2:
         st.space(20)
@@ -375,7 +385,7 @@ def render_mobility_form() -> None:
     depts_in_region = [
         code
         for code, details in dept_details.items()
-        if details.get("reg_code") == selected_region_code
+        if details.get("reg_code") in selected_regions
     ]
     depts_in_region.sort()
 
@@ -388,15 +398,19 @@ def render_mobility_form() -> None:
         st.session_state["ui_mobility_dept"] = (
             [old_val] if old_val in depts_in_region else []
         )
+    else:
+        st.session_state["ui_mobility_dept"] = [
+            d for d in st.session_state["ui_mobility_dept"] if d in depts_in_region
+        ]
 
     col_dept_1, col_dept_2 = st.columns([3, 1])
     with col_dept_2:
         st.space(20)
         st.checkbox(
-            "Toute la région",
+            "Toutes les régions",
             key="ui_region_search",
             disabled=st.session_state.ui_france_search,
-            help="Rechercher dans tous les départements de cette région.",
+            help="Rechercher dans tous les départements des régions sélectionnées.",
         )
 
     with col_dept_1:
@@ -569,10 +583,14 @@ def render_org_profile_form() -> None:
 
             # Key for session state
             ui_key = f"ui_org_boost_{criterion_id}"
+            slider_key = f"ui_org_boost_slider_{criterion_id}"
 
             # Ensure session state is initialized if not present
             if ui_key not in st.session_state:
                 st.session_state[ui_key] = float(default_val)
+            if slider_key not in st.session_state:
+                st.session_state[slider_key] = int(st.session_state[ui_key])
+
             with st.container(horizontal=True):
                 # col1, col2 = st.columns([1, 2])
                 # with col1:
@@ -583,13 +601,14 @@ def render_org_profile_form() -> None:
                     f"Boost pour : {label}",
                     min_value=1,
                     max_value=5,
-                    value=int(st.session_state[ui_key]),
+                    # DO NOT pass a default value parameter when key is already in session_state,
+                    # to prevent Streamlit widget warning loops.
+                    key=slider_key,
                     step=1,
                     format="x%d",
-                    key=f"ui_org_boost_slider_{criterion_id}",
                     width=100,
                     label_visibility="collapsed",
-                    on_change=lambda k=ui_key, sk=f"ui_org_boost_slider_{criterion_id}": (
+                    on_change=lambda k=ui_key, sk=slider_key: (
                         st.session_state.update({k: float(st.session_state[sk])})
                     ),
                 )
@@ -807,7 +826,10 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
         loc_search_code = []
     elif st.session_state.get("ui_region_search"):
         loc_search_area = "region"
-        loc_search_code = [st.session_state.get("ui_mobility_region")]
+        selected_regs = st.session_state.get("ui_mobility_region", [])
+        loc_search_code = (
+            selected_regs if isinstance(selected_regs, list) else [selected_regs]
+        )
     else:
         loc_search_area = "departement"
         selected_depts = st.session_state.get("ui_mobility_dept", [])

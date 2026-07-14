@@ -73,3 +73,17 @@ class TestF53Multiselect:
         assert len(filtered) == 2
         assert "33063" in filtered.index
         assert "40001" in filtered.index
+
+    def test_filter_communes_multiple_regions(self):
+        """Tests filtering by multiple regions."""
+        df = pd.DataFrame(
+            {"dep_code": ["33", "75", "13"], "reg_code": ["75", "75", "93"]},
+            index=["33063", "75056", "13055"],
+        )
+        filtered = ScoringEngine._filter_communes(
+            df=df, start_commune=pd.DataFrame(), loc_type="region", loc_code=["75", "93"]
+        )
+        assert len(filtered) == 3
+        assert "33063" in filtered.index
+        assert "75056" in filtered.index
+        assert "13055" in filtered.index

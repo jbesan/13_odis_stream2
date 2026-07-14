@@ -1164,3 +1164,69 @@ class TestShortlistCity:
         assert "64445" not in top5_codes, (
             "Shortlisted city must be strictly excluded from the Top 5 recommended results"
         )
+
+    def test_scoring_with_commune_pressentie_under_cutoff(
+        self, sample_data, live_scores_cat, sample_incl_index, global_stats, monkeypatch
+    ):
+        """
+        Tests that when commune_pressentie is set and results exceed MAX_MAP_POLYGONS:
+        The commune_pressentie is preserved in the final processed_gdf.
+        """
+        from app.core import scoring
+        monkeypatch.setattr(scoring.cfg, "MAX_MAP_POLYGONS", 2)
+
+        # Bordeaux is 33063.
+        # Shortlisted city is Pau (64445).
+        config = SearchCriterias(
+            commune_actuelle=CriteriaItem(code="33063", label="Bordeaux"),
+            commune_pressentie=CriteriaItem(code="64445", label="Pau"),
+            loc_search_area="departement",
+            loc_search_code=["33"],
+            poids_emploi=1.0,
+            poids_logement=1.0,
+            poids_education=0.5,
+            poids_sante=0.5,
+            poids_inclusion=0.5,
+            poids_mobilite=0.5,
+            nb_adultes=1,
+            nb_enfants=0,
+            hebergement_cible=[],
+            logement="Location",
+            freq_retour="1 fois/mois",
+            codes_metiers=[[]],
+            codes_formations=[[]],
+            classe_enfants=[],
+            besoin_sante="Aucun",
+            inc_services_selection=[],
+            inc_asso_add_selection=[],
+            criteria_weights={},
+        )
+
+        engine = scoring.ScoringEngine(
+            df_all_communes=sample_data,
+            df_bv_geo=gpd.GeoDataFrame(),
+            scores_cat=live_scores_cat,
+            incl_index=sample_incl_index,
+            associations_data=pd.DataFrame(columns=["codgeo", "id_waldec", "count"]),
+            formations_data=pd.DataFrame(columns=["codgeo", "formation_code"]),
+            codformations_index=pd.DataFrame(columns=["label"]),
+            global_stats=global_stats,
+        )
+
+        # Run scoring (this invokes _compute_scores which applies the MAX_MAP_POLYGONS limit)
+        processed_gdf = engine.run(config)
+
+        # The processed_gdf should contain:
+        # - The top K (2) scored communes
+        # - The current commune (Bordeaux, 33063)
+        # - The commune pressentie (Pau, 64445)
+        # Therefore, Pau must be preserved despite the cutoff of 2!
+        assert "64445" in processed_gdf.index, (
+            "Shortlisted city must be preserved in processed_gdf even after polygon cutoff"
+        )
+
+        # Test results payload creation
+        results_data = engine.create_search_results(processed_gdf, config)
+        assert results_data.commune_pressentie is not None
+        assert results_data.commune_pressentie.codgeo == "64445"
+

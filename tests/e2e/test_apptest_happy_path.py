@@ -73,7 +73,7 @@ def test_happy_path_end_to_end(
     at.selectbox(key="ui_freq_retour").select("1 fois/mois").run()
     at.checkbox(key="ui_france_search").uncheck().run()
     at.checkbox(key="ui_region_search").uncheck().run()
-    at.selectbox(key="ui_mobility_region").select("75").run()  # region code
+    at.multiselect(key="ui_mobility_region").select("75").run()  # region code
     at.multiselect(key="ui_mobility_dept").select("33").run()
     at.radio(key="ui_target_city_size_label").set_value("🏘️ Petite Ville").run()
 

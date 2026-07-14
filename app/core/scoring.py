@@ -1510,6 +1510,12 @@ class ScoringEngine:
             if c_code and c_code in odis_sorted.index and c_code not in top_k.index:
                 top_k = pd.concat([top_k, odis_sorted.loc[[c_code]]])
 
+            p_code_raw = getattr(config, "commune_pressentie", None)
+            p_code = p_code_raw.code if hasattr(p_code_raw, "code") else p_code_raw
+
+            if p_code and p_code in odis_sorted.index and p_code not in top_k.index:
+                top_k = pd.concat([top_k, odis_sorted.loc[[p_code]]])
+
             return top_k
 
         return odis_sorted

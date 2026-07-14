@@ -141,7 +141,7 @@ def run_test_scenario(scenario_id, app_data):
         dept_details = app_data.get("dept_details", {})
         current_reg_code = dept_details.get(current_dept_code, {}).get("reg_code")
 
-        mock_session_state["ui_mobility_region"] = current_reg_code
+        mock_session_state["ui_mobility_region"] = [current_reg_code] if current_reg_code else []
         if loc_val == "region":
             mock_session_state["ui_mobility_dept"] = ["Toute la région"]
         else:
@@ -262,7 +262,7 @@ def test_result_details_display(app_data):
             "ui_departement": "33",
             "ui_commune": "Bordeaux",
             "ui_mobility_france": False,
-            "ui_mobility_region": "75",  # IDF
+            "ui_mobility_region": ["75"],  # IDF
             "ui_mobility_dept": "75",
             "ui_nb_adultes": 1,
             "ui_nb_enfants": 0,

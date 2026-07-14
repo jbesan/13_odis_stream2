@@ -89,6 +89,9 @@ def apply_logged_in_org_defaults(defaults: Dict[str, Any]) -> None:
                 else:
                     # Direct override for strings, numbers, etc.
                     defaults[key] = val
+            else:
+                # Add organization-specific defaults not present in global defaults
+                defaults[key] = val
 
         # Toast gating to avoid showing on every page load/re-run
         if st.session_state.get("org_defaults_applied") != org.id:
@@ -124,6 +127,18 @@ def session_states_init(defaults: Dict[str, Any]) -> None:
                 k = f"{key_base}_{i}"
                 if k not in st.session_state:
                     st.session_state[k] = val
+
+    # Initialize individual organization boosts keys (F-54 Expansion)
+    # This prevents Streamlit widget warning loops when rendering boost sliders.
+    org_boosts = st.session_state.get("ui_org_boosts") or defaults.get("org_boosts")
+    if org_boosts and isinstance(org_boosts, dict):
+        for criterion_id, default_val in org_boosts.items():
+            ui_key = f"ui_org_boost_{criterion_id}"
+            slider_key = f"ui_org_boost_slider_{criterion_id}"
+            if ui_key not in st.session_state:
+                st.session_state[ui_key] = float(default_val)
+            if slider_key not in st.session_state:
+                st.session_state[slider_key] = int(st.session_state[ui_key])
 
 
 def apply_search_criteria_to_ui(criteria: Any) -> None:
@@ -198,7 +213,7 @@ def apply_search_criteria_to_ui(criteria: Any) -> None:
         st.session_state["ui_region_search"] = True
         if loc_code:
             st.session_state["ui_mobility_region"] = (
-                loc_code[0] if isinstance(loc_code, list) else loc_code
+                loc_code if isinstance(loc_code, list) else [loc_code]
             )
     elif loc_area == "departement" and loc_code:
         st.session_state["ui_france_search"] = False
@@ -215,7 +230,7 @@ def apply_search_criteria_to_ui(criteria: Any) -> None:
         dept_details = app_data.get("dept_details", {})
         reg_code = dept_details.get(first_dept, {}).get("reg_code")
         if reg_code:
-            st.session_state["ui_mobility_region"] = reg_code
+            st.session_state["ui_mobility_region"] = [reg_code]
 
     # 5. Handle notes_qualitatives (UI expects a string, model provides a list of strings)
     if "notes_qualitatives" in flat_crit:
@@ -249,8 +264,10 @@ def apply_search_criteria_to_ui(criteria: Any) -> None:
 
     # 6b. Handle Organization Boosts
     if "org_boosts" in flat_crit and isinstance(flat_crit["org_boosts"], dict):
+        st.session_state["ui_org_boosts"] = flat_crit["org_boosts"]
         for b_key, b_val in flat_crit["org_boosts"].items():
             st.session_state[f"ui_org_boost_{b_key}"] = float(b_val)
+            st.session_state[f"ui_org_boost_slider_{b_key}"] = int(b_val)
 
     # 7. Town Size Reverse Lookup (Sync Radio Button with Mu/Sigma)
     target_pop = flat_crit.get("target_population")
