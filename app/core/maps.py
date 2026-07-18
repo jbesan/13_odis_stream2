@@ -455,7 +455,7 @@ def build_sante_layer(
 def build_mairies_layer(
     pois: gpd.GeoDataFrame, target_codgeos: Set[str]
 ) -> flm.FeatureGroup:
-    """Builds the map layer for mairies using unified POIs, rendering always-on red dots."""
+    """Builds the map layer for mairies using unified POIs, rendering always-on dark yellow dots above the chloropleth."""
     fg = flm.FeatureGroup(name="Mairies")
 
     filtered = pois[
@@ -467,14 +467,22 @@ def build_mairies_layer(
 
     for _, row in filtered.iterrows():
         popup_content = f"<b>{row['name']}</b><br>Type: {row['type']}"
-        flm.CircleMarker(
+        tooltip_content = f"<b>Mairie</b><br>{row['name']}"
+        
+        # SOTA: Render as Marker with DivIcon to force rendering on Leaflet markerPane (above choropleth overlayPane)
+        marker_html = """
+        <div style="background-color: #F5D819; border: 1.5px solid #1B4429; border-radius: 50%; width: 8px; height: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.4);"></div>
+        """
+        
+        flm.Marker(
             location=[row["lat"], row["lon"]],
-            radius=4,
-            color="red",
-            fill=True,
-            fill_color="red",
-            weight=0,
+            icon=flm.features.DivIcon(
+                icon_size=(11, 11),
+                icon_anchor=(5, 5),
+                html=marker_html,
+            ),
             popup=flm.Popup(popup_content, max_width=300),
+            tooltip=flm.Tooltip(tooltip_content, sticky=True),
         ).add_to(fg)
 
     return fg

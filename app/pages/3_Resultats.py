@@ -416,8 +416,8 @@ with col_map:
             # Always-on Mairie layer
             maps.build_mairies_layer(
                 data_loader.get_app_data()["pois"], target_codgeos
-            ).add_to(fg_dynamic)
-            legend_items.append({"color": "red", "text": "Mairie (BPE)", "icon": "circle"})
+            ).add_to(m)
+            legend_items.append({"color": "#F5D819", "text": "Mairie (BPE)", "icon": "circle"})
 
             if "edu" in selected_ids:
                 maps.build_ecoles_layer(
