@@ -200,7 +200,7 @@ def render_housing_form() -> None:
 def render_health_form() -> None:
     """Renders the UI for the 'Santé' form section."""
     # F-48: Consistent key with config.py
-    st.radio("Support médical à proximité", cfg.SANTE_OPTIONS, key="ui_besoin_sante")
+    st.multiselect("Support médical à proximité", cfg.SANTE_OPTIONS, key="ui_besoin_sante")
 
 
 def render_other_needs_form() -> None:
@@ -1029,7 +1029,7 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
         codes_metiers=codes_metiers,
         codes_formations=codes_formations,
         classe_enfants=classe_enfants,
-        besoin_sante=st.session_state.get("ui_besoin_sante", "Aucun"),
+        besoin_sante=st.session_state.get("ui_besoin_sante", []),
         # Consolidated inclusion services field
         inc_services_selection=inc_services_mapped,
         inc_asso_add_selection=inc_assos_mapped,

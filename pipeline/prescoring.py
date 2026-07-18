@@ -215,31 +215,12 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             communes_gdf['risque_fermeture_ratio'] = 0.0
 
         # ... (Creches Density)
-        if 'population' in communes_gdf.columns and 'bpe_creches_count' in communes_gdf.columns:
-            communes_gdf['bpe_creches_density'] = np.where(
-                communes_gdf['population'] > 0,
-                (communes_gdf['bpe_creches_count'] * 1000) / communes_gdf['population'],
-                0.0
-            )
-        
         # Hebergement Densities (New F-42)
         if 'population' in communes_gdf.columns:
-            if 'heb_centres_heb_cap' in communes_gdf.columns:
-                communes_gdf['heb_centres_heb_density'] = np.where(
-                    communes_gdf['population'] > 0,
-                    (communes_gdf['heb_centres_heb_cap'] * 1000) / communes_gdf['population'],
-                    0.0
-                )
             if 'inc_asso_refug_count' in communes_gdf.columns:
                 communes_gdf['inc_asso_refug_density'] = np.where(
                     communes_gdf['population'] > 0,
                     (communes_gdf['inc_asso_refug_count'] * 1000) / communes_gdf['population'],
-                    0.0
-                )
-            if 'heb_foyers_count' in communes_gdf.columns:
-                communes_gdf['heb_foyers_density'] = np.where(
-                    communes_gdf['population'] > 0,
-                    (communes_gdf['heb_foyers_count'] * 1000) / communes_gdf['population'],
                     0.0
                 )
             if 'heb_loc_iml_count' in communes_gdf.columns:
@@ -290,8 +271,6 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         process_scaling(communes_gdf, 'log_pp_occup', 'log_occup_scaled')
 
         # Hebergement Scaling (New F-42)
-        process_scaling(communes_gdf, 'heb_centres_heb_density', 'heb_centres_heb_scaled')
-        process_scaling(communes_gdf, 'heb_foyers_density', 'heb_foyers_scaled')
         process_scaling(communes_gdf, 'heb_loc_iml_density', 'heb_loc_iml_scaled')
         process_scaling(communes_gdf, 'heb_habitant_density', 'heb_asso_habitant_scaled')
 
@@ -341,9 +320,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         # Let's keep it standard.
         process_scaling(communes_gdf, 'risque_fermeture_ratio', 'edu_classes_ferm_scaled')
 
-        process_scaling(communes_gdf, 'bpe_creches_density', 'edu_creches_scaled')
         process_scaling(communes_gdf, 'edu_pe_tx_couverture', 'edu_petite_enfance_scaled') # Usually 0-100? or 0-1?
-
 
         # mob_gare_scaled
         if 'has_gare' in communes_gdf.columns:
@@ -360,23 +337,30 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             if col in communes_gdf.columns:
                 communes_gdf[score_col] = (communes_gdf[col] > 0).astype(float)
 
-        # Static Boolean Scores (Sante)
-        # Note: Health columns are not merged in build.py yet? 
-        # I need to check if they are merged.
-        # build.py merges 'finess' or 'sante'?
-        # It merges 'finess' but I don't see a merge for counts in build.py lines 60-80.
-        # I see 'merge_clean("education", ...)' but not health counts.
-        # Let's check build.py again.
-        
+        # Static Boolean Scores (Housing / Hébergement)
         for col, score_col in [
-            ('count_hopital', 'sante_hopital_scaled'),
-            ('count_maternite', 'sante_maternite_scaled'),
-            ('count_psy', 'sante_psy_scaled')
+            ('heb_chrs_count', 'heb_chrs_scaled'),
+            ('heb_cph_count', 'heb_cph_scaled'),
+            ('heb_cada_count', 'heb_cada_scaled'),
+            ('heb_fjt_count', 'heb_fjt_scaled'),
+            ('heb_pension_count', 'heb_pension_scaled')
         ]:
             if col in communes_gdf.columns:
                 communes_gdf[score_col] = (communes_gdf[col] > 0).astype(float)
-            else:
-                logging.warning(f"Column {col} missing for {score_col}")
+
+        # Static Boolean Scores (Sante)
+        for col, score_col in [
+            ('count_hopital', 'sante_hopital_scaled'),
+            ('count_maternite', 'sante_maternite_scaled'),
+            ('count_centre_sante', 'sante_centre_sante_scaled'),
+            ('count_psy', 'sante_psy_scaled'),
+            ('count_dialyse', 'sante_dialyse_scaled'),
+            ('count_maison_sante', 'sante_maison_sante_scaled'),
+            ('count_addictologie', 'sante_addictologie_scaled'),
+            ('count_pmi', 'sante_pmi_scaled')
+        ]:
+            if col in communes_gdf.columns:
+                communes_gdf[score_col] = (communes_gdf[col] > 0).astype(float)
                # 2. Add static scores that don't need calc (just rename/copy effectively, but already done in build?)
         # Actually most are calculated. 
         # But 'inc_population_scaled' etc are done above.
@@ -557,18 +541,6 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
                  0.0
              )
 
-        # Creches
-        # Note: 'population_bv' is the sum of population.
-        if 'bpe_creches_count' in bv_gdf.columns and 'population_bv' in bv_gdf.columns:
-             bv_gdf['bpe_creches_density'] = np.where(
-                 bv_gdf['population_bv'] > 0,
-                 bv_gdf['bpe_creches_count'] / bv_gdf['population_bv'] * 1000,
-                 0.0
-             )
-             
-        # J'Accueille (Binary Score) - MOVED TO DYNAMIC CALCULATION IN APP
-        # bv_gdf['heb_jaccueille_score'] = (bv_gdf['heb_jaccueille_count'] > 0).astype(float)
-             
         # --- 2. Scaling ---
         # Align with config-driven scaling used for communes
         if 'lien_social_density' in bv_gdf.columns:
@@ -579,9 +551,6 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
         
         if 'inc_siae_density' in bv_gdf.columns:
             process_scaling(bv_gdf, 'inc_siae_density', 'inc_siae_density_scaled')
-            
-        if 'bpe_creches_density' in bv_gdf.columns:
-            process_scaling(bv_gdf, 'bpe_creches_density', 'edu_creches_scaled')
 
         # --- 3. Weighted Averages from Communes ---
         metrics_to_avg = [
@@ -593,11 +562,14 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
             'log_occup_scaled',
             'log_soc_inoc_scaled',
             'edu_petite_enfance_scaled',
-            'sante_hopital_scaled', 'sante_maternite_scaled', 'sante_psy_scaled',
+            'sante_hopital_scaled', 'sante_maternite_scaled', 'sante_centre_sante_scaled',
+            'sante_psy_scaled', 'sante_dialyse_scaled', 'sante_maison_sante_scaled',
+            'sante_addictologie_scaled', 'sante_pmi_scaled',
             'edu_lycee_scaled', 'edu_college_scaled',
             'edu_maternelle_scaled', 'edu_elementaire_scaled',
             'youth_decline_scaled', 'workclass_decline_scaled',
-            'heb_centres_heb_scaled', 'heb_foyers_scaled', 
+            'heb_chrs_scaled', 'heb_cph_scaled', 'heb_cada_scaled',
+            'heb_fjt_scaled', 'heb_pension_scaled',
             'heb_loc_iml_scaled', 'heb_asso_habitant_scaled',
             'log_soc_delay_scaled', 'sante_rdv_delay_scaled', 'mob_dur_share_scaled', 'ter_insecurite_scaled'
         ]

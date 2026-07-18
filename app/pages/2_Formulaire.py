@@ -123,7 +123,7 @@ def display_housing_page():
 
 
 def display_health_page():
-    st.subheader(f"Besoin en santé {get_person_accompanied_str()}")
+    st.subheader(f"Besoin(s) en santé {get_person_accompanied_str()}")
     ui_forms.render_health_form()
 
 

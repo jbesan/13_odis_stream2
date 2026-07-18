@@ -606,39 +606,90 @@ scores:
     min_bound: 0.0
     max_bound: 0.1
 
-  - id: heb_centres_heb_scaled
+  - id: heb_chrs_scaled
     category: logement
-    source_metric: heb_centres_heb_density
+    source_metric: heb_chrs_count
     bdv_factor: 0.5
     computation: precomputed
     display:
-      name: Centres d'Hébergement (CHRS, CPH)
-      strong_point_text: Capacité d'accueil importante en CHRS/CPH
-      high_value_adjective: importante
-      show: true
-      unit: places/1000 hab.
-      display_factor: 1
-      tooltip: Capacité d'accueil totale en CHRS et CPH pour 1000 habitants (Source BPE)
-    weight: 2.0
-    min_bound: 0.0
-    max_bound: 2.5
-
-  - id: heb_foyers_scaled
-    category: logement
-    source_metric: heb_foyers_count
-    bdv_factor: 0.5
-    computation: precomputed
-    display:
-      name: Foyers & Pensions de Famille
-      strong_point_text: Présence de foyers (FJT, migrants) et pensions de famille
+      name: Centre d'hébergement et de réinsertion sociale (CHRS)
+      strong_point_text: Présence de structures CHRS
       high_value_adjective: forte
       show: true
       unit: structures
       display_factor: 1
-      tooltip: Nombre de foyers (FJT, migrants) et pensions de famille identifiés (Source BPE)
+      tooltip: Nombre de structures CHRS identifiées (Source BPE)
     weight: 2.0
     min_bound: 0.0
-    max_bound: 0.2
+    max_bound: 1.0
+
+  - id: heb_cph_scaled
+    category: logement
+    source_metric: heb_cph_count
+    bdv_factor: 0.5
+    computation: precomputed
+    display:
+      name: Centre provisoire d'hébergement (CPH)
+      strong_point_text: Présence de structures CPH
+      high_value_adjective: forte
+      show: true
+      unit: structures
+      display_factor: 1
+      tooltip: Nombre de structures CPH identifiées (Source BPE)
+    weight: 2.0
+    min_bound: 0.0
+    max_bound: 1.0
+
+  - id: heb_cada_scaled
+    category: logement
+    source_metric: heb_cada_count
+    bdv_factor: 0.5
+    computation: precomputed
+    display:
+      name: Centre d'accueil de demandeurs d'asile (CADA)
+      strong_point_text: Présence de structures CADA
+      high_value_adjective: forte
+      show: true
+      unit: structures
+      display_factor: 1
+      tooltip: Nombre de structures CADA identifiées (Source BPE)
+    weight: 2.0
+    min_bound: 0.0
+    max_bound: 1.0
+
+  - id: heb_fjt_scaled
+    category: logement
+    source_metric: heb_fjt_count
+    bdv_factor: 0.5
+    computation: precomputed
+    display:
+      name: Foyer de Jeunes Travailleurs (FJT)
+      strong_point_text: Présence de structures FJT
+      high_value_adjective: forte
+      show: true
+      unit: structures
+      display_factor: 1
+      tooltip: Nombre de structures FJT identifiées (Source BPE)
+    weight: 2.0
+    min_bound: 0.0
+    max_bound: 1.0
+
+  - id: heb_pension_scaled
+    category: logement
+    source_metric: heb_pension_count
+    bdv_factor: 0.5
+    computation: precomputed
+    display:
+      name: Pensions de Famille
+      strong_point_text: Présence de pensions de famille
+      high_value_adjective: forte
+      show: true
+      unit: structures
+      display_factor: 1
+      tooltip: Nombre de pensions de famille identifiées (Source BPE)
+    weight: 2.0
+    min_bound: 0.0
+    max_bound: 1.0
 
   - id: heb_asso_habitant_scaled
     category: logement

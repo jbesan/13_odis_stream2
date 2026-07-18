@@ -226,8 +226,11 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         # Merge CAF
         merge_clean("caf", ['taux_couverture'])
         
-        # Merge Education
-        merge_clean("education", ['edu_maternelle_ct', 'edu_elementaire_ct', 'edu_college_ct', 'edu_lycee_ct'])
+        # Merge Education (from BPE25)
+        merge_clean("bpe_education_cols", [
+            'edu_maternelle_ct', 'edu_elementaire_ct', 'edu_college_ct', 'edu_lycee_ct',
+            'edu_eaje_ct', 'edu_relais_petite_enfance_ct', 'edu_alsh_ct', 'edu_micro_creche_ct'
+        ])
         
         # Merge Political
         merge_clean("political", ['pol_num'])
@@ -238,15 +241,27 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         # Merge School Effectifs
         merge_clean("school_effectifs", ['total_eleves', 'ecoles_count', 'risky_schools_count'])
         
-        # Merge BPE Petite Enfance (Creches)
-        merge_clean("bpe_petite_enfance_cols", ['bpe_creches_count'])
-        
-        # Merge Hebergement metrics (New F-42)
-        merge_clean("bpe_hebergement_cols", ['heb_centres_heb_cap', 'heb_foyers_count'])
+        # Merge Hebergement metrics (from BPE25)
+        merge_clean("bpe_hebergement_cols", [
+            'heb_chrs_count', 'heb_cph_count', 'heb_cada_count', 'heb_fjt_count', 'heb_pension_count'
+        ])
         merge_clean("hebergement_rna_cols", ['heb_loc_iml_count', 'heb_habitant_count'])
 
-        # Merge Gares (Odace API)
-        merge_clean("gares", ['gare_count', 'has_gare'])
+        # Merge Gares (from BPE25)
+        merge_clean("bpe_gares_cols", ['gare_count', 'has_gare'])
+
+        # Merge Santé metrics (from BPE25)
+        merge_clean("bpe_sante_cols", [
+            'count_hopital', 'count_maternite', 'count_centre_sante',
+            'count_psy', 'count_dialyse', 'count_maison_sante',
+            'count_addictologie', 'count_pmi'
+        ])
+
+        # Merge Action Sociale (from BPE25)
+        merge_clean("bpe_action_sociale_cols", [
+            'act_antenne_justice_count', 'act_france_services_count',
+            'act_mairie_count', 'act_femmes_vuln_count'
+        ])
 
         # Merge mobility metrics
         merge_clean("mob_transports_pub", ['nb_stops_bus', 'nb_stops_tram', 'nb_stops_metro', 'nb_stops_train', 'nb_stops_total'])
@@ -369,65 +384,8 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         # Merge Refugee Associations Count - NOW HANDLED via rna_inclusion_agg.parquet
         # (See fetch_rna_rag_stats in ingest.py and merge_clean("rna_inclusion_agg") above)
 
-        # --- Calculate Health Counts (On-the-fly) ---
-        # Since we don't have a clean health file with counts, we calculate them here from raw/cache.
-        try:
-            finess_cfg = config['sources']['finess_national']
-            finess_path = CACHE_DIR / finess_cfg['local_name']
-            if finess_path.exists():
-                finess_df = load_dataset(finess_path, finess_cfg)
-                
-                # Construct codgeo
-                if 'Departement' in finess_df.columns and 'Commune' in finess_df.columns:
-                     finess_df['codgeo'] = finess_df['Departement'].astype(str) + finess_df['Commune'].astype(str).str.zfill(3)
-                
-                # Filter Categories
-                # Hospitals
-                hopital_mask = finess_df['LibelleCategorieAgregat'].isin([
-                    'Centres Hospitaliers', 
-                    'Centres Hospitaliers Régionaux', 
-                    'Hôpitaux Locaux'
-                ])
-                # Psy
-                psy_mask = finess_df['LibelleCategorieAgregat'].isin([
-                    'Centres Hospitaliers Spécialisés Lutte Maladies Mentales', 
-                    'Autres Etablissements de Lutte contre les Maladies Mentales'
-                ])
-                
-                # Maternites (Merge with DREES)
-                mat_cfg = config['sources']['maternites']
-                mat_path = CACHE_DIR / mat_cfg['local_name']
-                is_maternite_mask = pd.Series(False, index=finess_df.index)
-                
-                if mat_path.exists():
-                     mat_df = pd.read_json(mat_path)
-                     mat_col = 'FI_ET' if 'FI_ET' in mat_df.columns else 'fi_et'
-                     if mat_col in mat_df.columns:
-                         mat_ids = set(mat_df[mat_col].astype(str))
-                         is_maternite_mask = finess_df['nofinesset'].astype(str).isin(mat_ids)
+        # --- Health Counts & BPE columns are now pre-aggregated in clean_bpe ---
 
-                # Aggregate
-                health_counts = finess_df.groupby('codgeo').agg(
-                    count_hopital=('nofinesset', lambda x: x[hopital_mask.loc[x.index]].count()),
-                    count_psy=('nofinesset', lambda x: x[psy_mask.loc[x.index]].count()),
-                    count_maternite=('nofinesset', lambda x: x[is_maternite_mask.loc[x.index]].count())
-                ).reset_index()
-                
-                communes_gdf = communes_gdf.merge(health_counts, on='codgeo', how='left')
-                
-                # Fill NaNs for health counts
-                for col in ['count_hopital', 'count_psy', 'count_maternite']:
-                    communes_gdf[col] = communes_gdf[col].fillna(0)
-                
-                logging.info(f"Health counts calculated.")
-                    
-        except Exception as e:
-            logging.error(f"Failed to calculate health counts: {e}")
-            import traceback
-            traceback.print_exc()
-
-        # 3. Renames and Calculations
-        
         # Renames
         rename_map = {
             'taux_couverture': 'edu_pe_tx_couverture',
@@ -445,11 +403,18 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         numeric_cols = [
             'population', 'log_soc_total', 'log_soc_inoccupes', 
             'edu_maternelle_ct', 'edu_elementaire_ct', 'edu_college_ct', 'edu_lycee_ct',
+            'edu_eaje_ct', 'edu_relais_petite_enfance_ct', 'edu_alsh_ct', 'edu_micro_creche_ct',
             'lien_social_count', 'svc_incl_count', 
             'pop_active', 'pop_employes', 'pop_chomeurs', 
             'metiers_offres_diff', 'log_priv_vacant_plus_2ans', 'log_priv_total', 'edu_pe_tx_couverture',
-            'bpe_creches_count', 'heb_centres_heb_cap', 'heb_foyers_count',
+            'heb_chrs_count', 'heb_cph_count', 'heb_cada_count', 'heb_fjt_count', 'heb_pension_count',
             'heb_loc_iml_count', 'heb_habitant_count',
+            'count_hopital', 'count_maternite', 'count_centre_sante',
+            'count_psy', 'count_dialyse', 'count_maison_sante',
+            'count_addictologie', 'count_pmi',
+            'act_antenne_justice_count', 'act_france_services_count',
+            'act_mairie_count', 'act_femmes_vuln_count',
+            'gare_count', 'has_gare',
             'nb_stops_bus', 'nb_stops_tram', 'nb_stops_metro', 'nb_stops_train', 'nb_stops_total',
             'inc_siae_count',
             'log_soc_delay', 'sante_apl', 'mob_dur_share', 'ter_insecurite'
@@ -765,212 +730,12 @@ def build_vertical_tables(config: Dict[str, Any], logger: PipelineLogger):
         logger.log_step("build_vertical_tables", "ERROR", {"error": str(e)})
 
 def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
-    """Generates POIs from raw/cache sources."""
+    """Generates POIs from clean sources."""
     logger.log_step("generate_pois", "STARTED")
     try:
         pois_list = []
         
-        # Education
-        edu_cfg = config['sources']['education_annuaire']
-        edu_path = CACHE_DIR / edu_cfg['local_name']
-        if edu_path.exists():
-            edu_df = load_dataset(edu_path, edu_cfg)
-            # Normalize columns
-            edu_df.columns = [c.strip() for c in edu_df.columns]
-            
-            # Map new columns
-            # numero_uai -> id
-            # appellation_officielle -> name
-            # nature_uai_libe -> type
-            # latitude -> lat
-            # longitude -> lon
-            # secteur_public_prive_libe -> metadata (unused)
-            
-            if 'latitude' in edu_df.columns and 'longitude' in edu_df.columns:
-                 edu_df['lat'] = edu_df['latitude']
-                 edu_df['lon'] = edu_df['longitude']
-            
-            # Filter allowed types
-            allowed_types = [
-                'ECOLE MATERNELLE',
-                'ECOLE DE NIVEAU ELEMENTAIRE',
-                'ECOLE ELEMENTAIRE D APPLICATION',
-                'ECOLE ELEMENTAIRE',
-                'ECOLE PRIMAIRE',
-                'COLLEGE',
-                'LYCEE PROFESSIONNEL', 
-                'LYCEE ENSEIGNT GENERAL ET TECHNOLOGIQUE', 
-                'LYCEE D ENSEIGNEMENT GENERAL', 
-                'LYCEE D ENSEIGNEMENT TECHNOLOGIQUE',
-                'LYCEE POLYVALENT',
-                'SECTION D ENSEIGNEMENT PROFESSIONNEL'
-            ]
-            
-            if 'nature_uai_libe' in edu_df.columns:
-                edu_df = edu_df[edu_df['nature_uai_libe'].isin(allowed_types)]
-
-            # Calculate flags (logic from data_loader.py)
-            edu_df['ecole_maternelle'] = edu_df['nature_uai_libe'].str.contains('MATERNELLE', case=False, na=False) | \
-                                          edu_df['nature_uai_libe'].str.contains('PRIMAIRE', case=False, na=False)
-            edu_df['ecole_elementaire'] = edu_df['nature_uai_libe'].str.contains('ELEMENTAIRE', case=False, na=False) | \
-                                           edu_df['nature_uai_libe'].str.contains('PRIMAIRE', case=False, na=False)
-
-            # Standardize Types
-            edu_pois_list = []
-            
-            # 1. Maternelles
-            mat_mask = edu_df['ecole_maternelle']
-            if mat_mask.any():
-                mat_df_pois = edu_df[mat_mask].copy()
-                edu_pois_list.append(pd.DataFrame({
-                    'id': mat_df_pois['numero_uai'].astype(str) + "_mat",
-                    'name': mat_df_pois['appellation_officielle'],
-                    'type': 'Maternelle',
-                    'category': 'education',
-                    'lat': mat_df_pois['lat'],
-                    'lon': mat_df_pois['lon'],
-                    'codgeo': mat_df_pois['code_commune']
-                }))
-            
-            # 2. Elementaires
-            elem_mask = edu_df['ecole_elementaire']
-            if elem_mask.any():
-                elem_df_pois = edu_df[elem_mask].copy()
-                edu_pois_list.append(pd.DataFrame({
-                    'id': elem_df_pois['numero_uai'].astype(str) + "_elem",
-                    'name': elem_df_pois['appellation_officielle'],
-                    'type': 'Elémentaire',
-                    'category': 'education',
-                    'lat': elem_df_pois['lat'],
-                    'lon': elem_df_pois['lon'],
-                    'codgeo': elem_df_pois['code_commune']
-                }))
-            
-            # 3. Colleges & Lycees (remaining types)
-            other_types = [
-                'COLLEGE', 'LYCEE PROFESSIONNEL', 'LYCEE ENSEIGNT GENERAL ET TECHNOLOGIQUE', 
-                'LYCEE D ENSEIGNEMENT GENERAL', 'LYCEE D ENSEIGNEMENT TECHNOLOGIQUE',
-                'LYCEE POLYVALENT', 'SECTION D ENSEIGNEMENT PROFESSIONNEL'
-            ]
-            other_mask = edu_df['nature_uai_libe'].isin(other_types)
-            if other_mask.any():
-                other_df = edu_df[other_mask].copy()
-                def map_other_type(t):
-                    if t == 'COLLEGE': return 'Collège'
-                    return 'Lycée'
-                
-                edu_pois_list.append(pd.DataFrame({
-                    'id': other_df['numero_uai'],
-                    'name': other_df['appellation_officielle'],
-                    'type': other_df['nature_uai_libe'].apply(map_other_type),
-                    'category': 'education',
-                    'lat': other_df['lat'],
-                    'lon': other_df['lon'],
-                    'codgeo': other_df['code_commune']
-                }))
-
-            if edu_pois_list:
-                pois_list.append(pd.concat(edu_pois_list, ignore_index=True))
-            
-        # Health (FINESS)
-        finess_cfg = config['sources']['finess_national']
-        finess_path = CACHE_DIR / finess_cfg['local_name']
-        if finess_path.exists():
-            finess_df = load_dataset(finess_path, finess_cfg)
-            finess_df = finess_df.dropna(subset=['coordxet', 'coordyet'])
-            
-            # Filter Public only
-            if 'LibelleSph' in finess_df.columns:
-                 finess_df = finess_df[finess_df['LibelleSph'] == 'Etablissement public de santé']
-            
-            gdf_finess = gpd.GeoDataFrame(
-                finess_df,
-                geometry=gpd.points_from_xy(finess_df.coordxet, finess_df.coordyet),
-                crs=cfg.PROJECTED_CRS
-            )
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*array with ndim > 0 to a scalar is deprecated.*")
-                gdf_finess = gdf_finess.to_crs("EPSG:4326")
-            
-            # Merge Maternites
-            mat_cfg = config['sources']['maternites']
-            mat_path = CACHE_DIR / mat_cfg['local_name']
-            if mat_path.exists():
-                 # JSON format
-                 mat_df = pd.read_json(mat_path)
-                 # Expecting 'FI_ET' or 'fi_et' column
-                 mat_col = 'FI_ET' if 'FI_ET' in mat_df.columns else 'fi_et'
-                 
-                 if mat_col in mat_df.columns:
-                     mat_ids = set(mat_df[mat_col].astype(str))
-                     gdf_finess['is_maternite'] = gdf_finess['nofinesset'].astype(str).isin(mat_ids)
-                 else:
-                     gdf_finess['is_maternite'] = False
-            else:
-                 gdf_finess['is_maternite'] = False
-
-            # Define categories
-            # Clean strings first
-            if 'LibelleCategorieAgregat' in gdf_finess.columns:
-                gdf_finess['LibelleCategorieAgregat'] = gdf_finess['LibelleCategorieAgregat'].astype(str).str.strip()
-            
-            gdf_finess['is_hopital'] = gdf_finess['LibelleCategorieAgregat'].isin([
-                'Centres Hospitaliers', 
-                'Centres Hospitaliers Régionaux', 
-                'Hôpitaux Locaux'
-            ])
-            
-            gdf_finess['is_psy'] = gdf_finess['LibelleCategorieAgregat'].isin([
-                'Centres Hospitaliers Spécialisés Lutte Maladies Mentales', 
-                'Autres Etablissements de Lutte contre les Maladies Mentales'
-            ])
-            
-            # Ensure we have codgeo
-            if 'Departement' in gdf_finess.columns and 'Commune' in gdf_finess.columns:
-                 gdf_finess['codgeo'] = gdf_finess['Departement'].astype(str) + gdf_finess['Commune'].astype(str).str.zfill(3)
-            elif 'codgeo' not in gdf_finess.columns:
-                  gdf_finess['codgeo'] = None
-
-            # 1. Sante POIs (Hopital OR Psy)
-            sante_mask = gdf_finess['is_hopital'] | gdf_finess['is_psy']
-            sante_df = gdf_finess[sante_mask].copy()
-
-            # Standardize Types
-            def map_sante_type(row):
-                if row['is_hopital']: return 'Hopital'
-                if row['is_maternite']: return 'Maternité'
-                if row['is_psy']: return 'Soutien Psychologique & Addictologie'
-                return row['LibelleCategorieAgregat']
-
-            sante_df['standard_type'] = sante_df.apply(map_sante_type, axis=1)
-
-            finess_pois = pd.DataFrame({
-                'id': sante_df['nofinesset'],
-                'name': sante_df['RaisonSociale'],
-                'type': sante_df['standard_type'],
-                'category': 'sante',
-                'lat': sante_df.geometry.y,
-                'lon': sante_df.geometry.x,
-                'codgeo': sante_df['codgeo']
-            })
-            pois_list.append(finess_pois)
-            
-            # 2. Maternites POIs
-            mat_mask = gdf_finess['is_maternite']
-            mat_df_pois = gdf_finess[mat_mask].copy()
-            
-            maternite_pois = pd.DataFrame({
-                'id': mat_df_pois['nofinesset'].astype(str) + "_mat",
-                'name': mat_df_pois['RaisonSociale'],
-                'type': 'Maternité',
-                'category': 'sante',
-                'lat': mat_df_pois.geometry.y,
-                'lon': mat_df_pois.geometry.x,
-                'codgeo': mat_df_pois['codgeo']
-            })
-            pois_list.append(maternite_pois)
-            
-        # Inclusion Services (Cleaned in Ingest)
+        # 1. Inclusion Services (Cleaned in Ingest)
         incl_clean_path = CLEAN_DIR / "services_inclusion.parquet"
         if incl_clean_path.exists():
             incl_df = pd.read_parquet(incl_clean_path, engine='fastparquet')
@@ -991,16 +756,14 @@ def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
                 'lon': incl_df['longitude'],
                 'codgeo': incl_df['codgeo']
             })
-            
             pois_list.append(incl_pois)
         else:
              logging.warning("Clean services_inclusion.parquet not found. Run ingest.")
 
-        # BPE - POIs (Creches + Hebergement)
+        # 2. BPE - POIs (Ecoles, Sante, Hebergement, Mairie, Gares)
         bpe_pois_path = CLEAN_DIR / "bpe_pois.parquet"
         if bpe_pois_path.exists():
             bpe_pois_df = pd.read_parquet(bpe_pois_path, engine='fastparquet')
-            # Schema already matches from ingest step
             pois_list.append(bpe_pois_df)
 
         if pois_list:

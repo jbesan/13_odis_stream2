@@ -375,49 +375,19 @@ def build_ecoles_layer(
         f"build_ecoles_layer: Found {len(filtered)} schools before filtering by type."
     )
 
-    # Filter by type (nature_uai_libe)
-    # Replicate logic from data_loader.py using 'type' column
-    # Data is now standardized in ETL (pipeline/build.py)
-
-    # Robust type matching: check for variations and standardize
-    is_maternelle = filtered["type"].isin(
-        ["Maternelle", "Maternelle D Application", "Maternelle d'Application"]
-    )
-    is_elementaire = filtered["type"].isin(
-        [
-            "Elémentaire",
-            "Élémentaire",
-            "Elémentaire D Application",
-            "Élémentaire d'Application",
-            "Elementaire",
-        ]
-    )
-    is_college = filtered["type"].isin(["Collège", "College"])
-    is_lycee = filtered["type"].isin(["Lycée", "Lycee"])
-
-    # Map "Crèche / Assistante Maternelle" to available Crèche types
-    creche_types = [
-        "Crèche",
-        "Micro crèche",
-        "Halte-garderie",
-        "Crèche familiale",
-        "Crèche collective",
-        "Crèche parentale",
-        "Creche",
-    ]
-    # Ensure 'type_standardized' exists for the new logic, if not, fallback to 'type'
-    if "type_standardized" not in filtered.columns:
-        filtered["type_standardized"] = filtered["type"]
-
-    def is_creche_func(row):
-        return row["type_standardized"] in creche_types
+    # Standardized type matching from clean_bpe
+    is_maternelle = filtered["type"].isin(["École Maternelle", "École Primaire"])
+    is_elementaire = filtered["type"].isin(["École Élémentaire", "École Primaire"])
+    is_college = filtered["type"] == "Collège"
+    is_lycee = filtered["type"].isin(["Lycée Général/Tech", "Lycée Professionnel", "Lycée Agricole", "Section Enseignement Pro"])
+    is_creche = filtered["type"].isin(["Crèche / EAJE", "Micro-crèche", "Relais Petite Enfance", "Accueil de loisirs (ALSH)"])
 
     niveaux_map = {
         "Maternelle": is_maternelle,
         "Elémentaire": is_elementaire,
         "Collège": is_college,
         "Lycée": is_lycee,
-        "Crèche / Assistante Maternelle": filtered.apply(is_creche_func, axis=1),
+        "Crèche / Assistante Maternelle": is_creche,
     }
 
     mask = pd.Series(False, index=filtered.index)
@@ -450,17 +420,27 @@ def build_sante_layer(
         (pois["category"] == "sante") & (pois["codgeo"].isin(target_codgeos))
     ].copy()
 
-    if filtered.empty:
+    besoin_sante_list = getattr(config, "besoin_sante", [])
+    if filtered.empty or not besoin_sante_list:
         return fg
 
-    # Filter by type (Standardized in ETL)
-    mask = pd.Series(False, index=filtered.index)
-    if config.besoin_sante == "Maternité":
-        mask = filtered["type"] == "Maternité"
-    elif config.besoin_sante in ["Hôpital", "Hopital"]:
-        mask = filtered["type"] == "Hopital"
-    elif config.besoin_sante == "Soutien Psychologique & Addictologie":
-        mask = filtered["type"] == "Soutien Psychologique & Addictologie"
+    # Mapping of needs to POI types (type column)
+    sante_type_map = {
+        "Hôpital": "Hôpital",
+        "Maternité": "Maternité",
+        "Soutien Psychologique": "Soutien Psychologique",
+        "Dialyse": "Dialyse",
+        "Maison de santé": "Maison de santé",
+        "Addictologie": "Addictologie",
+        "Santé maternelle et infantile (PMI)": "Santé maternelle et infantile (PMI)",
+    }
+    
+    # Filter the types corresponding to the chosen needs
+    allowed_types = [sante_type_map[b] for b in besoin_sante_list if b in sante_type_map]
+    if not allowed_types:
+        return fg
+        
+    mask = filtered["type"].isin(allowed_types)
 
     if not mask.any():
         return fg
@@ -469,6 +449,34 @@ def build_sante_layer(
         filtered[mask], icon="plus", color="blue", tooltip_cols=["name", "type"]
     )
     cluster.add_to(fg)
+    return fg
+
+
+def build_mairies_layer(
+    pois: gpd.GeoDataFrame, target_codgeos: Set[str]
+) -> flm.FeatureGroup:
+    """Builds the map layer for mairies using unified POIs, rendering always-on red dots."""
+    fg = flm.FeatureGroup(name="Mairies")
+
+    filtered = pois[
+        (pois["category"] == "mairie") & (pois["codgeo"].isin(target_codgeos))
+    ].copy()
+
+    if filtered.empty:
+        return fg
+
+    for _, row in filtered.iterrows():
+        popup_content = f"<b>{row['name']}</b><br>Type: {row['type']}"
+        flm.CircleMarker(
+            location=[row["lat"], row["lon"]],
+            radius=4,
+            color="red",
+            fill=True,
+            fill_color="red",
+            weight=0,
+            popup=flm.Popup(popup_content, max_width=300),
+        ).add_to(fg)
+
     return fg
 
 

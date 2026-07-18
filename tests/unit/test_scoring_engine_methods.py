@@ -36,7 +36,7 @@ def test_compute_sante_scores_direct(base_sample_data, live_scores_cat):
     config = SearchCriterias(
         nb_adultes=1,
         nb_enfants=0,
-        besoin_sante="Hôpital",
+        besoin_sante=["Hôpital"],
         codes_metiers=[[]],
         codes_formations=[[]],
     )
@@ -53,7 +53,7 @@ def test_compute_sante_scores_direct(base_sample_data, live_scores_cat):
     config_none = SearchCriterias(
         nb_adultes=1,
         nb_enfants=0,
-        besoin_sante="Aucun",
+        besoin_sante=[],
         codes_metiers=[[]],
         codes_formations=[[]],
     )

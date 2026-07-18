@@ -59,7 +59,7 @@ def base_config():
         codes_metiers=[[]],
         codes_formations=[[]],
         classe_enfants=[],
-        besoin_sante="Aucun",
+        besoin_sante=[],
         inc_services_selection=[],
         inc_asso_add_selection=[],
         type_logement=CriteriaItem(code="appt_all", label="Appartement (Tous types)"),
@@ -71,7 +71,7 @@ def test_format_city_details_consistency(scoring_engine, base_df, base_config):
     config = base_config
     config.nb_enfants = 1
     config.classe_enfants = ["Maternelle"]
-    config.besoin_sante = "Hôpital"
+    config.besoin_sante = ["Hôpital"]
     config.type_logement = CriteriaItem(
         code="appt_all", label="Appartement (Tous types)"
     )

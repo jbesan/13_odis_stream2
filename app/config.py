@@ -73,16 +73,22 @@ LOC_SEARCH_AREA_OPTIONS = {
 }
 HEBERGEMENT_OPTIONS = [
     "Location avec Intermédiation",
-    "Centres d'Hébergement (CHRS, CPH)",
-    "Foyers & Pensions de Famille",
+    "Centre d'hébergement et de réinsertion sociale (CHRS)",
+    "Centre provisoire d'hébergement (CPH)",
+    "Centre d'accueil de demandeurs d'asile (CADA)",
+    "Foyer de Jeunes Travailleurs (FJT)",
+    "Pensions de Famille",
     "Chez l'habitant",
 ]
 LOGEMENT_OPTIONS = ["Location", "Logement Social"]
 SANTE_OPTIONS = [
-    "Aucun",
     "Hôpital",
     "Maternité",
-    "Soutien Psychologique & Addictologie",
+    "Soutien Psychologique",
+    "Dialyse",
+    "Maison de santé",
+    "Addictologie",
+    "Santé maternelle et infantile (PMI)",
 ]
 POIDS_OPTIONS = [0.0, 0.25, 0.5, 0.75, 1.0]
 HOUSING_TYPE_OPTIONS = {

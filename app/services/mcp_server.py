@@ -402,7 +402,7 @@ def _compute_top_cities_logic(
         codes_metiers=c_metiers,
         codes_formations=c_formations,
         classe_enfants=filters.get("classe_enfants", []),
-        besoin_sante=filters.get("besoin_sante", "Aucun"),
+        besoin_sante=filters.get("besoin_sante", []),
         type_logement=filters.get("type_logement") or "appt_all",
         inc_services_selection=inc_services,
         inc_asso_add_selection=filters.get("inc_asso_add_selection", []),

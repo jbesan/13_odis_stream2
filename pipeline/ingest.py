@@ -613,158 +613,14 @@ def clean_caf(config: Dict[str, Any], logger: PipelineLogger):
             logger.log_step("clean_caf", "COMPLETED", {"path": str(output_path), "rows": len(df_out), "source": "legacy"})
 
 def clean_education(config: Dict[str, Any], logger: PipelineLogger):
-    """Cleans Education and saves to parquet."""
-    logger.log_step("clean_education", "STARTED")
-    source = config['sources']['education_annuaire']
-    path = CACHE_DIR / source['local_name']
-    
-    if source.get('use_odace', False):
-        try:
-            client = get_odace_client(logger)
-            df_odace = client.fetch_table(source.get('odace_table', 'dim_etablissement_scolaire'))
-            if not df_odace.empty:
-                # Map to raw format and write to CACHE_DIR/education_annuaire.parquet
-                rename_dict = {
-                    'uai_code': 'numero_uai',
-                    'commune_insee_code': 'code_commune',
-                    'nature_etablissement': 'nature_uai_libe',
-                    'etablissement_label': 'appellation_officielle'
-                }
-                df_raw = df_odace.rename(columns=rename_dict)
-                for col in ['numero_uai', 'code_commune', 'nature_uai_libe', 'appellation_officielle', 'latitude', 'longitude', 'code_postal']:
-                    if col not in df_raw.columns:
-                        df_raw[col] = ""
-                
-                df_raw = df_raw[['numero_uai', 'code_commune', 'nature_uai_libe', 'appellation_officielle', 'latitude', 'longitude', 'code_postal']].copy()
-                df_raw.to_parquet(path, engine='fastparquet')
-                logging.info(f"Education: Written mapped Odace data to cache path {path}")
-            else:
-                logging.warning("Odace fetch returned empty data for education_annuaire. Falling back to legacy.")
-        except Exception as e:
-            logging.error(f"Failed to fetch education_annuaire from Odace: {e}. Falling back to legacy.")
-
-    if not path.exists(): return
-
-    df = load_dataset(path, source)
-    
-    # Columns: 'Code INSEE de la commune', 'Code nature', 'Nature'
-    # Normalize columns
-    df.columns = [c.strip() for c in df.columns]
-    
-    # Identify columns
-    codgeo_col = next((c for c in df.columns if 'code_commune' in c), None) # Changed from 'Code INSEE'
-    nature_col = 'nature_uai' # Changed from 'Code nature'
-    
-    if not codgeo_col or 'nature_uai_libe' not in df.columns:
-         logging.warning(f"Education: Missing columns. Found: {df.columns}")
-         return
-
-    df['codgeo'] = df[codgeo_col].astype(str).str.zfill(5)
-    
-    # Aggregation logic based on 'nature_uai_libe'
-    # Maternelles = ['ECOLE MATERNELLE']
-    # Elementaires = ['ECOLE DE NIVEAU ELEMENTAIRE']
-    # Collèges = ['COLLEGE']
-    # Lycées = ['LYCEE PROFESSIONNEL', 'LYCEE ENSEIGNT GENERAL ET TECHNOLOGIQUE', 'LYCEE D ENSEIGNEMENT GENERAL', 'LYCEE D ENSEIGNEMENT TECHNOLOGIQUE']
-    
-    if 'nature_uai_libe' not in df.columns:
-         logging.warning(f"Education: Missing 'nature_uai_libe'. Found: {df.columns}")
-         return
-
-    # Create flags
-    df['is_maternelle'] = (df['nature_uai_libe'].str.contains('MATERNELLE', case=False, na=False) | \
-                           df['nature_uai_libe'].str.contains('PRIMAIRE', case=False, na=False)).astype(int)
-    df['is_elementaire'] = (df['nature_uai_libe'].str.contains('ELEMENTAIRE', case=False, na=False) | \
-                            df['nature_uai_libe'].str.contains('PRIMAIRE', case=False, na=False)).astype(int)
-    df['is_college'] = (df['nature_uai_libe'] == 'COLLEGE').astype(int)
-    df['is_lycee'] = (df['nature_uai_libe'].str.contains('LYCEE', case=False, na=False) | \
-                      df['nature_uai_libe'].str.contains('SECTION D ENSEIGNEMENT PROFESSIONNEL', case=False, na=False)).astype(int)
-    
-    df_agg = df.groupby('codgeo').agg({
-        'is_maternelle': 'sum',
-        'is_elementaire': 'sum',
-        'is_college': 'sum',
-        'is_lycee': 'sum'
-    }).rename(columns={
-        'is_maternelle': 'edu_maternelle_ct',
-        'is_elementaire': 'edu_elementaire_ct',
-        'is_college': 'edu_college_ct',
-        'is_lycee': 'edu_lycee_ct'
-    }).reset_index()
-    
-    output_path = CLEAN_DIR / "education.parquet"
-    df_agg.to_parquet(output_path, engine='fastparquet')
-    logger.log_step("clean_education", "COMPLETED", {"path": str(output_path)})
+    """Cleans Education and saves to parquet (Bypassed in favor of BPE25)."""
+    logger.log_step("clean_education", "SKIPPED")
+    return
 
 def clean_finess_national(config: Dict[str, Any], logger: PipelineLogger):
-    """Cleans FINESS National data and saves to parquet.
-
-    Args:
-        config (Dict[str, Any]): Global pipeline configuration dictionary.
-        logger (PipelineLogger): central logging utility.
-    """
-    logger.log_step("clean_finess_national", "STARTED")
-    source = config['sources']['finess_national']
-    
-    if source.get('use_odace', False):
-        try:
-            client = get_odace_client(logger)
-            df_odace = client.fetch_table(source.get('odace_table', 'dim_etablissement_sante'))
-            if not df_odace.empty:
-                rename_dict = {
-                    'raison_sociale': 'RaisonSociale',
-                    'categorie_agregat': 'LibelleCategorieAgregat',
-                    'finess_etablissement_code': 'nofinesset',
-                    'libelle_sph': 'LibelleSph'
-                }
-                df_out = df_odace.rename(columns=rename_dict)
-                
-                # Resolve codgeo
-                df_out['codgeo'] = df_out.apply(
-                    lambda r: resolve_codgeo(r.get('commune_insee_code'), r.get('departement_code')),
-                    axis=1
-                )
-                
-                # Drop rows with invalid/empty codgeo
-                df_out = df_out[df_out['codgeo'] != ""].copy()
-                
-                # Reconstruct Departement and Commune
-                df_out['Departement'] = df_out['codgeo'].str[:-3]
-                df_out['Commune'] = df_out['codgeo'].str[-3:]
-                
-                # Add dummy coordinates since Odace table lacks them
-                df_out['coordxet'] = np.nan
-                df_out['coordyet'] = np.nan
-                
-                # Keep only the used columns + codgeo (which build.py might use/recreate)
-                expected_cols = [
-                    'Departement', 'Commune', 'LibelleCategorieAgregat', 'nofinesset',
-                    'LibelleSph', 'coordxet', 'coordyet', 'RaisonSociale', 'codgeo'
-                ]
-                # Ensure all exist
-                for col in expected_cols:
-                    if col not in df_out.columns:
-                        if col in ['coordxet', 'coordyet']:
-                            df_out[col] = np.nan
-                        elif col == 'LibelleSph':
-                            df_out[col] = 'nan'
-                        else:
-                            df_out[col] = ""
-                            
-                df_out = df_out[expected_cols].copy()
-                
-                output_path = CACHE_DIR / source['local_name']
-                df_out.to_parquet(output_path, engine='fastparquet')
-                logger.log_step("clean_finess_national", "COMPLETED", {"rows": len(df_out), "source": "odace"})
-                return
-            else:
-                logging.warning("Odace fetch returned empty data for dim_etablissement_sante. Falling back to legacy.")
-        except Exception as e:
-            logging.error(f"Failed to fetch dim_etablissement_sante from Odace: {e}. Falling back to legacy.")
-
-    # Legacy ingestion path (do nothing because fetch_source already copied it to CACHE_DIR / finess_national.parquet)
-    logging.info("finess_national: use_odace is False or Odace fetch failed. Reverting to legacy local copy.")
-    logger.log_step("clean_finess_national", "COMPLETED", {"source": "legacy"})
+    """Cleans FINESS National data and saves to parquet (Bypassed in favor of BPE25)."""
+    logger.log_step("clean_finess_national", "SKIPPED")
+    return
         
 def clean_maternites(config: Dict[str, Any], logger: PipelineLogger):
     """Cleans Maternites (DREES) and saves to json in CACHE_DIR to maintain backward compatibility."""
@@ -1452,17 +1308,22 @@ def clean_school_effectifs(config: Dict[str, Any], logger: PipelineLogger):
 
 def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
     """Extracts points of interest and aggregated counts from BPE."""
+    output_edu_cols = CLEAN_DIR / "bpe_education_cols.parquet"
+    output_sante_cols = CLEAN_DIR / "bpe_sante_cols.parquet"
     output_heb_cols = CLEAN_DIR / "bpe_hebergement_cols.parquet"
-    output_creches_cols = CLEAN_DIR / "bpe_petite_enfance_cols.parquet"
+    output_act_cols = CLEAN_DIR / "bpe_action_sociale_cols.parquet"
+    output_gares_cols = CLEAN_DIR / "bpe_gares_cols.parquet"
     output_pois = CLEAN_DIR / "bpe_pois.parquet"
 
     # 1-Year TTL Check (as requested by user)
     needs_refresh = True
-    if output_heb_cols.exists() and output_creches_cols.exists() and output_pois.exists():
-        mtime = datetime.fromtimestamp(output_heb_cols.stat().st_mtime)
+    if (output_edu_cols.exists() and output_sante_cols.exists() and 
+        output_heb_cols.exists() and output_act_cols.exists() and 
+        output_gares_cols.exists() and output_pois.exists()):
+        mtime = datetime.fromtimestamp(output_edu_cols.stat().st_mtime)
         age_days = (datetime.now() - mtime).days
         if age_days < 365:
-            logging.info(f"[BPE] BPE stats (hebergement) are {age_days} days old. Using cache (TTL=1 year).")
+            logging.info(f"[BPE] BPE stats are {age_days} days old. Using cache (TTL=1 year).")
             needs_refresh = False
 
     if not needs_refresh:
@@ -1471,106 +1332,283 @@ def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
     logger.log_step("clean_bpe", "STARTED")
     source = config['sources']['bpe']
     
-    df = None
-    if source.get('use_odace', False):
-        try:
-            client = get_odace_client(logger)
-            df_odace = client.fetch_table(source.get('odace_table', 'dim_equipement_territoire'))
-            if not df_odace.empty:
-                # Filter for the relevant types
-                df_filtered = df_odace[df_odace['type_equipement_code'].isin(['D502', 'D703', 'D704', 'D710'])].copy()
-                df = df_filtered.rename(columns={
-                    'commune_insee_code': 'CODGEO',
-                    'type_equipement_code': 'TYPEQU',
-                    'coord_x_lambert': 'LAMBERT_X',
-                    'coord_y_lambert': 'LAMBERT_Y',
-                    'equipement_label': 'NOMRS',
-                    'capacite_hebergement': 'CAPACITE'
-                })
-            else:
-                logging.warning("Odace BPE fetch returned empty data. Falling back to legacy.")
-                df = None
-        except Exception as e:
-            logging.error(f"Failed to fetch BPE from Odace: {e}. Falling back to legacy.")
-            df = None
-
-    if df is None:
-        path = CACHE_DIR / source['local_name']
-        if not path.exists(): return
-        df = load_dataset(path, source)
+    path = CACHE_DIR / source['local_name']
+    if not path.exists():
+        logging.error(f"BPE25 parquet file not found at {path}")
+        return
+        
+    df = load_dataset(path, source)
     
-    # Check columns: DEP, COM, TYPEQU, LAMBERT_X, LAMBERT_Y
     # Construct CODGEO
     if 'DEPCOM' in df.columns:
-            df['codgeo'] = df['DEPCOM'].astype(str).str.zfill(5)
+        df['codgeo'] = df['DEPCOM'].astype(str).str.zfill(5)
     elif 'DEP' in df.columns and 'COM' in df.columns:
         df['codgeo'] = df['DEP'].astype(str).str.zfill(2) + df['COM'].astype(str).str.zfill(3)
     elif 'CODGEO' in df.columns:
         df['codgeo'] = df['CODGEO'].astype(str).str.zfill(5)
         
     if 'TYPEQU' not in df.columns:
-            logging.warning("BPE: TYPEQU column not found.")
-            return
+        logging.warning("BPE: TYPEQU column not found.")
+        return
 
-    # --- 1. Petite Enfance (Creches) ---
-    df_creches = df[df['TYPEQU'] == 'D502'].copy()
-    df_creches['type_libelle'] = 'Creche'
-    creches_counts = df_creches.groupby('codgeo').size().rename('bpe_creches_count').reset_index()
+    # Project coords if LATITUDE/LONGITUDE are missing but LAMBERT_X/LAMBERT_Y are present
+    df['longitude'] = pd.to_numeric(df['LONGITUDE'], errors='coerce')
+    df['latitude'] = pd.to_numeric(df['LATITUDE'], errors='coerce')
     
-    output_creches_cols = CLEAN_DIR / "bpe_petite_enfance_cols.parquet"
-    creches_counts.to_parquet(output_creches_cols, engine='fastparquet')
-
-    # --- 2. Hebergement (CHRS, CPH, FJT, Pensions) ---
-    # CHRS (D703), CPH (D704) -> sum(CAPACITE)
-    df_centres = df[df['TYPEQU'].isin(['D703', 'D704'])].copy()
-    df_centres['type_libelle'] = df_centres['TYPEQU'].map({'D703': 'CHRS', 'D704': 'CPH'})
-    df_centres['CAPACITE'] = pd.to_numeric(df_centres['CAPACITE'], errors='coerce').fillna(0)
-    centres_agg = df_centres.groupby('codgeo')['CAPACITE'].sum().rename('heb_centres_heb_cap').reset_index()
-
-    # FJT & Pensions & Migrants (D710 + name filter) -> Count
-    # Keyword 'pension' for Pensions de famille as per user
-    mask_fjt = (df['TYPEQU'] == 'D710') & (
-        df['NOMRS'].str.contains('fjt|foyer jeunes travailleurs|pension|migrant', case=False, na=False, regex=True)
-    )
-    df_foyers = df[mask_fjt].copy()
-    df_foyers['type_libelle'] = 'Foyer/Pension'
-    foyers_agg = df_foyers.groupby('codgeo').size().rename('heb_foyers_count').reset_index()
-
-    heb_metrics = centres_agg.merge(foyers_agg, on='codgeo', how='outer').fillna(0)
-    output_heb_cols = CLEAN_DIR / "bpe_hebergement_cols.parquet"
-    heb_metrics.to_parquet(output_heb_cols, engine='fastparquet')
-
-    # --- 3. POIs Output ---
-    # Combine all for POIs
-    df_all_pois = pd.concat([df_creches, df_centres, df_foyers])
+    missing_coords = df['longitude'].isna() | df['latitude'].isna()
+    valid_lambert = ~df['LAMBERT_X'].isna() & ~df['LAMBERT_Y'].isna() & (df['LAMBERT_X'] != 0) & (df['LAMBERT_Y'] != 0)
     
-    if 'LAMBERT_X' in df_all_pois.columns and 'LAMBERT_Y' in df_all_pois.columns:
-            gdf = gpd.GeoDataFrame(
-                df_all_pois, 
-                geometry=gpd.points_from_xy(df_all_pois.LAMBERT_X, df_all_pois.LAMBERT_Y),
+    reproject_mask = missing_coords & valid_lambert
+    if reproject_mask.any():
+        try:
+            df_to_reproj = df[reproject_mask].copy()
+            gdf_reproj = gpd.GeoDataFrame(
+                df_to_reproj,
+                geometry=gpd.points_from_xy(df_to_reproj['LAMBERT_X'], df_to_reproj['LAMBERT_Y']),
                 crs="EPSG:2154"
             ).to_crs("EPSG:4326")
-            
-            pois = pd.DataFrame({
-                'id': gdf.index.astype(str),
-                'name': gdf['NOMRS'].astype(str),
-                'type': gdf['type_libelle'],
-                'category': gdf['TYPEQU'].apply(lambda x: 'education' if x == 'D502' else 'hebergement'),
-                'lat': gdf.geometry.y,
-                'lon': gdf.geometry.x,
-                'codgeo': gdf['codgeo']
-            })
-            
-            output_pois = CLEAN_DIR / "bpe_pois.parquet"
-            pois.to_parquet(output_pois, engine='fastparquet')
-            logger.log_step("clean_bpe", "COMPLETED", {
-                "creches_cols": str(output_creches_cols), 
-                "heb_cols": str(output_heb_cols),
-                "pois": str(output_pois)
-            })
+            df.loc[reproject_mask, 'longitude'] = gdf_reproj.geometry.x
+            df.loc[reproject_mask, 'latitude'] = gdf_reproj.geometry.y
+            logging.info(f"BPE: Reprojected {reproject_mask.sum()} coords from Lambert EPSG:2154")
+        except Exception as e:
+            logging.warning(f"BPE: Reprojection failed: {e}")
+
+    # --- 1. Education & Early Childhood (Éducation & Petite Enfance) ---
+    is_edu = df['TYPEQU'].str.startswith('C', na=False)
+    # Apply SECTEUR filter ONLY to education codes (Public and Private sous contrat)
+    # EAJE, Relais, ALSH, Micro-crèche do not have SECTEUR codes or are not filtered
+    df_edu_all = df[
+        (is_edu & df['SECTEUR'].isin(['1', '2'])) |
+        (df['TYPEQU'].isin(['D502', 'D504', 'D505', 'D509']))
+    ].copy()
+    
+    df_edu_all['is_maternelle'] = df_edu_all['TYPEQU'].isin(['C107', 'C108']).astype(int)
+    df_edu_all['is_elementaire'] = df_edu_all['TYPEQU'].isin(['C109', 'C108']).astype(int)
+    df_edu_all['is_college'] = (df_edu_all['TYPEQU'] == 'C201').astype(int)
+    df_edu_all['is_lycee'] = df_edu_all['TYPEQU'].isin(['C301', 'C302', 'C303', 'C305']).astype(int)
+    df_edu_all['is_eaje'] = (df_edu_all['TYPEQU'] == 'D502').astype(int)
+    df_edu_all['is_relais_petite_enfance'] = (df_edu_all['TYPEQU'] == 'D504').astype(int)
+    df_edu_all['is_alsh'] = (df_edu_all['TYPEQU'] == 'D505').astype(int)
+    df_edu_all['is_micro_creche'] = (df_edu_all['TYPEQU'] == 'D509').astype(int)
+    
+    df_edu_cols = df_edu_all.groupby('codgeo').agg({
+        'is_maternelle': 'sum',
+        'is_elementaire': 'sum',
+        'is_college': 'sum',
+        'is_lycee': 'sum',
+        'is_eaje': 'sum',
+        'is_relais_petite_enfance': 'sum',
+        'is_alsh': 'sum',
+        'is_micro_creche': 'sum'
+    }).rename(columns={
+        'is_maternelle': 'edu_maternelle_ct',
+        'is_elementaire': 'edu_elementaire_ct',
+        'is_college': 'edu_college_ct',
+        'is_lycee': 'edu_lycee_ct',
+        'is_eaje': 'edu_eaje_ct',
+        'is_relais_petite_enfance': 'edu_relais_petite_enfance_ct',
+        'is_alsh': 'edu_alsh_ct',
+        'is_micro_creche': 'edu_micro_creche_ct'
+    }).reset_index()
+    df_edu_cols.to_parquet(output_edu_cols, engine='fastparquet')
+
+    # --- 2. Housing & Accommodation (Logement & Hébergement) ---
+    df_heb = df[df['TYPEQU'].isin(['D703', 'D704', 'D705', 'D710'])].copy()
+    
+    mask_fjt = (df_heb['TYPEQU'] == 'D710') & df_heb['NOMRS'].str.contains('fjt|foyer jeunes travailleurs', case=False, na=False, regex=True)
+    mask_pension = (df_heb['TYPEQU'] == 'D710') & df_heb['NOMRS'].str.contains('pension', case=False, na=False, regex=True)
+    
+    df_heb['sub_type'] = None
+    df_heb.loc[df_heb['TYPEQU'] == 'D703', 'sub_type'] = 'CHRS'
+    df_heb.loc[df_heb['TYPEQU'] == 'D704', 'sub_type'] = 'CPH'
+    df_heb.loc[df_heb['TYPEQU'] == 'D705', 'sub_type'] = 'CADA'
+    df_heb.loc[mask_fjt, 'sub_type'] = 'FJT'
+    df_heb.loc[mask_pension, 'sub_type'] = 'Pension'
+    
+    # Drop rows that don't match FJT, Pension, CHRS, CPH, CADA
+    df_heb = df_heb.dropna(subset=['sub_type']).copy()
+    
+    df_heb['is_chrs'] = (df_heb['sub_type'] == 'CHRS').astype(int)
+    df_heb['is_cph'] = (df_heb['sub_type'] == 'CPH').astype(int)
+    df_heb['is_cada'] = (df_heb['sub_type'] == 'CADA').astype(int)
+    df_heb['is_fjt'] = (df_heb['sub_type'] == 'FJT').astype(int)
+    df_heb['is_pension'] = (df_heb['sub_type'] == 'Pension').astype(int)
+    
+    df_heb_cols = df_heb.groupby('codgeo').agg({
+        'is_chrs': 'sum',
+        'is_cph': 'sum',
+        'is_cada': 'sum',
+        'is_fjt': 'sum',
+        'is_pension': 'sum'
+    }).rename(columns={
+        'is_chrs': 'heb_chrs_count',
+        'is_cph': 'heb_cph_count',
+        'is_cada': 'heb_cada_count',
+        'is_fjt': 'heb_fjt_count',
+        'is_pension': 'heb_pension_count'
+    }).reset_index()
+    df_heb_cols.to_parquet(output_heb_cols, engine='fastparquet')
+
+    # --- 3. Health (Santé) ---
+    df_sante = df[df['TYPEQU'].isin(['D101', 'D107', 'D108', 'D109', 'D111', 'D113', 'D114', 'D115'])].copy()
+    df_sante['is_hopital'] = (df_sante['TYPEQU'] == 'D101').astype(int)
+    df_sante['is_maternite'] = (df_sante['TYPEQU'] == 'D107').astype(int)
+    df_sante['is_centre_sante'] = (df_sante['TYPEQU'] == 'D108').astype(int)
+    df_sante['is_psy'] = (df_sante['TYPEQU'] == 'D109').astype(int)
+    df_sante['is_dialyse'] = (df_sante['TYPEQU'] == 'D111').astype(int)
+    df_sante['is_maison_sante'] = (df_sante['TYPEQU'] == 'D113').astype(int)
+    df_sante['is_addictologie'] = (df_sante['TYPEQU'] == 'D114').astype(int)
+    df_sante['is_pmi'] = (df_sante['TYPEQU'] == 'D115').astype(int)
+    
+    df_sante_cols = df_sante.groupby('codgeo').agg({
+        'is_hopital': 'sum',
+        'is_maternite': 'sum',
+        'is_centre_sante': 'sum',
+        'is_psy': 'sum',
+        'is_dialyse': 'sum',
+        'is_maison_sante': 'sum',
+        'is_addictologie': 'sum',
+        'is_pmi': 'sum'
+    }).rename(columns={
+        'is_hopital': 'count_hopital',
+        'is_maternite': 'count_maternite',
+        'is_centre_sante': 'count_centre_sante',
+        'is_psy': 'count_psy',
+        'is_dialyse': 'count_dialyse',
+        'is_maison_sante': 'count_maison_sante',
+        'is_addictologie': 'count_addictologie',
+        'is_pmi': 'count_pmi'
+    }).reset_index()
+    df_sante_cols.to_parquet(output_sante_cols, engine='fastparquet')
+
+    # --- 4. Action Sociale ---
+    df_act = df[df['TYPEQU'].isin(['A125', 'A128', 'A129', 'D711'])].copy()
+    df_act['is_antenne_justice'] = (df_act['TYPEQU'] == 'A125').astype(int)
+    df_act['is_france_services'] = (df_act['TYPEQU'] == 'A128').astype(int)
+    df_act['is_mairie'] = (df_act['TYPEQU'] == 'A129').astype(int)
+    df_act['is_femmes_vuln'] = (df_act['TYPEQU'] == 'D711').astype(int)
+    
+    df_act_cols = df_act.groupby('codgeo').agg({
+        'is_antenne_justice': 'sum',
+        'is_france_services': 'sum',
+        'is_mairie': 'sum',
+        'is_femmes_vuln': 'sum'
+    }).rename(columns={
+        'is_antenne_justice': 'act_antenne_justice_count',
+        'is_france_services': 'act_france_services_count',
+        'is_mairie': 'act_mairie_count',
+        'is_femmes_vuln': 'act_femmes_vuln_count'
+    }).reset_index()
+    df_act_cols.to_parquet(output_act_cols, engine='fastparquet')
+
+    # --- 5. Gares ---
+    df_gares = df[df['TYPEQU'].isin(['E107', 'E108', 'E109'])].copy()
+    df_gares['is_gare'] = 1
+    df_gares_cols = df_gares.groupby('codgeo').agg({
+        'is_gare': 'sum'
+    }).rename(columns={
+        'is_gare': 'gare_count'
+    }).reset_index()
+    df_gares_cols['has_gare'] = (df_gares_cols['gare_count'] > 0).astype(int)
+    df_gares_cols.to_parquet(output_gares_cols, engine='fastparquet')
+
+    # --- 6. Unified POIs output ---
+    pois_parts = []
+    
+    # 1. Education POIs
+    df_edu_pois = df_edu_all.dropna(subset=['longitude', 'latitude']).copy()
+    if not df_edu_pois.empty:
+        type_lbls = {
+            'C107': 'École Maternelle', 'C108': 'École Primaire', 'C109': 'École Élémentaire',
+            'C201': 'Collège', 'C301': 'Lycée Général/Tech', 'C302': 'Lycée Professionnel',
+            'C303': 'Lycée Agricole', 'C305': 'Section Enseignement Pro',
+            'D502': 'Crèche / EAJE', 'D504': 'Relais Petite Enfance',
+            'D505': 'Accueil de loisirs (ALSH)', 'D509': 'Micro-crèche'
+        }
+        pois_parts.append(pd.DataFrame({
+            'id': df_edu_pois.index.astype(str) + "_edu",
+            'name': df_edu_pois['NOMRS'].astype(str),
+            'type': df_edu_pois['TYPEQU'].map(type_lbls),
+            'category': 'education',
+            'lat': df_edu_pois['latitude'],
+            'lon': df_edu_pois['longitude'],
+            'codgeo': df_edu_pois['codgeo']
+        }))
+        
+    # 2. Housing POIs
+    df_heb_pois = df_heb.dropna(subset=['longitude', 'latitude']).copy()
+    if not df_heb_pois.empty:
+        pois_parts.append(pd.DataFrame({
+            'id': df_heb_pois.index.astype(str) + "_heb",
+            'name': df_heb_pois['NOMRS'].astype(str),
+            'type': df_heb_pois['sub_type'],
+            'category': 'hebergement',
+            'lat': df_heb_pois['latitude'],
+            'lon': df_heb_pois['longitude'],
+            'codgeo': df_heb_pois['codgeo']
+        }))
+        
+    # 3. Health POIs
+    df_sante_pois = df_sante.dropna(subset=['longitude', 'latitude']).copy()
+    if not df_sante_pois.empty:
+        type_lbls = {
+            'D101': 'Hôpital', 'D107': 'Maternité', 'D108': 'Centre de santé',
+            'D109': 'Soutien Psychologique', 'D111': 'Dialyse', 'D113': 'Maison de santé',
+            'D114': 'Addictologie', 'D115': 'Santé maternelle et infantile (PMI)'
+        }
+        pois_parts.append(pd.DataFrame({
+            'id': df_sante_pois.index.astype(str) + "_sante",
+            'name': df_sante_pois['NOMRS'].astype(str),
+            'type': df_sante_pois['TYPEQU'].map(type_lbls),
+            'category': 'sante',
+            'lat': df_sante_pois['latitude'],
+            'lon': df_sante_pois['longitude'],
+            'codgeo': df_sante_pois['codgeo']
+        }))
+        
+    # 4. Action Sociale & Mairie POIs
+    df_act_pois = df_act.dropna(subset=['longitude', 'latitude']).copy()
+    if not df_act_pois.empty:
+        type_lbls = {
+            'A125': 'Antenne de justice', 'A128': 'France Services',
+            'A129': 'Mairie', 'D711': 'Aide femmes vulnérables'
+        }
+        pois_parts.append(pd.DataFrame({
+            'id': df_act_pois.index.astype(str) + "_act",
+            'name': df_act_pois['NOMRS'].astype(str),
+            'type': df_act_pois['TYPEQU'].map(type_lbls),
+            'category': df_act_pois['TYPEQU'].apply(lambda x: 'mairie' if x == 'A129' else 'action_sociale'),
+            'lat': df_act_pois['latitude'],
+            'lon': df_act_pois['longitude'],
+            'codgeo': df_act_pois['codgeo']
+        }))
+        
+    # 5. Gares POIs
+    df_gares_pois = df_gares.dropna(subset=['longitude', 'latitude']).copy()
+    if not df_gares_pois.empty:
+        pois_parts.append(pd.DataFrame({
+            'id': df_gares_pois.index.astype(str) + "_gare",
+            'name': df_gares_pois['NOMRS'].astype(str),
+            'type': 'Gare SNCF',
+            'category': 'mobilite',
+            'lat': df_gares_pois['latitude'],
+            'lon': df_gares_pois['longitude'],
+            'codgeo': df_gares_pois['codgeo']
+        }))
+
+    if pois_parts:
+        pois_df = pd.concat(pois_parts, ignore_index=True)
+        pois_df.to_parquet(output_pois, engine='fastparquet')
+        logger.log_step("clean_bpe", "COMPLETED", {
+            "edu": str(output_edu_cols),
+            "sante": str(output_sante_cols),
+            "heb": str(output_heb_cols),
+            "act": str(output_act_cols),
+            "gares": str(output_gares_cols),
+            "pois": str(output_pois)
+        })
     else:
-            logging.warning("BPE: LAMBERT coordinates not found.")
-            logger.log_step("clean_bpe", "PARTIAL", {"counts": str(output_creches_cols)})
+        logger.log_step("clean_bpe", "PARTIAL", {"msg": "No POIs generated"})
 
 def compute_rna_rag_counts(query_text: str, threshold: float = 0.65) -> pd.DataFrame:
     """Computes semantic counts for a query using BigQuery Vector Search (ML.DISTANCE)."""
@@ -2438,107 +2476,9 @@ def clean_formations(config: Dict[str, Any], logger: PipelineLogger):
 
 
 def clean_odace_gares(config: Dict[str, Any], logger: PipelineLogger):
-    """Fetches and cleans Gare data from Odace API."""
-    logger.log_step("clean_odace_gares", "STARTED")
-
-    client = get_odace_client(logger)
-    
-    # Fetch Data
-    df_commune = client.fetch_dim_commune()
-    df_gare = client.fetch_dim_gare()
-    
-    if df_commune.empty or df_gare.empty:
-        logging.warning("Odace API returned empty data for communes or gares.")
-        return
-
-    # Initialize output
-    # Join Strategy:
-    # 1. Primary: commune_sk
-    # 2. Fallback: gare_label == commune_label (for rows with empty/null commune_sk)
-    
-    # Prepare Fallback
-    # Ensure common columns, drop duplicates in commune for name match
-    # commune_label might not be unique? Assume it is or take first.
-    # Actually commune_insee_code is unique. Labels might repeat (e.g. Saint-Sauveur).
-    # We should be careful. 
-    # But for 'Ambérieu-en-Bugey', it's likely unique.
-    
-    # Split gares into linked and unlinked
-    df_gare['commune_sk'] = df_gare['commune_sk'].replace('', pd.NA)
-    
-    linked_gares = df_gare.dropna(subset=['commune_sk'])
-    unlinked_gares = df_gare[df_gare['commune_sk'].isna()]
-    
-    logging.info(f"Gares: Total={len(df_gare)}, Linked={len(linked_gares)}, Unlinked={len(unlinked_gares)}")
-    
-    # 1. Merge Linked
-    merged_linked = linked_gares.merge(df_commune, on='commune_sk', how='inner')
-    
-    # 2. Merge Unlinked (Fallback on Name)
-    if not unlinked_gares.empty:
-        # Prepare commune name lookup
-        # We want to match unlinked 'gare_label' to 'commune_label'
-        # To avoid bad matches on duplicate names, we could filter for unique names only?
-        # Or just proceed.
-        unlinked_gares = unlinked_gares.copy()
-        # Normalize for matching
-        unlinked_gares['match_name'] = unlinked_gares['gare_label'].astype(str).str.lower().str.strip()
-        
-        df_commune_lookup = df_commune.copy()
-        df_commune_lookup['match_name'] = df_commune_lookup['commune_label'].astype(str).str.lower().str.strip()
-        
-        # Drop duplicates in lookup (if multiple communes have same name, we can't safely match)
-        # Actually, let's keep duplicate names but log.
-        # Convert to dict?
-        
-        merged_fallback = unlinked_gares.merge(df_commune_lookup, on='match_name', how='inner', suffixes=('', '_commune'))
-        
-        logging.info(f"Fallback Name Match: Recovered {len(merged_fallback)} gares.")
-        
-        # Align columns
-        # merged_linked has cols from dim_commune
-        # merged_fallback has cols from dim_commune with possible suffixes if collision (but we joined on match_name)
-        # We want 'commune_insee_code'
-        
-        cols_needed = ['gare_sk', 'commune_insee_code']
-        
-        combined = pd.concat([
-            merged_linked[cols_needed], 
-            merged_fallback[cols_needed]
-        ], ignore_index=True)
-        
-    else:
-        combined = merged_linked[['gare_sk', 'commune_insee_code']]
-
-    # 2. Group by INSEE Code
-    if 'commune_insee_code' not in combined.columns:
-            logging.warning("Missing commune_insee_code in Odace data.")
-            return
-
-    # Count unique gares
-    stats = combined.groupby('commune_insee_code')['gare_sk'].nunique().rename('gare_count').reset_index()
-    stats.rename(columns={'commune_insee_code': 'codgeo'}, inplace=True)
-    stats['codgeo'] = stats['codgeo'].astype(str).str.zfill(5)
-    stats['has_gare'] = (stats['gare_count'] > 0).astype(int)
-    
-    # Save Gares Stats
-    clean_dir = CLEAN_DIR
-    clean_dir.mkdir(parents=True, exist_ok=True)
-    output_path = clean_dir / "gares.parquet"
-    stats.to_parquet(output_path, engine='fastparquet')
-    
-    # Save Commune SK Mapping
-    # We want to keep the link between codgeo and commune_sk
-    # df_commune columns: commune_sk, commune_insee_code, commune_label, departement_code, region_code
-    sk_mapping = df_commune[['commune_insee_code', 'commune_sk']].drop_duplicates()
-    sk_mapping.rename(columns={'commune_insee_code': 'codgeo'}, inplace=True)
-    sk_mapping['codgeo'] = sk_mapping['codgeo'].astype(str).str.zfill(5)
-    
-    sk_output_path = clean_dir / "odace_communes_sk.parquet"
-    sk_mapping.to_parquet(sk_output_path, engine='fastparquet')
-    logging.info(f"Odace: Saved {len(sk_mapping)} SK mappings to {sk_output_path}")
-
-    logger.log_step("clean_odace_gares", "COMPLETED", {"path": str(output_path), "rows": len(stats)})
+    """Fetches and cleans Gare data from Odace API (Bypassed in favor of BPE25)."""
+    logger.log_step("clean_odace_gares", "SKIPPED")
+    return
 
 def clean_odace_rent(config: Dict[str, Any], logger: PipelineLogger):
     """Fetches and cleans Rent data from Odace API."""
