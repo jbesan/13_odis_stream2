@@ -110,7 +110,7 @@ def test_happy_path_end_to_end(
     at.session_state.form_page = "health"
     at.run(timeout=10)
     assert len(at.exception) == 0
-    at.multiselect(key="ui_besoin_sante").select("Hôpital").run()
+    at.checkbox(key="ui_sante_cb_hôpital").check().run()
 
     # --- PAGE 7: Inclusion ---
     at.session_state.form_page = "other_needs"

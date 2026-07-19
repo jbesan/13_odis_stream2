@@ -67,7 +67,6 @@ def test_data_columns_contract():
                     x in score_id
                     for x in [
                         "edu_structures_scaled",
-                        "sante_structures_scaled",
                         "besoins_match_scaled",
                     ]
                 )

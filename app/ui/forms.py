@@ -199,8 +199,26 @@ def render_housing_form() -> None:
 
 def render_health_form() -> None:
     """Renders the UI for the 'Santé' form section."""
-    # F-48: Consistent key with config.py
-    st.multiselect("Support médical à proximité", cfg.SANTE_OPTIONS, key="ui_besoin_sante")
+    st.subheader("Support médical à proximité")
+    current_sante = st.session_state.get("ui_besoin_sante", [])
+
+    # Callback to compile selected checkboxes into ui_besoin_sante list
+    def on_sante_change():
+        selected = []
+        for opt in cfg.SANTE_OPTIONS:
+            safe_opt = opt.replace(" ", "_").replace("'", "_").replace("(", "").replace(")", "").lower()
+            cb_key = f"ui_sante_cb_{safe_opt}"
+            if st.session_state.get(cb_key):
+                selected.append(opt)
+        st.session_state["ui_besoin_sante"] = selected
+
+    for opt in cfg.SANTE_OPTIONS:
+        safe_opt = opt.replace(" ", "_").replace("'", "_").replace("(", "").replace(")", "").lower()
+        cb_key = f"ui_sante_cb_{safe_opt}"
+        if cb_key not in st.session_state:
+            st.session_state[cb_key] = opt in current_sante
+
+        st.checkbox(opt, key=cb_key, on_change=on_sante_change)
 
 
 def render_other_needs_form() -> None:
@@ -953,7 +971,18 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
 
     # Health Priority
     if st.session_state.get("ui_priority_sante", False):
-        criteria_weights["sante_structures_scaled"] = 3.0
+        sante_map = {
+            "Hôpital": "sante_hopital_scaled",
+            "Maternité": "sante_maternite_scaled",
+            "Soutien Psychologique": "sante_psy_scaled",
+            "Dialyse": "sante_dialyse_scaled",
+            "Maison de santé": "sante_maison_sante_scaled",
+            "Addictologie": "sante_addictologie_scaled",
+            "Santé maternelle et infantile (PMI)": "sante_pmi_scaled",
+        }
+        for need in st.session_state.get("ui_besoin_sante", []):
+            if need in sante_map:
+                criteria_weights[sante_map[need]] = 3.0
 
     # Other Needs Priority (F-15)
     if st.session_state.get("ui_priority_other_needs", False):

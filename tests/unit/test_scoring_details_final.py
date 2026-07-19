@@ -36,7 +36,7 @@ def base_df(sample_data):
     # Add housing and health scores
     df["log_vac_scaled"] = 0.5
     df["log_vac_ratio"] = 6.0  # Raw metric for log_vac_scaled
-    df["sante_structures_scaled"] = 0.5
+    df["sante_hopital_scaled"] = 0.5
     return df
 
 
@@ -119,8 +119,8 @@ def test_format_city_details_consistency(scoring_engine, base_df, base_config):
 
     # Active
     assert "edu_classes_ferm_scaled" in all_scores
-    # Note: 'sante_hopital_scaled' is not in mock, use 'sante_structures_scaled'
-    assert "sante_structures_scaled" in all_scores
+    # 'sante_hopital_scaled' is verified since need is 'Hôpital'
+    assert "sante_hopital_scaled" in all_scores
     assert "log_vac_scaled" in all_scores
     assert "mob_gare_scaled" in all_scores
 

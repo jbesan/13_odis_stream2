@@ -409,20 +409,116 @@ scores:
     min_bound: null
     max_bound: null
     quantile_level: 0.05
-  - id: sante_structures_scaled
+  - id: sante_hopital_scaled
     category: sante
-    source_metric: sante_structures_scaled
-    bdv_factor: 0.5
-    computation: live
+    source_metric: count_hopital
+    bdv_factor: 0.8
+    computation: precomputed
     display:
-      name: Structure de sante spécifique
-      strong_point_text: L'établissement de sante recherché est présent
+      name: Hôpital
+      strong_point_text: Présence d'un hôpital
       high_value_adjective: présent
       show: true
       unit: ""
-      display_factor: 100
-      tooltip: Présence de la structure de sante sélectionnée
-    weight: 1.0
+      display_factor: 1
+      tooltip: Nombre d'hôpitaux identifiés (Source BPE)
+    weight: 2.0
+    min_bound: 0.0
+    max_bound: 1.0
+  - id: sante_maternite_scaled
+    category: sante
+    source_metric: count_maternite
+    bdv_factor: 0.25
+    computation: precomputed
+    display:
+      name: Maternité
+      strong_point_text: Présence d'une maternité
+      high_value_adjective: présente
+      show: true
+      unit: ""
+      display_factor: 1
+      tooltip: Nombre de maternités identifiées (Source BPE)
+    weight: 2.0
+    min_bound: 0.0
+    max_bound: 1.0
+  - id: sante_psy_scaled
+    category: sante
+    source_metric: count_psy
+    bdv_factor: 0.0
+    computation: precomputed
+    display:
+      name: Soutien Psychologique
+      strong_point_text: Présence de structures de soutien psychologique
+      high_value_adjective: présent
+      show: true
+      unit: ""
+      display_factor: 1
+      tooltip: Nombre d'établissements de soutien psychologique (Source BPE)
+    weight: 2.0
+    min_bound: 0.0
+    max_bound: 1.0
+  - id: sante_dialyse_scaled
+    category: sante
+    source_metric: count_dialyse
+    bdv_factor: 0.0
+    computation: precomputed
+    display:
+      name: Dialyse
+      strong_point_text: Présence d'un centre de dialyse
+      high_value_adjective: présent
+      show: true
+      unit: ""
+      display_factor: 1
+      tooltip: Nombre de structures de dialyse (Source BPE)
+    weight: 2.0
+    min_bound: 0.0
+    max_bound: 1.0
+  - id: sante_maison_sante_scaled
+    category: sante
+    source_metric: count_maison_sante
+    bdv_factor: 0.0
+    computation: precomputed
+    display:
+      name: Maison de santé
+      strong_point_text: Présence d'une maison de santé
+      high_value_adjective: présente
+      show: true
+      unit: ""
+      display_factor: 1
+      tooltip: Nombre de maisons de santé (Source BPE)
+    weight: 2.0
+    min_bound: 0.0
+    max_bound: 1.0
+  - id: sante_addictologie_scaled
+    category: sante
+    source_metric: count_addictologie
+    bdv_factor: 0.0
+    computation: precomputed
+    display:
+      name: Addictologie
+      strong_point_text: Présence de structures d'addictologie
+      high_value_adjective: présent
+      show: true
+      unit: ""
+      display_factor: 1
+      tooltip: Nombre de centres d'addictologie (Source BPE)
+    weight: 2.0
+    min_bound: 0.0
+    max_bound: 1.0
+  - id: sante_pmi_scaled
+    category: sante
+    source_metric: count_pmi
+    bdv_factor: 0.0
+    computation: precomputed
+    display:
+      name: Santé maternelle et infantile (PMI)
+      strong_point_text: Présence d'un centre PMI
+      high_value_adjective: présent
+      show: true
+      unit: ""
+      display_factor: 1
+      tooltip: Nombre de centres PMI (Source BPE)
+    weight: 2.0
     min_bound: 0.0
     max_bound: 1.0
   - id: mob_gare_scaled

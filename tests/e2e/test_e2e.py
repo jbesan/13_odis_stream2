@@ -268,7 +268,7 @@ def test_result_details_display(app_data):
             "ui_nb_enfants": 0,
             "ui_hebergement": "Location",
             "ui_logement": "Location",
-            "ui_besoin_sante": "Aucun",
+            "ui_besoin_sante": [],
             "ui_inc_services_selection": {},
             "ui_poids_emploi": 1.0,
             "ui_poids_logement": 1.0,

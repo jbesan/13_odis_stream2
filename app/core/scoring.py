@@ -176,10 +176,7 @@ class ScoringEngine:
             # Skip if category totally irrelevant
             if category == "education" and getattr(config, "nb_enfants", 1) == 0:
                 continue
-            if (
-                category == "sante"
-                and getattr(config, "besoin_sante", "Aucun") == "Aucun"
-            ):
+            if category == "sante" and not getattr(config, "besoin_sante", []):
                 continue
 
             # Find columns for this category that are active
@@ -637,15 +634,10 @@ class ScoringEngine:
             "Santé maternelle et infantile (PMI)": "sante_pmi_scaled",
         }
         
-        has_health_needs = False
         for besoin in besoin_sante_list:
             if besoin in sante_map:
                 active.add(sante_map[besoin])
-                has_health_needs = True
                 
-        if has_health_needs:
-            active.add("sante_structures_scaled")
-
         # 7. Inclusion (Additional optional criteria)
         inc_services = getattr(config, "inc_services_selection", [])
         if inc_services:
@@ -1813,27 +1805,7 @@ class ScoringEngine:
     def _compute_sante_scores(
         self, df: pd.DataFrame, config: SearchCriterias
     ) -> pd.DataFrame:
-        # Operating in-place
-        besoin_sante_list = getattr(config, "besoin_sante", [])
-            
-        col_map = {
-            "Hôpital": "sante_hopital_scaled",
-            "Maternité": "sante_maternite_scaled",
-            "Soutien Psychologique": "sante_psy_scaled",
-            "Dialyse": "sante_dialyse_scaled",
-            "Maison de santé": "sante_maison_sante_scaled",
-            "Addictologie": "sante_addictologie_scaled",
-            "Santé maternelle et infantile (PMI)": "sante_pmi_scaled",
-        }
-        
-        targets = [col_map[b] for b in besoin_sante_list if b in col_map]
-        valid_targets = [t for t in targets if t in df.columns]
-        
-        if valid_targets:
-            df["sante_structures_scaled"] = df[valid_targets].max(axis=1)
-        else:
-            df["sante_structures_scaled"] = 0.0
-            
+        """Health structures are now statically precomputed in the parquet dataset."""
         return df
 
     def _compute_mobility_scores(
