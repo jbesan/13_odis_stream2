@@ -198,6 +198,14 @@ ORGANIZATION_PROFILES: Dict[str, Org] = {
         default_zones=["01", "03", "15", "69"],
         defaults={"org_boosts": {"inc_siae_density_scaled": 3.0}},
     ),
+    "agir33": Org(
+        id="agir33",
+        name="AGIR 33",
+        description="Le programme AGIR (Accompagnement Global et Individualisé des Réfugiés) dans le département de la Gironde (33).",
+        zone_type="departement",
+        default_zones=["33"],
+        defaults={},
+    ),
 }
 
 # --- Map Defaults ---
@@ -211,6 +219,19 @@ PROJECTED_CRS = "EPSG:2154"  # RGF93 / Lambert-93, suitable for metropolitan Fra
 
 # --- Auth ---
 # Note: ALLOWED_AUTH_DOMAINS is now managed in .streamlit/secrets.toml
+OIDC_ALLOWED_DOMAINS = {"jaccueille.fr", "lahso.org", "groupe-sos.org", "fondationcos.org"}
+OIDC_ALLOWED_EMAILS = {"jbesancon@gmail.com"}
+
+OIDC_DOMAIN_ORG_MAPPING = {
+    "jaccueille.fr": "jaccueille",
+    "lahso.org": "emile_aura",
+    "groupe-sos.org": "agir33",
+    "fondationcos.org": "agir33",
+}
+
+OIDC_EMAIL_ORG_MAPPING = {
+    "jbesancon@gmail.com": "jaccueille",
+}
 
 
 # --- Inclusion Defaults ---

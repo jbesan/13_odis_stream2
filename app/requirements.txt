@@ -25,3 +25,4 @@ db-dtypes
 fastparquet
 logfire[httpx]
 python-frontmatter
+Authlib>=1.3.2

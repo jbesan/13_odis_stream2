@@ -45,18 +45,20 @@ ODIS implements a secure, role-based organizational profile context enforced imm
     *   Every page calls `auth.check_password()` before rendering.
     *   **Local Development**: By default (when Cloud Run environment variable `K_SERVICE` is not detected), the app auto-logins with a fallback developer user (`local-dev`) belonging to the `local` organization.
     *   **Forced Auth Override**: Setting `ODIS_FORCE_AUTH=True` in environment variables disables this bypass, forcing the Streamlit login screen to render even during local development.
-    *   **Production Authentication**: On Cloud Run, users must authenticate. Credentials are loaded from the `ODIS_USERS_CONFIG` JSON environment variable or Streamlit secrets:
-        ```json
-        {
-          "users": {
-            "user@domaine.fr": {
-              "password_hash": "pbkdf2_sha256$20000$...",
-              "org_id": "myorg"
+    *   **Production Authentication (Hybrid)**: On Cloud Run, users can authenticate via two methods presented side-by-side:
+        *   **OpenID Connect (OIDC / Google Workspace)**: Uses Streamlit's native `st.login("google")` / `st.user`. Authenticated emails are filtered against whitelisted domains (`OIDC_ALLOWED_DOMAINS` in `config.py`) or individual emails (`OIDC_ALLOWED_EMAILS` in `config.py`). If whitelisted, they are mapped to their static Organization profile.
+        *   **Legacy Credentials**: Checked against the `ODIS_USERS_CONFIG` JSON environment variable or Streamlit secrets:
+            ```json
+            {
+              "users": {
+                "user@domaine.fr": {
+                  "password_hash": "pbkdf2_sha256$20000$...",
+                  "org_id": "myorg"
+                }
+              }
             }
-          }
-        }
-        ```
-    *   Passwords are encrypted using timing-safe `PBKDF2-HMAC-SHA256` password hashing.
+            ```
+            Passwords are verified using timing-safe `PBKDF2-HMAC-SHA256` password hashing.
 
 2.  **Organization Defaults & Smart Merge (`app/utils/data_loader.py`)**:
     *   Upon successful authentication, the active user context is stored as a Pydantic `User` model, and their organization context is loaded from `config.ORGANIZATION_PROFILES` as a Pydantic `Org` model in `st.session_state['org']`.
