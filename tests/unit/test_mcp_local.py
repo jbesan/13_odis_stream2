@@ -112,7 +112,7 @@ def test_compute_top_cities_execution_complex(mcp_data_context):
                 "label": "Français",
             }
         ],
-        "besoin_sante": "Maternité",
+        "besoin_sante": ["Maternité"],
         "inc_asso_add_selection": [{"code": "123", "label": "Entraide / Bénévolat"}],
     }
 

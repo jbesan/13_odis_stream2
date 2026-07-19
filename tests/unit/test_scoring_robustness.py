@@ -137,10 +137,9 @@ def test_tier1_demo_scenarios_integration(real_engine, app_data, scenario_id):
     # For every category with non-zero weight, the f"{cat}_cat_score" MUST exist.
     for cat in real_engine.categories:
         weight = getattr(config, f"poids_{cat}", 0.0)
-        # Check conditional skips that force exclusion
         if cat == "education" and config.nb_enfants == 0:
             weight = 0.0
-        if cat == "sante" and config.besoin_sante == "Aucun":
+        if cat == "sante" and not config.besoin_sante:
             weight = 0.0
 
         col_name = f"{cat}_cat_score"
@@ -161,7 +160,7 @@ def test_tier1_demo_scenarios_integration(real_engine, app_data, scenario_id):
         ].iloc[0]["cat"]
         if cat_of_baseline == "education" and config.nb_enfants == 0:
             continue
-        if cat_of_baseline == "sante" and config.besoin_sante == "Aucun":
+        if cat_of_baseline == "sante" and not config.besoin_sante:
             continue
         assert b_id in config.active_criteria, (
             f"Baseline criteria '{b_id}' is not in active_criteria set!"
@@ -186,7 +185,7 @@ def test_tier1_demo_scenarios_integration(real_engine, app_data, scenario_id):
     for cat in real_engine.categories:
         if cat == "education" and config.nb_enfants == 0:
             continue
-        if cat == "sante" and config.besoin_sante == "Aucun":
+        if cat == "sante" and not config.besoin_sante:
             continue
 
         col = f"{cat}_cat_score"
@@ -294,7 +293,7 @@ def test_tier2_config_engine_category_symmetry(real_engine):
     # Remove categories that are conditionally excluded in the test config
     test_scenario = {
         "nb_enfants": 1,
-        "besoin_sante": "Hopital",
+        "besoin_sante": ["Hôpital"],
         "poids_emploi": 1.0,
         "poids_logement": 1.0,
         "poids_education": 1.0,

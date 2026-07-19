@@ -45,7 +45,7 @@ def test_map_ui_config_to_search_criterias():
         inc_asso_add_selection = ["Football"]
         type_logement = "appt_all"
         logement = "Location"
-        besoin_sante = "Aucun"
+        besoin_sante = []
         weight_profile = "Équilibré"
         criteria_weights = {}
         org_context = None

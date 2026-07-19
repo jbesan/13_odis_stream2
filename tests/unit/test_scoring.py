@@ -417,7 +417,7 @@ class TestConditionalScoring:
             codes_metiers=[],
             codes_formations=[],
             classe_enfants=["Maternelle"],
-            besoin_sante=["Hopital"],  # Condition to include sante
+            besoin_sante=["Hôpital"],  # Condition to include sante
             inc_services_selection=[],
             inc_asso_add_selection=[],
             criteria_weights={},
