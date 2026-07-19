@@ -16,25 +16,23 @@ OUTPUT_PATH = Path("pipeline/cache/output/odis_inclusion_jobs.parquet")
 STRUCTURES_PATH = Path("pipeline/cache/output/odis_inclusion_structures.parquet")
 SIAE_LOOKUP_PATH = Path("pipeline/cache/raw/structures-inclusion-2026-02-16.parquet")
 API_URL = "https://emplois.inclusion.beta.gouv.fr/api/v1/siaes/"
-AUTH_URL = "https://emplois.inclusion.beta.gouv.fr/api/v1/token-auth/"
 TTL_DAYS = 7
 
 # Relevant SIAE types (ACI, AI, EI, ETTI, EITI)
 SIAE_TYPES_RELEVANT = {"ACI", "AI", "EI", "ETTI", "EITI"}
 
-# Auth Credentials
-LOGIN = os.getenv("EMPLOIS_INCLUSION_LOGIN")
-PASSWORD = os.getenv("EMPLOIS_INCLUSION_PWD")
-STATIC_TOKEN = os.getenv("EMPLOIS_INCLUSION_TOKEN")
-
-# Scope: Metropolitan France (01 to 95) + Overseas
+# metropolitan departments + overseas
 DEPARTEMENTS = [str(i).zfill(2) for i in range(1, 96)] + ["2A", "2B", "971", "972", "973", "974", "976"]
 if "20" in DEPARTEMENTS:
     DEPARTEMENTS.remove("20")
 DEPARTEMENTS = sorted(DEPARTEMENTS)
 
-def get_inclusion_jobs_status():
-    """Returns the status and age of the inclusion jobs data."""
+def get_inclusion_jobs_status() -> Dict[str, Any]:
+    """Returns the status and age of the inclusion jobs data.
+
+    Returns:
+        Dict[str, Any]: A dictionary with data availability status, age in days, and TTL metrics.
+    """
     if not OUTPUT_PATH.exists():
         return {"exists": False, "within_ttl": False, "age_days": None, "ttl_days": TTL_DAYS}
     
@@ -48,46 +46,6 @@ def get_inclusion_jobs_status():
         "path": str(OUTPUT_PATH)
     }
 
-def get_token() -> Optional[str]:
-    """Obtains an API token, prioritizing static token then fallback to login/password."""
-    if STATIC_TOKEN:
-        return STATIC_TOKEN
-
-    if not LOGIN or not PASSWORD:
-        print("  [Error] EMPLOIS_INCLUSION_TOKEN or EMPLOIS_INCLUSION_LOGIN/PWD missing in .env")
-        return None
-    
-    try:
-        payload = {"username": LOGIN, "password": PASSWORD}
-        response = requests.post(AUTH_URL, json=payload, timeout=10)
-        if response.status_code == 200:
-            token = response.json().get("token")
-            return token
-        else:
-            print(f"  [Error] Token retrieval failed (Status {response.status_code}): {response.text}")
-            return None
-    except Exception as e:
-        print(f"  [Error] Network error during token retrieval: {e}")
-        return None
-
-def validate_auth(token: str) -> bool:
-    """Validates the API token by making a test call."""
-    headers = {
-        "Authorization": f"Token {token}",
-        "Accept": "application/json"
-    }
-    try:
-        # Minimal call to check auth - requires at least one geographic filter
-        response = requests.get(API_URL, headers=headers, params={"page_size": 1, "postes_dans_le_departement": "75"}, timeout=10)
-        if response.status_code == 200:
-            return True
-        else:
-            print(f"  [Error] Auth validation failed (Status {response.status_code}): {response.text}")
-            return False
-    except Exception as e:
-        print(f"  [Error] Network error during validation: {e}")
-        return False
-
 def extract_rome_code(rome_str: str) -> Optional[str]:
     """Extracts only the ROME code (e.g., A1203) from a string like 'Label (A1203)'."""
     if not rome_str:
@@ -97,59 +55,63 @@ def extract_rome_code(rome_str: str) -> Optional[str]:
         return match.group(1)
     return rome_str # Fallback if already a code or format differs
 
-def fetch_department_jobs(dept: str, token: str) -> List[Dict[str, Any]]:
-    """Fetches hiring structures and their job openings for a specific department."""
+def fetch_department_jobs(dept: str) -> List[Dict[str, Any]]:
+    """Fetches hiring structures and their job openings for a specific department.
+
+    Args:
+        dept: The 2-3 digit department code.
+
+    Returns:
+        List[Dict[str, Any]]: List of structures that contain job openings.
+    """
     headers = {
-        "Authorization": f"Token {token}",
         "Accept": "application/json"
     }
     params = {
         "postes_dans_le_departement": dept,
-        "page_size": 100 # Adjust if needed, api might support pagination
+        "page_size": 100
     }
     
     all_results = []
     url = API_URL
+    backoff = 5.0
     
     while url:
-        try:
-            response = requests.get(url, headers=headers, params=params if url == API_URL else None, timeout=30)
-            if response.status_code == 429:
-                print(f"    [Rate Limit] Waiting 5s for dept {dept}...")
-                time.sleep(5)
-                continue
-            response.raise_for_status()
-            data = response.json()
-            
-            # The API returns PaginatedSiaeList: {count, next, previous, results}
-            results = data.get('results', [])
-            # Filter for structures with at least one job opening
-            hiring = [s for s in results if len(s.get('postes', [])) > 0]
-            all_results.extend(hiring)
-            
-            url = data.get('next')
-            if url:
-                time.sleep(0.5) # Gentle iteration
-        except Exception as e:
-            print(f"    [Error] Failed to fetch dept {dept}: {e}")
-            break
+        while True:
+            try:
+                response = requests.get(url, headers=headers, params=params if url == API_URL else None, timeout=30)
+                if response.status_code == 429:
+                    retry_after = response.headers.get("Retry-After")
+                    wait_time = float(retry_after) if retry_after and retry_after.isdigit() else backoff
+                    print(f"    [Rate Limit] HTTP 429. Waiting {wait_time}s for dept {dept}...")
+                    time.sleep(wait_time)
+                    backoff = min(backoff * 2.0, 60.0)
+                    continue
+                response.raise_for_status()
+                data = response.json()
+                break
+            except Exception as e:
+                print(f"    [Error] Failed to fetch dept {dept}: {e}")
+                return all_results
+                
+        results = data.get('results', [])
+        # Filter for structures with at least one job opening
+        hiring = [s for s in results if len(s.get('postes', [])) > 0]
+        all_results.extend(hiring)
+        
+        url = data.get('next')
+        if url:
+            time.sleep(0.5) # Gentle iteration
             
     return all_results
 
-def run_ingestion(token: str = None, departments: List[str] = None):
-    """Main ingestion loop."""
-    if not token:
-        # Try to get token programmatically first
-        token = get_token()
-        
-    if not token:
-        print("  [Info] Falling back to manual token entry...")
-        token = input("[?] Please enter your API token: ").strip()
-    
-    if not token or not validate_auth(token):
-        print("  [Abort] Invalid authentication. Please check your credentials in .env or provide a valid token.")
-        return
+def run_ingestion(departments: List[str] = None) -> None:
+    """Main ingestion loop using the public unauthenticated API.
 
+    Args:
+        departments: Optional list of specific department codes to ingest. If None,
+            all DEPARTEMENTS are processed.
+    """
     # Load SIAE lookup for code_insee fallback
     if SIAE_LOOKUP_PATH.exists():
         print(f"  [Lookup] Loading SIAE lookup table from {SIAE_LOOKUP_PATH}...")
@@ -161,14 +123,14 @@ def run_ingestion(token: str = None, departments: List[str] = None):
         str_inc = pd.DataFrame(columns=['siret', 'code_insee'])
 
     depts_to_process = departments or DEPARTEMENTS
-    print(f"=== Starting Ingestion: Les emplois de l'inclusion ({len(depts_to_process)} depts) ===")
+    print(f"=== Starting Ingestion (Public Mode): Les emplois de l'inclusion ({len(depts_to_process)} depts) ===")
     
     all_rows = []
     all_structures = []
     
     for dept in depts_to_process:
         print(f"  Processing {dept}...")
-        structures = fetch_department_jobs(dept, token)
+        structures = fetch_department_jobs(dept)
         
         for siae in structures:
             siret = siae.get('siret')
