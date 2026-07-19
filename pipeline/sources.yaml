@@ -284,13 +284,13 @@ sources:
       - libelle
 
   bpe:
-    url: "https://www.insee.fr/fr/statistiques/fichier/8217525/BPE24.parquet"
-    use_odace: true
+    url: "file:///Users/jacques/dev/13_odis_stream2/pipeline/cache/raw/BPE25.parquet"
+    use_odace: false
     odace_table: "dim_equipement_territoire"
     format: "parquet"
-    local_name: "BPE24.parquet"
+    local_name: "BPE25.parquet"
     ttl_days: 365
-    description: "Base Permanente des Équipements 2024"
+    description: "Base Permanente des Équipements 2025"
     used_columns:
       - DEPCOM
       - DEP
@@ -298,7 +298,10 @@ sources:
       - TYPEQU
       - LAMBERT_X
       - LAMBERT_Y
+      - LONGITUDE
+      - LATITUDE
       - NOMRS
+      - SECTEUR
 
   population_active:
     datagouv_resource_id: "f43b668d-251e-472a-9385-3d006d1ca6b8"

@@ -36,7 +36,7 @@ def base_df(sample_data):
     # Add housing and health scores
     df["log_vac_scaled"] = 0.5
     df["log_vac_ratio"] = 6.0  # Raw metric for log_vac_scaled
-    df["sante_structures_scaled"] = 0.5
+    df["sante_hopital_scaled"] = 0.5
     return df
 
 
@@ -59,7 +59,7 @@ def base_config():
         codes_metiers=[[]],
         codes_formations=[[]],
         classe_enfants=[],
-        besoin_sante="Aucun",
+        besoin_sante=[],
         inc_services_selection=[],
         inc_asso_add_selection=[],
         type_logement=CriteriaItem(code="appt_all", label="Appartement (Tous types)"),
@@ -71,7 +71,7 @@ def test_format_city_details_consistency(scoring_engine, base_df, base_config):
     config = base_config
     config.nb_enfants = 1
     config.classe_enfants = ["Maternelle"]
-    config.besoin_sante = "Hôpital"
+    config.besoin_sante = ["Hôpital"]
     config.type_logement = CriteriaItem(
         code="appt_all", label="Appartement (Tous types)"
     )
@@ -119,8 +119,8 @@ def test_format_city_details_consistency(scoring_engine, base_df, base_config):
 
     # Active
     assert "edu_classes_ferm_scaled" in all_scores
-    # Note: 'sante_hopital_scaled' is not in mock, use 'sante_structures_scaled'
-    assert "sante_structures_scaled" in all_scores
+    # 'sante_hopital_scaled' is verified since need is 'Hôpital'
+    assert "sante_hopital_scaled" in all_scores
     assert "log_vac_scaled" in all_scores
     assert "mob_gare_scaled" in all_scores
 

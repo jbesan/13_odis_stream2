@@ -186,10 +186,25 @@ def apply_search_criteria_to_ui(criteria: Any) -> None:
             st.session_state["ui_departement"] = code[:2]
 
     # Handle 'sante' field properly
-    if "besoin_sante" in flat_crit:
-        st.session_state["ui_besoin_sante"] = flat_crit["besoin_sante"] or "Aucun"
-    elif "sante" in flat_crit:
-        st.session_state["ui_besoin_sante"] = flat_crit["sante"] or "Aucun"
+    val_sante = flat_crit.get("besoin_sante") or flat_crit.get("sante")
+    if val_sante is None or val_sante == "Aucun":
+        st.session_state["ui_besoin_sante"] = []
+    elif isinstance(val_sante, list):
+        st.session_state["ui_besoin_sante"] = val_sante
+    else:
+        st.session_state["ui_besoin_sante"] = [val_sante]
+
+    # Synchronize checkboxes for housing and health to loaded states (F-53 Checkboxes Sync)
+    current_heb = st.session_state.get("ui_hebergement_cible", [])
+    for opt in cfg.HEBERGEMENT_OPTIONS:
+        cb_key = f"ui_heb_cb_{opt.replace(' ', '_').lower()}"
+        st.session_state[cb_key] = opt in current_heb
+
+    current_sante = st.session_state.get("ui_besoin_sante", [])
+    for opt in cfg.SANTE_OPTIONS:
+        safe_opt = opt.replace(" ", "_").replace("'", "_").replace("(", "").replace(")", "").lower()
+        cb_key = f"ui_sante_cb_{safe_opt}"
+        st.session_state[cb_key] = opt in current_sante
 
     # 3. Handle specific lists mapping that have index suffixes (e.g. metiers_adult_0)
     for key_base, crit_key in [

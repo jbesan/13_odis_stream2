@@ -73,16 +73,22 @@ LOC_SEARCH_AREA_OPTIONS = {
 }
 HEBERGEMENT_OPTIONS = [
     "Location avec Intermédiation",
-    "Centres d'Hébergement (CHRS, CPH)",
-    "Foyers & Pensions de Famille",
+    "Centre d'hébergement et de réinsertion sociale (CHRS)",
+    "Centre provisoire d'hébergement (CPH)",
+    "Centre d'accueil de demandeurs d'asile (CADA)",
+    "Foyer de Jeunes Travailleurs (FJT)",
+    "Pensions de Famille",
     "Chez l'habitant",
 ]
 LOGEMENT_OPTIONS = ["Location", "Logement Social"]
 SANTE_OPTIONS = [
-    "Aucun",
     "Hôpital",
     "Maternité",
-    "Soutien Psychologique & Addictologie",
+    "Soutien Psychologique",
+    "Dialyse",
+    "Maison de santé",
+    "Addictologie",
+    "Santé maternelle et infantile (PMI)",
 ]
 POIDS_OPTIONS = [0.0, 0.25, 0.5, 0.75, 1.0]
 HOUSING_TYPE_OPTIONS = {
@@ -243,7 +249,7 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     "loc_search_area": "departement",
     "hebergement_cible": ["Location avec Intermédiation"],
     "logement": "Location",
-    "sante": "Aucun",
+    "sante": [],
     "nb_adultes": 1,
     "nb_enfants": 0,
     "codes_metiers": [],
@@ -255,7 +261,7 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     "ui_inc_service_fle": False,
     "type_logement": "appt_all",
     "weight_profile": "Équilibré",
-    "besoin_sante": "Aucun",
+    "besoin_sante": [],
     "notes_qualitatives": "",
     "freq_retour": "1 fois/mois",
     "target_population": DEFAULT_MU,
@@ -291,7 +297,7 @@ DEMO_SCENARIOS = {
         "codes_metiers": [["H2206"], []],
         "codes_formations": [[], ["331", "330", "326"]],
         "classe_enfants": ["Maternelle", "Elémentaire"],
-        "besoin_sante": "Maternité",
+        "besoin_sante": ["Maternité"],
         "poids_mobilite": 0.0,
         "weight_profile": "Équilibré",
         "notes_qualitatives": "Olga et Dimitri cherchent un environnement calme pour leurs enfants.",
@@ -309,7 +315,7 @@ DEMO_SCENARIOS = {
         "codes_metiers": [["M1607", "M1602"]],
         "classe_enfants": ["Crèche / Assistante Maternelle", "Elémentaire"],
         "weight_profile": "Famille",
-        "besoin_sante": "Maternité",
+        "besoin_sante": ["Maternité"],
         "inc_services_selection": DEFAULT_INC_SERVICES_CORE
         + ["lecture-ecriture-calcul--maitriser-le-francais"],
         "inc_asso_add_selection": ["006030"],

@@ -385,7 +385,7 @@ with col_map:
         if config:
             if config.nb_enfants > 0:
                 pill_options.append({"id": "edu", "label": "🎓 Éducation"})
-            if config.besoin_sante != "Aucun":
+            if getattr(config, "besoin_sante", []):
                 pill_options.append({"id": "sante", "label": "🏥 Santé"})
             if config.inc_services_selection:
                 pill_options.append({"id": "inc", "label": "🤝 Inclusion"})
@@ -412,6 +412,12 @@ with col_map:
             target_codgeos = {str(c.codgeo) for c in search_results.results}
             if search_results.commune_pressentie:
                 target_codgeos.add(str(search_results.commune_pressentie.codgeo))
+
+            # Always-on Mairie layer
+            maps.build_mairies_layer(
+                data_loader.get_app_data()["pois"], target_codgeos
+            ).add_to(m)
+            legend_items.append({"color": "#F5D819", "text": "Mairie (BPE)", "icon": "circle"})
 
             if "edu" in selected_ids:
                 maps.build_ecoles_layer(

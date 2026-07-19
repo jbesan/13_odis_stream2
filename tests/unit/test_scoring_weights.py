@@ -23,7 +23,7 @@ def mock_config():
         codes_metiers=[],
         codes_formations=[],
         classe_enfants=[],
-        besoin_sante="Aucun",
+        besoin_sante=[],
         inc_services_selection=[],
         inc_asso_add_selection=[],
         criteria_weights={},

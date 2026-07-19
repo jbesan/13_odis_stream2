@@ -71,103 +71,12 @@ def test_odace_client_fetch_table_success(mock_get, temp_cache_dirs):
 # 2. Ingestion Cleaner: clean_finess_national Tests
 # =====================================================================
 
-@patch("pipeline.ingest.get_odace_client")
-def test_clean_finess_national_success(mock_get_client, temp_cache_dirs):
-    """Tests that clean_finess_national maps Odace columns and writes valid parquet on success."""
-    raw_dir, _ = temp_cache_dirs
-    
-    # Mock client and fetch_table response
-    mock_client = MagicMock()
-    mock_get_client.return_value = mock_client
-    
-    mock_data = pd.DataFrame([
-        {
-            "commune_insee_code": "9353.",
-            "departement_code": "93",
-            "raison_sociale": "CPMI NOISY LE SEC",
-            "categorie_agregat": "PMI",
-            "libelle_sph": "nan",
-            "finess_etablissement_code": "930060686"
-        }
-    ])
-    mock_client.fetch_table.return_value = mock_data
-
-    config = {
-        "sources": {
-            "finess_national": {
-                "use_odace": True,
-                "odace_table": "dim_etablissement_sante",
-                "local_name": "finess_national.parquet",
-                "used_columns": [
-                    "Departement", "Commune", "LibelleCategorieAgregat", "nofinesset",
-                    "LibelleSph", "coordxet", "coordyet", "RaisonSociale"
-                ]
-            }
-        }
-    }
-    
+def test_clean_finess_national_success():
+    """Tests that clean_finess_national logs SKIPPED as health data is handled by BPE25."""
+    config = {}
     logger = MagicMock(spec=PipelineLogger)
     clean_finess_national(config, logger)
-    
-    # Verify file is written
-    out_file = raw_dir / "finess_national.parquet"
-    assert out_file.exists()
-    
-    # Load and verify schema/values
-    df_clean = pd.read_parquet(out_file, engine="fastparquet")
-    assert list(df_clean.columns) == [
-        "Departement", "Commune", "LibelleCategorieAgregat", "nofinesset",
-        "LibelleSph", "coordxet", "coordyet", "RaisonSociale", "codgeo"
-    ]
-    
-    assert df_clean.iloc[0]["codgeo"] == "93053"
-    assert df_clean.iloc[0]["Departement"] == "93"
-    assert df_clean.iloc[0]["Commune"] == "053"
-    assert df_clean.iloc[0]["nofinesset"] == "930060686"
-    assert df_clean.iloc[0]["RaisonSociale"] == "CPMI NOISY LE SEC"
-    assert df_clean.iloc[0]["LibelleCategorieAgregat"] == "PMI"
-    assert pd.isna(df_clean.iloc[0]["coordxet"])
-
-
-@patch("pipeline.ingest.get_odace_client")
-def test_clean_finess_national_fallback(mock_get_client, temp_cache_dirs):
-    """Tests that clean_finess_national falls back to legacy copy on API exception."""
-    raw_dir, _ = temp_cache_dirs
-    
-    # Mock client fetch to fail
-    mock_client = MagicMock()
-    mock_get_client.return_value = mock_client
-    mock_client.fetch_table.side_effect = Exception("API connection timed out")
-    
-    # Write a dummy legacy file to represent cached file
-    legacy_file = raw_dir / "finess_national.parquet"
-    legacy_df = pd.DataFrame([{"Departement": "01", "Commune": "451", "nofinesset": "1234"}])
-    legacy_df.to_parquet(legacy_file, engine="fastparquet")
-
-    config = {
-        "sources": {
-            "finess_national": {
-                "use_odace": True,
-                "odace_table": "dim_etablissement_sante",
-                "local_name": "finess_national.parquet",
-                "used_columns": [
-                    "Departement", "Commune", "LibelleCategorieAgregat", "nofinesset",
-                    "LibelleSph", "coordxet", "coordyet", "RaisonSociale"
-                ]
-            }
-        }
-    }
-    
-    logger = MagicMock(spec=PipelineLogger)
-    
-    # Execute step - should log error but complete without raising exception
-    clean_finess_national(config, logger)
-    
-    # Verify legacy file is still there and unmodified
-    assert legacy_file.exists()
-    df_result = pd.read_parquet(legacy_file, engine="fastparquet")
-    assert len(df_result) == 1
-    assert df_result.iloc[0]["nofinesset"] == "1234"
+    logger.log_step.assert_called_once_with("clean_finess_national", "SKIPPED")
 
 
 # =====================================================================

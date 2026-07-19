@@ -62,7 +62,7 @@
         "code": "appt_all",
         "label": "Appartement (Tous types)"
       },
-      "besoin_sante": "Soutien Psychologique & Addictologie",
+      "besoin_sante": ["Soutien Psychologique", "Addictologie"],
       "freq_retour": "1 fois/an",
       "notes_qualitatives": ["Proximité d'une Mosquée et de la mer"],
       "weight_profile": "Équilibré",
@@ -105,9 +105,9 @@
         "mob_epci_scaled",
         "mob_gare_scaled",
         "mob_trans_pub_density_scaled",
+        "sante_addictologie_scaled",
         "sante_psy_scaled",
         "sante_rdv_delay_scaled",
-        "sante_structures_scaled",
         "ter_insecurite_scaled",
         "ter_pol_scaled",
         "ter_population_scaled",
@@ -315,9 +315,17 @@
             ],
             "sante": [
               {
-                "label": "Structure de sante spécifique",
-                "score_id": "sante_structures_scaled",
-                "valeur_kpi": 100.0,
+                "label": "Soutien Psychologique",
+                "score_id": "sante_psy_scaled",
+                "valeur_kpi": 1.0,
+                "score_normalise": 1.0,
+                "unit": "",
+                "relative_weight": 2.0
+              },
+              {
+                "label": "Addictologie",
+                "score_id": "sante_addictologie_scaled",
+                "valeur_kpi": 1.0,
                 "score_normalise": 1.0,
                 "unit": "",
                 "relative_weight": 2.0

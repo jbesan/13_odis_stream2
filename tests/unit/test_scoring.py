@@ -361,7 +361,7 @@ class TestConditionalScoring:
             codes_metiers=[],
             codes_formations=[],
             classe_enfants=[],
-            besoin_sante="Aucun",  # Condition to ignore sante
+            besoin_sante=[],  # Condition to ignore sante
             inc_services_selection=[],
             inc_asso_add_selection=[],
             criteria_weights={},
@@ -417,7 +417,7 @@ class TestConditionalScoring:
             codes_metiers=[],
             codes_formations=[],
             classe_enfants=["Maternelle"],
-            besoin_sante="Hopital",  # Condition to include sante
+            besoin_sante=["Hopital"],  # Condition to include sante
             inc_services_selection=[],
             inc_asso_add_selection=[],
             criteria_weights={},
@@ -532,7 +532,7 @@ class TestMCPScenario:
             codes_metiers=[["M1805"]],  # Mock job code
             codes_formations=[[]],
             classe_enfants=[],
-            besoin_sante="Aucun",
+            besoin_sante=[],
             inc_services_selection=[],
             inc_asso_add_selection=[],
             criteria_weights={},
@@ -867,7 +867,7 @@ class TestHousingScoresLogic:
                 codes_metiers=[[]],
                 codes_formations=[[]],
                 classe_enfants=[],
-                besoin_sante="Aucun",
+                besoin_sante=[],
                 inc_services_selection=[],
                 inc_asso_add_selection=[],
             )
@@ -993,7 +993,7 @@ class TestHousingScoresLogic:
                 codes_metiers=[[]],
                 codes_formations=[[]],
                 classe_enfants=[],
-                besoin_sante="Aucun",
+                besoin_sante=[],
                 inc_services_selection=[],
                 inc_asso_add_selection=[],
                 type_logement=type_logement,
@@ -1026,7 +1026,7 @@ class TestHousingScoresLogic:
             codes_metiers=[[]],
             codes_formations=[[]],
             classe_enfants=[],
-            besoin_sante="Aucun",
+            besoin_sante=[],
             inc_services_selection=[],
             inc_asso_add_selection=[],
         )
@@ -1125,7 +1125,7 @@ class TestShortlistCity:
             codes_metiers=[[]],
             codes_formations=[[]],
             classe_enfants=[],
-            besoin_sante="Aucun",
+            besoin_sante=[],
             inc_services_selection=[],
             inc_asso_add_selection=[],
             criteria_weights={},
@@ -1196,7 +1196,7 @@ class TestShortlistCity:
             codes_metiers=[[]],
             codes_formations=[[]],
             classe_enfants=[],
-            besoin_sante="Aucun",
+            besoin_sante=[],
             inc_services_selection=[],
             inc_asso_add_selection=[],
             criteria_weights={},

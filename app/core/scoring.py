@@ -176,10 +176,7 @@ class ScoringEngine:
             # Skip if category totally irrelevant
             if category == "education" and getattr(config, "nb_enfants", 1) == 0:
                 continue
-            if (
-                category == "sante"
-                and getattr(config, "besoin_sante", "Aucun") == "Aucun"
-            ):
+            if category == "sante" and not getattr(config, "besoin_sante", []):
                 continue
 
             # Find columns for this category that are active
@@ -339,7 +336,7 @@ class ScoringEngine:
             # Robust Check: Force exclusion if conditions met, even if column exists
             if cat == "education" and config.nb_enfants == 0:
                 continue
-            if cat == "sante" and config.besoin_sante == "Aucun":
+            if cat == "sante" and not getattr(config, "besoin_sante", []):
                 continue
 
             # Skip if category score not computed (e.g. no children)
@@ -572,11 +569,20 @@ class ScoringEngine:
             active.add("heb_loc_iml_scaled")
             active.add("log_vac_scaled")
 
-        if "Centres d'Hébergement (CHRS, CPH)" in heb_sel:
-            active.add("heb_centres_heb_scaled")
+        if "Centre d'hébergement et de réinsertion sociale (CHRS)" in heb_sel:
+            active.add("heb_chrs_scaled")
 
-        if "Foyers & Pensions de Famille" in heb_sel:
-            active.add("heb_foyers_scaled")
+        if "Centre provisoire d'hébergement (CPH)" in heb_sel:
+            active.add("heb_cph_scaled")
+
+        if "Centre d'accueil de demandeurs d'asile (CADA)" in heb_sel:
+            active.add("heb_cada_scaled")
+
+        if "Foyer de Jeunes Travailleurs (FJT)" in heb_sel:
+            active.add("heb_fjt_scaled")
+
+        if "Pensions de Famille" in heb_sel:
+            active.add("heb_pension_scaled")
 
         if "Chez l'habitant" in heb_sel:
             active.add("heb_asso_habitant_scaled")
@@ -616,19 +622,22 @@ class ScoringEngine:
                     active.add(edu_map[level])
 
         # 6. Sante (Conditional on needs)
-        besoin_sante = getattr(config, "besoin_sante", "Aucun")
-        if besoin_sante != "Aucun":
-            sante_map = {
-                "Hôpital": "sante_hopital_scaled",
-                "Hopital": "sante_hopital_scaled",
-                "Maternité": "sante_maternite_scaled",
-                "Soutien Psychologique & Addictologie": "sante_psy_scaled",
-                "Psychiatrie": "sante_psy_scaled",
-            }
-            if besoin_sante in sante_map:
-                active.add(sante_map[besoin_sante])
-            active.add("sante_structures_scaled")
-
+        besoin_sante_list = getattr(config, "besoin_sante", [])
+            
+        sante_map = {
+            "Hôpital": "sante_hopital_scaled",
+            "Maternité": "sante_maternite_scaled",
+            "Soutien Psychologique": "sante_psy_scaled",
+            "Dialyse": "sante_dialyse_scaled",
+            "Maison de santé": "sante_maison_sante_scaled",
+            "Addictologie": "sante_addictologie_scaled",
+            "Santé maternelle et infantile (PMI)": "sante_pmi_scaled",
+        }
+        
+        for besoin in besoin_sante_list:
+            if besoin in sante_map:
+                active.add(sante_map[besoin])
+                
         # 7. Inclusion (Additional optional criteria)
         inc_services = getattr(config, "inc_services_selection", [])
         if inc_services:
@@ -1796,20 +1805,7 @@ class ScoringEngine:
     def _compute_sante_scores(
         self, df: pd.DataFrame, config: SearchCriterias
     ) -> pd.DataFrame:
-        # Operating in-place
-        if config.besoin_sante != "Aucun":
-            col_map = {
-                "Hôpital": "sante_hopital_scaled",
-                "Hopital": "sante_hopital_scaled",
-                "Maternité": "sante_maternite_scaled",
-                "Soutien Psychologique & Addictologie": "sante_psy_scaled",
-                "Psychiatrie": "sante_psy_scaled",
-            }
-            target = col_map.get(config.besoin_sante)
-            if target and target in df.columns:
-                df["sante_structures_scaled"] = df[target]
-            else:
-                df["sante_structures_scaled"] = 0.0
+        """Health structures are now statically precomputed in the parquet dataset."""
         return df
 
     def _compute_mobility_scores(

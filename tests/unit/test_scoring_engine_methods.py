@@ -23,7 +23,7 @@ def base_sample_data():
 
 
 def test_compute_sante_scores_direct(base_sample_data, live_scores_cat):
-    """Direct test for _compute_sante_scores mapping logic."""
+    """Direct test to verify _compute_sante_scores is a no-op passthrough leaving the df clean."""
     engine = scoring.ScoringEngine(
         df_all_communes=base_sample_data,
         df_bv_geo=gpd.GeoDataFrame(),
@@ -36,7 +36,7 @@ def test_compute_sante_scores_direct(base_sample_data, live_scores_cat):
     config = SearchCriterias(
         nb_adultes=1,
         nb_enfants=0,
-        besoin_sante="Hôpital",
+        besoin_sante=["Hôpital"],
         codes_metiers=[[]],
         codes_formations=[[]],
     )
@@ -44,26 +44,10 @@ def test_compute_sante_scores_direct(base_sample_data, live_scores_cat):
     df = base_sample_data.copy()
     res = engine._compute_sante_scores(df, config)
 
-    # Assert output column is mapped correctly
-    assert "sante_structures_scaled" in res.columns
-    assert res.loc["13055", "sante_structures_scaled"] == 0.8
-    assert res.loc["13001", "sante_structures_scaled"] == 0.4
-
-    # Assert fallback to 0.0 when health needs are 'Aucun'
-    config_none = SearchCriterias(
-        nb_adultes=1,
-        nb_enfants=0,
-        besoin_sante="Aucun",
-        codes_metiers=[[]],
-        codes_formations=[[]],
-    )
-    df_none = base_sample_data.copy()
-    res_none = engine._compute_sante_scores(df_none, config_none)
-    assert (
-        "sante_structures_scaled" not in res_none.columns
-        or res_none["sante_structures_scaled"].isna().all()
-        or (res_none["sante_structures_scaled"] == 0.0).all()
-    )
+    # Verify that the no-op leaves columns intact and does not inject legacy column
+    assert "sante_structures_scaled" not in res.columns
+    assert res.loc["13055", "sante_hopital_scaled"] == 0.8
+    assert res.loc["13001", "sante_hopital_scaled"] == 0.4
 
 
 def test_compute_territory_scores_direct(base_sample_data, live_scores_cat):

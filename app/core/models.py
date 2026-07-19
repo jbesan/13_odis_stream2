@@ -1,6 +1,6 @@
 from typing import List, Dict, Any, Union, Optional, Set, Literal
 import hashlib
-from pydantic import BaseModel, Field, ConfigDict, model_validator
+from pydantic import BaseModel, Field, ConfigDict, model_validator, field_validator
 
 
 class CriteriaItem(BaseModel):
@@ -185,8 +185,8 @@ class SearchCriterias(BaseModel):
             ]
         },
     )
-    besoin_sante: Optional[str] = Field(
-        None,
+    besoin_sante: List[str] = Field(
+        default_factory=list,
         description="Besoin de santé spécifique",
         json_schema_extra={
             "odis_visibility": [
@@ -351,6 +351,15 @@ class SearchCriterias(BaseModel):
         if data.__class__.__name__ == cls.__name__ and not isinstance(data, cls):
             return data.model_dump() if hasattr(data, "model_dump") else data.__dict__
         return data
+
+    @field_validator("besoin_sante", mode="before")
+    @classmethod
+    def validate_besoin_sante(cls, v: Any) -> List[str]:
+        if isinstance(v, str):
+            return [] if v == "Aucun" or not v else [v]
+        if v is None:
+            return []
+        return v
 
     @model_validator(mode="before")
     @classmethod
