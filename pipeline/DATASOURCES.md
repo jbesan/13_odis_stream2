@@ -81,6 +81,13 @@
 - URL Stable: https://www.data.gouv.fr/api/1/datasets/r/ea5d6bc3-37d0-4884-a437-155a90c3e05f
 - Type de fichier: csv
 
+## Historique électoral
+
+- Données: https://www.data.gouv.fr/fr/datasets/resultats-des-elections-en-france-par-commune-et-par-bureau-de-vote/
+- Fichier local: pipeline/local/candidats_results.parquet
+- Type de fichier: parquet (optimisé, ~27.5 millions de lignes, 161 Mo)
+- Description: Résultats électoraux par bureau de vote. Utilisé pour compiler l'historique des 5 derniers scrutins majeurs de chaque commune (enregistré au format JSON).
+
 ## Associations
 
 - Données: https://www.data.gouv.fr/datasets/rna-agrege-a-lechelle-nationale/#/resources/cc7b8f0c-45ea-4444-8b55-55d30bc34ac5

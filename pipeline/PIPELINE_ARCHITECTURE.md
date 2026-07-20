@@ -40,7 +40,7 @@ Each dataset specifies `used_columns` in `sources.yaml`. The validation engine c
 The pipeline integrates 14 primary datasets directly from the Odace platform. To support large datasets and complex schemas without server timeouts:
 *   **Paginated Query API (`/api/data/query`)**: `OdaceClient` auto-paginates queries by looping over `offset` and `has_more` to safely pull tables exceeding the 10,000-row API limit (e.g. `fact_population_municipale` at 34,998 rows).
 *   **Parquet Export Streaming (`/api/data/export`)**: Heavy tables like BPE (`dim_equipement_territoire` >2.78M rows) and RNA (`dim_association`) stream pre-compiled Parquet export files directly.
-*   **BPE Capacity Optimization**: BPE parquet is filtered locally in Python for ODIS-relevant codes (`D502`, `D703`, `D704`, `D710`), reducing rows to ~18k, and maps `capacite_hebergement` to `CAPACITE`.
+*   **BPE Ingestion & Spatial Reprojection Optimization**: BPE is fetched directly from the Odace silver export API. It is filtered locally in Python to ODIS-relevant equipment codes (reducing rows to ~197k), which optimizes coordinate reprojection from Lambert-93 to WGS-84 to under 0.2 seconds.
 *   **PLM Population Alignment**: Arrondissement populations (Paris, Lyon, Marseille) are fully populated in the cleaned population dataset. The build pipeline uses standard population-weighted average consolidation (removing simple mean fallbacks).
 
 ### 2. Live & Remote APIs

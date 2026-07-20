@@ -3,6 +3,7 @@ import requests
 import time
 import pandas as pd
 import re
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -14,7 +15,7 @@ load_dotenv("app/.env")
 # Constants
 OUTPUT_PATH = Path("pipeline/cache/output/odis_inclusion_jobs.parquet")
 STRUCTURES_PATH = Path("pipeline/cache/output/odis_inclusion_structures.parquet")
-SIAE_LOOKUP_PATH = Path("pipeline/cache/raw/structures-inclusion-2026-02-16.parquet")
+SIAE_LOOKUP_PATH = Path("pipeline/cache/raw/structures_inclusion.parquet")
 API_URL = "https://emplois.inclusion.beta.gouv.fr/api/v1/siaes/"
 TTL_DAYS = 7
 
@@ -103,7 +104,7 @@ def fetch_department_jobs(dept: str) -> List[Dict[str, Any]]:
                         if retry_after and retry_after.isdigit()
                         else backoff
                     )
-                    print(
+                    logging.warning(
                         f"    [Rate Limit] HTTP 429. Waiting {wait_time}s for dept {dept}..."
                     )
                     time.sleep(wait_time)
@@ -113,7 +114,7 @@ def fetch_department_jobs(dept: str) -> List[Dict[str, Any]]:
                 data = response.json()
                 break
             except Exception as e:
-                print(f"    [Error] Failed to fetch dept {dept}: {e}")
+                logging.error(f"    [Error] Failed to fetch dept {dept}: {e}")
                 return all_results
 
         results = data.get("results", [])
@@ -137,18 +138,18 @@ def run_ingestion(departments: List[str] = None) -> None:
     """
     # Load SIAE lookup for code_insee fallback
     if SIAE_LOOKUP_PATH.exists():
-        print(f"  [Lookup] Loading SIAE lookup table from {SIAE_LOOKUP_PATH}...")
+        logging.info(f"  [Lookup] Loading SIAE lookup table from {SIAE_LOOKUP_PATH}...")
         str_inc = pd.read_parquet(SIAE_LOOKUP_PATH, engine="fastparquet")
         # Ensure siret is string for matching
         str_inc["siret"] = str_inc["siret"].astype(str)
     else:
-        print(
+        logging.warning(
             f"  [Warning] SIAE lookup file not found at {SIAE_LOOKUP_PATH}. Fallback to local code_insee will be disabled."
         )
         str_inc = pd.DataFrame(columns=["siret", "code_insee"])
 
     depts_to_process = departments or DEPARTEMENTS
-    print(
+    logging.info(
         f"=== Starting Ingestion (Public Mode): Les emplois de l'inclusion ({len(depts_to_process)} depts) ==="
     )
 
@@ -156,7 +157,7 @@ def run_ingestion(departments: List[str] = None) -> None:
     all_structures = []
 
     for dept in depts_to_process:
-        print(f"  Processing {dept}...")
+        logging.info(f"  Processing {dept}...")
         structures = fetch_department_jobs(dept)
 
         for siae in structures:
@@ -227,9 +228,9 @@ def run_ingestion(departments: List[str] = None) -> None:
         # Save granular data as requested (no aggregation)
         os.makedirs(OUTPUT_PATH.parent, exist_ok=True)
         df.to_parquet(OUTPUT_PATH, index=False, engine="fastparquet")
-        print(f"\n✅ Successfully saved {len(df)} job opening records to {OUTPUT_PATH}")
+        logging.info(f"Successfully saved {len(df)} job opening records to {OUTPUT_PATH}")
     else:
-        print("\n⚠️ No job data collected.")
+        logging.warning("No job data collected.")
 
     if all_structures:
         df_struct = pd.DataFrame(all_structures)
@@ -237,12 +238,16 @@ def run_ingestion(departments: List[str] = None) -> None:
         df_struct = df_struct.drop_duplicates(subset=["codgeo", "siae_siret"])
         os.makedirs(STRUCTURES_PATH.parent, exist_ok=True)
         df_struct.to_parquet(STRUCTURES_PATH, index=False, engine="fastparquet")
-        print(
-            f"✅ Successfully saved {len(df_struct)} unique SIAE structure records to {STRUCTURES_PATH}"
+        logging.info(
+            f"Successfully saved {len(df_struct)} unique SIAE structure records to {STRUCTURES_PATH}"
         )
     else:
-        print("\n⚠️ No structure data collected.")
+        logging.warning("No structure data collected.")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s"
+    )
     run_ingestion()

@@ -95,7 +95,7 @@ def apply_logged_in_org_defaults(defaults: Dict[str, Any]) -> None:
 
         # Toast gating to avoid showing on every page load/re-run
         if st.session_state.get("org_defaults_applied") != org.id:
-            st.toast(f"Profil Organisation activé : **{org.name}**", icon="🏢")
+            # st.toast(f"Profil Organisation activé : **{org.name}**", icon="🏢")
             st.session_state["org_defaults_applied"] = org.id
 
 
@@ -585,6 +585,8 @@ def load_all_data_raw() -> Dict[str, Any]:
             "nb_stops_metro",
             "nb_stops_train",
             "nb_stops_total",
+            "maire_extreme_droite",
+            "electoral_history",
         }
 
         columns_to_load = {

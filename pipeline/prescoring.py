@@ -131,6 +131,8 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
 
         # --- Fill NaNs for Raw Metrics (Fix N/A display) ---
         raw_metrics_to_fill = [
+            "ter_anvita_member",
+            "ter_ctai_member",
             "edu_maternelle_ct",
             "edu_elementaire_ct",
             "edu_college_ct",
@@ -327,6 +329,14 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         # ter_pol_scaled (already 0-1)
         if "pol_num" in communes_gdf.columns:
             communes_gdf["ter_pol_scaled"] = communes_gdf["pol_num"]
+
+        # ter_anvita_scaled (already 0-1)
+        if "ter_anvita_member" in communes_gdf.columns:
+            communes_gdf["ter_anvita_scaled"] = communes_gdf["ter_anvita_member"]
+
+        # ter_ctai_scaled (already 0-1)
+        if "ter_ctai_member" in communes_gdf.columns:
+            communes_gdf["ter_ctai_scaled"] = communes_gdf["ter_ctai_member"]
 
         process_scaling(communes_gdf, "log_pp_occup", "log_occup_scaled")
 

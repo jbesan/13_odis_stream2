@@ -191,6 +191,7 @@ def fetch_source(
             "maternites",
             "associations",
             "political_nuance",
+            "electoral_history",
             "housing_occupation",
             "education_effectifs",
             "bpe",
@@ -824,42 +825,9 @@ def clean_finess_national(config: Dict[str, Any], logger: PipelineLogger):
 
 
 def clean_maternites(config: Dict[str, Any], logger: PipelineLogger):
-    """Cleans Maternites (DREES) and saves to json in CACHE_DIR to maintain backward compatibility."""
-    logger.log_step("clean_maternites", "STARTED")
-    source = config["sources"]["maternites"]
-
-    if source.get("use_odace", False):
-        try:
-            client = get_odace_client(logger)
-            df_odace = client.fetch_table(source.get("odace_table", "dim_maternite"))
-            if not df_odace.empty:
-                # Expecting 'fi_et' (or 'FI_ET') in the json file loaded by build.py
-                df_out = df_odace[["finess_etablissement_code"]].rename(
-                    columns={"finess_etablissement_code": "fi_et"}
-                )
-
-                output_path = CACHE_DIR / source["local_name"]
-                df_out.to_json(output_path, orient="records")
-                logger.log_step(
-                    "clean_maternites",
-                    "COMPLETED",
-                    {"rows": len(df_out), "source": "odace"},
-                )
-                return
-            else:
-                logging.warning(
-                    "Odace fetch returned empty data for dim_maternite. Falling back to legacy."
-                )
-        except Exception as e:
-            logging.error(
-                f"Failed to fetch dim_maternite from Odace: {e}. Falling back to legacy."
-            )
-
-    # Legacy ingestion path
-    logging.info(
-        "maternites: use_odace is False or Odace fetch failed. Reverting to legacy local copy."
-    )
-    logger.log_step("clean_maternites", "COMPLETED", {"source": "legacy"})
+    """Cleans Maternites (DREES) and saves to json in CACHE_DIR to maintain backward compatibility (Bypassed in favor of BPE25)."""
+    logger.log_step("clean_maternites", "SKIPPED")
+    return
 
 
 def clean_services_inclusion(config: Dict[str, Any], logger: PipelineLogger):
@@ -1324,6 +1292,7 @@ def clean_communes(config: Dict[str, Any], logger: PipelineLogger):
             client = get_odace_client(logger)
             df_odace = client.fetch_table(source.get("odace_table", "ref_commune_geo"))
             if not df_odace.empty:
+                import geopandas as gpd
                 from shapely.geometry import shape
 
                 # 1. Fetch and build EPCI mapping
@@ -1384,9 +1353,37 @@ def clean_communes(config: Dict[str, Any], logger: PipelineLogger):
                         inplace=True,
                     )
                 else:
-                    df_odace["nom"] = ""
-                    df_odace["departement"] = ""
-                    df_odace["region"] = ""
+                    logging.warning(
+                        "Odace dim_commune empty. Trying to load/download local communes fallback."
+                    )
+                    import copy
+                    temp_cfg = copy.deepcopy(source)
+                    temp_cfg["use_odace"] = False
+                    try:
+                        legacy_path = fetch_source("communes", temp_cfg, logger)
+                    except Exception as e:
+                        logging.error(f"Failed to fetch legacy communes: {e}")
+                        legacy_path = CACHE_DIR / "communes.geojson"
+
+                    if legacy_path and legacy_path.exists():
+                        try:
+                            df_legacy = gpd.read_file(legacy_path)
+                            df_legacy.rename(columns={"code": "codgeo"}, inplace=True)
+                            df_legacy["codgeo"] = df_legacy["codgeo"].astype(str).str.zfill(5)
+                            df_odace = df_odace.merge(
+                                df_legacy[["codgeo", "nom", "departement", "region"]],
+                                on="codgeo",
+                                how="left",
+                            )
+                        except Exception as e:
+                            logging.error(f"Failed to load local communes fallback: {e}")
+                            df_odace["nom"] = ""
+                            df_odace["departement"] = ""
+                            df_odace["region"] = ""
+                    else:
+                        df_odace["nom"] = ""
+                        df_odace["departement"] = ""
+                        df_odace["region"] = ""
 
                 # Add commune name duplicate and plm flag
                 df_odace["commune"] = df_odace["nom"]
@@ -1471,7 +1468,6 @@ def clean_political(config: Dict[str, Any], logger: PipelineLogger):
     df = load_dataset(path, source)
     df.columns = [c.strip() for c in df.columns]
 
-    # Expected: 'Code Insee Commune', 'Nuance' OR 'cog_commune', 'nuance_politique'
     codgeo_col = next(
         (c for c in df.columns if "Code Insee" in c or "cog_commune" in c), None
     )
@@ -1483,41 +1479,244 @@ def clean_political(config: Dict[str, Any], logger: PipelineLogger):
         ),
         None,
     )
+    famille_col = next(
+        (c for c in df.columns if "famille" in c.lower() or "famille_nuance" in c), None
+    )
 
-    if codgeo_col and nuance_col:
-        # Mapping
-        POL_MAPPING = {
-            "UG": 1.0,
-            "COM": 1.0,
-            "FI": 1.0,
-            "SOC": 1.0,
-            "RDG": 1.0,
-            "ECO": 1.0,
-            "DVG": 1.0,
-            "VEC": 1.0,
-            "REN": 0.5,
-            "MDM": 0.5,
-            "HOR": 0.5,
-            "DVC": 0.5,
-            "LR": 0.2,
-            "DVD": 0.2,
-            "UDI": 0.2,
-            "RN": 0.0,
-            "REC": 0.0,
-            "EXD": 0.0,
-        }
-
-        df["pol_num"] = (
-            df[nuance_col].map(POL_MAPPING).fillna(0.5)
-        )  # Default to neutral
+    if codgeo_col:
+        # Normalize columns
+        nuance_val = df[nuance_col].astype(str).str.strip().str.upper() if nuance_col else pd.Series("", index=df.index)
+        famille_val = df[famille_col].astype(str).str.strip() if famille_col else pd.Series("", index=df.index)
+        
+        far_right_nuances = {"RN", "LRN", "REC", "LREC", "EXD", "LEXD", "UXD", "LUXD", "BC-RN", "BC-UXD", "BC-EXD"}
+        
+        df["maire_extreme_droite"] = (
+            (famille_val == "Extrême droite") | 
+            (nuance_val.isin(far_right_nuances))
+        )
+        df["pol_num"] = np.where(df["maire_extreme_droite"], 0.0, 1.0)
         df["codgeo"] = df[codgeo_col].astype(str).str.zfill(5)
 
-        df_out = df[["codgeo", "pol_num"]]
+        df_out = df[["codgeo", "pol_num", "maire_extreme_droite"]]
         output_path = CLEAN_DIR / "political.parquet"
         df_out.to_parquet(output_path, engine="fastparquet")
         logger.log_step("clean_political", "COMPLETED", {"path": str(output_path)})
     else:
         logging.warning(f"Political: Columns not found. Found: {df.columns}")
+
+
+def clean_electoral_history(config: Dict[str, Any], logger: PipelineLogger):
+    """Cleans Electoral History from candidats_results.parquet and saves to parquet."""
+    logger.log_step("clean_electoral_history", "STARTED")
+    source = config["sources"]["electoral_history"]
+    path = CACHE_DIR / source["local_name"]
+    if not path.exists():
+        logging.warning(f"Electoral history source file not found at: {path}")
+        return
+
+    cols = ["id_election", "code_commune", "nuance", "libelle_abrege_liste", "nom", "voix"]
+    
+    # Pre-determined major elections list for PyArrow filter to avoid loading 3.4GB+
+    allowed_elections = [
+        "2026_muni_t2", "2026_muni_t1",
+        "2024_legi_t2", "2024_legi_t1", "2024_euro_t1",
+        "2022_pres_t2", "2022_pres_t1", "2022_legi_t2", "2022_legi_t1",
+        "2020_muni_t2", "2020_muni_t1", "2019_euro_t1",
+        "2017_pres_t2", "2017_pres_t1", "2017_legi_t2", "2017_legi_t1",
+        "2014_euro_t1", "2014_muni_t2", "2014_muni_t1",
+        "2012_pres_t2", "2012_pres_t1", "2012_legi_t2", "2012_legi_t1"
+    ]
+    
+    # Load and filter at pyarrow level
+    df = pd.read_parquet(
+        path,
+        columns=cols,
+        filters=[("id_election", "in", allowed_elections)],
+        engine="pyarrow"
+    )
+
+    df["nuance"] = df["nuance"].fillna("").astype(str)
+    df["libelle_abrege_liste"] = df["libelle_abrege_liste"].fillna("").astype(str)
+    df["nom"] = df["nom"].fillna("").astype(str)
+    
+    agg = df.groupby(["code_commune", "id_election", "nuance", "libelle_abrege_liste", "nom"], as_index=False)["voix"].sum()
+    
+    # Compute total votes per commune + election
+    totals = agg.groupby(["code_commune", "id_election"])["voix"].transform("sum")
+    agg["total_voix"] = totals
+    agg["pct"] = np.where(agg["total_voix"] > 0, (agg["voix"] / agg["total_voix"] * 100).round(1), 0.0)
+    
+    # Get index of row with max votes for each group
+    idx = agg.groupby(["code_commune", "id_election"])["voix"].idxmax()
+    winners = agg.loc[idx].copy()
+    
+    NUANCE_LABELS = {
+        "UG": "Union de la Gauche",
+        "LUG": "Union de la Gauche",
+        "BC-UG": "Union de la Gauche",
+        "BC-UGE": "Union de la Gauche & Écologistes",
+        "SOC": "Socialiste",
+        "LSOC": "Parti Socialiste",
+        "BC-SOC": "Parti Socialiste",
+        "COM": "Parti Communiste Français",
+        "LCOM": "Parti Communiste Français",
+        "BC-COM": "Parti Communiste Français",
+        "FI": "La France Insoumise",
+        "LFI": "La France Insoumise",
+        "BC-FI": "La France Insoumise",
+        "VEC": "Les Écologistes",
+        "LVEC": "Les Écologistes",
+        "BC-ECO": "Écologistes",
+        "ECO": "Écologiste",
+        "LECO": "Écologistes",
+        "NUP": "NUPES",
+        "DVG": "Divers Gauche",
+        "LDVG": "Divers Gauche",
+        "BC-DVG": "Divers Gauche",
+        "EXG": "Extrême Gauche",
+        "LEXG": "Extrême Gauche",
+        "DXG": "Divers Extrême Gauche",
+        "BC-EXG": "Extrême Gauche",
+        "REN": "Renaissance",
+        "LREN": "Renaissance / Ensemble",
+        "LREM": "La République En Marche",
+        "REM": "La République En Marche",
+        "BC-REM": "La République En Marche",
+        "MDM": "MoDem",
+        "LMDM": "MoDem",
+        "BC-MDM": "MoDem",
+        "HOR": "Horizons",
+        "LHOR": "Horizons",
+        "ENS": "Ensemble",
+        "LENS": "Ensemble",
+        "DVC": "Divers Centre",
+        "LDVC": "Divers Centre",
+        "BC-DVC": "Divers Centre",
+        "UC": "Union du Centre",
+        "LUC": "Union du Centre",
+        "BC-UC": "Union du Centre",
+        "LR": "Les Républicains",
+        "LLR": "Les Républicains",
+        "BC-LR": "Les Républicains",
+        "DVD": "Divers Droite",
+        "LDVD": "Divers Droite",
+        "BC-DVD": "Divers Droite",
+        "UDI": "Union des Démocrates et Indépendants",
+        "LUDI": "Union des Démocrates et Indépendants",
+        "BC-UDI": "Union des Démocrates et Indépendants",
+        "UD": "Union de la Droite",
+        "LUD": "Union de la Droite",
+        "BC-UD": "Union de la Droite",
+        "BC-UCD": "Union du Centre-Droite",
+        "UCD": "Union du Centre-Droite",
+        "LUCD": "Union du Centre-Droite",
+        "DSV": "Droite Souverainiste",
+        "LDSV": "Droite Souverainiste",
+        "BC-DSV": "Droite Souverainiste",
+        "LDLF": "Debout la France",
+        "RN": "Rassemblement National",
+        "LRN": "Rassemblement National",
+        "BC-RN": "Rassemblement National",
+        "REC": "Reconquête",
+        "LREC": "Reconquête",
+        "EXD": "Extrême Droite",
+        "LEXD": "Extrême Droite",
+        "UXD": "Union de l'Extrême Droite",
+        "LUXD": "Union de l'Extrême Droite",
+        "BC-UXD": "Union de l'Extrême Droite",
+        "DXD": "Divers Extrême Droite",
+        "BC-EXD": "Extrême Droite",
+        "DIV": "Divers",
+        "LDIV": "Divers",
+        "BC-DIV": "Divers",
+        "REG": "Régionaliste",
+        "LREG": "Régionaliste",
+        "BC-REG": "Régionaliste",
+        "NC": "Non Classé",
+        "LNC": "Non Classé",
+        "GJ": "Gilets Jaunes",
+        "LGJ": "Gilets Jaunes",
+        "BC-GJ": "Gilets Jaunes",
+    }
+
+    ELECTION_DATES = {
+        "2026_muni_t2": "2026-06-28",
+        "2026_muni_t1": "2026-06-21",
+        "2024_legi_t2": "2024-07-07",
+        "2024_legi_t1": "2024-06-30",
+        "2024_euro_t1": "2024-06-09",
+        "2022_legi_t2": "2022-06-19",
+        "2022_legi_t1": "2022-06-12",
+        "2022_pres_t2": "2022-04-24",
+        "2022_pres_t1": "2022-04-10",
+        "2020_muni_t2": "2020-06-28",
+        "2020_muni_t1": "2020-03-15",
+        "2019_euro_t1": "2019-05-26",
+        "2017_legi_t2": "2017-06-18",
+        "2017_legi_t1": "2017-06-11",
+        "2017_pres_t2": "2017-05-07",
+        "2017_pres_t1": "2017-04-23",
+        "2014_euro_t1": "2014-05-25",
+        "2014_muni_t2": "2014-03-30",
+        "2014_muni_t1": "2014-03-23",
+        "2012_legi_t2": "2012-06-17",
+        "2012_legi_t1": "2012-06-10",
+        "2012_pres_t2": "2012-05-06",
+        "2012_pres_t1": "2012-04-22",
+    }
+
+    ELECTION_LABELS = {
+        "muni": "Municipales",
+        "legi": "Législatives",
+        "pres": "Présidentielle",
+        "euro": "Européennes",
+    }
+
+    def format_election_name(id_election: str) -> str:
+        parts = id_election.split("_")
+        year = parts[0]
+        el_type = parts[1]
+        label = ELECTION_LABELS.get(el_type, el_type.capitalize())
+        return f"{label} {year}"
+
+    def get_winner_label(row):
+        nuance = row["nuance"]
+        list_name = row["libelle_abrege_liste"]
+        nom = row["nom"]
+        
+        if nuance:
+            return NUANCE_LABELS.get(nuance, nuance)
+        elif list_name:
+            return list_name
+        elif nom:
+            return nom
+        else:
+            return "Inconnu"
+            
+    winners["winner_label"] = winners.apply(get_winner_label, axis=1)
+    
+    winners["date"] = winners["id_election"].map(ELECTION_DATES).fillna("1900-01-01")
+    winners = winners.sort_values(by=["code_commune", "date"], ascending=[True, False])
+    
+    commune_histories = {}
+    for code_commune, group in winners.groupby("code_commune"):
+        history = []
+        for _, row in group.head(5).iterrows():
+            history.append({
+                "election": format_election_name(row["id_election"]),
+                "nuance": row["winner_label"],
+                "percentage": float(row["pct"])
+            })
+        commune_histories[code_commune] = json.dumps(history, ensure_ascii=False)
+        
+    df_out = pd.DataFrame([
+        {"codgeo": str(k).zfill(5), "electoral_history": v}
+        for k, v in commune_histories.items()
+    ])
+    
+    output_path = CLEAN_DIR / "electoral_history.parquet"
+    df_out.to_parquet(output_path, engine="fastparquet")
+    logger.log_step("clean_electoral_history", "COMPLETED", {"path": str(output_path)})
 
 
 def clean_housing_occupation(config: Dict[str, Any], logger: PipelineLogger):
@@ -1764,31 +1963,82 @@ def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
     logger.log_step("clean_bpe", "STARTED")
     source = config["sources"]["bpe"]
 
-    path = CACHE_DIR / source["local_name"]
-    if not path.exists():
-        logging.error(f"BPE25 parquet file not found at {path}")
-        return
+    df = None
+    if source.get("use_odace", False):
+        try:
+            client = get_odace_client(logger)
+            df_odace = client.fetch_table(
+                source.get("odace_table", "dim_equipement_territoire"),
+                ttl_days=source.get("ttl_days", 365),
+            )
+            if not df_odace.empty:
+                rename_dict = {
+                    "commune_insee_code": "codgeo",
+                    "type_equipement_code": "TYPEQU",
+                    "equipement_label": "NOMRS",
+                    "coord_x_lambert": "LAMBERT_X",
+                    "coord_y_lambert": "LAMBERT_Y",
+                    "departement_code": "DEP",
+                }
+                df = df_odace.rename(columns=rename_dict).copy()
+                df["longitude"] = pd.to_numeric(df.get("longitude", np.nan), errors="coerce")
+                df["latitude"] = pd.to_numeric(df.get("latitude", np.nan), errors="coerce")
+                logging.info(f"[BPE] Loaded {len(df)} rows from Odace API.")
+        except Exception as e:
+            logging.warning(f"BPE: Odace fetch failed, falling back to local: {e}")
 
-    df = load_dataset(path, source)
+    if df is None:
+        path = CACHE_DIR / source["local_name"]
+        if not path.exists():
+            logging.error(f"BPE25 parquet file not found at {path}")
+            return
+        df = load_dataset(path, source)
 
     # Construct CODGEO
-    if "DEPCOM" in df.columns:
-        df["codgeo"] = df["DEPCOM"].astype(str).str.zfill(5)
-    elif "DEP" in df.columns and "COM" in df.columns:
-        df["codgeo"] = df["DEP"].astype(str).str.zfill(2) + df["COM"].astype(
-            str
-        ).str.zfill(3)
-    elif "CODGEO" in df.columns:
-        df["codgeo"] = df["CODGEO"].astype(str).str.zfill(5)
+    if "codgeo" not in df.columns:
+        for col in ["commune_insee_code", "DEPCOM", "CODGEO"]:
+            if col in df.columns:
+                df["codgeo"] = df[col].astype(str).str.zfill(5)
+                break
+        else:
+            if "DEP" in df.columns and "COM" in df.columns:
+                df["codgeo"] = df["DEP"].astype(str).str.zfill(2) + df["COM"].astype(
+                    str
+                ).str.zfill(3)
 
     if "TYPEQU" not in df.columns:
         logging.warning("BPE: TYPEQU column not found.")
         return
 
-    # Project coords if LATITUDE/LONGITUDE are missing but LAMBERT_X/LAMBERT_Y are present
-    df["longitude"] = pd.to_numeric(df["LONGITUDE"], errors="coerce")
-    df["latitude"] = pd.to_numeric(df["LATITUDE"], errors="coerce")
+    # Normalize/ensure standard naming
+    if "longitude" not in df.columns and "LONGITUDE" in df.columns:
+        df["longitude"] = pd.to_numeric(df["LONGITUDE"], errors="coerce")
+    else:
+        df["longitude"] = pd.to_numeric(df.get("longitude", np.nan), errors="coerce")
 
+    if "latitude" not in df.columns and "LATITUDE" in df.columns:
+        df["latitude"] = pd.to_numeric(df["LATITUDE"], errors="coerce")
+    else:
+        df["latitude"] = pd.to_numeric(df.get("latitude", np.nan), errors="coerce")
+
+    # Optimization: filter to target equipment categories before reprojection
+    target_types = {
+        # Education & Early Childhood (C-prefixed codes are matched via startswith, others explicitly here)
+        "D502", "D504", "D505", "D509",
+        # Housing & Accommodation
+        "D703", "D704", "D705", "D710",
+        # Health
+        "D101", "D107", "D108", "D109", "D111", "D113", "D114", "D115",
+        # Action Sociale
+        "A125", "A128", "A129", "D711",
+        # Gares
+        "E107", "E108", "E109"
+    }
+    is_edu = df["TYPEQU"].str.startswith("C", na=False)
+    is_other_target = df["TYPEQU"].isin(target_types)
+    df = df[is_edu | is_other_target].copy()
+
+    # Project coords if latitude/longitude are missing but LAMBERT_X/LAMBERT_Y are present
     missing_coords = df["longitude"].isna() | df["latitude"].isna()
     valid_lambert = (
         ~df["LAMBERT_X"].isna()
@@ -1801,6 +2051,7 @@ def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
     if reproject_mask.any():
         try:
             df_to_reproj = df[reproject_mask].copy()
+            import geopandas as gpd
             gdf_reproj = gpd.GeoDataFrame(
                 df_to_reproj,
                 geometry=gpd.points_from_xy(
@@ -1818,10 +2069,10 @@ def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
 
     # --- 1. Education & Early Childhood (Éducation & Petite Enfance) ---
     is_edu = df["TYPEQU"].str.startswith("C", na=False)
-    # Apply SECTEUR filter ONLY to education codes (Public and Private sous contrat)
+    # Apply filter ONLY to education codes (All sectors, as requested by user)
     # EAJE, Relais, ALSH, Micro-crèche do not have SECTEUR codes or are not filtered
     df_edu_all = df[
-        (is_edu & df["SECTEUR"].isin(["1", "2"]))
+        is_edu
         | (df["TYPEQU"].isin(["D502", "D504", "D505", "D509"]))
     ].copy()
 
@@ -2693,6 +2944,10 @@ def run_clean_step_safely(
       5. Validates that the resulting clean parquet file is non-empty.
       6. Commits (deletes backups) on success, or rolls back (restores backups) on failure/exception.
     """
+    if step_name in {"education", "finess_national", "maternites"}:
+        logger.log_step(f"clean_{step_name}", "SKIPPED")
+        return
+
     import os
     from pathlib import Path
 
@@ -2712,6 +2967,7 @@ def run_clean_step_safely(
         "gares": "dim_gare",
         "odace_rent": "fact_loyer_annonce",
         "formations": "formations_annuaire",
+        "electoral_history": "electoral_history",
     }
 
     config_key = STEP_TO_SOURCE_MAP.get(step_name, step_name)
@@ -2994,6 +3250,7 @@ def main(argv=None):
         "associations": clean_associations,
         "refugee_associations": clean_refugee_associations,
         "political": clean_political,
+        "electoral_history": clean_electoral_history,
         "housing_occupation": clean_housing_occupation,
         "school_effectifs": clean_school_effectifs,
         "bpe": clean_bpe,

@@ -40,6 +40,9 @@ from pipeline.common import (
     STATUS_FILE,
 )
 import app.config as cfg
+from pipeline.anvita import compute_anvita_scores
+from pipeline.ctai import compute_ctai_scores
+
 
 # Constants
 PLM_ARRONDISSEMENTS = (
@@ -283,7 +286,10 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         )
 
         # Merge Political
-        merge_clean("political", ["pol_num"])
+        merge_clean("political", ["pol_num", "maire_extreme_droite"])
+
+        # Merge Electoral History
+        merge_clean("electoral_history", ["electoral_history"])
 
         # Merge Housing Occupation
         merge_clean(
@@ -722,6 +728,22 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         consolidated_df = consolidate_plm_communes(communes_gdf)
         communes_gdf = gpd.GeoDataFrame(
             consolidated_df, geometry="geometry", crs=original_crs
+        )
+
+        # Compute ANVITA scores after PLM consolidation to avoid summing/averaging arrondissement metrics
+        excel_path = Path(__file__).parent / "data_private" / "Tableau de suivi off - membres CT ANVITA.xlsx"
+        communes_gdf["ter_anvita_member"] = compute_anvita_scores(
+            communes_df=communes_gdf,
+            cache_raw_dir=CACHE_DIR,
+            excel_path=excel_path
+        )
+
+        # Compute CTAI scores after PLM consolidation
+        ctai_json_path = Path(__file__).parent / "data_private" / "ctai_signataires.json"
+        communes_gdf["ter_ctai_member"] = compute_ctai_scores(
+            communes_df=communes_gdf,
+            cache_raw_dir=CACHE_DIR,
+            json_path=ctai_json_path
         )
 
         # Save polygons as WKB in WGS84 (4326) for direct map rendering

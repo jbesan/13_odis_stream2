@@ -30,9 +30,10 @@ graph TD
         
         %% Dynamic Calculations
         H --> I["Calculs Live / Dynamiques"]
+        I --> I3["Matchs (Emploi, Santé... normalisés)"]
         I --> I1["Proximité Géographique (Décroissance linéaire)"]
         I --> I2["Taille de Ville (Courbe Gaussienne)"]
-        I --> I3["Matchs Directs & Live (Emploi FT, Formations, Santé, Affinités)"]
+        
         
         %% BdV Boost
         I1 & I2 & I3 --> J["Application du Boost Bassin de Vie (BdV)"]
@@ -99,7 +100,7 @@ Enfin, les scores normalisés de chaque catégorie sont regroupés puis pondér�
 
 ## 📊 Synthèse de la Configuration (Tous les Critères)
 
-Voici l'intégralité des 45 critères configurés dans le moteur de scoring OD&IS (`scores_config.yaml` + Distance).
+Voici l'intégralité des 47 critères configurés dans le moteur de scoring OD&IS (`scores_config.yaml` + Distance).
 
 ### 🏠 Logement
 
@@ -149,8 +150,10 @@ Voici l'intégralité des 45 critères configurés dans le moteur de scoring OD&
 | :--------------------- | :----- | :---- | :------- | :-------- | :----------------------------------------- |
 | **Population Commune** | Live-scoring | 3.0   | **Oui**  | -0.5      | Score basé sur la taille de ville (Gauss). |
 | **Sécurité (Taux)**    | Pre-scoring | 1.0   | **Oui**  | 0.5       | Indice d'insécurité (Vols/Dégradations).   |
-| **Couleur Politique**  | Pre-scoring | 1.0   | **Oui**  | 0.0       | Orientation politique locale de la commune. |
+| **Couleur Politique**  | Pre-scoring | 1.0   | **Oui**  | 0.0       | Score binaire : 0.0 si le maire est d'extrême droite, 1.0 sinon. |
 | **Zone Stratégique**   | Live-scoring | 3.0   | Non      | 0.0       | Zone d'action privilégiée partenaire.      |
+| **Adhésion ANVITA**    | Pre-scoring | 3.0   | **Oui**  | 0.0       | Adhésion au réseau ANVITA (1.0 si Commune/EPCI, 0.5 si Dépt/Région, 0.0 sinon). |
+| **Signataire CTAI**    | Pre-scoring | 3.0   | **Oui**  | 0.0       | Contrat territorial d'accueil et d'intégration (1.0 si Commune/EPCI, 0.5 si Dépt/Région, 0.0 sinon). |
 
 
 ### 🎓 Éducation

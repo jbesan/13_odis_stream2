@@ -227,9 +227,9 @@ def check_password() -> bool:
         org_name = (
             st.session_state.get("org").name if st.session_state.get("org") else "Test"
         )
-        st.sidebar.warning(
-            f"**{org_name}**. \n Vos interactions sont collectées pour améliorer l'outil. Merci d'anonymiser au maximum vos saisies libres."
-        )
+        # st.sidebar.warning(
+        #     f"**{org_name}**. \n Vos interactions sont collectées pour améliorer l'outil. Merci d'anonymiser au maximum vos saisies libres."
+        # )
         return True
 
     # 3. Check OIDC login state (st.user.is_logged_in) and authenticate
@@ -245,9 +245,9 @@ def check_password() -> bool:
 
             # Show standard warning sidebar
             org_name = org.name
-            st.sidebar.warning(
-                f"**{org_name}**. \n Vos interactions sont collectées pour améliorer l'outil. Merci d'anonymiser au maximum vos saisies libres."
-            )
+            # st.sidebar.warning(
+            #     f"**{org_name}**. \n Vos interactions sont collectées pour améliorer l'outil. Merci d'anonymiser au maximum vos saisies libres."
+            # )
             return True
         else:
             with st.container(width="stretch", horizontal_alignment="center"):
