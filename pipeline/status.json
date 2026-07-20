@@ -75,14 +75,14 @@
     },
     "generate_pois": {
       "status": "CREATED",
-      "timestamp": "2026-07-20T14:34:35.023000",
+      "timestamp": "2026-07-20T15:36:22.017634",
       "details": {
         "path": "pipeline/cache/output/odis_pois.parquet"
       }
     },
     "generate_referentiels": {
       "status": "CREATED",
-      "timestamp": "2026-07-20T14:34:35.437613",
+      "timestamp": "2026-07-20T15:36:22.396973",
       "details": {
         "path": "pipeline/cache/output/odis_referentiels.parquet"
       }
@@ -181,7 +181,7 @@
     },
     "build_communes": {
       "status": "CREATED",
-      "timestamp": "2026-07-20T14:33:30.916735",
+      "timestamp": "2026-07-20T15:35:16.408707",
       "details": {
         "path": "pipeline/cache/output/odis_communes_pre.parquet",
         "rows": 34968
@@ -189,7 +189,7 @@
     },
     "build_bassins_de_vie": {
       "status": "CREATED",
-      "timestamp": "2026-07-20T14:33:34.703928",
+      "timestamp": "2026-07-20T15:35:20.688591",
       "details": {
         "path": "pipeline/cache/output/odis_bassins_de_vie.parquet",
         "rows": 1707
@@ -197,7 +197,7 @@
     },
     "build_all": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-20T14:34:35.440668",
+      "timestamp": "2026-07-20T15:36:22.399198",
       "details": {}
     },
     "clean_voisins": {
@@ -209,7 +209,7 @@
     },
     "build_vertical_tables": {
       "status": "REFUGEE_ASSOCIATIONS",
-      "timestamp": "2026-07-20T14:34:07.325036",
+      "timestamp": "2026-07-20T15:35:53.129398",
       "details": {
         "path": "pipeline/cache/output/odis_refugee_associations.parquet"
       }
@@ -256,9 +256,9 @@
     },
     "apply_prescoring": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-20T14:35:31.599808",
+      "timestamp": "2026-07-20T15:37:12.566313",
       "details": {
-        "columns": 128,
+        "columns": 130,
         "path": "pipeline/cache/output/odis_communes.parquet",
         "rows": 34968
       }
@@ -281,7 +281,7 @@
     },
     "score_bassins_de_vie": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-20T14:35:35.228456",
+      "timestamp": "2026-07-20T15:37:16.255513",
       "details": {
         "rows": 1707
       }
@@ -340,7 +340,7 @@
     },
     "apply_prescoring_load": {
       "status": "LOADED",
-      "timestamp": "2026-07-20T14:34:45.917458",
+      "timestamp": "2026-07-20T15:36:26.162370",
       "details": {
         "rows": 34968
       }
@@ -355,7 +355,7 @@
     },
     "inc_services_core_scaled": {
       "status": "CALCULATED",
-      "timestamp": "2026-07-20T14:34:48.457945",
+      "timestamp": "2026-07-20T15:36:28.643109",
       "details": {}
     },
     "clean_regions": {

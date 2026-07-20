@@ -130,14 +130,31 @@ scores:
     baseline: true
     computation: precomputed
     display:
-      name: Couleur Politique de la commmue
-      strong_point_text: La couleur politique de la localité est favorable
-      high_value_adjective: favorable
+      name: Couleur politique de l'équipe municipale 
+      strong_point_text: La couleur politique de la localité n'est pas défavorable
+      high_value_adjective: pas défavorable
       show: false
       unit: None
       display_factor: 1
-      tooltip: Affiliation à un parti politique en faveur de l'accueil
+      tooltip: Affiliation à un parti politique d'extrème droite
     weight: 1.0
+    min_bound: 0.0
+    max_bound: 1.0
+  - id: ter_anvita_scaled
+    category: territoire
+    source_metric: ter_anvita_member
+    bdv_factor: 0.0
+    baseline: true
+    computation: precomputed
+    display:
+      name: Adhésion Réseau ANVITA
+      strong_point_text: Le territoire est membre du réseau ANVITA
+      high_value_adjective: oui
+      show: false
+      unit: None
+      display_factor: 1
+      tooltip: Commune, EPCI, Département ou Région membre de l'ANVITA
+    weight: 3.0
     min_bound: 0.0
     max_bound: 1.0
   - id: ter_population_scaled

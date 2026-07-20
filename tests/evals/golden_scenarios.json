@@ -19,10 +19,17 @@
       },
       "commune_pressentie": null,
       "loc_search_area": "departement",
-      "loc_search_code": ["17", "33", "40"],
+      "loc_search_code": [
+        "17",
+        "33",
+        "40"
+      ],
       "nb_adultes": 1,
       "nb_enfants": 2,
-      "classe_enfants": ["Elémentaire", "Crèche / Assistante Maternelle"],
+      "classe_enfants": [
+        "Elémentaire",
+        "Crèche / Assistante Maternelle"
+      ],
       "codes_metiers": [
         [
           {
@@ -31,7 +38,9 @@
           }
         ]
       ],
-      "codes_formations": [[]],
+      "codes_formations": [
+        []
+      ],
       "inc_services_selection": [
         {
           "code": "difficultes-administratives-ou-juridiques--accompagnement-aux-demarches-administratives",
@@ -56,15 +65,22 @@
           "label": "football (football, futsal)"
         }
       ],
-      "hebergement_cible": ["Location avec Intermédiation"],
+      "hebergement_cible": [
+        "Location avec Intermédiation"
+      ],
       "logement": "Location",
       "type_logement": {
         "code": "appt_all",
         "label": "Appartement (Tous types)"
       },
-      "besoin_sante": ["Soutien Psychologique", "Addictologie"],
+      "besoin_sante": [
+        "Soutien Psychologique",
+        "Addictologie"
+      ],
       "freq_retour": "1 fois/an",
-      "notes_qualitatives": ["Proximité d'une Mosquée et de la mer"],
+      "notes_qualitatives": [
+        "Proximité d'une Mosquée et de la mer"
+      ],
       "weight_profile": "Équilibré",
       "criteria_weights": {
         "mob_epci_scaled": 0.5,
@@ -171,7 +187,7 @@
             ],
             "territoire": [
               {
-                "label": "Couleur Politique de la commmue",
+                "label": "Couleur politique de l'équipe municipale",
                 "score_id": "ter_pol_scaled",
                 "valeur_kpi": 0.5,
                 "score_normalise": 0.5,
@@ -398,7 +414,9 @@
               "Mécanicien / Mécanicienne automobile": 1,
               "Mécanicien / Mécanicienne motocycles": 1
             },
-            "training_programs": ["Comptabilité, gestion"],
+            "training_programs": [
+              "Comptabilité, gestion"
+            ],
             "training_programs_matching": [],
             "matching_job_offers": [
               [

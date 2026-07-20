@@ -31,5 +31,6 @@ app/*.pyc
 app/.DS_Store
 app/.env
 app/data_private/
+pipeline/data_private/
 **/.env
 
