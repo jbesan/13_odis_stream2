@@ -157,6 +157,23 @@ scores:
     weight: 3.0
     min_bound: 0.0
     max_bound: 1.0
+  - id: ter_ctai_scaled
+    category: territoire
+    source_metric: ter_ctai_member
+    bdv_factor: 0.0
+    baseline: true
+    computation: precomputed
+    display:
+      name: Signataire CTAI
+      strong_point_text: Le territoire est signataire d'un CTAI
+      high_value_adjective: oui
+      show: false
+      unit: None
+      display_factor: 1
+      tooltip: Commune, EPCI, Département ou Région signataire d'un Contrat territorial d'accueil et d'intégration (CTAI)
+    weight: 3.0
+    min_bound: 0.0
+    max_bound: 1.0
   - id: ter_population_scaled
     category: territoire
     source_metric: population
@@ -844,7 +861,7 @@ scores:
     bdv_factor: 0.0
     computation: live
     display:
-      name: Zone Stratégique Partenaire
+      name: Zone Stratégique
       strong_point_text: Zone d'action privilégiée de l'organisation
       high_value_adjective: oui
       show: true

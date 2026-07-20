@@ -41,6 +41,7 @@ from pipeline.common import (
 )
 import app.config as cfg
 from pipeline.anvita import compute_anvita_scores
+from pipeline.ctai import compute_ctai_scores
 
 
 # Constants
@@ -735,6 +736,14 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
             communes_df=communes_gdf,
             cache_raw_dir=CACHE_DIR,
             excel_path=excel_path
+        )
+
+        # Compute CTAI scores after PLM consolidation
+        ctai_json_path = Path(__file__).parent / "data_private" / "ctai_signataires.json"
+        communes_gdf["ter_ctai_member"] = compute_ctai_scores(
+            communes_df=communes_gdf,
+            cache_raw_dir=CACHE_DIR,
+            json_path=ctai_json_path
         )
 
         # Save polygons as WKB in WGS84 (4326) for direct map rendering

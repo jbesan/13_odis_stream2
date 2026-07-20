@@ -825,42 +825,9 @@ def clean_finess_national(config: Dict[str, Any], logger: PipelineLogger):
 
 
 def clean_maternites(config: Dict[str, Any], logger: PipelineLogger):
-    """Cleans Maternites (DREES) and saves to json in CACHE_DIR to maintain backward compatibility."""
-    logger.log_step("clean_maternites", "STARTED")
-    source = config["sources"]["maternites"]
-
-    if source.get("use_odace", False):
-        try:
-            client = get_odace_client(logger)
-            df_odace = client.fetch_table(source.get("odace_table", "dim_maternite"))
-            if not df_odace.empty:
-                # Expecting 'fi_et' (or 'FI_ET') in the json file loaded by build.py
-                df_out = df_odace[["finess_etablissement_code"]].rename(
-                    columns={"finess_etablissement_code": "fi_et"}
-                )
-
-                output_path = CACHE_DIR / source["local_name"]
-                df_out.to_json(output_path, orient="records")
-                logger.log_step(
-                    "clean_maternites",
-                    "COMPLETED",
-                    {"rows": len(df_out), "source": "odace"},
-                )
-                return
-            else:
-                logging.warning(
-                    "Odace fetch returned empty data for dim_maternite. Falling back to legacy."
-                )
-        except Exception as e:
-            logging.error(
-                f"Failed to fetch dim_maternite from Odace: {e}. Falling back to legacy."
-            )
-
-    # Legacy ingestion path
-    logging.info(
-        "maternites: use_odace is False or Odace fetch failed. Reverting to legacy local copy."
-    )
-    logger.log_step("clean_maternites", "COMPLETED", {"source": "legacy"})
+    """Cleans Maternites (DREES) and saves to json in CACHE_DIR to maintain backward compatibility (Bypassed in favor of BPE25)."""
+    logger.log_step("clean_maternites", "SKIPPED")
+    return
 
 
 def clean_services_inclusion(config: Dict[str, Any], logger: PipelineLogger):
@@ -1967,31 +1934,81 @@ def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
     logger.log_step("clean_bpe", "STARTED")
     source = config["sources"]["bpe"]
 
-    path = CACHE_DIR / source["local_name"]
-    if not path.exists():
-        logging.error(f"BPE25 parquet file not found at {path}")
-        return
+    df = None
+    if source.get("use_odace", False):
+        try:
+            client = get_odace_client(logger)
+            df_odace = client.fetch_table(
+                source.get("odace_table", "dim_equipement_territoire"),
+                ttl_days=source.get("ttl_days", 365),
+            )
+            if not df_odace.empty:
+                rename_dict = {
+                    "commune_insee_code": "codgeo",
+                    "type_equipement_code": "TYPEQU",
+                    "equipement_label": "NOMRS",
+                    "coord_x_lambert": "LAMBERT_X",
+                    "coord_y_lambert": "LAMBERT_Y",
+                    "departement_code": "DEP",
+                }
+                df = df_odace.rename(columns=rename_dict).copy()
+                df["longitude"] = pd.to_numeric(df.get("longitude", np.nan), errors="coerce")
+                df["latitude"] = pd.to_numeric(df.get("latitude", np.nan), errors="coerce")
+                logging.info(f"[BPE] Loaded {len(df)} rows from Odace API.")
+        except Exception as e:
+            logging.warning(f"BPE: Odace fetch failed, falling back to local: {e}")
 
-    df = load_dataset(path, source)
+    if df is None:
+        path = CACHE_DIR / source["local_name"]
+        if not path.exists():
+            logging.error(f"BPE25 parquet file not found at {path}")
+            return
+        df = load_dataset(path, source)
 
     # Construct CODGEO
-    if "DEPCOM" in df.columns:
-        df["codgeo"] = df["DEPCOM"].astype(str).str.zfill(5)
-    elif "DEP" in df.columns and "COM" in df.columns:
-        df["codgeo"] = df["DEP"].astype(str).str.zfill(2) + df["COM"].astype(
-            str
-        ).str.zfill(3)
-    elif "CODGEO" in df.columns:
-        df["codgeo"] = df["CODGEO"].astype(str).str.zfill(5)
+    if "codgeo" not in df.columns:
+        if "DEPCOM" in df.columns:
+            df["codgeo"] = df["DEPCOM"].astype(str).str.zfill(5)
+        elif "DEP" in df.columns and "COM" in df.columns:
+            df["codgeo"] = df["DEP"].astype(str).str.zfill(2) + df["COM"].astype(
+                str
+            ).str.zfill(3)
+        elif "CODGEO" in df.columns:
+            df["codgeo"] = df["CODGEO"].astype(str).str.zfill(5)
 
     if "TYPEQU" not in df.columns:
         logging.warning("BPE: TYPEQU column not found.")
         return
 
-    # Project coords if LATITUDE/LONGITUDE are missing but LAMBERT_X/LAMBERT_Y are present
-    df["longitude"] = pd.to_numeric(df["LONGITUDE"], errors="coerce")
-    df["latitude"] = pd.to_numeric(df["LATITUDE"], errors="coerce")
+    # Normalize/ensure standard naming
+    if "longitude" not in df.columns and "LONGITUDE" in df.columns:
+        df["longitude"] = pd.to_numeric(df["LONGITUDE"], errors="coerce")
+    else:
+        df["longitude"] = pd.to_numeric(df.get("longitude", np.nan), errors="coerce")
 
+    if "latitude" not in df.columns and "LATITUDE" in df.columns:
+        df["latitude"] = pd.to_numeric(df["LATITUDE"], errors="coerce")
+    else:
+        df["latitude"] = pd.to_numeric(df.get("latitude", np.nan), errors="coerce")
+
+    # Optimization: filter to target equipment categories before reprojection
+    target_types = {
+        # Education & Early Childhood (C-prefixed codes are matched via startswith, others explicitly here)
+        "D502", "D504", "D505", "D509",
+        # Housing & Accommodation
+        "D703", "D704", "D705", "D710",
+        # Health
+        "D101", "D107", "D108", "D109", "D111", "D113", "D114", "D115",
+        # Action Sociale
+        "A125", "A128", "A129", "D711",
+        # Gares
+        "E107", "E108", "E109"
+    }
+    is_edu = df["TYPEQU"].str.startswith("C", na=False)
+    is_other_target = df["TYPEQU"].isin(target_types)
+    df = df[is_edu | is_other_target].copy()
+
+    # Project coords if latitude/longitude are missing but LAMBERT_X/LAMBERT_Y are present
     missing_coords = df["longitude"].isna() | df["latitude"].isna()
     valid_lambert = (
         ~df["LAMBERT_X"].isna()
@@ -2004,6 +2021,7 @@ def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
     if reproject_mask.any():
         try:
             df_to_reproj = df[reproject_mask].copy()
+            import geopandas as gpd
             gdf_reproj = gpd.GeoDataFrame(
                 df_to_reproj,
                 geometry=gpd.points_from_xy(
@@ -2021,10 +2039,10 @@ def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
 
     # --- 1. Education & Early Childhood (Éducation & Petite Enfance) ---
     is_edu = df["TYPEQU"].str.startswith("C", na=False)
-    # Apply SECTEUR filter ONLY to education codes (Public and Private sous contrat)
+    # Apply filter ONLY to education codes (All sectors, as requested by user)
     # EAJE, Relais, ALSH, Micro-crèche do not have SECTEUR codes or are not filtered
     df_edu_all = df[
-        (is_edu & df["SECTEUR"].isin(["1", "2"]))
+        is_edu
         | (df["TYPEQU"].isin(["D502", "D504", "D505", "D509"]))
     ].copy()
 
@@ -2896,6 +2914,10 @@ def run_clean_step_safely(
       5. Validates that the resulting clean parquet file is non-empty.
       6. Commits (deletes backups) on success, or rolls back (restores backups) on failure/exception.
     """
+    if step_name in {"education", "finess_national", "maternites"}:
+        logger.log_step(f"clean_{step_name}", "SKIPPED")
+        return
+
     import os
     from pathlib import Path
 

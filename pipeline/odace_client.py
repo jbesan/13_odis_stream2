@@ -25,6 +25,14 @@ class OdaceClient:
             "Content-Type": "application/json",
         }
 
+        # Central configuration lookup for TTL mapping
+        from pipeline.common import CONFIG_FILE, load_config
+        try:
+            self.config = load_config(CONFIG_FILE)
+        except Exception as e:
+            logging.warning(f"OdaceClient: Failed to load config from {CONFIG_FILE}: {e}")
+            self.config = {}
+
     def _fetch_table_export(
         self, table_name: str, ttl_seconds: int = 30 * 24 * 60 * 60
     ) -> pd.DataFrame:
@@ -103,10 +111,34 @@ class OdaceClient:
         self,
         table_name: str,
         limit: int = 150000,
-        ttl_days: int = 30,
+        ttl_days: Optional[int] = None,
         sort_by: str = None,
     ) -> pd.DataFrame:
         """Generic fetch for any silver table from Odace API."""
+        if ttl_days is None:
+            # 1. Try to find the TTL in sources.yaml configuration
+            if self.config and "sources" in self.config:
+                for name, source_cfg in self.config["sources"].items():
+                    if source_cfg.get("odace_table") == table_name:
+                        ttl_days = source_cfg.get("ttl_days")
+                        if ttl_days is not None:
+                            logging.info(
+                                f"OdaceClient: Resolved TTL for '{table_name}' from sources configuration: {ttl_days} days"
+                            )
+                            break
+
+            # 2. Fallback to hardcoded defaults for common dimension/reference tables not in sources.yaml
+            if ttl_days is None:
+                default_ttls = {
+                    "dim_commune": 365,
+                    "dim_gare": 365,
+                    "ref_logement_profil": 365,
+                }
+                ttl_days = default_ttls.get(table_name, 30)
+                logging.info(
+                    f"OdaceClient: Resolved default TTL for '{table_name}': {ttl_days} days"
+                )
+
         return self._fetch_table_export(table_name, ttl_seconds=ttl_days * 24 * 60 * 60)
 
     def execute_query(

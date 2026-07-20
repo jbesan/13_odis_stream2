@@ -10,6 +10,7 @@ from pipeline.ingest import (
     clean_finess_national,
     clean_caf,
     clean_maternites,
+    clean_bpe,
     PipelineLogger,
 )
 
@@ -203,79 +204,152 @@ def test_clean_caf_odace_fallback(mock_get_client, temp_cache_dirs):
 # =====================================================================
 
 
+def test_clean_maternites_skipped():
+    """Tests that clean_maternites logs SKIPPED as it is bypassed in favor of BPE25."""
+    config = {}
+    logger = MagicMock(spec=PipelineLogger)
+    clean_maternites(config, logger)
+    logger.log_step.assert_called_once_with("clean_maternites", "SKIPPED")
+
+
+# =====================================================================
+# 5. Ingestion Cleaner: clean_bpe Tests
+# =====================================================================
+
+
 @patch("pipeline.ingest.get_odace_client")
-def test_clean_maternites_odace_success(mock_get_client, temp_cache_dirs):
-    """Tests that clean_maternites maps Odace columns and writes valid JSON on success."""
-    raw_dir, _ = temp_cache_dirs
+def test_clean_bpe_odace_success(mock_get_client, temp_cache_dirs):
+    """Tests that clean_bpe maps Odace columns, filters, reprojects coordinates, and writes clean parquets."""
+    _, clean_dir = temp_cache_dirs
 
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
 
+    # Mock data representing dim_equipement_territoire from Odace
     mock_data = pd.DataFrame(
         [
-            {"finess_etablissement_code": "120004569"},
-            {"finess_etablissement_code": "930060686"},
+            # Ecole Maternelle C107
+            {
+                "equipement_sk": "eq1",
+                "commune_sk": "comm1",
+                "commune_insee_code": "13054",
+                "departement_code": "13",
+                "commune_label": "MARIGNANE",
+                "type_equipement_code": "C107",
+                "equipement_label": "ECOLE MATERNELLE PUBLIQUE ABBE",
+                "capacite_hebergement": None,
+                "coord_x_lambert": 879374.24,
+                "coord_y_lambert": 6260251.11,
+            },
+            # Gare E107
+            {
+                "equipement_sk": "eq2",
+                "commune_sk": "comm1",
+                "commune_insee_code": "13054",
+                "departement_code": "13",
+                "commune_label": "MARIGNANE",
+                "type_equipement_code": "E107",
+                "equipement_label": "GARE DE MARIGNANE",
+                "capacite_hebergement": None,
+                "coord_x_lambert": 879374.24,
+                "coord_y_lambert": 6260251.11,
+            },
+            # Untargeted equipment (should be filtered out)
+            {
+                "equipement_sk": "eq3",
+                "commune_sk": "comm1",
+                "commune_insee_code": "13054",
+                "departement_code": "13",
+                "commune_label": "MARIGNANE",
+                "type_equipement_code": "Z999",
+                "equipement_label": "SOMETHING ELSE",
+                "capacite_hebergement": None,
+                "coord_x_lambert": 879374.24,
+                "coord_y_lambert": 6260251.11,
+            }
         ]
     )
     mock_client.fetch_table.return_value = mock_data
 
     config = {
         "sources": {
-            "maternites": {
+            "bpe": {
                 "use_odace": True,
-                "odace_table": "dim_maternite",
-                "local_name": "maternites_drees.json",
-                "used_columns": ["FI_ET", "fi_et"],
+                "odace_table": "dim_equipement_territoire",
+                "local_name": "BPE25.parquet",
+                "ttl_days": 365,
+                "used_columns": ["DEPCOM", "TYPEQU", "NOMRS", "LAMBERT_X", "LAMBERT_Y"],
             }
         }
     }
 
     logger = MagicMock(spec=PipelineLogger)
-    clean_maternites(config, logger)
+    clean_bpe(config, logger)
 
-    # Verify file is written in raw_dir/maternites_drees.json
-    out_file = raw_dir / "maternites_drees.json"
-    assert out_file.exists()
+    # Verify output parquet files are created
+    assert (clean_dir / "bpe_education_cols.parquet").exists()
+    assert (clean_dir / "bpe_gares_cols.parquet").exists()
+    assert (clean_dir / "bpe_pois.parquet").exists()
 
-    df_clean = pd.read_json(out_file)
-    assert list(df_clean.columns) == ["fi_et"]
-    assert len(df_clean) == 2
-    assert df_clean.iloc[0]["fi_et"] == 120004569
+    # Read output POIs to check reprojection and filtering
+    pois_df = pd.read_parquet(clean_dir / "bpe_pois.parquet")
+    assert len(pois_df) == 2  # C107 and E107 kept, Z999 filtered out
+    assert "lat" in pois_df.columns
+    assert "lon" in pois_df.columns
+    # Check that coordinates are not NaN and represent reprojected Lambert coords (near Marignane/Marseille ~43.4, ~5.2)
+    assert not np.isnan(pois_df.iloc[0]["lat"])
+    assert not np.isnan(pois_df.iloc[0]["lon"])
+    assert 43.0 < pois_df.iloc[0]["lat"] < 44.0
+    assert 5.0 < pois_df.iloc[0]["lon"] < 6.5
 
 
 @patch("pipeline.ingest.get_odace_client")
-def test_clean_maternites_odace_fallback(mock_get_client, temp_cache_dirs):
-    """Tests that clean_maternites does not overwrite legacy JSON file on API exception."""
-    raw_dir, _ = temp_cache_dirs
+def test_clean_bpe_odace_fallback(mock_get_client, temp_cache_dirs):
+    """Tests that clean_bpe falls back to local cache file if Odace API raises an exception."""
+    raw_dir, clean_dir = temp_cache_dirs
 
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
     mock_client.fetch_table.side_effect = Exception("API error")
 
-    # Write dummy legacy JSON file to raw cache
-    legacy_file = raw_dir / "maternites_drees.json"
-    import json
-
-    legacy_data = [{"fi_et": "12345"}]
-    with open(legacy_file, "w") as f:
-        json.dump(legacy_data, f)
+    # Create dummy local raw parquet file in raw cache directory
+    local_raw_path = raw_dir / "BPE25.parquet"
+    df_raw = pd.DataFrame(
+        [
+            {
+                "DEPCOM": "13054",
+                "TYPEQU": "C107",
+                "NOMRS": "LOCAL ECOLE MATERNELLE",
+                "LAMBERT_X": 879374.24,
+                "LAMBERT_Y": 6260251.11,
+                "LONGITUDE": np.nan,
+                "LATITUDE": np.nan,
+                "SECTEUR": "1",
+            }
+        ]
+    )
+    df_raw.to_parquet(local_raw_path, engine="fastparquet")
 
     config = {
         "sources": {
-            "maternites": {
+            "bpe": {
                 "use_odace": True,
-                "odace_table": "dim_maternite",
-                "local_name": "maternites_drees.json",
-                "used_columns": ["FI_ET", "fi_et"],
+                "odace_table": "dim_equipement_territoire",
+                "local_name": "BPE25.parquet",
+                "ttl_days": 365,
+                "used_columns": ["DEPCOM", "TYPEQU", "NOMRS", "LAMBERT_X", "LAMBERT_Y", "LONGITUDE", "LATITUDE", "SECTEUR"],
             }
         }
     }
 
     logger = MagicMock(spec=PipelineLogger)
-    clean_maternites(config, logger)
+    clean_bpe(config, logger)
 
-    # Verify legacy file is still there and unmodified
-    assert legacy_file.exists()
-    df_result = pd.read_json(legacy_file)
-    assert len(df_result) == 1
-    assert df_result.iloc[0]["fi_et"] == 12345
+    # Verify fallback executed and wrote outputs from local cache
+    assert (clean_dir / "bpe_education_cols.parquet").exists()
+    assert (clean_dir / "bpe_pois.parquet").exists()
+
+    pois_df = pd.read_parquet(clean_dir / "bpe_pois.parquet")
+    assert len(pois_df) == 1
+    assert pois_df.iloc[0]["name"] == "LOCAL ECOLE MATERNELLE"
+

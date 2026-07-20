@@ -299,7 +299,7 @@ sources:
 
   bpe:
     url: "file:///Users/jacques/dev/13_odis_stream2/pipeline/cache/raw/BPE25.parquet"
-    use_odace: false
+    use_odace: true
     odace_table: "dim_equipement_territoire"
     format: "parquet"
     local_name: "BPE25.parquet"
