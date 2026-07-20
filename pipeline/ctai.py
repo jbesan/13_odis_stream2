@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 # Manual corrections specifically for CTAI data typo(s)
 MANUAL_EPCI_CORRECTIONS = {
     "sijon": "dijon",
-    "le clunisois": "cluny"
+    "le clunisois": "du clunisois"
 }
 
 def compute_ctai_scores(

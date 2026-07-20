@@ -1292,6 +1292,7 @@ def clean_communes(config: Dict[str, Any], logger: PipelineLogger):
             client = get_odace_client(logger)
             df_odace = client.fetch_table(source.get("odace_table", "ref_commune_geo"))
             if not df_odace.empty:
+                import geopandas as gpd
                 from shapely.geometry import shape
 
                 # 1. Fetch and build EPCI mapping
@@ -1352,9 +1353,37 @@ def clean_communes(config: Dict[str, Any], logger: PipelineLogger):
                         inplace=True,
                     )
                 else:
-                    df_odace["nom"] = ""
-                    df_odace["departement"] = ""
-                    df_odace["region"] = ""
+                    logging.warning(
+                        "Odace dim_commune empty. Trying to load/download local communes fallback."
+                    )
+                    import copy
+                    temp_cfg = copy.deepcopy(source)
+                    temp_cfg["use_odace"] = False
+                    try:
+                        legacy_path = fetch_source("communes", temp_cfg, logger)
+                    except Exception as e:
+                        logging.error(f"Failed to fetch legacy communes: {e}")
+                        legacy_path = CACHE_DIR / "communes.geojson"
+
+                    if legacy_path and legacy_path.exists():
+                        try:
+                            df_legacy = gpd.read_file(legacy_path)
+                            df_legacy.rename(columns={"code": "codgeo"}, inplace=True)
+                            df_legacy["codgeo"] = df_legacy["codgeo"].astype(str).str.zfill(5)
+                            df_odace = df_odace.merge(
+                                df_legacy[["codgeo", "nom", "departement", "region"]],
+                                on="codgeo",
+                                how="left",
+                            )
+                        except Exception as e:
+                            logging.error(f"Failed to load local communes fallback: {e}")
+                            df_odace["nom"] = ""
+                            df_odace["departement"] = ""
+                            df_odace["region"] = ""
+                    else:
+                        df_odace["nom"] = ""
+                        df_odace["departement"] = ""
+                        df_odace["region"] = ""
 
                 # Add commune name duplicate and plm flag
                 df_odace["commune"] = df_odace["nom"]
@@ -1967,14 +1996,15 @@ def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
 
     # Construct CODGEO
     if "codgeo" not in df.columns:
-        if "DEPCOM" in df.columns:
-            df["codgeo"] = df["DEPCOM"].astype(str).str.zfill(5)
-        elif "DEP" in df.columns and "COM" in df.columns:
-            df["codgeo"] = df["DEP"].astype(str).str.zfill(2) + df["COM"].astype(
-                str
-            ).str.zfill(3)
-        elif "CODGEO" in df.columns:
-            df["codgeo"] = df["CODGEO"].astype(str).str.zfill(5)
+        for col in ["commune_insee_code", "DEPCOM", "CODGEO"]:
+            if col in df.columns:
+                df["codgeo"] = df[col].astype(str).str.zfill(5)
+                break
+        else:
+            if "DEP" in df.columns and "COM" in df.columns:
+                df["codgeo"] = df["DEP"].astype(str).str.zfill(2) + df["COM"].astype(
+                    str
+                ).str.zfill(3)
 
     if "TYPEQU" not in df.columns:
         logging.warning("BPE: TYPEQU column not found.")

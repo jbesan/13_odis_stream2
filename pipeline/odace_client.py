@@ -88,7 +88,33 @@ class OdaceClient:
             return pd.DataFrame()
 
     def fetch_dim_commune(self) -> pd.DataFrame:
-        """Fetches dim_commune and returns as DataFrame (1 year TTL)."""
+        """Fetches dim_commune (falling back to dim_geo) and returns as DataFrame (1 year TTL)."""
+        try:
+            df_geo = self._fetch_table_export("dim_geo", ttl_seconds=365 * 24 * 60 * 60)
+            if not df_geo.empty:
+                # Include both communes and arrondissements for Paris, Lyon, Marseille (PLM) compatibility
+                df_commune = df_geo[df_geo["geo_level"].isin(["commune", "arrondissement"])].copy()
+                if not df_commune.empty:
+                    # Drop existing columns to avoid duplicate column names after rename
+                    cols_to_drop = [c for c in ["commune_insee_code", "commune_label"] if c in df_commune.columns]
+                    if cols_to_drop:
+                        df_commune = df_commune.drop(columns=cols_to_drop)
+                    df_commune = df_commune.rename(
+                        columns={
+                            "geo_code": "commune_insee_code",
+                            "geo_label": "commune_label",
+                        }
+                    )
+                    logging.info(
+                        f"OdaceClient: Successfully resolved dim_commune from dim_geo ({len(df_commune)} rows)."
+                    )
+                    return df_commune
+        except Exception as e:
+            logging.warning(
+                f"OdaceClient: Failed to fetch dim_commune from dim_geo: {e}"
+            )
+
+        logging.warning("OdaceClient: Falling back to direct dim_commune fetch.")
         return self._fetch_table_export("dim_commune", ttl_seconds=365 * 24 * 60 * 60)
 
     def fetch_dim_gare(self) -> pd.DataFrame:
@@ -115,6 +141,8 @@ class OdaceClient:
         sort_by: str = None,
     ) -> pd.DataFrame:
         """Generic fetch for any silver table from Odace API."""
+        if table_name == "dim_commune":
+            return self.fetch_dim_commune()
         if ttl_days is None:
             # 1. Try to find the TTL in sources.yaml configuration
             if self.config and "sources" in self.config:
