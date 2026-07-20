@@ -149,7 +149,7 @@ Voici l'intégralité des 45 critères configurés dans le moteur de scoring OD&
 | :--------------------- | :----- | :---- | :------- | :-------- | :----------------------------------------- |
 | **Population Commune** | Live-scoring | 3.0   | **Oui**  | -0.5      | Score basé sur la taille de ville (Gauss). |
 | **Sécurité (Taux)**    | Pre-scoring | 1.0   | **Oui**  | 0.5       | Indice d'insécurité (Vols/Dégradations).   |
-| **Couleur Politique**  | Pre-scoring | 1.0   | **Oui**  | 0.0       | Orientation politique locale de la commune. |
+| **Couleur Politique**  | Pre-scoring | 1.0   | **Oui**  | 0.0       | Score binaire : 0.0 si le maire est d'extrême droite, 1.0 sinon. |
 | **Zone Stratégique**   | Live-scoring | 3.0   | Non      | 0.0       | Zone d'action privilégiée partenaire.      |
 
 

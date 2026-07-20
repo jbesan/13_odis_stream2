@@ -283,7 +283,10 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         )
 
         # Merge Political
-        merge_clean("political", ["pol_num"])
+        merge_clean("political", ["pol_num", "maire_extreme_droite"])
+
+        # Merge Electoral History
+        merge_clean("electoral_history", ["electoral_history"])
 
         # Merge Housing Occupation
         merge_clean(

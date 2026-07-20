@@ -695,6 +695,12 @@ class ScoringEngine:
             static_row.get("ter_insecurite_rate", 0.0)
         )
         territoire_data.is_strategic = bool(static_row.get("is_strategic", False))
+        
+        med_val = static_row.get("maire_extreme_droite")
+        territoire_data.maire_extreme_droite = bool(med_val) if pd.notna(med_val) else False
+        
+        eh_val = static_row.get("electoral_history")
+        territoire_data.electoral_history = str(eh_val) if pd.notna(eh_val) else None
 
         # Populate mobility & static defaults from static_row
         mob_data.bus_stops = int(static_row.get("nb_stops_bus", 0))

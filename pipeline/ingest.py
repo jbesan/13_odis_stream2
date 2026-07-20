@@ -191,6 +191,7 @@ def fetch_source(
             "maternites",
             "associations",
             "political_nuance",
+            "electoral_history",
             "housing_occupation",
             "education_effectifs",
             "bpe",
@@ -1471,7 +1472,6 @@ def clean_political(config: Dict[str, Any], logger: PipelineLogger):
     df = load_dataset(path, source)
     df.columns = [c.strip() for c in df.columns]
 
-    # Expected: 'Code Insee Commune', 'Nuance' OR 'cog_commune', 'nuance_politique'
     codgeo_col = next(
         (c for c in df.columns if "Code Insee" in c or "cog_commune" in c), None
     )
@@ -1483,41 +1483,244 @@ def clean_political(config: Dict[str, Any], logger: PipelineLogger):
         ),
         None,
     )
+    famille_col = next(
+        (c for c in df.columns if "famille" in c.lower() or "famille_nuance" in c), None
+    )
 
-    if codgeo_col and nuance_col:
-        # Mapping
-        POL_MAPPING = {
-            "UG": 1.0,
-            "COM": 1.0,
-            "FI": 1.0,
-            "SOC": 1.0,
-            "RDG": 1.0,
-            "ECO": 1.0,
-            "DVG": 1.0,
-            "VEC": 1.0,
-            "REN": 0.5,
-            "MDM": 0.5,
-            "HOR": 0.5,
-            "DVC": 0.5,
-            "LR": 0.2,
-            "DVD": 0.2,
-            "UDI": 0.2,
-            "RN": 0.0,
-            "REC": 0.0,
-            "EXD": 0.0,
-        }
-
-        df["pol_num"] = (
-            df[nuance_col].map(POL_MAPPING).fillna(0.5)
-        )  # Default to neutral
+    if codgeo_col:
+        # Normalize columns
+        nuance_val = df[nuance_col].astype(str).str.strip().str.upper() if nuance_col else pd.Series("", index=df.index)
+        famille_val = df[famille_col].astype(str).str.strip() if famille_col else pd.Series("", index=df.index)
+        
+        far_right_nuances = {"RN", "LRN", "REC", "LREC", "EXD", "LEXD", "UXD", "LUXD", "BC-RN", "BC-UXD", "BC-EXD"}
+        
+        df["maire_extreme_droite"] = (
+            (famille_val == "Extrême droite") | 
+            (nuance_val.isin(far_right_nuances))
+        )
+        df["pol_num"] = np.where(df["maire_extreme_droite"], 0.0, 1.0)
         df["codgeo"] = df[codgeo_col].astype(str).str.zfill(5)
 
-        df_out = df[["codgeo", "pol_num"]]
+        df_out = df[["codgeo", "pol_num", "maire_extreme_droite"]]
         output_path = CLEAN_DIR / "political.parquet"
         df_out.to_parquet(output_path, engine="fastparquet")
         logger.log_step("clean_political", "COMPLETED", {"path": str(output_path)})
     else:
         logging.warning(f"Political: Columns not found. Found: {df.columns}")
+
+
+def clean_electoral_history(config: Dict[str, Any], logger: PipelineLogger):
+    """Cleans Electoral History from candidats_results.parquet and saves to parquet."""
+    logger.log_step("clean_electoral_history", "STARTED")
+    source = config["sources"]["electoral_history"]
+    path = CACHE_DIR / source["local_name"]
+    if not path.exists():
+        logging.warning(f"Electoral history source file not found at: {path}")
+        return
+
+    cols = ["id_election", "code_commune", "nuance", "libelle_abrege_liste", "nom", "voix"]
+    
+    # Pre-determined major elections list for PyArrow filter to avoid loading 3.4GB+
+    allowed_elections = [
+        "2026_muni_t2", "2026_muni_t1",
+        "2024_legi_t2", "2024_legi_t1", "2024_euro_t1",
+        "2022_pres_t2", "2022_pres_t1", "2022_legi_t2", "2022_legi_t1",
+        "2020_muni_t2", "2020_muni_t1", "2019_euro_t1",
+        "2017_pres_t2", "2017_pres_t1", "2017_legi_t2", "2017_legi_t1",
+        "2014_euro_t1", "2014_muni_t2", "2014_muni_t1",
+        "2012_pres_t2", "2012_pres_t1", "2012_legi_t2", "2012_legi_t1"
+    ]
+    
+    # Load and filter at pyarrow level
+    df = pd.read_parquet(
+        path,
+        columns=cols,
+        filters=[("id_election", "in", allowed_elections)],
+        engine="pyarrow"
+    )
+
+    df["nuance"] = df["nuance"].fillna("").astype(str)
+    df["libelle_abrege_liste"] = df["libelle_abrege_liste"].fillna("").astype(str)
+    df["nom"] = df["nom"].fillna("").astype(str)
+    
+    agg = df.groupby(["code_commune", "id_election", "nuance", "libelle_abrege_liste", "nom"], as_index=False)["voix"].sum()
+    
+    # Compute total votes per commune + election
+    totals = agg.groupby(["code_commune", "id_election"])["voix"].transform("sum")
+    agg["total_voix"] = totals
+    agg["pct"] = np.where(agg["total_voix"] > 0, (agg["voix"] / agg["total_voix"] * 100).round(1), 0.0)
+    
+    # Get index of row with max votes for each group
+    idx = agg.groupby(["code_commune", "id_election"])["voix"].idxmax()
+    winners = agg.loc[idx].copy()
+    
+    NUANCE_LABELS = {
+        "UG": "Union de la Gauche",
+        "LUG": "Union de la Gauche",
+        "BC-UG": "Union de la Gauche",
+        "BC-UGE": "Union de la Gauche & Écologistes",
+        "SOC": "Socialiste",
+        "LSOC": "Parti Socialiste",
+        "BC-SOC": "Parti Socialiste",
+        "COM": "Parti Communiste Français",
+        "LCOM": "Parti Communiste Français",
+        "BC-COM": "Parti Communiste Français",
+        "FI": "La France Insoumise",
+        "LFI": "La France Insoumise",
+        "BC-FI": "La France Insoumise",
+        "VEC": "Les Écologistes",
+        "LVEC": "Les Écologistes",
+        "BC-ECO": "Écologistes",
+        "ECO": "Écologiste",
+        "LECO": "Écologistes",
+        "NUP": "NUPES",
+        "DVG": "Divers Gauche",
+        "LDVG": "Divers Gauche",
+        "BC-DVG": "Divers Gauche",
+        "EXG": "Extrême Gauche",
+        "LEXG": "Extrême Gauche",
+        "DXG": "Divers Extrême Gauche",
+        "BC-EXG": "Extrême Gauche",
+        "REN": "Renaissance",
+        "LREN": "Renaissance / Ensemble",
+        "LREM": "La République En Marche",
+        "REM": "La République En Marche",
+        "BC-REM": "La République En Marche",
+        "MDM": "MoDem",
+        "LMDM": "MoDem",
+        "BC-MDM": "MoDem",
+        "HOR": "Horizons",
+        "LHOR": "Horizons",
+        "ENS": "Ensemble",
+        "LENS": "Ensemble",
+        "DVC": "Divers Centre",
+        "LDVC": "Divers Centre",
+        "BC-DVC": "Divers Centre",
+        "UC": "Union du Centre",
+        "LUC": "Union du Centre",
+        "BC-UC": "Union du Centre",
+        "LR": "Les Républicains",
+        "LLR": "Les Républicains",
+        "BC-LR": "Les Républicains",
+        "DVD": "Divers Droite",
+        "LDVD": "Divers Droite",
+        "BC-DVD": "Divers Droite",
+        "UDI": "Union des Démocrates et Indépendants",
+        "LUDI": "Union des Démocrates et Indépendants",
+        "BC-UDI": "Union des Démocrates et Indépendants",
+        "UD": "Union de la Droite",
+        "LUD": "Union de la Droite",
+        "BC-UD": "Union de la Droite",
+        "BC-UCD": "Union du Centre-Droite",
+        "UCD": "Union du Centre-Droite",
+        "LUCD": "Union du Centre-Droite",
+        "DSV": "Droite Souverainiste",
+        "LDSV": "Droite Souverainiste",
+        "BC-DSV": "Droite Souverainiste",
+        "LDLF": "Debout la France",
+        "RN": "Rassemblement National",
+        "LRN": "Rassemblement National",
+        "BC-RN": "Rassemblement National",
+        "REC": "Reconquête",
+        "LREC": "Reconquête",
+        "EXD": "Extrême Droite",
+        "LEXD": "Extrême Droite",
+        "UXD": "Union de l'Extrême Droite",
+        "LUXD": "Union de l'Extrême Droite",
+        "BC-UXD": "Union de l'Extrême Droite",
+        "DXD": "Divers Extrême Droite",
+        "BC-EXD": "Extrême Droite",
+        "DIV": "Divers",
+        "LDIV": "Divers",
+        "BC-DIV": "Divers",
+        "REG": "Régionaliste",
+        "LREG": "Régionaliste",
+        "BC-REG": "Régionaliste",
+        "NC": "Non Classé",
+        "LNC": "Non Classé",
+        "GJ": "Gilets Jaunes",
+        "LGJ": "Gilets Jaunes",
+        "BC-GJ": "Gilets Jaunes",
+    }
+
+    ELECTION_DATES = {
+        "2026_muni_t2": "2026-06-28",
+        "2026_muni_t1": "2026-06-21",
+        "2024_legi_t2": "2024-07-07",
+        "2024_legi_t1": "2024-06-30",
+        "2024_euro_t1": "2024-06-09",
+        "2022_legi_t2": "2022-06-19",
+        "2022_legi_t1": "2022-06-12",
+        "2022_pres_t2": "2022-04-24",
+        "2022_pres_t1": "2022-04-10",
+        "2020_muni_t2": "2020-06-28",
+        "2020_muni_t1": "2020-03-15",
+        "2019_euro_t1": "2019-05-26",
+        "2017_legi_t2": "2017-06-18",
+        "2017_legi_t1": "2017-06-11",
+        "2017_pres_t2": "2017-05-07",
+        "2017_pres_t1": "2017-04-23",
+        "2014_euro_t1": "2014-05-25",
+        "2014_muni_t2": "2014-03-30",
+        "2014_muni_t1": "2014-03-23",
+        "2012_legi_t2": "2012-06-17",
+        "2012_legi_t1": "2012-06-10",
+        "2012_pres_t2": "2012-05-06",
+        "2012_pres_t1": "2012-04-22",
+    }
+
+    ELECTION_LABELS = {
+        "muni": "Municipales",
+        "legi": "Législatives",
+        "pres": "Présidentielle",
+        "euro": "Européennes",
+    }
+
+    def format_election_name(id_election: str) -> str:
+        parts = id_election.split("_")
+        year = parts[0]
+        el_type = parts[1]
+        label = ELECTION_LABELS.get(el_type, el_type.capitalize())
+        return f"{label} {year}"
+
+    def get_winner_label(row):
+        nuance = row["nuance"]
+        list_name = row["libelle_abrege_liste"]
+        nom = row["nom"]
+        
+        if nuance:
+            return NUANCE_LABELS.get(nuance, nuance)
+        elif list_name:
+            return list_name
+        elif nom:
+            return nom
+        else:
+            return "Inconnu"
+            
+    winners["winner_label"] = winners.apply(get_winner_label, axis=1)
+    
+    winners["date"] = winners["id_election"].map(ELECTION_DATES).fillna("1900-01-01")
+    winners = winners.sort_values(by=["code_commune", "date"], ascending=[True, False])
+    
+    commune_histories = {}
+    for code_commune, group in winners.groupby("code_commune"):
+        history = []
+        for _, row in group.head(5).iterrows():
+            history.append({
+                "election": format_election_name(row["id_election"]),
+                "nuance": row["winner_label"],
+                "percentage": float(row["pct"])
+            })
+        commune_histories[code_commune] = json.dumps(history, ensure_ascii=False)
+        
+    df_out = pd.DataFrame([
+        {"codgeo": str(k).zfill(5), "electoral_history": v}
+        for k, v in commune_histories.items()
+    ])
+    
+    output_path = CLEAN_DIR / "electoral_history.parquet"
+    df_out.to_parquet(output_path, engine="fastparquet")
+    logger.log_step("clean_electoral_history", "COMPLETED", {"path": str(output_path)})
 
 
 def clean_housing_occupation(config: Dict[str, Any], logger: PipelineLogger):
@@ -2712,6 +2915,7 @@ def run_clean_step_safely(
         "gares": "dim_gare",
         "odace_rent": "fact_loyer_annonce",
         "formations": "formations_annuaire",
+        "electoral_history": "electoral_history",
     }
 
     config_key = STEP_TO_SOURCE_MAP.get(step_name, step_name)
@@ -2994,6 +3198,7 @@ def main(argv=None):
         "associations": clean_associations,
         "refugee_associations": clean_refugee_associations,
         "political": clean_political,
+        "electoral_history": clean_electoral_history,
         "housing_occupation": clean_housing_occupation,
         "school_effectifs": clean_school_effectifs,
         "bpe": clean_bpe,

@@ -942,6 +942,28 @@ def show_details_dialog(index: Any):
                 st.info(
                     f"🚨 **Sécurité** : {commune.territoire.ter_insecurite:.1f} crimes+délits pour 1000 hab. (Moyenne départementale)."
                 )
+            
+            if commune.territoire.maire_extreme_droite:
+                st.warning("⚠️ **Municipalité** : Le maire actuel est classé à l'extrême droite.")
+
+            if commune.territoire.electoral_history:
+                try:
+                    import json
+                    history = json.loads(commune.territoire.electoral_history)
+                    if history:
+                        st.markdown("##### 🗳️ Historique Électoral (5 derniers scrutins)")
+                        table_rows = []
+                        for item in history:
+                            pct_str = f"**{item['percentage']:.1f}%**"
+                            table_rows.append(f"| {item['election']} | {item['nuance']} | {pct_str} |")
+                        
+                        table_content = "\n".join([
+                            "| Scrutin | Nuance Majoritaire | Score |",
+                            "| :--- | :--- | :--- |",
+                        ] + table_rows)
+                        st.markdown(table_content)
+                except Exception as e:
+                    st.caption("Erreur lors du chargement de l'historique électoral.")
         with c2:
             st.markdown("#### :material/security: Indicateurs Territoriaux")
             render_scores_for_category("territoire")

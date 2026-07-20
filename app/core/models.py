@@ -1237,6 +1237,20 @@ class TerritoryMetrics(BaseModel):
             ]
         },
     )
+    maire_extreme_droite: bool = Field(
+        False,
+        description="Maire d'extrême droite",
+        json_schema_extra={
+            "odis_visibility": ["agent_refiner", "ui_details", "pdf_report"]
+        },
+    )
+    electoral_history: Optional[str] = Field(
+        None,
+        description="Historique électoral (JSON)",
+        json_schema_extra={
+            "odis_visibility": ["agent_refiner", "ui_details", "pdf_report"]
+        },
+    )
 
 
 class CommuneResult(BaseModel):
