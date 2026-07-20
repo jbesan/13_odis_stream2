@@ -81,7 +81,10 @@ class TestF53Multiselect:
             index=["33063", "75056", "13055"],
         )
         filtered = ScoringEngine._filter_communes(
-            df=df, start_commune=pd.DataFrame(), loc_type="region", loc_code=["75", "93"]
+            df=df,
+            start_commune=pd.DataFrame(),
+            loc_type="region",
+            loc_code=["75", "93"],
         )
         assert len(filtered) == 3
         assert "33063" in filtered.index

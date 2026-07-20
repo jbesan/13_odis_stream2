@@ -379,8 +379,22 @@ def build_ecoles_layer(
     is_maternelle = filtered["type"].isin(["École Maternelle", "École Primaire"])
     is_elementaire = filtered["type"].isin(["École Élémentaire", "École Primaire"])
     is_college = filtered["type"] == "Collège"
-    is_lycee = filtered["type"].isin(["Lycée Général/Tech", "Lycée Professionnel", "Lycée Agricole", "Section Enseignement Pro"])
-    is_creche = filtered["type"].isin(["Crèche / EAJE", "Micro-crèche", "Relais Petite Enfance", "Accueil de loisirs (ALSH)"])
+    is_lycee = filtered["type"].isin(
+        [
+            "Lycée Général/Tech",
+            "Lycée Professionnel",
+            "Lycée Agricole",
+            "Section Enseignement Pro",
+        ]
+    )
+    is_creche = filtered["type"].isin(
+        [
+            "Crèche / EAJE",
+            "Micro-crèche",
+            "Relais Petite Enfance",
+            "Accueil de loisirs (ALSH)",
+        ]
+    )
 
     niveaux_map = {
         "Maternelle": is_maternelle,
@@ -434,12 +448,14 @@ def build_sante_layer(
         "Addictologie": "Addictologie",
         "Santé maternelle et infantile (PMI)": "Santé maternelle et infantile (PMI)",
     }
-    
+
     # Filter the types corresponding to the chosen needs
-    allowed_types = [sante_type_map[b] for b in besoin_sante_list if b in sante_type_map]
+    allowed_types = [
+        sante_type_map[b] for b in besoin_sante_list if b in sante_type_map
+    ]
     if not allowed_types:
         return fg
-        
+
     mask = filtered["type"].isin(allowed_types)
 
     if not mask.any():
@@ -468,12 +484,12 @@ def build_mairies_layer(
     for _, row in filtered.iterrows():
         popup_content = f"<b>{row['name']}</b><br>Type: {row['type']}"
         tooltip_content = f"<b>Mairie</b><br>{row['name']}"
-        
+
         # SOTA: Render as Marker with DivIcon to force rendering on Leaflet markerPane (above choropleth overlayPane)
         marker_html = """
         <div style="background-color: #F5D819; border: 1.5px solid #1B4429; border-radius: 50%; width: 8px; height: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.4);"></div>
         """
-        
+
         flm.Marker(
             location=[row["lat"], row["lon"]],
             icon=flm.features.DivIcon(

@@ -623,7 +623,7 @@ class ScoringEngine:
 
         # 6. Sante (Conditional on needs)
         besoin_sante_list = getattr(config, "besoin_sante", [])
-            
+
         sante_map = {
             "Hôpital": "sante_hopital_scaled",
             "Maternité": "sante_maternite_scaled",
@@ -633,11 +633,11 @@ class ScoringEngine:
             "Addictologie": "sante_addictologie_scaled",
             "Santé maternelle et infantile (PMI)": "sante_pmi_scaled",
         }
-        
+
         for besoin in besoin_sante_list:
             if besoin in sante_map:
                 active.add(sante_map[besoin])
-                
+
         # 7. Inclusion (Additional optional criteria)
         inc_services = getattr(config, "inc_services_selection", [])
         if inc_services:

@@ -66,12 +66,17 @@ The algorithm calculates a score between 0 and 1 for each category for every can
 
 ### D. Santé (Weight: 100)
 
-- **Health Structures (`sante_structures_scaled`)**:
-  - This is a dynamic metric that maps to the user's specific health selection:
-    - If "Maternité" -> `sante_maternite_scaled`
-    - If "Hopital" -> `sante_hopital_scaled`
-    - If "Soutien Psychologique & Addictologie" -> `sante_psy_scaled`
+- **Health Structures**:
+  - Scores are calculated and activated individually for each checked health need option:
+    - **Hôpital** (`sante_hopital_scaled`)
+    - **Maternité** (`sante_maternite_scaled`)
+    - **Soutien Psychologique** (`sante_psy_scaled`)
+    - **Dialyse** (`sante_dialyse_scaled`)
+    - **Maison de santé** (`sante_maison_sante_scaled`)
+    - **Addictologie** (`sante_addictologie_scaled`)
+    - **PMI** (`sante_pmi_scaled`)
   - Presence = 1.0, Absence = 0.0.
+  - _Note: Only the specific levels checked by the user are included in the average._
 
 ### E. Inclusion (Weight: 50)
 

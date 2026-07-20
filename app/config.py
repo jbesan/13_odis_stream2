@@ -219,7 +219,12 @@ PROJECTED_CRS = "EPSG:2154"  # RGF93 / Lambert-93, suitable for metropolitan Fra
 
 # --- Auth ---
 # Note: ALLOWED_AUTH_DOMAINS is now managed in .streamlit/secrets.toml
-OIDC_ALLOWED_DOMAINS = {"jaccueille.fr", "lahso.org", "groupe-sos.org", "fondationcos.org"}
+OIDC_ALLOWED_DOMAINS = {
+    "jaccueille.fr",
+    "lahso.org",
+    "groupe-sos.org",
+    "fondationcos.org",
+}
 OIDC_ALLOWED_EMAILS = {"jbesancon@gmail.com"}
 
 OIDC_DOMAIN_ORG_MAPPING = {

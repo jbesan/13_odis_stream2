@@ -1173,6 +1173,7 @@ class TestShortlistCity:
         The commune_pressentie is preserved in the final processed_gdf.
         """
         from app.core import scoring
+
         monkeypatch.setattr(scoring.cfg, "MAX_MAP_POLYGONS", 2)
 
         # Bordeaux is 33063.
@@ -1229,4 +1230,3 @@ class TestShortlistCity:
         results_data = engine.create_search_results(processed_gdf, config)
         assert results_data.commune_pressentie is not None
         assert results_data.commune_pressentie.codgeo == "64445"
-

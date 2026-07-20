@@ -206,14 +206,26 @@ def render_health_form() -> None:
     def on_sante_change():
         selected = []
         for opt in cfg.SANTE_OPTIONS:
-            safe_opt = opt.replace(" ", "_").replace("'", "_").replace("(", "").replace(")", "").lower()
+            safe_opt = (
+                opt.replace(" ", "_")
+                .replace("'", "_")
+                .replace("(", "")
+                .replace(")", "")
+                .lower()
+            )
             cb_key = f"ui_sante_cb_{safe_opt}"
             if st.session_state.get(cb_key):
                 selected.append(opt)
         st.session_state["ui_besoin_sante"] = selected
 
     for opt in cfg.SANTE_OPTIONS:
-        safe_opt = opt.replace(" ", "_").replace("'", "_").replace("(", "").replace(")", "").lower()
+        safe_opt = (
+            opt.replace(" ", "_")
+            .replace("'", "_")
+            .replace("(", "")
+            .replace(")", "")
+            .lower()
+        )
         cb_key = f"ui_sante_cb_{safe_opt}"
         if cb_key not in st.session_state:
             st.session_state[cb_key] = opt in current_sante
@@ -367,10 +379,14 @@ def render_mobility_form() -> None:
         st.session_state["ui_region_search"] = False
     if "ui_mobility_region" not in st.session_state:
         st.session_state["ui_mobility_region"] = (
-            [current_reg_code] if current_reg_code in region_codes else [region_codes[0]]
+            [current_reg_code]
+            if current_reg_code in region_codes
+            else [region_codes[0]]
         )
     elif isinstance(st.session_state["ui_mobility_region"], str):
-        st.session_state["ui_mobility_region"] = [st.session_state["ui_mobility_region"]]
+        st.session_state["ui_mobility_region"] = [
+            st.session_state["ui_mobility_region"]
+        ]
 
     # Ensure all elements in the list are valid region codes
     valid_selected_regions = [
@@ -378,7 +394,9 @@ def render_mobility_form() -> None:
     ]
     if not valid_selected_regions:
         valid_selected_regions = (
-            [current_reg_code] if current_reg_code in region_codes else [region_codes[0]]
+            [current_reg_code]
+            if current_reg_code in region_codes
+            else [region_codes[0]]
         )
     st.session_state["ui_mobility_region"] = valid_selected_regions
 
@@ -626,8 +644,8 @@ def render_org_profile_form() -> None:
                     format="x%d",
                     width=100,
                     label_visibility="collapsed",
-                    on_change=lambda k=ui_key, sk=slider_key: (
-                        st.session_state.update({k: float(st.session_state[sk])})
+                    on_change=lambda k=ui_key, sk=slider_key: st.session_state.update(
+                        {k: float(st.session_state[sk])}
                     ),
                 )
             new_boosts[criterion_id] = float(val)

@@ -202,7 +202,13 @@ def apply_search_criteria_to_ui(criteria: Any) -> None:
 
     current_sante = st.session_state.get("ui_besoin_sante", [])
     for opt in cfg.SANTE_OPTIONS:
-        safe_opt = opt.replace(" ", "_").replace("'", "_").replace("(", "").replace(")", "").lower()
+        safe_opt = (
+            opt.replace(" ", "_")
+            .replace("'", "_")
+            .replace("(", "")
+            .replace(")", "")
+            .lower()
+        )
         cb_key = f"ui_sante_cb_{safe_opt}"
         st.session_state[cb_key] = opt in current_sante
 

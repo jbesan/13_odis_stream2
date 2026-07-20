@@ -268,12 +268,9 @@ def create_agent(agent_name: str, **kwargs: Any) -> Agent[Any, Any]:
     model_settings = get_model_settings(agent_name)
 
     # Enforce standard defaults
-    kwargs.setdefault("name", agent_name)            # Ensures proper Logfire trace names
-    kwargs.setdefault("defer_model_check", True)      # Bypasses Cloud Run startup API key errors
+    kwargs.setdefault("name", agent_name)  # Ensures proper Logfire trace names
+    kwargs.setdefault(
+        "defer_model_check", True
+    )  # Bypasses Cloud Run startup API key errors
 
-    return Agent(
-        model=model,
-        model_settings=model_settings,
-        **kwargs
-    )
-
+    return Agent(model=model, model_settings=model_settings, **kwargs)

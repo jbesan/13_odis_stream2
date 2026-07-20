@@ -67,7 +67,7 @@ def test_check_password_oidc_authorized_email():
     mock_user = MagicMock()
     mock_user.is_logged_in = True
     mock_user.email = "jbesancon@gmail.com"
-    
+
     with (
         patch("utils.auth.inject_idle_sleep"),
         patch("utils.auth.st.user", mock_user, create=True),
@@ -88,7 +88,7 @@ def test_check_password_oidc_authorized_domain():
     mock_user = MagicMock()
     mock_user.is_logged_in = True
     mock_user.email = "contact@lahso.org"
-    
+
     with (
         patch("utils.auth.inject_idle_sleep"),
         patch("utils.auth.st.user", mock_user, create=True),
@@ -107,7 +107,7 @@ def test_check_password_oidc_unauthorized():
     mock_user = MagicMock()
     mock_user.is_logged_in = True
     mock_user.email = "stranger@malicious.com"
-    
+
     with (
         patch("utils.auth.inject_idle_sleep"),
         patch("utils.auth.st.user", mock_user, create=True),
@@ -121,7 +121,7 @@ def test_check_password_oidc_unauthorized():
     ):
         mock_button.return_value = True  # Simulate clicking "Se déconnecter"
         assert check_password() is False
-        mock_error.assert_called_once_with("❌ Accès refusé : l'adresse email 'stranger@malicious.com' n'est pas autorisée à accéder à ODIS.")
+        mock_error.assert_called_once_with(
+            "❌ Accès refusé : l'adresse email 'stranger@malicious.com' n'est pas autorisée à accéder à ODIS."
+        )
         mock_logout.assert_called_once()
-
-

@@ -233,12 +233,16 @@ def polling_associations_fragment(commune: CommuneResult, h: Optional[str]):
                 )
                 st.rerun()  # Trigger dialog rerun to reveal content
 
-    total_assos = (inc_data.asso_refugee_count or 0) + (inc_data.asso_inclusion_count or 0)
+    total_assos = (inc_data.asso_refugee_count or 0) + (
+        inc_data.asso_inclusion_count or 0
+    )
     if total_assos > 0:
         st.info(f"**{total_assos} associations** actives.")
         categories_to_show = {}
         if inc_data.asso_refugee_list:
-            categories_to_show["Intégration des réfugiés & migrants"] = inc_data.asso_refugee_list
+            categories_to_show["Intégration des réfugiés & migrants"] = (
+                inc_data.asso_refugee_list
+            )
         if inc_data.asso_inclusion_list_by_cat:
             for cat, asso_list in inc_data.asso_inclusion_list_by_cat.items():
                 categories_to_show[cat] = asso_list

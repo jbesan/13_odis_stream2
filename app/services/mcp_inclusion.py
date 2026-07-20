@@ -159,6 +159,7 @@ def _get_inclusion_job_details_logic(siae_id: str) -> Dict[str, Any]:
     if not dept:
         try:
             import streamlit as st
+
             dept_state = st.session_state.get("ui_departement")
             if dept_state:
                 dept = str(dept_state)

@@ -220,3 +220,20 @@ Liste en vrac d'idées d'amélioration
 
 ### 📊 Status
 - **June 2026**: Complete. Swarm prompts refactored, ACL exposures updated, BigQuery vector search optimized, and RAG search query instructions integrated. Checked with all 135 passing unit and E2E tests.
+
+---
+
+## 🚀 Feature [F-68]: Health Needs Breakdown & Form Checkboxes Alignment
+
+### 📝 User Stories
+- En tant que travailleur social, je veux pouvoir sélectionner plusieurs besoins en santé indépendamment, afin d'évaluer fidèlement la situation médicale complexe d'un bénéficiaire.
+- En tant que travailleur social, je veux que la sélection des critères de santé soit présentée sous forme de cases à cocher individuelles pour être cohérente avec le parcours du logement.
+- En tant qu'architecte, je veux que les coefficients et le Boost Bassin de Vie de chaque besoin en santé soient déclaratifs et configurés individuellement sans logique de max() dynamique en dur.
+
+### 🔑 Key Features
+* **Individual Checkboxes Selection UI**: Refactoring du sélecteur de santé en cases à cocher individuelles (`ui_sante_cb_...`) avec un callback de synchronisation bidirectionnelle dans le gestionnaire de profil (`data_loader.py`).
+* **Precomputed Multi-Score Evaluation**: Démantèlement de l'indicateur consolidé `sante_structures_scaled` au profit de 7 indicateurs précalculés autonomes.
+* **Config-driven weights & BdV Boosts**: Alignement déclaratif de chaque structure avec sa propre règle de boost bassin de vie (ex: 0.8 pour un hôpital régional, 0.25 pour une maternité, et 0.0 pour les autres structures locales) et son propre poids d'importance (2.0 par défaut).
+
+### 📊 Status
+- **July 2026**: Complete. Fully integrated, tested with 100% green pytest baseline, visual forms aligned, and validation scenarios updated.

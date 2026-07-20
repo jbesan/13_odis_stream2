@@ -81,17 +81,19 @@ async def search_places_batch_tool(queries: List[str], location: str) -> Dict[st
     return await search_places_batch(queries, location)
 
 
-social_integration_expert_agent: Agent[ODISDeps, SocialIntegrationResult] = create_agent(
-    "social_integration_expert",
-    deps_type=ODISDeps,
-    tools=[
-        search_refugee_associations_tool,
-        search_rna_rag_batch_tool,
-        search_ccas_tool,
-        search_places_batch_tool,
-    ],
-    capabilities=[WebSearch()],
-    output_type=SocialIntegrationResult,
+social_integration_expert_agent: Agent[ODISDeps, SocialIntegrationResult] = (
+    create_agent(
+        "social_integration_expert",
+        deps_type=ODISDeps,
+        tools=[
+            search_refugee_associations_tool,
+            search_rna_rag_batch_tool,
+            search_ccas_tool,
+            search_places_batch_tool,
+        ],
+        capabilities=[WebSearch()],
+        output_type=SocialIntegrationResult,
+    )
 )
 
 

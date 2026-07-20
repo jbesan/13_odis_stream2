@@ -141,7 +141,9 @@ def run_test_scenario(scenario_id, app_data):
         dept_details = app_data.get("dept_details", {})
         current_reg_code = dept_details.get(current_dept_code, {}).get("reg_code")
 
-        mock_session_state["ui_mobility_region"] = [current_reg_code] if current_reg_code else []
+        mock_session_state["ui_mobility_region"] = (
+            [current_reg_code] if current_reg_code else []
+        )
         if loc_val == "region":
             mock_session_state["ui_mobility_dept"] = ["Toute la région"]
         else:

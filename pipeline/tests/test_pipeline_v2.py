@@ -14,9 +14,10 @@ from pipeline.common import (
     validate_dataset_contract,
     atomic_swap,
     get_ingest_paths,
-    finalize_ingest
+    finalize_ingest,
 )
 from pipeline.ingest import fetch_source, run_clean_step_safely, PipelineLogger
+
 
 @pytest.fixture
 def temp_pipeline_dirs(tmp_path):
@@ -24,23 +25,27 @@ def temp_pipeline_dirs(tmp_path):
     raw_dir = tmp_path / "raw"
     clean_dir = tmp_path / "clean"
     output_dir = tmp_path / "output"
-    
+
     raw_dir.mkdir(parents=True, exist_ok=True)
     clean_dir.mkdir(parents=True, exist_ok=True)
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Patch the CACHE_DIR and CLEAN_DIR in common and ingest
-    with patch("pipeline.common.CACHE_DIR", raw_dir), \
-         patch("pipeline.common.CLEAN_DIR", clean_dir), \
-         patch("pipeline.common.OUTPUT_DIR", output_dir), \
-         patch("pipeline.ingest.CACHE_DIR", raw_dir), \
-         patch("pipeline.ingest.CLEAN_DIR", clean_dir), \
-         patch("pipeline.ingest.OUTPUT_DIR", output_dir):
+    with (
+        patch("pipeline.common.CACHE_DIR", raw_dir),
+        patch("pipeline.common.CLEAN_DIR", clean_dir),
+        patch("pipeline.common.OUTPUT_DIR", output_dir),
+        patch("pipeline.ingest.CACHE_DIR", raw_dir),
+        patch("pipeline.ingest.CLEAN_DIR", clean_dir),
+        patch("pipeline.ingest.OUTPUT_DIR", output_dir),
+    ):
         yield raw_dir, clean_dir, output_dir
+
 
 # =====================================================================
 # 1. TTL & CACHE VALIDITY TESTS
 # =====================================================================
+
 
 def test_is_cache_valid(temp_pipeline_dirs):
     raw_dir, _, _ = temp_pipeline_dirs
@@ -48,10 +53,7 @@ def test_is_cache_valid(temp_pipeline_dirs):
     local_name = "test_source.csv"
     local_path = raw_dir / local_name
 
-    source_cfg = {
-        "local_name": local_name,
-        "ttl_days": 10
-    }
+    source_cfg = {"local_name": local_name, "ttl_days": 10}
 
     # Case 1: Cache file does not exist
     assert not is_cache_valid(source_name, source_cfg)
@@ -71,7 +73,7 @@ def test_is_cache_valid(temp_pipeline_dirs):
     # Reset file to current time
     os.utime(local_path, None)
     assert is_cache_valid(source_name, source_cfg_default)
-    
+
     # Set to 40 days ago
     expired_time = time.time() - (40 * 24 * 3600)
     os.utime(local_path, (expired_time, expired_time))
@@ -82,16 +84,15 @@ def test_is_cache_valid(temp_pipeline_dirs):
 # 2. REMOTE METADATA & VERSION CHECK TESTS
 # =====================================================================
 
+
 @patch("requests.get")
 def test_fetch_remote_metadata_datagouv(mock_get):
     resource_id = "test-resource-id-123"
-    
+
     # Mock successful redirect response with Last-Modified header
     mock_resp = MagicMock()
     mock_resp.status_code = 200
-    mock_resp.headers = {
-        "Last-Modified": "Fri, 22 May 2026 08:00:00 GMT"
-    }
+    mock_resp.headers = {"Last-Modified": "Fri, 22 May 2026 08:00:00 GMT"}
     mock_resp.url = "https://object.data.gouv.fr/test-resource-id-123"
     mock_get.return_value = mock_resp
 
@@ -105,7 +106,7 @@ def test_fetch_remote_metadata_datagouv(mock_get):
         },
         stream=True,
         allow_redirects=True,
-        timeout=15
+        timeout=15,
     )
 
     # Mock failed response
@@ -119,10 +120,9 @@ def test_fetch_remote_metadata_datagouv(mock_get):
 # 3. SCHEMA CONTRACT VALIDATION TESTS
 # =====================================================================
 
+
 def test_validate_dataset_contract():
-    source_cfg = {
-        "used_columns": ["col_a", "col_b", "codgeo"]
-    }
+    source_cfg = {"used_columns": ["col_a", "col_b", "codgeo"]}
 
     # Case 1: Empty DataFrame
     df_empty = pd.DataFrame()
@@ -137,26 +137,38 @@ def test_validate_dataset_contract():
     assert not validate_dataset_contract(df_missing_all, "test_set", source_cfg)
 
     # Case 3: High null rate in primary identifier (codgeo)
-    df_high_null = pd.DataFrame({
-        "col_a": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-        "col_b": [10]*10,
-        "codgeo": [None, None, "31000", "31000", "31000", "31000", "31000", "31000", "31000", "31000"]
-    })
+    df_high_null = pd.DataFrame(
+        {
+            "col_a": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+            "col_b": [10] * 10,
+            "codgeo": [
+                None,
+                None,
+                "31000",
+                "31000",
+                "31000",
+                "31000",
+                "31000",
+                "31000",
+                "31000",
+                "31000",
+            ],
+        }
+    )
     # 20% null rate is > 5% allowed threshold
     assert not validate_dataset_contract(df_high_null, "test_set", source_cfg)
 
     # Case 4: Valid DataFrame
-    df_valid = pd.DataFrame({
-        "col_a": [1, 2, 3],
-        "col_b": [4, 5, 6],
-        "codgeo": ["31000", "33000", "75001"]
-    })
+    df_valid = pd.DataFrame(
+        {"col_a": [1, 2, 3], "col_b": [4, 5, 6], "codgeo": ["31000", "33000", "75001"]}
+    )
     assert validate_dataset_contract(df_valid, "test_set", source_cfg)
 
 
 # =====================================================================
 # 4. DOWNLOAD CACHING, REMOTE CHECKS & ZIP EXTRACTION IN FETCH_SOURCE
 # =====================================================================
+
 
 @patch("requests.get")
 def test_fetch_source_caching_and_remote_metadata(mock_get, temp_pipeline_dirs):
@@ -166,13 +178,13 @@ def test_fetch_source_caching_and_remote_metadata(mock_get, temp_pipeline_dirs):
     source_cfg = {
         "datagouv_resource_id": "communes-resource-id",
         "local_name": "communes.geojson",
-        "ttl_days": 10
+        "ttl_days": 10,
     }
 
     # Case 1: Cache is valid (under TTL) -> returns local path without calling remote metadata API
     local_path = raw_dir / "communes.geojson"
     local_path.write_text("cached communes geojson")
-    
+
     ret_path = fetch_source("communes", source_cfg, logger)
     assert ret_path == local_path
     mock_get.assert_not_called()
@@ -181,23 +193,24 @@ def test_fetch_source_caching_and_remote_metadata(mock_get, temp_pipeline_dirs):
     # Let's set local modification date to 15 days ago
     past_mtime = time.time() - (15 * 24 * 3600)
     os.utime(local_path, (past_mtime, past_mtime))
-    
+
     # Mock remote metadata: returns metadata modification date that is older than local mtime
     # E.g., 20 days ago (local is 15 days ago)
     # Using HTTP Date format
     import email.utils
+
     remote_mod_dt = datetime.now() - timedelta(days=20)
-    remote_mod_date_http = email.utils.formatdate(timeval=remote_mod_dt.timestamp(), usegmt=True)
-    
+    remote_mod_date_http = email.utils.formatdate(
+        timeval=remote_mod_dt.timestamp(), usegmt=True
+    )
+
     mock_metadata_resp = MagicMock()
     mock_metadata_resp.status_code = 200
-    mock_metadata_resp.headers = {
-        "Last-Modified": remote_mod_date_http
-    }
+    mock_metadata_resp.headers = {"Last-Modified": remote_mod_date_http}
     mock_metadata_resp.url = "https://object.data.gouv.fr/communes.geojson"
-    
+
     mock_get.return_value = mock_metadata_resp
-    
+
     ret_path_skip = fetch_source("communes", source_cfg, logger)
     assert ret_path_skip == local_path
     # Verify that the local cache file's TTL was reset (mtime touched)
@@ -215,14 +228,15 @@ def test_fetch_source_staging_download_and_zip(mock_get, temp_pipeline_dirs):
         "format": "zip",
         "local_name": "test_dataset.zip",
         "archive_file": "extracted_member.csv",
-        "ttl_days": 10
+        "ttl_days": 10,
     }
 
     # Cache is empty, downloading zip file to staging path
     # Let's prepare a valid mock zip response
     import io
+
     zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
         zip_file.writestr("extracted_member.csv", "col_a,col_b\n1,2\n3,4")
     zip_bytes = zip_buffer.getvalue()
 
@@ -232,7 +246,7 @@ def test_fetch_source_staging_download_and_zip(mock_get, temp_pipeline_dirs):
     mock_get.return_value = mock_download_resp
 
     ret_path = fetch_source("test_zip", source_cfg, logger)
-    
+
     # Should save the zip as staging_test_dataset.zip
     staging_zip = raw_dir / "staging_test_dataset.zip"
     assert staging_zip.exists()
@@ -250,6 +264,7 @@ def test_fetch_source_staging_download_and_zip(mock_get, temp_pipeline_dirs):
 # 5. BLUE-GREEN SHADOW STAGING (COMMIT / ROLLBACK) via run_clean_step_safely
 # =====================================================================
 
+
 @patch("pipeline.ingest.load_dataset")
 def test_run_clean_step_safely_success(mock_load, temp_pipeline_dirs):
     raw_dir, clean_dir, _ = temp_pipeline_dirs
@@ -259,7 +274,7 @@ def test_run_clean_step_safely_success(mock_load, temp_pipeline_dirs):
         "sources": {
             "communes": {
                 "local_name": "communes.geojson",
-                "used_columns": ["codgeo", "name"]
+                "used_columns": ["codgeo", "name"],
             }
         }
     }
@@ -270,7 +285,9 @@ def test_run_clean_step_safely_success(mock_load, temp_pipeline_dirs):
     active_raw = raw_dir / "communes.geojson"
     active_raw.write_text("old raw data")
     active_clean = clean_dir / "communes.parquet"
-    pd.DataFrame({"codgeo": ["11111"], "name": ["Paris"]}).to_parquet(active_clean, engine="fastparquet")
+    pd.DataFrame({"codgeo": ["11111"], "name": ["Paris"]}).to_parquet(
+        active_clean, engine="fastparquet"
+    )
 
     # Setup staging raw file (simulating that fetch_source downloaded an update)
     staging_raw = raw_dir / "staging_communes.geojson"
@@ -280,10 +297,14 @@ def test_run_clean_step_safely_success(mock_load, temp_pipeline_dirs):
     def clean_communes(cfg, log):
         # Read the raw communes.geojson
         raw_content = active_raw.read_text()
-        assert raw_content == "new raw data"  # Verifies staging was moved to active name before clean ran!
-        
+        assert (
+            raw_content == "new raw data"
+        )  # Verifies staging was moved to active name before clean ran!
+
         # Write clean parquet
-        df_new = pd.DataFrame({"codgeo": ["31000", "33000"], "name": ["Toulouse", "Bordeaux"]})
+        df_new = pd.DataFrame(
+            {"codgeo": ["31000", "33000"], "name": ["Toulouse", "Bordeaux"]}
+        )
         df_new.to_parquet(active_clean, engine="fastparquet")
 
     run_clean_step_safely("communes", clean_communes, config, logger)
@@ -311,7 +332,7 @@ def test_run_clean_step_safely_failure_rollback(mock_load, temp_pipeline_dirs):
         "sources": {
             "communes": {
                 "local_name": "communes.geojson",
-                "used_columns": ["codgeo", "name"]
+                "used_columns": ["codgeo", "name"],
             }
         }
     }
@@ -329,6 +350,7 @@ def test_run_clean_step_safely_failure_rollback(mock_load, temp_pipeline_dirs):
     staging_raw.write_text("corrupted raw data")
 
     clean_executed = False
+
     def clean_communes_failed(cfg, log):
         nonlocal clean_executed
         clean_executed = True

@@ -139,7 +139,9 @@ def test_fetch_jaccueille_data_bq(mock_exists, mock_read_parquet, mock_bq_client
 @patch("utils.data_loader.pd.read_parquet")
 @patch("utils.data_loader.os.path.exists")
 @patch("utils.data_loader.os.makedirs")
-def test_fetch_jaccueille_data_bq_cloud_run(mock_makedirs, mock_exists, mock_read_parquet, mock_bq_client_class, monkeypatch):
+def test_fetch_jaccueille_data_bq_cloud_run(
+    mock_makedirs, mock_exists, mock_read_parquet, mock_bq_client_class, monkeypatch
+):
     """Tests that BQ fetch cache uses /tmp/data_private when running in Cloud Run."""
     monkeypatch.setenv("K_SERVICE", "odis-app")
     mock_exists.return_value = False  # No cache
@@ -156,6 +158,7 @@ def test_fetch_jaccueille_data_bq_cloud_run(mock_makedirs, mock_exists, mock_rea
     # Assert
     assert mock_bq_client.query.called
     # Confirm makedirs was called with the app/data_private path
-    assert any(args[0].endswith("app/data_private") for args, _ in mock_makedirs.call_args_list)
+    assert any(
+        args[0].endswith("app/data_private") for args, _ in mock_makedirs.call_args_list
+    )
     assert df.loc[0, "heb_accueillants_count"] == 5
-

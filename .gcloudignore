@@ -4,10 +4,12 @@
 # Allow app directory
 !app/
 !tests/
-!data/
 !requirements-dev.txt
 !mypy.ini
 !cloudbuild.yaml
+!ruff.toml
+!ty.toml
+!pytest.ini
 
 # Explicitly ignore hidden files/folders in root (since * misses them)
 .git

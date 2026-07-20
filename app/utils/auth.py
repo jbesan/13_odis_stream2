@@ -161,7 +161,7 @@ def resolve_org_for_oidc(email: str) -> Org:
             if k.lower() == email_lower:
                 org_id = v
                 break
-        
+
         # Check domain mapping if not matched by email
         if not org_id and "@" in email_lower:
             domain = email_lower.split("@")[-1]
@@ -242,7 +242,7 @@ def check_password() -> bool:
             org = resolve_org_for_oidc(email)
             st.session_state["user"] = User(username=email, org_id=org.id)
             st.session_state["org"] = org
-            
+
             # Show standard warning sidebar
             org_name = org.name
             st.sidebar.warning(
@@ -251,9 +251,13 @@ def check_password() -> bool:
             return True
         else:
             with st.container(width="stretch", horizontal_alignment="center"):
-                with st.container(width=450, border=True, horizontal_alignment="center"):
+                with st.container(
+                    width=450, border=True, horizontal_alignment="center"
+                ):
                     st.subheader("Accès ODIS")
-                    st.error(f"❌ Accès refusé : l'adresse email '{email or 'inconnue'}' n'est pas autorisée à accéder à ODIS.")
+                    st.error(
+                        f"❌ Accès refusé : l'adresse email '{email or 'inconnue'}' n'est pas autorisée à accéder à ODIS."
+                    )
                     if st.button("Se déconnecter", width="stretch"):
                         st.logout()
             return False
@@ -262,14 +266,21 @@ def check_password() -> bool:
     with st.container(width="stretch", horizontal_alignment="center"):
         with st.container(width=400, border=True, horizontal_alignment="center"):
             st.subheader("Accès ODIS")
-            st.info("👋 Bienvenue ! Veuillez vous connecter avec l'une des méthodes ci-dessous.")
+            st.info(
+                "👋 Bienvenue ! Veuillez vous connecter avec l'une des méthodes ci-dessous."
+            )
 
             # --- OPTION A : Google Workspace (OIDC) ---
-            if st.button("🔑 Se connecter avec Google", type="primary", width="stretch"):
+            if st.button(
+                "🔑 Se connecter avec Google", type="primary", width="stretch"
+            ):
                 st.login("google")
                 st.stop()
 
-            st.markdown("<div style='text-align: center; color: gray; margin: 15px 0;'>--- ou via vos identifiants classiques ---</div>", unsafe_allow_html=True)
+            st.markdown(
+                "<div style='text-align: center; color: gray; margin: 15px 0;'>--- ou via vos identifiants classiques ---</div>",
+                unsafe_allow_html=True,
+            )
 
             # --- OPTION B : Form Login (Legacy) ---
             with st.form("login_form"):
@@ -313,5 +324,3 @@ def check_password() -> bool:
                     else:
                         st.error("❌ Identifiants incorrects.")
     return False
-
-

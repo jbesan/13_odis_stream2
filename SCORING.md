@@ -167,10 +167,16 @@ Voici l'intégralité des 45 critères configurés dans le moteur de scoring OD&
 
 ### 🩺 Santé
 
-| Critère                | Calcul | Poids | Baseline | Boost BdV | Description                                 |
-| :--------------------- | :----- | :---- | :------- | :-------- | :------------------------------------------ |
-| **Accessibilité Soins** | Pre-scoring | 2.0   | **Oui**  | 0.0       | Potentiel de RDV médicaux (APL DREES).      |
-| **Structure de Santé** | Live-scoring | 1.0   | Non      | 0.5       | Match spécifique (Hôpital, Maternité, Psy). |
+| Critère                                    | Calcul | Poids | Baseline | Boost BdV | Description                                                    |
+| :----------------------------------------- | :----- | :---- | :------- | :-------- | :------------------------------------------------------------- |
+| **Accessibilité Soins**                    | Pre-scoring | 2.0   | **Oui**  | 0.0       | Potentiel de RDV médicaux (APL DREES).                         |
+| **Hôpital**                                | Pre-scoring | 2.0   | Non      | 0.8       | Présence locale d'un hôpital (Source BPE).                     |
+| **Maternité**                              | Pre-scoring | 2.0   | Non      | 0.25      | Présence locale d'une maternité (Source BPE).                  |
+| **Soutien Psychologique**                  | Pre-scoring | 2.0   | Non      | 0.0       | Présence de structures de soutien psychologique (Source BPE).  |
+| **Dialyse**                                | Pre-scoring | 2.0   | Non      | 0.0       | Présence d'un centre de dialyse (Source BPE).                  |
+| **Maison de santé**                        | Pre-scoring | 2.0   | Non      | 0.0       | Présence d'une maison de santé (Source BPE).                   |
+| **Addictologie**                           | Pre-scoring | 2.0   | Non      | 0.0       | Présence locale de structures d'addictologie (Source BPE).     |
+| **Santé maternelle et infantile (PMI)**    | Pre-scoring | 2.0   | Non      | 0.0       | Présence locale d'un centre PMI (Source BPE).                  |
 
 ### 🧭 Mobilité
 
@@ -209,10 +215,12 @@ Avant d'être utilisés dans l'application, les scores passent par une phase de 
 
 ### Santé
 
-Le score de Santé est **dynamique** et dépend du besoin exprimé :
+Le score de Santé est déterminé à partir de la sélection de besoins spécifiques (ex: "Hôpital", "Maternité") dans le formulaire (checkboxes) :
 
-- Si l'utilisateur sélectionne un besoin (ex: "Maternité"), le moteur cherche la structure la plus proche dans la commune.
-- Le **Boost BdV** intervient ici : si la commune n'a pas de maternité mais que le Bassin de Vie en possède une, un score partiel (facteur 0.5) est attribué.
+- Les scores de présence correspondants (`sante_hopital_scaled`, `sante_maternite_scaled`, etc.) sont précalculés de manière booléenne (présence = 1.0, absence = 0.0) et stockés au niveau de la commune dans le Parquet.
+- Seuls les indicateurs sélectionnés par l'utilisateur sont activés au moment de la recherche.
+- Pour chacun des indicateurs activés, le **Boost Bassin de Vie (BdV)** est appliqué selon la politique de coefficient configurée (ex: 0.8 pour un hôpital de portée régionale, 0.25 pour une maternité, et 0.0 pour les structures locales d'accès direct).
+- Contrairement aux versions précédentes, il n'y a plus d'agrégation `max()` dynamique au sein d'une seule colonne de santé, ce qui permet à chaque besoin en santé d'être évalué et pondéré de manière indépendante avec son propre poids de configuration.
 
 ### Mobilité
 
