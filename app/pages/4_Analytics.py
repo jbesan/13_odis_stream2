@@ -156,14 +156,14 @@ if selected_orgs:
 
 # --- Tabs ---
 tab_global, tab_recommandations, tab_profiles = st.tabs(
-    ["📈 Activité Globale", "🏙️ Résultats & Recommandations", "📋 Profil de Recherches"]
+    ["📈 Activité Globale", "🥇 Résultats & Recommandations", "🔎 Profil de Recherches"]
 )
 
 # ==========================================
 # TAB 1: ACTIVITÉ GLOBALE
 # ==========================================
 with tab_global:
-    st.subheader("Indicateurs Clés de Performance (KPIs)")
+    st.markdown("##### Indicateurs Clés de Performance (KPIs)")
 
     kpi1, kpi2, kpi3, kpi4, kpi5, kpi6 = st.columns(6)
 
@@ -204,7 +204,6 @@ with tab_global:
     col_chart1, col_chart2 = st.columns(2)
 
     with col_chart1:
-        st.subheader("Volume de Recherches au fil du temps")
         if not df_searches.empty:
             df_searches["date"] = pd.to_datetime(df_searches["timestamp"]).dt.date
             searches_by_date = (
@@ -223,7 +222,6 @@ with tab_global:
             st.info("Aucune donnée de recherche enregistrée pour cette période.")
 
     with col_chart2:
-        st.subheader("Activité par Organisation")
         if not df_searches.empty and "org_id" in df_searches.columns:
             org_counts = (
                 df_searches.groupby("org_id").size().reset_index(name="Recherches")
@@ -244,7 +242,6 @@ with tab_global:
     col_top_users, col_event_dist = st.columns(2)
 
     with col_top_users:
-        st.subheader("🏆 Top 5 des Utilisateurs les plus actifs")
         if not df_searches.empty:
             top_users = (
                 df_searches.groupby(["username", "org_id"])
@@ -268,7 +265,6 @@ with tab_global:
             st.info("Aucune donnée utilisateur disponible.")
 
     with col_event_dist:
-        st.subheader("⚡ Répartition des Actions Utilisateurs")
         if not df_usage.empty:
             event_counts = df_usage["event_name"].value_counts().reset_index()
             event_counts.columns = ["Action", "Nombre"]
@@ -289,12 +285,11 @@ with tab_global:
 # TAB 2: RÉSULTATS & RECOMMANDATIONS
 # ==========================================
 with tab_recommandations:
-    st.subheader("🏙️ Analyse des Recommandations et Consultations")
+    # st.subheader("🥇 Analyse des Recommandations et Consultations")
 
     col_rec1, col_rec2 = st.columns(2)
 
     with col_rec1:
-        st.markdown("##### Palmarès des Villes Recommandées (Top 15)")
         if not df_searches.empty and "top_results" in df_searches.columns:
             city_records = []
             for idx, row in df_searches.iterrows():
@@ -338,7 +333,7 @@ with tab_recommandations:
                     x="recommandations",
                     y="libgeo",
                     orientation="h",
-                    title="Communes les plus souvent suggérées par le moteur",
+                    title="Top 15 des villes les plus recommandées",
                     labels={"recommandations": "Occurrences", "libgeo": "Commune"},
                     color="score_moyen",
                     color_continuous_scale="Viridis",
@@ -351,7 +346,7 @@ with tab_recommandations:
             st.info("Aucune donnée de recherche à analyser.")
 
     with col_rec2:
-        st.markdown("##### Top 15 des Communes les plus Consultées (Détails)")
+        # st.markdown("##### Top 15 des Communes les plus Consultées (Détails)")
         if not df_usage.empty:
             df_details = df_usage[df_usage["event_name"] == "view_commune_details"]
             if not df_details.empty:
@@ -378,7 +373,7 @@ with tab_recommandations:
                         x="Consultations",
                         y="Commune",
                         orientation="h",
-                        title="Communes les plus consultées ('En Savoir Plus')",
+                        title="Top 15 des villes les plus consultées ('En savoir plus')",
                         color="Consultations",
                         color_continuous_scale="Plasma",
                     )
@@ -394,7 +389,7 @@ with tab_recommandations:
     st.divider()
 
     # Spider / Radar Chart of Category Scores
-    st.subheader("🕸️ Profil des Scores Moyens par Catégorie (Radar Chart)")
+    # st.subheader("🕸️ Profil des Scores Moyens par Catégorie (Radar Chart)")
     if not df_searches.empty and "detailed_breakdown" in df_searches.columns:
         cat_scores_accumulator = {
             "Logement": [],
@@ -463,7 +458,7 @@ with tab_recommandations:
 # TAB 3: PROFIL DE RECHERCHES
 # ==========================================
 with tab_profiles:
-    st.subheader("📋 Analyse des Critères et Besoins Saisis")
+    # st.subheader("📋 Analyse des Critères et Besoins Saisis")
 
     if not df_searches.empty and "search_criteria" in df_searches.columns:
         parsed_criteria = []
@@ -491,7 +486,7 @@ with tab_profiles:
         col_prof1, col_prof2 = st.columns(2)
 
         with col_prof1:
-            st.markdown("##### Type d'Aire de Recherche Géo")
+            
             if not df_crit.empty and "loc_search_area" in df_crit.columns:
                 area_mapping = {
                     "departement": "Département",
@@ -505,7 +500,7 @@ with tab_profiles:
                     area_counts,
                     names="Aire Géo",
                     values="Nombre",
-                    title="Répartition par échelle géographique de recherche",
+                    title="Répartition par type de zone de recherche",
                     color_discrete_sequence=px.colors.qualitative.Bold,
                 )
                 st.plotly_chart(fig_area, width="content")
@@ -514,7 +509,7 @@ with tab_profiles:
 
         # 2. Profils de Pondérations les plus utilisés (Bar chart)
         with col_prof2:
-            st.markdown("##### Top 5 Profils de Pondération")
+            # st.markdown("##### Top 5 Profils de Pondération")
             profiles = []
             for idx, c in enumerate(parsed_criteria):
                 p = c.get("weight_profile")
@@ -559,7 +554,7 @@ with tab_profiles:
         col_enf1, col_enf2 = st.columns(2)
 
         with col_enf1:
-            st.markdown("##### Proportion de recherches avec enfants")
+            # st.markdown("##### Proportion de recherches avec enfants")
             if not df_crit.empty and "nb_enfants" in df_crit.columns:
                 has_kids = df_crit["nb_enfants"].apply(lambda x: "Avec enfants" if (x or 0) > 0 else "Sans enfant")
                 kids_counts = has_kids.value_counts().reset_index()
@@ -574,7 +569,7 @@ with tab_profiles:
                 st.plotly_chart(fig_kids_pie, width="content")
 
         with col_enf2:
-            st.markdown("##### Top Nombre d'Enfants Renseigné")
+            # st.markdown("##### Top Nombre d'Enfants Renseigné")
             if not df_crit.empty and "nb_enfants" in df_crit.columns:
                 nb_kids_counts = df_crit["nb_enfants"].value_counts().reset_index()
                 nb_kids_counts.columns = ["Nombre d'enfants", "Recherches"]
@@ -619,7 +614,7 @@ with tab_profiles:
                             all_rome_codes.append(val)
 
         with col_job1:
-            st.markdown("##### Recherches incluant des Métiers (ROME)")
+            # st.markdown("##### Recherches incluant des Métiers (ROME)")
             has_jobs_count = len(all_rome_codes)
             status_labels = ["Avec Métier(s)", "Sans Métier"]
             if has_jobs_count > 0:
@@ -637,7 +632,7 @@ with tab_profiles:
             st.plotly_chart(fig_job_pie, width="content")
 
         with col_job2:
-            st.markdown("##### Top 5 Familles / Codes ROME demandés")
+            # st.markdown("##### Top 5 Familles / Codes ROME demandés")
             if all_rome_codes:
                 df_rome = pd.Series(all_rome_codes).value_counts().reset_index()
                 df_rome.columns = ["Code ROME", "Fréquence"]
@@ -661,7 +656,7 @@ with tab_profiles:
         col_sante1, col_sante2 = st.columns(2)
 
         with col_sante1:
-            st.markdown("##### Recherches incluant des Besoins en Santé")
+            # st.markdown("##### Recherches incluant des Besoins en Santé")
             if not df_crit.empty and "besoin_sante" in df_crit.columns:
                 has_sante = df_crit["besoin_sante"].apply(
                     lambda x: "Avec besoin(s) santé" if (isinstance(x, list) and len(x) > 0) else "Sans besoin spécifique"
@@ -672,13 +667,13 @@ with tab_profiles:
                     sante_counts,
                     names="Statut",
                     values="Nombre",
-                    title="Proportion de besoins médicaux spécifiques",
+                    title="Proportion de recherches avec besoins médicaux",
                     color_discrete_sequence=["#C62828", "#EF9A9A"],
                 )
                 st.plotly_chart(fig_sante_pie, width="content")
 
         with col_sante2:
-            st.markdown("##### Top 5 Besoins en Santé les plus demandés")
+            # st.markdown("##### Top 5 Besoins en Santé les plus demandés")
             if not df_crit.empty and "besoin_sante" in df_crit.columns:
                 all_sante_needs = []
                 for c in parsed_criteria:
