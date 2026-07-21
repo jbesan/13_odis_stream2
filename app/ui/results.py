@@ -1274,7 +1274,7 @@ def _display_result_details(commune: CommuneResult, is_ready: bool = False) -> N
         score_percent = f"{commune.global_score * 100:.1f}%"
 
         st.markdown(
-            f"**{libgeo}** ({population} habitants) fait partie du bassin de vie de : **{commune.name_bdv}**.  \nLa correspondance avec le projet est évaluée à **{score_percent}**."
+            f"**{libgeo}** ({population} habitants) fait partie du bassin de vie de : **{commune.name_bdv}**.  La correspondance avec le projet est évaluée à **{score_percent}**."
         )
 
         # Sync background results into model if available
@@ -1283,60 +1283,84 @@ def _display_result_details(commune: CommuneResult, is_ready: bool = False) -> N
         # --- AI Pitch Fragment ---
         ai_pitch_container(commune.codgeo, h)
 
+        st.space("small")
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button(
+                "En savoir plus",
+                key=f"btn_details_comm_{commune.codgeo}",
+                icon=":material/data_exploration:",
+                type="primary",
+                width="stretch",
+            ):
+                st.session_state.active_details_index = commune.codgeo
+                st.rerun()
+        with c2:
+            if st.button(
+                "Contact local",
+                key=f"btn_ccas_commune_{commune.codgeo}",
+                icon=":material/phone:",
+                type="secondary",
+                width="stretch",
+            ):
+                st.session_state.active_ccas_index = commune.codgeo
+                st.rerun()
+
         # F-IA: AI Dialog Trigger (Session State based)
         if not cfg.is_ai_free_mode():
-            col1, col2, col3 = st.columns([1, 2, 1])
-            with col2:
-                st.markdown(
-                    '<style> [class*="st-key-btn_ia"] .stButton button { background-color: #F5D819; color: #1B4429; } </style>',
-                    unsafe_allow_html=True,
-                )
+            # col1, col2, col3 = st.columns([1, 2, 1])
+            # with col2:
+            st.markdown(
+                '<style> [class*="st-key-btn_ia"] .stButton button { background-color: #F5D819; color: #1B4429; } </style>',
+                unsafe_allow_html=True,
+            )
 
-                # Premium Guardrail (F-IA): Verify if background hydrations (jobs & associations) are completed
-                jobs_ready = False
-                assos_ready = False
-                if h:
-                    bg_res = odis_get_bg_result(h)
-                    if isinstance(bg_res, dict):
-                        # Check jobs hydration status
-                        jobs_city_data = bg_res.get("jobs_enrichment", {}).get(
-                            str(commune.codgeo)
-                        )
-                        if jobs_city_data and jobs_city_data.get("status") in [
-                            "done",
-                            "error",
-                        ]:
-                            jobs_ready = True
+            # Premium Guardrail (F-IA): Verify if background hydrations (jobs & associations) are completed
+            jobs_ready = False
+            assos_ready = False
+            if h:
+                bg_res = odis_get_bg_result(h)
+                if isinstance(bg_res, dict):
+                    # Check jobs hydration status
+                    jobs_city_data = bg_res.get("jobs_enrichment", {}).get(
+                        str(commune.codgeo)
+                    )
+                    if jobs_city_data and jobs_city_data.get("status") in [
+                        "done",
+                        "error",
+                    ]:
+                        jobs_ready = True
 
-                        # Check associations hydration status
-                        enrich_data = bg_res.get("enrichment", {}).get(
-                            str(commune.codgeo)
-                        )
-                        if enrich_data is not None:
-                            assos_ready = True
+                    # Check associations hydration status
+                    enrich_data = bg_res.get("enrichment", {}).get(
+                        str(commune.codgeo)
+                    )
+                    if enrich_data is not None:
+                        assos_ready = True
 
-                if not is_ready:
-                    btn_label = "Analyse Avancée (Calcul...)"
-                    btn_disabled = True
-                elif not jobs_ready or not assos_ready:
-                    btn_label = "Analyse Avancée (Préparation...)"
-                    btn_disabled = True
-                else:
-                    btn_label = "Analyse Avancée"
-                    btn_disabled = False
+            if not is_ready:
+                btn_label = "Analyse Avancée (Calcul...)"
+                btn_disabled = True
+            elif not jobs_ready or not assos_ready:
+                btn_label = "Analyse Avancée (Préparation...)"
+                btn_disabled = True
+            else:
+                btn_label = "Analyse Avancée"
+                btn_disabled = False
 
-                if st.button(
-                    btn_label,
-                    key=f"btn_ia_comm_{commune.codgeo}",
-                    icon=":material/bolt:",
-                    width="content",
-                    type="primary",
-                    disabled=btn_disabled,
-                ):
-                    st.session_state.active_ia_city_index = commune.codgeo
-                    st.rerun()
+            if st.button(
+                btn_label,
+                key=f"btn_ia_comm_{commune.codgeo}",
+                icon=":material/wand_stars:",
+                width="stretch",
+                # type="primary",
+                disabled=btn_disabled,
+            ):
+                st.session_state.active_ia_city_index = commune.codgeo
+                st.rerun()
 
         # --- Radar Chart with Comparison ---
+        st.space("small")
         all_cats = [
             "emploi",
             "logement",
@@ -1415,8 +1439,10 @@ def _display_result_details(commune: CommuneResult, is_ready: bool = False) -> N
         # Add trace for current city (Blue) if available
         if search_results and search_results.current_geo:
             _, vals_current = get_radar_data(search_results.current_geo, active_cats)
-            current_name = search_results.current_geo.name or "Actuel"
-
+            current_name = search_results.current_geo.name or "Votre ville"
+            
+            st.text(f"Comparaison avec {current_name}", help=f"Comparaison des profils : la zone verte représente **{commune.name}**, la zone bleue **{current_name}**. Une plus grande surface indique une meilleure adéquation avec vos critères.")
+            
             fig.add_trace(
                 go.Scatterpolar(
                     r=vals_current,
@@ -1428,45 +1454,19 @@ def _display_result_details(commune: CommuneResult, is_ready: bool = False) -> N
                     hovertemplate="%{theta}: %{r:.1f}%<extra></extra>",
                 )
             )
+            
+        
+            fig.update_layout(
+                polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
+                showlegend=True,
+                legend=dict(
+                    orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
+                ),
+                margin=dict(l=50, r=50, t=50, b=50),
+            )
 
-        fig.update_layout(
-            polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
-            showlegend=True,
-            legend=dict(
-                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
-            ),
-            margin=dict(l=50, r=50, t=50, b=50),
-        )
+            st.plotly_chart(fig, width="stretch", height=300, config=None)
 
-        st.plotly_chart(fig, width="stretch", config=None)
-
-        current_geo = search_results.current_geo if search_results else None
-        current_label = current_geo.name if current_geo else "votre ville"
-        st.caption(
-            f"**Comparaison des profils** : la zone verte représente **{commune.name}**, la zone bleue **{current_label}**. Une plus grande surface indique une meilleure adéquation avec vos critères.",
-            text_alignment="center",
-        )
-        st.space("small")
-
-        c1, c2 = st.columns(2)
-        with c1:
-            if st.button(
-                "En savoir plus",
-                key=f"btn_details_comm_{commune.codgeo}",
-                width="stretch",
-            ):
-                st.session_state.active_details_index = commune.codgeo
-                st.rerun()
-        with c2:
-            if st.button(
-                "Contact local",
-                key=f"btn_ccas_commune_{commune.codgeo}",
-                icon=":material/phone:",
-                type="secondary",
-                width="stretch",
-            ):
-                st.session_state.active_ccas_index = commune.codgeo
-                st.rerun()
 
         st.divider()
         with st.container(
