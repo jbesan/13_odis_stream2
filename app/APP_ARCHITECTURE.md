@@ -182,6 +182,13 @@ Decodes commune boundary geometries from **WKB (Well-Known Binary)** bytes just-
 ### 4.7 PDF Report Export (`app/core/pdf_generator.py`)
 Generates structured, multi-page PDF briefings for social workers. It dynamically converts Markdown summaries into ReportLab Paragraph flowables, rendering tables and page counts.
 
+### 4.8 BigQuery Telemetry & In-App Admin Dashboard (`app/services/telemetry.py` & `app/pages/4_Analytics.py`)
+Coordinates application usage tracking and internal business intelligence:
+- **`search_events`**: Consolidated search events in BigQuery containing `interaction_id`, `timestamp`, `username`, `org_id`, `search_hash`, criteria (dynamically extracted from `SearchCriterias.model_fields` and mapped against ACL `odis_visibility` tags), weights, and recommended cities.
+- **`usage_events`**: Functional event logging for page navigation (`page_view` with `origin` tracking) and key user interactions (`view_commune_details`, `run_ia_analysis`, `auto_detect_criteria`, `export_pdf`).
+- **`4_Analytics.py`**: Restricted admin BI dashboard guarded by `auth.is_admin()`. Queries BigQuery with REST fallback (`create_bqstorage_client=False`) to deliver activity KPIs, recommendation popularity metrics, and search profile analytics across 3 interactive tabs.
+
+
 ---
 
 ## 5. Directory Structure & Extension Guide
@@ -195,18 +202,22 @@ app/
 │   ├── maps.py           # Folium rendering and geometry decoding
 │   └── pdf_generator.py  # ReportLab document layout builder
 ├── ui/
-│   ├── components.py     # UI cards, tables, and metric displays
+│   ├── components.py     # UI cards, tables, admin sidebar links, and metric displays
 │   ├── forms.py          # Form input wizard layout fields
 │   ├── results.py        # Polling fragments and detail views
 │   └── idle_sleep.py     # Iframe activity listeners & idle monitors
 ├── pages/
 │   ├── 1_Accueil.py      # Entry screen
 │   ├── 2_Formulaire.py   # Multi-step search wizard
-│   └── 3_Resultats.py    # Map, rankings list, and chatbot page
+│   ├── 3_Resultats.py    # Map, rankings list, and chatbot page
+│   └── 4_Analytics.py    # Admin BI analytics dashboard
+├── services/
+│   ├── telemetry.py      # BigQuery search & usage events logger
+│   └── bq_logger.py      # Agent state and chat trajectory BigQuery logger
 ├── utils/
-│   ├── auth.py           # Password gates and idle monitor triggers
+│   ├── auth.py           # Password gates, admin whitelist checks, and idle monitor triggers
 │   └── data_loader.py    # Lazy-loaded data singletons
-└── config.py             # Global constants and options catalogs
+└── config.py             # Global constants, admin whitelist, and options catalogs
 ```
 
 ### 5.2 Guidelines for Future Developers

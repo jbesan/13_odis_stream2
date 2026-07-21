@@ -40,6 +40,8 @@ Ce prototype a un triple objectif :
 - **Moteur de Recherche RAG (RNA) :** Recherche sémantique et thématique sur l'ensemble du Répertoire National des Associations (RNA) via BigQuery et Vertex AI, permettant de classer les associations par catégories d'inclusion (FLE, Logement, Emploi, etc.) ou des recherches spécifiques (intégration des personnes réfugiées).
 - **Accueils Citoyens (J'Accueille) :** Intégration de la base de données de l'association J'Accueille pour valoriser les bassins de vie disposant déjà d'un réseau d'hébergement citoyen actif. (Données Mars 2026).
 - **Profils Partenaires & Zones Stratégiques :** Support de contextes d'organisations spécifiques (via `?org=`) permettant de pré-configurer l'outil (pondérations, zones prioritaires) tout en laissant le contrôle final à l'utilisateur.
+- **Tableau de Bord Administrateur & Télémétrie BigQuery :** Dashboard BI in-app sécurisé (`pages/4_Analytics.py`) accessible exclusivement aux administrateurs pour analyser l'activité de la plateforme, le volume de recherches, les événements applicatifs (`usage_events`) et le palmarès des recommandations métiers (`search_events`).
+
 
 ## 📸 Aperçu de l'Application
 

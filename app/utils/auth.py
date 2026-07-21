@@ -184,6 +184,26 @@ def resolve_org_for_oidc(email: str) -> Org:
     return org
 
 
+def get_login_session_id() -> str:
+    """Retrieves or generates a unique login_session_id for the current user session."""
+    if "login_session_id" not in st.session_state:
+        st.session_state["login_session_id"] = str(secrets.token_hex(16))
+    return st.session_state["login_session_id"]
+
+
+def is_admin(username: Optional[str] = None) -> bool:
+    """Checks if the given or current session user is an administrator."""
+    if not username:
+        try:
+            username = st.session_state.get("username")
+        except Exception:
+            pass
+    if not username:
+        return False
+    admin_users = getattr(cfg, "ADMIN_USERS", set())
+    return username in admin_users
+
+
 def check_password() -> bool:
     """Checks if the user has authenticated with a correct password.
 

@@ -82,3 +82,12 @@ def get_person_accompanied_str() -> str:
     if st.session_state.get("ui_nom"):
         return f"de {st.session_state.ui_nom}"
     return "de la personne accompagnée"
+
+
+def render_admin_sidebar_link() -> None:
+    """Renders the Analytics Dashboard button in the sidebar if the current user is an admin."""
+    from utils import auth
+    if auth.is_admin():
+        if st.button("📊 Dashboard Analytics", key="btn_admin_analytics", width="stretch"):
+            st.switch_page("pages/4_Analytics.py")
+

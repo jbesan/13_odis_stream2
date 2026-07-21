@@ -143,6 +143,80 @@ def test_log_search_complete(mock_client_class):
             assert row["interaction_id"] == "test-id"
             assert row["username"] == "test_user"
             assert row["source_flow"] == "classic"
+            assert "search_hash" in row
+            assert "org_id" in row
 
             criteria_loaded = json.loads(row["search_criteria"])
             assert criteria_loaded["commune_actuelle"]["code"] == "33063"
+
+
+def test_is_admin_check(monkeypatch):
+    """Test admin check helper."""
+    import config as cfg
+    from utils import auth
+
+    monkeypatch.setattr(cfg, "ADMIN_USERS", {"jbesancon@gmail.com", "jacques-local"})
+    assert auth.is_admin("jbesancon@gmail.com") is True
+    assert auth.is_admin("jacques-local") is True
+    assert auth.is_admin("random_user") is False
+    assert auth.is_admin(None) is False
+
+
+@patch("services.telemetry.bigquery.Client")
+def test_log_usage_event(mock_client_class):
+    """Test log_usage_event inserts structured rows to BQ."""
+    mock_client = mock_client_class.return_value
+    mock_client.project = "test-project"
+    mock_client.insert_rows_json.return_value = []
+
+    with patch("streamlit.session_state", MagicMock()) as mock_ss:
+        mock_ss.get.side_effect = lambda k, d=None: (
+            "test_user" if k == "username" else ("jaccueille" if k == "org" else d)
+        )
+        mock_ss.interaction_id = "test-id"
+        mock_ss.__contains__.side_effect = lambda k: k in ("interaction_id", "username")
+
+        with patch("os.getenv", return_value="test-project"):
+            telemetry.log_usage_event("click_button", {"button": "en_savoir_plus"})
+            assert mock_client.insert_rows_json.called
+            args, _ = mock_client.insert_rows_json.call_args
+            row = args[1][0]
+            assert row["event_name"] == "click_button"
+            assert "en_savoir_plus" in row["payload"]
+
+
+def test_log_page_view_deduplication():
+    """Test that log_page_view deduplicates consecutive re-runs on the same page."""
+    fake_state = {}
+
+    def get_item(k, default=None):
+        return fake_state.get(k, default)
+
+    def set_item(k, v):
+        fake_state[k] = v
+
+    mock_ss = MagicMock()
+    mock_ss.get.side_effect = get_item
+    mock_ss.__setitem__.side_effect = set_item
+
+    with patch("streamlit.session_state", mock_ss), patch("services.telemetry.log_usage_event") as mock_log_usage:
+        # First visit to Accueil
+        telemetry.log_page_view("Accueil")
+        assert fake_state.get("current_page") == "Accueil"
+        assert mock_log_usage.called
+        assert mock_log_usage.call_args[0][0] == "page_view"
+        assert mock_log_usage.call_args[0][1]["page"] == "Accueil"
+
+        mock_log_usage.reset_mock()
+
+        # Second re-run on Accueil (should NOT log again)
+        telemetry.log_page_view("Accueil")
+        assert not mock_log_usage.called
+
+        # Navigate to Formulaire (should log with origin=Accueil)
+        telemetry.log_page_view("Formulaire")
+        assert fake_state.get("current_page") == "Formulaire"
+        assert fake_state.get("previous_page") == "Accueil"
+        assert mock_log_usage.called
+        assert mock_log_usage.call_args[0][1]["origin"] == "Accueil"
+

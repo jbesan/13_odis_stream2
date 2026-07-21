@@ -1,6 +1,6 @@
-import warnings
 import os
-from typing import List, Dict, Any
+import warnings
+from typing import Any, Dict, List, Optional, Set
 from core.models import Org
 
 # Suppress annoying warnings from third-party libraries (especially in Python 3.14+)
@@ -220,26 +220,37 @@ DETAIL_MAP_ZOOM = 11
 MAX_MAP_POLYGONS = 5000
 PROJECTED_CRS = "EPSG:2154"  # RGF93 / Lambert-93, suitable for metropolitan France
 
-# --- Auth ---
-# Note: ALLOWED_AUTH_DOMAINS is now managed in .streamlit/secrets.toml
-OIDC_ALLOWED_DOMAINS = {
-    "jaccueille.fr",
-    "lahso.org",
-    "groupe-sos.org",
-    "fondationcos.org",
-}
-OIDC_ALLOWED_EMAILS = {"jbesancon@gmail.com"}
+def _get_auth_secret(key: str, default: Any) -> Any:
+    """Read an auth configuration value from st.secrets, with a safe fallback.
 
-OIDC_DOMAIN_ORG_MAPPING = {
-    "jaccueille.fr": "jaccueille",
-    "lahso.org": "emile_aura",
-    "groupe-sos.org": "agir33",
-    "fondationcos.org": "agir33",
-}
+    Reads from the [auth] section or top-level of .streamlit/secrets.toml.
+    Falls back to `default` when Streamlit is not running (e.g. during tests or pipeline runs).
 
-OIDC_EMAIL_ORG_MAPPING = {
-    "jbesancon@gmail.com": "jaccueille",
-}
+    Args:
+        key: The key within the secrets configuration.
+        default: The fallback value if the secret is unavailable.
+
+    Returns:
+        The secret value, or `default` if Streamlit secrets are inaccessible.
+    """
+    try:
+        import streamlit as st
+
+        if key in st.secrets:
+            return st.secrets[key]
+        return st.secrets.get("auth", {}).get(key, default)
+    except Exception:
+        return default
+
+
+# Read from .streamlit/secrets.toml
+OIDC_ALLOWED_DOMAINS: Set[str] = set(_get_auth_secret("allowed_domains", []))
+OIDC_ALLOWED_EMAILS: Set[str] = set(_get_auth_secret("allowed_emails", []))
+OIDC_DOMAIN_ORG_MAPPING: Dict[str, str] = dict(_get_auth_secret("domain_org_mapping", {}))
+OIDC_EMAIL_ORG_MAPPING: Dict[str, str] = dict(_get_auth_secret("email_org_mapping", {}))
+
+# --- Admins Allowlist ---
+ADMIN_USERS: Set[str] = set(_get_auth_secret("admin_users", ["jacques-local"]))
 
 
 # --- Inclusion Defaults ---
@@ -303,7 +314,7 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
 
 DEMO_SCENARIOS = {
     "1": {
-        "nom": "Zacharie",
+        "nom": "Profil 1 - Jeune actif",
         "departement_actuel": "33",
         "commune_actuelle": "Bordeaux",
         "loc_search_area": "departement",
@@ -311,10 +322,10 @@ DEMO_SCENARIOS = {
         "nb_adultes": 1,
         "nb_enfants": 0,
         "weight_profile": "Équilibré",
-        "notes_qualitatives": "Zacharie est un jeune homme dynamique.",
+        "notes_qualitatives": "Jeune actif à la recherche d'une solution de cohabitation solidaire.",
     },
     "2": {
-        "nom": "Olga & Dimitri",
+        "nom": "Profil 2 - Famille",
         "departement_actuel": "75",
         "commune_actuelle": "Paris",
         "loc_search_area": "region",
@@ -329,7 +340,7 @@ DEMO_SCENARIOS = {
         "besoin_sante": ["Maternité"],
         "poids_mobilite": 0.0,
         "weight_profile": "Équilibré",
-        "notes_qualitatives": "Olga et Dimitri cherchent un environnement calme pour leurs enfants.",
+        "notes_qualitatives": "Famille recherchant un environnement adapté avec écoles et équipements de santé.",
     },
     "3": {
         "nb_adultes": 1,
@@ -348,7 +359,7 @@ DEMO_SCENARIOS = {
         "inc_services_selection": DEFAULT_INC_SERVICES_CORE
         + ["lecture-ecriture-calcul--maitriser-le-francais"],
         "inc_asso_add_selection": ["006030"],
-        "notes_qualitatives": "Aïcha souhaite passer son permis et cherche une boucherie Hallal à proximité",
+        "notes_qualitatives": "Famille monoparentale recherchant des services de mobilité et d'accompagnement.",
     },
     "agir": {
         "nb_adultes": 1,
@@ -374,7 +385,7 @@ DEMO_SCENARIOS = {
         "poids_sante": 0.25,
         "poids_mobilite": 0.25,
         "besoin_sante": ["Soutien Psychologique", "Addictologie"],
-        "notes_qualitatives": "Proximité d'une Mosquée et de la mer",
+        "notes_qualitatives": "Recherche un logement et un emploi dans un cadre adapté.",
         "target_population": 20000,
         "target_population_sigma": 10000,
     },
@@ -402,7 +413,7 @@ DEMO_SCENARIOS = {
         "poids_sante": 0.25,
         "poids_mobilite": 0.25,
         "besoin_sante": ["Soutien Psychologique", "Addictologie"],
-        "notes_qualitatives": "Peuvent se déplacer à vélo. Aiment les balades en montagne.",
+        "notes_qualitatives": "Accompagnement mobilité vers logement social et emploi.",
         "target_population": 20000,
         "target_population_sigma": 10000,
     },

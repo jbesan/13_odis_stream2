@@ -16,8 +16,11 @@ import plotly.graph_objects as go
 from core import maps
 from core.pdf_generator import generate_pdf_report
 
+from services import telemetry
+
 # Configure Logging
 logger = logging.getLogger("ui.results")
+
 
 
 # --- Dialog Dismiss Callbacks (Necessary for modular UI state management) ---
@@ -50,6 +53,11 @@ def pdf_modal():
                 processed_gdf=st.session_state.get("processed_gdf"),
             )
             st.session_state.pdf_modal_data = pdf_bytes
+            telemetry.log_usage_event(
+                "export_pdf",
+                {"search_hash": search_results.search_hash if search_results else ""},
+            )
+
 
     # State 2: Download Ready
     if st.session_state.get("pdf_modal_data"):
@@ -552,6 +560,8 @@ def show_ia_analysis_dialog(index: Any):
     nom = commune.name
     codgeo = commune.codgeo
 
+    telemetry.log_usage_event("run_ia_analysis", {"codgeo": codgeo, "name": nom})
+
     st.header(f"Analyse OD&IS pour {nom}")
 
     search_criterias = st.session_state.config
@@ -750,6 +760,8 @@ def show_details_dialog(index: Any):
     if not commune:
         st.error("Détails non disponibles.")
         return
+
+    telemetry.log_usage_event("view_commune_details", {"codgeo": commune.codgeo, "name": commune.name})
 
     # --- Header ---
     st.markdown(f"## 📍 {commune.name} (code INSEE: {commune.codgeo})")
