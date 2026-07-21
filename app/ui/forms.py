@@ -596,6 +596,17 @@ def render_org_profile_form() -> None:
         help="Les communes situées dans ces zones recevront un bonus dans le score final.",
     )
 
+    # Special filter checkbox for J'Accueille (only if org == "jaccueille")
+    if org.id == "jaccueille":
+        if "ui_org_strategic_locations_filter" not in st.session_state:
+            st.session_state["ui_org_strategic_locations_filter"] = False
+
+        st.checkbox(
+            "Restreindre la recherche uniquement aux zones opérationnelles J'Accueille",
+            key="ui_org_strategic_locations_filter",
+            help="Si activé, la recherche ne renverra que des communes situées dans des bassins de vie disposant de coordinateurs locaux et d'au moins un accueillant ou prospect.",
+        )
+
     # --- Criteria Boosts Sliders (F-54 Expansion) ---
     org_defaults = org.defaults
     if "org_boosts" in org_defaults:
@@ -1090,6 +1101,9 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
         org_strategic_locations=st.session_state.get("ui_org_strategic_locations", []),
         org_strategic_locations_type=st.session_state.get(
             "ui_org_strategic_locations_type", "departement"
+        ),
+        org_strategic_locations_filter=st.session_state.get(
+            "ui_org_strategic_locations_filter", False
         ),
         org_boosts=st.session_state.get("ui_org_boosts", {}),
         poids_territoire=st.session_state.get("ui_poids_territoire", 1.0),

@@ -237,3 +237,19 @@ Liste en vrac d'idées d'amélioration
 
 ### 📊 Status
 - **July 2026**: Complete. Fully integrated, tested with 100% green pytest baseline, visual forms aligned, and validation scenarios updated.
+
+---
+
+## 🚀 Feature [F-69]: J'Accueille Operational Geographic Filtering
+
+### 📝 User Stories
+- En tant que travailleur social de J'Accueille, je veux pouvoir restreindre la recherche de communes uniquement aux zones opérationnelles de mon organisation (présence de coordinateurs locaux et d'accueillants/prospects), afin de ne pas proposer des territoires où J'Accueille n'a pas les ressources nécessaires pour accompagner et installer le bénéficiaire.
+- En tant qu'architecte, je veux que ce filtrage s'applique en amont du scoring pour optimiser les performances de calcul en limitant la liste des communes évaluées.
+
+### 🔑 Key Features
+* **Operational Areas Double Filtering**: Restriction des communes à celles situées dans des bassins de vie opérationnels éligibles. Un bassin de vie est qualifié s'il possède au moins un contact accueillant (base contact) OU un prospect inscrit (base prospect) et si son département est inclus dans la sélection de départements stratégiques de J'Accueille (présence d'un coordinateur).
+* **Prospects Dataset Integration**: Ajout et traitement automatique d'un nouveau fichier de prospects (`OD&ISbis - Inscrits`) au sein du pipeline ETL local et de BigQuery (`jaccueille_prospects_bdv`).
+* **UI Controls**: Ajout d'une case à cocher ("Restreindre la recherche uniquement aux zones opérationnelles J'Accueille") visible exclusivement pour les utilisateurs de J'Accueille dans le panneau de configuration de l'organisation.
+
+### 📊 Status
+- **July 2026**: Complete. ETL pipeline integrated, BigQuery tables populated, UI components registered, and scoring filters tested with green pytest suites.

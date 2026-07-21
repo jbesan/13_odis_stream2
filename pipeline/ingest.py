@@ -3267,6 +3267,7 @@ def main(argv=None):
         "mob_transports_pub": clean_mob_transports_pub,
         "hebergement_rna": clean_hebergement_rna,
         "jaccueille": clean_jaccueille,
+        "jaccueille_prospects": clean_jaccueille_prospects,
         "log_soc_delay": clean_log_soc_delay,
         "sante_apl": clean_sante_apl,
         "mob_durable": clean_mob_durable,
@@ -4329,6 +4330,160 @@ def clean_jaccueille(config: Dict[str, Any], logger: PipelineLogger):
         )
     else:
         logging.warning("Bassin de vie columns not identified for mapping.")
+
+
+def clean_jaccueille_prospects(config: Dict[str, Any], logger: PipelineLogger):
+    """Cleans J'Accueille prospects data and aggregates by Bassin de Vie."""
+    logger.log_step("clean_jaccueille_prospects", "STARTED")
+    source = config.get("local_files", {}).get("jaccueille_prospects")
+    if not source:
+        source = config["sources"].get("jaccueille_prospects")
+
+    if not source:
+        logging.warning("J'Accueille prospects source config not found.")
+        return
+
+    # Fetch source to raw cache first
+    path = fetch_source("jaccueille_prospects", source, logger)
+    if not path or not path.exists():
+        logging.warning(f"J'Accueille prospects file not found at {path}.")
+        return
+
+    # 1. Load J'Accueille Prospects Excel
+    try:
+        # The Excel file has headers in row 14 (0-indexed 13 in pandas)
+        df_raw = pd.read_excel(path, header=13)
+    except Exception as e:
+        logging.error(f"Failed to read J'Accueille prospects Excel: {e}")
+        return
+
+    # Get initial row count for report
+    initial_rows = len(df_raw)
+
+    # Expected columns: 'Code postal', 'Nombre d\'enregistrements'
+    cp_col = next(
+        (c for c in df_raw.columns if "Code postal" in str(c) or "code_postal" in str(c).lower()), None
+    )
+    val_col = next(
+        (
+            c
+            for c in df_raw.columns
+            if "Nombre d'enregistrements" in str(c)
+            or "prospects" in str(c).lower()
+            or "count" in str(c).lower()
+            or "enregistrements" in str(c).lower()
+        ),
+        None,
+    )
+
+    if not cp_col or not val_col:
+        logging.warning(f"J'Accueille prospects: Could not identify columns. Found: {df_raw.columns}")
+        return
+
+    df = df_raw[[cp_col, val_col]].rename(columns={cp_col: "code_postal_raw", val_col: "prospects_count"})
+    
+    # 2. Extract and clean code postal values
+    import re
+    def extract_and_clean_zip(val):
+        if pd.isna(val):
+            return None
+        val_str = str(val).strip()
+        # Remove spaces and commas (thousands separators)
+        val_str = val_str.replace(" ", "").replace(",", "")
+        
+        # Try to find exactly 5 digits surrounded by word boundaries
+        match = re.search(r'\b\d{5}\b', val_str)
+        if match:
+            return match.group(0)
+        # Try finding any sequence of 5 digits (e.g. "34070y")
+        match = re.search(r'\d{5}', val_str)
+        if match:
+            return match.group(0)
+        return None
+
+    df["code_postal"] = df["code_postal_raw"].apply(extract_and_clean_zip)
+    
+    # Drop rows without a valid 5-digit postal code
+    df_cleaned = df.dropna(subset=["code_postal"]).copy()
+    
+    df_cleaned["prospects_count"] = pd.to_numeric(
+        df_cleaned["prospects_count"], errors="coerce"
+    ).fillna(0)
+    
+    # Report cleaning stats
+    prospects_before = df_raw[val_col].sum() if val_col in df_raw.columns else 0
+    prospects_after = df_cleaned["prospects_count"].sum()
+    kept_rows = len(df_cleaned)
+    dropped_rows = initial_rows - kept_rows
+    
+    logging.info(
+        f"🧹 [CLEAN PROSPECTS] Cleaning Stats:\n"
+        f"  - Initial rows: {initial_rows}\n"
+        f"  - Kept rows: {kept_rows}\n"
+        f"  - Dropped rows: {dropped_rows}\n"
+        f"  - Prospects sum before cleaning: {prospects_before}\n"
+        f"  - Prospects sum after cleaning: {prospects_after}"
+    )
+
+    # 3. Map Code Postal -> Code Commune -> Bassin de Vie
+    cp_mapping_path = CLEAN_DIR / "codes_postaux.parquet"
+    if not cp_mapping_path.exists():
+        logging.warning("Codes Postaux mapping not found, cannot map J'Accueille prospects data.")
+        return
+
+    df_cp = pd.read_parquet(cp_mapping_path, engine="fastparquet")
+    df_cp_unique = df_cp.drop_duplicates(subset=["code_postal"], keep="first")
+
+    merged = df_cleaned.merge(df_cp_unique, on="code_postal", how="inner")
+
+    bdv_cfg = config["sources"]["bassins_de_vie"]
+    bdv_path = CACHE_DIR / bdv_cfg["archive_file"]
+
+    if not bdv_path.exists():
+        logging.warning("Bassin de vie raw file not found.")
+        return
+
+    df_bdv = load_dataset(bdv_path, bdv_cfg)
+
+    codgeo_col = next(
+        (c for c in df_bdv.columns if "Code géographique" in c or "CODGEO" in c), None
+    )
+    bdv_col = next((c for c in df_bdv.columns if "Bassin de vie" in c), None)
+
+    if codgeo_col and bdv_col:
+        df_bdv = df_bdv[[codgeo_col, bdv_col]].rename(
+            columns={codgeo_col: "codgeo", bdv_col: "bassin_de_vie"}
+        )
+        df_bdv["codgeo"] = df_bdv["codgeo"].astype(str).str.zfill(5)
+        df_bdv["bassin_de_vie"] = (
+            df_bdv["bassin_de_vie"].astype(str).str.replace(r"\.0$", "", regex=True)
+        )
+
+        merged_bdv = merged.merge(df_bdv, on="codgeo", how="inner")
+
+        # Aggregate by BDV
+        df_agg = (
+            merged_bdv.groupby("bassin_de_vie")["prospects_count"]
+            .sum()
+            .reset_index()
+        )
+
+        output_path = CLEAN_DIR / "jaccueille_prospects_bdv.parquet"
+        df_agg.to_parquet(output_path, engine="fastparquet")
+        logger.log_step(
+            "clean_jaccueille_prospects",
+            "COMPLETED",
+            {
+                "path": str(output_path),
+                "rows": len(df_agg),
+                "initial_rows": initial_rows,
+                "kept_rows": kept_rows,
+                "dropped_rows": dropped_rows,
+                "prospects_sum": prospects_after
+            },
+        )
+    else:
+        logging.warning("Bassin de vie columns not identified for prospects mapping.")
 
 
 if __name__ == "__main__":

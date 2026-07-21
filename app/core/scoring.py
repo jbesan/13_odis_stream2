@@ -64,17 +64,45 @@ class ScoringEngine:
         start_commune: pd.DataFrame,
         loc_type: str,
         loc_code: Union[str, List[str], None],
+        config: Optional[SearchCriterias] = None,
     ) -> pd.DataFrame:
         if loc_type == "departement":
             # Handle both single string and list for backward compatibility and flexibility
             codes = [loc_code] if isinstance(loc_code, str) else (loc_code or [])
-            return df[df["dep_code"].isin(codes)]
+            filtered_df = df[df["dep_code"].isin(codes)]
         elif loc_type == "region":
             codes = [loc_code] if isinstance(loc_code, str) else (loc_code or [])
-            return df[df["reg_code"].isin(codes)]
+            filtered_df = df[df["reg_code"].isin(codes)]
         elif loc_type == "france":
-            return df[~df["dep_code"].astype(str).str.startswith(("97", "98"))]
-        return pd.DataFrame()
+            filtered_df = df[~df["dep_code"].astype(str).str.startswith(("97", "98"))]
+        else:
+            filtered_df = pd.DataFrame()
+
+        # Apply J'Accueille geographic restriction filter if enabled
+        if (
+            config is not None
+            and getattr(config, "org_strategic_locations_filter", False)
+            and getattr(config, "org_context", None) == "jaccueille"
+        ):
+            # 1. Bassin de vie level: presence of at least one contact (accueillant) OR prospect
+            bv_with_presence = df[
+                (df.get("heb_accueillants_count", 0) > 0)
+                | (df.get("prospects_count", 0) > 0)
+            ]["bassin_de_vie"].dropna().unique()
+
+            # 2. Department level: must contain coordinators (strategic locations)
+            strategic_deps = getattr(config, "org_strategic_locations", [])
+            bv_in_strategic_deps = df[df["dep_code"].isin(strategic_deps)][
+                "bassin_de_vie"
+            ].dropna().unique()
+
+            # 3. Inner join: intersection of both sets of bassins de vie
+            valid_bvs = set(bv_with_presence).intersection(set(bv_in_strategic_deps))
+
+            # Filter final list of communes
+            filtered_df = filtered_df[filtered_df["bassin_de_vie"].isin(valid_bvs)]
+
+        return filtered_df
 
     @staticmethod
     def _scale_series(
@@ -1430,6 +1458,7 @@ class ScoringEngine:
             start_commune=start_commune,
             loc_type=loc_type,
             loc_code=loc_code,
+            config=config,
         )
 
         # Always include current commune

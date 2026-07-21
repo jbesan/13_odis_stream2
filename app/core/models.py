@@ -305,6 +305,11 @@ class SearchCriterias(BaseModel):
         description="Type de zone stratégique",
         json_schema_extra={"odis_visibility": ["agent_refiner", "pdf_report"]},
     )
+    org_strategic_locations_filter: bool = Field(
+        False,
+        description="Restreindre aux zones opérationnelles",
+        json_schema_extra={"odis_visibility": ["agent_refiner", "pdf_report"]},
+    )
 
     # Population target (F-50)
     target_population: int = Field(
