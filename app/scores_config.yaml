@@ -838,7 +838,7 @@ scores:
     min_bound: 0.0
     max_bound: 0.1
 
-  - id: heb_jaccueille_score
+  - id: heb_jaccueille_accueillants_score
     category: logement
     source_metric: heb_accueillants_count
     bdv_factor: 1.0
@@ -851,6 +851,23 @@ scores:
       unit: ""
       display_factor: 1
       tooltip: Au moins un accueillant actif dans le bassin de vie (Source J'Accueille)
+    weight: 3.0
+    min_bound: 0.0
+    max_bound: 1.0
+
+  - id: heb_jaccueille_prospects_score
+    category: logement
+    source_metric: prospects_count
+    bdv_factor: 1.0
+    computation: precomputed
+    display:
+      name: Prospects J'Accueille dans le bassin de vie
+      strong_point_text: Des prospects J'Accueille sont présents dans ce bassin de vie
+      high_value_adjective: présents
+      show: true
+      unit: ""
+      display_factor: 1
+      tooltip: Au moins un prospect inscrit dans le bassin de vie (Source J'Accueille)
     weight: 2.0
     min_bound: 0.0
     max_bound: 1.0

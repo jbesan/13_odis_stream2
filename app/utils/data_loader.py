@@ -396,9 +396,12 @@ def _fetch_jaccueille_data_bq_logic() -> pd.DataFrame:
     cache_path = os.path.join(cache_dir, "jaccueille_hosts_cache.parquet")
     ttl_seconds = 30 * 24 * 3600  # 30 days (1 month)
 
-    # 1. Try to load from persistent local cache
+    import sys
+    is_testing = "pytest" in sys.modules or "unittest" in sys.modules
+
+    # 1. Try to load from persistent local cache (disabled in tests)
     try:
-        if os.path.exists(cache_path):
+        if os.path.exists(cache_path) and not is_testing:
             mtime = os.path.getmtime(cache_path)
             if (time.time() - mtime) < ttl_seconds:
                 # logger.info("📂 [J'ACCUEILLE] Loading host counts from local cache...")
@@ -418,7 +421,7 @@ def _fetch_jaccueille_data_bq_logic() -> pd.DataFrame:
         df_jacc = client.query(query).to_dataframe(create_bqstorage_client=True)
 
         # Save to local cache for future use
-        if not df_jacc.empty:
+        if not df_jacc.empty and not is_testing:
             try:
                 os.makedirs(os.path.dirname(cache_path), exist_ok=True)
                 df_jacc.to_parquet(cache_path, engine="fastparquet")
@@ -450,6 +453,75 @@ def fetch_jaccueille_data_bq() -> pd.DataFrame:
     except ImportError:
         pass
     return _fetch_jaccueille_data_bq_logic()
+
+
+def _fetch_jaccueille_prospects_bq_logic() -> pd.DataFrame:
+    """
+    Internal logic to fetch J'Accueille prospect counts from BigQuery.
+    Implements a persistent local cache to avoid redundant BQ hits.
+    """
+    import time
+
+    cache_dir = os.path.join(cfg.APP_DIR, "data_private")
+    cache_path = os.path.join(cache_dir, "jaccueille_prospects_cache.parquet")
+    ttl_seconds = 30 * 24 * 3600  # 30 days (1 month)
+
+    import sys
+    is_testing = "pytest" in sys.modules or "unittest" in sys.modules
+
+    # 1. Try to load from persistent local cache (disabled in tests)
+    try:
+        if os.path.exists(cache_path) and not is_testing:
+            mtime = os.path.getmtime(cache_path)
+            if (time.time() - mtime) < ttl_seconds:
+                return pd.read_parquet(cache_path, engine="fastparquet")
+    except Exception as e:
+        logger.warning(f"Failed to read J'Accueille prospects cache: {e}")
+
+    # 2. Fetch from BigQuery if cache is missing or stale
+    try:
+        from google.cloud import bigquery
+
+        client = bigquery.Client(project="odis-stream2")
+        query = "SELECT bassin_de_vie, prospects_count FROM `odis-stream2.jaccueille.jaccueille_prospects_bdv`"
+        logger.debug(
+            "📡 [J'ACCUEILLE] Fetching prospect counts from BigQuery (Cache stale or missing)..."
+        )
+        df_prop = client.query(query).to_dataframe(create_bqstorage_client=True)
+
+        # Save to local cache for future use
+        if not df_prop.empty and not is_testing:
+            try:
+                os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+                df_prop.to_parquet(cache_path, engine="fastparquet")
+            except Exception as e:
+                logger.warning(f"Failed to save J'Accueille prospects cache: {e}")
+
+        return df_prop
+    except Exception as e:
+        logger.error(f"J'Accueille prospects BQ fetch failed: {e}")
+        return pd.DataFrame(columns=["bassin_de_vie", "prospects_count"])
+
+
+@st.cache_data(ttl=3600)
+def fetch_jaccueille_prospects_bq_cached() -> pd.DataFrame:
+    """Cached version of J'Accueille prospects fetch for Streamlit."""
+    return _fetch_jaccueille_prospects_bq_logic()
+
+
+def fetch_jaccueille_prospects_bq() -> pd.DataFrame:
+    """
+    Fetches J'Accueille prospects counts, using Streamlit cache if context is available,
+    otherwise fetching directly.
+    """
+    try:
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+
+        if get_script_run_ctx():
+            return fetch_jaccueille_prospects_bq_cached()
+    except ImportError:
+        pass
+    return _fetch_jaccueille_prospects_bq_logic()
 
 
 def _enrich_waldec_index(
@@ -835,32 +907,45 @@ def load_all_data_raw() -> Dict[str, Any]:
 
     # --- 5b. Enrich with dynamic J'Accueille data (Cached) ---
     df_jacc = fetch_jaccueille_data_bq()
+    df_jacc_prosp = fetch_jaccueille_prospects_bq()
 
-    if df_jacc is not None and not df_jacc.empty:
-        # Join to BV
-        if not bv_geo.empty:
-            bv_geo = bv_geo.reset_index()
+    if not bv_geo.empty:
+        bv_geo = bv_geo.reset_index()
+        if df_jacc is not None and not df_jacc.empty:
             df_jacc["bassin_de_vie"] = df_jacc["bassin_de_vie"].astype(str)
             bv_geo = bv_geo.merge(df_jacc, on="bassin_de_vie", how="left")
-            bv_geo["heb_accueillants_count"] = bv_geo["heb_accueillants_count"].fillna(
-                0
-            )
-            # Re-calculate heb_jaccueille_score dynamically
-            bv_geo["heb_jaccueille_score"] = (
-                bv_geo["heb_accueillants_count"] > 0
-            ).astype(float)
-            bv_geo = bv_geo.set_index("bassin_de_vie")
+        if df_jacc_prosp is not None and not df_jacc_prosp.empty:
+            df_jacc_prosp["bassin_de_vie"] = df_jacc_prosp["bassin_de_vie"].astype(str)
+            bv_geo = bv_geo.merge(df_jacc_prosp, on="bassin_de_vie", how="left")
+        bv_geo["heb_accueillants_count"] = bv_geo.get("heb_accueillants_count", pd.Series(0.0, index=bv_geo.index)).fillna(0)
+        bv_geo["prospects_count"] = bv_geo.get("prospects_count", pd.Series(0.0, index=bv_geo.index)).fillna(0)
+        # Re-calculate J'Accueille scores dynamically
+        bv_geo["heb_jaccueille_accueillants_score"] = (
+            bv_geo["heb_accueillants_count"] > 0
+        ).astype(float)
+        bv_geo["heb_jaccueille_prospects_score"] = (
+            bv_geo["prospects_count"] > 0
+        ).astype(float)
+        bv_geo = bv_geo.set_index("bassin_de_vie")
 
-        # Join to ODIS (for detailed city display)
-        if not odis.empty:
-            odis = odis.reset_index()
-            # We already have bassin_de_vie in odis
+    # Join to ODIS (for detailed city display)
+    if not odis.empty:
+        odis = odis.reset_index()
+        if df_jacc is not None and not df_jacc.empty:
+            df_jacc["bassin_de_vie"] = df_jacc["bassin_de_vie"].astype(str)
             odis = odis.merge(df_jacc, on="bassin_de_vie", how="left")
-            odis["heb_accueillants_count"] = odis["heb_accueillants_count"].fillna(0)
-            odis["heb_jaccueille_score"] = (odis["heb_accueillants_count"] > 0).astype(
-                float
-            )
-            odis = odis.set_index("codgeo")
+        if df_jacc_prosp is not None and not df_jacc_prosp.empty:
+            df_jacc_prosp["bassin_de_vie"] = df_jacc_prosp["bassin_de_vie"].astype(str)
+            odis = odis.merge(df_jacc_prosp, on="bassin_de_vie", how="left")
+        odis["heb_accueillants_count"] = odis.get("heb_accueillants_count", pd.Series(0.0, index=odis.index)).fillna(0)
+        odis["prospects_count"] = odis.get("prospects_count", pd.Series(0.0, index=odis.index)).fillna(0)
+        odis["heb_jaccueille_accueillants_score"] = (odis["heb_accueillants_count"] > 0).astype(
+            float
+        )
+        odis["heb_jaccueille_prospects_score"] = (odis["prospects_count"] > 0).astype(
+            float
+        )
+        odis = odis.set_index("codgeo")
 
     return {
         "odis": odis,

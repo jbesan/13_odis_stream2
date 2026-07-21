@@ -67,9 +67,98 @@ class TestFilterCommunes:
         assert "33063" in filtered.index  # Bordeaux (Metro)
         assert "97411" not in filtered.index  # Saint-Denis (DROM)
 
+    def test_filter_communes_jaccueille_strategic(self, sample_data):
+        """Tests the J'Accueille operational area filter logic."""
+        start_commune = sample_data.loc[["33063"]]  # Bordeaux
+        
+        # Prepare sample data with bassin_de_vie and counts
+        df = sample_data.loc[["33063", "64445", "75056"]].copy()
+        df["bassin_de_vie"] = ["BV1", "BV2", "BV3"]
+        df["dep_code"] = ["33", "40", "75"]
+        df["heb_accueillants_count"] = [1.0, 0.0, 0.0]
+        df["prospects_count"] = [0.0, 5.0, 0.0]
+
+        # Scenario 1: Filter disabled
+        config_disabled = SearchCriterias(
+            org_context="jaccueille",
+            org_strategic_locations_filter=False,
+            org_strategic_locations=["33", "40"],
+        )
+        filtered = scoring.ScoringEngine._filter_communes(
+            df=df,
+            start_commune=start_commune,
+            loc_type="france",
+            loc_code=None,
+            config=config_disabled,
+        )
+        # Should return all communes since filter is disabled
+        assert len(filtered) == 3
+
+        # Scenario 2: Filter enabled
+        config_enabled = SearchCriterias(
+            org_context="jaccueille",
+            org_strategic_locations_filter=True,
+            org_strategic_locations=["33", "40"], # Strategic departments
+        )
+        filtered = scoring.ScoringEngine._filter_communes(
+            df=df,
+            start_commune=start_commune,
+            loc_type="france",
+            loc_code=None,
+            config=config_enabled,
+        )
+        
+        # BV1 has 1 accueillant and is in dep 33 (strategic) -> Kept
+        # BV2 has 5 prospects and is in dep 40 (strategic) -> Kept
+        # BV3 has 0 accueillants/prospects and is in dep 75 -> Dropped
+        assert len(filtered) == 2
+        assert "33063" in filtered.index  # BV1
+        assert "64445" in filtered.index  # BV2 (Pau was matched to BV2 in mock)
+        assert "75056" not in filtered.index  # BV3 (Paris)
+
 
 @pytest.mark.unit
 class TestScoringLogic:
+    def test_jaccueille_prospects_scoring_activation(
+        self,
+        sample_data,
+        default_config,
+        sample_incl_index,
+        live_scores_cat,
+        global_stats,
+    ):
+        """Tests that heb_jaccueille_prospects_score is activated and computed correctly."""
+        from core.scoring import ScoringEngine
+        from app.core.models import SearchCriterias
+        import geopandas as gpd
+        
+        # When hebergement_cible contains "Chez l'habitant"
+        config = SearchCriterias(
+            hebergement_cible=["Chez l'habitant"],
+        )
+        
+        engine = ScoringEngine(
+            df_all_communes=sample_data,
+            df_bv_geo=gpd.GeoDataFrame(),
+            scores_cat=live_scores_cat,
+            incl_index=sample_incl_index,
+            associations_data=pd.DataFrame(columns=["codgeo", "id_waldec", "count"]),
+            formations_data=pd.DataFrame(columns=["codgeo", "formation_code"]),
+            codformations_index=pd.DataFrame(columns=["label"]),
+            global_stats=global_stats,
+        )
+        
+        active = engine._get_active_criteria(config)
+        assert "heb_jaccueille_accueillants_score" in active
+        assert "heb_jaccueille_prospects_score" in active
+        
+        # When hebergement_cible does not contain "Chez l'habitant"
+        config_no_habitant = SearchCriterias(
+            hebergement_cible=["Location"],
+        )
+        active_no_habitant = engine._get_active_criteria(config_no_habitant)
+        assert "heb_jaccueille_accueillants_score" not in active_no_habitant
+        assert "heb_jaccueille_prospects_score" not in active_no_habitant
     def test_compute_criteria_scores_structure(
         self,
         sample_data,

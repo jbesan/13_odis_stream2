@@ -521,6 +521,17 @@ local_files:
       - "Code postal"
       - "Nombre d'enregistrements"
 
+  jaccueille_prospects:
+    url: "file://pipeline/data_private/OD&ISbis - Inscrits -2026-03-03-14-43-04.xlsx"
+    use_odace: false
+    format: "xlsx"
+    local_name: "OD&ISbis - Inscrits -2026-03-03-14-43-04.xlsx"
+    ttl_days: 30
+    description: "Nombre de prospects J'Accueille par code postal"
+    used_columns:
+      - "Code postal"
+      - "Nombre d'enregistrements"
+
   inclusion_jobs:
     format: "api"
     ttl_days: 7

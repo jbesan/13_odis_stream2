@@ -187,7 +187,10 @@ ORGANIZATION_PROFILES: Dict[str, Org] = {
         ],
         defaults={
             "hebergement_cible": ["Chez l'habitant"],
-            "org_boosts": {"heb_jaccueille_score": 3.0},
+            "org_boosts": {
+                "heb_jaccueille_accueillants_score": 3.0,
+                "heb_jaccueille_prospects_score": 3.0,
+            },
         },
     ),
     "emile_aura": Org(

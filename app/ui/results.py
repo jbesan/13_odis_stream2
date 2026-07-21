@@ -687,9 +687,9 @@ def show_details_dialog(index: Any):
         if category_key == "education" and scores_list is None:
             scores = [s for s in scores if not s.label.startswith("Présence")]
 
-        # Sort by score_normalise desc to show strengths
+        # Sort by score_id to keep criteria in a predictable, grouped order
         if scores_list is None:
-            scores = sorted(scores, key=lambda x: x.score_normalise, reverse=True)
+            scores = sorted(scores, key=lambda x: x.score_id)
 
         with st.container(border=False):
             for s in scores:
@@ -831,7 +831,7 @@ def show_details_dialog(index: Any):
         # Split housing indicators equally
         housing_scores = commune.scores.get("logement", [])
         housing_scores = sorted(
-            housing_scores, key=lambda x: x.score_normalise, reverse=True
+            housing_scores, key=lambda x: x.score_id
         )
 
         mid = (len(housing_scores) + 1) // 2
@@ -848,7 +848,7 @@ def show_details_dialog(index: Any):
             render_scores_for_category("logement", scores_list=scores_left)
 
         with c2:
-            st.markdown("#### :material/home: Indicateurs Logement")
+            st.markdown("#### :material/home: Indicateurs Logement (suite)")
             render_scores_for_category("logement", scores_list=scores_right)
 
     with tab_edu:
@@ -922,7 +922,7 @@ def show_details_dialog(index: Any):
     with tab_mob:
         c1, c2 = st.columns([1, 1], gap="medium")
         mob_scores = commune.scores.get("mobilite", [])
-        mob_scores = sorted(mob_scores, key=lambda x: x.score_normalise, reverse=True)
+        mob_scores = sorted(mob_scores, key=lambda x: x.score_id)
         mid = (len(mob_scores) + 1) // 2
         scores_left = mob_scores[:mid]
         scores_right = mob_scores[mid:]

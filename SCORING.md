@@ -28,12 +28,21 @@ graph TD
         G["Profil Utilisateur & Critères (SearchCriterias)"] --> H["Moteur de Scoring (app/core/scoring.py)"]
         F --> H
         
+        %% Filtering
+        H --> H1["Filtrage Pré-Scoring (_filter_communes)"]
+        H1 --> H2{"Filtres Géographiques Cumulés"}
+        
+        %% Geographic filters
+        H2 --> H2a["1. Périmètre principal (Département, Région, France)"]
+        H2 --> H2b["2. Restriction opérationnelle J'Accueille (Optionnelle)"]
+        
+        H2a & H2b --> H3["Communes retenues pour l'évaluation"]
+        
         %% Dynamic Calculations
-        H --> I["Calculs Live / Dynamiques"]
+        H3 --> I["Calculs Live / Dynamiques"]
         I --> I3["Matchs (Emploi, Santé... normalisés)"]
         I --> I1["Proximité Géographique (Décroissance linéaire)"]
         I --> I2["Taille de Ville (Courbe Gaussienne)"]
-        
         
         %% BdV Boost
         I1 & I2 & I3 --> J["Application du Boost Bassin de Vie (BdV)"]
@@ -47,16 +56,27 @@ graph TD
     end
 ```
 
-Le score final d'une commune est le résultat d'un processus en six étapes :
+Le score final d'une commune est le résultat d'un processus en sept étapes :
 
-### 1. Filtrage et Proximité Géographique
+### 1. Filtrage Pré-Scoring (`_filter_communes`)
 
-Le moteur commence par délimiter la zone de recherche (Département, Région ou France entière). Un score de distance est ensuite calculé par rapport à la localisation actuelle de l'utilisateur :
+Avant de lancer les calculs géométriques et indicateurs de scoring (très coûteux en performance), ODIS restreint la liste des communes évaluées :
+
+* **Périmètre Géographique Principal** : Filtrage selon le choix de l'utilisateur (Département spécifique, Région, ou France métropolitaine).
+* **Filtre Opérationnel J'Accueille** : Si l'utilisateur appartient à l'organisation `jaccueille` et active le filtre de restriction opérationnelle (`org_strategic_locations_filter` à `True`), les communes sont filtrées selon un double critère géographique :
+  * **Maille Bassin de Vie** : Le bassin de vie de la commune doit compter au moins un contact accueillant actif (base contacts) OU au moins un prospect inscrit (base prospects).
+  * **Maille Département** : Le département de la commune doit figurer dans la liste des zones stratégiques actives configurées/sélectionnées par l'organisation (présence de coordinateurs locaux).
+  * *Calcul* : Un **Inner Join** (intersection) de ces deux mailles détermine la liste des bassins de vie opérationnels éligibles. Seules les communes situées dans ces bassins de vie sont conservées.
+  * *Exception* : La commune actuelle de l'usager et la commune pressentie de comparaison sont systématiquement exemptées de ce filtrage pour garantir leur évaluation et comparaison dans les résultats.
+
+### 2. Proximité Géographique (Distance)
+
+Pour les communes retenues à l'étape 1, un score de distance est calculé par rapport à la localisation actuelle de l'utilisateur :
 
 - On utilise une **décroissance linéaire** : plus la commune est proche, plus le score est élevé ($Score = 1 - \frac{distance}{distance\_max}$).
 - Par défaut, la recherche est optimisée dans un rayon de 50km (ajustable via les bornes de configuration).
 
-### 2. Le Score de Taille (Fonction Gaussienne)
+### 3. Le Score de Taille (Fonction Gaussienne)
 
 ODIS ne filtre pas par "nombre d'habitants" minimum. Il utilise une **courbe de Gauss** pour favoriser les villes moyennes (l'idéal d'accueil).
 
@@ -64,7 +84,7 @@ ODIS ne filtre pas par "nombre d'habitants" minimum. Il utilise une **courbe de 
 - **Écart-type ($\sigma$)** : 40 000 habitants.
 - Cela signifie qu'une ville de 50 000 habitants obtiendra un score de 1.0, tandis qu'une métropole géante ou un petit village obtiendront des scores plus faibles.
 
-### 3. L'Enrichissement par le Bassin de Vie (Boost Opportunity) 🚀
+### 4. L'Enrichissement par le Bassin de Vie (Boost Opportunity) 🚀
 
 C'est le cœur de l'innovation ODIS. On considère qu'une commune n'est pas une île : elle bénéficie des services de son **Bassin de Vie**.
 
@@ -76,14 +96,14 @@ Pour chaque critère (Emploi, Santé, Éducation), nous appliquons une logique d
   - **Bonus de proximité** : Si des opportunités existent à proximité, elles viennent combler le "manque" local.
   - **Factor** : Chaque critère a un facteur de pondération (ex: 0.5 pour l'emploi, 0.8 pour les formations) qui réduit le poids du Bassin de Vie s'il est jugé plus éloigné.
 
-### 4. Le Pattern "Baseline Criteria" (Mandatory Metrics) 🛡️
+### 5. Le Pattern "Baseline Criteria" (Mandatory Metrics) 🛡️
 
 Depuis 2026, ODIS intègre des **critères de référence (Baselines)**. Contrairement aux critères classiques qui s'activent selon les besoins de l'utilisateur, les Baselines sont **systématiquement actives** et contribuent au score global avec des poids fixes.
 
 - **Objectif** : Garantir qu'un standard minimum de qualité territoriale (sécurité, accès aux soins, mobilité durable) soit évalué pour chaque dossier.
 - **Visibilité** : Ces critères sont visibles dans les rapports détaillés et utilisés par l'IA pour justifier ses recommandations.
 
-### 5. Normalisation des Scores par Catégorie (Percentile Ranking) 📊
+### 6. Normalisation des Scores par Catégorie (Percentile Ranking) 📊
 
 Depuis mai 2026, afin de résoudre le problème des disparités d'écarts de scores entre les catégories (par exemple, la catégorie Logement qui avait historiquement des scores bruts faibles, tandis que la Santé ou l'Éducation avaient des scores très élevés, créant un biais de pondération implicite), ODIS applique une **normalisation par centiles (percentile ranking)** au niveau de chaque catégorie :
 
@@ -92,7 +112,7 @@ Depuis mai 2026, afin de résoudre le problème des disparités d'écarts de sco
 - **Protection Variance Nulle** : Si toutes les communes qualifiées obtiennent le même score de catégorie (cas de recherche sur un ensemble minuscule ou mocké), le classement est ignoré et le score brut uniforme est conservé.
 - **Résultat** : Toutes les catégories actives ont désormais une distribution uniforme centrée autour de 0.5. Les coefficients de pondération (ex: Famille, Économique) choisis par l'utilisateur sont ainsi parfaitement respectés.
 
-### 6. Agrégation et Pondération
+### 7. Agrégation et Pondération
 
 Enfin, les scores normalisés de chaque catégorie sont regroupés puis pondérés selon les préférences de l'utilisateur (Profil Expert ou Prédéfini) pour obtenir le score final global.
 
@@ -118,7 +138,8 @@ Voici l'intégralité des 47 critères configurés dans le moteur de scoring OD&
 | **Centres d'Hébergement**     | Pre-scoring | 2.0   | Non      | 0.5       | Capacité en CHRS / CPH.                         |
 | **Foyers & Pensions**         | Pre-scoring | 2.0   | Non      | 0.5       | Densité FJT, Pensions de famille, Migrants.     |
 | **Hébergement Citoyen**       | Pre-scoring | 2.0   | Non      | 0.8       | Associations d'accueil chez l'habitant.         |
-| **Accueils J'Accueille**      | Pre-scoring | 3.0   | Non      | 1.0       | Présence active d'accueillants (Bassin de Vie). |
+| **Accueillants J'Accueille**  | Pre-scoring | 3.0   | Non      | 1.0       | Présence active d'accueillants (Bassin de Vie). |
+| **Prospects J'Accueille**     | Pre-scoring | 2.0   | Non      | 1.0       | Présence active de prospects (Bassin de Vie).   |
 
 ### 💼 Emploi & Formation
 
