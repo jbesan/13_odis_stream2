@@ -40,6 +40,20 @@ def test_happy_path_end_to_end(
                 c.codgeo: f"Mock pitch for {c.name}" for c in search_results.results
             },
             "enrichment": {c.codgeo: {} for c in search_results.results},
+            "inclusion_services_enrichment": {
+                c.codgeo: {
+                    "Maitriser le français": [
+                        {
+                            "id": "mock_srv_1",
+                            "name": "Mock French Service",
+                            "description": "Mock description",
+                            "lien_source": "https://example.com",
+                            "source": "soliguide",
+                        }
+                    ]
+                }
+                for c in search_results.results
+            },
             "jobs": {c.codgeo: [] for c in search_results.results},
             "odis_brief": "Mock situation brief",
         }

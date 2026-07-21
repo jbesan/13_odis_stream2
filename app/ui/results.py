@@ -7,6 +7,7 @@ from core.models import (
     CommuneScoreDetail,
     SearchResultsData,
     AssociationDetail,
+    InclusionServiceDetail,
 )
 from utils.data_loader import get_app_data
 from agents.utils import odis_get_bg_result, launch_background_city_analysis
@@ -258,6 +259,93 @@ def polling_associations_fragment(commune: CommuneResult, h: Optional[str]):
         st.write("⌛ _Chargement des associations..._")
     else:
         st.info("Aucune association répertoriée.")
+
+
+@st.fragment(run_every=3.0)
+def polling_inclusion_services_fragment(commune: CommuneResult, h: Optional[str]):
+    """Fragment that automatically polls for detailed inclusion services enrichment every 3s."""
+    inc_data = commune.inclusion
+    if h and not inc_data.services_detailed:
+        bg_res = odis_get_bg_result(h)
+        if isinstance(bg_res, dict) and "inclusion_services_enrichment" in bg_res:
+            incl_services_data = bg_res["inclusion_services_enrichment"].get(
+                str(commune.codgeo)
+            )
+            if incl_services_data:
+                inc_data.services_detailed = {
+                    cat: [InclusionServiceDetail.model_validate(s) for s in svc_list]
+                    for cat, svc_list in incl_services_data.items()
+                }
+                st.rerun()
+
+    if inc_data.services_detailed:
+        # Global deduplication: each structure appears in at most one expander
+        seen_struct_keys: set[str] = set()
+        for thematique, services in sorted(inc_data.services_detailed.items()):
+            if not services:
+                continue
+            # Deduplicate by structure within this thematique, accumulating service names
+            struct_map: dict[str, dict] = {}
+            for srv in services:
+                struct_key = srv.structure_id or srv.nom_structure or srv.name
+                if struct_key in seen_struct_keys:
+                    continue  # already shown in a prior thematique expander
+                if struct_key not in struct_map:
+                    struct_map[struct_key] = {
+                        "nom": srv.nom_structure.title() or srv.name.title(),
+                        "lien_source": srv.lien_source,
+                        "service_names": [],
+                    }
+                svc_label = srv.name
+                if svc_label and svc_label not in struct_map[struct_key]["service_names"]:
+                    struct_map[struct_key]["service_names"].append(svc_label)
+
+            if not struct_map:
+                continue  # all structures for this thematique already shown elsewhere
+
+            # Mark these structures as seen globally
+            seen_struct_keys.update(struct_map.keys())
+
+            with st.expander(
+                f"{thematique} ({len(struct_map)})", expanded=False
+            ):
+                for struct_data in sorted(struct_map.values(), key=lambda s: s["nom"]):
+                    url_part = (
+                        f" [↗ Fiche]({struct_data['lien_source']})"
+                        if struct_data["lien_source"]
+                        else ""
+                    )
+                    svc_names = struct_data["service_names"]
+                    svc_subtitle = (
+                        f"  \n  <small><i>{', '.join(svc_names)}</i></small>"
+                        if svc_names
+                        else ""
+                    )
+                    st.markdown(
+                        f"• **{struct_data['nom']}**{url_part}{svc_subtitle}",
+                        unsafe_allow_html=True,
+                    )
+    else:
+        services_grouped = inc_data.services_grouped
+        if services_grouped:
+            for thematique, names in sorted(services_grouped.items()):
+                items = sorted(list(set([n for n in names if pd.notna(n)])))
+                if items:
+                    with st.expander(f"{thematique} ({len(items)})", expanded=False):
+                        for name in items:
+                            st.write(f"• {name}")
+        else:
+            st.info("Aucun service spécifique référencé.")
+
+        if h:
+            bg_res = odis_get_bg_result(h)
+            if (
+                not isinstance(bg_res, dict)
+                or "inclusion_services_enrichment" not in bg_res
+            ):
+                st.caption(
+                    "⌛ _Chargement des descriptions et liens depuis l'API Data Inclusion..._"
+                )
 
 
 @st.fragment(run_every=3.0)
@@ -525,6 +613,19 @@ def sync_background_data(commune: CommuneResult, h: Optional[str]):
             ]
             if "total" in jobs_city_data:
                 emp_data.standard_jobs_matching_total = jobs_city_data["total"]
+
+    # 1c. Sync Enrichment (Inclusion Services)
+    if "inclusion_services_enrichment" in bg_res:
+        incl_services_data = bg_res["inclusion_services_enrichment"].get(
+            str(commune.codgeo)
+        )
+        if incl_services_data and not commune.inclusion.services_detailed:
+            logging.debug(f"✨ [SYNC] Inclusion services sync for {commune.codgeo}")
+            inc_data = commune.inclusion
+            inc_data.services_detailed = {
+                cat: [InclusionServiceDetail.model_validate(s) for s in svc_list]
+                for cat, svc_list in incl_services_data.items()
+            }
 
     # 2. Sync Pitches (AI analysis)
     if "pitches" in bg_res:
@@ -830,9 +931,7 @@ def show_details_dialog(index: Any):
 
         # Split housing indicators equally
         housing_scores = commune.scores.get("logement", [])
-        housing_scores = sorted(
-            housing_scores, key=lambda x: x.score_id
-        )
+        housing_scores = sorted(housing_scores, key=lambda x: x.score_id)
 
         mid = (len(housing_scores) + 1) // 2
         scores_left = housing_scores[:mid]
@@ -897,19 +996,7 @@ def show_details_dialog(index: Any):
         with c1:
             with st.container(border=False):
                 st.markdown("#### :material/volunteer_activism: Services d'Inclusion")
-                with st.expander("Consulter les services disponibles", expanded=False):
-                    services_grouped = inclusion_data.services_grouped
-                    if services_grouped:
-                        for thematique, names in sorted(services_grouped.items()):
-                            items = sorted(list(set([n for n in names if pd.notna(n)])))
-                            if items:
-                                with st.expander(
-                                    f"{thematique} ({len(items)})", expanded=False
-                                ):
-                                    for name in items:
-                                        st.write(f"• {name}")
-                    else:
-                        st.info("Aucun service spécifique référencé.")
+                polling_inclusion_services_fragment(commune, h)
 
                 st.markdown("#### :material/groups: Associations de l'inclusion")
 
@@ -942,25 +1029,35 @@ def show_details_dialog(index: Any):
                 st.info(
                     f"🚨 **Sécurité** : {commune.territoire.ter_insecurite:.1f} crimes+délits pour 1000 hab. (Moyenne départementale)."
                 )
-            
+
             if commune.territoire.maire_extreme_droite:
-                st.warning("⚠️ **Municipalité** : Le maire actuel est classé à l'extrême droite.")
+                st.warning(
+                    "⚠️ **Municipalité** : Le maire actuel est classé à l'extrême droite."
+                )
 
             if commune.territoire.electoral_history:
                 try:
                     import json
+
                     history = json.loads(commune.territoire.electoral_history)
                     if history:
-                        st.markdown("##### 🗳️ Historique Électoral (5 derniers scrutins)")
+                        st.markdown(
+                            "##### 🗳️ Historique Électoral (5 derniers scrutins)"
+                        )
                         table_rows = []
                         for item in history:
                             pct_str = f"**{item['percentage']:.1f}%**"
-                            table_rows.append(f"| {item['election']} | {item['nuance']} | {pct_str} |")
-                        
-                        table_content = "\n".join([
-                            "| Scrutin | Nuance Majoritaire | Score |",
-                            "| :--- | :--- | :--- |",
-                        ] + table_rows)
+                            table_rows.append(
+                                f"| {item['election']} | {item['nuance']} | {pct_str} |"
+                            )
+
+                        table_content = "\n".join(
+                            [
+                                "| Scrutin | Nuance Majoritaire | Score |",
+                                "| :--- | :--- | :--- |",
+                            ]
+                            + table_rows
+                        )
                         st.markdown(table_content)
                 except Exception as e:
                     st.caption("Erreur lors du chargement de l'historique électoral.")

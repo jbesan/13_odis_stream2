@@ -250,6 +250,166 @@ def launch_background_association_enrichment(
     thread.start()
 
 
+def launch_background_inclusion_enrichment(
+    engine: Any, codgeos: List[str], hash_val: str, thematique_slugs: Optional[List[str]] = None
+) -> None:
+    """
+    Launches a background thread to fetch detailed inclusion services for the search results from the Data Inclusion API.
+
+    Args:
+        engine: ScoringEngine instance with inclusion_services_index.
+        codgeos: List of INSEE commune codes to fetch services for.
+        hash_val: Search hash used as background store key.
+        thematique_slugs: Optional list of Data Inclusion thematique slugs to filter the API
+            response. If None or empty, fetches all services for each commune.
+    """
+    store = get_odis_bg_store()
+
+    def bg_inclusion_enrichment_task(results_store: dict):
+        import requests
+        import os
+
+        api_key = os.getenv("DATA_INCLUSION_API_KEY")
+        if not api_key:
+            logging.warning("⚠️ [INCLUSION-ENRICH] DATA_INCLUSION_API_KEY is not set.")
+            return
+
+        logging.info(
+            f"🚀 [INCLUSION-ENRICH] Starting background services enrichment for {len(codgeos)} communes (hash: {hash_val})"
+        )
+
+        headers = {"Authorization": f"Bearer {api_key}"}
+        base_url = "https://api.data.inclusion.gouv.fr/api/v1"
+
+        enrichment_data = {}
+
+        for codgeo in codgeos:
+            try:
+                # Fetch services (filtered by thematiques if provided)
+                services_params: dict = {"code_commune": codgeo, "limit": 100}
+                if thematique_slugs:
+                    services_params["thematiques"] = thematique_slugs
+
+                r_services = requests.get(
+                    f"{base_url}/services/",
+                    headers=headers,
+                    params=services_params,
+                    timeout=10,
+                )
+                r_structures = requests.get(
+                    f"{base_url}/structures",
+                    headers=headers,
+                    params={"code_commune": codgeo, "size": 200},
+                    timeout=10,
+                )
+
+                if r_services.status_code != 200:
+                    logging.warning(
+                        f"⚠️ [INCLUSION-ENRICH] Failed to fetch services for codgeo {codgeo}: {r_services.status_code} {r_services.text[:100]}"
+                    )
+                    continue
+
+                items = r_services.json().get("items", [])
+
+                # Build structure_id -> nom_structure lookup
+                structure_names: dict[str, str] = {}
+                if r_structures.status_code == 200:
+                    for struct in r_structures.json().get("items", []):
+                        sid = struct.get("id")
+                        snom = struct.get("nom") or ""
+                        if sid:
+                            structure_names[sid] = snom
+
+                # Group by user-friendly thematic label using engine.inclusion_services_index
+                grouped_services: dict[str, list] = {}
+                # Deduplication key: (structure_id, nom) — avoids duplicates from same structure
+                seen_keys: set[tuple] = set()
+                # Only index codes matching the user's thematique selection
+                active_slugs: set[str] | None = set(thematique_slugs) if thematique_slugs else None
+
+                for item in items:
+                    srv_id = item.get("id") or ""
+                    nom = item.get("nom") or ""
+                    structure_id = item.get("structure_id") or ""
+                    nom_structure = structure_names.get(structure_id) or item.get("nom_structure") or ""
+
+                    # Deduplication key: same structure offering same service type
+                    dedup_key = (structure_id, nom.strip().lower())
+                    if dedup_key in seen_keys:
+                        continue
+                    seen_keys.add(dedup_key)
+
+                    desc = item.get("description") or ""
+                    if desc.lower() in ["nan", "none"]:
+                        desc = ""
+                    # Cap description to a reasonable length
+                    if len(desc) > 250:
+                        desc = desc[:250] + "..."
+
+                    # Keep direct lien_source if populated
+                    lien_source = item.get("lien_source") or ""
+                    source = item.get("source") or ""
+
+                    # Get service thematiques list
+                    thematiques = item.get("thematiques") or []
+                    if isinstance(thematiques, str):
+                        thematiques = [thematiques]
+
+                    # Convert each thematic code to user-friendly label using index
+                    # Only process codes that match the user's selection (if filtered)
+                    for code in thematiques:
+                        if active_slugs and code not in active_slugs:
+                            continue
+                        label = code
+                        try:
+                            if (
+                                hasattr(engine, "inclusion_services_index")
+                                and engine.inclusion_services_index is not None
+                                and code in engine.inclusion_services_index.index
+                            ):
+                                val = engine.inclusion_services_index.loc[code, "label"]
+                                label = val if isinstance(val, str) else val.iloc[0]
+                        except Exception as e:
+                            logging.debug(f"Error mapping thematic label: {e}")
+
+                        if label not in grouped_services:
+                            grouped_services[label] = []
+
+                        grouped_services[label].append(
+                            {
+                                "id": srv_id,
+                                "name": nom,
+                                "nom_structure": nom_structure,
+                                "structure_id": structure_id,
+                                "description": desc,
+                                "lien_source": lien_source,
+                                "source": source,
+                            }
+                        )
+
+                enrichment_data[str(codgeo)] = grouped_services
+
+            except Exception as e:
+                logging.error(
+                    f"❌ [INCLUSION-ENRICH] Error fetching services for codgeo {codgeo}: {e}"
+                )
+
+        # Merge into global results_store
+        current_val = results_store.get(hash_val, {})
+        if not isinstance(current_val, dict):
+            current_val = {}
+        current_val["inclusion_services_enrichment"] = enrichment_data
+        results_store[hash_val] = current_val
+
+        logging.info(
+            f"✅ [INCLUSION-ENRICH] Background services enrichment finished for hash {hash_val}"
+        )
+
+    thread = threading.Thread(target=bg_inclusion_enrichment_task, args=(store,))
+    thread.daemon = True
+    thread.start()
+
+
 def _curate_jobs_with_agent(
     jobs: List[Dict[str, Any]],
     profile_brief: str,
@@ -771,6 +931,11 @@ def launch_post_scoring_tasks(engine: Any, config: Any, search_results: Any, h: 
             target_codgeos.append(commune_pressentie_full["codgeo"])
 
         launch_background_association_enrichment(engine, target_codgeos, h)
+        thematique_slugs = [
+            i.code if hasattr(i, "code") else str(i)
+            for i in getattr(config, "inc_services_selection", [])
+        ]
+        launch_background_inclusion_enrichment(engine, target_codgeos, h, thematique_slugs or None)
         launch_background_job_curation(target_codgeos, config, h, search_results)
         launch_background_audit_log(config, search_results, h)
         return
@@ -817,6 +982,11 @@ def launch_post_scoring_tasks(engine: Any, config: Any, search_results: Any, h: 
     if commune_pressentie_full:
         target_codgeos.append(commune_pressentie_full["codgeo"])
     launch_background_association_enrichment(engine, target_codgeos, h)
+    thematique_slugs = [
+        i.code if hasattr(i, "code") else str(i)
+        for i in getattr(config, "inc_services_selection", [])
+    ]
+    launch_background_inclusion_enrichment(engine, target_codgeos, h, thematique_slugs or None)
 
     # 4b. Launch Employment Enrichment (Detailed Jobs - France Travail)
     launch_background_job_curation(target_codgeos, config, h, search_results)
