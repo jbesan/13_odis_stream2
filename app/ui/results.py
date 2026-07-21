@@ -298,7 +298,7 @@ def polling_inclusion_services_fragment(commune: CommuneResult, h: Optional[str]
                     }
                 svc_label = srv.name
                 if svc_label and svc_label not in struct_map[struct_key]["service_names"]:
-                    struct_map[struct_key]["service_names"].append(svc_label)
+                    struct_map[struct_key]["service_names"].append(svc_label.capitalize())
 
             if not struct_map:
                 continue  # all structures for this thematique already shown elsewhere

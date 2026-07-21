@@ -22,34 +22,53 @@ def test_launch_background_inclusion_enrichment():
     ).set_index("code")
 
     # Mocked API response items — two different services with same (structure_id, nom) = duplicate
+    # Wrapped inside "service" structure like the real /search/services response
     mock_items = [
         {
-            "id": "srv1",
-            "nom": "Cours de français A1",
-            "structure_id": "struct-alpha",
-            "description": "Apprentissage du français langue étrangère.",
-            "lien_source": "https://example.com/srv1",
-            "source": "dora",
-            "thematiques": ["lecture-ecriture-calcul--maitriser-le-francais"],
+            "service": {
+                "id": "srv1",
+                "nom": "Cours de français A1",
+                "structure_id": "struct-alpha",
+                "description": "Apprentissage du français langue étrangère.",
+                "lien_source": "https://example.com/srv1",
+                "source": "dora",
+                "thematiques": ["lecture-ecriture-calcul--maitriser-le-francais"],
+                "structure": {
+                    "id": "struct-alpha",
+                    "nom": "Centre Social Alpha",
+                }
+            }
         },
         {
-            "id": "srv2",
-            "nom": "Cours de français B2",
-            "structure_id": "struct-beta",
-            "description": "Niveau avancé.",
-            "lien_source": "https://example.com/srv2",
-            "source": "soliguide",
-            "thematiques": ["lecture-ecriture-calcul--maitriser-le-francais"],
+            "service": {
+                "id": "srv2",
+                "nom": "Cours de français B2",
+                "structure_id": "struct-beta",
+                "description": "Niveau avancé.",
+                "lien_source": "https://example.com/srv2",
+                "source": "soliguide",
+                "thematiques": ["lecture-ecriture-calcul--maitriser-le-francais"],
+                "structure": {
+                    "id": "struct-beta",
+                    "nom": "CCAS Beta",
+                }
+            }
         },
         # Duplicate: same structure_id + same nom as srv1 → should be deduplicated
         {
-            "id": "srv3-duplicate",
-            "nom": "Cours de français A1",
-            "structure_id": "struct-alpha",
-            "description": "Version doublon du même service.",
-            "lien_source": "https://example.com/srv3",
-            "source": "dora",
-            "thematiques": ["lecture-ecriture-calcul--maitriser-le-francais"],
+            "service": {
+                "id": "srv3-duplicate",
+                "nom": "Cours de français A1",
+                "structure_id": "struct-alpha",
+                "description": "Version doublon du même service.",
+                "lien_source": "https://example.com/srv3",
+                "source": "dora",
+                "thematiques": ["lecture-ecriture-calcul--maitriser-le-francais"],
+                "structure": {
+                    "id": "struct-alpha",
+                    "nom": "Centre Social Alpha",
+                }
+            }
         },
     ]
 
@@ -60,18 +79,7 @@ def test_launch_background_inclusion_enrichment():
         mock_services_response = MagicMock()
         mock_services_response.status_code = 200
         mock_services_response.json.return_value = {"items": mock_items}
-
-        mock_structures_response = MagicMock()
-        mock_structures_response.status_code = 200
-        mock_structures_response.json.return_value = {
-            "items": [
-                {"id": "struct-alpha", "nom": "Centre Social Alpha"},
-                {"id": "struct-beta", "nom": "CCAS Beta"},
-            ]
-        }
-
-        # First call → services, second → structures
-        mock_get.side_effect = [mock_services_response, mock_structures_response]
+        mock_get.return_value = mock_services_response
 
         # 2. Parameters
         codgeos = ["94041"]
@@ -122,5 +130,30 @@ def test_launch_background_inclusion_enrichment():
         assert services[1]["lien_source"] == "https://example.com/srv2"
         assert services[1]["source"] == "soliguide"
 
-        # Verify 2 GET calls were made (services + structures)
-        assert mock_get.call_count == 2
+        # Verify only 1 GET call was made
+        assert mock_get.call_count == 1
+        mock_get.assert_called_once_with(
+            "https://api.data.inclusion.gouv.fr/api/v1/search/services",
+            headers={"Authorization": "Bearer fake_api_key"},
+            params={"code_commune": "94041", "size": 100},
+            timeout=10,
+        )
+
+
+def test_launch_background_inclusion_enrichment_missing_api_key():
+    """Tests that launch_background_inclusion_enrichment returns early if the API key is missing."""
+    mock_engine = MagicMock()
+    with patch("os.getenv") as mock_getenv, patch("requests.get") as mock_get:
+        mock_getenv.return_value = None
+
+        hash_val = "test_missing_key_hash"
+        store = get_odis_bg_store()
+        if hash_val in store:
+            del store[hash_val]
+
+        launch_background_inclusion_enrichment(mock_engine, ["94041"], hash_val)
+        time.sleep(0.2)
+
+        # The store should not have been updated
+        assert hash_val not in store
+        assert mock_get.call_count == 0

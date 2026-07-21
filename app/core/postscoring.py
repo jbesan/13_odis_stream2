@@ -285,21 +285,15 @@ def launch_background_inclusion_enrichment(
 
         for codgeo in codgeos:
             try:
-                # Fetch services (filtered by thematiques if provided)
-                services_params: dict = {"code_commune": codgeo, "limit": 100}
+                # Fetch services using search endpoint (automatically embeds structure and handles proximity/zones)
+                services_params: dict = {"code_commune": codgeo, "size": 100}
                 if thematique_slugs:
                     services_params["thematiques"] = thematique_slugs
 
                 r_services = requests.get(
-                    f"{base_url}/services/",
+                    f"{base_url}/search/services",
                     headers=headers,
                     params=services_params,
-                    timeout=10,
-                )
-                r_structures = requests.get(
-                    f"{base_url}/structures",
-                    headers=headers,
-                    params={"code_commune": codgeo, "size": 200},
                     timeout=10,
                 )
 
@@ -311,15 +305,6 @@ def launch_background_inclusion_enrichment(
 
                 items = r_services.json().get("items", [])
 
-                # Build structure_id -> nom_structure lookup
-                structure_names: dict[str, str] = {}
-                if r_structures.status_code == 200:
-                    for struct in r_structures.json().get("items", []):
-                        sid = struct.get("id")
-                        snom = struct.get("nom") or ""
-                        if sid:
-                            structure_names[sid] = snom
-
                 # Group by user-friendly thematic label using engine.inclusion_services_index
                 grouped_services: dict[str, list] = {}
                 # Deduplication key: (structure_id, nom) — avoids duplicates from same structure
@@ -327,11 +312,14 @@ def launch_background_inclusion_enrichment(
                 # Only index codes matching the user's thematique selection
                 active_slugs: set[str] | None = set(thematique_slugs) if thematique_slugs else None
 
-                for item in items:
-                    srv_id = item.get("id") or ""
-                    nom = item.get("nom") or ""
-                    structure_id = item.get("structure_id") or ""
-                    nom_structure = structure_names.get(structure_id) or item.get("nom_structure") or ""
+                for item_wrapper in items:
+                    service = item_wrapper.get("service") or {}
+                    srv_id = service.get("id") or ""
+                    nom = service.get("nom") or ""
+                    structure_id = service.get("structure_id") or ""
+
+                    struct_obj = service.get("structure") or {}
+                    nom_structure = struct_obj.get("nom") or service.get("nom_structure") or ""
 
                     # Deduplication key: same structure offering same service type
                     dedup_key = (structure_id, nom.strip().lower())
@@ -339,7 +327,7 @@ def launch_background_inclusion_enrichment(
                         continue
                     seen_keys.add(dedup_key)
 
-                    desc = item.get("description") or ""
+                    desc = service.get("description") or ""
                     if desc.lower() in ["nan", "none"]:
                         desc = ""
                     # Cap description to a reasonable length
@@ -347,11 +335,11 @@ def launch_background_inclusion_enrichment(
                         desc = desc[:250] + "..."
 
                     # Keep direct lien_source if populated
-                    lien_source = item.get("lien_source") or ""
-                    source = item.get("source") or ""
+                    lien_source = service.get("lien_source") or ""
+                    source = service.get("source") or ""
 
                     # Get service thematiques list
-                    thematiques = item.get("thematiques") or []
+                    thematiques = service.get("thematiques") or []
                     if isinstance(thematiques, str):
                         thematiques = [thematiques]
 

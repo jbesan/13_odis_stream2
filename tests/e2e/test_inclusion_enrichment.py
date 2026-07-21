@@ -68,12 +68,19 @@ def test_background_inclusion_enrichment_success(mock_getenv, mock_get):
 
     mock_items = [
         {
-            "id": "srv_dora_1",
-            "nom": "Apprendre le français",
-            "description": "Cours pour débutants.",
-            "lien_source": "https://dora.fr/srv1",
-            "source": "dora",
-            "thematiques": ["lecture-ecriture-calcul--maitriser-le-francais"],
+            "service": {
+                "id": "srv_dora_1",
+                "nom": "Apprendre le français",
+                "structure_id": "struct-alpha",
+                "description": "Cours pour débutants.",
+                "lien_source": "https://dora.fr/srv1",
+                "source": "dora",
+                "thematiques": ["lecture-ecriture-calcul--maitriser-le-francais"],
+                "structure": {
+                    "id": "struct-alpha",
+                    "nom": "Centre Social Alpha",
+                }
+            }
         }
     ]
 
@@ -106,6 +113,7 @@ def test_background_inclusion_enrichment_success(mock_getenv, mock_get):
     assert len(services) == 1
     assert services[0]["id"] == "srv_dora_1"
     assert services[0]["name"] == "Apprendre le français"
+    assert services[0]["nom_structure"] == "Centre Social Alpha"
     assert services[0]["lien_source"] == "https://dora.fr/srv1"
 
 
