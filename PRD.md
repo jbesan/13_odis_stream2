@@ -253,3 +253,21 @@ Liste en vrac d'idées d'amélioration
 
 ### 📊 Status
 - **July 2026**: Complete. ETL pipeline integrated, BigQuery tables populated, UI components registered, and scoring filters tested with green pytest suites.
+
+---
+
+## 🚀 Feature [F-70]: Data Inclusion API Integration
+
+### 📝 User Stories
+- En tant que travailleur social, je veux voir les services d'inclusion détaillés (nom de structure, description, thématiques et lien direct Soliguide) plutôt que des thématiques génériques non explicatives, afin de mieux orienter le bénéficiaire.
+- En tant qu'architecte, je veux que la récupération des données s'effectue de manière asynchrone (post-scoring pipeline) et soit filtrée par les thématiques de recherche de l'utilisateur pour préserver les performances et la pertinence.
+
+### 🔑 Key Features
+* **Single /search/services API Call**: Utilisation de l'API de recherche Data Inclusion qui retourne nativement la structure imbriquée (plus besoin d'appels secondaires à `/structures`), optimisant la latence et la consommation réseau.
+* **Thematique Search Filtering**: Filtrage automatique des résultats via le paramètre `thematiques` de l'API et au moment du groupage pour n'afficher que les catégories thématiques sélectionnées par l'utilisateur.
+* **Global Structure Deduplication**: Chaque structure d'accueil n'apparaît qu'une seule fois (dans le premier expander thématique), avec la liste complète de ses services associés affichée en sous-titre pour un rendu UX compact et clair.
+* **Robust Fallback & Test Coverage**: Gestion gracieuse des erreurs de réseau ou clés API absentes, avec une suite de tests unitaires et E2E garantissant la robustesse en production et en local.
+
+### 📊 Status
+- **July 2026**: Complete. Fully integrated, documented in postscoring architecture catalog, covered by unit and E2E test suites, and optimized to 1 API request/commune.
+

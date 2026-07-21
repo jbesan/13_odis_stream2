@@ -300,3 +300,36 @@ def test_association_detail_context_formatting():
     )
     assert ui_ctx["Libellé de la catégorie WALDEC"] == "Action Sociale"
     assert ui_ctx["Si l'association est dédiée aux réfugiés"] is True
+
+
+def test_inclusion_service_detail_context_formatting():
+    """Verifies that InclusionServiceDetail objects are formatted as pipe-separated strings for agents, but normal dicts for UI."""
+    from core.models import InclusionServiceDetail
+
+    srv = InclusionServiceDetail(
+        id="srv1",
+        name="French Lessons",
+        nom_structure="Secours Populaire",
+        structure_id="struct123",
+        description="Free French learning classes.",
+        lien_source="https://soliguide.fr/service/1",
+        source="soliguide",
+    )
+
+    # For an agent, it should be simplified to a pipe-separated string
+    agent_ctx = ODISContextBuilder._auto_build_context(
+        srv, "agent_social_integration_expert"
+    )
+    assert (
+        agent_ctx
+        == "srv1 | French Lessons par Secours Populaire"
+    )
+
+    # For UI, it should remain a dictionary with all visible fields
+    ui_ctx = ODISContextBuilder._auto_build_context(srv, "ui_details")
+    assert isinstance(ui_ctx, dict)
+    assert ui_ctx["Identifiant unique du service"] == "srv1"
+    assert ui_ctx["Nom du service"] == "French Lessons"
+    assert ui_ctx["Nom de la structure proposant le service"] == "Secours Populaire"
+    assert ui_ctx["Description du service"] == "Free French learning classes."
+

@@ -1005,6 +1005,100 @@ class AssociationDetail(BaseModel):
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 
 
+class InclusionServiceDetail(BaseModel):
+    """Represents a detailed inclusion service from the Data Inclusion API."""
+
+    id: str = Field(
+        ...,
+        description="Identifiant unique du service",
+        json_schema_extra={
+            "odis_visibility": [
+                "agent_social_integration_expert",
+                "ui_details",
+                "pdf_report",
+            ]
+        },
+    )
+    name: str = Field(
+        ...,
+        description="Nom du service",
+        json_schema_extra={
+            "odis_visibility": [
+                "agent_social_integration_expert",
+                "ui_details",
+                "pdf_report",
+            ]
+        },
+    )
+    nom_structure: Optional[str] = Field(
+        None,
+        description="Nom de la structure proposant le service",
+        json_schema_extra={
+            "odis_visibility": [
+                "agent_social_integration_expert",
+                "ui_details",
+                "pdf_report",
+            ]
+        },
+    )
+    structure_id: Optional[str] = Field(
+        None,
+        description="Identifiant unique de la structure",
+        json_schema_extra={
+            "odis_visibility": [
+                "agent_social_integration_expert",
+                "ui_details",
+                "pdf_report",
+            ]
+        },
+    )
+    description: Optional[str] = Field(
+        None,
+        description="Description du service",
+        json_schema_extra={
+            "odis_visibility": [
+                "agent_social_integration_expert",
+                "ui_details",
+                "pdf_report",
+            ]
+        },
+    )
+    lien_source: Optional[str] = Field(
+        None,
+        description="Lien vers la fiche détaillée du service",
+        json_schema_extra={
+            "odis_visibility": [
+                "agent_social_integration_expert",
+                "ui_details",
+                "pdf_report",
+            ]
+        },
+    )
+    source: Optional[str] = Field(
+        None,
+        description="Source du service (ex: soliguide, dora)",
+        json_schema_extra={
+            "odis_visibility": [
+                "agent_social_integration_expert",
+                "ui_details",
+                "pdf_report",
+            ]
+        },
+    )
+    presentation_structure: Optional[str] = Field(
+        None,
+        description="Présentation de la structure",
+        json_schema_extra={
+            "odis_visibility": [
+                "ui_details",
+                "pdf_report",
+            ]
+        },
+    )
+
+    model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
+
+
 class InclusionMetrics(BaseModel):
     cat_score: float = Field(
         0.0,
@@ -1068,6 +1162,17 @@ class InclusionMetrics(BaseModel):
     services_grouped: Dict[str, List[str]] = Field(
         default_factory=dict,
         description="Services d'inclusion groupés par thématique",
+        json_schema_extra={
+            "odis_visibility": [
+                "agent_social_integration_expert",
+                "ui_details",
+                "pdf_report",
+            ]
+        },
+    )
+    services_detailed: Dict[str, List[InclusionServiceDetail]] = Field(
+        default_factory=dict,
+        description="Services d'inclusion détaillés groupés par thématique",
         json_schema_extra={
             "odis_visibility": [
                 "agent_social_integration_expert",

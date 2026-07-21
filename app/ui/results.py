@@ -7,6 +7,7 @@ from core.models import (
     CommuneScoreDetail,
     SearchResultsData,
     AssociationDetail,
+    InclusionServiceDetail,
 )
 from utils.data_loader import get_app_data
 from agents.utils import odis_get_bg_result, launch_background_city_analysis
@@ -258,6 +259,104 @@ def polling_associations_fragment(commune: CommuneResult, h: Optional[str]):
         st.write("⌛ _Chargement des associations..._")
     else:
         st.info("Aucune association répertoriée.")
+
+
+@st.fragment(run_every=3.0)
+def polling_inclusion_services_fragment(commune: CommuneResult, h: Optional[str]):
+    """Fragment that automatically polls for detailed inclusion services enrichment every 3s."""
+    inc_data = commune.inclusion
+    if h and not inc_data.services_detailed:
+        bg_res = odis_get_bg_result(h)
+        if isinstance(bg_res, dict) and "inclusion_services_enrichment" in bg_res:
+            incl_services_data = bg_res["inclusion_services_enrichment"].get(
+                str(commune.codgeo)
+            )
+            if incl_services_data:
+                inc_data.services_detailed = {
+                    cat: [InclusionServiceDetail.model_validate(s) for s in svc_list]
+                    for cat, svc_list in incl_services_data.items()
+                }
+                st.rerun()
+
+    if inc_data.services_detailed:
+        # Global deduplication: each structure appears in at most one expander
+        seen_struct_keys: set[str] = set()
+        for thematique, services in sorted(inc_data.services_detailed.items()):
+            if not services:
+                continue
+            # Deduplicate by structure within this thematique, accumulating service names
+            struct_map: dict[str, dict] = {}
+            for srv in services:
+                struct_key = srv.structure_id or srv.nom_structure or srv.name
+                if struct_key in seen_struct_keys:
+                    continue  # already shown in a prior thematique expander
+                if struct_key not in struct_map:
+                    struct_map[struct_key] = {
+                        "nom": srv.nom_structure.title() or srv.name.title(),
+                        "presentation_structure": getattr(srv, "presentation_structure", None) or "",
+                        "lien_source": srv.lien_source,
+                        "services": [],
+                    }
+                svc_label = srv.name
+                if svc_label and not any(s["name"] == svc_label.capitalize() for s in struct_map[struct_key]["services"]):
+                    struct_map[struct_key]["services"].append({
+                        "name": svc_label.capitalize(),
+                        "description": srv.description or ""
+                    })
+
+            if not struct_map:
+                continue  # all structures for this thematique already shown elsewhere
+
+            # Mark these structures as seen globally
+            seen_struct_keys.update(struct_map.keys())
+
+            with st.expander(
+                f"{thematique} ({len(struct_map)})", expanded=False
+            ):
+                for struct_data in sorted(struct_map.values(), key=lambda s: s["nom"]):
+                    struct_name = struct_data["nom"]
+                    presentation = struct_data["presentation_structure"]
+                    url_part = (
+                        f" [↗ Fiche]({struct_data['lien_source']})"
+                        if struct_data['lien_source']
+                        else ""
+                    )
+
+                    # 1. Display structure with help tooltip if presentation is available
+                    if presentation:
+                        st.markdown(f"• **{struct_name}** {url_part}", help=presentation)
+                    else:
+                        st.markdown(f"• **{struct_name}** {url_part}")
+
+                    # 2. Display services as nested items with help tooltips
+                    for svc in struct_data["services"]:
+                        name = svc["name"]
+                        desc = svc["description"]
+                        if desc:
+                            st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;└ {name}", help=desc)
+                        else:
+                            st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;└ {name}")
+    else:
+        services_grouped = inc_data.services_grouped
+        if services_grouped:
+            for thematique, names in sorted(services_grouped.items()):
+                items = sorted(list(set([n for n in names if pd.notna(n)])))
+                if items:
+                    with st.expander(f"{thematique} ({len(items)})", expanded=False):
+                        for name in items:
+                            st.write(f"• {name}")
+        else:
+            st.info("Aucun service spécifique référencé.")
+
+        if h:
+            bg_res = odis_get_bg_result(h)
+            if (
+                not isinstance(bg_res, dict)
+                or "inclusion_services_enrichment" not in bg_res
+            ):
+                st.caption(
+                    "⌛ _Chargement des descriptions et liens depuis l'API Data Inclusion..._"
+                )
 
 
 @st.fragment(run_every=3.0)
@@ -525,6 +624,19 @@ def sync_background_data(commune: CommuneResult, h: Optional[str]):
             ]
             if "total" in jobs_city_data:
                 emp_data.standard_jobs_matching_total = jobs_city_data["total"]
+
+    # 1c. Sync Enrichment (Inclusion Services)
+    if "inclusion_services_enrichment" in bg_res:
+        incl_services_data = bg_res["inclusion_services_enrichment"].get(
+            str(commune.codgeo)
+        )
+        if incl_services_data and not commune.inclusion.services_detailed:
+            logging.debug(f"✨ [SYNC] Inclusion services sync for {commune.codgeo}")
+            inc_data = commune.inclusion
+            inc_data.services_detailed = {
+                cat: [InclusionServiceDetail.model_validate(s) for s in svc_list]
+                for cat, svc_list in incl_services_data.items()
+            }
 
     # 2. Sync Pitches (AI analysis)
     if "pitches" in bg_res:
@@ -830,9 +942,7 @@ def show_details_dialog(index: Any):
 
         # Split housing indicators equally
         housing_scores = commune.scores.get("logement", [])
-        housing_scores = sorted(
-            housing_scores, key=lambda x: x.score_id
-        )
+        housing_scores = sorted(housing_scores, key=lambda x: x.score_id)
 
         mid = (len(housing_scores) + 1) // 2
         scores_left = housing_scores[:mid]
@@ -897,19 +1007,7 @@ def show_details_dialog(index: Any):
         with c1:
             with st.container(border=False):
                 st.markdown("#### :material/volunteer_activism: Services d'Inclusion")
-                with st.expander("Consulter les services disponibles", expanded=False):
-                    services_grouped = inclusion_data.services_grouped
-                    if services_grouped:
-                        for thematique, names in sorted(services_grouped.items()):
-                            items = sorted(list(set([n for n in names if pd.notna(n)])))
-                            if items:
-                                with st.expander(
-                                    f"{thematique} ({len(items)})", expanded=False
-                                ):
-                                    for name in items:
-                                        st.write(f"• {name}")
-                    else:
-                        st.info("Aucun service spécifique référencé.")
+                polling_inclusion_services_fragment(commune, h)
 
                 st.markdown("#### :material/groups: Associations de l'inclusion")
 
@@ -942,25 +1040,35 @@ def show_details_dialog(index: Any):
                 st.info(
                     f"🚨 **Sécurité** : {commune.territoire.ter_insecurite:.1f} crimes+délits pour 1000 hab. (Moyenne départementale)."
                 )
-            
+
             if commune.territoire.maire_extreme_droite:
-                st.warning("⚠️ **Municipalité** : Le maire actuel est classé à l'extrême droite.")
+                st.warning(
+                    "⚠️ **Municipalité** : Le maire actuel est classé à l'extrême droite."
+                )
 
             if commune.territoire.electoral_history:
                 try:
                     import json
+
                     history = json.loads(commune.territoire.electoral_history)
                     if history:
-                        st.markdown("##### 🗳️ Historique Électoral (5 derniers scrutins)")
+                        st.markdown(
+                            "##### 🗳️ Historique Électoral (5 derniers scrutins)"
+                        )
                         table_rows = []
                         for item in history:
                             pct_str = f"**{item['percentage']:.1f}%**"
-                            table_rows.append(f"| {item['election']} | {item['nuance']} | {pct_str} |")
-                        
-                        table_content = "\n".join([
-                            "| Scrutin | Nuance Majoritaire | Score |",
-                            "| :--- | :--- | :--- |",
-                        ] + table_rows)
+                            table_rows.append(
+                                f"| {item['election']} | {item['nuance']} | {pct_str} |"
+                            )
+
+                        table_content = "\n".join(
+                            [
+                                "| Scrutin | Nuance Majoritaire | Score |",
+                                "| :--- | :--- | :--- |",
+                            ]
+                            + table_rows
+                        )
                         st.markdown(table_content)
                 except Exception as e:
                     st.caption("Erreur lors du chargement de l'historique électoral.")
@@ -1166,7 +1274,7 @@ def _display_result_details(commune: CommuneResult, is_ready: bool = False) -> N
         score_percent = f"{commune.global_score * 100:.1f}%"
 
         st.markdown(
-            f"**{libgeo}** ({population} habitants) fait partie du bassin de vie de : **{commune.name_bdv}**.  \nLa correspondance avec le projet est évaluée à **{score_percent}**."
+            f"**{libgeo}** ({population} habitants) fait partie du bassin de vie de : **{commune.name_bdv}**.  La correspondance avec le projet est évaluée à **{score_percent}**."
         )
 
         # Sync background results into model if available
@@ -1175,60 +1283,84 @@ def _display_result_details(commune: CommuneResult, is_ready: bool = False) -> N
         # --- AI Pitch Fragment ---
         ai_pitch_container(commune.codgeo, h)
 
+        st.space("small")
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button(
+                "En savoir plus",
+                key=f"btn_details_comm_{commune.codgeo}",
+                icon=":material/data_exploration:",
+                type="primary",
+                width="stretch",
+            ):
+                st.session_state.active_details_index = commune.codgeo
+                st.rerun()
+        with c2:
+            if st.button(
+                "Contact local",
+                key=f"btn_ccas_commune_{commune.codgeo}",
+                icon=":material/phone:",
+                type="secondary",
+                width="stretch",
+            ):
+                st.session_state.active_ccas_index = commune.codgeo
+                st.rerun()
+
         # F-IA: AI Dialog Trigger (Session State based)
         if not cfg.is_ai_free_mode():
-            col1, col2, col3 = st.columns([1, 2, 1])
-            with col2:
-                st.markdown(
-                    '<style> [class*="st-key-btn_ia"] .stButton button { background-color: #F5D819; color: #1B4429; } </style>',
-                    unsafe_allow_html=True,
-                )
+            # col1, col2, col3 = st.columns([1, 2, 1])
+            # with col2:
+            st.markdown(
+                '<style> [class*="st-key-btn_ia"] .stButton button { background-color: #F5D819; color: #1B4429; } </style>',
+                unsafe_allow_html=True,
+            )
 
-                # Premium Guardrail (F-IA): Verify if background hydrations (jobs & associations) are completed
-                jobs_ready = False
-                assos_ready = False
-                if h:
-                    bg_res = odis_get_bg_result(h)
-                    if isinstance(bg_res, dict):
-                        # Check jobs hydration status
-                        jobs_city_data = bg_res.get("jobs_enrichment", {}).get(
-                            str(commune.codgeo)
-                        )
-                        if jobs_city_data and jobs_city_data.get("status") in [
-                            "done",
-                            "error",
-                        ]:
-                            jobs_ready = True
+            # Premium Guardrail (F-IA): Verify if background hydrations (jobs & associations) are completed
+            jobs_ready = False
+            assos_ready = False
+            if h:
+                bg_res = odis_get_bg_result(h)
+                if isinstance(bg_res, dict):
+                    # Check jobs hydration status
+                    jobs_city_data = bg_res.get("jobs_enrichment", {}).get(
+                        str(commune.codgeo)
+                    )
+                    if jobs_city_data and jobs_city_data.get("status") in [
+                        "done",
+                        "error",
+                    ]:
+                        jobs_ready = True
 
-                        # Check associations hydration status
-                        enrich_data = bg_res.get("enrichment", {}).get(
-                            str(commune.codgeo)
-                        )
-                        if enrich_data is not None:
-                            assos_ready = True
+                    # Check associations hydration status
+                    enrich_data = bg_res.get("enrichment", {}).get(
+                        str(commune.codgeo)
+                    )
+                    if enrich_data is not None:
+                        assos_ready = True
 
-                if not is_ready:
-                    btn_label = "Analyse Avancée (Calcul...)"
-                    btn_disabled = True
-                elif not jobs_ready or not assos_ready:
-                    btn_label = "Analyse Avancée (Préparation...)"
-                    btn_disabled = True
-                else:
-                    btn_label = "Analyse Avancée"
-                    btn_disabled = False
+            if not is_ready:
+                btn_label = "Analyse Avancée (Calcul...)"
+                btn_disabled = True
+            elif not jobs_ready or not assos_ready:
+                btn_label = "Analyse Avancée (Préparation...)"
+                btn_disabled = True
+            else:
+                btn_label = "Analyse Avancée"
+                btn_disabled = False
 
-                if st.button(
-                    btn_label,
-                    key=f"btn_ia_comm_{commune.codgeo}",
-                    icon=":material/bolt:",
-                    width="content",
-                    type="primary",
-                    disabled=btn_disabled,
-                ):
-                    st.session_state.active_ia_city_index = commune.codgeo
-                    st.rerun()
+            if st.button(
+                btn_label,
+                key=f"btn_ia_comm_{commune.codgeo}",
+                icon=":material/wand_stars:",
+                width="stretch",
+                # type="primary",
+                disabled=btn_disabled,
+            ):
+                st.session_state.active_ia_city_index = commune.codgeo
+                st.rerun()
 
         # --- Radar Chart with Comparison ---
+        st.space("small")
         all_cats = [
             "emploi",
             "logement",
@@ -1307,8 +1439,10 @@ def _display_result_details(commune: CommuneResult, is_ready: bool = False) -> N
         # Add trace for current city (Blue) if available
         if search_results and search_results.current_geo:
             _, vals_current = get_radar_data(search_results.current_geo, active_cats)
-            current_name = search_results.current_geo.name or "Actuel"
-
+            current_name = search_results.current_geo.name or "Votre ville"
+            
+            st.text(f"Comparaison avec {current_name}", help=f"Comparaison des profils : la zone verte représente **{commune.name}**, la zone bleue **{current_name}**. Une plus grande surface indique une meilleure adéquation avec vos critères.")
+            
             fig.add_trace(
                 go.Scatterpolar(
                     r=vals_current,
@@ -1320,45 +1454,19 @@ def _display_result_details(commune: CommuneResult, is_ready: bool = False) -> N
                     hovertemplate="%{theta}: %{r:.1f}%<extra></extra>",
                 )
             )
+            
+        
+            fig.update_layout(
+                polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
+                showlegend=True,
+                legend=dict(
+                    orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
+                ),
+                margin=dict(l=50, r=50, t=50, b=50),
+            )
 
-        fig.update_layout(
-            polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
-            showlegend=True,
-            legend=dict(
-                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
-            ),
-            margin=dict(l=50, r=50, t=50, b=50),
-        )
+            st.plotly_chart(fig, width="stretch", height=300, config=None)
 
-        st.plotly_chart(fig, width="stretch", config=None)
-
-        current_geo = search_results.current_geo if search_results else None
-        current_label = current_geo.name if current_geo else "votre ville"
-        st.caption(
-            f"**Comparaison des profils** : la zone verte représente **{commune.name}**, la zone bleue **{current_label}**. Une plus grande surface indique une meilleure adéquation avec vos critères.",
-            text_alignment="center",
-        )
-        st.space("small")
-
-        c1, c2 = st.columns(2)
-        with c1:
-            if st.button(
-                "En savoir plus",
-                key=f"btn_details_comm_{commune.codgeo}",
-                width="stretch",
-            ):
-                st.session_state.active_details_index = commune.codgeo
-                st.rerun()
-        with c2:
-            if st.button(
-                "Contact local",
-                key=f"btn_ccas_commune_{commune.codgeo}",
-                icon=":material/phone:",
-                type="secondary",
-                width="stretch",
-            ):
-                st.session_state.active_ccas_index = commune.codgeo
-                st.rerun()
 
         st.divider()
         with st.container(

@@ -259,6 +259,16 @@ class ODISContextBuilder:
                 return f"{asso_id} | {name} | {desc}"
             # For non-agent visibility, fall through to normal recursion
 
+        # 3b. Special Case: InclusionServiceDetail (Compact representation for agents)
+        if model.__class__.__name__ == "InclusionServiceDetail":
+            if visibility_key.startswith("agent_"):
+                srv_id = getattr(model, "id", "")
+                name = getattr(model, "name", "")
+                struct = getattr(model, "nom_structure", "") or ""
+                struct_part = f" par {struct}" if struct else ""
+                return f"{srv_id} | {name}{struct_part}"
+            # For non-agent visibility, fall through to normal recursion
+
         # 4. Handle Pydantic BaseModel
         if isinstance(model, BaseModel):
             ctx = {}

@@ -13,7 +13,7 @@ import config as cfg
 logger = logging.getLogger(__name__)
 
 # Constant for fallback local development user
-LOCAL_DEV_USERNAME = "local-dev"
+LOCAL_DEV_USERNAME = "jacques-local"
 
 
 def hash_password(password: str, iterations: int = 20000) -> str:
@@ -203,13 +203,9 @@ def check_password() -> bool:
     # 1. Skip if not running on Cloud Run and not forced (Local Dev)
     if not is_cloud_run and not force_auth:
         if "user" not in st.session_state or "org" not in st.session_state:
-            st.session_state["user"] = User(username=LOCAL_DEV_USERNAME, org_id="local")
-            st.session_state["org"] = Org(
-                id="local",
-                name="Local Dev",
-                zone_type="departement",
-                default_zones=["33"],
-            )
+            org = cfg.ORGANIZATION_PROFILES.get("jaccueille")
+            st.session_state["user"] = User(username=LOCAL_DEV_USERNAME, org_id="jaccueille")
+            st.session_state["org"] = org
             # For compatibility
             st.session_state["username"] = LOCAL_DEV_USERNAME
         st.session_state["password_correct"] = True

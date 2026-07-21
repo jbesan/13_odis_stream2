@@ -421,10 +421,11 @@ def _fetch_jaccueille_data_bq_logic() -> pd.DataFrame:
         df_jacc = client.query(query).to_dataframe(create_bqstorage_client=True)
 
         # Save to local cache for future use
-        if not df_jacc.empty and not is_testing:
+        if not df_jacc.empty:
             try:
                 os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-                df_jacc.to_parquet(cache_path, engine="fastparquet")
+                if not is_testing:
+                    df_jacc.to_parquet(cache_path, engine="fastparquet")
             except Exception as e:
                 logger.warning(f"Failed to save J'Accueille cache: {e}")
 
@@ -490,10 +491,11 @@ def _fetch_jaccueille_prospects_bq_logic() -> pd.DataFrame:
         df_prop = client.query(query).to_dataframe(create_bqstorage_client=True)
 
         # Save to local cache for future use
-        if not df_prop.empty and not is_testing:
+        if not df_prop.empty:
             try:
                 os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-                df_prop.to_parquet(cache_path, engine="fastparquet")
+                if not is_testing:
+                    df_prop.to_parquet(cache_path, engine="fastparquet")
             except Exception as e:
                 logger.warning(f"Failed to save J'Accueille prospects cache: {e}")
 
