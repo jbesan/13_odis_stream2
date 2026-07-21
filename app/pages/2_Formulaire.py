@@ -5,9 +5,12 @@ st.set_page_config(page_title="OD&IS", page_icon="👋", layout="wide")
 
 # --- Authentication ---
 from utils import auth
+from services import telemetry
 
 if not auth.check_password():
     st.stop()
+
+telemetry.log_page_view("Formulaire")
 
 from ui import components as ui
 from ui import forms as ui_forms
@@ -38,6 +41,8 @@ with st.sidebar:
         st.error("Logo not found")
 
     st.space("medium")
+    ui.render_admin_sidebar_link()
+
     st.text(
         "Remplissez ce formulaire afin de préciser le projet de vie de la ou des personnes accompagnées."
     )

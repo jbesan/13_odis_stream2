@@ -88,6 +88,82 @@ def log_event(
     )
 
 
+def log_usage_event(
+    event_name: str,
+    payload: Optional[dict] = None,
+    interaction_id: Optional[str] = None,
+    username: Optional[str] = None,
+    org_id: Optional[str] = None,
+):
+    """Logs a functional usage event (page view, feature click, etc.) to BigQuery usage_events table."""
+    if not os.getenv("GOOGLE_CLOUD_PROJECT") and not os.getenv("GCP_PROJECT"):
+        return
+
+    if payload is None:
+        payload = {}
+
+    try:
+        try:
+            if not username:
+                username = st.session_state.get("username", "unknown")
+            if not interaction_id:
+                interaction_id = get_interaction_id()
+            if not org_id:
+                org = st.session_state.get("org")
+                org_id = org.id if org and hasattr(org, "id") else "unknown"
+            login_session_id = st.session_state.get("login_session_id", "unknown")
+        except:
+            username = username or "unknown"
+            interaction_id = interaction_id or "unknown"
+            org_id = org_id or "unknown"
+            login_session_id = "unknown"
+
+        try:
+            paris_tz = zoneinfo.ZoneInfo("Europe/Paris")
+            timestamp_str = datetime.now(paris_tz).isoformat()
+        except:
+            timestamp_str = datetime.now().isoformat()
+
+        client = bigquery.Client()
+        table_ref = f"{client.project}.odis_logs.usage_events"
+
+        row = {
+            "interaction_id": interaction_id,
+            "login_session_id": login_session_id,
+            "timestamp": timestamp_str,
+            "username": username,
+            "org_id": org_id,
+            "event_name": event_name,
+            "payload": json.dumps(_safe_json_format(payload), default=str, ensure_ascii=False),
+        }
+
+        errors = client.insert_rows_json(table_ref, [row], timeout=15)
+        if errors:
+            logger.error(f"❌ [TELEMETRY] BQ Usage Event Insert Error: {errors}")
+    except Exception as e:
+        logger.error(f"❌ [TELEMETRY] Failed to log usage event to BQ: {str(e)}")
+
+
+def log_page_view(page_name: str):
+    """Logs page navigation event to BQ, deduplicating consecutive re-runs on the same page."""
+    try:
+        current_page = st.session_state.get("current_page")
+        if current_page != page_name:
+            previous_page = current_page
+            st.session_state["previous_page"] = previous_page
+            st.session_state["current_page"] = page_name
+
+            log_usage_event(
+                "page_view",
+                {
+                    "page": page_name,
+                    "origin": previous_page or "direct_entry",
+                },
+            )
+    except Exception as e:
+        logger.error(f"Failed to log page view: {e}")
+
+
 def _safe_json_format(obj: Any) -> Any:
     """Recursively converts sets to lists for JSON serialization."""
     if isinstance(obj, set):
@@ -105,6 +181,7 @@ def log_search_complete(
     source_flow: str = "classic",
     interaction_id: Optional[str] = None,
     username: Optional[str] = None,
+    org_id: Optional[str] = None,
 ):
     """
     Consolidated logging of a search event directly to BigQuery search_events table.
@@ -119,9 +196,13 @@ def log_search_complete(
                 interaction_id = get_interaction_id()
             if not username:
                 username = st.session_state.get("username", "unknown")
+            if not org_id:
+                org = st.session_state.get("org")
+                org_id = org.id if org and hasattr(org, "id") else "unknown"
         except:
             interaction_id = interaction_id or "unknown"
             username = username or "unknown"
+            org_id = org_id or "unknown"
 
         try:
             paris_tz = zoneinfo.ZoneInfo("Europe/Paris")
@@ -129,27 +210,29 @@ def log_search_complete(
         except:
             timestamp_str = datetime.now().isoformat()
 
+        # Compute search hash
+        search_hash = ""
+        if hasattr(config, "compute_hash"):
+            search_hash = config.compute_hash()
+        elif hasattr(search_results, "search_hash"):
+            search_hash = search_results.search_hash
+
         # 1. Prepare Criteria & Weights
         # Handle both Pydantic models and dicts
         full_config = config.model_dump() if hasattr(config, "model_dump") else config
         if not isinstance(full_config, dict):
             full_config = {}
 
-        criteria_keys = [
-            "commune_actuelle",
-            "loc_search_area",
-            "situation_famille",
-            "nb_enfants",
-            "besoin_emploi",
-            "besoin_sante",
-            "inc_services_selection",
-            "freq_retour",
-            "active_criteria",
-        ]
+        # Dynamically extract all criteria fields declared in SearchCriterias model
+        from core.models import SearchCriterias
+
+        criteria_keys = set(SearchCriterias.model_fields.keys())
         search_criteria = {
             k: full_config.get(k) for k in criteria_keys if k in full_config
         }
         weights = {k: v for k, v in full_config.items() if k.startswith("poids_")}
+
+
 
         # 2. Prepare Results Summary
         top_5_results = []
@@ -216,11 +299,12 @@ def log_search_complete(
         client = bigquery.Client()
         table_ref = f"{client.project}.odis_logs.search_events"
 
-        # Ensure sets are converted to lists BEFORE json.dumps
         row = {
             "interaction_id": interaction_id,
             "timestamp": timestamp_str,
             "username": username,
+            "org_id": org_id,
+            "search_hash": search_hash,
             "source_flow": source_flow,
             "search_criteria": json.dumps(
                 _safe_json_format(search_criteria), default=str, ensure_ascii=False
@@ -250,3 +334,4 @@ def log_search_complete(
         logger.error(
             f"❌ [TELEMETRY] Failed to log search event to BQ: {str(e)}", exc_info=True
         )
+

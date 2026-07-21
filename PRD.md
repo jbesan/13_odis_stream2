@@ -271,3 +271,24 @@ Liste en vrac d'idées d'amélioration
 ### 📊 Status
 - **July 2026**: Complete. Fully integrated, documented in postscoring architecture catalog, covered by unit and E2E test suites, and optimized to 1 API request/commune.
 
+---
+
+## 🚀 Feature [F-71]: BigQuery Telemetry & In-App Admin Analytics Dashboard
+
+### 📝 User Stories
+- En tant qu'administrateur, je veux pouvoir accéder à un tableau de bord d'analytics sécurisé au sein de l'application Streamlit afin de visualiser l'activité globale de la plateforme, le volume de recherches et les recommandations métiers sans impacter les performances utilisateurs.
+- En tant qu'architecte, je veux que la navigation et les événements d'usage clés (ex: consultation des détails du score, déclenchement d'une analyse IA) soient tracés dans BigQuery de manière dédupliquée et associés aux sessions utilisateurs.
+
+### 🔑 Key Features
+* **In-App Admin Dashboard (`pages/4_Analytics.py`)**: Page dédiée d'analyse BI comportant 3 onglets ("Activité Globale", "Résultats & Recommandations", "Profil de Recherches") avec filtres par période de date et organisation, accessible uniquement par les administrateurs whitelistés via `auth.is_admin()`.
+* **Centralized Sidebar Redirection**: Bouton d'accès `"📊 Dashboard Analytics"` intégré dans la barre latérale sous condition de rôle administrateur (`ui_comp.render_admin_sidebar_link()`).
+* **Usage Event Telemetry (`odis_logs.usage_events`)**: Enregistrement générique des événements applicatifs avec payload JSON flexible (`page_view`, `view_commune_details`, `run_ia_analysis`, `export_pdf`).
+* **Page View & Action Deduplication**: Suivi de la navigation de page avec déduplication d'état Streamlit, origin tracking, et comptage des exports PDF.
+* **Search Events Schema Enhancement (`odis_logs.search_events`)**: Enrichissement de la table de recherches avec `search_hash` (`config.compute_hash()`) et `org_id`.
+* **Advanced Analytics Visualizations**: Top 5 utilisateurs actifs, Top 15 communes consultées ("En Savoir Plus"), Radar chart Plotly des scores thématiques moyens, et analyse des profils de recherche (aires géographiques, enfants, métiers ROME, besoins de santé, profils de poids).
+* **Resilient BQ Execution**: Query engine configuré avec `create_bqstorage_client=False` pour contourner les limitations gRPC Storage API locales et assurer une lecture 100% fiable de l'historique de recherches.
+
+### 📊 Status
+- **July 2026**: Complete. Fully implemented with 3 tabs, tested with 100% green pytest baseline (218 passing tests), BQ schemas updated, and documentation synchronized.
+
+

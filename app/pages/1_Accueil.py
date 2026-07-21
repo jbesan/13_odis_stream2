@@ -15,8 +15,13 @@ if "search_results" in st.session_state:
 
 # --- Authentication ---
 
+from services import telemetry
+from ui import components as ui_comp
+
 if not auth.check_password():
     st.stop()
+
+telemetry.log_page_view("Accueil")
 
 logging.info(f"--- App re-run at {time.ctime(time.time())} ---")
 
@@ -41,6 +46,9 @@ with st.sidebar:
                     f'<img src="data:image/png;base64,{logo_b64}" width="150" style="margin-bottom: 20px;">',
                     unsafe_allow_html=True,
                 )
+
+    ui_comp.render_admin_sidebar_link()
+
 
 
 # --- CSS / Styling (V3 Global Green) ---
@@ -279,6 +287,10 @@ else:
                                 "response": result_data.response,
                                 "criteria": result_data.search_criteria,
                             }
+                            telemetry.log_usage_event(
+                                "auto_detect_criteria",
+                                {"text_length": len(text_input)},
+                            )
                         except Exception as e:
                             st.error(f"Une erreur est survenue lors de l'analyse : {e}")
 

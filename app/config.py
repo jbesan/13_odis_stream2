@@ -228,7 +228,30 @@ OIDC_ALLOWED_DOMAINS = {
     "groupe-sos.org",
     "fondationcos.org",
 }
-OIDC_ALLOWED_EMAILS = {"jbesancon@gmail.com"}
+
+def _parse_env_set(env_var: str, default: set = None) -> set:
+    val = os.environ.get(env_var)
+    if val:
+        return {item.strip() for item in val.split(",") if item.strip()}
+    return default if default is not None else set()
+
+def _parse_env_dict(env_var: str, default: dict = None) -> dict:
+    val = os.environ.get(env_var)
+    if val:
+        try:
+            import json
+            return json.loads(val)
+        except Exception:
+            res = {}
+            for item in val.split(","):
+                if ":" in item:
+                    k, v = item.split(":", 1)
+                    res[k.strip()] = v.strip()
+            return res
+    return default if default is not None else {}
+
+# Configurable via OIDC_ALLOWED_EMAILS env var (comma-separated)
+OIDC_ALLOWED_EMAILS = _parse_env_set("OIDC_ALLOWED_EMAILS")
 
 OIDC_DOMAIN_ORG_MAPPING = {
     "jaccueille.fr": "jaccueille",
@@ -237,9 +260,12 @@ OIDC_DOMAIN_ORG_MAPPING = {
     "fondationcos.org": "agir33",
 }
 
-OIDC_EMAIL_ORG_MAPPING = {
-    "jbesancon@gmail.com": "jaccueille",
-}
+# Configurable via OIDC_EMAIL_ORG_MAPPING env var (JSON or email1:org1,email2:org2)
+OIDC_EMAIL_ORG_MAPPING = _parse_env_dict("OIDC_EMAIL_ORG_MAPPING")
+
+# --- Admins Allowlist ---
+# Configurable via ADMIN_USERS env var (comma-separated)
+ADMIN_USERS = _parse_env_set("ADMIN_USERS", default={"jacques-local"})
 
 
 # --- Inclusion Defaults ---
@@ -303,7 +329,7 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
 
 DEMO_SCENARIOS = {
     "1": {
-        "nom": "Zacharie",
+        "nom": "Profil 1 - Jeune actif",
         "departement_actuel": "33",
         "commune_actuelle": "Bordeaux",
         "loc_search_area": "departement",
@@ -311,10 +337,10 @@ DEMO_SCENARIOS = {
         "nb_adultes": 1,
         "nb_enfants": 0,
         "weight_profile": "Équilibré",
-        "notes_qualitatives": "Zacharie est un jeune homme dynamique.",
+        "notes_qualitatives": "Jeune actif à la recherche d'une solution de cohabitation solidaire.",
     },
     "2": {
-        "nom": "Olga & Dimitri",
+        "nom": "Profil 2 - Famille",
         "departement_actuel": "75",
         "commune_actuelle": "Paris",
         "loc_search_area": "region",
@@ -329,7 +355,7 @@ DEMO_SCENARIOS = {
         "besoin_sante": ["Maternité"],
         "poids_mobilite": 0.0,
         "weight_profile": "Équilibré",
-        "notes_qualitatives": "Olga et Dimitri cherchent un environnement calme pour leurs enfants.",
+        "notes_qualitatives": "Famille recherchant un environnement adapté avec écoles et équipements de santé.",
     },
     "3": {
         "nb_adultes": 1,
@@ -348,7 +374,7 @@ DEMO_SCENARIOS = {
         "inc_services_selection": DEFAULT_INC_SERVICES_CORE
         + ["lecture-ecriture-calcul--maitriser-le-francais"],
         "inc_asso_add_selection": ["006030"],
-        "notes_qualitatives": "Aïcha souhaite passer son permis et cherche une boucherie Hallal à proximité",
+        "notes_qualitatives": "Famille monoparentale recherchant des services de mobilité et d'accompagnement.",
     },
     "agir": {
         "nb_adultes": 1,
@@ -374,7 +400,7 @@ DEMO_SCENARIOS = {
         "poids_sante": 0.25,
         "poids_mobilite": 0.25,
         "besoin_sante": ["Soutien Psychologique", "Addictologie"],
-        "notes_qualitatives": "Proximité d'une Mosquée et de la mer",
+        "notes_qualitatives": "Recherche un logement et un emploi dans un cadre adapté.",
         "target_population": 20000,
         "target_population_sigma": 10000,
     },
@@ -402,7 +428,7 @@ DEMO_SCENARIOS = {
         "poids_sante": 0.25,
         "poids_mobilite": 0.25,
         "besoin_sante": ["Soutien Psychologique", "Addictologie"],
-        "notes_qualitatives": "Peuvent se déplacer à vélo. Aiment les balades en montagne.",
+        "notes_qualitatives": "Accompagnement mobilité vers logement social et emploi.",
         "target_population": 20000,
         "target_population_sigma": 10000,
     },

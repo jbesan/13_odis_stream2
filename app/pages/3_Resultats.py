@@ -35,9 +35,13 @@ st.markdown(
 
 # --- Authentication ---
 from utils import auth
+from services import telemetry
 
 if not auth.check_password():
     st.stop()
+
+telemetry.log_page_view("Resultats")
+
 
 # --- Session State Initialization ---
 if "highlighted_result" not in st.session_state:
@@ -248,6 +252,10 @@ with st.sidebar:
 
     # --- Bouton Feedback ---
     feedback.render_feedback_button()
+
+    # --- Dashboard Admin Analytics ---
+    ui.render_admin_sidebar_link()
+
 
     # --- Export to PDF ---
     if st.session_state.get("search_results") is not None:
@@ -481,7 +489,7 @@ with col_map:
                 zoom=st.session_state.get("zoom"),
                 feature_group_to_add=fg_dynamic,
                 key="odis_main_map",
-                use_container_width=True,
+                width="content",
                 returned_objects=[],
             )
         except Exception as e:
