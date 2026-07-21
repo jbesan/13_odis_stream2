@@ -320,6 +320,7 @@ def launch_background_inclusion_enrichment(
 
                     struct_obj = service.get("structure") or {}
                     nom_structure = struct_obj.get("nom") or service.get("nom_structure") or ""
+                    presentation_structure = struct_obj.get("presentation_resumee") or struct_obj.get("presentation_detail") or ""
 
                     # Deduplication key: same structure offering same service type
                     dedup_key = (structure_id, nom.strip().lower())
@@ -369,6 +370,7 @@ def launch_background_inclusion_enrichment(
                                 "name": nom,
                                 "nom_structure": nom_structure,
                                 "structure_id": structure_id,
+                                "presentation_structure": presentation_structure,
                                 "description": desc,
                                 "lien_source": lien_source,
                                 "source": source,

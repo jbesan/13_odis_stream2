@@ -293,12 +293,16 @@ def polling_inclusion_services_fragment(commune: CommuneResult, h: Optional[str]
                 if struct_key not in struct_map:
                     struct_map[struct_key] = {
                         "nom": srv.nom_structure.title() or srv.name.title(),
+                        "presentation_structure": getattr(srv, "presentation_structure", None) or "",
                         "lien_source": srv.lien_source,
-                        "service_names": [],
+                        "services": [],
                     }
                 svc_label = srv.name
-                if svc_label and svc_label not in struct_map[struct_key]["service_names"]:
-                    struct_map[struct_key]["service_names"].append(svc_label.capitalize())
+                if svc_label and not any(s["name"] == svc_label.capitalize() for s in struct_map[struct_key]["services"]):
+                    struct_map[struct_key]["services"].append({
+                        "name": svc_label.capitalize(),
+                        "description": srv.description or ""
+                    })
 
             if not struct_map:
                 continue  # all structures for this thematique already shown elsewhere
@@ -310,21 +314,28 @@ def polling_inclusion_services_fragment(commune: CommuneResult, h: Optional[str]
                 f"{thematique} ({len(struct_map)})", expanded=False
             ):
                 for struct_data in sorted(struct_map.values(), key=lambda s: s["nom"]):
+                    struct_name = struct_data["nom"]
+                    presentation = struct_data["presentation_structure"]
                     url_part = (
                         f" [↗ Fiche]({struct_data['lien_source']})"
-                        if struct_data["lien_source"]
+                        if struct_data['lien_source']
                         else ""
                     )
-                    svc_names = struct_data["service_names"]
-                    svc_subtitle = (
-                        f"  \n  <small><i>{', '.join(svc_names)}</i></small>"
-                        if svc_names
-                        else ""
-                    )
-                    st.markdown(
-                        f"• **{struct_data['nom']}**{url_part}{svc_subtitle}",
-                        unsafe_allow_html=True,
-                    )
+
+                    # 1. Display structure with help tooltip if presentation is available
+                    if presentation:
+                        st.markdown(f"• **{struct_name}** {url_part}", help=presentation)
+                    else:
+                        st.markdown(f"• **{struct_name}** {url_part}")
+
+                    # 2. Display services as nested items with help tooltips
+                    for svc in struct_data["services"]:
+                        name = svc["name"]
+                        desc = svc["description"]
+                        if desc:
+                            st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;└ {name}", help=desc)
+                        else:
+                            st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;└ {name}")
     else:
         services_grouped = inc_data.services_grouped
         if services_grouped:

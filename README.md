@@ -97,7 +97,7 @@ Ce prototype a un triple objectif :
 
 L'application intègre une gestion d'utilisateurs et de profils d'organisations partenaires (ex. *J'Accueille*, *EMILE*).
 
-* **Développement local (Bypass) :** Par défaut, l'authentification est désactivée en local pour simplifier le développement (un utilisateur `local-dev` de l'organisation `local` est injecté).
+* **Développement local (Bypass) :** Par défaut, l'authentification est désactivée en local pour simplifier le développement (un utilisateur `jacques-local` de l'organisation `jaccueille` est injecté).
 * **Forcer l'authentification en local :** Pour tester la mire de connexion en local, lancez l'application avec la variable d'environnement `ODIS_FORCE_AUTH` :
   ```bash
   ODIS_FORCE_AUTH=True streamlit run app/1_Accueil.py

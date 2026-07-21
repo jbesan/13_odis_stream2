@@ -36,8 +36,8 @@ def test_check_password_local_dev_autologin():
             assert "org" in mock_session
             assert isinstance(mock_session["user"], User)
             assert isinstance(mock_session["org"], Org)
-            assert mock_session["user"].username == "local-dev"
-            assert mock_session["org"].id == "local"
+            assert mock_session["user"].username == "jacques-local"
+            assert mock_session["org"].id == "jaccueille"
 
 
 def test_check_password_local_dev_forced_auth():
