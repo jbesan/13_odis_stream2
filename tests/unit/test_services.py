@@ -150,9 +150,12 @@ def test_log_search_complete(mock_client_class):
             assert criteria_loaded["commune_actuelle"]["code"] == "33063"
 
 
-def test_is_admin_check():
+def test_is_admin_check(monkeypatch):
     """Test admin check helper."""
+    import config as cfg
     from utils import auth
+
+    monkeypatch.setattr(cfg, "ADMIN_USERS", {"jbesancon@gmail.com", "jacques-local"})
     assert auth.is_admin("jbesancon@gmail.com") is True
     assert auth.is_admin("jacques-local") is True
     assert auth.is_admin("random_user") is False

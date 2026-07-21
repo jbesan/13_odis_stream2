@@ -1,6 +1,6 @@
-import warnings
 import os
-from typing import List, Dict, Any
+import warnings
+from typing import Any, Dict, List, Optional, Set
 from core.models import Org
 
 # Suppress annoying warnings from third-party libraries (especially in Python 3.14+)
@@ -220,52 +220,37 @@ DETAIL_MAP_ZOOM = 11
 MAX_MAP_POLYGONS = 5000
 PROJECTED_CRS = "EPSG:2154"  # RGF93 / Lambert-93, suitable for metropolitan France
 
-# --- Auth ---
-# Note: ALLOWED_AUTH_DOMAINS is now managed in .streamlit/secrets.toml
-OIDC_ALLOWED_DOMAINS = {
-    "jaccueille.fr",
-    "lahso.org",
-    "groupe-sos.org",
-    "fondationcos.org",
-}
+def _get_auth_secret(key: str, default: Any) -> Any:
+    """Read an auth configuration value from st.secrets, with a safe fallback.
 
-def _parse_env_set(env_var: str, default: set = None) -> set:
-    val = os.environ.get(env_var)
-    if val:
-        return {item.strip() for item in val.split(",") if item.strip()}
-    return default if default is not None else set()
+    Reads from the [auth] section or top-level of .streamlit/secrets.toml.
+    Falls back to `default` when Streamlit is not running (e.g. during tests or pipeline runs).
 
-def _parse_env_dict(env_var: str, default: dict = None) -> dict:
-    val = os.environ.get(env_var)
-    if val:
-        try:
-            import json
-            return json.loads(val)
-        except Exception:
-            res = {}
-            for item in val.split(","):
-                if ":" in item:
-                    k, v = item.split(":", 1)
-                    res[k.strip()] = v.strip()
-            return res
-    return default if default is not None else {}
+    Args:
+        key: The key within the secrets configuration.
+        default: The fallback value if the secret is unavailable.
 
-# Configurable via OIDC_ALLOWED_EMAILS env var (comma-separated)
-OIDC_ALLOWED_EMAILS = _parse_env_set("OIDC_ALLOWED_EMAILS")
+    Returns:
+        The secret value, or `default` if Streamlit secrets are inaccessible.
+    """
+    try:
+        import streamlit as st
 
-OIDC_DOMAIN_ORG_MAPPING = {
-    "jaccueille.fr": "jaccueille",
-    "lahso.org": "emile_aura",
-    "groupe-sos.org": "agir33",
-    "fondationcos.org": "agir33",
-}
+        if key in st.secrets:
+            return st.secrets[key]
+        return st.secrets.get("auth", {}).get(key, default)
+    except Exception:
+        return default
 
-# Configurable via OIDC_EMAIL_ORG_MAPPING env var (JSON or email1:org1,email2:org2)
-OIDC_EMAIL_ORG_MAPPING = _parse_env_dict("OIDC_EMAIL_ORG_MAPPING")
+
+# Read from .streamlit/secrets.toml
+OIDC_ALLOWED_DOMAINS: Set[str] = set(_get_auth_secret("allowed_domains", []))
+OIDC_ALLOWED_EMAILS: Set[str] = set(_get_auth_secret("allowed_emails", []))
+OIDC_DOMAIN_ORG_MAPPING: Dict[str, str] = dict(_get_auth_secret("domain_org_mapping", {}))
+OIDC_EMAIL_ORG_MAPPING: Dict[str, str] = dict(_get_auth_secret("email_org_mapping", {}))
 
 # --- Admins Allowlist ---
-# Configurable via ADMIN_USERS env var (comma-separated)
-ADMIN_USERS = _parse_env_set("ADMIN_USERS", default={"jacques-local"})
+ADMIN_USERS: Set[str] = set(_get_auth_secret("admin_users", ["jacques-local"]))
 
 
 # --- Inclusion Defaults ---
