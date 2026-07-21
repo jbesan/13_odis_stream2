@@ -614,7 +614,8 @@ class ScoringEngine:
 
         if "Chez l'habitant" in heb_sel:
             active.add("heb_asso_habitant_scaled")
-            active.add("heb_jaccueille_score")
+            active.add("heb_jaccueille_accueillants_score")
+            active.add("heb_jaccueille_prospects_score")
             active.add("log_occup_scaled")
 
         # Rent scaling activation (if Location or IML)

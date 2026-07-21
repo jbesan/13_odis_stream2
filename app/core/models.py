@@ -326,7 +326,7 @@ class SearchCriterias(BaseModel):
     # Organization Specific Boosts (F-54 Expansion)
     org_boosts: Dict[str, float] = Field(
         default_factory=dict,
-        description="Multiplier boosts for specific criteria (e.g. {'heb_jaccueille_score': 3.0})",
+        description="Multiplier boosts for specific criteria (e.g. {'heb_jaccueille_accueillants_score': 3.0})",
         json_schema_extra={"odis_visibility": ["agent_refiner", "pdf_report"]},
     )
 

@@ -119,6 +119,46 @@ class TestFilterCommunes:
 
 @pytest.mark.unit
 class TestScoringLogic:
+    def test_jaccueille_prospects_scoring_activation(
+        self,
+        sample_data,
+        default_config,
+        sample_incl_index,
+        live_scores_cat,
+        global_stats,
+    ):
+        """Tests that heb_jaccueille_prospects_score is activated and computed correctly."""
+        from core.scoring import ScoringEngine
+        from app.core.models import SearchCriterias
+        import geopandas as gpd
+        
+        # When hebergement_cible contains "Chez l'habitant"
+        config = SearchCriterias(
+            hebergement_cible=["Chez l'habitant"],
+        )
+        
+        engine = ScoringEngine(
+            df_all_communes=sample_data,
+            df_bv_geo=gpd.GeoDataFrame(),
+            scores_cat=live_scores_cat,
+            incl_index=sample_incl_index,
+            associations_data=pd.DataFrame(columns=["codgeo", "id_waldec", "count"]),
+            formations_data=pd.DataFrame(columns=["codgeo", "formation_code"]),
+            codformations_index=pd.DataFrame(columns=["label"]),
+            global_stats=global_stats,
+        )
+        
+        active = engine._get_active_criteria(config)
+        assert "heb_jaccueille_accueillants_score" in active
+        assert "heb_jaccueille_prospects_score" in active
+        
+        # When hebergement_cible does not contain "Chez l'habitant"
+        config_no_habitant = SearchCriterias(
+            hebergement_cible=["Location"],
+        )
+        active_no_habitant = engine._get_active_criteria(config_no_habitant)
+        assert "heb_jaccueille_accueillants_score" not in active_no_habitant
+        assert "heb_jaccueille_prospects_score" not in active_no_habitant
     def test_compute_criteria_scores_structure(
         self,
         sample_data,

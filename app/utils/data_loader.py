@@ -396,9 +396,12 @@ def _fetch_jaccueille_data_bq_logic() -> pd.DataFrame:
     cache_path = os.path.join(cache_dir, "jaccueille_hosts_cache.parquet")
     ttl_seconds = 30 * 24 * 3600  # 30 days (1 month)
 
-    # 1. Try to load from persistent local cache
+    import sys
+    is_testing = "pytest" in sys.modules or "unittest" in sys.modules
+
+    # 1. Try to load from persistent local cache (disabled in tests)
     try:
-        if os.path.exists(cache_path):
+        if os.path.exists(cache_path) and not is_testing:
             mtime = os.path.getmtime(cache_path)
             if (time.time() - mtime) < ttl_seconds:
                 # logger.info("📂 [J'ACCUEILLE] Loading host counts from local cache...")
@@ -418,7 +421,7 @@ def _fetch_jaccueille_data_bq_logic() -> pd.DataFrame:
         df_jacc = client.query(query).to_dataframe(create_bqstorage_client=True)
 
         # Save to local cache for future use
-        if not df_jacc.empty:
+        if not df_jacc.empty and not is_testing:
             try:
                 os.makedirs(os.path.dirname(cache_path), exist_ok=True)
                 df_jacc.to_parquet(cache_path, engine="fastparquet")
@@ -463,9 +466,12 @@ def _fetch_jaccueille_prospects_bq_logic() -> pd.DataFrame:
     cache_path = os.path.join(cache_dir, "jaccueille_prospects_cache.parquet")
     ttl_seconds = 30 * 24 * 3600  # 30 days (1 month)
 
-    # 1. Try to load from persistent local cache
+    import sys
+    is_testing = "pytest" in sys.modules or "unittest" in sys.modules
+
+    # 1. Try to load from persistent local cache (disabled in tests)
     try:
-        if os.path.exists(cache_path):
+        if os.path.exists(cache_path) and not is_testing:
             mtime = os.path.getmtime(cache_path)
             if (time.time() - mtime) < ttl_seconds:
                 return pd.read_parquet(cache_path, engine="fastparquet")
@@ -484,7 +490,7 @@ def _fetch_jaccueille_prospects_bq_logic() -> pd.DataFrame:
         df_prop = client.query(query).to_dataframe(create_bqstorage_client=True)
 
         # Save to local cache for future use
-        if not df_prop.empty:
+        if not df_prop.empty and not is_testing:
             try:
                 os.makedirs(os.path.dirname(cache_path), exist_ok=True)
                 df_prop.to_parquet(cache_path, engine="fastparquet")
@@ -913,9 +919,12 @@ def load_all_data_raw() -> Dict[str, Any]:
             bv_geo = bv_geo.merge(df_jacc_prosp, on="bassin_de_vie", how="left")
         bv_geo["heb_accueillants_count"] = bv_geo.get("heb_accueillants_count", pd.Series(0.0, index=bv_geo.index)).fillna(0)
         bv_geo["prospects_count"] = bv_geo.get("prospects_count", pd.Series(0.0, index=bv_geo.index)).fillna(0)
-        # Re-calculate heb_jaccueille_score dynamically
-        bv_geo["heb_jaccueille_score"] = (
+        # Re-calculate J'Accueille scores dynamically
+        bv_geo["heb_jaccueille_accueillants_score"] = (
             bv_geo["heb_accueillants_count"] > 0
+        ).astype(float)
+        bv_geo["heb_jaccueille_prospects_score"] = (
+            bv_geo["prospects_count"] > 0
         ).astype(float)
         bv_geo = bv_geo.set_index("bassin_de_vie")
 
@@ -930,7 +939,10 @@ def load_all_data_raw() -> Dict[str, Any]:
             odis = odis.merge(df_jacc_prosp, on="bassin_de_vie", how="left")
         odis["heb_accueillants_count"] = odis.get("heb_accueillants_count", pd.Series(0.0, index=odis.index)).fillna(0)
         odis["prospects_count"] = odis.get("prospects_count", pd.Series(0.0, index=odis.index)).fillna(0)
-        odis["heb_jaccueille_score"] = (odis["heb_accueillants_count"] > 0).astype(
+        odis["heb_jaccueille_accueillants_score"] = (odis["heb_accueillants_count"] > 0).astype(
+            float
+        )
+        odis["heb_jaccueille_prospects_score"] = (odis["prospects_count"] > 0).astype(
             float
         )
         odis = odis.set_index("codgeo")

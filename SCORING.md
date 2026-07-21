@@ -138,7 +138,8 @@ Voici l'intégralité des 47 critères configurés dans le moteur de scoring OD&
 | **Centres d'Hébergement**     | Pre-scoring | 2.0   | Non      | 0.5       | Capacité en CHRS / CPH.                         |
 | **Foyers & Pensions**         | Pre-scoring | 2.0   | Non      | 0.5       | Densité FJT, Pensions de famille, Migrants.     |
 | **Hébergement Citoyen**       | Pre-scoring | 2.0   | Non      | 0.8       | Associations d'accueil chez l'habitant.         |
-| **Accueils J'Accueille**      | Pre-scoring | 3.0   | Non      | 1.0       | Présence active d'accueillants (Bassin de Vie). |
+| **Accueillants J'Accueille**  | Pre-scoring | 3.0   | Non      | 1.0       | Présence active d'accueillants (Bassin de Vie). |
+| **Prospects J'Accueille**     | Pre-scoring | 2.0   | Non      | 1.0       | Présence active de prospects (Bassin de Vie).   |
 
 ### 💼 Emploi & Formation
 

@@ -989,7 +989,8 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
             criteria_weights["heb_foyers_scaled"] = 3.0
         if "Chez l'habitant" in heb_sel:
             criteria_weights["heb_asso_habitant_scaled"] = 3.0
-            criteria_weights["heb_jaccueille_score"] = 3.0
+            criteria_weights["heb_jaccueille_accueillants_score"] = 3.0
+            criteria_weights["heb_jaccueille_prospects_score"] = 3.0
             criteria_weights["log_occup_scaled"] = 3.0
 
     if st.session_state.get("ui_priority_logement", False):
