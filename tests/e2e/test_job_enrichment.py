@@ -181,12 +181,12 @@ def test_background_jobs_enrichment_success(mock_curator_run, mock_search):
         "Maitrise du français",
     ]
 
-    # Assert correct parameters were sent: sort=2, distance=20, range_end=9 (10 jobs limit)
+    # Assert correct parameters were sent: sort=2, distance=10, range_end=9 (10 jobs limit)
     mock_search.assert_any_call(
-        rome="M1805", location="33063", distance=20, sort=2, range_start=0, range_end=9
+        rome="M1805", location="33063", distance=10, sort=2, range_start=0, range_end=9, rome_label="Développement informatique"
     )
     mock_search.assert_any_call(
-        rome="A1201", location="33063", distance=20, sort=2, range_start=0, range_end=9
+        rome="A1201", location="33063", distance=10, sort=2, range_start=0, range_end=9, rome_label="Boulangerie"
     )
 
 

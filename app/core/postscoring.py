@@ -624,14 +624,15 @@ def launch_background_job_curation(
                     rome_label = rome_entry["label"]
 
                     try:
-                        # sort=2 (distance ascending), distance=20 (radius in km)
+                        # sort=2 (distance ascending), distance=10 (radius in km)
                         res = _search_job_offers_logic(
                             rome=rome,
                             location=cg,
-                            distance=20,
+                            distance=10,
                             sort=2,
                             range_start=0,
                             range_end=9,
+                            rome_label=rome_label,
                         )
                         offres = res.get("offres", [])[:10]
                         api_total_count += res.get("total", 0)

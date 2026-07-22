@@ -116,6 +116,7 @@ def _search_job_offers_logic(
     range_end: int = 19,
     rome_code: Optional[str] = None,  # Alias 1
     rome_codes: Optional[str] = None,  # Alias 2
+    rome_label: Optional[str] = None,  # ROME label fallback
 ) -> Dict[str, Any]:
     """Publicly exported logic for searching job offers."""
 
@@ -172,9 +173,13 @@ def _search_job_offers_logic(
 
     if location:
         params["commune"] = location
-        params["distance"] = distance
+        params["distance"] = distance if (distance is not None and distance != "") else 10
 
-    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+        "Range": f"offres={range_start}-{range_end}",
+    }
 
     logger.debug(
         f"👉 [FranceTravail] API Call: {BASE_URL}/offres/search | Params: {params}"
@@ -183,13 +188,28 @@ def _search_job_offers_logic(
         f"{BASE_URL}/offres/search", params=params, headers=headers, timeout=10
     )
 
+    # Simple & Direct Fallback: If codeROME returns HTTP 500 from FT server, retry with motsCles (rome_label)
+    if response.status_code == 500 and "codeROME" in params:
+        label_to_use = rome_label or query
+        if label_to_use:
+            logger.info(
+                f"🔄 [FranceTravail] FT 500 on codeROME '{rome}'. Retrying with motsCles='{label_to_use}'."
+            )
+            fallback_params = dict(params)
+            fallback_params.pop("codeROME", None)
+            fallback_params["motsCles"] = label_to_use
+            response = requests.get(
+                f"{BASE_URL}/offres/search", params=fallback_params, headers=headers, timeout=10
+            )
+
     if response.status_code == 204:
         return {"offres": [], "total": 0}
 
     if response.status_code not in [200, 206]:
-        logger.error(
-            f"❌ [FranceTravail] Search Error: {response.status_code} - {response.text}"
+        logger.warning(
+            f"⚠️ [FranceTravail] Search Error: {response.status_code} - {response.text[:200]}"
         )
+        return {"offres": [], "total": 0}
 
     response.raise_for_status()
     # data = response.json()
