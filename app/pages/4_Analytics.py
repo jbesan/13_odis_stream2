@@ -67,8 +67,9 @@ if client is None:
 
 dataset_id = "odis_logs"
 
-# --- Date Filters ---
-col_filter1, col_filter2 = st.columns([1, 2])
+# --- Date & Action Filters ---
+col_filter1, col_filter2, col_filter3 = st.columns([2, 3, 1])
+
 with col_filter1:
     period_days = st.selectbox(
         "Période d'analyse",
@@ -77,10 +78,17 @@ with col_filter1:
         format_func=lambda x: f"Derniers {x} jours",
     )
 
+with col_filter3:
+    st.write("")  # Vertical spacing for alignment with selectbox
+    st.write("")
+    if st.button("🔄 Rafraîchir", help="Forcer le rafraîchissement des données depuis BigQuery"):
+        st.cache_data.clear()
+        st.rerun()
 
-# Fetch data cached functions
-@st.cache_data(ttl=60)
-def fetch_analytics_data(days: int):
+
+# Fetch data cached functions (invalidates automatically when `days` or `_client.project` change)
+@st.cache_data
+def fetch_analytics_data(_client, days: int):
     query_searches = f"""
         SELECT 
             interaction_id,
@@ -93,7 +101,7 @@ def fetch_analytics_data(days: int):
             weights,
             top_results,
             detailed_breakdown
-        FROM `{client.project}.{dataset_id}.search_events`
+        FROM `{_client.project}.{dataset_id}.search_events`
         WHERE TIMESTAMP(timestamp) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {days} DAY)
         ORDER BY timestamp DESC
     """
@@ -107,19 +115,19 @@ def fetch_analytics_data(days: int):
             IFNULL(org_id, 'défaut') AS org_id,
             event_name,
             payload
-        FROM `{client.project}.{dataset_id}.usage_events`
+        FROM `{_client.project}.{dataset_id}.usage_events`
         WHERE TIMESTAMP(timestamp) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {days} DAY)
         ORDER BY timestamp DESC
     """
 
     try:
-        df_searches = client.query(query_searches).to_dataframe(create_bqstorage_client=False)
+        df_searches = _client.query(query_searches).to_dataframe(create_bqstorage_client=False)
     except Exception as e:
         logger.warning(f"Failed to query search_events: {e}")
         df_searches = pd.DataFrame()
 
     try:
-        df_usage = client.query(query_usage).to_dataframe(create_bqstorage_client=False)
+        df_usage = _client.query(query_usage).to_dataframe(create_bqstorage_client=False)
     except Exception as e:
         logger.warning(f"Failed to query usage_events: {e}")
         df_usage = pd.DataFrame()
@@ -128,7 +136,7 @@ def fetch_analytics_data(days: int):
 
 
 with st.spinner("Chargement des données BigQuery..."):
-    df_searches, df_usage = fetch_analytics_data(period_days)
+    df_searches, df_usage = fetch_analytics_data(client, period_days)
 
 # Filter by Org if data exists
 all_orgs = sorted(
