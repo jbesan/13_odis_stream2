@@ -54,8 +54,8 @@ def show_sources_dialog():
     st.markdown(
         f"""
         <div style="background-color: #f8f9fa; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; border: 1px solid #e9ecef;">
-            <span style="font-weight: 600; color: #212529;">📦 Version du Manifest :</span> <code>{manifest_version}</code><br/>
-            <span style="color: #6c757d; font-size: 0.85rem;">Dernière compilation du pipeline : {created_at} | <strong>{len(sources)}</strong> sources référencées</span>
+            <span style="font-weight: 600; color: #212529;">📦 Version du jeu de données :</span> <code>{manifest_version}</code><br/>
+            <span style="color: #6c757d; font-size: 0.85rem;">Dernière compilation des jeu de données : {created_at} | <strong>{len(sources)}</strong> sources référencées</span>
         </div>
         """,
         unsafe_allow_html=True,
@@ -69,11 +69,13 @@ def show_sources_dialog():
         doc_url = s.get("doc_url")
         link_markdown = f"[Consulter]({doc_url})" if doc_url else "-"
 
+        annee_ref = str(s.get("annee_reference")) if s.get("annee_reference") else "-"
+
         table_rows.append(
             {
                 "Source": s.get("name") or s.get("source_key"),
                 "Méthode": s.get("method") or "Open Data",
-                "Année réf.": s.get("annee_reference") or "-",
+                "Année réf.": annee_ref,
                 "Dernière maj.": format_iso_date(s.get("last_updated")),
                 "Volumétrie": formatted_rows,
                 "Documentation": link_markdown,
@@ -81,6 +83,8 @@ def show_sources_dialog():
         )
 
     df = pd.DataFrame(table_rows)
+    df = df.astype(str)
+
 
     st.dataframe(
         df,
@@ -88,7 +92,7 @@ def show_sources_dialog():
             "Documentation": st.column_config.LinkColumn("Documentation", display_text="Consulter"),
             "Volumétrie": st.column_config.TextColumn("Volumétrie"),
         },
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 

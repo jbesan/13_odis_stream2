@@ -500,19 +500,29 @@ def render_mobility_form() -> None:
     )
 
     if has_pressentie:
-        # Get top 100 communes by population
-        odis_df = app_data["odis"]
-        top_100 = (
-            odis_df.dropna(subset=["population", "libgeo"])
-            .sort_values(by="population", ascending=False)
-            .head(1000)
-        )
-        communes_list = []
-        for codgeo, row in top_100.iterrows():
-            dep = row.get("dep_code", "")
-            label = f"{row['libgeo']} ({dep})"
-            communes_list.append((str(codgeo), label))
-        communes_list.sort(key=lambda x: x[1])
+        # Get top 100 communes by population or fallback to depcom_df
+        odis_df = app_data.get("odis", pd.DataFrame())
+        if not odis_df.empty and "population" in odis_df.columns:
+            top_100 = (
+                odis_df.dropna(subset=["population", "libgeo"])
+                .sort_values(by="population", ascending=False)
+                .head(1000)
+            )
+            communes_list = []
+            for codgeo, row in top_100.iterrows():
+                dep = row.get("dep_code", "")
+                label = f"{row['libgeo']} ({dep})"
+                communes_list.append((str(codgeo), label))
+            communes_list.sort(key=lambda x: x[1])
+        else:
+            depcom = app_data.get("depcom_df", pd.DataFrame())
+            communes_list = []
+            if not depcom.empty:
+                for codgeo, row in depcom.iterrows():
+                    dep = row.get("dep_code", "")
+                    label = f"{row['libgeo']} ({dep})"
+                    communes_list.append((str(codgeo), label))
+                communes_list.sort(key=lambda x: x[1])
 
         # Default value index
         current_val = st.session_state.get("ui_commune_pressentie")
@@ -554,7 +564,7 @@ def render_org_profile_form() -> None:
     # st.divider()
 
     # --- Strategic Locations Multi-select ---
-    app_data = get_app_data()
+    app_data = get_app_data(load_heavy=False)
     zone_type = org.zone_type
 
     if zone_type == "departement":
@@ -567,11 +577,8 @@ def render_org_profile_form() -> None:
     else:
         # Bassin de vie
         label = "Bassins de vie"
-        odis = app_data["odis"]
-        options = sorted(odis["bassin_de_vie"].unique().tolist())
-        bv_names = (
-            odis.groupby("bassin_de_vie")["libelle_bassin_de_vie"].first().to_dict()
-        )
+        bv_names = app_data.get("bv_names", {})
+        options = sorted(list(bv_names.keys()))
 
         def format_func(x):
             return f"{x} - {bv_names.get(x, x)}"
@@ -860,10 +867,12 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
         "ui_commune_pressentie"
     ):
         p_code = st.session_state.get("ui_commune_pressentie")
+        commune_names = app_data.get("commune_names", {})
+        odis = app_data.get("odis", pd.DataFrame())
         p_lib = (
-            app_data["odis"].loc[p_code, "libgeo"]
-            if p_code in app_data["odis"].index
-            else p_code
+            odis.loc[p_code, "libgeo"]
+            if not odis.empty and p_code in odis.index
+            else commune_names.get(p_code, p_code)
         )
         commune_pressentie = CriteriaItem(code=str(p_code), label=str(p_lib))
 

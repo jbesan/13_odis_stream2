@@ -93,7 +93,7 @@ sources:
     odace_table: "dim_association"
     format: "parquet"
     local_name: "associations.parquet"
-    ttl_days: 90
+    ttl_days: 365
     description: "RNA agrégé (Associations)"
     used_columns:
       - adrs_codeinsee

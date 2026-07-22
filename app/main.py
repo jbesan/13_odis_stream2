@@ -1,5 +1,6 @@
 import streamlit as st
 import logfire
+import utils.logger  # Ensures logfire.configure() is executed before any spans are created
 from utils import data_loader
 
 # --- Page Configuration (Standard ODIS) ---

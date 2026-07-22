@@ -8,6 +8,7 @@ import numpy as np
 import json
 import time
 from pathlib import Path
+import re
 from typing import Dict, Any, Optional
 from google import genai
 from google.cloud import bigquery
@@ -1528,25 +1529,30 @@ def clean_electoral_history(config: Dict[str, Any], logger: PipelineLogger):
 
     cols = ["id_election", "code_commune", "nuance", "libelle_abrege_liste", "nom", "voix"]
     
-    # Pre-determined major elections list for PyArrow filter to avoid loading 3.4GB+
-    allowed_elections = [
-        "2026_muni_t2", "2026_muni_t1",
-        "2024_legi_t2", "2024_legi_t1", "2024_euro_t1",
-        "2022_pres_t2", "2022_pres_t1", "2022_legi_t2", "2022_legi_t1",
-        "2020_muni_t2", "2020_muni_t1", "2019_euro_t1",
-        "2017_pres_t2", "2017_pres_t1", "2017_legi_t2", "2017_legi_t1",
-        "2014_euro_t1", "2014_muni_t2", "2014_muni_t1",
-        "2012_pres_t2", "2012_pres_t1", "2012_legi_t2", "2012_legi_t1"
-    ]
-    
-    # Load and filter at pyarrow level
-    df = pd.read_parquet(
-        path,
-        columns=cols,
-        filters=[("id_election", "in", allowed_elections)],
-        engine="pyarrow"
-    )
+    # Filter elections dynamically for Municipales and Présidentielles via regex
+    election_pattern = r"_(muni|pres)_"
+    try:
+        all_elections = pd.read_parquet(path, columns=["id_election"], engine="pyarrow")["id_election"].unique()
+        allowed_elections = [
+            str(el) for el in all_elections 
+            if re.search(election_pattern, str(el))
+        ]
+    except Exception as e:
+        logging.warning(f"Error inspecting election IDs from parquet: {e}")
+        allowed_elections = None
 
+    if allowed_elections is not None:
+        df = pd.read_parquet(
+            path,
+            columns=cols,
+            filters=[("id_election", "in", allowed_elections)],
+            engine="pyarrow"
+        )
+    else:
+        df = pd.read_parquet(path, columns=cols, engine="pyarrow")
+        df = df[df["id_election"].astype(str).str.contains(election_pattern, regex=True)]
+
+    df = df.copy()
     df["nuance"] = df["nuance"].fillna("").astype(str)
     df["libelle_abrege_liste"] = df["libelle_abrege_liste"].fillna("").astype(str)
     df["nom"] = df["nom"].fillna("").astype(str)
@@ -1654,78 +1660,77 @@ def clean_electoral_history(config: Dict[str, Any], logger: PipelineLogger):
     ELECTION_DATES = {
         "2026_muni_t2": "2026-06-28",
         "2026_muni_t1": "2026-06-21",
-        "2024_legi_t2": "2024-07-07",
-        "2024_legi_t1": "2024-06-30",
-        "2024_euro_t1": "2024-06-09",
-        "2022_legi_t2": "2022-06-19",
-        "2022_legi_t1": "2022-06-12",
         "2022_pres_t2": "2022-04-24",
         "2022_pres_t1": "2022-04-10",
         "2020_muni_t2": "2020-06-28",
         "2020_muni_t1": "2020-03-15",
-        "2019_euro_t1": "2019-05-26",
-        "2017_legi_t2": "2017-06-18",
-        "2017_legi_t1": "2017-06-11",
         "2017_pres_t2": "2017-05-07",
         "2017_pres_t1": "2017-04-23",
-        "2014_euro_t1": "2014-05-25",
         "2014_muni_t2": "2014-03-30",
         "2014_muni_t1": "2014-03-23",
-        "2012_legi_t2": "2012-06-17",
-        "2012_legi_t1": "2012-06-10",
         "2012_pres_t2": "2012-05-06",
         "2012_pres_t1": "2012-04-22",
     }
 
     ELECTION_LABELS = {
         "muni": "Municipales",
-        "legi": "Législatives",
         "pres": "Présidentielle",
-        "euro": "Européennes",
     }
 
-    def format_election_name(id_election: str) -> str:
-        parts = id_election.split("_")
-        year = parts[0]
-        el_type = parts[1]
-        label = ELECTION_LABELS.get(el_type, el_type.capitalize())
-        return f"{label} {year}"
+    # Vectorized winner label determination
+    nuance_s = winners["nuance"].str.strip()
+    list_s = winners["libelle_abrege_liste"].str.strip()
+    nom_s = winners["nom"].str.strip()
 
-    def get_winner_label(row):
-        nuance = row["nuance"]
-        list_name = row["libelle_abrege_liste"]
-        nom = row["nom"]
-        
-        if nuance:
-            return NUANCE_LABELS.get(nuance, nuance)
-        elif list_name:
-            return list_name
-        elif nom:
-            return nom
-        else:
-            return "Inconnu"
-            
-    winners["winner_label"] = winners.apply(get_winner_label, axis=1)
-    
-    winners["date"] = winners["id_election"].map(ELECTION_DATES).fillna("1900-01-01")
+    nuance_mapped = nuance_s.map(NUANCE_LABELS).fillna(nuance_s)
+
+    winners["winner_label"] = np.where(
+        nuance_s != "",
+        nuance_mapped,
+        np.where(
+            list_s != "",
+            list_s,
+            np.where(nom_s != "", nom_s, "Inconnu")
+        )
+    )
+
+    # Vectorized election date mapping (with year fallback if missing from dict)
+    id_el_s = winners["id_election"].astype(str)
+    year_extracted = id_el_s.str.extract(r"^(\d{4})")[0].fillna("1900")
+    default_date = year_extracted + "-01-01"
+    winners["date"] = id_el_s.map(ELECTION_DATES).fillna(default_date)
+
     winners = winners.sort_values(by=["code_commune", "date"], ascending=[True, False])
-    
+
+    # Vectorized election name formatting
+    parts = id_el_s.str.split("_", expand=True)
+    year_col = parts[0]
+    type_col = parts[1]
+    label_col = type_col.map(ELECTION_LABELS).fillna(type_col.str.capitalize())
+    winners["election_formatted"] = label_col + " " + year_col
+
+    # Get top 5 elections per commune
+    top5 = winners.groupby("code_commune").head(5)
+
+    # Vectorized aggregation into commune history JSON
+    records = top5[["code_commune", "election_formatted", "winner_label", "pct"]].to_dict("records")
     commune_histories = {}
-    for code_commune, group in winners.groupby("code_commune"):
-        history = []
-        for _, row in group.head(5).iterrows():
-            history.append({
-                "election": format_election_name(row["id_election"]),
-                "nuance": row["winner_label"],
-                "percentage": float(row["pct"])
-            })
-        commune_histories[code_commune] = json.dumps(history, ensure_ascii=False)
-        
+    for r in records:
+        code = r["code_commune"]
+        item = {
+            "election": r["election_formatted"],
+            "nuance": r["winner_label"],
+            "percentage": float(r["pct"])
+        }
+        if code not in commune_histories:
+            commune_histories[code] = []
+        commune_histories[code].append(item)
+
     df_out = pd.DataFrame([
-        {"codgeo": str(k).zfill(5), "electoral_history": v}
+        {"codgeo": str(k).zfill(5), "electoral_history": json.dumps(v, ensure_ascii=False)}
         for k, v in commune_histories.items()
     ])
-    
+
     output_path = CLEAN_DIR / "electoral_history.parquet"
     df_out.to_parquet(output_path, engine="fastparquet")
     logger.log_step("clean_electoral_history", "COMPLETED", {"path": str(output_path)})

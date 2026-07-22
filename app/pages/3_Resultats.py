@@ -62,16 +62,16 @@ if "active_ccas_index" not in st.session_state:
 
 # --- PDF Modal Execution (moved to bottom for reliability) ---
 
-# Ensure app_data is initialized
-# Ensure app data and session state are initialized
-data_loader.ensure_data_initialized()
+# Ensure app data and session state are initialized with heavy datasets
+with st.spinner("Chargement des indicateurs et données territoriales..."):
+    data_loader.ensure_data_initialized(load_heavy=True)
+    app_data = data_loader.get_app_data(load_heavy=True)
 
 # DO NOT REMOVE: This makes sure the ui_ form state persists as expected
 for k, v in st.session_state.items():
     if str(k).startswith("ui_"):
         st.session_state[k] = v
 
-app_data = data_loader.get_app_data()
 search_results: SearchResultsData = st.session_state.get("search_results")
 
 
@@ -95,7 +95,7 @@ def run_search():
     st.session_state["config"] = config
 
     # Get required dataframes from global cached app_data
-    app_data = data_loader.get_app_data()
+    app_data = data_loader.get_app_data(load_heavy=True)
     df_all_communes = app_data["odis"]
     df_bv_geo = app_data["bv_geo"]
     start_commune = df_all_communes.loc[[config.commune_actuelle.code]]

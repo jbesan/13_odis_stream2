@@ -17,13 +17,13 @@ from ui import forms as ui_forms
 from utils import data_loader
 
 # Ensure app data and session state are initialized
-data_loader.ensure_data_initialized()
+data_loader.ensure_data_initialized(load_heavy=False)
 
 # DO NOT REMOVE: This makes sure the ui_ form state persists as expected
 for k, v in st.session_state.items():
     if str(k).startswith("ui_"):
         st.session_state[k] = v
-app_data = data_loader.get_app_data()
+app_data = data_loader.get_app_data(load_heavy=False)
 
 import logging
 from utils import common as utils

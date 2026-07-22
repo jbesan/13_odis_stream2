@@ -7,10 +7,10 @@ from services.telemetry import get_manifest_version
 from ui.sources_dialog import load_manifest, format_iso_date
 
 
-def test_get_manifest_version_fallback():
+def test_get_manifest_version_raises_error_if_missing():
     with patch("pathlib.Path.exists", return_value=False):
-        ver = get_manifest_version()
-        assert ver == "unknown"
+        with pytest.raises(RuntimeError, match="manifest_version"):
+            get_manifest_version()
 
 
 def test_format_iso_date():

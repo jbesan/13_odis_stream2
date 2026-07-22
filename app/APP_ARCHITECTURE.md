@@ -67,6 +67,9 @@ ODIS implements a secure, role-based organizational profile context enforced imm
         *   **Lists**: Performs a Union of default arrays (e.g. adding partner-specific housing lists to global defaults).
         *   **Scalars**: Performs a direct override of scalars (e.g. strategic weight boosts take precedence).
     *   **Toast Gating**: Gated in session state via `org_defaults_applied` to ensure the activation notification toast is only displayed once per login/session.
+3.  **Two-Tier Pre-Warming & Async Toast Notification (`app/utils/data_loader.py`)**:
+    *   Calling `ensure_data_initialized(load_heavy=False)` on initial pages (`1_Accueil.py`, `2_Formulaire.py`) loads Tier 1 referentiels instantly (< 1.5s) and launches a daemon background thread (`_bg_preload_scoring_datasets`) to pre-warm the heavy Tier 2 scoring dataset cache in `@st.cache_resource`.
+    *   As soon as the background thread finishes, `st.toast("Chargement des données terminé", icon="✅")` is rendered on whichever page the user is currently interacting with. When the user proceeds to `3_Resultats.py`, Tier 2 datasets are retrieved from RAM with 0ms delay.
 
 ---
 

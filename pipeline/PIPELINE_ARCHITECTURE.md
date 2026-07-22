@@ -42,6 +42,7 @@ The pipeline integrates 14 primary datasets directly from the Odace platform. To
 *   **Parquet Export Streaming (`/api/data/export`)**: Heavy tables like BPE (`dim_equipement_territoire` >2.78M rows) and RNA (`dim_association`) stream pre-compiled Parquet export files directly.
 *   **BPE Ingestion & Spatial Reprojection Optimization**: BPE is fetched directly from the Odace silver export API. It is filtered locally in Python to ODIS-relevant equipment codes (reducing rows to ~197k), which optimizes coordinate reprojection from Lambert-93 to WGS-84 to under 0.2 seconds.
 *   **PLM Population Alignment**: Arrondissement populations (Paris, Lyon, Marseille) are fully populated in the cleaned population dataset. The build pipeline uses standard population-weighted average consolidation (removing simple mean fallbacks).
+*   **Dynamic Electoral Ingestion Optimization**: `clean_electoral_history()` uses dynamic Parquet metadata inspection and regex filtering `r"_(muni|pres)_"` to extract present and future Municipales and Présidentielles election results without hardcoding election IDs. Winner label resolution and JSON aggregation are fully vectorized using NumPy and Pandas.
 
 ### 2. Live & Remote APIs
 *   **France Travail Live Jobs**: Fetches real-time jobs and computes territorial stress metrics.

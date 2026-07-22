@@ -26,7 +26,7 @@ telemetry.log_page_view("Accueil")
 logging.info(f"--- App re-run at {time.ctime(time.time())} ---")
 
 # --- Main App Execution ---
-data_loader.ensure_data_initialized()
+data_loader.ensure_data_initialized(load_heavy=False)
 
 # --- Sidebar / Org Context ---
 with st.sidebar:
