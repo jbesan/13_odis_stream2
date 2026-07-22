@@ -43,6 +43,8 @@ Liste en vrac d'idées d'amélioration
 - [x] Normaliser les scores de catégorie pour éviter une surévaluation de certains critères
 - [x] Ajouter des profils de pondération (famille vs célibataire)
 - [x] Ajouter la base J'accueille d'accueil chez l'habitant
+- [x] Mieux tracker la version des sources de données (Data Manifest JSON, modal "À propos des sources" et colonne BigQuery manifest_version dans search_events)
+
 - [x] Ajouter la base des transports publics ?
 - [ ] Critere 'Niveau de vie' de l'INSEE ?
 - [ ] Enlever la couleur politique

@@ -104,6 +104,15 @@ sources:
       - titre_court
       - adrs_libcommune
 
+  rna_rag:
+    provider: "bigquery"
+    table: "odis-stream2.rna_rag.rna_rag"
+    format: "parquet"
+    local_name: "rna_inclusion_agg.parquet"
+    ttl_days: 365
+    description: "Table BigQuery RNA RAG (Associations enrichies et embeddings)"
+
+
   logement_vacant:
     datagouv_resource_id: "2e0417b4-902d-4c60-90e7-bf5df148cb87"
     use_odace: true

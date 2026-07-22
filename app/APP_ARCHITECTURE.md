@@ -182,11 +182,13 @@ Decodes commune boundary geometries from **WKB (Well-Known Binary)** bytes just-
 ### 4.7 PDF Report Export (`app/core/pdf_generator.py`)
 Generates structured, multi-page PDF briefings for social workers. It dynamically converts Markdown summaries into ReportLab Paragraph flowables, rendering tables and page counts.
 
-### 4.8 BigQuery Telemetry & In-App Admin Dashboard (`app/services/telemetry.py` & `app/pages/4_Analytics.py`)
-Coordinates application usage tracking and internal business intelligence:
-- **`search_events`**: Consolidated search events in BigQuery containing `interaction_id`, `timestamp`, `username`, `org_id`, `search_hash`, criteria (dynamically extracted from `SearchCriterias.model_fields` and mapped against ACL `odis_visibility` tags), weights, and recommended cities.
+### 4.8 BigQuery Telemetry, Data Manifest & In-App Admin Dashboard (`app/services/telemetry.py`, `app/ui/sources_dialog.py` & `app/pages/4_Analytics.py`)
+Coordinates application usage tracking, data versioning transparency, and internal business intelligence:
+- **`search_events`**: Consolidated search events in BigQuery containing `interaction_id`, `timestamp`, `username`, `org_id`, `manifest_version` (referencing `data_manifest.json`), `search_hash`, criteria (dynamically extracted from `SearchCriterias.model_fields` and mapped against ACL `odis_visibility` tags), weights, and recommended cities.
 - **`usage_events`**: Functional event logging for page navigation (`page_view` with `origin` tracking) and key user interactions (`view_commune_details`, `run_ia_analysis`, `auto_detect_criteria`, `export_pdf`).
+- **Data Manifest Dialog (`app/ui/sources_dialog.py`)**: Accessible from the sidebar on all pages (`ℹ️ Sources des données`), rendering an interactive `@st.dialog` modal displaying the active Data Manifest version, compilation date, and formatted catalog of all 36+ data sources (Odace Silver, Data.gouv.fr, Data Inclusion) with reference years, freshness, and documentation links.
 - **`4_Analytics.py`**: Restricted admin BI dashboard guarded by `auth.is_admin()`. Queries BigQuery with REST fallback (`create_bqstorage_client=False`) to deliver activity KPIs, recommendation popularity metrics, and search profile analytics across 3 interactive tabs.
+
 
 
 ---

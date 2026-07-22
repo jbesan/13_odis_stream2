@@ -175,6 +175,23 @@ def _safe_json_format(obj: Any) -> Any:
     return obj
 
 
+def get_manifest_version() -> str:
+    """Reads current manifest version from app/data/data_manifest.json."""
+    from pathlib import Path
+    import config
+
+    manifest_path = Path(config.LOCAL_DATA_PATH) / "data_manifest.json"
+    if manifest_path.exists():
+        try:
+            data = json.loads(manifest_path.read_text(encoding="utf-8"))
+            return data.get("manifest_version", "unknown")
+        except Exception:
+            pass
+    return "unknown"
+
+
+
+
 def log_search_complete(
     config: SearchCriterias,
     search_results: SearchResultsData,
@@ -231,8 +248,6 @@ def log_search_complete(
             k: full_config.get(k) for k in criteria_keys if k in full_config
         }
         weights = {k: v for k, v in full_config.items() if k.startswith("poids_")}
-
-
 
         # 2. Prepare Results Summary
         top_5_results = []
@@ -304,6 +319,7 @@ def log_search_complete(
             "timestamp": timestamp_str,
             "username": username,
             "org_id": org_id,
+            "manifest_version": get_manifest_version(),
             "search_hash": search_hash,
             "source_flow": source_flow,
             "search_criteria": json.dumps(
@@ -319,6 +335,7 @@ def log_search_complete(
                 _safe_json_format(top_5_breakdown), default=str, ensure_ascii=False
             ),
         }
+
 
         errors = client.insert_rows_json(table_ref, [row], timeout=15)
         if errors:

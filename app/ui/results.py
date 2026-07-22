@@ -1069,19 +1069,15 @@ def show_details_dialog(index: Any):
                         )
                         table_rows = []
                         for item in history:
-                            pct_str = f"**{item['percentage']:.1f}%**"
                             table_rows.append(
-                                f"| {item['election']} | {item['nuance']} | {pct_str} |"
+                                {
+                                    "Scrutin": item.get("election", ""),
+                                    "Nuance Majoritaire": item.get("nuance", ""),
+                                    "Score": f"{item.get('percentage', 0):.1f}%",
+                                }
                             )
-
-                        table_content = "\n".join(
-                            [
-                                "| Scrutin | Nuance Majoritaire | Score |",
-                                "| :--- | :--- | :--- |",
-                            ]
-                            + table_rows
-                        )
-                        st.markdown(table_content)
+                        df_history = pd.DataFrame(table_rows)
+                        st.table(df_history.set_index("Scrutin"))
                 except Exception as e:
                     st.caption("Erreur lors du chargement de l'historique électoral.")
         with c2:

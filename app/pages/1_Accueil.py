@@ -48,6 +48,8 @@ with st.sidebar:
                 )
 
     ui_comp.render_admin_sidebar_link()
+    ui_comp.render_sources_sidebar_link()
+
 
 
 
@@ -139,9 +141,10 @@ st.markdown(
     /* Button Tweaks */
     .stButton button {
         border-radius: 8px;
-        border: 1px solid white; 
     }
     /* Primary button style tweak to fit dark theme */
+
+
     div[data-testid="stButton"] > button[kind="primary"] {
         background-color: #FFD700;
         border: none;

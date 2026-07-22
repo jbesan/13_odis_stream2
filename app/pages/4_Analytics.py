@@ -39,6 +39,8 @@ with st.sidebar:
     st.write("Bienvenue sur le tableau de bord d'analyse de l'usage et des recommandations d'OD&IS.")
     st.divider()
     ui_comp.start_over()
+    ui_comp.render_sources_sidebar_link()
+
 
 
 # --- BigQuery Helper ---

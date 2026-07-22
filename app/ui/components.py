@@ -20,7 +20,9 @@ def inject_custom_css() -> None:
                 max-width: 500px !important;
             }
             /* Custom styling for specific buttons if needed */
-            .st-key-btn_recommencer .stButton p {color: white;}
+            /* .st-key-btn_recommencer .stButton p {color: white;} */
+
+
             
             /* Org Badge Styling */
             .org-badge {
@@ -88,6 +90,16 @@ def render_admin_sidebar_link() -> None:
     """Renders the Analytics Dashboard button in the sidebar if the current user is an admin."""
     from utils import auth
     if auth.is_admin():
-        if st.button("📊 Dashboard Analytics", key="btn_admin_analytics", width="stretch"):
+        if st.button("Admin Dashboard", key="btn_admin_analytics", width="stretch", type='tertiary'):
             st.switch_page("pages/4_Analytics.py")
+
+
+def render_sources_sidebar_link() -> None:
+    """Renders the 'Sources des données' button in the sidebar opening the sources dialog."""
+    from ui.sources_dialog import show_sources_dialog
+    if st.button("Sources des données", key="btn_sources_dialog", width='stretch', type='tertiary'):
+        show_sources_dialog()
+
+
+
 
