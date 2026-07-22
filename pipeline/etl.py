@@ -24,7 +24,9 @@ FILES_TO_COPY = [
     "odis_refugee_associations.parquet",
     "odis_ft_jobs_agg.parquet",
     "odis_inclusion_jobs.parquet",
+    "data_manifest.json",
 ]
+
 
 
 def main():
@@ -156,6 +158,24 @@ def main():
         logging.info("=== Starting Prescoring Phase ===")
         prescoring.main([])
         logging.info("=== Prescoring Phase Completed ===")
+        
+        logging.info("=== Generating Data Manifest ===")
+        try:
+            from pipeline.manifest import generate_manifest
+            from pipeline.odace_client import get_odace_client
+            from pathlib import Path
+            odace_client = None
+            try:
+                odace_client = get_odace_client()
+            except Exception as e:
+                logging.warning(f"Could not initialize OdaceClient for manifest generation: {e}")
+
+            generate_manifest(output_path=Path("pipeline/cache/output/data_manifest.json"), odace_client=odace_client)
+            generate_manifest(output_path=Path("data/processed/data_manifest.json"), odace_client=odace_client)
+            logging.info("=== Data Manifest Generation Completed ===")
+        except Exception as e:
+            logging.error(f"Failed to generate Data Manifest: {e}", exc_info=True)
+
 
     if args.step in ["deploy", "all"]:
         logging.info("=== Starting Deployment Phase ===")

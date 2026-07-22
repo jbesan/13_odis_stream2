@@ -40,8 +40,7 @@ with st.sidebar:
     else:
         st.error("Logo not found")
 
-    st.space("medium")
-    ui.render_admin_sidebar_link()
+
 
     st.text(
         "Remplissez ce formulaire afin de préciser le projet de vie de la ou des personnes accompagnées."
@@ -54,8 +53,6 @@ with st.sidebar:
 
     feedback.render_feedback_button()
 
-    st.divider()
-
     if st.button(
         "Passer aux résultats",
         type="secondary",
@@ -63,6 +60,12 @@ with st.sidebar:
         icon=":material/fast_forward:",
     ):
         st.switch_page("pages/3_Resultats.py")
+
+    st.divider()
+
+    # --- Dashboard Admin Analytics & Sources ---
+    ui.render_admin_sidebar_link()
+    ui.render_sources_sidebar_link()
 
 org = st.session_state.get("org")
 

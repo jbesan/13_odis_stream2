@@ -1138,12 +1138,24 @@ def clean_associations(config: Dict[str, Any], logger: PipelineLogger):
 
 def clean_refugee_associations(config: Dict[str, Any], logger: PipelineLogger):
     """Filters RNA for refugee associations and augments data."""
+    output_path = CLEAN_DIR / "refugee_associations.parquet"
+    ttl_days = config.get("sources", {}).get("rna_rag", {}).get("ttl_days", 365)
+
+    if output_path.exists():
+        mtime = datetime.fromtimestamp(output_path.stat().st_mtime)
+        age_days = (datetime.now() - mtime).days
+        if age_days < ttl_days:
+            logging.info(
+                f"[clean_refugee_associations] Cache is {age_days} days old. Using cache (TTL={ttl_days} days)."
+            )
+            logger.log_step(
+                "clean_refugee_associations",
+                "COMPLETED",
+                {"path": str(output_path), "age_days": age_days, "ttl_days": ttl_days},
+            )
+            return
+
     logger.log_step("clean_refugee_associations", "STARTED")
-    source = config["sources"]["associations"]
-    path = CACHE_DIR / source["local_name"]
-    if not path.exists():
-        logging.warning("RNA file not found.")
-        return
 
     # Updated to fetch from BigQuery using is_refugee_focused flag (Harmonization)
     try:
@@ -2446,14 +2458,15 @@ def compute_rna_rag_counts(query_text: str, threshold: float = 0.65) -> pd.DataF
 def clean_hebergement_rna(config: Dict[str, Any], logger: PipelineLogger):
     """Extracts accommodation-related associations from RNA using RAG (IML & Citoyen)."""
     output_agg = CLEAN_DIR / "hebergement_rna_cols.parquet"
+    ttl_days = config.get("sources", {}).get("rna_rag", {}).get("ttl_days", 365)
 
-    # 1. 1-Year TTL Check (as requested by user)
+    # 1. TTL Check
     if output_agg.exists():
         mtime = datetime.fromtimestamp(output_agg.stat().st_mtime)
         age_days = (datetime.now() - mtime).days
-        if age_days < 365:
+        if age_days < ttl_days:
             logging.info(
-                f"[RNA RAG] Hebergement RNA stats are {age_days} days old. Using cache (TTL=1 year)."
+                f"[RNA RAG] Hebergement RNA stats are {age_days} days old. Using cache (TTL={ttl_days} days)."
             )
             return
 
@@ -3228,7 +3241,7 @@ def main(argv=None):
     fetch_rome_referential(config, logger)
 
     # --- 2. Fetch RNA RAG Stats from BigQuery (New) ---
-    fetch_rna_rag_stats(logger)
+    fetch_rna_rag_stats(logger, config)
 
     # 2. Fetch others
     for name, source_cfg in config["sources"].items():
@@ -3590,17 +3603,22 @@ def clean_departements(config: Dict[str, Any], logger: PipelineLogger):
         logging.warning(f"Departements: Columns not found. Found: {df.columns}")
 
 
-def fetch_rna_rag_stats(logger: PipelineLogger) -> Optional[Path]:
-    """Fetches RNA category counts from BigQuery with 30-day TTL."""
+def fetch_rna_rag_stats(
+    logger: PipelineLogger, config: Optional[Dict[str, Any]] = None
+) -> Optional[Path]:
+    """Fetches RNA category counts from BigQuery with configured TTL (365 days)."""
     local_path = CLEAN_DIR / "rna_inclusion_agg.parquet"
+    if config is None:
+        config = load_config(CONFIG_FILE)
+    ttl_days = config.get("sources", {}).get("rna_rag", {}).get("ttl_days", 365)
 
-    # 1. 30-Day TTL Check
+    # 1. TTL Check
     if local_path.exists():
         mtime = datetime.fromtimestamp(local_path.stat().st_mtime)
         age_days = (datetime.now() - mtime).days
-        if age_days < 30:
+        if age_days < ttl_days:
             logging.info(
-                f"[RNA RAG] Stats are {age_days} days old. Using cache (TTL=30 days)."
+                f"[RNA RAG] Stats are {age_days} days old. Using cache (TTL={ttl_days} days)."
             )
             return local_path
         logging.info(f"[RNA RAG] Stats are {age_days} days old. Refreshing...")

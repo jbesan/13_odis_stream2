@@ -253,10 +253,6 @@ with st.sidebar:
     # --- Bouton Feedback ---
     feedback.render_feedback_button()
 
-    # --- Dashboard Admin Analytics ---
-    ui.render_admin_sidebar_link()
-
-
     # --- Export to PDF ---
     if st.session_state.get("search_results") is not None:
         h = st.session_state.search_results.search_hash
@@ -271,7 +267,11 @@ with st.sidebar:
         else:
             export_pdf_container_polling(h)
 
-    # st.divider()
+    st.divider()
+
+    # --- Dashboard Admin Analytics & Sources ---
+    ui.render_admin_sidebar_link()
+    ui.render_sources_sidebar_link()
 
     # --- Weights --- (MOVED TO TOP FILTER FORM)
 

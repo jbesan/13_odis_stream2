@@ -253,6 +253,29 @@ class OdaceClient:
                 self.logger.log_source(f"odace_query_{cache_name}", "ERROR", error_msg)
             return pd.DataFrame()
 
+    def fetch_silver_table_detail(self, table_name: str) -> Optional[Dict[str, Any]]:
+        """Fetches table metadata and catalog info from GET /api/data/catalog/silver/{table_name}."""
+        if not self.api_url or not self.api_key:
+            return None
+
+        url = f"{self.api_url}/api/data/catalog/silver/{table_name}"
+        try:
+            logging.info(f"OdaceClient: Fetching catalog detail for {table_name}...")
+            response = requests.get(url, headers=self.headers, timeout=15)
+            if response.status_code == 200:
+                return response.json()
+            else:
+                logging.warning(
+                    f"OdaceClient: Catalog detail returned HTTP {response.status_code} for {table_name}"
+                )
+                return None
+        except Exception as e:
+            logging.warning(
+                f"OdaceClient: Failed to fetch catalog detail for {table_name}: {e}"
+            )
+            return None
+
 
 def get_odace_client(logger: Optional[PipelineLogger] = None) -> OdaceClient:
     return OdaceClient(logger)
+

@@ -18,7 +18,9 @@ CONFIG_FILE = "pipeline/sources.yaml"
 CACHE_DIR = Path("pipeline/cache/raw")
 CLEAN_DIR = Path("pipeline/cache/clean")
 OUTPUT_DIR = Path("pipeline/cache/output")
+PROCESSED_DIR = Path("data/processed")
 STATUS_FILE = Path("pipeline/status.json")
+
 
 
 # Configure logging centrally
