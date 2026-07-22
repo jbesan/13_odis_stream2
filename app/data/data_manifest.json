@@ -1,6 +1,6 @@
 {
-  "manifest_version": "v2026.07.22-03a39d",
-  "created_at": "2026-07-22T16:17:31.323558+00:00",
+  "manifest_version": "v2026.07.22-09ab11",
+  "created_at": "2026-07-22T17:15:09.663139+00:00",
   "total_sources": 36,
   "sources": [
     {
@@ -9,7 +9,7 @@
       "method": "Data Platform Odace",
       "odace_table": "ref_commune_geo",
       "annee_reference": 2024,
-      "last_updated": "2026-07-22T18:14:16.624966",
+      "last_updated": "2026-07-22T19:00:40.393181",
       "row_count": 35014,
       "certified": false,
       "doc_url": "https://www.data.gouv.fr/datasets/contours-administratifs/#/resources/12f8cdc9-5844-4666-a4b5-6385d5415f67"
@@ -31,7 +31,7 @@
       "method": "Data Platform Odace",
       "odace_table": "fact_population_municipale",
       "annee_reference": 2023,
-      "last_updated": "2026-07-22T18:14:18.343254",
+      "last_updated": "2026-07-22T19:00:42.120688",
       "row_count": 34998,
       "certified": false,
       "doc_url": "https://www.data.gouv.fr/datasets/population-municipale-des-communes-france-entiere/#/resources/630e7917-02db-4838-8856-09235719551c"
@@ -53,7 +53,7 @@
       "method": "Export Data.gouv.fr",
       "odace_table": null,
       "annee_reference": null,
-      "last_updated": "2026-07-22T18:14:17.982403",
+      "last_updated": "2026-07-22T19:00:41.768368",
       "row_count": 283416,
       "certified": false,
       "doc_url": "https://www.data.gouv.fr/fr/datasets/r/de4856b8-bb67-4b79-83bd-038e846a1774"
@@ -75,8 +75,8 @@
       "method": "Export Data.gouv.fr",
       "odace_table": null,
       "annee_reference": null,
-      "last_updated": "2026-07-22T18:14:34.524549",
-      "row_count": 37036,
+      "last_updated": "2026-07-22T19:11:41.115170",
+      "row_count": null,
       "certified": false,
       "doc_url": "https://www.data.gouv.fr/fr/datasets/r/52a11762-45b4-414f-b6a2-eaa290217dc6"
     },
@@ -86,7 +86,7 @@
       "method": "Data Platform Odace",
       "odace_table": "dim_association",
       "annee_reference": 2024,
-      "last_updated": "2026-07-22T18:14:27.785540",
+      "last_updated": "2026-07-22T19:00:50.802120",
       "row_count": 844361,
       "certified": false,
       "doc_url": "https://www.data.gouv.fr/datasets/rna-agrege-a-lechelle-nationale/#/resources/cc7b8f0c-45ea-4444-8b55-55d30bc34ac5"
@@ -119,7 +119,7 @@
       "method": "Export Data.gouv.fr",
       "odace_table": null,
       "annee_reference": null,
-      "last_updated": "2026-07-22T18:14:34.895351",
+      "last_updated": "2026-07-22T19:00:57.779313",
       "row_count": 34854,
       "certified": false,
       "doc_url": "https://www.data.gouv.fr/fr/datasets/r/cae4e8a4-15e0-40ff-88fe-087b9e206514"
@@ -141,7 +141,7 @@
       "method": "Data Platform Odace",
       "odace_table": "dim_maternite",
       "annee_reference": 2026,
-      "last_updated": "2026-07-22T18:14:25.304914",
+      "last_updated": "2026-07-22T19:00:48.471585",
       "row_count": null,
       "certified": false,
       "doc_url": "https://www.data.gouv.fr/datasets/liste-des-maternites-de-france-depuis-2000/#/resources/a822f7ae-7c46-42c0-86e1-ad7d381c1ad2"
@@ -163,7 +163,7 @@
       "method": "Export Data.gouv.fr",
       "odace_table": null,
       "annee_reference": null,
-      "last_updated": "2026-07-22T18:14:52.182601",
+      "last_updated": "2026-07-22T19:01:12.332582",
       "row_count": 297,
       "certified": false,
       "doc_url": "https://www.data.gouv.fr/fr/datasets/r/d65d5cae-399f-4150-804f-493026645fd5"
@@ -174,7 +174,7 @@
       "method": "Data Platform Odace",
       "odace_table": "fact_couverture_petite_enfance",
       "annee_reference": 2023,
-      "last_updated": "2026-07-22T18:14:25.303545",
+      "last_updated": "2026-07-22T19:00:48.470207",
       "row_count": 1019,
       "certified": false,
       "doc_url": "https://www.data.gouv.fr/datasets/taux-de-couverture-daccueil-du-jeune-enfant-communal/"
@@ -207,7 +207,7 @@
       "method": "Export Open Data",
       "odace_table": null,
       "annee_reference": null,
-      "last_updated": "2026-07-22T18:14:49.528572",
+      "last_updated": "2026-07-22T19:01:09.673041",
       "row_count": 35511,
       "certified": false,
       "doc_url": "https://object.files.data.gouv.fr/hydra-parquet/hydra-parquet/008a2dda-2c60-4b63-b910-998f6f818089.parquet"
@@ -240,7 +240,7 @@
       "method": "Data Platform Odace",
       "odace_table": "dim_etablissement_sante",
       "annee_reference": 2026,
-      "last_updated": "2026-07-22T18:14:25.304490",
+      "last_updated": "2026-07-22T19:00:48.471153",
       "row_count": null,
       "certified": false,
       "doc_url": "https://www.data.gouv.fr/datasets/finess-extraction-du-fichier-des-etablissements/#/resources/98f3161f-79ff-4f16-8f6a-6d571a80fea2"
@@ -262,7 +262,7 @@
       "method": "Data Platform Odace",
       "odace_table": "dim_equipement_territoire",
       "annee_reference": 2024,
-      "last_updated": "2026-07-22T18:14:49.497939",
+      "last_updated": "2026-07-22T19:01:09.642396",
       "row_count": 197242,
       "certified": false,
       "doc_url": "https://www.insee.fr/fr/statistiques/8217525?sommaire=8217537"
@@ -273,7 +273,7 @@
       "method": "Export Data.gouv.fr",
       "odace_table": null,
       "annee_reference": null,
-      "last_updated": "2026-07-22T18:14:25.235769",
+      "last_updated": "2026-07-22T19:00:48.406563",
       "row_count": 34774,
       "certified": false,
       "doc_url": "https://www.data.gouv.fr/fr/datasets/r/f43b668d-251e-472a-9385-3d006d1ca6b8"
@@ -306,7 +306,7 @@
       "method": "Export Data.gouv.fr",
       "odace_table": null,
       "annee_reference": null,
-      "last_updated": "2026-07-22T18:14:18.303411",
+      "last_updated": "2026-07-22T19:00:42.080122",
       "row_count": 12752,
       "certified": false,
       "doc_url": "https://www.data.gouv.fr/fr/datasets/r/915c05e8-77ea-44f6-9837-0f1eff897a54"
@@ -317,7 +317,7 @@
       "method": "Export Data.gouv.fr",
       "odace_table": null,
       "annee_reference": null,
-      "last_updated": "2026-07-22T18:14:52.159215",
+      "last_updated": "2026-07-22T19:01:12.314405",
       "row_count": 34852,
       "certified": false,
       "doc_url": "https://www.data.gouv.fr/fr/datasets/r/7e3937bb-e815-4e58-92d4-d7ef478abcc0"
@@ -350,7 +350,7 @@
       "method": "Export Open Data",
       "odace_table": null,
       "annee_reference": null,
-      "last_updated": "2026-07-22T18:14:52.275809",
+      "last_updated": "2026-07-22T19:01:12.425231",
       "row_count": 34858,
       "certified": false,
       "doc_url": "https://object.files.data.gouv.fr/hydra-parquet/hydra-parquet/501ac60d-246d-45bf-8dcf-ab43e1b1a736.parquet"
@@ -372,7 +372,7 @@
       "method": "Data Platform Odace",
       "odace_table": "fact_apl_medecin",
       "annee_reference": 2023,
-      "last_updated": "2026-07-22T18:14:52.782010",
+      "last_updated": "2026-07-22T19:01:12.778718",
       "row_count": 34912,
       "certified": false,
       "doc_url": "https://data.drees.solidarites-sante.gouv.fr/explore/dataset/530_l-accessibilite-potentielle-localisee-apl/"
@@ -394,7 +394,7 @@
       "method": "Data Platform Odace",
       "odace_table": "fact_insecurite_commune",
       "annee_reference": 2024,
-      "last_updated": "2026-07-22T18:14:53.744392",
+      "last_updated": "2026-07-22T19:01:13.745554",
       "row_count": 34875,
       "certified": false,
       "doc_url": "https://www.data.gouv.fr/datasets/statistiques-d-insecurite-par-commune-ssmsi/"

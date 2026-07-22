@@ -1677,6 +1677,11 @@ def clean_electoral_history(config: Dict[str, Any], logger: PipelineLogger):
         "pres": "Présidentielle",
     }
 
+    TOUR_LABELS = {
+        "t1": "1er tour",
+        "t2": "2nd tour",
+    }
+
     # Vectorized winner label determination
     nuance_s = winners["nuance"].str.strip()
     list_s = winners["libelle_abrege_liste"].str.strip()
@@ -1694,37 +1699,55 @@ def clean_electoral_history(config: Dict[str, Any], logger: PipelineLogger):
         )
     )
 
-    # Vectorized election date mapping (with year fallback if missing from dict)
+    # Vectorized election date, type, tour, and category formatting (BEFORE sorting to preserve index alignment)
     id_el_s = winners["id_election"].astype(str)
     year_extracted = id_el_s.str.extract(r"^(\d{4})")[0].fillna("1900")
     default_date = year_extracted + "-01-01"
     winners["date"] = id_el_s.map(ELECTION_DATES).fillna(default_date)
 
+    parts = id_el_s.str.split("_", expand=True)
+    winners["type"] = parts[1]
+    winners["tour"] = parts[2].map(TOUR_LABELS).fillna("")
+    label_col = winners["type"].map(ELECTION_LABELS).fillna(winners["type"].str.capitalize())
+    winners["election_formatted"] = label_col + " " + parts[0]
+
+    # Sort winners by commune code and date descending
     winners = winners.sort_values(by=["code_commune", "date"], ascending=[True, False])
 
-    # Vectorized election name formatting
-    parts = id_el_s.str.split("_", expand=True)
-    year_col = parts[0]
-    type_col = parts[1]
-    label_col = type_col.map(ELECTION_LABELS).fillna(type_col.str.capitalize())
-    winners["election_formatted"] = label_col + " " + year_col
+    # Split into Municipales and Présidentielles
+    muni_df = winners[winners["type"] == "muni"]
+    pres_df = winners[winners["type"] == "pres"]
 
-    # Get top 5 elections per commune
-    top5 = winners.groupby("code_commune").head(5)
+    # Keep top election occurrences per category (up to 6 rounds / 3 elections per commune)
+    top_muni = muni_df.groupby("code_commune").head(6)
+    top_pres = pres_df.groupby("code_commune").head(6)
 
-    # Vectorized aggregation into commune history JSON
-    records = top5[["code_commune", "election_formatted", "winner_label", "pct"]].to_dict("records")
+    # Vectorized aggregation into separate Municipales & Présidentielles JSON tables
     commune_histories = {}
-    for r in records:
+
+    muni_records = top_muni[["code_commune", "election_formatted", "tour", "winner_label", "pct"]].to_dict("records")
+    for r in muni_records:
         code = r["code_commune"]
-        item = {
+        if code not in commune_histories:
+            commune_histories[code] = {"municipales": [], "presidentielles": []}
+        commune_histories[code]["municipales"].append({
             "election": r["election_formatted"],
+            "tour": r["tour"],
             "nuance": r["winner_label"],
             "percentage": float(r["pct"])
-        }
+        })
+
+    pres_records = top_pres[["code_commune", "election_formatted", "tour", "winner_label", "pct"]].to_dict("records")
+    for r in pres_records:
+        code = r["code_commune"]
         if code not in commune_histories:
-            commune_histories[code] = []
-        commune_histories[code].append(item)
+            commune_histories[code] = {"municipales": [], "presidentielles": []}
+        commune_histories[code]["presidentielles"].append({
+            "election": r["election_formatted"],
+            "tour": r["tour"],
+            "nuance": r["winner_label"],
+            "percentage": float(r["pct"])
+        })
 
     df_out = pd.DataFrame([
         {"codgeo": str(k).zfill(5), "electoral_history": json.dumps(v, ensure_ascii=False)}
@@ -3242,17 +3265,6 @@ def main(argv=None):
 
     logger.log_step("ingest_all", "STARTED")
 
-    # --- 1. Fetch ROME Referential (New) ---
-    fetch_rome_referential(config, logger)
-
-    # --- 2. Fetch RNA RAG Stats from BigQuery (New) ---
-    fetch_rna_rag_stats(logger, config)
-
-    # 2. Fetch others
-    for name, source_cfg in config["sources"].items():
-        fetch_source(name, source_cfg, logger)
-
-    # 2. Clean
     steps_map = {
         "communes": clean_communes,
         "services_inclusion": clean_services_inclusion,
@@ -3292,7 +3304,21 @@ def main(argv=None):
         "ter_insecurite": clean_ter_insecurite,
     }
 
-    selected_steps = args.steps.split(",") if args.steps else steps_map.keys()
+    selected_steps = args.steps.split(",") if args.steps else list(steps_map.keys())
+
+    if not args.steps or "rome" in selected_steps:
+        # --- 1. Fetch ROME Referential (New) ---
+        fetch_rome_referential(config, logger)
+
+    if not args.steps or any(s in selected_steps for s in ["associations", "refugee_associations", "rna"]):
+        # --- 2. Fetch RNA RAG Stats from BigQuery (New) ---
+        fetch_rna_rag_stats(logger, config)
+
+    # 2. Fetch others
+    for name, source_cfg in config["sources"].items():
+        if args.steps and name not in selected_steps:
+            continue
+        fetch_source(name, source_cfg, logger)
 
     for step_name in selected_steps:
         if step_name in steps_map:
@@ -4438,15 +4464,6 @@ def clean_jaccueille_prospects(config: Dict[str, Any], logger: PipelineLogger):
     prospects_after = df_cleaned["prospects_count"].sum()
     kept_rows = len(df_cleaned)
     dropped_rows = initial_rows - kept_rows
-    
-    logging.info(
-        f"🧹 [CLEAN PROSPECTS] Cleaning Stats:\n"
-        f"  - Initial rows: {initial_rows}\n"
-        f"  - Kept rows: {kept_rows}\n"
-        f"  - Dropped rows: {dropped_rows}\n"
-        f"  - Prospects sum before cleaning: {prospects_before}\n"
-        f"  - Prospects sum after cleaning: {prospects_after}"
-    )
 
     # 3. Map Code Postal -> Code Commune -> Bassin de Vie
     cp_mapping_path = CLEAN_DIR / "codes_postaux.parquet"

@@ -38,6 +38,14 @@ def main():
         help="Step to run",
     )
     parser.add_argument(
+        "--table",
+        "--tables",
+        "--steps",
+        dest="steps",
+        type=str,
+        help="Specific table(s) or step(s) to process (comma-separated, e.g. communes,population)",
+    )
+    parser.add_argument(
         "--skip-live-jobs",
         action="store_true",
         help="Skip France Travail Live Jobs fetch",
@@ -146,12 +154,17 @@ def main():
             ingest_args.append("--skip-live-jobs")
         if skip_inclusion_jobs:
             ingest_args.append("--skip-inclusion-jobs")
+        if args.steps:
+            ingest_args.extend(["--steps", args.steps])
         ingest.main(ingest_args)
         logging.info("=== Ingestion Phase Completed ===")
 
     if args.step in ["build", "all"]:
         logging.info("=== Starting Build Phase ===")
-        build.main([])
+        build_args = []
+        if args.steps:
+            build_args.extend(["--steps", args.steps])
+        build.main(build_args)
         logging.info("=== Build Phase Completed ===")
 
     if args.step in ["prescoring", "all"]:

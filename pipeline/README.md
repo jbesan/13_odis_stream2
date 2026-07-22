@@ -18,10 +18,14 @@ All pipeline modules must be executed from the project root directory:
 
 ```bash
 # Run the full pipeline (Ingest + Build + Prescoring + Deploy)
-python -m pipeline.etl --step all
+uv run python -m pipeline.etl --step all
 
-# Run specific steps (ingest, build, prescoring, deploy)
-python -m pipeline.etl --step ingest
+# Run specific phase (ingest, build, prescoring, deploy)
+uv run python -m pipeline.etl --step ingest
+
+# Target a specific table / dataset across steps
+uv run python -m pipeline.etl --step all --table communes
+uv run python -m pipeline.etl --step ingest --table population,caf
 ```
 
 ---

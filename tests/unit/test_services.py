@@ -155,8 +155,8 @@ def test_is_admin_check(monkeypatch):
     import config as cfg
     from utils import auth
 
-    monkeypatch.setattr(cfg, "ADMIN_USERS", {"jbesancon@gmail.com", "jacques-local"})
-    assert auth.is_admin("jbesancon@gmail.com") is True
+    monkeypatch.setattr(cfg, "ADMIN_USERS", {"admin@example.com", "jacques-local"})
+    assert auth.is_admin("admin@example.com") is True
     assert auth.is_admin("jacques-local") is True
     assert auth.is_admin("random_user") is False
     assert auth.is_admin(None) is False

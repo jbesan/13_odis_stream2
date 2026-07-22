@@ -1,9 +1,6 @@
-import importlib
 from unittest.mock import MagicMock
 import pandas as pd
-
-analytics_page = importlib.import_module("app.pages.4_Analytics")
-fetch_analytics_data = analytics_page.fetch_analytics_data
+from services.analytics_data import fetch_analytics_data
 
 
 def test_fetch_analytics_data_caching():
@@ -31,3 +28,12 @@ def test_fetch_analytics_data_caching():
 
     searches_query_arg = mock_client.query.call_args_list[0][0][0]
     assert "INTERVAL 30 DAY" in searches_query_arg
+
+
+def test_fetch_analytics_data_none_client():
+    """Verify that fetch_analytics_data returns empty DataFrames gracefully when client is None."""
+    fn = getattr(fetch_analytics_data, "__wrapped__", fetch_analytics_data)
+    df_searches, df_usage = fn(None, 30)
+    assert df_searches.empty
+    assert df_usage.empty
+

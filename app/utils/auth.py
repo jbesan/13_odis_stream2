@@ -124,51 +124,43 @@ def verify_credentials(
     return False
 
 
-def is_authorized_email_or_domain(email: str) -> bool:
-    """Checks if the email or its domain is allowed to access ODIS.
-
-    Args:
-        email: The email address to check.
-
-    Returns:
-        True if the email address or its domain is whitelisted, False otherwise.
-    """
-    if not email:
-        return False
-    email_lower = email.lower()
-    if email_lower in {e.lower() for e in cfg.OIDC_ALLOWED_EMAILS}:
-        return True
-    domain = email_lower.split("@")[-1] if "@" in email_lower else ""
-    if domain in {d.lower() for d in cfg.OIDC_ALLOWED_DOMAINS}:
-        return True
-    return False
-
-
 def resolve_org_for_oidc(email: str) -> Org:
     """Resolves the Org profile for an OIDC-authenticated email.
 
+    Reads org mappings from st.secrets (written by generate_secrets.py at startup),
+    then falls back to config defaults.
+
     Args:
-        email: The authenticated OIDC email address.
+        email: The authenticated OIDC email address (already verified by Streamlit).
 
     Returns:
-        The mapped Org profile. Defaults to a generic default Org profile if no mapping exists.
+        The mapped Org profile. Defaults to a generic Org if no mapping found.
     """
     org_id = None
     if email:
         email_lower = email.lower()
-        # Check email mapping first
-        for k, v in cfg.OIDC_EMAIL_ORG_MAPPING.items():
-            if k.lower() == email_lower:
-                org_id = v
-                break
 
-        # Check domain mapping if not matched by email
+        # Read mappings from st.secrets (populated by generate_secrets.py)
+        try:
+            email_mapping = dict(st.secrets.get("auth", {}).get("email_org_mapping", {}))
+            if email_lower in {k.lower() for k in email_mapping}:
+                org_id = next(v for k, v in email_mapping.items() if k.lower() == email_lower)
+        except Exception:
+            pass
+
+        # Fall back to domain mapping
         if not org_id and "@" in email_lower:
             domain = email_lower.split("@")[-1]
-            for k, v in cfg.OIDC_DOMAIN_ORG_MAPPING.items():
-                if k.lower() == domain:
-                    org_id = v
-                    break
+            try:
+                domain_mapping = dict(st.secrets.get("auth", {}).get("domain_org_mapping", {}))
+                if domain in {k.lower() for k in domain_mapping}:
+                    org_id = next(v for k, v in domain_mapping.items() if k.lower() == domain)
+            except Exception:
+                pass
+
+        # Final fallback to config
+        if not org_id:
+            org_id = cfg.OIDC_DOMAIN_ORG_MAPPING.get(email_lower.split("@")[-1] if "@" in email_lower else "")
 
     if not org_id:
         org_id = "default"
@@ -205,91 +197,59 @@ def is_admin(username: Optional[str] = None) -> bool:
 
 
 def check_password() -> bool:
-    """Checks if the user has authenticated with a correct password.
+    """Checks if the user has authenticated.
 
-    Bypasses authentication in local development unless ODIS_FORCE_AUTH is enabled.
+    Delegates OIDC authorization entirely to Streamlit's native [auth] secrets.toml
+    enforcement. Custom logic is limited to org resolution and legacy form login.
 
     Returns:
-        True if the user is authenticated (or bypass is active), False otherwise.
+        True if the user is authenticated (or local dev bypass is active), False otherwise.
     """
     # Detect Cloud Run environment or forced auth flag
     is_cloud_run = os.environ.get("K_SERVICE") is not None
-    force_auth = os.environ.get("ODIS_FORCE_AUTH", "False").lower() in (
-        "true",
-        "1",
-        "yes",
-    )
+    force_auth = os.environ.get("ODIS_FORCE_AUTH", "False").lower() in ("true", "1", "yes")
 
-    # 1. Skip if not running on Cloud Run and not forced (Local Dev)
+    # 1. Local dev bypass (no Cloud Run, no forced auth)
     if not is_cloud_run and not force_auth:
         if "user" not in st.session_state or "org" not in st.session_state:
             org = cfg.ORGANIZATION_PROFILES.get("jaccueille")
             st.session_state["user"] = User(username=LOCAL_DEV_USERNAME, org_id="jaccueille")
             st.session_state["org"] = org
-            # For compatibility
             st.session_state["username"] = LOCAL_DEV_USERNAME
         st.session_state["password_correct"] = True
         return True
 
-    # 1b. Inject Idle Sleep monitor (10 mins timeout) - ONLY on Cloud Run
+    # Only on Cloud Run: inject idle sleep monitor
     inject_idle_sleep(timeout_minutes=10)
 
-    # Initialize session state for auth
+    # Initialize auth state
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
 
-    # 2. Short-circuit if already authenticated
+    # 2. Short-circuit if already authenticated this session
     if st.session_state.get("password_correct"):
-        org_name = (
-            st.session_state.get("org").name if st.session_state.get("org") else "Test"
-        )
-        # st.sidebar.warning(
-        #     f"**{org_name}**. \n Vos interactions sont collectées pour améliorer l'outil. Merci d'anonymiser au maximum vos saisies libres."
-        # )
         return True
 
-    # 3. Check OIDC login state (st.user.is_logged_in) and authenticate
+    # 3. OIDC: if st.user.is_logged_in is True, Streamlit has already enforced
+    #    allowed_emails / allowed_domains from secrets.toml — just resolve org.
     user_obj = getattr(st, "user", None)
     if user_obj and getattr(user_obj, "is_logged_in", False):
         email = getattr(user_obj, "email", None)
-        if email and is_authorized_email_or_domain(email):
-            st.session_state["password_correct"] = True
-            st.session_state["username"] = email
-            org = resolve_org_for_oidc(email)
-            st.session_state["user"] = User(username=email, org_id=org.id)
-            st.session_state["org"] = org
+        org = resolve_org_for_oidc(email or "")
+        st.session_state["password_correct"] = True
+        st.session_state["username"] = email
+        st.session_state["user"] = User(username=email, org_id=org.id)
+        st.session_state["org"] = org
+        return True
 
-            # Show standard warning sidebar
-            org_name = org.name
-            # st.sidebar.warning(
-            #     f"**{org_name}**. \n Vos interactions sont collectées pour améliorer l'outil. Merci d'anonymiser au maximum vos saisies libres."
-            # )
-            return True
-        else:
-            with st.container(width="stretch", horizontal_alignment="center"):
-                with st.container(
-                    width=450, border=True, horizontal_alignment="center"
-                ):
-                    st.subheader("Accès ODIS")
-                    st.error(
-                        f"❌ Accès refusé : l'adresse email '{email or 'inconnue'}' n'est pas autorisée à accéder à ODIS."
-                    )
-                    if st.button("Se déconnecter", width="stretch"):
-                        st.logout()
-            return False
-
-    # 4. If not authenticated, show login UI with BOTH options
+    # 4. Show login UI (Google OIDC + legacy form)
     with st.container(width="stretch", horizontal_alignment="center"):
         with st.container(width=400, border=True, horizontal_alignment="center"):
             st.subheader("Accès ODIS")
-            st.info(
-                "👋 Bienvenue ! Veuillez vous connecter avec l'une des méthodes ci-dessous."
-            )
+            st.info("👋 Bienvenue ! Veuillez vous connecter avec l'une des méthodes ci-dessous.")
 
             # --- OPTION A : Google Workspace (OIDC) ---
-            if st.button(
-                "🔑 Se connecter avec Google", type="primary", width="stretch"
-            ):
+            if st.button("🔑 Se connecter avec Google", type="primary", width="stretch"):
                 st.login("google")
                 st.stop()
 
@@ -315,25 +275,17 @@ def check_password() -> bool:
                     if not username or not password:
                         st.error("❌ Veuillez remplir tous les champs.")
                     elif verify_credentials(username, password):
-                        # Resolve user and org
                         users_config = load_users_config()
                         user_data = users_config[username]
                         org_id = user_data["org_id"]
-
-                        # Get org properties from ORGANIZATION_PROFILES, or construct default
-                        org = cfg.ORGANIZATION_PROFILES.get(org_id)
-                        if not org:
-                            org = Org(
-                                id=org_id,
-                                name=org_id.capitalize(),
-                                zone_type="departement",
-                                default_zones=[],
-                            )
-
-                        st.session_state["password_correct"] = True
-                        st.session_state["user"] = User(
-                            username=username, org_id=org_id
+                        org = cfg.ORGANIZATION_PROFILES.get(org_id) or Org(
+                            id=org_id,
+                            name=org_id.capitalize(),
+                            zone_type="departement",
+                            default_zones=[],
                         )
+                        st.session_state["password_correct"] = True
+                        st.session_state["user"] = User(username=username, org_id=org_id)
                         st.session_state["org"] = org
                         st.session_state["username"] = username
                         st.rerun()

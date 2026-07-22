@@ -9,7 +9,7 @@ from google.cloud import bigquery
 from utils import auth
 from ui import components as ui_comp
 from utils import common as utils
-from services import telemetry
+from services import telemetry, analytics_data
 
 logger = logging.getLogger("pages.analytics")
 
@@ -44,18 +44,7 @@ with st.sidebar:
 
 
 # --- BigQuery Helper ---
-@st.cache_resource(ttl=300)
-def get_bq_client():
-    if not os.getenv("GOOGLE_CLOUD_PROJECT") and not os.getenv("GCP_PROJECT"):
-        return None
-    try:
-        return bigquery.Client()
-    except Exception as e:
-        logger.error(f"Failed to initialize BQ client: {e}")
-        return None
-
-
-client = get_bq_client()
+client = analytics_data.get_bq_client()
 
 st.title("📊 Dashboard Analytics & BI Métier")
 
@@ -88,57 +77,8 @@ with col_filter3:
         st.rerun()
 
 
-# Fetch data cached functions (invalidates automatically when `days` or `_client.project` change)
-@st.cache_data
-def fetch_analytics_data(_client, days: int):
-    query_searches = f"""
-        SELECT 
-            interaction_id,
-            timestamp,
-            username,
-            IFNULL(org_id, 'défaut') AS org_id,
-            IFNULL(search_hash, '') AS search_hash,
-            source_flow,
-            search_criteria,
-            weights,
-            top_results,
-            detailed_breakdown
-        FROM `{_client.project}.{dataset_id}.search_events`
-        WHERE TIMESTAMP(timestamp) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {days} DAY)
-        ORDER BY timestamp DESC
-    """
-
-    query_usage = f"""
-        SELECT 
-            interaction_id,
-            login_session_id,
-            timestamp,
-            username,
-            IFNULL(org_id, 'défaut') AS org_id,
-            event_name,
-            payload
-        FROM `{_client.project}.{dataset_id}.usage_events`
-        WHERE TIMESTAMP(timestamp) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {days} DAY)
-        ORDER BY timestamp DESC
-    """
-
-    try:
-        df_searches = _client.query(query_searches).to_dataframe(create_bqstorage_client=False)
-    except Exception as e:
-        logger.warning(f"Failed to query search_events: {e}")
-        df_searches = pd.DataFrame()
-
-    try:
-        df_usage = _client.query(query_usage).to_dataframe(create_bqstorage_client=False)
-    except Exception as e:
-        logger.warning(f"Failed to query usage_events: {e}")
-        df_usage = pd.DataFrame()
-
-    return df_searches, df_usage
-
-
 with st.spinner("Chargement des données BigQuery..."):
-    df_searches, df_usage = fetch_analytics_data(client, period_days)
+    df_searches, df_usage = analytics_data.fetch_analytics_data(client, period_days)
 
 # Filter by Org if data exists
 all_orgs = sorted(

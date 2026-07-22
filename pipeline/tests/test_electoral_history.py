@@ -78,43 +78,51 @@ def test_clean_electoral_history(tmp_path):
     row_17 = df_out[df_out["codgeo"] == "17347"].iloc[0]
     history_17 = json.loads(row_17["electoral_history"])
     
-    # Should have 4 kept elections (muni 2026, pres 2022, muni 2020, pres 2017)
-    assert len(history_17) == 4
-    
-    # 1. 2026 Muni T1: LSOC -> Parti Socialiste (500 / 700 = 71.4%)
-    assert history_17[0]["election"] == "Municipales 2026"
-    assert history_17[0]["nuance"] == "Parti Socialiste"
-    assert round(history_17[0]["percentage"], 1) == 71.4
-    
-    # 2. 2022 Pres T2: MACRON
-    assert history_17[1]["election"] == "Présidentielle 2022"
-    assert history_17[1]["nuance"] == "MACRON"
-    
-    # 3. 2020 Muni T1: UG -> Union de la Gauche
-    assert history_17[2]["election"] == "Municipales 2020"
-    assert history_17[2]["nuance"] == "Union de la Gauche"
-    
-    # 4. 2017 Pres T1: FI -> La France Insoumise
-    assert history_17[3]["election"] == "Présidentielle 2017"
-    assert history_17[3]["nuance"] == "La France Insoumise"
-    
-    # Ensure legi and euro are NOT present
-    elections_17 = [item["election"] for item in history_17]
-    assert "Législatives 2024" not in elections_17
-    assert "Européennes 2024" not in elections_17
-    
-    # Validate Bordeaux (33063) fallback labels
+    assert isinstance(history_17, dict)
+    assert "municipales" in history_17
+    assert "presidentielles" in history_17
+
+    muni_17 = history_17["municipales"]
+    pres_17 = history_17["presidentielles"]
+
+    # Municipales 2026 T1 and Municipales 2020 T1
+    assert len(muni_17) == 2
+    assert muni_17[0]["election"] == "Municipales 2026"
+    assert muni_17[0]["tour"] == "1er tour"
+    assert muni_17[0]["nuance"] == "Parti Socialiste"
+    assert round(muni_17[0]["percentage"], 1) == 71.4
+
+    assert muni_17[1]["election"] == "Municipales 2020"
+    assert muni_17[1]["tour"] == "1er tour"
+    assert muni_17[1]["nuance"] == "Union de la Gauche"
+
+    # Présidentielle 2022 T2 and Présidentielle 2017 T1
+    assert len(pres_17) == 2
+    assert pres_17[0]["election"] == "Présidentielle 2022"
+    assert pres_17[0]["tour"] == "2nd tour"
+    assert pres_17[0]["nuance"] == "MACRON"
+
+    assert pres_17[1]["election"] == "Présidentielle 2017"
+    assert pres_17[1]["tour"] == "1er tour"
+    assert pres_17[1]["nuance"] == "La France Insoumise"
+
+    # Validate Bordeaux (33063) fallback labels and tour
     row_33 = df_out[df_out["codgeo"] == "33063"].iloc[0]
     history_33 = json.loads(row_33["electoral_history"])
-    assert len(history_33) == 2
-    
-    # 1. 2026 Muni T1: L-GAUCHE (libelle_abrege_liste fallback)
-    assert history_33[0]["election"] == "Municipales 2026"
-    assert history_33[0]["nuance"] == "L-GAUCHE"
-    assert round(history_33[0]["percentage"], 1) == 66.7
-    
-    # 2. 2022 Pres T1: MÉLENCHON (nom fallback)
-    assert history_33[1]["election"] == "Présidentielle 2022"
-    assert history_33[1]["nuance"] == "MÉLENCHON"
-    assert history_33[1]["percentage"] == 100.0
+    assert isinstance(history_33, dict)
+
+    muni_33 = history_33["municipales"]
+    pres_33 = history_33["presidentielles"]
+
+    assert len(muni_33) == 1
+    assert muni_33[0]["election"] == "Municipales 2026"
+    assert muni_33[0]["tour"] == "1er tour"
+    assert muni_33[0]["nuance"] == "L-GAUCHE"
+    assert round(muni_33[0]["percentage"], 1) == 66.7
+
+    assert len(pres_33) == 1
+    assert pres_33[0]["election"] == "Présidentielle 2022"
+    assert pres_33[0]["tour"] == "1er tour"
+    assert pres_33[0]["nuance"] == "MÉLENCHON"
+    assert pres_33[0]["percentage"] == 100.0
 

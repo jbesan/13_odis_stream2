@@ -1063,21 +1063,49 @@ def show_details_dialog(index: Any):
                     import json
 
                     history = json.loads(commune.territoire.electoral_history)
-                    if history:
-                        st.markdown(
-                            "##### 🗳️ Historique Électoral (5 derniers scrutins)"
-                        )
-                        table_rows = []
-                        for item in history:
-                            table_rows.append(
+                    if isinstance(history, dict):
+                        muni_list = history.get("municipales", [])
+                        pres_list = history.get("presidentielles", [])
+
+                        if muni_list:
+                            st.markdown("##### 🗳️ Élections Municipales")
+                            rows_muni = [
                                 {
                                     "Scrutin": item.get("election", ""),
+                                    "Tour": item.get("tour", ""),
                                     "Nuance Majoritaire": item.get("nuance", ""),
                                     "Score": f"{item.get('percentage', 0):.1f}%",
                                 }
-                            )
-                        df_history = pd.DataFrame(table_rows)
-                        st.table(df_history.set_index("Scrutin"))
+                                for item in muni_list
+                            ]
+                            st.dataframe(pd.DataFrame(rows_muni), hide_index=True, use_container_width=True)
+
+                        if pres_list:
+                            st.markdown("##### 🗳️ Élections Présidentielles")
+                            rows_pres = [
+                                {
+                                    "Scrutin": item.get("election", ""),
+                                    "Tour": item.get("tour", ""),
+                                    "Nuance Majoritaire": item.get("nuance", ""),
+                                    "Score": f"{item.get('percentage', 0):.1f}%",
+                                }
+                                for item in pres_list
+                            ]
+                            st.dataframe(pd.DataFrame(rows_pres), hide_index=True, use_container_width=True)
+                    elif isinstance(history, list) and history:
+                        st.markdown(
+                            "##### 🗳️ Historique Électoral"
+                        )
+                        table_rows = [
+                            {
+                                "Scrutin": item.get("election", ""),
+                                "Tour": item.get("tour", "-"),
+                                "Nuance Majoritaire": item.get("nuance", ""),
+                                "Score": f"{item.get('percentage', 0):.1f}%",
+                            }
+                            for item in history
+                        ]
+                        st.dataframe(pd.DataFrame(table_rows), hide_index=True, use_container_width=True)
                 except Exception as e:
                     st.caption("Erreur lors du chargement de l'historique électoral.")
         with c2:

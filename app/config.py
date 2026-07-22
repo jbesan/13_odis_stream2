@@ -243,10 +243,27 @@ def _get_auth_secret(key: str, default: Any) -> Any:
         return default
 
 
-# Read from .streamlit/secrets.toml
-OIDC_ALLOWED_DOMAINS: Set[str] = set(_get_auth_secret("allowed_domains", []))
+DEFAULT_OIDC_ALLOWED_DOMAINS = [
+    "jaccueille.fr",
+    "lahso.org",
+    "groupe-sos.org",
+    "fondationcos.org",
+]
+DEFAULT_OIDC_DOMAIN_ORG_MAPPING = {
+    "jaccueille.fr": "jaccueille",
+    "lahso.org": "emile_aura",
+    "groupe-sos.org": "agir33",
+    "fondationcos.org": "agir33",
+}
+
+# Read from .streamlit/secrets.toml (No PII hardcoded in source control)
+OIDC_ALLOWED_DOMAINS: Set[str] = set(
+    _get_auth_secret("allowed_domains", DEFAULT_OIDC_ALLOWED_DOMAINS)
+)
 OIDC_ALLOWED_EMAILS: Set[str] = set(_get_auth_secret("allowed_emails", []))
-OIDC_DOMAIN_ORG_MAPPING: Dict[str, str] = dict(_get_auth_secret("domain_org_mapping", {}))
+OIDC_DOMAIN_ORG_MAPPING: Dict[str, str] = dict(
+    _get_auth_secret("domain_org_mapping", DEFAULT_OIDC_DOMAIN_ORG_MAPPING)
+)
 OIDC_EMAIL_ORG_MAPPING: Dict[str, str] = dict(_get_auth_secret("email_org_mapping", {}))
 
 # --- Admins Allowlist ---

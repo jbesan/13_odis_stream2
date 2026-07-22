@@ -90,3 +90,5 @@ def test_apply_logged_in_org_defaults():
         }
         # Test scalar override
         assert defaults["target_population"] == 10000
+
+
