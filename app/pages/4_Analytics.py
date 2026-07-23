@@ -40,6 +40,7 @@ with st.sidebar:
     st.divider()
     ui_comp.start_over()
     ui_comp.render_sources_sidebar_link()
+    ui_comp.render_logout_sidebar_button()
 
 
 

@@ -272,6 +272,7 @@ with st.sidebar:
     # --- Dashboard Admin Analytics & Sources ---
     ui.render_admin_sidebar_link()
     ui.render_sources_sidebar_link()
+    ui.render_logout_sidebar_button()
 
     # --- Weights --- (MOVED TO TOP FILTER FORM)
 

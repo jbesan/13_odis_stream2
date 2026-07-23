@@ -101,5 +101,29 @@ def render_sources_sidebar_link() -> None:
         show_sources_dialog()
 
 
+def render_logout_sidebar_button() -> None:
+    """Renders the connected user info badge and logout button in the sidebar."""
+    from utils import auth
 
+    user = st.session_state.get("user")
+    username = st.session_state.get("username")
+    org = st.session_state.get("org")
 
+    if username or user or org:
+        st.divider()
+        display_name = username or (user.username if user else "Utilisateur")
+        org_name = org.name if org else None
+
+        # st.caption("👤 **Connecté en tant que :**")
+        # st.markdown(f"**{display_name}**")
+        # if org_name:
+        #     st.caption(f"🏢 *{org_name}*")
+
+        if st.button(
+            "Se déconnecter",
+            key="btn_logout_sidebar",
+            width="stretch",
+            icon=":material/logout:",
+            type="tertiary",
+        ):
+            auth.logout()

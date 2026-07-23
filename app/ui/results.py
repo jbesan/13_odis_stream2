@@ -1078,7 +1078,7 @@ def show_details_dialog(index: Any):
                                 }
                                 for item in muni_list
                             ]
-                            st.dataframe(pd.DataFrame(rows_muni), hide_index=True, use_container_width=True)
+                            st.dataframe(pd.DataFrame(rows_muni), hide_index=True, width="content")
 
                         if pres_list:
                             st.markdown("##### 🗳️ Élections Présidentielles")
@@ -1091,7 +1091,7 @@ def show_details_dialog(index: Any):
                                 }
                                 for item in pres_list
                             ]
-                            st.dataframe(pd.DataFrame(rows_pres), hide_index=True, use_container_width=True)
+                            st.dataframe(pd.DataFrame(rows_pres), hide_index=True, width="content")
                     elif isinstance(history, list) and history:
                         st.markdown(
                             "##### 🗳️ Historique Électoral"
@@ -1105,7 +1105,7 @@ def show_details_dialog(index: Any):
                             }
                             for item in history
                         ]
-                        st.dataframe(pd.DataFrame(table_rows), hide_index=True, use_container_width=True)
+                        st.dataframe(pd.DataFrame(table_rows), hide_index=True, width="content")
                 except Exception as e:
                     st.caption("Erreur lors du chargement de l'historique électoral.")
         with c2:

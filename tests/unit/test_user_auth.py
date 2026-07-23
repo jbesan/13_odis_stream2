@@ -1,8 +1,9 @@
 import os
 from unittest.mock import patch
-from utils.auth import hash_password, verify_password, check_password
+from utils.auth import hash_password, verify_password, check_password, logout
 from core.models import User, Org
 from utils.data_loader import apply_logged_in_org_defaults
+from unittest.mock import MagicMock
 
 
 def test_verify_password_pbkdf2_roundtrip():
@@ -90,5 +91,36 @@ def test_apply_logged_in_org_defaults():
         }
         # Test scalar override
         assert defaults["target_population"] == 10000
+
+
+def test_logout_direct_email():
+    """Verify that logout clears session_state and switches page for email direct login."""
+    mock_session = MagicMock()
+
+    with (
+        patch("utils.auth.st.session_state", mock_session),
+        patch("utils.auth.st.user", None, create=True),
+        patch("utils.auth.st.switch_page") as mock_switch,
+    ):
+        logout()
+        mock_session.clear.assert_called_once()
+        mock_switch.assert_called_once_with("pages/1_Accueil.py")
+
+
+def test_logout_oidc():
+    """Verify that logout calls st.logout() when user is logged in via OIDC."""
+    mock_session = MagicMock()
+    mock_user = MagicMock()
+    mock_user.is_logged_in = True
+
+    with (
+        patch("utils.auth.st.session_state", mock_session),
+        patch("utils.auth.st.user", mock_user, create=True),
+        patch("utils.auth.st.logout") as mock_st_logout,
+    ):
+        logout()
+        mock_session.clear.assert_called_once()
+        mock_st_logout.assert_called_once()
+
 
 

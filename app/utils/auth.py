@@ -292,3 +292,22 @@ def check_password() -> bool:
                     else:
                         st.error("❌ Identifiants incorrects.")
     return False
+
+
+def logout() -> None:
+    """Logs out the current user session.
+
+    Supports both native Streamlit OIDC authentication (st.logout()) and direct email/password login.
+    Clears all session state variables and redirects to the home/login page.
+    """
+    st.session_state.clear()
+
+    user_obj = getattr(st, "user", None)
+    if user_obj and getattr(user_obj, "is_logged_in", False):
+        st.logout()
+    else:
+        try:
+            st.switch_page("pages/1_Accueil.py")
+        except Exception:
+            st.rerun()
+

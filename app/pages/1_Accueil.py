@@ -49,6 +49,7 @@ with st.sidebar:
 
     ui_comp.render_admin_sidebar_link()
     ui_comp.render_sources_sidebar_link()
+    ui_comp.render_logout_sidebar_button()
 
 
 
