@@ -96,7 +96,7 @@
     },
     "ingest_all": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-22T19:13:47.773980",
+      "timestamp": "2026-07-23T16:18:27.770336",
       "details": {}
     },
     "clean_communes": {
@@ -493,6 +493,11 @@
     "clean_jaccueille_prospects": {
       "status": "COMPLETED",
       "timestamp": "2026-07-22T19:01:12.733894",
+      "details": {}
+    },
+    "clean_salesforce_jaccueille": {
+      "status": "COMPLETED",
+      "timestamp": "2026-07-23T16:18:27.769874",
       "details": {}
     }
   },
