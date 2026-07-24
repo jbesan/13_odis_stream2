@@ -1354,7 +1354,7 @@ class TerritoryMetrics(BaseModel):
             "odis_visibility": ["agent_refiner", "ui_details", "pdf_report"]
         },
     )
-    electoral_history: Optional[str] = Field(
+    electoral_history: Optional[Union[str, List[Any], Dict[str, Any]]] = Field(
         None,
         description="Historique électoral (JSON)",
         json_schema_extra={
