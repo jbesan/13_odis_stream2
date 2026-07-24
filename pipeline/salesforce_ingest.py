@@ -17,6 +17,13 @@ load_dotenv(Path(__file__).parent / ".env")
 # Constants
 RAW_OUTPUT_PATH = Path("pipeline/cache/raw/salesforce_jaccueille_raw.parquet")
 OUTPUT_PATH = Path("pipeline/cache/output/salesforce_jaccueille.parquet")
+OUTPUT_BDV_PATH = Path("pipeline/cache/output/salesforce_jaccueille_bdv.parquet")
+CLEAN_BDV_PATH = Path("pipeline/cache/clean/jaccueille_bdv.parquet")
+CLEAN_PROSPECTS_BDV_PATH = Path("pipeline/cache/clean/jaccueille_prospects_bdv.parquet")
+
+CODES_POSTAUX_PATH = Path("pipeline/cache/clean/codes_postaux.parquet")
+COMMUNES_PATH = Path("pipeline/cache/output/odis_communes.parquet")
+
 TTL_DAYS = 7
 
 
@@ -26,7 +33,7 @@ def get_salesforce_status() -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: Status info containing exists, within_ttl, age_days, and ttl_days.
     """
-    if not OUTPUT_PATH.exists():
+    if not OUTPUT_PATH.exists() or not OUTPUT_BDV_PATH.exists():
         return {
             "exists": False,
             "within_ttl": False,
@@ -34,14 +41,14 @@ def get_salesforce_status() -> Dict[str, Any]:
             "ttl_days": TTL_DAYS,
         }
 
-    mtime = datetime.fromtimestamp(OUTPUT_PATH.stat().st_mtime)
+    mtime = datetime.fromtimestamp(OUTPUT_BDV_PATH.stat().st_mtime)
     age_days = (datetime.now() - mtime).days
     return {
         "exists": True,
         "within_ttl": age_days < TTL_DAYS,
         "age_days": age_days,
         "ttl_days": TTL_DAYS,
-        "path": str(OUTPUT_PATH),
+        "path": str(OUTPUT_BDV_PATH),
     }
 
 
@@ -140,16 +147,7 @@ def get_salesforce_jwt_token() -> Tuple[str, str]:
 
 
 def fetch_soql_records(instance_url: str, access_token: str, soql_query: str) -> List[Dict[str, Any]]:
-    """Executes a SOQL query against Salesforce REST API handling pagination.
-
-    Args:
-        instance_url: Salesforce instance base URL.
-        access_token: OAuth Bearer access token.
-        soql_query: The SOQL query string.
-
-    Returns:
-        List[Dict[str, Any]]: List of matching records.
-    """
+    """Executes a SOQL query against Salesforce REST API handling pagination."""
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json",
@@ -178,16 +176,7 @@ def fetch_soql_records(instance_url: str, access_token: str, soql_query: str) ->
 
 
 def aggregate_salesforce_data(leads: List[Dict[str, Any]], contacts: List[Dict[str, Any]]) -> pd.DataFrame:
-    """Processes Lead and Contact records into a postal code aggregated DataFrame.
-
-    Args:
-        leads: List of Lead records.
-        contacts: List of Contact records.
-
-    Returns:
-        pd.DataFrame: Aggregated DataFrame with columns:
-            code_postal, lead_count, contact_count, total_jaccueille_count, lead_ids, contact_ids.
-    """
+    """Processes Lead and Contact records into a postal code aggregated DataFrame."""
     # 1. Process Leads
     lead_map: Dict[str, List[str]] = {}
     for l in leads:
@@ -238,30 +227,106 @@ def aggregate_salesforce_data(leads: List[Dict[str, Any]], contacts: List[Dict[s
     return df
 
 
+def aggregate_by_bassin_de_vie(df_cp_sf: pd.DataFrame) -> pd.DataFrame:
+    """Maps Code Postal -> Commune (codgeo) -> Bassin de Vie in pipeline and aggregates counts + IDs + postal codes."""
+    if df_cp_sf.empty or not CODES_POSTAUX_PATH.exists() or not COMMUNES_PATH.exists():
+        logging.warning("[Salesforce] Missing reference mappings for Bassin de Vie aggregation.")
+        return pd.DataFrame(columns=[
+            "bassin_de_vie",
+            "lead_count",
+            "contact_count",
+            "total_jaccueille_count",
+            "codes_postaux",
+            "lead_ids",
+            "contact_ids",
+        ])
+
+    df_cp = pd.read_parquet(CODES_POSTAUX_PATH).drop_duplicates(subset=["code_postal"], keep="first")
+    df_comm = pd.read_parquet(COMMUNES_PATH)[["codgeo", "bassin_de_vie"]].drop_duplicates(subset=["codgeo"], keep="first")
+
+    merged = df_cp_sf.merge(df_cp, on="code_postal", how="inner")
+    merged_bdv = merged.merge(df_comm, on="codgeo", how="inner")
+
+    bdv_rows = []
+    for bdv, group in merged_bdv.groupby("bassin_de_vie"):
+        lead_count = group["lead_count"].sum()
+        contact_count = group["contact_count"].sum()
+        total_count = lead_count + contact_count
+
+        all_postal_codes = [str(cp) for cp in group["code_postal"].dropna().unique()]
+        all_leads = []
+        all_contacts = []
+
+        for _, r in group.iterrows():
+            l_json = r.get("lead_ids")
+            c_json = r.get("contact_ids")
+            if l_json:
+                try:
+                    l_list = json.loads(l_json) if isinstance(l_json, str) else l_json
+                    if isinstance(l_list, list):
+                        all_leads.extend(l_list)
+                except Exception:
+                    pass
+            if c_json:
+                try:
+                    c_list = json.loads(c_json) if isinstance(c_json, str) else c_json
+                    if isinstance(c_list, list):
+                        all_contacts.extend(c_list)
+                except Exception:
+                    pass
+
+        bdv_rows.append({
+            "bassin_de_vie": str(bdv),
+            "lead_count": int(lead_count),
+            "contact_count": int(contact_count),
+            "total_jaccueille_count": int(total_count),
+            "codes_postaux": json.dumps(sorted(list(set(all_postal_codes)))),
+            "lead_ids": json.dumps(sorted(list(set(all_leads)))),
+            "contact_ids": json.dumps(sorted(list(set(all_contacts)))),
+        })
+
+    df_bdv = pd.DataFrame(bdv_rows)
+    if df_bdv.empty:
+        df_bdv = pd.DataFrame(columns=[
+            "bassin_de_vie",
+            "lead_count",
+            "contact_count",
+            "total_jaccueille_count",
+            "codes_postaux",
+            "lead_ids",
+            "contact_ids",
+        ])
+
+    return df_bdv
+
+
+
+
 def run_salesforce_ingest(force: bool = False) -> Path:
-    """Executes the Salesforce J'accueille data ingestion pipeline.
-
-    Args:
-        force: If True, bypasses 7-day TTL cache validation and re-fetches from Salesforce API.
-
-    Returns:
-        Path: Path to the clean output Parquet file.
-    """
+    """Executes the Salesforce J'accueille data ingestion pipeline."""
     status = get_salesforce_status()
     if not force and status["within_ttl"]:
         logging.info(f"[Salesforce] Local cache is valid ({status['age_days']} days old < TTL {TTL_DAYS} days). Skipping fetch.")
-        return OUTPUT_PATH
+        return OUTPUT_BDV_PATH
 
     logging.info("[Salesforce] Starting live Salesforce J'accueille data extraction...")
     access_token, instance_url = get_salesforce_jwt_token()
 
-    # 1. Fetch Leads (Prospects) with filters
+    # 1. Fetch Leads (Prospects) with status filters requested by team
+    target_statuses = (
+        "'En attente de nouvelles après RI', "
+        "'Inscription non-finalisée', "
+        "'Inscrit à une date de RI', "
+        "'En attente de conversion', "
+        "'Confirmation non finalisée'"
+    )
     lead_soql = (
         "SELECT Id, PostalCode, CreatedDate, Status, Blackliste__c "
         "FROM Lead "
         "WHERE IsDeleted = FALSE AND Blackliste__c = FALSE "
-        "AND Status NOT IN ('Désistement', 'Ne rentre pas dans le programme')"
+        f"AND Status IN ({target_statuses})"
     )
+
     logging.info("[Salesforce] Fetching Leads...")
     leads = fetch_soql_records(instance_url, access_token, lead_soql)
     logging.info(f"[Salesforce] Extracted {len(leads)} active Leads.")
@@ -287,13 +352,28 @@ def run_salesforce_ingest(force: bool = False) -> Path:
     raw_df.to_parquet(RAW_OUTPUT_PATH, index=False)
     logging.info(f"[Salesforce] Raw data saved to {RAW_OUTPUT_PATH}")
 
-    # 4. Process and aggregate
-    clean_df = aggregate_salesforce_data(leads, contacts)
+    # 4. Process and aggregate by Postal Code
+    clean_cp_df = aggregate_salesforce_data(leads, contacts)
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    clean_df.to_parquet(OUTPUT_PATH, index=False)
-    logging.info(f"[Salesforce] Aggregated dataset saved to {OUTPUT_PATH} ({len(clean_df)} postal codes).")
+    clean_cp_df.to_parquet(OUTPUT_PATH, index=False)
+    logging.info(f"[Salesforce] Postal Code aggregated dataset saved to {OUTPUT_PATH} ({len(clean_cp_df)} postal codes).")
 
-    return OUTPUT_PATH
+    # 5. Pipeline Offline Aggregation Code Postal -> BDV
+    clean_bdv_df = aggregate_by_bassin_de_vie(clean_cp_df)
+    OUTPUT_BDV_PATH.parent.mkdir(parents=True, exist_ok=True)
+    clean_bdv_df.to_parquet(OUTPUT_BDV_PATH, index=False)
+    logging.info(f"[Salesforce] Bassin de Vie aggregated dataset saved to {OUTPUT_BDV_PATH} ({len(clean_bdv_df)} BDVs).")
+
+    # 6. Legacy compatibility output for scoring engine
+    CLEAN_BDV_PATH.parent.mkdir(parents=True, exist_ok=True)
+    df_hosts = clean_bdv_df[["bassin_de_vie", "contact_count"]].rename(columns={"contact_count": "heb_jaccueille_count"})
+    df_hosts.to_parquet(CLEAN_BDV_PATH, index=False)
+
+    CLEAN_PROSPECTS_BDV_PATH.parent.mkdir(parents=True, exist_ok=True)
+    df_props = clean_bdv_df[["bassin_de_vie", "lead_count"]].rename(columns={"lead_count": "prospects_count"})
+    df_props.to_parquet(CLEAN_PROSPECTS_BDV_PATH, index=False)
+
+    return OUTPUT_BDV_PATH
 
 
 if __name__ == "__main__":

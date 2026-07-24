@@ -64,15 +64,18 @@ def test_aggregate_salesforce_data():
 def test_get_salesforce_status(tmp_path, monkeypatch):
     """Test 7-day TTL status check."""
     mock_output = tmp_path / "salesforce_jaccueille.parquet"
+    mock_bdv_output = tmp_path / "salesforce_jaccueille_bdv.parquet"
     monkeypatch.setattr("pipeline.salesforce_ingest.OUTPUT_PATH", mock_output)
+    monkeypatch.setattr("pipeline.salesforce_ingest.OUTPUT_BDV_PATH", mock_bdv_output)
 
     status_before = get_salesforce_status()
     assert not status_before["exists"]
     assert not status_before["within_ttl"]
 
-    # Create dummy output file
+    # Create dummy output files
     df = pd.DataFrame([{"code_postal": "75015", "total_jaccueille_count": 1}])
     df.to_parquet(mock_output)
+    df.to_parquet(mock_bdv_output)
 
     status_after = get_salesforce_status()
     assert status_after["exists"]
@@ -86,8 +89,15 @@ def test_run_salesforce_ingest_force(mock_fetch, mock_jwt, tmp_path, monkeypatch
     """Test pipeline run execution with mock fetch."""
     raw_path = tmp_path / "raw.parquet"
     out_path = tmp_path / "output.parquet"
+    bdv_path = tmp_path / "output_bdv.parquet"
+    clean_bdv_path = tmp_path / "clean_bdv.parquet"
+    clean_props_path = tmp_path / "clean_props.parquet"
+
     monkeypatch.setattr("pipeline.salesforce_ingest.RAW_OUTPUT_PATH", raw_path)
     monkeypatch.setattr("pipeline.salesforce_ingest.OUTPUT_PATH", out_path)
+    monkeypatch.setattr("pipeline.salesforce_ingest.OUTPUT_BDV_PATH", bdv_path)
+    monkeypatch.setattr("pipeline.salesforce_ingest.CLEAN_BDV_PATH", clean_bdv_path)
+    monkeypatch.setattr("pipeline.salesforce_ingest.CLEAN_PROSPECTS_BDV_PATH", clean_props_path)
 
     mock_jwt.return_value = ("fake_token", "https://fake.salesforce.com")
     mock_fetch.side_effect = [
@@ -96,11 +106,13 @@ def test_run_salesforce_ingest_force(mock_fetch, mock_jwt, tmp_path, monkeypatch
     ]
 
     res_path = run_salesforce_ingest(force=True)
-    assert res_path == out_path
+    assert res_path == bdv_path
     assert out_path.exists()
     assert raw_path.exists()
+    assert bdv_path.exists()
 
     df = pd.read_parquet(out_path)
     assert len(df) == 1
     assert df.iloc[0]["code_postal"] == "75015"
     assert df.iloc[0]["total_jaccueille_count"] == 2
+

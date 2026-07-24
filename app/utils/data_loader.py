@@ -566,6 +566,30 @@ def fetch_jaccueille_prospects_bq() -> pd.DataFrame:
     return _fetch_jaccueille_prospects_bq_logic()
 
 
+@st.cache_data(ttl=3600)
+def fetch_salesforce_jaccueille_bdv() -> pd.DataFrame:
+    """Loads the pre-aggregated Salesforce J'accueille BDV table from pipeline cache."""
+    possible_paths = [
+        os.path.join(
+            cfg.APP_DIR, "../pipeline/cache/output/salesforce_jaccueille_bdv.parquet"
+        ),
+        os.path.join(
+            cfg.APP_DIR, "pipeline/cache/output/salesforce_jaccueille_bdv.parquet"
+        ),
+        "pipeline/cache/output/salesforce_jaccueille_bdv.parquet",
+    ]
+    for p in possible_paths:
+        if os.path.exists(p):
+            try:
+                return pd.read_parquet(p)
+            except Exception as e:
+                logger.warning(
+                    f"Failed to read salesforce_jaccueille_bdv.parquet at {p}: {e}"
+                )
+    return pd.DataFrame()
+
+
+
 def _load_parquet(
     path: str, columns: Optional[list] = None, error_list: Optional[list] = None
 ) -> pd.DataFrame:
