@@ -554,3 +554,16 @@ local_files:
     format: "api"
     ttl_days: 30
     description: "API Odace - Équipements et gares"
+
+  salesforce_jaccueille:
+    format: "api"
+    ttl_days: 7
+    description: "API Salesforce J'accueille - Extraction en direct des Prospects et Contacts"
+    used_columns:
+      - code_postal
+      - lead_count
+      - contact_count
+      - total_jaccueille_count
+      - lead_ids
+      - contact_ids
+

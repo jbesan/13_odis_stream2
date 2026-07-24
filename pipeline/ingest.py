@@ -3240,7 +3240,23 @@ def run_clean_step_safely(
         )
 
 
+def clean_salesforce_jaccueille(config: Dict[str, Any], logger: PipelineLogger):
+    """Cleans and ingests Salesforce J'accueille live data (Leads & Contacts)."""
+    logger.log_step("clean_salesforce_jaccueille", "STARTED")
+    try:
+        from pipeline.salesforce_ingest import run_salesforce_ingest
+
+        output_path = run_salesforce_ingest(force=False)
+        logger.log_step(
+            "clean_salesforce_jaccueille", "COMPLETED", {"path": str(output_path)}
+        )
+    except Exception as e:
+        logging.error(f"Failed to ingest Salesforce J'accueille data: {e}")
+        logger.log_step("clean_salesforce_jaccueille", "FAILED", {"error": str(e)})
+
+
 def main(argv=None):
+
     logging.getLogger().setLevel(logging.INFO)
     parser = argparse.ArgumentParser(description="ODIS Ingest Pipeline")
     parser.add_argument(
@@ -3302,7 +3318,9 @@ def main(argv=None):
         "sante_apl": clean_sante_apl,
         "mob_durable": clean_mob_durable,
         "ter_insecurite": clean_ter_insecurite,
+        "salesforce_jaccueille": clean_salesforce_jaccueille,
     }
+
 
     selected_steps = args.steps.split(",") if args.steps else list(steps_map.keys())
 
