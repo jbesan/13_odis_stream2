@@ -18,7 +18,7 @@ from core.models import SearchCriterias, SearchResultsData
 logger = logging.getLogger("services.share_service")
 
 # GCS & BQ Settings
-GCS_BUCKET_NAME = os.getenv("GCS_SHARED_SEARCHES_BUCKET", "odis-shared-searches")
+GCS_BUCKET_NAME = os.getenv("GCS_SHARED_SEARCHES_BUCKET", "odis-stream2-eu")
 LOCAL_STORAGE_DIR = os.path.join(cfg.APP_DIR, "data", "shared_searches")
 
 
