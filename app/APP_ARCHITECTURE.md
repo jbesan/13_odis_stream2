@@ -217,6 +217,7 @@ app/
 │   ├── 3_Resultats.py    # Map, rankings list, and chatbot page
 │   └── 4_Analytics.py    # Admin BI analytics dashboard
 ├── services/
+│   ├── share_service.py  # Snapshot persistence, GCS upload, and session restoration
 │   ├── telemetry.py      # BigQuery search & usage events logger
 │   └── bq_logger.py      # Agent state and chat trajectory BigQuery logger
 ├── utils/
@@ -242,3 +243,22 @@ app/
 1.  Create a new Markdown file with YAML frontmatter under `app/agents/skills/`.
 2.  Define the `domain` (e.g., `mobility_expert`), `id`, and specific constraints.
 3.  Update the coordinator `ts_agent.py` prompts to plan and select the new skill card ID under appropriate user criteria conditions.
+
+---
+
+## 6. Search Results Permalinks & Sharing (`share_service.py`)
+
+ODIS supports sharing search results via unique permalink URLs (`?search=<share_id>`).
+
+### 6.1 Data Persistence Architecture
+* **On-Demand Snapshotting**: Clicking "Partager la recherche" serializes the active `SearchCriterias` and `SearchResultsData` Pydantic models.
+* **Storage Location**: Saved as a JSON blob to Google Cloud Storage (`gs://odis-shared-searches/<share_id>.json`) with local disk fallback (`app/data/shared_searches/<share_id>.json`).
+* **Telemetry**: Logs a `search_shared` event to BigQuery `odis_logs.usage_events`.
+
+### 6.2 URL Parameter Interception & Session Hydration
+* **URL Parameter Interception**: `app/main.py`, `app/pages/1_Accueil.py`, and `app/pages/3_Resultats.py` check `st.query_params.get("search")`.
+* **Session State Restoration**: `restore_shared_search_to_session_state()` re-hydrates `st.session_state` with:
+  * `config` (`SearchCriterias`) and `search_results` (`SearchResultsData`).
+  * `processed_gdf` (Lambert-93 / EPSG:4326 geometries).
+  * `st.session_state["odis_bg_store"][hash]` pre-populated with `pitches`, `enrichment`, `jobs_enrichment`, and city `analysis_key` statuses (`"done"`).
+* **Fork on Edit**: Fine-tuning search criteria and re-running a search from a permalink generates a fresh `share_id` snapshot without altering the original sender's permalink.

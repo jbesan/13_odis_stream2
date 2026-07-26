@@ -136,16 +136,7 @@ def save_shared_search(
 
     payload_json = json.dumps(payload, default=str, ensure_ascii=False)
 
-    # 1. Save Locally (Primary / Fallback)
-    try:
-        local_path = _get_local_filepath(share_id)
-        with open(local_path, "w", encoding="utf-8") as f:
-            f.write(payload_json)
-        logger.info(f"✅ Saved shared search snapshot locally at {local_path}")
-    except Exception as e:
-        logger.error(f"❌ Failed to save shared search snapshot locally: {e}")
-
-    # 2. Upload to GCS (Cloud Storage)
+    # 1. Upload to GCS (Cloud Storage - Primary)
     gcs_uri = ""
     gcs_client = _get_gcs_client()
     if gcs_client:
@@ -156,7 +147,17 @@ def save_shared_search(
             gcs_uri = f"gs://{GCS_BUCKET_NAME}/searches/{share_id}.json"
             logger.info(f"✅ Saved shared search snapshot to GCS at {gcs_uri}")
         except Exception as e:
-            logger.warning(f"⚠️ GCS upload skipped/failed for {share_id}: {e}")
+            logger.warning(f"⚠️ GCS upload failed for {share_id}: {e}")
+
+    # 2. Fallback to Local Storage ONLY if GCS is unavailable or failed (e.g. local dev / unit tests)
+    if not gcs_uri:
+        try:
+            local_path = _get_local_filepath(share_id)
+            with open(local_path, "w", encoding="utf-8") as f:
+                f.write(payload_json)
+            logger.info(f"✅ Saved shared search snapshot locally at {local_path}")
+        except Exception as e:
+            logger.error(f"❌ Failed to save shared search snapshot locally: {e}")
 
     # 3. Log Telemetry to BigQuery
     try:
@@ -182,7 +183,7 @@ def load_shared_search(
 ) -> Tuple[Optional[SearchCriterias], Optional[SearchResultsData]]:
     """
     Loads and deserializes a saved search snapshot by share_id.
-    Checks local filesystem first, then GCS.
+    Checks GCS primary first, and falls back to local file if GCS unavailable (e.g. local unit tests).
     Returns (SearchCriterias, SearchResultsData) or (None, None) if not found.
     """
     if not share_id or not isinstance(share_id, str):
@@ -193,29 +194,29 @@ def load_shared_search(
 
     payload_dict: Optional[Dict[str, Any]] = None
 
-    # 1. Check Local File
-    local_path = _get_local_filepath(share_id)
-    if os.path.exists(local_path):
+    # 1. Check GCS (Primary)
+    gcs_client = _get_gcs_client()
+    if gcs_client:
         try:
-            with open(local_path, "r", encoding="utf-8") as f:
-                payload_dict = json.load(f)
-            logger.info(f"✅ Loaded shared search snapshot from local file {local_path}")
+            bucket = gcs_client.bucket(GCS_BUCKET_NAME)
+            blob = bucket.blob(f"searches/{share_id}.json")
+            if blob.exists():
+                data_str = blob.download_as_text(encoding="utf-8")
+                payload_dict = json.loads(data_str)
+                logger.info(f"✅ Loaded shared search snapshot from GCS for {share_id}")
         except Exception as e:
-            logger.error(f"❌ Failed reading local shared search {local_path}: {e}")
+            logger.error(f"❌ Failed fetching GCS shared search {share_id}: {e}")
 
-    # 2. Check GCS if not found locally
+    # 2. Check Local File (Fallback ONLY if GCS unavailable / local dev)
     if payload_dict is None:
-        gcs_client = _get_gcs_client()
-        if gcs_client:
+        local_path = _get_local_filepath(share_id)
+        if os.path.exists(local_path):
             try:
-                bucket = gcs_client.bucket(GCS_BUCKET_NAME)
-                blob = bucket.blob(f"searches/{share_id}.json")
-                if blob.exists():
-                    data_str = blob.download_as_text(encoding="utf-8")
-                    payload_dict = json.loads(data_str)
-                    logger.info(f"✅ Loaded shared search snapshot from GCS for {share_id}")
+                with open(local_path, "r", encoding="utf-8") as f:
+                    payload_dict = json.load(f)
+                logger.info(f"✅ Loaded shared search snapshot from local file {local_path}")
             except Exception as e:
-                logger.error(f"❌ Failed fetching GCS shared search {share_id}: {e}")
+                logger.error(f"❌ Failed reading local shared search {local_path}: {e}")
 
     if not payload_dict or "config" not in payload_dict or "search_results" not in payload_dict:
         logger.warning(f"⚠️ Shared search snapshot not found for ID: {share_id}")
