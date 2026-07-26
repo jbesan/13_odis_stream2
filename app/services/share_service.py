@@ -11,6 +11,8 @@ if sys.version_info >= (3, 9):
 else:
     from backports import zoneinfo as zoneinfo  # type: ignore
 
+import gzip
+
 import streamlit as st
 import config as cfg
 from core.models import SearchCriterias, SearchResultsData
@@ -80,6 +82,13 @@ def _clean_set_strings(obj: Any) -> Any:
     return obj
 
 
+def _decompress_payload_bytes(data_bytes: bytes) -> Dict[str, Any]:
+    """Decompresses gzipped bytes or parses raw JSON bytes transparently."""
+    if data_bytes.startswith(b"\x1f\x8b"):
+        data_bytes = gzip.decompress(data_bytes)
+    return json.loads(data_bytes.decode("utf-8"))
+
+
 def save_shared_search(
     config: SearchCriterias,
     search_results: SearchResultsData,
@@ -88,7 +97,7 @@ def save_shared_search(
 ) -> str:
     """
     Serializes and saves a search results snapshot (config + search_results).
-    Saves to GCS when available and always keeps a local JSON fallback.
+    Compresses payload with Gzip and uploads to GCS with content_encoding='gzip'.
     Logs metadata to BigQuery. Returns the 8-character share_id.
     """
     share_id = uuid.uuid4().hex[:8]
@@ -135,17 +144,22 @@ def save_shared_search(
     }
 
     payload_json = json.dumps(payload, default=str, ensure_ascii=False)
+    compressed_bytes = gzip.compress(payload_json.encode("utf-8"))
 
-    # 1. Upload to GCS (Cloud Storage - Primary)
+    # 1. Upload to GCS (Cloud Storage - Primary with Gzip compression)
     gcs_uri = ""
     gcs_client = _get_gcs_client()
     if gcs_client:
         try:
             bucket = gcs_client.bucket(GCS_BUCKET_NAME)
             blob = bucket.blob(f"searches/{share_id}.json")
-            blob.upload_from_string(payload_json, content_type="application/json")
+            blob.upload_from_string(
+                compressed_bytes,
+                content_type="application/json",
+                content_encoding="gzip",
+            )
             gcs_uri = f"gs://{GCS_BUCKET_NAME}/searches/{share_id}.json"
-            logger.info(f"✅ Saved shared search snapshot to GCS at {gcs_uri}")
+            logger.info(f"✅ Saved gzipped shared search snapshot to GCS at {gcs_uri} ({len(compressed_bytes)} bytes)")
         except Exception as e:
             logger.warning(f"⚠️ GCS upload failed for {share_id}: {e}")
 
@@ -153,9 +167,9 @@ def save_shared_search(
     if not gcs_uri:
         try:
             local_path = _get_local_filepath(share_id)
-            with open(local_path, "w", encoding="utf-8") as f:
-                f.write(payload_json)
-            logger.info(f"✅ Saved shared search snapshot locally at {local_path}")
+            with open(local_path, "wb") as f:
+                f.write(compressed_bytes)
+            logger.info(f"✅ Saved gzipped shared search snapshot locally at {local_path}")
         except Exception as e:
             logger.error(f"❌ Failed to save shared search snapshot locally: {e}")
 
@@ -184,6 +198,7 @@ def load_shared_search(
     """
     Loads and deserializes a saved search snapshot by share_id.
     Checks GCS primary first, and falls back to local file if GCS unavailable (e.g. local unit tests).
+    Supports both gzipped and uncompressed JSON payloads.
     Returns (SearchCriterias, SearchResultsData) or (None, None) if not found.
     """
     if not share_id or not isinstance(share_id, str):
@@ -201,8 +216,8 @@ def load_shared_search(
             bucket = gcs_client.bucket(GCS_BUCKET_NAME)
             blob = bucket.blob(f"searches/{share_id}.json")
             if blob.exists():
-                data_str = blob.download_as_text(encoding="utf-8")
-                payload_dict = json.loads(data_str)
+                data_bytes = blob.download_as_bytes()
+                payload_dict = _decompress_payload_bytes(data_bytes)
                 logger.info(f"✅ Loaded shared search snapshot from GCS for {share_id}")
         except Exception as e:
             logger.error(f"❌ Failed fetching GCS shared search {share_id}: {e}")
@@ -212,8 +227,9 @@ def load_shared_search(
         local_path = _get_local_filepath(share_id)
         if os.path.exists(local_path):
             try:
-                with open(local_path, "r", encoding="utf-8") as f:
-                    payload_dict = json.load(f)
+                with open(local_path, "rb") as f:
+                    data_bytes = f.read()
+                payload_dict = _decompress_payload_bytes(data_bytes)
                 logger.info(f"✅ Loaded shared search snapshot from local file {local_path}")
             except Exception as e:
                 logger.error(f"❌ Failed reading local shared search {local_path}: {e}")
