@@ -13,7 +13,6 @@
 .venv/
 venv
 .DS_Store
-.mypy_cache
 .pytest_cache
 .gitignore
 __pycache__
@@ -33,4 +32,3 @@ app/.env
 app/data_private/
 pipeline/data_private/
 **/.env
-

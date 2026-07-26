@@ -5,7 +5,6 @@
 !app/
 !tests/
 !requirements-dev.txt
-!mypy.ini
 !cloudbuild.yaml
 !ruff.toml
 !ty.toml
@@ -16,7 +15,6 @@
 .venv/
 venv
 .DS_Store
-.mypy_cache
 .pytest_cache
 .gitignore
 __pycache__
@@ -33,4 +31,3 @@ app/*.pyc
 app/.DS_Store
 app/.env
 **/.env
-

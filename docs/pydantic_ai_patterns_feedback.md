@@ -118,7 +118,7 @@ Tous les toolsets du projet héritent d'une classe wrapper [TracedToolset](file:
 
 Si vous démarrez un projet similaire sous PydanticAI, suivez ces principes :
 
-1.  **Préférez `pydantic_graph` à LangGraph** si vous cherchez une intégration native avec Pydantic, un typage statique fort (`mypy`/`pyright`) et une gestion simplifiée de l'état asynchrone.
+1.  **Préférez `pydantic_graph` à LangGraph** si vous cherchez une intégration native avec Pydantic, un typage statique fort (`ty`/`pyright`) et une gestion simplifiée de l'état asynchrone.
 2.  **N'écrivez pas de prompts géants avec tous les outils**. Utilisez l'assemblage dynamique : chargez les instructions métiers (prompts) et activez les outils (`toolsets`) uniquement au moment de l'exécution, en réponse au besoin qualifié par l'orchestrateur.
 3.  **Contrôlez les appels d'outils externes** via les `prepare` hooks de PydanticAI. C'est le moyen le plus propre pour ajouter des contraintes dynamiques (géographiques, droits d'accès, filtres de domaines) sans modifier le code de base de l'outil.
 4.  **Structurez vos dépendances** en lecture seule (les clients d'API, bases de données) dans un conteneur comme `GraphDeps`, et les données mutables dans le `GraphState`.
