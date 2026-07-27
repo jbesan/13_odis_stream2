@@ -162,3 +162,45 @@ def test_fetch_jaccueille_data_bq_cloud_run(
         args[0].endswith("app/data_private") for args, _ in mock_makedirs.call_args_list
     )
     assert df.loc[0, "heb_accueillants_count"] == 5
+
+
+def test_resolve_dataset_path_local_datasets(tmp_path, monkeypatch):
+    """Tests that resolve_dataset_path finds files in app/data/datasets/."""
+    datasets_dir = tmp_path / "app" / "data" / "datasets"
+    datasets_dir.mkdir(parents=True)
+    test_file = datasets_dir / "test_dataset.parquet"
+    test_file.write_text("dummy")
+
+    monkeypatch.setattr(data_loader.cfg, "APP_DIR", str(tmp_path / "app"))
+
+    resolved = data_loader.resolve_dataset_path("test_dataset.parquet")
+    assert resolved == str(test_file)
+
+
+@patch("utils.data_loader.storage.Client")
+def test_resolve_dataset_path_gcs_fallback(mock_storage_client_cls, tmp_path, monkeypatch):
+    """Tests that resolve_dataset_path falls back to GCS download when file is not local."""
+    monkeypatch.setattr(data_loader.cfg, "APP_DIR", str(tmp_path / "nonexistent_app"))
+    monkeypatch.setattr(data_loader.tempfile, "gettempdir", lambda: str(tmp_path / "tmp"))
+    
+    mock_client = MagicMock()
+    mock_storage_client_cls.return_value = mock_client
+    mock_bucket = MagicMock()
+    mock_client.bucket.return_value = mock_bucket
+    mock_blob = MagicMock()
+    mock_bucket.blob.return_value = mock_blob
+    mock_blob.exists.return_value = True
+
+    # Simulate download_to_filename writing dummy file
+    def mock_download(target_path):
+        from pathlib import Path
+        Path(target_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(target_path).write_text("gcs_data")
+
+    mock_blob.download_to_filename.side_effect = mock_download
+
+    resolved = data_loader.resolve_dataset_path("salesforce_jaccueille_bdv.parquet")
+    assert resolved is not None
+    assert "salesforce_jaccueille_bdv.parquet" in resolved
+    assert mock_blob.download_to_filename.called
+

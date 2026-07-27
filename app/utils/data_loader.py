@@ -8,7 +8,9 @@ import logging
 from typing import Dict, Any, List, Optional
 import config as cfg
 import copy
+import tempfile
 import threading
+from google.cloud import storage
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -584,43 +586,86 @@ def fetch_jaccueille_prospects_bq() -> pd.DataFrame:
     return _fetch_jaccueille_prospects_bq_logic()
 
 
+def resolve_dataset_path(filename_or_path: str) -> Optional[str]:
+    """
+    Resolves the physical path of a dataset file with Dual-Mode strategy:
+    1. Direct path if specified and exists
+    2. app/data/datasets/{filename} (local dev mirror)
+    3. app/data/{filename} (legacy local app data)
+    4. /tmp/data_cache/{filename} (downloaded GCS cache)
+    5. GCS download from gs://{GCS_BUCKET_NAME}/datasets/{filename}
+    """
+    filename = os.path.basename(filename_or_path)
+
+    # 1. Direct path check
+    if os.path.exists(filename_or_path):
+        return filename_or_path
+
+    # 2. Local app/data/datasets/ (local dev mirror)
+    local_datasets_path = os.path.join(cfg.APP_DIR, "data", "datasets", filename)
+    if os.path.exists(local_datasets_path):
+        logger.debug(f"📦 [DATASET] Loaded '{filename}' from local datasets mirror.")
+        return local_datasets_path
+
+    # 3. Local app/data/ (legacy fallback)
+    local_data_path = os.path.join(cfg.APP_DIR, "data", filename)
+    if os.path.exists(local_data_path):
+        logger.debug(f"📦 [DATASET] Loaded '{filename}' from app/data/.")
+        return local_data_path
+
+    # 4. Local temp GCS cache
+    tmp_cache_dir = os.path.join(tempfile.gettempdir(), "odis_data_cache")
+    tmp_cache_path = os.path.join(tmp_cache_dir, filename)
+    if os.path.exists(tmp_cache_path):
+        logger.debug(f"💾 [GCS CACHE] Loaded '{filename}' from local temp cache ({tmp_cache_path}).")
+        return tmp_cache_path
+
+    # 5. GCS download
+    try:
+        bucket_name = os.getenv("GCS_DATASETS_BUCKET", "odis-stream2-eu")
+        client = storage.Client()
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob(f"datasets/{filename}")
+        if blob.exists():
+            os.makedirs(tmp_cache_dir, exist_ok=True)
+            logger.info(f"📡 [GCS] Downloading dataset '{filename}' from gs://{bucket_name}/datasets/...")
+            blob.download_to_filename(tmp_cache_path)
+            logger.info(f"✅ [GCS] Successfully cached '{filename}' to {tmp_cache_path}")
+            return tmp_cache_path
+        else:
+            logger.warning(f"⚠️ [GCS] Blob 'datasets/{filename}' not found in bucket 'gs://{bucket_name}'")
+    except Exception as e:
+        logger.warning(f"⚠️ [GCS] Failed to fetch dataset '{filename}' from GCS: {e}")
+
+    return None
+
+
 @st.cache_data(ttl=3600)
 def fetch_salesforce_jaccueille_bdv() -> pd.DataFrame:
-    """Loads the pre-aggregated Salesforce J'accueille BDV table from pipeline cache."""
-    possible_paths = [
-        os.path.join(
-            cfg.APP_DIR, "../pipeline/cache/output/salesforce_jaccueille_bdv.parquet"
-        ),
-        os.path.join(
-            cfg.APP_DIR, "pipeline/cache/output/salesforce_jaccueille_bdv.parquet"
-        ),
-        "pipeline/cache/output/salesforce_jaccueille_bdv.parquet",
-    ]
-    for p in possible_paths:
-        if os.path.exists(p):
-            try:
-                return pd.read_parquet(p)
-            except Exception as e:
-                logger.warning(
-                    f"Failed to read salesforce_jaccueille_bdv.parquet at {p}: {e}"
-                )
-    return pd.DataFrame()
-
+    """Loads the pre-aggregated Salesforce J'accueille BDV table using the unified dataset loader."""
+    logger.info("📡 [SALESFORCE] Fetching Salesforce J'accueille BDV dataset...")
+    df = load_parquet_dataset("salesforce_jaccueille_bdv.parquet")
+    if not df.empty:
+        logger.info(f"✅ [SALESFORCE] Loaded {len(df)} rows from salesforce_jaccueille_bdv.parquet")
+    else:
+        logger.warning("⚠️ [SALESFORCE] salesforce_jaccueille_bdv.parquet is missing or empty")
+    return df
 
 
 def _load_parquet(
     path: str, columns: Optional[list] = None, error_list: Optional[list] = None
 ) -> pd.DataFrame:
-    """Internal non-cached loader with error tracking."""
-    if not os.path.exists(path):
+    """Internal non-cached loader with error tracking and GCS dataset resolution."""
+    resolved_path = resolve_dataset_path(path)
+    if not resolved_path or not os.path.exists(resolved_path):
         fname = os.path.basename(path)
         logger.error(f"File not found: {path} (Critical for this feature)")
         if error_list is not None:
             error_list.append(fname)
         return pd.DataFrame()
     if columns:
-        return pd.read_parquet(path, engine="fastparquet", columns=columns)
-    return pd.read_parquet(path, engine="fastparquet")
+        return pd.read_parquet(resolved_path, engine="fastparquet", columns=columns)
+    return pd.read_parquet(resolved_path, engine="fastparquet")
 
 
 @st.cache_resource

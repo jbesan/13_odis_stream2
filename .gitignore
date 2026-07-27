@@ -24,4 +24,5 @@ app/.streamlit/secrets.toml
 app/data_private/
 pipeline/data_private/
 app/data/shared_searches/
+app/data/datasets/
 .antigravityignore

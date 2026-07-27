@@ -9,22 +9,29 @@ sys.path.append(os.path.join(os.getcwd(), "app"))
 from pipeline import ingest, build, prescoring
 import shutil
 import os
+from pathlib import Path
+from google.cloud import storage
 
-SOURCE_DIR = "pipeline/cache/output"
-DEST_DIR = "app/data"
+SOURCE_DIR = Path("pipeline/cache/output")
+DEST_DATA_DIR = Path("app/data")
+DEST_DATASETS_DIR = Path("app/data/datasets")
 
-FILES_TO_COPY = [
+BOOTSTRAP_FILES = [
+    "odis_referentiels.parquet",
+    "data_manifest.json",
+]
+
+DATASET_FILES = [
     "odis_communes.parquet",
     "odis_bassins_de_vie.parquet",
     "odis_pois.parquet",
     "odis_associations_agg.parquet",
-    "odis_referentiels.parquet",
     "odis_formations_agg.parquet",
     "odis_ccas.parquet",
     "odis_refugee_associations.parquet",
     "odis_ft_jobs_agg.parquet",
     "odis_inclusion_jobs.parquet",
-    "data_manifest.json",
+    "salesforce_jaccueille_bdv.parquet",
 ]
 
 
@@ -191,30 +198,49 @@ def main():
 
     if args.step in ["deploy", "all"]:
         logging.info("=== Starting Deployment Phase ===")
-        if not os.path.exists(DEST_DIR):
-            os.makedirs(DEST_DIR)
-            logging.info(f"Created {DEST_DIR}")
+        DEST_DATA_DIR.mkdir(parents=True, exist_ok=True)
+        DEST_DATASETS_DIR.mkdir(parents=True, exist_ok=True)
 
-        # Cleanup legacy files
-        for f in os.listdir(DEST_DIR):
-            if f.startswith("odis_rel_") and f.endswith(".parquet"):
-                try:
-                    os.remove(os.path.join(DEST_DIR, f))
-                    logging.info(f"Removed legacy file: {f}")
-                except Exception as e:
-                    logging.warning(f"Failed to remove legacy file {f}: {e}")
-
-        for f in FILES_TO_COPY:
-            src = os.path.join(SOURCE_DIR, f)
-            dst = os.path.join(DEST_DIR, f)
-
-            if os.path.exists(src):
-                if os.path.exists(dst):
-                    os.remove(dst)
+        # 1. Copy Bootstrap files to app/data/
+        for f in BOOTSTRAP_FILES:
+            src = SOURCE_DIR / f
+            dst = DEST_DATA_DIR / f
+            if src.exists():
                 shutil.copy2(src, dst)
-                logging.info(f"Copied {f} to {DEST_DIR}")
+                logging.info(f"Copied bootstrap file {f} to {DEST_DATA_DIR}")
             else:
-                logging.error(f"Source file {f} not found in {SOURCE_DIR}")
+                logging.error(f"Bootstrap source file {f} not found in {SOURCE_DIR}")
+
+        # 2. Copy Dataset files to app/data/datasets/ (local dev mirror)
+        for f in DATASET_FILES:
+            src = SOURCE_DIR / f
+            dst = DEST_DATASETS_DIR / f
+            if src.exists():
+                shutil.copy2(src, dst)
+                logging.info(f"Copied dataset file {f} to {DEST_DATASETS_DIR}")
+            else:
+                logging.warning(f"Dataset source file {f} not found in {SOURCE_DIR}")
+
+        # 3. Upload Datasets to GCS bucket (gs://odis-stream2-eu/datasets/)
+        bucket_name = os.getenv("GCS_DATASETS_BUCKET", "odis-stream2-eu")
+        try:
+            gcs_client = storage.Client()
+            bucket = gcs_client.bucket(bucket_name)
+            logging.info(f"Uploading datasets to GCS bucket 'gs://{bucket_name}/datasets/'...")
+            
+            all_files_to_upload = BOOTSTRAP_FILES + DATASET_FILES
+            for f in all_files_to_upload:
+                src = SOURCE_DIR / f
+                if src.exists():
+                    blob_path = f"datasets/{f}"
+                    blob = bucket.blob(blob_path)
+                    blob.upload_from_filename(str(src))
+                    logging.info(f"Uploaded {f} -> gs://{bucket_name}/{blob_path}")
+        except Exception as e:
+            logging.warning(
+                f"GCS Upload skipped or failed (GCP credentials/connection issue): {e}"
+            )
+
         logging.info("=== Deployment Phase Completed ===")
 
 
