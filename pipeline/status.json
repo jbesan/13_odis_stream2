@@ -96,7 +96,7 @@
     },
     "ingest_all": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-23T16:40:29.724557",
+      "timestamp": "2026-07-27T14:29:37.022045",
       "details": {}
     },
     "clean_communes": {
@@ -125,7 +125,7 @@
     },
     "clean_population_active": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-23T16:40:03.985024",
+      "timestamp": "2026-07-27T14:29:35.786192",
       "details": {
         "rows": 34774,
         "path": "pipeline/cache/clean/population_active.parquet"
@@ -324,7 +324,7 @@
     },
     "clean_population_details": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-23T16:40:28.339581",
+      "timestamp": "2026-07-27T14:29:36.916138",
       "details": {
         "rows": 34852,
         "path": "pipeline/cache/clean/population_details.parquet"
@@ -404,7 +404,7 @@
     },
     "clean_mob_transports_pub": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-23T16:40:28.448615",
+      "timestamp": "2026-07-27T14:29:37.021308",
       "details": {
         "rows": 34858,
         "path": "pipeline/cache/clean/mob_transports_pub.parquet"

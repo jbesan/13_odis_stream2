@@ -234,14 +234,20 @@ if st.session_state.get("processed_gdf") is None and st.session_state.get(
 # --- UI LAYOUT ---
 
 
-# Fragment-based PDF container (polled while background tasks are running)
+# Fragment-based action buttons container (polled while background tasks are running)
 @st.fragment(run_every=3.0)
-def export_pdf_container_polling(h: str):
+def action_buttons_container_polling(h: str):
     ui_results.render_export_pdf_button(h)
+    ui_results.render_share_search_button(
+        h=h, button_text="Partager", key_prefix="sidebar_share"
+    )
 
 
-def export_pdf_container_static(h: str):
+def action_buttons_container_static(h: str):
     ui_results.render_export_pdf_button(h)
+    ui_results.render_share_search_button(
+        h=h, button_text="Partager", key_prefix="sidebar_share"
+    )
 
 
 # Sidebar
@@ -277,16 +283,10 @@ with st.sidebar:
             isinstance(bg_res, dict) and "pitches" in bg_res and "enrichment" in bg_res
         )
 
-        # col_pdf, col_share = st.columns(2)
-        # with col_pdf:
         if is_done:
-            export_pdf_container_static(h)
+            action_buttons_container_static(h)
         else:
-            export_pdf_container_polling(h)
-        # with col_share:
-        ui_results.render_share_search_button(
-            h=h, button_text="Partager", key_prefix="sidebar_share"
-        )
+            action_buttons_container_polling(h)
 
     st.divider()
 

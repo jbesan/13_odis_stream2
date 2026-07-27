@@ -16,6 +16,7 @@ import gzip
 import streamlit as st
 import config as cfg
 from core.models import SearchCriterias, SearchResultsData
+from google.cloud import storage, bigquery
 
 logger = logging.getLogger("services.share_service")
 
@@ -35,10 +36,9 @@ def _get_gcs_client():
     if not os.getenv("GOOGLE_CLOUD_PROJECT") and not os.getenv("GCP_PROJECT"):
         return None
     try:
-        from google.cloud import storage
         return storage.Client()
     except Exception as e:
-        logger.debug(f"GCS client unavailable: {e}")
+        logger.warning(f"GCS client initialization failed: {e}")
         return None
 
 
@@ -47,10 +47,9 @@ def _get_bq_client():
     if not os.getenv("GOOGLE_CLOUD_PROJECT") and not os.getenv("GCP_PROJECT"):
         return None
     try:
-        from google.cloud import bigquery
         return bigquery.Client()
     except Exception as e:
-        logger.debug(f"BQ client unavailable: {e}")
+        logger.warning(f"BQ client initialization failed: {e}")
         return None
 
 
@@ -153,10 +152,10 @@ def save_shared_search(
         try:
             bucket = gcs_client.bucket(GCS_BUCKET_NAME)
             blob = bucket.blob(f"searches/{share_id}.json")
+            blob.content_encoding = "gzip"
             blob.upload_from_string(
                 compressed_bytes,
                 content_type="application/json",
-                content_encoding="gzip",
             )
             gcs_uri = f"gs://{GCS_BUCKET_NAME}/searches/{share_id}.json"
             logger.info(f"✅ Saved gzipped shared search snapshot to GCS at {gcs_uri} ({len(compressed_bytes)} bytes)")

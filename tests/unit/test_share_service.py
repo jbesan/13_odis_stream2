@@ -7,9 +7,10 @@ from services.share_service import save_shared_search, load_shared_search, _get_
 
 def test_save_and_load_shared_search_roundtrip(tmp_path, monkeypatch):
     """Verify that saving a search snapshot and loading it back yields identical Pydantic objects."""
-    # Mock local storage directory to a temporary path
+    # Mock local storage directory to a temporary path and bypass GCS for local test
     test_dir = str(tmp_path / "shared_searches")
     monkeypatch.setattr("services.share_service.LOCAL_STORAGE_DIR", test_dir)
+    monkeypatch.setattr("services.share_service._get_gcs_client", lambda: None)
 
     config = SearchCriterias(
         commune_actuelle=CriteriaItem(code="75056", label="Paris"),

@@ -184,15 +184,36 @@ def render_share_search_button(
     key_prefix: str = "share_btn",
     width: str = "stretch",
 ):
-    """Component to trigger the Share Search modal."""
-    if st.button(
-        button_text,
-        icon=":material/share:",
-        type="secondary",
-        width=width,
-        key=f"{key_prefix}_{h}",
-    ):
-        share_search_modal()
+    """Component to trigger the Share Search modal, disabled until post-scoring is complete."""
+    if not h and "search_results" in st.session_state and st.session_state.search_results:
+        h = st.session_state.search_results.search_hash
+
+    refiner_res = odis_get_bg_result(h) if h else None
+
+    # 🧪 SOTA: Robust check for BOTH Scorer and Enrichment completion
+    has_pitches = isinstance(refiner_res, dict) and "pitches" in refiner_res
+    has_enrichment = isinstance(refiner_res, dict) and "enrichment" in refiner_res
+
+    if has_pitches and has_enrichment:
+        if st.button(
+            button_text,
+            icon=":material/share:",
+            type="secondary",
+            width=width,
+            key=f"{key_prefix}_{h}",
+        ):
+            share_search_modal()
+    else:
+        # Still running or not started
+        st.button(
+            "Patientez...",
+            disabled=True,
+            icon=":material/hourglass_empty:",
+            type="secondary",
+            width=width,
+            key=f"{key_prefix}_disabled_{h}",
+        )
+
 
 
 # --- Module Level Fragments for Stability ---

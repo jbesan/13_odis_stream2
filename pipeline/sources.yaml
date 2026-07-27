@@ -328,7 +328,7 @@ sources:
 
   population_active:
     datagouv_resource_id: "f43b668d-251e-472a-9385-3d006d1ca6b8"
-    use_odace: false
+    use_odace: true
     odace_table: "fact_population_active"
     format: "zip"
     archive_file: "DS_RP_EMPLOI_LR_COMP_2022_data.csv"
@@ -384,7 +384,7 @@ sources:
 
   population_details:
     datagouv_resource_id: "7e3937bb-e815-4e58-92d4-d7ef478abcc0"
-    use_odace: false
+    use_odace: true
     odace_table: "fact_demographie"
     format: "zip"
     archive_file: "DS_RP_POPULATION_PRINC_2022_data.csv"
@@ -422,7 +422,7 @@ sources:
 
   mob_transports_pub:
     url: "https://object.files.data.gouv.fr/hydra-parquet/hydra-parquet/501ac60d-246d-45bf-8dcf-ab43e1b1a736.parquet"
-    use_odace: false
+    use_odace: true
     odace_table: "fact_transport_commun"
     format: "parquet"
     local_name: "mob_transports_pub.parquet"

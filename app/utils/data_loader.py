@@ -462,7 +462,7 @@ def _fetch_jaccueille_data_bq_logic() -> pd.DataFrame:
         logger.debug(
             "📡 [J'ACCUEILLE] Fetching host counts from BigQuery (Cache stale or missing)..."
         )
-        df_jacc = client.query(query).to_dataframe(create_bqstorage_client=True)
+        df_jacc = client.query(query).to_dataframe(create_bqstorage_client=False)
 
         if not df_jacc.empty:
             try:
@@ -475,6 +475,12 @@ def _fetch_jaccueille_data_bq_logic() -> pd.DataFrame:
         return df_jacc
     except Exception as e:
         logger.error(f"❌ [J'ACCUEILLE] Impossible de charger les accueillants depuis BigQuery : {e}")
+        if os.path.exists(cache_path):
+            try:
+                logger.info("📦 [J'ACCUEILLE] Fallback to local parquet cache for hosts")
+                return pd.read_parquet(cache_path, engine="fastparquet")
+            except Exception:
+                pass
         return pd.DataFrame(columns=["bassin_de_vie", "heb_accueillants_count"])
 
 
@@ -529,7 +535,7 @@ def _fetch_jaccueille_prospects_bq_logic() -> pd.DataFrame:
         logger.debug(
             "📡 [J'ACCUEILLE] Fetching prospect counts from BigQuery (Cache stale or missing)..."
         )
-        df_prop = client.query(query).to_dataframe(create_bqstorage_client=True)
+        df_prop = client.query(query).to_dataframe(create_bqstorage_client=False)
 
         if not df_prop.empty:
             try:
@@ -542,6 +548,12 @@ def _fetch_jaccueille_prospects_bq_logic() -> pd.DataFrame:
         return df_prop
     except Exception as e:
         logger.error(f"❌ [J'ACCUEILLE] Impossible de charger les prospects depuis BigQuery : {e}")
+        if os.path.exists(cache_path):
+            try:
+                logger.info("📦 [J'ACCUEILLE] Fallback to local parquet cache for prospects")
+                return pd.read_parquet(cache_path, engine="fastparquet")
+            except Exception:
+                pass
         return pd.DataFrame(columns=["bassin_de_vie", "prospects_count"])
 
 
