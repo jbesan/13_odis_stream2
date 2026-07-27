@@ -381,7 +381,10 @@ def ensure_data_initialized(load_heavy: bool = False) -> None:
 
         try:
             if "heavy_data_toast_shown" not in st.session_state:
-                # st.toast("Chargement des données terminé", icon="✅")
+                app_data = st.session_state.get("app_data", {})
+                load_errors = app_data.get("_load_errors", []) if isinstance(app_data, dict) else []
+                if load_errors:
+                    st.toast("Toutes les données n'ont pas pu être chargées, les résultats peuvent en être affectés", icon="⚠️")
                 st.session_state["heavy_data_toast_shown"] = True
         except Exception:
             pass
@@ -426,7 +429,10 @@ def ensure_data_initialized(load_heavy: bool = False) -> None:
 
         if is_completed and "heavy_data_toast_shown" not in st.session_state:
             try:
-                # st.toast("Chargement des données terminé", icon="✅")
+                app_data = get_app_data(load_heavy=True)
+                load_errors = app_data.get("_load_errors", []) if isinstance(app_data, dict) else []
+                if load_errors:
+                    st.toast("Toutes les données n'ont pas pu être chargées, les résultats peuvent en être affectés", icon="⚠️")
                 st.session_state["heavy_data_toast_shown"] = True
             except Exception:
                 pass
@@ -1022,6 +1028,10 @@ def load_scoring_datasets_raw(refs_data: Optional[Dict[str, Any]] = None) -> Dic
     # --- 5b. Enrich with dynamic J'Accueille data (Cached) ---
     df_jacc = fetch_jaccueille_data_bq()
     df_jacc_prosp = fetch_jaccueille_prospects_bq()
+
+    if (df_jacc is None or df_jacc.empty) and (df_jacc_prosp is None or df_jacc_prosp.empty):
+        logger.error("❌ [J'ACCUEILLE] Impossible de charger les accueillants et prospects depuis BigQuery ni le cache local.")
+        load_errors.append("J'Accueille BQ data missing")
 
     if not bv_geo.empty:
         bv_geo = bv_geo.reset_index()

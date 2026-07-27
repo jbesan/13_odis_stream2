@@ -617,22 +617,11 @@ def render_org_profile_form() -> None:
         if "ui_org_strategic_locations_filter" not in st.session_state:
             st.session_state["ui_org_strategic_locations_filter"] = False
 
-        is_filtered = st.checkbox(
+        st.checkbox(
             "Restreindre la recherche uniquement aux zones opérationnelles J'Accueille",
             key="ui_org_strategic_locations_filter",
             help="Si activé, la recherche ne renverra que des communes situées dans des bassins de vie disposant de coordinateurs locaux et d'au moins un accueillant ou prospect.",
         )
-        if is_filtered:
-            from utils.data_loader import fetch_jaccueille_data_bq, fetch_jaccueille_prospects_bq
-            df_jacc = fetch_jaccueille_data_bq()
-            df_jacc_prosp = fetch_jaccueille_prospects_bq()
-            has_hosts = df_jacc is not None and not df_jacc.empty and float(df_jacc.get("heb_accueillants_count", pd.Series(0.0)).sum()) > 0
-            has_prospects = df_jacc_prosp is not None and not df_jacc_prosp.empty and float(df_jacc_prosp.get("prospects_count", pd.Series(0.0)).sum()) > 0
-            if not has_hosts and not has_prospects:
-                st.warning(
-                    "⚠️ **Attention** : Les données des accueillants et prospects J'accueille n'ont pas pu être chargées depuis BigQuery. "
-                    "La recherche risque de ne renvoyer aucun résultat tant que l'accès n'est pas disponible."
-                )
 
     # --- Criteria Boosts Sliders (F-54 Expansion) ---
     org_defaults = org.defaults
