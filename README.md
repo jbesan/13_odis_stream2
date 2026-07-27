@@ -135,7 +135,7 @@ Pour plus de détails sur la logique d'enrichissement par bassin de vie (Boost o
 
 Le projet suit une approche rigoureuse de développement piloté par les spécifications (SDD) et le typage statique :
 
-- **Typage Stricte (Mypy)** : Le codebase est 100% conforme à `mypy` en mode strict. Toutes les fonctions sont annotées et les modèles Pydantic assurent la validation des données à l'exécution.
+- **Typage Strict (Ty)** : Le codebase utilise `ty` comme vérificateur de types statiques officiel. Toutes les fonctions sont annotées et les modèles Pydantic assurent la validation des données à l'exécution.
 - **Tests Automatisés (Pytest)** : Une suite de plus de 100 tests unitaires et d'intégration couvre le moteur de scoring, les agents pydantic-graph et les composants UI.
 - **Documentation Narrative** : Chaque changement majeur est documenté dans le `walkthrough.md` et le [guide d'architecture](./PROJECT_ARCHITECTURE.md).
 

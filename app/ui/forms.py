@@ -524,23 +524,30 @@ def render_mobility_form() -> None:
                     communes_list.append((str(codgeo), label))
                 communes_list.sort(key=lambda x: x[1])
 
-        # Default value index
+        # Ensure ui_commune_pressentie_pair state is initialized/synced before selectbox render
         current_val = st.session_state.get("ui_commune_pressentie")
-        default_index = 0
-        if current_val:
-            curr_code = (
-                current_val.code if hasattr(current_val, "code") else current_val
-            )
-            for idx, (code, _) in enumerate(communes_list):
-                if code == curr_code:
-                    default_index = idx
-                    break
+        curr_code = (
+            current_val.code if hasattr(current_val, "code") else current_val
+        ) if current_val else None
+
+        existing_pair = st.session_state.get("ui_commune_pressentie_pair")
+        if (
+            existing_pair not in communes_list
+            or (curr_code and existing_pair and existing_pair[0] != curr_code)
+        ):
+            default_pair = communes_list[0] if communes_list else None
+            if curr_code:
+                for pair in communes_list:
+                    if pair[0] == curr_code:
+                        default_pair = pair
+                        break
+            if default_pair:
+                st.session_state["ui_commune_pressentie_pair"] = default_pair
 
         selected_pair = st.selectbox(
             "Ville souhaitée",
             options=communes_list,
             format_func=lambda x: x[1],
-            index=default_index,
             key="ui_commune_pressentie_pair",
             help="Sélectionnez la ville avec laquelle vous souhaitez comparer les résultats.",
         )
@@ -548,6 +555,8 @@ def render_mobility_form() -> None:
             st.session_state["ui_commune_pressentie"] = selected_pair[0]
     else:
         st.session_state["ui_commune_pressentie"] = None
+        if "ui_commune_pressentie_pair" in st.session_state:
+            del st.session_state["ui_commune_pressentie_pair"]
 
 
 def render_org_profile_form() -> None:
@@ -608,11 +617,22 @@ def render_org_profile_form() -> None:
         if "ui_org_strategic_locations_filter" not in st.session_state:
             st.session_state["ui_org_strategic_locations_filter"] = False
 
-        st.checkbox(
+        is_filtered = st.checkbox(
             "Restreindre la recherche uniquement aux zones opérationnelles J'Accueille",
             key="ui_org_strategic_locations_filter",
             help="Si activé, la recherche ne renverra que des communes situées dans des bassins de vie disposant de coordinateurs locaux et d'au moins un accueillant ou prospect.",
         )
+        if is_filtered:
+            app_data = st.session_state.get("app_data", {})
+            odis_df = app_data.get("odis") if isinstance(app_data, dict) else None
+            if odis_df is not None:
+                has_hosts = float(odis_df.get("heb_accueillants_count", pd.Series(0.0, index=odis_df.index)).sum()) > 0
+                has_prospects = float(odis_df.get("prospects_count", pd.Series(0.0, index=odis_df.index)).sum()) > 0
+                if not has_hosts and not has_prospects:
+                    st.warning(
+                        "⚠️ **Attention** : Les données des accueillants et prospects J'accueille n'ont pas pu être chargées depuis BigQuery. "
+                        "La recherche risque de ne renvoyer aucun résultat tant que l'accès n'est pas disponible."
+                    )
 
     # --- Criteria Boosts Sliders (F-54 Expansion) ---
     org_defaults = org.defaults

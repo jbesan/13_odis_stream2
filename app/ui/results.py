@@ -113,6 +113,88 @@ def render_export_pdf_button(h: str):
         )
 
 
+@st.dialog("Partager cette recherche")
+def share_search_modal():
+    """Dialog to generate, display, and copy shared permalink URL."""
+    config = st.session_state.get("config")
+    search_results = st.session_state.get("search_results")
+
+    if not config or not search_results:
+        st.error("Aucune recherche active à partager.")
+        return
+
+    # Generate or retrieve active share_id
+    if "active_share_id" not in st.session_state or not st.session_state.active_share_id:
+        with st.spinner("Génération du lien de partage..."):
+            from services import share_service
+            share_id = share_service.save_shared_search(config=config, search_results=search_results)
+            st.session_state["active_share_id"] = share_id
+    else:
+        share_id = st.session_state.active_share_id
+
+    # Construct public shareable URL
+    base_url = "https://myapp.fr"
+    try:
+        headers = st.context.headers if hasattr(st, "context") and hasattr(st.context, "headers") else {}
+        host = headers.get("host") or headers.get("Host")
+        if host:
+            scheme = "https" if "localhost" not in host and "127.0.0.1" not in host else "http"
+            base_url = f"{scheme}://{host}"
+    except Exception:
+        pass
+
+    permalink = f"{base_url}/?search={share_id}"
+
+    st.markdown(
+        "Ce lien permet à vos collègues d'accéder directement à ces résultats de recherche et de continuer à affiner les critères."
+    )
+
+    st.code(permalink, language=None)
+
+    import urllib.parse
+
+    subject = "Résultats de recherche OD&IS"
+    body = f"Voici le lien pour accéder aux résultats de la recherche : {permalink}"
+    slack_msg = f"Voici les résultats de notre recherche OD&IS : {permalink}"
+
+    slack_share_url = f"https://slack.com/app_redirect?channel=&message={urllib.parse.quote(slack_msg)}"
+    mailto_url = f"mailto:?subject={urllib.parse.quote(subject)}&body={urllib.parse.quote(body, safe=':/?=')}"
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.link_button(
+            "Partager sur Slack",
+            slack_share_url,
+            icon=":material/chat:",
+            use_container_width=True,
+        )
+    with col2:
+        st.link_button(
+            "Envoyer par Email",
+            mailto_url,
+            icon=":material/mail:",
+            type="primary",
+            use_container_width=True,
+        )
+
+
+def render_share_search_button(
+    h: str = "",
+    button_text: str = "Partager la recherche",
+    key_prefix: str = "share_btn",
+    width: str = "stretch",
+):
+    """Component to trigger the Share Search modal."""
+    if st.button(
+        button_text,
+        icon=":material/share:",
+        type="secondary",
+        width=width,
+        key=f"{key_prefix}_{h}",
+    ):
+        share_search_modal()
+
+
 # --- Module Level Fragments for Stability ---
 def _merge_agent_results(final_state_results, codgeo: str, commune: CommuneResult):
     """Helper to merge graph state results back into session state."""
@@ -1420,7 +1502,17 @@ def _display_result_details(commune: CommuneResult, is_ready: bool = False) -> N
             # Premium Guardrail (F-IA): Verify if background hydrations (jobs & associations) are completed
             jobs_ready = False
             assos_ready = False
-            if h:
+
+            # Model level fallbacks (e.g. for restored shared search snapshots)
+            if hasattr(commune, "siae_jobs") and getattr(commune, "siae_jobs", None) is not None:
+                jobs_ready = True
+            if hasattr(commune, "associations_details") and getattr(commune, "associations_details", None) is not None:
+                assos_ready = True
+            if getattr(commune, "odis_synthesis", None):
+                jobs_ready = True
+                assos_ready = True
+
+            if h and not (jobs_ready and assos_ready):
                 bg_res = odis_get_bg_result(h)
                 if isinstance(bg_res, dict):
                     # Check jobs hydration status

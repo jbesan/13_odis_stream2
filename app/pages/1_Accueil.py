@@ -9,7 +9,27 @@ from utils import common as utils
 # --- Page Configuration ---
 st.set_page_config(page_title="OD&IS", page_icon="👋", layout="wide")
 
-# --- RESET: Clear search memory when returning to home ---
+# --- RESET: Clear search memory when returning to home (unless opening a shared permalink) ---
+if "search" in st.query_params:
+    share_id = st.query_params.get("search")
+    if share_id:
+        from services import share_service
+        try:
+            config_obj, results_obj = share_service.load_shared_search(share_id)
+            if config_obj and results_obj:
+                share_service.restore_shared_search_to_session_state(config_obj, results_obj, share_id)
+                st.switch_page("pages/3_Resultats.py")
+            else:
+                st.session_state["share_error"] = f"La recherche partagée '{share_id}' est introuvable ou a expiré."
+        except Exception as e:
+            st.session_state["share_error"] = f"Impossible de lire la recherche partagée '{share_id}' : {e}"
+
+# Display toast & error banner if a shared search failed to load
+if "share_error" in st.session_state and st.session_state.share_error:
+    err_msg = st.session_state.pop("share_error")
+    st.toast(err_msg, icon="⚠️")
+    st.error(f"⚠️ {err_msg}")
+
 if "search_results" in st.session_state:
     memory.reset_app_state()
 

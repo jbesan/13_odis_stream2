@@ -68,9 +68,23 @@ with st.spinner("Chargement des indicateurs et données territoriales..."):
     app_data = data_loader.get_app_data(load_heavy=True)
 
 # DO NOT REMOVE: This makes sure the ui_ form state persists as expected
-for k, v in st.session_state.items():
-    if str(k).startswith("ui_"):
-        st.session_state[k] = v
+# --- Shared Search Restoration (Direct link access) ---
+if "search" in st.query_params:
+    share_id = st.query_params.get("search")
+    if share_id and st.session_state.get("active_share_id") != share_id:
+        from services import share_service
+        try:
+            config_obj, results_obj = share_service.load_shared_search(share_id)
+            if config_obj and results_obj:
+                share_service.restore_shared_search_to_session_state(config_obj, results_obj, share_id)
+            else:
+                err_msg = f"La recherche partagée '{share_id}' est introuvable ou a expiré."
+                st.toast(err_msg, icon="⚠️")
+                st.error(f"⚠️ {err_msg}")
+        except Exception as e:
+            err_msg = f"Impossible de restaurer la recherche '{share_id}' : {e}"
+            st.toast(err_msg, icon="⚠️")
+            st.error(f"⚠️ {err_msg}")
 
 search_results: SearchResultsData = st.session_state.get("search_results")
 
@@ -83,9 +97,10 @@ def run_search():
     logging.info("--- Running new search with refactored logic ---")
     gc.collect()
 
-    # Clear any previously generated PDF data on new search
+    # Clear any previously generated PDF data and share ID on new search
     st.session_state["pdf_data"] = None
     st.session_state["pdf_modal_data"] = None
+    st.session_state["active_share_id"] = None
 
     from services import telemetry
 
@@ -253,7 +268,7 @@ with st.sidebar:
     # --- Bouton Feedback ---
     feedback.render_feedback_button()
 
-    # --- Export to PDF ---
+    # --- Export to PDF & Partager ---
     if st.session_state.get("search_results") is not None:
         h = st.session_state.search_results.search_hash
         bg_res = odis_get_bg_result(h)
@@ -262,10 +277,16 @@ with st.sidebar:
             isinstance(bg_res, dict) and "pitches" in bg_res and "enrichment" in bg_res
         )
 
+        # col_pdf, col_share = st.columns(2)
+        # with col_pdf:
         if is_done:
             export_pdf_container_static(h)
         else:
             export_pdf_container_polling(h)
+        # with col_share:
+        ui_results.render_share_search_button(
+            h=h, button_text="Partager", key_prefix="sidebar_share"
+        )
 
     st.divider()
 
@@ -290,7 +311,7 @@ with st.container(border=False, key="top_menu"):
         unsafe_allow_html=True,
     )
 
-    col_tabs, col_button = st.columns([5, 1])
+    col_tabs, col_btn_search = st.columns([5.0, 1.0])
     with col_tabs:
         st.markdown(f"## Projet de vie {ui.get_person_accompanied_str()}")
 
@@ -302,16 +323,23 @@ with st.container(border=False, key="top_menu"):
     else:
         disable_search = False
 
-    with col_button:
-        with st.container(
-            height="stretch", horizontal_alignment="center", vertical_alignment="center"
-        ):
-            st.button(
-                "Lancer la recherche",
-                on_click=run_search,
-                type="primary",
-                disabled=disable_search,
-            )
+    with col_btn_search:
+        st.button(
+            "Rechercher",
+            on_click=run_search,
+            type="primary",
+            disabled=disable_search,
+            width="stretch",
+            icon=":material/search:"
+        )
+
+    # with col_btn_share:
+    #     if st.session_state.get("search_results"):
+    #         ui_results.render_share_search_button(
+    #             h=st.session_state.search_results.search_hash,
+    #             button_text="Partager",
+    #             key_prefix="top_share",
+    #         )
     with st.expander("🔎 Modifier les critères de recherche", expanded=False):
         ui_forms.display_input_tabs()
 
