@@ -474,7 +474,7 @@ def _fetch_jaccueille_data_bq_logic() -> pd.DataFrame:
 
         return df_jacc
     except Exception as e:
-        logger.error(f"J'Accueille BQ fetch failed: {e}")
+        logger.error(f"❌ [J'ACCUEILLE] Impossible de charger les accueillants depuis BigQuery : {e}")
         return pd.DataFrame(columns=["bassin_de_vie", "heb_accueillants_count"])
 
 
@@ -541,7 +541,7 @@ def _fetch_jaccueille_prospects_bq_logic() -> pd.DataFrame:
 
         return df_prop
     except Exception as e:
-        logger.error(f"J'Accueille prospects BQ fetch failed: {e}")
+        logger.error(f"❌ [J'ACCUEILLE] Impossible de charger les prospects depuis BigQuery : {e}")
         return pd.DataFrame(columns=["bassin_de_vie", "prospects_count"])
 
 
