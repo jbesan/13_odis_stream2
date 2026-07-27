@@ -277,16 +277,16 @@ with st.sidebar:
             isinstance(bg_res, dict) and "pitches" in bg_res and "enrichment" in bg_res
         )
 
-        col_pdf, col_share = st.columns(2)
-        with col_pdf:
-            if is_done:
-                export_pdf_container_static(h)
-            else:
-                export_pdf_container_polling(h)
-        with col_share:
-            ui_results.render_share_search_button(
-                h=h, button_text="Partager", key_prefix="sidebar_share"
-            )
+        # col_pdf, col_share = st.columns(2)
+        # with col_pdf:
+        if is_done:
+            export_pdf_container_static(h)
+        else:
+            export_pdf_container_polling(h)
+        # with col_share:
+        ui_results.render_share_search_button(
+            h=h, button_text="Partager", key_prefix="sidebar_share"
+        )
 
     st.divider()
 
@@ -311,7 +311,7 @@ with st.container(border=False, key="top_menu"):
         unsafe_allow_html=True,
     )
 
-    col_tabs, col_btn_search, col_btn_share = st.columns([3.8, 1.2, 1.0])
+    col_tabs, col_btn_search = st.columns([5.0, 1.0])
     with col_tabs:
         st.markdown(f"## Projet de vie {ui.get_person_accompanied_str()}")
 
@@ -325,20 +325,21 @@ with st.container(border=False, key="top_menu"):
 
     with col_btn_search:
         st.button(
-            "Lancer la recherche",
+            "Rechercher",
             on_click=run_search,
             type="primary",
             disabled=disable_search,
-            use_container_width=True,
+            width="stretch",
+            icon=":material/search:"
         )
 
-    with col_btn_share:
-        if st.session_state.get("search_results"):
-            ui_results.render_share_search_button(
-                h=st.session_state.search_results.search_hash,
-                button_text="Partager",
-                key_prefix="top_share",
-            )
+    # with col_btn_share:
+    #     if st.session_state.get("search_results"):
+    #         ui_results.render_share_search_button(
+    #             h=st.session_state.search_results.search_hash,
+    #             button_text="Partager",
+    #             key_prefix="top_share",
+    #         )
     with st.expander("🔎 Modifier les critères de recherche", expanded=False):
         ui_forms.display_input_tabs()
 

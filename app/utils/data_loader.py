@@ -381,7 +381,7 @@ def ensure_data_initialized(load_heavy: bool = False) -> None:
 
         try:
             if "heavy_data_toast_shown" not in st.session_state:
-                st.toast("Chargement des données terminé", icon="✅")
+                # st.toast("Chargement des données terminé", icon="✅")
                 st.session_state["heavy_data_toast_shown"] = True
         except Exception:
             pass
@@ -426,7 +426,7 @@ def ensure_data_initialized(load_heavy: bool = False) -> None:
 
         if is_completed and "heavy_data_toast_shown" not in st.session_state:
             try:
-                st.toast("Chargement des données terminé", icon="✅")
+                # st.toast("Chargement des données terminé", icon="✅")
                 st.session_state["heavy_data_toast_shown"] = True
             except Exception:
                 pass

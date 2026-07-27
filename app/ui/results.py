@@ -149,33 +149,47 @@ def share_search_modal():
         "Ce lien permet à vos collègues d'accéder directement à ces résultats de recherche et de continuer à affiner les critères."
     )
 
-    st.text_input("Lien de partage", value=permalink, key="share_permalink_input", disabled=False)
+    st.code(permalink, language=None)
 
     import urllib.parse
-    encoded_url = urllib.parse.quote(permalink)
-    slack_share_url = f"https://slack.com/app_redirect?channel=&message={urllib.parse.quote('Voici les résultats de notre recherche OD&IS : ' + permalink)}"
-    mailto_url = f"mailto:?subject={urllib.parse.quote('Résultats de recherche OD&IS')}&body={urllib.parse.quote('Voici le lien pour accéder aux résultats de la recherche : ' + permalink)}"
+
+    subject = "Résultats de recherche OD&IS"
+    body = f"Voici le lien pour accéder aux résultats de la recherche : {permalink}"
+    slack_msg = f"Voici les résultats de notre recherche OD&IS : {permalink}"
+
+    slack_share_url = f"https://slack.com/app_redirect?channel=&message={urllib.parse.quote(slack_msg)}"
+    mailto_url = f"mailto:?subject={urllib.parse.quote(subject)}&body={urllib.parse.quote(body, safe=':/?=')}"
 
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown(
-            f'<a href="{slack_share_url}" target="_blank" style="text-decoration: none;"><button style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #ccc; background-color: #4A154B; color: white; font-weight: bold; cursor: pointer;">Partager sur Slack</button></a>',
-            unsafe_allow_html=True,
+        st.link_button(
+            "Partager sur Slack",
+            slack_share_url,
+            icon=":material/chat:",
+            use_container_width=True,
         )
     with col2:
-        st.markdown(
-            f'<a href="{mailto_url}" target="_blank" style="text-decoration: none;"><button style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #0078D4; background-color: #0078D4; color: white; font-weight: bold; cursor: pointer;">Envoyer par Email</button></a>',
-            unsafe_allow_html=True,
+        st.link_button(
+            "Envoyer par Email",
+            mailto_url,
+            icon=":material/mail:",
+            type="primary",
+            use_container_width=True,
         )
 
 
-def render_share_search_button(h: str = "", button_text: str = "Partager la recherche", key_prefix: str = "share_btn"):
+def render_share_search_button(
+    h: str = "",
+    button_text: str = "Partager la recherche",
+    key_prefix: str = "share_btn",
+    width: str = "stretch",
+):
     """Component to trigger the Share Search modal."""
     if st.button(
         button_text,
         icon=":material/share:",
         type="secondary",
-        width="stretch",
+        width=width,
         key=f"{key_prefix}_{h}",
     ):
         share_search_modal()
