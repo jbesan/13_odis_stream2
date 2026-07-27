@@ -2,9 +2,11 @@ import streamlit as st
 import pandas as pd
 import geopandas as gpd
 import shapely.wkb as wkb
+import json
 import os
 import yaml
 import logging
+import re
 from typing import Dict, Any, List, Optional
 import config as cfg
 import copy
@@ -23,10 +25,10 @@ _HEAVY_PRELOAD_STATUS: Dict[str, Any] = {
 }
 
 
-def _bg_preload_scoring_datasets(mtime: float) -> None:
+def _bg_preload_scoring_datasets(data_hash: str) -> None:
     """Background task to pre-warm Tier 2 heavy datasets cache."""
     try:
-        get_scoring_datasets(mtime)
+        get_scoring_datasets(data_hash)
         with _HEAVY_PRELOAD_STATUS["lock"]:
             _HEAVY_PRELOAD_STATUS["completed"] = True
     except Exception as e:
@@ -592,8 +594,8 @@ def resolve_dataset_path(filename_or_path: str) -> Optional[str]:
     1. Direct path if specified and exists
     2. app/data/datasets/{filename} (local dev mirror)
     3. app/data/{filename} (legacy local app data)
-    4. /tmp/data_cache/{filename} (downloaded GCS cache)
-    5. GCS download from gs://{GCS_BUCKET_NAME}/datasets/{filename}
+    4. Versioned /tmp/odis_data_cache/{release}/{filename} (GCS cache)
+    5. GCS download from the active release in gs://{GCS_BUCKET_NAME}/datasets/
     """
     filename = os.path.basename(filename_or_path)
 
@@ -613,31 +615,78 @@ def resolve_dataset_path(filename_or_path: str) -> Optional[str]:
         logger.debug(f"📦 [DATASET] Loaded '{filename}' from app/data/.")
         return local_data_path
 
-    # 4. Local temp GCS cache
-    tmp_cache_dir = os.path.join(tempfile.gettempdir(), "odis_data_cache")
-    tmp_cache_path = os.path.join(tmp_cache_dir, filename)
-    if os.path.exists(tmp_cache_path):
-        logger.debug(f"💾 [GCS CACHE] Loaded '{filename}' from local temp cache ({tmp_cache_path}).")
-        return tmp_cache_path
-
-    # 5. GCS download
+    # 4-5. Resolve and download from the active immutable GCS release.
     try:
         bucket_name = os.getenv("GCS_DATASETS_BUCKET", "odis-stream2-eu")
+        datasets_prefix = os.getenv("GCS_DATASETS_PREFIX", "datasets").strip("/")
         client = storage.Client()
         bucket = client.bucket(bucket_name)
-        blob = bucket.blob(f"datasets/{filename}")
+        release_version = _read_gcs_release_version(bucket, datasets_prefix)
+        if release_version:
+            remote_prefix = f"{datasets_prefix}/releases/{release_version}"
+            cache_namespace = release_version
+        else:
+            # Temporary compatibility with buckets populated by the previous layout.
+            remote_prefix = datasets_prefix
+            cache_namespace = "legacy"
+            logger.warning(
+                "⚠️ [GCS] No current dataset release pointer found; trying legacy path."
+            )
+
+        tmp_cache_dir = os.path.join(
+            tempfile.gettempdir(), "odis_data_cache", cache_namespace
+        )
+        tmp_cache_path = os.path.join(tmp_cache_dir, filename)
+        if os.path.exists(tmp_cache_path):
+            logger.debug(
+                f"💾 [GCS CACHE] Loaded '{filename}' from local temp cache ({tmp_cache_path})."
+            )
+            return tmp_cache_path
+
+        blob_path = f"{remote_prefix}/{filename}"
+        blob = bucket.blob(blob_path)
         if blob.exists():
             os.makedirs(tmp_cache_dir, exist_ok=True)
-            logger.info(f"📡 [GCS] Downloading dataset '{filename}' from gs://{bucket_name}/datasets/...")
-            blob.download_to_filename(tmp_cache_path)
-            logger.info(f"✅ [GCS] Successfully cached '{filename}' to {tmp_cache_path}")
+            tmp_download_path = f"{tmp_cache_path}.{os.getpid()}.tmp"
+            logger.info(
+                f"📡 [GCS] Downloading dataset '{filename}' from gs://{bucket_name}/{blob_path}..."
+            )
+            try:
+                blob.download_to_filename(tmp_download_path)
+                os.replace(tmp_download_path, tmp_cache_path)
+            finally:
+                if os.path.exists(tmp_download_path):
+                    os.remove(tmp_download_path)
+            logger.info(
+                f"✅ [GCS] Successfully cached '{filename}' to {tmp_cache_path}"
+            )
             return tmp_cache_path
         else:
-            logger.warning(f"⚠️ [GCS] Blob 'datasets/{filename}' not found in bucket 'gs://{bucket_name}'")
+            logger.warning(
+                f"⚠️ [GCS] Blob '{blob_path}' not found in bucket 'gs://{bucket_name}'"
+            )
     except Exception as e:
         logger.warning(f"⚠️ [GCS] Failed to fetch dataset '{filename}' from GCS: {e}")
 
     return None
+
+
+def _read_gcs_release_version(bucket: Any, datasets_prefix: str) -> Optional[str]:
+    """Read the active release pointer without caching it in process memory."""
+    pointer_blob = bucket.blob(f"{datasets_prefix}/current.json")
+    if not pointer_blob.exists():
+        return None
+
+    raw_pointer = pointer_blob.download_as_bytes()
+    if isinstance(raw_pointer, bytes):
+        raw_pointer = raw_pointer.decode("utf-8")
+    pointer = json.loads(raw_pointer)
+    release_version = pointer.get("version")
+    if not isinstance(release_version, str) or not re.fullmatch(
+        r"[A-Za-z0-9._-]+", release_version
+    ):
+        raise ValueError("Invalid version in GCS dataset release pointer")
+    return release_version
 
 
 @st.cache_data(ttl=3600)
@@ -869,7 +918,7 @@ def load_scoring_datasets_raw(refs_data: Optional[Dict[str, Any]] = None) -> Dic
     odis_path = os.path.join(base_path, cfg.ODIS_FILE)
 
     try:
-        temp_df = pd.read_parquet(odis_path, engine="fastparquet")
+        temp_df = _load_parquet(odis_path)
         all_cols = temp_df.columns.tolist()
         del temp_df
 
@@ -924,9 +973,7 @@ def load_scoring_datasets_raw(refs_data: Optional[Dict[str, Any]] = None) -> Dic
         except Exception as e:
             logger.warning(f"Could not load raw metrics from config: {e}")
 
-        odis = pd.read_parquet(
-            odis_path, engine="fastparquet", columns=list(columns_to_load)
-        )
+        odis = _load_parquet(odis_path, columns=list(columns_to_load))
 
         # Geometry processing (JIT DEHYDRATION)
         odis_geo = pd.Series(dtype="object")
@@ -1153,28 +1200,67 @@ def load_all_data_raw() -> Dict[str, Any]:
     return load_scoring_datasets_raw(refs)
 
 
-def get_data_mtime() -> float:
-    """Returns the maximum mtime of critical data files to invalidate cache."""
+def get_data_mtime() -> str:
+    """Return a cache identity that changes when local or GCS data changes."""
     base_path = cfg.get_data_path()
-    critical_files = [
-        os.path.join(base_path, cfg.ODIS_FILE),
+    local_mirror_dir = os.path.join(base_path, "datasets")
+    local_mirror_files = []
+    if os.path.isdir(local_mirror_dir):
+        local_mirror_files = [
+            entry.path
+            for entry in os.scandir(local_mirror_dir)
+            if entry.is_file() and entry.name.endswith(".parquet")
+        ]
+    legacy_dataset_path = os.path.join(base_path, cfg.ODIS_FILE)
+    local_critical_files = local_mirror_files + [
+        legacy_dataset_path,
         os.path.join(cfg.APP_DIR, cfg.SCORES_CAT_FILE),
+        os.path.join(base_path, "data_manifest.json"),
     ]
-    mtimes = []
-    for f in critical_files:
+    local_mtimes = []
+    for f in local_critical_files:
         if os.path.exists(f):
-            mtimes.append(os.path.getmtime(f))
-    return max(mtimes) if mtimes else 0.0
+            local_mtimes.append(os.path.getmtime(f))
+
+    # Local mirrors are intentionally authoritative for local development. In Cloud
+    # Run they are excluded from the image, so the active GCS release becomes the
+    # cache key and a monthly pipeline publication invalidates Streamlit's resource
+    # cache without a container rebuild.
+    if local_mirror_files or os.path.exists(legacy_dataset_path):
+        return "local:" + ":".join(f"{mtime:.6f}" for mtime in sorted(local_mtimes))
+
+    try:
+        bucket_name = os.getenv("GCS_DATASETS_BUCKET", "odis-stream2-eu")
+        datasets_prefix = os.getenv("GCS_DATASETS_PREFIX", "datasets").strip("/")
+        release_version = _read_gcs_release_version(
+            storage.Client().bucket(bucket_name), datasets_prefix
+        )
+    except Exception as e:
+        logger.warning(f"⚠️ [GCS] Could not read dataset release pointer: {e}")
+        release_version = None
+
+    if release_version:
+        scores_path = os.path.join(cfg.APP_DIR, cfg.SCORES_CAT_FILE)
+        scores_mtime = (
+            f"{os.path.getmtime(scores_path):.6f}"
+            if os.path.exists(scores_path)
+            else "missing"
+        )
+        return f"gcs:{release_version}:scores:{scores_mtime}"
+
+    if local_mtimes:
+        return "local:" + ":".join(f"{mtime:.6f}" for mtime in sorted(local_mtimes))
+    return "empty"
 
 
 @st.cache_resource
-def get_referentiels_data(data_hash: float) -> Dict[str, Any]:
+def get_referentiels_data(data_hash: str) -> Dict[str, Any]:
     """Cached wrapper for Tier 1 Referentiels."""
     return load_referentiels_raw()
 
 
 @st.cache_resource
-def get_scoring_datasets(data_hash: float) -> Dict[str, Any]:
+def get_scoring_datasets(data_hash: str) -> Dict[str, Any]:
     """Cached wrapper for Tier 2 Heavy Scoring datasets."""
     refs = get_referentiels_data(data_hash)
     return load_scoring_datasets_raw(refs)

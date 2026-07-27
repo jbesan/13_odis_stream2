@@ -1,15 +1,17 @@
 import argparse
+import json
 import logging
-import sys
+import re
+import shutil
 import os
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
 
 # Add app directory to sys.path to allow imports from app/
 sys.path.append(os.path.join(os.getcwd(), "app"))
 
 from pipeline import ingest, build, prescoring
-import shutil
-import os
-from pathlib import Path
 from google.cloud import storage
 
 SOURCE_DIR = Path("pipeline/cache/output")
@@ -34,6 +36,71 @@ DATASET_FILES = [
     "salesforce_jaccueille_bdv.parquet",
 ]
 
+
+def _get_release_version(source_dir: Path) -> str:
+    """Read and validate the manifest version used as the GCS release ID."""
+    manifest_path = source_dir / "data_manifest.json"
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"Manifest source file not found: {manifest_path}")
+
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid JSON manifest: {manifest_path}") from exc
+
+    version = manifest.get("manifest_version")
+    if not isinstance(version, str) or not re.fullmatch(r"[A-Za-z0-9._-]+", version):
+        raise ValueError(
+            "Manifest must contain a safe, non-empty 'manifest_version' value"
+        )
+    return version
+
+
+def _publish_datasets_to_gcs(source_dir: Path, bucket_name: str) -> str:
+    """Publish one immutable dataset release, then atomically advance its pointer."""
+    release_version = _get_release_version(source_dir)
+    missing_files = [
+        filename for filename in DATASET_FILES if not (source_dir / filename).exists()
+    ]
+    if missing_files:
+        raise FileNotFoundError(
+            "Cannot publish an incomplete dataset release; missing files: "
+            + ", ".join(missing_files)
+        )
+
+    datasets_prefix = os.getenv("GCS_DATASETS_PREFIX", "datasets").strip("/")
+    release_prefix = f"{datasets_prefix}/releases/{release_version}"
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+
+    logging.info(
+        "Uploading dataset release '%s' to gs://%s/%s/",
+        release_version,
+        bucket_name,
+        release_prefix,
+    )
+    for filename in DATASET_FILES:
+        blob_path = f"{release_prefix}/{filename}"
+        bucket.blob(blob_path).upload_from_filename(str(source_dir / filename))
+        logging.info("Uploaded %s -> gs://%s/%s", filename, bucket_name, blob_path)
+
+    pointer = {
+        "version": release_version,
+        "files": DATASET_FILES,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    pointer_path = f"{datasets_prefix}/current.json"
+    bucket.blob(pointer_path).upload_from_string(
+        json.dumps(pointer, ensure_ascii=False, indent=2),
+        content_type="application/json",
+    )
+    logging.info(
+        "Activated dataset release '%s' with pointer gs://%s/%s",
+        release_version,
+        bucket_name,
+        pointer_path,
+    )
+    return release_version
 
 
 def main():
@@ -183,7 +250,6 @@ def main():
         try:
             from pipeline.manifest import generate_manifest
             from pipeline.odace_client import get_odace_client
-            from pathlib import Path
             odace_client = None
             try:
                 odace_client = get_odace_client()
@@ -194,6 +260,7 @@ def main():
             logging.info("=== Data Manifest Generation Completed ===")
         except Exception as e:
             logging.error(f"Failed to generate Data Manifest: {e}", exc_info=True)
+            raise
 
 
     if args.step in ["deploy", "all"]:
@@ -201,45 +268,35 @@ def main():
         DEST_DATA_DIR.mkdir(parents=True, exist_ok=True)
         DEST_DATASETS_DIR.mkdir(parents=True, exist_ok=True)
 
+        missing_bootstrap = [
+            f for f in BOOTSTRAP_FILES if not (SOURCE_DIR / f).exists()
+        ]
+        missing_datasets = [
+            f for f in DATASET_FILES if not (SOURCE_DIR / f).exists()
+        ]
+        if missing_bootstrap or missing_datasets:
+            missing = missing_bootstrap + missing_datasets
+            raise FileNotFoundError(
+                "Deployment source is incomplete; missing files: " + ", ".join(missing)
+            )
+
         # 1. Copy Bootstrap files to app/data/
         for f in BOOTSTRAP_FILES:
             src = SOURCE_DIR / f
             dst = DEST_DATA_DIR / f
-            if src.exists():
-                shutil.copy2(src, dst)
-                logging.info(f"Copied bootstrap file {f} to {DEST_DATA_DIR}")
-            else:
-                logging.error(f"Bootstrap source file {f} not found in {SOURCE_DIR}")
+            shutil.copy2(src, dst)
+            logging.info(f"Copied bootstrap file {f} to {DEST_DATA_DIR}")
 
         # 2. Copy Dataset files to app/data/datasets/ (local dev mirror)
         for f in DATASET_FILES:
             src = SOURCE_DIR / f
             dst = DEST_DATASETS_DIR / f
-            if src.exists():
-                shutil.copy2(src, dst)
-                logging.info(f"Copied dataset file {f} to {DEST_DATASETS_DIR}")
-            else:
-                logging.warning(f"Dataset source file {f} not found in {SOURCE_DIR}")
+            shutil.copy2(src, dst)
+            logging.info(f"Copied dataset file {f} to {DEST_DATASETS_DIR}")
 
-        # 3. Upload Datasets to GCS bucket (gs://odis-stream2-eu/datasets/)
+        # 3. Upload Datasets to an immutable GCS release, then update current.json.
         bucket_name = os.getenv("GCS_DATASETS_BUCKET", "odis-stream2-eu")
-        try:
-            gcs_client = storage.Client()
-            bucket = gcs_client.bucket(bucket_name)
-            logging.info(f"Uploading datasets to GCS bucket 'gs://{bucket_name}/datasets/'...")
-            
-            all_files_to_upload = BOOTSTRAP_FILES + DATASET_FILES
-            for f in all_files_to_upload:
-                src = SOURCE_DIR / f
-                if src.exists():
-                    blob_path = f"datasets/{f}"
-                    blob = bucket.blob(blob_path)
-                    blob.upload_from_filename(str(src))
-                    logging.info(f"Uploaded {f} -> gs://{bucket_name}/{blob_path}")
-        except Exception as e:
-            logging.warning(
-                f"GCS Upload skipped or failed (GCP credentials/connection issue): {e}"
-            )
+        _publish_datasets_to_gcs(SOURCE_DIR, bucket_name)
 
         logging.info("=== Deployment Phase Completed ===")
 

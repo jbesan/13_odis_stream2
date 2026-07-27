@@ -50,6 +50,7 @@ def mock_parquet_data():
 
 
 @patch("utils.data_loader.fetch_jaccueille_data_bq")
+@patch("utils.data_loader.fetch_jaccueille_prospects_bq")
 @patch("utils.data_loader.os.path.exists")
 @patch("utils.data_loader.pd.read_parquet")
 @patch("config.get_data_path")
@@ -57,6 +58,7 @@ def test_init_datasets(
     mock_get_data_path,
     mock_read_parquet,
     mock_exists,
+    mock_fetch_prospects,
     mock_fetch_jaccueille,
     mock_parquet_data,
 ):
@@ -65,6 +67,9 @@ def test_init_datasets(
     mock_get_data_path.return_value = "/mock/path"
     mock_fetch_jaccueille.return_value = pd.DataFrame(
         columns=["bassin_de_vie", "heb_accueillants_count"]
+    )
+    mock_fetch_prospects.return_value = pd.DataFrame(
+        columns=["bassin_de_vie", "prospects_count"]
     )
     odis_df, pois_df, ref_df = mock_parquet_data
 
@@ -187,9 +192,13 @@ def test_resolve_dataset_path_gcs_fallback(mock_storage_client_cls, tmp_path, mo
     mock_storage_client_cls.return_value = mock_client
     mock_bucket = MagicMock()
     mock_client.bucket.return_value = mock_bucket
-    mock_blob = MagicMock()
-    mock_bucket.blob.return_value = mock_blob
-    mock_blob.exists.return_value = True
+
+    pointer_blob = MagicMock()
+    pointer_blob.exists.return_value = True
+    pointer_blob.download_as_bytes.return_value = b'{"version": "v-test-1"}'
+
+    dataset_blob = MagicMock()
+    dataset_blob.exists.return_value = True
 
     # Simulate download_to_filename writing dummy file
     def mock_download(target_path):
@@ -197,10 +206,17 @@ def test_resolve_dataset_path_gcs_fallback(mock_storage_client_cls, tmp_path, mo
         Path(target_path).parent.mkdir(parents=True, exist_ok=True)
         Path(target_path).write_text("gcs_data")
 
-    mock_blob.download_to_filename.side_effect = mock_download
+    dataset_blob.download_to_filename.side_effect = mock_download
+
+    def get_blob(blob_path):
+        if blob_path == "datasets/current.json":
+            return pointer_blob
+        return dataset_blob
+
+    mock_bucket.blob.side_effect = get_blob
 
     resolved = data_loader.resolve_dataset_path("salesforce_jaccueille_bdv.parquet")
     assert resolved is not None
     assert "salesforce_jaccueille_bdv.parquet" in resolved
-    assert mock_blob.download_to_filename.called
-
+    assert "v-test-1" in resolved
+    assert dataset_blob.download_to_filename.called

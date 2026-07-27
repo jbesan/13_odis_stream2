@@ -27,7 +27,8 @@ ASSETS_DIR: str = os.path.join(APP_DIR, "ui", "assets")
 def get_data_path() -> str:
     """
     Returns the appropriate data path based on the environment.
-    Since data is now included in the Docker image, we always use the local path.
+    The bootstrap files stay local; generated scoring datasets are resolved lazily
+    by ``utils.data_loader`` from the local dev mirror or the active GCS release.
     """
 
     return LOCAL_DATA_PATH
