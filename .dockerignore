@@ -29,6 +29,8 @@ app/tests
 app/*.pyc
 app/.DS_Store
 app/.env
+app/.streamlit/secrets.toml
 app/data_private/
+app/data/shared_searches/
 pipeline/data_private/
 **/.env

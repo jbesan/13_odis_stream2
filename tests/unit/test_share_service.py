@@ -1,16 +1,37 @@
-import pytest
-import os
-import shutil
 from core.models import SearchCriterias, SearchResultsData, CommuneResult, CriteriaItem
-from services.share_service import save_shared_search, load_shared_search, _get_local_filepath
+from services.share_service import save_shared_search, load_shared_search
 
 
-def test_save_and_load_shared_search_roundtrip(tmp_path, monkeypatch):
-    """Verify that saving a search snapshot and loading it back yields identical Pydantic objects."""
-    # Mock local storage directory to a temporary path and bypass GCS for local test
-    test_dir = str(tmp_path / "shared_searches")
-    monkeypatch.setattr("services.share_service.LOCAL_STORAGE_DIR", test_dir)
-    monkeypatch.setattr("services.share_service._get_gcs_client", lambda: None)
+def test_save_and_load_shared_search_roundtrip(monkeypatch):
+    """Verify that GCS persistence round-trips identical Pydantic objects."""
+    stored_objects = {}
+
+    class FakeBlob:
+        def __init__(self, name):
+            self.name = name
+            self.content_encoding = None
+
+        def upload_from_string(self, data, content_type=None):
+            stored_objects[self.name] = data
+
+        def exists(self):
+            return self.name in stored_objects
+
+        def download_as_bytes(self):
+            return stored_objects[self.name]
+
+    class FakeBucket:
+        def blob(self, name):
+            return FakeBlob(name)
+
+    class FakeGcsClient:
+        def bucket(self, name):
+            return FakeBucket()
+
+    monkeypatch.setattr(
+        "services.share_service._get_gcs_client", lambda: FakeGcsClient()
+    )
+    monkeypatch.setattr("services.telemetry.log_usage_event", lambda *args, **kwargs: None)
 
     config = SearchCriterias(
         commune_actuelle=CriteriaItem(code="75056", label="Paris"),
@@ -49,8 +70,7 @@ def test_save_and_load_shared_search_roundtrip(tmp_path, monkeypatch):
     assert isinstance(share_id, str)
     assert len(share_id) == 8
 
-    local_path = os.path.join(test_dir, f"{share_id}.json")
-    assert os.path.exists(local_path)
+    assert f"searches/{share_id}.json" in stored_objects
 
     # 2. Load
     loaded_config, loaded_results = load_shared_search(share_id)
@@ -68,8 +88,9 @@ def test_save_and_load_shared_search_roundtrip(tmp_path, monkeypatch):
     assert loaded_results.results[0].refiner_pitch == "Excellente opportunité d'emploi et de logement."
 
 
-def test_load_shared_search_invalid_id():
+def test_load_shared_search_invalid_id(monkeypatch):
     """Verify that non-existent share_ids safely return (None, None)."""
+    monkeypatch.setattr("services.share_service._get_gcs_client", lambda: None)
     cfg, res = load_shared_search("non_existent_id_99999")
     assert cfg is None
     assert res is None

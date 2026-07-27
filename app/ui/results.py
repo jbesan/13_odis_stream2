@@ -127,7 +127,13 @@ def share_search_modal():
     if "active_share_id" not in st.session_state or not st.session_state.active_share_id:
         with st.spinner("Génération du lien de partage..."):
             from services import share_service
-            share_id = share_service.save_shared_search(config=config, search_results=search_results)
+            try:
+                share_id = share_service.save_shared_search(
+                    config=config, search_results=search_results
+                )
+            except RuntimeError as exc:
+                st.error(str(exc))
+                return
             st.session_state["active_share_id"] = share_id
     else:
         share_id = st.session_state.active_share_id

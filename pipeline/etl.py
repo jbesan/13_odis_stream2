@@ -184,7 +184,6 @@ def main():
                 logging.warning(f"Could not initialize OdaceClient for manifest generation: {e}")
 
             generate_manifest(output_path=Path("pipeline/cache/output/data_manifest.json"), odace_client=odace_client)
-            generate_manifest(output_path=Path("data/processed/data_manifest.json"), odace_client=odace_client)
             logging.info("=== Data Manifest Generation Completed ===")
         except Exception as e:
             logging.error(f"Failed to generate Data Manifest: {e}", exc_info=True)

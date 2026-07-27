@@ -129,9 +129,9 @@ def test_fetch_jaccueille_data_bq(mock_exists, mock_read_parquet, mock_bq_client
     # Assert
     assert mock_bq_client.query.called
     assert mock_query_job.to_dataframe.called
-    # Check that create_bqstorage_client=True was passed
+    # Check that create_bqstorage_client=False was passed
     args, kwargs = mock_query_job.to_dataframe.call_args
-    assert kwargs.get("create_bqstorage_client") is True
+    assert kwargs.get("create_bqstorage_client") is False
     assert df.loc[0, "heb_accueillants_count"] == 5
 
 

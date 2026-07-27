@@ -302,7 +302,7 @@ Liste en vrac d'idées d'amélioration
 - En tant que destinataire d'un lien de partage, je veux pouvoir charger directement la page de résultats complète et cliquer sur "Modifier les critères" pour affiner la recherche et générer ma propre déclinaison de la recherche sans altérer le lien d'origine.
 
 ### 🔑 Key Features
-* **Hybrid Storage Architecture (GCS + BigQuery)**: Sauvegarde intégrale du payload JSON (`SearchCriterias` + `SearchResultsData`) sur Google Cloud Storage (`gs://odis-shared-searches/<share_id>.json`) avec fallback fichier local (`app/data/shared_searches/`), et enregistrement de la télémétrie sur BigQuery `odis_logs.usage_events` (`event_name="search_shared"`).
+* **Storage Architecture (GCS + BigQuery telemetry)**: Sauvegarde intégrale du payload JSON (`SearchCriterias` + `SearchResultsData`) sous forme compressée sur Google Cloud Storage (`gs://odis-stream2-eu/searches/<share_id>.json`), sans fallback fichier local, et enregistrement de la télémétrie sur BigQuery `odis_logs.usage_events` (`event_name="search_shared"`).
 * **On-Demand Snapshotting**: Génération du snapshot lors du clic sur "Partager la recherche" pour capturer l'état réel et complet des résultats (scores, graphiques, synthèses et analyses IA approfondies des communes).
 * **URL Parameter Routing (`st.query_params`)**: Interception du paramètre `?search=<share_id>` à l'entrée sur `1_Accueil.py`, restauration automatique des objets Pydantic dans `st.session_state` et redirection fluide vers `pages/3_Resultats.py` via `st.switch_page`.
 * **Sharing UI Dialog (`@st.dialog`)**: Fenêtre modale de partage proposant l'URL permalien avec zone de saisie, ainsi que des raccourcis directs de partage Slack et Email (`mailto:`).
@@ -310,6 +310,5 @@ Liste en vrac d'idées d'amélioration
 
 ### 📊 Status
 - **July 2026**: Complete. Integrated, covered by unit test suite (`test_share_service.py`), verified with green test execution, and fully documented.
-
 
 

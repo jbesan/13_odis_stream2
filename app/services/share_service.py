@@ -22,13 +22,6 @@ logger = logging.getLogger("services.share_service")
 
 # GCS & BQ Settings
 GCS_BUCKET_NAME = os.getenv("GCS_SHARED_SEARCHES_BUCKET", "odis-stream2-eu")
-LOCAL_STORAGE_DIR = os.path.join(cfg.APP_DIR, "data", "shared_searches")
-
-
-def _get_local_filepath(share_id: str) -> str:
-    """Returns local path for shared search JSON file."""
-    os.makedirs(LOCAL_STORAGE_DIR, exist_ok=True)
-    return os.path.join(LOCAL_STORAGE_DIR, f"{share_id}.json")
 
 
 def _get_gcs_client():
@@ -145,34 +138,26 @@ def save_shared_search(
     payload_json = json.dumps(payload, default=str, ensure_ascii=False)
     compressed_bytes = gzip.compress(payload_json.encode("utf-8"))
 
-    # 1. Upload to GCS (Cloud Storage - Primary with Gzip compression)
-    gcs_uri = ""
+    # Upload to GCS (the only supported persistence backend).
     gcs_client = _get_gcs_client()
-    if gcs_client:
-        try:
-            bucket = gcs_client.bucket(GCS_BUCKET_NAME)
-            blob = bucket.blob(f"searches/{share_id}.json")
-            blob.content_encoding = "gzip"
-            blob.upload_from_string(
-                compressed_bytes,
-                content_type="application/json",
-            )
-            gcs_uri = f"gs://{GCS_BUCKET_NAME}/searches/{share_id}.json"
-            logger.info(f"✅ Saved gzipped shared search snapshot to GCS at {gcs_uri} ({len(compressed_bytes)} bytes)")
-        except Exception as e:
-            logger.warning(f"⚠️ GCS upload failed for {share_id}: {e}")
+    if not gcs_client:
+        raise RuntimeError("Le stockage GCS des recherches partagées est indisponible.")
 
-    # 2. Fallback to Local Storage ONLY if GCS is unavailable or failed (e.g. local dev / unit tests)
-    if not gcs_uri:
-        try:
-            local_path = _get_local_filepath(share_id)
-            with open(local_path, "wb") as f:
-                f.write(compressed_bytes)
-            logger.info(f"✅ Saved gzipped shared search snapshot locally at {local_path}")
-        except Exception as e:
-            logger.error(f"❌ Failed to save shared search snapshot locally: {e}")
+    try:
+        bucket = gcs_client.bucket(GCS_BUCKET_NAME)
+        blob = bucket.blob(f"searches/{share_id}.json")
+        blob.content_encoding = "gzip"
+        blob.upload_from_string(
+            compressed_bytes,
+            content_type="application/json",
+        )
+        gcs_uri = f"gs://{GCS_BUCKET_NAME}/searches/{share_id}.json"
+        logger.info(f"✅ Saved gzipped shared search snapshot to GCS at {gcs_uri} ({len(compressed_bytes)} bytes)")
+    except Exception as e:
+        logger.error(f"❌ GCS upload failed for {share_id}: {e}")
+        raise RuntimeError("Impossible d'enregistrer la recherche partagée dans GCS.") from e
 
-    # 3. Log Telemetry to BigQuery
+    # Log telemetry only after the durable snapshot has been stored.
     try:
         from services import telemetry
         telemetry.log_usage_event(
@@ -196,7 +181,7 @@ def load_shared_search(
 ) -> Tuple[Optional[SearchCriterias], Optional[SearchResultsData]]:
     """
     Loads and deserializes a saved search snapshot by share_id.
-    Checks GCS primary first, and falls back to local file if GCS unavailable (e.g. local unit tests).
+    Loads the snapshot from GCS.
     Supports both gzipped and uncompressed JSON payloads.
     Returns (SearchCriterias, SearchResultsData) or (None, None) if not found.
     """
@@ -208,30 +193,20 @@ def load_shared_search(
 
     payload_dict: Optional[Dict[str, Any]] = None
 
-    # 1. Check GCS (Primary)
     gcs_client = _get_gcs_client()
-    if gcs_client:
-        try:
-            bucket = gcs_client.bucket(GCS_BUCKET_NAME)
-            blob = bucket.blob(f"searches/{share_id}.json")
-            if blob.exists():
-                data_bytes = blob.download_as_bytes()
-                payload_dict = _decompress_payload_bytes(data_bytes)
-                logger.info(f"✅ Loaded shared search snapshot from GCS for {share_id}")
-        except Exception as e:
-            logger.error(f"❌ Failed fetching GCS shared search {share_id}: {e}")
+    if not gcs_client:
+        logger.error("❌ GCS client unavailable while loading shared search %s", share_id)
+        return None, None
 
-    # 2. Check Local File (Fallback ONLY if GCS unavailable / local dev)
-    if payload_dict is None:
-        local_path = _get_local_filepath(share_id)
-        if os.path.exists(local_path):
-            try:
-                with open(local_path, "rb") as f:
-                    data_bytes = f.read()
-                payload_dict = _decompress_payload_bytes(data_bytes)
-                logger.info(f"✅ Loaded shared search snapshot from local file {local_path}")
-            except Exception as e:
-                logger.error(f"❌ Failed reading local shared search {local_path}: {e}")
+    try:
+        bucket = gcs_client.bucket(GCS_BUCKET_NAME)
+        blob = bucket.blob(f"searches/{share_id}.json")
+        if blob.exists():
+            data_bytes = blob.download_as_bytes()
+            payload_dict = _decompress_payload_bytes(data_bytes)
+            logger.info(f"✅ Loaded shared search snapshot from GCS for {share_id}")
+    except Exception as e:
+        logger.error(f"❌ Failed fetching GCS shared search {share_id}: {e}")
 
     if not payload_dict or "config" not in payload_dict or "search_results" not in payload_dict:
         logger.warning(f"⚠️ Shared search snapshot not found for ID: {share_id}")
@@ -243,9 +218,6 @@ def load_shared_search(
         config = SearchCriterias.model_validate(cfg_clean)
         search_results = SearchResultsData.model_validate(res_clean)
         return config, search_results
-    except Exception as e:
-        logger.error(f"❌ Deserialization failed for shared search {share_id}: {e}", exc_info=True)
-        return None, None
     except Exception as e:
         logger.error(f"❌ Deserialization failed for shared search {share_id}: {e}", exc_info=True)
         return None, None
@@ -385,4 +357,3 @@ def restore_shared_search_to_session_state(
         st.session_state["selected_geo"] = df_all_communes.loc[
             [config_obj.commune_actuelle.code]
         ].copy()
-

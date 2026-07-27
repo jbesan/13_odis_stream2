@@ -63,7 +63,7 @@ At the end of the `prescoring` step (or full pipeline run), `DataManifestBuilder
 1. Balaye les 36+ sources de `sources.yaml`.
 2. Interroge l'API Catalogue Odace (`GET /api/data/catalog/silver/{table_name}`) pour les tables Odace.
 3. Récupère les horodatages réels et volumétries depuis `pipeline/status.json` (ou l'horodatage `st_mtime` des fichiers locaux).
-4. Calcule la version unique déterministe (`vYYYY.MM.DD-hash`) et écrit `data/processed/data_manifest.json` ainsi que `app/data/data_manifest.json` lors du déploiement.
+4. Calcule la version unique déterministe (`vYYYY.MM.DD-hash`) et écrit le manifeste de sortie dans `pipeline/cache/output/data_manifest.json`. L'étape `deploy` le copie ensuite dans `app/data/data_manifest.json`, qui est le seul emplacement consommé par l'application.
 
 ---
 

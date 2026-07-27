@@ -252,7 +252,7 @@ ODIS supports sharing search results via unique permalink URLs (`?search=<share_
 
 ### 6.1 Data Persistence Architecture
 * **On-Demand Snapshotting**: Clicking "Partager la recherche" serializes the active `SearchCriterias` and `SearchResultsData` Pydantic models.
-* **Storage Location**: Saved as a JSON blob to Google Cloud Storage (`gs://odis-shared-searches/<share_id>.json`) with local disk fallback (`app/data/shared_searches/<share_id>.json`).
+* **Storage Location**: Saved as a gzipped JSON blob to Google Cloud Storage (`gs://odis-stream2-eu/searches/<share_id>.json`). Local-disk persistence is not supported.
 * **Telemetry**: Logs a `search_shared` event to BigQuery `odis_logs.usage_events`.
 
 ### 6.2 URL Parameter Interception & Session Hydration

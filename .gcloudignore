@@ -6,6 +6,7 @@
 !tests/
 !requirements-dev.txt
 !cloudbuild.yaml
+!.dockerignore
 !ruff.toml
 !ty.toml
 !pytest.ini
@@ -30,4 +31,7 @@ app/.logs
 app/*.pyc
 app/.DS_Store
 app/.env
+app/.streamlit/secrets.toml
+app/data_private/
+app/data/shared_searches/
 **/.env

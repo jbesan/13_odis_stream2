@@ -1,18 +1,17 @@
 import json
 import hashlib
-import time
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 
-from pipeline.common import CONFIG_FILE, load_config, CACHE_DIR, CLEAN_DIR, PROCESSED_DIR, STATUS_FILE
-from pipeline.odace_client import OdaceClient, get_odace_client
+from pipeline.common import CONFIG_FILE, load_config, CACHE_DIR, CLEAN_DIR, OUTPUT_DIR, STATUS_FILE
+from pipeline.odace_client import OdaceClient
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MANIFEST_PATH = PROCESSED_DIR / "data_manifest.json"
+DEFAULT_MANIFEST_PATH = OUTPUT_DIR / "data_manifest.json"
 
 
 class SourceManifestItem(BaseModel):
