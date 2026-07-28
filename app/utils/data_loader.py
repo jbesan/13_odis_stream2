@@ -594,9 +594,8 @@ def resolve_dataset_path(filename_or_path: str) -> Optional[str]:
     Resolves the physical path of a dataset file with Dual-Mode strategy:
     1. Direct path if specified and exists
     2. app/data/datasets/{filename} (local dev mirror)
-    3. app/data/{filename} (legacy local app data)
-    4. Versioned /tmp/odis_data_cache/{release}/{filename} (GCS cache)
-    5. GCS download from the active release in gs://{GCS_BUCKET_NAME}/datasets/
+    3. Versioned /tmp/odis_data_cache/{release}/{filename} (GCS cache)
+    4. GCS download from the active release in gs://{GCS_BUCKET_NAME}/datasets/
     """
     filename = os.path.basename(filename_or_path)
 
@@ -610,13 +609,7 @@ def resolve_dataset_path(filename_or_path: str) -> Optional[str]:
         logger.debug(f"📦 [DATASET] Loaded '{filename}' from local datasets mirror.")
         return local_datasets_path
 
-    # 3. Local app/data/ (legacy fallback)
-    local_data_path = os.path.join(cfg.APP_DIR, "data", filename)
-    if os.path.exists(local_data_path):
-        logger.debug(f"📦 [DATASET] Loaded '{filename}' from app/data/.")
-        return local_data_path
-
-    # 4-5. Resolve and download from the active immutable GCS release.
+    # 3-4. Resolve and download from the active immutable GCS release.
     try:
         bucket_name = os.getenv("GCS_DATASETS_BUCKET", "odis-stream2-eu")
         datasets_prefix = os.getenv("GCS_DATASETS_PREFIX", "datasets").strip("/")

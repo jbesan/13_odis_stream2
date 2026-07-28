@@ -486,9 +486,9 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
                     communes_gdf = communes_gdf.merge(
                         df_pivot, on="commune_sk", how="left"
                     )
-                    logging.info(
-                        f"Odace Rent: Merged pivoted data. Columns added: {list(df_pivot.columns)}"
-                    )
+                    # logging.info(
+                    #     f"Odace Rent: Merged pivoted data. Columns added: {list(df_pivot.columns)}"
+                    # )
                     # logging.info(f"DEBUG: communes_gdf cols after merge: {[c for c in communes_gdf.columns if 'loyer' in c]}")
             else:
                 logging.warning("Odace Rent clean files missing.")
@@ -1017,7 +1017,7 @@ def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
         incl_clean_path = CLEAN_DIR / "services_inclusion.parquet"
         if incl_clean_path.exists():
             incl_df = pd.read_parquet(incl_clean_path, engine="fastparquet")
-            logging.info(f"Inclusion Clean File Found: {len(incl_df)} rows")
+            # logging.info(f"Inclusion Clean File Found: {len(incl_df)} rows")
 
             # Create unique ID from id_structure and service_slug
             import hashlib
