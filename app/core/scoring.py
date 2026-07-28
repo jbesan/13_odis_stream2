@@ -1553,37 +1553,44 @@ class ScoringEngine:
             config=config,
         )
 
-        # Always include current commune
-        if (
-            c_code in self.df_all_communes.index
-            and c_code not in communes_to_score.index
-        ):
-            communes_to_score = pd.concat(
-                [communes_to_score, self.df_all_communes.loc[[c_code]]]
-            )
+        # Early conservative pruning
+        communes_to_score = self._prune_irrelevant_metrics(
+            communes_to_score, config, aggressive=False
+        )
 
-        # Always include commune pressentie (Feature F-61)
+        # Score candidate pool strictly without out-of-pool comparators
+        results = self._compute_scores(communes_to_score, config)
+
+        # If current city or commune pressentie are out-of-pool, score them separately
+        # after candidate pool scoring so they cannot alter candidate scores or ranking
         p_code_obj = getattr(config, "commune_pressentie", None)
         p_code = (
             p_code_obj.code
             if p_code_obj and hasattr(p_code_obj, "code")
             else p_code_obj
         )
-        if (
-            p_code
-            and p_code in self.df_all_communes.index
-            and p_code not in communes_to_score.index
-        ):
-            communes_to_score = pd.concat(
-                [communes_to_score, self.df_all_communes.loc[[p_code]]]
+
+        extra_dfs = []
+        c_code_str = str(c_code) if c_code is not None else None
+        if c_code_str and c_code_str in self.df_all_communes.index and c_code_str not in results.index:
+            c_df = self._prune_irrelevant_metrics(
+                self.df_all_communes.loc[[c_code_str]], config, aggressive=False
             )
+            extra_dfs.append(self._compute_scores(c_df, config))
 
-        # Early conservative pruning
-        communes_to_score = self._prune_irrelevant_metrics(
-            communes_to_score, config, aggressive=False
-        )
+        p_code_str = str(p_code) if p_code is not None else None
+        if (
+            p_code_str
+            and p_code_str in self.df_all_communes.index
+            and p_code_str not in results.index
+        ):
+            p_df = self._prune_irrelevant_metrics(
+                self.df_all_communes.loc[[p_code_str]], config, aggressive=False
+            )
+            extra_dfs.append(self._compute_scores(p_df, config))
 
-        results = self._compute_scores(communes_to_score, config)
+        if extra_dfs:
+            results = pd.concat([results] + extra_dfs)
 
         del communes_to_score
         return results
