@@ -178,7 +178,7 @@
     },
     "build_communes": {
       "status": "CREATED",
-      "timestamp": "2026-07-28T14:06:14.470430",
+      "timestamp": "2026-07-28T14:49:34.034092",
       "details": {
         "path": "pipeline/cache/output/odis_communes_pre.parquet",
         "rows": 34968
@@ -186,7 +186,7 @@
     },
     "build_bassins_de_vie": {
       "status": "CREATED",
-      "timestamp": "2026-07-28T14:06:18.453966",
+      "timestamp": "2026-07-28T14:49:38.048848",
       "details": {
         "path": "pipeline/cache/output/odis_bassins_de_vie.parquet",
         "rows": 1707
@@ -194,7 +194,7 @@
     },
     "build_all": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-28T14:07:20.755153",
+      "timestamp": "2026-07-28T14:49:38.089354",
       "details": {}
     },
     "clean_voisins": {
@@ -253,7 +253,7 @@
     },
     "apply_prescoring": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-28T14:08:37.465133",
+      "timestamp": "2026-07-28T15:03:19.259064",
       "details": {
         "columns": 132,
         "path": "pipeline/cache/output/odis_communes.parquet",
@@ -278,7 +278,7 @@
     },
     "score_bassins_de_vie": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-28T14:08:41.056976",
+      "timestamp": "2026-07-28T15:03:24.297777",
       "details": {
         "rows": 1707
       }
@@ -337,7 +337,7 @@
     },
     "apply_prescoring_load": {
       "status": "LOADED",
-      "timestamp": "2026-07-28T14:07:21.065619",
+      "timestamp": "2026-07-28T15:02:00.607775",
       "details": {
         "rows": 34968
       }
@@ -352,7 +352,7 @@
     },
     "inc_services_core_scaled": {
       "status": "CALCULATED",
-      "timestamp": "2026-07-28T14:07:23.399671",
+      "timestamp": "2026-07-28T15:02:02.968294",
       "details": {}
     },
     "clean_regions": {

@@ -1,958 +1,1007 @@
 scores:
-  - id: log_vac_scaled
-    category: logement
-    source_metric: log_vac_struct_ratio
-    bdv_factor: 0.0
-    computation: precomputed
-    display:
-      name: Taux Vacance Structurelle (> 2 ans)
-      strong_point_text: Nombre élevé de logements vacants depuis plus de 2 ans
-      high_value_adjective: élevé
-      show: true
-      unit: "%"
-      display_factor: 100
-      tooltip: Part des logements vacants depuis plus de 2 ans sur le parc total
-    weight: 1.0
-    min_bound: 0
-    max_bound: 0.10
-  - id: log_soc_inoc_scaled
-    category: logement
-    source_metric: log_soc_inoc_ratio
-    bdv_factor: 0.0
-    computation: precomputed
-    display:
-      name: Taux de Logements Sociaux Inoccupés (Vacants ou Vides)
-      strong_point_text: Un nombre élevé de logements sociaux potentiellement disponibles
-      high_value_adjective: élevé
-      show: true
-      unit: "%"
-      display_factor: 100
-      tooltip:
-        Nombre de logements sociaux innocupés (vacants ou vide) sur le parc de
-        logements sociaux
-    weight: 3.0
-    min_bound: 0.0
-    max_bound: 0.10
-  - id: log_occup_scaled
-    category: logement
-    source_metric: log_pp_occup
-    bdv_factor: 0.0
-    computation: precomputed
-    display:
-      name: Taux d'Occupation (Sous-occupation)
-      strong_point_text: Logements sous-occupés (potentiel d'accueil)
-      high_value_adjective: élevé
-      show: true
-      unit: "%"
-      display_factor: 100
-      tooltip: "Part des logements sous-occupés"
-    weight: 1.0
-    min_bound: null
-    max_bound: null
-    quantile_level: 0.05
-
-  - id: log_loyer_moyen_appt_all_scaled
-    category: logement
-    source_metric: loyer_m2_moy_appt_all
-    bdv_factor: 0.0
-    computation: precomputed
-    display:
-      name: Loyer Moyen - Appartement (Ensemble)
-      strong_point_text: Loyer moyen au m² attractif
-      high_value_adjective: attractif
-      show: true
-      unit: "€/m²"
-      display_factor: 1
-      tooltip: "Loyer moyen d'annonce par m² pour tous les appartements"
-    weight: 5.0
-    min_bound: null
-    max_bound: null
-    quantile_level: 0.05
-
-  - id: log_loyer_moyen_appt_t1_t2_scaled
-    category: logement
-    source_metric: loyer_m2_moy_appt_t1_t2
-    bdv_factor: 0.0
-    computation: precomputed
-    display:
-      name: Loyer Moyen - Appartement (T1 & T2)
-      strong_point_text: Loyer moyen au m² attractif pour petits appartements
-      high_value_adjective: attractif
-      show: true
-      unit: "€/m²"
-      display_factor: 1
-      tooltip: "Loyer moyen d'annonce par m² pour les appartements T1 et T2"
-    weight: 5.0
-    min_bound: null
-    max_bound: null
-    quantile_level: 0.05
-
-  - id: log_loyer_moyen_appt_t3_p_scaled
-    category: logement
-    source_metric: loyer_m2_moy_appt_t3_p
-    bdv_factor: 0.0
-    computation: precomputed
-    display:
-      name: Loyer Moyen - Appartement (T3+)
-      strong_point_text: Loyer moyen au m² attractif pour grands appartements
-      high_value_adjective: attractif
-      show: true
-      unit: "€/m²"
-      display_factor: 1
-      tooltip: "Loyer moyen d'annonce par m² pour les appartements T3 et plus"
-    weight: 5.0
-    min_bound: null
-    max_bound: null
-    quantile_level: 0.05
-
-  - id: log_loyer_moyen_house_all_scaled
-    category: logement
-    source_metric: loyer_m2_moy_house_all
-    bdv_factor: 0.0
-    computation: precomputed
-    display:
-      name: Loyer Moyen - Maison
-      strong_point_text: Loyer moyen au m² attractif pour les maisons
-      high_value_adjective: attractif
-      show: true
-      unit: "€/m²"
-      display_factor: 1
-      tooltip: "Loyer moyen d'annonce par m² pour les maisons"
-    weight: 5.0
-    min_bound: null
-    max_bound: null
-    quantile_level: 0.05
-
-  - id: ter_pol_scaled
-    category: territoire
-    source_metric: pol_num
-    bdv_factor: 0.0
-    baseline: true
-    computation: precomputed
-    display:
-      name: Couleur politique de l'équipe municipale 
-      strong_point_text: La couleur politique de la localité n'est pas défavorable
-      high_value_adjective: pas défavorable
-      show: false
-      unit: None
-      display_factor: 1
-      tooltip: Affiliation à un parti politique d'extrème droite
-    weight: 1.0
-    min_bound: 0.0
-    max_bound: 1.0
-  - id: ter_anvita_scaled
-    category: territoire
-    source_metric: ter_anvita_member
-    bdv_factor: 0.0
-    baseline: true
-    computation: precomputed
-    display:
-      name: Adhésion Réseau ANVITA
-      strong_point_text: Le territoire est membre du réseau ANVITA
-      high_value_adjective: oui
-      show: false
-      unit: None
-      display_factor: 1
-      tooltip: Commune, EPCI, Département ou Région membre de l'ANVITA
-    weight: 3.0
-    min_bound: 0.0
-    max_bound: 1.0
-  - id: ter_ctai_scaled
-    category: territoire
-    source_metric: ter_ctai_member
-    bdv_factor: 0.0
-    baseline: true
-    computation: precomputed
-    display:
-      name: Signataire CTAI
-      strong_point_text: Le territoire est signataire d'un CTAI
-      high_value_adjective: oui
-      show: false
-      unit: None
-      display_factor: 1
-      tooltip: Commune, EPCI, Département ou Région signataire d'un Contrat territorial d'accueil et d'intégration (CTAI)
-    weight: 3.0
-    min_bound: 0.0
-    max_bound: 1.0
-  - id: ter_population_scaled
-    category: territoire
-    source_metric: population
-    bdv_factor: -0.8
-    baseline: true
-    computation: live
-    display:
-      name: Population de la commune
-      strong_point_text: La taille de la commune est correspondante.
-      high_value_adjective: correspondante
-      show: false
-      unit: habitants
-      display_factor: 1
-      tooltip: Population totale de la commune
-    weight: 5.0
-    scaling_type: gaussian
-    mu: 50000
-    sigma: 25000
-  - id: form_match_adult1_scaled
-    category: emploi
-    source_metric: form_match_adult1
-    bdv_factor: 0.8
-    computation: live
-    display:
-      name: Match besoins et Centres de formation
-      strong_point_text:
-        Des centres de formations proposent les formations recherchées
-        par l'adulte 1
-      high_value_adjective: présent
-      show: true
-      unit: formations offertes
-      display_factor: 1
-      tooltip: Nombre centres de formations
-    weight: 2.0
-    min_bound: 0.0
-    max_bound: null
-  - id: form_match_adult2_scaled
-    category: emploi
-    source_metric: form_match_adult2
-    bdv_factor: 0.8
-    computation: live
-    display:
-      name: Match besoins et Centres de formation
-      strong_point_text:
-        Des centres de formations proposent les formations recherchées
-        par l'adulte 2
-      high_value_adjective: présent
-      show: true
-      unit: formations offertes
-      display_factor: 1
-      tooltip: Nombre centres de formations
-    weight: 2.0
-    min_bound: 0.0
-    max_bound: null
-  - id: mob_epci_scaled
-    category: mobilite
-    source_metric: mob_epci_scaled
-    bdv_factor: 0.0
-    computation: live
-    display:
-      name: Même agglomération que la localisation actuelle
-      strong_point_text: La localité proposée est bien connectée à la commune actuelle
-      high_value_adjective: proche
-      show: false
-      unit: ""
-      display_factor: 1
-      tooltip: ""
-    weight: 1.0
-    min_bound: 0.0
-    max_bound: 1.0
-  - id: mob_dist_current_loc_scaled
-    category: mobilite
-    source_metric: dist_current_loc
-    bdv_factor: 0.0
-    computation: live
-    display:
-      name: Proximité avec la commune actuelle
-      strong_point_text: La localité proposée est proche de la commune actuelle
-      high_value_adjective: proche
-      show: false
-      unit: "km"
-      display_factor: 0.001
-      tooltip: "Distance à vol d'oiseau avec la commune actuelle"
-    weight: 1.0
-    min_bound: 0.0
-    max_bound: 50000.0
-  - id: inc_asso_core_scaled
-    category: inclusion
-    source_metric: lien_social_density
-    bdv_factor: 0.8
-    baseline: true
-    computation: precomputed
-    display:
-      name: Lien Social
-      strong_point_text: Présence d'associations favorisant le lien social
-      high_value_adjective: dense
-      show: true
-      unit: assos/1000 hab.
-      display_factor: 1
-      tooltip: Densité d'associations favorisant le lien social
-    weight: 1.0
-    min_bound: null
-    max_bound: null
-  - id: inc_asso_refug_scaled
-    category: inclusion
-    source_metric: inc_asso_refug_density
-    bdv_factor: 0.8
-    baseline: true
-    computation: precomputed
-    display:
-      name: Accompagnement Réfugiés
-      strong_point_text: Présence d'associations spécialisées dans l'accueil
-      high_value_adjective: dense
-      show: true
-      unit: assos/1000 hab.
-      display_factor: 1
-      tooltip: Densité d'associations spécialisées réfugiés (Source RNA)
-    weight: 1.0
-    min_bound: null
-    max_bound: null
-  - id: inc_siae_density_scaled
-    category: inclusion
-    source_metric: inc_siae_density
-    bdv_factor: 0.8
-    baseline: true
-    computation: precomputed
-    display:
-      name: Densité SIAE
-      strong_point_text: Présence de structures d'insertion par l'activité économique (SIAE)
-      high_value_adjective: dense
-      show: true
-      unit: SIAE/1000 hab.
-      display_factor: 1
-      tooltip: Densité de structures d'insertion (ACI, AI, EI, ETTI, EITI)
-    weight: 1.0
-    min_bound: null
-    max_bound: null
-  - id: inc_asso_add_scaled
-    category: inclusion
-    source_metric: affinite_density
-    bdv_factor: 0.8
-    computation: live
-    display:
-      name: Affinités
-      strong_point_text: Associations correspondant aux centres d'intérêt
-      high_value_adjective: présent
-      show: true
-      unit: assos/1000 hab.
-      display_factor: 1
-      tooltip: Densité d'associations correspondant aux affinités sélectionnées
-    weight: 1.0
-    min_bound: 0.0
-    max_bound: 0.25 ## This is Jacques guess looking at the data
-  - id: inc_services_incl_scaled
-    category: inclusion
-    source_metric: inc_services_incl_scaled
-    bdv_factor: 0.8
-    computation: live
-    display:
-      name: Services Inclusion
-      strong_point_text: Services d'inclusion recherchés présents
-      high_value_adjective: complet
-      show: true
-      unit: "%"
-      display_factor: 100
-      tooltip: Présence des services d'inclusion sélectionnés
-    weight: 1.0
-    min_bound: 0.0
-    max_bound: 1.0
-  - id: edu_petite_enfance_scaled
-    category: education
-    source_metric: edu_pe_tx_couverture
-    bdv_factor: 0.0
-    computation: precomputed
-    display:
-      name: Accueil Petite Enfance
-      strong_point_text: Bonne couverture en crèches et assistantes maternelles
-      high_value_adjective: bonne
-      show: true
-      unit: places/100 enfants
-      display_factor: 1
-      tooltip:
-        "Nombre de places (collectif + individuel) pour 100 enfants de moins
-        de 3 ans (Source: CAF)"
-    weight: 3.0
-    min_bound: null
-    max_bound: null
-    quantile_level: 0.05
-  - id: edu_maternelle_scaled
-    category: education
-    source_metric: edu_maternelle
-    bdv_factor: 0.0
-    computation: live
-    display:
-      name: Ecole Maternelle
-      strong_point_text: Présence d'une école maternelle
-      high_value_adjective: présente
-      show: true
-      unit: ""
-      display_factor: 1
-      tooltip: Présence d'une école maternelle
-    weight: 2.0
-    min_bound: 0.0
-    max_bound: null
-  - id: edu_elementaire_scaled
-    category: education
-    source_metric: edu_elementaire
-    bdv_factor: 0.0
-    computation: live
-    display:
-      name: Ecole Elémentaire
-      strong_point_text: Présence d'une école élémentaire
-      high_value_adjective: présente
-      show: true
-      unit: ""
-      display_factor: 1
-      tooltip: Présence d'une école élémentaire
-    weight: 2.0
-    min_bound: 0.0
-    max_bound: null
-  - id: edu_college_scaled
-    category: education
-    source_metric: edu_college
-    bdv_factor: 0.5
-    computation: live
-    display:
-      name: Collège
-      strong_point_text: Présence d'un collège
-      high_value_adjective: présent
-      show: true
-      unit: ""
-      display_factor: 1
-      tooltip: Présence d'un collège
-    weight: 1.0
-    min_bound: 0.0
-    max_bound: null
-  - id: edu_lycee_scaled
-    category: education
-    source_metric: edu_lycee
-    bdv_factor: 0.8
-    computation: live
-    display:
-      name: Lycée
-      strong_point_text: Présence d'un lycée
-      high_value_adjective: présent
-      show: true
-      unit: ""
-      display_factor: 1
-      tooltip: Présence d'un lycée
-    weight: 1.0
-    min_bound: 0.0
-    max_bound: null
-  - id: edu_classes_ferm_scaled
-    category: education
-    source_metric: risque_fermeture_ratio
-    bdv_factor: 0.5
-    computation: precomputed
-    display:
-      name: Nombre de classes à risque de fermeture
-      strong_point_text: Classes en manque d'élèves (risque de fermeture)
-      high_value_adjective: forte
-      show: true
-      unit: écoles
-      display_factor: 1
-      tooltip: Nombre d'écoles avec des classes à faible effectif (< 20 élèves)
-    weight: 1.0
-    min_bound: null
-    max_bound: null
-    quantile_level: 0.05
-  - id: sante_hopital_scaled
-    category: sante
-    source_metric: count_hopital
-    bdv_factor: 0.8
-    computation: precomputed
-    display:
-      name: Hôpital
-      strong_point_text: Présence d'un hôpital
-      high_value_adjective: présent
-      show: true
-      unit: ""
-      display_factor: 1
-      tooltip: Nombre d'hôpitaux identifiés (Source BPE)
-    weight: 2.0
-    min_bound: 0.0
-    max_bound: 1.0
-  - id: sante_maternite_scaled
-    category: sante
-    source_metric: count_maternite
-    bdv_factor: 0.25
-    computation: precomputed
-    display:
-      name: Maternité
-      strong_point_text: Présence d'une maternité
-      high_value_adjective: présente
-      show: true
-      unit: ""
-      display_factor: 1
-      tooltip: Nombre de maternités identifiées (Source BPE)
-    weight: 2.0
-    min_bound: 0.0
-    max_bound: 1.0
-  - id: sante_psy_scaled
-    category: sante
-    source_metric: count_psy
-    bdv_factor: 0.0
-    computation: precomputed
-    display:
-      name: Soutien Psychologique
-      strong_point_text: Présence de structures de soutien psychologique
-      high_value_adjective: présent
-      show: true
-      unit: ""
-      display_factor: 1
-      tooltip: Nombre d'établissements de soutien psychologique (Source BPE)
-    weight: 2.0
-    min_bound: 0.0
-    max_bound: 1.0
-  - id: sante_dialyse_scaled
-    category: sante
-    source_metric: count_dialyse
-    bdv_factor: 0.0
-    computation: precomputed
-    display:
-      name: Dialyse
-      strong_point_text: Présence d'un centre de dialyse
-      high_value_adjective: présent
-      show: true
-      unit: ""
-      display_factor: 1
-      tooltip: Nombre de structures de dialyse (Source BPE)
-    weight: 2.0
-    min_bound: 0.0
-    max_bound: 1.0
-  - id: sante_maison_sante_scaled
-    category: sante
-    source_metric: count_maison_sante
-    bdv_factor: 0.0
-    computation: precomputed
-    display:
-      name: Maison de santé
-      strong_point_text: Présence d'une maison de santé
-      high_value_adjective: présente
-      show: true
-      unit: ""
-      display_factor: 1
-      tooltip: Nombre de maisons de santé (Source BPE)
-    weight: 2.0
-    min_bound: 0.0
-    max_bound: 1.0
-  - id: sante_addictologie_scaled
-    category: sante
-    source_metric: count_addictologie
-    bdv_factor: 0.0
-    computation: precomputed
-    display:
-      name: Addictologie
-      strong_point_text: Présence de structures d'addictologie
-      high_value_adjective: présent
-      show: true
-      unit: ""
-      display_factor: 1
-      tooltip: Nombre de centres d'addictologie (Source BPE)
-    weight: 2.0
-    min_bound: 0.0
-    max_bound: 1.0
-  - id: sante_pmi_scaled
-    category: sante
-    source_metric: count_pmi
-    bdv_factor: 0.0
-    computation: precomputed
-    display:
-      name: Santé maternelle et infantile (PMI)
-      strong_point_text: Présence d'un centre PMI
-      high_value_adjective: présent
-      show: true
-      unit: ""
-      display_factor: 1
-      tooltip: Nombre de centres PMI (Source BPE)
-    weight: 2.0
-    min_bound: 0.0
-    max_bound: 1.0
-  - id: mob_gare_scaled
-    category: mobilite
-    source_metric: has_gare
-    bdv_factor: 0.0
-    baseline: true
-    computation: precomputed
-    display:
-      name: Présence d'une gare SNCF
-      strong_point_text: Présence d'une gare ferroviaire dans la commune
-      high_value_adjective: présente
-      show: true
-      unit: ""
-      display_factor: 1
-      tooltip: "Présence d'une gare ferroviaire dans la commune"
-    weight: 1.0
-    min_bound: 0.0
-    max_bound: 1.0
-  - id: mob_trans_pub_density_scaled
-    category: mobilite
-    source_metric: mob_trans_pub_stop_density
-    bdv_factor: 0.0
-    baseline: true
-    computation: live
-    display:
-      name: Densité des transports en commun
-      strong_point_text: Excellente desserte transports
-      high_value_adjective: excellente
-      show: true
-      unit: "arrêts / 1000 hab."
-      display_factor: 1
-      tooltip: "Nombre d'arrêts de transports en commun (bus, tram, métro, train) pour 1000 habitants"
-    weight: 3.0
-    min_bound: 0.0
-    max_bound: 10.0
-  - id: youth_decline_scaled
-    category: education
-    source_metric: youth_growth_rate
-    bdv_factor: 0.0
-    computation: precomputed
-    display:
-      name: Evolution Démographique Jeune
-      strong_point_text: Baisse de la population jeune (Faible score = Opportunité d'accueil = positif)
-      high_value_adjective: forte
-      show: true
-      unit: "% (Evol. 2016-2022)"
-      display_factor: 100
-      tooltip: Evolution de la population des moins de 15 ans entre 2016 et 2022
-    weight: 1.0
-    min_bound: -0.2
-    max_bound: 0.2
-  - id: workclass_decline_scaled
-    category: emploi
-    source_metric: workclass_growth_rate
-    bdv_factor: 0.0
-    baseline: true
-    computation: precomputedde
-    display:
-      name: Dynamisme Population Active
-      strong_point_text: Décroissance de la population active
-      high_value_adjective: forte
-      show: true
-      unit: "%"
-      display_factor: 100
-      tooltip: "Évolution de la population active (Source Insee)"
-    weight: 3.0
-    min_bound: 0.0
-    max_bound: 0.1
-  - id: met_match_adult1_scaled
-    category: emploi
-    source_metric: met_match_adult1
-    bdv_factor: 0.5
-    computation: live
-    display:
-      name: Opportunités Emploi - Adulte 1
-      strong_point_text: De nombreuses offres d'emploi correspondent à la recherche de l'adulte 1
-      high_value_adjective: nombreuses
-      show: true
-      unit: offres
-      display_factor: 1
-      tooltip: "Nombre d'offres d'emploi en direct pour l'adulte 1 (Source: France Travail)"
-    weight: 3.0
-    min_bound: 0
-    max_bound: 10
-  - id: met_match_adult1_tension_scaled
-    category: emploi
-    source_metric: met_match_adult1_tension
-    bdv_factor: 0.0
-    computation: live
-    display:
-      name: Tension de recrutement - Adulte 1
-      strong_point_text: Recrutements difficiles pour l'adulte 1 (Fort besoin de main d'oeuvre)
-      high_value_adjective: forte
-      show: true
-      unit: offres en tension
-      display_factor: 1
-      tooltip: "Nombre d'offres signalées avec 'Manque de candidats' pour l'adulte 1 (Source: France Travail)"
-    weight: 1.0
-    min_bound: 0
-    max_bound: 5
-  - id: met_match_adult2_scaled
-    category: emploi
-    source_metric: met_match_adult2
-    bdv_factor: 0.5
-    computation: live
-    display:
-      name: Opportunités Emploi - Adulte 2
-      strong_point_text: De nombreuses offres d'emploi correspondent à la recherche de l'adulte 2
-      high_value_adjective: nombreuses
-      show: true
-      unit: offres
-      display_factor: 1
-      tooltip: "Nombre d'offres d'emploi en direct pour l'adulte 2 (Source: France Travail)"
-    weight: 3.0
-    min_bound: 0
-    max_bound: 10
-  - id: met_match_adult2_tension_scaled
-    category: emploi
-    source_metric: met_match_adult2_tension
-    bdv_factor: 0.0
-    computation: live
-    display:
-      name: Tension de recrutement - Adulte 2
-      strong_point_text: Recrutements difficiles pour l'adulte 2 (Fort besoin de main d'oeuvre)
-      high_value_adjective: forte
-      show: true
-      unit: offres en tension
-      display_factor: 1
-      tooltip: "Nombre d'offres signalées avec 'Manque de candidats' pour l'adulte 2 (Source: France Travail)"
-    weight: 1.0
-    min_bound: 0
-    max_bound: 5
-  - id: met_siae_match_adult1_scaled
-    category: emploi
-    source_metric: met_siae_match_adult1
-    bdv_factor: 0.5
-    computation: live
-    display:
-      name: Offres SIAE - Adulte 1
-      strong_point_text: Des offres d'insertion (SIAE) correspondent à l'adulte 1
-      high_value_adjective: nombreuses
-      show: true
-      unit: offres
-      display_factor: 1
-      tooltip: "Nombre d'offres en SIAE pour l'adulte 1 (Source: Les emplois de l'inclusion)"
-    weight: 3.0
-    min_bound: 0
-    max_bound: 5
-  - id: met_siae_match_adult2_scaled
-    category: emploi
-    source_metric: met_siae_match_adult2
-    bdv_factor: 0.5
-    computation: live
-    display:
-      name: Offres SIAE - Adulte 2
-      strong_point_text: Des offres d'insertion (SIAE) correspondent à l'adulte 2
-      high_value_adjective: nombreuses
-      show: true
-      unit: offres
-      display_factor: 1
-      tooltip: "Nombre d'offres en SIAE pour l'adulte 2 (Source: Les emplois de l'inclusion)"
-    weight: 3.0
-    min_bound: 0
-    max_bound: 5
-
-  - id: heb_loc_iml_scaled
-    category: logement
-    source_metric: heb_loc_iml_count
-    bdv_factor: 0.8
-    computation: precomputed
-    display:
-      name: Location avec Intermédiation
-      strong_point_text: Présence d'associations IML/Solibail
-      high_value_adjective: forte
-      show: true
-      unit: associations
-      display_factor: 1
-      tooltip: Nombre d'associations proposant de l'intermédiation locative ou Solibail (Source RNA)
-    weight: 1.0
-    min_bound: 0.0
-    max_bound: 0.1
-
-  - id: heb_chrs_scaled
-    category: logement
-    source_metric: heb_chrs_count
-    bdv_factor: 0.5
-    computation: precomputed
-    display:
-      name: Centre d'hébergement et de réinsertion sociale (CHRS)
-      strong_point_text: Présence de structures CHRS
-      high_value_adjective: forte
-      show: true
-      unit: structures
-      display_factor: 1
-      tooltip: Nombre de structures CHRS identifiées (Source BPE)
-    weight: 2.0
-    min_bound: 0.0
-    max_bound: 1.0
-
-  - id: heb_cph_scaled
-    category: logement
-    source_metric: heb_cph_count
-    bdv_factor: 0.5
-    computation: precomputed
-    display:
-      name: Centre provisoire d'hébergement (CPH)
-      strong_point_text: Présence de structures CPH
-      high_value_adjective: forte
-      show: true
-      unit: structures
-      display_factor: 1
-      tooltip: Nombre de structures CPH identifiées (Source BPE)
-    weight: 2.0
-    min_bound: 0.0
-    max_bound: 1.0
-
-  - id: heb_cada_scaled
-    category: logement
-    source_metric: heb_cada_count
-    bdv_factor: 0.5
-    computation: precomputed
-    display:
-      name: Centre d'accueil de demandeurs d'asile (CADA)
-      strong_point_text: Présence de structures CADA
-      high_value_adjective: forte
-      show: true
-      unit: structures
-      display_factor: 1
-      tooltip: Nombre de structures CADA identifiées (Source BPE)
-    weight: 2.0
-    min_bound: 0.0
-    max_bound: 1.0
-
-  - id: heb_fjt_scaled
-    category: logement
-    source_metric: heb_fjt_count
-    bdv_factor: 0.5
-    computation: precomputed
-    display:
-      name: Foyer de Jeunes Travailleurs (FJT)
-      strong_point_text: Présence de structures FJT
-      high_value_adjective: forte
-      show: true
-      unit: structures
-      display_factor: 1
-      tooltip: Nombre de structures FJT identifiées (Source BPE)
-    weight: 2.0
-    min_bound: 0.0
-    max_bound: 1.0
-
-  - id: heb_pension_scaled
-    category: logement
-    source_metric: heb_pension_count
-    bdv_factor: 0.5
-    computation: precomputed
-    display:
-      name: Pensions de Famille
-      strong_point_text: Présence de pensions de famille
-      high_value_adjective: forte
-      show: true
-      unit: structures
-      display_factor: 1
-      tooltip: Nombre de pensions de famille identifiées (Source BPE)
-    weight: 2.0
-    min_bound: 0.0
-    max_bound: 1.0
-
-  - id: heb_asso_habitant_scaled
-    category: logement
-    source_metric: heb_habitant_count
-    bdv_factor: 0.8
-    computation: precomputed
-    display:
-      name: Associations d'Hébergement Citoyen
-      strong_point_text: Présence d'associations d'hébergement citoyen
-      high_value_adjective: forte
-      show: true
-      unit: associations
-      display_factor: 1
-      tooltip: Nombre d'associations proposant de l'hébergement citoyen (Source RNA/RNAG)
-    weight: 2.0
-    min_bound: 0.0
-    max_bound: 0.1
-
-  - id: heb_jaccueille_accueillants_score
-    category: logement
-    source_metric: heb_accueillants_count
-    bdv_factor: 1.0
-    computation: precomputed
-    display:
-      name: Accueillants J'Accueille dans le bassin de vie
-      strong_point_text: Des particuliers accueillent déjà dans ce bassin de vie
-      high_value_adjective: présents
-      show: true
-      unit: ""
-      display_factor: 1
-      tooltip: Au moins un accueillant actif dans le bassin de vie (Source J'Accueille)
-    weight: 3.0
-    min_bound: 0.0
-    max_bound: 1.0
-
-  - id: heb_jaccueille_prospects_score
-    category: logement
-    source_metric: prospects_count
-    bdv_factor: 1.0
-    computation: precomputed
-    display:
-      name: Prospects J'Accueille dans le bassin de vie
-      strong_point_text: Des prospects J'Accueille sont présents dans ce bassin de vie
-      high_value_adjective: présents
-      show: true
-      unit: ""
-      display_factor: 1
-      tooltip: Au moins un prospect inscrit dans le bassin de vie (Source J'Accueille)
-    weight: 2.0
-    min_bound: 0.0
-    max_bound: 1.0
-
-  - id: ter_strategic_locations_scaled
-    category: territoire
-    source_metric: ter_strategic_locations_scaled
-    bdv_factor: 0.0
-    computation: live
-    display:
-      name: Zone Stratégique
-      strong_point_text: Zone d'action privilégiée de l'organisation
-      high_value_adjective: oui
-      show: true
-      unit: ""
-      display_factor: 1
-      tooltip: Commune située dans une zone stratégique pour l'organisation
-    weight: 3.0
-    min_bound: 0.0
-    max_bound: 1.0
-
-  - id: log_soc_delay_scaled
-    category: logement
-    source_metric: log_soc_delay
-    bdv_factor: 0.0
-    baseline: true
-    computation: precomputed
-    display:
-      name: Délai moyen Logement Social
-      strong_point_text: Délai d'attente pour un logement social réduit
-      high_value_adjective: réduit
-      show: true
-      unit: "mois"
-      display_factor: 1
-      tooltip: Délai moyen entre la demande et l'attribution (Source USH)
-    weight: 5.0
-    min_bound: 6.0
-    max_bound: 24.0
-
-  - id: sante_rdv_delay_scaled
-    category: sante
-    source_metric: sante_apl
-    bdv_factor: 0.0
-    baseline: true
-    computation: precomputed
-    display:
-      name: Accessibilité Médicale (APL)
-      strong_point_text: Excellente accessibilité aux médecins généralistes
-      high_value_adjective: excellente
-      show: true
-      unit: "APL"
-      display_factor: 1
-      tooltip: Indicateur d'Accessibilité Potentielle Localisée (Source DREES)
-    weight: 2.0
-
-  - id: mob_dur_share_scaled
-    category: mobilite
-    source_metric: mob_dur_share
-    bdv_factor: 0.5
-    baseline: true
-    computation: precomputed
-    display:
-      name: Part des actifs effectuant leurs trajets domicile-travail sans voiture
-      strong_point_text: Forte utilisation des transports en commun, marche ou vélo pour les trajets domicile-travail
-      high_value_adjective: forte
-      show: true
-      unit: "%"
-      display_factor: 100
-      tooltip: Part modale des transports domicile-travail sans voiture (Source Ecolab / RP Insee)
-    weight: 3.0
-
-  - id: ter_insecurite_scaled
-    category: territoire
-    source_metric: ter_insecurite
-    bdv_factor: 0.5
-    baseline: true
-    computation: precomputed
-    display:
-      name: Indice de Sécurité
-      strong_point_text: Faible taux de criminalité et délits
-      high_value_adjective: élevé
-      show: true
-      unit: "crimes+délits/1000 hab."
-      display_factor: 1
-      tooltip: Taux cumulé des crimes et délits pour 1000 hab. (Source SSMSI)
-    weight: 1.0
-    min_bound: 0.0
-    max_bound: 100.0
+- id: log_vac_scaled
+  category: logement
+  source_metric: log_vac_struct_ratio
+  bdv_factor: 0.0
+  computation: precomputed
+  display:
+    name: Taux Vacance Structurelle (> 2 ans)
+    strong_point_text: Nombre élevé de logements vacants depuis plus de 2 ans
+    high_value_adjective: élevé
+    show: true
+    unit: '%'
+    display_factor: 100
+    tooltip: Part des logements vacants depuis plus de 2 ans sur le parc total
+    format: '{:.1f}'
+  weight: 1.0
+  min_bound: 0
+  max_bound: 0.1
+- id: log_soc_inoc_scaled
+  category: logement
+  source_metric: log_soc_inoc_ratio
+  bdv_factor: 0.0
+  computation: precomputed
+  display:
+    name: Taux de Logements Sociaux Inoccupés (Vacants ou Vides)
+    strong_point_text: Un nombre élevé de logements sociaux potentiellement disponibles
+    high_value_adjective: élevé
+    show: true
+    unit: '%'
+    display_factor: 100
+    tooltip: Nombre de logements sociaux innocupés (vacants ou vide) sur le parc de
+      logements sociaux
+    format: '{:.1f}'
+  weight: 3.0
+  min_bound: 0.0
+  max_bound: 0.1
+- id: log_occup_scaled
+  category: logement
+  source_metric: log_pp_occup
+  bdv_factor: 0.0
+  computation: precomputed
+  display:
+    name: Taux d'Occupation (Sous-occupation)
+    strong_point_text: Logements sous-occupés (potentiel d'accueil)
+    high_value_adjective: élevé
+    show: true
+    unit: '%'
+    display_factor: 100
+    tooltip: Part des logements sous-occupés
+    format: '{:.1f}'
+  weight: 1.0
+  min_bound: null
+  max_bound: null
+  quantile_level: 0.05
+- id: log_loyer_moyen_appt_all_scaled
+  category: logement
+  source_metric: loyer_m2_moy_appt_all
+  bdv_factor: 0.0
+  computation: precomputed
+  display:
+    name: Loyer Moyen - Appartement (Ensemble)
+    strong_point_text: Loyer moyen au m² attractif
+    high_value_adjective: attractif
+    show: true
+    unit: €/m²
+    display_factor: 1
+    tooltip: Loyer moyen d'annonce par m² pour tous les appartements
+    format: '{:.1f}'
+  weight: 5.0
+  min_bound: null
+  max_bound: null
+  quantile_level: 0.05
+- id: log_loyer_moyen_appt_t1_t2_scaled
+  category: logement
+  source_metric: loyer_m2_moy_appt_t1_t2
+  bdv_factor: 0.0
+  computation: precomputed
+  display:
+    name: Loyer Moyen - Appartement (T1 & T2)
+    strong_point_text: Loyer moyen au m² attractif pour petits appartements
+    high_value_adjective: attractif
+    show: true
+    unit: €/m²
+    display_factor: 1
+    tooltip: Loyer moyen d'annonce par m² pour les appartements T1 et T2
+    format: '{:.1f}'
+  weight: 5.0
+  min_bound: null
+  max_bound: null
+  quantile_level: 0.05
+- id: log_loyer_moyen_appt_t3_p_scaled
+  category: logement
+  source_metric: loyer_m2_moy_appt_t3_p
+  bdv_factor: 0.0
+  computation: precomputed
+  display:
+    name: Loyer Moyen - Appartement (T3+)
+    strong_point_text: Loyer moyen au m² attractif pour grands appartements
+    high_value_adjective: attractif
+    show: true
+    unit: €/m²
+    display_factor: 1
+    tooltip: Loyer moyen d'annonce par m² pour les appartements T3 et plus
+    format: '{:.1f}'
+  weight: 5.0
+  min_bound: null
+  max_bound: null
+  quantile_level: 0.05
+- id: log_loyer_moyen_house_all_scaled
+  category: logement
+  source_metric: loyer_m2_moy_house_all
+  bdv_factor: 0.0
+  computation: precomputed
+  display:
+    name: Loyer Moyen - Maison
+    strong_point_text: Loyer moyen au m² attractif pour les maisons
+    high_value_adjective: attractif
+    show: true
+    unit: €/m²
+    display_factor: 1
+    tooltip: Loyer moyen d'annonce par m² pour les maisons
+    format: '{:.1f}'
+  weight: 5.0
+  min_bound: null
+  max_bound: null
+  quantile_level: 0.05
+- id: ter_pol_scaled
+  category: territoire
+  source_metric: pol_num
+  bdv_factor: 0.0
+  baseline: true
+  computation: precomputed
+  display:
+    name: Couleur politique de l'équipe municipale
+    strong_point_text: La couleur politique de la localité n'est pas défavorable
+    high_value_adjective: pas défavorable
+    show: false
+    unit: None
+    display_factor: 1
+    tooltip: Affiliation à un parti politique d'extrème droite
+    format: '{:.1f}'
+  weight: 1.0
+  min_bound: 0.0
+  max_bound: 1.0
+- id: ter_anvita_scaled
+  category: territoire
+  source_metric: ter_anvita_member
+  bdv_factor: 0.0
+  baseline: true
+  computation: precomputed
+  display:
+    name: Adhésion Réseau ANVITA
+    strong_point_text: Le territoire est membre du réseau ANVITA
+    high_value_adjective: oui
+    show: false
+    unit: None
+    display_factor: 1
+    tooltip: Commune, EPCI, Département ou Région membre de l'ANVITA
+    format: '{:.1f}'
+  weight: 3.0
+  min_bound: 0.0
+  max_bound: 1.0
+- id: ter_ctai_scaled
+  category: territoire
+  source_metric: ter_ctai_member
+  bdv_factor: 0.0
+  baseline: true
+  computation: precomputed
+  display:
+    name: Signataire CTAI
+    strong_point_text: Le territoire est signataire d'un CTAI
+    high_value_adjective: oui
+    show: false
+    unit: None
+    display_factor: 1
+    tooltip: Commune, EPCI, Département ou Région signataire d'un Contrat territorial
+      d'accueil et d'intégration (CTAI)
+    format: '{:.1f}'
+  weight: 3.0
+  min_bound: 0.0
+  max_bound: 1.0
+- id: ter_population_scaled
+  category: territoire
+  source_metric: population
+  bdv_factor: -0.8
+  baseline: true
+  computation: live
+  display:
+    name: Population de la commune
+    strong_point_text: La taille de la commune est correspondante.
+    high_value_adjective: correspondante
+    show: false
+    unit: habitants
+    display_factor: 1
+    tooltip: Population totale de la commune
+    format: '{:,.0f}'
+  weight: 5.0
+  scaling_type: gaussian
+  mu: 50000
+  sigma: 25000
+- id: form_match_adult1_scaled
+  category: emploi
+  source_metric: form_match_adult1
+  bdv_factor: 0.8
+  computation: live
+  display:
+    name: Match besoins et Centres de formation
+    strong_point_text: Des centres de formations proposent les formations recherchées
+      par l'adulte 1
+    high_value_adjective: présent
+    show: true
+    unit: formations offertes
+    display_factor: 1
+    tooltip: Nombre centres de formations
+    format: '{:,.0f}'
+  weight: 2.0
+  min_bound: 0.0
+  max_bound: null
+- id: form_match_adult2_scaled
+  category: emploi
+  source_metric: form_match_adult2
+  bdv_factor: 0.8
+  computation: live
+  display:
+    name: Match besoins et Centres de formation
+    strong_point_text: Des centres de formations proposent les formations recherchées
+      par l'adulte 2
+    high_value_adjective: présent
+    show: true
+    unit: formations offertes
+    display_factor: 1
+    tooltip: Nombre centres de formations
+    format: '{:,.0f}'
+  weight: 2.0
+  min_bound: 0.0
+  max_bound: null
+- id: mob_epci_scaled
+  category: mobilite
+  source_metric: mob_epci_scaled
+  bdv_factor: 0.0
+  computation: live
+  display:
+    name: Même agglomération que la localisation actuelle
+    strong_point_text: La localité proposée est bien connectée à la commune actuelle
+    high_value_adjective: proche
+    show: false
+    unit: ''
+    display_factor: 1
+    tooltip: ''
+    format: '{:.1f}'
+  weight: 1.0
+  min_bound: 0.0
+  max_bound: 1.0
+- id: mob_dist_current_loc_scaled
+  category: mobilite
+  source_metric: dist_current_loc
+  bdv_factor: 0.0
+  computation: live
+  display:
+    name: Proximité avec la commune actuelle
+    strong_point_text: La localité proposée est proche de la commune actuelle
+    high_value_adjective: proche
+    show: false
+    unit: km
+    display_factor: 0.001
+    tooltip: Distance à vol d'oiseau avec la commune actuelle
+    format: '{:.1f}'
+  weight: 1.0
+  min_bound: 0.0
+  max_bound: 50000.0
+- id: inc_asso_core_scaled
+  category: inclusion
+  source_metric: lien_social_density
+  bdv_factor: 0.8
+  baseline: true
+  computation: precomputed
+  display:
+    name: Lien Social
+    strong_point_text: Présence d'associations favorisant le lien social
+    high_value_adjective: dense
+    show: true
+    unit: assos/1000 hab.
+    display_factor: 1
+    tooltip: Densité d'associations favorisant le lien social
+    format: '{:.1f}'
+  weight: 1.0
+  min_bound: null
+  max_bound: null
+- id: inc_asso_refug_scaled
+  category: inclusion
+  source_metric: inc_asso_refug_density
+  bdv_factor: 0.8
+  baseline: true
+  computation: precomputed
+  display:
+    name: Accompagnement Réfugiés
+    strong_point_text: Présence d'associations spécialisées dans l'accueil
+    high_value_adjective: dense
+    show: true
+    unit: assos/1000 hab.
+    display_factor: 1
+    tooltip: Densité d'associations spécialisées réfugiés (Source RNA)
+    format: '{:.1f}'
+  weight: 1.0
+  min_bound: null
+  max_bound: null
+- id: inc_siae_density_scaled
+  category: inclusion
+  source_metric: inc_siae_density
+  bdv_factor: 0.8
+  baseline: true
+  computation: precomputed
+  display:
+    name: Densité SIAE
+    strong_point_text: Présence de structures d'insertion par l'activité économique
+      (SIAE)
+    high_value_adjective: dense
+    show: true
+    unit: SIAE/1000 hab.
+    display_factor: 1
+    tooltip: Densité de structures d'insertion (ACI, AI, EI, ETTI, EITI)
+    format: '{:.1f}'
+  weight: 1.0
+  min_bound: null
+  max_bound: null
+- id: inc_asso_add_scaled
+  category: inclusion
+  source_metric: affinite_density
+  bdv_factor: 0.8
+  computation: live
+  display:
+    name: Affinités
+    strong_point_text: Associations correspondant aux centres d'intérêt
+    high_value_adjective: présent
+    show: true
+    unit: assos/1000 hab.
+    display_factor: 1
+    tooltip: Densité d'associations correspondant aux affinités sélectionnées
+    format: '{:.1f}'
+  weight: 1.0
+  min_bound: 0.0
+  max_bound: 0.25
+- id: inc_services_incl_scaled
+  category: inclusion
+  source_metric: inc_services_incl_scaled
+  bdv_factor: 0.8
+  computation: live
+  display:
+    name: Services Inclusion
+    strong_point_text: Services d'inclusion recherchés présents
+    high_value_adjective: complet
+    show: true
+    unit: '%'
+    display_factor: 100
+    tooltip: Présence des services d'inclusion sélectionnés
+    format: '{:.1f}'
+  weight: 1.0
+  min_bound: 0.0
+  max_bound: 1.0
+- id: edu_petite_enfance_scaled
+  category: education
+  source_metric: edu_pe_tx_couverture
+  bdv_factor: 0.0
+  computation: precomputed
+  display:
+    name: Accueil Petite Enfance
+    strong_point_text: Bonne couverture en crèches et assistantes maternelles
+    high_value_adjective: bonne
+    show: true
+    unit: places/100 enfants
+    display_factor: 1
+    tooltip: 'Nombre de places (collectif + individuel) pour 100 enfants de moins
+      de 3 ans (Source: CAF)'
+    format: '{:.1f}'
+  weight: 3.0
+  min_bound: null
+  max_bound: null
+  quantile_level: 0.05
+- id: edu_maternelle_scaled
+  category: education
+  source_metric: edu_maternelle
+  bdv_factor: 0.0
+  computation: live
+  display:
+    name: Ecole Maternelle
+    strong_point_text: Présence d'une école maternelle
+    high_value_adjective: présente
+    show: true
+    unit: ''
+    display_factor: 1
+    tooltip: Présence d'une école maternelle
+    format: '{:,.0f}'
+  weight: 2.0
+  min_bound: 0.0
+  max_bound: null
+- id: edu_elementaire_scaled
+  category: education
+  source_metric: edu_elementaire
+  bdv_factor: 0.0
+  computation: live
+  display:
+    name: Ecole Elémentaire
+    strong_point_text: Présence d'une école élémentaire
+    high_value_adjective: présente
+    show: true
+    unit: ''
+    display_factor: 1
+    tooltip: Présence d'une école élémentaire
+    format: '{:,.0f}'
+  weight: 2.0
+  min_bound: 0.0
+  max_bound: null
+- id: edu_college_scaled
+  category: education
+  source_metric: edu_college
+  bdv_factor: 0.5
+  computation: live
+  display:
+    name: Collège
+    strong_point_text: Présence d'un collège
+    high_value_adjective: présent
+    show: true
+    unit: ''
+    display_factor: 1
+    tooltip: Présence d'un collège
+    format: '{:,.0f}'
+  weight: 1.0
+  min_bound: 0.0
+  max_bound: null
+- id: edu_lycee_scaled
+  category: education
+  source_metric: edu_lycee
+  bdv_factor: 0.8
+  computation: live
+  display:
+    name: Lycée
+    strong_point_text: Présence d'un lycée
+    high_value_adjective: présent
+    show: true
+    unit: ''
+    display_factor: 1
+    tooltip: Présence d'un lycée
+    format: '{:,.0f}'
+  weight: 1.0
+  min_bound: 0.0
+  max_bound: null
+- id: edu_classes_ferm_scaled
+  category: education
+  source_metric: risque_fermeture_ratio
+  bdv_factor: 0.5
+  computation: precomputed
+  display:
+    name: Nombre de classes à risque de fermeture
+    strong_point_text: Classes en manque d'élèves (risque de fermeture)
+    high_value_adjective: forte
+    show: true
+    unit: écoles
+    display_factor: 1
+    tooltip: Nombre d'écoles avec des classes à faible effectif (< 20 élèves)
+    format: '{:,.0f}'
+  weight: 1.0
+  min_bound: null
+  max_bound: null
+  quantile_level: 0.05
+- id: sante_hopital_scaled
+  category: sante
+  source_metric: count_hopital
+  bdv_factor: 0.8
+  computation: precomputed
+  display:
+    name: Hôpital
+    strong_point_text: Présence d'un hôpital
+    high_value_adjective: présent
+    show: true
+    unit: ''
+    display_factor: 1
+    tooltip: Nombre d'hôpitaux identifiés (Source BPE)
+    format: '{:,.0f}'
+  weight: 2.0
+  min_bound: 0.0
+  max_bound: 1.0
+- id: sante_maternite_scaled
+  category: sante
+  source_metric: count_maternite
+  bdv_factor: 0.25
+  computation: precomputed
+  display:
+    name: Maternité
+    strong_point_text: Présence d'une maternité
+    high_value_adjective: présente
+    show: true
+    unit: ''
+    display_factor: 1
+    tooltip: Nombre de maternités identifiées (Source BPE)
+    format: '{:,.0f}'
+  weight: 2.0
+  min_bound: 0.0
+  max_bound: 1.0
+- id: sante_psy_scaled
+  category: sante
+  source_metric: count_psy
+  bdv_factor: 0.0
+  computation: precomputed
+  display:
+    name: Soutien Psychologique
+    strong_point_text: Présence de structures de soutien psychologique
+    high_value_adjective: présent
+    show: true
+    unit: ''
+    display_factor: 1
+    tooltip: Nombre d'établissements de soutien psychologique (Source BPE)
+    format: '{:,.0f}'
+  weight: 2.0
+  min_bound: 0.0
+  max_bound: 1.0
+- id: sante_dialyse_scaled
+  category: sante
+  source_metric: count_dialyse
+  bdv_factor: 0.0
+  computation: precomputed
+  display:
+    name: Dialyse
+    strong_point_text: Présence d'un centre de dialyse
+    high_value_adjective: présent
+    show: true
+    unit: ''
+    display_factor: 1
+    tooltip: Nombre de structures de dialyse (Source BPE)
+    format: '{:,.0f}'
+  weight: 2.0
+  min_bound: 0.0
+  max_bound: 1.0
+- id: sante_maison_sante_scaled
+  category: sante
+  source_metric: count_maison_sante
+  bdv_factor: 0.0
+  computation: precomputed
+  display:
+    name: Maison de santé
+    strong_point_text: Présence d'une maison de santé
+    high_value_adjective: présente
+    show: true
+    unit: ''
+    display_factor: 1
+    tooltip: Nombre de maisons de santé (Source BPE)
+    format: '{:,.0f}'
+  weight: 2.0
+  min_bound: 0.0
+  max_bound: 1.0
+- id: sante_addictologie_scaled
+  category: sante
+  source_metric: count_addictologie
+  bdv_factor: 0.0
+  computation: precomputed
+  display:
+    name: Addictologie
+    strong_point_text: Présence de structures d'addictologie
+    high_value_adjective: présent
+    show: true
+    unit: ''
+    display_factor: 1
+    tooltip: Nombre de centres d'addictologie (Source BPE)
+    format: '{:,.0f}'
+  weight: 2.0
+  min_bound: 0.0
+  max_bound: 1.0
+- id: sante_pmi_scaled
+  category: sante
+  source_metric: count_pmi
+  bdv_factor: 0.0
+  computation: precomputed
+  display:
+    name: Santé maternelle et infantile (PMI)
+    strong_point_text: Présence d'un centre PMI
+    high_value_adjective: présent
+    show: true
+    unit: ''
+    display_factor: 1
+    tooltip: Nombre de centres PMI (Source BPE)
+    format: '{:,.0f}'
+  weight: 2.0
+  min_bound: 0.0
+  max_bound: 1.0
+- id: mob_gare_scaled
+  category: mobilite
+  source_metric: has_gare
+  bdv_factor: 0.0
+  baseline: true
+  computation: precomputed
+  display:
+    name: Présence d'une gare SNCF
+    strong_point_text: Présence d'une gare ferroviaire dans la commune
+    high_value_adjective: présente
+    show: true
+    unit: ''
+    display_factor: 1
+    tooltip: Présence d'une gare ferroviaire dans la commune
+    format: bool
+  weight: 1.0
+  min_bound: 0.0
+  max_bound: 1.0
+- id: mob_trans_pub_density_scaled
+  category: mobilite
+  source_metric: mob_trans_pub_stop_density
+  bdv_factor: 0.0
+  baseline: true
+  computation: live
+  display:
+    name: Densité des transports en commun
+    strong_point_text: Excellente desserte transports
+    high_value_adjective: excellente
+    show: true
+    unit: arrêts / 1000 hab.
+    display_factor: 1
+    tooltip: Nombre d'arrêts de transports en commun (bus, tram, métro, train) pour
+      1000 habitants
+    format: '{:.1f}'
+  weight: 3.0
+  min_bound: 0.0
+  max_bound: 10.0
+- id: youth_decline_scaled
+  category: education
+  source_metric: youth_growth_rate
+  bdv_factor: 0.0
+  computation: precomputed
+  display:
+    name: Evolution Démographique Jeune
+    strong_point_text: Baisse de la population jeune (Faible score = Opportunité d'accueil
+      = positif)
+    high_value_adjective: forte
+    show: true
+    unit: '% (Evol. 2016-2022)'
+    display_factor: 100
+    tooltip: Evolution de la population des moins de 15 ans entre 2016 et 2022
+    format: '{:.1f}'
+  weight: 1.0
+  min_bound: -0.2
+  max_bound: 0.2
+- id: workclass_decline_scaled
+  category: emploi
+  source_metric: workclass_growth_rate
+  bdv_factor: 0.0
+  baseline: true
+  computation: precomputedde
+  display:
+    name: Dynamisme Population Active
+    strong_point_text: Décroissance de la population active
+    high_value_adjective: forte
+    show: true
+    unit: '%'
+    display_factor: 100
+    tooltip: Évolution de la population active (Source Insee)
+    format: '{:.1f}'
+  weight: 3.0
+  min_bound: 0.0
+  max_bound: 0.1
+- id: met_match_adult1_scaled
+  category: emploi
+  source_metric: met_match_adult1
+  bdv_factor: 0.5
+  computation: live
+  display:
+    name: Opportunités Emploi - Adulte 1
+    strong_point_text: De nombreuses offres d'emploi correspondent à la recherche
+      de l'adulte 1
+    high_value_adjective: nombreuses
+    show: true
+    unit: offres
+    display_factor: 1
+    tooltip: 'Nombre d''offres d''emploi en direct pour l''adulte 1 (Source: France
+      Travail)'
+    format: '{:,.0f}'
+  weight: 3.0
+  min_bound: 0
+  max_bound: 10
+- id: met_match_adult1_tension_scaled
+  category: emploi
+  source_metric: met_match_adult1_tension
+  bdv_factor: 0.0
+  computation: live
+  display:
+    name: Tension de recrutement - Adulte 1
+    strong_point_text: Recrutements difficiles pour l'adulte 1 (Fort besoin de main
+      d'oeuvre)
+    high_value_adjective: forte
+    show: true
+    unit: offres en tension
+    display_factor: 1
+    tooltip: 'Nombre d''offres signalées avec ''Manque de candidats'' pour l''adulte
+      1 (Source: France Travail)'
+    format: '{:,.0f}'
+  weight: 1.0
+  min_bound: 0
+  max_bound: 5
+- id: met_match_adult2_scaled
+  category: emploi
+  source_metric: met_match_adult2
+  bdv_factor: 0.5
+  computation: live
+  display:
+    name: Opportunités Emploi - Adulte 2
+    strong_point_text: De nombreuses offres d'emploi correspondent à la recherche
+      de l'adulte 2
+    high_value_adjective: nombreuses
+    show: true
+    unit: offres
+    display_factor: 1
+    tooltip: 'Nombre d''offres d''emploi en direct pour l''adulte 2 (Source: France
+      Travail)'
+    format: '{:,.0f}'
+  weight: 3.0
+  min_bound: 0
+  max_bound: 10
+- id: met_match_adult2_tension_scaled
+  category: emploi
+  source_metric: met_match_adult2_tension
+  bdv_factor: 0.0
+  computation: live
+  display:
+    name: Tension de recrutement - Adulte 2
+    strong_point_text: Recrutements difficiles pour l'adulte 2 (Fort besoin de main
+      d'oeuvre)
+    high_value_adjective: forte
+    show: true
+    unit: offres en tension
+    display_factor: 1
+    tooltip: 'Nombre d''offres signalées avec ''Manque de candidats'' pour l''adulte
+      2 (Source: France Travail)'
+    format: '{:,.0f}'
+  weight: 1.0
+  min_bound: 0
+  max_bound: 5
+- id: met_siae_match_adult1_scaled
+  category: emploi
+  source_metric: met_siae_match_adult1
+  bdv_factor: 0.5
+  computation: live
+  display:
+    name: Offres SIAE correspondantes - Adulte 1
+    strong_point_text: Des offres d'insertion (SIAE) correspondent à l'adulte 1
+    high_value_adjective: nombreuses
+    show: true
+    unit: offres
+    display_factor: 1
+    tooltip: 'Nombre d''offres en SIAE pour l''adulte 1 (Source: Les emplois de l''inclusion)'
+    format: '{:,.0f}'
+  weight: 3.0
+  min_bound: 0
+  max_bound: 5
+- id: met_siae_match_adult2_scaled
+  category: emploi
+  source_metric: met_siae_match_adult2
+  bdv_factor: 0.5
+  computation: live
+  display:
+    name: Offres SIAE correspondantes - Adulte 2
+    strong_point_text: Des offres d'insertion (SIAE) correspondent à l'adulte 2
+    high_value_adjective: nombreuses
+    show: true
+    unit: offres
+    display_factor: 1
+    tooltip: 'Nombre d''offres en SIAE pour l''adulte 2 (Source: Les emplois de l''inclusion)'
+    format: '{:,.0f}'
+  weight: 3.0
+  min_bound: 0
+  max_bound: 5
+- id: heb_loc_iml_scaled
+  category: logement
+  source_metric: heb_loc_iml_count
+  bdv_factor: 0.8
+  computation: precomputed
+  display:
+    name: Location avec Intermédiation
+    strong_point_text: Présence d'associations IML/Solibail
+    high_value_adjective: forte
+    show: true
+    unit: associations
+    display_factor: 1
+    tooltip: Nombre d'associations proposant de l'intermédiation locative ou Solibail
+      (Source RNA)
+    format: '{:,.0f}'
+  weight: 1.0
+  min_bound: 0.0
+  max_bound: 0.1
+- id: heb_chrs_scaled
+  category: logement
+  source_metric: heb_chrs_count
+  bdv_factor: 0.5
+  computation: precomputed
+  display:
+    name: Centre d'hébergement et de réinsertion sociale (CHRS)
+    strong_point_text: Présence de structures CHRS
+    high_value_adjective: forte
+    show: true
+    unit: structures
+    display_factor: 1
+    tooltip: Nombre de structures CHRS identifiées (Source BPE)
+    format: '{:,.0f}'
+  weight: 2.0
+  min_bound: 0.0
+  max_bound: 1.0
+- id: heb_cph_scaled
+  category: logement
+  source_metric: heb_cph_count
+  bdv_factor: 0.5
+  computation: precomputed
+  display:
+    name: Centre provisoire d'hébergement (CPH)
+    strong_point_text: Présence de structures CPH
+    high_value_adjective: forte
+    show: true
+    unit: structures
+    display_factor: 1
+    tooltip: Nombre de structures CPH identifiées (Source BPE)
+    format: '{:,.0f}'
+  weight: 2.0
+  min_bound: 0.0
+  max_bound: 1.0
+- id: heb_cada_scaled
+  category: logement
+  source_metric: heb_cada_count
+  bdv_factor: 0.5
+  computation: precomputed
+  display:
+    name: Centre d'accueil de demandeurs d'asile (CADA)
+    strong_point_text: Présence de structures CADA
+    high_value_adjective: forte
+    show: true
+    unit: structures
+    display_factor: 1
+    tooltip: Nombre de structures CADA identifiées (Source BPE)
+    format: '{:,.0f}'
+  weight: 2.0
+  min_bound: 0.0
+  max_bound: 1.0
+- id: heb_fjt_scaled
+  category: logement
+  source_metric: heb_fjt_count
+  bdv_factor: 0.5
+  computation: precomputed
+  display:
+    name: Foyer de Jeunes Travailleurs (FJT)
+    strong_point_text: Présence de structures FJT
+    high_value_adjective: forte
+    show: true
+    unit: structures
+    display_factor: 1
+    tooltip: Nombre de structures FJT identifiées (Source BPE)
+    format: '{:,.0f}'
+  weight: 2.0
+  min_bound: 0.0
+  max_bound: 1.0
+- id: heb_pension_scaled
+  category: logement
+  source_metric: heb_pension_count
+  bdv_factor: 0.5
+  computation: precomputed
+  display:
+    name: Pensions de Famille
+    strong_point_text: Présence de pensions de famille
+    high_value_adjective: forte
+    show: true
+    unit: structures
+    display_factor: 1
+    tooltip: Nombre de pensions de famille identifiées (Source BPE)
+    format: '{:,.0f}'
+  weight: 2.0
+  min_bound: 0.0
+  max_bound: 1.0
+- id: heb_asso_habitant_scaled
+  category: logement
+  source_metric: heb_habitant_count
+  bdv_factor: 0.8
+  computation: precomputed
+  display:
+    name: Associations d'Hébergement Citoyen
+    strong_point_text: Présence d'associations d'hébergement citoyen
+    high_value_adjective: forte
+    show: true
+    unit: associations
+    display_factor: 1
+    tooltip: Nombre d'associations proposant de l'hébergement citoyen (Source RNA/RNAG)
+    format: '{:,.0f}'
+  weight: 2.0
+  min_bound: 0.0
+  max_bound: 0.1
+- id: heb_jaccueille_accueillants_score
+  category: logement
+  source_metric: heb_accueillants_count
+  bdv_factor: 1.0
+  computation: precomputed
+  display:
+    name: Accueillants J'Accueille dans le bassin de vie
+    strong_point_text: Des particuliers accueillent déjà dans ce bassin de vie
+    high_value_adjective: présents
+    show: true
+    unit: ''
+    display_factor: 1
+    tooltip: Au moins un accueillant actif dans le bassin de vie (Source J'Accueille)
+    format: '{:,.0f}'
+  weight: 3.0
+  min_bound: 0.0
+  max_bound: 1.0
+- id: heb_jaccueille_prospects_score
+  category: logement
+  source_metric: prospects_count
+  bdv_factor: 1.0
+  computation: precomputed
+  display:
+    name: Prospects J'Accueille dans le bassin de vie
+    strong_point_text: Des prospects J'Accueille sont présents dans ce bassin de vie
+    high_value_adjective: présents
+    show: true
+    unit: ''
+    display_factor: 1
+    tooltip: Au moins un prospect inscrit dans le bassin de vie (Source J'Accueille)
+    format: '{:,.0f}'
+  weight: 2.0
+  min_bound: 0.0
+  max_bound: 1.0
+- id: ter_strategic_locations_scaled
+  category: territoire
+  source_metric: ter_strategic_locations_scaled
+  bdv_factor: 0.0
+  computation: live
+  display:
+    name: Zone Stratégique
+    strong_point_text: Zone d'action privilégiée de l'organisation
+    high_value_adjective: oui
+    show: true
+    unit: ''
+    display_factor: 1
+    tooltip: Commune située dans une zone stratégique pour l'organisation
+    format: '{:.1f}'
+  weight: 3.0
+  min_bound: 0.0
+  max_bound: 1.0
+- id: log_soc_delay_scaled
+  category: logement
+  source_metric: log_soc_delay
+  bdv_factor: 0.0
+  baseline: true
+  computation: precomputed
+  display:
+    name: Délai moyen Logement Social
+    strong_point_text: Délai d'attente pour un logement social réduit
+    high_value_adjective: réduit
+    show: true
+    unit: mois
+    display_factor: 1
+    tooltip: Délai moyen entre la demande et l'attribution (Source USH)
+    format: '{:.1f}'
+  weight: 5.0
+  min_bound: 6.0
+  max_bound: 24.0
+- id: sante_rdv_delay_scaled
+  category: sante
+  source_metric: sante_apl
+  bdv_factor: 0.0
+  baseline: true
+  computation: precomputed
+  display:
+    name: Accessibilité Médicale (APL)
+    strong_point_text: Excellente accessibilité aux médecins généralistes
+    high_value_adjective: excellente
+    show: true
+    unit: APL
+    display_factor: 1
+    tooltip: Indicateur d'Accessibilité Potentielle Localisée (Source DREES)
+    format: '{:,.0f}'
+  weight: 2.0
+- id: mob_dur_share_scaled
+  category: mobilite
+  source_metric: mob_dur_share
+  bdv_factor: 0.5
+  baseline: true
+  computation: precomputed
+  display:
+    name: Part des actifs effectuant leurs trajets domicile-travail sans voiture
+    strong_point_text: Forte utilisation des transports en commun, marche ou vélo
+      pour les trajets domicile-travail
+    high_value_adjective: forte
+    show: true
+    unit: '%'
+    display_factor: 100
+    tooltip: Part modale des transports domicile-travail sans voiture (Source Ecolab
+      / RP Insee)
+    format: '{:.1f}'
+  weight: 3.0
+- id: ter_insecurite_scaled
+  category: territoire
+  source_metric: ter_insecurite
+  bdv_factor: 0.5
+  baseline: true
+  computation: precomputed
+  display:
+    name: Indice de Sécurité
+    strong_point_text: Faible taux de criminalité et délits
+    high_value_adjective: élevé
+    show: true
+    unit: crimes+délits/1000 hab.
+    display_factor: 1
+    tooltip: Taux cumulé des crimes et délits pour 1000 hab. (Source SSMSI)
+    format: '{:.1f}'
+  weight: 1.0
+  min_bound: 0.0
+  max_bound: 100.0

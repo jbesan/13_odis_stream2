@@ -1319,3 +1319,77 @@ class TestShortlistCity:
         results_data = engine.create_search_results(processed_gdf, config)
         assert results_data.commune_pressentie is not None
         assert results_data.commune_pressentie.codgeo == "64445"
+
+
+@pytest.mark.unit
+class TestP102ScoringReconciliation:
+    """Tests for P1-02 audit fix: exact score reconciliation, effective weight function, and BdV transparency."""
+
+    def test_get_effective_weight_canonical_behavior(self):
+        config = SearchCriterias(
+            dept_code="33",
+            active_criteria=["mob_dist_current_loc_scaled", "housing_rent"],
+            criteria_weights={"housing_rent": 2.5},
+            org_boosts={"housing_rent": 1.2},
+            freq_retour="1 fois/semaine",
+        )
+
+        # Standard criterion with weight replacement + org boost: 2.5 * 1.2 = 3.0
+        w_rent = scoring.get_effective_weight("housing_rent", config, catalog_weight=1.0)
+        assert abs(w_rent - 3.0) < 1e-6
+
+        # Proximity criterion with freq multiplier 3.0: catalog 1.0 * 3.0 = 3.0
+        w_prox = scoring.get_effective_weight("mob_dist_current_loc_scaled", config, catalog_weight=1.0)
+        assert abs(w_prox - 3.0) < 1e-6
+
+    def test_global_score_reconciliation_exact(
+        self, sample_data, live_scores_cat, sample_incl_index, global_stats
+    ):
+        config = SearchCriterias(
+            dept_code="33",
+            commune_actuelle="33063",
+            poids_emploi=1.0,
+            poids_logement=1.0,
+            poids_education=0.0,
+            poids_sante=0.0,
+            poids_inclusion=1.0,
+            poids_mobilite=1.0,
+            poids_territoire=1.0,
+            nb_enfants=0,
+        )
+
+        engine = scoring.ScoringEngine(
+            df_all_communes=sample_data,
+            df_bv_geo=gpd.GeoDataFrame(),
+            scores_cat=live_scores_cat,
+            incl_index=sample_incl_index,
+            associations_data=pd.DataFrame(columns=["codgeo", "id_waldec", "count"]),
+            formations_data=pd.DataFrame(columns=["codgeo", "formation_code"]),
+            codformations_index=pd.DataFrame(columns=["label"]),
+            global_stats=global_stats,
+        )
+
+        gdf = engine.run(config)
+        results = engine.create_search_results(gdf, config)
+
+        for commune in results.results:
+            # Category Scores
+            cat_scores = {
+                "emploi": commune.employment.cat_score if commune.employment else 0.0,
+                "logement": commune.housing.cat_score if commune.housing else 0.0,
+                "inclusion": commune.inclusion.cat_score if commune.inclusion else 0.0,
+                "mobilite": commune.mobility.cat_score if commune.mobility else 0.0,
+                "territoire": commune.territoire.cat_score if commune.territoire else 0.0,
+            }
+            # Active weights
+            weights = {
+                "emploi": config.poids_emploi,
+                "logement": config.poids_logement,
+                "inclusion": config.poids_inclusion,
+                "mobilite": config.poids_mobilite,
+                "territoire": config.poids_territoire,
+            }
+            expected_global = sum(cat_scores[k] * weights[k] for k in cat_scores) / sum(weights.values())
+            assert abs(commune.global_score - expected_global) < 1e-6, (
+                f"Global score mismatch for {commune.name}: got {commune.global_score}, expected {expected_global}"
+            )

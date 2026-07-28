@@ -41,6 +41,7 @@ def get_scores_config():
                         "scaling_type": s.get("scaling_type", "linear"),
                         "mu": s.get("mu"),
                         "sigma": s.get("sigma"),
+                        "quantile_level": s.get("quantile_level"),
                     }
     else:
         logging.warning(f"App config not found at {app_config_path}")
@@ -94,7 +95,7 @@ def process_scaling(df, col_name, output_col, inverted=False):
     if c_min is not None and c_max is not None:
         min_b, max_b = c_min, c_max
     else:
-        q_level = conf.get("quantile_level", 0.01)
+        q_level = conf.get("quantile_level") or 0.01
         min_b, max_b = get_min_max_quant(df[col_name], q_level)
 
     df[output_col] = scale_series(df[col_name], min_b, max_b, inverted, col_name=output_col)
@@ -732,7 +733,7 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
         if "inc_siae_density" in bv_gdf.columns:
             process_scaling(bv_gdf, "inc_siae_density", "inc_siae_density_scaled")
 
-        # --- 3. Weighted Averages from Communes ---
+        # --- 3. Weighted Averages & Sums of Metrics from Communes ---
         metrics_to_avg = [
             "inc_services_core_scaled",
             "inc_asso_refug_scaled",
@@ -767,23 +768,63 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
             "sante_rdv_delay_scaled",
             "mob_dur_share_scaled",
             "ter_insecurite_scaled",
+            # Raw metrics for display in UI/PDF details
+            "mob_dur_share",
+            "risque_fermeture_ratio",
+            "ter_insecurite",
+            "inc_asso_refug_density",
+            "inc_siae_density",
+            "lien_social_density",
+            "edu_pe_tx_couverture",
+            "log_pp_occup",
+            "log_soc_delay",
+            "log_soc_inoc_ratio",
+            "log_vac_struct_ratio",
+            "loyer_m2_moy_appt_all",
+            "loyer_m2_moy_appt_t1_t2",
+            "loyer_m2_moy_appt_t3_p",
+            "loyer_m2_moy_house_all",
+            "pol_num",
+            "sante_apl",
+            "ter_anvita_member",
+            "ter_ctai_member",
+            "workclass_growth_rate",
+            "youth_growth_rate",
         ]
 
+        raw_sum_metrics = [
+            "count_addictologie",
+            "count_dialyse",
+            "count_hopital",
+            "count_maison_sante",
+            "count_maternite",
+            "count_pmi",
+            "count_psy",
+            "heb_cada_count",
+            "heb_chrs_count",
+            "heb_cph_count",
+            "heb_fjt_count",
+            "heb_habitant_count",
+            "heb_loc_iml_count",
+            "heb_pension_count",
+        ]
+
+        all_target_metrics = list(set(metrics_to_avg + raw_sum_metrics))
+
         # Idempotency: Drop existing metrics to prevent duplication during merge
-        cols_to_drop_bv = [col for col in metrics_to_avg if col in bv_gdf.columns]
-        # Also drop _x, _y variants if they exist from failed runs
-        for col in metrics_to_avg:
+        cols_to_drop_bv = [col for col in all_target_metrics if col in bv_gdf.columns]
+        for col in all_target_metrics:
             if f"{col}_x" in bv_gdf.columns:
                 cols_to_drop_bv.append(f"{col}_x")
             if f"{col}_y" in bv_gdf.columns:
                 cols_to_drop_bv.append(f"{col}_y")
 
-        if cols_to_drop_bv:
-            bv_gdf.drop(columns=cols_to_drop_bv, inplace=True)
+        if "population_bv" in bv_gdf.columns and "population" not in bv_gdf.columns:
+            bv_gdf["population"] = bv_gdf["population_bv"]
 
         communes_subset = communes_df[
             ["codgeo", "bassin_de_vie", "population"]
-            + [m for m in metrics_to_avg if m in communes_df.columns]
+            + [m for m in all_target_metrics if m in communes_df.columns]
         ].copy()
 
         if "bassin_de_vie" in communes_subset.columns:
@@ -795,14 +836,16 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
                     )
 
             grouped = communes_subset.groupby("bassin_de_vie", observed=True)
-
             bv_aggs = pd.DataFrame(index=grouped.groups.keys())
-
             sum_pop = grouped["population"].sum()
 
             for metric in metrics_to_avg:
                 if metric in communes_subset.columns:
                     bv_aggs[metric] = grouped[f"{metric}_w"].sum() / sum_pop
+
+            for metric in raw_sum_metrics:
+                if metric in communes_subset.columns:
+                    bv_aggs[metric] = grouped[metric].sum()
 
             # Merge back
             if "bassin_de_vie" in bv_gdf.columns:

@@ -4201,8 +4201,6 @@ def clean_ter_insecurite(config: Dict[str, Any], logger: PipelineLogger):
 def clean_jaccueille(config: Dict[str, Any], logger: PipelineLogger):
     """Cleans J'Accueille data via live Salesforce integration (replaces legacy CSV)."""
     return clean_salesforce_jaccueille(config, logger)
-    else:
-        logging.warning("Bassin de vie columns not identified for mapping.")
 
 
 def clean_jaccueille_prospects(config: Dict[str, Any], logger: PipelineLogger):

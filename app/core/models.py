@@ -492,6 +492,66 @@ class CommuneScoreDetail(BaseModel):
             ]
         },
     )
+    valeur_kpi_commune: Optional[Union[float, int, str]] = Field(
+        None,
+        description="Valeur brute locale de la commune",
+        json_schema_extra={
+            "odis_visibility": [
+                "ui_details",
+                "pdf_report",
+            ]
+        },
+    )
+    valeur_kpi_bdv: Optional[Union[float, int, str]] = Field(
+        None,
+        description="Valeur brute du Bassin de Vie",
+        json_schema_extra={
+            "odis_visibility": [
+                "ui_details",
+                "pdf_report",
+            ]
+        },
+    )
+    score_normalise_commune: Optional[float] = Field(
+        None,
+        description="Score normé local de la commune (avant BdV)",
+        json_schema_extra={
+            "odis_visibility": [
+                "ui_details",
+                "pdf_report",
+            ]
+        },
+    )
+    score_normalise_bdv: Optional[float] = Field(
+        None,
+        description="Score normé du Bassin de Vie",
+        json_schema_extra={
+            "odis_visibility": [
+                "ui_details",
+                "pdf_report",
+            ]
+        },
+    )
+    bdv_factor: float = Field(
+        0.0,
+        description="Facteur d'influence du Bassin de Vie",
+        json_schema_extra={
+            "odis_visibility": [
+                "ui_details",
+                "pdf_report",
+            ]
+        },
+    )
+    bdv_applied: bool = Field(
+        False,
+        description="Indique si une combinaison BdV s'applique sur ce critère",
+        json_schema_extra={
+            "odis_visibility": [
+                "ui_details",
+                "pdf_report",
+            ]
+        },
+    )
     strong_point_text: Optional[str] = Field(
         "",
         description="Phrase décrivant le point fort",

@@ -80,12 +80,16 @@ def consolidate_plm_communes(df: pd.DataFrame) -> pd.DataFrame:
         "has_gare",
     ]
 
+    avg_keywords = ("loyer", "m2", "moy", "rate", "ratio", "density", "share", "delay", "pct", "scaled")
     cols_to_sum = []
     cols_to_avg = []
     for col in df.columns:
-        if col in rate_cols:
+        if col in special_cols or not pd.api.types.is_numeric_dtype(df[col]):
+            continue
+        col_lower = col.lower()
+        if col in rate_cols or any(kw in col_lower for kw in avg_keywords):
             cols_to_avg.append(col)
-        elif col not in special_cols and pd.api.types.is_numeric_dtype(df[col]):
+        else:
             cols_to_sum.append(col)
 
     # Cast to ensure float/int operations are safe
@@ -103,26 +107,23 @@ def consolidate_plm_communes(df: pd.DataFrame) -> pd.DataFrame:
             if col in df.columns:
                 df.loc[df["codgeo"] == parent, col] = df.loc[family_mask, col].sum()
 
-        # 2. Population-weighted averages for rates
-        parent_pop = df.loc[df["codgeo"] == parent, "population"].values[0]
+        # 2. Population-weighted averages for rates using child arrondissements
         for col in cols_to_avg:
             if col in df.columns:
                 children_mask = df["codgeo"].isin(children)
-                children_pop = df.loc[children_mask, "population"].sum()
-                if children_pop > 0:
-                    total_pop = df.loc[family_mask, "population"].sum()
+                # Filter for valid non-null, non-zero child metric observations
+                valid_children_mask = children_mask & df[col].notna() & (df[col] > 0)
+                valid_pop = df.loc[valid_children_mask, "population"].sum()
+                if valid_pop > 0:
                     weighted_sum = (
-                        df.loc[family_mask, col] * df.loc[family_mask, "population"]
+                        df.loc[valid_children_mask, col] * df.loc[valid_children_mask, "population"]
                     ).sum()
-                    df.loc[df["codgeo"] == parent, col] = weighted_sum / total_pop
+                    df.loc[df["codgeo"] == parent, col] = weighted_sum / valid_pop
                 else:
-                    # Fallback to simple average of children values if child populations are zero
-                    # Only use non-zero children values (since NaNs are filled with 0 before consolidation)
-                    non_zero_children = df.loc[children_mask, col][
-                        df.loc[children_mask, col] > 0
-                    ]
-                    if not non_zero_children.empty:
-                        df.loc[df["codgeo"] == parent, col] = non_zero_children.mean()
+                    # Fallback to simple average of non-null children values
+                    valid_children = df.loc[children_mask & df[col].notna(), col]
+                    if not valid_children.empty:
+                        df.loc[df["codgeo"] == parent, col] = valid_children.mean()
                     else:
                         # Use parent value if no children have non-zero values
                         pass
@@ -513,7 +514,8 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
             print(f"ERROR [build.py]: {msg}")
             if "loyer_app_m2" in communes_gdf.columns:
                 communes_gdf["loyer_m2_moy_appt_all"] = communes_gdf["loyer_app_m2"]
-                for c in ["loyer_m2_moy_appt_t1_t2", "loyer_m2_moy_appt_t3_p", "loyer_m2_moy_house_all"]:
+                # Map apartment fallback only to apartment sub-typologies, NOT house rent!
+                for c in ["loyer_m2_moy_appt_t1_t2", "loyer_m2_moy_appt_t3_p"]:
                     if c not in communes_gdf.columns or (communes_gdf[c].notna() & (communes_gdf[c] > 0)).sum() < 100:
                         communes_gdf[c] = communes_gdf["loyer_app_m2"]
 

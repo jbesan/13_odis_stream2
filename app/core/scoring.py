@@ -30,6 +30,80 @@ from utils.common import project_point
 from services.rna_rag import RNARagService
 
 
+def get_effective_weight(
+    score_id: str,
+    config: Optional[SearchCriterias],
+    catalog_weight: float,
+) -> float:
+    """Calculates canonical effective weight for a criterion.
+
+    Order of operations:
+    1. Base weight: user-defined criteria_weights[score_id] if present in config, else catalog_weight.
+    2. Org boost: multiplied by org_boosts[score_id] if present.
+    3. Proximity frequency multiplier: applied for proximity criteria based on freq_retour.
+    """
+    if config is None:
+        return float(catalog_weight)
+
+    # 1. Base weight (user preference replaces catalog default)
+    if config.criteria_weights and score_id in config.criteria_weights:
+        weight = float(config.criteria_weights[score_id])
+    else:
+        weight = float(catalog_weight)
+
+    # 2. Org boost
+    org_boosts = getattr(config, "org_boosts", None)
+    if org_boosts and score_id in org_boosts:
+        weight *= float(org_boosts[score_id])
+
+    # 3. Frequency multiplier for proximity criteria (F-60)
+    if score_id in ["mob_epci_scaled", "mob_dist_current_loc_scaled"]:
+        freq = getattr(config, "freq_retour", "Pas d'attache particulière")
+        multiplier = 1.0
+        if freq == "1 fois/semaine":
+            multiplier = 3.0
+        elif freq == "1 fois/mois":
+            multiplier = 2.0
+        elif freq == "1 fois/an":
+            multiplier = 1.0
+        else:
+            multiplier = 0.0
+        weight *= multiplier
+
+    return weight
+
+
+def _format_kpi_value(
+    val_raw: Any,
+    unit: str,
+    score_id: str,
+    val_scaled: Optional[float] = None,
+    fmt: Optional[str] = None,
+) -> Any:
+    if val_raw is None or pd.isna(val_raw):
+        return None
+    if fmt == "bool" or (score_id == "mob_gare_scaled" and val_scaled is not None):
+        return "Oui" if (val_raw == 1 or val_scaled == 1.0) else "Non"
+    if isinstance(val_raw, (int, float, np.integer, np.floating)):
+        try:
+            f_val = float(val_raw)
+            if fmt and fmt != "bool":
+                return fmt.format(f_val).replace(",", " ")
+            if unit == "habitants":
+                v_int = int(round(f_val))
+                return f"{v_int:,}".replace(",", " ") if v_int > 1000 else v_int
+            elif unit in ["%", "assos/1000 hab.", "crimes+délits/1000 hab."]:
+                return round(f_val, 1)
+            elif f_val.is_integer():
+                v_int = int(f_val)
+                return f"{v_int:,}".replace(",", " ") if v_int > 1000 else v_int
+            else:
+                return round(f_val, 1)
+        except Exception:
+            return val_raw
+    return val_raw
+
+
 class ScoringEngine:
     """
     The engine responsible for running the ODIS scoring algorithm.
@@ -261,31 +335,13 @@ class ScoringEngine:
                 else:
                     continue  # Skip if no data available for this criterion
 
-                # Apply user or catalog weights
-                weight = 1.0
-                if sid in config.criteria_weights:
-                    weight *= config.criteria_weights[sid]
-                else:
-                    weight *= float(s_row["weight"])
+                # Apply canonical effective weight calculation
+                catalog_w = float(s_row["weight"])
+                weight = get_effective_weight(sid, config, catalog_w)
 
-                # Apply organization specific boosts if present (F-54 Expansion)
-                org_boosts = getattr(config, "org_boosts", None)
-                if config and org_boosts and sid in org_boosts:
-                    weight *= float(org_boosts[sid])
-
-                # APPLY FREQUENCY MULTIPLIER (F-60)
-                if sid in ["mob_epci_scaled", "mob_dist_current_loc_scaled"]:
-                    freq = getattr(config, "freq_retour", "Pas d'attache particulière")
-                    multiplier = 1.0
-                    if freq == "1 fois/semaine":
-                        multiplier = 3.0
-                    elif freq == "1 fois/mois":
-                        multiplier = 2.0
-                    elif freq == "1 fois/an":
-                        multiplier = 1.0
-                    else:
-                        multiplier = 0.0
-                    weight *= multiplier
+                # Save uncombined commune value for BdV transparency details
+                if val_commune is not None:
+                    df[f"{sid}_uncombined_commune"] = val_commune
 
                 # Track valid weights per row (using non-nullity of original sources)
                 # If both are null, weight is 0
@@ -335,17 +391,8 @@ class ScoringEngine:
                 )
                 s = pd.Series(raw_scores, index=df.index)
 
-                # Only normalize if we have variation in the scores to avoid zero-variance compression
-                if s.nunique() > 1:
-                    non_zero_mask = s > 0
-                    if non_zero_mask.any():
-                        ranked = s.rank(pct=True)
-                        ranked[~non_zero_mask] = 0.0
-                        df[f"{category}_cat_score"] = ranked
-                    else:
-                        df[f"{category}_cat_score"] = 0.0
-                else:
-                    df[f"{category}_cat_score"] = s
+                # Absolute Category Score (0.0 to 1.0): raw weighted mean of active criteria
+                df[f"{category}_cat_score"] = s
 
         return df
 
@@ -812,12 +859,9 @@ class ScoringEngine:
             norm_cat = cat.replace("é", "e").replace("ê", "e").replace("à", "a").lower()
             active_norm_cats.add(norm_cat)
 
-            w_crit = float(score_row["weight"])
-            if config and score_id in config.criteria_weights:
-                w_crit *= config.criteria_weights[score_id]
-            org_boosts = getattr(config, "org_boosts", None)
-            if config and org_boosts and score_id in org_boosts:
-                w_crit *= float(org_boosts[score_id])
+            w_crit = get_effective_weight(
+                score_id, config, float(score_row["weight"])
+            )
 
             cat_internal_weights[norm_cat] = (
                 cat_internal_weights.get(norm_cat, 0.0) + w_crit
@@ -885,25 +929,66 @@ class ScoringEngine:
                 else:
                     val_raw = val
 
-            # Format val_raw for display (preserving underlying type logic)
+            # Format val_raw and val_kpi_bdv using canonical formatting helper
             unit = score_row.get("unit", score_row.get("description", ""))
-            if score_id == "mob_gare_scaled":
-                # Convert the binary/scaled score to a human-friendly "Oui"/"Non" indicator
-                val_raw = "Oui" if val_scaled == 1.0 else "Non"
-            elif isinstance(val_raw, (int, float)):
-                if unit == "habitants":
-                    val_raw = int(round(float(val_raw) / 1000) * 1000)
-                elif unit == "%" or unit == "assos/1000 hab.":
-                    val_raw = round(float(val_raw), 1)
-                elif float(val_raw).is_integer():
-                    val_raw = int(val_raw)
-                else:
-                    val_raw = round(float(val_raw), 1)
+            fmt = score_row.get("format", None)
+            val_raw = _format_kpi_value(val_raw, unit, score_id, val_scaled, fmt)
 
             # Impact = (w_crit / sum_weights_in_cat) * (cat_weight / total_cat_weight)
             rel_weight = (w_crit / cat_internal_weights[norm_cat]) * (
                 cat_weights[norm_cat] / total_cat_weight
             )
+
+            # BdV details extraction
+            bdv_f = float(score_row.get("bdv_factor", 0.0))
+            bdv_applied = False
+            val_kpi_commune = val_raw
+            val_kpi_bdv = None
+            score_norm_commune = None
+            score_norm_bdv = None
+
+            if bdv_f != 0.0:
+                sid_bdv = f"{score_id}_bdv"
+                has_bdv_data = (
+                    (sid_bdv in row and pd.notna(row[sid_bdv]))
+                    or (sid_bdv in static_row and pd.notna(static_row[sid_bdv]))
+                )
+                if has_bdv_data:
+                    bdv_applied = True
+                    score_norm_commune = (
+                        float(row[f"{score_id}_uncombined_commune"])
+                        if f"{score_id}_uncombined_commune" in row
+                        and pd.notna(row[f"{score_id}_uncombined_commune"])
+                        else val_scaled
+                    )
+                    score_norm_bdv = (
+                        float(row[sid_bdv])
+                        if sid_bdv in row and pd.notna(row[sid_bdv])
+                        else (
+                            float(static_row[sid_bdv])
+                            if sid_bdv in static_row and pd.notna(static_row[sid_bdv])
+                            else None
+                        )
+                    )
+                    val_kpi_commune = val_raw
+                    raw_bdv_col = f"{raw_metric_col}_bdv"
+                    bdv_src = (
+                        static_row
+                        if (static_row is not None and raw_bdv_col in static_row)
+                        else (row if (row is not None and raw_bdv_col in row) else None)
+                    )
+                    if (
+                        bdv_src is not None
+                        and raw_bdv_col in bdv_src
+                        and pd.notna(bdv_src[raw_bdv_col])
+                    ):
+                        b_val = bdv_src[raw_bdv_col]
+                        d_factor = float(score_row.get("display_factor", 1.0))
+                        if pd.api.types.is_number(b_val):
+                            raw_b = float(b_val * d_factor)
+                        else:
+                            raw_b = b_val
+                        val_kpi_bdv = _format_kpi_value(raw_b, unit, score_id, score_norm_bdv, fmt)
 
             structured_scores[norm_cat].append(
                 CommuneScoreDetail(
@@ -913,6 +998,12 @@ class ScoringEngine:
                     score_normalise=val_scaled,
                     unit=unit,
                     relative_weight=round(rel_weight * 100, 1),
+                    valeur_kpi_commune=val_kpi_commune,
+                    valeur_kpi_bdv=val_kpi_bdv,
+                    score_normalise_commune=score_norm_commune,
+                    score_normalise_bdv=score_norm_bdv,
+                    bdv_factor=bdv_f,
+                    bdv_applied=bdv_applied,
                     strong_point_text=str(score_row.get("score_affichage"))
                     if pd.notna(score_row.get("score_affichage"))
                     else "",

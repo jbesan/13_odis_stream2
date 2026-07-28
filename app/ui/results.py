@@ -9,6 +9,7 @@ from core.models import (
     AssociationDetail,
     InclusionServiceDetail,
 )
+from core.scoring import _format_kpi_value
 from utils.data_loader import get_app_data, fetch_salesforce_jaccueille_bdv
 
 from agents.utils import odis_get_bg_result, launch_background_city_analysis
@@ -1017,17 +1018,26 @@ def show_details_dialog(index: Any):
                         """,
                         unsafe_allow_html=True,
                     )
-                with c_val:
-                    val_display = s.valeur_kpi
-                    if isinstance(val_display, (int, float)) and pd.notna(val_display):
-                        if isinstance(val_display, int) and val_display > 1000:
-                            st.markdown(f"### {val_display:,}".replace(",", " "))
-                        else:
-                            st.markdown(f"### {val_display}")
-                    else:
-                        st.markdown(f"### {val_display}")
 
-                    st.caption(s.unit if s.unit and s.unit != "None" else "")
+                    val_kpi_c = s.valeur_kpi_commune if s.valeur_kpi_commune is not None else s.valeur_kpi
+                    c_val_fmt = _format_kpi_value(val_kpi_c, s.unit, s.score_id, s.score_normalise_commune or s.score_normalise)
+                    unit_str = f" {s.unit}" if s.unit and s.unit != "None" else ""
+                    c_txt = f"{c_val_fmt}" if c_val_fmt is not None else "Donnée indisponible"
+
+                    if getattr(s, "bdv_applied", False):
+                        b_val_fmt = _format_kpi_value(s.valeur_kpi_bdv, s.unit, s.score_id, s.score_normalise_bdv)    
+                        b_txt = f"{b_val_fmt}" if b_val_fmt is not None else "Donnée indisponible"
+
+                        st.caption(f"Commune : {c_txt} | Bassin de Vie : {b_txt}{unit_str}")
+                    else:
+                        st.caption(f"Commune : {c_txt}{unit_str}")
+                with c_val:
+                    if p_val_raw is not None and pd.notna(p_val_raw):
+                        score_pct_str = f"{p_val * 100:.0f}%"
+                    else:
+                        score_pct_str = "N/A"
+                    st.markdown(f"### {score_pct_str}")
+                    st.caption("Score")
             st.markdown("<br>", unsafe_allow_html=True)  # Minor spacing
 
     # --- Tabs ---

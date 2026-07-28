@@ -61,10 +61,10 @@ def test_weighted_average(mock_config):
     mock_config.criteria_weights = {"crit1": 3.0}
     # Raw Row 0: (0*3 + 1*1) / 4 = 0.25
     # Raw Row 1: (1*3 + 0*1) / 4 = 0.75
-    # Percentile ranks: 0.25 -> 0.5, 0.75 -> 1.0
+    # P1-02: Category score is direct raw weighted mean (0.25 and 0.75)
     df_res = engine._compute_category_scores(df, mock_config)
-    assert df_res["emploi_cat_score"].iloc[0] == 0.5
-    assert df_res["emploi_cat_score"].iloc[1] == 1.0
+    assert abs(df_res["emploi_cat_score"].iloc[0] - 0.25) < 1e-6
+    assert abs(df_res["emploi_cat_score"].iloc[1] - 0.75) < 1e-6
 
 
 def test_weighted_average_with_zeros(mock_config):
@@ -93,7 +93,7 @@ def test_weighted_average_with_zeros(mock_config):
 
     # Raw Row 0: (0*1 + 1*3) / 4 = 0.75
     # Raw Row 1: (0*1 + 0*3) / 4 = 0.0
-    # Percentile ranks: 0.75 -> 1.0, 0.0 -> 0.0
+    # P1-02: Category score is direct raw weighted mean (0.75 and 0.0)
     df_res = engine._compute_category_scores(df, mock_config)
-    assert df_res["emploi_cat_score"].iloc[0] == 1.0
-    assert df_res["emploi_cat_score"].iloc[1] == 0.0
+    assert abs(df_res["emploi_cat_score"].iloc[0] - 0.75) < 1e-6
+    assert abs(df_res["emploi_cat_score"].iloc[1] - 0.0) < 1e-6
