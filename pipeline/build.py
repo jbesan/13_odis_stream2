@@ -511,7 +511,7 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
                 f"({valid_odace.sum()} valid rows). Triggering FALLBACK to legacy loyers.parquet source (loyer_app_m2)."
             )
             logging.error(msg)
-            print(f"ERROR [build.py]: {msg}")
+            # print(f"ERROR [build.py]: {msg}")
             if "loyer_app_m2" in communes_gdf.columns:
                 communes_gdf["loyer_m2_moy_appt_all"] = communes_gdf["loyer_app_m2"]
                 # Map apartment fallback only to apartment sub-typologies, NOT house rent!
@@ -560,7 +560,6 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
             "metiers_offres_diff",
             "log_priv_vacant_plus_2ans",
             "log_priv_total",
-            "edu_pe_tx_couverture",
             "heb_chrs_count",
             "heb_cph_count",
             "heb_cada_count",

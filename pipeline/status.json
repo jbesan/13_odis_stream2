@@ -75,14 +75,14 @@
     },
     "generate_pois": {
       "status": "CREATED",
-      "timestamp": "2026-07-28T14:07:20.376393",
+      "timestamp": "2026-07-28T16:48:46.170471",
       "details": {
         "path": "pipeline/cache/output/odis_pois.parquet"
       }
     },
     "generate_referentiels": {
       "status": "CREATED",
-      "timestamp": "2026-07-28T14:07:20.753188",
+      "timestamp": "2026-07-28T16:48:46.535685",
       "details": {
         "path": "pipeline/cache/output/odis_referentiels.parquet"
       }
@@ -178,7 +178,7 @@
     },
     "build_communes": {
       "status": "CREATED",
-      "timestamp": "2026-07-28T14:49:34.034092",
+      "timestamp": "2026-07-28T16:47:42.610092",
       "details": {
         "path": "pipeline/cache/output/odis_communes_pre.parquet",
         "rows": 34968
@@ -186,7 +186,7 @@
     },
     "build_bassins_de_vie": {
       "status": "CREATED",
-      "timestamp": "2026-07-28T14:49:38.048848",
+      "timestamp": "2026-07-28T16:47:46.762050",
       "details": {
         "path": "pipeline/cache/output/odis_bassins_de_vie.parquet",
         "rows": 1707
@@ -194,7 +194,7 @@
     },
     "build_all": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-28T14:49:38.089354",
+      "timestamp": "2026-07-28T16:48:46.538001",
       "details": {}
     },
     "clean_voisins": {
@@ -206,7 +206,7 @@
     },
     "build_vertical_tables": {
       "status": "REFUGEE_ASSOCIATIONS",
-      "timestamp": "2026-07-28T14:06:52.977319",
+      "timestamp": "2026-07-28T16:48:18.525291",
       "details": {
         "path": "pipeline/cache/output/odis_refugee_associations.parquet"
       }
@@ -253,7 +253,7 @@
     },
     "apply_prescoring": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-28T15:03:19.259064",
+      "timestamp": "2026-07-28T16:41:45.270187",
       "details": {
         "columns": 132,
         "path": "pipeline/cache/output/odis_communes.parquet",
@@ -277,10 +277,10 @@
       }
     },
     "score_bassins_de_vie": {
-      "status": "COMPLETED",
-      "timestamp": "2026-07-28T15:03:24.297777",
+      "status": "ERROR",
+      "timestamp": "2026-07-28T16:41:45.612131",
       "details": {
-        "rows": 1707
+        "error": "Passing 'suffixes' which cause duplicate columns {'inc_siae_density_x', 'lien_social_density_x', 'inc_siae_density_scaled_x'} is not allowed."
       }
     },
     "clean_epci": {
@@ -337,7 +337,7 @@
     },
     "apply_prescoring_load": {
       "status": "LOADED",
-      "timestamp": "2026-07-28T15:02:00.607775",
+      "timestamp": "2026-07-28T16:40:26.737723",
       "details": {
         "rows": 34968
       }
@@ -352,7 +352,7 @@
     },
     "inc_services_core_scaled": {
       "status": "CALCULATED",
-      "timestamp": "2026-07-28T15:02:02.968294",
+      "timestamp": "2026-07-28T16:40:29.189747",
       "details": {}
     },
     "clean_regions": {

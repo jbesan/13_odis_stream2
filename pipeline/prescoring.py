@@ -53,14 +53,12 @@ def scale_series(series, min_b, max_b, inverted=False, col_name="series"):
         return series
     denom = max_b - min_b
     if denom == 0:
-        msg = f"CRITICAL ERROR: Zero variance in series scaling for '{col_name}' (min={min_b}, max={max_b}). Returning NaN for all entries."
-        logging.error(msg)
-        print(f"ERROR [prescoring.py]: {msg}")
-        return pd.Series(np.nan, index=series.index)
+        logging.warning(
+            f"Zero variance in series scaling for '{col_name}' (min={min_b}, max={max_b}). Defaulting to 0.0."
+        )
+        return pd.Series(0.0, index=series.index)
 
-    # Calculate linear scaling
     scaled = (series - min_b) / denom
-
     if inverted:
         scaled = 1.0 - scaled
     return scaled.clip(0, 1)
@@ -91,7 +89,6 @@ def process_scaling(df, col_name, output_col, inverted=False):
         return
 
     c_min, c_max = conf.get("min"), conf.get("max")
-
     if c_min is not None and c_max is not None:
         min_b, max_b = c_min, c_max
     else:
@@ -151,7 +148,6 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             "lien_social_count",
             "inc_asso_refug_count",
             "bpe_creches_count",
-            "edu_pe_tx_couverture",
             "pop_chomeurs",
             "log_priv_vacant_plus_2ans",
             "pol_num",
@@ -736,6 +732,7 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
         # --- 3. Weighted Averages & Sums of Metrics from Communes ---
         metrics_to_avg = [
             "inc_services_core_scaled",
+            "inc_asso_core_scaled",
             "inc_asso_refug_scaled",
             "inc_siae_density_scaled",
             "edu_classes_ferm_scaled",

@@ -1001,11 +1001,17 @@ def show_details_dialog(index: Any):
                     )
 
                     # Auto color based on score value
-                    if p_val < 0.35:
+                    if p_val < 0.05:
+                        p_val_bar = 0.05
+                        bar_color = "linear-gradient(90deg, #505050, #000000)"  # Soft to dark Red
+                    elif p_val < 0.35:
+                        p_val_bar = p_val
                         bar_color = "linear-gradient(90deg, #f87171, #ef4444)"  # Soft to dark Red
                     elif p_val < 0.65:
+                        p_val_bar = p_val
                         bar_color = "linear-gradient(90deg, #fbbf24, #f59e0b)"  # Warm Orange/Yellow
                     else:
+                        p_val_bar = p_val
                         bar_color = (
                             "linear-gradient(90deg, #34d399, #10b981)"  # Emerald Green
                         )
@@ -1013,7 +1019,7 @@ def show_details_dialog(index: Any):
                     st.markdown(
                         f"""
                         <div style="width: 100%; background-color: rgba(128, 128, 128, 0.15); border-radius: 4px; height: 8px; margin-top: 4px; overflow: hidden;">
-                            <div style="width: {p_val * 100}%; background: {bar_color}; height: 100%; border-radius: 4px;"></div>
+                            <div style="width: {p_val_bar * 100}%; background: {bar_color}; height: 100%; border-radius: 4px;"></div>
                         </div>
                         """,
                         unsafe_allow_html=True,
@@ -1036,8 +1042,8 @@ def show_details_dialog(index: Any):
                         score_pct_str = f"{p_val * 100:.0f}%"
                     else:
                         score_pct_str = "N/A"
-                    st.markdown(f"### {score_pct_str}")
-                    st.caption("Score")
+                    st.space('small')
+                    st.subheader(f"{score_pct_str}")
             st.markdown("<br>", unsafe_allow_html=True)  # Minor spacing
 
     # --- Tabs ---
