@@ -23,7 +23,7 @@ class SessionStateDict(dict):
 
 @pytest.mark.unit
 def test_render_commune_pressentie_form_initialization():
-    """Test that render_mobility_form initializes commune pressentie pair state without warnings."""
+    """Test that render_mobility_form initializes commune pressentie directly using Streamlit native key binding."""
     mock_app_data = {
         "coddep_set": ["75", "69"],
         "dept_details": {"75": {"reg_code": "11"}},
@@ -51,8 +51,11 @@ def test_render_commune_pressentie_form_initialization():
         return session_state.get(key, False)
 
     def mock_selectbox(label, options=None, format_func=None, key=None, **kwargs):
-        if key == "ui_commune_pressentie_pair":
-            assert "index" not in kwargs, "selectbox for ui_commune_pressentie_pair should not use index parameter"
+        if key == "ui_commune_pressentie":
+            assert "index" not in kwargs, "selectbox for ui_commune_pressentie should not use index parameter"
+            assert format_func is not None, "format_func must be provided for codgeo labels"
+            assert format_func("69123") == "Lyon (69)"
+            assert format_func("75056") == "Paris (75)"
         val = session_state.get(key)
         if val is None and options:
             val = options[0]
@@ -71,6 +74,42 @@ def test_render_commune_pressentie_form_initialization():
         
         render_mobility_form()
 
-        assert "ui_commune_pressentie_pair" in session_state
-        assert session_state["ui_commune_pressentie_pair"][0] == "69123"
+        assert "ui_commune_pressentie" in session_state
         assert session_state["ui_commune_pressentie"] == "69123"
+
+
+@pytest.mark.unit
+def test_city_size_radio_hash_invalidation():
+    """Test that changing ui_target_city_size_label instantly updates SearchCriterias target_population."""
+    from app.ui.forms import create_search_criterias_from_inputs
+
+    mock_app_data = {
+        "coddep_set": ["75"],
+        "dept_details": {"75": {"reg_code": "11"}},
+        "depcom_df": pd.DataFrame({"dep_code": ["75"], "libgeo": ["Paris"]}, index=["75056"]),
+        "odis": pd.DataFrame(),
+    }
+
+    session_state = SessionStateDict({
+        "ui_departement": "75",
+        "ui_commune": "Paris",
+        "ui_target_city_size_label": "🏘️ Petite Ville",
+    })
+
+    with patch("app.ui.forms.get_app_data", return_value=mock_app_data), \
+         patch("app.ui.forms.st.session_state", session_state):
+        
+        criterias1 = create_search_criterias_from_inputs()
+        pop1 = criterias1.target_population
+        hash1 = criterias1.compute_hash()
+
+        # Change city size radio selection
+        session_state["ui_target_city_size_label"] = "🏙️ Ville moyenne"
+
+        criterias2 = create_search_criterias_from_inputs()
+        pop2 = criterias2.target_population
+        hash2 = criterias2.compute_hash()
+
+        assert pop1 != pop2, f"Expected target populations to differ but got {pop1} == {pop2}"
+        assert hash1 != hash2, "Expected search criteria hash to change when city size radio changes"
+

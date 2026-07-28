@@ -480,13 +480,6 @@ def render_mobility_form() -> None:
             label_visibility="collapsed",
         )
 
-    selected_label = st.session_state["ui_target_city_size_label"]
-    mapping = cfg.CITY_SIZE_MAPPING.get(
-        selected_label, {"mu": cfg.DEFAULT_MU, "sigma": cfg.DEFAULT_SIGMA}
-    )
-    st.session_state["ui_target_population"] = mapping["mu"]
-    st.session_state["ui_target_population_sigma"] = mapping["sigma"]
-
     st.divider()
 
     st.markdown("##### Une idée de ville en tête ?")
@@ -500,63 +493,54 @@ def render_mobility_form() -> None:
     )
 
     if has_pressentie:
-        # Get top 100 communes by population or fallback to depcom_df
+        # Get top 1000 communes by population or fallback to depcom_df
         odis_df = app_data.get("odis", pd.DataFrame())
+        communes_dict = {}
         if not odis_df.empty and "population" in odis_df.columns:
-            top_100 = (
+            top_1000 = (
                 odis_df.dropna(subset=["population", "libgeo"])
                 .sort_values(by="population", ascending=False)
                 .head(1000)
             )
-            communes_list = []
-            for codgeo, row in top_100.iterrows():
+            for codgeo, row in top_1000.iterrows():
                 dep = row.get("dep_code", "")
-                label = f"{row['libgeo']} ({dep})"
-                communes_list.append((str(codgeo), label))
-            communes_list.sort(key=lambda x: x[1])
+                communes_dict[str(codgeo)] = f"{row['libgeo']} ({dep})"
         else:
             depcom = app_data.get("depcom_df", pd.DataFrame())
-            communes_list = []
             if not depcom.empty:
                 for codgeo, row in depcom.iterrows():
                     dep = row.get("dep_code", "")
-                    label = f"{row['libgeo']} ({dep})"
-                    communes_list.append((str(codgeo), label))
-                communes_list.sort(key=lambda x: x[1])
+                    communes_dict[str(codgeo)] = f"{row['libgeo']} ({dep})"
 
-        # Ensure ui_commune_pressentie_pair state is initialized/synced before selectbox render
+        # Ensure active/restored commune code is present in options if set
         current_val = st.session_state.get("ui_commune_pressentie")
         curr_code = (
             current_val.code if hasattr(current_val, "code") else current_val
         ) if current_val else None
 
-        existing_pair = st.session_state.get("ui_commune_pressentie_pair")
-        if (
-            existing_pair not in communes_list
-            or (curr_code and existing_pair and existing_pair[0] != curr_code)
-        ):
-            default_pair = communes_list[0] if communes_list else None
-            if curr_code:
-                for pair in communes_list:
-                    if pair[0] == curr_code:
-                        default_pair = pair
-                        break
-            if default_pair:
-                st.session_state["ui_commune_pressentie_pair"] = default_pair
+        if curr_code and curr_code not in communes_dict:
+            if not odis_df.empty and curr_code in odis_df.index:
+                row = odis_df.loc[curr_code]
+                lib = row.get("libgeo", curr_code)
+                dep = row.get("dep_code", "")
+                communes_dict[str(curr_code)] = f"{lib} ({dep})" if dep else str(lib)
+            else:
+                communes_dict[str(curr_code)] = str(curr_code)
 
-        selected_pair = st.selectbox(
+        options = sorted(communes_dict.keys(), key=lambda c: communes_dict[c])
+
+        if not curr_code or curr_code not in options:
+            st.session_state["ui_commune_pressentie"] = options[0] if options else None
+
+        st.selectbox(
             "Ville souhaitée",
-            options=communes_list,
-            format_func=lambda x: x[1],
-            key="ui_commune_pressentie_pair",
+            options=options,
+            format_func=lambda code: communes_dict.get(code, code),
+            key="ui_commune_pressentie",
             help="Sélectionnez la ville avec laquelle vous souhaitez comparer les résultats.",
         )
-        if selected_pair:
-            st.session_state["ui_commune_pressentie"] = selected_pair[0]
     else:
         st.session_state["ui_commune_pressentie"] = None
-        if "ui_commune_pressentie_pair" in st.session_state:
-            del st.session_state["ui_commune_pressentie_pair"]
 
 
 def render_org_profile_form() -> None:
@@ -1062,13 +1046,13 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
     # Weights & Profile
     profile = st.session_state.get("ui_weight_profile", "Équilibré")
 
-    # Population mapping (Respect session state if present, fallback to label mapping)
+    # Population mapping based on selected city size label
     selected_city_label = st.session_state.get("ui_target_city_size_label")
     mapping = cfg.CITY_SIZE_MAPPING.get(
         selected_city_label, {"mu": cfg.DEFAULT_MU, "sigma": cfg.DEFAULT_SIGMA}
     )
-    target_pop = st.session_state.get("ui_target_population", mapping["mu"])
-    target_sigma = st.session_state.get("ui_target_population_sigma", mapping["sigma"])
+    target_pop = mapping["mu"]
+    target_sigma = mapping["sigma"]
 
     # Mobility weights based on freq_retour
     freq = st.session_state.get("ui_freq_retour", "1 fois/mois")

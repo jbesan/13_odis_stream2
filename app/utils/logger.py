@@ -284,45 +284,108 @@ def log_search_results(
         md_lines.append("No results found.")
     md_lines.append("")
 
-    # 3. Current Location Reference
+    # Helper for pressentie codgeo
+    pressentie_codgeo = (
+        search_results.commune_pressentie.codgeo
+        if search_results.commune_pressentie
+        else None
+    )
+
+    # 3. Current & Shortlisted Location Reference Headers (if present)
     if search_results.current_geo:
-        md_lines.append("## Current Location Reference")
         cg = search_results.current_geo
+        md_lines.append("## Current Location Reference")
         md_lines.append(f"**Name**: {cg.name} ({cg.codgeo})")
         md_lines.append(f"**Global Score (Simulated)**: {cg.global_score:.2f}")
         md_lines.append("")
 
-        # Detailed breakdown for Current Location
-        md_lines.append("### Detailed Breakdown (Current)")
-        for cat, details in sorted(cg.scores.items()):
-            md_lines.append(f"#### {cat.capitalize()}")
-            md_lines.append("| Technical ID | Label | Value | Score | Weight |")
-            md_lines.append("| :--- | :--- | :--- | :--- | :--- |")
-            for d in details:
-                val_kpi = d.valeur_kpi if d.valeur_kpi is not None else "N/A"
-                md_lines.append(
-                    f"| `{d.score_id}` | {d.label} | {val_kpi} {d.unit} | {d.score_normalise:.2f} | {d.relative_weight}% |"
-                )
-            md_lines.append("")
-
-    # 4. Detailed Breakdown (Top Results)
-    md_lines.append("## Detailed Breakdown (Top Results)")
-    for i, commune in enumerate(search_results.results):
-        md_lines.append(f"### {i + 1}. {commune.name} ({commune.codgeo})")
-        md_lines.append(f"* **Population**: {commune.population:,}")
-        md_lines.append(f"* **Global Score**: {commune.global_score:.2f}")
+    if search_results.commune_pressentie:
+        cp = search_results.commune_pressentie
+        md_lines.append("## Shortlisted Location Reference (Ville Pressentie)")
+        md_lines.append(f"**Name**: {cp.name} ({cp.codgeo})")
+        md_lines.append(f"**Global Score**: {cp.global_score:.2f}")
         md_lines.append("")
 
-        for cat, details in sorted(commune.scores.items()):
-            md_lines.append(f"#### {cat.capitalize()}")
-            md_lines.append("| Technical ID | Label | Value | Score | Weight |")
-            md_lines.append("| :--- | :--- | :--- | :--- | :--- |")
+    # 4. Synthetic Comparative Breakdown
+    md_lines.append("## Detailed Comparative Breakdown")
+    md_lines.append("")
+
+    # Collect cities to compare: current_geo (if present) + top results + commune_pressentie (if outside top results)
+    eval_cities = []
+    if search_results.current_geo:
+        eval_cities.append(("current", search_results.current_geo))
+    for i, commune in enumerate(search_results.results):
+        eval_cities.append((f"{i + 1}", commune))
+
+    if (
+        search_results.commune_pressentie
+        and not any(c.codgeo == pressentie_codgeo for _, c in eval_cities)
+    ):
+        eval_cities.append(("pressentie", search_results.commune_pressentie))
+
+    # Collect all categories across cities
+    all_categories = set()
+    for _, city in eval_cities:
+        all_categories.update(city.scores.keys())
+
+    for cat in sorted(all_categories):
+        md_lines.append(f"### {cat.capitalize()}")
+
+        # Headers: Catégorie / Critère, Poids Relatif, City columns
+        table_headers = ["Catégorie / Critère", "Poids Relatif"]
+        for role, city in eval_cities:
+            is_press = pressentie_codgeo and city.codgeo == pressentie_codgeo
+            if role == "current":
+                table_headers.append(f"{city.name} (Ref)")
+            elif role == "pressentie":
+                table_headers.append(f"📌 {city.name} (Pressentie)")
+            else:
+                suffix = " 📌 (Pressentie)" if is_press else ""
+                table_headers.append(f"{role}. {city.name}{suffix}")
+
+        md_lines.append("| " + " | ".join(table_headers) + " |")
+        md_lines.append(
+            "| "
+            + " | ".join([":---", ":---:"] + [":---:"] * (len(table_headers) - 2))
+            + " |"
+        )
+
+        # Collect unique score criteria for this category
+        criteria_map = {}
+        for role, city in eval_cities:
+            details = city.scores.get(cat, [])
             for d in details:
-                val_kpi = d.valeur_kpi if d.valeur_kpi is not None else "N/A"
-                md_lines.append(
-                    f"| `{d.score_id}` | {d.label} | {val_kpi} {d.unit} | {d.score_normalise:.2f} | {d.relative_weight}% |"
-                )
-            md_lines.append("")
+                sid = d.score_id
+                if sid not in criteria_map:
+                    criteria_map[sid] = {
+                        "label": d.label,
+                        "relative_weight": d.relative_weight,
+                        "city_details": {},
+                    }
+                criteria_map[sid]["city_details"][role] = d
+
+        for sid, cinfo in criteria_map.items():
+            label_display = f"**{cinfo['label']}**<br>`{sid}`"
+            rel_w_display = f"{cinfo['relative_weight']}%"
+            row_cells = [label_display, rel_w_display]
+
+            for role, city in eval_cities:
+                cdetail = cinfo["city_details"].get(role)
+                if cdetail is not None:
+                    val_kpi = cdetail.valeur_kpi
+                    unit = cdetail.unit.strip() if cdetail.unit else ""
+                    if val_kpi is not None and str(val_kpi).strip() not in ("", "N/A"):
+                        unit_str = f" {unit}" if unit else ""
+                        val_str = f"{cdetail.score_normalise:.2f} ({val_kpi}{unit_str})"
+                    else:
+                        val_str = f"{cdetail.score_normalise:.2f}"
+                else:
+                    val_str = "-"
+                row_cells.append(val_str)
+
+            md_lines.append("| " + " | ".join(row_cells) + " |")
+
+        md_lines.append("")
 
     # Write to file
     try:
