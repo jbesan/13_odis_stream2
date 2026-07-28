@@ -45,3 +45,36 @@ def test_load_manifest_with_mock_file(tmp_path):
         assert data is not None
         assert data["manifest_version"] == "v2026.07.22-abc123"
         assert len(data["sources"]) == 1
+
+
+def test_show_sources_dialog_dataframe_urls():
+    mock_manifest = {
+        "manifest_version": "v1.0",
+        "created_at": "2026-07-22T10:00:00Z",
+        "sources": [
+            {
+                "source_key": "communes",
+                "name": "Contours communes",
+                "doc_url": "https://www.data.gouv.fr/datasets/contours-administratifs/",
+            },
+            {
+                "source_key": "no_doc",
+                "name": "No Doc Dataset",
+                "doc_url": None,
+            },
+        ],
+    }
+
+    with patch("ui.sources_dialog.load_manifest", return_value=mock_manifest), \
+         patch("streamlit.dataframe") as mock_st_dataframe, \
+         patch("streamlit.markdown"), \
+         patch("streamlit.caption"):
+        from ui.sources_dialog import show_sources_dialog
+
+        show_sources_dialog.__wrapped__()
+
+        assert mock_st_dataframe.called
+        df_passed = mock_st_dataframe.call_args[0][0]
+        assert df_passed.loc[0, "Documentation"] == "https://www.data.gouv.fr/datasets/contours-administratifs/"
+        assert df_passed.loc[1, "Documentation"] is None
+

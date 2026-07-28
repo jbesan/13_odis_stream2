@@ -67,7 +67,6 @@ def show_sources_dialog():
         rows_val = s.get("row_count")
         formatted_rows = f"{rows_val:,}".replace(",", " ") if isinstance(rows_val, int) else "-"
         doc_url = s.get("doc_url")
-        link_markdown = f"[Consulter]({doc_url})" if doc_url else "-"
 
         annee_ref = str(s.get("annee_reference")) if s.get("annee_reference") else "-"
 
@@ -78,12 +77,11 @@ def show_sources_dialog():
                 "Année réf.": annee_ref,
                 "Dernière maj.": format_iso_date(s.get("last_updated")),
                 "Volumétrie": formatted_rows,
-                "Documentation": link_markdown,
+                "Documentation": doc_url if doc_url else None,
             }
         )
 
     df = pd.DataFrame(table_rows)
-    df = df.astype(str)
 
 
     st.dataframe(

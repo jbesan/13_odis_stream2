@@ -75,14 +75,14 @@
     },
     "generate_pois": {
       "status": "CREATED",
-      "timestamp": "2026-07-27T17:00:59.605929",
+      "timestamp": "2026-07-27T19:08:03.772120",
       "details": {
         "path": "pipeline/cache/output/odis_pois.parquet"
       }
     },
     "generate_referentiels": {
       "status": "CREATED",
-      "timestamp": "2026-07-27T17:00:59.980197",
+      "timestamp": "2026-07-27T19:08:04.205083",
       "details": {
         "path": "pipeline/cache/output/odis_referentiels.parquet"
       }
@@ -177,13 +177,16 @@
       }
     },
     "build_communes": {
-      "status": "STARTED",
-      "timestamp": "2026-07-27T19:05:24.788020",
-      "details": {}
+      "status": "CREATED",
+      "timestamp": "2026-07-27T19:06:48.369711",
+      "details": {
+        "path": "pipeline/cache/output/odis_communes_pre.parquet",
+        "rows": 34968
+      }
     },
     "build_bassins_de_vie": {
       "status": "CREATED",
-      "timestamp": "2026-07-27T17:00:00.575681",
+      "timestamp": "2026-07-27T19:06:54.072978",
       "details": {
         "path": "pipeline/cache/output/odis_bassins_de_vie.parquet",
         "rows": 1707
@@ -191,7 +194,7 @@
     },
     "build_all": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-27T17:00:59.982293",
+      "timestamp": "2026-07-27T19:08:04.212674",
       "details": {}
     },
     "clean_voisins": {
@@ -203,7 +206,7 @@
     },
     "build_vertical_tables": {
       "status": "REFUGEE_ASSOCIATIONS",
-      "timestamp": "2026-07-27T17:00:32.063700",
+      "timestamp": "2026-07-27T19:07:32.528996",
       "details": {
         "path": "pipeline/cache/output/odis_refugee_associations.parquet"
       }
@@ -250,7 +253,7 @@
     },
     "apply_prescoring": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-27T17:02:17.085334",
+      "timestamp": "2026-07-27T19:09:21.839393",
       "details": {
         "columns": 132,
         "path": "pipeline/cache/output/odis_communes.parquet",
@@ -275,7 +278,7 @@
     },
     "score_bassins_de_vie": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-27T17:02:20.710974",
+      "timestamp": "2026-07-27T19:09:25.508163",
       "details": {
         "rows": 1707
       }
@@ -334,7 +337,7 @@
     },
     "apply_prescoring_load": {
       "status": "LOADED",
-      "timestamp": "2026-07-27T17:01:00.326169",
+      "timestamp": "2026-07-27T19:08:05.134133",
       "details": {
         "rows": 34968
       }
@@ -349,7 +352,7 @@
     },
     "inc_services_core_scaled": {
       "status": "CALCULATED",
-      "timestamp": "2026-07-27T17:01:02.612437",
+      "timestamp": "2026-07-27T19:08:07.546445",
       "details": {}
     },
     "clean_regions": {
