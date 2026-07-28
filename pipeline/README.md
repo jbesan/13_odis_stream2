@@ -35,4 +35,4 @@ uv run python -m pipeline.etl --step ingest --table population,caf
 * **`ingest`**: Queries the Odace API and external endpoints (France Travail, Les emplois de l'inclusion, BigQuery RNA RAG) to download and clean raw staging datasets.
 * **`build`**: Resolves geographical PLM hierarchies, consolidates arrondissement rates, and dissolves geometries.
 * **`prescoring`**: Pre-calculates static indicators and performs quantile rank normalizations.
-* **`deploy`**: Swaps cache targets atomically to update the application's reference parquet files.
+* **`deploy`**: Copies only the bootstrap files locally, publishes the generated Parquets (except `odis_referentiels.parquet`) to an immutable GCS release, then updates `datasets/current.json` as the atomic release pointer. Cloud Run downloads the active release on first use and caches it in `/tmp`.

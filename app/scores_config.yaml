@@ -182,13 +182,13 @@ scores:
     computation: live
     display:
       name: Population de la commune
-      strong_point_text: La commune est de taille importante
-      high_value_adjective: importante
+      strong_point_text: La taille de la commune est correspondante.
+      high_value_adjective: correspondante
       show: false
       unit: habitants
       display_factor: 1
       tooltip: Population totale de la commune
-    weight: 3.0
+    weight: 5.0
     scaling_type: gaussian
     mu: 50000
     sigma: 25000

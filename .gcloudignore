@@ -33,5 +33,8 @@ app/.DS_Store
 app/.env
 app/.streamlit/secrets.toml
 app/data_private/
+app/data/datasets/
+app/data/*.parquet
+!app/data/odis_referentiels.parquet
 app/data/shared_searches/
 **/.env
