@@ -70,8 +70,9 @@ class OdaceClient:
             return pd.read_parquet(cache_file, engine="fastparquet")
 
         except Exception as e:
-            error_msg = f"Failed to export {table_name} from Odace: {str(e)}"
+            error_msg = f"CRITICAL ERROR: Failed to export {table_name} from Odace API: {str(e)}"
             logging.error(error_msg)
+            print(f"ERROR [OdaceClient]: {error_msg}")
 
             # Fallback to expired cache if available
             if cache_file.exists():
@@ -80,8 +81,8 @@ class OdaceClient:
                 )
                 try:
                     return pd.read_parquet(cache_file, engine="fastparquet")
-                except:
-                    pass
+                except Exception as cache_err:
+                    logging.error(f"OdaceClient: Expired cache read also failed for {table_name}: {cache_err}")
 
             if self.logger:
                 self.logger.log_source(f"odace_{table_name}", "ERROR", error_msg)

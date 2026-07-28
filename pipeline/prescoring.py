@@ -16,6 +16,7 @@ from pipeline.common import (
     CLEAN_DIR,
     STATUS_FILE,
 )
+from pipeline.quality_gate import run_quality_gate
 import app.config as cfg
 
 # Global Scores Config cache
@@ -46,24 +47,29 @@ def get_scores_config():
     return _scores_config_cache
 
 
-def scale_series(series, min_b, max_b, inverted=False):
+def scale_series(series, min_b, max_b, inverted=False, col_name="series"):
     if series.empty:
         return series
     denom = max_b - min_b
     if denom == 0:
-        scaled = pd.Series(0.0 if not inverted else 1.0, index=series.index)
-    else:
-        scaled = (series - min_b) / denom
+        msg = f"CRITICAL ERROR: Zero variance in series scaling for '{col_name}' (min={min_b}, max={max_b}). Returning NaN for all entries."
+        logging.error(msg)
+        print(f"ERROR [prescoring.py]: {msg}")
+        return pd.Series(np.nan, index=series.index)
 
-    if inverted and denom != 0:
+    # Calculate linear scaling
+    scaled = (series - min_b) / denom
+
+    if inverted:
         scaled = 1.0 - scaled
     return scaled.clip(0, 1)
 
 
 def get_min_max_quant(series, q=0.01):
-    if series.empty:
+    valid_series = series.dropna()
+    if valid_series.empty:
         return 0.0, 1.0
-    return float(series.quantile(q)), float(series.quantile(1 - q))
+    return float(valid_series.quantile(q)), float(valid_series.quantile(1 - q))
 
 
 def process_scaling(df, col_name, output_col, inverted=False):
@@ -91,7 +97,7 @@ def process_scaling(df, col_name, output_col, inverted=False):
         q_level = conf.get("quantile_level", 0.01)
         min_b, max_b = get_min_max_quant(df[col_name], q_level)
 
-    df[output_col] = scale_series(df[col_name], min_b, max_b, inverted)
+    df[output_col] = scale_series(df[col_name], min_b, max_b, inverted, col_name=output_col)
 
 
 # PLM consolidation is now fully handled in the build phase (pipeline/build.py)
@@ -360,6 +366,9 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             communes_gdf, "ter_insecurite", "ter_insecurite_scaled", inverted=True
         )
 
+        # Defragment DataFrame memory layout
+        communes_gdf = communes_gdf.copy()
+
         # Population Decline (Inverted logic handled in process_scaling)
         if (
             "pop_jeune_2016" in communes_gdf.columns
@@ -601,14 +610,17 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             inplace=True,
         )
 
-        # Optimization: Cast floats to float32 (float16 caused UI issues and overflow)
-        exclude_cols = {"population", "plm"}
-        for col in communes_gdf.select_dtypes(include=["float64"]).columns:
-            # We generally want everything float32
-            communes_gdf[col] = communes_gdf[col].astype("float32")
+        # Optimization: Vectorized float64 to float32 conversion to prevent fragmentation
+        float64_cols = list(communes_gdf.select_dtypes(include=["float64"]).columns)
+        if float64_cols:
+            communes_gdf[float64_cols] = communes_gdf[float64_cols].astype("float32")
 
         if "inc_services_core_scaled" not in communes_gdf.columns:
             communes_gdf["inc_services_core_scaled"] = 0.0
+
+        # Defragment DataFrame memory layout after batch column operations
+        communes_gdf = communes_gdf.copy()
+
         # Save
         if "geometry" in communes_gdf.columns:
             # SOTA: Keep only metric numerical coordinates in the massive `odis` dataframe to avoid geometry overhead for fast Euclidean distance computations
@@ -631,6 +643,15 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         pd.DataFrame(communes_gdf).to_parquet(
             output_path, compression="brotli", index=False, engine="fastparquet"
         )
+
+        # Run Quality Gate validation on published dataset
+        run_quality_gate(
+            communes_path=output_path,
+            status_path=STATUS_FILE,
+            dataset_name="odis_communes.parquet",
+            ask_user_on_failure=True,
+        )
+
         logger.log_step(
             "apply_prescoring",
             "COMPLETED",

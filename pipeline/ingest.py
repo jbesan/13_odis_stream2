@@ -3579,9 +3579,13 @@ def clean_odace_rent(config: Dict[str, Any], logger: PipelineLogger):
     df_profil = client.fetch_ref_logement_profil()
 
     if df_rent.empty or df_profil.empty:
-        logging.warning(
-            "Odace API returned empty data for rent facts or housing profiles."
+        error_msg = (
+            f"CRITICAL ERROR: Odace API returned empty data for rent facts (empty={df_rent.empty}) "
+            f"or housing profiles (empty={df_profil.empty})!"
         )
+        logging.error(error_msg)
+        print(f"ERROR [clean_odace_rent]: {error_msg}")
+        logger.log_step("clean_odace_rent", "ERROR", error_msg)
         return
 
     # Filter for relevant data (Prioritize 'commune', fallback to 'maille' if commune not available)
@@ -4195,206 +4199,8 @@ def clean_ter_insecurite(config: Dict[str, Any], logger: PipelineLogger):
 
 
 def clean_jaccueille(config: Dict[str, Any], logger: PipelineLogger):
-    """Cleans J'Accueille data and aggregates by Bassin de Vie."""
-    logger.log_step("clean_jaccueille", "STARTED")
-    source = config.get("local_files", {}).get("jaccueille")
-    if not source:
-        source = config["sources"].get("jaccueille")
-
-    if not source:
-        logging.warning("J'Accueille source config not found.")
-        return
-
-    if source.get("use_odace", False):
-        try:
-            client = get_odace_client(logger)
-            df_odace = client.fetch_table(source.get("odace_table", "dim_accueillant"))
-            if not df_odace.empty:
-                # Group by commune_sk to count hosts
-                df_counts = (
-                    df_odace.groupby("commune_sk")
-                    .size()
-                    .rename("heb_jaccueille_count")
-                    .reset_index()
-                )
-
-                # Join with dim_commune to get commune_insee_code
-                df_commune = client.fetch_dim_commune()
-                if not df_commune.empty:
-                    merged = df_counts.merge(
-                        df_commune[["commune_sk", "commune_insee_code"]],
-                        on="commune_sk",
-                        how="inner",
-                    )
-                    merged.rename(
-                        columns={"commune_insee_code": "codgeo"}, inplace=True
-                    )
-                    merged["codgeo"] = merged["codgeo"].astype(str).str.zfill(5)
-
-                    # Merge with Bassin de Vie mapping
-                    bdv_cfg = config["sources"]["bassins_de_vie"]
-                    bdv_path = CACHE_DIR / bdv_cfg["archive_file"]
-
-                    if bdv_path.exists():
-                        df_bdv = load_dataset(bdv_path, bdv_cfg)
-                        codgeo_col = next(
-                            (
-                                c
-                                for c in df_bdv.columns
-                                if "Code géographique" in c or "CODGEO" in c
-                            ),
-                            None,
-                        )
-                        bdv_col = next(
-                            (c for c in df_bdv.columns if "Bassin de vie" in c), None
-                        )
-
-                        if codgeo_col and bdv_col:
-                            df_bdv = df_bdv[[codgeo_col, bdv_col]].rename(
-                                columns={codgeo_col: "codgeo", bdv_col: "bassin_de_vie"}
-                            )
-                            df_bdv["codgeo"] = df_bdv["codgeo"].astype(str).str.zfill(5)
-                            df_bdv["bassin_de_vie"] = (
-                                df_bdv["bassin_de_vie"]
-                                .astype(str)
-                                .str.replace(r"\.0$", "", regex=True)
-                            )
-
-                            merged_bdv = merged.merge(df_bdv, on="codgeo", how="inner")
-                            df_agg = (
-                                merged_bdv.groupby("bassin_de_vie")[
-                                    "heb_jaccueille_count"
-                                ]
-                                .sum()
-                                .reset_index()
-                            )
-
-                            output_path = CLEAN_DIR / "jaccueille_bdv.parquet"
-                            df_agg.to_parquet(output_path, engine="fastparquet")
-                            logger.log_step(
-                                "clean_jaccueille",
-                                "COMPLETED",
-                                {"rows": len(df_agg), "source": "odace"},
-                            )
-                            return
-                        else:
-                            logging.warning(
-                                "Bassin de vie columns not identified for Odace J'Accueille mapping."
-                            )
-                    else:
-                        logging.warning(
-                            "Bassin de vie file not found for Odace J'Accueille mapping."
-                        )
-                else:
-                    logging.warning(
-                        "Odace dim_commune empty for J'Accueille. Falling back to legacy."
-                    )
-            else:
-                logging.warning(
-                    "Odace fetch returned empty data for J'Accueille. Falling back to legacy."
-                )
-        except Exception as e:
-            logging.error(
-                f"Failed to fetch J'Accueille from Odace: {e}. Falling back to legacy."
-            )
-
-    path = CACHE_DIR / source["local_name"]
-    if not path.exists():
-        # Maybe it's directly in local? The fetch_source should have copied it.
-        logging.warning(f"J'Accueille file not found at {path}.")
-        return
-
-    # 1. Load J'Accueille CSV
-    try:
-        df = pd.read_csv(path)
-    except Exception as e:
-        df = pd.read_csv(path, sep=";")  # fallback
-
-    # Expected columns: 'Code postal', 'Nombre d'enregistrements'
-    cp_col = next(
-        (c for c in df.columns if "Code postal" in c or "code_postal" in c), None
-    )
-    val_col = next(
-        (
-            c
-            for c in df.columns
-            if "Nombre d'enregistrements" in c
-            or "accueillants" in c.lower()
-            or "count" in c.lower()
-        ),
-        None,
-    )
-
-    if not cp_col or not val_col:
-        logging.warning(f"J'Accueille: Could not identify columns. Found: {df.columns}")
-        return
-
-    df = df.rename(columns={cp_col: "code_postal", val_col: "heb_jaccueille_count"})
-    df["code_postal"] = (
-        df["code_postal"].astype(str).str.replace(r"\.0$", "", regex=True).str.zfill(5)
-    )
-    df["heb_jaccueille_count"] = pd.to_numeric(
-        df["heb_jaccueille_count"], errors="coerce"
-    ).fillna(0)
-
-    # 2. Map Code Postal -> Code Commune -> Bassin de Vie
-    # A. Code Postal -> Commune (using official mapping)
-    cp_mapping_path = CLEAN_DIR / "codes_postaux.parquet"
-    if not cp_mapping_path.exists():
-        logging.warning("Codes Postaux mapping not found, cannot map J'Accueille data.")
-        return
-
-    df_cp = pd.read_parquet(
-        cp_mapping_path, engine="fastparquet"
-    )  # 'code_postal', 'codgeo'
-
-    # Take the first commune for a given postal code (since 1 CP maps to 1 BDV eventually)
-    df_cp_unique = df_cp.drop_duplicates(subset=["code_postal"], keep="first")
-
-    merged = df.merge(df_cp_unique, on="code_postal", how="inner")
-
-    # B. Commune -> Bassin de Vie (using our pre-processed mapping or from BDV dataset)
-    # The BDV mapping is usually applied in `build.py`, but we can extract it from the raw BDV file or communes_pre if it exists.
-    # Let's read it from the raw BDV file loaded earlier (bassins_de_vie)
-    bdv_cfg = config["sources"]["bassins_de_vie"]
-    bdv_path = CACHE_DIR / bdv_cfg["archive_file"]
-
-    if not bdv_path.exists():
-        logging.warning("Bassin de vie raw file not found.")
-        return
-
-    df_bdv = load_dataset(bdv_path, bdv_cfg)
-
-    codgeo_col = next(
-        (c for c in df_bdv.columns if "Code géographique" in c or "CODGEO" in c), None
-    )
-    bdv_col = next((c for c in df_bdv.columns if "Bassin de vie" in c), None)
-
-    if codgeo_col and bdv_col:
-        df_bdv = df_bdv[[codgeo_col, bdv_col]].rename(
-            columns={codgeo_col: "codgeo", bdv_col: "bassin_de_vie"}
-        )
-        df_bdv["codgeo"] = df_bdv["codgeo"].astype(str).str.zfill(5)
-        df_bdv["bassin_de_vie"] = (
-            df_bdv["bassin_de_vie"].astype(str).str.replace(r"\.0$", "", regex=True)
-        )
-
-        merged_bdv = merged.merge(df_bdv, on="codgeo", how="inner")
-
-        # Aggregate by BDV
-        df_agg = (
-            merged_bdv.groupby("bassin_de_vie")["heb_jaccueille_count"]
-            .sum()
-            .reset_index()
-        )
-
-        output_path = CLEAN_DIR / "jaccueille_bdv.parquet"
-        df_agg.to_parquet(output_path, engine="fastparquet")
-        logger.log_step(
-            "clean_jaccueille",
-            "COMPLETED",
-            {"path": str(output_path), "rows": len(df_agg)},
-        )
+    """Cleans J'Accueille data via live Salesforce integration (replaces legacy CSV)."""
+    return clean_salesforce_jaccueille(config, logger)
     else:
         logging.warning("Bassin de vie columns not identified for mapping.")
 

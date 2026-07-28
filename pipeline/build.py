@@ -457,9 +457,10 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
 
                 # Pivot: 1 row per commune_sk, columns are the 4 housing types
                 # FIX: Coerce to numeric before pivot to avoid "agg function failed [how->mean,dtype->object]"
+                # Keep NaNs instead of fillna(0) to avoid turning missing data into zero-rent
                 df_merged["loyer_m2_moy"] = pd.to_numeric(
                     df_merged["loyer_m2_moy"], errors="coerce"
-                ).fillna(0)
+                )
 
                 df_pivot = df_merged.pivot_table(
                     index="commune_sk",
@@ -495,6 +496,26 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
 
         # Merge Loyers (Appartements - Legacy source)
         merge_clean("loyers", ["loyer_app_m2"])
+
+        # Check if Odace rent metrics are valid, otherwise fall back to legacy loyer_app_m2
+        rent_col = "loyer_m2_moy_appt_all"
+        valid_odace = (
+            communes_gdf[rent_col].notna() & (communes_gdf[rent_col] > 0)
+            if rent_col in communes_gdf.columns
+            else pd.Series(False, index=communes_gdf.index)
+        )
+        if valid_odace.sum() < 100:
+            msg = (
+                f"CRITICAL ERROR: Odace rent primary data is missing or invalid "
+                f"({valid_odace.sum()} valid rows). Triggering FALLBACK to legacy loyers.parquet source (loyer_app_m2)."
+            )
+            logging.error(msg)
+            print(f"ERROR [build.py]: {msg}")
+            if "loyer_app_m2" in communes_gdf.columns:
+                communes_gdf["loyer_m2_moy_appt_all"] = communes_gdf["loyer_app_m2"]
+                for c in ["loyer_m2_moy_appt_t1_t2", "loyer_m2_moy_appt_t3_p", "loyer_m2_moy_house_all"]:
+                    if c not in communes_gdf.columns or (communes_gdf[c].notna() & (communes_gdf[c] > 0)).sum() < 100:
+                        communes_gdf[c] = communes_gdf["loyer_app_m2"]
 
         # Associations merge (Deprecated - Now handled via RNA RAG above)
 
