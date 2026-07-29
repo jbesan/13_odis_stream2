@@ -957,68 +957,8 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
             label = str(code)
         inc_services_mapped.append(CriteriaItem(code=str(code), label=label))
 
-    # F-15: Compute Criteria Weights
+    # F-15: Compute Criteria Weights (Default empty dict, customized weights via org_boosts or API)
     criteria_weights = {}
-
-    # Education Priorities
-    edu_map = {
-        "Crèche / Assistante Maternelle": "edu_petite_enfance_scaled",
-        "Maternelle": "edu_maternelle_scaled",
-        "Elémentaire": "edu_elementaire_scaled",
-        "Collège": "edu_college_scaled",
-        "Lycée": "edu_lycee_scaled",
-    }
-    for i in range(nb_enfants):
-        level = st.session_state.get(f"ui_classe_enfant_{i}")
-        is_priority = st.session_state.get(f"ui_priority_edu_{i}", False)
-        if is_priority and level in edu_map:
-            criteria_weights[edu_map[level]] = 3.0
-
-    # Employment Priorities (F-15)
-    for i in range(nb_adultes):
-        if st.session_state.get(f"ui_priority_job_adult_{i}", False):
-            criteria_weights[f"met_match_adult{i + 1}_scaled"] = 3.0
-
-    # Housing Priorities (F-15)
-    heb_sel = st.session_state.get("ui_hebergement_cible", [])
-    if st.session_state.get("ui_priority_hebergement", False):
-        if "Location avec Intermédiation" in heb_sel:
-            criteria_weights["heb_loc_iml_scaled"] = 3.0
-            criteria_weights["log_vac_scaled"] = 3.0
-        if "Centres d'Hébergement (CHRS, CPH)" in heb_sel:
-            criteria_weights["heb_centres_heb_scaled"] = 3.0
-        if "Foyers & Pensions de Famille" in heb_sel:
-            criteria_weights["heb_foyers_scaled"] = 3.0
-        if "Chez l'habitant" in heb_sel:
-            criteria_weights["heb_asso_habitant_scaled"] = 3.0
-            criteria_weights["heb_jaccueille_accueillants_score"] = 3.0
-            criteria_weights["heb_jaccueille_prospects_score"] = 3.0
-            criteria_weights["log_occup_scaled"] = 3.0
-
-    if st.session_state.get("ui_priority_logement", False):
-        if st.session_state.get("ui_logement") == "Logement Social":
-            criteria_weights["log_soc_inoc_scaled"] = 3.0
-        else:
-            criteria_weights["log_vac_scaled"] = 3.0
-
-    # Health Priority
-    if st.session_state.get("ui_priority_sante", False):
-        sante_map = {
-            "Hôpital": "sante_hopital_scaled",
-            "Maternité": "sante_maternite_scaled",
-            "Soutien Psychologique": "sante_psy_scaled",
-            "Dialyse": "sante_dialyse_scaled",
-            "Maison de santé": "sante_maison_sante_scaled",
-            "Addictologie": "sante_addictologie_scaled",
-            "Santé maternelle et infantile (PMI)": "sante_pmi_scaled",
-        }
-        for need in st.session_state.get("ui_besoin_sante", []):
-            if need in sante_map:
-                criteria_weights[sante_map[need]] = 3.0
-
-    # Other Needs Priority (F-15)
-    if st.session_state.get("ui_priority_other_needs", False):
-        criteria_weights["inc_services_incl_scaled"] = 3.0
 
     # Enrich Inclusion Associations (WALDEC Logic F-48)
     waldec_index = app_data.get("waldec_index", pd.DataFrame())
@@ -1053,18 +993,6 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
     )
     target_pop = mapping["mu"]
     target_sigma = mapping["sigma"]
-
-    # Mobility weights based on freq_retour
-    freq = st.session_state.get("ui_freq_retour", "1 fois/mois")
-    if freq == "1 fois/semaine":
-        criteria_weights["mob_epci_scaled"] = 2.0
-        criteria_weights["mob_dist_current_loc_scaled"] = 2.0
-    elif freq == "1 fois/mois":
-        criteria_weights["mob_epci_scaled"] = 1.0
-        criteria_weights["mob_dist_current_loc_scaled"] = 1.0
-    elif freq == "1 fois/an":
-        criteria_weights["mob_epci_scaled"] = 0.5
-        criteria_weights["mob_dist_current_loc_scaled"] = 0.5
 
     return SearchCriterias(
         weight_profile=profile,

@@ -697,7 +697,7 @@ class ScoringEngine:
 
         if logement_type == "Logement Social":
             active.add("log_soc_inoc_scaled")
-            active.add("log_soc_dem_scaled")
+            active.add("log_soc_delay_scaled")
 
         # 5. Education (Conditional on children)
         nb_enfants = getattr(config, "nb_enfants", 0)

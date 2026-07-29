@@ -1328,14 +1328,14 @@ class TestP102ScoringReconciliation:
     def test_get_effective_weight_canonical_behavior(self):
         config = SearchCriterias(
             dept_code="33",
-            active_criteria=["mob_dist_current_loc_scaled", "housing_rent"],
-            criteria_weights={"housing_rent": 2.5},
-            org_boosts={"housing_rent": 1.2},
+            active_criteria=["mob_dist_current_loc_scaled", "log_loyer_moyen_appt_all_scaled"],
+            criteria_weights={"log_loyer_moyen_appt_all_scaled": 2.5},
+            org_boosts={"log_loyer_moyen_appt_all_scaled": 1.2},
             freq_retour="1 fois/semaine",
         )
 
         # Standard criterion with weight replacement + org boost: 2.5 * 1.2 = 3.0
-        w_rent = scoring.get_effective_weight("housing_rent", config, catalog_weight=1.0)
+        w_rent = scoring.get_effective_weight("log_loyer_moyen_appt_all_scaled", config, catalog_weight=1.0)
         assert abs(w_rent - 3.0) < 1e-6
 
         # Proximity criterion with freq multiplier 3.0: catalog 1.0 * 3.0 = 3.0

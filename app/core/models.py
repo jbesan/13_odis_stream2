@@ -1,6 +1,28 @@
 from typing import List, Dict, Any, Union, Optional, Set, Literal
+import functools
 import hashlib
+import logging
+from pathlib import Path
+import yaml
 from pydantic import BaseModel, Field, ConfigDict, model_validator, field_validator
+
+logger = logging.getLogger(__name__)
+
+
+@functools.lru_cache(maxsize=1)
+def get_valid_score_ids() -> Set[str]:
+    """Loads and caches valid score IDs defined in scores_config.yaml."""
+    config_path = Path(__file__).parent.parent / "scores_config.yaml"
+    if not config_path.exists():
+        return set()
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            cfg_data = yaml.safe_load(f)
+        scores = cfg_data.get("scores", []) if isinstance(cfg_data, dict) else []
+        return {item.get("id") for item in scores if isinstance(item, dict) and item.get("id")}
+    except Exception as e:
+        logger.warning(f"Could not load valid score IDs from scores_config.yaml: {e}")
+        return set()
 
 
 class CriteriaItem(BaseModel):
@@ -249,6 +271,25 @@ class SearchCriterias(BaseModel):
         description="Poids personnalisés par critère",
         json_schema_extra={"odis_visibility": ["agent_refiner", "pdf_report"]},
     )
+
+    @field_validator("criteria_weights", mode="before")
+    @classmethod
+    def validate_criteria_weights(cls, v: Any) -> Dict[str, float]:
+        if not isinstance(v, dict):
+            return {}
+        valid_ids = get_valid_score_ids()
+        if not valid_ids:
+            return {str(k): float(val) for k, val in v.items()}
+        sanitized = {}
+        for key, weight in v.items():
+            s_key = str(key)
+            if s_key in valid_ids:
+                sanitized[s_key] = float(weight)
+            else:
+                logger.warning(
+                    f"Removing unknown criterion ID '{s_key}' from criteria_weights."
+                )
+        return sanitized
 
     # Global Category Weights
     poids_emploi: float = Field(
