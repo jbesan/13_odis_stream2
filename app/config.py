@@ -1,6 +1,7 @@
 import os
 import warnings
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Set
+
 from core.models import Org
 
 # Suppress annoying warnings from third-party libraries (especially in Python 3.14+)
@@ -53,9 +54,20 @@ SCORES_CAT_FILE = "scores_config.yaml"
 
 # Paris, Lyon, Marseille Global Codes -> Arrondissement Prefix
 PLM_MAPPING = {"75056": "751", "69123": "693", "13055": "132"}
+# Salesforce Reports
+SF_REPORT_ACCUEILLANTS_URL: str = os.getenv(
+    "SF_REPORT_ACCUEILLANTS_URL",
+    "https://jaccueille.lightning.force.com/lightning/r/Report/00OJv00000EHteLMAT/view",
+)
+SF_REPORT_PROSPECTS_URL: str = os.getenv(
+    "SF_REPORT_PROSPECTS_URL",
+    "https://jaccueille.lightning.force.com/lightning/r/Report/00OJv00000EHuqXMAT/view",
+)
+
 # --- Data Columns ---
 BV_CODE_COL = "bassin_de_vie"
 BV_NAME_COL = "libelle_bassin_de_vie"
+
 
 # --- UI Options ---
 NOMBRE_ADULTES_OPTIONS = [1, 2]
