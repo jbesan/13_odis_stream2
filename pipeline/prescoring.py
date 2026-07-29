@@ -42,6 +42,8 @@ def get_scores_config():
                         "mu": s.get("mu"),
                         "sigma": s.get("sigma"),
                         "quantile_level": s.get("quantile_level"),
+                        "missing_strategy": s.get("missing_strategy", "exclude"),
+                        "source_metric": s.get("source_metric"),
                     }
     else:
         logging.warning(f"App config not found at {app_config_path}")
@@ -54,9 +56,9 @@ def scale_series(series, min_b, max_b, inverted=False, col_name="series"):
     denom = max_b - min_b
     if denom == 0:
         logging.warning(
-            f"Zero variance in series scaling for '{col_name}' (min={min_b}, max={max_b}). Defaulting to 0.0."
+            f"Zero variance in series scaling for '{col_name}' (min={min_b}, max={max_b}). Defaulting to NaN."
         )
-        return pd.Series(0.0, index=series.index)
+        return pd.Series(np.nan, index=series.index)
 
     scaled = (series - min_b) / denom
     if inverted:
@@ -133,37 +135,23 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
 
         # --- Calculated Columns ---
 
-        # --- Fill NaNs for Raw Metrics (Fix N/A display) ---
-        raw_metrics_to_fill = [
-            "ter_anvita_member",
-            "ter_ctai_member",
-            "edu_maternelle_ct",
-            "edu_elementaire_ct",
-            "edu_college_ct",
-            "edu_lycee_ct",
-            "count_hopital",
-            "count_maternite",
-            "count_psy",
-            "risky_schools_count",
-            "lien_social_count",
-            "inc_asso_refug_count",
-            "bpe_creches_count",
-            "pop_chomeurs",
-            "log_priv_vacant_plus_2ans",
-            "pol_num",
-            "log_vac_struct_ratio",
-            "heb_centres_heb_cap",
-            "heb_foyers_count",
-            "heb_loc_iml_count",
-            "heb_habitant_count",
-        ]
+        # --- Config-driven Fill NaNs for Raw Metrics (missing_strategy == "zero") ---
+        scores_conf = get_scores_config()
+        raw_metrics_to_fill = set()
+        for score_id, conf in scores_conf.items():
+            if conf.get("missing_strategy") == "zero":
+                if conf.get("source_metric"):
+                    raw_metrics_to_fill.add(conf["source_metric"])
+                raw_metrics_to_fill.add(score_id)
+
         # Robust fill for RNA Category counts (inc_rna_..._count)
         rna_cols = [
             c
             for c in communes_gdf.columns
             if c.startswith("inc_rna_") and c.endswith("_count")
         ]
-        raw_metrics_to_fill.extend(rna_cols)
+        raw_metrics_to_fill.update(rna_cols)
+
         for col in raw_metrics_to_fill:
             if col in communes_gdf.columns:
                 communes_gdf[col] = communes_gdf[col].fillna(0)

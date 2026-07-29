@@ -66,6 +66,7 @@ def load_scores_config_as_df(config_path: str) -> pd.DataFrame:
                 "sigma": item.get("sigma"),
                 "baseline": item.get("baseline", False),
                 "format": item.get("display", {}).get("format", None),
+                "missing_strategy": item.get("missing_strategy", "exclude"),
             }
         )
     return pd.DataFrame(data)

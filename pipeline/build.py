@@ -539,63 +539,6 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         }
         communes_gdf.rename(columns=rename_map, inplace=True)
 
-        # Fill NaNs
-        numeric_cols = [
-            "population",
-            "log_soc_total",
-            "log_soc_inoccupes",
-            "edu_maternelle_ct",
-            "edu_elementaire_ct",
-            "edu_college_ct",
-            "edu_lycee_ct",
-            "edu_eaje_ct",
-            "edu_relais_petite_enfance_ct",
-            "edu_alsh_ct",
-            "edu_micro_creche_ct",
-            "lien_social_count",
-            "svc_incl_count",
-            "pop_active",
-            "pop_employes",
-            "pop_chomeurs",
-            "metiers_offres_diff",
-            "log_priv_vacant_plus_2ans",
-            "log_priv_total",
-            "heb_chrs_count",
-            "heb_cph_count",
-            "heb_cada_count",
-            "heb_fjt_count",
-            "heb_pension_count",
-            "heb_loc_iml_count",
-            "heb_habitant_count",
-            "count_hopital",
-            "count_maternite",
-            "count_centre_sante",
-            "count_psy",
-            "count_dialyse",
-            "count_maison_sante",
-            "count_addictologie",
-            "count_pmi",
-            "act_antenne_justice_count",
-            "act_france_services_count",
-            "act_mairie_count",
-            "act_femmes_vuln_count",
-            "gare_count",
-            "has_gare",
-            "nb_stops_bus",
-            "nb_stops_tram",
-            "nb_stops_metro",
-            "nb_stops_train",
-            "nb_stops_total",
-            "inc_siae_count",
-            "log_soc_delay",
-            "sante_apl",
-            "mob_dur_share",
-            "ter_insecurite",
-        ]
-        for col in numeric_cols:
-            if col in communes_gdf.columns:
-                communes_gdf[col] = communes_gdf[col].fillna(0)
-
         # Ensure epci_nom exists (placeholder if missing)
         if "epci_nom" not in communes_gdf.columns:
             if "epci_code" in communes_gdf.columns:

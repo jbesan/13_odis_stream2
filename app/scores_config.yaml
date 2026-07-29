@@ -16,6 +16,7 @@ scores:
   weight: 1.0
   min_bound: 0
   max_bound: 0.1
+  missing_strategy: exclude
 - id: log_soc_inoc_scaled
   category: logement
   source_metric: log_soc_inoc_ratio
@@ -34,6 +35,7 @@ scores:
   weight: 3.0
   min_bound: 0.0
   max_bound: 0.1
+  missing_strategy: exclude
 - id: log_occup_scaled
   category: logement
   source_metric: log_pp_occup
@@ -52,6 +54,7 @@ scores:
   min_bound: null
   max_bound: null
   quantile_level: 0.05
+  missing_strategy: exclude
 - id: log_loyer_moyen_appt_all_scaled
   category: logement
   source_metric: loyer_m2_moy_appt_all
@@ -70,6 +73,7 @@ scores:
   min_bound: null
   max_bound: null
   quantile_level: 0.05
+  missing_strategy: exclude
 - id: log_loyer_moyen_appt_t1_t2_scaled
   category: logement
   source_metric: loyer_m2_moy_appt_t1_t2
@@ -88,6 +92,7 @@ scores:
   min_bound: null
   max_bound: null
   quantile_level: 0.05
+  missing_strategy: exclude
 - id: log_loyer_moyen_appt_t3_p_scaled
   category: logement
   source_metric: loyer_m2_moy_appt_t3_p
@@ -106,6 +111,7 @@ scores:
   min_bound: null
   max_bound: null
   quantile_level: 0.05
+  missing_strategy: exclude
 - id: log_loyer_moyen_house_all_scaled
   category: logement
   source_metric: loyer_m2_moy_house_all
@@ -124,6 +130,7 @@ scores:
   min_bound: null
   max_bound: null
   quantile_level: 0.05
+  missing_strategy: exclude
 - id: ter_pol_scaled
   category: territoire
   source_metric: pol_num
@@ -142,6 +149,7 @@ scores:
   weight: 1.0
   min_bound: 0.0
   max_bound: 1.0
+  missing_strategy: exclude
 - id: ter_anvita_scaled
   category: territoire
   source_metric: ter_anvita_member
@@ -160,6 +168,7 @@ scores:
   weight: 3.0
   min_bound: 0.0
   max_bound: 1.0
+  missing_strategy: zero
 - id: ter_ctai_scaled
   category: territoire
   source_metric: ter_ctai_member
@@ -179,6 +188,7 @@ scores:
   weight: 3.0
   min_bound: 0.0
   max_bound: 1.0
+  missing_strategy: zero
 - id: ter_population_scaled
   category: territoire
   source_metric: population
@@ -198,6 +208,7 @@ scores:
   scaling_type: gaussian
   mu: 50000
   sigma: 25000
+  missing_strategy: exclude
 - id: form_match_adult1_scaled
   category: emploi
   source_metric: form_match_adult1
@@ -216,6 +227,7 @@ scores:
   weight: 2.0
   min_bound: 0.0
   max_bound: null
+  missing_strategy: zero
 - id: form_match_adult2_scaled
   category: emploi
   source_metric: form_match_adult2
@@ -234,6 +246,7 @@ scores:
   weight: 2.0
   min_bound: 0.0
   max_bound: null
+  missing_strategy: zero
 - id: mob_epci_scaled
   category: mobilite
   source_metric: mob_epci_scaled
@@ -251,6 +264,7 @@ scores:
   weight: 1.0
   min_bound: 0.0
   max_bound: 1.0
+  missing_strategy: zero
 - id: mob_dist_current_loc_scaled
   category: mobilite
   source_metric: dist_current_loc
@@ -268,6 +282,7 @@ scores:
   weight: 1.0
   min_bound: 0.0
   max_bound: 50000.0
+  missing_strategy: exclude
 - id: inc_asso_core_scaled
   category: inclusion
   source_metric: lien_social_density
@@ -286,6 +301,7 @@ scores:
   weight: 1.0
   min_bound: null
   max_bound: null
+  missing_strategy: zero
 - id: inc_asso_refug_scaled
   category: inclusion
   source_metric: inc_asso_refug_density
@@ -304,6 +320,7 @@ scores:
   weight: 1.0
   min_bound: null
   max_bound: null
+  missing_strategy: zero
 - id: inc_siae_density_scaled
   category: inclusion
   source_metric: inc_siae_density
@@ -323,6 +340,7 @@ scores:
   weight: 1.0
   min_bound: null
   max_bound: null
+  missing_strategy: zero
 - id: inc_asso_add_scaled
   category: inclusion
   source_metric: affinite_density
@@ -340,6 +358,7 @@ scores:
   weight: 1.0
   min_bound: 0.0
   max_bound: 0.25
+  missing_strategy: zero
 - id: inc_services_incl_scaled
   category: inclusion
   source_metric: inc_services_incl_scaled
@@ -357,6 +376,7 @@ scores:
   weight: 1.0
   min_bound: 0.0
   max_bound: 1.0
+  missing_strategy: exclude
 - id: edu_petite_enfance_scaled
   category: education
   source_metric: edu_pe_tx_couverture
@@ -376,6 +396,7 @@ scores:
   min_bound: null
   max_bound: null
   quantile_level: 0.05
+  missing_strategy: exclude
 - id: edu_maternelle_scaled
   category: education
   source_metric: edu_maternelle
@@ -393,6 +414,7 @@ scores:
   weight: 2.0
   min_bound: 0.0
   max_bound: null
+  missing_strategy: zero
 - id: edu_elementaire_scaled
   category: education
   source_metric: edu_elementaire
@@ -410,6 +432,7 @@ scores:
   weight: 2.0
   min_bound: 0.0
   max_bound: null
+  missing_strategy: zero
 - id: edu_college_scaled
   category: education
   source_metric: edu_college
@@ -427,6 +450,7 @@ scores:
   weight: 1.0
   min_bound: 0.0
   max_bound: null
+  missing_strategy: zero
 - id: edu_lycee_scaled
   category: education
   source_metric: edu_lycee
@@ -444,6 +468,7 @@ scores:
   weight: 1.0
   min_bound: 0.0
   max_bound: null
+  missing_strategy: zero
 - id: edu_classes_ferm_scaled
   category: education
   source_metric: risque_fermeture_ratio
@@ -462,6 +487,7 @@ scores:
   min_bound: null
   max_bound: null
   quantile_level: 0.05
+  missing_strategy: exclude
 - id: sante_hopital_scaled
   category: sante
   source_metric: count_hopital
@@ -479,6 +505,7 @@ scores:
   weight: 2.0
   min_bound: 0.0
   max_bound: 1.0
+  missing_strategy: zero
 - id: sante_maternite_scaled
   category: sante
   source_metric: count_maternite
@@ -496,6 +523,7 @@ scores:
   weight: 2.0
   min_bound: 0.0
   max_bound: 1.0
+  missing_strategy: zero
 - id: sante_psy_scaled
   category: sante
   source_metric: count_psy
@@ -513,6 +541,7 @@ scores:
   weight: 2.0
   min_bound: 0.0
   max_bound: 1.0
+  missing_strategy: zero
 - id: sante_dialyse_scaled
   category: sante
   source_metric: count_dialyse
@@ -530,6 +559,7 @@ scores:
   weight: 2.0
   min_bound: 0.0
   max_bound: 1.0
+  missing_strategy: zero
 - id: sante_maison_sante_scaled
   category: sante
   source_metric: count_maison_sante
@@ -547,6 +577,7 @@ scores:
   weight: 2.0
   min_bound: 0.0
   max_bound: 1.0
+  missing_strategy: zero
 - id: sante_addictologie_scaled
   category: sante
   source_metric: count_addictologie
@@ -564,6 +595,7 @@ scores:
   weight: 2.0
   min_bound: 0.0
   max_bound: 1.0
+  missing_strategy: zero
 - id: sante_pmi_scaled
   category: sante
   source_metric: count_pmi
@@ -581,6 +613,7 @@ scores:
   weight: 2.0
   min_bound: 0.0
   max_bound: 1.0
+  missing_strategy: zero
 - id: mob_gare_scaled
   category: mobilite
   source_metric: has_gare
@@ -599,6 +632,7 @@ scores:
   weight: 1.0
   min_bound: 0.0
   max_bound: 1.0
+  missing_strategy: zero
 - id: mob_trans_pub_density_scaled
   category: mobilite
   source_metric: mob_trans_pub_stop_density
@@ -618,6 +652,7 @@ scores:
   weight: 3.0
   min_bound: 0.0
   max_bound: 10.0
+  missing_strategy: zero
 - id: youth_decline_scaled
   category: education
   source_metric: youth_growth_rate
@@ -636,6 +671,7 @@ scores:
   weight: 1.0
   min_bound: -0.2
   max_bound: 0.2
+  missing_strategy: exclude
 - id: workclass_decline_scaled
   category: emploi
   source_metric: workclass_growth_rate
@@ -654,6 +690,7 @@ scores:
   weight: 3.0
   min_bound: 0.0
   max_bound: 0.1
+  missing_strategy: exclude
 - id: met_match_adult1_scaled
   category: emploi
   source_metric: met_match_adult1
@@ -673,6 +710,7 @@ scores:
   weight: 3.0
   min_bound: 0
   max_bound: 10
+  missing_strategy: zero
 - id: met_match_adult1_tension_scaled
   category: emploi
   source_metric: met_match_adult1_tension
@@ -692,6 +730,7 @@ scores:
   weight: 1.0
   min_bound: 0
   max_bound: 5
+  missing_strategy: zero
 - id: met_match_adult2_scaled
   category: emploi
   source_metric: met_match_adult2
@@ -711,6 +750,7 @@ scores:
   weight: 3.0
   min_bound: 0
   max_bound: 10
+  missing_strategy: zero
 - id: met_match_adult2_tension_scaled
   category: emploi
   source_metric: met_match_adult2_tension
@@ -730,6 +770,7 @@ scores:
   weight: 1.0
   min_bound: 0
   max_bound: 5
+  missing_strategy: zero
 - id: met_siae_match_adult1_scaled
   category: emploi
   source_metric: met_siae_match_adult1
@@ -747,6 +788,7 @@ scores:
   weight: 3.0
   min_bound: 0
   max_bound: 5
+  missing_strategy: zero
 - id: met_siae_match_adult2_scaled
   category: emploi
   source_metric: met_siae_match_adult2
@@ -764,6 +806,7 @@ scores:
   weight: 3.0
   min_bound: 0
   max_bound: 5
+  missing_strategy: zero
 - id: heb_loc_iml_scaled
   category: logement
   source_metric: heb_loc_iml_count
@@ -782,6 +825,7 @@ scores:
   weight: 1.0
   min_bound: 0.0
   max_bound: 0.1
+  missing_strategy: zero
 - id: heb_chrs_scaled
   category: logement
   source_metric: heb_chrs_count
@@ -799,6 +843,7 @@ scores:
   weight: 2.0
   min_bound: 0.0
   max_bound: 1.0
+  missing_strategy: zero
 - id: heb_cph_scaled
   category: logement
   source_metric: heb_cph_count
@@ -816,6 +861,7 @@ scores:
   weight: 2.0
   min_bound: 0.0
   max_bound: 1.0
+  missing_strategy: zero
 - id: heb_cada_scaled
   category: logement
   source_metric: heb_cada_count
@@ -833,6 +879,7 @@ scores:
   weight: 2.0
   min_bound: 0.0
   max_bound: 1.0
+  missing_strategy: zero
 - id: heb_fjt_scaled
   category: logement
   source_metric: heb_fjt_count
@@ -850,6 +897,7 @@ scores:
   weight: 2.0
   min_bound: 0.0
   max_bound: 1.0
+  missing_strategy: zero
 - id: heb_pension_scaled
   category: logement
   source_metric: heb_pension_count
@@ -867,6 +915,7 @@ scores:
   weight: 2.0
   min_bound: 0.0
   max_bound: 1.0
+  missing_strategy: zero
 - id: heb_asso_habitant_scaled
   category: logement
   source_metric: heb_habitant_count
@@ -884,6 +933,7 @@ scores:
   weight: 2.0
   min_bound: 0.0
   max_bound: 0.1
+  missing_strategy: zero
 - id: heb_jaccueille_accueillants_score
   category: logement
   source_metric: heb_accueillants_count
@@ -901,6 +951,7 @@ scores:
   weight: 3.0
   min_bound: 0.0
   max_bound: 1.0
+  missing_strategy: zero
 - id: heb_jaccueille_prospects_score
   category: logement
   source_metric: prospects_count
@@ -918,6 +969,7 @@ scores:
   weight: 2.0
   min_bound: 0.0
   max_bound: 1.0
+  missing_strategy: zero
 - id: ter_strategic_locations_scaled
   category: territoire
   source_metric: ter_strategic_locations_scaled
@@ -935,6 +987,7 @@ scores:
   weight: 3.0
   min_bound: 0.0
   max_bound: 1.0
+  missing_strategy: zero
 - id: log_soc_delay_scaled
   category: logement
   source_metric: log_soc_delay
@@ -953,6 +1006,7 @@ scores:
   weight: 5.0
   min_bound: 6.0
   max_bound: 24.0
+  missing_strategy: exclude
 - id: sante_rdv_delay_scaled
   category: sante
   source_metric: sante_apl
@@ -969,6 +1023,7 @@ scores:
     tooltip: Indicateur d'Accessibilité Potentielle Localisée (Source DREES)
     format: '{:,.0f}'
   weight: 2.0
+  missing_strategy: exclude
 - id: mob_dur_share_scaled
   category: mobilite
   source_metric: mob_dur_share
@@ -987,6 +1042,7 @@ scores:
       / RP Insee)
     format: '{:.1f}'
   weight: 3.0
+  missing_strategy: exclude
 - id: ter_insecurite_scaled
   category: territoire
   source_metric: ter_insecurite
@@ -1005,3 +1061,4 @@ scores:
   weight: 1.0
   min_bound: 0.0
   max_bound: 100.0
+  missing_strategy: exclude

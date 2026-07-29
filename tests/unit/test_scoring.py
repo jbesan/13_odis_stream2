@@ -1393,3 +1393,54 @@ class TestP102ScoringReconciliation:
             assert abs(commune.global_score - expected_global) < 1e-6, (
                 f"Global score mismatch for {commune.name}: got {commune.global_score}, expected {expected_global}"
             )
+
+
+@pytest.mark.unit
+class TestMissingnessHandling:
+    def test_scale_series_preserves_nan(self):
+        """Verify scale_series preserves NaN values and clips valid values."""
+        from pipeline.prescoring import scale_series
+        import pandas as pd
+        import numpy as np
+
+        s = pd.Series([10.0, np.nan, 20.0, 30.0])
+        scaled = scale_series(s, min_b=10.0, max_b=30.0, inverted=False)
+        assert pd.isna(scaled[1])
+        assert scaled[0] == 0.0
+        assert scaled[2] == 0.5
+        assert scaled[3] == 1.0
+
+        # Inverted scaling should also preserve NaN
+        scaled_inv = scale_series(s, min_b=10.0, max_b=30.0, inverted=True)
+        assert pd.isna(scaled_inv[1])
+        assert scaled_inv[0] == 1.0
+        assert scaled_inv[2] == 0.5
+        assert scaled_inv[3] == 0.0
+
+    def test_category_scoring_excludes_nan(self, live_scores_cat, sample_data, sample_incl_index, global_stats):
+        """Verify that NaN criterion scores are excluded from category weighted means without biasing to 0 or 1."""
+        df = sample_data.copy()
+        # Set ter_insecurite_scaled to NaN for Bordeaux (33063)
+        df.loc["33063", "ter_insecurite_scaled"] = None
+
+        config = SearchCriterias(
+            loc_type="departement",
+            loc_code="33",
+            commune_actuelle="33063",
+        )
+
+        engine = scoring.ScoringEngine(
+            df_all_communes=df,
+            df_bv_geo=gpd.GeoDataFrame(),
+            scores_cat=live_scores_cat,
+            incl_index=sample_incl_index,
+            associations_data=pd.DataFrame(columns=["codgeo", "id_waldec", "count"]),
+            formations_data=pd.DataFrame(columns=["codgeo", "formation_code"]),
+            codformations_index=pd.DataFrame(columns=["label"]),
+            global_stats=global_stats,
+        )
+
+        df_scored = engine._compute_category_scores(df, config)
+        # Bordeaux's ter_insecurite_scaled should be NaN
+        assert pd.isna(df_scored.loc["33063", "ter_insecurite_scaled"])
+

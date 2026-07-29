@@ -314,24 +314,43 @@ class ScoringEngine:
                     logger.warning(
                         f"⚠️ [SCORING] Active criterion '{sid}' (or '{sid_bdv}') is MISSING from the input data. Score will be defaulted to 0."
                     )
-                # 4. Combine using bdv_factor (Multi-mode: Bonus or Malus)
+                # 4. Read config-driven missing_strategy
+                missing_strat = s_row.get("missing_strategy", "exclude")
+                if missing_strat == "zero":
+                    if val_commune is not None:
+                        val_commune = val_commune.fillna(0.0)
+                    if val_bdv is not None:
+                        val_bdv = val_bdv.fillna(0.0)
+
+                # Combine using bdv_factor (Multi-mode: Bonus or Malus)
                 if val_commune is not None and val_bdv is not None:
-                    s_c = val_commune.fillna(0)
-                    s_b = val_bdv.fillna(0)
+                    s_c = val_commune.fillna(0.0)
+                    s_b = val_bdv.fillna(0.0)
                     if bdv_f > 0.0:
                         # Formula: Sc + (1 - Sc) * (Sb * factor)
                         # Bassin de Vie opportunities act as a bonus to local ones
-                        val = s_c + (1.0 - s_c) * (s_b * bdv_f)
+                        combined = s_c + (1.0 - s_c) * (s_b * bdv_f)
+                        val = pd.Series(
+                            np.where(val_commune.notna() | val_bdv.notna(), combined, np.nan),
+                            index=df.index,
+                        )
                     elif bdv_f < 0.0:
                         # Proportional Malus: Reduces score based on "lack of goodness" in BdV
                         # Formula: Sc - Sc * (1.0 - Sb) * abs(factor)
-                        val = s_c - s_c * (1.0 - s_b) * abs(bdv_f)
+                        combined = s_c - s_c * (1.0 - s_b) * abs(bdv_f)
+                        val = pd.Series(
+                            np.where(val_commune.notna(), combined, np.nan),
+                            index=df.index,
+                        )
                     else:
-                        val = s_c
+                        val = val_commune
                 elif val_commune is not None:
-                    val = val_commune.fillna(0)
+                    val = val_commune
                 elif val_bdv is not None:
-                    val = val_bdv.fillna(0)
+                    val = pd.Series(
+                        np.where(val_bdv.notna(), val_bdv * max(bdv_f, 0.0), np.nan),
+                        index=df.index,
+                    )
                 else:
                     continue  # Skip if no data available for this criterion
 
@@ -368,12 +387,12 @@ class ScoringEngine:
                     is_current = df.index == str(current_codgeo)
                     # Set weight to 0 so it's excluded from the denominator
                     valid_weight = cast(Any, np.where(is_current, 0.0, valid_weight))
-                    # Set value to NaN so it doesn't appear in UI details as 100%
-                    val = np.where(is_current, np.nan, val)
+                # Ensure float dtype
+                val = pd.Series(val, index=df.index, dtype=float)
 
                 # Replace NaN with 0 for score addition (since valid_weight handles the skip)
                 scores_val.append(
-                    np.nan_to_num(val, nan=0.0) * valid_weight
+                    np.nan_to_num(val.to_numpy(), nan=0.0) * valid_weight
                 )  # Use valid_weight for per-row weighting
                 weights_val.append(valid_weight)
 
@@ -382,14 +401,15 @@ class ScoringEngine:
                 df[sid] = val
 
             if weights_val:
-                denom = sum(weights_val)
+                scores_arr = np.nan_to_num(sum(scores_val), nan=0.0).astype(float)
+                denom_arr = np.array(sum(weights_val), dtype=float)
                 raw_scores = np.divide(
-                    sum(scores_val),
-                    denom,
-                    out=np.zeros_like(denom, dtype=float),
-                    where=denom > 0,
+                    scores_arr,
+                    denom_arr,
+                    out=np.zeros_like(denom_arr, dtype=float),
+                    where=denom_arr > 0,
                 )
-                s = pd.Series(raw_scores, index=df.index)
+                s = pd.Series(np.where(denom_arr > 0, raw_scores, np.nan), index=df.index, dtype=float)
 
                 # Absolute Category Score (0.0 to 1.0): raw weighted mean of active criteria
                 df[f"{category}_cat_score"] = s
