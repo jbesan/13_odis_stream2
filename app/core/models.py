@@ -9,20 +9,69 @@ from pydantic import BaseModel, Field, ConfigDict, model_validator, field_valida
 logger = logging.getLogger(__name__)
 
 
+ScoreCategory = Literal[
+    "education", "emploi", "inclusion", "logement", "territoire", "sante", "mobilite"
+]
+ScoreComputation = Literal["precomputed", "live", "calculated"]
+ScoreMissingStrategy = Literal["exclude", "zero"]
+ScoreScalingType = Literal["linear", "gaussian"]
+
+
+class ScoreDisplayConfigSchema(BaseModel):
+    name: str
+    strong_point_text: Optional[str] = None
+    high_value_adjective: Optional[str] = None
+    show: bool = True
+    unit: Optional[str] = None
+    display_factor: Optional[Union[int, float]] = 1
+    tooltip: Optional[str] = None
+    format: Optional[str] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ScoreConfigItemSchema(BaseModel):
+    id: str
+    category: ScoreCategory
+    source_metric: Optional[str] = None
+    bdv_factor: float = 0.0
+    computation: ScoreComputation
+    display: Optional[ScoreDisplayConfigSchema] = None
+    weight: float = 1.0
+    min_bound: Optional[float] = None
+    max_bound: Optional[float] = None
+    quantile_level: Optional[float] = Field(None, ge=0.0, le=0.5)
+    missing_strategy: ScoreMissingStrategy = "exclude"
+    baseline: bool = False
+    scaling_type: Optional[ScoreScalingType] = None
+    mu: Optional[float] = None
+    sigma: Optional[float] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ScoresConfigFileSchema(BaseModel):
+    scores: List[ScoreConfigItemSchema]
+
+    model_config = ConfigDict(extra="forbid")
+
+
+def validate_scores_config(config_data: Dict[str, Any]) -> ScoresConfigFileSchema:
+    """Validates the raw dictionary loaded from scores_config.yaml against the Pydantic schema."""
+    return ScoresConfigFileSchema.model_validate(config_data)
+
+
 @functools.lru_cache(maxsize=1)
 def get_valid_score_ids() -> Set[str]:
-    """Loads and caches valid score IDs defined in scores_config.yaml."""
+    """Loads, validates, and caches valid score IDs defined in scores_config.yaml."""
     config_path = Path(__file__).parent.parent / "scores_config.yaml"
     if not config_path.exists():
         return set()
-    try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            cfg_data = yaml.safe_load(f)
-        scores = cfg_data.get("scores", []) if isinstance(cfg_data, dict) else []
-        return {item.get("id") for item in scores if isinstance(item, dict) and item.get("id")}
-    except Exception as e:
-        logger.warning(f"Could not load valid score IDs from scores_config.yaml: {e}")
-        return set()
+    with open(config_path, "r", encoding="utf-8") as f:
+        cfg_data = yaml.safe_load(f)
+    validated_cfg = validate_scores_config(cfg_data)
+    return {item.id for item in validated_cfg.scores}
+
 
 
 class CriteriaItem(BaseModel):

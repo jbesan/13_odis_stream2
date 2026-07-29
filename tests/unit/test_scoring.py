@@ -419,25 +419,25 @@ class TestScoringLogic:
 class TestConditionalScoring:
     def test_compute_weighted_score_conditional_exclusion(self, live_scores_cat):
         """
-        Tests that 'education' and 'sante' categories are excluded from the weighted score
-        calculation when specific conditions are met (no kids, no health needs).
+        Tests that 'education' is excluded when nb_enfants == 0, while baseline 'sante'
+        (sante_rdv_delay_scaled) is universally included per P1-07 audit fix.
         """
         # Arrange
         df = pd.DataFrame(
             {
                 "emploi_cat_score": [1.0],
-                "education_cat_score": [0.5],  # Should be ignored
-                "sante_cat_score": [0.5],  # Should be ignored
+                "education_cat_score": [0.5],  # Should be ignored (nb_enfants == 0)
+                "sante_cat_score": [0.5],      # Included as universal baseline
                 "logement_cat_score": [1.0],
             }
         )
 
-        # Config with 0 kids and no health needs
+        # Config with 0 kids and no explicit health needs
         config = SearchCriterias(
             poids_emploi=1.0,
             poids_logement=1.0,
-            poids_education=1.0,  # Weight is present, but should be ignored
-            poids_sante=1.0,  # Weight is present, but should be ignored
+            poids_education=1.0,  # Weight is present, but education is ignored (nb_enfants == 0)
+            poids_sante=1.0,      # Weight is present, health baseline is evaluated
             poids_inclusion=0.0,
             poids_mobilite=0.0,
             commune_actuelle="33063",
@@ -450,20 +450,18 @@ class TestConditionalScoring:
             codes_metiers=[],
             codes_formations=[],
             classe_enfants=[],
-            besoin_sante=[],  # Condition to ignore sante
+            besoin_sante=[],  # Empty health needs, but baseline sante_rdv_delay_scaled applies
             inc_services_selection=[],
             inc_asso_add_selection=[],
             criteria_weights={},
         )
 
         # Act
-        # Expected behavior (after fix): (1.0*100 + 1.0*100) / 200 = 1.0
-        # Act
-        # Expected behavior (after fix): (1.0*100 + 1.0*100) / 200 = 1.0
+        # Expected behavior: (1.0*1.0 [emploi] + 1.0*1.0 [logement] + 0.5*1.0 [sante]) / (1.0 + 1.0 + 1.0) = 0.8333333
         engine = scoring.ScoringEngine(
             df_all_communes=pd.DataFrame(),
             df_bv_geo=gpd.GeoDataFrame(),
-            scores_cat=live_scores_cat,  # Not needed for weighted score
+            scores_cat=live_scores_cat,
             associations_data=pd.DataFrame(),
             formations_data=pd.DataFrame(),
             incl_index=pd.DataFrame(),
@@ -471,8 +469,8 @@ class TestConditionalScoring:
         weighted_score = engine._compute_weighted_score(df, config)
 
         # Assert
-        assert weighted_score.iloc[0] == 1.0, (
-            f"Expected 1.0, got {weighted_score.iloc[0]}"
+        assert weighted_score.iloc[0] == pytest.approx(0.8333333333333334), (
+            f"Expected ~0.8333, got {weighted_score.iloc[0]}"
         )
 
     def test_compute_weighted_score_inclusion_when_relevant(self, live_scores_cat):

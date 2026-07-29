@@ -677,7 +677,7 @@ scores:
   source_metric: workclass_growth_rate
   bdv_factor: 0.0
   baseline: true
-  computation: precomputedde
+  computation: precomputed
   display:
     name: Dynamisme Population Active
     strong_point_text: Décroissance de la population active

@@ -278,8 +278,6 @@ class ScoringEngine:
             # Skip if category totally irrelevant
             if category == "education" and getattr(config, "nb_enfants", 1) == 0:
                 continue
-            if category == "sante" and not getattr(config, "besoin_sante", []):
-                continue
 
             # Find columns for this category that are active
             cat_scores = self.scores_cat[self.scores_cat.cat == category]
@@ -430,8 +428,6 @@ class ScoringEngine:
         for cat, weight in weights.items():
             # Robust Check: Force exclusion if conditions met, even if column exists
             if cat == "education" and config.nb_enfants == 0:
-                continue
-            if cat == "sante" and not getattr(config, "besoin_sante", []):
                 continue
 
             # Skip if category score not computed (e.g. no children)

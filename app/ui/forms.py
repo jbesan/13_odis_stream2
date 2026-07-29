@@ -993,6 +993,9 @@ def create_search_criterias_from_inputs() -> SearchCriterias:
     )
     target_pop = mapping["mu"]
     target_sigma = mapping["sigma"]
+    # Hébergement & Fréquence
+    heb_sel = st.session_state.get("ui_hebergement_cible", [])
+    freq = st.session_state.get("ui_freq_retour", "Pas d'attache particulière")
 
     return SearchCriterias(
         weight_profile=profile,

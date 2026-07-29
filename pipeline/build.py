@@ -100,41 +100,35 @@ def consolidate_plm_communes(df: pd.DataFrame) -> pd.DataFrame:
             logging.warning(f"Parent code {parent} not found in communes data.")
             continue
 
-        family_mask = df["codgeo"].isin([parent] + children)
+        children_mask = df["codgeo"].isin(children)
+        parent_mask = df["codgeo"] == parent
 
-        # 1. Sum absolute counts
+        # 1. Sum absolute counts over child arrondissements (or fallback to parent if children sum is 0)
         for col in cols_to_sum:
             if col in df.columns:
-                df.loc[df["codgeo"] == parent, col] = df.loc[family_mask, col].sum()
+                child_sum = df.loc[children_mask, col].sum()
+                if child_sum > 0:
+                    df.loc[parent_mask, col] = child_sum
 
         # 2. Population-weighted averages for rates using child arrondissements
         for col in cols_to_avg:
             if col in df.columns:
-                children_mask = df["codgeo"].isin(children)
-                # Filter for valid non-null, non-zero child metric observations
-                valid_children_mask = children_mask & df[col].notna() & (df[col] > 0)
+                valid_children_mask = children_mask & df[col].notna()
                 valid_pop = df.loc[valid_children_mask, "population"].sum()
                 if valid_pop > 0:
                     weighted_sum = (
                         df.loc[valid_children_mask, col] * df.loc[valid_children_mask, "population"]
                     ).sum()
-                    df.loc[df["codgeo"] == parent, col] = weighted_sum / valid_pop
-                else:
-                    # Fallback to simple average of non-null children values
-                    valid_children = df.loc[children_mask & df[col].notna(), col]
-                    if not valid_children.empty:
-                        df.loc[df["codgeo"] == parent, col] = valid_children.mean()
-                    else:
-                        # Use parent value if no children have non-zero values
-                        pass
+                    df.loc[parent_mask, col] = weighted_sum / valid_pop
+                # Else: preserve pre-existing parent value (e.g. DREES sante_apl for 75056)
 
         # 3. Special logical flags
         # PLM parents (Paris, Lyon, Marseille) always have major railway stations (gares)
         if "has_gare" in df.columns:
-            df.loc[df["codgeo"] == parent, "has_gare"] = 1.0
+            df.loc[parent_mask, "has_gare"] = 1.0
         if "gare_count" in df.columns:
-            parent_gare_count = df.loc[df["codgeo"] == parent, "gare_count"].values[0]
-            df.loc[df["codgeo"] == parent, "gare_count"] = max(parent_gare_count, 1.0)
+            parent_gare_count = df.loc[parent_mask, "gare_count"].values[0]
+            df.loc[parent_mask, "gare_count"] = max(parent_gare_count, 1.0)
 
     # 4. Filter out child arrondissements
     all_children = []
@@ -552,7 +546,7 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         # Rounding
         for col in ["pop_active", "pop_employes", "pop_chomeurs"]:
             if col in communes_gdf.columns:
-                communes_gdf[col] = communes_gdf[col].round(0).astype(int)
+                communes_gdf[col] = communes_gdf[col].fillna(0).round(0).astype(int)
 
         # Centroids & Geometry
         # CRITICAL: We project the STORAGE to EPSG:2154 (Lambert-93) for performance and consistency.

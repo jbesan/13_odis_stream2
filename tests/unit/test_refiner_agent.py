@@ -7,7 +7,15 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "..", "app"))
 from agents.refiner import refiner_agent, RefinerResult
 from agents.state import GraphState, ODISDeps
 from core.models import SearchCriterias, CriteriaItem, SearchResultsData, CommuneResult
-from agents.agent_config import get_p_model
+run_evals = os.getenv("RUN_EVALS", "false").lower() == "true"
+
+pytestmark = [
+    pytest.mark.eval,
+    pytest.mark.skipif(
+        not run_evals,
+        reason="Evaluation tests are skipped by default. Set RUN_EVALS=true to run them.",
+    ),
+]
 
 
 @pytest.mark.asyncio

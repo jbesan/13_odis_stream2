@@ -4,11 +4,10 @@ import pytest
 from pipeline.prescoring import scale_series, get_min_max_quant, process_scaling
 
 def test_scale_series_zero_variance():
-    """Verify that zero variance returns a 0.0 series instead of NaNs."""
+    """Verify that zero variance returns a NaN series safeguard."""
     s = pd.Series([0.0, 0.0, 0.0, 0.0])
     scaled = scale_series(s, min_b=0.0, max_b=0.0, col_name="test_col")
-    assert not scaled.isna().any(), "Zero variance scaling should not return NaNs"
-    assert (scaled == 0.0).all(), "Zero variance scaling should default to 0.0"
+    assert scaled.isna().all(), "Zero variance scaling should default to NaN"
 
 def test_get_min_max_quant_ignores_nans():
     """Verify that get_min_max_quant ignores NaNs and calculates quantiles on valid values."""

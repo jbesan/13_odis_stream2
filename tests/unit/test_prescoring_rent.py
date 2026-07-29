@@ -51,3 +51,22 @@ def test_quantile_level_propagation_in_scores_config():
     # Check that scores_config contains quantile_level key for configured criteria
     for score_id, conf in config.items():
         assert "quantile_level" in conf, f"quantile_level key must be present in score config for {score_id}"
+
+
+def test_get_min_max_quant_safeguards_zero_variance():
+    """Test that get_min_max_quant correctly uses quantile q and falls back to observed min/max if q yields min==max."""
+    from pipeline.prescoring import get_min_max_quant
+
+    # Case 1: Standard distribution
+    s1 = pd.Series(np.linspace(0, 100, 101), name="s1")
+    q_min, q_max = get_min_max_quant(s1, q=0.05)
+    assert q_min == pytest.approx(5.0)
+    assert q_max == pytest.approx(95.0)
+
+    # Case 2: Zero-inflated distribution (97 zeros out of 100) -> q=0.05 gives q0.05=0, q0.95=0 -> min==max
+    s2 = pd.Series([0.0] * 97 + [10.0, 20.0, 30.0], name="s2")
+    q_min2, q_max2 = get_min_max_quant(s2, q=0.05)
+    # Must fallback to observed min/max (0.0, 30.0) instead of collapsing to (0.0, 0.0)
+    assert q_min2 == 0.0
+    assert q_max2 == 30.0
+

@@ -66,11 +66,35 @@ def scale_series(series, min_b, max_b, inverted=False, col_name="series"):
     return scaled.clip(0, 1)
 
 
-def get_min_max_quant(series, q=0.01):
+def get_min_max_quant(series: pd.Series, q: float = 0.01) -> tuple[float, float]:
     valid_series = series.dropna()
     if valid_series.empty:
         return 0.0, 1.0
-    return float(valid_series.quantile(q)), float(valid_series.quantile(1 - q))
+
+    q_min = float(valid_series.quantile(q))
+    q_max = float(valid_series.quantile(1.0 - q))
+
+    if q_max > q_min:
+        return q_min, q_max
+
+    # Safeguard: if quantile trimming collapses bounds (e.g., zero-inflated distributions),
+    # fallback to observed min/max of valid data.
+    obs_min = float(valid_series.min())
+    obs_max = float(valid_series.max())
+
+    col_id = getattr(series, "name", "series")
+    if obs_max > obs_min:
+        logging.warning(
+            f"Quantile level q={q} for column '{col_id}' yielded zero-variance bounds ({q_min}, {q_max}). "
+            f"Falling back to full observed bounds ({obs_min}, {obs_max})."
+        )
+        return obs_min, obs_max
+
+    # If even observed data has zero variance (constant series), return safe min, min+1 fallback
+    logging.warning(
+        f"Column '{col_id}' has constant observed values ({obs_min})."
+    )
+    return obs_min, obs_min + 1.0 if obs_min != 0.0 else 1.0
 
 
 def process_scaling(df, col_name, output_col, inverted=False):
@@ -131,7 +155,8 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             # Fallback
             communes_gdf = gpd.GeoDataFrame(communes_df, geometry="geometry")
 
-        logger.log_step("apply_prescoring_load", "LOADED", {"rows": len(communes_gdf)})
+        if "population" in communes_gdf.columns:
+            communes_gdf["population"] = pd.to_numeric(communes_gdf["population"], errors="coerce").fillna(0).astype("float64")
 
         # --- Calculated Columns ---
 
@@ -803,6 +828,8 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
                 cols_to_drop_bv.append(f"{col}_x")
             if f"{col}_y" in bv_gdf.columns:
                 cols_to_drop_bv.append(f"{col}_y")
+        if cols_to_drop_bv:
+            bv_gdf.drop(columns=list(set(cols_to_drop_bv)), errors="ignore", inplace=True)
 
         if "population_bv" in bv_gdf.columns and "population" not in bv_gdf.columns:
             bv_gdf["population"] = bv_gdf["population_bv"]
