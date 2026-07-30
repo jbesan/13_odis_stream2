@@ -264,7 +264,8 @@ class ScoringEngine:
     def _compute_category_scores(
         self, df: pd.DataFrame, config: SearchCriterias
     ) -> pd.DataFrame:
-        # Operating in-place on the provided DataFrame
+        df = df.copy()
+
 
         # Use cached active criteria if available
         active = (
@@ -1567,7 +1568,7 @@ class ScoringEngine:
             loc_type=loc_type,
             loc_code=loc_code,
             config=config,
-        )
+        ).copy()
 
         # Early conservative pruning
         communes_to_score = self._prune_irrelevant_metrics(
@@ -1590,7 +1591,7 @@ class ScoringEngine:
         c_code_str = str(c_code) if c_code is not None else None
         if c_code_str and c_code_str in self.df_all_communes.index and c_code_str not in results.index:
             c_df = self._prune_irrelevant_metrics(
-                self.df_all_communes.loc[[c_code_str]], config, aggressive=False
+                self.df_all_communes.loc[[c_code_str]].copy(), config, aggressive=False
             )
             extra_dfs.append(self._compute_scores(c_df, config))
 
@@ -1601,7 +1602,7 @@ class ScoringEngine:
             and p_code_str not in results.index
         ):
             p_df = self._prune_irrelevant_metrics(
-                self.df_all_communes.loc[[p_code_str]], config, aggressive=False
+                self.df_all_communes.loc[[p_code_str]].copy(), config, aggressive=False
             )
             extra_dfs.append(self._compute_scores(p_df, config))
 

@@ -62,6 +62,8 @@ steps:
 images:
   - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/${_IMAGE}"
 
+logsBucket: "gs://odis-stream2-eu_cloudbuild"
+
 # Keep build logs in a user-owned bucket in the regional Cloud Build location.
 options:
   defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET
@@ -72,4 +74,4 @@ options:
 #   --config=cloudbuild.yaml \
 #   --region=europe-west1 \
 #   --gcs-source-staging-dir=gs://odis-stream2-eu_cloudbuild/source \
-#   --default-buckets-behavior=regional-user-owned-bucket
+#   --gcs-log-dir=gs://odis-stream2-eu_cloudbuild/logs

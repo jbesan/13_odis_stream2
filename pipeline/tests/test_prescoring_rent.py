@@ -69,4 +69,3 @@ def test_get_min_max_quant_safeguards_zero_variance():
     # Must fallback to observed min/max (0.0, 30.0) instead of collapsing to (0.0, 0.0)
     assert q_min2 == 0.0
     assert q_max2 == 30.0
-

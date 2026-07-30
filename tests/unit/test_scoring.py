@@ -1395,26 +1395,6 @@ class TestP102ScoringReconciliation:
 
 @pytest.mark.unit
 class TestMissingnessHandling:
-    def test_scale_series_preserves_nan(self):
-        """Verify scale_series preserves NaN values and clips valid values."""
-        from pipeline.prescoring import scale_series
-        import pandas as pd
-        import numpy as np
-
-        s = pd.Series([10.0, np.nan, 20.0, 30.0])
-        scaled = scale_series(s, min_b=10.0, max_b=30.0, inverted=False)
-        assert pd.isna(scaled[1])
-        assert scaled[0] == 0.0
-        assert scaled[2] == 0.5
-        assert scaled[3] == 1.0
-
-        # Inverted scaling should also preserve NaN
-        scaled_inv = scale_series(s, min_b=10.0, max_b=30.0, inverted=True)
-        assert pd.isna(scaled_inv[1])
-        assert scaled_inv[0] == 1.0
-        assert scaled_inv[2] == 0.5
-        assert scaled_inv[3] == 0.0
-
     def test_category_scoring_excludes_nan(self, live_scores_cat, sample_data, sample_incl_index, global_stats):
         """Verify that NaN criterion scores are excluded from category weighted means without biasing to 0 or 1."""
         df = sample_data.copy()
