@@ -16,6 +16,11 @@ The retired direct-download implementations are preserved in
 `ingest_manual_fallbacks.py`, a non-imported source-level snapshot of the
 pre-cleanup pipeline at commit `3104b64`.
 
+The archived `housing_occupation` cleaner reads the direct INSEE/Data.gouv
+CSV/ZIP export. The active equivalent reads Odace
+`fact_occupation_logement` and validates its versioned source contract before
+writing a candidate artifact.
+
 | Active source | Odace table | Archived direct-download cleaner |
 | --- | --- | --- |
 | communes | `ref_commune_geo` | `clean_communes` |
@@ -23,6 +28,7 @@ pre-cleanup pipeline at commit `3104b64`.
 | population_active | `fact_population_active` | `clean_population_active` |
 | logement_vacant | `fact_logement_vacant` | `clean_lovac` |
 | logement_social | `fact_logement_social_rpls` | `clean_rpls` |
+| housing_occupation | `fact_occupation_logement` | `clean_housing_occupation` |
 | caf | `fact_couverture_petite_enfance` | `clean_caf` |
 | associations | `dim_association` | `clean_associations` |
 | bpe | `dim_equipement_territoire` | `clean_bpe` |

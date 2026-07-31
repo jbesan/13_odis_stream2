@@ -1,4 +1,5 @@
 import json
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -73,3 +74,12 @@ def test_deploy_rejects_a_candidate_manifest_for_another_run(tmp_path, monkeypat
 
     with pytest.raises(PipelineRunError, match="does not belong"):
         etl._assert_deployable_candidate(run.output_dir, run)
+
+
+def test_deploy_flag_is_only_valid_for_the_full_pipeline(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["etl.py", "--step", "build", "--deploy"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        etl.main()
+
+    assert exc_info.value.code == 2

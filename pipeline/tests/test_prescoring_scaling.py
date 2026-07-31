@@ -5,6 +5,7 @@ from pipeline.prescoring import (
     apply_configured_raw_missingness,
     apply_configured_score_missingness,
     get_min_max_quant,
+    get_scores_config,
     process_scaling,
     safe_ratio,
     scale_series,
@@ -88,6 +89,13 @@ def test_process_scaling_sparse_metric_with_nans():
     assert df["edu_petite_enfance_scaled"].isna().sum() == 98
     assert df["edu_petite_enfance_scaled"].iloc[-1] == 1.0
     assert df["edu_petite_enfance_scaled"].iloc[-2] == 0.0
+
+
+def test_jaccueille_scores_are_calculated_live_from_published_salesforce_data():
+    scores_config = get_scores_config()
+
+    assert scores_config["heb_jaccueille_accueillants_score"]["computation"] == "live"
+    assert scores_config["heb_jaccueille_prospects_score"]["computation"] == "live"
 
 
 def test_scale_series_preserves_nan():

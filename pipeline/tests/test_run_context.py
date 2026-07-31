@@ -25,6 +25,15 @@ def test_run_record_is_isolated_and_requires_a_passed_quality_gate(
     assert run.assert_deployable()["state"] == "PASSED"
 
 
+def test_run_with_missing_quality_gate_is_not_deployable(tmp_path, monkeypatch):
+    monkeypatch.setattr("pipeline.run_context.RUNS_DIR", tmp_path / "runs")
+    run = PipelineRun.create("run-without-quality-gate")
+    run.update_state("PASSED", quality_gate=None)
+
+    with pytest.raises(PipelineRunError, match="passed quality gate"):
+        run.assert_deployable()
+
+
 def test_bind_run_paths_isolates_clean_and_output_artifacts(tmp_path, monkeypatch):
     monkeypatch.setattr("pipeline.run_context.RUNS_DIR", tmp_path / "runs")
     run = PipelineRun.create("run-candidate")

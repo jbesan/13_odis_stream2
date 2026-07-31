@@ -486,7 +486,7 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         merge_clean("rna_inclusion_agg")
 
         # Merge SIAE Structures Count (New F-39)
-        siae_path = OUTPUT_DIR / "odis_inclusion_structures.parquet"
+        siae_path = CLEAN_DIR / "structures_inclusion.parquet"
         if siae_path.exists():
             siae_df = pd.read_parquet(siae_path, engine="fastparquet")
             siae_agg = (
@@ -516,14 +516,17 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         else:
             communes_gdf["lien_social_count"] = np.nan
 
-        # Merge Odace Commune SK
-        merge_clean("odace_communes_sk", ["commune_sk"])
-
         # Merge Odace Rent Data
-        # We pivot the ODACE rent data by housing type and join it using commune_sk
+        # The candidate communes artifact carries commune_sk from Odace
+        # dim_commune. Do not read a separately generated shared mapping here:
+        # that would break run isolation and could mix runs.
         try:
             rent_path = CLEAN_DIR / "odace_loyer_annonce.parquet"
             profil_path = CLEAN_DIR / "odace_logement_profil.parquet"
+            if "commune_sk" not in communes_gdf.columns:
+                raise PipelineRunError(
+                    "Candidate communes artifact is missing the Odace commune_sk key"
+                )
             if rent_path.exists() and profil_path.exists():
                 df_rent = pd.read_parquet(rent_path, engine="fastparquet")
                 df_profil = pd.read_parquet(profil_path, engine="fastparquet")
@@ -589,14 +592,17 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
                     # )
                     # logging.info(f"DEBUG: communes_gdf cols after merge: {[c for c in communes_gdf.columns if 'loyer' in c]}")
             else:
-                logging.warning("Odace Rent clean files missing.")
+                raise PipelineRunError(
+                    "Odace rent clean files are missing from the candidate"
+                )
         except Exception as e:
             logging.error(f"Failed to merge Odace Rent: {e}")
+            if isinstance(e, PipelineRunError):
+                raise
+            raise PipelineRunError("Required Odace rent merge failed") from e
 
-        # Merge Loyers (Appartements - Legacy source)
-        merge_clean("loyers", ["loyer_app_m2"])
-
-        # Check if Odace rent metrics are valid, otherwise fall back to legacy loyer_app_m2
+        # Odace rent is the active source. A missing/invalid join must fail the
+        # candidate instead of silently reviving the archived loyers dataset.
         rent_col = "loyer_m2_moy_appt_all"
         valid_odace = (
             communes_gdf[rent_col].notna() & (communes_gdf[rent_col] > 0)
@@ -604,21 +610,10 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
             else pd.Series(False, index=communes_gdf.index)
         )
         if valid_odace.sum() < 100:
-            msg = (
-                f"CRITICAL ERROR: Odace rent primary data is missing or invalid "
-                f"({valid_odace.sum()} valid rows). Triggering FALLBACK to legacy loyers.parquet source (loyer_app_m2)."
+            raise PipelineRunError(
+                "Odace rent primary data is missing or invalid "
+                f"({valid_odace.sum()} valid rows); refusing legacy rent fallback"
             )
-            logging.error(msg)
-            # print(f"ERROR [build.py]: {msg}")
-            if "loyer_app_m2" in communes_gdf.columns:
-                communes_gdf["loyer_m2_moy_appt_all"] = communes_gdf["loyer_app_m2"]
-                # Map apartment fallback only to apartment sub-typologies, NOT house rent!
-                for c in ["loyer_m2_moy_appt_t1_t2", "loyer_m2_moy_appt_t3_p"]:
-                    if (
-                        c not in communes_gdf.columns
-                        or (communes_gdf[c].notna() & (communes_gdf[c] > 0)).sum() < 100
-                    ):
-                        communes_gdf[c] = communes_gdf["loyer_app_m2"]
 
         # Associations merge (Deprecated - Now handled via RNA RAG above)
 

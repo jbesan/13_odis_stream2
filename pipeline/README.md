@@ -99,6 +99,12 @@ uv run python -m pipeline.etl \
   --run-id run-20260731T120000Z-ab12cd34
 ```
 
+To build and publish in a single explicit command, opt in to deployment:
+
+```bash
+uv run python -m pipeline.etl --step all --deploy
+```
+
 Deployment validates the complete release file set, uploads the candidate to
 an immutable GCS release, and advances `datasets/current.json` only after the
 release upload succeeds. The local application mirror is updated afterward.
@@ -118,7 +124,7 @@ Do not deploy from the historical shared directory
   release pointer.
 
 The `all` step runs ingest, build and prescoring. It intentionally does not
-run deployment.
+run deployment unless `--deploy` is supplied explicitly.
 
 ## Active source boundary
 
@@ -146,6 +152,10 @@ artifact supplies both accueillant and prospect aggregates used by scoring and
 the result details UI; the old runtime BigQuery queries and local manual
 exports are not part of the active path.
 
+Odace rent facts are joined to communes through the candidate's persisted
+`commune_sk` key. If that key or the Odace rent artifacts are unavailable, the
+candidate fails rather than silently reviving the archived `loyers` dataset.
+
 ## Contracts and quality gate
 
 Two contract layers protect a candidate:
@@ -158,6 +168,12 @@ Two contract layers protect a candidate:
    required commune columns, unique/non-null `codgeo`, geographic coverage,
    configured precomputed score columns, required release artifacts and the
    communes-to-BdV join orphan rate.
+
+`housing_occupation` is an Odace-only source: its source contract fixes
+`fact_occupation_logement` to the INSEE RP 2022 observations, the six raw
+occupation-count indicators used by prescoring, their business key, coverage
+and non-negative values. The historical Data.gouv CSV/ZIP cleaner is archived
+and cannot be selected as a fallback.
 
 The score checks are derived from [app/scores_config.yaml](../app/scores_config.yaml),
 so adding a precomputed score creates a corresponding release check rather than
@@ -200,8 +216,10 @@ one already exists.
 ## Operational notes
 
 - A new candidate uses isolated `clean/`, `output/` and `run.json` paths. The
-  provider raw cache remains a last-known-good cache and is never itself the
-  release source of truth.
+  provider caches remain last-known-good inputs and are never themselves the
+  release source of truth. The RAG aggregates use the shared
+  `pipeline/cache/clean/` cache for their configured TTL, then are copied into
+  the candidate clean directory.
 - Odace downloads are staged and readability-checked before the cache is
   atomically replaced.
 - A failed candidate never advances the active GCS pointer and does not update

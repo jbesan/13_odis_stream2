@@ -1,5 +1,33 @@
 version: 1
 
+source_contracts:
+  housing_occupation:
+    version: 1
+    odace_table: fact_occupation_logement
+    reference_year: "2022"
+    required_columns:
+      - commune_insee_code
+      - annee
+      - indicateur_occupation
+      - valeur
+    primary_key:
+      - commune_insee_code
+      - annee
+      - indicateur_occupation
+    required_indicators:
+      - MOD_OVER_OCC
+      - MOD_UNDER_OCC
+      - SEV_OVER_OCC
+      - SEV_UNDER_OCC
+      - STD_OCC
+      - VSEV_UNDER_OCC
+    minimum_communes: 30000
+    minimum_communes_per_indicator: 30000
+    require_complete_indicator_set_per_commune: true
+    value:
+      minimum: 0
+      nullable: false
+
 release:
   required_artifacts:
     - odis_communes.parquet

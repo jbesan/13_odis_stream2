@@ -37,8 +37,9 @@ flowchart TD
     L --> M["Advance datasets/current.json"]
 ```
 
-`--step all` ends at the passed candidate. It does not deploy. The active
-release pointer moves only in the separate `deploy` step.
+`--step all` ends at the passed candidate by default. The active release
+pointer moves only after an explicit deployment: either a separate
+`--step deploy --run-id …` command or `--step all --deploy`.
 
 ## 1. Provider and ingestion boundary
 
@@ -69,7 +70,11 @@ The pipeline also has deliberate non-Odace adapters:
 - France Travail and Les emplois de l'inclusion provide live job datasets;
 - BigQuery RNA RAG provides the configured association enrichment;
 - INSEE, education, electoral, postal-code, formation and other reference
-  inputs remain active where the build requires them.
+inputs remain active where the build requires them.
+
+Odace rent facts are joined to the candidate communes through the persisted
+`commune_sk` key. A missing key, missing rent artifact or invalid rent join
+fails the candidate; the archived `loyers` source is not an active fallback.
 
 The former manual J'Accueille CSV/XLSX and BigQuery paths, together with the
 retired direct-download cleaners for Odace-backed tables, are preserved under
@@ -88,9 +93,12 @@ pipeline/cache/runs/<run_id>/
 ```
 
 The provider raw cache under `pipeline/cache/raw/` remains shared as a
-last-known-good input cache. Clean and output artifacts are rebound to the
-candidate before the ETL invokes ingest, build or prescoring. Consequently, a
-candidate cannot publish a mixture of another run's clean/output artifacts.
+last-known-good input cache. RAG-derived aggregates additionally use the
+shared `pipeline/cache/clean/` directory as a TTL-governed provider cache; a
+valid RAG artifact is copied into the candidate before use. Other clean and
+output artifacts are rebound to the candidate before the ETL invokes ingest,
+build or prescoring. Consequently, a candidate cannot publish a mixture of
+another run's clean/output artifacts.
 
 `run_clean_step_safely` applies the source boundary:
 
@@ -115,7 +123,8 @@ such as identifier and geography requirements.
 ### Release contract
 
 [data_contracts.yaml](data_contracts.yaml) is the versioned contract for the
-published scoring bundle. Version 1 currently declares:
+published scoring bundle and source facts that have an explicit semantic
+boundary. Version 1 currently declares:
 
 - the required release artifact set;
 - minimum commune row count;
@@ -123,6 +132,13 @@ published scoring bundle. Version 1 currently declares:
 - minimum coverage for department, region, EPCI and BdV identifiers;
 - the configured minimum non-null fraction for precomputed score metrics;
 - the communes-to-BdV join and its maximum orphan fraction.
+
+For example, `housing_occupation` consumes Odace's
+`fact_occupation_logement` table under a source contract: RP 2022 only, one
+row per commune/year/occupation indicator, all six raw count indicators needed
+for the weighted occupation score, sufficient commune coverage and non-negative
+non-null values. Its old Data.gouv ZIP cleaner is retained only in
+`legacy_ingest/` and is not a runtime fallback.
 
 The quality gate in [quality_gate.py](quality_gate.py) reads this contract and
 derives the precomputed score list from

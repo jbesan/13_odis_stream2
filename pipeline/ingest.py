@@ -35,6 +35,51 @@ from pipeline.run_context import PipelineRunError
 FT_SHARED_OUTPUT_PATH = Path("pipeline/cache/output/odis_ft_jobs_agg.parquet")
 INCLUSION_SHARED_OUTPUT_PATH = Path("pipeline/cache/output/odis_inclusion_jobs.parquet")
 INCLUSION_OUTPUT_PATH = INCLUSION_SHARED_OUTPUT_PATH
+SHARED_CLEAN_DIR = Path("pipeline/cache/clean")
+DATA_CONTRACTS_FILE = Path("pipeline/data_contracts.yaml")
+
+
+def _materialize_rag_cache(
+    candidate_path: Path,
+    shared_path: Path,
+    ttl_days: int,
+    logger: PipelineLogger,
+    source_name: str,
+) -> Optional[Dict[str, Any]]:
+    """Reuse a valid shared RAG cache and materialize it into the candidate."""
+    candidate_path = Path(candidate_path)
+    shared_path = Path(shared_path)
+
+    for cache_path in (candidate_path, shared_path):
+        if not cache_path.exists() or cache_path.stat().st_size == 0:
+            continue
+        age_days = (
+            datetime.now() - datetime.fromtimestamp(cache_path.stat().st_mtime)
+        ).total_seconds() / 86400
+        if age_days >= ttl_days:
+            continue
+
+        if cache_path != candidate_path:
+            candidate_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(cache_path, candidate_path)
+
+        logger.log_source(source_name, "CACHED", cache_path)
+        return {
+            "path": str(candidate_path),
+            "cache_status": "reused_within_ttl",
+            "cache_age_days": round(age_days, 3),
+            "cache_source": str(cache_path),
+            "ttl_days": ttl_days,
+        }
+    return None
+
+
+def _save_rag_cache(candidate_path: Path, shared_path: Path) -> None:
+    """Persist a freshly computed RAG artifact for future candidate runs."""
+    if candidate_path.resolve() == shared_path.resolve():
+        return
+    shared_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(candidate_path, shared_path)
 
 
 def _materialize_external_output(source_path: Path, candidate_path: Path) -> bool:
@@ -880,21 +925,24 @@ def clean_associations(config: Dict[str, Any], logger: PipelineLogger):
 def clean_refugee_associations(config: Dict[str, Any], logger: PipelineLogger):
     """Filters RNA for refugee associations and augments data."""
     output_path = CLEAN_DIR / "refugee_associations.parquet"
+    shared_path = SHARED_CLEAN_DIR / output_path.name
     ttl_days = config.get("sources", {}).get("rna_rag", {}).get("ttl_days", 365)
 
-    if output_path.exists():
-        mtime = datetime.fromtimestamp(output_path.stat().st_mtime)
-        age_days = (datetime.now() - mtime).days
-        if age_days < ttl_days:
-            logging.info(
-                f"[clean_refugee_associations] Cache is {age_days} days old. Using cache (TTL={ttl_days} days)."
-            )
-            logger.log_step(
-                "clean_refugee_associations",
-                "COMPLETED",
-                {"path": str(output_path), "age_days": age_days, "ttl_days": ttl_days},
-            )
-            return
+    cache_details = _materialize_rag_cache(
+        output_path,
+        shared_path,
+        ttl_days,
+        logger,
+        "rna_rag_refugee",
+    )
+    if cache_details:
+        logging.info(
+            "[RNA RAG] Reusing refugee associations cache (%s days old, TTL=%s).",
+            cache_details["cache_age_days"],
+            ttl_days,
+        )
+        logger.log_step("clean_refugee_associations", "COMPLETED", cache_details)
+        return
 
     logger.log_step("clean_refugee_associations", "STARTED")
 
@@ -966,10 +1014,12 @@ def clean_refugee_associations(config: Dict[str, Any], logger: PipelineLogger):
 
     output_path = CLEAN_DIR / "refugee_associations.parquet"
     df_out.to_parquet(output_path, engine="fastparquet")
+    _save_rag_cache(output_path, shared_path)
+    logger.log_source("rna_rag_refugee", "REFRESHED", output_path)
     logger.log_step(
         "clean_refugee_associations",
         "COMPLETED",
-        {"path": str(output_path), "rows": len(df_out)},
+        {"path": str(output_path), "rows": len(df_out), "cache_status": "refreshed"},
     )
 
 
@@ -1067,6 +1117,7 @@ def clean_communes(config: Dict[str, Any], logger: PipelineLogger):
                         df_commune[
                             [
                                 "codgeo",
+                                "commune_sk",
                                 "commune_label",
                                 "departement_code",
                                 "region_code",
@@ -1107,6 +1158,11 @@ def clean_communes(config: Dict[str, Any], logger: PipelineLogger):
                 # Filter to only the required output columns to maintain exact compat
                 out_cols = [
                     "codgeo",
+                    # Keep the Odace surrogate key in the candidate commune
+                    # artifact. Rent facts are keyed by commune_sk, so
+                    # dropping it here forces the build to depend on a stale
+                    # shared odace_communes_sk.parquet file.
+                    "commune_sk",
                     "nom",
                     "departement",
                     "region",
@@ -1469,49 +1525,166 @@ def clean_electoral_history(config: Dict[str, Any], logger: PipelineLogger):
     logger.log_step("clean_electoral_history", "COMPLETED", {"path": str(output_path)})
 
 
+def _load_source_contract(source_name: str) -> Dict[str, Any]:
+    """Load one versioned source contract from the active contract catalogue."""
+    contracts = load_config(str(DATA_CONTRACTS_FILE))
+    contract = contracts.get("source_contracts", {}).get(source_name)
+    if not isinstance(contract, dict):
+        raise PipelineRunError(f"Missing source contract for '{source_name}'")
+    return contract
+
+
+def transform_housing_occupation_odace(
+    df_odace: pd.DataFrame, contract: Dict[str, Any]
+) -> pd.DataFrame:
+    """Validate and pivot the canonical Odace housing-occupation fact table."""
+    required_columns = contract["required_columns"]
+    missing_columns = sorted(set(required_columns) - set(df_odace.columns))
+    if missing_columns:
+        raise PipelineRunError(
+            "Odace fact_occupation_logement is missing required columns: "
+            f"{missing_columns}"
+        )
+
+    df = df_odace.copy()
+    primary_key = contract["primary_key"]
+    for column in primary_key:
+        if df[column].isna().any():
+            raise PipelineRunError(
+                f"Odace fact_occupation_logement has null primary-key values in '{column}'"
+            )
+
+    commune_codes = df["commune_insee_code"].astype(str).str.strip()
+    df["annee"] = df["annee"].astype(str).str.strip()
+    df["indicateur_occupation"] = df["indicateur_occupation"].astype(str).str.strip()
+    if (commune_codes == "").any() or (
+        df["indicateur_occupation"] == ""
+    ).any():
+        raise PipelineRunError(
+            "Odace fact_occupation_logement has blank commune or indicator identifiers"
+        )
+    df["commune_insee_code"] = commune_codes.str.zfill(5)
+    if df.duplicated(primary_key).any():
+        duplicate_count = int(df.duplicated(primary_key, keep=False).sum())
+        raise PipelineRunError(
+            "Odace fact_occupation_logement violates its primary key "
+            f"{primary_key} ({duplicate_count} duplicate rows)"
+        )
+
+    df["valeur"] = pd.to_numeric(df["valeur"], errors="coerce")
+    value_contract = contract["value"]
+    if not value_contract.get("nullable", True) and df["valeur"].isna().any():
+        raise PipelineRunError("Odace fact_occupation_logement has null or invalid values")
+    minimum_value = value_contract.get("minimum")
+    if minimum_value is not None and (df["valeur"] < minimum_value).any():
+        raise PipelineRunError(
+            "Odace fact_occupation_logement has values below its contractual minimum "
+            f"({minimum_value})"
+        )
+
+    reference_year = str(contract["reference_year"])
+    required_indicators = contract["required_indicators"]
+    reference = df.loc[
+        (df["annee"] == reference_year)
+        & df["indicateur_occupation"].isin(required_indicators)
+    ].copy()
+    if reference.empty:
+        raise PipelineRunError(
+            "Odace fact_occupation_logement has no required observations for "
+            f"reference year {reference_year}"
+        )
+
+    observed_indicators = set(reference["indicateur_occupation"])
+    missing_indicators = sorted(set(required_indicators) - observed_indicators)
+    if missing_indicators:
+        raise PipelineRunError(
+            "Odace fact_occupation_logement is missing required indicators for "
+            f"{reference_year}: {missing_indicators}"
+        )
+
+    minimum_per_indicator = contract["minimum_communes_per_indicator"]
+    indicator_coverage = reference.groupby("indicateur_occupation")[
+        "commune_insee_code"
+    ].nunique()
+    insufficient_indicators = {
+        indicator: int(indicator_coverage.get(indicator, 0))
+        for indicator in required_indicators
+        if indicator_coverage.get(indicator, 0) < minimum_per_indicator
+    }
+    if insufficient_indicators:
+        raise PipelineRunError(
+            "Odace fact_occupation_logement has insufficient commune coverage per "
+            f"indicator: {insufficient_indicators}"
+        )
+
+    df_out = (
+        reference.pivot(
+            index="commune_insee_code",
+            columns="indicateur_occupation",
+            values="valeur",
+        )
+        .reindex(columns=required_indicators)
+        .reset_index()
+        .rename(columns={"commune_insee_code": "codgeo"})
+    )
+    if len(df_out) < contract["minimum_communes"]:
+        raise PipelineRunError(
+            "Odace fact_occupation_logement has insufficient commune coverage: "
+            f"{len(df_out)} < {contract['minimum_communes']}"
+        )
+    if (
+        contract.get("require_complete_indicator_set_per_commune", False)
+        and df_out[required_indicators].isna().any().any()
+    ):
+        incomplete_count = int(df_out[required_indicators].isna().any(axis=1).sum())
+        raise PipelineRunError(
+            "Odace fact_occupation_logement has incomplete indicator families for "
+            f"{incomplete_count} communes"
+        )
+    if df_out["codgeo"].duplicated().any():
+        raise PipelineRunError("Housing occupation output has duplicate codgeo values")
+    return df_out
+
+
 def clean_housing_occupation(config: Dict[str, Any], logger: PipelineLogger):
-    """Cleans Housing Occupation and saves to parquet."""
+    """Build the canonical occupancy-count dataset from the Odace fact table."""
     logger.log_step("clean_housing_occupation", "STARTED")
     source = config["sources"]["housing_occupation"]
-    path = CACHE_DIR / source["archive_file"]
-    if not path.exists():
-        return
+    if not source.get("use_odace", False):
+        raise PipelineRunError("housing_occupation must be served by Odace")
 
-    # Load with correct separator (likely ';')
     try:
-        df = pd.read_csv(path, sep=";")
-        if len(df.columns) < 2:
-            df = pd.read_csv(path, sep=",")
-    except:
-        df = pd.read_csv(path, sep=",")
-
-    # Filter
-    if "TIME_PERIOD" in df.columns:
-        max_year = df["TIME_PERIOD"].max()
-        logging.info(f"Housing Occupation: Using max year {max_year}")
-        df = df[df["TIME_PERIOD"] == max_year]
-    if "GEO_OBJECT" in df.columns:
-        df = df[df["GEO_OBJECT"] == "COM"]
-
-    # We need Taux d'occupation.
-    # Assuming OCC_IND has 'STD_OCC' (Standard), 'OVER_OCC' (Suroccupation), 'UNDER_OCC' (Sous-occupation)
-    # And OBS_VALUE is the count of dwellings.
-    # We want the rate of "Good" occupation? Or rate of "Under" (room to spare)?
-    # User said "build a scale based of OCC_IND".
-    # Let's save the raw counts pivoted by OCC_IND and let build.py calculate the ratio.
-
-    if "GEO" in df.columns and "OCC_IND" in df.columns and "OBS_VALUE" in df.columns:
-        df_pivot = df.pivot_table(
-            index="GEO", columns="OCC_IND", values="OBS_VALUE", aggfunc="sum"
-        ).reset_index()
-        df_pivot.rename(columns={"GEO": "codgeo"}, inplace=True)
-        df_pivot["codgeo"] = df_pivot["codgeo"].astype(str).str.zfill(5)
+        contract = _load_source_contract("housing_occupation")
+        if source.get("odace_table") != contract["odace_table"]:
+            raise PipelineRunError(
+                "housing_occupation source and contract disagree on the Odace table"
+            )
+        client = get_odace_client(logger)
+        df_odace = client.fetch_table(contract["odace_table"])
+        if df_odace.empty:
+            raise PipelineRunError("Odace fact_occupation_logement returned no rows")
+        df_out = transform_housing_occupation_odace(df_odace, contract)
 
         output_path = CLEAN_DIR / "housing_occupation.parquet"
-        df_pivot.to_parquet(output_path, engine="fastparquet")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        df_out.to_parquet(output_path, engine="fastparquet")
         logger.log_step(
-            "clean_housing_occupation", "COMPLETED", {"path": str(output_path)}
+            "clean_housing_occupation",
+            "COMPLETED",
+            {
+                "path": str(output_path),
+                "rows": len(df_out),
+                "source": "odace",
+                "contract_version": contract["version"],
+                "reference_year": contract["reference_year"],
+            },
         )
+    except Exception as exc:
+        logging.error("Failed to build housing_occupation from Odace: %s", exc)
+        logger.log_step("clean_housing_occupation", "ERROR", {"error": str(exc)})
+        raise PipelineRunError(
+            "Odace housing_occupation did not produce a contract-compliant dataset"
+        ) from exc
 
 
 def clean_school_effectifs(config: Dict[str, Any], logger: PipelineLogger):
@@ -2220,17 +2393,24 @@ def compute_rna_rag_counts(query_text: str, threshold: float = 0.65) -> pd.DataF
 def clean_hebergement_rna(config: Dict[str, Any], logger: PipelineLogger):
     """Extracts accommodation-related associations from RNA using RAG (IML & Citoyen)."""
     output_agg = CLEAN_DIR / "hebergement_rna_cols.parquet"
+    shared_path = SHARED_CLEAN_DIR / output_agg.name
     ttl_days = config.get("sources", {}).get("rna_rag", {}).get("ttl_days", 365)
 
-    # 1. TTL Check
-    if output_agg.exists():
-        mtime = datetime.fromtimestamp(output_agg.stat().st_mtime)
-        age_days = (datetime.now() - mtime).days
-        if age_days < ttl_days:
-            logging.info(
-                f"[RNA RAG] Hebergement RNA stats are {age_days} days old. Using cache (TTL={ttl_days} days)."
-            )
-            return
+    cache_details = _materialize_rag_cache(
+        output_agg,
+        shared_path,
+        ttl_days,
+        logger,
+        "rna_rag_hebergement",
+    )
+    if cache_details:
+        logging.info(
+            "[RNA RAG] Reusing hebergement cache (%s days old, TTL=%s).",
+            cache_details["cache_age_days"],
+            ttl_days,
+        )
+        logger.log_step("clean_hebergement_rna", "COMPLETED", cache_details)
+        return
 
     logger.log_step("clean_hebergement_rna", "STARTED")
 
@@ -2250,10 +2430,12 @@ def clean_hebergement_rna(config: Dict[str, Any], logger: PipelineLogger):
         agg["codgeo"] = agg["codgeo"].astype(str).str.zfill(5)
 
         agg.to_parquet(output_agg, engine="fastparquet")
+        _save_rag_cache(output_agg, shared_path)
+        logger.log_source("rna_rag_hebergement", "REFRESHED", output_agg)
         logger.log_step(
             "clean_hebergement_rna",
             "COMPLETED",
-            {"path": str(output_agg), "rows": len(agg)},
+            {"path": str(output_agg), "rows": len(agg), "cache_status": "refreshed"},
         )
 
     except Exception as e:
@@ -3052,6 +3234,10 @@ def main(argv=None):
     for name, source_cfg in config["sources"].items():
         if args.steps and name not in selected_steps:
             continue
+        # RNA RAG has dedicated TTL-aware handlers above; it is not a generic
+        # downloadable source and must not overwrite their status as skipped.
+        if name == "rna_rag":
+            continue
         fetch_source(name, source_cfg, logger)
 
     for step_name in selected_steps:
@@ -3379,20 +3565,28 @@ def fetch_rna_rag_stats(
 ) -> Optional[Path]:
     """Fetches RNA category counts from BigQuery with configured TTL (365 days)."""
     local_path = CLEAN_DIR / "rna_inclusion_agg.parquet"
+    shared_path = SHARED_CLEAN_DIR / local_path.name
     if config is None:
         config = load_config(CONFIG_FILE)
     ttl_days = config.get("sources", {}).get("rna_rag", {}).get("ttl_days", 365)
 
-    # 1. TTL Check
-    if local_path.exists():
-        mtime = datetime.fromtimestamp(local_path.stat().st_mtime)
-        age_days = (datetime.now() - mtime).days
-        if age_days < ttl_days:
-            logging.info(
-                f"[RNA RAG] Stats are {age_days} days old. Using cache (TTL={ttl_days} days)."
-            )
-            return local_path
-        logging.info(f"[RNA RAG] Stats are {age_days} days old. Refreshing...")
+    cache_details = _materialize_rag_cache(
+        local_path,
+        shared_path,
+        ttl_days,
+        logger,
+        "rna_rag",
+    )
+    if cache_details:
+        logging.info(
+            "[RNA RAG] Reusing stats cache (%s days old, TTL=%s).",
+            cache_details["cache_age_days"],
+            ttl_days,
+        )
+        logger.log_step("fetch_rna_rag_stats", "COMPLETED", cache_details)
+        return local_path
+
+    logging.info("[RNA RAG] Stats cache is missing or expired. Refreshing...")
 
     try:
         client = bigquery.Client()
@@ -3449,13 +3643,15 @@ def fetch_rna_rag_stats(
             df_pivot["inc_asso_refug_count"] = 0
 
         df_pivot.to_parquet(local_path, engine="fastparquet")
+        _save_rag_cache(local_path, shared_path)
         logging.info(
             f"✅ [RNA RAG] Saved {len(df_pivot)} commune stats to {local_path}"
         )
+        logger.log_source("rna_rag", "REFRESHED", local_path)
         logger.log_step(
             "fetch_rna_rag_stats",
             "COMPLETED",
-            {"path": str(local_path), "rows": len(df_pivot)},
+            {"path": str(local_path), "rows": len(df_pivot), "cache_status": "refreshed"},
         )
         return local_path
 

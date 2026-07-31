@@ -98,8 +98,8 @@ class PipelineRun:
             raise PipelineRunError(
                 f"Run {self.run_id} is not deployable (state={payload.get('state')!r})"
             )
-        quality_gate = payload.get("quality_gate", {})
-        if quality_gate.get("status") != "PASSED":
+        quality_gate = payload.get("quality_gate") or {}
+        if not isinstance(quality_gate, dict) or quality_gate.get("status") != "PASSED":
             raise PipelineRunError("Run does not have a passed quality gate")
         return payload
 

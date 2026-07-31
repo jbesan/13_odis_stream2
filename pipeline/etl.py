@@ -152,10 +152,22 @@ def main():
     parser.add_argument(
         "--skip-inclusion-jobs", action="store_true", help="Skip Inclusion Jobs fetch"
     )
+    parser.add_argument(
+        "--deploy",
+        action="store_true",
+        help="Publish the passed candidate after --step all completes",
+    )
     args = parser.parse_args()
 
     if args.step == "deploy" and not args.run_id:
         parser.error("--step deploy requires --run-id for a previously passed run")
+    if args.step == "prescoring" and not args.run_id:
+        parser.error(
+            "--step prescoring requires --run-id for a candidate produced by build; "
+            "use --step all to run the full pipeline"
+        )
+    if args.deploy and args.step != "all":
+        parser.error("--deploy can only be used with --step all")
 
     if args.run_id:
         run = PipelineRun.from_id(args.run_id)
@@ -336,10 +348,17 @@ def main():
                 )
                 run.update_state("PASSED", quality_gate=quality_summary)
                 logging.info("=== Data Manifest Generation Completed ===")
+                if args.step == "all" and not args.deploy:
+                    command = (
+                        "uv run python -m pipeline.etl --step deploy "
+                        f"--run-id {run.run_id}"
+                    )
+                    logging.info("Candidate passed. Deploy it with: %s", command)
+                    print(f"Candidate passed. Deploy it with:\n{command}")
             except Exception as e:
                 logging.error(f"Failed to generate Data Manifest: {e}", exc_info=True)
                 raise
-        if args.step == "deploy":
+        if args.step == "deploy" or args.deploy:
             logging.info("=== Starting Deployment Phase ===")
             _assert_deployable_candidate(source_dir, run)
             DEST_DATA_DIR.mkdir(parents=True, exist_ok=True)

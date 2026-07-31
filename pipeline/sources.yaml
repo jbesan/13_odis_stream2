@@ -90,18 +90,10 @@ sources:
     description: "Logements vacants du parc privé (LOVAC)"
 
   housing_occupation:
-    datagouv_resource_id: "cae4e8a4-15e0-40ff-88fe-087b9e206514"
-    format: "zip"
-    archive_file: "DS_RP_LOGEMENT_COMPL_2022_data.csv"
-    local_name: "housing_occupation.zip"
+    use_odace: true
+    odace_table: "fact_occupation_logement"
     ttl_days: 365
-    description: "Logements : Taux d'occupation (INSEE)"
-    used_columns:
-      - TIME_PERIOD
-      - GEO_OBJECT
-      - GEO
-      - OCC_IND
-      - OBS_VALUE
+    description: "Occupation des logements par commune (INSEE RP 2022 via Odace)"
 
   logement_social:
     use_odace: true

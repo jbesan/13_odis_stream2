@@ -79,18 +79,35 @@ def apply_configured_score_missingness(
     df: pd.DataFrame, scores_config: Dict[str, Any]
 ) -> None:
     """Apply catalog policy to score outputs after all derivations/scaling."""
+    missing_columns = {}
     for score_id, conf in scores_config.items():
         if conf.get("missing_strategy") == "zero" and conf.get("computation") != "live":
             if score_id in df.columns:
                 df[score_id] = df[score_id].fillna(0.0)
             else:
-                df[score_id] = 0.0
+                missing_columns[score_id] = 0.0
+
+    # Adding missing score columns one by one fragments the frame. Add them as
+    # one block instead (this is especially noticeable on the large commune
+    # dataset).
+    if missing_columns:
+        df[list(missing_columns)] = pd.DataFrame(missing_columns, index=df.index)
 
 
 def safe_ratio(numerator: pd.Series, denominator: pd.Series) -> pd.Series:
     """Compute a ratio without confusing an unavailable/zero denominator with 0."""
     valid = numerator.notna() & denominator.notna() & denominator.gt(0)
     return numerator.div(denominator).where(valid)
+
+
+def append_columns(df: pd.DataFrame, columns: Dict[str, Any]) -> pd.DataFrame:
+    """Append a batch of columns while replacing any existing same-named columns."""
+    if not columns:
+        return df
+
+    additions = pd.DataFrame(columns, index=df.index)
+    base = df.drop(columns=additions.columns, errors="ignore")
+    return pd.concat([base, additions], axis=1)
 
 
 def scale_series(series, min_b, max_b, inverted=False, col_name="series"):
@@ -138,9 +155,9 @@ def get_min_max_quant(series: pd.Series, q: float = 0.01) -> tuple[float, float]
     return obs_min, obs_min + 1.0 if obs_min != 0.0 else 1.0
 
 
-def process_scaling(df, col_name, output_col, inverted=False):
+def process_scaling(df, col_name, output_col, inverted=False, assign=True):
     if col_name not in df.columns:
-        return
+        return None
 
     scores_config = get_scores_config()
     conf = scores_config.get(output_col, {})
@@ -152,8 +169,10 @@ def process_scaling(df, col_name, output_col, inverted=False):
         logging.info(
             f"Applying Gaussian scaling to {col_name} -> {output_col} (mu={mu}, sigma={sigma})"
         )
-        df[output_col] = np.exp(-0.5 * ((df[col_name] - mu) / sigma) ** 2)
-        return
+        scaled = np.exp(-0.5 * ((df[col_name] - mu) / sigma) ** 2)
+        if assign:
+            df[output_col] = scaled
+        return scaled
 
     c_min, c_max = conf.get("min"), conf.get("max")
     if c_min is not None and c_max is not None:
@@ -162,9 +181,10 @@ def process_scaling(df, col_name, output_col, inverted=False):
         q_level = conf.get("quantile_level") or 0.01
         min_b, max_b = get_min_max_quant(df[col_name], q_level)
 
-    df[output_col] = scale_series(
-        df[col_name], min_b, max_b, inverted, col_name=output_col
-    )
+    scaled = scale_series(df[col_name], min_b, max_b, inverted, col_name=output_col)
+    if assign:
+        df[output_col] = scaled
+    return scaled
 
 
 # PLM consolidation is now fully handled in the build phase (pipeline/build.py)
@@ -183,7 +203,9 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             logger.log_step(
                 "apply_prescoring", "FAILED", {"reason": "Input file not found"}
             )
-            return
+            raise PipelineRunError(
+                f"Prescoring input is missing: {input_path}. Run build first."
+            )
 
         # Read as standard Parquet (WKB)
         communes_df = pd.read_parquet(input_path, engine="fastparquet")
@@ -197,6 +219,11 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         else:
             # Fallback
             communes_gdf = gpd.GeoDataFrame(communes_df, geometry="geometry")
+
+        # Parquet inputs can already contain several dtype blocks. Start the
+        # calculation from a compact frame so the derived columns below do not
+        # inherit avoidable fragmentation from the input representation.
+        communes_gdf = communes_gdf.copy()
 
         if "population" in communes_gdf.columns:
             communes_gdf["population"] = pd.to_numeric(
@@ -236,21 +263,20 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             "SEV_UNDER_OCC",
             "VSEV_UNDER_OCC",
         ]
-        # Ensure columns exist (should be filled in build, but good to check)
-        for col in occup_cols:
-            if col not in communes_gdf.columns:
-                communes_gdf[col] = np.nan
-
-        total_occup_households = communes_gdf[occup_cols].sum(axis=1, min_count=1)
+        # Reindex supplies missing occupancy inputs without inserting six
+        # columns into the GeoDataFrame. Those raw columns are dropped later
+        # and therefore never need to exist in the output frame.
+        occup_data = communes_gdf.reindex(columns=occup_cols)
+        total_occup_households = occup_data.sum(axis=1, min_count=1)
         communes_gdf["log_total"] = total_occup_households  # Use as log_total (RP)
 
         weighted_sum_occup = (
-            communes_gdf["SEV_OVER_OCC"] * 0.0
-            + communes_gdf["MOD_OVER_OCC"] * 0.25
-            + communes_gdf["STD_OCC"] * 0.5
-            + communes_gdf["MOD_UNDER_OCC"] * 0.75
-            + communes_gdf["SEV_UNDER_OCC"] * 1.0
-            + communes_gdf["VSEV_UNDER_OCC"] * 1.0
+            occup_data["SEV_OVER_OCC"] * 0.0
+            + occup_data["MOD_OVER_OCC"] * 0.25
+            + occup_data["STD_OCC"] * 0.5
+            + occup_data["MOD_UNDER_OCC"] * 0.75
+            + occup_data["SEV_UNDER_OCC"] * 1.0
+            + occup_data["VSEV_UNDER_OCC"] * 1.0
         )
 
         communes_gdf["log_pp_occup"] = safe_ratio(
@@ -326,6 +352,18 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         # Load App Config for Scores (Source of Truth)
         scores_config = get_scores_config()
         socle_admin_list: List[Any] = []
+        scaled_columns = {}
+
+        def batch_scale(col_name, output_col, inverted=False):
+            scaled = process_scaling(
+                communes_gdf,
+                col_name,
+                output_col,
+                inverted=inverted,
+                assign=False,
+            )
+            if scaled is not None:
+                scaled_columns[output_col] = scaled
 
         # Updated Housing Rent Scaling (ODACE source)
         # Using concise names as per user request: appt_all, appt_t1_t2, appt_t3_p, house_all
@@ -338,52 +376,38 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             ("loyer_m2_moy_house_all", "log_loyer_moyen_house_all_scaled"),
         ]:
             if col in communes_gdf.columns:
-                process_scaling(communes_gdf, col, target, inverted=True)
+                batch_scale(col, target, inverted=True)
             else:
                 logging.warning(f"ODACE Rent column {col} missing for scaling.")
 
-        process_scaling(
-            communes_gdf, "log_vac_scaled", "log_vac_scaled"
-        )  # wait, log_vac_scaled vs log_vac_struct_ratio?
+        batch_scale("log_vac_scaled", "log_vac_scaled")
         # Fixed logic:
-        process_scaling(communes_gdf, "log_vac_struct_ratio", "log_vac_scaled")
-        process_scaling(communes_gdf, "lien_social_density", "inc_asso_core_scaled")
-        process_scaling(communes_gdf, "inc_asso_refug_density", "inc_asso_refug_scaled")
-        process_scaling(communes_gdf, "inc_siae_density", "inc_siae_density_scaled")
+        batch_scale("log_vac_struct_ratio", "log_vac_scaled")
+        batch_scale("lien_social_density", "inc_asso_core_scaled")
+        batch_scale("inc_asso_refug_density", "inc_asso_refug_scaled")
+        batch_scale("inc_siae_density", "inc_siae_density_scaled")
 
-        # ter_pol_scaled (already 0-1)
-        if "pol_num" in communes_gdf.columns:
-            communes_gdf["ter_pol_scaled"] = communes_gdf["pol_num"]
+        # These columns are also batched below with the boolean scores.
+        static_columns = {}
+        for source, target in [
+            ("pol_num", "ter_pol_scaled"),
+            ("ter_anvita_member", "ter_anvita_scaled"),
+            ("ter_ctai_member", "ter_ctai_scaled"),
+        ]:
+            if source in communes_gdf.columns:
+                static_columns[target] = communes_gdf[source]
 
-        # ter_anvita_scaled (already 0-1)
-        if "ter_anvita_member" in communes_gdf.columns:
-            communes_gdf["ter_anvita_scaled"] = communes_gdf["ter_anvita_member"]
-
-        # ter_ctai_scaled (already 0-1)
-        if "ter_ctai_member" in communes_gdf.columns:
-            communes_gdf["ter_ctai_scaled"] = communes_gdf["ter_ctai_member"]
-
-        process_scaling(communes_gdf, "log_pp_occup", "log_occup_scaled")
+        batch_scale("log_pp_occup", "log_occup_scaled")
 
         # Hebergement Scaling (New F-42)
-        process_scaling(communes_gdf, "heb_loc_iml_density", "heb_loc_iml_scaled")
-        process_scaling(
-            communes_gdf, "heb_habitant_density", "heb_asso_habitant_scaled"
-        )
+        batch_scale("heb_loc_iml_density", "heb_loc_iml_scaled")
+        batch_scale("heb_habitant_density", "heb_asso_habitant_scaled")
 
         # New 2026 Metrics
-        process_scaling(
-            communes_gdf, "log_soc_delay", "log_soc_delay_scaled", inverted=True
-        )
-        process_scaling(
-            communes_gdf, "sante_apl", "sante_rdv_delay_scaled", inverted=False
-        )
-        process_scaling(
-            communes_gdf, "mob_dur_share", "mob_dur_share_scaled", inverted=False
-        )
-        process_scaling(
-            communes_gdf, "ter_insecurite", "ter_insecurite_scaled", inverted=True
-        )
+        batch_scale("log_soc_delay", "log_soc_delay_scaled", inverted=True)
+        batch_scale("sante_apl", "sante_rdv_delay_scaled")
+        batch_scale("mob_dur_share", "mob_dur_share_scaled")
+        batch_scale("ter_insecurite", "ter_insecurite_scaled", inverted=True)
 
         # Defragment DataFrame memory layout
         communes_gdf = communes_gdf.copy()
@@ -408,16 +432,11 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             )
 
         if "youth_growth_rate" in communes_gdf.columns:
-            process_scaling(
-                communes_gdf, "youth_growth_rate", "youth_decline_scaled", inverted=True
-            )
+            batch_scale("youth_growth_rate", "youth_decline_scaled", inverted=True)
 
         if "workclass_growth_rate" in communes_gdf.columns:
-            process_scaling(
-                communes_gdf,
-                "workclass_growth_rate",
-                "workclass_decline_scaled",
-                inverted=True,
+            batch_scale(
+                "workclass_growth_rate", "workclass_decline_scaled", inverted=True
             )
 
         if (
@@ -427,7 +446,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             communes_gdf["log_soc_inoc_ratio"] = safe_ratio(
                 communes_gdf["log_soc_inoccupes"], communes_gdf["log_soc_total"]
             )
-            process_scaling(communes_gdf, "log_soc_inoc_ratio", "log_soc_inoc_scaled")
+            batch_scale("log_soc_inoc_ratio", "log_soc_inoc_scaled")
 
         # edu_classes_ferm_scaled
         # Logic was: max count -> 1.0 (inverted=False in previous edit).
@@ -435,18 +454,16 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         # So Higher Ratio (Risk Count) -> Higher Score. Standard scaling.
         # But wait, previous edit said: inverted=False.
         # Let's keep it standard.
-        process_scaling(
-            communes_gdf, "risque_fermeture_ratio", "edu_classes_ferm_scaled"
-        )
+        batch_scale("risque_fermeture_ratio", "edu_classes_ferm_scaled")
 
-        process_scaling(
-            communes_gdf, "edu_pe_tx_couverture", "edu_petite_enfance_scaled"
+        batch_scale(
+            "edu_pe_tx_couverture", "edu_petite_enfance_scaled"
         )  # Usually 0-100? or 0-1?
 
         # mob_gare_scaled
         if "has_gare" in communes_gdf.columns:
             # Binary score: 1 if present, 0 if not
-            communes_gdf["mob_gare_scaled"] = (
+            static_columns["mob_gare_scaled"] = (
                 communes_gdf["has_gare"]
                 .gt(0)
                 .where(communes_gdf["has_gare"].notna())
@@ -461,7 +478,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             ("edu_lycee_ct", "edu_lycee_scaled"),
         ]:
             if col in communes_gdf.columns:
-                communes_gdf[score_col] = (
+                static_columns[score_col] = (
                     communes_gdf[col]
                     .gt(0)
                     .where(communes_gdf[col].notna())
@@ -477,7 +494,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             ("heb_pension_count", "heb_pension_scaled"),
         ]:
             if col in communes_gdf.columns:
-                communes_gdf[score_col] = (
+                static_columns[score_col] = (
                     communes_gdf[col]
                     .gt(0)
                     .where(communes_gdf[col].notna())
@@ -496,7 +513,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             ("count_pmi", "sante_pmi_scaled"),
         ]:
             if col in communes_gdf.columns:
-                communes_gdf[score_col] = (
+                static_columns[score_col] = (
                     communes_gdf[col]
                     .gt(0)
                     .where(communes_gdf[col].notna())
@@ -505,6 +522,10 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             # 2. Add static scores that don't need calc (just rename/copy effectively, but already done in build?)
         # Actually most are calculated.
         # But 'inc_population_scaled' etc are done above.
+
+        # Add all scaled and static score outputs in two contiguous blocks.
+        communes_gdf = append_columns(communes_gdf, scaled_columns)
+        communes_gdf = append_columns(communes_gdf, static_columns)
 
         # --- Drop Unused Columns ---
         cols_to_drop = [
@@ -532,6 +553,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
 
         # --- Socle Administratif (Pre-calculated) ---
         # Load POIs to get inclusion services
+        socle_columns = {}
         pois_path = OUTPUT_DIR / "odis_pois.parquet"
         if pois_path.exists():
             try:
@@ -579,30 +601,36 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
                         socle_scores = socle_presence / max_score
 
                         # Assign using map on codgeo
-                        communes_gdf["inc_services_core_scaled"] = communes_gdf[
+                        socle_columns["inc_services_core_scaled"] = communes_gdf[
                             "codgeo"
                         ].map(socle_scores)
 
                         # Save Raw Count
-                        communes_gdf["socle_match_count"] = communes_gdf["codgeo"].map(
+                        socle_columns["socle_match_count"] = communes_gdf["codgeo"].map(
                             socle_presence
                         )
                     else:
-                        communes_gdf["inc_services_core_scaled"] = np.nan
-                        communes_gdf["socle_match_count"] = np.nan
+                        socle_columns["inc_services_core_scaled"] = np.nan
+                        socle_columns["socle_match_count"] = np.nan
 
                     logger.log_step("inc_services_core_scaled", "CALCULATED")
                 else:
-                    communes_gdf["inc_services_core_scaled"] = np.nan
+                    socle_columns["inc_services_core_scaled"] = np.nan
 
             except Exception as e:
                 logging.exception(
                     "❌ [PRESCORING FAILURE] Failed to calculate socle admin score"
                 )
-                communes_gdf["inc_services_core_scaled"] = np.nan
+                socle_columns["inc_services_core_scaled"] = np.nan
         else:
             logging.warning("pois.parquet not found, skipping socle admin score")
-            communes_gdf["inc_services_core_scaled"] = np.nan
+            socle_columns["inc_services_core_scaled"] = np.nan
+
+        # The socle score and its diagnostic count are added together so this
+        # large frame receives one contiguous append instead of two inserts.
+        if "inc_services_core_scaled" not in socle_columns:
+            socle_columns["inc_services_core_scaled"] = np.nan
+        communes_gdf = append_columns(communes_gdf, socle_columns)
 
         communes_gdf.drop(
             columns=[c for c in cols_to_drop if c in communes_gdf.columns], inplace=True
@@ -625,10 +653,13 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             inplace=True,
         )
 
-        # Optimization: Vectorized float64 to float32 conversion to prevent fragmentation
+        # Convert by dtype mapping rather than assigning a multi-column slice;
+        # the latter can reinsert each column and recreate fragmentation.
         float64_cols = list(communes_gdf.select_dtypes(include=["float64"]).columns)
         if float64_cols:
-            communes_gdf[float64_cols] = communes_gdf[float64_cols].astype("float32")
+            communes_gdf = communes_gdf.astype(
+                {column: "float32" for column in float64_cols}
+            )
 
         if "inc_services_core_scaled" not in communes_gdf.columns:
             communes_gdf["inc_services_core_scaled"] = np.nan
@@ -644,15 +675,19 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             # LAMBERT-93 (EPSG:2154)
             metric_geo = communes_gdf.geometry.to_crs("EPSG:2154")
             cents = metric_geo.centroid
-            communes_gdf["centroid_lon"] = cents.x.values
-            communes_gdf["centroid_lat"] = cents.y.values
+            save_columns = {
+                "centroid_lon": cents.x.to_numpy(),
+                "centroid_lat": cents.y.to_numpy(),
+            }
 
             # Ensure we are in EPSG:4326 (WGS84) before serializing polygons to WKB for the UI
             if communes_gdf.crs != "EPSG:4326":
                 temp_gdf = communes_gdf.to_crs("EPSG:4326")
-                communes_gdf["polygon"] = temp_gdf.geometry.to_wkb()
+                save_columns["polygon"] = temp_gdf.geometry.to_wkb().to_numpy()
             else:
-                communes_gdf["polygon"] = communes_gdf.geometry.to_wkb()
+                save_columns["polygon"] = communes_gdf.geometry.to_wkb().to_numpy()
+
+            communes_gdf = append_columns(communes_gdf, save_columns)
 
             # Drop the heavy metric geometry to keep the dataframe lightweight
             communes_gdf.drop(columns=["geometry"], inplace=True)

@@ -1,7 +1,7 @@
 {
-  "manifest_version": "v2026.07.31-c7e0cd",
-  "created_at": "2026-07-31T08:24:44.308863+00:00",
-  "total_sources": 36,
+  "manifest_version": "v2026.07.31-e10cdb",
+  "created_at": "2026-07-31T10:26:36.805441+00:00",
+  "total_sources": 34,
   "sources": [
     {
       "source_key": "communes",
@@ -9,7 +9,7 @@
       "method": "Data Platform Odace",
       "odace_table": "ref_commune_geo",
       "annee_reference": 2024,
-      "last_updated": "2026-07-31T10:01:00.042381",
+      "last_updated": "2026-07-31T12:21:19.871982",
       "row_count": 35014,
       "certified": false,
       "doc_url": "https://www.data.gouv.fr/datasets/contours-administratifs/#/resources/12f8cdc9-5844-4666-a4b5-6385d5415f67"
@@ -31,7 +31,7 @@
       "method": "Data Platform Odace",
       "odace_table": "fact_population_municipale",
       "annee_reference": 2023,
-      "last_updated": "2026-07-31T10:01:01.961386",
+      "last_updated": "2026-07-31T12:21:21.585877",
       "row_count": 34998,
       "certified": false,
       "doc_url": "https://www.data.gouv.fr/datasets/population-municipale-des-communes-france-entiere/#/resources/630e7917-02db-4838-8856-09235719551c"
@@ -53,7 +53,7 @@
       "method": "Export Data.gouv.fr",
       "odace_table": null,
       "annee_reference": null,
-      "last_updated": "2026-07-31T10:01:01.505266",
+      "last_updated": "2026-07-31T12:21:21.226712",
       "row_count": 283416,
       "certified": false,
       "doc_url": "https://www.data.gouv.fr/fr/datasets/r/de4856b8-bb67-4b79-83bd-038e846a1774"
@@ -75,7 +75,7 @@
       "method": "Export Data.gouv.fr",
       "odace_table": null,
       "annee_reference": null,
-      "last_updated": "2026-07-31T10:01:12.675049",
+      "last_updated": "2026-07-31T12:21:31.228937",
       "row_count": 37036,
       "certified": false,
       "doc_url": "https://www.data.gouv.fr/fr/datasets/r/52a11762-45b4-414f-b6a2-eaa290217dc6"
@@ -86,7 +86,7 @@
       "method": "Data Platform Odace",
       "odace_table": "dim_association",
       "annee_reference": 2024,
-      "last_updated": "2026-07-31T10:01:05.094842",
+      "last_updated": "2026-07-31T12:21:24.483335",
       "row_count": 844361,
       "certified": false,
       "doc_url": "https://www.data.gouv.fr/datasets/rna-agrege-a-lechelle-nationale/#/resources/cc7b8f0c-45ea-4444-8b55-55d30bc34ac5"
@@ -115,14 +115,14 @@
     },
     {
       "source_key": "housing_occupation",
-      "name": "Logements : Taux d'occupation (INSEE)",
-      "method": "Export Data.gouv.fr",
-      "odace_table": null,
-      "annee_reference": null,
-      "last_updated": "2026-07-31T10:01:13.119454",
+      "name": "Taux d'occupation des logements par commune — INSEE RP 2022. Grain : commune × indicateur × année.",
+      "method": "Data Platform Odace",
+      "odace_table": "fact_occupation_logement",
+      "annee_reference": 2022,
+      "last_updated": "2026-07-31T12:21:53.300026",
       "row_count": 34854,
       "certified": false,
-      "doc_url": "https://www.data.gouv.fr/fr/datasets/r/cae4e8a4-15e0-40ff-88fe-087b9e206514"
+      "doc_url": "https://www.data.gouv.fr/datasets/logements/#/resources/cae4e8a4-15e0-40ff-88fe-087b9e206514"
     },
     {
       "source_key": "logement_social",
@@ -136,23 +136,12 @@
       "doc_url": "https://www.statistiques.developpement-durable.gouv.fr/54-millions-de-logements-locatifs-sociaux-en-france-au-1er-janvier-2024"
     },
     {
-      "source_key": "maternites",
-      "name": "Maternités françaises identifiées par numéro FINESS (DREES, data.gouv.fr). Enrichissement géographique via dim_etablissement_sante.",
-      "method": "Data Platform Odace",
-      "odace_table": "dim_maternite",
-      "annee_reference": 2026,
-      "last_updated": "2026-07-31T10:01:02.568742",
-      "row_count": null,
-      "certified": false,
-      "doc_url": "https://www.data.gouv.fr/datasets/liste-des-maternites-de-france-depuis-2000/#/resources/a822f7ae-7c46-42c0-86e1-ad7d381c1ad2"
-    },
-    {
       "source_key": "bmo",
       "name": "Enquête Besoins en Main d'Oeuvre 2025",
       "method": "Export Data.gouv.fr",
       "odace_table": null,
       "annee_reference": null,
-      "last_updated": "2025-12-02T16:07:10.309233",
+      "last_updated": "2026-06-11T07:41:40.666551+00:00",
       "row_count": null,
       "certified": false,
       "doc_url": "https://www.data.gouv.fr/fr/datasets/r/54478315-aafd-4070-b8df-a5647297e0c0"
@@ -163,7 +152,7 @@
       "method": "Export Data.gouv.fr",
       "odace_table": null,
       "annee_reference": null,
-      "last_updated": "2026-07-31T10:01:31.437824",
+      "last_updated": "2026-07-31T12:22:11.948795",
       "row_count": 297,
       "certified": false,
       "doc_url": "https://www.data.gouv.fr/fr/datasets/r/d65d5cae-399f-4150-804f-493026645fd5"
@@ -174,7 +163,7 @@
       "method": "Data Platform Odace",
       "odace_table": "fact_couverture_petite_enfance",
       "annee_reference": 2023,
-      "last_updated": "2026-07-31T10:01:02.567402",
+      "last_updated": "2026-07-31T12:21:22.136461",
       "row_count": 1019,
       "certified": false,
       "doc_url": "https://www.data.gouv.fr/datasets/taux-de-couverture-daccueil-du-jeune-enfant-communal/"
@@ -196,7 +185,7 @@
       "method": "Data Platform Odace",
       "odace_table": "dim_etablissement_scolaire",
       "annee_reference": 2024,
-      "last_updated": "2026-06-11T07:37:57.241202+00:00",
+      "last_updated": "2026-07-31T09:23:42.035961+00:00",
       "row_count": null,
       "certified": false,
       "doc_url": "https://www.data.gouv.fr/datasets/annuaire-de-leducation/#/resources/9eb02ac9-4bce-4fa8-a6f7-451c5b366f66"
@@ -207,7 +196,7 @@
       "method": "Export Open Data",
       "odace_table": null,
       "annee_reference": null,
-      "last_updated": "2026-07-31T10:01:29.197768",
+      "last_updated": "2026-07-31T12:22:09.582799",
       "row_count": 35511,
       "certified": false,
       "doc_url": "https://object.files.data.gouv.fr/hydra-parquet/hydra-parquet/008a2dda-2c60-4b63-b910-998f6f818089.parquet"
@@ -235,17 +224,6 @@
       "doc_url": "https://www.data.gouv.fr/fr/datasets/r/803121dd-1acf-423d-b7d8-8511f1c607c1"
     },
     {
-      "source_key": "finess_national",
-      "name": "Établissements de santé et médico-sociaux FINESS national (etalab). Grain : établissement (nofinesset). Source : data.gouv.fr.",
-      "method": "Data Platform Odace",
-      "odace_table": "dim_etablissement_sante",
-      "annee_reference": 2026,
-      "last_updated": "2026-07-31T10:01:02.568321",
-      "row_count": null,
-      "certified": false,
-      "doc_url": "https://www.data.gouv.fr/datasets/finess-extraction-du-fichier-des-etablissements/#/resources/98f3161f-79ff-4f16-8f6a-6d571a80fea2"
-    },
-    {
       "source_key": "rome",
       "name": "Référentiel ROME v4.60 (JSON)",
       "method": "Export Data.gouv.fr",
@@ -262,8 +240,8 @@
       "method": "Data Platform Odace",
       "odace_table": "dim_equipement_territoire",
       "annee_reference": 2024,
-      "last_updated": "2026-07-31T10:01:29.165521",
-      "row_count": 197242,
+      "last_updated": "2026-07-31T12:22:09.551244",
+      "row_count": 193554,
       "certified": false,
       "doc_url": "https://www.insee.fr/fr/statistiques/8217525?sommaire=8217537"
     },
@@ -273,7 +251,7 @@
       "method": "Data Platform Odace",
       "odace_table": "fact_population_active",
       "annee_reference": 2022,
-      "last_updated": "2026-07-31T10:01:02.457920",
+      "last_updated": "2026-07-31T12:21:22.040128",
       "row_count": 34774,
       "certified": false,
       "doc_url": "https://www.data.gouv.fr/datasets/population-active-et-chomage/"
@@ -306,7 +284,7 @@
       "method": "Export Data.gouv.fr",
       "odace_table": null,
       "annee_reference": null,
-      "last_updated": "2026-07-31T10:01:01.914614",
+      "last_updated": "2026-07-31T12:21:21.549235",
       "row_count": 12752,
       "certified": false,
       "doc_url": "https://www.data.gouv.fr/fr/datasets/r/915c05e8-77ea-44f6-9837-0f1eff897a54"
@@ -317,7 +295,7 @@
       "method": "Data Platform Odace",
       "odace_table": "fact_demographie",
       "annee_reference": 2022,
-      "last_updated": "2026-07-31T10:01:31.426702",
+      "last_updated": "2026-07-31T12:22:11.938167",
       "row_count": 34852,
       "certified": false,
       "doc_url": "https://www.data.gouv.fr/datasets/population-2/#/resources/7e3937bb-e815-4e58-92d4-d7ef478abcc0"
@@ -350,7 +328,7 @@
       "method": "Data Platform Odace",
       "odace_table": "fact_transport_commun",
       "annee_reference": 2025,
-      "last_updated": "2026-07-31T10:20:51.805657",
+      "last_updated": "2026-07-31T12:22:12.158748",
       "row_count": 34858,
       "certified": false,
       "doc_url": "https://www.data.gouv.fr/datasets/nombre-de-stations-de-transports-en-commun-selon-le-type-de-reseau?resource_id=501ac60d-246d-45bf-8dcf-ab43e1b1a736"
@@ -372,7 +350,7 @@
       "method": "Data Platform Odace",
       "odace_table": "fact_apl_medecin",
       "annee_reference": 2023,
-      "last_updated": "2026-07-31T10:20:56.543147",
+      "last_updated": "2026-07-31T12:22:12.197767",
       "row_count": 34912,
       "certified": false,
       "doc_url": "https://data.drees.solidarites-sante.gouv.fr/explore/dataset/530_l-accessibilite-potentielle-localisee-apl/"
@@ -394,10 +372,516 @@
       "method": "Data Platform Odace",
       "odace_table": "fact_insecurite_commune",
       "annee_reference": 2024,
-      "last_updated": "2026-07-31T10:20:58.354969",
+      "last_updated": "2026-07-31T12:22:13.072664",
       "row_count": 34875,
       "certified": false,
       "doc_url": "https://www.data.gouv.fr/datasets/statistiques-d-insecurite-par-commune-ssmsi/"
     }
-  ]
+  ],
+  "pipeline_run_id": "run-20260731T102119Z-f564b43c",
+  "quality_gate": {
+    "status": "PASSED",
+    "contract_version": 1,
+    "communes": {
+      "rows": 34968,
+      "columns": 131
+    },
+    "score_metrics": [
+      {
+        "id": "log_vac_scaled",
+        "coverage": 0.47063029055136124
+      },
+      {
+        "id": "log_soc_inoc_scaled",
+        "coverage": 0.47969572180279113
+      },
+      {
+        "id": "log_occup_scaled",
+        "coverage": 0.9964253031342942
+      },
+      {
+        "id": "log_loyer_moyen_appt_all_scaled",
+        "coverage": 0.9965968885838481
+      },
+      {
+        "id": "log_loyer_moyen_appt_t1_t2_scaled",
+        "coverage": 0.9965968885838481
+      },
+      {
+        "id": "log_loyer_moyen_appt_t3_p_scaled",
+        "coverage": 0.9965968885838481
+      },
+      {
+        "id": "log_loyer_moyen_house_all_scaled",
+        "coverage": 0.9965968885838481
+      },
+      {
+        "id": "ter_pol_scaled",
+        "coverage": 0.9943662777396477
+      },
+      {
+        "id": "ter_anvita_scaled",
+        "coverage": 1.0
+      },
+      {
+        "id": "ter_ctai_scaled",
+        "coverage": 1.0
+      },
+      {
+        "id": "inc_asso_core_scaled",
+        "coverage": 1.0
+      },
+      {
+        "id": "inc_asso_refug_scaled",
+        "coverage": 1.0
+      },
+      {
+        "id": "inc_siae_density_scaled",
+        "coverage": 1.0
+      },
+      {
+        "id": "edu_petite_enfance_scaled",
+        "coverage": 0.029083733699382292
+      },
+      {
+        "id": "edu_classes_ferm_scaled",
+        "coverage": 0.6034660260809883
+      },
+      {
+        "id": "sante_hopital_scaled",
+        "coverage": 1.0
+      },
+      {
+        "id": "sante_maternite_scaled",
+        "coverage": 1.0
+      },
+      {
+        "id": "sante_psy_scaled",
+        "coverage": 1.0
+      },
+      {
+        "id": "sante_dialyse_scaled",
+        "coverage": 1.0
+      },
+      {
+        "id": "sante_maison_sante_scaled",
+        "coverage": 1.0
+      },
+      {
+        "id": "sante_addictologie_scaled",
+        "coverage": 1.0
+      },
+      {
+        "id": "sante_pmi_scaled",
+        "coverage": 1.0
+      },
+      {
+        "id": "mob_gare_scaled",
+        "coverage": 1.0
+      },
+      {
+        "id": "youth_decline_scaled",
+        "coverage": 0.9921642644703729
+      },
+      {
+        "id": "workclass_decline_scaled",
+        "coverage": 0.9961393273850377
+      },
+      {
+        "id": "heb_loc_iml_scaled",
+        "coverage": 1.0
+      },
+      {
+        "id": "heb_chrs_scaled",
+        "coverage": 1.0
+      },
+      {
+        "id": "heb_cph_scaled",
+        "coverage": 1.0
+      },
+      {
+        "id": "heb_cada_scaled",
+        "coverage": 1.0
+      },
+      {
+        "id": "heb_fjt_scaled",
+        "coverage": 1.0
+      },
+      {
+        "id": "heb_pension_scaled",
+        "coverage": 1.0
+      },
+      {
+        "id": "heb_asso_habitant_scaled",
+        "coverage": 1.0
+      },
+      {
+        "id": "log_soc_delay_scaled",
+        "coverage": 0.9897620681766186
+      },
+      {
+        "id": "sante_rdv_delay_scaled",
+        "coverage": 0.9964253031342942
+      },
+      {
+        "id": "mob_dur_share_scaled",
+        "coverage": 0.9939659116906886
+      },
+      {
+        "id": "ter_insecurite_scaled",
+        "coverage": 0.9969400594829558
+      }
+    ],
+    "checks": [
+      {
+        "name": "communes.minimum_rows",
+        "status": "PASSED",
+        "actual": 34968,
+        "minimum": 30000
+      },
+      {
+        "name": "communes.required_columns",
+        "status": "PASSED",
+        "missing": []
+      },
+      {
+        "name": "communes.primary_key",
+        "status": "PASSED",
+        "nulls": 0,
+        "duplicates": 0
+      },
+      {
+        "name": "communes.geography.dep_code",
+        "status": "PASSED",
+        "coverage": 0.9970830473575841,
+        "minimum": 0.995
+      },
+      {
+        "name": "communes.geography.reg_code",
+        "status": "PASSED",
+        "coverage": 0.9970830473575841,
+        "minimum": 0.995
+      },
+      {
+        "name": "communes.geography.epci_code",
+        "status": "PASSED",
+        "coverage": 0.9971974376572866,
+        "minimum": 0.995
+      },
+      {
+        "name": "communes.geography.bassin_de_vie",
+        "status": "PASSED",
+        "coverage": 0.9973118279569892,
+        "minimum": 0.995
+      },
+      {
+        "name": "score.log_vac_scaled",
+        "status": "PASSED",
+        "coverage": 0.47063029055136124,
+        "minimum_coverage": 0.001,
+        "distinct_values": 8405
+      },
+      {
+        "name": "score.log_soc_inoc_scaled",
+        "status": "PASSED",
+        "coverage": 0.47969572180279113,
+        "minimum_coverage": 0.001,
+        "distinct_values": 2530
+      },
+      {
+        "name": "score.log_occup_scaled",
+        "status": "PASSED",
+        "coverage": 0.9964253031342942,
+        "minimum_coverage": 0.001,
+        "distinct_values": 22805
+      },
+      {
+        "name": "score.log_loyer_moyen_appt_all_scaled",
+        "status": "PASSED",
+        "coverage": 0.9965968885838481,
+        "minimum_coverage": 0.001,
+        "distinct_values": 723
+      },
+      {
+        "name": "score.log_loyer_moyen_appt_t1_t2_scaled",
+        "status": "PASSED",
+        "coverage": 0.9965968885838481,
+        "minimum_coverage": 0.001,
+        "distinct_values": 760
+      },
+      {
+        "name": "score.log_loyer_moyen_appt_t3_p_scaled",
+        "status": "PASSED",
+        "coverage": 0.9965968885838481,
+        "minimum_coverage": 0.001,
+        "distinct_values": 667
+      },
+      {
+        "name": "score.log_loyer_moyen_house_all_scaled",
+        "status": "PASSED",
+        "coverage": 0.9965968885838481,
+        "minimum_coverage": 0.001,
+        "distinct_values": 699
+      },
+      {
+        "name": "score.ter_pol_scaled",
+        "status": "PASSED",
+        "coverage": 0.9943662777396477,
+        "minimum_coverage": 0.001,
+        "distinct_values": 2
+      },
+      {
+        "name": "score.ter_anvita_scaled",
+        "status": "PASSED",
+        "coverage": 1.0,
+        "minimum_coverage": 0.001,
+        "distinct_values": 3
+      },
+      {
+        "name": "score.ter_ctai_scaled",
+        "status": "PASSED",
+        "coverage": 1.0,
+        "minimum_coverage": 0.001,
+        "distinct_values": 3
+      },
+      {
+        "name": "score.inc_asso_core_scaled",
+        "status": "PASSED",
+        "coverage": 1.0,
+        "minimum_coverage": 0.001,
+        "distinct_values": 5919
+      },
+      {
+        "name": "score.inc_asso_refug_scaled",
+        "status": "PASSED",
+        "coverage": 1.0,
+        "minimum_coverage": 0.001,
+        "distinct_values": 357
+      },
+      {
+        "name": "score.inc_siae_density_scaled",
+        "status": "PASSED",
+        "coverage": 1.0,
+        "minimum_coverage": 0.001,
+        "distinct_values": 5529
+      },
+      {
+        "name": "score.edu_petite_enfance_scaled",
+        "status": "PASSED",
+        "coverage": 0.029083733699382292,
+        "minimum_coverage": 0.001,
+        "distinct_values": 442
+      },
+      {
+        "name": "score.edu_classes_ferm_scaled",
+        "status": "PASSED",
+        "coverage": 0.6034660260809883,
+        "minimum_coverage": 0.001,
+        "distinct_values": 3
+      },
+      {
+        "name": "score.sante_hopital_scaled",
+        "status": "PASSED",
+        "coverage": 1.0,
+        "minimum_coverage": 0.001,
+        "distinct_values": 2
+      },
+      {
+        "name": "score.sante_maternite_scaled",
+        "status": "PASSED",
+        "coverage": 1.0,
+        "minimum_coverage": 0.001,
+        "distinct_values": 2
+      },
+      {
+        "name": "score.sante_psy_scaled",
+        "status": "PASSED",
+        "coverage": 1.0,
+        "minimum_coverage": 0.001,
+        "distinct_values": 2
+      },
+      {
+        "name": "score.sante_dialyse_scaled",
+        "status": "PASSED",
+        "coverage": 1.0,
+        "minimum_coverage": 0.001,
+        "distinct_values": 2
+      },
+      {
+        "name": "score.sante_maison_sante_scaled",
+        "status": "PASSED",
+        "coverage": 1.0,
+        "minimum_coverage": 0.001,
+        "distinct_values": 2
+      },
+      {
+        "name": "score.sante_addictologie_scaled",
+        "status": "PASSED",
+        "coverage": 1.0,
+        "minimum_coverage": 0.001,
+        "distinct_values": 2
+      },
+      {
+        "name": "score.sante_pmi_scaled",
+        "status": "PASSED",
+        "coverage": 1.0,
+        "minimum_coverage": 0.001,
+        "distinct_values": 2
+      },
+      {
+        "name": "score.mob_gare_scaled",
+        "status": "PASSED",
+        "coverage": 1.0,
+        "minimum_coverage": 0.001,
+        "distinct_values": 2
+      },
+      {
+        "name": "score.youth_decline_scaled",
+        "status": "PASSED",
+        "coverage": 0.9921642644703729,
+        "minimum_coverage": 0.001,
+        "distinct_values": 21942
+      },
+      {
+        "name": "score.workclass_decline_scaled",
+        "status": "PASSED",
+        "coverage": 0.9961393273850377,
+        "minimum_coverage": 0.001,
+        "distinct_values": 7609
+      },
+      {
+        "name": "score.heb_loc_iml_scaled",
+        "status": "PASSED",
+        "coverage": 1.0,
+        "minimum_coverage": 0.001,
+        "distinct_values": 228
+      },
+      {
+        "name": "score.heb_chrs_scaled",
+        "status": "PASSED",
+        "coverage": 1.0,
+        "minimum_coverage": 0.001,
+        "distinct_values": 2
+      },
+      {
+        "name": "score.heb_cph_scaled",
+        "status": "PASSED",
+        "coverage": 1.0,
+        "minimum_coverage": 0.001,
+        "distinct_values": 2
+      },
+      {
+        "name": "score.heb_cada_scaled",
+        "status": "PASSED",
+        "coverage": 1.0,
+        "minimum_coverage": 0.001,
+        "distinct_values": 2
+      },
+      {
+        "name": "score.heb_fjt_scaled",
+        "status": "PASSED",
+        "coverage": 1.0,
+        "minimum_coverage": 0.001,
+        "distinct_values": 2
+      },
+      {
+        "name": "score.heb_pension_scaled",
+        "status": "PASSED",
+        "coverage": 1.0,
+        "minimum_coverage": 0.001,
+        "distinct_values": 2
+      },
+      {
+        "name": "score.heb_asso_habitant_scaled",
+        "status": "PASSED",
+        "coverage": 1.0,
+        "minimum_coverage": 0.001,
+        "distinct_values": 372
+      },
+      {
+        "name": "score.log_soc_delay_scaled",
+        "status": "PASSED",
+        "coverage": 0.9897620681766186,
+        "minimum_coverage": 0.001,
+        "distinct_values": 882
+      },
+      {
+        "name": "score.sante_rdv_delay_scaled",
+        "status": "PASSED",
+        "coverage": 0.9964253031342942,
+        "minimum_coverage": 0.001,
+        "distinct_values": 5439
+      },
+      {
+        "name": "score.mob_dur_share_scaled",
+        "status": "PASSED",
+        "coverage": 0.9939659116906886,
+        "minimum_coverage": 0.001,
+        "distinct_values": 19121
+      },
+      {
+        "name": "score.ter_insecurite_scaled",
+        "status": "PASSED",
+        "coverage": 0.9969400594829558,
+        "minimum_coverage": 0.001,
+        "distinct_values": 8819
+      },
+      {
+        "name": "release.odis_communes.parquet",
+        "status": "PASSED",
+        "path": "pipeline/cache/runs/run-20260731T102119Z-f564b43c/output/odis_communes.parquet"
+      },
+      {
+        "name": "release.odis_bassins_de_vie.parquet",
+        "status": "PASSED",
+        "path": "pipeline/cache/runs/run-20260731T102119Z-f564b43c/output/odis_bassins_de_vie.parquet"
+      },
+      {
+        "name": "release.odis_pois.parquet",
+        "status": "PASSED",
+        "path": "pipeline/cache/runs/run-20260731T102119Z-f564b43c/output/odis_pois.parquet"
+      },
+      {
+        "name": "release.odis_associations_agg.parquet",
+        "status": "PASSED",
+        "path": "pipeline/cache/runs/run-20260731T102119Z-f564b43c/output/odis_associations_agg.parquet"
+      },
+      {
+        "name": "release.odis_formations_agg.parquet",
+        "status": "PASSED",
+        "path": "pipeline/cache/runs/run-20260731T102119Z-f564b43c/output/odis_formations_agg.parquet"
+      },
+      {
+        "name": "release.odis_ccas.parquet",
+        "status": "PASSED",
+        "path": "pipeline/cache/runs/run-20260731T102119Z-f564b43c/output/odis_ccas.parquet"
+      },
+      {
+        "name": "release.odis_refugee_associations.parquet",
+        "status": "PASSED",
+        "path": "pipeline/cache/runs/run-20260731T102119Z-f564b43c/output/odis_refugee_associations.parquet"
+      },
+      {
+        "name": "release.odis_ft_jobs_agg.parquet",
+        "status": "PASSED",
+        "path": "pipeline/cache/runs/run-20260731T102119Z-f564b43c/output/odis_ft_jobs_agg.parquet"
+      },
+      {
+        "name": "release.odis_inclusion_jobs.parquet",
+        "status": "PASSED",
+        "path": "pipeline/cache/runs/run-20260731T102119Z-f564b43c/output/odis_inclusion_jobs.parquet"
+      },
+      {
+        "name": "release.salesforce_jaccueille_bdv.parquet",
+        "status": "PASSED",
+        "path": "pipeline/cache/runs/run-20260731T102119Z-f564b43c/output/salesforce_jaccueille_bdv.parquet"
+      },
+      {
+        "name": "join.bassin_de_vie",
+        "status": "PASSED",
+        "orphan_fraction": 0.0,
+        "maximum": 0.005
+      }
+    ]
+  }
 }
