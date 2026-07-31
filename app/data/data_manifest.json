@@ -258,14 +258,14 @@
     },
     {
       "source_key": "referentiel_services_inclusion",
-      "name": "Référentiel des services d'inclusion (Local)",
+      "name": "Référentiel des services d'inclusion (fichier local portable)",
       "method": "Export Open Data",
       "odace_table": null,
       "annee_reference": null,
       "last_updated": "2026-06-11T07:44:08.241523+00:00",
       "row_count": null,
       "certified": false,
-      "doc_url": "file:///Users/jacques/dev/13_odis_stream2/pipeline/local/referentiel_services_inclusion.csv"
+      "doc_url": "file://pipeline/local/referentiel_services_inclusion.csv"
     },
     {
       "source_key": "loyers_apparts",

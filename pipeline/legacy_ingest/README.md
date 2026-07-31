@@ -3,6 +3,11 @@
 This package preserves retired manual-download ingestion paths. It is not part
 of the default ETL, release manifest, or application runtime.
 
+Historical local inputs for the retired USH housing-delay and DREES APL flows
+are kept under [`data/`](data/) for reference only. They are not read by the
+active pipeline; the active sources are Odace
+`fact_delai_attribution_logement` and `fact_apl_medecin`.
+
 The J'Accueille CSV/XLSX exports and their former BigQuery uploader were
 superseded by the Salesforce extract. Run an archived path only for a documented
 historical-reproduction or recovery exercise, supplying the input path

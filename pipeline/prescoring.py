@@ -110,6 +110,46 @@ def append_columns(df: pd.DataFrame, columns: Dict[str, Any]) -> pd.DataFrame:
     return pd.concat([base, additions], axis=1)
 
 
+def aggregate_commune_metrics_by_bv(
+    communes: pd.DataFrame,
+    metrics_to_average: List[str],
+    metrics_to_sum: List[str],
+) -> pd.DataFrame:
+    """Aggregate commune metrics by bassin de vie without inserting temporary columns.
+
+    Weighted metrics use population only where both the metric and population
+    are observed, preserving the missing-data behavior of the previous
+    ``<metric>_w`` and ``<metric>_population`` intermediate columns.
+    """
+    group_key = "bassin_de_vie"
+    group_values = communes[group_key]
+    aggregates = []
+
+    average_metrics = [metric for metric in metrics_to_average if metric in communes]
+    if average_metrics:
+        values = communes[average_metrics]
+        population = communes["population"]
+        valid = values.notna() & population.notna().to_numpy()[:, None]
+        weighted_values = values.mul(population, axis=0).where(valid)
+        weights = valid.mul(population, axis=0).where(valid)
+        weighted_means = (
+            weighted_values.groupby(group_values, observed=True)
+            .sum(min_count=1)
+            .div(weights.groupby(group_values, observed=True).sum(min_count=1))
+        )
+        aggregates.append(weighted_means)
+
+    sum_metrics = [metric for metric in metrics_to_sum if metric in communes]
+    if sum_metrics:
+        aggregates.append(
+            communes[sum_metrics].groupby(group_values, observed=True).sum(min_count=1)
+        )
+
+    if not aggregates:
+        return pd.DataFrame(index=pd.Index([], name=group_key))
+    return pd.concat(aggregates, axis=1)
+
+
 def scale_series(series, min_b, max_b, inverted=False, col_name="series"):
     if series.empty:
         return series
@@ -882,31 +922,9 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
         ].copy()
 
         if "bassin_de_vie" in communes_subset.columns:
-            for metric in metrics_to_avg:
-                if metric in communes_subset.columns:
-                    valid = (
-                        communes_subset[metric].notna()
-                        & communes_subset["population"].notna()
-                    )
-                    communes_subset[f"{metric}_w"] = (
-                        communes_subset[metric] * communes_subset["population"]
-                    ).where(valid)
-                    communes_subset[f"{metric}_population"] = communes_subset[
-                        "population"
-                    ].where(valid)
-
-            grouped = communes_subset.groupby("bassin_de_vie", observed=True)
-            bv_aggs = pd.DataFrame(index=grouped.groups.keys())
-            for metric in metrics_to_avg:
-                if metric in communes_subset.columns:
-                    metric_population = grouped[f"{metric}_population"].sum(min_count=1)
-                    bv_aggs[metric] = (
-                        grouped[f"{metric}_w"].sum(min_count=1) / metric_population
-                    )
-
-            for metric in raw_sum_metrics:
-                if metric in communes_subset.columns:
-                    bv_aggs[metric] = grouped[metric].sum(min_count=1)
+            bv_aggs = aggregate_commune_metrics_by_bv(
+                communes_subset, metrics_to_avg, raw_sum_metrics
+            )
 
             # Merge back
             if "bassin_de_vie" in bv_gdf.columns:

@@ -84,7 +84,7 @@
 ## Historique électoral
 
 - Données: https://www.data.gouv.fr/fr/datasets/resultats-des-elections-en-france-par-commune-et-par-bureau-de-vote/
-- Fichier local: pipeline/local/candidats_results.parquet
+- Cache ETL généré: pipeline/cache/raw/candidats_results.parquet (non versionné)
 - Type de fichier: parquet (optimisé, ~27.5 millions de lignes, 161 Mo)
 - Description: Résultats électoraux par bureau de vote. Utilisé pour compiler l'historique des 5 derniers scrutins majeurs de chaque commune (enregistré au format JSON).
 
@@ -238,13 +238,13 @@
 # Territoire
 
 ## Délai d'attente logement social
-- Page: https://www.union-habitat.org/donnees-ush
-- Source Locale: pipeline/local/donnees_ush_stats_1_demande_attribution.xlsx (Utilisé car blocage WAF USH)
-- Type de fichier: xlsx
-- Onglet: Carte 1
+- Source active: Odace `fact_delai_attribution_logement`
+- Source historique: Union Sociale pour l'Habitat (USH)
+- Fichiers historiques archivés: `pipeline/legacy_ingest/data/`
 - Description: Délai moyen d'attribution par EPCI (SIREN).
 
 ## Accessibilité Potentielle Localisée (APL) aux médecins
+- Fichier historique archivé: `pipeline/legacy_ingest/data/apl_acces_medecins_generalistes_2023.csv`
 - Page: https://data.drees.solidarites-sante.gouv.fr/explore/dataset/530_l-accessibilite-potentielle-localisee-apl
 - Lien direct: https://data.drees.solidarites-sante.gouv.fr/api/datasets/1.0/530_l-accessibilite-potentielle-localisee-apl/attachments/indicateur_d_accessibilite_potentielle_localisee_apl_aux_medecins_generalistes_xlsx/
 - Type de fichier: xlsx

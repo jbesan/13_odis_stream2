@@ -207,11 +207,11 @@ sources:
     description: "Population active et chômage (INSEE)"
 
   referentiel_services_inclusion:
-    url: "file:///Users/jacques/dev/13_odis_stream2/pipeline/local/referentiel_services_inclusion.csv"
+    url: "file://pipeline/local/referentiel_services_inclusion.csv"
     format: "csv"
     local_name: "referentiel_services_inclusion.csv"
     ttl_days: 365
-    description: "Référentiel des services d'inclusion (Local)"
+    description: "Référentiel des services d'inclusion (fichier local portable)"
     used_columns:
       - code
       - libelle
