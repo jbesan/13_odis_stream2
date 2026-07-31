@@ -56,6 +56,7 @@ class PipelineLogger:
         return {}
 
     def _save_status(self):
+        self.status_file.parent.mkdir(parents=True, exist_ok=True)
         with open(self.status_file, "w") as f:
             json.dump(self.status, f, indent=2, default=str)
 
@@ -79,8 +80,14 @@ class PipelineLogger:
         if "sources" not in self.status:
             self.status["sources"] = {}
 
+        source_statuses = {
+            "CACHED": "reused_within_ttl",
+            "SKIPPED": "skipped_optional",
+            "STAGING_COPIED": "refreshed",
+            "STAGING_DOWNLOADED": "refreshed",
+        }
         self.status["sources"][source_name] = {
-            "status": status,
+            "status": source_statuses.get(status, status.lower()),
             "timestamp": datetime.now().isoformat(),
             "file": str(file_path) if file_path else None,
         }

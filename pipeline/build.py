@@ -5,9 +5,10 @@ import geopandas as gpd
 import numpy as np
 from pathlib import Path
 import warnings
+from dataclasses import dataclass
 from shapely.geometry import Polygon, MultiPolygon
 from shapely.validation import make_valid
-from typing import Dict, Any, List, Optional, cast
+from typing import Dict, Any, List, Literal, Optional, cast
 from shapely import wkb
 
 
@@ -40,6 +41,7 @@ from pipeline.common import (
 import app.config as cfg
 from pipeline.anvita import compute_anvita_scores
 from pipeline.ctai import compute_ctai_scores
+from pipeline.run_context import PipelineRunError
 
 
 # Constants
@@ -49,89 +51,125 @@ PLM_ARRONDISSEMENTS = (
     + [str(x) for x in range(69381, 69390)]
 )
 
+PLM_FAMILIES = {
+    "75056": tuple(str(x) for x in range(75101, 75121)),
+    "13055": tuple(str(x) for x in range(13201, 13217)),
+    "69123": tuple(str(x) for x in range(69381, 69390)),
+}
+
+
+@dataclass(frozen=True)
+class PLMAggregationPolicy:
+    """Source-level rule for one metric in a PLM commune family."""
+
+    fallback: Literal["parent", "sum_children", "population_weighted_mean", "max"]
+
+
+# This contract follows the scores catalog's missing_strategy pattern: every
+# metric is explicit, and an unclassified numerical metric blocks the build.
+PLM_SUM_CHILDREN_METRICS = frozenset(
+    {
+        "population", "pop_active", "pop_employes", "pop_chomeurs",
+        "pop_jeune_2016", "pop_jeune_2022", "pop_active_2016", "pop_active_2022",
+        "log_priv_vacant_plus_2ans", "log_priv_total", "log_soc_total",
+        "log_soc_inoccupes", "edu_maternelle_ct", "edu_elementaire_ct",
+        "edu_college_ct", "edu_lycee_ct", "edu_eaje_ct",
+        "edu_relais_petite_enfance_ct", "edu_alsh_ct", "edu_micro_creche_ct",
+        "total_eleves", "ecoles_count", "risky_schools_count", "heb_chrs_count",
+        "heb_cph_count", "heb_cada_count", "heb_fjt_count", "heb_pension_count",
+        "heb_loc_iml_count", "heb_habitant_count", "gare_count", "count_hopital",
+        "count_maternite", "count_centre_sante", "count_psy", "count_dialyse",
+        "count_maison_sante", "count_addictologie", "count_pmi",
+        "act_antenne_justice_count", "act_france_services_count", "act_mairie_count",
+        "act_femmes_vuln_count", "nb_stops_bus", "nb_stops_tram", "nb_stops_metro",
+        "nb_stops_train", "nb_stops_total", "inc_rna_Culturelle_count",
+        "inc_rna_Emploi/IAE_count", "inc_rna_FLE/Alpha_count",
+        "inc_rna_Juridique_count", "inc_rna_Logement_count",
+        "inc_rna_Numérique_count", "inc_rna_Santé/Psy_count", "inc_asso_refug_count",
+        "inc_siae_count", "lien_social_count",
+    }
+)
+PLM_POPULATION_WEIGHTED_METRICS = frozenset(
+    {
+        "edu_pe_tx_couverture", "log_soc_delay", "sante_apl", "mob_dur_share",
+        "ter_insecurite", "loyer_m2_moy_appt_all", "loyer_m2_moy_appt_t1_t2",
+        "loyer_m2_moy_appt_t3_p", "loyer_m2_moy_house_all", "loyer_app_m2",
+    }
+)
+PLM_PARENT_ONLY_METRICS = frozenset(
+    {
+        "pol_num", "MOD_OVER_OCC", "MOD_UNDER_OCC", "SEV_OVER_OCC",
+        "SEV_UNDER_OCC", "STD_OCC", "VSEV_UNDER_OCC",
+    }
+)
+PLM_MAX_METRICS = frozenset({"has_gare"})
+PLM_STRUCTURAL_COLUMNS = frozenset(
+    {"codgeo", "epci_code", "dep_code", "reg_code", "bassin_de_vie", "plm"}
+)
+
+
+def _plm_metric_policies(df: pd.DataFrame) -> Dict[str, PLMAggregationPolicy]:
+    """Return and validate the complete PLM contract for this build schema."""
+    policies = {
+        **{column: PLMAggregationPolicy("sum_children") for column in PLM_SUM_CHILDREN_METRICS},
+        **{column: PLMAggregationPolicy("population_weighted_mean") for column in PLM_POPULATION_WEIGHTED_METRICS},
+        **{column: PLMAggregationPolicy("parent") for column in PLM_PARENT_ONLY_METRICS},
+        **{column: PLMAggregationPolicy("max") for column in PLM_MAX_METRICS},
+    }
+    numeric_columns = {
+        column for column in df.columns
+        if column not in PLM_STRUCTURAL_COLUMNS and pd.api.types.is_numeric_dtype(df[column])
+    }
+    unknown_columns = numeric_columns - policies.keys()
+    if unknown_columns:
+        raise ValueError(
+            "PLM aggregation contract is missing numerical metrics: "
+            f"{sorted(unknown_columns)}"
+        )
+    return {column: policies[column] for column in numeric_columns}
+
 
 def consolidate_plm_communes(df: pd.DataFrame) -> pd.DataFrame:
-    """Consolidates PLM arrondissements metrics to parent codes."""
-    plm_mapping = {
-        "75056": [str(x) for x in range(75101, 75121)],  # Paris
-        "13055": [str(x) for x in range(13201, 13217)],  # Marseille
-        "69123": [str(x) for x in range(69381, 69390)],  # Lyon
-    }
-
-    # Identify columns to sum vs average
-    rate_cols = [
-        "sante_apl",
-        "edu_pe_tx_couverture",
-        "mob_dur_share",
-        "ter_insecurite",
-        "log_soc_delay",
-        "sante_rdv_delay",
-        "loyer_app_m2",
-    ]
-    special_cols = [
-        "codgeo",
-        "epci_code",
-        "dep_code",
-        "reg_code",
-        "bassin_de_vie",
-        "plm",
-        "has_gare",
-    ]
-
-    avg_keywords = ("loyer", "m2", "moy", "rate", "ratio", "density", "share", "delay", "pct", "scaled")
-    cols_to_sum = []
-    cols_to_avg = []
-    for col in df.columns:
-        if col in special_cols or not pd.api.types.is_numeric_dtype(df[col]):
-            continue
-        col_lower = col.lower()
-        if col in rate_cols or any(kw in col_lower for kw in avg_keywords):
-            cols_to_avg.append(col)
-        else:
-            cols_to_sum.append(col)
-
-    # Cast to ensure float/int operations are safe
+    """Collapse PLM children using the declared per-metric source contract."""
     df = df.copy()
+    df["codgeo"] = df["codgeo"].astype(str)
+    metric_policies = _plm_metric_policies(df)
 
-    for parent, children in plm_mapping.items():
+    for parent, children in PLM_FAMILIES.items():
         if not (df["codgeo"] == parent).any():
             logging.warning(f"Parent code {parent} not found in communes data.")
             continue
 
         children_mask = df["codgeo"].isin(children)
         parent_mask = df["codgeo"] == parent
+        present_children = set(df.loc[children_mask, "codgeo"])
 
-        # 1. Sum absolute counts over child arrondissements (or fallback to parent if children sum is 0)
-        for col in cols_to_sum:
-            if col in df.columns:
-                child_sum = df.loc[children_mask, col].sum(min_count=1)
-                if pd.notna(child_sum) and child_sum > 0:
-                    df.loc[parent_mask, col] = child_sum
+        for column, policy in metric_policies.items():
+            parent_value = df.loc[parent_mask, column].iloc[0]
+            if policy.fallback == "parent" or pd.notna(parent_value):
+                continue
 
-        # 2. Population-weighted averages for rates using child arrondissements
-        for col in cols_to_avg:
-            if col in df.columns:
-                valid_children_mask = children_mask & df[col].notna()
-                valid_pop = df.loc[valid_children_mask, "population"].sum()
-                if valid_pop > 0:
-                    weighted_sum = (
-                        df.loc[valid_children_mask, col] * df.loc[valid_children_mask, "population"]
-                    ).sum()
-                    df.loc[parent_mask, col] = weighted_sum / valid_pop
-                # Else: preserve pre-existing parent value (e.g. DREES sante_apl for 75056)
+            if set(children) != present_children:
+                raise ValueError(
+                    f"PLM {parent} has no parent value for '{column}' and only "
+                    f"{len(present_children)}/{len(children)} child rows."
+                )
 
-        # 3. Special logical flags
-        # PLM parents (Paris, Lyon, Marseille) always have major railway stations (gares)
-        if "has_gare" in df.columns:
-            df.loc[parent_mask, "has_gare"] = 1.0
-        if "gare_count" in df.columns:
-            parent_gare_count = df.loc[parent_mask, "gare_count"].values[0]
-            df.loc[parent_mask, "gare_count"] = max(parent_gare_count, 1.0)
+            child_values = df.loc[children_mask, column]
+            if policy.fallback == "sum_children":
+                # min_count=1 preserves missingness while allowing a legitimate 0.
+                df.loc[parent_mask, column] = child_values.sum(min_count=1)
+            elif policy.fallback == "population_weighted_mean":
+                child_populations = df.loc[children_mask, "population"]
+                valid = child_values.notna() & child_populations.notna() & child_populations.gt(0)
+                if valid.any():
+                    df.loc[parent_mask, column] = (
+                        child_values.loc[valid] * child_populations.loc[valid]
+                    ).sum() / child_populations.loc[valid].sum()
+            elif policy.fallback == "max":
+                df.loc[parent_mask, column] = child_values.max(skipna=True)
 
-    # 4. Filter out child arrondissements
-    all_children = []
-    for children in plm_mapping.values():
-        all_children.extend(children)
+    all_children = [child for children in PLM_FAMILIES.values() for child in children]
     df = df[~df["codgeo"].isin(all_children)].copy()
 
     return df
@@ -140,23 +178,24 @@ def consolidate_plm_communes(df: pd.DataFrame) -> pd.DataFrame:
 def consolidate_plm_vertical(
     df: pd.DataFrame, codgeo_col: str, group_cols: list, sum_col: str
 ) -> pd.DataFrame:
-    """Aggregates and sums count-based vertical tables (e.g. associations, formations) to PLM parents."""
-    plm_mapping = {
-        "75056": [str(x) for x in range(75101, 75121)],  # Paris
-        "13055": [str(x) for x in range(13201, 13217)],  # Marseille
-        "69123": [str(x) for x in range(69381, 69390)],  # Lyon
-    }
+    """Map child counts to PLM parents without duplicating parent source rows."""
 
     df = df.copy()
     df[codgeo_col] = df[codgeo_col].astype(str)
 
     new_rows = []
-    for global_code, arrondissements in plm_mapping.items():
+    for global_code, arrondissements in PLM_FAMILIES.items():
         arr_df = df[df[codgeo_col].isin(arrondissements)]
         if not arr_df.empty:
             grouped = arr_df.groupby(group_cols)[sum_col].sum().reset_index()
             grouped[codgeo_col] = global_code
-            new_rows.append(grouped)
+            parent_keys = df.loc[df[codgeo_col] == global_code, group_cols]
+            if not parent_keys.empty:
+                grouped_index = pd.MultiIndex.from_frame(grouped[group_cols])
+                parent_index = pd.MultiIndex.from_frame(parent_keys.drop_duplicates())
+                grouped = grouped.loc[~grouped_index.isin(parent_index)]
+            if not grouped.empty:
+                new_rows.append(grouped)
 
     if new_rows:
         df = pd.concat([df] + new_rows, ignore_index=True)
@@ -166,12 +205,7 @@ def consolidate_plm_vertical(
 def consolidate_plm_detail_list(
     df: pd.DataFrame, codgeo_col: str, parent_bdvs: Optional[Dict[Any, Any]] = None
 ) -> pd.DataFrame:
-    """Duplicates details list records from child arrondissements to PLM parent codes."""
-    plm_mapping = {
-        "75056": [str(x) for x in range(75101, 75121)],  # Paris
-        "13055": [str(x) for x in range(13201, 13217)],  # Marseille
-        "69123": [str(x) for x in range(69381, 69390)],  # Lyon
-    }
+    """Map child detail rows to PLM parents, preserving existing parent records."""
 
     df = df.copy()
     df[codgeo_col] = df[codgeo_col].astype(str)
@@ -179,12 +213,17 @@ def consolidate_plm_detail_list(
         df["bassin_de_vie"] = df["bassin_de_vie"].astype(str)
 
     new_rows = []
-    for global_code, arrondissements in plm_mapping.items():
+    for global_code, arrondissements in PLM_FAMILIES.items():
         arr_df = df[df[codgeo_col].isin(arrondissements)].copy()
         if not arr_df.empty:
             arr_df[codgeo_col] = global_code
             if "bassin_de_vie" in arr_df.columns and parent_bdvs:
                 arr_df["bassin_de_vie"] = parent_bdvs.get(global_code, global_code)
+            if "id" in arr_df.columns:
+                parent_ids = set(
+                    df.loc[df[codgeo_col] == global_code, "id"].dropna().astype(str)
+                )
+                arr_df = arr_df[~arr_df["id"].astype(str).isin(parent_ids)]
             new_rows.append(arr_df)
 
     if new_rows:
@@ -740,7 +779,7 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
     except Exception as e:
         logger.log_step("build_communes", "ERROR", {"error": str(e)})
         logging.error(f"Build Communes failed: {e}")
-        return gpd.GeoDataFrame()
+        raise PipelineRunError("Required build step 'communes' failed") from e
 
 
 def build_bassins_de_vie(
@@ -1255,10 +1294,28 @@ def main(argv=None):
         else ["communes", "bassins_de_vie", "vertical_tables", "pois", "referentiels"]
     )
 
+    required_outputs = {
+        "communes": ["odis_communes_pre.parquet"],
+        "bassins_de_vie": ["odis_bassins_de_vie.parquet"],
+        "vertical_tables": [
+            "odis_associations_agg.parquet",
+            "odis_ccas.parquet",
+            "odis_formations_agg.parquet",
+            "odis_refugee_associations.parquet",
+        ],
+        "pois": ["odis_pois.parquet"],
+        "referentiels": ["odis_referentiels.parquet"],
+    }
+
     communes_gdf = None
     if "communes" in selected_steps or "bassins_de_vie" in selected_steps:
         # We need communes for BV
         communes_gdf = build_communes(config, logger)
+        missing = [
+            name for name in required_outputs["communes"] if not (OUTPUT_DIR / name).exists()
+        ]
+        if missing:
+            raise PipelineRunError(f"Build step 'communes' produced no output: {missing}")
 
     for step_name in selected_steps:
         if step_name == "communes":
@@ -1272,6 +1329,18 @@ def main(argv=None):
             except Exception as e:
                 logging.exception(
                     f"❌ [BUILD FAILURE] Error running build step '{step_name}'"
+                )
+                logger.log_step("build_all", "ERROR", {"failed_step": step_name})
+                raise
+            missing = [
+                name
+                for name in required_outputs[step_name]
+                if not (OUTPUT_DIR / name).exists()
+            ]
+            if missing:
+                logger.log_step("build_all", "ERROR", {"failed_step": step_name, "missing": missing})
+                raise PipelineRunError(
+                    f"Build step '{step_name}' produced no required output: {missing}"
                 )
         else:
             logging.warning(f"Unknown build step: {step_name}")

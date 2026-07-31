@@ -63,7 +63,16 @@ At the end of the `prescoring` step (or full pipeline run), `DataManifestBuilder
 1. Balaye les 36+ sources de `sources.yaml`.
 2. Interroge l'API Catalogue Odace (`GET /api/data/catalog/silver/{table_name}`) pour les tables Odace.
 3. Récupère les horodatages réels et volumétries depuis `pipeline/status.json` (ou l'horodatage `st_mtime` des fichiers locaux).
-4. Calcule la version unique déterministe (`vYYYY.MM.DD-hash`) et écrit le manifeste de sortie dans `pipeline/cache/output/data_manifest.json`. L'étape `deploy` conserve le manifeste et `odis_referentiels.parquet` comme bootstrap local, publie les autres Parquets dans une release immuable sous `gs://odis-stream2-eu/datasets/releases/<version>/`, puis avance `gs://odis-stream2-eu/datasets/current.json` en dernier.
+4. Calcule la version unique déterministe (`vYYYY.MM.DD-hash`) et écrit le manifeste dans le répertoire du candidat `pipeline/cache/runs/<run_id>/output/`. Le manifeste est complété par le `run_id` et le résultat du quality gate. L'étape `deploy` refuse tout candidat qui n'est pas `PASSED`, conserve le manifeste et `odis_referentiels.parquet` comme bootstrap local, publie les autres Parquets sous `gs://odis-stream2-eu/datasets/releases/<run_id>/`, puis avance `gs://odis-stream2-eu/datasets/current.json` en dernier.
+
+### 5. Run-scoped publication boundary
+
+`pipeline/run_context.py` creates one isolated candidate record (`run.json`) per
+execution. Required clean, build, and prescoring failures are propagated to the
+ETL process; they mark that candidate `FAILED` and prevent deployment. A source
+may explicitly be `refreshed`, `reused_within_ttl`, `fallback_last_good`, or
+`skipped_optional`, but the runtime data pointer only moves after one candidate
+has a passed quality gate and a manifest matching its `run_id`.
 
 ---
 

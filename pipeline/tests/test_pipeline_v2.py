@@ -350,7 +350,8 @@ def test_run_clean_step_safely_failure_rollback(mock_load, temp_pipeline_dirs):
         nonlocal clean_executed
         clean_executed = True
 
-    run_clean_step_safely("communes", clean_communes_failed, config, logger)
+    with pytest.raises(Exception, match="raw contract validation"):
+        run_clean_step_safely("communes", clean_communes_failed, config, logger)
 
     # Verify early abort (clean function not run, staging discarded, active kept)
     assert not clean_executed
@@ -367,7 +368,8 @@ def test_run_clean_step_safely_failure_rollback(mock_load, temp_pipeline_dirs):
         assert active_raw.read_text() == "new raw data"
         raise ValueError("Simulated cleaning crash")
 
-    run_clean_step_safely("communes", clean_communes_crash, config, logger)
+    with pytest.raises(Exception, match="Required clean step"):
+        run_clean_step_safely("communes", clean_communes_crash, config, logger)
 
     # Verify rollback successfully restored active files and discarded staging
     assert active_raw.read_text() == "old raw data"

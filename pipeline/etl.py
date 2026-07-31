@@ -13,6 +13,7 @@ sys.path.append(os.path.join(os.getcwd(), "app"))
 
 from pipeline import ingest, build, prescoring
 from google.cloud import storage
+from pipeline.run_context import PipelineRun, PipelineRunError, bind_run_paths
 
 SOURCE_DIR = Path("pipeline/cache/output")
 DEST_DATA_DIR = Path("app/data")
@@ -56,9 +57,11 @@ def _get_release_version(source_dir: Path) -> str:
     return version
 
 
-def _publish_datasets_to_gcs(source_dir: Path, bucket_name: str) -> str:
+def _publish_datasets_to_gcs(
+    source_dir: Path, bucket_name: str, *, release_version: str | None = None
+) -> str:
     """Publish one immutable dataset release, then atomically advance its pointer."""
-    release_version = _get_release_version(source_dir)
+    release_version = release_version or _get_release_version(source_dir)
     missing_files = [
         filename for filename in DATASET_FILES if not (source_dir / filename).exists()
     ]
@@ -103,6 +106,20 @@ def _publish_datasets_to_gcs(source_dir: Path, bucket_name: str) -> str:
     return release_version
 
 
+def _assert_deployable_candidate(source_dir: Path, run: PipelineRun) -> None:
+    """Reject loose or stale artefacts before they can reach the release pointer."""
+    run.assert_deployable()
+    manifest_path = source_dir / "data_manifest.json"
+    if not manifest_path.exists():
+        raise PipelineRunError(f"Candidate manifest is missing: {manifest_path}")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise PipelineRunError(f"Candidate manifest is invalid: {manifest_path}") from exc
+    if manifest.get("pipeline_run_id") != run.run_id:
+        raise PipelineRunError("Candidate manifest does not belong to the requested run")
+
+
 def main():
     parser = argparse.ArgumentParser(description="ODIS Data Pipeline ETL")
     parser.add_argument(
@@ -110,6 +127,10 @@ def main():
         choices=["ingest", "build", "prescoring", "deploy", "all"],
         default="all",
         help="Step to run",
+    )
+    parser.add_argument(
+        "--run-id",
+        help="Existing run to continue or deploy. A new ID is created when omitted.",
     )
     parser.add_argument(
         "--table",
@@ -129,176 +150,212 @@ def main():
     )
     args = parser.parse_args()
 
+    if args.step == "deploy" and not args.run_id:
+        parser.error("--step deploy requires --run-id for a previously passed run")
+
+    if args.run_id:
+        run = PipelineRun.from_id(args.run_id)
+        if args.step != "deploy" and not run.directory.exists():
+            raise PipelineRunError(f"Run does not exist: {run.run_id}")
+        if args.step != "deploy" and run.directory.exists():
+            previous_state = run.read_state().get("state")
+            if previous_state != "RUNNING":
+                raise PipelineRunError(
+                    f"Run {run.run_id} cannot be reused (state={previous_state!r})"
+                )
+    else:
+        run = PipelineRun.create()
+    bind_run_paths(run)
+    source_dir = run.output_dir
+    logging.info("Pipeline candidate run: %s", run.run_id)
+    print(f"Pipeline candidate run: {run.run_id}")
+
     skip_live_jobs = args.skip_live_jobs
     skip_inclusion_jobs = args.skip_inclusion_jobs
 
-    # Early check for France Travail fetch if ingest/all is selected and not explicitly skipped
-    if args.step in ["ingest", "all"]:
-        from pipeline.ingest import get_live_jobs_status
+    publication_started = False
+    try:
+        # Early check for France Travail fetch if ingest/all is selected and not explicitly skipped
+        if args.step in ["ingest", "all"]:
+            from pipeline.ingest import get_live_jobs_status
 
-        status = get_live_jobs_status()
+            status = get_live_jobs_status()
 
-        if not status["within_ttl"] and not skip_live_jobs:
-            print("\n" + "=" * 50)
-            if not status["exists"]:
-                print("[?] France Travail Live Jobs data is MISSING.")
-            else:
-                print(
-                    f"[?] France Travail Live Jobs data is {status['age_days']:.1f} days old (TTL={status['ttl_days']})."
+            if not status["within_ttl"] and not skip_live_jobs:
+                print("\n" + "=" * 50)
+                if not status["exists"]:
+                    print("[?] France Travail Live Jobs data is MISSING.")
+                else:
+                    print(
+                        f"[?] France Travail Live Jobs data is {status['age_days']:.1f} days old (TTL={status['ttl_days']})."
+                    )
+
+                choice = (
+                    input("    Do you want to refresh the metadata? (y/N): ")
+                    .lower()
+                    .strip()
                 )
+                if choice != "y":
+                    print("    >> Skipping Live Jobs fetch.")
+                    skip_live_jobs = True
+                else:
+                    print("    >> Live Jobs fetch will run during ingestion.")
+                print("=" * 50 + "\n")
 
-            choice = (
-                input("    Do you want to refresh the metadata? (y/N): ")
-                .lower()
-                .strip()
-            )
-            if choice != "y":
-                print("    >> Skipping Live Jobs fetch.")
-                skip_live_jobs = True
-            else:
-                print("    >> Live Jobs fetch will run during ingestion.")
-            print("=" * 50 + "\n")
+            # Inclusion Jobs check
+            from pipeline.ingest import get_inclusion_jobs_status
 
-        # Inclusion Jobs check
-        from pipeline.ingest import get_inclusion_jobs_status
+            status_inc = get_inclusion_jobs_status()
+            if not status_inc["within_ttl"] and not skip_inclusion_jobs:
+                print("\n" + "=" * 50)
+                if not status_inc["exists"]:
+                    print("[?] Inclusion Jobs data is MISSING.")
+                else:
+                    print(
+                        f"[?] Inclusion Jobs data is {status_inc['age_days']:.1f} days old (TTL={status_inc['ttl_days']})."
+                    )
 
-        status_inc = get_inclusion_jobs_status()
-        if not status_inc["within_ttl"] and not skip_inclusion_jobs:
-            print("\n" + "=" * 50)
-            if not status_inc["exists"]:
-                print("[?] Inclusion Jobs data is MISSING.")
-            else:
-                print(
-                    f"[?] Inclusion Jobs data is {status_inc['age_days']:.1f} days old (TTL={status_inc['ttl_days']})."
+                choice = (
+                    input("    Do you want to refresh the Inclusion Jobs? (y/N): ")
+                    .lower()
+                    .strip()
                 )
+                if choice != "y":
+                    print("    >> Skipping Inclusion Jobs fetch.")
+                    skip_inclusion_jobs = True
+                else:
+                    print(
+                        "    >> Inclusion Jobs fetch will run during ingestion using credentials from .env."
+                    )
+                print("=" * 50 + "\n")
 
-            choice = (
-                input("    Do you want to refresh the Inclusion Jobs? (y/N): ")
-                .lower()
-                .strip()
-            )
-            if choice != "y":
-                print("    >> Skipping Inclusion Jobs fetch.")
-                skip_inclusion_jobs = True
-            else:
-                print(
-                    "    >> Inclusion Jobs fetch will run during ingestion using credentials from .env."
-                )
-            print("=" * 50 + "\n")
-
-    if args.step in ["ingest", "all"]:
-        # Print reminders for non-datagouv sources that have expired caches
-        try:
-            from pipeline.common import (
-                load_config,
-                CONFIG_FILE,
-                CACHE_DIR,
-                is_cache_valid,
-            )
-            from datetime import datetime
-
-            config = load_config(CONFIG_FILE)
-            expired_reminders = []
-            for name, source_cfg in config["sources"].items():
-                if not source_cfg.get("datagouv_resource_id"):
-                    local_name = source_cfg.get("local_name")
-                    if local_name:
-                        local_path = CACHE_DIR / local_name
-                        if local_path.exists() and not is_cache_valid(name, source_cfg):
-                            mtime = datetime.fromtimestamp(local_path.stat().st_mtime)
-                            age_days = (datetime.now() - mtime).days
-                            ttl = source_cfg.get("ttl_days", 30)
-                            expired_reminders.append(
-                                f"  - {name}: age={age_days} days (TTL={ttl} days)"
-                            )
-            if expired_reminders:
-                print("\n" + "🔔" * 15 + " CACHE EXPIRATION REMINDERS " + "🔔" * 15)
-                for reminder in expired_reminders:
-                    print(reminder)
-                print(
-                    "Please check manually if new versions of these datasets are available."
-                )
-                print("🔔" * 58 + "\n")
-        except Exception as e:
-            logging.debug(f"Failed to compile early reminders: {e}")
-
-        logging.info("=== Starting Ingestion Phase ===")
-        ingest_args = []
-        if skip_live_jobs:
-            ingest_args.append("--skip-live-jobs")
-        if skip_inclusion_jobs:
-            ingest_args.append("--skip-inclusion-jobs")
-        if args.steps:
-            ingest_args.extend(["--steps", args.steps])
-        ingest.main(ingest_args)
-        logging.info("=== Ingestion Phase Completed ===")
-
-    if args.step in ["build", "all"]:
-        logging.info("=== Starting Build Phase ===")
-        build_args = []
-        if args.steps:
-            build_args.extend(["--steps", args.steps])
-        build.main(build_args)
-        logging.info("=== Build Phase Completed ===")
-
-    if args.step in ["prescoring", "all"]:
-        logging.info("=== Starting Prescoring Phase ===")
-        prescoring.main([])
-        logging.info("=== Prescoring Phase Completed ===")
-        
-        logging.info("=== Generating Data Manifest ===")
-        try:
-            from pipeline.manifest import generate_manifest
-            from pipeline.odace_client import get_odace_client
-            odace_client = None
+        if args.step in ["ingest", "all"]:
+            # Print reminders for non-datagouv sources that have expired caches
             try:
-                odace_client = get_odace_client()
+                from pipeline.common import (
+                    load_config,
+                    CONFIG_FILE,
+                    CACHE_DIR,
+                    is_cache_valid,
+                )
+                from datetime import datetime
+
+                config = load_config(CONFIG_FILE)
+                expired_reminders = []
+                for name, source_cfg in config["sources"].items():
+                    if not source_cfg.get("datagouv_resource_id"):
+                        local_name = source_cfg.get("local_name")
+                        if local_name:
+                            local_path = CACHE_DIR / local_name
+                            if local_path.exists() and not is_cache_valid(name, source_cfg):
+                                mtime = datetime.fromtimestamp(local_path.stat().st_mtime)
+                                age_days = (datetime.now() - mtime).days
+                                ttl = source_cfg.get("ttl_days", 30)
+                                expired_reminders.append(
+                                    f"  - {name}: age={age_days} days (TTL={ttl} days)"
+                                )
+                if expired_reminders:
+                    print("\n" + "🔔" * 15 + " CACHE EXPIRATION REMINDERS " + "🔔" * 15)
+                    for reminder in expired_reminders:
+                        print(reminder)
+                    print(
+                        "Please check manually if new versions of these datasets are available."
+                    )
+                    print("🔔" * 58 + "\n")
             except Exception as e:
-                logging.warning(f"Could not initialize OdaceClient for manifest generation: {e}")
+                logging.debug(f"Failed to compile early reminders: {e}")
 
-            generate_manifest(output_path=Path("pipeline/cache/output/data_manifest.json"), odace_client=odace_client)
-            logging.info("=== Data Manifest Generation Completed ===")
-        except Exception as e:
-            logging.error(f"Failed to generate Data Manifest: {e}", exc_info=True)
-            raise
+            logging.info("=== Starting Ingestion Phase ===")
+            ingest_args = []
+            if skip_live_jobs:
+                ingest_args.append("--skip-live-jobs")
+            if skip_inclusion_jobs:
+                ingest_args.append("--skip-inclusion-jobs")
+            if args.steps:
+                ingest_args.extend(["--steps", args.steps])
+            ingest.main(ingest_args)
+            logging.info("=== Ingestion Phase Completed ===")
 
+        if args.step in ["build", "all"]:
+            logging.info("=== Starting Build Phase ===")
+            build_args = []
+            if args.steps:
+                build_args.extend(["--steps", args.steps])
+            build.main(build_args)
+            logging.info("=== Build Phase Completed ===")
 
-    if args.step in ["deploy", "all"]:
-        logging.info("=== Starting Deployment Phase ===")
-        DEST_DATA_DIR.mkdir(parents=True, exist_ok=True)
-        DEST_DATASETS_DIR.mkdir(parents=True, exist_ok=True)
-
-        missing_bootstrap = [
-            f for f in BOOTSTRAP_FILES if not (SOURCE_DIR / f).exists()
-        ]
-        missing_datasets = [
-            f for f in DATASET_FILES if not (SOURCE_DIR / f).exists()
-        ]
-        if missing_bootstrap or missing_datasets:
-            missing = missing_bootstrap + missing_datasets
-            raise FileNotFoundError(
-                "Deployment source is incomplete; missing files: " + ", ".join(missing)
+        if args.step in ["prescoring", "all"]:
+            logging.info("=== Starting Prescoring Phase ===")
+            quality_summary = prescoring.main([])
+            (run.directory / "quality_report.json").write_text(
+                json.dumps(quality_summary, indent=2), encoding="utf-8"
             )
+            logging.info("=== Prescoring Phase Completed ===")
+        
+            logging.info("=== Generating Data Manifest ===")
+            try:
+                from pipeline.manifest import generate_manifest
+                from pipeline.odace_client import get_odace_client
+                odace_client = None
+                try:
+                    odace_client = get_odace_client()
+                except Exception as e:
+                    logging.warning(f"Could not initialize OdaceClient for manifest generation: {e}")
 
-        # 1. Copy Bootstrap files to app/data/
-        for f in BOOTSTRAP_FILES:
-            src = SOURCE_DIR / f
-            dst = DEST_DATA_DIR / f
-            shutil.copy2(src, dst)
-            logging.info(f"Copied bootstrap file {f} to {DEST_DATA_DIR}")
+                generate_manifest(output_path=source_dir / "data_manifest.json", odace_client=odace_client)
+                manifest_path = source_dir / "data_manifest.json"
+                manifest_payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+                manifest_payload["pipeline_run_id"] = run.run_id
+                manifest_payload["quality_gate"] = quality_summary
+                manifest_path.write_text(
+                    json.dumps(manifest_payload, indent=2, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+                run.update_state("PASSED", quality_gate=quality_summary)
+                logging.info("=== Data Manifest Generation Completed ===")
+            except Exception as e:
+                logging.error(f"Failed to generate Data Manifest: {e}", exc_info=True)
+                raise
+        if args.step == "deploy":
+            logging.info("=== Starting Deployment Phase ===")
+            _assert_deployable_candidate(source_dir, run)
+            DEST_DATA_DIR.mkdir(parents=True, exist_ok=True)
+            DEST_DATASETS_DIR.mkdir(parents=True, exist_ok=True)
 
-        # 2. Copy Dataset files to app/data/datasets/ (local dev mirror)
-        for f in DATASET_FILES:
-            src = SOURCE_DIR / f
-            dst = DEST_DATASETS_DIR / f
-            shutil.copy2(src, dst)
-            logging.info(f"Copied dataset file {f} to {DEST_DATASETS_DIR}")
+            missing_bootstrap = [
+                f for f in BOOTSTRAP_FILES if not (source_dir / f).exists()
+            ]
+            missing_datasets = [
+                f for f in DATASET_FILES if not (source_dir / f).exists()
+            ]
+            if missing_bootstrap or missing_datasets:
+                missing = missing_bootstrap + missing_datasets
+                raise FileNotFoundError(
+                    "Deployment source is incomplete; missing files: " + ", ".join(missing)
+                )
 
-        # 3. Upload Datasets to an immutable GCS release, then update current.json.
-        bucket_name = os.getenv("GCS_DATASETS_BUCKET", "odis-stream2-eu")
-        _publish_datasets_to_gcs(SOURCE_DIR, bucket_name)
+            # Publish only the validated candidate before updating the local
+            # development mirror.  A failed candidate never changes the
+            # runtime pointer.
+            bucket_name = os.getenv("GCS_DATASETS_BUCKET", "odis-stream2-eu")
+            publication_started = True
+            _publish_datasets_to_gcs(source_dir, bucket_name, release_version=run.run_id)
 
-        logging.info("=== Deployment Phase Completed ===")
+            # Keep the development mirror in sync after successful publication.
+            for f in BOOTSTRAP_FILES:
+                shutil.copy2(source_dir / f, DEST_DATA_DIR / f)
+            for f in DATASET_FILES:
+                shutil.copy2(source_dir / f, DEST_DATASETS_DIR / f)
+
+            logging.info("=== Deployment Phase Completed ===")
+    except Exception as exc:
+        if publication_started:
+            # A GCS/local-mirror failure does not invalidate a candidate that
+            # already passed its pipeline checks; retain it for a safe retry.
+            run.update_state("PASSED", deployment_error=str(exc))
+        else:
+            run.update_state("FAILED", error=str(exc))
+        raise
 
 
 if __name__ == "__main__":

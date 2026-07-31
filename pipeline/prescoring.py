@@ -15,6 +15,7 @@ from pipeline.common import (
     STATUS_FILE,
 )
 from pipeline.quality_gate import run_quality_gate
+from pipeline.run_context import PipelineRunError
 import app.config as cfg
 
 # Global Scores Config cache
@@ -661,7 +662,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         )
 
         # Run Quality Gate validation on published dataset
-        run_quality_gate(
+        quality_summary = run_quality_gate(
             communes_path=output_path,
             status_path=STATUS_FILE,
             dataset_name="odis_communes.parquet",
@@ -675,8 +676,10 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
                 "columns": len(communes_gdf.columns),
                 "path": str(output_path),
                 "rows": len(communes_gdf),
+                "quality_gate": quality_summary,
             },
         )
+        return quality_summary
 
     except Exception as e:
         logger.log_step("apply_prescoring", "ERROR", {"error": str(e)})
@@ -903,13 +906,15 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
     except Exception as e:
         logger.log_step("score_bassins_de_vie", "ERROR", {"error": str(e)})
         logging.error(f"Score BV failed: {e}")
+        raise PipelineRunError("Required prescoring step 'bassins_de_vie' failed") from e
 
 
 def main(argv=None):
     logger = PipelineLogger(STATUS_FILE)
     config = load_config(CONFIG_FILE)
-    apply_prescoring(config, logger)
+    quality_summary = apply_prescoring(config, logger)
     score_bassins_de_vie(config, logger)
+    return quality_summary
 
 
 if __name__ == "__main__":

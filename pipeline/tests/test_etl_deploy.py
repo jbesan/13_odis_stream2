@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pipeline import etl
+from pipeline.run_context import PipelineRun, PipelineRunError
 
 
 def _make_output_dir(tmp_path: Path) -> Path:
@@ -58,3 +59,17 @@ def test_publish_datasets_rejects_incomplete_output(mock_client_class, tmp_path)
         etl._publish_datasets_to_gcs(output_dir, "odis-stream2-eu")
 
     mock_client_class.assert_not_called()
+
+
+def test_deploy_rejects_a_candidate_manifest_for_another_run(tmp_path, monkeypatch):
+    monkeypatch.setattr("pipeline.run_context.RUNS_DIR", tmp_path / "runs")
+    run = PipelineRun.create("run-a")
+    run.update_state("PASSED", quality_gate={"status": "PASSED"})
+    manifest_path = run.output_dir / "data_manifest.json"
+    manifest_path.write_text(
+        json.dumps({"manifest_version": "v-test-1", "pipeline_run_id": "run-b"}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(PipelineRunError, match="does not belong"):
+        etl._assert_deployable_candidate(run.output_dir, run)

@@ -17,7 +17,7 @@ ODACE_API_KEY=sk_live_...
 All pipeline modules must be executed from the project root directory:
 
 ```bash
-# Run the full pipeline (Ingest + Build + Prescoring + Deploy)
+# Build a full candidate (Ingest + Build + Prescoring). Deploy is explicit.
 uv run python -m pipeline.etl --step all
 
 # Run specific phase (ingest, build, prescoring, deploy)
@@ -28,6 +28,27 @@ uv run python -m pipeline.etl --step all --table communes
 uv run python -m pipeline.etl --step ingest --table population,caf
 ```
 
+### Run-scoped candidates and deployment
+
+Each non-deployment invocation creates (or resumes with `--run-id`) an isolated
+candidate under `pipeline/cache/runs/<run_id>/`. Its `run.json`, quality report,
+manifest, and generated datasets must all belong to the same run. A failed run
+is never deployable and does not change the active GCS release.
+
+```bash
+# Build a complete candidate. The command prints its generated run ID.
+uv run python -m pipeline.etl --step all
+
+# Continue an incomplete candidate with the printed ID.
+uv run python -m pipeline.etl --step prescoring --run-id run-20260731T120000Z-ab12cd34
+
+# Deploy only a candidate whose run record and quality gate both passed.
+uv run python -m pipeline.etl --step deploy --run-id run-20260731T120000Z-ab12cd34
+```
+
+Do not deploy from the legacy `pipeline/cache/output` directory. It is no longer
+a release source of truth.
+
 ---
 
 ## 📋 Execution Steps Catalog
@@ -35,4 +56,4 @@ uv run python -m pipeline.etl --step ingest --table population,caf
 * **`ingest`**: Queries the Odace API and external endpoints (France Travail, Les emplois de l'inclusion, BigQuery RNA RAG) to download and clean raw staging datasets.
 * **`build`**: Resolves geographical PLM hierarchies, consolidates arrondissement rates, and dissolves geometries.
 * **`prescoring`**: Pre-calculates static indicators and performs quantile rank normalizations.
-* **`deploy`**: Copies only the bootstrap files locally, publishes the generated Parquets (except `odis_referentiels.parquet`) to an immutable GCS release, then updates `datasets/current.json` as the atomic release pointer. Cloud Run downloads the active release on first use and caches it in `/tmp`.
+* **`deploy`**: Requires a passed `--run-id`, publishes that candidate's generated Parquets (except `odis_referentiels.parquet`) to a GCS release, then updates `datasets/current.json` as the atomic release pointer. Cloud Run downloads the active release on first use and caches it in `/tmp`.

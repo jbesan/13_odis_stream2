@@ -28,6 +28,7 @@ from pipeline.common import (
 from pipeline.odace_client import get_odace_client
 from pipeline.ft_live_ingest import run_etl, get_token as get_ft_token
 from pipeline.emplois_inclusion_ingest import run_ingestion as run_inclusion_ingest
+from pipeline.run_context import PipelineRunError
 
 
 def resolve_codgeo(insee_code, dept_code) -> str:
@@ -257,15 +258,16 @@ def fetch_source(
         return staging_local_path
     except Exception as e:
         logging.error(f"[Fetch] {name} Failed: {e}")
-        logger.log_source(name, "FAILED", str(e))
         # If download failed, but we have an active cached file, return the active file so we can fall back to it
         if local_path.exists():
             logging.warning(
                 f"⚠️ Failed to download updated version of {name}. Falling back to cached copy."
             )
+            logger.log_source(name, "FALLBACK_LAST_GOOD", str(e))
             if source_cfg.get("format") == "zip" and "archive_file" in source_cfg:
                 return CACHE_DIR / source_cfg["archive_file"]
             return local_path
+        logger.log_source(name, "FAILED", str(e))
         return None
 
 
@@ -2956,11 +2958,13 @@ class MutedPipelineLogger:
     def __init__(self, real_logger: PipelineLogger):
         self.real_logger = real_logger
         self.status = getattr(real_logger, "status", None)
+        self.errors: list[tuple[str, Optional[Dict[str, Any]]]] = []
 
     def log_step(
         self, step_name: str, status: str, details: Optional[Dict[str, Any]] = None
     ):
-        pass
+        if status in {"ERROR", "FAILED"}:
+            self.errors.append((step_name, details))
 
     def log_source(
         self, source_name: str, status: str, file_path: Optional[str] = None
@@ -2988,7 +2992,7 @@ def run_clean_step_safely(
       6. Commits (deletes backups) on success, or rolls back (restores backups) on failure/exception.
     """
     if step_name in {"education", "finess_national", "maternites"}:
-        logger.log_step(f"clean_{step_name}", "SKIPPED")
+        logger.log_step(f"clean_{step_name}", "SKIPPED_OPTIONAL")
         return
 
     import os
@@ -3081,26 +3085,28 @@ def run_clean_step_safely(
         # No staging files exist, run the clean function directly
         try:
             clean_func(config, muted_logger, *args, **kwargs)
+            if muted_logger.errors:
+                raise PipelineRunError(
+                    f"Clean step '{step_name}' reported failure: {muted_logger.errors}"
+                )
 
-            # Validate that the active clean parquet is non-empty for basic sanity
-            details = {}
-            if active_clean.exists():
-                try:
-                    df_clean = pd.read_parquet(active_clean, engine="fastparquet")
-                    details = {"rows": len(df_clean), "path": str(active_clean)}
-                    if len(df_clean) == 0:
-                        logging.warning(
-                            f"⚠️ [SANITY WARNING] Active clean file for '{step_name}' is empty."
-                        )
-                except Exception as e:
-                    logging.warning(
-                        f"⚠️ [SANITY WARNING] Failed to read active clean file for '{step_name}': {e}"
-                    )
+            # A required step cannot report success without a readable,
+            # non-empty artefact.  A previous cache is a source fallback, not
+            # proof that this run completed the requested clean step.
+            if not active_clean.exists():
+                raise FileNotFoundError(
+                    f"Clean step did not generate the clean parquet file: {active_clean}"
+                )
+            df_clean = pd.read_parquet(active_clean, engine="fastparquet")
+            if len(df_clean) == 0:
+                raise ValueError(f"Clean step '{step_name}' produced an empty dataset")
+            details = {"rows": len(df_clean), "path": str(active_clean)}
 
             logger.log_step(f"clean_{step_name}", "COMPLETED", details)
         except Exception as e:
             logger.log_step(f"clean_{step_name}", "ERROR", {"error": str(e)})
             logging.exception(f"Error running step clean_{step_name}")
+            raise PipelineRunError(f"Required clean step '{step_name}' failed") from e
         return
 
     # Blue-Green: validate RAW, back up, and swap staging files into place
@@ -3143,7 +3149,9 @@ def run_clean_step_safely(
                 except:
                     pass
             logging.warning(f"⚠️ [ABORTED] Retained existing cache for '{step_name}'.")
-            return
+            raise PipelineRunError(
+                f"Required clean step '{step_name}' failed raw contract validation"
+            ) from e
 
     backups = {}  # Map of active_path -> backup_path
     moved_staging = []  # List of (active_path, staging_path)
@@ -3183,6 +3191,10 @@ def run_clean_step_safely(
 
         # 5. Run the clean function (it will read the staging data and output to active_clean)
         clean_func(config, muted_logger, *args, **kwargs)
+        if muted_logger.errors:
+            raise PipelineRunError(
+                f"Clean step '{step_name}' reported failure: {muted_logger.errors}"
+            )
 
         # 6. Validate the resulting clean parquet file is non-empty
         if not active_clean.exists():
@@ -3240,6 +3252,7 @@ def run_clean_step_safely(
         logging.warning(
             f"⚠️ [ROLLBACK COMPLETE] Reverted '{step_name}' to last known good cache."
         )
+        raise PipelineRunError(f"Required clean step '{step_name}' failed") from e
 
 
 def clean_salesforce_jaccueille(config: Dict[str, Any], logger: PipelineLogger):
@@ -3361,6 +3374,8 @@ def main(argv=None):
                 logging.exception(
                     f"❌ [INGEST FAILURE] Error running step '{step_name}'"
                 )
+                logger.log_step("ingest_all", "ERROR", {"failed_step": step_name})
+                raise
         else:
             logging.warning(f"Unknown step: {step_name}")
 

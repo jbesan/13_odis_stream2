@@ -15,7 +15,9 @@ def test_plm_rent_aggregation_averages_instead_of_summing():
     data = []
     
     # Parent row
-    data.append({"codgeo": "75056", "population": 2100000, "loyer_m2_moy_appt_all": 0.0, "loyer_app_m2": 0.0})
+    # NaN means the source has no parent-level observation; unlike the former
+    # implementation, a legitimate parent value of 0 must be preserved.
+    data.append({"codgeo": "75056", "population": np.nan, "loyer_m2_moy_appt_all": np.nan, "loyer_app_m2": np.nan})
     
     # 20 child arrondissements with 30.0 euro/m2 rent each
     for code in arrondissements:
