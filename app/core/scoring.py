@@ -211,6 +211,27 @@ class ScoringEngine:
             )
         return 0.0, 1.0
 
+    def _apply_configured_score_missingness(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Apply the catalog's missing-data rule to runtime score outputs.
+
+        Dynamic enrichments leave unavailable source data as null.  This is the
+        sole runtime policy boundary that may turn those nulls into zeroes.
+        """
+        if self.scores_cat.empty or "score" not in self.scores_cat.columns:
+            return df
+
+        strategy = (
+            self.scores_cat.set_index("score")["missing_strategy"]
+            if "missing_strategy" in self.scores_cat.columns
+            else pd.Series("exclude", index=self.scores_cat["score"])
+        )
+        for score_id in strategy[strategy == "zero"].index:
+            if score_id in df.columns:
+                df[score_id] = df[score_id].fillna(0.0)
+            else:
+                df[score_id] = 0.0
+        return df
+
     def _compute_distance_score(
         self, df: pd.DataFrame, config: SearchCriterias
     ) -> pd.DataFrame:
@@ -311,7 +332,7 @@ class ScoringEngine:
                     and val_bdv is None
                 ):
                     logger.warning(
-                        f"⚠️ [SCORING] Active criterion '{sid}' (or '{sid_bdv}') is MISSING from the input data. Score will be defaulted to 0."
+                        f"⚠️ [SCORING] Active criterion '{sid}' (or '{sid_bdv}') is MISSING from the input data. The configured missing-data policy will be applied."
                     )
                 # 4. Read config-driven missing_strategy
                 missing_strat = s_row.get("missing_strategy", "exclude")
@@ -423,6 +444,7 @@ class ScoringEngine:
         logfire.info("Computing weighted score for hash: {search_hash}", search_hash=h)
         total_score = pd.Series(0.0, index=df.index)
         total_weight = 0.0
+        has_weighted_category = False
 
         weights = {cat: getattr(config, f"poids_{cat}", 0.0) for cat in self.categories}
 
@@ -435,6 +457,8 @@ class ScoringEngine:
             col = f"{cat}_cat_score"
             if col not in df.columns:
                 continue
+
+            has_weighted_category = has_weighted_category or weight != 0
 
             val = df[col].fillna(0)
             valid_mask = df[col].notna()  # Where score exists
@@ -449,9 +473,17 @@ class ScoringEngine:
 
         # Ensure no division by zero
         if isinstance(total_weight, (int, float)):
-            return total_score / total_weight if total_weight > 0 else total_score
+            return (
+                total_score / total_weight
+                if total_weight > 0
+                else (
+                    pd.Series(np.nan, index=df.index, dtype=float)
+                    if has_weighted_category
+                    else total_score
+                )
+            )
         else:
-            return (total_score / total_weight).fillna(0)
+            return total_score / total_weight if has_weighted_category else total_score
 
     def _prune_irrelevant_metrics(
         self, df: pd.DataFrame, config: SearchCriterias, aggressive: bool = False
@@ -1705,10 +1737,10 @@ class ScoringEngine:
                             adult_romes.add(code)
 
                 if not adult_romes:
-                    df[f"met_match_{adult_key}_scaled"] = 0.0
+                    df[f"met_match_{adult_key}_scaled"] = np.nan
                     if "bassin_de_vie" in df.columns:
-                        df[f"met_match_{adult_key}_bdv_scaled"] = 0.0
-                    df[f"met_match_{adult_key}_tension_scaled"] = 0.0
+                        df[f"met_match_{adult_key}_bdv_scaled"] = np.nan
+                    df[f"met_match_{adult_key}_tension_scaled"] = np.nan
                     continue
 
                 target_live = self.live_jobs_data[
@@ -1730,7 +1762,7 @@ class ScoringEngine:
                     ].sum()
                     df[col_tension_raw] = df.index.map(commune_tension_counts).fillna(0)
                 else:
-                    df[col_tension_raw] = 0.0
+                    df[col_tension_raw] = np.nan
 
                 # BdV Sum
                 col_bdv_raw = f"met_match_{adult_key}_bdv"
@@ -1741,7 +1773,7 @@ class ScoringEngine:
                     ].sum()
                     df[col_bdv_raw] = df["bassin_de_vie"].map(bdv_live_counts).fillna(0)
                 else:
-                    df[col_bdv_raw] = 0.0
+                    df[col_bdv_raw] = np.nan
 
                 # Scaling
                 s_def = (
@@ -1809,7 +1841,7 @@ class ScoringEngine:
 
                 # --- SIAE Jobs Matching (New F-39) ---
                 col_siae_raw = f"met_siae_match_{adult_key}"
-                df[col_siae_raw] = 0.0
+                df[col_siae_raw] = np.nan
 
                 if self.siae_jobs_data is not None and not self.siae_jobs_data.empty:
                     # SIAE matching uses 3rd digit prefix
@@ -1846,7 +1878,7 @@ class ScoringEngine:
                 )
 
         # --- Formations ---
-        if any(config.codes_formations):
+        if any(config.codes_formations) and not self.formations_data.empty:
             relevant_formations = self.formations_data[
                 self.formations_data["codgeo"].isin(df.index)
             ]
@@ -1970,9 +2002,8 @@ class ScoringEngine:
 
         # --- Density ---
         if "nb_stops_total" in df.columns:
-            df["mob_trans_pub_stop_density"] = (
-                df["nb_stops_total"] / df["population"].replace(0, 1)
-            ) * 1000
+            population = df["population"].where(df["population"] > 0)
+            df["mob_trans_pub_stop_density"] = (df["nb_stops_total"] / population) * 1000
             s_def_mob = (
                 self.scores_cat[
                     self.scores_cat["score"] == "mob_trans_pub_density_scaled"
@@ -2066,9 +2097,6 @@ class ScoringEngine:
                     sigma=sigma,
                 )
 
-        if "inc_asso_core_scaled" not in df.columns:
-            df["inc_asso_core_scaled"] = 0.0
-
         # Affinities
         inc_asso_add = getattr(config, "inc_asso_add_selection", [])
         if inc_asso_add:
@@ -2078,7 +2106,7 @@ class ScoringEngine:
                 code = i.code if hasattr(i, "code") else str(i)
                 interest_codes.add(code)
 
-            if interest_codes:
+            if interest_codes and not self.associations_data.empty:
                 # Normalization logic
                 expanded_interests = set()
                 for c in interest_codes:
@@ -2100,9 +2128,10 @@ class ScoringEngine:
                 )
 
                 if "population" in df.columns:
-                    df["affinite_density"] = (affinite_counts * 1000) / df["population"]
+                    population = df["population"].where(df["population"] > 0)
+                    df["affinite_density"] = (affinite_counts * 1000) / population
                 else:
-                    df["affinite_density"] = 0.0
+                    df["affinite_density"] = np.nan
                 min_b, max_b = self._get_bounds("inc_asso_add_scaled")
                 s_def_inc = (
                     self.scores_cat[
@@ -2133,7 +2162,7 @@ class ScoringEngine:
         for i in getattr(config, "inc_services_selection", []):
             needed.add(i.code if hasattr(i, "code") else str(i))
 
-        if needed:
+        if needed and not self.incl_index.empty:
 
             def count_matches(available):
                 if not isinstance(available, set):
@@ -2163,6 +2192,7 @@ class ScoringEngine:
         df = self._compute_housing_scores(df, config)
         df = self._compute_education_scores(df, config)
         df = self._compute_territory_scores(df, config)
+        df = self._apply_configured_score_missingness(df)
 
         # Pruning
         df = self._prune_irrelevant_metrics(df, config)

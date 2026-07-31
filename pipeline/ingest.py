@@ -641,21 +641,21 @@ def clean_rpls(config: Dict[str, Any], logger: PipelineLogger):
                         "nb_logements_vacants": "log_soc_inoccupes",
                     }
                     df_out = merged.rename(columns=rename_dict)
-                if "codgeo" not in df_out.columns:
-                    raise ValueError("RPLS source is missing commune_insee_code")
-                for col in ["log_soc_total", "log_soc_inoccupes"]:
-                    if col not in df_out.columns:
-                        df_out[col] = np.nan
+                    if "codgeo" not in df_out.columns:
+                        raise ValueError("RPLS source is missing commune_insee_code")
+                    for col in ["log_soc_total", "log_soc_inoccupes"]:
+                        if col not in df_out.columns:
+                            df_out[col] = np.nan
                     df_out = df_out[
                         ["codgeo", "log_soc_total", "log_soc_inoccupes"]
                     ].copy()
                     df_out["codgeo"] = df_out["codgeo"].astype(str).str.zfill(5)
-                df_out["log_soc_total"] = pd.to_numeric(
-                    df_out["log_soc_total"], errors="coerce"
-                )
-                df_out["log_soc_inoccupes"] = pd.to_numeric(
-                    df_out["log_soc_inoccupes"], errors="coerce"
-                )
+                    df_out["log_soc_total"] = pd.to_numeric(
+                        df_out["log_soc_total"], errors="coerce"
+                    )
+                    df_out["log_soc_inoccupes"] = pd.to_numeric(
+                        df_out["log_soc_inoccupes"], errors="coerce"
+                    )
 
                     output_path = CLEAN_DIR / "rpls.parquet"
                     df_out.to_parquet(output_path, engine="fastparquet")
@@ -1251,7 +1251,7 @@ def clean_population(config: Dict[str, Any], logger: PipelineLogger):
                 df_out["codgeo"] = df_out["codgeo"].astype(str).str.zfill(5)
                 df_out["population"] = pd.to_numeric(
                     df_out["population"], errors="coerce"
-                ).fillna(0)
+                )
 
                 # No longer overriding population for Paris, Marseille, and Lyon as Odace API now returns correct populations for parent codes
 
@@ -2607,7 +2607,7 @@ def clean_population_details(config: Dict[str, Any], logger: PipelineLogger):
                 df_filtered["year"] = df_filtered["TIME_PERIOD"].astype(str)
                 df_filtered["count"] = pd.to_numeric(
                     df_filtered["OBS_VALUE"], errors="coerce"
-                ).fillna(0)
+                )
 
                 age_mapping = {
                     "Y_LT15": "jeune",
@@ -2616,11 +2616,12 @@ def clean_population_details(config: Dict[str, Any], logger: PipelineLogger):
                 }
                 df_filtered["age_group"] = df_filtered["AGE"].map(age_mapping)
 
-                df_pivot = df_filtered.pivot_table(
-                    index="codgeo",
-                    columns=["age_group", "year"],
-                    values="count",
-                    aggfunc="sum",
+                df_pivot = (
+                    df_filtered.groupby(
+                        ["codgeo", "age_group", "year"], observed=True
+                    )["count"]
+                    .sum(min_count=1)
+                    .unstack(["age_group", "year"])
                 )
                 df_pivot.columns = [f"pop_{c[0]}_{c[1]}" for c in df_pivot.columns]
                 df_pivot = df_pivot.reset_index()
@@ -2633,7 +2634,7 @@ def clean_population_details(config: Dict[str, Any], logger: PipelineLogger):
                 ]
                 for col in expected_cols:
                     if col not in df_pivot.columns:
-                        df_pivot[col] = 0.0
+                        df_pivot[col] = np.nan
 
                 output_path = CLEAN_DIR / "population_details.parquet"
                 df_pivot.to_parquet(output_path, engine="fastparquet")
@@ -2687,7 +2688,7 @@ def clean_population_details(config: Dict[str, Any], logger: PipelineLogger):
     df["year"] = df["TIME_PERIOD"].astype(str)
 
     # Value to numeric
-    df["count"] = pd.to_numeric(df["OBS_VALUE"], errors="coerce").fillna(0)
+    df["count"] = pd.to_numeric(df["OBS_VALUE"], errors="coerce")
 
     # Aggregate Active Group
     # Map ages to broad categories
@@ -2699,8 +2700,10 @@ def clean_population_details(config: Dict[str, Any], logger: PipelineLogger):
     # Columns: {age_group}_{year}
     # Values: Sum of count
 
-    df_pivot = df.pivot_table(
-        index="codgeo", columns=["age_group", "year"], values="count", aggfunc="sum"
+    df_pivot = (
+        df.groupby(["codgeo", "age_group", "year"], observed=True)["count"]
+        .sum(min_count=1)
+        .unstack(["age_group", "year"])
     )
 
     # Flatten Columns
@@ -2708,7 +2711,7 @@ def clean_population_details(config: Dict[str, Any], logger: PipelineLogger):
     df_pivot.columns = [f"pop_{c[0]}_{c[1]}" for c in df_pivot.columns]
     df_pivot.reset_index(inplace=True)
 
-    # Ensure expected columns exist (fill 0 if checking years 2016/2022)
+    # An absent reference year is unavailable data, not an observed zero population.
     expected_cols = [
         "pop_jeune_2016",
         "pop_jeune_2022",
@@ -2718,9 +2721,9 @@ def clean_population_details(config: Dict[str, Any], logger: PipelineLogger):
     for col in expected_cols:
         if col not in df_pivot.columns:
             logging.warning(
-                f"Population Details: Missing expected column {col}. Setting to 0."
+                f"Population Details: Missing expected column {col}. Preserving as unavailable."
             )
-            df_pivot[col] = 0.0
+            df_pivot[col] = np.nan
 
     output_path = CLEAN_DIR / "population_details.parquet"
     df_pivot.to_parquet(output_path, engine="fastparquet")

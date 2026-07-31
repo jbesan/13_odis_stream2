@@ -103,12 +103,11 @@ async def test_golden_scenarios_evaluation():
                 "No token usage was recorded in the state"
             )
 
-            res_str = (
-                final_answer_end.data
+            return (
+                str(final_answer_end.data)
                 if hasattr(final_answer_end, "data")
                 else str(final_answer_end)
             )
-            return res_str
 
         # Define the test case using candidate odis_brief as clean input representation
         case = Case(

@@ -7,7 +7,7 @@ from pathlib import Path
 import warnings
 from shapely.geometry import Polygon, MultiPolygon
 from shapely.validation import make_valid
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, cast
 from shapely import wkb
 
 
@@ -735,7 +735,7 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
             {"path": str(output_path), "rows": len(df_to_save)},
         )
 
-        return communes_gdf
+        return cast(gpd.GeoDataFrame, communes_gdf)
 
     except Exception as e:
         logger.log_step("build_communes", "ERROR", {"error": str(e)})

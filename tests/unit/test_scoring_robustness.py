@@ -10,6 +10,47 @@ from core import scoring
 from core.models import SearchCriterias
 
 
+def test_runtime_missingness_policy_is_catalog_driven():
+    """Runtime enrichments may only impute values when the catalog says zero."""
+    engine = object.__new__(scoring.ScoringEngine)
+    engine.scores_cat = pd.DataFrame(
+        [
+            {"score": "zero_scaled", "missing_strategy": "zero"},
+            {"score": "exclude_scaled", "missing_strategy": "exclude"},
+            {"score": "missing_zero_scaled", "missing_strategy": "zero"},
+        ]
+    )
+    values = pd.DataFrame(
+        {"zero_scaled": [None, 0.75], "exclude_scaled": [None, 0.5]}
+    )
+
+    result = engine._apply_configured_score_missingness(values)
+
+    assert result["zero_scaled"].tolist() == [0.0, 0.75]
+    assert (result["missing_zero_scaled"] == 0.0).all()
+    assert pd.isna(result.loc[0, "exclude_scaled"])
+
+
+def test_global_score_stays_unavailable_without_observed_category():
+    """Excluding every criterion must not turn the overall score into zero."""
+    engine = object.__new__(scoring.ScoringEngine)
+    engine.categories = ["logement"]
+
+    class Config:
+        poids_logement = 1.0
+        nb_enfants = 0
+
+        @staticmethod
+        def compute_hash() -> str:
+            return "missingness-test"
+
+    result = engine._compute_weighted_score(
+        pd.DataFrame({"logement_cat_score": [float("nan")]}), Config()
+    )
+
+    assert result.isna().all()
+
+
 @pytest.fixture(scope="module")
 def app_data():
     """Loads application data once for the test module to avoid redundant loads."""
