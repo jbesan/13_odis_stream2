@@ -1005,7 +1005,7 @@ def show_details_dialog(index: Any):
             for s in scores:
                 c_label, c_val = st.columns([3, 1])
                 with c_label:
-                    st.markdown(f"**{s.label}**")
+                    st.subheader(f"{s.label}")
                     p_val_raw = s.score_normalise
                     p_val = (
                         float(max(0.0, min(1.0, p_val_raw)))
@@ -1031,7 +1031,7 @@ def show_details_dialog(index: Any):
 
                     st.markdown(
                         f"""
-                        <div style="width: 100%; background-color: rgba(128, 128, 128, 0.15); border-radius: 4px; height: 8px; margin-top: 4px; overflow: hidden;">
+                        <div style="width: 100%; background-color: rgba(128, 128, 128, 0.15); border-radius: 4px; height: 10px; margin-top: -15px; overflow: hidden;">
                             <div style="width: {p_val_bar * 100}%; background: {bar_color}; height: 100%; border-radius: 4px;"></div>
                         </div>
                         """,
