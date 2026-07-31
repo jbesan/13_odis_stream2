@@ -47,8 +47,8 @@ graph TD
         %% BdV Boost
         I1 & I2 & I3 --> J["Application du Boost Bassin de Vie (BdV)"]
         
-        %% Category aggregation & Percentile normalisation
-        J --> K["Agrégation par Catégorie (Moyenne Pondérée Réconciliée 0-100%)"]
+        %% Category aggregation & global weighted index
+        J --> K["Agrégation par Catégorie (Moyenne Pondérée Réconciliée 0-1)"]
         
         %% Weighted Sum & Map limit
         K --> L["Somme Pondérée Finale (weighted_score)"]
@@ -65,8 +65,8 @@ Avant de lancer les calculs géométriques et indicateurs de scoring (très coû
 * **Périmètre Géographique Principal** : Filtrage selon le choix de l'utilisateur (Département spécifique, Région, ou France métropolitaine).
 * **Filtre Opérationnel J'Accueille** : Si l'utilisateur appartient à l'organisation `jaccueille` et active le filtre de restriction opérationnelle (`org_strategic_locations_filter` à `True`), les communes sont filtrées selon un double critère géographique :
   * **Maille Bassin de Vie** : Le bassin de vie de la commune doit compter au moins un contact accueillant actif (base contacts) OU au moins un prospect inscrit (base prospects).
-  * **Maille Département** : Le département de la commune doit figurer dans la liste des zones stratégiques actives configurées/sélectionnées par l'organisation (présence de coordinateurs locaux).
-  * *Calcul* : Un **Inner Join** (intersection) de ces deux mailles détermine la liste des bassins de vie opérationnels éligibles. Seules les communes situées dans ces bassins de vie sont conservées.
+  * **Maille Département** : La présence d'une zone stratégique dans un département identifie les bassins de vie opérationnels qui la recouvrent.
+  * *Calcul* : Un **Inner Join** (intersection) de ces deux mailles détermine la liste des bassins de vie opérationnels éligibles. Toutes les communes de ces bassins sont conservées, y compris lorsqu'un bassin de vie traverse une limite départementale. Cette extension trans-départementale est une décision produit assumée ; elle constitue un risque résiduel à surveiller.
   * *Exception* : La commune actuelle de l'usager et la commune pressentie de comparaison sont systématiquement exemptées de ce filtrage pour garantir leur évaluation et comparaison dans les résultats.
 
 ### 2. Proximité Géographique (Distance)
@@ -103,14 +103,16 @@ Depuis 2026, ODIS intègre des **critères de référence (Baselines)**. Contrai
 - **Objectif** : Garantir qu'un standard minimum de qualité territoriale (sécurité, accès aux soins, mobilité durable) soit évalué pour chaque dossier.
 - **Visibilité** : Ces critères sont visibles dans les rapports détaillés et utilisés par l'IA pour justifier ses recommandations.
 
-### 6. Normalisation des Scores par Catégorie (Percentile Ranking) 📊
+### 6. Normalisation et agrégation des scores 📊
 
-Depuis mai 2026, afin de résoudre le problème des disparités d'écarts de scores entre les catégories (par exemple, la catégorie Logement qui avait historiquement des scores bruts faibles, tandis que la Santé ou l'Éducation avaient des scores très élevés, créant un biais de pondération implicite), ODIS applique une **normalisation par centiles (percentile ranking)** au niveau de chaque catégorie :
+Les critères pré-calculés et calculés en direct sont ramenés à une échelle commune $[0, 1]$. Cette échelle facilite l'agrégation ; elle ne constitue pas une probabilité et ne mesure pas un pourcentage de besoins couverts.
 
-- **Principe** : Les scores bruts agrégés d'une catégorie pour toutes les communes qualifiées sont convertis en rangs centiles uniformes dans l'intervalle $[0, 1]$.
-- **Protection Zéro Absolu** : Les communes obtenant un score brut de exactement `0.0` (aucun indicateur actif rencontré) sont exclues de l'opération de classement et restent fixées à `0.0` pour éviter une inflation artificielle.
-- **Protection Variance Nulle** : Si toutes les communes qualifiées obtiennent le même score de catégorie (cas de recherche sur un ensemble minuscule ou mocké), le classement est ignoré et le score brut uniforme est conservé.
-- **Résultat** : Toutes les catégories actives ont désormais une distribution uniforme centrée autour de 0.5. Les coefficients de pondération (ex: Famille, Économique) choisis par l'utilisateur sont ainsi parfaitement respectés.
+- **Score de critère** : la valeur communale est combinée avec la valeur du Bassin de Vie selon le `bdv_factor` du catalogue. Les valeurs indisponibles sont exclues du dénominateur lorsque `missing_strategy: exclude` est configuré ; elles ne doivent donc pas être interprétées comme une performance nulle.
+- **Score de catégorie** : moyenne pondérée, ligne par ligne, des critères actifs et disponibles de la catégorie, avec les poids effectifs du profil (poids du catalogue, éventuel boost organisationnel et règle de fréquence).
+- **Indice global** : moyenne pondérée des scores de catégories disponibles selon les `poids_{cat}` du profil. L'interface multiplie cet indice par 100 uniquement pour l'afficher sur une échelle `0–100`.
+- **Interprétation** : `80/100` signifie qu'une commune obtient un indice pondéré élevé dans la recherche et la configuration courantes. Cela ne signifie pas « 80 % de compatibilité » et ne doit pas être comparé entre versions de catalogue ou jeux de données sans vérifier leur provenance.
+
+Le détail affiché par l'interface et le PDF réutilise les mêmes poids effectifs et les mêmes valeurs de critères combinées que le calcul global, afin que les contributions se réconcilient. Les comparateurs sont ajoutés après le calcul du classement des candidats afin de ne pas modifier leurs scores.
 
 ### 7. Agrégation et Pondération
 

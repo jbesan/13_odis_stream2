@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from pipeline.build import consolidate_plm_communes
-from pipeline.prescoring import get_scores_config, process_scaling, scale_series
+from pipeline.prescoring import get_scores_config
 
 
 def test_plm_rent_aggregation_averages_instead_of_summing():

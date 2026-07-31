@@ -3,8 +3,6 @@ import time
 import zipfile
 import pytest
 import pandas as pd
-import geopandas as gpd
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timedelta
 
@@ -12,9 +10,6 @@ from pipeline.common import (
     is_cache_valid,
     fetch_remote_metadata_datagouv,
     validate_dataset_contract,
-    atomic_swap,
-    get_ingest_paths,
-    finalize_ingest,
 )
 from pipeline.ingest import fetch_source, run_clean_step_safely, PipelineLogger
 

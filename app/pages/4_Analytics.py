@@ -1,10 +1,8 @@
-import os
 import json
 import logging
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from google.cloud import bigquery
 
 from utils import auth
 from ui import components as ui_comp
@@ -650,4 +648,3 @@ with tab_profiles:
                     st.info("Aucun besoin en santé spécifique renseigné.")
     else:
         st.info("Aucune donnée de critères enregistrée pour cette période.")
-

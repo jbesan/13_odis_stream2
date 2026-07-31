@@ -1,9 +1,7 @@
 import json
-import pytest
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-from pipeline.manifest import DataManifestBuilder, SourceManifestItem, DataManifest
+from pipeline.manifest import DataManifestBuilder, SourceManifestItem
 
 
 def test_source_manifest_item_model():

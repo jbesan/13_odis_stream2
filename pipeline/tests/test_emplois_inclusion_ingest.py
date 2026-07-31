@@ -1,4 +1,3 @@
-import pytest
 from unittest.mock import patch, MagicMock
 from pipeline.emplois_inclusion_ingest import fetch_department_jobs
 

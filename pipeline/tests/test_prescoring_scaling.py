@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-import pytest
 from pipeline.prescoring import scale_series, get_min_max_quant, process_scaling
 
 def test_scale_series_zero_variance():
@@ -46,5 +45,4 @@ def test_scale_series_preserves_nan():
     assert scaled_inv[0] == 1.0
     assert scaled_inv[2] == 0.5
     assert scaled_inv[3] == 0.0
-
 

@@ -1,13 +1,12 @@
 """Unit tests for Quality Gate System, Prescoring Scaling Safety, and Fallback Rent Data Handling."""
 
 import json
-from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
 
 from pipeline.prescoring import scale_series
-from pipeline.quality_gate import run_quality_gate, QualityGateFailureError, prompt_user_continuation
+from pipeline.quality_gate import run_quality_gate, QualityGateFailureError
 
 
 def test_scale_series_zero_variance_returns_nan():

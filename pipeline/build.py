@@ -2,13 +2,11 @@ import argparse
 import logging
 import pandas as pd
 import geopandas as gpd
-import json
-import logging
-import shutil
 import numpy as np
 from pathlib import Path
 import warnings
 from shapely.geometry import Polygon, MultiPolygon
+from shapely.validation import make_valid
 from typing import Dict, Any, List, Optional
 from shapely import wkb
 
@@ -106,8 +104,8 @@ def consolidate_plm_communes(df: pd.DataFrame) -> pd.DataFrame:
         # 1. Sum absolute counts over child arrondissements (or fallback to parent if children sum is 0)
         for col in cols_to_sum:
             if col in df.columns:
-                child_sum = df.loc[children_mask, col].sum()
-                if child_sum > 0:
+                child_sum = df.loc[children_mask, col].sum(min_count=1)
+                if pd.notna(child_sum) and child_sum > 0:
                     df.loc[parent_mask, col] = child_sum
 
         # 2. Population-weighted averages for rates using child arrondissements
@@ -390,11 +388,10 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
                 siae_df.groupby("codgeo").size().rename("inc_siae_count").reset_index()
             )
             communes_gdf = communes_gdf.merge(siae_agg, on="codgeo", how="left")
-            communes_gdf["inc_siae_count"] = communes_gdf["inc_siae_count"].fillna(0)
             logging.info(f"SIAE structures counts merged from {siae_path}.")
         else:
             logging.warning(f"SIAE structures file not found at {siae_path}.")
-            communes_gdf["inc_siae_count"] = 0
+            communes_gdf["inc_siae_count"] = np.nan
 
         # Calculate lien_social_count from RAG categories
         # 'lien_social_count' is used for inc_asso_core_scaled (Lien Social Density)
@@ -405,12 +402,14 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
             if c.startswith("inc_rna_") and c.endswith("_count")
         ]
         if rna_cols:
-            communes_gdf["lien_social_count"] = communes_gdf[rna_cols].sum(axis=1)
+            communes_gdf["lien_social_count"] = communes_gdf[rna_cols].sum(
+                axis=1, min_count=1
+            )
             logging.info(
                 f"RNA RAG: Calculated lien_social_count from {len(rna_cols)} categories."
             )
         else:
-            communes_gdf["lien_social_count"] = 0
+            communes_gdf["lien_social_count"] = np.nan
 
         # Merge Odace Commune SK
         merge_clean("odace_communes_sk", ["commune_sk"])
@@ -546,7 +545,9 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         # Rounding
         for col in ["pop_active", "pop_employes", "pop_chomeurs"]:
             if col in communes_gdf.columns:
-                communes_gdf[col] = communes_gdf[col].fillna(0).round(0).astype(int)
+                communes_gdf[col] = pd.to_numeric(
+                    communes_gdf[col], errors="coerce"
+                ).round(0)
 
         # Centroids & Geometry
         # CRITICAL: We project the STORAGE to EPSG:2154 (Lambert-93) for performance and consistency.
@@ -763,8 +764,6 @@ def build_bassins_de_vie(
                     communes_gdf = communes_gdf.set_geometry(geoms)
         communes_gdf = communes_gdf.set_geometry("geometry")
 
-        from shapely.validation import make_valid
-
         communes_gdf["geometry"] = communes_gdf.geometry.apply(make_valid)
 
         numeric_cols = [
@@ -813,8 +812,6 @@ def build_bassins_de_vie(
         # FIX: Remove holes from the dissolved polygons
         # Some communes might be "enclaves" or topological errors might create holes.
         # We want the BV to be a solid shape covering everything.
-        from shapely.geometry import Polygon, MultiPolygon
-
         def remove_holes(geom):
             if isinstance(geom, Polygon):
                 return Polygon(geom.exterior)

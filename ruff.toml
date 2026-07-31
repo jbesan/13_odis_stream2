@@ -14,3 +14,7 @@ ignore = [
     "W293", # blank-line-contains-whitespace
     "F841", # unused-variable
 ]
+
+[lint.per-file-ignores]
+# Notebook cells commonly consume variables created by earlier interactive cells.
+"notebooks/*.ipynb" = ["F821"]

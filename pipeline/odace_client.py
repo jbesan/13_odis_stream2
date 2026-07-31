@@ -2,10 +2,8 @@ import os
 import requests
 import logging
 import pandas as pd
-import json
 import time
 from typing import Optional, Dict, Any
-from pathlib import Path
 from pipeline.common import PipelineLogger, CACHE_DIR
 
 
@@ -279,4 +277,3 @@ class OdaceClient:
 
 def get_odace_client(logger: Optional[PipelineLogger] = None) -> OdaceClient:
     return OdaceClient(logger)
-

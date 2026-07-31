@@ -3,7 +3,6 @@ import logging
 import requests
 from datetime import datetime
 import pandas as pd
-import geopandas as gpd
 import numpy as np
 import json
 import time
@@ -17,7 +16,6 @@ from pipeline.common import (
     PipelineLogger,
     load_config,
     load_dataset,
-    extract_zip,
     CONFIG_FILE,
     CACHE_DIR,
     CLEAN_DIR,
@@ -26,9 +24,6 @@ from pipeline.common import (
     is_cache_valid,
     fetch_remote_metadata_datagouv,
     validate_dataset_contract,
-    atomic_swap,
-    get_ingest_paths,
-    finalize_ingest,
 )
 from pipeline.odace_client import get_odace_client
 from pipeline.ft_live_ingest import run_etl, get_token as get_ft_token
@@ -297,7 +292,7 @@ def fetch_rome_referential(
         url = "https://api.francetravail.io/partenaire/offresdemploi/v2/referentiel/metiers"
         headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
 
-        logging.info(f"📡 [ROME] Fetching referential from France Travail API...")
+        logging.info("📡 [ROME] Fetching referential from France Travail API...")
         response = requests.get(url, headers=headers, timeout=30)
         response.raise_for_status()
         data = response.json()
@@ -501,19 +496,21 @@ def clean_lovac(config: Dict[str, Any], logger: PipelineLogger):
                     "nb_logements_prives_total": "log_priv_total_24",
                 }
                 df_out = df_odace.rename(columns=rename_dict)
-                for col in ["codgeo", "pp_vacant_plus_2ans_25", "log_priv_total_24"]:
+                if "codgeo" not in df_out.columns:
+                    raise ValueError("LOVAC source is missing commune_insee_code")
+                for col in ["pp_vacant_plus_2ans_25", "log_priv_total_24"]:
                     if col not in df_out.columns:
-                        df_out[col] = 0
+                        df_out[col] = np.nan
                 df_out = df_out[
                     ["codgeo", "pp_vacant_plus_2ans_25", "log_priv_total_24"]
                 ].copy()
                 df_out["codgeo"] = df_out["codgeo"].astype(str).str.zfill(5)
                 df_out["pp_vacant_plus_2ans_25"] = pd.to_numeric(
                     df_out["pp_vacant_plus_2ans_25"], errors="coerce"
-                ).fillna(0)
+                )
                 df_out["log_priv_total_24"] = pd.to_numeric(
                     df_out["log_priv_total_24"], errors="coerce"
-                ).fillna(0)
+                )
 
                 output_path = CLEAN_DIR / "lovac.parquet"
                 df_out.to_parquet(output_path, engine="fastparquet")
@@ -582,19 +579,19 @@ def clean_lovac(config: Dict[str, Any], logger: PipelineLogger):
 
         if vac_col and vac_col in df.columns:
             df[vac_col] = pd.to_numeric(
-                df[vac_col].replace("s", 0), errors="coerce"
-            ).fillna(0)
+                df[vac_col].replace("s", np.nan), errors="coerce"
+            )
 
             # Extract Total Housing
             if total_col in df.columns:
                 df[total_col] = pd.to_numeric(
-                    df[total_col].replace("s", 0), errors="coerce"
-                ).fillna(0)
+                    df[total_col].replace("s", np.nan), errors="coerce"
+                )
             else:
                 logging.warning(
-                    f"LOVAC: {total_col} not found in {df.columns}. Setting to 0."
+                    f"LOVAC: {total_col} not found in {df.columns}. Preserving missing values."
                 )
-                df[total_col] = 0
+                df[total_col] = np.nan
 
             df_out = df[[codgeo_col, vac_col, total_col]].rename(
                 columns={
@@ -644,19 +641,21 @@ def clean_rpls(config: Dict[str, Any], logger: PipelineLogger):
                         "nb_logements_vacants": "log_soc_inoccupes",
                     }
                     df_out = merged.rename(columns=rename_dict)
-                    for col in ["codgeo", "log_soc_total", "log_soc_inoccupes"]:
-                        if col not in df_out.columns:
-                            df_out[col] = 0
+                if "codgeo" not in df_out.columns:
+                    raise ValueError("RPLS source is missing commune_insee_code")
+                for col in ["log_soc_total", "log_soc_inoccupes"]:
+                    if col not in df_out.columns:
+                        df_out[col] = np.nan
                     df_out = df_out[
                         ["codgeo", "log_soc_total", "log_soc_inoccupes"]
                     ].copy()
                     df_out["codgeo"] = df_out["codgeo"].astype(str).str.zfill(5)
-                    df_out["log_soc_total"] = pd.to_numeric(
-                        df_out["log_soc_total"], errors="coerce"
-                    ).fillna(0)
-                    df_out["log_soc_inoccupes"] = pd.to_numeric(
-                        df_out["log_soc_inoccupes"], errors="coerce"
-                    ).fillna(0)
+                df_out["log_soc_total"] = pd.to_numeric(
+                    df_out["log_soc_total"], errors="coerce"
+                )
+                df_out["log_soc_inoccupes"] = pd.to_numeric(
+                    df_out["log_soc_inoccupes"], errors="coerce"
+                )
 
                     output_path = CLEAN_DIR / "rpls.parquet"
                     df_out.to_parquet(output_path, engine="fastparquet")
@@ -713,8 +712,8 @@ def clean_rpls(config: Dict[str, Any], logger: PipelineLogger):
     )
 
     if total_col and vac_col:
-        df["log_soc_total"] = pd.to_numeric(df[total_col], errors="coerce").fillna(0)
-        df["log_soc_inoccupes"] = pd.to_numeric(df[vac_col], errors="coerce").fillna(0)
+        df["log_soc_total"] = pd.to_numeric(df[total_col], errors="coerce")
+        df["log_soc_inoccupes"] = pd.to_numeric(df[vac_col], errors="coerce")
         df_out = df[["codgeo", "log_soc_total", "log_soc_inoccupes"]]
 
         output_path = CLEAN_DIR / "rpls.parquet"
@@ -750,7 +749,7 @@ def clean_caf(config: Dict[str, Any], logger: PipelineLogger):
                 df_out = df_odace[["codgeo", "taux_couverture"]].copy()
                 df_out["taux_couverture"] = pd.to_numeric(
                     df_out["taux_couverture"], errors="coerce"
-                ).fillna(0)
+                )
 
                 output_path = CLEAN_DIR / "caf.parquet"
                 df_out.to_parquet(output_path, engine="fastparquet")
@@ -801,7 +800,7 @@ def clean_caf(config: Dict[str, Any], logger: PipelineLogger):
         if "taux_couverture" in df.columns:
             df["taux_couverture"] = pd.to_numeric(
                 df["taux_couverture"], errors="coerce"
-            ).fillna(0)
+            )
             df_out = df[["codgeo", "taux_couverture"]].copy()
 
             output_path = CLEAN_DIR / "caf.parquet"
@@ -3909,7 +3908,7 @@ def clean_log_soc_delay(config: Dict[str, Any], logger: PipelineLogger):
                 )
                 df_odace["log_soc_delay"] = pd.to_numeric(
                     df_odace["log_soc_delay"], errors="coerce"
-                ).fillna(0)
+                )
 
                 # Group by epci_code and average
                 df_clean = (
@@ -3955,7 +3954,7 @@ def clean_log_soc_delay(config: Dict[str, Any], logger: PipelineLogger):
         df["epci_code"] = df["epci_code"].astype(str).str.strip().str.zfill(9)
         df["log_soc_delay"] = pd.to_numeric(
             df["log_soc_delay"], errors="coerce"
-        ).fillna(0)
+        )
 
         # Group by epci_code and average
         df_clean = df.groupby("epci_code")["log_soc_delay"].mean().reset_index()
@@ -3992,7 +3991,7 @@ def clean_sante_apl(config: Dict[str, Any], logger: PipelineLogger):
                 df_out["codgeo"] = df_out["codgeo"].astype(str).str.zfill(5)
                 df_out["sante_apl"] = pd.to_numeric(
                     df_out["sante_apl"], errors="coerce"
-                ).fillna(0)
+                )
 
                 output_path.parent.mkdir(parents=True, exist_ok=True)
                 df_out.to_parquet(output_path, engine="fastparquet")
@@ -4026,7 +4025,7 @@ def clean_sante_apl(config: Dict[str, Any], logger: PipelineLogger):
             columns={codgeo_col: "codgeo", val_col: "sante_apl"}
         )
         df["codgeo"] = df["codgeo"].astype(str).str.zfill(5)
-        df["sante_apl"] = pd.to_numeric(df["sante_apl"], errors="coerce").fillna(0)
+        df["sante_apl"] = pd.to_numeric(df["sante_apl"], errors="coerce")
 
         df.to_parquet(output_path, engine="fastparquet")
         logger.log_step("clean_sante_apl", "COMPLETED", {"rows": len(df)})
@@ -4065,7 +4064,7 @@ def clean_mob_durable(config: Dict[str, Any], logger: PipelineLogger):
                 df_pivot["mob_dur_share"] = np.where(
                     df_pivot["total_valeur"] > 0,
                     df_pivot[present_durable].sum(axis=1) / df_pivot["total_valeur"],
-                    0.0,
+                    np.nan,
                 )
 
                 df_out = df_pivot[["codgeo", "mob_dur_share"]]
@@ -4116,7 +4115,7 @@ def clean_mob_durable(config: Dict[str, Any], logger: PipelineLogger):
         df_pivot["mob_dur_share"] = np.where(
             df_pivot["total_valeur"] > 0,
             df_pivot[present_durable].sum(axis=1) / df_pivot["total_valeur"],
-            0.0,
+            np.nan,
         )
 
         df_out = df_pivot[["codgeo", "mob_dur_share"]]
@@ -4144,7 +4143,7 @@ def clean_ter_insecurite(config: Dict[str, Any], logger: PipelineLogger):
 
                 df_agg = (
                     df_odace.groupby("commune_insee_code")["taux_pour_mille"]
-                    .sum()
+                    .sum(min_count=1)
                     .reset_index()
                 )
                 df_agg.rename(
@@ -4187,7 +4186,11 @@ def clean_ter_insecurite(config: Dict[str, Any], logger: PipelineLogger):
         latest = df["annee"].max()
         df = df[df["annee"] == latest]
 
-        df_agg = df.groupby("CODGEO_2025")["taux_pour_mille"].sum().reset_index()
+        df_agg = (
+            df.groupby("CODGEO_2025")["taux_pour_mille"]
+            .sum(min_count=1)
+            .reset_index()
+        )
         df_agg.rename(
             columns={"CODGEO_2025": "codgeo", "taux_pour_mille": "ter_insecurite"},
             inplace=True,

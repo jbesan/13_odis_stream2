@@ -974,9 +974,9 @@ def show_details_dialog(index: Any):
             )
         with col3:
             st.metric(
-                "Score Global",
-                f"{commune.global_score * 100:.1f}%",
-                help="Adéquation globale avec votre projet de vie",
+                "Indice global",
+                f"{commune.global_score * 100:.1f}/100",
+                help="Indice pondéré (0–100), non calibré comme une probabilité ; il sert à comparer les communes de cette recherche.",
             )
 
     # --- Helper to render scores table ---
@@ -1463,7 +1463,7 @@ def display_results_list(display_gdf: Optional[pd.DataFrame] = None) -> None:
         )
 
         p_commune = search_results.commune_pressentie
-        title_p = f"**{p_commune.global_score * 100:.1f}%**  |  {p_commune.name} (Ville Souhaitée)"
+        title_p = f"**{p_commune.global_score * 100:.1f}/100**  |  {p_commune.name} (Ville Souhaitée)"
 
         st.button(
             title_p,
@@ -1482,7 +1482,7 @@ def display_results_list(display_gdf: Optional[pd.DataFrame] = None) -> None:
         st.text("Alternatives : ")
 
     for i, commune in enumerate(search_results.results):
-        title = f"**{commune.global_score * 100:.1f}%**  |  {commune.name}"
+        title = f"**{commune.global_score * 100:.1f}/100**  |  {commune.name}"
 
         st.button(
             title,
@@ -1508,10 +1508,10 @@ def _display_result_details(commune: CommuneResult, is_ready: bool = False) -> N
         # --- Pitch ---
         population = f"{commune.population:,}".replace(",", " ")
         libgeo = commune.name
-        score_percent = f"{commune.global_score * 100:.1f}%"
+        score_percent = f"{commune.global_score * 100:.1f}/100"
 
         st.markdown(
-            f"**{libgeo}** ({population} habitants) fait partie du bassin de vie de : **{commune.name_bdv}**.  La correspondance avec le projet est évaluée à **{score_percent}**."
+            f"**{libgeo}** ({population} habitants) fait partie du bassin de vie de : **{commune.name_bdv}**.  L'indice pondéré de cette recherche est de **{score_percent}**."
         )
 
         # Sync background results into model if available

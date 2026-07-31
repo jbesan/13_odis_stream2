@@ -1,8 +1,6 @@
-import os
 import pandas as pd
 import pytest
 from pathlib import Path
-import app.config as cfg
 
 OUTPUT_DIR = Path("pipeline/cache/output")
 

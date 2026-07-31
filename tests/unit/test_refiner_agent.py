@@ -24,7 +24,7 @@ async def test_refiner_agent_live_shortlisted_city():
     Live integration test to prove that refiner_agent generates pitches for both
     the Top 5 recommended results AND the shortlisted commune_pressentie.
     """
-    from agents.agent_config import get_gemini_client
+    from agents.agent_config import get_gemini_client, get_p_model
 
     client = get_gemini_client()
 

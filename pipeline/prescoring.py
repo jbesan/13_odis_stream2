@@ -4,16 +4,14 @@ import geopandas as gpd
 import numpy as np
 import yaml
 from shapely import wkb
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, List
 from pathlib import Path
 
 from pipeline.common import (
     PipelineLogger,
     load_config,
     CONFIG_FILE,
-    CACHE_DIR,
     OUTPUT_DIR,
-    CLEAN_DIR,
     STATUS_FILE,
 )
 from pipeline.quality_gate import run_quality_gate
@@ -48,6 +46,48 @@ def get_scores_config():
     else:
         logging.warning(f"App config not found at {app_config_path}")
     return _scores_config_cache
+
+
+def apply_configured_raw_missingness(
+    df: pd.DataFrame, scores_config: Dict[str, Any]
+) -> None:
+    """Apply catalog policy to raw metrics before derived scores are calculated.
+
+    Ingestion and build deliberately preserve missing observations. This is the
+    single point where a catalog entry may deliberately turn an unavailable raw
+    value into zero.
+    """
+    raw_metrics_to_fill = {
+        conf["source_metric"]
+        for conf in scores_config.values()
+        if conf.get("missing_strategy") == "zero" and conf.get("source_metric")
+    }
+
+    # RNA category counts feed zero-strategy inclusion indicators.
+    raw_metrics_to_fill.update(
+        c
+        for c in df.columns
+        if c.startswith("inc_rna_") and c.endswith("_count")
+    )
+
+    for metric in raw_metrics_to_fill:
+        if metric in df.columns:
+            df[metric] = df[metric].fillna(0.0)
+
+
+def apply_configured_score_missingness(
+    df: pd.DataFrame, scores_config: Dict[str, Any]
+) -> None:
+    """Apply catalog policy to score outputs after all derivations/scaling."""
+    for score_id, conf in scores_config.items():
+        if conf.get("missing_strategy") == "zero" and score_id in df.columns:
+            df[score_id] = df[score_id].fillna(0.0)
+
+
+def safe_ratio(numerator: pd.Series, denominator: pd.Series) -> pd.Series:
+    """Compute a ratio without confusing an unavailable/zero denominator with 0."""
+    valid = numerator.notna() & denominator.notna() & denominator.gt(0)
+    return numerator.div(denominator).where(valid)
 
 
 def scale_series(series, min_b, max_b, inverted=False, col_name="series"):
@@ -121,7 +161,9 @@ def process_scaling(df, col_name, output_col, inverted=False):
         q_level = conf.get("quantile_level") or 0.01
         min_b, max_b = get_min_max_quant(df[col_name], q_level)
 
-    df[output_col] = scale_series(df[col_name], min_b, max_b, inverted, col_name=output_col)
+    df[output_col] = scale_series(
+        df[col_name], min_b, max_b, inverted, col_name=output_col
+    )
 
 
 # PLM consolidation is now fully handled in the build phase (pipeline/build.py)
@@ -156,30 +198,14 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             communes_gdf = gpd.GeoDataFrame(communes_df, geometry="geometry")
 
         if "population" in communes_gdf.columns:
-            communes_gdf["population"] = pd.to_numeric(communes_gdf["population"], errors="coerce").fillna(0).astype("float64")
+            communes_gdf["population"] = pd.to_numeric(
+                communes_gdf["population"], errors="coerce"
+            ).astype("float64")
 
         # --- Calculated Columns ---
 
-        # --- Config-driven Fill NaNs for Raw Metrics (missing_strategy == "zero") ---
         scores_conf = get_scores_config()
-        raw_metrics_to_fill = set()
-        for score_id, conf in scores_conf.items():
-            if conf.get("missing_strategy") == "zero":
-                if conf.get("source_metric"):
-                    raw_metrics_to_fill.add(conf["source_metric"])
-                raw_metrics_to_fill.add(score_id)
-
-        # Robust fill for RNA Category counts (inc_rna_..._count)
-        rna_cols = [
-            c
-            for c in communes_gdf.columns
-            if c.startswith("inc_rna_") and c.endswith("_count")
-        ]
-        raw_metrics_to_fill.update(rna_cols)
-
-        for col in raw_metrics_to_fill:
-            if col in communes_gdf.columns:
-                communes_gdf[col] = communes_gdf[col].fillna(0)
+        apply_configured_raw_missingness(communes_gdf, scores_conf)
         # 0. Load Associations for Lien Social Score (moved to build.py)
         # Block removed.
 

@@ -18,9 +18,8 @@ import logging
 import shutil
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
-import numpy as np
 import pandas as pd
 
 # Define paths relative to workspace root
@@ -60,7 +59,7 @@ def prompt_user_continuation(dataset_name: str, reason: str, interactive: Option
     print("\n" + "=" * 80)
     print(f"  CRITICAL QUALITY GATE FAILURE FOR DATASET: {dataset_name}")
     print(f"  REASON: {reason}")
-    print(f"  ACTION: Kept / restored previous valid version of dataset.")
+    print("  ACTION: Kept / restored previous valid version of dataset.")
     print("=" * 80)
 
     if is_tty:
