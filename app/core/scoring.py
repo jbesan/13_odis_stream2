@@ -413,7 +413,7 @@ class ScoringEngine:
                 # Absolute Category Score (0.0 to 1.0): raw weighted mean of active criteria
                 df[f"{category}_cat_score"] = s
 
-        return df
+        return df.copy()
 
     @logfire.instrument("_compute_weighted_score: {config}")
     def _compute_weighted_score(
@@ -1657,8 +1657,12 @@ class ScoringEngine:
         # Final pruning
         self._prune_irrelevant_metrics(odis_exploded, config, aggressive=False)
 
-        # Sort by weighted score
-        odis_sorted = odis_exploded.sort_values(by="weighted_score", ascending=False)
+        # Sort by weighted score (primary) and territoire_cat_score (secondary tie-break per P1-08)
+        sort_cols = ["weighted_score"]
+        if "territoire_cat_score" in odis_exploded.columns:
+            sort_cols.append("territoire_cat_score")
+
+        odis_sorted = odis_exploded.sort_values(by=sort_cols, ascending=[False] * len(sort_cols))
 
         # 🧪 SOTA: Limit the number of polygons
         if len(odis_sorted) > cfg.MAX_MAP_POLYGONS:

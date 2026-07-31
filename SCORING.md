@@ -48,11 +48,11 @@ graph TD
         I1 & I2 & I3 --> J["Application du Boost Bassin de Vie (BdV)"]
         
         %% Category aggregation & Percentile normalisation
-        J --> K["Agrégation & Normalisation par Centiles (Percentile Ranking par Catégorie)"]
+        J --> K["Agrégation par Catégorie (Moyenne Pondérée Réconciliée 0-100%)"]
         
         %% Weighted Sum & Map limit
         K --> L["Somme Pondérée Finale (weighted_score)"]
-        L --> M["Cutoff Map (Top 1000 pour la Carte Folium)"]
+        L --> M["Cutoff Map (Top 5000 pour la Carte Folium)"]
     end
 ```
 
@@ -81,7 +81,7 @@ Pour les communes retenues à l'étape 1, un score de distance est calculé par 
 ODIS ne filtre pas par "nombre d'habitants" minimum. Il utilise une **courbe de Gauss** pour favoriser les villes moyennes (l'idéal d'accueil).
 
 - **Moyenne ($\mu$)** : 50 000 habitants.
-- **Écart-type ($\sigma$)** : 40 000 habitants.
+- **Écart-type ($\sigma$)** : 25 000 habitants (`DEFAULT_SIGMA`).
 - Cela signifie qu'une ville de 50 000 habitants obtiendra un score de 1.0, tandis qu'une métropole géante ou un petit village obtiendront des scores plus faibles.
 
 ### 4. L'Enrichissement par le Bassin de Vie (Boost Opportunity) 🚀
@@ -114,103 +114,99 @@ Depuis mai 2026, afin de résoudre le problème des disparités d'écarts de sco
 
 ### 7. Agrégation et Pondération
 
-Enfin, les scores normalisés de chaque catégorie sont regroupés puis pondérés selon les préférences de l'utilisateur (Profil Expert ou Prédéfini) pour obtenir le score final global.
+Voici l'intégralité des **57 critères** configurés dans le moteur de scoring OD&IS (`scores_config.yaml` + Distance & Taille).
 
----
+### 🏠 Logement (17 critères)
 
-## 📊 Synthèse de la Configuration (Tous les Critères)
+| Critère                       | ID YAML | Calcul | Poids | Baseline | Boost BdV | Description |
+| :---------------------------- | :------ | :----- | :---- | :------- | :-------- | :---------- |
+| **Vacance Structurelle**      | `log_vac_scaled` | Pre-scoring | 1.0 | Non | 0.0 | Taux de vacance (> 2 ans) sur le parc total. |
+| **Logements Sociaux Vacants** | `log_soc_inoc_scaled` | Pre-scoring | 3.0 | Non | 0.0 | Taux de logements sociaux inoccupés. |
+| **Sous-occupation**           | `log_occup_scaled` | Pre-scoring | 1.0 | Non | 0.0 | Part des logements sous-occupés (potentiel d'accueil). |
+| **Loyer Moyen (Tous Appt)**   | `log_loyer_moyen_appt_all_scaled` | Pre-scoring | 5.0 | Non | 0.0 | Loyer moyen d'annonce au m² (Ensemble appartements). |
+| **Loyer Moyen (T1/T2)**       | `log_loyer_moyen_appt_t1_t2_scaled` | Pre-scoring | 5.0 | Non | 0.0 | Loyer spécifiquement pour petits appartements. |
+| **Loyer Moyen (T3+)**         | `log_loyer_moyen_appt_t3_p_scaled` | Pre-scoring | 5.0 | Non | 0.0 | Loyer spécifiquement pour grands appartements. |
+| **Loyer Moyen (Maisons)**     | `log_loyer_moyen_house_all_scaled` | Pre-scoring | 5.0 | Non | 0.0 | Loyer moyen d'annonce pour les maisons. |
+| **Délai Logement Social**     | `log_soc_delay_scaled` | Pre-scoring | 5.0 | **Oui** | 0.0 | Délai moyen d'attente (Demande/Attribution, USH). |
+| **Location IML (Solibail)**   | `heb_loc_iml_scaled` | Pre-scoring | 1.0 | Non | 0.8 | Intermédiation locative / Solibail. |
+| **Centres CHRS**              | `heb_chrs_scaled` | Pre-scoring | 2.0 | Non | 0.5 | Capacité en CHRS. |
+| **Centres CPH**               | `heb_cph_scaled` | Pre-scoring | 2.0 | Non | 0.5 | Capacité en CPH (Centre Provisoire d'Hébergement). |
+| **Centres CADA**              | `heb_cada_scaled` | Pre-scoring | 2.0 | Non | 0.5 | Capacité en CADA. |
+| **Foyers FJT**                | `heb_fjt_scaled` | Pre-scoring | 2.0 | Non | 0.5 | Foyers de Jeunes Travailleurs. |
+| **Pensions de Famille**       | `heb_pension_scaled` | Pre-scoring | 2.0 | Non | 0.5 | Pensions de famille et maisons relais. |
+| **Hébergement Citoyen**       | `heb_asso_habitant_scaled` | Pre-scoring | 2.0 | Non | 0.8 | Associations d'accueil chez l'habitant. |
+| **Accueillants J'Accueille**  | `heb_jaccueille_accueillants_score` | Pre-scoring | 3.0 | Non | 1.0 | Présence active d'accueillants (Bassin de Vie). |
+| **Prospects J'Accueille**     | `heb_jaccueille_prospects_score` | Pre-scoring | 2.0 | Non | 1.0 | Présence active de prospects (Bassin de Vie). |
 
-Voici l'intégralité des 47 critères configurés dans le moteur de scoring OD&IS (`scores_config.yaml` + Distance).
+### 💼 Emploi & Formation (9 critères)
 
-### 🏠 Logement
+| Critère                       | ID YAML | Calcul | Poids | Baseline | Boost BdV | Description |
+| :---------------------------- | :------ | :----- | :---- | :------- | :-------- | :---------- |
+| **Opportunités Emploi (A1)**  | `met_match_adult1_scaled` | Live-scoring | 3.0 | Non | 0.5 | Match direct métiers Adulte 1 (FT). |
+| **Tension recrutement (A1)**  | `met_match_adult1_tension_scaled` | Live-scoring | 1.0 | Non | 0.0 | Métiers en tension Adulte 1. |
+| **Opportunités Emploi (A2)**  | `met_match_adult2_scaled` | Live-scoring | 3.0 | Non | 0.5 | Match direct métiers Adulte 2 (FT). |
+| **Tension recrutement (A2)**  | `met_match_adult2_tension_scaled` | Live-scoring | 1.0 | Non | 0.0 | Métiers en tension Adulte 2. |
+| **Offres SIAE (A1)**          | `met_siae_match_adult1_scaled` | Live-scoring | 3.0 | Non | 0.5 | Insertion (SIAE) Adulte 1. |
+| **Offres SIAE (A2)**          | `met_siae_match_adult2_scaled` | Live-scoring | 3.0 | Non | 0.5 | Insertion (SIAE) Adulte 2. |
+| **Centres de Formation (A1)** | `form_match_adult1_scaled` | Live-scoring | 2.0 | Non | 0.8 | Formations recherchées Adulte 1. |
+| **Centres de Formation (A2)** | `form_match_adult2_scaled` | Live-scoring | 2.0 | Non | 0.8 | Formations recherchées Adulte 2. |
+| **Dynamisme Pop. Active**     | `workclass_decline_scaled` | Pre-scoring | 3.0 | **Oui** | 0.0 | Évolution de la population active (Insee). |
 
-| Critère                       | Calcul | Poids | Baseline | Boost BdV | Description                                     |
-| :---------------------------- | :----- | :---- | :------- | :-------- | :---------------------------------------------- |
-| **Vacance Structurelle**      | Pre-scoring | 1.0   | Non      | 0.0       | Taux de vacance (> 2 ans) sur le parc total.    |
-| **Logements Sociaux Vacants** | Pre-scoring | 3.0   | Non      | 0.0       | Taux de logements sociaux inoccupés.            |
-| **Délai Logement Social**     | Pre-scoring | 3.0   | **Oui**  | 0.0       | Délai moyen d'attente (Demande/Attribution).    |
-| **Sous-occupation**           | Pre-scoring | 1.0   | Non      | 0.0       | Part des logements sous-occupés.                |
-| **Loyer Moyen (Tous Appt)**   | Pre-scoring | 3.0   | Non      | 0.0       | Loyer moyen d'annonce au m² (Ensemble).         |
-| **Loyer Moyen (T1/T2)**       | Pre-scoring | 3.0   | Non      | 0.0       | Loyer spécifiquement pour petits appartements.  |
-| **Loyer Moyen (T3+)**         | Pre-scoring | 3.0   | Non      | 0.0       | Loyer spécifiquement pour grands appartements.  |
-| **Loyer Moyen (Maisons)**     | Pre-scoring | 3.0   | Non      | 0.0       | Loyer moyen pour les maisons.                   |
-| **Associations IML**          | Pre-scoring | 1.0   | Non      | 0.8       | Location avec Intermédiation (Solibail, etc.).  |
-| **Centres d'Hébergement**     | Pre-scoring | 2.0   | Non      | 0.5       | Capacité en CHRS / CPH.                         |
-| **Foyers & Pensions**         | Pre-scoring | 2.0   | Non      | 0.5       | Densité FJT, Pensions de famille, Migrants.     |
-| **Hébergement Citoyen**       | Pre-scoring | 2.0   | Non      | 0.8       | Associations d'accueil chez l'habitant.         |
-| **Accueillants J'Accueille**  | Pre-scoring | 3.0   | Non      | 1.0       | Présence active d'accueillants (Bassin de Vie). |
-| **Prospects J'Accueille**     | Pre-scoring | 2.0   | Non      | 1.0       | Présence active de prospects (Bassin de Vie).   |
+### 🤝 Inclusion & Lien Social (5 critères)
 
-### 💼 Emploi & Formation
+| Critère                     | ID YAML | Calcul | Poids | Baseline | Boost BdV | Description |
+| :-------------------------- | :------ | :----- | :---- | :------- | :-------- | :---------- |
+| **Lien Social (Général)**   | `inc_asso_core_scaled` | Pre-scoring | 1.0 | **Oui** | 0.8 | Densité associative globale (RNA). |
+| **Accompagnement Réfugiés** | `inc_asso_refug_scaled` | Pre-scoring | 1.0 | **Oui** | 0.8 | Associations spécialisées (RNA). |
+| **SIAE (Densité)**          | `inc_siae_density_scaled` | Pre-scoring | 1.0 | **Oui** | 0.8 | Densité de structures d'insertion. |
+| **Affinités (Thématiques)** | `inc_asso_add_scaled` | Live-scoring | 1.0 | Non | 0.8 | Assos correspondant aux loisirs/intérêts. |
+| **Services Inclusion**      | `inc_services_incl_scaled` | Live-scoring | 1.0 | Non | 0.8 | Match avec les services sélectionnés. |
 
-| Critère                       | Calcul | Poids | Baseline | Boost BdV | Description                         |
-| :---------------------------- | :----- | :---- | :------- | :-------- | :---------------------------------- |
-| **Opportunités Emploi (A1)**  | Live-scoring | 3.0   | Non      | 0.5       | Match direct métiers Adulte 1 (FT). |
-| **Opportunités Emploi (A2)**  | Live-scoring | 3.0   | Non      | 0.5       | Match direct métiers Adulte 2 (FT). |
-| **Tension recrutement (A1)**  | Live-scoring | 1.0   | Non      | 0.0       | Métiers en tension Adulte 1.        |
-| **Tension recrutement (A2)**  | Live-scoring | 1.0   | Non      | 0.0       | Métiers en tension Adulte 2.        |
-| **Offres SIAE (A1)**          | Live-scoring | 3.0   | Non      | 0.5       | Insertion (SIAE) Adulte 1.          |
-| **Offres SIAE (A2)**          | Live-scoring | 3.0   | Non      | 0.5       | Insertion (SIAE) Adulte 2.          |
-| **Centres de Formation (A1)** | Live-scoring | 2.0   | Non      | 0.8       | Formations recherchées Adulte 1.    |
-| **Centres de Formation (A2)** | Live-scoring | 2.0   | Non      | 0.8       | Formations recherchées Adulte 2.    |
-| **Déclin Population Active**  | Pre-scoring | 3.0   | **Oui**  | 0.0       | Baisse de la population des actifs. |
+### 🗺️ Territoire (6 critères)
 
-### 🤝 Inclusion & Lien Social
+| Critère                | ID YAML | Calcul | Poids | Baseline | Boost BdV | Description |
+| :--------------------- | :------ | :----- | :---- | :------- | :-------- | :---------- |
+| **Population Commune** | `ter_population_scaled` | Live-scoring | 5.0 | **Oui** | -0.8 | Score basé sur la taille de ville (Gauss). |
+| **Sécurité (Indice)**  | `ter_insecurite_scaled` | Pre-scoring | 1.0 | **Oui** | 0.5 | Indice de sécurité (SSMSI). |
+| **Couleur Politique**  | `ter_pol_scaled` | Pre-scoring | 1.0 | **Oui** | 0.0 | 0.0 si extrême droite, 1.0 sinon. |
+| **Zone Stratégique**   | `ter_strategic_locations_scaled` | Live-scoring | 3.0 | Non | 0.0 | Zone d'action privilégiée partenaire. |
+| **Adhésion ANVITA**    | `ter_anvita_scaled` | Pre-scoring | 3.0 | **Oui** | 0.0 | Membre du réseau ANVITA. |
+| **Signataire CTAI**    | `ter_ctai_scaled` | Pre-scoring | 3.0 | **Oui** | 0.0 | Signataire d'un CTAI. |
 
-| Critère                     | Calcul | Poids | Baseline | Boost BdV | Description                               |
-| :-------------------------- | :----- | :---- | :------- | :-------- | :---------------------------------------- |
-| **Lien Social (Général)**   | Pre-scoring | 1.0   | **Oui**  | 0.8       | Densité associative globale (RNA).        |
-| **Accompagnement Réfugiés** | Pre-scoring | 1.0   | **Oui**  | 0.8       | Associations spécialisées (RNA).          |
-| **SIAE (Densité)**          | Pre-scoring | 1.0   | **Oui**  | 0.8       | Présence de structures d'insertion.       |
-| **Affinités (Thématiques)** | Live-scoring | 1.0   | Non      | 0.8       | Assos correspondant aux loisirs/intérets. |
-| **Services Inclusion**      | Live-scoring | 1.0   | Non      | 0.8       | Match avec les services sélectionnés.     |
+### 🎓 Éducation (7 critères)
 
-### 🗺️ Territoire
+| Critère                    | ID YAML | Calcul | Poids | Baseline | Boost BdV | Description |
+| :------------------------- | :------ | :----- | :---- | :------- | :-------- | :---------- |
+| **Petite Enfance**         | `edu_petite_enfance_scaled` | Pre-scoring | 3.0 | Non | 0.0 | Taux de couverture Crèches/Assmat (CAF). |
+| **Ecole Maternelle**       | `edu_maternelle_scaled` | Live-scoring | 2.0 | Non | 0.0 | Présence d'une école maternelle. |
+| **Ecole Elémentaire**      | `edu_elementaire_scaled` | Live-scoring | 2.0 | Non | 0.0 | Présence d'une école élémentaire. |
+| **Collège**                | `edu_college_scaled` | Live-scoring | 1.0 | Non | 0.5 | Présence d'un collège. |
+| **Lycée**                  | `edu_lycee_scaled` | Live-scoring | 1.0 | Non | 0.8 | Présence d'un lycée. |
+| **Classes à risque**       | `edu_classes_ferm_scaled` | Pre-scoring | 1.0 | Non | 0.5 | Écoles avec un besoin de nouveaux élèves. |
+| **Evolution Démog. Jeune** | `youth_decline_scaled` | Pre-scoring | 1.0 | Non | 0.0 | Évolution des -15 ans (2016-2022). |
 
-| Critère                | Calcul | Poids | Baseline | Boost BdV | Description                                |
-| :--------------------- | :----- | :---- | :------- | :-------- | :----------------------------------------- |
-| **Population Commune** | Live-scoring | 3.0   | **Oui**  | -0.5      | Score basé sur la taille de ville (Gauss). |
-| **Sécurité (Taux)**    | Pre-scoring | 1.0   | **Oui**  | 0.5       | Indice d'insécurité (Vols/Dégradations).   |
-| **Couleur Politique**  | Pre-scoring | 1.0   | **Oui**  | 0.0       | Score binaire : 0.0 si le maire est d'extrême droite, 1.0 sinon. |
-| **Zone Stratégique**   | Live-scoring | 3.0   | Non      | 0.0       | Zone d'action privilégiée partenaire.      |
-| **Adhésion ANVITA**    | Pre-scoring | 3.0   | **Oui**  | 0.0       | Adhésion au réseau ANVITA (1.0 si Commune/EPCI, 0.5 si Dépt/Région, 0.0 sinon). |
-| **Signataire CTAI**    | Pre-scoring | 3.0   | **Oui**  | 0.0       | Contrat territorial d'accueil et d'intégration (1.0 si Commune/EPCI, 0.5 si Dépt/Région, 0.0 sinon). |
+### 🩺 Santé (8 critères)
 
+| Critère                                 | ID YAML | Calcul | Poids | Baseline | Boost BdV | Description |
+| :-------------------------------------- | :------ | :----- | :---- | :------- | :-------- | :---------- |
+| **Accessibilité Soins (APL)**           | `sante_rdv_delay_scaled` | Pre-scoring | 2.0 | **Oui** | 0.0 | Potentiel de RDV médicaux (APL DREES). |
+| **Hôpital**                             | `sante_hopital_scaled` | Pre-scoring | 2.0 | Non | 0.8 | Présence locale d'un hôpital (BPE). |
+| **Maternité**                           | `sante_maternite_scaled` | Pre-scoring | 2.0 | Non | 0.25 | Présence locale d'une maternité (BPE). |
+| **Soutien Psychologique**               | `sante_psy_scaled` | Pre-scoring | 2.0 | Non | 0.0 | Structures de soutien psychologique (BPE). |
+| **Dialyse**                             | `sante_dialyse_scaled` | Pre-scoring | 2.0 | Non | 0.0 | Centre de dialyse (BPE). |
+| **Maison de santé**                     | `sante_maison_sante_scaled` | Pre-scoring | 2.0 | Non | 0.0 | Maison de santé (BPE). |
+| **Addictologie**                        | `sante_addictologie_scaled` | Pre-scoring | 2.0 | Non | 0.0 | Structures d'addictologie (BPE). |
+| **Santé Maternelle et Infantile (PMI)** | `sante_pmi_scaled` | Pre-scoring | 2.0 | Non | 0.0 | Centre PMI (BPE). |
 
-### 🎓 Éducation
+### 🧭 Mobilité (5 critères)
 
-| Critère                    | Calcul | Poids | Baseline | Boost BdV | Description                               |
-| :------------------------- | :----- | :---- | :------- | :-------- | :---------------------------------------- |
-| **Petite Enfance**         | Pre-scoring | 3.0   | Non      | 0.0       | Taux de couverture Crèches/Assmat.        |
-| **Ecole Maternelle**       | Live-scoring | 2.0   | Non      | 0.0       | Présence locale ou à proximité.           |
-| **Ecole Elémentaire**      | Live-scoring | 2.0   | Non      | 0.0       | Présence locale ou à proximité.           |
-| **Collège**                | Live-scoring | 1.0   | Non      | 0.5       | Présence locale ou à proximité.           |
-| **Lycée**                  | Live-scoring | 1.0   | Non      | 0.8       | Présence locale ou à proximité.           |
-| **Classes à risque**       | Pre-scoring | 1.0   | Non      | 0.5       | Écoles avec un besoin de nouveaux élèves. |
-| **Evolution Démog. Jeune** | Pre-scoring | 2.0   | Non      | 0.0       | Baisse de la population des -15 ans.      |
-
-### 🩺 Santé
-
-| Critère                                    | Calcul | Poids | Baseline | Boost BdV | Description                                                    |
-| :----------------------------------------- | :----- | :---- | :------- | :-------- | :------------------------------------------------------------- |
-| **Accessibilité Soins**                    | Pre-scoring | 2.0   | **Oui**  | 0.0       | Potentiel de RDV médicaux (APL DREES).                         |
-| **Hôpital**                                | Pre-scoring | 2.0   | Non      | 0.8       | Présence locale d'un hôpital (Source BPE).                     |
-| **Maternité**                              | Pre-scoring | 2.0   | Non      | 0.25      | Présence locale d'une maternité (Source BPE).                  |
-| **Soutien Psychologique**                  | Pre-scoring | 2.0   | Non      | 0.0       | Présence de structures de soutien psychologique (Source BPE).  |
-| **Dialyse**                                | Pre-scoring | 2.0   | Non      | 0.0       | Présence d'un centre de dialyse (Source BPE).                  |
-| **Maison de santé**                        | Pre-scoring | 2.0   | Non      | 0.0       | Présence d'une maison de santé (Source BPE).                   |
-| **Addictologie**                           | Pre-scoring | 2.0   | Non      | 0.0       | Présence locale de structures d'addictologie (Source BPE).     |
-| **Santé maternelle et infantile (PMI)**    | Pre-scoring | 2.0   | Non      | 0.0       | Présence locale d'un centre PMI (Source BPE).                  |
-
-### 🧭 Mobilité
-
-| Critère                | Calcul | Poids | Baseline | Boost BdV | Description                               |
-| :--------------------- | :----- | :---- | :------- | :-------- | :---------------------------------------- |
-| **Mobilité Durable**   | Pre-scoring | 3.0   | **Oui**  | 0.5       | Part des déplacements durables (Ecolab).  |
-| **Densité Transports** | Live-scoring | 2.0   | **Oui**  | 0.0       | Nombre d'arrêts de transport / 1000 hab.  |
-| **Gare SNCF**          | Pre-scoring | 1.0   | **Oui**  | 0.0       | Présence d'une gare dans la commune.      |
-| **Bonus EPCI**         | Live-scoring | 1.0   | Non      | 0.0       | Appartenance à la même agglomération.     |
-| **Distance Proximité** | Live-scoring | 1.0   | Non      | 0.0       | Décroissance linéaire (Proximité réelle). |
+| Critère                | ID YAML | Calcul | Poids | Baseline | Boost BdV | Description |
+| :--------------------- | :------ | :----- | :---- | :------- | :-------- | :---------- |
+| **Mobilité Durable**   | `mob_dur_share_scaled` | Pre-scoring | 3.0 | **Oui** | 0.5 | Part domicile-travail sans voiture (Ecolab). |
+| **Densité Transports** | `mob_trans_pub_density_scaled` | Live-scoring | 3.0 | **Oui** | 0.0 | Arrêts de transport pour 1000 hab. |
+| **Gare SNCF**          | `mob_gare_scaled` | Pre-scoring | 1.0 | **Oui** | 0.0 | Présence d'une gare dans la commune. |
+| **Bonus EPCI**         | `mob_epci_scaled` | Live-scoring | 1.0 | Non | 0.0 | Même agglomération que la commune actuelle. |
+| **Distance Proximité** | `mob_dist_current_loc_scaled` | Live-scoring | 1.0 | Non | 0.0 | Décroissance linéaire de proximité. |
 
 ---
 
@@ -261,8 +257,8 @@ La mobilité est évaluée sur trois axes :
 
 Pour garantir une expérience utilisateur fluide sur la carte Folium (évitant le gel du navigateur avec des dizaines de milliers de polygones), le moteur applique une **limitation automatique** :
 
-- **Seuil** : 1 000 communes maximum (`MAX_MAP_POLYGONS` dans `app/config.py`).
-- **Logique** : Seules les 1 000 meilleures communes selon le `weighted_score` sont conservées pour l'affichage cartographique.
+- **Seuil** : 5 000 communes maximum (`MAX_MAP_POLYGONS` dans `app/config.py`).
+- **Logique** : Seules les 5 000 meilleures communes selon le `weighted_score` sont conservées pour l'affichage cartographique.
 - **Exception** : La **commune actuelle** (départ) est systématiquement conservée dans le jeu de données, même si son score est faible, afin de servir de point de repère visuel.
 
 > Cette optimisation permet de réduire drastiquement l'empreinte mémoire côté client tout en conservant les résultats les plus pertinents pour le projet de vie.

@@ -1422,3 +1422,62 @@ class TestMissingnessHandling:
         # Bordeaux's ter_insecurite_scaled should be NaN
         assert pd.isna(df_scored.loc["33063", "ter_insecurite_scaled"])
 
+
+@pytest.mark.unit
+class TestP108TieBreak:
+    """Tests for P1-08: Secondary sorting by territoire_cat_score when weighted_score ties."""
+
+    def test_territoire_tie_break_order(self, sample_data, live_scores_cat, sample_incl_index, global_stats):
+        df = sample_data.copy()
+
+        # Add a second commune in dept 33 so dept filtering returns 2 communes
+        c1, c2 = "33063", "33999"
+        df.loc[c2] = df.loc[c1].copy()
+        df.loc[c2, "libgeo"] = "Commune Test 2"
+
+        config = SearchCriterias(
+            loc_type="departement",
+            loc_code="33",
+            commune_actuelle="33063",
+        )
+
+        engine = scoring.ScoringEngine(
+            df_all_communes=df,
+            df_bv_geo=gpd.GeoDataFrame(),
+            scores_cat=live_scores_cat,
+            incl_index=sample_incl_index,
+            associations_data=pd.DataFrame(columns=["codgeo", "id_waldec", "count"]),
+            formations_data=pd.DataFrame(columns=["codgeo", "formation_code"]),
+            codformations_index=pd.DataFrame(columns=["label"]),
+            global_stats=global_stats,
+        )
+
+        # Force equal weighted score inputs by giving identical values to non-territoire criteria
+        # but higher ter_pol_scaled to c2
+        df.loc[c1, "ter_pol_scaled"] = 0.0
+        df.loc[c2, "ter_pol_scaled"] = 1.0
+
+        # Adjust another criterion so weighted_score stays equal between c1 and c2
+        # c1 gets 1.0 for log_vac_scaled (weight 1.0), c2 gets 0.0
+        # c1 gets 0.0 for ter_pol_scaled (weight 1.0), c2 gets 1.0 for ter_pol_scaled (weight 1.0)
+        df.loc[c1, "log_vac_scaled"] = 1.0
+        df.loc[c2, "log_vac_scaled"] = 0.0
+
+        results_tied = engine.run(config)
+
+        # Both c1 and c2 have equal weighted_score contribution, but c2 has higher territoire_cat_score
+        score_c1 = results_tied.loc[c1, "weighted_score"]
+        score_c2 = results_tied.loc[c2, "weighted_score"]
+        assert abs(score_c1 - score_c2) < 1e-5, f"Expected equal weighted score, got {score_c1} vs {score_c2}"
+
+        ter_c1 = results_tied.loc[c1, "territoire_cat_score"]
+        ter_c2 = results_tied.loc[c2, "territoire_cat_score"]
+        assert ter_c2 > ter_c1
+
+        # Assert c2 is sorted before c1 because of secondary key territoire_cat_score
+        idx_c1 = results_tied.index.get_loc(c1)
+        idx_c2 = results_tied.index.get_loc(c2)
+        assert idx_c2 < idx_c1, f"Expected c2 ({c2}) to be ordered before c1 ({c1}) due to territoire_cat_score tie-break"
+
+
+

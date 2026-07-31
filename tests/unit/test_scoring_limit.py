@@ -9,7 +9,7 @@ from shapely.geometry import Point
 
 def test_scoring_limit_and_current_city_preservation(live_scores_cat, default_config):
     """
-    Test that ScoringEngine limits results to MAX_MAP_POLYGONS (1000)
+    Test that ScoringEngine limits results to MAX_MAP_POLYGONS (5000 in prod, set to 1000 in test)
     but preserves the current city.
     """
     # 1. Create a large mock dataset (1500 rows)
