@@ -69,37 +69,89 @@ class PLMAggregationPolicy:
 # metric is explicit, and an unclassified numerical metric blocks the build.
 PLM_SUM_CHILDREN_METRICS = frozenset(
     {
-        "population", "pop_active", "pop_employes", "pop_chomeurs",
-        "pop_jeune_2016", "pop_jeune_2022", "pop_active_2016", "pop_active_2022",
-        "log_priv_vacant_plus_2ans", "log_priv_total", "log_soc_total",
-        "log_soc_inoccupes", "edu_maternelle_ct", "edu_elementaire_ct",
-        "edu_college_ct", "edu_lycee_ct", "edu_eaje_ct",
-        "edu_relais_petite_enfance_ct", "edu_alsh_ct", "edu_micro_creche_ct",
-        "total_eleves", "ecoles_count", "risky_schools_count", "heb_chrs_count",
-        "heb_cph_count", "heb_cada_count", "heb_fjt_count", "heb_pension_count",
-        "heb_loc_iml_count", "heb_habitant_count", "gare_count", "count_hopital",
-        "count_maternite", "count_centre_sante", "count_psy", "count_dialyse",
-        "count_maison_sante", "count_addictologie", "count_pmi",
-        "act_antenne_justice_count", "act_france_services_count", "act_mairie_count",
-        "act_femmes_vuln_count", "nb_stops_bus", "nb_stops_tram", "nb_stops_metro",
-        "nb_stops_train", "nb_stops_total", "inc_rna_Culturelle_count",
-        "inc_rna_Emploi/IAE_count", "inc_rna_FLE/Alpha_count",
-        "inc_rna_Juridique_count", "inc_rna_Logement_count",
-        "inc_rna_Numérique_count", "inc_rna_Santé/Psy_count", "inc_asso_refug_count",
-        "inc_siae_count", "lien_social_count",
+        "population",
+        "pop_active",
+        "pop_employes",
+        "pop_chomeurs",
+        "pop_jeune_2016",
+        "pop_jeune_2022",
+        "pop_active_2016",
+        "pop_active_2022",
+        "log_priv_vacant_plus_2ans",
+        "log_priv_total",
+        "log_soc_total",
+        "log_soc_inoccupes",
+        "edu_maternelle_ct",
+        "edu_elementaire_ct",
+        "edu_college_ct",
+        "edu_lycee_ct",
+        "edu_eaje_ct",
+        "edu_relais_petite_enfance_ct",
+        "edu_alsh_ct",
+        "edu_micro_creche_ct",
+        "total_eleves",
+        "ecoles_count",
+        "risky_schools_count",
+        "heb_chrs_count",
+        "heb_cph_count",
+        "heb_cada_count",
+        "heb_fjt_count",
+        "heb_pension_count",
+        "heb_loc_iml_count",
+        "heb_habitant_count",
+        "gare_count",
+        "count_hopital",
+        "count_maternite",
+        "count_centre_sante",
+        "count_psy",
+        "count_dialyse",
+        "count_maison_sante",
+        "count_addictologie",
+        "count_pmi",
+        "act_antenne_justice_count",
+        "act_france_services_count",
+        "act_mairie_count",
+        "act_femmes_vuln_count",
+        "nb_stops_bus",
+        "nb_stops_tram",
+        "nb_stops_metro",
+        "nb_stops_train",
+        "nb_stops_total",
+        "inc_rna_Culturelle_count",
+        "inc_rna_Emploi/IAE_count",
+        "inc_rna_FLE/Alpha_count",
+        "inc_rna_Juridique_count",
+        "inc_rna_Logement_count",
+        "inc_rna_Numérique_count",
+        "inc_rna_Santé/Psy_count",
+        "inc_asso_refug_count",
+        "inc_siae_count",
+        "lien_social_count",
     }
 )
 PLM_POPULATION_WEIGHTED_METRICS = frozenset(
     {
-        "edu_pe_tx_couverture", "log_soc_delay", "sante_apl", "mob_dur_share",
-        "ter_insecurite", "loyer_m2_moy_appt_all", "loyer_m2_moy_appt_t1_t2",
-        "loyer_m2_moy_appt_t3_p", "loyer_m2_moy_house_all", "loyer_app_m2",
+        "edu_pe_tx_couverture",
+        "log_soc_delay",
+        "sante_apl",
+        "mob_dur_share",
+        "ter_insecurite",
+        "loyer_m2_moy_appt_all",
+        "loyer_m2_moy_appt_t1_t2",
+        "loyer_m2_moy_appt_t3_p",
+        "loyer_m2_moy_house_all",
+        "loyer_app_m2",
     }
 )
 PLM_PARENT_ONLY_METRICS = frozenset(
     {
-        "pol_num", "MOD_OVER_OCC", "MOD_UNDER_OCC", "SEV_OVER_OCC",
-        "SEV_UNDER_OCC", "STD_OCC", "VSEV_UNDER_OCC",
+        "pol_num",
+        "MOD_OVER_OCC",
+        "MOD_UNDER_OCC",
+        "SEV_OVER_OCC",
+        "SEV_UNDER_OCC",
+        "STD_OCC",
+        "VSEV_UNDER_OCC",
     }
 )
 PLM_MAX_METRICS = frozenset({"has_gare"})
@@ -111,14 +163,24 @@ PLM_STRUCTURAL_COLUMNS = frozenset(
 def _plm_metric_policies(df: pd.DataFrame) -> Dict[str, PLMAggregationPolicy]:
     """Return and validate the complete PLM contract for this build schema."""
     policies = {
-        **{column: PLMAggregationPolicy("sum_children") for column in PLM_SUM_CHILDREN_METRICS},
-        **{column: PLMAggregationPolicy("population_weighted_mean") for column in PLM_POPULATION_WEIGHTED_METRICS},
-        **{column: PLMAggregationPolicy("parent") for column in PLM_PARENT_ONLY_METRICS},
+        **{
+            column: PLMAggregationPolicy("sum_children")
+            for column in PLM_SUM_CHILDREN_METRICS
+        },
+        **{
+            column: PLMAggregationPolicy("population_weighted_mean")
+            for column in PLM_POPULATION_WEIGHTED_METRICS
+        },
+        **{
+            column: PLMAggregationPolicy("parent") for column in PLM_PARENT_ONLY_METRICS
+        },
         **{column: PLMAggregationPolicy("max") for column in PLM_MAX_METRICS},
     }
     numeric_columns = {
-        column for column in df.columns
-        if column not in PLM_STRUCTURAL_COLUMNS and pd.api.types.is_numeric_dtype(df[column])
+        column
+        for column in df.columns
+        if column not in PLM_STRUCTURAL_COLUMNS
+        and pd.api.types.is_numeric_dtype(df[column])
     }
     unknown_columns = numeric_columns - policies.keys()
     if unknown_columns:
@@ -161,7 +223,11 @@ def consolidate_plm_communes(df: pd.DataFrame) -> pd.DataFrame:
                 df.loc[parent_mask, column] = child_values.sum(min_count=1)
             elif policy.fallback == "population_weighted_mean":
                 child_populations = df.loc[children_mask, "population"]
-                valid = child_values.notna() & child_populations.notna() & child_populations.gt(0)
+                valid = (
+                    child_values.notna()
+                    & child_populations.notna()
+                    & child_populations.gt(0)
+                )
                 if valid.any():
                     df.loc[parent_mask, column] = (
                         child_values.loc[valid] * child_populations.loc[valid]
@@ -548,7 +614,10 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
                 communes_gdf["loyer_m2_moy_appt_all"] = communes_gdf["loyer_app_m2"]
                 # Map apartment fallback only to apartment sub-typologies, NOT house rent!
                 for c in ["loyer_m2_moy_appt_t1_t2", "loyer_m2_moy_appt_t3_p"]:
-                    if c not in communes_gdf.columns or (communes_gdf[c].notna() & (communes_gdf[c] > 0)).sum() < 100:
+                    if (
+                        c not in communes_gdf.columns
+                        or (communes_gdf[c].notna() & (communes_gdf[c] > 0)).sum() < 100
+                    ):
                         communes_gdf[c] = communes_gdf["loyer_app_m2"]
 
         # Associations merge (Deprecated - Now handled via RNA RAG above)
@@ -730,19 +799,21 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         )
 
         # Compute ANVITA scores after PLM consolidation to avoid summing/averaging arrondissement metrics
-        excel_path = Path(__file__).parent / "data_private" / "Tableau de suivi off - membres CT ANVITA.xlsx"
+        excel_path = (
+            Path(__file__).parent
+            / "data_private"
+            / "Tableau de suivi off - membres CT ANVITA.xlsx"
+        )
         communes_gdf["ter_anvita_member"] = compute_anvita_scores(
-            communes_df=communes_gdf,
-            cache_raw_dir=CACHE_DIR,
-            excel_path=excel_path
+            communes_df=communes_gdf, cache_raw_dir=CACHE_DIR, excel_path=excel_path
         )
 
         # Compute CTAI scores after PLM consolidation
-        ctai_json_path = Path(__file__).parent / "data_private" / "ctai_signataires.json"
+        ctai_json_path = (
+            Path(__file__).parent / "data_private" / "ctai_signataires.json"
+        )
         communes_gdf["ter_ctai_member"] = compute_ctai_scores(
-            communes_df=communes_gdf,
-            cache_raw_dir=CACHE_DIR,
-            json_path=ctai_json_path
+            communes_df=communes_gdf, cache_raw_dir=CACHE_DIR, json_path=ctai_json_path
         )
 
         # Save polygons as WKB in WGS84 (4326) for direct map rendering
@@ -1312,10 +1383,14 @@ def main(argv=None):
         # We need communes for BV
         communes_gdf = build_communes(config, logger)
         missing = [
-            name for name in required_outputs["communes"] if not (OUTPUT_DIR / name).exists()
+            name
+            for name in required_outputs["communes"]
+            if not (OUTPUT_DIR / name).exists()
         ]
         if missing:
-            raise PipelineRunError(f"Build step 'communes' produced no output: {missing}")
+            raise PipelineRunError(
+                f"Build step 'communes' produced no output: {missing}"
+            )
 
     for step_name in selected_steps:
         if step_name == "communes":
@@ -1338,7 +1413,9 @@ def main(argv=None):
                 if not (OUTPUT_DIR / name).exists()
             ]
             if missing:
-                logger.log_step("build_all", "ERROR", {"failed_step": step_name, "missing": missing})
+                logger.log_step(
+                    "build_all", "ERROR", {"failed_step": step_name, "missing": missing}
+                )
                 raise PipelineRunError(
                     f"Build step '{step_name}' produced no required output: {missing}"
                 )

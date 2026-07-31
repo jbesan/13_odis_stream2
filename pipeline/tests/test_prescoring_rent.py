@@ -13,46 +13,67 @@ def test_plm_rent_aggregation_averages_instead_of_summing():
     # Synthetic Paris arrondissements data (75101 to 75120) and parent 75056
     arrondissements = [str(x) for x in range(75101, 75121)]
     data = []
-    
+
     # Parent row
     # NaN means the source has no parent-level observation; unlike the former
     # implementation, a legitimate parent value of 0 must be preserved.
-    data.append({"codgeo": "75056", "population": np.nan, "loyer_m2_moy_appt_all": np.nan, "loyer_app_m2": np.nan})
-    
+    data.append(
+        {
+            "codgeo": "75056",
+            "population": np.nan,
+            "loyer_m2_moy_appt_all": np.nan,
+            "loyer_app_m2": np.nan,
+        }
+    )
+
     # 20 child arrondissements with 30.0 euro/m2 rent each
     for code in arrondissements:
-        data.append({"codgeo": code, "population": 100000, "loyer_m2_moy_appt_all": 30.0, "loyer_app_m2": 30.0})
-        
+        data.append(
+            {
+                "codgeo": code,
+                "population": 100000,
+                "loyer_m2_moy_appt_all": 30.0,
+                "loyer_app_m2": 30.0,
+            }
+        )
+
     df = pd.DataFrame(data)
-    
+
     res = consolidate_plm_communes(df)
-    
+
     parent_row = res[res["codgeo"] == "75056"].iloc[0]
-    assert parent_row["loyer_m2_moy_appt_all"] == pytest.approx(30.0, abs=0.5), \
+    assert parent_row["loyer_m2_moy_appt_all"] == pytest.approx(30.0, abs=0.5), (
         f"Paris parent rent must be ~30.0 €/m² (averaged), NOT summed ({parent_row['loyer_m2_moy_appt_all']} €/m²)"
+    )
     assert parent_row["loyer_app_m2"] == pytest.approx(30.0, abs=0.5)
 
 
 def test_house_rent_not_overwritten_by_apartment_fallback():
     """Test that house rent remains NaN when fallback is applied if no house data exists."""
-    df = pd.DataFrame({
-        "commune_sk": ["sk1", "sk2"],
-        "loyer_app_m2": [15.0, 20.0],
-        "loyer_m2_moy_appt_all": [15.0, 20.0],
-        "loyer_m2_moy_house_all": [np.nan, np.nan]
-    })
-    
+    df = pd.DataFrame(
+        {
+            "commune_sk": ["sk1", "sk2"],
+            "loyer_app_m2": [15.0, 20.0],
+            "loyer_m2_moy_appt_all": [15.0, 20.0],
+            "loyer_m2_moy_house_all": [np.nan, np.nan],
+        }
+    )
+
     # House rent must not be forcibly populated with apartment rent
-    assert df["loyer_m2_moy_house_all"].isna().all(), "House rent must remain NaN when house data is unobserved"
+    assert df["loyer_m2_moy_house_all"].isna().all(), (
+        "House rent must remain NaN when house data is unobserved"
+    )
 
 
 def test_quantile_level_propagation_in_scores_config():
     """Test that quantile_level is extracted in get_scores_config()."""
     config = get_scores_config()
-    
+
     # Check that scores_config contains quantile_level key for configured criteria
     for score_id, conf in config.items():
-        assert "quantile_level" in conf, f"quantile_level key must be present in score config for {score_id}"
+        assert "quantile_level" in conf, (
+            f"quantile_level key must be present in score config for {score_id}"
+        )
 
 
 def test_get_min_max_quant_safeguards_zero_variance():
