@@ -37,6 +37,11 @@ class PipelineRun:
         return self.directory / "output"
 
     @property
+    def clean_dir(self) -> Path:
+        """Run-scoped cleaned intermediates used to build this candidate."""
+        return self.directory / "clean"
+
+    @property
     def status_file(self) -> Path:
         return self.directory / "run.json"
 
@@ -49,6 +54,7 @@ class PipelineRun:
         if run.directory.exists():
             raise PipelineRunError(f"Run already exists: {run.run_id}")
         run.output_dir.mkdir(parents=True)
+        run.clean_dir.mkdir(parents=True)
         run._write_state(
             {
                 "schema_version": 1,
@@ -73,7 +79,9 @@ class PipelineRun:
         try:
             return json.loads(self.status_file.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
-            raise PipelineRunError(f"Run record is invalid JSON: {self.status_file}") from exc
+            raise PipelineRunError(
+                f"Run record is invalid JSON: {self.status_file}"
+            ) from exc
 
     def update_state(self, state: str, **details: Any) -> None:
         payload = self.read_state()
@@ -112,13 +120,17 @@ def bind_run_paths(run: PipelineRun) -> None:
     from pipeline import build, common, ingest, manifest, prescoring
 
     common.STATUS_FILE = run.status_file
+    common.CLEAN_DIR = run.clean_dir
     common.OUTPUT_DIR = run.output_dir
     ingest.STATUS_FILE = run.status_file
+    ingest.CLEAN_DIR = run.clean_dir
     ingest.OUTPUT_DIR = run.output_dir
     build.STATUS_FILE = run.status_file
+    build.CLEAN_DIR = run.clean_dir
     build.OUTPUT_DIR = run.output_dir
     prescoring.STATUS_FILE = run.status_file
     prescoring.OUTPUT_DIR = run.output_dir
     manifest.STATUS_FILE = run.status_file
+    manifest.CLEAN_DIR = run.clean_dir
     manifest.OUTPUT_DIR = run.output_dir
     manifest.DEFAULT_MANIFEST_PATH = run.output_dir / "data_manifest.json"

@@ -49,8 +49,7 @@ def mock_parquet_data():
     return odis_df, pois_df, ref_df
 
 
-@patch("utils.data_loader.fetch_jaccueille_data_bq")
-@patch("utils.data_loader.fetch_jaccueille_prospects_bq")
+@patch("utils.data_loader.fetch_salesforce_jaccueille_bdv")
 @patch("utils.data_loader.os.path.exists")
 @patch("utils.data_loader.pd.read_parquet")
 @patch("config.get_data_path")
@@ -58,18 +57,14 @@ def test_init_datasets(
     mock_get_data_path,
     mock_read_parquet,
     mock_exists,
-    mock_fetch_prospects,
-    mock_fetch_jaccueille,
+    mock_fetch_salesforce,
     mock_parquet_data,
 ):
     """Tests the initialization of datasets."""
     mock_exists.return_value = True
     mock_get_data_path.return_value = "/mock/path"
-    mock_fetch_jaccueille.return_value = pd.DataFrame(
-        columns=["bassin_de_vie", "heb_accueillants_count"]
-    )
-    mock_fetch_prospects.return_value = pd.DataFrame(
-        columns=["bassin_de_vie", "prospects_count"]
+    mock_fetch_salesforce.return_value = pd.DataFrame(
+        columns=["bassin_de_vie", "contact_count", "lead_count"]
     )
     odis_df, pois_df, ref_df = mock_parquet_data
 
@@ -115,58 +110,23 @@ def test_init_datasets(
     assert "Dev" in data["rome_index"]["label"].values
 
 
-@patch("google.cloud.bigquery.Client")
-@patch("utils.data_loader.pd.read_parquet")
-@patch("utils.data_loader.os.path.exists")
-def test_fetch_jaccueille_data_bq(mock_exists, mock_read_parquet, mock_bq_client_class):
-    """Tests that J'Accueille data is fetched from BQ when cache is missing."""
-    mock_exists.return_value = False  # No cache
-    mock_bq_client = mock_bq_client_class.return_value
-    mock_query_job = MagicMock()
-    mock_bq_client.query.return_value = mock_query_job
-
-    mock_df = pd.DataFrame({"bassin_de_vie": ["BV1"], "heb_accueillants_count": [5]})
-    mock_query_job.to_dataframe.return_value = mock_df
-
-    # Act
-    df = data_loader._fetch_jaccueille_data_bq_logic()
-
-    # Assert
-    assert mock_bq_client.query.called
-    assert mock_query_job.to_dataframe.called
-    # Check that create_bqstorage_client=False was passed
-    args, kwargs = mock_query_job.to_dataframe.call_args
-    assert kwargs.get("create_bqstorage_client") is False
-    assert df.loc[0, "heb_accueillants_count"] == 5
-
-
-@patch("google.cloud.bigquery.Client")
-@patch("utils.data_loader.pd.read_parquet")
-@patch("utils.data_loader.os.path.exists")
-@patch("utils.data_loader.os.makedirs")
-def test_fetch_jaccueille_data_bq_cloud_run(
-    mock_makedirs, mock_exists, mock_read_parquet, mock_bq_client_class, monkeypatch
-):
-    """Tests that BQ fetch cache uses /tmp/data_private when running in Cloud Run."""
-    monkeypatch.setenv("K_SERVICE", "odis-app")
-    mock_exists.return_value = False  # No cache
-    mock_bq_client = mock_bq_client_class.return_value
-    mock_query_job = MagicMock()
-    mock_bq_client.query.return_value = mock_query_job
-
-    mock_df = pd.DataFrame({"bassin_de_vie": ["BV1"], "heb_accueillants_count": [5]})
-    mock_query_job.to_dataframe.return_value = mock_df
-
-    # Act
-    df = data_loader._fetch_jaccueille_data_bq_logic()
-
-    # Assert
-    assert mock_bq_client.query.called
-    # Confirm makedirs was called with the app/data_private path
-    assert any(
-        args[0].endswith("app/data_private") for args, _ in mock_makedirs.call_args_list
+def test_get_salesforce_jaccueille_counts(monkeypatch):
+    """Salesforce's published BDV artifact is the sole source of score inputs."""
+    source = pd.DataFrame(
+        {
+            "bassin_de_vie": ["BV1", "BV1", "BV2"],
+            "contact_count": [2, 3, 1],
+            "lead_count": [4, 5, 0],
+        }
     )
-    assert df.loc[0, "heb_accueillants_count"] == 5
+    monkeypatch.setattr(data_loader, "fetch_salesforce_jaccueille_bdv", lambda: source)
+
+    counts = data_loader.get_salesforce_jaccueille_counts()
+
+    assert counts.to_dict("records") == [
+        {"bassin_de_vie": "BV1", "heb_accueillants_count": 5, "prospects_count": 9},
+        {"bassin_de_vie": "BV2", "heb_accueillants_count": 1, "prospects_count": 0},
+    ]
 
 
 def test_resolve_dataset_path_local_datasets(tmp_path, monkeypatch):

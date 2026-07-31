@@ -8,11 +8,11 @@ from core.models import SearchCriterias
 @patch("utils.auth.inject_idle_sleep")
 @patch("streamlit_folium.st_folium")
 @patch("core.postscoring.launch_post_scoring_tasks")
-@patch("utils.data_loader.fetch_jaccueille_data_bq")
+@patch("utils.data_loader.fetch_salesforce_jaccueille_bdv")
 @patch("services.rna_rag.RNARagService")
 def test_happy_path_end_to_end(
     mock_rna_rag,
-    mock_fetch_jaccueille,
+    mock_fetch_salesforce,
     mock_launch_post_scoring_tasks,
     mock_st_folium,
     mock_inject_idle_sleep,
@@ -26,8 +26,8 @@ def test_happy_path_end_to_end(
        and results dataframe are all correctly constructed and match invariants.
     """
     # 1. Setup mocks
-    mock_fetch_jaccueille.return_value = pd.DataFrame(
-        columns=["bassin_de_vie", "heb_accueillants_count"]
+    mock_fetch_salesforce.return_value = pd.DataFrame(
+        columns=["bassin_de_vie", "contact_count", "lead_count"]
     )
 
     def fake_launch(engine, config, search_results, h):

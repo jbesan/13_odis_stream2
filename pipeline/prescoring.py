@@ -67,9 +67,7 @@ def apply_configured_raw_missingness(
 
     # RNA category counts feed zero-strategy inclusion indicators.
     raw_metrics_to_fill.update(
-        c
-        for c in df.columns
-        if c.startswith("inc_rna_") and c.endswith("_count")
+        c for c in df.columns if c.startswith("inc_rna_") and c.endswith("_count")
     )
 
     for metric in raw_metrics_to_fill:
@@ -82,10 +80,7 @@ def apply_configured_score_missingness(
 ) -> None:
     """Apply catalog policy to score outputs after all derivations/scaling."""
     for score_id, conf in scores_config.items():
-        if (
-            conf.get("missing_strategy") == "zero"
-            and conf.get("computation") != "live"
-        ):
+        if conf.get("missing_strategy") == "zero" and conf.get("computation") != "live":
             if score_id in df.columns:
                 df[score_id] = df[score_id].fillna(0.0)
             else:
@@ -139,9 +134,7 @@ def get_min_max_quant(series: pd.Series, q: float = 0.01) -> tuple[float, float]
         return obs_min, obs_max
 
     # If even observed data has zero variance (constant series), return safe min, min+1 fallback
-    logging.warning(
-        f"Column '{col_id}' has constant observed values ({obs_min})."
-    )
+    logging.warning(f"Column '{col_id}' has constant observed values ({obs_min}).")
     return obs_min, obs_min + 1.0 if obs_min != 0.0 else 1.0
 
 
@@ -307,9 +300,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         # 4. Risque Fermeture (Count of schools with < 20 students/class)
         # We use the count directly. Lower is better.
         if "risky_schools_count" in communes_gdf.columns:
-            communes_gdf["risque_fermeture_ratio"] = communes_gdf[
-                "risky_schools_count"
-            ]
+            communes_gdf["risque_fermeture_ratio"] = communes_gdf["risky_schools_count"]
         else:
             communes_gdf["risque_fermeture_ratio"] = np.nan
 
@@ -456,9 +447,10 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         if "has_gare" in communes_gdf.columns:
             # Binary score: 1 if present, 0 if not
             communes_gdf["mob_gare_scaled"] = (
-                communes_gdf["has_gare"].gt(0).where(
-                    communes_gdf["has_gare"].notna()
-                ).astype(float)
+                communes_gdf["has_gare"]
+                .gt(0)
+                .where(communes_gdf["has_gare"].notna())
+                .astype(float)
             )
 
         # Static Boolean Scores (Education)
@@ -469,9 +461,12 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             ("edu_lycee_ct", "edu_lycee_scaled"),
         ]:
             if col in communes_gdf.columns:
-                communes_gdf[score_col] = communes_gdf[col].gt(0).where(
-                    communes_gdf[col].notna()
-                ).astype(float)
+                communes_gdf[score_col] = (
+                    communes_gdf[col]
+                    .gt(0)
+                    .where(communes_gdf[col].notna())
+                    .astype(float)
+                )
 
         # Static Boolean Scores (Housing / Hébergement)
         for col, score_col in [
@@ -482,9 +477,12 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             ("heb_pension_count", "heb_pension_scaled"),
         ]:
             if col in communes_gdf.columns:
-                communes_gdf[score_col] = communes_gdf[col].gt(0).where(
-                    communes_gdf[col].notna()
-                ).astype(float)
+                communes_gdf[score_col] = (
+                    communes_gdf[col]
+                    .gt(0)
+                    .where(communes_gdf[col].notna())
+                    .astype(float)
+                )
 
         # Static Boolean Scores (Sante)
         for col, score_col in [
@@ -498,9 +496,12 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             ("count_pmi", "sante_pmi_scaled"),
         ]:
             if col in communes_gdf.columns:
-                communes_gdf[score_col] = communes_gdf[col].gt(0).where(
-                    communes_gdf[col].notna()
-                ).astype(float)
+                communes_gdf[score_col] = (
+                    communes_gdf[col]
+                    .gt(0)
+                    .where(communes_gdf[col].notna())
+                    .astype(float)
+                )
             # 2. Add static scores that don't need calc (just rename/copy effectively, but already done in build?)
         # Actually most are calculated.
         # But 'inc_population_scaled' etc are done above.
@@ -583,9 +584,8 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
                         ].map(socle_scores)
 
                         # Save Raw Count
-                        communes_gdf["socle_match_count"] = (
-                            communes_gdf["codgeo"]
-                            .map(socle_presence)
+                        communes_gdf["socle_match_count"] = communes_gdf["codgeo"].map(
+                            socle_presence
                         )
                     else:
                         communes_gdf["inc_services_core_scaled"] = np.nan
@@ -664,9 +664,8 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         # Run Quality Gate validation on published dataset
         quality_summary = run_quality_gate(
             communes_path=output_path,
-            status_path=STATUS_FILE,
-            dataset_name="odis_communes.parquet",
-            ask_user_on_failure=True,
+            output_dir=OUTPUT_DIR,
+            check_release_artifacts=True,
         )
 
         logger.log_step(
@@ -835,7 +834,9 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
             if f"{col}_y" in bv_gdf.columns:
                 cols_to_drop_bv.append(f"{col}_y")
         if cols_to_drop_bv:
-            bv_gdf.drop(columns=list(set(cols_to_drop_bv)), errors="ignore", inplace=True)
+            bv_gdf.drop(
+                columns=list(set(cols_to_drop_bv)), errors="ignore", inplace=True
+            )
 
         if "population_bv" in bv_gdf.columns and "population" not in bv_gdf.columns:
             bv_gdf["population"] = bv_gdf["population_bv"]
@@ -863,12 +864,10 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
             bv_aggs = pd.DataFrame(index=grouped.groups.keys())
             for metric in metrics_to_avg:
                 if metric in communes_subset.columns:
-                    metric_population = grouped[f"{metric}_population"].sum(
-                        min_count=1
+                    metric_population = grouped[f"{metric}_population"].sum(min_count=1)
+                    bv_aggs[metric] = (
+                        grouped[f"{metric}_w"].sum(min_count=1) / metric_population
                     )
-                    bv_aggs[metric] = grouped[f"{metric}_w"].sum(
-                        min_count=1
-                    ) / metric_population
 
             for metric in raw_sum_metrics:
                 if metric in communes_subset.columns:
@@ -906,7 +905,9 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
     except Exception as e:
         logger.log_step("score_bassins_de_vie", "ERROR", {"error": str(e)})
         logging.error(f"Score BV failed: {e}")
-        raise PipelineRunError("Required prescoring step 'bassins_de_vie' failed") from e
+        raise PipelineRunError(
+            "Required prescoring step 'bassins_de_vie' failed"
+        ) from e
 
 
 def main(argv=None):

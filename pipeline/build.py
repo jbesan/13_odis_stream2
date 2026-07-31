@@ -486,7 +486,7 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         merge_clean("rna_inclusion_agg")
 
         # Merge SIAE Structures Count (New F-39)
-        siae_path = CLEAN_DIR.parent / "output" / "odis_inclusion_structures.parquet"
+        siae_path = OUTPUT_DIR / "odis_inclusion_structures.parquet"
         if siae_path.exists():
             siae_df = pd.read_parquet(siae_path, engine="fastparquet")
             siae_agg = (

@@ -444,152 +444,6 @@ def ensure_data_initialized(load_heavy: bool = False) -> None:
                 pass
 
 
-def _fetch_jaccueille_data_bq_logic() -> pd.DataFrame:
-    """
-    Internal logic to fetch J'Accueille host counts from BigQuery.
-    Implements a persistent local cache to avoid redundant BQ hits.
-    """
-    import time
-
-    cache_dir = os.path.join(cfg.APP_DIR, "data_private")
-    cache_path = os.path.join(cache_dir, "jaccueille_hosts_cache.parquet")
-    ttl_seconds = 30 * 24 * 3600
-
-    import sys
-    is_testing = "pytest" in sys.modules or "unittest" in sys.modules
-
-    try:
-        if os.path.exists(cache_path) and not is_testing:
-            mtime = os.path.getmtime(cache_path)
-            if (time.time() - mtime) < ttl_seconds:
-                return pd.read_parquet(cache_path, engine="fastparquet")
-    except Exception as e:
-        logger.warning(f"Failed to read J'Accueille cache: {e}")
-
-    try:
-        from google.cloud import bigquery
-
-        client = bigquery.Client(project="odis-stream2")
-        query = "SELECT bassin_de_vie, heb_accueillants_count FROM `odis-stream2.jaccueille.jaccueille_accueillants_bdv`"
-        logger.debug(
-            "📡 [J'ACCUEILLE] Fetching host counts from BigQuery (Cache stale or missing)..."
-        )
-        df_jacc = client.query(query).to_dataframe(create_bqstorage_client=False)
-
-        if not df_jacc.empty:
-            try:
-                os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-                if not is_testing:
-                    df_jacc.to_parquet(cache_path, engine="fastparquet")
-            except Exception as e:
-                logger.warning(f"Failed to save J'Accueille cache: {e}")
-
-        return df_jacc
-    except Exception as e:
-        logger.error(f"❌ [J'ACCUEILLE] Impossible de charger les accueillants depuis BigQuery : {e}")
-        if os.path.exists(cache_path):
-            try:
-                logger.info("📦 [J'ACCUEILLE] Fallback to local parquet cache for hosts")
-                return pd.read_parquet(cache_path, engine="fastparquet")
-            except Exception:
-                pass
-        return pd.DataFrame(columns=["bassin_de_vie", "heb_accueillants_count"])
-
-
-@st.cache_data(ttl=3600)
-def fetch_jaccueille_data_bq_cached() -> pd.DataFrame:
-    """Cached version of J'Accueille fetch for Streamlit."""
-    return _fetch_jaccueille_data_bq_logic()
-
-
-def fetch_jaccueille_data_bq() -> pd.DataFrame:
-    """
-    Fetches J'Accueille host counts, using Streamlit cache if context is available,
-    otherwise fetching directly (useful for background threads or MCP).
-    """
-    try:
-        from streamlit.runtime.scriptrunner import get_script_run_ctx
-
-        if get_script_run_ctx():
-            return fetch_jaccueille_data_bq_cached()
-    except ImportError:
-        pass
-    return _fetch_jaccueille_data_bq_logic()
-
-
-def _fetch_jaccueille_prospects_bq_logic() -> pd.DataFrame:
-    """
-    Internal logic to fetch J'Accueille prospect counts from BigQuery.
-    Implements a persistent local cache to avoid redundant BQ hits.
-    """
-    import time
-
-    cache_dir = os.path.join(cfg.APP_DIR, "data_private")
-    cache_path = os.path.join(cache_dir, "jaccueille_prospects_cache.parquet")
-    ttl_seconds = 30 * 24 * 3600
-
-    import sys
-    is_testing = "pytest" in sys.modules or "unittest" in sys.modules
-
-    try:
-        if os.path.exists(cache_path) and not is_testing:
-            mtime = os.path.getmtime(cache_path)
-            if (time.time() - mtime) < ttl_seconds:
-                return pd.read_parquet(cache_path, engine="fastparquet")
-    except Exception as e:
-        logger.warning(f"Failed to read J'Accueille prospects cache: {e}")
-
-    try:
-        from google.cloud import bigquery
-
-        client = bigquery.Client(project="odis-stream2")
-        query = "SELECT bassin_de_vie, prospects_count FROM `odis-stream2.jaccueille.jaccueille_prospects_bdv`"
-        logger.debug(
-            "📡 [J'ACCUEILLE] Fetching prospect counts from BigQuery (Cache stale or missing)..."
-        )
-        df_prop = client.query(query).to_dataframe(create_bqstorage_client=False)
-
-        if not df_prop.empty:
-            try:
-                os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-                if not is_testing:
-                    df_prop.to_parquet(cache_path, engine="fastparquet")
-            except Exception as e:
-                logger.warning(f"Failed to save J'Accueille prospects cache: {e}")
-
-        return df_prop
-    except Exception as e:
-        logger.error(f"❌ [J'ACCUEILLE] Impossible de charger les prospects depuis BigQuery : {e}")
-        if os.path.exists(cache_path):
-            try:
-                logger.info("📦 [J'ACCUEILLE] Fallback to local parquet cache for prospects")
-                return pd.read_parquet(cache_path, engine="fastparquet")
-            except Exception:
-                pass
-        return pd.DataFrame(columns=["bassin_de_vie", "prospects_count"])
-
-
-@st.cache_data(ttl=3600)
-def fetch_jaccueille_prospects_bq_cached() -> pd.DataFrame:
-    """Cached version of J'Accueille prospects fetch for Streamlit."""
-    return _fetch_jaccueille_prospects_bq_logic()
-
-
-def fetch_jaccueille_prospects_bq() -> pd.DataFrame:
-    """
-    Fetches J'Accueille prospects counts, using Streamlit cache if context is available,
-    otherwise fetching directly.
-    """
-    try:
-        from streamlit.runtime.scriptrunner import get_script_run_ctx
-
-        if get_script_run_ctx():
-            return fetch_jaccueille_prospects_bq_cached()
-    except ImportError:
-        pass
-    return _fetch_jaccueille_prospects_bq_logic()
-
-
 def resolve_dataset_path(filename_or_path: str) -> Optional[str]:
     """
     Resolves the physical path of a dataset file with Dual-Mode strategy:
@@ -694,6 +548,42 @@ def fetch_salesforce_jaccueille_bdv() -> pd.DataFrame:
     else:
         logger.warning("⚠️ [SALESFORCE] salesforce_jaccueille_bdv.parquet is missing or empty")
     return df
+
+
+def get_salesforce_jaccueille_counts() -> pd.DataFrame:
+    """Return the single Salesforce-derived source of J'Accueille score inputs.
+
+    The published BDV dataset deliberately drives both the score inputs and the
+    result-page details.  Do not add a runtime BigQuery or local-file fallback:
+    it would mix versions and make the data source ambiguous.
+    """
+    df = fetch_salesforce_jaccueille_bdv()
+    required = {"bassin_de_vie", "contact_count", "lead_count"}
+    if df.empty or not required.issubset(df.columns):
+        missing = sorted(required - set(df.columns)) if not df.empty else sorted(required)
+        logger.error(
+            "[J'ACCUEILLE] Salesforce BDV dataset is unavailable or incomplete; "
+            "missing columns: %s",
+            ", ".join(missing),
+        )
+        return pd.DataFrame(
+            columns=["bassin_de_vie", "heb_accueillants_count", "prospects_count"]
+        )
+
+    counts = df[["bassin_de_vie", "contact_count", "lead_count"]].copy()
+    counts["bassin_de_vie"] = counts["bassin_de_vie"].astype(str)
+    counts["heb_accueillants_count"] = pd.to_numeric(
+        counts["contact_count"], errors="coerce"
+    ).fillna(0)
+    counts["prospects_count"] = pd.to_numeric(
+        counts["lead_count"], errors="coerce"
+    ).fillna(0)
+    return (
+        counts.groupby("bassin_de_vie", as_index=False)[
+            ["heb_accueillants_count", "prospects_count"]
+        ]
+        .sum()
+    )
 
 
 def _load_parquet(
@@ -983,7 +873,12 @@ def load_scoring_datasets_raw(refs_data: Optional[Dict[str, Any]] = None) -> Dic
         odis.set_index("codgeo", inplace=True)
 
         if "population" in odis.columns:
-            odis["population"] = odis["population"].astype("int32")
+            # A partial candidate or historical release can legitimately have
+            # missing population. Keep it nullable instead of failing before
+            # the scoring layer can apply its missing-data policy.
+            odis["population"] = pd.to_numeric(
+                odis["population"], errors="coerce"
+            ).astype("Int32")
 
         float_cols = [c for c in columns_to_load if "scaled" in c or "score" in c]
         for col in float_cols:
@@ -1112,22 +1007,17 @@ def load_scoring_datasets_raw(refs_data: Optional[Dict[str, Any]] = None) -> Dic
             columns=[c for c in cols_to_drop if c in bv_geo.columns], errors="ignore"
         )
 
-    # --- 5b. Enrich with dynamic J'Accueille data (Cached) ---
-    df_jacc = fetch_jaccueille_data_bq()
-    df_jacc_prosp = fetch_jaccueille_prospects_bq()
+    # --- 5b. Enrich with the published Salesforce J'Accueille dataset ---
+    df_jaccueille = get_salesforce_jaccueille_counts()
 
-    if (df_jacc is None or df_jacc.empty) and (df_jacc_prosp is None or df_jacc_prosp.empty):
-        logger.error("❌ [J'ACCUEILLE] Impossible de charger les accueillants et prospects depuis BigQuery ni le cache local.")
-        load_errors.append("J'Accueille BQ data missing")
+    if df_jaccueille.empty:
+        logger.error("❌ [J'ACCUEILLE] Salesforce BDV data is missing or incomplete.")
+        load_errors.append("J'Accueille Salesforce data missing")
 
     if not bv_geo.empty:
         bv_geo = bv_geo.reset_index()
-        if df_jacc is not None and not df_jacc.empty:
-            df_jacc["bassin_de_vie"] = df_jacc["bassin_de_vie"].astype(str)
-            bv_geo = bv_geo.merge(df_jacc, on="bassin_de_vie", how="left")
-        if df_jacc_prosp is not None and not df_jacc_prosp.empty:
-            df_jacc_prosp["bassin_de_vie"] = df_jacc_prosp["bassin_de_vie"].astype(str)
-            bv_geo = bv_geo.merge(df_jacc_prosp, on="bassin_de_vie", how="left")
+        if not df_jaccueille.empty:
+            bv_geo = bv_geo.merge(df_jaccueille, on="bassin_de_vie", how="left")
         bv_geo["heb_accueillants_count"] = bv_geo.get("heb_accueillants_count", pd.Series(0.0, index=bv_geo.index)).fillna(0)
         bv_geo["prospects_count"] = bv_geo.get("prospects_count", pd.Series(0.0, index=bv_geo.index)).fillna(0)
         bv_geo["heb_jaccueille_accueillants_score"] = (
@@ -1140,12 +1030,8 @@ def load_scoring_datasets_raw(refs_data: Optional[Dict[str, Any]] = None) -> Dic
 
     if not odis.empty:
         odis = odis.reset_index()
-        if df_jacc is not None and not df_jacc.empty:
-            df_jacc["bassin_de_vie"] = df_jacc["bassin_de_vie"].astype(str)
-            odis = odis.merge(df_jacc, on="bassin_de_vie", how="left")
-        if df_jacc_prosp is not None and not df_jacc_prosp.empty:
-            df_jacc_prosp["bassin_de_vie"] = df_jacc_prosp["bassin_de_vie"].astype(str)
-            odis = odis.merge(df_jacc_prosp, on="bassin_de_vie", how="left")
+        if not df_jaccueille.empty:
+            odis = odis.merge(df_jaccueille, on="bassin_de_vie", how="left")
         odis["heb_accueillants_count"] = odis.get("heb_accueillants_count", pd.Series(0.0, index=odis.index)).fillna(0)
         odis["prospects_count"] = odis.get("prospects_count", pd.Series(0.0, index=odis.index)).fillna(0)
         odis["heb_jaccueille_accueillants_score"] = (odis["heb_accueillants_count"] > 0).astype(

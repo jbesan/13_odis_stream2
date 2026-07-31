@@ -6,12 +6,11 @@ from unittest.mock import patch, MagicMock
 
 from pipeline.odace_client import OdaceClient
 from pipeline.ingest import (
-    clean_finess_national,
     clean_caf,
-    clean_maternites,
     clean_bpe,
     PipelineLogger,
 )
+from pipeline.run_context import PipelineRunError
 
 
 @pytest.fixture
@@ -87,20 +86,7 @@ def test_odace_client_fetch_table_success(mock_get, temp_cache_dirs):
 
 
 # =====================================================================
-# 2. Ingestion Cleaner: clean_finess_national Tests
-# =====================================================================
-
-
-def test_clean_finess_national_success():
-    """Tests that clean_finess_national logs SKIPPED as health data is handled by BPE25."""
-    config = {}
-    logger = MagicMock(spec=PipelineLogger)
-    clean_finess_national(config, logger)
-    logger.log_step.assert_called_once_with("clean_finess_national", "SKIPPED")
-
-
-# =====================================================================
-# 3. Ingestion Cleaner: clean_caf Tests
+# 2. Ingestion Cleaner: clean_caf Tests
 # =====================================================================
 
 
@@ -159,15 +145,17 @@ def test_clean_caf_odace_success(mock_get_client, temp_cache_dirs):
 
 
 @patch("pipeline.ingest.get_odace_client")
-def test_clean_caf_odace_fallback(mock_get_client, temp_cache_dirs):
-    """Tests that clean_caf falls back to legacy raw file on API exception."""
-    raw_dir, clean_dir = temp_cache_dirs
+def test_clean_caf_odace_failure_does_not_use_legacy_raw(
+    mock_get_client, temp_cache_dirs
+):
+    """An enabled Odace source fails closed rather than reviving a local file."""
+    raw_dir, _ = temp_cache_dirs
 
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
     mock_client.fetch_table.side_effect = Exception("API error")
 
-    # Write dummy legacy JSON file to raw cache
+    # A historical raw file must not alter the outcome.
     legacy_file = raw_dir / "caf_taux_couverture.json"
     import json
 
@@ -187,32 +175,12 @@ def test_clean_caf_odace_fallback(mock_get_client, temp_cache_dirs):
     }
 
     logger = MagicMock(spec=PipelineLogger)
-    clean_caf(config, logger)
-
-    # Verify output is written in clean/caf.parquet using legacy loader
-    out_file = clean_dir / "caf.parquet"
-    assert out_file.exists()
-    df_clean = pd.read_parquet(out_file, engine="fastparquet")
-    assert len(df_clean) == 1
-    assert df_clean.iloc[0]["codgeo"] == "38085"
-    assert df_clean.iloc[0]["taux_couverture"] == 51.4
+    with pytest.raises(PipelineRunError, match="Odace caf"):
+        clean_caf(config, logger)
 
 
 # =====================================================================
-# 4. Ingestion Cleaner: clean_maternites Tests
-# =====================================================================
-
-
-def test_clean_maternites_skipped():
-    """Tests that clean_maternites logs SKIPPED as it is bypassed in favor of BPE25."""
-    config = {}
-    logger = MagicMock(spec=PipelineLogger)
-    clean_maternites(config, logger)
-    logger.log_step.assert_called_once_with("clean_maternites", "SKIPPED")
-
-
-# =====================================================================
-# 5. Ingestion Cleaner: clean_bpe Tests
+# 3. Ingestion Cleaner: clean_bpe Tests
 # =====================================================================
 
 
@@ -265,7 +233,7 @@ def test_clean_bpe_odace_success(mock_get_client, temp_cache_dirs):
                 "capacite_hebergement": None,
                 "coord_x_lambert": 879374.24,
                 "coord_y_lambert": 6260251.11,
-            }
+            },
         ]
     )
     mock_client.fetch_table.return_value = mock_data
@@ -303,8 +271,10 @@ def test_clean_bpe_odace_success(mock_get_client, temp_cache_dirs):
 
 
 @patch("pipeline.ingest.get_odace_client")
-def test_clean_bpe_odace_fallback(mock_get_client, temp_cache_dirs):
-    """Tests that clean_bpe falls back to local cache file if Odace API raises an exception."""
+def test_clean_bpe_odace_failure_does_not_use_legacy_raw(
+    mock_get_client, temp_cache_dirs
+):
+    """An enabled Odace BPE source fails closed rather than using local cache."""
     raw_dir, clean_dir = temp_cache_dirs
 
     mock_client = MagicMock()
@@ -336,18 +306,21 @@ def test_clean_bpe_odace_fallback(mock_get_client, temp_cache_dirs):
                 "odace_table": "dim_equipement_territoire",
                 "local_name": "BPE25.parquet",
                 "ttl_days": 365,
-                "used_columns": ["DEPCOM", "TYPEQU", "NOMRS", "LAMBERT_X", "LAMBERT_Y", "LONGITUDE", "LATITUDE", "SECTEUR"],
+                "used_columns": [
+                    "DEPCOM",
+                    "TYPEQU",
+                    "NOMRS",
+                    "LAMBERT_X",
+                    "LAMBERT_Y",
+                    "LONGITUDE",
+                    "LATITUDE",
+                    "SECTEUR",
+                ],
             }
         }
     }
 
     logger = MagicMock(spec=PipelineLogger)
-    clean_bpe(config, logger)
-
-    # Verify fallback executed and wrote outputs from local cache
-    assert (clean_dir / "bpe_education_cols.parquet").exists()
-    assert (clean_dir / "bpe_pois.parquet").exists()
-
-    pois_df = pd.read_parquet(clean_dir / "bpe_pois.parquet")
-    assert len(pois_df) == 1
-    assert pois_df.iloc[0]["name"] == "LOCAL ECOLE MATERNELLE"
+    with pytest.raises(PipelineRunError, match="Odace bpe"):
+        clean_bpe(config, logger)
+    assert not (clean_dir / "bpe_pois.parquet").exists()

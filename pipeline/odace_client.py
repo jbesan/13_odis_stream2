@@ -3,6 +3,7 @@ import requests
 import logging
 import pandas as pd
 import time
+from pathlib import Path
 from typing import Optional, Dict, Any
 from pipeline.common import PipelineLogger, CACHE_DIR
 
@@ -25,10 +26,13 @@ class OdaceClient:
 
         # Central configuration lookup for TTL mapping
         from pipeline.common import CONFIG_FILE, load_config
+
         try:
             self.config = load_config(CONFIG_FILE)
         except Exception as e:
-            logging.warning(f"OdaceClient: Failed to load config from {CONFIG_FILE}: {e}")
+            logging.warning(
+                f"OdaceClient: Failed to load config from {CONFIG_FILE}: {e}"
+            )
             self.config = {}
 
     def _fetch_table_export(
@@ -58,16 +62,25 @@ class OdaceClient:
             response = requests.get(url, headers=self.headers, stream=True, timeout=120)
             response.raise_for_status()
 
-            # Save directly to cache parquet file
+            # Download and parse a staging file before atomically replacing the
+            # last-known-good cache. A failed or truncated export therefore
+            # cannot erase the usable Odace source snapshot.
             CACHE_DIR.mkdir(parents=True, exist_ok=True)
-            with open(cache_file, "wb") as f:
+            staging_file = Path(f"{cache_file}.staging")
+            with open(staging_file, "wb") as f:
                 for chunk in response.iter_content(chunk_size=65536):
                     f.write(chunk)
 
+            downloaded = pd.read_parquet(staging_file, engine="fastparquet")
+            if downloaded.empty:
+                raise ValueError(f"Odace export '{table_name}' is empty")
+            os.replace(staging_file, cache_file)
             logging.info(f"OdaceClient: Cached {table_name} to {cache_file}")
-            return pd.read_parquet(cache_file, engine="fastparquet")
+            return downloaded
 
         except Exception as e:
+            if "staging_file" in locals() and staging_file.exists():
+                staging_file.unlink()
             error_msg = f"CRITICAL ERROR: Failed to export {table_name} from Odace API: {str(e)}"
             logging.error(error_msg)
             print(f"ERROR [OdaceClient]: {error_msg}")
@@ -80,7 +93,9 @@ class OdaceClient:
                 try:
                     return pd.read_parquet(cache_file, engine="fastparquet")
                 except Exception as cache_err:
-                    logging.error(f"OdaceClient: Expired cache read also failed for {table_name}: {cache_err}")
+                    logging.error(
+                        f"OdaceClient: Expired cache read also failed for {table_name}: {cache_err}"
+                    )
 
             if self.logger:
                 self.logger.log_source(f"odace_{table_name}", "ERROR", error_msg)
@@ -92,10 +107,16 @@ class OdaceClient:
             df_geo = self._fetch_table_export("dim_geo", ttl_seconds=365 * 24 * 60 * 60)
             if not df_geo.empty:
                 # Include both communes and arrondissements for Paris, Lyon, Marseille (PLM) compatibility
-                df_commune = df_geo[df_geo["geo_level"].isin(["commune", "arrondissement"])].copy()
+                df_commune = df_geo[
+                    df_geo["geo_level"].isin(["commune", "arrondissement"])
+                ].copy()
                 if not df_commune.empty:
                     # Drop existing columns to avoid duplicate column names after rename
-                    cols_to_drop = [c for c in ["commune_insee_code", "commune_label"] if c in df_commune.columns]
+                    cols_to_drop = [
+                        c
+                        for c in ["commune_insee_code", "commune_label"]
+                        if c in df_commune.columns
+                    ]
                     if cols_to_drop:
                         df_commune = df_commune.drop(columns=cols_to_drop)
                     df_commune = df_commune.rename(

@@ -21,7 +21,6 @@ OUTPUT_DIR = Path("pipeline/cache/output")
 STATUS_FILE = Path("pipeline/status.json")
 
 
-
 # Configure logging centrally
 def configure_logging(level=logging.INFO):
     logging.basicConfig(level=level, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -297,11 +296,6 @@ def atomic_swap(src_path: Path, dst_path: Path):
     if not src_path.exists():
         raise FileNotFoundError(f"Staging source file not found: {src_path}")
     dst_path.parent.mkdir(parents=True, exist_ok=True)
-    if dst_path.exists():
-        try:
-            os.remove(dst_path)
-        except Exception as e:
-            logging.warning(f"Failed to delete existing target file {dst_path}: {e}")
     os.replace(src_path, dst_path)
     logging.info(f"🔄 Swapped staging {src_path.name} -> active {dst_path.name}")
 

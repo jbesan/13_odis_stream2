@@ -1,142 +1,138 @@
-"""Unit tests for Quality Gate System, Prescoring Scaling Safety, and Fallback Rent Data Handling."""
+"""Tests for candidate-only quality contracts."""
 
-import json
 import numpy as np
 import pandas as pd
 import pytest
+import yaml
 
 from pipeline.prescoring import scale_series
-from pipeline.quality_gate import run_quality_gate, QualityGateFailureError
+from pipeline.quality_gate import QualityGateFailureError, run_quality_gate
+
+
+def _write_contracts(tmp_path):
+    contracts = {
+        "version": 1,
+        "release": {
+            "required_artifacts": [
+                "odis_communes.parquet",
+                "odis_bassins_de_vie.parquet",
+            ]
+        },
+        "communes": {
+            "primary_key": "codgeo",
+            "min_rows": 3,
+            "required_columns": [
+                "codgeo",
+                "population",
+                "dep_code",
+                "reg_code",
+                "epci_code",
+                "bassin_de_vie",
+            ],
+            "geography": {
+                "dep_code": 0.9,
+                "reg_code": 0.9,
+                "epci_code": 0.9,
+                "bassin_de_vie": 0.9,
+            },
+            "scoring": {"min_non_null_fraction": 0.5},
+        },
+        "joins": [
+            {
+                "source_column": "bassin_de_vie",
+                "target_artifact": "odis_bassins_de_vie.parquet",
+                "target_key": "bassin_de_vie",
+                "max_orphan_fraction": 0.0,
+            }
+        ],
+    }
+    scores = {"scores": [{"id": "metric_scaled", "computation": "precomputed"}]}
+    contracts_path = tmp_path / "contracts.yaml"
+    scores_path = tmp_path / "scores.yaml"
+    contracts_path.write_text(yaml.safe_dump(contracts), encoding="utf-8")
+    scores_path.write_text(yaml.safe_dump(scores), encoding="utf-8")
+    return contracts_path, scores_path
+
+
+def _valid_communes():
+    return pd.DataFrame(
+        {
+            "codgeo": ["00001", "00002", "00003"],
+            "population": [100, 200, 300],
+            "dep_code": ["01", "01", "01"],
+            "reg_code": ["84", "84", "84"],
+            "epci_code": ["200000001", "200000001", "200000001"],
+            "bassin_de_vie": ["BV1", "BV1", "BV2"],
+            "metric_scaled": [0.1, 0.5, 0.9],
+        }
+    )
 
 
 def test_scale_series_zero_variance_returns_nan():
-    """Test that zero-variance series (min == max) returns NaNs and not 1.0."""
-    series = pd.Series([0.0, 0.0, 0.0, 0.0])
-    scaled = scale_series(series, min_b=0.0, max_b=0.0, inverted=True, col_name="test_zero_var")
-    
-    assert scaled.isna().all(), "Zero variance inverted series must return all NaNs, not 1.0"
+    assert scale_series(pd.Series([0.0, 0.0]), 0.0, 0.0, True, "zero").isna().all()
 
 
-def test_scale_series_inverted_valid_values():
-    """Test normal inverted scaling behavior."""
-    series = pd.Series([10.0, 20.0, 30.0])
-    scaled = scale_series(series, min_b=10.0, max_b=30.0, inverted=True, col_name="rent")
-    
-    assert list(scaled) == [1.0, 0.5, 0.0], "Inverted scaling should map min to 1.0 and max to 0.0"
+def test_quality_gate_derives_score_checks_and_validates_join(tmp_path):
+    contracts_path, scores_path = _write_contracts(tmp_path)
+    _valid_communes().to_parquet(tmp_path / "odis_communes.parquet", index=False)
+    pd.DataFrame({"bassin_de_vie": ["BV1", "BV2"]}).to_parquet(
+        tmp_path / "odis_bassins_de_vie.parquet", index=False
+    )
+
+    summary = run_quality_gate(
+        output_dir=tmp_path,
+        contracts_path=contracts_path,
+        scores_config_path=scores_path,
+        check_release_artifacts=True,
+    )
+
+    assert summary["status"] == "PASSED"
+    assert any(check["name"] == "score.metric_scaled" for check in summary["checks"])
 
 
-def test_quality_gate_passes_on_valid_dataset(tmp_path):
-    """Test quality gate passing on a valid dataset and manifest."""
-    communes_file = tmp_path / "odis_communes.parquet"
-    status_file = tmp_path / "status.json"
+def test_quality_gate_rejects_missing_or_constant_score_metric(tmp_path):
+    contracts_path, scores_path = _write_contracts(tmp_path)
+    df = _valid_communes()
+    df["metric_scaled"] = 1.0
+    df.to_parquet(tmp_path / "odis_communes.parquet", index=False)
 
-    df = pd.DataFrame({
-        "commune_insee_code": [f"{i:05d}" for i in range(35000)],
-        "log_loyer_moyen_appt_all_scaled": np.random.uniform(0.1, 0.9, 35000),
-        "ter_insecurite_scaled": np.random.uniform(0.1, 0.9, 35000),
-        "sante_rdv_delay_scaled": np.random.uniform(0.1, 0.9, 35000),
-        "mob_dur_share_scaled": np.random.uniform(0.1, 0.9, 35000),
-        "workclass_decline_scaled": np.random.uniform(0.1, 0.9, 35000),
-    })
-    df.to_parquet(communes_file, index=False, engine="fastparquet")
-
-    status_data = {
-        "steps": {
-            "output_communes": {
-                "status": "CREATED",
-                "details": {"rows": 35000}
-            }
-        }
-    }
-    with open(status_file, "w") as f:
-        json.dump(status_data, f)
-
-    res = run_quality_gate(communes_path=communes_file, status_path=status_file, ask_user_on_failure=False)
-    assert res["status"] == "PASSED"
-    assert res["rows"] == 35000
+    with pytest.raises(QualityGateFailureError, match="score.metric_scaled"):
+        run_quality_gate(
+            output_dir=tmp_path,
+            contracts_path=contracts_path,
+            scores_config_path=scores_path,
+        )
 
 
-def test_quality_gate_fails_on_row_count_variance(tmp_path):
-    """Test quality gate failure when row count variance exceeds 10%."""
-    communes_file = tmp_path / "odis_communes.parquet"
-    status_file = tmp_path / "status.json"
+def test_quality_gate_rejects_geographic_orphans(tmp_path):
+    contracts_path, scores_path = _write_contracts(tmp_path)
+    df = _valid_communes()
+    df.loc[2, "bassin_de_vie"] = "MISSING"
+    df.to_parquet(tmp_path / "odis_communes.parquet", index=False)
+    pd.DataFrame({"bassin_de_vie": ["BV1"]}).to_parquet(
+        tmp_path / "odis_bassins_de_vie.parquet", index=False
+    )
 
-    df = pd.DataFrame({
-        "commune_insee_code": [f"{i:05d}" for i in range(30500)],
-        "log_loyer_moyen_appt_all_scaled": np.random.uniform(0.1, 0.9, 30500),
-        "ter_insecurite_scaled": np.random.uniform(0.1, 0.9, 30500),
-        "sante_rdv_delay_scaled": np.random.uniform(0.1, 0.9, 30500),
-        "mob_dur_share_scaled": np.random.uniform(0.1, 0.9, 30500),
-        "workclass_decline_scaled": np.random.uniform(0.1, 0.9, 30500),
-    })
-    df.to_parquet(communes_file, index=False, engine="fastparquet")
-
-    status_data = {
-        "steps": {
-            "output_communes": {
-                "status": "CREATED",
-                "details": {"rows": 35000}
-            }
-        }
-    }
-    with open(status_file, "w") as f:
-        json.dump(status_data, f)
-
-    with pytest.raises(QualityGateFailureError, match="Row count variance"):
-        run_quality_gate(communes_path=communes_file, status_path=status_file, max_row_variance_pct=0.10, ask_user_on_failure=False)
+    with pytest.raises(QualityGateFailureError, match="join.bassin_de_vie"):
+        run_quality_gate(
+            output_dir=tmp_path,
+            contracts_path=contracts_path,
+            scores_config_path=scores_path,
+            check_release_artifacts=True,
+        )
 
 
-def test_quality_gate_fails_on_zero_variance_metric(tmp_path):
-    """Test quality gate failure when a critical metric has zero variance (constant score)."""
-    communes_file = tmp_path / "odis_communes.parquet"
-    status_file = tmp_path / "status.json"
+def test_quality_gate_never_replaces_failed_candidate(tmp_path):
+    contracts_path, scores_path = _write_contracts(tmp_path)
+    candidate = _valid_communes()
+    candidate["metric_scaled"] = np.nan
+    path = tmp_path / "odis_communes.parquet"
+    candidate.to_parquet(path, index=False)
 
-    df = pd.DataFrame({
-        "commune_insee_code": [f"{i:05d}" for i in range(35000)],
-        "log_loyer_moyen_appt_all_scaled": [1.0] * 35000,
-        "ter_insecurite_scaled": np.random.uniform(0.1, 0.9, 35000),
-        "sante_rdv_delay_scaled": np.random.uniform(0.1, 0.9, 35000),
-        "mob_dur_share_scaled": np.random.uniform(0.1, 0.9, 35000),
-        "workclass_decline_scaled": np.random.uniform(0.1, 0.9, 35000),
-    })
-    df.to_parquet(communes_file, index=False, engine="fastparquet")
-
-    with pytest.raises(QualityGateFailureError, match="zero variance"):
-        run_quality_gate(communes_path=communes_file, status_path=status_file, ask_user_on_failure=False)
-
-
-def test_quality_gate_rollback_and_user_continuation(tmp_path):
-    """Test that when a dataset fails quality gate, the previous valid version is retained."""
-    communes_file = tmp_path / "odis_communes.parquet"
-    backup_file = tmp_path / "odis_communes.parquet.bak"
-    status_file = tmp_path / "status.json"
-
-    # Create previous valid version and save as backup
-    df_valid = pd.DataFrame({
-        "commune_insee_code": [f"{i:05d}" for i in range(35000)],
-        "log_loyer_moyen_appt_all_scaled": np.random.uniform(0.1, 0.9, 35000),
-        "ter_insecurite_scaled": np.random.uniform(0.1, 0.9, 35000),
-        "sante_rdv_delay_scaled": np.random.uniform(0.1, 0.9, 35000),
-        "mob_dur_share_scaled": np.random.uniform(0.1, 0.9, 35000),
-        "workclass_decline_scaled": np.random.uniform(0.1, 0.9, 35000),
-    })
-    df_valid.to_parquet(backup_file, index=False, engine="fastparquet")
-
-    # Create broken dataset (zero variance defect)
-    df_broken = pd.DataFrame({
-        "commune_insee_code": [f"{i:05d}" for i in range(35000)],
-        "log_loyer_moyen_appt_all_scaled": [1.0] * 35000,
-        "ter_insecurite_scaled": np.random.uniform(0.1, 0.9, 35000),
-        "sante_rdv_delay_scaled": np.random.uniform(0.1, 0.9, 35000),
-        "mob_dur_share_scaled": np.random.uniform(0.1, 0.9, 35000),
-        "workclass_decline_scaled": np.random.uniform(0.1, 0.9, 35000),
-    })
-    df_broken.to_parquet(communes_file, index=False, engine="fastparquet")
-
-    # Halt execution when user declines continuation
     with pytest.raises(QualityGateFailureError):
-        run_quality_gate(communes_path=communes_file, status_path=status_file, ask_user_on_failure=False)
-
-    # Verify that communes_file was restored to the valid backup dataset
-    restored_df = pd.read_parquet(communes_file, engine="fastparquet")
-    assert restored_df["log_loyer_moyen_appt_all_scaled"].nunique() > 1, "Rollback must restore valid non-constant dataset"
+        run_quality_gate(
+            output_dir=tmp_path,
+            contracts_path=contracts_path,
+            scores_config_path=scores_path,
+        )
+    assert pd.read_parquet(path).equals(candidate)

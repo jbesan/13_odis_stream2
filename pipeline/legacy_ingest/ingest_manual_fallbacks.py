@@ -6,7 +6,6 @@ import pandas as pd
 import numpy as np
 import json
 import time
-import shutil
 from pathlib import Path
 import re
 from typing import Dict, Any, Optional
@@ -30,24 +29,6 @@ from pipeline.odace_client import get_odace_client
 from pipeline.ft_live_ingest import run_etl, get_token as get_ft_token
 from pipeline.emplois_inclusion_ingest import run_ingestion as run_inclusion_ingest
 from pipeline.run_context import PipelineRunError
-
-
-FT_SHARED_OUTPUT_PATH = Path("pipeline/cache/output/odis_ft_jobs_agg.parquet")
-INCLUSION_SHARED_OUTPUT_PATH = Path("pipeline/cache/output/odis_inclusion_jobs.parquet")
-INCLUSION_OUTPUT_PATH = INCLUSION_SHARED_OUTPUT_PATH
-
-
-def _materialize_external_output(source_path: Path, candidate_path: Path) -> bool:
-    """Copy a live external source into the current run's candidate output."""
-    source_path = Path(source_path)
-    if not source_path.exists() or source_path.stat().st_size == 0:
-        deployed_name = Path("data") / source_path.name
-        if not deployed_name.exists() or deployed_name.stat().st_size == 0:
-            return False
-        source_path = deployed_name
-    candidate_path.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(source_path, candidate_path)
-    return candidate_path.exists() and candidate_path.stat().st_size > 0
 
 
 def resolve_codgeo(insee_code, dept_code) -> str:
@@ -87,8 +68,10 @@ def fetch_source(
     import os
 
     if source_cfg.get("use_odace", False):
-        logging.info(f"[Fetch] {name}: managed by Odace. Skipping legacy download.")
-        logger.log_source(name, "SKIPPED", "managed by Odace")
+        logging.info(f"[Fetch] {name}: use_odace is enabled. Skipping remote download.")
+        local_name = source_cfg.get("local_name")
+        if local_name:
+            return CACHE_DIR / local_name
         return None
 
     resource_id = source_cfg.get("datagouv_resource_id")
@@ -201,6 +184,8 @@ def fetch_source(
             "logement_social",
             "caf",
             "education_annuaire",
+            "finess_national",
+            "maternites",
             "associations",
             "political_nuance",
             "electoral_history",
@@ -443,10 +428,56 @@ def clean_population_active(config: Dict[str, Any], logger: PipelineLogger):
                     "Odace fetch returned empty data for population_active."
                 )
         except Exception as e:
-            logging.error(f"Failed to fetch population_active from Odace: {e}")
-        raise PipelineRunError(
-            "Odace population_active did not produce a usable dataset"
+            logging.error(
+                f"Failed to fetch population_active from Odace: {e}. Falling back to legacy."
+            )
+
+    path = CACHE_DIR / source["archive_file"]
+    if not path.exists():
+        logging.warning("Population Active file not found.")
+        return
+
+    actif = load_dataset(path, source)
+
+    required_cols = [
+        "TIME_PERIOD",
+        "GEO_OBJECT",
+        "PCS",
+        "EMPSTA_ENQ",
+        "GEO",
+        "OBS_VALUE",
+    ]
+    if not all(col in actif.columns for col in required_cols):
+        logging.warning("Population Active missing columns")
+        return
+
+    max_year = actif["TIME_PERIOD"].max()
+    logging.info(f"Population Active: Using max year {max_year}")
+
+    actif_2022 = actif[
+        (actif.TIME_PERIOD == max_year)
+        & (actif.GEO_OBJECT == "COM")
+        & (actif.PCS == "_T")
+        & (actif.EMPSTA_ENQ.isin(["1T2", "1"]))
+    ].pivot_table(index="GEO", columns="EMPSTA_ENQ", values="OBS_VALUE", aggfunc="sum")
+
+    if "1T2" in actif_2022.columns and "1" in actif_2022.columns:
+        actif_2022["pop_chomeurs"] = actif_2022["1T2"] - actif_2022["1"]
+        actif_2022.rename(
+            columns={"1T2": "pop_active", "1": "pop_employes"}, inplace=True
         )
+        actif_2022 = actif_2022[["pop_active", "pop_employes", "pop_chomeurs"]]
+        actif_2022.index.name = "codgeo"
+        actif_2022.reset_index(inplace=True)
+        actif_2022["codgeo"] = actif_2022["codgeo"].astype(str).str.zfill(5)
+
+        output_path = CLEAN_DIR / "population_active.parquet"
+        actif_2022.to_parquet(output_path, engine="fastparquet")
+        logger.log_step(
+            "clean_population_active", "COMPLETED", {"path": str(output_path)}
+        )
+    else:
+        logging.warning("Population Active pivot failed.")
 
 
 def clean_lovac(config: Dict[str, Any], logger: PipelineLogger):
@@ -490,10 +521,97 @@ def clean_lovac(config: Dict[str, Any], logger: PipelineLogger):
                 )
                 return
             else:
-                logging.warning("Odace fetch returned empty data for logement_vacant.")
+                logging.warning(
+                    "Odace fetch returned empty data for logement_vacant. Falling back to legacy."
+                )
         except Exception as e:
-            logging.error(f"Failed to fetch logement_vacant from Odace: {e}")
-        raise PipelineRunError("Odace logement_vacant did not produce a usable dataset")
+            logging.error(
+                f"Failed to fetch logement_vacant from Odace: {e}. Falling back to legacy."
+            )
+
+    path = CACHE_DIR / source["local_name"]
+    if not path.exists():
+        return
+
+    df = load_dataset(path, source)
+    df.columns = [c.strip() for c in df.columns]
+
+    codgeo_col = next((c for c in df.columns if "CODGEO" in c), None)
+    if codgeo_col:
+        # Dynamic Year Detection
+        import re
+
+        # Find all years for vacancy data
+        years = []
+        year_pattern = re.compile(r"pp_vacant_plus_2ans_(\d+)")
+
+        for col in df.columns:
+            match = year_pattern.search(col)
+            if match:
+                years.append(int(match.group(1)))
+
+        if years:
+            max_year = max(years)
+            # Ensure it's two digits if format assumes that, but usually int is fine for logic
+            # The headers were like 'pp_vacant_plus_2ans_25'
+            # so N is 25.
+
+            # Vacancy Column (Year N)
+            vac_col = f"pp_vacant_plus_2ans_{max_year}"
+
+            # Total Column (Year N-1)
+            target_total_year = max_year - 1
+            total_col = f"pp_total_{target_total_year}"
+
+            logging.info(
+                f"LOVAC: Detected max year {max_year}. Using {vac_col} and {total_col}"
+            )
+        else:
+            # Fallback
+            logging.warning("LOVAC: Could not detect years. Using default 25/24.")
+            vac_col = "pp_vacant_plus_2ans_25"
+            total_col = "pp_total_24"
+
+        # Allow fallback if dynamic total dict doesn't exist but static might?
+        # Actually, let's just stick to the specific columns.
+
+        if vac_col not in df.columns:
+            # Try finding any valid vac col
+            vac_col = next((c for c in df.columns if "vacant_plus_2ans" in c), None)
+
+        if vac_col and vac_col in df.columns:
+            df[vac_col] = pd.to_numeric(
+                df[vac_col].replace("s", np.nan), errors="coerce"
+            )
+
+            # Extract Total Housing
+            if total_col in df.columns:
+                df[total_col] = pd.to_numeric(
+                    df[total_col].replace("s", np.nan), errors="coerce"
+                )
+            else:
+                logging.warning(
+                    f"LOVAC: {total_col} not found in {df.columns}. Preserving missing values."
+                )
+                df[total_col] = np.nan
+
+            df_out = df[[codgeo_col, vac_col, total_col]].rename(
+                columns={
+                    codgeo_col: "codgeo",
+                    vac_col: "pp_vacant_plus_2ans_25",  # Keep standardized internal name
+                    total_col: "log_priv_total_24",  # Keep standardized internal name
+                }
+            )
+            df_out["codgeo"] = df_out["codgeo"].astype(str)
+
+            output_path = CLEAN_DIR / "lovac.parquet"
+            df_out.to_parquet(output_path, engine="fastparquet")
+            logger.log_step("clean_lovac", "COMPLETED", {"rows": len(df_out)})
+        else:
+            logging.warning(f"LOVAC: Vacancy column {vac_col} not found.")
+
+    else:
+        logging.warning("LOVAC: CODGEO not found.")
 
 
 def clean_rpls(config: Dict[str, Any], logger: PipelineLogger):
@@ -550,12 +668,59 @@ def clean_rpls(config: Dict[str, Any], logger: PipelineLogger):
                     )
                     return
                 else:
-                    logging.warning("Odace dim_commune is empty for RPLS.")
+                    logging.warning(
+                        "Odace dim_commune empty for RPLS. Falling back to legacy."
+                    )
             else:
-                logging.warning("Odace fetch returned empty data for RPLS.")
+                logging.warning(
+                    "Odace fetch returned empty data for RPLS. Falling back to legacy."
+                )
         except Exception as e:
-            logging.error(f"Failed to fetch RPLS from Odace: {e}")
-        raise PipelineRunError("Odace logement_social did not produce a usable dataset")
+            logging.error(
+                f"Failed to fetch RPLS from Odace: {e}. Falling back to legacy."
+            )
+
+    path = CACHE_DIR / source["local_name"]
+    if not path.exists():
+        return
+
+    df = load_dataset(path, source)
+    df.columns = [str(c).strip() for c in df.columns]
+
+    if "CODGEO" in df.columns:
+        df["codgeo"] = df["CODGEO"].astype(str).str.zfill(5)
+    elif "DEPCOM_ARM" in df.columns:
+        df["codgeo"] = df["DEPCOM_ARM"].astype(str).str.zfill(5)
+    elif "DEP" in df.columns and "COM" in df.columns:
+        df["codgeo"] = df["DEP"].astype(str).str.zfill(2) + df["COM"].astype(
+            str
+        ).str.zfill(3)
+    else:
+        logging.warning("RPLS: No codgeo found")
+        return
+
+    cols = df.columns.tolist()
+    total_col = next(
+        (c for c in cols if "total" in c.lower() and "parc" in c.lower()), None
+    )
+    if not total_col:
+        total_col = next(
+            (c for c in cols if c in ["PARC_SOCIAL_NB", "NB_LOG_TOT", "nb_lgt_tot"]),
+            None,
+        )
+
+    vac_col = next(
+        (c for c in cols if "vacant" in c.lower() or "inoccup" in c.lower()), None
+    )
+
+    if total_col and vac_col:
+        df["log_soc_total"] = pd.to_numeric(df[total_col], errors="coerce")
+        df["log_soc_inoccupes"] = pd.to_numeric(df[vac_col], errors="coerce")
+        df_out = df[["codgeo", "log_soc_total", "log_soc_inoccupes"]]
+
+        output_path = CLEAN_DIR / "rpls.parquet"
+        df_out.to_parquet(output_path, engine="fastparquet")
+        logger.log_step("clean_rpls", "COMPLETED", {"path": str(output_path)})
 
 
 def clean_caf(config: Dict[str, Any], logger: PipelineLogger):
@@ -598,13 +763,73 @@ def clean_caf(config: Dict[str, Any], logger: PipelineLogger):
                 return
             else:
                 logging.warning(
-                    "Odace fetch returned empty data for fact_couverture_petite_enfance."
+                    "Odace fetch returned empty data for fact_couverture_petite_enfance. Falling back to legacy."
                 )
         except Exception as e:
             logging.error(
-                f"Failed to fetch fact_couverture_petite_enfance from Odace: {e}"
+                f"Failed to fetch fact_couverture_petite_enfance from Odace: {e}. Falling back to legacy."
             )
-        raise PipelineRunError("Odace caf did not produce a usable dataset")
+
+    # Legacy path
+    path = CACHE_DIR / source["local_name"]
+    if not path.exists():
+        return
+
+    df = load_dataset(path, source)
+    df.columns = [c.strip() for c in df.columns]
+
+    codgeo_col = next(
+        (
+            c
+            for c in df.columns
+            if "codgeo" in c.lower() or "insee" in c.lower() or c == "numcom"
+        ),
+        None,
+    )
+    if codgeo_col:
+        df.rename(columns={codgeo_col: "codgeo"}, inplace=True)
+        df["codgeo"] = df["codgeo"].astype(str).str.zfill(5)
+
+        if "annee" in df.columns:
+            max_year = df["annee"].max()
+            df = df[df["annee"] == max_year]
+
+        if "taux_accueil_total" in df.columns:
+            df.rename(columns={"taux_accueil_total": "taux_couverture"}, inplace=True)
+        elif "txcouv_com" in df.columns:
+            df.rename(columns={"txcouv_com": "taux_couverture"}, inplace=True)
+
+        if "taux_couverture" in df.columns:
+            df["taux_couverture"] = pd.to_numeric(
+                df["taux_couverture"], errors="coerce"
+            )
+            df_out = df[["codgeo", "taux_couverture"]].copy()
+
+            output_path = CLEAN_DIR / "caf.parquet"
+            df_out.to_parquet(output_path, engine="fastparquet")
+            logger.log_step(
+                "clean_caf",
+                "COMPLETED",
+                {"path": str(output_path), "rows": len(df_out), "source": "legacy"},
+            )
+
+
+def clean_education(config: Dict[str, Any], logger: PipelineLogger):
+    """Cleans Education and saves to parquet (Bypassed in favor of BPE25)."""
+    logger.log_step("clean_education", "SKIPPED")
+    return
+
+
+def clean_finess_national(config: Dict[str, Any], logger: PipelineLogger):
+    """Cleans FINESS National data and saves to parquet (Bypassed in favor of BPE25)."""
+    logger.log_step("clean_finess_national", "SKIPPED")
+    return
+
+
+def clean_maternites(config: Dict[str, Any], logger: PipelineLogger):
+    """Cleans Maternites (DREES) and saves to json in CACHE_DIR to maintain backward compatibility (Bypassed in favor of BPE25)."""
+    logger.log_step("clean_maternites", "SKIPPED")
+    return
 
 
 def clean_services_inclusion(config: Dict[str, Any], logger: PipelineLogger):
@@ -871,10 +1096,46 @@ def clean_associations(config: Dict[str, Any], logger: PipelineLogger):
                 )
                 return
             else:
-                logging.warning("Odace fetch returned empty data for dim_association.")
+                logging.warning(
+                    "Odace fetch returned empty data for dim_association. Falling back to legacy."
+                )
         except Exception as e:
-            logging.error(f"Failed to fetch associations from Odace: {e}")
-        raise PipelineRunError("Odace associations did not produce a usable dataset")
+            logging.error(
+                f"Failed to fetch associations from Odace: {e}. Falling back to legacy."
+            )
+
+    # Legacy pathway
+    path = CACHE_DIR / source["local_name"]
+    if not path.exists():
+        return
+
+    df = load_dataset(path, source)
+    df.columns = [c.strip() for c in df.columns]
+
+    if "adrs_codeinsee" in df.columns:
+        df.rename(columns={"adrs_codeinsee": "codgeo"}, inplace=True)
+    if "objet_social1" in df.columns:
+        df.rename(columns={"objet_social1": "id_waldec"}, inplace=True)
+
+    if "codgeo" in df.columns and "id_waldec" in df.columns:
+        # Need config for WALDEC codes.
+        # We can load them from app config or hardcode/duplicate for pipeline isolation.
+        # For now, let's try to load from app.config if possible, or just use a known list.
+        # To avoid dependency issues, I will read them from config.py if I can, or just skip filtering here?
+        # No, I need to filter to get 'lien_social'.
+
+        df["id_waldec"] = df["id_waldec"].astype(str).str.zfill(6)
+        df["codgeo"] = df["codgeo"].astype(str).str.zfill(5)
+
+        # Save detailed associations for vertical table
+        # We keep all associations to allow dynamic filtering in the app (Core vs Affinities)
+        # We aggregate by codgeo and id_waldec to save space and provide a count
+        df_out = (
+            df.groupby(["codgeo", "id_waldec"]).size().rename("count").reset_index()
+        )
+
+        df_out.to_parquet(output_path, engine="fastparquet")
+        logger.log_step("clean_associations", "COMPLETED", {"path": str(output_path)})
 
 
 def clean_refugee_associations(config: Dict[str, Any], logger: PipelineLogger):
@@ -1007,8 +1268,30 @@ def clean_population(config: Dict[str, Any], logger: PipelineLogger):
             else:
                 logging.warning("Odace fetch returned empty data for population.")
         except Exception as e:
-            logging.error(f"Failed to fetch population from Odace: {e}")
-        raise PipelineRunError("Odace population did not produce a usable dataset")
+            logging.error(
+                f"Failed to fetch population from Odace: {e}. Falling back to legacy."
+            )
+
+    path = CACHE_DIR / source["local_name"]
+    if not path.exists():
+        return
+
+    df = load_dataset(path, source)
+
+    pop_col = next((c for c in df.columns if "pop" in c.lower()), None)
+    geo_col = next(
+        (c for c in df.columns if "codgeo" in c.lower() or "com" in c.lower()), None
+    )
+
+    if pop_col and geo_col:
+        df = df[[geo_col, pop_col]].rename(
+            columns={geo_col: "codgeo", pop_col: "population"}
+        )
+        df["codgeo"] = df["codgeo"].astype(str).str.zfill(5)
+
+        output_path = CLEAN_DIR / "population.parquet"
+        df.to_parquet(output_path, engine="fastparquet")
+        logger.log_step("clean_population", "COMPLETED", {"path": str(output_path)})
 
 
 def clean_communes(config: Dict[str, Any], logger: PipelineLogger):
@@ -1084,7 +1367,42 @@ def clean_communes(config: Dict[str, Any], logger: PipelineLogger):
                         inplace=True,
                     )
                 else:
-                    raise ValueError("Odace dim_commune is empty")
+                    logging.warning(
+                        "Odace dim_commune empty. Trying to load/download local communes fallback."
+                    )
+                    import copy
+
+                    temp_cfg = copy.deepcopy(source)
+                    temp_cfg["use_odace"] = False
+                    try:
+                        legacy_path = fetch_source("communes", temp_cfg, logger)
+                    except Exception as e:
+                        logging.error(f"Failed to fetch legacy communes: {e}")
+                        legacy_path = CACHE_DIR / "communes.geojson"
+
+                    if legacy_path and legacy_path.exists():
+                        try:
+                            df_legacy = gpd.read_file(legacy_path)
+                            df_legacy.rename(columns={"code": "codgeo"}, inplace=True)
+                            df_legacy["codgeo"] = (
+                                df_legacy["codgeo"].astype(str).str.zfill(5)
+                            )
+                            df_odace = df_odace.merge(
+                                df_legacy[["codgeo", "nom", "departement", "region"]],
+                                on="codgeo",
+                                how="left",
+                            )
+                        except Exception as e:
+                            logging.error(
+                                f"Failed to load local communes fallback: {e}"
+                            )
+                            df_odace["nom"] = ""
+                            df_odace["departement"] = ""
+                            df_odace["region"] = ""
+                    else:
+                        df_odace["nom"] = ""
+                        df_odace["departement"] = ""
+                        df_odace["region"] = ""
 
                 # Add commune name duplicate and plm flag
                 df_odace["commune"] = df_odace["nom"]
@@ -1129,10 +1447,33 @@ def clean_communes(config: Dict[str, Any], logger: PipelineLogger):
                 )
                 return
             else:
-                logging.warning("Odace fetch returned empty data for ref_commune_geo.")
+                logging.warning(
+                    "Odace fetch returned empty data for ref_commune_geo. Falling back to legacy."
+                )
         except Exception as e:
-            logging.error(f"Failed to fetch ref_commune_geo from Odace: {e}")
-        raise PipelineRunError("Odace communes did not produce a usable dataset")
+            logging.error(
+                f"Failed to fetch ref_commune_geo from Odace: {e}. Falling back to legacy."
+            )
+
+    # Legacy pathway
+    path = CACHE_DIR / source["local_name"]
+    if not path.exists():
+        return
+
+    gdf = load_dataset(path, source)
+
+    if "codgeo" not in gdf.columns:
+        if "INSEE_COM" in gdf.columns:
+            gdf.rename(columns={"INSEE_COM": "codgeo"}, inplace=True)
+        elif "code" in gdf.columns:
+            gdf.rename(columns={"code": "codgeo"}, inplace=True)
+
+    if "codgeo" in gdf.columns:
+        if "geometry" in gdf.columns:
+            gdf["polygon"] = gdf.geometry.to_wkb()
+            gdf.drop(columns=["geometry"], inplace=True)
+        pd.DataFrame(gdf).to_parquet(output_path, engine="fastparquet")
+        logger.log_step("clean_communes", "COMPLETED", {"path": str(output_path)})
 
 
 def clean_political(config: Dict[str, Any], logger: PipelineLogger):
@@ -1568,36 +1909,31 @@ def clean_school_effectifs(config: Dict[str, Any], logger: PipelineLogger):
 
     # 2. Education Annuaire (Reference for UAI -> Commune)
     annuaire_cfg = config["sources"]["education_annuaire"]
-    try:
-        df_annuaire = get_odace_client(logger).fetch_table(annuaire_cfg["odace_table"])
-    except Exception as exc:
-        raise PipelineRunError("Odace education_annuaire could not be loaded") from exc
-    if df_annuaire.empty:
-        raise PipelineRunError("Odace education_annuaire returned no rows")
+    annuaire_path = CACHE_DIR / annuaire_cfg["local_name"]
 
-    # Odace uses ``uai_code`` and ``commune_insee_code`` while the retired
-    # export used ``numero_uai`` and ``code_commune``. Keep the mapping
-    # explicit so schema drift fails with a useful message.
+    if not annuaire_path.exists():
+        logging.warning("Education Annuaire not found. Cannot map effectifs.")
+        return
+
+    df_annuaire = pd.read_parquet(annuaire_path, engine="fastparquet")
+
+    # Check columns
+    # We expect 'numero_uai' and 'code_commune' (or similar)
     uai_col = next(
         (
             c
             for c in df_annuaire.columns
-            if c in {"uai_code", "numero_uai", "identifiant_de_l_etablissement"}
+            if "numero_uai" in c or "identifiant_de_l_etablissement" in c
         ),
         None,
     )
-    insee_col = next(
-        (c for c in df_annuaire.columns if c in {"commune_insee_code", "code_commune"}),
-        None,
-    )
+    insee_col = next((c for c in df_annuaire.columns if "code_commune" in c), None)
 
     if not uai_col or not insee_col:
         logging.warning(
             f"Education Annuaire: Missing UAI ({uai_col}) or INSEE ({insee_col}) columns."
         )
-        raise PipelineRunError(
-            "Odace education_annuaire is missing its UAI or commune code columns"
-        )
+        return
 
     # Prepare Annuaire for link
     # Drop duplicates on UAI just in case
@@ -1744,11 +2080,14 @@ def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
                 )
                 logging.info(f"[BPE] Loaded {len(df)} rows from Odace API.")
         except Exception as e:
-            logging.error(f"BPE: Odace fetch failed: {e}")
+            logging.warning(f"BPE: Odace fetch failed, falling back to local: {e}")
 
     if df is None:
-        if source.get("use_odace", False):
-            raise PipelineRunError("Odace bpe did not produce a usable dataset")
+        path = CACHE_DIR / source["local_name"]
+        if not path.exists():
+            logging.error(f"BPE25 parquet file not found at {path}")
+            return
+        df = load_dataset(path, source)
 
     # Construct CODGEO
     if "codgeo" not in df.columns:
@@ -2384,10 +2723,89 @@ def clean_population_details(config: Dict[str, Any], logger: PipelineLogger):
                     "Odace fetch returned empty data for population_details."
                 )
         except Exception as e:
-            logging.error(f"Failed to fetch population_details from Odace: {e}")
-        raise PipelineRunError(
-            "Odace population_details did not produce a usable dataset"
-        )
+            logging.error(
+                f"Failed to fetch population_details from Odace: {e}. Falling back to legacy."
+            )
+
+    path = CACHE_DIR / source["archive_file"]
+    if not path.exists():
+        logging.warning("Population Details file not found.")
+        return
+
+    # Load CSV (Long Format)
+    # "AGE";"GEO";"GEO_OBJECT";"RP_MEASURE";"SEX";"TIME_PERIOD";"OBS_VALUE"
+    df = pd.read_csv(path, sep=";", low_memory=False)
+
+    # Filter Checks
+    required_cols = ["AGE", "GEO", "GEO_OBJECT", "SEX", "TIME_PERIOD", "OBS_VALUE"]
+    if not all(col in df.columns for col in required_cols):
+        logging.warning(f"Population Details: Missing columns. Found: {df.columns}")
+        return
+
+    # Filter Rows
+    # GEO_OBJECT == 'COM'
+    # SEX == '_T' (Total)
+    df = df[(df["GEO_OBJECT"] == "COM") & (df["SEX"] == "_T")]
+
+    # We need Age Groups:
+    # Youth: < 15 -> 'Y_LT15'
+    # Active: 25-54 -> 'Y25T39' + 'Y40T54'
+
+    target_ages = ["Y_LT15", "Y25T39", "Y40T54"]
+    df = df[df["AGE"].isin(target_ages)]
+
+    # Normalize GEO -> codgeo
+    df.rename(columns={"GEO": "codgeo"}, inplace=True)
+    df["codgeo"] = df["codgeo"].astype(str).str.zfill(5)
+
+    # Normalize Year
+    df["year"] = df["TIME_PERIOD"].astype(str)
+
+    # Value to numeric
+    df["count"] = pd.to_numeric(df["OBS_VALUE"], errors="coerce")
+
+    # Aggregate Active Group
+    # Map ages to broad categories
+    age_mapping = {"Y_LT15": "jeune", "Y25T39": "active", "Y40T54": "active"}
+    df["age_group"] = df["AGE"].map(age_mapping)
+
+    # Pivot
+    # Index: codgeo
+    # Columns: {age_group}_{year}
+    # Values: Sum of count
+
+    df_pivot = (
+        df.groupby(["codgeo", "age_group", "year"], observed=True)["count"]
+        .sum(min_count=1)
+        .unstack(["age_group", "year"])
+    )
+
+    # Flatten Columns
+    # e.g. active_2016, active_2022
+    df_pivot.columns = [f"pop_{c[0]}_{c[1]}" for c in df_pivot.columns]
+    df_pivot.reset_index(inplace=True)
+
+    # An absent reference year is unavailable data, not an observed zero population.
+    expected_cols = [
+        "pop_jeune_2016",
+        "pop_jeune_2022",
+        "pop_active_2016",
+        "pop_active_2022",
+    ]
+    for col in expected_cols:
+        if col not in df_pivot.columns:
+            logging.warning(
+                f"Population Details: Missing expected column {col}. Preserving as unavailable."
+            )
+            df_pivot[col] = np.nan
+
+    output_path = CLEAN_DIR / "population_details.parquet"
+    df_pivot.to_parquet(output_path, engine="fastparquet")
+    logger.log_step(
+        "clean_population_details",
+        "COMPLETED",
+        {"path": str(output_path), "rows": len(df_pivot)},
+    )
 
 
 def clean_nomenclature_waldec(config: Dict[str, Any], logger: PipelineLogger):
@@ -2490,32 +2908,9 @@ def clean_inclusion_jobs(
     if should_run:
         logging.info("Inclusion Jobs: Running Les emplois de l'inclusion ingest...")
         run_inclusion_ingest()
-        if _materialize_external_output(
-            INCLUSION_OUTPUT_PATH, OUTPUT_DIR / INCLUSION_OUTPUT_PATH.name
-        ):
-            logger.log_step(
-                "clean_inclusion_jobs",
-                "COMPLETED",
-                {"path": str(OUTPUT_DIR / INCLUSION_OUTPUT_PATH.name)},
-            )
-        else:
-            logger.log_step("clean_inclusion_jobs", "FAILED")
-            raise PipelineRunError(
-                "Inclusion Jobs ingest produced no candidate artefact"
-            )
+        logger.log_step("clean_inclusion_jobs", "COMPLETED")
     else:
-        if not skip and _materialize_external_output(
-            INCLUSION_OUTPUT_PATH, OUTPUT_DIR / INCLUSION_OUTPUT_PATH.name
-        ):
-            logger.log_step(
-                "clean_inclusion_jobs",
-                "COMPLETED",
-                {"path": str(OUTPUT_DIR / INCLUSION_OUTPUT_PATH.name), "cached": True},
-            )
-        elif skip:
-            logger.log_step("clean_inclusion_jobs", "SKIPPED")
-        else:
-            raise PipelineRunError("Inclusion Jobs cache is unavailable")
+        logger.log_step("clean_inclusion_jobs", "SKIPPED")
 
 
 def get_live_jobs_status() -> Dict[str, Any]:
@@ -2534,7 +2929,7 @@ def get_live_jobs_status() -> Dict[str, Any]:
     except:
         ttl_days = 7
 
-    files = [cache_path, FT_SHARED_OUTPUT_PATH, data_path]
+    files = [cache_path, data_path]
     mtimes = []
     for f in files:
         if f.exists():
@@ -2573,7 +2968,7 @@ def get_inclusion_jobs_status() -> Dict[str, Any]:
     except:
         ttl_days = 7
 
-    files = [cache_path, INCLUSION_SHARED_OUTPUT_PATH, data_path]
+    files = [cache_path, data_path]
     mtimes = []
     for f in files:
         if f.exists():
@@ -2621,30 +3016,12 @@ def clean_live_jobs(config: Dict[str, Any], logger: PipelineLogger, skip: bool =
     if should_run:
         logging.info("Live Jobs: Running France Travail ingest...")
         path = run_etl()
-        candidate_path = OUTPUT_DIR / FT_SHARED_OUTPUT_PATH.name
-        if path and _materialize_external_output(Path(path), candidate_path):
-            logger.log_step(
-                "clean_live_jobs", "COMPLETED", {"path": str(candidate_path)}
-            )
+        if path:
+            logger.log_step("clean_live_jobs", "COMPLETED", {"path": path})
         else:
             logger.log_step("clean_live_jobs", "FAILED")
-            raise PipelineRunError(
-                "France Travail ingest produced no candidate artefact"
-            )
     else:
-        candidate_path = OUTPUT_DIR / FT_SHARED_OUTPUT_PATH.name
-        if not skip and _materialize_external_output(
-            FT_SHARED_OUTPUT_PATH, candidate_path
-        ):
-            logger.log_step(
-                "clean_live_jobs",
-                "COMPLETED",
-                {"path": str(candidate_path), "cached": True},
-            )
-        elif skip:
-            logger.log_step("clean_live_jobs", "SKIPPED")
-        else:
-            raise PipelineRunError("France Travail cache is unavailable")
+        logger.log_step("clean_live_jobs", "SKIPPED")
 
 
 class MutedPipelineLogger:
@@ -2686,7 +3063,7 @@ def run_clean_step_safely(
       5. Validates that the resulting clean parquet file is non-empty.
       6. Commits (deletes backups) on success, or rolls back (restores backups) on failure/exception.
     """
-    if step_name == "education":
+    if step_name in {"education", "finess_national", "maternites"}:
         logger.log_step(f"clean_{step_name}", "SKIPPED_OPTIONAL")
         return
 
@@ -2759,19 +3136,15 @@ def run_clean_step_safely(
         "associations": "associations_vertical.parquet",
         "nomenclature_waldec": "referentiel_waldec.parquet",
         "hebergement_rna": "hebergement_rna_cols.parquet",
+        "jaccueille": "jaccueille_bdv.parquet",
         "bpe": "bpe_pois.parquet",
         "odace_rent": "odace_loyer_annonce.parquet",
         "formations": "formations_annuaire.parquet",
+        "finess_national": "../raw/finess_national.parquet",
+        "maternites": "../raw/maternites_drees.json",
     }
     clean_filename = clean_filenames.get(step_name, f"{step_name}.parquet")
-    if step_name == "salesforce_jaccueille":
-        active_clean = OUTPUT_DIR / clean_filename
-    elif step_name == "live_jobs":
-        active_clean = OUTPUT_DIR / "odis_ft_jobs_agg.parquet"
-    elif step_name == "inclusion_jobs":
-        active_clean = OUTPUT_DIR / "odis_inclusion_jobs.parquet"
-    else:
-        active_clean = CLEAN_DIR / clean_filename
+    active_clean = CLEAN_DIR / clean_filename
 
     # Determine if we are in staging mode
     is_staging = False
@@ -2955,25 +3328,18 @@ def run_clean_step_safely(
 
 
 def clean_salesforce_jaccueille(config: Dict[str, Any], logger: PipelineLogger):
-    """Build the candidate J'accueille release from the Salesforce source cache."""
+    """Cleans and ingests Salesforce J'accueille live data (Leads & Contacts)."""
     logger.log_step("clean_salesforce_jaccueille", "STARTED")
     try:
         from pipeline.salesforce_ingest import run_salesforce_ingest
 
-        output_path = OUTPUT_DIR / "salesforce_jaccueille_bdv.parquet"
-        run_salesforce_ingest(
-            force=False,
-            output_bdv_path=output_path,
-            postal_codes_path=CLEAN_DIR / "codes_postaux.parquet",
-            communes_path=OUTPUT_DIR / "odis_communes_pre.parquet",
-        )
+        output_path = run_salesforce_ingest(force=False)
         logger.log_step(
             "clean_salesforce_jaccueille", "COMPLETED", {"path": str(output_path)}
         )
     except Exception as e:
         logging.error(f"Failed to ingest Salesforce J'accueille data: {e}")
         logger.log_step("clean_salesforce_jaccueille", "FAILED", {"error": str(e)})
-        raise
 
 
 def main(argv=None):
@@ -3011,6 +3377,9 @@ def main(argv=None):
         "lovac": clean_lovac,
         "rpls": clean_rpls,
         "caf": clean_caf,
+        "education": clean_education,
+        "finess_national": clean_finess_national,
+        "maternites": clean_maternites,
         "associations": clean_associations,
         "refugee_associations": clean_refugee_associations,
         "political": clean_political,
@@ -3030,10 +3399,13 @@ def main(argv=None):
         "inclusion_jobs": clean_inclusion_jobs,
         "mob_transports_pub": clean_mob_transports_pub,
         "hebergement_rna": clean_hebergement_rna,
+        "jaccueille": clean_jaccueille,
+        "jaccueille_prospects": clean_jaccueille_prospects,
         "log_soc_delay": clean_log_soc_delay,
         "sante_apl": clean_sante_apl,
         "mob_durable": clean_mob_durable,
         "ter_insecurite": clean_ter_insecurite,
+        "salesforce_jaccueille": clean_salesforce_jaccueille,
     }
 
     selected_steps = args.steps.split(",") if args.steps else list(steps_map.keys())
@@ -3527,12 +3899,75 @@ def clean_mob_transports_pub(config: Dict[str, Any], logger: PipelineLogger):
                 )
                 return
             else:
-                logging.warning("Odace fetch returned empty data for transports.")
+                logging.warning(
+                    "Odace fetch returned empty data for transports. Falling back to legacy."
+                )
         except Exception as e:
-            logging.error(f"Failed to fetch transports from Odace: {e}")
-        raise PipelineRunError(
-            "Odace mob_transports_pub did not produce a usable dataset"
+            logging.error(
+                f"Failed to fetch transports from Odace: {e}. Falling back to legacy."
+            )
+
+    path = CACHE_DIR / source["local_name"]
+    if not path.exists():
+        logging.warning("Public Transport Stations file not found.")
+        return
+
+    df = load_dataset(path, source)
+
+    # Required columns: geocode_commune, type_transport_en_commun, valeur
+    required_cols = ["geocode_commune", "type_transport_en_commun", "valeur"]
+    if not all(col in df.columns for col in required_cols):
+        logging.warning(
+            f"Public Transport Stations: Missing columns. Found: {df.columns}"
         )
+        return
+
+    # Pivot the data: 1 row per commune
+    # type_transport_en_commun values: 'Bus', 'Tramway', 'Métropolitain', 'Train' (assuming)
+    df_pivot = (
+        df.pivot_table(
+            index="geocode_commune",
+            columns="type_transport_en_commun",
+            values="valeur",
+            aggfunc="sum",
+        )
+        .reset_index()
+        .fillna(0)
+    )
+
+    # Rename columns to standardized names
+    # The raw data has lowercase keys according to my earlier print: 'bus', 'tramway', 'métro', 'train'
+    col_mapping = {
+        "geocode_commune": "codgeo",
+        "bus": "nb_stops_bus",
+        "tramway": "nb_stops_tram",
+        "métro": "nb_stops_metro",
+        "train": "nb_stops_train",
+    }
+
+    # Apply mapping
+    df_pivot.rename(columns=col_mapping, inplace=True)
+
+    # Ensure all columns exist (in case some types are missing in the data)
+    for col in ["nb_stops_bus", "nb_stops_tram", "nb_stops_metro", "nb_stops_train"]:
+        if col not in df_pivot.columns:
+            df_pivot[col] = 0.0
+
+    df_pivot["codgeo"] = df_pivot["codgeo"].astype(str).str.zfill(5)
+    df_pivot["nb_stops_total"] = (
+        df_pivot["nb_stops_bus"]
+        + df_pivot["nb_stops_tram"]
+        + df_pivot["nb_stops_metro"]
+        + df_pivot["nb_stops_train"]
+    )
+
+    output_path = CLEAN_DIR / "mob_transports_pub.parquet"
+    df_pivot.to_parquet(output_path, engine="fastparquet")
+    logger.log_step(
+        "clean_mob_transports_pub",
+        "COMPLETED",
+        {"path": str(output_path), "rows": len(df_pivot)},
+    )
 
 
 def clean_log_soc_delay(config: Dict[str, Any], logger: PipelineLogger):
@@ -3581,13 +4016,40 @@ def clean_log_soc_delay(config: Dict[str, Any], logger: PipelineLogger):
                 return
             else:
                 logging.warning(
-                    "Odace fetch returned empty data for logement_social_delay."
+                    "Odace fetch returned empty data for logement_social_delay. Falling back to legacy."
                 )
         except Exception as e:
-            logging.error(f"Failed to fetch logement_social_delay from Odace: {e}")
-        raise PipelineRunError(
-            "Odace logement_social_delay did not produce a usable dataset"
+            logging.error(
+                f"Failed to fetch logement_social_delay from Odace: {e}. Falling back to legacy."
+            )
+
+    # Legacy pathway
+    path = CACHE_DIR / source["local_name"]
+    if not path.exists():
+        return
+
+    # USH range A3:B1263. load_dataset uses header=2 (row 3)
+    df = load_dataset(path, source)
+
+    if len(df) > 1260:
+        df = df.iloc[:1260]
+
+    if "SIRET" in df.columns and "Délai d'attribution moyen" in df.columns:
+        df.rename(
+            columns={
+                "SIRET": "epci_code",
+                "Délai d'attribution moyen": "log_soc_delay",
+            },
+            inplace=True,
         )
+        df["epci_code"] = df["epci_code"].astype(str).str.strip().str.zfill(9)
+        df["log_soc_delay"] = pd.to_numeric(df["log_soc_delay"], errors="coerce")
+
+        # Group by epci_code and average
+        df_clean = df.groupby("epci_code")["log_soc_delay"].mean().reset_index()
+
+        df_clean.to_parquet(output_path, engine="fastparquet")
+        logger.log_step("clean_log_soc_delay", "COMPLETED", {"rows": len(df_clean)})
 
 
 def clean_sante_apl(config: Dict[str, Any], logger: PipelineLogger):
@@ -3629,10 +4091,33 @@ def clean_sante_apl(config: Dict[str, Any], logger: PipelineLogger):
                 )
                 return
             else:
-                logging.warning("Odace fetch returned empty data for sante_apl.")
+                logging.warning(
+                    "Odace fetch returned empty data for sante_apl. Falling back to legacy."
+                )
         except Exception as e:
-            logging.error(f"Failed to fetch sante_apl from Odace: {e}")
-        raise PipelineRunError("Odace sante_apl did not produce a usable dataset")
+            logging.error(
+                f"Failed to fetch sante_apl from Odace: {e}. Falling back to legacy."
+            )
+
+    # Legacy pathway
+    path = CACHE_DIR / source["local_name"]
+    if not path.exists():
+        return
+
+    df = load_dataset(path, source)
+
+    codgeo_col = "Code commune INSEE"
+    val_col = "APL aux médecins généralistes"
+
+    if codgeo_col in df.columns and val_col in df.columns:
+        df = df[[codgeo_col, val_col]].rename(
+            columns={codgeo_col: "codgeo", val_col: "sante_apl"}
+        )
+        df["codgeo"] = df["codgeo"].astype(str).str.zfill(5)
+        df["sante_apl"] = pd.to_numeric(df["sante_apl"], errors="coerce")
+
+        df.to_parquet(output_path, engine="fastparquet")
+        logger.log_step("clean_sante_apl", "COMPLETED", {"rows": len(df)})
 
 
 def clean_mob_durable(config: Dict[str, Any], logger: PipelineLogger):
@@ -3682,13 +4167,49 @@ def clean_mob_durable(config: Dict[str, Any], logger: PipelineLogger):
                 return
             else:
                 logging.warning(
-                    "Odace fetch returned empty data for mob_durable_share."
+                    "Odace fetch returned empty data for mob_durable_share. Falling back to legacy."
                 )
         except Exception as e:
-            logging.error(f"Failed to fetch mob_durable_share from Odace: {e}")
-        raise PipelineRunError(
-            "Odace mob_durable_share did not produce a usable dataset"
+            logging.error(
+                f"Failed to fetch mob_durable_share from Odace: {e}. Falling back to legacy."
+            )
+
+    # Legacy pathway
+    path = CACHE_DIR / source["local_name"]
+    if not path.exists():
+        return
+
+    df = load_dataset(path, source)
+
+    if all(c in df.columns for c in ["geocode_commune", "mode_transport", "valeur"]):
+        if "date_mesure" in df.columns:
+            latest = df["date_mesure"].max()
+            df = df[df["date_mesure"] == latest]
+
+        df_pivot = df.pivot_table(
+            index="geocode_commune",
+            columns="mode_transport",
+            values="valeur",
+            aggfunc="sum",
+        ).reset_index()
+        df_pivot.rename(columns={"geocode_commune": "codgeo"}, inplace=True)
+        df_pivot["codgeo"] = df_pivot["codgeo"].astype(str).str.zfill(5)
+
+        durable_modes = ["Transports en commun", "Marche", "Vélo", "V\u00e9lo"]
+        present_durable = [m for m in durable_modes if m in df_pivot.columns]
+
+        mode_cols = [c for c in df_pivot.columns if c != "codgeo"]
+        df_pivot["total_valeur"] = df_pivot[mode_cols].sum(axis=1)
+
+        df_pivot["mob_dur_share"] = np.where(
+            df_pivot["total_valeur"] > 0,
+            df_pivot[present_durable].sum(axis=1) / df_pivot["total_valeur"],
+            np.nan,
         )
+
+        df_out = df_pivot[["codgeo", "mob_dur_share"]]
+        df_out.to_parquet(output_path, engine="fastparquet")
+        logger.log_step("clean_mob_durable", "COMPLETED", {"rows": len(df_out)})
 
 
 def clean_ter_insecurite(config: Dict[str, Any], logger: PipelineLogger):
@@ -3732,7 +4253,200 @@ def clean_ter_insecurite(config: Dict[str, Any], logger: PipelineLogger):
                 )
                 return
             else:
-                logging.warning("Odace fetch returned empty data for ter_insecurite.")
+                logging.warning(
+                    "Odace fetch returned empty data for ter_insecurite. Falling back to legacy."
+                )
         except Exception as e:
-            logging.error(f"Failed to fetch ter_insecurite from Odace: {e}")
-        raise PipelineRunError("Odace ter_insecurite did not produce a usable dataset")
+            logging.error(
+                f"Failed to fetch ter_insecurite from Odace: {e}. Falling back to legacy."
+            )
+
+    # Legacy pathway
+    path = CACHE_DIR / source["local_name"]
+    if not path.exists():
+        return
+
+    df = load_dataset(path, source)
+
+    if all(
+        c in df.columns
+        for c in ["CODGEO_2025", "annee", "indicateur", "taux_pour_mille"]
+    ):
+        latest = df["annee"].max()
+        df = df[df["annee"] == latest]
+
+        df_agg = (
+            df.groupby("CODGEO_2025")["taux_pour_mille"].sum(min_count=1).reset_index()
+        )
+        df_agg.rename(
+            columns={"CODGEO_2025": "codgeo", "taux_pour_mille": "ter_insecurite"},
+            inplace=True,
+        )
+        df_agg["codgeo"] = df_agg["codgeo"].astype(str).str.zfill(5)
+
+        df_agg.to_parquet(output_path, engine="fastparquet")
+        logger.log_step("clean_ter_insecurite", "COMPLETED", {"rows": len(df_agg)})
+
+
+def clean_jaccueille(config: Dict[str, Any], logger: PipelineLogger):
+    """Cleans J'Accueille data via live Salesforce integration (replaces legacy CSV)."""
+    return clean_salesforce_jaccueille(config, logger)
+
+
+def clean_jaccueille_prospects(config: Dict[str, Any], logger: PipelineLogger):
+    """Cleans J'Accueille prospects data and aggregates by Bassin de Vie."""
+    logger.log_step("clean_jaccueille_prospects", "STARTED")
+    source = config.get("local_files", {}).get("jaccueille_prospects")
+    if not source:
+        source = config["sources"].get("jaccueille_prospects")
+
+    if not source:
+        logging.warning("J'Accueille prospects source config not found.")
+        return
+
+    # Fetch source to raw cache first
+    path = fetch_source("jaccueille_prospects", source, logger)
+    if not path or not path.exists():
+        logging.warning(f"J'Accueille prospects file not found at {path}.")
+        return
+
+    # 1. Load J'Accueille Prospects Excel
+    try:
+        # The Excel file has headers in row 14 (0-indexed 13 in pandas)
+        df_raw = pd.read_excel(path, header=13)
+    except Exception as e:
+        logging.error(f"Failed to read J'Accueille prospects Excel: {e}")
+        return
+
+    # Get initial row count for report
+    initial_rows = len(df_raw)
+
+    # Expected columns: 'Code postal', 'Nombre d\'enregistrements'
+    cp_col = next(
+        (
+            c
+            for c in df_raw.columns
+            if "Code postal" in str(c) or "code_postal" in str(c).lower()
+        ),
+        None,
+    )
+    val_col = next(
+        (
+            c
+            for c in df_raw.columns
+            if "Nombre d'enregistrements" in str(c)
+            or "prospects" in str(c).lower()
+            or "count" in str(c).lower()
+            or "enregistrements" in str(c).lower()
+        ),
+        None,
+    )
+
+    if not cp_col or not val_col:
+        logging.warning(
+            f"J'Accueille prospects: Could not identify columns. Found: {df_raw.columns}"
+        )
+        return
+
+    df = df_raw[[cp_col, val_col]].rename(
+        columns={cp_col: "code_postal_raw", val_col: "prospects_count"}
+    )
+
+    # 2. Extract and clean code postal values
+    import re
+
+    def extract_and_clean_zip(val):
+        if pd.isna(val):
+            return None
+        val_str = str(val).strip()
+        # Remove spaces and commas (thousands separators)
+        val_str = val_str.replace(" ", "").replace(",", "")
+
+        # Try to find exactly 5 digits surrounded by word boundaries
+        match = re.search(r"\b\d{5}\b", val_str)
+        if match:
+            return match.group(0)
+        # Try finding any sequence of 5 digits (e.g. "34070y")
+        match = re.search(r"\d{5}", val_str)
+        if match:
+            return match.group(0)
+        return None
+
+    df["code_postal"] = df["code_postal_raw"].apply(extract_and_clean_zip)
+
+    # Drop rows without a valid 5-digit postal code
+    df_cleaned = df.dropna(subset=["code_postal"]).copy()
+
+    df_cleaned["prospects_count"] = pd.to_numeric(
+        df_cleaned["prospects_count"], errors="coerce"
+    ).fillna(0)
+
+    # Report cleaning stats
+    prospects_before = df_raw[val_col].sum() if val_col in df_raw.columns else 0
+    prospects_after = df_cleaned["prospects_count"].sum()
+    kept_rows = len(df_cleaned)
+    dropped_rows = initial_rows - kept_rows
+
+    # 3. Map Code Postal -> Code Commune -> Bassin de Vie
+    cp_mapping_path = CLEAN_DIR / "codes_postaux.parquet"
+    if not cp_mapping_path.exists():
+        logging.warning(
+            "Codes Postaux mapping not found, cannot map J'Accueille prospects data."
+        )
+        return
+
+    df_cp = pd.read_parquet(cp_mapping_path, engine="fastparquet")
+    df_cp_unique = df_cp.drop_duplicates(subset=["code_postal"], keep="first")
+
+    merged = df_cleaned.merge(df_cp_unique, on="code_postal", how="inner")
+
+    bdv_cfg = config["sources"]["bassins_de_vie"]
+    bdv_path = CACHE_DIR / bdv_cfg["archive_file"]
+
+    if not bdv_path.exists():
+        logging.warning("Bassin de vie raw file not found.")
+        return
+
+    df_bdv = load_dataset(bdv_path, bdv_cfg)
+
+    codgeo_col = next(
+        (c for c in df_bdv.columns if "Code géographique" in c or "CODGEO" in c), None
+    )
+    bdv_col = next((c for c in df_bdv.columns if "Bassin de vie" in c), None)
+
+    if codgeo_col and bdv_col:
+        df_bdv = df_bdv[[codgeo_col, bdv_col]].rename(
+            columns={codgeo_col: "codgeo", bdv_col: "bassin_de_vie"}
+        )
+        df_bdv["codgeo"] = df_bdv["codgeo"].astype(str).str.zfill(5)
+        df_bdv["bassin_de_vie"] = (
+            df_bdv["bassin_de_vie"].astype(str).str.replace(r"\.0$", "", regex=True)
+        )
+
+        merged_bdv = merged.merge(df_bdv, on="codgeo", how="inner")
+
+        # Aggregate by BDV
+        df_agg = (
+            merged_bdv.groupby("bassin_de_vie")["prospects_count"].sum().reset_index()
+        )
+
+        output_path = CLEAN_DIR / "jaccueille_prospects_bdv.parquet"
+        df_agg.to_parquet(output_path, engine="fastparquet")
+        logger.log_step(
+            "clean_jaccueille_prospects",
+            "COMPLETED",
+            {
+                "path": str(output_path),
+                "rows": len(df_agg),
+                "initial_rows": initial_rows,
+                "kept_rows": kept_rows,
+                "dropped_rows": dropped_rows,
+                "prospects_sum": prospects_after,
+            },
+        )
+    else:
+        logging.warning("Bassin de vie columns not identified for prospects mapping.")
+
+
+if __name__ == "__main__":
+    main()

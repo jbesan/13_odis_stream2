@@ -115,9 +115,13 @@ def _assert_deployable_candidate(source_dir: Path, run: PipelineRun) -> None:
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
-        raise PipelineRunError(f"Candidate manifest is invalid: {manifest_path}") from exc
+        raise PipelineRunError(
+            f"Candidate manifest is invalid: {manifest_path}"
+        ) from exc
     if manifest.get("pipeline_run_id") != run.run_id:
-        raise PipelineRunError("Candidate manifest does not belong to the requested run")
+        raise PipelineRunError(
+            "Candidate manifest does not belong to the requested run"
+        )
 
 
 def main():
@@ -247,8 +251,12 @@ def main():
                         local_name = source_cfg.get("local_name")
                         if local_name:
                             local_path = CACHE_DIR / local_name
-                            if local_path.exists() and not is_cache_valid(name, source_cfg):
-                                mtime = datetime.fromtimestamp(local_path.stat().st_mtime)
+                            if local_path.exists() and not is_cache_valid(
+                                name, source_cfg
+                            ):
+                                mtime = datetime.fromtimestamp(
+                                    local_path.stat().st_mtime
+                                )
                                 age_days = (datetime.now() - mtime).days
                                 ttl = source_cfg.get("ttl_days", 30)
                                 expired_reminders.append(
@@ -282,6 +290,15 @@ def main():
             if args.steps:
                 build_args.extend(["--steps", args.steps])
             build.main(build_args)
+            if not args.steps or "salesforce_jaccueille" in args.steps.split(","):
+                from pipeline.common import CONFIG_FILE, PipelineLogger, load_config
+
+                # This depends on the candidate's communes and postal-code
+                # mappings produced above, so it must run after build rather
+                # than alongside source ingestion.
+                ingest.clean_salesforce_jaccueille(
+                    load_config(CONFIG_FILE), PipelineLogger(run.status_file)
+                )
             logging.info("=== Build Phase Completed ===")
 
         if args.step in ["prescoring", "all"]:
@@ -291,18 +308,24 @@ def main():
                 json.dumps(quality_summary, indent=2), encoding="utf-8"
             )
             logging.info("=== Prescoring Phase Completed ===")
-        
+
             logging.info("=== Generating Data Manifest ===")
             try:
                 from pipeline.manifest import generate_manifest
                 from pipeline.odace_client import get_odace_client
+
                 odace_client = None
                 try:
                     odace_client = get_odace_client()
                 except Exception as e:
-                    logging.warning(f"Could not initialize OdaceClient for manifest generation: {e}")
+                    logging.warning(
+                        f"Could not initialize OdaceClient for manifest generation: {e}"
+                    )
 
-                generate_manifest(output_path=source_dir / "data_manifest.json", odace_client=odace_client)
+                generate_manifest(
+                    output_path=source_dir / "data_manifest.json",
+                    odace_client=odace_client,
+                )
                 manifest_path = source_dir / "data_manifest.json"
                 manifest_payload = json.loads(manifest_path.read_text(encoding="utf-8"))
                 manifest_payload["pipeline_run_id"] = run.run_id
@@ -331,7 +354,8 @@ def main():
             if missing_bootstrap or missing_datasets:
                 missing = missing_bootstrap + missing_datasets
                 raise FileNotFoundError(
-                    "Deployment source is incomplete; missing files: " + ", ".join(missing)
+                    "Deployment source is incomplete; missing files: "
+                    + ", ".join(missing)
                 )
 
             # Publish only the validated candidate before updating the local
@@ -339,7 +363,9 @@ def main():
             # runtime pointer.
             bucket_name = os.getenv("GCS_DATASETS_BUCKET", "odis-stream2-eu")
             publication_started = True
-            _publish_datasets_to_gcs(source_dir, bucket_name, release_version=run.run_id)
+            _publish_datasets_to_gcs(
+                source_dir, bucket_name, release_version=run.run_id
+            )
 
             # Keep the development mirror in sync after successful publication.
             for f in BOOTSTRAP_FILES:
@@ -349,6 +375,12 @@ def main():
 
             logging.info("=== Deployment Phase Completed ===")
     except Exception as exc:
+        from pipeline.quality_gate import QualityGateFailureError
+
+        if isinstance(exc, QualityGateFailureError) and exc.summary is not None:
+            (run.directory / "quality_report.json").write_text(
+                json.dumps(exc.summary, indent=2), encoding="utf-8"
+            )
         if publication_started:
             # A GCS/local-mirror failure does not invalidate a candidate that
             # already passed its pipeline checks; retain it for a safe retry.
