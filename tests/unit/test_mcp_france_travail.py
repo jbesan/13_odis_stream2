@@ -81,7 +81,25 @@ def test_search_job_offers_no_results():
 
         results = _search_job_offers_logic(query="Unknown")
         assert results["offres"] == []
-        assert results["total"] == 0
+    assert results["total"] == 0
+    assert results["status"] == "success_empty"
+
+
+def test_search_job_offers_http_failure_is_not_empty_success():
+    TOKEN_CACHE["access_token"] = "valid_token"
+    TOKEN_CACHE["expires_at"] = time.time() + 1000
+
+    with patch("requests.get") as mock_get:
+        mock_response = MagicMock()
+        mock_response.status_code = 503
+        mock_response.text = "temporarily unavailable"
+        mock_get.return_value = mock_response
+
+        results = _search_job_offers_logic(query="Dev", location="33063")
+
+    assert results["status"] == "error"
+    assert results["offres"] == []
+    assert results["error_code"] == "http_503"
 
 
 def test_get_job_details_success():

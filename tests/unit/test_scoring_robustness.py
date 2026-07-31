@@ -20,6 +20,7 @@ def test_runtime_missingness_policy_is_catalog_driven():
             {"score": "missing_zero_scaled", "missing_strategy": "zero"},
         ]
     )
+    engine._unavailable_runtime_scores = set()
     values = pd.DataFrame(
         {"zero_scaled": [None, 0.75], "exclude_scaled": [None, 0.5]}
     )

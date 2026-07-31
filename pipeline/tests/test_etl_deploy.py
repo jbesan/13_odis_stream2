@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pipeline import etl
+from pipeline.manifest import artifact_metadata
 from pipeline.run_context import PipelineRun, PipelineRunError
 
 
@@ -44,11 +45,15 @@ def test_publish_datasets_uploads_files_before_pointer(mock_client_class, tmp_pa
     assert version == "v-test-1"
     assert [event[1] for event in events[:-1]] == [
         f"datasets/releases/v-test-1/{filename}" for filename in etl.DATASET_FILES
-    ]
+    ] + ["datasets/releases/v-test-1/data_manifest.json"]
     assert events[-1][0:2] == ("pointer", "datasets/current.json")
     pointer = json.loads(events[-1][2])
     assert pointer["version"] == "v-test-1"
     assert pointer["files"] == etl.DATASET_FILES
+    assert pointer["manifest"]["name"] == "data_manifest.json"
+    assert pointer["manifest"]["sha256"] == artifact_metadata(
+        output_dir / "data_manifest.json"
+    ).sha256
 
 
 @patch("pipeline.etl.storage.Client")
@@ -66,9 +71,23 @@ def test_deploy_rejects_a_candidate_manifest_for_another_run(tmp_path, monkeypat
     monkeypatch.setattr("pipeline.run_context.RUNS_DIR", tmp_path / "runs")
     run = PipelineRun.create("run-a")
     run.update_state("PASSED", quality_gate={"status": "PASSED"})
+    for filename in etl.DATASET_FILES:
+        (run.output_dir / filename).write_text(filename, encoding="utf-8")
     manifest_path = run.output_dir / "data_manifest.json"
     manifest_path.write_text(
-        json.dumps({"manifest_version": "v-test-1", "pipeline_run_id": "run-b"}),
+        json.dumps(
+            {
+                "schema_version": 2,
+                "manifest_version": "v-test-1",
+                "created_at": "2026-07-31T00:00:00+00:00",
+                "pipeline_run_id": "run-b",
+                "configuration": {},
+                "quality_gate": {"status": "PASSED"},
+                "total_sources": 0,
+                "sources": [],
+                "outputs": [],
+            }
+        ),
         encoding="utf-8",
     )
 

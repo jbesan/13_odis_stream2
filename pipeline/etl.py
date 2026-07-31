@@ -33,9 +33,12 @@ DATASET_FILES = [
     "odis_ccas.parquet",
     "odis_refugee_associations.parquet",
     "odis_ft_jobs_agg.parquet",
+    "odis_ft_jobs_coverage.parquet",
     "odis_inclusion_jobs.parquet",
+    "odis_inclusion_jobs_coverage.parquet",
     "salesforce_jaccueille_bdv.parquet",
 ]
+RELEASE_MANIFEST_FILE = "data_manifest.json"
 
 
 def _get_release_version(source_dir: Path) -> str:
@@ -82,14 +85,21 @@ def _publish_datasets_to_gcs(
         bucket_name,
         release_prefix,
     )
-    for filename in DATASET_FILES:
+    from pipeline.manifest import artifact_metadata
+
+    release_artifacts = DATASET_FILES + [RELEASE_MANIFEST_FILE]
+    for filename in release_artifacts:
         blob_path = f"{release_prefix}/{filename}"
         bucket.blob(blob_path).upload_from_filename(str(source_dir / filename))
         logging.info("Uploaded %s -> gs://%s/%s", filename, bucket_name, blob_path)
 
+    manifest_metadata = artifact_metadata(
+        source_dir / RELEASE_MANIFEST_FILE, name=RELEASE_MANIFEST_FILE
+    ).model_dump()
     pointer = {
         "version": release_version,
         "files": DATASET_FILES,
+        "manifest": manifest_metadata,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     pointer_path = f"{datasets_prefix}/current.json"
@@ -112,16 +122,14 @@ def _assert_deployable_candidate(source_dir: Path, run: PipelineRun) -> None:
     manifest_path = source_dir / "data_manifest.json"
     if not manifest_path.exists():
         raise PipelineRunError(f"Candidate manifest is missing: {manifest_path}")
+    from pipeline.manifest import validate_manifest_for_deployment
+
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise PipelineRunError(
-            f"Candidate manifest is invalid: {manifest_path}"
-        ) from exc
-    if manifest.get("pipeline_run_id") != run.run_id:
-        raise PipelineRunError(
-            "Candidate manifest does not belong to the requested run"
+        validate_manifest_for_deployment(
+            manifest_path, run_id=run.run_id, required_artifacts=DATASET_FILES
         )
+    except ValueError as exc:
+        raise PipelineRunError(str(exc)) from exc
 
 
 def main():
@@ -337,14 +345,10 @@ def main():
                 generate_manifest(
                     output_path=source_dir / "data_manifest.json",
                     odace_client=odace_client,
-                )
-                manifest_path = source_dir / "data_manifest.json"
-                manifest_payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-                manifest_payload["pipeline_run_id"] = run.run_id
-                manifest_payload["quality_gate"] = quality_summary
-                manifest_path.write_text(
-                    json.dumps(manifest_payload, indent=2, ensure_ascii=False),
-                    encoding="utf-8",
+                    run_id=run.run_id,
+                    quality_gate=quality_summary,
+                    release_artifacts=DATASET_FILES,
+                    quality_report_path=run.directory / "quality_report.json",
                 )
                 run.update_state("PASSED", quality_gate=quality_summary)
                 logging.info("=== Data Manifest Generation Completed ===")

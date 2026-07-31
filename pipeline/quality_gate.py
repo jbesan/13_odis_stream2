@@ -12,6 +12,8 @@ from typing import Any
 import pandas as pd
 import yaml
 
+from pipeline.employment_coverage import METROPOLITAN_DEPARTMENTS
+
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_CONTRACT_PATH = Path(__file__).with_name("data_contracts.yaml")
@@ -186,6 +188,46 @@ def run_quality_gate(
                 orphan_fraction <= maximum,
                 orphan_fraction=orphan_fraction,
                 maximum=maximum,
+            )
+
+        for coverage_name in (
+            "odis_ft_jobs_coverage.parquet",
+            "odis_inclusion_jobs_coverage.parquet",
+        ):
+            if coverage_name not in contracts["release"]["required_artifacts"]:
+                continue
+            coverage_path = output_dir / coverage_name
+            check_name = f"coverage.{coverage_name}"
+            if not coverage_path.exists():
+                _add_check(checks, check_name, False, reason="missing artifact")
+                continue
+            coverage = pd.read_parquet(coverage_path, engine="fastparquet")
+            if not {"department", "status", "pages_expected", "pages_retrieved"}.issubset(
+                coverage.columns
+            ):
+                _add_check(checks, check_name, False, reason="missing coverage columns")
+                continue
+            successful = coverage.loc[coverage["status"] == "success"]
+            complete_departments = set(successful["department"].astype(str))
+            pages_complete = bool(
+                (successful["pages_retrieved"] >= successful["pages_expected"]).all()
+            )
+            nonempty_departments = (
+                bool((successful["offers_count"] > 0).all())
+                if coverage_name == "odis_ft_jobs_coverage.parquet"
+                and "offers_count" in successful.columns
+                else True
+            )
+            _add_check(
+                checks,
+                check_name,
+                complete_departments == set(METROPOLITAN_DEPARTMENTS)
+                and pages_complete
+                and nonempty_departments,
+                completed_departments=len(complete_departments),
+                expected_departments=len(METROPOLITAN_DEPARTMENTS),
+                pages_complete=pages_complete,
+                nonempty_departments=nonempty_departments,
             )
 
     failures = [check for check in checks if check["status"] == "FAILED"]

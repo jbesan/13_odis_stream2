@@ -81,3 +81,54 @@ def test_manifest_builder_with_mocked_odace(tmp_path):
     assert manifest_output_path.exists()
     saved_data = json.loads(manifest_output_path.read_text())
     assert saved_data["manifest_version"] == manifest.manifest_version
+
+
+def test_manifest_includes_local_files_and_observed_run_provenance(tmp_path, monkeypatch):
+    source_file = tmp_path / "source.csv"
+    source_file.write_text("id\n1\n", encoding="utf-8")
+    output_file = tmp_path / "bundle.txt"
+    output_file.write_text("release artifact", encoding="utf-8")
+    quality_report = tmp_path / "quality_report.json"
+    quality_report.write_text('{"status": "PASSED"}', encoding="utf-8")
+    status_file = tmp_path / "run.json"
+    status_file.write_text(
+        json.dumps(
+            {
+                "sources": {
+                    "catalog": {
+                        "status": "refreshed",
+                        "timestamp": "2026-07-30T12:00:00+00:00",
+                        "file": str(source_file),
+                    },
+                    "live_api": {
+                        "status": "fallback_last_good",
+                        "timestamp": "2026-07-29T12:00:00+00:00",
+                        "file": str(source_file),
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("pipeline.manifest.STATUS_FILE", status_file)
+
+    manifest = DataManifestBuilder(
+        sources_config={"catalog": {"ttl_days": 30}},
+        local_files_config={"live_api": {"format": "api", "ttl_days": 7}},
+        output_path=tmp_path / "data_manifest.json",
+        run_id="run-provenance",
+        quality_gate={"status": "PASSED"},
+        release_artifacts=["bundle.txt"],
+        quality_report_path=quality_report,
+    ).build()
+
+    assert manifest.pipeline_run_id == "run-provenance"
+    assert manifest.total_sources == 2
+    assert {source.source_key for source in manifest.sources} == {"catalog", "live_api"}
+    live_api = next(source for source in manifest.sources if source.source_key == "live_api")
+    assert live_api.acquisition_status == "fallback_last_good"
+    assert live_api.fallback_used is True
+    assert live_api.artifact is not None
+    assert manifest.outputs[0].sha256
+    assert manifest.quality_report is not None
+    assert manifest.configuration["sources_yaml_sha256"]

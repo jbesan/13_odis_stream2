@@ -10,6 +10,7 @@ from core.models import (
     InclusionServiceDetail,
 )
 from core.scoring import _format_kpi_value
+from core.enrichment_status import EnrichmentStatus
 from utils.data_loader import get_app_data, fetch_salesforce_jaccueille_bdv
 
 from agents.utils import odis_get_bg_result, launch_background_city_analysis
@@ -374,10 +375,24 @@ def polling_associations_fragment(commune: CommuneResult, h: Optional[str]):
                     st.markdown(
                         f"**{asso.name}**: {asso.description or ''} [Détails]({url})"
                     )
-    elif h and (not odis_get_bg_result(h) or "enrichment" not in odis_get_bg_result(h)):
-        st.write("⌛ _Chargement des associations..._")
     else:
-        st.info("Aucune association répertoriée.")
+        bg_res = odis_get_bg_result(h) if h else None
+        status_data = (
+            bg_res.get("association_enrichment_status", {}).get(str(commune.codgeo))
+            if isinstance(bg_res, dict)
+            else None
+        )
+        status = status_data.get("status") if isinstance(status_data, dict) else None
+        if status in {EnrichmentStatus.ERROR.value, EnrichmentStatus.TIMEOUT.value, EnrichmentStatus.NOT_CONFIGURED.value}:
+            st.info("Associations temporairement indisponibles.")
+        elif status == EnrichmentStatus.PARTIAL.value:
+            st.warning("Liste d'associations partielle : certaines données sont temporairement indisponibles.")
+        elif status == EnrichmentStatus.PENDING.value:
+            st.write("⌛ _Chargement des associations..._")
+        elif h and (not isinstance(bg_res, dict) or "association_enrichment_status" not in bg_res):
+            st.write("⌛ _Chargement des associations..._")
+        else:
+            st.info("Aucune association répertoriée.")
 
 
 @st.fragment(run_every=3.0)
@@ -469,13 +484,25 @@ def polling_inclusion_services_fragment(commune: CommuneResult, h: Optional[str]
 
         if h:
             bg_res = odis_get_bg_result(h)
+            status_data = (
+                bg_res.get("inclusion_services_status", {}).get(str(commune.codgeo))
+                if isinstance(bg_res, dict)
+                else None
+            )
+            status = status_data.get("status") if isinstance(status_data, dict) else None
             if (
                 not isinstance(bg_res, dict)
-                or "inclusion_services_enrichment" not in bg_res
+                or "inclusion_services_status" not in bg_res
             ):
                 st.caption(
                     "⌛ _Chargement des descriptions et liens depuis l'API Data Inclusion..._"
                 )
+            elif status in {EnrichmentStatus.ERROR.value, EnrichmentStatus.TIMEOUT.value, EnrichmentStatus.NOT_CONFIGURED.value}:
+                st.caption("Descriptions et liens Data Inclusion temporairement indisponibles.")
+            elif status == EnrichmentStatus.PARTIAL.value:
+                st.caption("Descriptions et liens Data Inclusion partiels.")
+            elif status == EnrichmentStatus.PENDING.value:
+                st.caption("⌛ _Chargement des descriptions et liens depuis l'API Data Inclusion..._")
 
 
 @st.fragment(run_every=3.0)
@@ -489,7 +516,11 @@ def polling_jobs_fragment(commune: CommuneResult, h: Optional[str]):
         if isinstance(bg_res, dict) and "jobs_enrichment" in bg_res:
             jobs_city_data = bg_res["jobs_enrichment"].get(str(commune.codgeo))
             if jobs_city_data:
-                if jobs_city_data.get("status") == "done":
+                if jobs_city_data.get("status") in {
+                    EnrichmentStatus.SUCCESS_NONEMPTY.value,
+                    EnrichmentStatus.SUCCESS_EMPTY.value,
+                    EnrichmentStatus.PARTIAL.value,
+                }:
                     # We deserialize the nested list structure List[List[JobOfferDetail]]
                     from core.models import JobOfferDetail
 
@@ -501,10 +532,6 @@ def polling_jobs_fragment(commune: CommuneResult, h: Optional[str]):
                     if "total" in jobs_city_data:
                         emp_data.standard_jobs_matching_total = jobs_city_data["total"]
                     st.rerun()  # Trigger dialog rerun to reveal content
-                elif jobs_city_data.get("status") == "error":
-                    # Put a dummy empty list to stop polling on error
-                    emp_data.matching_job_offers = [[]]
-                    st.rerun()
 
     bg_res = odis_get_bg_result(h) if h else None
     jobs_city_data = (
@@ -587,9 +614,18 @@ def polling_jobs_fragment(commune: CommuneResult, h: Optional[str]):
                     for offer in adult_jobs:
                         render_job_card(offer)
 
-    elif jobs_city_data and jobs_city_data.get("status") == "error":
+    elif jobs_city_data and jobs_city_data.get("status") in {
+        EnrichmentStatus.ERROR.value,
+        EnrichmentStatus.TIMEOUT.value,
+        EnrichmentStatus.NOT_CONFIGURED.value,
+    }:
         with st.expander("💼 Offres d'emploi directes", expanded=True):
             st.info("⚠️ Offres d'emploi temporairement indisponibles.")
+    elif jobs_city_data and jobs_city_data.get("status") == EnrichmentStatus.PARTIAL.value:
+        with st.expander("💼 Offres d'emploi directes", expanded=True):
+            st.warning("⚠️ Offres d'emploi partielles : certaines recherches sont temporairement indisponibles.")
+    elif jobs_city_data and jobs_city_data.get("status") == EnrichmentStatus.PENDING.value:
+        st.write("⌛ _Chargement des offres d'emploi en cours..._")
     elif h and (not bg_res or "jobs_enrichment" not in bg_res or not jobs_city_data):
         st.write("⌛ _Chargement des offres d'emploi en cours..._")
     else:
@@ -1081,6 +1117,12 @@ def show_details_dialog(index: Any):
 
                 live_total = employment_data.standard_jobs_total
                 matching_total = employment_data.standard_jobs_matching_total
+                availability = employment_data.source_availability
+
+                if availability.get("france_travail") == "unavailable":
+                    st.info("Données France Travail indisponibles pour cette release : elles ne sont pas comptées dans le score.")
+                if availability.get("emplois_inclusion") == "unavailable":
+                    st.info("Données Emplois de l'inclusion indisponibles pour cette release : elles ne sont pas comptées dans le score.")
 
                 if live_total > 0:
                     st.info(

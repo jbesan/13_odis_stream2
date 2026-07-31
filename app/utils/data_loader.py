@@ -3,6 +3,7 @@ import pandas as pd
 import geopandas as gpd
 import shapely.wkb as wkb
 import json
+import hashlib
 import os
 import yaml
 import logging
@@ -538,6 +539,62 @@ def _read_gcs_release_version(bucket: Any, datasets_prefix: str) -> Optional[str
     return release_version
 
 
+def load_active_data_manifest() -> Dict[str, Any]:
+    """Load and verify the manifest belonging to the active GCS dataset release.
+
+    Cloud Run must never report the bootstrap manifest embedded in the image once
+    a dataset pointer exists.  A local manifest remains a development-only
+    fallback so contributors can run the app without GCS credentials.
+    """
+    try:
+        bucket_name = os.getenv("GCS_DATASETS_BUCKET", "odis-stream2-eu")
+        datasets_prefix = os.getenv("GCS_DATASETS_PREFIX", "datasets").strip("/")
+        bucket = storage.Client().bucket(bucket_name)
+        pointer_blob = bucket.blob(f"{datasets_prefix}/current.json")
+        if not pointer_blob.exists():
+            raise RuntimeError("Active dataset release pointer is missing")
+        pointer = json.loads(pointer_blob.download_as_bytes())
+        release_version = pointer.get("version")
+        manifest_info = pointer.get("manifest")
+        if not isinstance(release_version, str) or not re.fullmatch(
+            r"[A-Za-z0-9._-]+", release_version
+        ):
+            raise ValueError("Invalid version in GCS dataset release pointer")
+        if not isinstance(manifest_info, dict):
+            raise ValueError("Active dataset release pointer has no manifest metadata")
+
+        manifest_name = manifest_info.get("name")
+        expected_sha256 = manifest_info.get("sha256")
+        if manifest_name != "data_manifest.json" or not isinstance(expected_sha256, str):
+            raise ValueError("Active dataset manifest metadata is invalid")
+        manifest_blob = bucket.blob(
+            f"{datasets_prefix}/releases/{release_version}/{manifest_name}"
+        )
+        manifest_bytes = manifest_blob.download_as_bytes()
+        actual_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
+        if actual_sha256 != expected_sha256:
+            raise ValueError("Active dataset manifest checksum mismatch")
+        manifest = json.loads(manifest_bytes)
+        if manifest.get("pipeline_run_id") != release_version:
+            raise ValueError("Active dataset manifest does not belong to its release")
+        manifest["active_release_version"] = release_version
+        return manifest
+    except Exception as exc:
+        # Cloud Run must surface a broken release rather than falling back to a
+        # potentially stale image manifest.  Local development intentionally has
+        # no release pointer and can still use its checked-out artifact.
+        if os.getenv("K_SERVICE"):
+            raise RuntimeError(f"Unable to load active data manifest: {exc}") from exc
+        local_manifest_path = os.path.join(cfg.LOCAL_DATA_PATH, "data_manifest.json")
+        if not os.path.exists(local_manifest_path):
+            raise RuntimeError(f"Unable to load active data manifest: {exc}") from exc
+        logger.info("Using local development data manifest after GCS lookup failed: %s", exc)
+        with open(local_manifest_path, encoding="utf-8") as handle:
+            manifest = json.load(handle)
+        manifest["active_release_version"] = manifest.get("pipeline_run_id")
+        return manifest
+
+
 @st.cache_data(ttl=3600)
 def fetch_salesforce_jaccueille_bdv() -> pd.DataFrame:
     """Loads the pre-aggregated Salesforce J'accueille BDV table using the unified dataset loader."""
@@ -780,10 +837,12 @@ def load_referentiels_raw() -> Dict[str, Any]:
         "bv_geo": pd.DataFrame(),
         "bv_data": pd.DataFrame(),
         "live_jobs_data": pd.DataFrame(),
+        "live_jobs_coverage": pd.DataFrame(),
         "structures_ccas": pd.DataFrame(),
         "pois": pd.DataFrame(),
         "refugee_associations_data": pd.DataFrame(),
         "siae_jobs_data": pd.DataFrame(),
+        "siae_jobs_coverage": pd.DataFrame(),
         "_load_errors": [],
     }
 
@@ -950,6 +1009,9 @@ def load_scoring_datasets_raw(refs_data: Optional[Dict[str, Any]] = None) -> Dic
     live_jobs_data = _load_parquet(
         os.path.join(base_path, cfg.LIVE_JOBS_FILE), error_list=load_errors
     )
+    live_jobs_coverage = _load_parquet(
+        os.path.join(base_path, cfg.LIVE_JOBS_COVERAGE_FILE), error_list=load_errors
+    )
     associations_data = _load_parquet(
         os.path.join(base_path, cfg.AGG_ASSOCIATIONS_FILE), error_list=load_errors
     )
@@ -973,6 +1035,9 @@ def load_scoring_datasets_raw(refs_data: Optional[Dict[str, Any]] = None) -> Dic
 
     siae_jobs_data = _load_parquet(
         os.path.join(base_path, cfg.SIAE_JOBS_FILE), error_list=load_errors
+    )
+    siae_jobs_coverage = _load_parquet(
+        os.path.join(base_path, cfg.SIAE_JOBS_COVERAGE_FILE), error_list=load_errors
     )
 
     # --- Enrichment: Index Sorting & Truncation ---
@@ -1057,6 +1122,7 @@ def load_scoring_datasets_raw(refs_data: Optional[Dict[str, Any]] = None) -> Dic
             "bv_geo": bv_geo,
             "bv_data": bv_geo,
             "live_jobs_data": live_jobs_data,
+            "live_jobs_coverage": live_jobs_coverage,
             "structures_ccas": structures_ccas,
             "pois": pois_df,
             "refugee_associations_data": refugee_associations_data,
@@ -1065,6 +1131,7 @@ def load_scoring_datasets_raw(refs_data: Optional[Dict[str, Any]] = None) -> Dic
             "rome_index": rome_index,
             "rome_top_index": rome_top_index,
             "siae_jobs_data": siae_jobs_data,
+            "siae_jobs_coverage": siae_jobs_coverage,
             "_load_errors": load_errors,
         }
     )

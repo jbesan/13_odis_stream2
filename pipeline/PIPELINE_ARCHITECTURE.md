@@ -69,6 +69,13 @@ The pipeline also has deliberate non-Odace adapters:
   scoring and by result details;
 - France Travail and Les emplois de l'inclusion provide live job datasets;
 - BigQuery RNA RAG provides the configured association enrichment;
+
+The two job datasets are metropolitan-only scoring inputs. Their collectors
+must complete the 96 valid metropolitan department identifiers and publish
+per-department, page-level coverage artifacts; France Travail additionally
+requires at least one offer in every department. The quality gate rejects a
+candidate with incomplete coverage; at runtime a missing coverage artifact
+means employment opportunities are unavailable rather than zero.
 - INSEE, education, electoral, postal-code, formation and other reference
 inputs remain active where the build requires them.
 
@@ -177,16 +184,17 @@ duplicate parent from child rows.
 Prescoring computes configured derived indicators and scaled values after PLM
 consolidation. It then runs `run_quality_gate` against the candidate output.
 
-The manifest builder in [manifest.py](manifest.py) records the active source
-catalog, provider metadata, Odace table metadata where available, timestamps and
-row counts. The ETL completes the manifest with:
+The manifest builder in [manifest.py](manifest.py) records every configured
+`sources` and `local_files` entry, its observed acquisition status, TTL, age,
+fallback status and available source-artifact metadata. It also records hashes,
+sizes, row counts and schemas for every published output, the quality-report
+artifact, `pipeline_run_id`, Git commit, optional runtime-image digest and
+hashes of the source, score and contract configuration.
 
-- `pipeline_run_id`;
-- the quality-gate summary.
-
-The manifest is written to the candidate output directory. Its deterministic
-manifest version is retained as source metadata, while the deployment release
-ID is the explicit `run_id` used by the deployment command.
+The manifest is written once to the candidate output directory after the
+quality gate passes. Its content-derived `manifest_version` identifies the
+provenance record; the deployment release ID remains the explicit immutable
+`run_id` used by the deployment command.
 
 ## 6. Run state and publication boundary
 
@@ -206,12 +214,16 @@ Deployment requires all of the following:
 1. an explicit `--run-id`;
 2. a matching `run.json` in `PASSED` state;
 3. a passed quality gate in that run record;
-4. a manifest whose `pipeline_run_id` matches the requested run;
-5. every required release artifact present and non-empty.
+4. a manifest whose `pipeline_run_id` matches the requested run and whose
+   output hashes match the candidate files;
+5. quality-report metadata in that manifest;
+6. every required release artifact present and non-empty.
 
-The deployment operation uploads the validated dataset files under an
-immutable GCS release prefix and advances `datasets/current.json` only after
-the upload. The local `app/data` mirror is updated after successful
+The deployment operation uploads the validated dataset files and manifest under
+the GCS release prefix, then advances `datasets/current.json` with the manifest
+checksum only after the upload. Cloud Run resolves that manifest from the
+active release for source display and telemetry; it does not report the baked
+bootstrap manifest. The local `app/data` mirror is updated after successful
 publication. A failed candidate cannot advance the active release pointer.
 
 ## 7. File roles

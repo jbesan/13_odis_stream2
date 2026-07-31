@@ -176,30 +176,19 @@ def _safe_json_format(obj: Any) -> Any:
 
 
 def get_manifest_version() -> str:
-    """Reads current manifest version from app/data/data_manifest.json. Never returns 'unknown'."""
-    from pathlib import Path
-    import config
-
-    manifest_path = Path(config.LOCAL_DATA_PATH) / "data_manifest.json"
-    if not manifest_path.exists():
-        raise RuntimeError(
-            f"❌ Data manifest missing at {manifest_path}. 'manifest_version' is strictly required."
-        )
+    """Return the manifest version belonging to the active dataset release."""
+    from utils.data_loader import load_active_data_manifest
 
     try:
-        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        data = load_active_data_manifest()
         version = data.get("manifest_version")
         if not version or version == "unknown":
             raise RuntimeError(
-                f"❌ Invalid or missing 'manifest_version' in {manifest_path}."
+                "❌ Invalid or missing 'manifest_version' in the active data release."
             )
         return version
     except Exception as e:
-        if isinstance(e, RuntimeError):
-            raise
-        raise RuntimeError(
-            f"❌ Failed to parse data manifest at {manifest_path}: {e}"
-        ) from e
+        raise RuntimeError(f"❌ Failed to load active manifest_version: {e}") from e
 
 
 
@@ -363,4 +352,3 @@ def log_search_complete(
         logger.error(
             f"❌ [TELEMETRY] Failed to log search event to BQ: {str(e)}", exc_info=True
         )
-

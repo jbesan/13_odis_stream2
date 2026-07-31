@@ -32,6 +32,13 @@ Live France Travail and Les emplois de l'inclusion refreshes require their own
 configured credentials. A deployment also requires access to the configured
 GCS bucket.
 
+Employment scoring is limited to metropolitan France. France Travail must
+complete all 96 valid department identifiers (`01`–`95` excluding `20`, plus
+`2A` and `2B`) with at least one collected offer per department, and publishes
+a companion coverage Parquet with department and page outcomes. A missing,
+partial, or empty-department coverage report makes the candidate fail;
+the runtime never turns an uncollected department into zero opportunities.
+
 ### Build a candidate
 
 ```bash

@@ -7,7 +7,9 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+from dataclasses import dataclass
 from dotenv import load_dotenv
+from pipeline.employment_coverage import METROPOLITAN_DEPARTMENTS
 
 # Load environment variables
 load_dotenv("app/.env")
@@ -15,6 +17,7 @@ load_dotenv("app/.env")
 # Constants
 OUTPUT_PATH = Path("pipeline/cache/output/odis_inclusion_jobs.parquet")
 STRUCTURES_PATH = Path("pipeline/cache/output/odis_inclusion_structures.parquet")
+COVERAGE_OUTPUT_PATH = Path("pipeline/cache/output/odis_inclusion_jobs_coverage.parquet")
 SIAE_LOOKUP_PATH = Path("pipeline/cache/raw/structures_inclusion.parquet")
 API_URL = "https://emplois.inclusion.beta.gouv.fr/api/v1/siaes/"
 TTL_DAYS = 7
@@ -22,19 +25,17 @@ TTL_DAYS = 7
 # Relevant SIAE types (ACI, AI, EI, ETTI, EITI)
 SIAE_TYPES_RELEVANT = {"ACI", "AI", "EI", "ETTI", "EITI"}
 
-# metropolitan departments + overseas
-DEPARTEMENTS = [str(i).zfill(2) for i in range(1, 96)] + [
-    "2A",
-    "2B",
-    "971",
-    "972",
-    "973",
-    "974",
-    "976",
-]
-if "20" in DEPARTEMENTS:
-    DEPARTEMENTS.remove("20")
-DEPARTEMENTS = sorted(DEPARTEMENTS)
+DEPARTEMENTS = list(METROPOLITAN_DEPARTMENTS)
+
+
+@dataclass
+class DepartmentJobsFetchResult:
+    department: str
+    jobs: List[Dict[str, Any]]
+    pages_expected: int
+    pages_retrieved: int
+    status: str
+    error: str | None = None
 
 
 def get_inclusion_jobs_status() -> Dict[str, Any]:
@@ -72,7 +73,7 @@ def extract_rome_code(rome_str: str) -> Optional[str]:
     return rome_str  # Fallback if already a code or format differs
 
 
-def fetch_department_jobs(dept: str) -> List[Dict[str, Any]]:
+def fetch_department_jobs_with_coverage(dept: str) -> DepartmentJobsFetchResult:
     """Fetches hiring structures and their job openings for a specific department.
 
     Args:
@@ -87,6 +88,8 @@ def fetch_department_jobs(dept: str) -> List[Dict[str, Any]]:
     all_results = []
     url = API_URL
     backoff = 5.0
+    pages_retrieved = 0
+    pages_expected: int | None = None
 
     while url:
         while True:
@@ -115,18 +118,43 @@ def fetch_department_jobs(dept: str) -> List[Dict[str, Any]]:
                 break
             except Exception as e:
                 logging.error(f"    [Error] Failed to fetch dept {dept}: {e}")
-                return all_results
+                return DepartmentJobsFetchResult(
+                    dept,
+                    [],
+                    pages_expected or 0,
+                    pages_retrieved,
+                    "failed",
+                    str(e),
+                )
 
         results = data.get("results", [])
+        pages_retrieved += 1
         # Filter for structures with at least one job opening
         hiring = [s for s in results if len(s.get("postes", [])) > 0]
         all_results.extend(hiring)
 
         url = data.get("next")
+        if pages_expected is None:
+            total_pages = data.get("total_pages")
+            pages_expected = int(total_pages) if total_pages is not None else None
         if url:
             time.sleep(0.5)  # Gentle iteration
 
-    return all_results
+    return DepartmentJobsFetchResult(
+        dept,
+        all_results,
+        pages_expected or pages_retrieved,
+        pages_retrieved,
+        "success",
+    )
+
+
+def fetch_department_jobs(dept: str) -> List[Dict[str, Any]]:
+    """Compatibility wrapper returning data only after a complete collection."""
+    result = fetch_department_jobs_with_coverage(dept)
+    if result.status != "success":
+        raise RuntimeError(f"Inclusion jobs fetch failed for {dept}: {result.error}")
+    return result.jobs
 
 
 def run_ingestion(departments: List[str] = None) -> None:
@@ -156,9 +184,16 @@ def run_ingestion(departments: List[str] = None) -> None:
     all_rows = []
     all_structures = []
 
+    coverage_results: list[DepartmentJobsFetchResult] = []
     for dept in depts_to_process:
         logging.info(f"  Processing {dept}...")
-        structures = fetch_department_jobs(dept)
+        coverage_result = fetch_department_jobs_with_coverage(dept)
+        coverage_results.append(coverage_result)
+        if coverage_result.status != "success":
+            raise RuntimeError(
+                f"Inclusion jobs coverage failed for {dept}: {coverage_result.error}"
+            )
+        structures = coverage_result.jobs
 
         for siae in structures:
             siret = siae.get("siret")
@@ -218,6 +253,30 @@ def run_ingestion(departments: List[str] = None) -> None:
 
         time.sleep(1)  # Gentle delay between departments
 
+    coverage = pd.DataFrame(
+        [
+            {
+                "department": result.department,
+                "status": result.status,
+                "offers_count": len(result.jobs),
+                "pages_expected": result.pages_expected,
+                "pages_retrieved": result.pages_retrieved,
+                "error": result.error,
+            }
+            for result in coverage_results
+        ]
+    )
+    expected_departments = set(depts_to_process)
+    completed_departments = set(
+        coverage.loc[coverage["status"] == "success", "department"]
+    )
+    missing_departments = sorted(expected_departments - completed_departments)
+    if missing_departments:
+        raise RuntimeError(
+            "Inclusion jobs coverage is incomplete; refusing to publish: "
+            + ", ".join(missing_departments)
+        )
+
     if all_rows:
         df = pd.DataFrame(all_rows)
         # Ensure types
@@ -231,6 +290,18 @@ def run_ingestion(departments: List[str] = None) -> None:
         logging.info(f"Successfully saved {len(df)} job opening records to {OUTPUT_PATH}")
     else:
         logging.warning("No job data collected.")
+        os.makedirs(OUTPUT_PATH.parent, exist_ok=True)
+        pd.DataFrame(
+            columns=[
+                "job_id",
+                "codgeo",
+                "siae_siret",
+                "siae_type",
+                "siae_name",
+                "rome",
+                "postes",
+            ]
+        ).to_parquet(OUTPUT_PATH, index=False, engine="fastparquet")
 
     if all_structures:
         df_struct = pd.DataFrame(all_structures)
@@ -243,6 +314,9 @@ def run_ingestion(departments: List[str] = None) -> None:
         )
     else:
         logging.warning("No structure data collected.")
+
+    os.makedirs(COVERAGE_OUTPUT_PATH.parent, exist_ok=True)
+    coverage.to_parquet(COVERAGE_OUTPUT_PATH, index=False, engine="fastparquet")
 
 
 if __name__ == "__main__":

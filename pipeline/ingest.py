@@ -33,7 +33,9 @@ from pipeline.run_context import PipelineRunError
 
 
 FT_SHARED_OUTPUT_PATH = Path("pipeline/cache/output/odis_ft_jobs_agg.parquet")
+FT_COVERAGE_SHARED_OUTPUT_PATH = Path("pipeline/cache/output/odis_ft_jobs_coverage.parquet")
 INCLUSION_SHARED_OUTPUT_PATH = Path("pipeline/cache/output/odis_inclusion_jobs.parquet")
+INCLUSION_COVERAGE_SHARED_OUTPUT_PATH = Path("pipeline/cache/output/odis_inclusion_jobs_coverage.parquet")
 INCLUSION_OUTPUT_PATH = INCLUSION_SHARED_OUTPUT_PATH
 SHARED_CLEAN_DIR = Path("pipeline/cache/clean")
 DATA_CONTRACTS_FILE = Path("pipeline/data_contracts.yaml")
@@ -93,6 +95,17 @@ def _materialize_external_output(source_path: Path, candidate_path: Path) -> boo
     candidate_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source_path, candidate_path)
     return candidate_path.exists() and candidate_path.stat().st_size > 0
+
+
+def _materialize_employment_output_pair(
+    data_source: Path, coverage_source: Path
+) -> bool:
+    """Materialize a job dataset only with its matching coverage evidence."""
+    return _materialize_external_output(
+        data_source, OUTPUT_DIR / data_source.name
+    ) and _materialize_external_output(
+        coverage_source, OUTPUT_DIR / coverage_source.name
+    )
 
 
 def resolve_codgeo(insee_code, dept_code) -> str:
@@ -2672,8 +2685,8 @@ def clean_inclusion_jobs(
     if should_run:
         logging.info("Inclusion Jobs: Running Les emplois de l'inclusion ingest...")
         run_inclusion_ingest()
-        if _materialize_external_output(
-            INCLUSION_OUTPUT_PATH, OUTPUT_DIR / INCLUSION_OUTPUT_PATH.name
+        if _materialize_employment_output_pair(
+            INCLUSION_OUTPUT_PATH, INCLUSION_COVERAGE_SHARED_OUTPUT_PATH
         ):
             logger.log_step(
                 "clean_inclusion_jobs",
@@ -2686,8 +2699,8 @@ def clean_inclusion_jobs(
                 "Inclusion Jobs ingest produced no candidate artefact"
             )
     else:
-        if not skip and _materialize_external_output(
-            INCLUSION_OUTPUT_PATH, OUTPUT_DIR / INCLUSION_OUTPUT_PATH.name
+        if not skip and _materialize_employment_output_pair(
+            INCLUSION_OUTPUT_PATH, INCLUSION_COVERAGE_SHARED_OUTPUT_PATH
         ):
             logger.log_step(
                 "clean_inclusion_jobs",
@@ -2804,7 +2817,9 @@ def clean_live_jobs(config: Dict[str, Any], logger: PipelineLogger, skip: bool =
         logging.info("Live Jobs: Running France Travail ingest...")
         path = run_etl()
         candidate_path = OUTPUT_DIR / FT_SHARED_OUTPUT_PATH.name
-        if path and _materialize_external_output(Path(path), candidate_path):
+        if path and _materialize_employment_output_pair(
+            Path(path), FT_COVERAGE_SHARED_OUTPUT_PATH
+        ):
             logger.log_step(
                 "clean_live_jobs", "COMPLETED", {"path": str(candidate_path)}
             )
@@ -2815,8 +2830,8 @@ def clean_live_jobs(config: Dict[str, Any], logger: PipelineLogger, skip: bool =
             )
     else:
         candidate_path = OUTPUT_DIR / FT_SHARED_OUTPUT_PATH.name
-        if not skip and _materialize_external_output(
-            FT_SHARED_OUTPUT_PATH, candidate_path
+        if not skip and _materialize_employment_output_pair(
+            FT_SHARED_OUTPUT_PATH, FT_COVERAGE_SHARED_OUTPUT_PATH
         ):
             logger.log_step(
                 "clean_live_jobs",
