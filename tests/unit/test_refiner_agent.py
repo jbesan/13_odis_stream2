@@ -7,7 +7,15 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "..", "app"))
 from agents.refiner import refiner_agent, RefinerResult
 from agents.state import GraphState, ODISDeps
 from core.models import SearchCriterias, CriteriaItem, SearchResultsData, CommuneResult
-from agents.agent_config import get_p_model
+run_evals = os.getenv("RUN_EVALS", "false").lower() == "true"
+
+pytestmark = [
+    pytest.mark.eval,
+    pytest.mark.skipif(
+        not run_evals,
+        reason="Evaluation tests are skipped by default. Set RUN_EVALS=true to run them.",
+    ),
+]
 
 
 @pytest.mark.asyncio
@@ -16,7 +24,7 @@ async def test_refiner_agent_live_shortlisted_city():
     Live integration test to prove that refiner_agent generates pitches for both
     the Top 5 recommended results AND the shortlisted commune_pressentie.
     """
-    from agents.agent_config import get_gemini_client
+    from agents.agent_config import get_gemini_client, get_p_model
 
     client = get_gemini_client()
 

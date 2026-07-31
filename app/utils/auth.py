@@ -219,8 +219,9 @@ def check_password() -> bool:
         st.session_state["password_correct"] = True
         return True
 
-    # Only on Cloud Run: inject idle sleep monitor
-    inject_idle_sleep(timeout_minutes=10)
+    # Only on Cloud Run when auth is forced: inject idle sleep monitor
+    if is_cloud_run and force_auth:
+        inject_idle_sleep(timeout_minutes=10)
 
     # Initialize auth state
     if "password_correct" not in st.session_state:

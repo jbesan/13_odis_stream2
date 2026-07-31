@@ -148,7 +148,7 @@ def test_format_city_details_consistency(scoring_engine, base_df, base_config):
         item for item in details.scores["logement"] if item.score_id == "log_vac_scaled"
     )
     # Since display_factor is 100 in the live config and scaled score is 0.5, it should be 50.0
-    assert vac_item.valeur_kpi == 50.0
+    assert float(vac_item.valeur_kpi) == 50.0
 
     # Check that mob_gare_scaled fell back to scaled score and formatted to "Oui"
     gare_item = next(

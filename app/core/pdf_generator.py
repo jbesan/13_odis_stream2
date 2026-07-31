@@ -186,7 +186,7 @@ def _generate_static_map_image(
         vmin=0.0,
         vmax=1.0,
         legend_kwds={
-            "label": "Score Global",
+            "label": "Indice global (0–100)",
             "orientation": "horizontal",
             "shrink": 0.5,
             "pad": 0.05,
@@ -465,7 +465,7 @@ def generate_pdf_report(
     )
     pdf.set_font("DejaVu", "", 9)
     for rank, commune in enumerate(search_results.results, start=1):
-        score_percent = f"{commune.global_score * 100:.1f}%"
+        score_percent = f"{commune.global_score * 100:.1f}/100"
         pdf.cell(
             pdf.epw,
             5,
@@ -477,7 +477,7 @@ def generate_pdf_report(
 
     if search_results.commune_pressentie:
         p_commune = search_results.commune_pressentie
-        score_percent = f"{p_commune.global_score * 100:.1f}%"
+        score_percent = f"{p_commune.global_score * 100:.1f}/100"
         pdf.ln(2)
         pdf.set_font("DejaVu", "B", 9)
         pdf.cell(
@@ -514,7 +514,7 @@ def generate_pdf_report(
         bdv_text = f"Fait partie du bassin de vie de : {commune.name_bdv}"
         pdf.cell(pdf.epw, 6, bdv_text, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
-        score_percent = f"Adéquation globale : {commune.global_score * 100:.1f}%"
+        score_percent = f"Indice global : {commune.global_score * 100:.1f}/100"
         pdf.set_font("DejaVu", "B", 10)
         pdf.cell(pdf.epw, 6, score_percent, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(4)

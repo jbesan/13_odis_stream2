@@ -1,6 +1,77 @@
 from typing import List, Dict, Any, Union, Optional, Set, Literal
+import functools
 import hashlib
+import logging
+from pathlib import Path
+import yaml
 from pydantic import BaseModel, Field, ConfigDict, model_validator, field_validator
+
+logger = logging.getLogger(__name__)
+
+
+ScoreCategory = Literal[
+    "education", "emploi", "inclusion", "logement", "territoire", "sante", "mobilite"
+]
+ScoreComputation = Literal["precomputed", "live", "calculated"]
+ScoreMissingStrategy = Literal["exclude", "zero"]
+ScoreScalingType = Literal["linear", "gaussian"]
+
+
+class ScoreDisplayConfigSchema(BaseModel):
+    name: str
+    strong_point_text: Optional[str] = None
+    high_value_adjective: Optional[str] = None
+    show: bool = True
+    unit: Optional[str] = None
+    display_factor: Optional[Union[int, float]] = 1
+    tooltip: Optional[str] = None
+    format: Optional[str] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ScoreConfigItemSchema(BaseModel):
+    id: str
+    category: ScoreCategory
+    source_metric: Optional[str] = None
+    bdv_factor: float = 0.0
+    computation: ScoreComputation
+    display: Optional[ScoreDisplayConfigSchema] = None
+    weight: float = 1.0
+    min_bound: Optional[float] = None
+    max_bound: Optional[float] = None
+    quantile_level: Optional[float] = Field(None, ge=0.0, le=0.5)
+    missing_strategy: ScoreMissingStrategy = "exclude"
+    baseline: bool = False
+    scaling_type: Optional[ScoreScalingType] = None
+    mu: Optional[float] = None
+    sigma: Optional[float] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ScoresConfigFileSchema(BaseModel):
+    scores: List[ScoreConfigItemSchema]
+
+    model_config = ConfigDict(extra="forbid")
+
+
+def validate_scores_config(config_data: Dict[str, Any]) -> ScoresConfigFileSchema:
+    """Validates the raw dictionary loaded from scores_config.yaml against the Pydantic schema."""
+    return ScoresConfigFileSchema.model_validate(config_data)
+
+
+@functools.lru_cache(maxsize=1)
+def get_valid_score_ids() -> Set[str]:
+    """Loads, validates, and caches valid score IDs defined in scores_config.yaml."""
+    config_path = Path(__file__).parent.parent / "scores_config.yaml"
+    if not config_path.exists():
+        return set()
+    with open(config_path, "r", encoding="utf-8") as f:
+        cfg_data = yaml.safe_load(f)
+    validated_cfg = validate_scores_config(cfg_data)
+    return {item.id for item in validated_cfg.scores}
+
 
 
 class CriteriaItem(BaseModel):
@@ -250,6 +321,25 @@ class SearchCriterias(BaseModel):
         json_schema_extra={"odis_visibility": ["agent_refiner", "pdf_report"]},
     )
 
+    @field_validator("criteria_weights", mode="before")
+    @classmethod
+    def validate_criteria_weights(cls, v: Any) -> Dict[str, float]:
+        if not isinstance(v, dict):
+            return {}
+        valid_ids = get_valid_score_ids()
+        if not valid_ids:
+            return {str(k): float(val) for k, val in v.items()}
+        sanitized = {}
+        for key, weight in v.items():
+            s_key = str(key)
+            if s_key in valid_ids:
+                sanitized[s_key] = float(weight)
+            else:
+                logger.warning(
+                    f"Removing unknown criterion ID '{s_key}' from criteria_weights."
+                )
+        return sanitized
+
     # Global Category Weights
     poids_emploi: float = Field(
         0.0,
@@ -487,6 +577,66 @@ class CommuneScoreDetail(BaseModel):
             "odis_visibility": [
                 "agent_refiner",
                 "agent_synthesizer",
+                "ui_details",
+                "pdf_report",
+            ]
+        },
+    )
+    valeur_kpi_commune: Optional[Union[float, int, str]] = Field(
+        None,
+        description="Valeur brute locale de la commune",
+        json_schema_extra={
+            "odis_visibility": [
+                "ui_details",
+                "pdf_report",
+            ]
+        },
+    )
+    valeur_kpi_bdv: Optional[Union[float, int, str]] = Field(
+        None,
+        description="Valeur brute du Bassin de Vie",
+        json_schema_extra={
+            "odis_visibility": [
+                "ui_details",
+                "pdf_report",
+            ]
+        },
+    )
+    score_normalise_commune: Optional[float] = Field(
+        None,
+        description="Score normé local de la commune (avant BdV)",
+        json_schema_extra={
+            "odis_visibility": [
+                "ui_details",
+                "pdf_report",
+            ]
+        },
+    )
+    score_normalise_bdv: Optional[float] = Field(
+        None,
+        description="Score normé du Bassin de Vie",
+        json_schema_extra={
+            "odis_visibility": [
+                "ui_details",
+                "pdf_report",
+            ]
+        },
+    )
+    bdv_factor: float = Field(
+        0.0,
+        description="Facteur d'influence du Bassin de Vie",
+        json_schema_extra={
+            "odis_visibility": [
+                "ui_details",
+                "pdf_report",
+            ]
+        },
+    )
+    bdv_applied: bool = Field(
+        False,
+        description="Indique si une combinaison BdV s'applique sur ce critère",
+        json_schema_extra={
+            "odis_visibility": [
                 "ui_details",
                 "pdf_report",
             ]

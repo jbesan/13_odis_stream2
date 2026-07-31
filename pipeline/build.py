@@ -2,14 +2,12 @@ import argparse
 import logging
 import pandas as pd
 import geopandas as gpd
-import json
-import logging
-import shutil
 import numpy as np
 from pathlib import Path
 import warnings
 from shapely.geometry import Polygon, MultiPolygon
-from typing import Dict, Any, List, Optional
+from shapely.validation import make_valid
+from typing import Dict, Any, List, Optional, cast
 from shapely import wkb
 
 
@@ -80,12 +78,16 @@ def consolidate_plm_communes(df: pd.DataFrame) -> pd.DataFrame:
         "has_gare",
     ]
 
+    avg_keywords = ("loyer", "m2", "moy", "rate", "ratio", "density", "share", "delay", "pct", "scaled")
     cols_to_sum = []
     cols_to_avg = []
     for col in df.columns:
-        if col in rate_cols:
+        if col in special_cols or not pd.api.types.is_numeric_dtype(df[col]):
+            continue
+        col_lower = col.lower()
+        if col in rate_cols or any(kw in col_lower for kw in avg_keywords):
             cols_to_avg.append(col)
-        elif col not in special_cols and pd.api.types.is_numeric_dtype(df[col]):
+        else:
             cols_to_sum.append(col)
 
     # Cast to ensure float/int operations are safe
@@ -96,44 +98,35 @@ def consolidate_plm_communes(df: pd.DataFrame) -> pd.DataFrame:
             logging.warning(f"Parent code {parent} not found in communes data.")
             continue
 
-        family_mask = df["codgeo"].isin([parent] + children)
+        children_mask = df["codgeo"].isin(children)
+        parent_mask = df["codgeo"] == parent
 
-        # 1. Sum absolute counts
+        # 1. Sum absolute counts over child arrondissements (or fallback to parent if children sum is 0)
         for col in cols_to_sum:
             if col in df.columns:
-                df.loc[df["codgeo"] == parent, col] = df.loc[family_mask, col].sum()
+                child_sum = df.loc[children_mask, col].sum(min_count=1)
+                if pd.notna(child_sum) and child_sum > 0:
+                    df.loc[parent_mask, col] = child_sum
 
-        # 2. Population-weighted averages for rates
-        parent_pop = df.loc[df["codgeo"] == parent, "population"].values[0]
+        # 2. Population-weighted averages for rates using child arrondissements
         for col in cols_to_avg:
             if col in df.columns:
-                children_mask = df["codgeo"].isin(children)
-                children_pop = df.loc[children_mask, "population"].sum()
-                if children_pop > 0:
-                    total_pop = df.loc[family_mask, "population"].sum()
+                valid_children_mask = children_mask & df[col].notna()
+                valid_pop = df.loc[valid_children_mask, "population"].sum()
+                if valid_pop > 0:
                     weighted_sum = (
-                        df.loc[family_mask, col] * df.loc[family_mask, "population"]
+                        df.loc[valid_children_mask, col] * df.loc[valid_children_mask, "population"]
                     ).sum()
-                    df.loc[df["codgeo"] == parent, col] = weighted_sum / total_pop
-                else:
-                    # Fallback to simple average of children values if child populations are zero
-                    # Only use non-zero children values (since NaNs are filled with 0 before consolidation)
-                    non_zero_children = df.loc[children_mask, col][
-                        df.loc[children_mask, col] > 0
-                    ]
-                    if not non_zero_children.empty:
-                        df.loc[df["codgeo"] == parent, col] = non_zero_children.mean()
-                    else:
-                        # Use parent value if no children have non-zero values
-                        pass
+                    df.loc[parent_mask, col] = weighted_sum / valid_pop
+                # Else: preserve pre-existing parent value (e.g. DREES sante_apl for 75056)
 
         # 3. Special logical flags
         # PLM parents (Paris, Lyon, Marseille) always have major railway stations (gares)
         if "has_gare" in df.columns:
-            df.loc[df["codgeo"] == parent, "has_gare"] = 1.0
+            df.loc[parent_mask, "has_gare"] = 1.0
         if "gare_count" in df.columns:
-            parent_gare_count = df.loc[df["codgeo"] == parent, "gare_count"].values[0]
-            df.loc[df["codgeo"] == parent, "gare_count"] = max(parent_gare_count, 1.0)
+            parent_gare_count = df.loc[parent_mask, "gare_count"].values[0]
+            df.loc[parent_mask, "gare_count"] = max(parent_gare_count, 1.0)
 
     # 4. Filter out child arrondissements
     all_children = []
@@ -395,11 +388,10 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
                 siae_df.groupby("codgeo").size().rename("inc_siae_count").reset_index()
             )
             communes_gdf = communes_gdf.merge(siae_agg, on="codgeo", how="left")
-            communes_gdf["inc_siae_count"] = communes_gdf["inc_siae_count"].fillna(0)
             logging.info(f"SIAE structures counts merged from {siae_path}.")
         else:
             logging.warning(f"SIAE structures file not found at {siae_path}.")
-            communes_gdf["inc_siae_count"] = 0
+            communes_gdf["inc_siae_count"] = np.nan
 
         # Calculate lien_social_count from RAG categories
         # 'lien_social_count' is used for inc_asso_core_scaled (Lien Social Density)
@@ -410,12 +402,14 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
             if c.startswith("inc_rna_") and c.endswith("_count")
         ]
         if rna_cols:
-            communes_gdf["lien_social_count"] = communes_gdf[rna_cols].sum(axis=1)
+            communes_gdf["lien_social_count"] = communes_gdf[rna_cols].sum(
+                axis=1, min_count=1
+            )
             logging.info(
                 f"RNA RAG: Calculated lien_social_count from {len(rna_cols)} categories."
             )
         else:
-            communes_gdf["lien_social_count"] = 0
+            communes_gdf["lien_social_count"] = np.nan
 
         # Merge Odace Commune SK
         merge_clean("odace_communes_sk", ["commune_sk"])
@@ -457,9 +451,10 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
 
                 # Pivot: 1 row per commune_sk, columns are the 4 housing types
                 # FIX: Coerce to numeric before pivot to avoid "agg function failed [how->mean,dtype->object]"
+                # Keep NaNs instead of fillna(0) to avoid turning missing data into zero-rent
                 df_merged["loyer_m2_moy"] = pd.to_numeric(
                     df_merged["loyer_m2_moy"], errors="coerce"
-                ).fillna(0)
+                )
 
                 df_pivot = df_merged.pivot_table(
                     index="commune_sk",
@@ -484,9 +479,9 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
                     communes_gdf = communes_gdf.merge(
                         df_pivot, on="commune_sk", how="left"
                     )
-                    logging.info(
-                        f"Odace Rent: Merged pivoted data. Columns added: {list(df_pivot.columns)}"
-                    )
+                    # logging.info(
+                    #     f"Odace Rent: Merged pivoted data. Columns added: {list(df_pivot.columns)}"
+                    # )
                     # logging.info(f"DEBUG: communes_gdf cols after merge: {[c for c in communes_gdf.columns if 'loyer' in c]}")
             else:
                 logging.warning("Odace Rent clean files missing.")
@@ -495,6 +490,27 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
 
         # Merge Loyers (Appartements - Legacy source)
         merge_clean("loyers", ["loyer_app_m2"])
+
+        # Check if Odace rent metrics are valid, otherwise fall back to legacy loyer_app_m2
+        rent_col = "loyer_m2_moy_appt_all"
+        valid_odace = (
+            communes_gdf[rent_col].notna() & (communes_gdf[rent_col] > 0)
+            if rent_col in communes_gdf.columns
+            else pd.Series(False, index=communes_gdf.index)
+        )
+        if valid_odace.sum() < 100:
+            msg = (
+                f"CRITICAL ERROR: Odace rent primary data is missing or invalid "
+                f"({valid_odace.sum()} valid rows). Triggering FALLBACK to legacy loyers.parquet source (loyer_app_m2)."
+            )
+            logging.error(msg)
+            # print(f"ERROR [build.py]: {msg}")
+            if "loyer_app_m2" in communes_gdf.columns:
+                communes_gdf["loyer_m2_moy_appt_all"] = communes_gdf["loyer_app_m2"]
+                # Map apartment fallback only to apartment sub-typologies, NOT house rent!
+                for c in ["loyer_m2_moy_appt_t1_t2", "loyer_m2_moy_appt_t3_p"]:
+                    if c not in communes_gdf.columns or (communes_gdf[c].notna() & (communes_gdf[c] > 0)).sum() < 100:
+                        communes_gdf[c] = communes_gdf["loyer_app_m2"]
 
         # Associations merge (Deprecated - Now handled via RNA RAG above)
 
@@ -516,64 +532,6 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         }
         communes_gdf.rename(columns=rename_map, inplace=True)
 
-        # Fill NaNs
-        numeric_cols = [
-            "population",
-            "log_soc_total",
-            "log_soc_inoccupes",
-            "edu_maternelle_ct",
-            "edu_elementaire_ct",
-            "edu_college_ct",
-            "edu_lycee_ct",
-            "edu_eaje_ct",
-            "edu_relais_petite_enfance_ct",
-            "edu_alsh_ct",
-            "edu_micro_creche_ct",
-            "lien_social_count",
-            "svc_incl_count",
-            "pop_active",
-            "pop_employes",
-            "pop_chomeurs",
-            "metiers_offres_diff",
-            "log_priv_vacant_plus_2ans",
-            "log_priv_total",
-            "edu_pe_tx_couverture",
-            "heb_chrs_count",
-            "heb_cph_count",
-            "heb_cada_count",
-            "heb_fjt_count",
-            "heb_pension_count",
-            "heb_loc_iml_count",
-            "heb_habitant_count",
-            "count_hopital",
-            "count_maternite",
-            "count_centre_sante",
-            "count_psy",
-            "count_dialyse",
-            "count_maison_sante",
-            "count_addictologie",
-            "count_pmi",
-            "act_antenne_justice_count",
-            "act_france_services_count",
-            "act_mairie_count",
-            "act_femmes_vuln_count",
-            "gare_count",
-            "has_gare",
-            "nb_stops_bus",
-            "nb_stops_tram",
-            "nb_stops_metro",
-            "nb_stops_train",
-            "nb_stops_total",
-            "inc_siae_count",
-            "log_soc_delay",
-            "sante_apl",
-            "mob_dur_share",
-            "ter_insecurite",
-        ]
-        for col in numeric_cols:
-            if col in communes_gdf.columns:
-                communes_gdf[col] = communes_gdf[col].fillna(0)
-
         # Ensure epci_nom exists (placeholder if missing)
         if "epci_nom" not in communes_gdf.columns:
             if "epci_code" in communes_gdf.columns:
@@ -587,7 +545,9 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         # Rounding
         for col in ["pop_active", "pop_employes", "pop_chomeurs"]:
             if col in communes_gdf.columns:
-                communes_gdf[col] = communes_gdf[col].round(0).astype(int)
+                communes_gdf[col] = pd.to_numeric(
+                    communes_gdf[col], errors="coerce"
+                ).round(0)
 
         # Centroids & Geometry
         # CRITICAL: We project the STORAGE to EPSG:2154 (Lambert-93) for performance and consistency.
@@ -775,7 +735,7 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
             {"path": str(output_path), "rows": len(df_to_save)},
         )
 
-        return communes_gdf
+        return cast(gpd.GeoDataFrame, communes_gdf)
 
     except Exception as e:
         logger.log_step("build_communes", "ERROR", {"error": str(e)})
@@ -803,8 +763,6 @@ def build_bassins_de_vie(
                     geoms = [make_valid(wkb.loads(x)) for x in communes_gdf["polygon"]]
                     communes_gdf = communes_gdf.set_geometry(geoms)
         communes_gdf = communes_gdf.set_geometry("geometry")
-
-        from shapely.validation import make_valid
 
         communes_gdf["geometry"] = communes_gdf.geometry.apply(make_valid)
 
@@ -854,8 +812,6 @@ def build_bassins_de_vie(
         # FIX: Remove holes from the dissolved polygons
         # Some communes might be "enclaves" or topological errors might create holes.
         # We want the BV to be a solid shape covering everything.
-        from shapely.geometry import Polygon, MultiPolygon
-
         def remove_holes(geom):
             if isinstance(geom, Polygon):
                 return Polygon(geom.exterior)
@@ -995,7 +951,7 @@ def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
         incl_clean_path = CLEAN_DIR / "services_inclusion.parquet"
         if incl_clean_path.exists():
             incl_df = pd.read_parquet(incl_clean_path, engine="fastparquet")
-            logging.info(f"Inclusion Clean File Found: {len(incl_df)} rows")
+            # logging.info(f"Inclusion Clean File Found: {len(incl_df)} rows")
 
             # Create unique ID from id_structure and service_slug
             import hashlib

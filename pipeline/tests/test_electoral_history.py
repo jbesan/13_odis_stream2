@@ -1,8 +1,5 @@
-import os
 import json
-import pytest
 import pandas as pd
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 from pipeline.ingest import clean_electoral_history, PipelineLogger
@@ -125,4 +122,3 @@ def test_clean_electoral_history(tmp_path):
     assert pres_33[0]["tour"] == "1er tour"
     assert pres_33[0]["nuance"] == "MÉLENCHON"
     assert pres_33[0]["percentage"] == 100.0
-

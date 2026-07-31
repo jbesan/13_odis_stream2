@@ -9,6 +9,7 @@ from core.models import (
     AssociationDetail,
     InclusionServiceDetail,
 )
+from core.scoring import _format_kpi_value
 from utils.data_loader import get_app_data, fetch_salesforce_jaccueille_bdv
 
 from agents.utils import odis_get_bg_result, launch_background_city_analysis
@@ -852,65 +853,78 @@ def show_ccas_dialog(index: Any):
         st.warning("Données structures non disponibles.")
 
 
-def render_salesforce_jaccueille_expander(commune: CommuneResult):
+def render_jaccueille_housing_info(commune: CommuneResult):
     """
-    Displays an expander under J'Accueille hosts count with clickable Salesforce links.
-    Reads pre-aggregated BDV data lazily from pipeline cache.
+    Renders J'Accueille hosts & prospects counts with report links if org_context == 'jaccueille'.
     """
+    housing_data = commune.housing
+    j_count = int(housing_data.host_count) if housing_data and housing_data.host_count else 0
+
+    # 1. Check org profile (jaccueille only)
+    org_is_jaccueille = False
+    org = st.session_state.get("org")
+    if org:
+        org_id = getattr(org, "id", str(org))
+        if str(org_id).lower() == "jaccueille":
+            org_is_jaccueille = True
+
+    cfg_obj = st.session_state.get("config")
+    if cfg_obj and getattr(cfg_obj, "org_context", None) == "jaccueille":
+        org_is_jaccueille = True
+
+    if st.session_state.get("ui_org_context") == "jaccueille":
+        org_is_jaccueille = True
+
+    # 2. Retrieve salesforce pre-aggregated BDV data
     df_bdv = fetch_salesforce_jaccueille_bdv()
-    if df_bdv.empty or "bassin_de_vie" not in df_bdv.columns:
-        return
-
     bdv_code = getattr(commune.territoire, "bassin_de_vie", None) or commune.codgeo
-    row = df_bdv[df_bdv["bassin_de_vie"] == str(bdv_code)]
-    if row.empty:
-        return
 
-    r = row.iloc[0]
-    c_json = r.get("contact_ids")
-    l_json = r.get("lead_ids")
+    lead_count = 0
+    contact_count = j_count
+    codes_postaux = []
 
-    import json
+    if not df_bdv.empty and "bassin_de_vie" in df_bdv.columns:
+        row = df_bdv[df_bdv["bassin_de_vie"] == str(bdv_code)]
+        if not row.empty:
+            r = row.iloc[0]
+            if "contact_count" in r and pd.notna(r["contact_count"]):
+                contact_count = int(r["contact_count"])
+            if "lead_count" in r and pd.notna(r["lead_count"]):
+                lead_count = int(r["lead_count"])
+            cp_json = r.get("codes_postaux")
+            if cp_json:
+                try:
+                    import json
 
-    contact_ids = []
-    lead_ids = []
-    if c_json:
-        try:
-            contact_ids = json.loads(c_json) if isinstance(c_json, str) else c_json
-        except Exception:
-            pass
-    if l_json:
-        try:
-            lead_ids = json.loads(l_json) if isinstance(l_json, str) else l_json
-        except Exception:
-            pass
+                    codes_postaux = json.loads(cp_json) if isinstance(cp_json, str) else cp_json
+                except Exception:
+                    pass
 
-    if not contact_ids and not lead_ids:
-        return
+    # 3. Main control flow: J'Accueille special case vs standard organization
+    if org_is_jaccueille:
+        if contact_count == 0 and lead_count == 0:
+            return
 
-    expander_label = f"📋 Accueillants & prospects Salesforce ({len(contact_ids)} contacts, {len(lead_ids)} prospects)"
-    with st.expander(expander_label, expanded=False):
-        sf_base_url = "https://jaccueille.my.salesforce.com"
+        cp_param = ",".join(codes_postaux) if codes_postaux else ""
+        acc_report_base = cfg.SF_REPORT_ACCUEILLANTS_URL
+        prosp_report_base = cfg.SF_REPORT_PROSPECTS_URL
 
-        if contact_ids:
-            st.markdown(f"**Accueillants / Contacts ({len(contact_ids)}) :**")
-            displayed_contacts = contact_ids[:30]
-            for cid in displayed_contacts:
-                url = f"{sf_base_url}/{cid}"
-                st.markdown(f"• [fiche Contact Salesforce `{cid}`]({url})")
-            if len(contact_ids) > 30:
-                st.caption(f"*(et {len(contact_ids) - 30} autres contacts...)*")
+        acc_url = f"{acc_report_base}?fv0={cp_param}" if cp_param else acc_report_base
+        prosp_url = f"{prosp_report_base}?fv0={cp_param}" if cp_param else prosp_report_base
 
-        if lead_ids:
-            if contact_ids:
-                st.markdown("---")
-            st.markdown(f"**Prospects ({len(lead_ids)}) :**")
-            displayed_leads = lead_ids[:30]
-            for lid in displayed_leads:
-                url = f"{sf_base_url}/{lid}"
-                st.markdown(f"• [fiche Prospect Salesforce `{lid}`]({url})")
-            if len(lead_ids) > 30:
-                st.caption(f"*(et {len(lead_ids) - 30} autres prospects...)*")
+        st.info(
+            f"**{contact_count} accueillants** J'Accueille dans le bassin de vie ([voir la liste]({acc_url}))  \n"
+            f"**{lead_count} prospects** J'Accueille dans le bassin de vie ([voir la liste]({prosp_url}))"
+        )
+    else:
+        # Standard default behavior for non-J'Accueille organizations
+        if contact_count > 0:
+            st.info(
+                f"**{contact_count} accueillants** J'Accueille dans le bassin de vie."
+            )
+
+
+
 
 
 @st.dialog(
@@ -960,9 +974,9 @@ def show_details_dialog(index: Any):
             )
         with col3:
             st.metric(
-                "Score Global",
-                f"{commune.global_score * 100:.1f}%",
-                help="Adéquation globale avec votre projet de vie",
+                "Indice global",
+                f"{commune.global_score * 100:.1f}/100",
+                help="Indice pondéré (0–100), non calibré comme une probabilité ; il sert à comparer les communes de cette recherche.",
             )
 
     # --- Helper to render scores table ---
@@ -991,7 +1005,7 @@ def show_details_dialog(index: Any):
             for s in scores:
                 c_label, c_val = st.columns([3, 1])
                 with c_label:
-                    st.markdown(f"**{s.label}**")
+                    st.subheader(f"{s.label}")
                     p_val_raw = s.score_normalise
                     p_val = (
                         float(max(0.0, min(1.0, p_val_raw)))
@@ -1000,34 +1014,49 @@ def show_details_dialog(index: Any):
                     )
 
                     # Auto color based on score value
-                    if p_val < 0.35:
+                    if p_val < 0.05:
+                        p_val_bar = 0.05
+                        bar_color = "linear-gradient(90deg, #505050, #000000)"  # Soft to dark Red
+                    elif p_val < 0.35:
+                        p_val_bar = p_val
                         bar_color = "linear-gradient(90deg, #f87171, #ef4444)"  # Soft to dark Red
                     elif p_val < 0.65:
+                        p_val_bar = p_val
                         bar_color = "linear-gradient(90deg, #fbbf24, #f59e0b)"  # Warm Orange/Yellow
                     else:
+                        p_val_bar = p_val
                         bar_color = (
                             "linear-gradient(90deg, #34d399, #10b981)"  # Emerald Green
                         )
 
                     st.markdown(
                         f"""
-                        <div style="width: 100%; background-color: rgba(128, 128, 128, 0.15); border-radius: 4px; height: 8px; margin-top: 4px; overflow: hidden;">
-                            <div style="width: {p_val * 100}%; background: {bar_color}; height: 100%; border-radius: 4px;"></div>
+                        <div style="width: 100%; background-color: rgba(128, 128, 128, 0.15); border-radius: 4px; height: 10px; margin-top: -15px; overflow: hidden;">
+                            <div style="width: {p_val_bar * 100}%; background: {bar_color}; height: 100%; border-radius: 4px;"></div>
                         </div>
                         """,
                         unsafe_allow_html=True,
                     )
-                with c_val:
-                    val_display = s.valeur_kpi
-                    if isinstance(val_display, (int, float)) and pd.notna(val_display):
-                        if isinstance(val_display, int) and val_display > 1000:
-                            st.markdown(f"### {val_display:,}".replace(",", " "))
-                        else:
-                            st.markdown(f"### {val_display}")
-                    else:
-                        st.markdown(f"### {val_display}")
 
-                    st.caption(s.unit if s.unit and s.unit != "None" else "")
+                    val_kpi_c = s.valeur_kpi_commune if s.valeur_kpi_commune is not None else s.valeur_kpi
+                    c_val_fmt = _format_kpi_value(val_kpi_c, s.unit, s.score_id, s.score_normalise_commune or s.score_normalise)
+                    unit_str = f" {s.unit}" if s.unit and s.unit != "None" else ""
+                    c_txt = f"{c_val_fmt}" if c_val_fmt is not None else "Donnée indisponible"
+
+                    if getattr(s, "bdv_applied", False):
+                        b_val_fmt = _format_kpi_value(s.valeur_kpi_bdv, s.unit, s.score_id, s.score_normalise_bdv)    
+                        b_txt = f"{b_val_fmt}" if b_val_fmt is not None else "Donnée indisponible"
+
+                        st.caption(f"Commune : {c_txt} | Bassin de Vie : {b_txt}{unit_str}")
+                    else:
+                        st.caption(f"Commune : {c_txt}{unit_str}")
+                with c_val:
+                    if p_val_raw is not None and pd.notna(p_val_raw):
+                        score_pct_str = f"{p_val * 100:.0f}%"
+                    else:
+                        score_pct_str = "N/A"
+                    st.space('small')
+                    st.subheader(f"{score_pct_str}")
             st.markdown("<br>", unsafe_allow_html=True)  # Minor spacing
 
     # --- Tabs ---
@@ -1135,13 +1164,10 @@ def show_details_dialog(index: Any):
 
         with c1:
             st.markdown("#### :material/home: Indicateurs Logement")
-            j_count = housing_data.host_count
-            if j_count > 0:
-                st.info(
-                    f"**{int(j_count)} accueillants** J'Accueille identifiés dans le bassin de vie."
-                )
-                render_salesforce_jaccueille_expander(commune)
+            render_jaccueille_housing_info(commune)
             render_scores_for_category("logement", scores_list=scores_left)
+
+
 
 
         with c2:
@@ -1437,7 +1463,7 @@ def display_results_list(display_gdf: Optional[pd.DataFrame] = None) -> None:
         )
 
         p_commune = search_results.commune_pressentie
-        title_p = f"**{p_commune.global_score * 100:.1f}%**  |  {p_commune.name} (Ville Souhaitée)"
+        title_p = f"**{p_commune.global_score * 100:.1f}/100**  |  {p_commune.name} (Ville Souhaitée)"
 
         st.button(
             title_p,
@@ -1456,7 +1482,7 @@ def display_results_list(display_gdf: Optional[pd.DataFrame] = None) -> None:
         st.text("Alternatives : ")
 
     for i, commune in enumerate(search_results.results):
-        title = f"**{commune.global_score * 100:.1f}%**  |  {commune.name}"
+        title = f"**{commune.global_score * 100:.1f}/100**  |  {commune.name}"
 
         st.button(
             title,
@@ -1482,10 +1508,10 @@ def _display_result_details(commune: CommuneResult, is_ready: bool = False) -> N
         # --- Pitch ---
         population = f"{commune.population:,}".replace(",", " ")
         libgeo = commune.name
-        score_percent = f"{commune.global_score * 100:.1f}%"
+        score_percent = f"{commune.global_score * 100:.1f}/100"
 
         st.markdown(
-            f"**{libgeo}** ({population} habitants) fait partie du bassin de vie de : **{commune.name_bdv}**.  La correspondance avec le projet est évaluée à **{score_percent}**."
+            f"**{libgeo}** ({population} habitants) fait partie du bassin de vie de : **{commune.name_bdv}**.  L'indice pondéré de cette recherche est de **{score_percent}**."
         )
 
         # Sync background results into model if available

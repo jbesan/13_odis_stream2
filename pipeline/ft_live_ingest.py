@@ -3,7 +3,7 @@ import requests
 import time
 import pandas as pd
 from dotenv import load_dotenv
-from typing import List, Dict, Any
+from typing import Dict, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 
@@ -233,9 +233,9 @@ def run_etl():
     METRICS["start_time"] = time.time()
     get_token()
 
-    print(f"=== Starting Optimized France Travail Live ETL ===")
+    print("=== Starting Optimized France Travail Live ETL ===")
     print(f"Target: Metropolitan France ({len(DEPARTEMENTS)} depts)")
-    print(f"Strategy: Dept -> Domain -> TypeContrat (if needed)")
+    print("Strategy: Dept -> Domain -> TypeContrat (if needed)")
 
     all_raw_data = []
 
@@ -334,7 +334,7 @@ def run_etl():
         missing_depts = [d for d in DEPARTEMENTS if d not in found_depts]
 
         duration = (time.time() - METRICS["start_time"]) / 60
-        print(f"\n=== ETL SUMMARY ===")
+        print("\n=== ETL SUMMARY ===")
         print(f"Duration: {duration:.2f} minutes")
         print(f"Total API Calls: {METRICS['total_calls']}")
         print(f"Rate Limit Errors (429): {METRICS['rate_limit_errors']}")

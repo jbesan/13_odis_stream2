@@ -2,7 +2,6 @@ import os
 import pytest
 import pandas as pd
 import numpy as np
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 from pipeline.odace_client import OdaceClient
@@ -352,4 +351,3 @@ def test_clean_bpe_odace_fallback(mock_get_client, temp_cache_dirs):
     pois_df = pd.read_parquet(clean_dir / "bpe_pois.parquet")
     assert len(pois_df) == 1
     assert pois_df.iloc[0]["name"] == "LOCAL ECOLE MATERNELLE"
-

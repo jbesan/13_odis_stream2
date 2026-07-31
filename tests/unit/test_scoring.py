@@ -419,25 +419,25 @@ class TestScoringLogic:
 class TestConditionalScoring:
     def test_compute_weighted_score_conditional_exclusion(self, live_scores_cat):
         """
-        Tests that 'education' and 'sante' categories are excluded from the weighted score
-        calculation when specific conditions are met (no kids, no health needs).
+        Tests that 'education' is excluded when nb_enfants == 0, while baseline 'sante'
+        (sante_rdv_delay_scaled) is universally included per P1-07 audit fix.
         """
         # Arrange
         df = pd.DataFrame(
             {
                 "emploi_cat_score": [1.0],
-                "education_cat_score": [0.5],  # Should be ignored
-                "sante_cat_score": [0.5],  # Should be ignored
+                "education_cat_score": [0.5],  # Should be ignored (nb_enfants == 0)
+                "sante_cat_score": [0.5],      # Included as universal baseline
                 "logement_cat_score": [1.0],
             }
         )
 
-        # Config with 0 kids and no health needs
+        # Config with 0 kids and no explicit health needs
         config = SearchCriterias(
             poids_emploi=1.0,
             poids_logement=1.0,
-            poids_education=1.0,  # Weight is present, but should be ignored
-            poids_sante=1.0,  # Weight is present, but should be ignored
+            poids_education=1.0,  # Weight is present, but education is ignored (nb_enfants == 0)
+            poids_sante=1.0,      # Weight is present, health baseline is evaluated
             poids_inclusion=0.0,
             poids_mobilite=0.0,
             commune_actuelle="33063",
@@ -450,20 +450,18 @@ class TestConditionalScoring:
             codes_metiers=[],
             codes_formations=[],
             classe_enfants=[],
-            besoin_sante=[],  # Condition to ignore sante
+            besoin_sante=[],  # Empty health needs, but baseline sante_rdv_delay_scaled applies
             inc_services_selection=[],
             inc_asso_add_selection=[],
             criteria_weights={},
         )
 
         # Act
-        # Expected behavior (after fix): (1.0*100 + 1.0*100) / 200 = 1.0
-        # Act
-        # Expected behavior (after fix): (1.0*100 + 1.0*100) / 200 = 1.0
+        # Expected behavior: (1.0*1.0 [emploi] + 1.0*1.0 [logement] + 0.5*1.0 [sante]) / (1.0 + 1.0 + 1.0) = 0.8333333
         engine = scoring.ScoringEngine(
             df_all_communes=pd.DataFrame(),
             df_bv_geo=gpd.GeoDataFrame(),
-            scores_cat=live_scores_cat,  # Not needed for weighted score
+            scores_cat=live_scores_cat,
             associations_data=pd.DataFrame(),
             formations_data=pd.DataFrame(),
             incl_index=pd.DataFrame(),
@@ -471,8 +469,8 @@ class TestConditionalScoring:
         weighted_score = engine._compute_weighted_score(df, config)
 
         # Assert
-        assert weighted_score.iloc[0] == 1.0, (
-            f"Expected 1.0, got {weighted_score.iloc[0]}"
+        assert weighted_score.iloc[0] == pytest.approx(0.8333333333333334), (
+            f"Expected ~0.8333, got {weighted_score.iloc[0]}"
         )
 
     def test_compute_weighted_score_inclusion_when_relevant(self, live_scores_cat):
@@ -1319,3 +1317,167 @@ class TestShortlistCity:
         results_data = engine.create_search_results(processed_gdf, config)
         assert results_data.commune_pressentie is not None
         assert results_data.commune_pressentie.codgeo == "64445"
+
+
+@pytest.mark.unit
+class TestP102ScoringReconciliation:
+    """Tests for P1-02 audit fix: exact score reconciliation, effective weight function, and BdV transparency."""
+
+    def test_get_effective_weight_canonical_behavior(self):
+        config = SearchCriterias(
+            dept_code="33",
+            active_criteria=["mob_dist_current_loc_scaled", "log_loyer_moyen_appt_all_scaled"],
+            criteria_weights={"log_loyer_moyen_appt_all_scaled": 2.5},
+            org_boosts={"log_loyer_moyen_appt_all_scaled": 1.2},
+            freq_retour="1 fois/semaine",
+        )
+
+        # Standard criterion with weight replacement + org boost: 2.5 * 1.2 = 3.0
+        w_rent = scoring.get_effective_weight("log_loyer_moyen_appt_all_scaled", config, catalog_weight=1.0)
+        assert abs(w_rent - 3.0) < 1e-6
+
+        # Proximity criterion with freq multiplier 3.0: catalog 1.0 * 3.0 = 3.0
+        w_prox = scoring.get_effective_weight("mob_dist_current_loc_scaled", config, catalog_weight=1.0)
+        assert abs(w_prox - 3.0) < 1e-6
+
+    def test_global_score_reconciliation_exact(
+        self, sample_data, live_scores_cat, sample_incl_index, global_stats
+    ):
+        config = SearchCriterias(
+            dept_code="33",
+            commune_actuelle="33063",
+            poids_emploi=1.0,
+            poids_logement=1.0,
+            poids_education=0.0,
+            poids_sante=0.0,
+            poids_inclusion=1.0,
+            poids_mobilite=1.0,
+            poids_territoire=1.0,
+            nb_enfants=0,
+        )
+
+        engine = scoring.ScoringEngine(
+            df_all_communes=sample_data,
+            df_bv_geo=gpd.GeoDataFrame(),
+            scores_cat=live_scores_cat,
+            incl_index=sample_incl_index,
+            associations_data=pd.DataFrame(columns=["codgeo", "id_waldec", "count"]),
+            formations_data=pd.DataFrame(columns=["codgeo", "formation_code"]),
+            codformations_index=pd.DataFrame(columns=["label"]),
+            global_stats=global_stats,
+        )
+
+        gdf = engine.run(config)
+        results = engine.create_search_results(gdf, config)
+
+        for commune in results.results:
+            # Category Scores
+            cat_scores = {
+                "emploi": commune.employment.cat_score if commune.employment else 0.0,
+                "logement": commune.housing.cat_score if commune.housing else 0.0,
+                "inclusion": commune.inclusion.cat_score if commune.inclusion else 0.0,
+                "mobilite": commune.mobility.cat_score if commune.mobility else 0.0,
+                "territoire": commune.territoire.cat_score if commune.territoire else 0.0,
+            }
+            # Active weights
+            weights = {
+                "emploi": config.poids_emploi,
+                "logement": config.poids_logement,
+                "inclusion": config.poids_inclusion,
+                "mobilite": config.poids_mobilite,
+                "territoire": config.poids_territoire,
+            }
+            expected_global = sum(cat_scores[k] * weights[k] for k in cat_scores) / sum(weights.values())
+            assert abs(commune.global_score - expected_global) < 1e-6, (
+                f"Global score mismatch for {commune.name}: got {commune.global_score}, expected {expected_global}"
+            )
+
+
+@pytest.mark.unit
+class TestMissingnessHandling:
+    def test_category_scoring_excludes_nan(self, live_scores_cat, sample_data, sample_incl_index, global_stats):
+        """Verify that NaN criterion scores are excluded from category weighted means without biasing to 0 or 1."""
+        df = sample_data.copy()
+        # Set ter_insecurite_scaled to NaN for Bordeaux (33063)
+        df.loc["33063", "ter_insecurite_scaled"] = None
+
+        config = SearchCriterias(
+            loc_type="departement",
+            loc_code="33",
+            commune_actuelle="33063",
+        )
+
+        engine = scoring.ScoringEngine(
+            df_all_communes=df,
+            df_bv_geo=gpd.GeoDataFrame(),
+            scores_cat=live_scores_cat,
+            incl_index=sample_incl_index,
+            associations_data=pd.DataFrame(columns=["codgeo", "id_waldec", "count"]),
+            formations_data=pd.DataFrame(columns=["codgeo", "formation_code"]),
+            codformations_index=pd.DataFrame(columns=["label"]),
+            global_stats=global_stats,
+        )
+
+        df_scored = engine._compute_category_scores(df, config)
+        # Bordeaux's ter_insecurite_scaled should be NaN
+        assert pd.isna(df_scored.loc["33063", "ter_insecurite_scaled"])
+
+
+@pytest.mark.unit
+class TestP108TieBreak:
+    """Tests for P1-08: Secondary sorting by territoire_cat_score when weighted_score ties."""
+
+    def test_territoire_tie_break_order(self, sample_data, live_scores_cat, sample_incl_index, global_stats):
+        df = sample_data.copy()
+
+        # Add a second commune in dept 33 so dept filtering returns 2 communes
+        c1, c2 = "33063", "33999"
+        df.loc[c2] = df.loc[c1].copy()
+        df.loc[c2, "libgeo"] = "Commune Test 2"
+
+        config = SearchCriterias(
+            loc_type="departement",
+            loc_code="33",
+            commune_actuelle="33063",
+        )
+
+        engine = scoring.ScoringEngine(
+            df_all_communes=df,
+            df_bv_geo=gpd.GeoDataFrame(),
+            scores_cat=live_scores_cat,
+            incl_index=sample_incl_index,
+            associations_data=pd.DataFrame(columns=["codgeo", "id_waldec", "count"]),
+            formations_data=pd.DataFrame(columns=["codgeo", "formation_code"]),
+            codformations_index=pd.DataFrame(columns=["label"]),
+            global_stats=global_stats,
+        )
+
+        # Force equal weighted score inputs by giving identical values to non-territoire criteria
+        # but higher ter_pol_scaled to c2
+        df.loc[c1, "ter_pol_scaled"] = 0.0
+        df.loc[c2, "ter_pol_scaled"] = 1.0
+
+        # Adjust another criterion so weighted_score stays equal between c1 and c2
+        # c1 gets 1.0 for log_vac_scaled (weight 1.0), c2 gets 0.0
+        # c1 gets 0.0 for ter_pol_scaled (weight 1.0), c2 gets 1.0 for ter_pol_scaled (weight 1.0)
+        df.loc[c1, "log_vac_scaled"] = 1.0
+        df.loc[c2, "log_vac_scaled"] = 0.0
+
+        results_tied = engine.run(config)
+
+        # Both c1 and c2 have equal weighted_score contribution, but c2 has higher territoire_cat_score
+        score_c1 = results_tied.loc[c1, "weighted_score"]
+        score_c2 = results_tied.loc[c2, "weighted_score"]
+        assert abs(score_c1 - score_c2) < 1e-5, f"Expected equal weighted score, got {score_c1} vs {score_c2}"
+
+        ter_c1 = results_tied.loc[c1, "territoire_cat_score"]
+        ter_c2 = results_tied.loc[c2, "territoire_cat_score"]
+        assert ter_c2 > ter_c1
+
+        # Assert c2 is sorted before c1 because of secondary key territoire_cat_score
+        idx_c1 = results_tied.index.get_loc(c1)
+        idx_c2 = results_tied.index.get_loc(c2)
+        assert idx_c2 < idx_c1, f"Expected c2 ({c2}) to be ordered before c1 ({c1}) due to territoire_cat_score tie-break"
+
+
+

@@ -3,7 +3,6 @@ import logging
 import requests
 from datetime import datetime
 import pandas as pd
-import geopandas as gpd
 import numpy as np
 import json
 import time
@@ -17,7 +16,6 @@ from pipeline.common import (
     PipelineLogger,
     load_config,
     load_dataset,
-    extract_zip,
     CONFIG_FILE,
     CACHE_DIR,
     CLEAN_DIR,
@@ -26,9 +24,6 @@ from pipeline.common import (
     is_cache_valid,
     fetch_remote_metadata_datagouv,
     validate_dataset_contract,
-    atomic_swap,
-    get_ingest_paths,
-    finalize_ingest,
 )
 from pipeline.odace_client import get_odace_client
 from pipeline.ft_live_ingest import run_etl, get_token as get_ft_token
@@ -297,7 +292,7 @@ def fetch_rome_referential(
         url = "https://api.francetravail.io/partenaire/offresdemploi/v2/referentiel/metiers"
         headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
 
-        logging.info(f"📡 [ROME] Fetching referential from France Travail API...")
+        logging.info("📡 [ROME] Fetching referential from France Travail API...")
         response = requests.get(url, headers=headers, timeout=30)
         response.raise_for_status()
         data = response.json()
@@ -501,19 +496,21 @@ def clean_lovac(config: Dict[str, Any], logger: PipelineLogger):
                     "nb_logements_prives_total": "log_priv_total_24",
                 }
                 df_out = df_odace.rename(columns=rename_dict)
-                for col in ["codgeo", "pp_vacant_plus_2ans_25", "log_priv_total_24"]:
+                if "codgeo" not in df_out.columns:
+                    raise ValueError("LOVAC source is missing commune_insee_code")
+                for col in ["pp_vacant_plus_2ans_25", "log_priv_total_24"]:
                     if col not in df_out.columns:
-                        df_out[col] = 0
+                        df_out[col] = np.nan
                 df_out = df_out[
                     ["codgeo", "pp_vacant_plus_2ans_25", "log_priv_total_24"]
                 ].copy()
                 df_out["codgeo"] = df_out["codgeo"].astype(str).str.zfill(5)
                 df_out["pp_vacant_plus_2ans_25"] = pd.to_numeric(
                     df_out["pp_vacant_plus_2ans_25"], errors="coerce"
-                ).fillna(0)
+                )
                 df_out["log_priv_total_24"] = pd.to_numeric(
                     df_out["log_priv_total_24"], errors="coerce"
-                ).fillna(0)
+                )
 
                 output_path = CLEAN_DIR / "lovac.parquet"
                 df_out.to_parquet(output_path, engine="fastparquet")
@@ -582,19 +579,19 @@ def clean_lovac(config: Dict[str, Any], logger: PipelineLogger):
 
         if vac_col and vac_col in df.columns:
             df[vac_col] = pd.to_numeric(
-                df[vac_col].replace("s", 0), errors="coerce"
-            ).fillna(0)
+                df[vac_col].replace("s", np.nan), errors="coerce"
+            )
 
             # Extract Total Housing
             if total_col in df.columns:
                 df[total_col] = pd.to_numeric(
-                    df[total_col].replace("s", 0), errors="coerce"
-                ).fillna(0)
+                    df[total_col].replace("s", np.nan), errors="coerce"
+                )
             else:
                 logging.warning(
-                    f"LOVAC: {total_col} not found in {df.columns}. Setting to 0."
+                    f"LOVAC: {total_col} not found in {df.columns}. Preserving missing values."
                 )
-                df[total_col] = 0
+                df[total_col] = np.nan
 
             df_out = df[[codgeo_col, vac_col, total_col]].rename(
                 columns={
@@ -644,19 +641,21 @@ def clean_rpls(config: Dict[str, Any], logger: PipelineLogger):
                         "nb_logements_vacants": "log_soc_inoccupes",
                     }
                     df_out = merged.rename(columns=rename_dict)
-                    for col in ["codgeo", "log_soc_total", "log_soc_inoccupes"]:
+                    if "codgeo" not in df_out.columns:
+                        raise ValueError("RPLS source is missing commune_insee_code")
+                    for col in ["log_soc_total", "log_soc_inoccupes"]:
                         if col not in df_out.columns:
-                            df_out[col] = 0
+                            df_out[col] = np.nan
                     df_out = df_out[
                         ["codgeo", "log_soc_total", "log_soc_inoccupes"]
                     ].copy()
                     df_out["codgeo"] = df_out["codgeo"].astype(str).str.zfill(5)
                     df_out["log_soc_total"] = pd.to_numeric(
                         df_out["log_soc_total"], errors="coerce"
-                    ).fillna(0)
+                    )
                     df_out["log_soc_inoccupes"] = pd.to_numeric(
                         df_out["log_soc_inoccupes"], errors="coerce"
-                    ).fillna(0)
+                    )
 
                     output_path = CLEAN_DIR / "rpls.parquet"
                     df_out.to_parquet(output_path, engine="fastparquet")
@@ -713,8 +712,8 @@ def clean_rpls(config: Dict[str, Any], logger: PipelineLogger):
     )
 
     if total_col and vac_col:
-        df["log_soc_total"] = pd.to_numeric(df[total_col], errors="coerce").fillna(0)
-        df["log_soc_inoccupes"] = pd.to_numeric(df[vac_col], errors="coerce").fillna(0)
+        df["log_soc_total"] = pd.to_numeric(df[total_col], errors="coerce")
+        df["log_soc_inoccupes"] = pd.to_numeric(df[vac_col], errors="coerce")
         df_out = df[["codgeo", "log_soc_total", "log_soc_inoccupes"]]
 
         output_path = CLEAN_DIR / "rpls.parquet"
@@ -750,7 +749,7 @@ def clean_caf(config: Dict[str, Any], logger: PipelineLogger):
                 df_out = df_odace[["codgeo", "taux_couverture"]].copy()
                 df_out["taux_couverture"] = pd.to_numeric(
                     df_out["taux_couverture"], errors="coerce"
-                ).fillna(0)
+                )
 
                 output_path = CLEAN_DIR / "caf.parquet"
                 df_out.to_parquet(output_path, engine="fastparquet")
@@ -801,7 +800,7 @@ def clean_caf(config: Dict[str, Any], logger: PipelineLogger):
         if "taux_couverture" in df.columns:
             df["taux_couverture"] = pd.to_numeric(
                 df["taux_couverture"], errors="coerce"
-            ).fillna(0)
+            )
             df_out = df[["codgeo", "taux_couverture"]].copy()
 
             output_path = CLEAN_DIR / "caf.parquet"
@@ -1252,7 +1251,7 @@ def clean_population(config: Dict[str, Any], logger: PipelineLogger):
                 df_out["codgeo"] = df_out["codgeo"].astype(str).str.zfill(5)
                 df_out["population"] = pd.to_numeric(
                     df_out["population"], errors="coerce"
-                ).fillna(0)
+                )
 
                 # No longer overriding population for Paris, Marseille, and Lyon as Odace API now returns correct populations for parent codes
 
@@ -2608,7 +2607,7 @@ def clean_population_details(config: Dict[str, Any], logger: PipelineLogger):
                 df_filtered["year"] = df_filtered["TIME_PERIOD"].astype(str)
                 df_filtered["count"] = pd.to_numeric(
                     df_filtered["OBS_VALUE"], errors="coerce"
-                ).fillna(0)
+                )
 
                 age_mapping = {
                     "Y_LT15": "jeune",
@@ -2617,11 +2616,12 @@ def clean_population_details(config: Dict[str, Any], logger: PipelineLogger):
                 }
                 df_filtered["age_group"] = df_filtered["AGE"].map(age_mapping)
 
-                df_pivot = df_filtered.pivot_table(
-                    index="codgeo",
-                    columns=["age_group", "year"],
-                    values="count",
-                    aggfunc="sum",
+                df_pivot = (
+                    df_filtered.groupby(
+                        ["codgeo", "age_group", "year"], observed=True
+                    )["count"]
+                    .sum(min_count=1)
+                    .unstack(["age_group", "year"])
                 )
                 df_pivot.columns = [f"pop_{c[0]}_{c[1]}" for c in df_pivot.columns]
                 df_pivot = df_pivot.reset_index()
@@ -2634,7 +2634,7 @@ def clean_population_details(config: Dict[str, Any], logger: PipelineLogger):
                 ]
                 for col in expected_cols:
                     if col not in df_pivot.columns:
-                        df_pivot[col] = 0.0
+                        df_pivot[col] = np.nan
 
                 output_path = CLEAN_DIR / "population_details.parquet"
                 df_pivot.to_parquet(output_path, engine="fastparquet")
@@ -2688,7 +2688,7 @@ def clean_population_details(config: Dict[str, Any], logger: PipelineLogger):
     df["year"] = df["TIME_PERIOD"].astype(str)
 
     # Value to numeric
-    df["count"] = pd.to_numeric(df["OBS_VALUE"], errors="coerce").fillna(0)
+    df["count"] = pd.to_numeric(df["OBS_VALUE"], errors="coerce")
 
     # Aggregate Active Group
     # Map ages to broad categories
@@ -2700,8 +2700,10 @@ def clean_population_details(config: Dict[str, Any], logger: PipelineLogger):
     # Columns: {age_group}_{year}
     # Values: Sum of count
 
-    df_pivot = df.pivot_table(
-        index="codgeo", columns=["age_group", "year"], values="count", aggfunc="sum"
+    df_pivot = (
+        df.groupby(["codgeo", "age_group", "year"], observed=True)["count"]
+        .sum(min_count=1)
+        .unstack(["age_group", "year"])
     )
 
     # Flatten Columns
@@ -2709,7 +2711,7 @@ def clean_population_details(config: Dict[str, Any], logger: PipelineLogger):
     df_pivot.columns = [f"pop_{c[0]}_{c[1]}" for c in df_pivot.columns]
     df_pivot.reset_index(inplace=True)
 
-    # Ensure expected columns exist (fill 0 if checking years 2016/2022)
+    # An absent reference year is unavailable data, not an observed zero population.
     expected_cols = [
         "pop_jeune_2016",
         "pop_jeune_2022",
@@ -2719,9 +2721,9 @@ def clean_population_details(config: Dict[str, Any], logger: PipelineLogger):
     for col in expected_cols:
         if col not in df_pivot.columns:
             logging.warning(
-                f"Population Details: Missing expected column {col}. Setting to 0."
+                f"Population Details: Missing expected column {col}. Preserving as unavailable."
             )
-            df_pivot[col] = 0.0
+            df_pivot[col] = np.nan
 
     output_path = CLEAN_DIR / "population_details.parquet"
     df_pivot.to_parquet(output_path, engine="fastparquet")
@@ -3579,9 +3581,13 @@ def clean_odace_rent(config: Dict[str, Any], logger: PipelineLogger):
     df_profil = client.fetch_ref_logement_profil()
 
     if df_rent.empty or df_profil.empty:
-        logging.warning(
-            "Odace API returned empty data for rent facts or housing profiles."
+        error_msg = (
+            f"CRITICAL ERROR: Odace API returned empty data for rent facts (empty={df_rent.empty}) "
+            f"or housing profiles (empty={df_profil.empty})!"
         )
+        logging.error(error_msg)
+        print(f"ERROR [clean_odace_rent]: {error_msg}")
+        logger.log_step("clean_odace_rent", "ERROR", error_msg)
         return
 
     # Filter for relevant data (Prioritize 'commune', fallback to 'maille' if commune not available)
@@ -3905,7 +3911,7 @@ def clean_log_soc_delay(config: Dict[str, Any], logger: PipelineLogger):
                 )
                 df_odace["log_soc_delay"] = pd.to_numeric(
                     df_odace["log_soc_delay"], errors="coerce"
-                ).fillna(0)
+                )
 
                 # Group by epci_code and average
                 df_clean = (
@@ -3951,7 +3957,7 @@ def clean_log_soc_delay(config: Dict[str, Any], logger: PipelineLogger):
         df["epci_code"] = df["epci_code"].astype(str).str.strip().str.zfill(9)
         df["log_soc_delay"] = pd.to_numeric(
             df["log_soc_delay"], errors="coerce"
-        ).fillna(0)
+        )
 
         # Group by epci_code and average
         df_clean = df.groupby("epci_code")["log_soc_delay"].mean().reset_index()
@@ -3988,7 +3994,7 @@ def clean_sante_apl(config: Dict[str, Any], logger: PipelineLogger):
                 df_out["codgeo"] = df_out["codgeo"].astype(str).str.zfill(5)
                 df_out["sante_apl"] = pd.to_numeric(
                     df_out["sante_apl"], errors="coerce"
-                ).fillna(0)
+                )
 
                 output_path.parent.mkdir(parents=True, exist_ok=True)
                 df_out.to_parquet(output_path, engine="fastparquet")
@@ -4022,7 +4028,7 @@ def clean_sante_apl(config: Dict[str, Any], logger: PipelineLogger):
             columns={codgeo_col: "codgeo", val_col: "sante_apl"}
         )
         df["codgeo"] = df["codgeo"].astype(str).str.zfill(5)
-        df["sante_apl"] = pd.to_numeric(df["sante_apl"], errors="coerce").fillna(0)
+        df["sante_apl"] = pd.to_numeric(df["sante_apl"], errors="coerce")
 
         df.to_parquet(output_path, engine="fastparquet")
         logger.log_step("clean_sante_apl", "COMPLETED", {"rows": len(df)})
@@ -4061,7 +4067,7 @@ def clean_mob_durable(config: Dict[str, Any], logger: PipelineLogger):
                 df_pivot["mob_dur_share"] = np.where(
                     df_pivot["total_valeur"] > 0,
                     df_pivot[present_durable].sum(axis=1) / df_pivot["total_valeur"],
-                    0.0,
+                    np.nan,
                 )
 
                 df_out = df_pivot[["codgeo", "mob_dur_share"]]
@@ -4112,7 +4118,7 @@ def clean_mob_durable(config: Dict[str, Any], logger: PipelineLogger):
         df_pivot["mob_dur_share"] = np.where(
             df_pivot["total_valeur"] > 0,
             df_pivot[present_durable].sum(axis=1) / df_pivot["total_valeur"],
-            0.0,
+            np.nan,
         )
 
         df_out = df_pivot[["codgeo", "mob_dur_share"]]
@@ -4140,7 +4146,7 @@ def clean_ter_insecurite(config: Dict[str, Any], logger: PipelineLogger):
 
                 df_agg = (
                     df_odace.groupby("commune_insee_code")["taux_pour_mille"]
-                    .sum()
+                    .sum(min_count=1)
                     .reset_index()
                 )
                 df_agg.rename(
@@ -4183,7 +4189,11 @@ def clean_ter_insecurite(config: Dict[str, Any], logger: PipelineLogger):
         latest = df["annee"].max()
         df = df[df["annee"] == latest]
 
-        df_agg = df.groupby("CODGEO_2025")["taux_pour_mille"].sum().reset_index()
+        df_agg = (
+            df.groupby("CODGEO_2025")["taux_pour_mille"]
+            .sum(min_count=1)
+            .reset_index()
+        )
         df_agg.rename(
             columns={"CODGEO_2025": "codgeo", "taux_pour_mille": "ter_insecurite"},
             inplace=True,
@@ -4195,208 +4205,8 @@ def clean_ter_insecurite(config: Dict[str, Any], logger: PipelineLogger):
 
 
 def clean_jaccueille(config: Dict[str, Any], logger: PipelineLogger):
-    """Cleans J'Accueille data and aggregates by Bassin de Vie."""
-    logger.log_step("clean_jaccueille", "STARTED")
-    source = config.get("local_files", {}).get("jaccueille")
-    if not source:
-        source = config["sources"].get("jaccueille")
-
-    if not source:
-        logging.warning("J'Accueille source config not found.")
-        return
-
-    if source.get("use_odace", False):
-        try:
-            client = get_odace_client(logger)
-            df_odace = client.fetch_table(source.get("odace_table", "dim_accueillant"))
-            if not df_odace.empty:
-                # Group by commune_sk to count hosts
-                df_counts = (
-                    df_odace.groupby("commune_sk")
-                    .size()
-                    .rename("heb_jaccueille_count")
-                    .reset_index()
-                )
-
-                # Join with dim_commune to get commune_insee_code
-                df_commune = client.fetch_dim_commune()
-                if not df_commune.empty:
-                    merged = df_counts.merge(
-                        df_commune[["commune_sk", "commune_insee_code"]],
-                        on="commune_sk",
-                        how="inner",
-                    )
-                    merged.rename(
-                        columns={"commune_insee_code": "codgeo"}, inplace=True
-                    )
-                    merged["codgeo"] = merged["codgeo"].astype(str).str.zfill(5)
-
-                    # Merge with Bassin de Vie mapping
-                    bdv_cfg = config["sources"]["bassins_de_vie"]
-                    bdv_path = CACHE_DIR / bdv_cfg["archive_file"]
-
-                    if bdv_path.exists():
-                        df_bdv = load_dataset(bdv_path, bdv_cfg)
-                        codgeo_col = next(
-                            (
-                                c
-                                for c in df_bdv.columns
-                                if "Code géographique" in c or "CODGEO" in c
-                            ),
-                            None,
-                        )
-                        bdv_col = next(
-                            (c for c in df_bdv.columns if "Bassin de vie" in c), None
-                        )
-
-                        if codgeo_col and bdv_col:
-                            df_bdv = df_bdv[[codgeo_col, bdv_col]].rename(
-                                columns={codgeo_col: "codgeo", bdv_col: "bassin_de_vie"}
-                            )
-                            df_bdv["codgeo"] = df_bdv["codgeo"].astype(str).str.zfill(5)
-                            df_bdv["bassin_de_vie"] = (
-                                df_bdv["bassin_de_vie"]
-                                .astype(str)
-                                .str.replace(r"\.0$", "", regex=True)
-                            )
-
-                            merged_bdv = merged.merge(df_bdv, on="codgeo", how="inner")
-                            df_agg = (
-                                merged_bdv.groupby("bassin_de_vie")[
-                                    "heb_jaccueille_count"
-                                ]
-                                .sum()
-                                .reset_index()
-                            )
-
-                            output_path = CLEAN_DIR / "jaccueille_bdv.parquet"
-                            df_agg.to_parquet(output_path, engine="fastparquet")
-                            logger.log_step(
-                                "clean_jaccueille",
-                                "COMPLETED",
-                                {"rows": len(df_agg), "source": "odace"},
-                            )
-                            return
-                        else:
-                            logging.warning(
-                                "Bassin de vie columns not identified for Odace J'Accueille mapping."
-                            )
-                    else:
-                        logging.warning(
-                            "Bassin de vie file not found for Odace J'Accueille mapping."
-                        )
-                else:
-                    logging.warning(
-                        "Odace dim_commune empty for J'Accueille. Falling back to legacy."
-                    )
-            else:
-                logging.warning(
-                    "Odace fetch returned empty data for J'Accueille. Falling back to legacy."
-                )
-        except Exception as e:
-            logging.error(
-                f"Failed to fetch J'Accueille from Odace: {e}. Falling back to legacy."
-            )
-
-    path = CACHE_DIR / source["local_name"]
-    if not path.exists():
-        # Maybe it's directly in local? The fetch_source should have copied it.
-        logging.warning(f"J'Accueille file not found at {path}.")
-        return
-
-    # 1. Load J'Accueille CSV
-    try:
-        df = pd.read_csv(path)
-    except Exception as e:
-        df = pd.read_csv(path, sep=";")  # fallback
-
-    # Expected columns: 'Code postal', 'Nombre d'enregistrements'
-    cp_col = next(
-        (c for c in df.columns if "Code postal" in c or "code_postal" in c), None
-    )
-    val_col = next(
-        (
-            c
-            for c in df.columns
-            if "Nombre d'enregistrements" in c
-            or "accueillants" in c.lower()
-            or "count" in c.lower()
-        ),
-        None,
-    )
-
-    if not cp_col or not val_col:
-        logging.warning(f"J'Accueille: Could not identify columns. Found: {df.columns}")
-        return
-
-    df = df.rename(columns={cp_col: "code_postal", val_col: "heb_jaccueille_count"})
-    df["code_postal"] = (
-        df["code_postal"].astype(str).str.replace(r"\.0$", "", regex=True).str.zfill(5)
-    )
-    df["heb_jaccueille_count"] = pd.to_numeric(
-        df["heb_jaccueille_count"], errors="coerce"
-    ).fillna(0)
-
-    # 2. Map Code Postal -> Code Commune -> Bassin de Vie
-    # A. Code Postal -> Commune (using official mapping)
-    cp_mapping_path = CLEAN_DIR / "codes_postaux.parquet"
-    if not cp_mapping_path.exists():
-        logging.warning("Codes Postaux mapping not found, cannot map J'Accueille data.")
-        return
-
-    df_cp = pd.read_parquet(
-        cp_mapping_path, engine="fastparquet"
-    )  # 'code_postal', 'codgeo'
-
-    # Take the first commune for a given postal code (since 1 CP maps to 1 BDV eventually)
-    df_cp_unique = df_cp.drop_duplicates(subset=["code_postal"], keep="first")
-
-    merged = df.merge(df_cp_unique, on="code_postal", how="inner")
-
-    # B. Commune -> Bassin de Vie (using our pre-processed mapping or from BDV dataset)
-    # The BDV mapping is usually applied in `build.py`, but we can extract it from the raw BDV file or communes_pre if it exists.
-    # Let's read it from the raw BDV file loaded earlier (bassins_de_vie)
-    bdv_cfg = config["sources"]["bassins_de_vie"]
-    bdv_path = CACHE_DIR / bdv_cfg["archive_file"]
-
-    if not bdv_path.exists():
-        logging.warning("Bassin de vie raw file not found.")
-        return
-
-    df_bdv = load_dataset(bdv_path, bdv_cfg)
-
-    codgeo_col = next(
-        (c for c in df_bdv.columns if "Code géographique" in c or "CODGEO" in c), None
-    )
-    bdv_col = next((c for c in df_bdv.columns if "Bassin de vie" in c), None)
-
-    if codgeo_col and bdv_col:
-        df_bdv = df_bdv[[codgeo_col, bdv_col]].rename(
-            columns={codgeo_col: "codgeo", bdv_col: "bassin_de_vie"}
-        )
-        df_bdv["codgeo"] = df_bdv["codgeo"].astype(str).str.zfill(5)
-        df_bdv["bassin_de_vie"] = (
-            df_bdv["bassin_de_vie"].astype(str).str.replace(r"\.0$", "", regex=True)
-        )
-
-        merged_bdv = merged.merge(df_bdv, on="codgeo", how="inner")
-
-        # Aggregate by BDV
-        df_agg = (
-            merged_bdv.groupby("bassin_de_vie")["heb_jaccueille_count"]
-            .sum()
-            .reset_index()
-        )
-
-        output_path = CLEAN_DIR / "jaccueille_bdv.parquet"
-        df_agg.to_parquet(output_path, engine="fastparquet")
-        logger.log_step(
-            "clean_jaccueille",
-            "COMPLETED",
-            {"path": str(output_path), "rows": len(df_agg)},
-        )
-    else:
-        logging.warning("Bassin de vie columns not identified for mapping.")
+    """Cleans J'Accueille data via live Salesforce integration (replaces legacy CSV)."""
+    return clean_salesforce_jaccueille(config, logger)
 
 
 def clean_jaccueille_prospects(config: Dict[str, Any], logger: PipelineLogger):

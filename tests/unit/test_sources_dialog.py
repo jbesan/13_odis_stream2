@@ -1,7 +1,6 @@
 import json
 import pytest
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from services.telemetry import get_manifest_version
 from ui.sources_dialog import load_manifest, format_iso_date
@@ -77,4 +76,3 @@ def test_show_sources_dialog_dataframe_urls():
         df_passed = mock_st_dataframe.call_args[0][0]
         assert df_passed.loc[0, "Documentation"] == "https://www.data.gouv.fr/datasets/contours-administratifs/"
         assert df_passed.loc[1, "Documentation"] is None
-

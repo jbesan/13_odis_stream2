@@ -30,6 +30,80 @@ from utils.common import project_point
 from services.rna_rag import RNARagService
 
 
+def get_effective_weight(
+    score_id: str,
+    config: Optional[SearchCriterias],
+    catalog_weight: float,
+) -> float:
+    """Calculates canonical effective weight for a criterion.
+
+    Order of operations:
+    1. Base weight: user-defined criteria_weights[score_id] if present in config, else catalog_weight.
+    2. Org boost: multiplied by org_boosts[score_id] if present.
+    3. Proximity frequency multiplier: applied for proximity criteria based on freq_retour.
+    """
+    if config is None:
+        return float(catalog_weight)
+
+    # 1. Base weight (user preference replaces catalog default)
+    if config.criteria_weights and score_id in config.criteria_weights:
+        weight = float(config.criteria_weights[score_id])
+    else:
+        weight = float(catalog_weight)
+
+    # 2. Org boost
+    org_boosts = getattr(config, "org_boosts", None)
+    if org_boosts and score_id in org_boosts:
+        weight *= float(org_boosts[score_id])
+
+    # 3. Frequency multiplier for proximity criteria (F-60)
+    if score_id in ["mob_epci_scaled", "mob_dist_current_loc_scaled"]:
+        freq = getattr(config, "freq_retour", "Pas d'attache particulière")
+        multiplier = 1.0
+        if freq == "1 fois/semaine":
+            multiplier = 3.0
+        elif freq == "1 fois/mois":
+            multiplier = 2.0
+        elif freq == "1 fois/an":
+            multiplier = 1.0
+        else:
+            multiplier = 0.0
+        weight *= multiplier
+
+    return weight
+
+
+def _format_kpi_value(
+    val_raw: Any,
+    unit: str,
+    score_id: str,
+    val_scaled: Optional[float] = None,
+    fmt: Optional[str] = None,
+) -> Any:
+    if val_raw is None or pd.isna(val_raw):
+        return None
+    if fmt == "bool" or (score_id == "mob_gare_scaled" and val_scaled is not None):
+        return "Oui" if (val_raw == 1 or val_scaled == 1.0) else "Non"
+    if isinstance(val_raw, (int, float, np.integer, np.floating)):
+        try:
+            f_val = float(val_raw)
+            if fmt and fmt != "bool":
+                return fmt.format(f_val).replace(",", " ")
+            if unit == "habitants":
+                v_int = int(round(f_val))
+                return f"{v_int:,}".replace(",", " ") if v_int > 1000 else v_int
+            elif unit in ["%", "assos/1000 hab.", "crimes+délits/1000 hab."]:
+                return round(f_val, 1)
+            elif f_val.is_integer():
+                v_int = int(f_val)
+                return f"{v_int:,}".replace(",", " ") if v_int > 1000 else v_int
+            else:
+                return round(f_val, 1)
+        except Exception:
+            return val_raw
+    return val_raw
+
+
 class ScoringEngine:
     """
     The engine responsible for running the ODIS scoring algorithm.
@@ -137,6 +211,27 @@ class ScoringEngine:
             )
         return 0.0, 1.0
 
+    def _apply_configured_score_missingness(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Apply the catalog's missing-data rule to runtime score outputs.
+
+        Dynamic enrichments leave unavailable source data as null.  This is the
+        sole runtime policy boundary that may turn those nulls into zeroes.
+        """
+        if self.scores_cat.empty or "score" not in self.scores_cat.columns:
+            return df
+
+        strategy = (
+            self.scores_cat.set_index("score")["missing_strategy"]
+            if "missing_strategy" in self.scores_cat.columns
+            else pd.Series("exclude", index=self.scores_cat["score"])
+        )
+        for score_id in strategy[strategy == "zero"].index:
+            if score_id in df.columns:
+                df[score_id] = df[score_id].fillna(0.0)
+            else:
+                df[score_id] = 0.0
+        return df
+
     def _compute_distance_score(
         self, df: pd.DataFrame, config: SearchCriterias
     ) -> pd.DataFrame:
@@ -190,7 +285,8 @@ class ScoringEngine:
     def _compute_category_scores(
         self, df: pd.DataFrame, config: SearchCriterias
     ) -> pd.DataFrame:
-        # Operating in-place on the provided DataFrame
+        df = df.copy()
+
 
         # Use cached active criteria if available
         active = (
@@ -203,8 +299,6 @@ class ScoringEngine:
         for category in self.categories:
             # Skip if category totally irrelevant
             if category == "education" and getattr(config, "nb_enfants", 1) == 0:
-                continue
-            if category == "sante" and not getattr(config, "besoin_sante", []):
                 continue
 
             # Find columns for this category that are active
@@ -238,54 +332,55 @@ class ScoringEngine:
                     and val_bdv is None
                 ):
                     logger.warning(
-                        f"⚠️ [SCORING] Active criterion '{sid}' (or '{sid_bdv}') is MISSING from the input data. Score will be defaulted to 0."
+                        f"⚠️ [SCORING] Active criterion '{sid}' (or '{sid_bdv}') is MISSING from the input data. The configured missing-data policy will be applied."
                     )
-                # 4. Combine using bdv_factor (Multi-mode: Bonus or Malus)
+                # 4. Read config-driven missing_strategy
+                missing_strat = s_row.get("missing_strategy", "exclude")
+                if missing_strat == "zero":
+                    if val_commune is not None:
+                        val_commune = val_commune.fillna(0.0)
+                    if val_bdv is not None:
+                        val_bdv = val_bdv.fillna(0.0)
+
+                # Combine using bdv_factor (Multi-mode: Bonus or Malus)
                 if val_commune is not None and val_bdv is not None:
-                    s_c = val_commune.fillna(0)
-                    s_b = val_bdv.fillna(0)
+                    s_c = val_commune.fillna(0.0)
+                    s_b = val_bdv.fillna(0.0)
                     if bdv_f > 0.0:
                         # Formula: Sc + (1 - Sc) * (Sb * factor)
                         # Bassin de Vie opportunities act as a bonus to local ones
-                        val = s_c + (1.0 - s_c) * (s_b * bdv_f)
+                        combined = s_c + (1.0 - s_c) * (s_b * bdv_f)
+                        val = pd.Series(
+                            np.where(val_commune.notna() | val_bdv.notna(), combined, np.nan),
+                            index=df.index,
+                        )
                     elif bdv_f < 0.0:
                         # Proportional Malus: Reduces score based on "lack of goodness" in BdV
                         # Formula: Sc - Sc * (1.0 - Sb) * abs(factor)
-                        val = s_c - s_c * (1.0 - s_b) * abs(bdv_f)
+                        combined = s_c - s_c * (1.0 - s_b) * abs(bdv_f)
+                        val = pd.Series(
+                            np.where(val_commune.notna(), combined, np.nan),
+                            index=df.index,
+                        )
                     else:
-                        val = s_c
+                        val = val_commune
                 elif val_commune is not None:
-                    val = val_commune.fillna(0)
+                    val = val_commune
                 elif val_bdv is not None:
-                    val = val_bdv.fillna(0)
+                    val = pd.Series(
+                        np.where(val_bdv.notna(), val_bdv * max(bdv_f, 0.0), np.nan),
+                        index=df.index,
+                    )
                 else:
                     continue  # Skip if no data available for this criterion
 
-                # Apply user or catalog weights
-                weight = 1.0
-                if sid in config.criteria_weights:
-                    weight *= config.criteria_weights[sid]
-                else:
-                    weight *= float(s_row["weight"])
+                # Apply canonical effective weight calculation
+                catalog_w = float(s_row["weight"])
+                weight = get_effective_weight(sid, config, catalog_w)
 
-                # Apply organization specific boosts if present (F-54 Expansion)
-                org_boosts = getattr(config, "org_boosts", None)
-                if config and org_boosts and sid in org_boosts:
-                    weight *= float(org_boosts[sid])
-
-                # APPLY FREQUENCY MULTIPLIER (F-60)
-                if sid in ["mob_epci_scaled", "mob_dist_current_loc_scaled"]:
-                    freq = getattr(config, "freq_retour", "Pas d'attache particulière")
-                    multiplier = 1.0
-                    if freq == "1 fois/semaine":
-                        multiplier = 3.0
-                    elif freq == "1 fois/mois":
-                        multiplier = 2.0
-                    elif freq == "1 fois/an":
-                        multiplier = 1.0
-                    else:
-                        multiplier = 0.0
-                    weight *= multiplier
+                # Save uncombined commune value for BdV transparency details
+                if val_commune is not None:
+                    df[f"{sid}_uncombined_commune"] = val_commune
 
                 # Track valid weights per row (using non-nullity of original sources)
                 # If both are null, weight is 0
@@ -312,12 +407,12 @@ class ScoringEngine:
                     is_current = df.index == str(current_codgeo)
                     # Set weight to 0 so it's excluded from the denominator
                     valid_weight = cast(Any, np.where(is_current, 0.0, valid_weight))
-                    # Set value to NaN so it doesn't appear in UI details as 100%
-                    val = np.where(is_current, np.nan, val)
+                # Ensure float dtype
+                val = pd.Series(val, index=df.index, dtype=float)
 
                 # Replace NaN with 0 for score addition (since valid_weight handles the skip)
                 scores_val.append(
-                    np.nan_to_num(val, nan=0.0) * valid_weight
+                    np.nan_to_num(val.to_numpy(), nan=0.0) * valid_weight
                 )  # Use valid_weight for per-row weighting
                 weights_val.append(valid_weight)
 
@@ -326,28 +421,20 @@ class ScoringEngine:
                 df[sid] = val
 
             if weights_val:
-                denom = sum(weights_val)
+                scores_arr = np.nan_to_num(sum(scores_val), nan=0.0).astype(float)
+                denom_arr = np.array(sum(weights_val), dtype=float)
                 raw_scores = np.divide(
-                    sum(scores_val),
-                    denom,
-                    out=np.zeros_like(denom, dtype=float),
-                    where=denom > 0,
+                    scores_arr,
+                    denom_arr,
+                    out=np.zeros_like(denom_arr, dtype=float),
+                    where=denom_arr > 0,
                 )
-                s = pd.Series(raw_scores, index=df.index)
+                s = pd.Series(np.where(denom_arr > 0, raw_scores, np.nan), index=df.index, dtype=float)
 
-                # Only normalize if we have variation in the scores to avoid zero-variance compression
-                if s.nunique() > 1:
-                    non_zero_mask = s > 0
-                    if non_zero_mask.any():
-                        ranked = s.rank(pct=True)
-                        ranked[~non_zero_mask] = 0.0
-                        df[f"{category}_cat_score"] = ranked
-                    else:
-                        df[f"{category}_cat_score"] = 0.0
-                else:
-                    df[f"{category}_cat_score"] = s
+                # Absolute Category Score (0.0 to 1.0): raw weighted mean of active criteria
+                df[f"{category}_cat_score"] = s
 
-        return df
+        return df.copy()
 
     @logfire.instrument("_compute_weighted_score: {config}")
     def _compute_weighted_score(
@@ -357,6 +444,7 @@ class ScoringEngine:
         logfire.info("Computing weighted score for hash: {search_hash}", search_hash=h)
         total_score = pd.Series(0.0, index=df.index)
         total_weight = 0.0
+        has_weighted_category = False
 
         weights = {cat: getattr(config, f"poids_{cat}", 0.0) for cat in self.categories}
 
@@ -364,13 +452,13 @@ class ScoringEngine:
             # Robust Check: Force exclusion if conditions met, even if column exists
             if cat == "education" and config.nb_enfants == 0:
                 continue
-            if cat == "sante" and not getattr(config, "besoin_sante", []):
-                continue
 
             # Skip if category score not computed (e.g. no children)
             col = f"{cat}_cat_score"
             if col not in df.columns:
                 continue
+
+            has_weighted_category = has_weighted_category or weight != 0
 
             val = df[col].fillna(0)
             valid_mask = df[col].notna()  # Where score exists
@@ -385,9 +473,17 @@ class ScoringEngine:
 
         # Ensure no division by zero
         if isinstance(total_weight, (int, float)):
-            return total_score / total_weight if total_weight > 0 else total_score
+            return (
+                total_score / total_weight
+                if total_weight > 0
+                else (
+                    pd.Series(np.nan, index=df.index, dtype=float)
+                    if has_weighted_category
+                    else total_score
+                )
+            )
         else:
-            return (total_score / total_weight).fillna(0)
+            return total_score / total_weight if has_weighted_category else total_score
 
     def _prune_irrelevant_metrics(
         self, df: pd.DataFrame, config: SearchCriterias, aggressive: bool = False
@@ -630,7 +726,7 @@ class ScoringEngine:
 
         if logement_type == "Logement Social":
             active.add("log_soc_inoc_scaled")
-            active.add("log_soc_dem_scaled")
+            active.add("log_soc_delay_scaled")
 
         # 5. Education (Conditional on children)
         nb_enfants = getattr(config, "nb_enfants", 0)
@@ -812,12 +908,9 @@ class ScoringEngine:
             norm_cat = cat.replace("é", "e").replace("ê", "e").replace("à", "a").lower()
             active_norm_cats.add(norm_cat)
 
-            w_crit = float(score_row["weight"])
-            if config and score_id in config.criteria_weights:
-                w_crit *= config.criteria_weights[score_id]
-            org_boosts = getattr(config, "org_boosts", None)
-            if config and org_boosts and score_id in org_boosts:
-                w_crit *= float(org_boosts[score_id])
+            w_crit = get_effective_weight(
+                score_id, config, float(score_row["weight"])
+            )
 
             cat_internal_weights[norm_cat] = (
                 cat_internal_weights.get(norm_cat, 0.0) + w_crit
@@ -885,25 +978,66 @@ class ScoringEngine:
                 else:
                     val_raw = val
 
-            # Format val_raw for display (preserving underlying type logic)
+            # Format val_raw and val_kpi_bdv using canonical formatting helper
             unit = score_row.get("unit", score_row.get("description", ""))
-            if score_id == "mob_gare_scaled":
-                # Convert the binary/scaled score to a human-friendly "Oui"/"Non" indicator
-                val_raw = "Oui" if val_scaled == 1.0 else "Non"
-            elif isinstance(val_raw, (int, float)):
-                if unit == "habitants":
-                    val_raw = int(round(float(val_raw) / 1000) * 1000)
-                elif unit == "%" or unit == "assos/1000 hab.":
-                    val_raw = round(float(val_raw), 1)
-                elif float(val_raw).is_integer():
-                    val_raw = int(val_raw)
-                else:
-                    val_raw = round(float(val_raw), 1)
+            fmt = score_row.get("format", None)
+            val_raw = _format_kpi_value(val_raw, unit, score_id, val_scaled, fmt)
 
             # Impact = (w_crit / sum_weights_in_cat) * (cat_weight / total_cat_weight)
             rel_weight = (w_crit / cat_internal_weights[norm_cat]) * (
                 cat_weights[norm_cat] / total_cat_weight
             )
+
+            # BdV details extraction
+            bdv_f = float(score_row.get("bdv_factor", 0.0))
+            bdv_applied = False
+            val_kpi_commune = val_raw
+            val_kpi_bdv = None
+            score_norm_commune = None
+            score_norm_bdv = None
+
+            if bdv_f != 0.0:
+                sid_bdv = f"{score_id}_bdv"
+                has_bdv_data = (
+                    (sid_bdv in row and pd.notna(row[sid_bdv]))
+                    or (sid_bdv in static_row and pd.notna(static_row[sid_bdv]))
+                )
+                if has_bdv_data:
+                    bdv_applied = True
+                    score_norm_commune = (
+                        float(row[f"{score_id}_uncombined_commune"])
+                        if f"{score_id}_uncombined_commune" in row
+                        and pd.notna(row[f"{score_id}_uncombined_commune"])
+                        else val_scaled
+                    )
+                    score_norm_bdv = (
+                        float(row[sid_bdv])
+                        if sid_bdv in row and pd.notna(row[sid_bdv])
+                        else (
+                            float(static_row[sid_bdv])
+                            if sid_bdv in static_row and pd.notna(static_row[sid_bdv])
+                            else None
+                        )
+                    )
+                    val_kpi_commune = val_raw
+                    raw_bdv_col = f"{raw_metric_col}_bdv"
+                    bdv_src = (
+                        static_row
+                        if (static_row is not None and raw_bdv_col in static_row)
+                        else (row if (row is not None and raw_bdv_col in row) else None)
+                    )
+                    if (
+                        bdv_src is not None
+                        and raw_bdv_col in bdv_src
+                        and pd.notna(bdv_src[raw_bdv_col])
+                    ):
+                        b_val = bdv_src[raw_bdv_col]
+                        d_factor = float(score_row.get("display_factor", 1.0))
+                        if pd.api.types.is_number(b_val):
+                            raw_b = float(b_val * d_factor)
+                        else:
+                            raw_b = b_val
+                        val_kpi_bdv = _format_kpi_value(raw_b, unit, score_id, score_norm_bdv, fmt)
 
             structured_scores[norm_cat].append(
                 CommuneScoreDetail(
@@ -913,6 +1047,12 @@ class ScoringEngine:
                     score_normalise=val_scaled,
                     unit=unit,
                     relative_weight=round(rel_weight * 100, 1),
+                    valeur_kpi_commune=val_kpi_commune,
+                    valeur_kpi_bdv=val_kpi_bdv,
+                    score_normalise_commune=score_norm_commune,
+                    score_normalise_bdv=score_norm_bdv,
+                    bdv_factor=bdv_f,
+                    bdv_applied=bdv_applied,
                     strong_point_text=str(score_row.get("score_affichage"))
                     if pd.notna(score_row.get("score_affichage"))
                     else "",
@@ -1460,39 +1600,46 @@ class ScoringEngine:
             loc_type=loc_type,
             loc_code=loc_code,
             config=config,
-        )
-
-        # Always include current commune
-        if (
-            c_code in self.df_all_communes.index
-            and c_code not in communes_to_score.index
-        ):
-            communes_to_score = pd.concat(
-                [communes_to_score, self.df_all_communes.loc[[c_code]]]
-            )
-
-        # Always include commune pressentie (Feature F-61)
-        p_code_obj = getattr(config, "commune_pressentie", None)
-        p_code = (
-            p_code_obj.code
-            if p_code_obj and hasattr(p_code_obj, "code")
-            else p_code_obj
-        )
-        if (
-            p_code
-            and p_code in self.df_all_communes.index
-            and p_code not in communes_to_score.index
-        ):
-            communes_to_score = pd.concat(
-                [communes_to_score, self.df_all_communes.loc[[p_code]]]
-            )
+        ).copy()
 
         # Early conservative pruning
         communes_to_score = self._prune_irrelevant_metrics(
             communes_to_score, config, aggressive=False
         )
 
+        # Score candidate pool strictly without out-of-pool comparators
         results = self._compute_scores(communes_to_score, config)
+
+        # If current city or commune pressentie are out-of-pool, score them separately
+        # after candidate pool scoring so they cannot alter candidate scores or ranking
+        p_code_obj = getattr(config, "commune_pressentie", None)
+        p_code = (
+            p_code_obj.code
+            if p_code_obj and hasattr(p_code_obj, "code")
+            else p_code_obj
+        )
+
+        extra_dfs = []
+        c_code_str = str(c_code) if c_code is not None else None
+        if c_code_str and c_code_str in self.df_all_communes.index and c_code_str not in results.index:
+            c_df = self._prune_irrelevant_metrics(
+                self.df_all_communes.loc[[c_code_str]].copy(), config, aggressive=False
+            )
+            extra_dfs.append(self._compute_scores(c_df, config))
+
+        p_code_str = str(p_code) if p_code is not None else None
+        if (
+            p_code_str
+            and p_code_str in self.df_all_communes.index
+            and p_code_str not in results.index
+        ):
+            p_df = self._prune_irrelevant_metrics(
+                self.df_all_communes.loc[[p_code_str]].copy(), config, aggressive=False
+            )
+            extra_dfs.append(self._compute_scores(p_df, config))
+
+        if extra_dfs:
+            results = pd.concat([results] + extra_dfs)
 
         del communes_to_score
         return results
@@ -1542,8 +1689,12 @@ class ScoringEngine:
         # Final pruning
         self._prune_irrelevant_metrics(odis_exploded, config, aggressive=False)
 
-        # Sort by weighted score
-        odis_sorted = odis_exploded.sort_values(by="weighted_score", ascending=False)
+        # Sort by weighted score (primary) and territoire_cat_score (secondary tie-break per P1-08)
+        sort_cols = ["weighted_score"]
+        if "territoire_cat_score" in odis_exploded.columns:
+            sort_cols.append("territoire_cat_score")
+
+        odis_sorted = odis_exploded.sort_values(by=sort_cols, ascending=[False] * len(sort_cols))
 
         # 🧪 SOTA: Limit the number of polygons
         if len(odis_sorted) > cfg.MAX_MAP_POLYGONS:
@@ -1586,10 +1737,10 @@ class ScoringEngine:
                             adult_romes.add(code)
 
                 if not adult_romes:
-                    df[f"met_match_{adult_key}_scaled"] = 0.0
+                    df[f"met_match_{adult_key}_scaled"] = np.nan
                     if "bassin_de_vie" in df.columns:
-                        df[f"met_match_{adult_key}_bdv_scaled"] = 0.0
-                    df[f"met_match_{adult_key}_tension_scaled"] = 0.0
+                        df[f"met_match_{adult_key}_bdv_scaled"] = np.nan
+                    df[f"met_match_{adult_key}_tension_scaled"] = np.nan
                     continue
 
                 target_live = self.live_jobs_data[
@@ -1611,7 +1762,7 @@ class ScoringEngine:
                     ].sum()
                     df[col_tension_raw] = df.index.map(commune_tension_counts).fillna(0)
                 else:
-                    df[col_tension_raw] = 0.0
+                    df[col_tension_raw] = np.nan
 
                 # BdV Sum
                 col_bdv_raw = f"met_match_{adult_key}_bdv"
@@ -1622,7 +1773,7 @@ class ScoringEngine:
                     ].sum()
                     df[col_bdv_raw] = df["bassin_de_vie"].map(bdv_live_counts).fillna(0)
                 else:
-                    df[col_bdv_raw] = 0.0
+                    df[col_bdv_raw] = np.nan
 
                 # Scaling
                 s_def = (
@@ -1690,7 +1841,7 @@ class ScoringEngine:
 
                 # --- SIAE Jobs Matching (New F-39) ---
                 col_siae_raw = f"met_siae_match_{adult_key}"
-                df[col_siae_raw] = 0.0
+                df[col_siae_raw] = np.nan
 
                 if self.siae_jobs_data is not None and not self.siae_jobs_data.empty:
                     # SIAE matching uses 3rd digit prefix
@@ -1727,7 +1878,7 @@ class ScoringEngine:
                 )
 
         # --- Formations ---
-        if any(config.codes_formations):
+        if any(config.codes_formations) and not self.formations_data.empty:
             relevant_formations = self.formations_data[
                 self.formations_data["codgeo"].isin(df.index)
             ]
@@ -1851,9 +2002,8 @@ class ScoringEngine:
 
         # --- Density ---
         if "nb_stops_total" in df.columns:
-            df["mob_trans_pub_stop_density"] = (
-                df["nb_stops_total"] / df["population"].replace(0, 1)
-            ) * 1000
+            population = df["population"].where(df["population"] > 0)
+            df["mob_trans_pub_stop_density"] = (df["nb_stops_total"] / population) * 1000
             s_def_mob = (
                 self.scores_cat[
                     self.scores_cat["score"] == "mob_trans_pub_density_scaled"
@@ -1947,9 +2097,6 @@ class ScoringEngine:
                     sigma=sigma,
                 )
 
-        if "inc_asso_core_scaled" not in df.columns:
-            df["inc_asso_core_scaled"] = 0.0
-
         # Affinities
         inc_asso_add = getattr(config, "inc_asso_add_selection", [])
         if inc_asso_add:
@@ -1959,7 +2106,7 @@ class ScoringEngine:
                 code = i.code if hasattr(i, "code") else str(i)
                 interest_codes.add(code)
 
-            if interest_codes:
+            if interest_codes and not self.associations_data.empty:
                 # Normalization logic
                 expanded_interests = set()
                 for c in interest_codes:
@@ -1981,9 +2128,10 @@ class ScoringEngine:
                 )
 
                 if "population" in df.columns:
-                    df["affinite_density"] = (affinite_counts * 1000) / df["population"]
+                    population = df["population"].where(df["population"] > 0)
+                    df["affinite_density"] = (affinite_counts * 1000) / population
                 else:
-                    df["affinite_density"] = 0.0
+                    df["affinite_density"] = np.nan
                 min_b, max_b = self._get_bounds("inc_asso_add_scaled")
                 s_def_inc = (
                     self.scores_cat[
@@ -2014,7 +2162,7 @@ class ScoringEngine:
         for i in getattr(config, "inc_services_selection", []):
             needed.add(i.code if hasattr(i, "code") else str(i))
 
-        if needed:
+        if needed and not self.incl_index.empty:
 
             def count_matches(available):
                 if not isinstance(available, set):
@@ -2044,6 +2192,7 @@ class ScoringEngine:
         df = self._compute_housing_scores(df, config)
         df = self._compute_education_scores(df, config)
         df = self._compute_territory_scores(df, config)
+        df = self._apply_configured_score_missingness(df)
 
         # Pruning
         df = self._prune_irrelevant_metrics(df, config)

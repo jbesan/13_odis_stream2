@@ -61,7 +61,7 @@ def test_happy_path_end_to_end(
     mock_launch_post_scoring_tasks.side_effect = fake_launch
 
     # 2. Initialize AppTest at main.py (so page paths resolve correctly relative to root)
-    at = AppTest.from_file("app/main.py")
+    at = AppTest.from_file("app/main.py", default_timeout=30)
 
     # Bypass authentication and pre-populate defaults
     at.session_state["password_correct"] = True

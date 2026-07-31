@@ -1,5 +1,3 @@
-import pytest
-from unittest.mock import patch, MagicMock
 import streamlit as st
 from app.ui.results import render_share_search_button
 

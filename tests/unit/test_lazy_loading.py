@@ -1,6 +1,4 @@
-import pytest
 import pandas as pd
-from unittest.mock import MagicMock, patch
 from utils import data_loader
 
 

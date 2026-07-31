@@ -35,7 +35,7 @@ tests/
 
 ### 2. Level 2: Integration Tests (`tests/integration/`)
 *   **Scope**: Verifies integration between code and local datasets/databases.
-*   **Schema & Metrics Contract**: Ensures all 45 YAML-configured metrics in `scores_config.yaml` exist as valid columns in the loaded Parquet files, catching structural data shifts before execution.
+*   **Schema & Metrics Contract**: Ensures all 57 YAML-configured metrics in `scores_config.yaml` exist as valid columns in the loaded Parquet files, catching structural data shifts before execution.
 *   **Reference Assertions**: Tests data loader and reference lookups (e.g., ROME code lookups, Waldec associations) using actual local data.
 
 ### 3. Level 3: Functional & System E2E (`tests/e2e/`)
