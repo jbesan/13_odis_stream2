@@ -82,7 +82,7 @@
     },
     "generate_referentiels": {
       "status": "CREATED",
-      "timestamp": "2026-07-31T10:23:20.217722",
+      "timestamp": "2026-07-31T19:29:48.914158",
       "details": {
         "path": "pipeline/cache/output/odis_referentiels.parquet"
       }
@@ -194,7 +194,7 @@
     },
     "build_all": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-31T10:23:20.220725",
+      "timestamp": "2026-07-31T19:29:48.921026",
       "details": {}
     },
     "clean_voisins": {

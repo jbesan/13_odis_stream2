@@ -209,6 +209,11 @@ def main():
                 print("\n" + "=" * 50)
                 if not status["exists"]:
                     print("[?] France Travail Live Jobs data is MISSING.")
+                elif not status.get("coverage_exists", False):
+                    print(
+                        "[!] France Travail aggregate exists, but its coverage evidence is missing; "
+                        "a refresh is required."
+                    )
                 else:
                     print(
                         f"[?] France Travail Live Jobs data is {status['age_days']:.1f} days old (TTL={status['ttl_days']})."
@@ -234,6 +239,11 @@ def main():
                 print("\n" + "=" * 50)
                 if not status_inc["exists"]:
                     print("[?] Inclusion Jobs data is MISSING.")
+                elif not status_inc.get("coverage_exists", False):
+                    print(
+                        "[!] Inclusion Jobs aggregate exists, but its coverage evidence is missing; "
+                        "a refresh is required."
+                    )
                 else:
                     print(
                         f"[?] Inclusion Jobs data is {status_inc['age_days']:.1f} days old (TTL={status_inc['ttl_days']})."

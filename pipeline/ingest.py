@@ -2710,7 +2710,14 @@ def clean_inclusion_jobs(
         elif skip:
             logger.log_step("clean_inclusion_jobs", "SKIPPED")
         else:
-            raise PipelineRunError("Inclusion Jobs cache is unavailable")
+            reason = (
+                "coverage evidence is missing"
+                if status.get("exists") and not status.get("coverage_exists")
+                else "cache is unavailable"
+            )
+            raise PipelineRunError(
+                f"Inclusion Jobs {reason}; refresh is required before publication"
+            )
 
 
 def get_live_jobs_status() -> Dict[str, Any]:
@@ -2730,6 +2737,11 @@ def get_live_jobs_status() -> Dict[str, Any]:
         ttl_days = 7
 
     files = [cache_path, FT_SHARED_OUTPUT_PATH, data_path]
+    coverage_files = [
+        OUTPUT_DIR / FT_COVERAGE_SHARED_OUTPUT_PATH.name,
+        FT_COVERAGE_SHARED_OUTPUT_PATH,
+        Path("data") / FT_COVERAGE_SHARED_OUTPUT_PATH.name,
+    ]
     mtimes = []
     for f in files:
         if f.exists():
@@ -2740,16 +2752,23 @@ def get_live_jobs_status() -> Dict[str, Any]:
             "age_days": None,
             "within_ttl": False,
             "exists": False,
+            "coverage_exists": False,
             "ttl_days": ttl_days,
         }
 
     newest_mtime = max(mtimes)
     age_days = (time.time() - newest_mtime) / (24 * 3600)
+    coverage_exists = any(
+        path.exists() and path.stat().st_size > 0 for path in coverage_files
+    )
 
     return {
         "age_days": age_days,
-        "within_ttl": age_days < ttl_days,
+        # A legacy aggregate without coverage evidence is not a valid
+        # reusable cache and must be refreshed before publication.
+        "within_ttl": age_days < ttl_days and coverage_exists,
         "exists": True,
+        "coverage_exists": coverage_exists,
         "ttl_days": ttl_days,
     }
 
@@ -2769,6 +2788,11 @@ def get_inclusion_jobs_status() -> Dict[str, Any]:
         ttl_days = 7
 
     files = [cache_path, INCLUSION_SHARED_OUTPUT_PATH, data_path]
+    coverage_files = [
+        OUTPUT_DIR / INCLUSION_COVERAGE_SHARED_OUTPUT_PATH.name,
+        INCLUSION_COVERAGE_SHARED_OUTPUT_PATH,
+        Path("data") / INCLUSION_COVERAGE_SHARED_OUTPUT_PATH.name,
+    ]
     mtimes = []
     for f in files:
         if f.exists():
@@ -2779,16 +2803,21 @@ def get_inclusion_jobs_status() -> Dict[str, Any]:
             "age_days": None,
             "within_ttl": False,
             "exists": False,
+            "coverage_exists": False,
             "ttl_days": ttl_days,
         }
 
     newest_mtime = max(mtimes)
     age_days = (time.time() - newest_mtime) / (24 * 3600)
+    coverage_exists = any(
+        path.exists() and path.stat().st_size > 0 for path in coverage_files
+    )
 
     return {
         "age_days": age_days,
-        "within_ttl": age_days < ttl_days,
+        "within_ttl": age_days < ttl_days and coverage_exists,
         "exists": True,
+        "coverage_exists": coverage_exists,
         "ttl_days": ttl_days,
     }
 
@@ -2841,7 +2870,14 @@ def clean_live_jobs(config: Dict[str, Any], logger: PipelineLogger, skip: bool =
         elif skip:
             logger.log_step("clean_live_jobs", "SKIPPED")
         else:
-            raise PipelineRunError("France Travail cache is unavailable")
+            reason = (
+                "coverage evidence is missing"
+                if status.get("exists") and not status.get("coverage_exists")
+                else "cache is unavailable"
+            )
+            raise PipelineRunError(
+                f"France Travail {reason}; refresh is required before publication"
+            )
 
 
 class MutedPipelineLogger:

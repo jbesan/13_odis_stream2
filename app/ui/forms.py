@@ -373,16 +373,21 @@ def render_mobility_form() -> None:
 
     region_codes = sorted(regions_dict.keys())
 
+    # A malformed/legacy release should not crash the form while the pipeline
+    # is being repaired.  The build gate now rejects this state, but keeping
+    # the widget defensive prevents an IndexError for already-deployed data.
+    default_region = (
+        [current_reg_code]
+        if current_reg_code in region_codes
+        else ([region_codes[0]] if region_codes else [])
+    )
+
     if "ui_france_search" not in st.session_state:
         st.session_state["ui_france_search"] = False
     if "ui_region_search" not in st.session_state:
         st.session_state["ui_region_search"] = False
     if "ui_mobility_region" not in st.session_state:
-        st.session_state["ui_mobility_region"] = (
-            [current_reg_code]
-            if current_reg_code in region_codes
-            else [region_codes[0]]
-        )
+        st.session_state["ui_mobility_region"] = default_region
     elif isinstance(st.session_state["ui_mobility_region"], str):
         st.session_state["ui_mobility_region"] = [
             st.session_state["ui_mobility_region"]
@@ -393,11 +398,7 @@ def render_mobility_form() -> None:
         r for r in st.session_state["ui_mobility_region"] if r in region_codes
     ]
     if not valid_selected_regions:
-        valid_selected_regions = (
-            [current_reg_code]
-            if current_reg_code in region_codes
-            else [region_codes[0]]
-        )
+        valid_selected_regions = default_region
     st.session_state["ui_mobility_region"] = valid_selected_regions
 
     col_reg_1, col_reg_2 = st.columns([3, 1])

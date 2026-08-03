@@ -1270,17 +1270,62 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
         logger.log_step("generate_referentiels", "ERROR_BASSINS_VIE", {"error": str(e)})
 
     try:
-        # Regions
+        # Regions.  Run-scoped candidates do not currently materialize the
+        # legacy ``clean/regions.parquet`` file, so fall back to the canonical
+        # raw COG referential instead of silently publishing no regions.
         regions_path = CLEAN_DIR / "regions.parquet"
+        regions_df = None
         if regions_path.exists():
             regions_df = pd.read_parquet(regions_path, engine="fastparquet")
+        else:
+            regions_cfg = config.get("sources", {}).get("regions_ref", {})
+            regions_name = regions_cfg.get("local_name", "referentiel_regions.json")
+            regions_raw_path = CACHE_DIR / regions_name
+            if regions_raw_path.exists():
+                regions_df = load_dataset(regions_raw_path, regions_cfg)
+                code_column = "REG" if "REG" in regions_df.columns else "code"
+                label_column = (
+                    "LIBELLE" if "LIBELLE" in regions_df.columns else "label"
+                )
+                if code_column in regions_df.columns and label_column in regions_df.columns:
+                    regions_df = regions_df.rename(
+                        columns={code_column: "code", label_column: "label"}
+                    )
+
+        # ODACE dim_geo is the authority for which region codes are actually
+        # attached to the commune hierarchy.  The COG file supplies labels,
+        # since this ODACE export exposes region_code but no region-level rows
+        # or region labels of its own.
+        geo_region_codes = None
+        geo_path = CACHE_DIR / "odace_dim_geo.parquet"
+        if geo_path.exists():
+            geo_df = pd.read_parquet(geo_path, engine="fastparquet")
+            if "region_code" in geo_df.columns:
+                geo_region_codes = set(
+                    geo_df["region_code"]
+                    .dropna()
+                    .astype(str)
+                    .str.strip()
+                    .str.upper()
+                )
+
+        if regions_df is not None and {"code", "label"}.issubset(regions_df.columns):
             regions_ref = pd.DataFrame(
                 {
                     "key": "regions",
-                    "code": regions_df["code"],
-                    "label": regions_df["label"],
+                    "code": regions_df["code"].astype(str).str.strip().str.upper(),
+                    "label": regions_df["label"].astype(str).str.strip(),
                 }
-            )
+            ).drop_duplicates(subset=["code"])
+            if geo_region_codes is not None:
+                missing_labels = geo_region_codes - set(regions_ref["code"])
+                if missing_labels:
+                    raise PipelineRunError(
+                        "ODACE dim_geo contains region codes absent from the region "
+                        "referential: "
+                        + ", ".join(sorted(missing_labels))
+                    )
+                regions_ref = regions_ref[regions_ref["code"].isin(geo_region_codes)]
             refs_list.append(regions_ref)
             logger.log_step(
                 "generate_referentiels", "REGIONS", {"count": len(regions_ref)}
@@ -1298,6 +1343,24 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
                     "reg_code": deps_df.get("reg_code", None),
                 }
             )
+            if geo_path.exists() and "departement_code" in geo_df.columns:
+                geo_department_codes = set(
+                    geo_df["departement_code"]
+                    .dropna()
+                    .astype(str)
+                    .str.strip()
+                    .str.upper()
+                )
+                department_codes = set(
+                    deps_ref["code"].astype(str).str.strip().str.upper()
+                )
+                missing_departments = geo_department_codes - department_codes
+                if missing_departments:
+                    raise PipelineRunError(
+                        "ODACE dim_geo contains department codes absent from the "
+                        "department referential: "
+                        + ", ".join(sorted(missing_departments))
+                    )
             refs_list.append(deps_ref)
             logger.log_step(
                 "generate_referentiels", "DEPARTEMENTS", {"count": len(deps_ref)}
@@ -1324,6 +1387,21 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
     except Exception as e:
         logger.log_step(
             "generate_referentiels", "ERROR_REG_DEP_MAPPING", {"error": str(e)}
+        )
+
+    # A release without these keys makes the first form page unusable.  Fail
+    # the candidate here rather than publishing a referential that only fails
+    # later when the Streamlit widget indexes an empty region list.
+    present_keys = {
+        str(ref["key"].iloc[0])
+        for ref in refs_list
+        if not ref.empty and "key" in ref.columns
+    }
+    missing_keys = {"communes", "departements", "regions"} - present_keys
+    if missing_keys:
+        raise PipelineRunError(
+            "Referential generation is incomplete; missing keys: "
+            + ", ".join(sorted(missing_keys))
         )
 
     # Final concatenation and save for all referentiels
