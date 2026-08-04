@@ -6,7 +6,7 @@ import logging
 import json
 import zipfile
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional, Tuple
 from dotenv import load_dotenv
 
@@ -19,7 +19,6 @@ CACHE_DIR = Path("pipeline/cache/raw")
 CLEAN_DIR = Path("pipeline/cache/clean")
 OUTPUT_DIR = Path("pipeline/cache/output")
 STATUS_FILE = Path("pipeline/status.json")
-
 
 
 # Configure logging centrally
@@ -56,6 +55,7 @@ class PipelineLogger:
         return {}
 
     def _save_status(self):
+        self.status_file.parent.mkdir(parents=True, exist_ok=True)
         with open(self.status_file, "w") as f:
             json.dump(self.status, f, indent=2, default=str)
 
@@ -67,21 +67,44 @@ class PipelineLogger:
 
         self.status["steps"][step_name] = {
             "status": status,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "details": details or {},
         }
         self._save_status()
         logging.info(f"Step '{step_name}': {status}")
 
     def log_source(
-        self, source_name: str, status: str, file_path: Optional[str] = None
+        self,
+        source_name: str,
+        status: str,
+        file_path: Optional[str] = None,
+        *,
+        observed_at: Optional[str] = None,
     ):
+        """Record the provenance outcome of a source for the current run.
+
+        ``observed_at`` is the acquisition time of a reused source cache.  It
+        deliberately differs from the time the current candidate copied or
+        aggregated that cache, which must not reset the source freshness clock.
+        """
         if "sources" not in self.status:
             self.status["sources"] = {}
 
+        source_statuses = {
+            "CACHED": "reused_within_ttl",
+            "SKIPPED": "skipped_optional",
+            "STAGING_COPIED": "refreshed",
+            "STAGING_DOWNLOADED": "refreshed",
+        }
+        if observed_at is None and status == "CACHED" and file_path:
+            cache_path = Path(file_path)
+            if cache_path.is_file():
+                observed_at = datetime.fromtimestamp(
+                    cache_path.stat().st_mtime, tz=timezone.utc
+                ).isoformat()
         self.status["sources"][source_name] = {
-            "status": status,
-            "timestamp": datetime.now().isoformat(),
+            "status": source_statuses.get(status, status.lower()),
+            "timestamp": observed_at or datetime.now(timezone.utc).isoformat(),
             "file": str(file_path) if file_path else None,
         }
         self._save_status()
@@ -176,7 +199,7 @@ def is_cache_valid(source_name: str, source_cfg: Dict[str, Any]) -> bool:
     if not local_path.exists():
         return False
 
-    ttl_days = source_cfg.get("ttl_days", 30)
+    ttl_days = source_cfg["ttl_days"]
     mtime = datetime.fromtimestamp(local_path.stat().st_mtime)
     age_days = (datetime.now() - mtime).days
     return age_days < ttl_days
@@ -290,11 +313,6 @@ def atomic_swap(src_path: Path, dst_path: Path):
     if not src_path.exists():
         raise FileNotFoundError(f"Staging source file not found: {src_path}")
     dst_path.parent.mkdir(parents=True, exist_ok=True)
-    if dst_path.exists():
-        try:
-            os.remove(dst_path)
-        except Exception as e:
-            logging.warning(f"Failed to delete existing target file {dst_path}: {e}")
     os.replace(src_path, dst_path)
     logging.info(f"🔄 Swapped staging {src_path.name} -> active {dst_path.name}")
 

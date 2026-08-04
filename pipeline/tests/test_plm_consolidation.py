@@ -2,25 +2,189 @@ import pandas as pd
 import pytest
 from pathlib import Path
 
+from pipeline.build import (
+    PLM_FAMILIES,
+    consolidate_plm_communes,
+    consolidate_plm_detail_list,
+    consolidate_plm_vertical,
+)
+
 OUTPUT_DIR = Path("pipeline/cache/output")
 
 
 @pytest.fixture
 def plm_mapping():
-    return {
-        "75056": [str(x) for x in range(75101, 75121)],  # Paris
-        "13055": [str(x) for x in range(13201, 13217)],  # Marseille
-        "69123": [str(x) for x in range(69381, 69390)],  # Lyon
-    }
+    return {parent: list(children) for parent, children in PLM_FAMILIES.items()}
+
+
+@pytest.fixture
+def plm_communes_fixture():
+    """All PLM representations, with exact expected child-only fallbacks."""
+    rows = []
+    expected = {}
+    for family_index, (parent, children) in enumerate(PLM_FAMILIES.items(), start=1):
+        child_population = list(range(10, 10 + len(children)))
+        child_rent = [20.0 + family_index, 30.0 + family_index] * (len(children) // 2)
+        if len(child_rent) < len(children):
+            child_rent.append(20.0 + family_index)
+        expected_population = sum(child_population)
+        expected_rent = (
+            sum(
+                value * population
+                for value, population in zip(child_rent, child_population)
+            )
+            / expected_population
+        )
+        expected[parent] = {
+            "population": expected_population,
+            "log_soc_total": 0.0,
+            "loyer_app_m2": expected_rent,
+            "has_gare": 1.0,
+        }
+        rows.append(
+            {
+                "codgeo": parent,
+                "population": float("nan"),
+                "log_soc_total": float("nan"),
+                "loyer_app_m2": float("nan"),
+                "has_gare": float("nan"),
+                "pol_num": float("nan"),
+            }
+        )
+        for code, population, rent in zip(children, child_population, child_rent):
+            rows.append(
+                {
+                    "codgeo": code,
+                    "population": population,
+                    "log_soc_total": 0.0,
+                    "loyer_app_m2": rent,
+                    "has_gare": 1.0 if code == children[0] else 0.0,
+                    "pol_num": 99.0,
+                }
+            )
+    return pd.DataFrame(rows), expected
+
+
+def test_plm_contract_uses_exact_child_fallbacks_and_preserves_zero(
+    plm_communes_fixture,
+):
+    source, expected = plm_communes_fixture
+
+    result = consolidate_plm_communes(source)
+
+    assert (
+        not result["codgeo"]
+        .isin([child for family in PLM_FAMILIES.values() for child in family])
+        .any()
+    )
+    for parent, values in expected.items():
+        row = result.loc[result["codgeo"] == parent].iloc[0]
+        assert row["population"] == values["population"]
+        assert row["log_soc_total"] == values["log_soc_total"]
+        assert row["loyer_app_m2"] == pytest.approx(values["loyer_app_m2"])
+        assert row["has_gare"] == values["has_gare"]
+        assert pd.isna(row["pol_num"]), (
+            "parent-only metrics must not be inferred from children"
+        )
+
+
+def test_plm_contract_never_adds_parent_and_child_totals():
+    children = PLM_FAMILIES["75056"]
+    source = pd.DataFrame(
+        [
+            {
+                "codgeo": "75056",
+                "population": 100.0,
+                "log_soc_total": 0.0,
+                "loyer_app_m2": 0.0,
+            },
+            *[
+                {
+                    "codgeo": code,
+                    "population": 5.0,
+                    "log_soc_total": 1.0,
+                    "loyer_app_m2": 30.0,
+                }
+                for code in children
+            ],
+        ]
+    )
+
+    result = consolidate_plm_communes(source)
+    parent = result.loc[result["codgeo"] == "75056"].iloc[0]
+
+    assert parent["population"] == 100.0
+    assert parent["log_soc_total"] == 0.0
+    assert parent["loyer_app_m2"] == 0.0
+
+
+def test_plm_contract_rejects_incomplete_children_without_parent_value():
+    source = pd.DataFrame(
+        [
+            {"codgeo": "75056", "population": float("nan")},
+            {"codgeo": "75101", "population": 10.0},
+        ]
+    )
+
+    with pytest.raises(ValueError, match="only 1/20 child rows"):
+        consolidate_plm_communes(source)
+
+
+def test_plm_contract_rejects_unclassified_numeric_metric():
+    source = pd.DataFrame(
+        [{"codgeo": "75056", "population": 1.0, "new_unclassified_metric": 2.0}]
+    )
+
+    with pytest.raises(ValueError, match="new_unclassified_metric"):
+        consolidate_plm_communes(source)
+
+
+def test_plm_vertical_contract_preserves_existing_parent_group():
+    source = pd.DataFrame(
+        [
+            {"codgeo": "75056", "id_waldec": "parent", "count": 7},
+            {"codgeo": "75101", "id_waldec": "parent", "count": 3},
+            {"codgeo": "75102", "id_waldec": "parent", "count": 4},
+            {"codgeo": "75101", "id_waldec": "children-only", "count": 2},
+            {"codgeo": "75102", "id_waldec": "children-only", "count": 5},
+        ]
+    )
+
+    result = consolidate_plm_vertical(source, "codgeo", ["id_waldec"], "count")
+    result = result[~result["codgeo"].isin(PLM_FAMILIES["75056"])]
+
+    assert result.loc[result["id_waldec"] == "parent", "count"].tolist() == [7]
+    assert result.loc[result["id_waldec"] == "children-only", "count"].tolist() == [7]
+
+
+def test_plm_detail_contract_preserves_existing_parent_id():
+    source = pd.DataFrame(
+        [
+            {"codgeo": "75056", "id": "shared", "name": "parent"},
+            {"codgeo": "75101", "id": "shared", "name": "child duplicate"},
+            {"codgeo": "75102", "id": "child-only", "name": "child"},
+        ]
+    )
+
+    result = consolidate_plm_detail_list(source, "codgeo")
+    result = result[~result["codgeo"].isin(PLM_FAMILIES["75056"])]
+
+    assert result.loc[result["id"] == "shared", "name"].tolist() == ["parent"]
+    assert result.loc[result["id"] == "child-only", "codgeo"].tolist() == ["75056"]
 
 
 def test_communes_plm_consolidation(plm_mapping):
-    """Verify that odis_communes.parquet is free from arrondissements and has consolidated parent metrics."""
+    """Verify that the published PLM population follows its source contract."""
     communes_path = OUTPUT_DIR / "odis_communes.parquet"
+    population_path = Path("pipeline/cache/clean/population.parquet")
     if not communes_path.exists():
         pytest.skip("odis_communes.parquet does not exist yet. Run the pipeline first.")
+    if not population_path.exists():
+        pytest.skip("population.parquet does not exist yet. Run the pipeline first.")
 
     df = pd.read_parquet(communes_path, engine="fastparquet")
+    population = pd.read_parquet(population_path, engine="fastparquet")
+    population["codgeo"] = population["codgeo"].astype(str)
 
     # Assert 'codgeo' exists
     assert "codgeo" in df.columns
@@ -44,32 +208,18 @@ def test_communes_plm_consolidation(plm_mapping):
 
         row = parent_rows.iloc[0]
 
-        # Verify key metrics are non-zero/non-null (ensuring consolidation took place)
-        assert row["population"] > 100000, (
-            f"Parent {parent} has suspiciously low population: {row['population']}"
+        parent_population = population.loc[
+            population["codgeo"] == parent, "population"
+        ].iloc[0]
+        child_population = population.loc[
+            population["codgeo"].isin(plm_mapping[parent]), "population"
+        ].sum(min_count=1)
+        expected_population = (
+            parent_population if pd.notna(parent_population) else child_population
         )
-        assert row["sante_apl"] > 0, (
-            f"Parent {parent} has sante_apl = {row['sante_apl']}"
-        )
-        assert row["edu_pe_tx_couverture"] > 0, (
-            f"Parent {parent} has edu_pe_tx_couverture = {row['edu_pe_tx_couverture']}"
-        )
-
-        # Verify that scaled outputs derived from consolidated counts are positive
-        assert "inc_siae_density_scaled" in df.columns
-        assert row["inc_siae_density_scaled"] > 0, (
-            f"Parent {parent} has 0 or missing inc_siae_density_scaled"
-        )
-
-        assert "mob_gare_scaled" in df.columns
-        assert row["mob_gare_scaled"] > 0, (
-            f"Parent {parent} has 0 or missing mob_gare_scaled"
-        )
-
-        # Sante RDV delay / medical metrics should be populated
-        assert pd.notnull(row["sante_apl"]), f"Parent {parent} has NaN sante_apl"
-        assert pd.notnull(row["edu_pe_tx_couverture"]), (
-            f"Parent {parent} has NaN edu_pe_tx_couverture"
+        assert row["population"] == expected_population, (
+            f"Parent {parent} population must be the authoritative parent value "
+            f"or, if unavailable, the child total; got {row['population']}"
         )
 
 

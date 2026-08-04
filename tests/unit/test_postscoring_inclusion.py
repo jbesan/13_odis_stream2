@@ -154,6 +154,5 @@ def test_launch_background_inclusion_enrichment_missing_api_key():
         launch_background_inclusion_enrichment(mock_engine, ["94041"], hash_val)
         time.sleep(0.2)
 
-        # The store should not have been updated
-        assert hash_val not in store
+        assert store[hash_val]["inclusion_services_status"]["94041"]["status"] == "not_configured"
         assert mock_get.call_count == 0

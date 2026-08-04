@@ -1,198 +1,363 @@
-import json
+"""Build the immutable provenance manifest for one pipeline candidate."""
+
+from __future__ import annotations
+
 import hashlib
+import json
 import logging
+import os
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel, Field
 
-from pipeline.common import CONFIG_FILE, load_config, CACHE_DIR, CLEAN_DIR, OUTPUT_DIR, STATUS_FILE
+from pipeline.common import (
+    CACHE_DIR,
+    CLEAN_DIR,
+    CONFIG_FILE,
+    OUTPUT_DIR,
+    STATUS_FILE,
+    load_config,
+)
 from pipeline.odace_client import OdaceClient
 
 logger = logging.getLogger(__name__)
 
+ROOT_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST_PATH = OUTPUT_DIR / "data_manifest.json"
+DEFAULT_SCORES_CONFIG_PATH = ROOT_DIR / "app" / "scores_config.yaml"
+DEFAULT_CONTRACTS_PATH = ROOT_DIR / "pipeline" / "data_contracts.yaml"
+
+
+class ArtifactManifestItem(BaseModel):
+    """A local artifact that can be verified after publication."""
+
+    name: str
+    sha256: str
+    size_bytes: int
+    row_count: Optional[int] = None
+    column_schema: Optional[Dict[str, str]] = None
 
 
 class SourceManifestItem(BaseModel):
-    source_key: str = Field(..., description="Technical identifier of the source in pipeline")
+    source_key: str = Field(..., description="Technical identifier in sources.yaml")
     name: str = Field(..., description="Display name / label of the data source")
-    method: str = Field(..., description="Ingestion method (e.g., Data Platform Odace, Export Data.gouv.fr)")
-    odace_table: Optional[str] = Field(None, description="Silver table name in Odace if applicable")
-    annee_reference: Optional[int] = Field(None, description="Year of reference of the data")
-    last_updated: Optional[str] = Field(None, description="ISO timestamp of data file download/cache")
-    row_count: Optional[int] = Field(None, description="Number of records in the dataset")
-    certified: bool = Field(False, description="Whether the table is certified in Odace")
-    doc_url: Optional[str] = Field(None, description="URL to dataset documentation or download")
+    method: str = Field(..., description="Ingestion method")
+    odace_table: Optional[str] = None
+    annee_reference: Optional[int] = None
+    doc_url: Optional[str] = None
+    certified: bool = False
+    ttl_days: Optional[int] = None
+    acquisition_status: str = "unknown"
+    acquired_at: Optional[str] = None
+    age_days: Optional[float] = None
+    fallback_used: bool = False
+    row_count: Optional[int] = None
+    artifact: Optional[ArtifactManifestItem] = None
 
 
 class DataManifest(BaseModel):
-    manifest_version: str = Field(..., description="Unique manifest version identifier")
-    created_at: str = Field(..., description="ISO creation timestamp of the manifest")
-    total_sources: int = Field(..., description="Total number of active data sources")
-    sources: List[SourceManifestItem] = Field(default_factory=list, description="Catalog of data sources")
+    schema_version: int = 2
+    manifest_version: str
+    created_at: str
+    pipeline_run_id: str
+    git_commit: Optional[str] = None
+    runtime_image: Optional[str] = None
+    configuration: Dict[str, str]
+    quality_gate: Dict[str, Any]
+    total_sources: int
+    sources: List[SourceManifestItem] = Field(default_factory=list)
+    outputs: List[ArtifactManifestItem] = Field(default_factory=list)
+    quality_report: Optional[ArtifactManifestItem] = None
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _parquet_metadata(path: Path) -> tuple[Optional[int], Optional[Dict[str, str]]]:
+    if path.suffix.lower() != ".parquet":
+        return None, None
+    try:
+        import pyarrow.parquet as pq
+
+        parquet = pq.ParquetFile(path)
+        return parquet.metadata.num_rows, {
+            field.name: str(field.type) for field in parquet.schema_arrow
+        }
+    except Exception as exc:  # pragma: no cover - defensive for malformed inputs
+        logger.warning("Could not inspect parquet artifact %s: %s", path, exc)
+        return None, None
+
+
+def artifact_metadata(path: Path, *, name: Optional[str] = None) -> ArtifactManifestItem:
+    """Return portable integrity metadata without loading whole datasets."""
+    if not path.is_file():
+        raise FileNotFoundError(f"Manifest artifact is missing: {path}")
+    row_count, schema = _parquet_metadata(path)
+    return ArtifactManifestItem(
+        name=name or path.name,
+        sha256=_sha256(path),
+        size_bytes=path.stat().st_size,
+        row_count=row_count,
+        column_schema=schema,
+    )
+
+
+def _git_commit() -> Optional[str]:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=ROOT_DIR,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return result.stdout.strip() or None
+
+
+def _canonical_digest(payload: Dict[str, Any]) -> str:
+    return hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
+    ).hexdigest()
 
 
 class DataManifestBuilder:
     def __init__(
         self,
         sources_config: Optional[Dict[str, Any]] = None,
+        local_files_config: Optional[Dict[str, Any]] = None,
         odace_client: Optional[OdaceClient] = None,
         output_path: Optional[Path] = None,
+        run_id: str = "local-unversioned",
+        quality_gate: Optional[Dict[str, Any]] = None,
+        release_artifacts: Optional[List[str]] = None,
+        quality_report_path: Optional[Path] = None,
     ):
         self.output_path = Path(output_path) if output_path else DEFAULT_MANIFEST_PATH
-        if sources_config is not None:
-            self.sources_config = sources_config
-        else:
-            try:
-                full_config = load_config(CONFIG_FILE)
-                self.sources_config = full_config.get("sources", {})
-            except Exception as e:
-                logger.warning(f"DataManifestBuilder: Failed to load sources config from {CONFIG_FILE}: {e}")
-                self.sources_config = {}
-
+        if sources_config is None:
+            full_config = load_config(CONFIG_FILE)
+            sources_config = full_config.get("sources", {})
+            local_files_config = full_config.get("local_files", {})
+        self.sources_config = sources_config
+        self.local_files_config = local_files_config or {}
         self.odace_client = odace_client
-        self.pipeline_status = self._load_pipeline_status()
+        self.run_id = run_id
+        self.quality_gate = quality_gate or {}
+        self.release_artifacts = release_artifacts or []
+        self.quality_report_path = quality_report_path
+        self.pipeline_state = self._load_pipeline_state()
+        self.source_outcomes = self.pipeline_state.get("sources", {})
+        self.step_statuses = self.pipeline_state.get("steps", {})
 
-    def _load_pipeline_status(self) -> Dict[str, Any]:
-        """Loads pipeline execution status from status.json if available."""
-        if STATUS_FILE.exists():
-            try:
-                with open(STATUS_FILE, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    return data.get("steps", {})
-            except Exception as e:
-                logger.warning(f"DataManifestBuilder: Failed to read {STATUS_FILE}: {e}")
-        return {}
+    def _load_pipeline_state(self) -> Dict[str, Any]:
+        if not STATUS_FILE.exists():
+            return {}
+        try:
+            return json.loads(STATUS_FILE.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning("Could not read pipeline state %s: %s", STATUS_FILE, exc)
+            return {}
 
     def build(self) -> DataManifest:
-        items: List[SourceManifestItem] = []
-
-        for source_key, source_meta in self.sources_config.items():
-            item = self._process_source(source_key, source_meta)
-            if item:
-                items.append(item)
-
-        # Generate deterministic version hash
-        now_iso = datetime.now(timezone.utc).isoformat()
-        date_str = datetime.now(timezone.utc).strftime("%Y.%m.%d")
-        payload_str = json.dumps([i.model_dump() for i in items], sort_keys=True)
-        hash_digest = hashlib.sha256(payload_str.encode("utf-8")).hexdigest()[:6]
-        manifest_version = f"v{date_str}-{hash_digest}"
-
-        manifest = DataManifest(
-            manifest_version=manifest_version,
-            created_at=now_iso,
-            total_sources=len(items),
-            sources=items,
+        source_catalog = {**self.sources_config, **self.local_files_config}
+        sources = [
+            self._process_source(source_key, source_meta)
+            for source_key, source_meta in source_catalog.items()
+        ]
+        outputs = [
+            artifact_metadata(self.output_path.parent / filename, name=filename)
+            for filename in self.release_artifacts
+        ]
+        quality_report = (
+            artifact_metadata(self.quality_report_path)
+            if self.quality_report_path and self.quality_report_path.exists()
+            else None
         )
-
-        # Save to output file
+        configuration = {
+            "sources_yaml_sha256": _sha256(Path(CONFIG_FILE)),
+            "scores_config_yaml_sha256": _sha256(DEFAULT_SCORES_CONFIG_PATH),
+            "data_contracts_yaml_sha256": _sha256(DEFAULT_CONTRACTS_PATH),
+        }
+        created_at = datetime.now(timezone.utc).isoformat()
+        content = {
+            "schema_version": 2,
+            "pipeline_run_id": self.run_id,
+            "git_commit": _git_commit(),
+            "runtime_image": os.getenv("RUNTIME_IMAGE_DIGEST"),
+            "configuration": configuration,
+            "quality_gate": self.quality_gate,
+            "sources": [source.model_dump() for source in sources],
+            "outputs": [output.model_dump() for output in outputs],
+            "quality_report": quality_report.model_dump() if quality_report else None,
+        }
+        manifest = DataManifest(
+            **content,
+            manifest_version=f"v2-{_canonical_digest(content)[:16]}",
+            created_at=created_at,
+            total_sources=len(sources),
+        )
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
         self.output_path.write_text(
             json.dumps(manifest.model_dump(), indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
-        logger.info(f"DataManifestBuilder: Generated manifest version {manifest_version} with {len(items)} sources at {self.output_path}")
-
+        logger.info(
+            "Generated manifest %s for run %s with %d sources at %s",
+            manifest.manifest_version,
+            self.run_id,
+            len(sources),
+            self.output_path,
+        )
         return manifest
 
-    def _process_source(self, source_key: str, meta: Dict[str, Any]) -> SourceManifestItem:
+    def _process_source(
+        self, source_key: str, meta: Dict[str, Any]
+    ) -> SourceManifestItem:
         use_odace = meta.get("use_odace", False)
         odace_table = meta.get("odace_table")
         name = meta.get("description") or source_key
+        annee_reference = meta.get("annee_reference")
         doc_url = meta.get("doc_url")
-        annee_ref = meta.get("annee_reference")
-        method = "Export Open Data"
-        row_count = None
-        last_updated = None
         certified = False
+        row_count = None
+        method = "Data Platform Odace" if use_odace else "Export Open Data"
+        if not use_odace and meta.get("provider") == "bigquery":
+            method = "BigQuery"
+        elif not use_odace and meta.get("format") == "api":
+            method = "API"
+        elif not use_odace and (meta.get("datagouv_resource_id") or "data.gouv" in (
+            meta.get("doc_url") or ""
+        ).lower()):
+            method = "Export Data.gouv.fr"
 
-        if use_odace and odace_table:
-            method = "Data Platform Odace"
-            # Try fetching Odace Silver detail if client is available
-            if self.odace_client:
-                detail = self.odace_client.fetch_silver_table_detail(odace_table)
-                if detail:
-                    certified = detail.get("certified", False)
-                    annee_ref = detail.get("annee_reference") or annee_ref
-                    if detail.get("description_fr"):
-                        name = detail["description_fr"]
-                    
-                    schema = detail.get("schema", {})
+        if use_odace and odace_table and self.odace_client:
+            detail = self.odace_client.fetch_silver_table_detail(odace_table)
+            if detail:
+                name = detail.get("description_fr") or name
+                annee_reference = detail.get("annee_reference") or annee_reference
+                certified = bool(detail.get("certified", False))
+                schema = detail.get("schema", {})
+                if isinstance(schema, dict):
                     row_count = schema.get("row_count")
+                if not doc_url:
+                    upstream_sources = detail.get("sources", [])
+                    if upstream_sources and isinstance(upstream_sources[0], dict):
+                        doc_url = upstream_sources[0].get("doc_url")
 
-                    # Primary source hypothesis (sources[0])
-                    odace_sources = detail.get("sources", [])
-                    if odace_sources and isinstance(odace_sources, list) and len(odace_sources) > 0:
-                        primary_source = odace_sources[0]
-                        if isinstance(primary_source, dict):
-                            if not doc_url and primary_source.get("doc_url"):
-                                doc_url = primary_source.get("doc_url")
-        else:
-            if meta.get("datagouv_resource_id") or "data.gouv" in (doc_url or "").lower():
-                method = "Export Data.gouv.fr"
+        if not doc_url and meta.get("datagouv_resource_id"):
+            doc_url = f"https://www.data.gouv.fr/fr/datasets/r/{meta['datagouv_resource_id']}"
+        elif not doc_url:
+            doc_url = meta.get("url")
 
-        # Fallback for doc_url from datagouv_resource_id or url
-        if not doc_url:
-            if meta.get("datagouv_resource_id"):
-                doc_url = f"https://www.data.gouv.fr/fr/datasets/r/{meta.get('datagouv_resource_id')}"
-            elif meta.get("url"):
-                doc_url = meta.get("url")
-
-        # Check status.json for execution step status & metadata
-        step_candidates = [
-            f"clean_{source_key}",
-            f"process_{source_key}",
-            f"output_{source_key}",
-            f"odace_{odace_table}" if odace_table else "",
-        ]
-        for step_name in step_candidates:
-            if step_name and step_name in self.pipeline_status:
-                step_info = self.pipeline_status[step_name]
-                if not last_updated and step_info.get("timestamp"):
-                    last_updated = step_info.get("timestamp")
-                details = step_info.get("details", {})
-                if row_count is None and isinstance(details, dict):
-                    row_count = details.get("rows") or details.get("count")
-
-        # Resolve exact file download / cache timestamp from local filesystem if status.json didn't provide last_updated
-        if not last_updated:
-            candidate_paths = []
-            if use_odace and odace_table:
-                candidate_paths.append(CACHE_DIR / f"odace_{odace_table}.parquet")
-            
-            local_name = meta.get("local_name")
-            if local_name:
-                candidate_paths.append(CACHE_DIR / local_name)
-                candidate_paths.append(CLEAN_DIR / local_name)
-            candidate_paths.append(CLEAN_DIR / f"{source_key}.parquet")
-
-            for path in candidate_paths:
-                if path.exists():
-                    last_updated = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat()
-                    break
-
-        if not last_updated:
-            last_updated = datetime.now(timezone.utc).isoformat()
+        outcome = self._source_outcome(source_key, odace_table)
+        source_path = self._source_path(source_key, meta, outcome)
+        source_artifact = artifact_metadata(source_path) if source_path else None
+        if row_count is None and source_artifact:
+            row_count = source_artifact.row_count
+        acquired_at = outcome.get("timestamp") if outcome else None
+        if not acquired_at and source_path:
+            acquired_at = datetime.fromtimestamp(
+                source_path.stat().st_mtime, tz=timezone.utc
+            ).isoformat()
+        age_days = _age_days(acquired_at)
 
         return SourceManifestItem(
             source_key=source_key,
             name=name,
             method=method,
             odace_table=odace_table if use_odace else None,
-            annee_reference=annee_ref,
-            last_updated=last_updated,
-            row_count=row_count,
-            certified=certified,
+            annee_reference=annee_reference,
             doc_url=doc_url,
+            certified=certified,
+            ttl_days=meta.get("ttl_days"),
+            acquisition_status=outcome.get("status", "unknown") if outcome else "unknown",
+            acquired_at=acquired_at,
+            age_days=age_days,
+            fallback_used=(outcome or {}).get("status") == "fallback_last_good",
+            row_count=row_count,
+            artifact=source_artifact,
         )
+
+    def _source_outcome(
+        self, source_key: str, odace_table: Optional[str]
+    ) -> Dict[str, Any]:
+        candidates = [source_key]
+        if odace_table:
+            candidates.extend([f"odace_{odace_table}", f"odace_query_{odace_table}"])
+        for candidate in candidates:
+            outcome = self.source_outcomes.get(candidate)
+            if isinstance(outcome, dict):
+                return outcome
+        return {}
+
+    def _source_path(
+        self, source_key: str, meta: Dict[str, Any], outcome: Dict[str, Any]
+    ) -> Optional[Path]:
+        reported = outcome.get("file")
+        if reported:
+            path = Path(reported)
+            if path.is_file():
+                return path
+        candidates: List[Path] = []
+        local_name = meta.get("local_name")
+        if local_name:
+            candidates.extend([CACHE_DIR / local_name, CLEAN_DIR / local_name])
+        if meta.get("use_odace") and meta.get("odace_table"):
+            candidates.append(CACHE_DIR / f"odace_{meta['odace_table']}.parquet")
+        candidates.append(CLEAN_DIR / f"{source_key}.parquet")
+        return next((path for path in candidates if path.is_file()), None)
+
+
+def _age_days(timestamp: Optional[str]) -> Optional[float]:
+    if not timestamp:
+        return None
+    try:
+        observed_at = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        if observed_at.tzinfo is None:
+            observed_at = observed_at.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+    return round((datetime.now(timezone.utc) - observed_at).total_seconds() / 86400, 3)
 
 
 def generate_manifest(
     output_path: Optional[Path] = None,
     odace_client: Optional[OdaceClient] = None,
+    **kwargs: Any,
 ) -> DataManifest:
-    """Convenience helper to build and write the Data Manifest."""
-    builder = DataManifestBuilder(odace_client=odace_client, output_path=output_path)
-    return builder.build()
+    """Build and write a provenance manifest for a single candidate run."""
+    return DataManifestBuilder(
+        odace_client=odace_client, output_path=output_path, **kwargs
+    ).build()
+
+
+def validate_manifest_for_deployment(
+    manifest_path: Path, *, run_id: str, required_artifacts: List[str]
+) -> DataManifest:
+    """Ensure a candidate manifest belongs to its run and describes its outputs."""
+    try:
+        manifest = DataManifest.model_validate_json(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"Invalid candidate manifest: {manifest_path}") from exc
+    if manifest.pipeline_run_id != run_id:
+        raise ValueError("Candidate manifest does not belong to the requested run")
+    if manifest.quality_report is None:
+        raise ValueError("Candidate manifest is missing its quality report metadata")
+    indexed_outputs = {artifact.name: artifact for artifact in manifest.outputs}
+    for filename in required_artifacts:
+        artifact = indexed_outputs.get(filename)
+        path = manifest_path.parent / filename
+        if artifact is None or not path.is_file() or artifact != artifact_metadata(path, name=filename):
+            raise ValueError(f"Manifest output integrity check failed: {filename}")
+    return manifest

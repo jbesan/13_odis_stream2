@@ -97,7 +97,9 @@ def get_scoring_engine() -> ScoringEngine:
             "refugee_associations_data", pd.DataFrame()
         ),
         live_jobs_data=DATA_CONTEXT.get("live_jobs_data", pd.DataFrame()),
+        live_jobs_coverage=DATA_CONTEXT.get("live_jobs_coverage", pd.DataFrame()),
         siae_jobs_data=DATA_CONTEXT.get("siae_jobs_data", pd.DataFrame()),
+        siae_jobs_coverage=DATA_CONTEXT.get("siae_jobs_coverage", pd.DataFrame()),
     )
 
 

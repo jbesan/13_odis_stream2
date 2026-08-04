@@ -4,8 +4,10 @@ import time
 import pandas as pd
 from dotenv import load_dotenv
 from typing import Dict, Any
+from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
+from pipeline.employment_coverage import METROPOLITAN_DEPARTMENTS
 
 # Load environment variables
 load_dotenv("app/.env")
@@ -45,11 +47,10 @@ GRAND_DOMAINES = [
 # Type Contrat for Level 3 splitting
 TYPES_CONTRAT = ["CDI", "CDD", "MIS", "CCE", "CTI", "LIB", "DIN", "FRA"]
 
-# Scope: Metropolitan France (01 to 95)
-DEPARTEMENTS = [str(i).zfill(2) for i in range(1, 96)] + ["2A", "2B"]
-DEPARTEMENTS = sorted(list(set(DEPARTEMENTS)))
-if "20" in DEPARTEMENTS:
-    DEPARTEMENTS.remove("20")
+# Product scope: all metropolitan departments, including the two Corsican codes.
+DEPARTEMENTS = list(METROPOLITAN_DEPARTMENTS)
+OUTPUT_PATH = "pipeline/cache/output/odis_ft_jobs_agg.parquet"
+COVERAGE_OUTPUT_PATH = "pipeline/cache/output/odis_ft_jobs_coverage.parquet"
 
 # Rate Limiter Configuration
 MAX_CALLS_PER_SECOND = 9  # Safe margin
@@ -83,6 +84,24 @@ METRICS = {
 
 # Session management
 SESSION = {"token": None, "http": None}
+
+
+@dataclass
+class FetchPagesResult:
+    offers: list[Dict[str, Any]]
+    pages_expected: int
+    pages_retrieved: int
+    needs_split: bool = False
+
+
+@dataclass
+class DepartmentFetchResult:
+    department: str
+    offers: list[Dict[str, Any]]
+    pages_expected: int
+    pages_retrieved: int
+    status: str
+    error: str | None = None
 
 
 def get_http_session():
@@ -170,7 +189,7 @@ def prune_offer(offer: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def fetch_all_pages(params):
+def fetch_all_pages(params) -> FetchPagesResult:
     all_offers = []
 
     # Range for the first call
@@ -178,14 +197,13 @@ def fetch_all_pages(params):
     resp = api_call(current_params)
 
     if resp is None:
-        print(f"  [Fatal] Failed to fetch first page for {params} after 5 attempts.")
-        return []
+        raise RuntimeError(f"Failed to fetch first page for {params} after retries")
 
     if resp.status_code == 204:
-        return []
+        return FetchPagesResult([], pages_expected=1, pages_retrieved=1)
 
     if not (resp.status_code == 200 or resp.status_code == 206):
-        return []
+        raise RuntimeError(f"Unexpected HTTP {resp.status_code} for {params}")
 
     # Parse total from Content-Range
     content_range = resp.headers.get("Content-Range", "")
@@ -194,21 +212,24 @@ def fetch_all_pages(params):
         total = int(content_range.split("/")[-1])
 
     if total == 0:
-        return []
+        return FetchPagesResult([], pages_expected=1, pages_retrieved=1)
 
     # If too big and not yet fully split, signal need for deeper split
     if total > 3150:
         if "grandDomaine" not in params:
-            return None  # Trigger Level 2
+            return FetchPagesResult([], 0, 0, needs_split=True)
         if "typeContrat" not in params:
-            return None  # Trigger Level 3
+            return FetchPagesResult([], 0, 0, needs_split=True)
+        raise RuntimeError(f"Segment remains above the API limit after splitting: {params}")
 
     # Store first batch (pruned)
     results = resp.json().get("resultats", [])
     all_offers.extend([prune_offer(o) for o in results])
 
     # Fetch remaining pages
-    limit = min(total, 3150)
+    limit = total
+    pages_expected = (limit + 149) // 150
+    pages_retrieved = 1
     # Start from 150 since we already have the first page
     for start in range(150, limit, 150):
         end = min(start + 149, limit - 1)
@@ -216,13 +237,12 @@ def fetch_all_pages(params):
         if page_resp and page_resp.status_code in [200, 206]:
             results = page_resp.json().get("resultats", [])
             all_offers.extend([prune_offer(o) for o in results])
-        elif page_resp is None:
-            print(f"      [Error] Could not fetch batch {start}-{end} for {params}.")
+            pages_retrieved += 1
+        else:
+            status = page_resp.status_code if page_resp is not None else "no_response"
+            raise RuntimeError(f"Could not fetch batch {start}-{end} for {params}: {status}")
 
-    if total > 3150:
-        print(f"      /!\\ WARNING: Truncated to 3150 for params: {params}")
-
-    return all_offers
+    return FetchPagesResult(all_offers, pages_expected, pages_retrieved)
 
 
 def run_etl():
@@ -239,35 +259,41 @@ def run_etl():
 
     all_raw_data = []
 
-    def process_segment(params):
+    def process_segment(params) -> FetchPagesResult:
         results = fetch_all_pages(params)
 
         # Level 1 Split (by Domain)
-        if results is None and "grandDomaine" not in params:
+        if results.needs_split and "grandDomaine" not in params:
             # print(f"\n  Splitting {params['departement']} by Domain...")
-            sub_results = []
+            sub_results: list[Dict[str, Any]] = []
+            pages_expected = 0
+            pages_retrieved = 0
             for domain in GRAND_DOMAINES:
                 res = process_segment({**params, "grandDomaine": domain})
-                if res and isinstance(res, list):
-                    sub_results.extend(res)
-            return sub_results
+                sub_results.extend(res.offers)
+                pages_expected += res.pages_expected
+                pages_retrieved += res.pages_retrieved
+            return FetchPagesResult(sub_results, pages_expected, pages_retrieved)
 
         # Level 2 Split (by Type Contrat)
-        if results is None and "grandDomaine" in params:
+        if results.needs_split and "grandDomaine" in params:
             print(
                 f"    - Domain {params['grandDomaine']} in {params['departement']} > 3150. Splitting by TypeContrat..."
             )
-            sub_results = []
+            sub_results: list[Dict[str, Any]] = []
+            pages_expected = 0
+            pages_retrieved = 0
             for t_contrat in TYPES_CONTRAT:
-                res = fetch_all_pages({**params, "typeContrat": t_contrat})
-                if res and isinstance(res, list):
-                    sub_results.extend(res)
-            # Final check for "everything else" is not easy, but we cover 99% with TYPES_CONTRAT
-            return sub_results
+                res = process_segment({**params, "typeContrat": t_contrat})
+                sub_results.extend(res.offers)
+                pages_expected += res.pages_expected
+                pages_retrieved += res.pages_retrieved
+            return FetchPagesResult(sub_results, pages_expected, pages_retrieved)
 
         return results
 
-    # We use 10 threads to overlap network latency
+    # A department is complete only when every required page/segment succeeds.
+    department_results: list[DepartmentFetchResult] = []
     with ThreadPoolExecutor(max_workers=10) as executor:
         future_to_dept = {
             executor.submit(process_segment, {"departement": d}): d
@@ -277,15 +303,58 @@ def run_etl():
         for future in as_completed(future_to_dept):
             dept = future_to_dept[future]
             try:
-                data = future.result()
-                if data:
+                result = future.result()
+                department_results.append(
+                    DepartmentFetchResult(
+                        dept,
+                        result.offers,
+                        result.pages_expected,
+                        result.pages_retrieved,
+                        "success",
+                    )
+                )
+                if result.offers:
                     with LOCK_DATA:
-                        all_raw_data.extend(data)
-                    print(f"Dept {dept}: Fetched {len(data)} offers.")
+                        all_raw_data.extend(result.offers)
+                    print(f"Dept {dept}: Fetched {len(result.offers)} offers.")
                 else:
                     print(f"Dept {dept}: No offers.")
             except Exception as e:
                 print(f"Dept {dept} generated an exception: {e}")
+                department_results.append(
+                    DepartmentFetchResult(dept, [], 0, 0, "failed", str(e))
+                )
+
+    coverage = pd.DataFrame(
+        [
+            {
+                "department": result.department,
+                "status": result.status,
+                "offers_count": len(result.offers),
+                "pages_expected": result.pages_expected,
+                "pages_retrieved": result.pages_retrieved,
+                "error": result.error,
+            }
+            for result in department_results
+        ]
+    )
+    completed_departments = set(
+        coverage.loc[coverage["status"] == "success", "department"]
+    )
+    missing_departments = sorted(set(DEPARTEMENTS) - completed_departments)
+    if missing_departments:
+        raise RuntimeError(
+            "France Travail coverage is incomplete; refusing to publish: "
+            + ", ".join(missing_departments)
+        )
+    empty_departments = sorted(
+        coverage.loc[coverage["offers_count"] == 0, "department"].astype(str)
+    )
+    if empty_departments:
+        raise RuntimeError(
+            "France Travail returned no offers for required departments: "
+            + ", ".join(empty_departments)
+        )
 
     # Transformation
     if all_raw_data:
@@ -324,14 +393,9 @@ def run_etl():
             .reset_index()
         )
 
-        output_path = "pipeline/cache/output/odis_ft_jobs_agg.parquet"
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        agg.to_parquet(output_path, index=False, engine="fastparquet")
-
-        # Validation: Check if all expected departments are present
-        df["dept"] = df["commune"].str[:2]
-        found_depts = df["dept"].unique()
-        missing_depts = [d for d in DEPARTEMENTS if d not in found_depts]
+        os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
+        agg.to_parquet(OUTPUT_PATH, index=False, engine="fastparquet")
+        coverage.to_parquet(COVERAGE_OUTPUT_PATH, index=False, engine="fastparquet")
 
         duration = (time.time() - METRICS["start_time"]) / 60
         print("\n=== ETL SUMMARY ===")
@@ -342,16 +406,12 @@ def run_etl():
         print(f"Final Aggregated Rows: {len(agg)}")
         print(f"Total Postes (Market Opportunity): {int(agg['total_postes'].sum())}")
 
-        if missing_depts:
-            print(f"/!\\ WARNING: Missing data for departments: {missing_depts}")
-        else:
-            print("✅ All departments successfully mapped in output.")
+        print("✅ All metropolitan departments completed their API collection.")
 
-        print(f"Saved to: {output_path}")
-        return output_path
+        print(f"Saved to: {OUTPUT_PATH}")
+        return OUTPUT_PATH
     else:
-        print("No data fetched.")
-        return None
+        raise RuntimeError("France Travail returned no offers for metropolitan France")
 
 
 if __name__ == "__main__":

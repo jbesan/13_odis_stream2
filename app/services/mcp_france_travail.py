@@ -203,13 +203,19 @@ def _search_job_offers_logic(
             )
 
     if response.status_code == 204:
-        return {"offres": [], "total": 0}
+        return {"status": "success_empty", "offres": [], "total": 0}
 
     if response.status_code not in [200, 206]:
         logger.warning(
             f"⚠️ [FranceTravail] Search Error: {response.status_code} - {response.text[:200]}"
         )
-        return {"offres": [], "total": 0}
+        return {
+            "status": "error",
+            "offres": [],
+            "total": 0,
+            "error_code": f"http_{response.status_code}",
+            "retryable": response.status_code in {429, 500, 502, 503, 504},
+        }
 
     response.raise_for_status()
     # data = response.json()
@@ -229,7 +235,11 @@ def _search_job_offers_logic(
 
     pruned_offres = [_prune_job_offer(o) for o in data.get("resultats", [])]
 
-    return {"offres": pruned_offres, "total": total}
+    return {
+        "status": "success_nonempty" if pruned_offres else "success_empty",
+        "offres": pruned_offres,
+        "total": total,
+    }
 
 
 @mcp.tool()

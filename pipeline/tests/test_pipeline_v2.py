@@ -63,16 +63,9 @@ def test_is_cache_valid(temp_pipeline_dirs):
     os.utime(local_path, (past_time, past_time))
     assert not is_cache_valid(source_name, source_cfg)
 
-    # Case 4: Default TTL behavior (30 days)
-    source_cfg_default = {"local_name": local_name}
-    # Reset file to current time
-    os.utime(local_path, None)
-    assert is_cache_valid(source_name, source_cfg_default)
-
-    # Set to 40 days ago
-    expired_time = time.time() - (40 * 24 * 3600)
-    os.utime(local_path, (expired_time, expired_time))
-    assert not is_cache_valid(source_name, source_cfg_default)
+    # Case 4: TTL is mandatory; no implicit cache policy is allowed.
+    with pytest.raises(KeyError, match="ttl_days"):
+        is_cache_valid(source_name, {"local_name": local_name})
 
 
 # =====================================================================
@@ -350,7 +343,8 @@ def test_run_clean_step_safely_failure_rollback(mock_load, temp_pipeline_dirs):
         nonlocal clean_executed
         clean_executed = True
 
-    run_clean_step_safely("communes", clean_communes_failed, config, logger)
+    with pytest.raises(Exception, match="raw contract validation"):
+        run_clean_step_safely("communes", clean_communes_failed, config, logger)
 
     # Verify early abort (clean function not run, staging discarded, active kept)
     assert not clean_executed
@@ -367,7 +361,8 @@ def test_run_clean_step_safely_failure_rollback(mock_load, temp_pipeline_dirs):
         assert active_raw.read_text() == "new raw data"
         raise ValueError("Simulated cleaning crash")
 
-    run_clean_step_safely("communes", clean_communes_crash, config, logger)
+    with pytest.raises(Exception, match="Required clean step"):
+        run_clean_step_safely("communes", clean_communes_crash, config, logger)
 
     # Verify rollback successfully restored active files and discarded staging
     assert active_raw.read_text() == "old raw data"

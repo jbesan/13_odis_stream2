@@ -938,7 +938,7 @@ scores:
   category: logement
   source_metric: heb_accueillants_count
   bdv_factor: 1.0
-  computation: precomputed
+  computation: live
   display:
     name: Accueillants J'Accueille dans le bassin de vie
     strong_point_text: Des particuliers accueillent déjà dans ce bassin de vie
@@ -956,7 +956,7 @@ scores:
   category: logement
   source_metric: prospects_count
   bdv_factor: 1.0
-  computation: precomputed
+  computation: live
   display:
     name: Prospects J'Accueille dans le bassin de vie
     strong_point_text: Des prospects J'Accueille sont présents dans ce bassin de vie

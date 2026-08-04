@@ -1,3 +1,4 @@
+import json
 import os
 import pytest
 import pandas as pd
@@ -6,12 +7,14 @@ from unittest.mock import patch, MagicMock
 
 from pipeline.odace_client import OdaceClient
 from pipeline.ingest import (
-    clean_finess_national,
     clean_caf,
-    clean_maternites,
     clean_bpe,
+    clean_communes,
+    clean_housing_occupation,
+    transform_housing_occupation_odace,
     PipelineLogger,
 )
+from pipeline.run_context import PipelineRunError
 
 
 @pytest.fixture
@@ -68,7 +71,7 @@ def test_odace_client_fetch_table_success(mock_get, temp_cache_dirs):
         os.environ, {"ODACE_API_KEY": "test-key", "ODACE_API_URL": "https://api-test"}
     ):
         client = OdaceClient()
-        df = client.fetch_table("dim_etablissement_sante")
+        df = client.fetch_table("dim_etablissement_sante", ttl_days=30)
 
         assert not df.empty
         assert len(df) == 1
@@ -87,20 +90,7 @@ def test_odace_client_fetch_table_success(mock_get, temp_cache_dirs):
 
 
 # =====================================================================
-# 2. Ingestion Cleaner: clean_finess_national Tests
-# =====================================================================
-
-
-def test_clean_finess_national_success():
-    """Tests that clean_finess_national logs SKIPPED as health data is handled by BPE25."""
-    config = {}
-    logger = MagicMock(spec=PipelineLogger)
-    clean_finess_national(config, logger)
-    logger.log_step.assert_called_once_with("clean_finess_national", "SKIPPED")
-
-
-# =====================================================================
-# 3. Ingestion Cleaner: clean_caf Tests
+# 2. Ingestion Cleaner: clean_caf Tests
 # =====================================================================
 
 
@@ -159,18 +149,18 @@ def test_clean_caf_odace_success(mock_get_client, temp_cache_dirs):
 
 
 @patch("pipeline.ingest.get_odace_client")
-def test_clean_caf_odace_fallback(mock_get_client, temp_cache_dirs):
-    """Tests that clean_caf falls back to legacy raw file on API exception."""
-    raw_dir, clean_dir = temp_cache_dirs
+def test_clean_caf_odace_failure_does_not_use_legacy_raw(
+    mock_get_client, temp_cache_dirs
+):
+    """An enabled Odace source fails closed rather than reviving a local file."""
+    raw_dir, _ = temp_cache_dirs
 
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
     mock_client.fetch_table.side_effect = Exception("API error")
 
-    # Write dummy legacy JSON file to raw cache
+    # A historical raw file must not alter the outcome.
     legacy_file = raw_dir / "caf_taux_couverture.json"
-    import json
-
     legacy_data = [{"numcom": "38085", "annee": 2023, "txcouv_com": 51.4}]
     with open(legacy_file, "w") as f:
         json.dump(legacy_data, f)
@@ -187,32 +177,209 @@ def test_clean_caf_odace_fallback(mock_get_client, temp_cache_dirs):
     }
 
     logger = MagicMock(spec=PipelineLogger)
-    clean_caf(config, logger)
-
-    # Verify output is written in clean/caf.parquet using legacy loader
-    out_file = clean_dir / "caf.parquet"
-    assert out_file.exists()
-    df_clean = pd.read_parquet(out_file, engine="fastparquet")
-    assert len(df_clean) == 1
-    assert df_clean.iloc[0]["codgeo"] == "38085"
-    assert df_clean.iloc[0]["taux_couverture"] == 51.4
+    with pytest.raises(PipelineRunError, match="Odace caf"):
+        clean_caf(config, logger)
 
 
 # =====================================================================
-# 4. Ingestion Cleaner: clean_maternites Tests
+# 3. Ingestion Cleaner: Housing occupation
 # =====================================================================
 
 
-def test_clean_maternites_skipped():
-    """Tests that clean_maternites logs SKIPPED as it is bypassed in favor of BPE25."""
-    config = {}
-    logger = MagicMock(spec=PipelineLogger)
-    clean_maternites(config, logger)
-    logger.log_step.assert_called_once_with("clean_maternites", "SKIPPED")
+@pytest.fixture
+def housing_occupation_contract():
+    return {
+        "version": 1,
+        "odace_table": "fact_occupation_logement",
+        "reference_year": "2022",
+        "required_columns": [
+            "commune_insee_code",
+            "annee",
+            "indicateur_occupation",
+            "valeur",
+        ],
+        "primary_key": ["commune_insee_code", "annee", "indicateur_occupation"],
+        "required_indicators": ["MOD_OVER_OCC", "STD_OCC", "SEV_UNDER_OCC"],
+        "minimum_communes": 2,
+        "minimum_communes_per_indicator": 2,
+        "require_complete_indicator_set_per_commune": True,
+        "value": {"minimum": 0, "nullable": False},
+    }
+
+
+@pytest.fixture
+def housing_occupation_odace_data(housing_occupation_contract):
+    rows = []
+    for commune, base in [("01001", 1.0), ("2B002", 10.0)]:
+        for offset, indicator in enumerate(housing_occupation_contract["required_indicators"]):
+            rows.append(
+                {
+                    "commune_insee_code": commune,
+                    "annee": "2022",
+                    "indicateur_occupation": indicator,
+                    "valeur": base + offset,
+                }
+            )
+    rows.append(
+        {
+            "commune_insee_code": "01001",
+            "annee": "2016",
+            "indicateur_occupation": "MOD_OVER_OCC",
+            "valeur": 999.0,
+        }
+    )
+    return pd.DataFrame(rows)
+
+
+def test_transform_housing_occupation_odace_applies_year_and_contract(
+    housing_occupation_odace_data, housing_occupation_contract
+):
+    result = transform_housing_occupation_odace(
+        housing_occupation_odace_data, housing_occupation_contract
+    )
+
+    assert result.columns.tolist() == [
+        "codgeo",
+        "MOD_OVER_OCC",
+        "STD_OCC",
+        "SEV_UNDER_OCC",
+    ]
+    assert result["codgeo"].tolist() == ["01001", "2B002"]
+    assert result.loc[result["codgeo"] == "01001", "MOD_OVER_OCC"].iloc[0] == 1.0
+
+
+def test_transform_housing_occupation_odace_rejects_incomplete_indicator_family(
+    housing_occupation_odace_data, housing_occupation_contract
+):
+    incomplete = housing_occupation_odace_data.iloc[:-2].copy()
+
+    with pytest.raises(PipelineRunError, match="insufficient commune coverage"):
+        transform_housing_occupation_odace(incomplete, housing_occupation_contract)
+
+
+def test_transform_housing_occupation_odace_rejects_duplicate_business_key(
+    housing_occupation_odace_data, housing_occupation_contract
+):
+    duplicated = pd.concat(
+        [housing_occupation_odace_data, housing_occupation_odace_data.iloc[[0]]],
+        ignore_index=True,
+    )
+
+    with pytest.raises(PipelineRunError, match="violates its primary key"):
+        transform_housing_occupation_odace(duplicated, housing_occupation_contract)
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_housing_occupation_uses_odace_only(
+    mock_get_client,
+    temp_cache_dirs,
+    housing_occupation_odace_data,
+    housing_occupation_contract,
+):
+    _, clean_dir = temp_cache_dirs
+    mock_client = MagicMock()
+    mock_client.fetch_table.return_value = housing_occupation_odace_data
+    mock_get_client.return_value = mock_client
+    config = {
+        "sources": {
+            "housing_occupation": {
+                "use_odace": True,
+                "odace_table": "fact_occupation_logement",
+            }
+        }
+    }
+
+    with patch(
+        "pipeline.ingest._load_source_contract", return_value=housing_occupation_contract
+    ):
+        clean_housing_occupation(config, MagicMock(spec=PipelineLogger))
+
+    output = pd.read_parquet(clean_dir / "housing_occupation.parquet", engine="fastparquet")
+    assert len(output) == 2
+    mock_client.fetch_table.assert_called_once_with("fact_occupation_logement")
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_housing_occupation_fails_without_odace_data(
+    mock_get_client, temp_cache_dirs, housing_occupation_contract
+):
+    mock_client = MagicMock()
+    mock_client.fetch_table.return_value = pd.DataFrame()
+    mock_get_client.return_value = mock_client
+    config = {
+        "sources": {
+            "housing_occupation": {
+                "use_odace": True,
+                "odace_table": "fact_occupation_logement",
+            }
+        }
+    }
+
+    with patch(
+        "pipeline.ingest._load_source_contract", return_value=housing_occupation_contract
+    ), pytest.raises(PipelineRunError, match="Odace housing_occupation"):
+        clean_housing_occupation(config, MagicMock(spec=PipelineLogger))
+
+
+@patch("pipeline.ingest.fetch_source", return_value=None)
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_communes_keeps_odace_commune_sk_for_candidate_joins(
+    mock_get_client, _mock_fetch_source, temp_cache_dirs
+):
+    """The candidate commune artifact must retain the Odace rent join key."""
+    _, clean_dir = temp_cache_dirs
+
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.return_value = pd.DataFrame(
+        {
+            "commune_insee_code": ["75001"],
+            "geometrie_geojson": [
+                json.dumps(
+                    {
+                        "type": "Polygon",
+                        "coordinates": [
+                            [
+                                [2.3, 48.8],
+                                [2.31, 48.8],
+                                [2.31, 48.81],
+                                [2.3, 48.8],
+                            ]
+                        ],
+                    }
+                )
+            ],
+        }
+    )
+    mock_client.fetch_dim_commune.return_value = pd.DataFrame(
+        {
+            "commune_sk": ["odace-sk-75001"],
+            "commune_insee_code": ["75001"],
+            "commune_label": ["Paris 1er"],
+            "departement_code": ["75"],
+            "region_code": ["11"],
+        }
+    )
+
+    config = {
+        "sources": {
+            "communes": {
+                "use_odace": True,
+                "odace_table": "ref_commune_geo",
+                "ttl_days": 30,
+            },
+            "ref_epci": {},
+        }
+    }
+
+    clean_communes(config, MagicMock(spec=PipelineLogger))
+
+    result = pd.read_parquet(clean_dir / "communes.parquet", engine="fastparquet")
+    assert result.loc[0, "commune_sk"] == "odace-sk-75001"
 
 
 # =====================================================================
-# 5. Ingestion Cleaner: clean_bpe Tests
+# 3. Ingestion Cleaner: clean_bpe Tests
 # =====================================================================
 
 
@@ -265,7 +432,7 @@ def test_clean_bpe_odace_success(mock_get_client, temp_cache_dirs):
                 "capacite_hebergement": None,
                 "coord_x_lambert": 879374.24,
                 "coord_y_lambert": 6260251.11,
-            }
+            },
         ]
     )
     mock_client.fetch_table.return_value = mock_data
@@ -303,8 +470,10 @@ def test_clean_bpe_odace_success(mock_get_client, temp_cache_dirs):
 
 
 @patch("pipeline.ingest.get_odace_client")
-def test_clean_bpe_odace_fallback(mock_get_client, temp_cache_dirs):
-    """Tests that clean_bpe falls back to local cache file if Odace API raises an exception."""
+def test_clean_bpe_odace_failure_does_not_use_legacy_raw(
+    mock_get_client, temp_cache_dirs
+):
+    """An enabled Odace BPE source fails closed rather than using local cache."""
     raw_dir, clean_dir = temp_cache_dirs
 
     mock_client = MagicMock()
@@ -336,18 +505,21 @@ def test_clean_bpe_odace_fallback(mock_get_client, temp_cache_dirs):
                 "odace_table": "dim_equipement_territoire",
                 "local_name": "BPE25.parquet",
                 "ttl_days": 365,
-                "used_columns": ["DEPCOM", "TYPEQU", "NOMRS", "LAMBERT_X", "LAMBERT_Y", "LONGITUDE", "LATITUDE", "SECTEUR"],
+                "used_columns": [
+                    "DEPCOM",
+                    "TYPEQU",
+                    "NOMRS",
+                    "LAMBERT_X",
+                    "LAMBERT_Y",
+                    "LONGITUDE",
+                    "LATITUDE",
+                    "SECTEUR",
+                ],
             }
         }
     }
 
     logger = MagicMock(spec=PipelineLogger)
-    clean_bpe(config, logger)
-
-    # Verify fallback executed and wrote outputs from local cache
-    assert (clean_dir / "bpe_education_cols.parquet").exists()
-    assert (clean_dir / "bpe_pois.parquet").exists()
-
-    pois_df = pd.read_parquet(clean_dir / "bpe_pois.parquet")
-    assert len(pois_df) == 1
-    assert pois_df.iloc[0]["name"] == "LOCAL ECOLE MATERNELLE"
+    with pytest.raises(PipelineRunError, match="Odace bpe"):
+        clean_bpe(config, logger)
+    assert not (clean_dir / "bpe_pois.parquet").exists()

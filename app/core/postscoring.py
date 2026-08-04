@@ -6,10 +6,43 @@ import logging
 import logfire
 
 import config as cfg
+from core.enrichment_status import EnrichmentStatus, enrichment_result
 from core.models import CommuneResult
 from agents.utils import get_odis_bg_store, sanitize_llm_markdown, rehydrate_graph_state
 
 logger = logging.getLogger(__name__)
+ENRICHMENT_DEADLINE_SECONDS = 30
+
+
+def _schedule_enrichment_deadline(
+    results_store: dict, hash_val: str, status_key: str, codgeos: List[str]
+) -> None:
+    """Ensure a stalled best-effort task reaches an honest terminal state."""
+
+    def mark_timeout() -> None:
+        current = results_store.get(hash_val, {})
+        if not isinstance(current, dict):
+            return
+        statuses = current.get(status_key, {})
+        if not isinstance(statuses, dict):
+            return
+        changed = False
+        for codgeo in codgeos:
+            item = statuses.get(str(codgeo), {})
+            if not item or item.get("status") == EnrichmentStatus.PENDING.value:
+                statuses[str(codgeo)] = enrichment_result(
+                    EnrichmentStatus.TIMEOUT,
+                    error_code="deadline_exceeded",
+                    retryable=True,
+                )
+                changed = True
+        if changed:
+            current[status_key] = statuses
+            results_store[hash_val] = current
+
+    timer = threading.Timer(ENRICHMENT_DEADLINE_SECONDS, mark_timeout)
+    timer.daemon = True
+    timer.start()
 
 
 def launch_background_refining(
@@ -159,7 +192,7 @@ def prefetch_associations(engine: Any, codgeos: List[str]) -> Dict[str, Dict[str
     Updates engine._associations_cache.
     """
     if not engine.rna_rag_service or not codgeos:
-        return {}
+        raise RuntimeError("association_service_not_configured")
 
     try:
         logger.info(f"📊 [PREFETCH] Fetching associations for {len(codgeos)} communes")
@@ -209,7 +242,7 @@ def prefetch_associations(engine: Any, codgeos: List[str]) -> Dict[str, Dict[str
 
     except Exception as e:
         logger.error(f"❌ [PREFETCH] Failed associations fetch: {e}")
-        return {}
+        raise RuntimeError("association_fetch_failed") from e
 
 
 def launch_background_association_enrichment(
@@ -219,6 +252,14 @@ def launch_background_association_enrichment(
     Launches a background thread to fetch detailed associations for the search results.
     """
     store = get_odis_bg_store()
+    current = store.get(hash_val, {})
+    if not isinstance(current, dict):
+        current = {}
+    current["association_enrichment_status"] = {
+        str(codgeo): enrichment_result(EnrichmentStatus.PENDING, attempts=0)
+        for codgeo in codgeos
+    }
+    store[hash_val] = current
 
     def bg_enrichment_task(results_store: dict):
         try:
@@ -235,6 +276,16 @@ def launch_background_association_enrichment(
             if not isinstance(current_val, dict):
                 current_val = {}
             current_val["enrichment"] = enrichment_data
+            current_val["association_enrichment_status"] = {
+                str(codgeo): enrichment_result(
+                    EnrichmentStatus.SUCCESS_NONEMPTY
+                    if enrichment_data.get(str(codgeo), {}).get("refugee")
+                    or enrichment_data.get(str(codgeo), {}).get("inclusion")
+                    else EnrichmentStatus.SUCCESS_EMPTY,
+                    data=enrichment_data.get(str(codgeo), {}),
+                )
+                for codgeo in codgeos
+            }
             results_store[hash_val] = current_val
 
             logging.info(
@@ -244,10 +295,28 @@ def launch_background_association_enrichment(
             logging.error(
                 f"❌ [ENRICH] Background enrichment error for {hash_val}: {e}"
             )
+            current_val = results_store.get(hash_val, {})
+            if not isinstance(current_val, dict):
+                current_val = {}
+            status = (
+                EnrichmentStatus.NOT_CONFIGURED
+                if str(e) == "association_service_not_configured"
+                else EnrichmentStatus.ERROR
+            )
+            current_val["association_enrichment_status"] = {
+                str(codgeo): enrichment_result(
+                    status,
+                    error_code=str(e),
+                    retryable=status == EnrichmentStatus.ERROR,
+                )
+                for codgeo in codgeos
+            }
+            results_store[hash_val] = current_val
 
     thread = threading.Thread(target=bg_enrichment_task, args=(store,))
     thread.daemon = True
     thread.start()
+    _schedule_enrichment_deadline(store, hash_val, "association_enrichment_status", codgeos)
 
 
 def launch_background_inclusion_enrichment(
@@ -264,6 +333,14 @@ def launch_background_inclusion_enrichment(
             response. If None or empty, fetches all services for each commune.
     """
     store = get_odis_bg_store()
+    current = store.get(hash_val, {})
+    if not isinstance(current, dict):
+        current = {}
+    current["inclusion_services_status"] = {
+        str(codgeo): enrichment_result(EnrichmentStatus.PENDING, attempts=0)
+        for codgeo in codgeos
+    }
+    store[hash_val] = current
 
     def bg_inclusion_enrichment_task(results_store: dict):
         import requests
@@ -272,6 +349,17 @@ def launch_background_inclusion_enrichment(
         api_key = os.getenv("DATA_INCLUSION_API_KEY")
         if not api_key:
             logging.warning("⚠️ [INCLUSION-ENRICH] DATA_INCLUSION_API_KEY is not set.")
+            current_val = results_store.get(hash_val, {})
+            if not isinstance(current_val, dict):
+                current_val = {}
+            current_val["inclusion_services_status"] = {
+                str(codgeo): enrichment_result(
+                    EnrichmentStatus.NOT_CONFIGURED,
+                    error_code="missing_data_inclusion_credentials",
+                )
+                for codgeo in codgeos
+            }
+            results_store[hash_val] = current_val
             return
 
         logging.info(
@@ -282,6 +370,7 @@ def launch_background_inclusion_enrichment(
         base_url = "https://api.data.inclusion.gouv.fr/api/v1"
 
         enrichment_data = {}
+        statuses = {}
 
         for codgeo in codgeos:
             try:
@@ -300,6 +389,11 @@ def launch_background_inclusion_enrichment(
                 if r_services.status_code != 200:
                     logging.warning(
                         f"⚠️ [INCLUSION-ENRICH] Failed to fetch services for codgeo {codgeo}: {r_services.status_code} {r_services.text[:100]}"
+                    )
+                    statuses[str(codgeo)] = enrichment_result(
+                        EnrichmentStatus.ERROR,
+                        error_code=f"http_{r_services.status_code}",
+                        retryable=r_services.status_code in {429, 500, 502, 503, 504},
                     )
                     continue
 
@@ -378,10 +472,25 @@ def launch_background_inclusion_enrichment(
                         )
 
                 enrichment_data[str(codgeo)] = grouped_services
+                statuses[str(codgeo)] = enrichment_result(
+                    EnrichmentStatus.SUCCESS_NONEMPTY
+                    if grouped_services
+                    else EnrichmentStatus.SUCCESS_EMPTY,
+                    data=grouped_services,
+                )
 
             except Exception as e:
                 logging.error(
                     f"❌ [INCLUSION-ENRICH] Error fetching services for codgeo {codgeo}: {e}"
+                )
+                statuses[str(codgeo)] = enrichment_result(
+                    EnrichmentStatus.TIMEOUT
+                    if isinstance(e, requests.Timeout)
+                    else EnrichmentStatus.ERROR,
+                    error_code="request_timeout"
+                    if isinstance(e, requests.Timeout)
+                    else "request_failed",
+                    retryable=True,
                 )
 
         # Merge into global results_store
@@ -389,6 +498,7 @@ def launch_background_inclusion_enrichment(
         if not isinstance(current_val, dict):
             current_val = {}
         current_val["inclusion_services_enrichment"] = enrichment_data
+        current_val["inclusion_services_status"] = statuses
         results_store[hash_val] = current_val
 
         logging.info(
@@ -398,6 +508,7 @@ def launch_background_inclusion_enrichment(
     thread = threading.Thread(target=bg_inclusion_enrichment_task, args=(store,))
     thread.daemon = True
     thread.start()
+    _schedule_enrichment_deadline(store, hash_val, "inclusion_services_status", codgeos)
 
 
 def _curate_jobs_with_agent(
@@ -562,13 +673,18 @@ def launch_background_job_curation(
     # Initialize nested dict
     if "jobs_enrichment" not in current_val:
         current_val["jobs_enrichment"] = {
-            str(cg): {"status": "pending", "jobs": []} for cg in codgeos
+            str(cg): {"status": EnrichmentStatus.PENDING.value, "jobs": []}
+            for cg in codgeos
         }
     else:
         # Reset specific keys to pending
         for cg in codgeos:
-            current_val["jobs_enrichment"][str(cg)] = {"status": "pending", "jobs": []}
+            current_val["jobs_enrichment"][str(cg)] = {
+                "status": EnrichmentStatus.PENDING.value,
+                "jobs": [],
+            }
     store[hash_val] = current_val
+    _schedule_enrichment_deadline(store, hash_val, "jobs_enrichment", codgeos)
 
     # 3. Extract unique valid ROME codes per adult
     adult_romes_list = []
@@ -599,7 +715,11 @@ def launch_background_job_curation(
         if not isinstance(current_val, dict):
             current_val = {}
         current_val["jobs_enrichment"] = {
-            cg: {"status": "done", "jobs": [[] for _ in adult_romes_list]}
+            cg: {
+                **enrichment_result(EnrichmentStatus.SUCCESS_EMPTY),
+                "jobs": [[] for _ in adult_romes_list],
+                "total": 0,
+            }
             for cg in codgeos
         }
         store[hash_val] = current_val
@@ -615,6 +735,7 @@ def launch_background_job_curation(
             )
             city_results = []
             api_total_count = 0
+            failed_queries = []
 
             # Fetch and pool up to 10 offers per ROME code per adult
             for i, adult_romes in enumerate(adult_romes_list):
@@ -634,6 +755,9 @@ def launch_background_job_curation(
                             range_end=9,
                             rome_label=rome_label,
                         )
+                        if res.get("status") == EnrichmentStatus.ERROR.value:
+                            failed_queries.append(res.get("error_code", "provider_error"))
+                            continue
                         offres = res.get("offres", [])[:10]
                         api_total_count += res.get("total", 0)
                         for o in offres:
@@ -671,6 +795,11 @@ def launch_background_job_curation(
                         logging.warning(
                             f"⚠️ [JOBS-ENRICH-CITY] API error for {cg} ROME {rome}: {e}"
                         )
+                        failed_queries.append(
+                            "missing_france_travail_credentials"
+                            if "Missing FRANCE_TRAVAIL" in str(e)
+                            else "request_failed"
+                        )
 
                 # Apply post-curation to the pooled jobs list for this adult
                 # Note: cfg.is_ai_free_mode() is checked here as an outer guard, returning 10 raw jobs directly.
@@ -707,8 +836,28 @@ def launch_background_job_curation(
             # Atomic update to results_store nested dictionary
             current_val = results_store.get(hash_val, {})
             if isinstance(current_val, dict) and "jobs_enrichment" in current_val:
+                has_jobs = any(city_results)
+                if failed_queries and has_jobs:
+                    status = EnrichmentStatus.PARTIAL
+                elif failed_queries:
+                    status = (
+                        EnrichmentStatus.NOT_CONFIGURED
+                        if all(
+                            error == "missing_france_travail_credentials"
+                            for error in failed_queries
+                        )
+                        else EnrichmentStatus.ERROR
+                    )
+                elif has_jobs:
+                    status = EnrichmentStatus.SUCCESS_NONEMPTY
+                else:
+                    status = EnrichmentStatus.SUCCESS_EMPTY
                 current_val["jobs_enrichment"][str(cg)] = {
-                    "status": "done",
+                    **enrichment_result(
+                        status,
+                        error_code=failed_queries[0] if failed_queries else None,
+                        retryable=bool(failed_queries),
+                    ),
                     "jobs": city_results,
                     "total": api_total_count,
                 }
@@ -724,8 +873,11 @@ def launch_background_job_curation(
             current_val = results_store.get(hash_val, {})
             if isinstance(current_val, dict) and "jobs_enrichment" in current_val:
                 current_val["jobs_enrichment"][str(cg)] = {
-                    "status": "error",
-                    "error": str(e),
+                    **enrichment_result(
+                        EnrichmentStatus.ERROR,
+                        error_code="worker_failed",
+                        retryable=True,
+                    ),
                     "jobs": [],
                 }
                 results_store[hash_val] = current_val

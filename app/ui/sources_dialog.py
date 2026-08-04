@@ -1,28 +1,21 @@
-import json
 import logging
-from pathlib import Path
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 import pandas as pd
 import streamlit as st
 
-import config
+from utils.data_loader import load_active_data_manifest
 
 logger = logging.getLogger(__name__)
 
-MANIFEST_PATH = Path(config.LOCAL_DATA_PATH) / "data_manifest.json"
-
-
 @st.cache_data(show_spinner=False, ttl=300)
 def load_manifest() -> Optional[Dict[str, Any]]:
-    """Loads the Data Manifest JSON from app/data/data_manifest.json."""
-    if MANIFEST_PATH.exists():
-        try:
-            content = MANIFEST_PATH.read_text(encoding="utf-8")
-            return json.loads(content)
-        except Exception as e:
-            logger.warning(f"Failed to load manifest at {MANIFEST_PATH}: {e}")
-    return None
+    """Load the verified manifest belonging to the active dataset release."""
+    try:
+        return load_active_data_manifest()
+    except Exception as exc:
+        logger.warning("Failed to load active data manifest: %s", exc)
+        return None
 
 
 
@@ -48,6 +41,9 @@ def show_sources_dialog():
         return
 
     manifest_version = manifest.get("manifest_version", "v1.0")
+    release_version = manifest.get("active_release_version") or manifest.get(
+        "pipeline_run_id", "-"
+    )
     created_at = format_iso_date(manifest.get("created_at"))
     sources: List[Dict[str, Any]] = manifest.get("sources", [])
 
@@ -55,7 +51,7 @@ def show_sources_dialog():
         f"""
         <div style="background-color: #f8f9fa; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; border: 1px solid #e9ecef;">
             <span style="font-weight: 600; color: #212529;">📦 Version du jeu de données :</span> <code>{manifest_version}</code><br/>
-            <span style="color: #6c757d; font-size: 0.85rem;">Dernière compilation des jeu de données : {created_at} | <strong>{len(sources)}</strong> sources référencées</span>
+            <span style="color: #6c757d; font-size: 0.85rem;">Release active : <code>{release_version}</code> | Compilation : {created_at} | <strong>{len(sources)}</strong> sources référencées</span>
         </div>
         """,
         unsafe_allow_html=True,
@@ -64,7 +60,8 @@ def show_sources_dialog():
 
     table_rows = []
     for s in sources:
-        rows_val = s.get("row_count")
+        artifact = s.get("artifact") or {}
+        rows_val = artifact.get("row_count")
         formatted_rows = f"{rows_val:,}".replace(",", " ") if isinstance(rows_val, int) else "-"
         doc_url = s.get("doc_url")
 
@@ -75,7 +72,9 @@ def show_sources_dialog():
                 "Source": s.get("name") or s.get("source_key"),
                 "Méthode": s.get("method") or "Open Data",
                 "Année réf.": annee_ref,
-                "Dernière maj.": format_iso_date(s.get("last_updated")),
+                "Statut": s.get("acquisition_status", "inconnu"),
+                "Mise à jour constatée": format_iso_date(s.get("acquired_at")),
+                "Âge / TTL": _format_age_and_ttl(s),
                 "Volumétrie": formatted_rows,
                 "Documentation": doc_url if doc_url else None,
             }
@@ -95,5 +94,14 @@ def show_sources_dialog():
     )
 
     st.caption(
-        "Les sources Odace sont synchronisées via la Data Platform. Les autres jeux de données sont extraits en Open Data certifié (INSEE, Data.gouv.fr, Data Inclusion)."
+        "La date indiquée est celle observée lors du run de la release active. Une date ou un statut inconnu signifie que la fraîcheur n'a pas été prouvée pour cette source."
     )
+
+
+def _format_age_and_ttl(source: Dict[str, Any]) -> str:
+    age_days = source.get("age_days")
+    ttl_days = source.get("ttl_days")
+    age = f"{age_days:g} j" if isinstance(age_days, (int, float)) else "inconnu"
+    ttl = f"{ttl_days} j" if isinstance(ttl_days, int) else "non défini"
+    suffix = " (fallback)" if source.get("fallback_used") else ""
+    return f"{age} / {ttl}{suffix}"

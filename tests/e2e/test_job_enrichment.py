@@ -146,7 +146,7 @@ def test_background_jobs_enrichment_success(mock_curator_run, mock_search):
     while time.time() - start < timeout:
         if hash_val in store and "jobs_enrichment" in store[hash_val]:
             cities_data = store[hash_val]["jobs_enrichment"]
-            if all(cities_data[cg]["status"] in ["done", "error"] for cg in codgeos):
+            if all(cities_data[cg]["status"] != "pending" for cg in codgeos):
                 break
         time.sleep(0.1)
 
@@ -155,7 +155,7 @@ def test_background_jobs_enrichment_success(mock_curator_run, mock_search):
     assert "33063" in jobs_enrichment
 
     city_data = jobs_enrichment["33063"]
-    assert city_data["status"] == "done"
+    assert city_data["status"] == "success_nonempty"
     assert len(city_data["jobs"]) == 2  # 2 adults
 
     # Verify curation: selected 5 jobs in LLM specified order
@@ -234,7 +234,7 @@ def test_background_jobs_enrichment_bypass(mock_curator_run, mock_search):
     while time.time() - start < timeout:
         if hash_val in store and "jobs_enrichment" in store[hash_val]:
             cities_data = store[hash_val]["jobs_enrichment"]
-            if all(cities_data[cg]["status"] in ["done", "error"] for cg in codgeos):
+            if all(cities_data[cg]["status"] != "pending" for cg in codgeos):
                 break
         time.sleep(0.1)
 
@@ -242,7 +242,7 @@ def test_background_jobs_enrichment_bypass(mock_curator_run, mock_search):
     jobs_enrichment = store[hash_val]["jobs_enrichment"]
     city_data = jobs_enrichment["33063"]
 
-    assert city_data["status"] == "done"
+    assert city_data["status"] == "success_nonempty"
     assert len(city_data["jobs"][0]) == 3  # All 3 returned directly
     mock_curator_run.assert_not_called()  # LLM agent bypassed
 
@@ -292,7 +292,7 @@ def test_background_jobs_enrichment_graceful_fallback(mock_curator_run, mock_sea
     while time.time() - start < timeout:
         if hash_val in store and "jobs_enrichment" in store[hash_val]:
             cities_data = store[hash_val]["jobs_enrichment"]
-            if all(cities_data[cg]["status"] in ["done", "error"] for cg in codgeos):
+            if all(cities_data[cg]["status"] != "pending" for cg in codgeos):
                 break
         time.sleep(0.1)
 
@@ -300,7 +300,7 @@ def test_background_jobs_enrichment_graceful_fallback(mock_curator_run, mock_sea
     jobs_enrichment = store[hash_val]["jobs_enrichment"]
     city_data = jobs_enrichment["33063"]
 
-    assert city_data["status"] == "done"
+    assert city_data["status"] == "success_nonempty"
     # Fallback returned first 5 distance-sorted offers
     assert len(city_data["jobs"][0]) == 5
     assert city_data["jobs"][0][0]["id"] == "J0"

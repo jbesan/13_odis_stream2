@@ -83,7 +83,8 @@ def test_vacant_housing_criterion():
     odis_scored = engine._compute_criteria_scores(odis_copy, config)
 
     assert "log_vac_scaled" in odis_scored.columns
-    assert odis_scored["log_vac_scaled"].notna().all()
+    valid_mask = odis["log_vac_struct_ratio"].notna()
+    assert odis_scored.loc[valid_mask, "log_vac_scaled"].notna().all()
 
     # Check correlation
     valid_data = odis_scored[["log_vac_struct_ratio", "log_vac_scaled"]].dropna()

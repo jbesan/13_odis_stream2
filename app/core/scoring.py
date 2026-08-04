@@ -127,7 +127,9 @@ class ScoringEngine:
     rome_index: pd.DataFrame
     refugee_associations_data: pd.DataFrame
     live_jobs_data: pd.DataFrame
+    live_jobs_coverage: pd.DataFrame
     siae_jobs_data: pd.DataFrame
+    siae_jobs_coverage: pd.DataFrame
     rna_rag_service: Optional[RNARagService]
     current_city_scored_row: Optional[pd.Series]
     _associations_cache: Dict[str, Dict[str, Any]]
@@ -226,11 +228,39 @@ class ScoringEngine:
             else pd.Series("exclude", index=self.scores_cat["score"])
         )
         for score_id in strategy[strategy == "zero"].index:
+            if score_id in self._unavailable_runtime_scores:
+                continue
+            availability_column = f"{score_id}__available"
             if score_id in df.columns:
-                df[score_id] = df[score_id].fillna(0.0)
+                if availability_column in df.columns:
+                    available = df[availability_column].fillna(False).astype(bool)
+                    df.loc[available, score_id] = df.loc[available, score_id].fillna(0.0)
+                else:
+                    df[score_id] = df[score_id].fillna(0.0)
             else:
                 df[score_id] = 0.0
         return df
+
+    @staticmethod
+    def _coverage_is_complete(coverage: pd.DataFrame) -> bool:
+        """Return whether a job source covers the agreed metropolitan scope."""
+        if coverage.empty or not {"department", "status"}.issubset(coverage.columns):
+            return False
+        expected = {
+            *[
+                str(department).zfill(2)
+                for department in range(1, 96)
+                if department != 20
+            ],
+            "2A",
+            "2B",
+        }
+        completed = set(
+            coverage.loc[coverage["status"] == "success", "department"]
+            .astype(str)
+            .str.upper()
+        )
+        return completed == expected
 
     def _compute_distance_score(
         self, df: pd.DataFrame, config: SearchCriterias
@@ -571,7 +601,9 @@ class ScoringEngine:
                 "refugee_associations_data", pd.DataFrame()
             ),
             live_jobs_data=app_data.get("live_jobs_data", pd.DataFrame()),
+            live_jobs_coverage=app_data.get("live_jobs_coverage", pd.DataFrame()),
             siae_jobs_data=app_data.get("siae_jobs_data", pd.DataFrame()),
+            siae_jobs_coverage=app_data.get("siae_jobs_coverage", pd.DataFrame()),
             rna_rag_service=app_data.get("rna_rag_service"),
         )
 
@@ -595,7 +627,9 @@ class ScoringEngine:
         rome_index: pd.DataFrame = pd.DataFrame(),
         refugee_associations_data: pd.DataFrame = pd.DataFrame(),
         live_jobs_data: pd.DataFrame = pd.DataFrame(),
+        live_jobs_coverage: pd.DataFrame = pd.DataFrame(),
         siae_jobs_data: pd.DataFrame = pd.DataFrame(),
+        siae_jobs_coverage: pd.DataFrame = pd.DataFrame(),
         rna_rag_service: Optional[RNARagService] = None,
     ):
         self.current_city_scored_row = None
@@ -616,7 +650,10 @@ class ScoringEngine:
         self.rome_index = rome_index
         self.refugee_associations_data = refugee_associations_data
         self.live_jobs_data = live_jobs_data
+        self.live_jobs_coverage = live_jobs_coverage
         self.siae_jobs_data = siae_jobs_data
+        self.siae_jobs_coverage = siae_jobs_coverage
+        self._unavailable_runtime_scores: set[str] = set()
 
         # Initialize RNA RAG Service if not provided
         self.rna_rag_service = rna_rag_service
@@ -1096,7 +1133,10 @@ class ScoringEngine:
         c_code = codgeo_str
         if c_code:
             # --- Live Jobs Match (ROME) ---
-            if not self.live_jobs_data.empty:
+            if not self._coverage_is_complete(self.live_jobs_coverage):
+                emploi_data.source_availability["france_travail"] = "unavailable"
+            elif not self.live_jobs_data.empty:
+                emploi_data.source_availability["france_travail"] = "available"
                 live_city = self.live_jobs_data[
                     self.live_jobs_data["commune"] == c_code
                 ]
@@ -1157,7 +1197,10 @@ class ScoringEngine:
                     emploi_data.top_professions = []
 
             # --- SIAE Jobs Match (New F-39) ---
-            if not self.siae_jobs_data.empty:
+            if not self._coverage_is_complete(self.siae_jobs_coverage):
+                emploi_data.source_availability["emplois_inclusion"] = "unavailable"
+            elif not self.siae_jobs_data.empty:
+                emploi_data.source_availability["emplois_inclusion"] = "available"
                 siae_city = self.siae_jobs_data[
                     self.siae_jobs_data["codgeo"] == codgeo_str
                 ]
@@ -1721,9 +1764,43 @@ class ScoringEngine:
     ) -> pd.DataFrame:
         # Operating in-place
 
+        expected_departments = {
+            *[str(department).zfill(2) for department in range(1, 96) if department != 20],
+            "2A",
+            "2B",
+        }
+        live_coverage_complete = self._coverage_is_complete(self.live_jobs_coverage)
+        siae_coverage_complete = self._coverage_is_complete(self.siae_jobs_coverage)
+        self._unavailable_runtime_scores.clear()
+
         # --- Live Jobs (ROME-based) ---
-        if any(config.codes_metiers) and not self.live_jobs_data.empty:
+        if any(config.codes_metiers):
+            for adult_number in range(1, config.nb_adultes + 1):
+                if not live_coverage_complete:
+                    self._unavailable_runtime_scores.update(
+                        {
+                            f"met_match_adult{adult_number}_scaled",
+                            f"met_match_adult{adult_number}_tension_scaled",
+                        }
+                    )
+                if not siae_coverage_complete:
+                    self._unavailable_runtime_scores.add(
+                        f"met_siae_match_adult{adult_number}_scaled"
+                    )
+
+        if any(config.codes_metiers) and live_coverage_complete:
             commune_to_bdv = self.df_all_communes["bassin_de_vie"].dropna().to_dict()
+            live_columns = {"commune", "romeCode", "total_postes"}
+            live_source = (
+                self.live_jobs_data
+                if live_columns.issubset(self.live_jobs_data.columns)
+                else pd.DataFrame(columns=[*live_columns, "nb_offres_tension"])
+            )
+            available = (
+                df["dep_code"].astype(str).str.upper().isin(expected_departments)
+                if "dep_code" in df.columns
+                else pd.Series(False, index=df.index)
+            )
 
             for i in range(config.nb_adultes):
                 adult_key = f"adult{i + 1}"
@@ -1743,16 +1820,15 @@ class ScoringEngine:
                     df[f"met_match_{adult_key}_tension_scaled"] = np.nan
                     continue
 
-                target_live = self.live_jobs_data[
-                    self.live_jobs_data["romeCode"].isin(adult_romes)
-                ]
+                target_live = live_source[live_source["romeCode"].isin(adult_romes)]
 
                 # City Sum
                 commune_live_counts = target_live.groupby("commune")[
                     "total_postes"
                 ].sum()
                 col_raw = f"met_match_{adult_key}"
-                df[col_raw] = df.index.map(commune_live_counts).fillna(0)
+                df[col_raw] = df.index.map(commune_live_counts)
+                df.loc[available, col_raw] = df.loc[available, col_raw].fillna(0)
 
                 # Tension Sum
                 col_tension_raw = f"met_match_{adult_key}_tension"
@@ -1760,7 +1836,10 @@ class ScoringEngine:
                     commune_tension_counts = target_live.groupby("commune")[
                         "nb_offres_tension"
                     ].sum()
-                    df[col_tension_raw] = df.index.map(commune_tension_counts).fillna(0)
+                    df[col_tension_raw] = df.index.map(commune_tension_counts)
+                    df.loc[available, col_tension_raw] = df.loc[
+                        available, col_tension_raw
+                    ].fillna(0)
                 else:
                     df[col_tension_raw] = np.nan
 
@@ -1771,7 +1850,8 @@ class ScoringEngine:
                     bdv_live_counts = target_live.groupby(bdv_series)[
                         "total_postes"
                     ].sum()
-                    df[col_bdv_raw] = df["bassin_de_vie"].map(bdv_live_counts).fillna(0)
+                    df[col_bdv_raw] = df["bassin_de_vie"].map(bdv_live_counts)
+                    df.loc[available, col_bdv_raw] = df.loc[available, col_bdv_raw].fillna(0)
                 else:
                     df[col_bdv_raw] = np.nan
 
@@ -1796,6 +1876,7 @@ class ScoringEngine:
                     mu=s_def.get("mu"),
                     sigma=s_def.get("sigma"),
                 )
+                df[f"{col_raw}_scaled__available"] = available
 
                 s_def_bdv = (
                     self.scores_cat[
@@ -1838,22 +1919,26 @@ class ScoringEngine:
                     mu=s_def_t.get("mu"),
                     sigma=s_def_t.get("sigma"),
                 )
+                df[f"{col_tension_raw}_scaled__available"] = available
 
                 # --- SIAE Jobs Matching (New F-39) ---
                 col_siae_raw = f"met_siae_match_{adult_key}"
                 df[col_siae_raw] = np.nan
 
-                if self.siae_jobs_data is not None and not self.siae_jobs_data.empty:
+                if siae_coverage_complete and self.siae_jobs_data is not None:
                     # SIAE matching uses 3rd digit prefix
                     siae_prefixes = {c[:3] for c in adult_romes if len(c) >= 3}
 
-                    siae_match = self.siae_jobs_data[
-                        self.siae_jobs_data["rome"].str[:3].isin(siae_prefixes)
-                    ]
+                    siae_source = self.siae_jobs_data
+                    if not {"rome", "codgeo"}.issubset(siae_source.columns):
+                        siae_source = pd.DataFrame(columns=["rome", "codgeo"])
+                    siae_match = siae_source[siae_source["rome"].str[:3].isin(siae_prefixes)]
 
-                    if not siae_match.empty:
-                        siae_counts = siae_match.groupby("codgeo").size()
-                        df[col_siae_raw] = df.index.map(siae_counts).fillna(0)
+                    siae_counts = siae_match.groupby("codgeo").size()
+                    df[col_siae_raw] = df.index.map(siae_counts)
+                    df.loc[available, col_siae_raw] = df.loc[
+                        available, col_siae_raw
+                    ].fillna(0)
 
                 # Scaling SIAE
                 s_def_s = (
@@ -1875,6 +1960,9 @@ class ScoringEngine:
                     scaling_type=s_def_s.get("scaling_type", "linear"),
                     mu=s_def_s.get("mu"),
                     sigma=s_def_s.get("sigma"),
+                )
+                df[f"{col_siae_raw}_scaled__available"] = (
+                    available if siae_coverage_complete else False
                 )
 
         # --- Formations ---

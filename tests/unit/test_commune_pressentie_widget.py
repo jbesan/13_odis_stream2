@@ -79,6 +79,29 @@ def test_render_commune_pressentie_form_initialization():
 
 
 @pytest.mark.unit
+def test_render_mobility_form_handles_missing_regions():
+    """A malformed legacy referential must not crash on region defaulting."""
+    mock_app_data = {
+        "dept_details": {"75": {"reg_code": "11", "label": "Paris"}},
+        "regions_names": {},
+    }
+    session_state = SessionStateDict({"ui_departement": "75"})
+
+    with patch("app.ui.forms.get_app_data", return_value=mock_app_data), \
+         patch("app.ui.forms.st.session_state", session_state), \
+         patch("app.ui.forms.st.columns", return_value=[MagicMock(), MagicMock()]), \
+         patch("app.ui.forms.st.multiselect", return_value=[]), \
+         patch("app.ui.forms.st.checkbox", return_value=False), \
+         patch("app.ui.forms.st.markdown"), \
+         patch("app.ui.forms.st.divider"), \
+         patch("app.ui.forms.st.container", return_value=MagicMock()), \
+         patch("app.ui.forms.st.radio"):
+        render_mobility_form()
+
+    assert session_state["ui_mobility_region"] == []
+
+
+@pytest.mark.unit
 def test_city_size_radio_hash_invalidation():
     """Test that changing ui_target_city_size_label instantly updates SearchCriterias target_population."""
     from app.ui.forms import create_search_criterias_from_inputs
@@ -112,4 +135,3 @@ def test_city_size_radio_hash_invalidation():
 
         assert pop1 != pop2, f"Expected target populations to differ but got {pop1} == {pop2}"
         assert hash1 != hash2, "Expected search criteria hash to change when city size radio changes"
-

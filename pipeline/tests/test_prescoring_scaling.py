@@ -1,10 +1,15 @@
+import warnings
+
 import numpy as np
 import pandas as pd
+import pytest
 
 from pipeline.prescoring import (
+    aggregate_commune_metrics_by_bv,
     apply_configured_raw_missingness,
     apply_configured_score_missingness,
     get_min_max_quant,
+    get_scores_config,
     process_scaling,
     safe_ratio,
     scale_series,
@@ -62,11 +67,13 @@ def test_safe_ratio_preserves_unavailable_observations():
     assert result.iloc[0] == 2.0
     assert result.iloc[1:].isna().all()
 
+
 def test_scale_series_zero_variance():
     """Verify that zero variance returns a NaN series safeguard."""
     s = pd.Series([0.0, 0.0, 0.0, 0.0])
     scaled = scale_series(s, min_b=0.0, max_b=0.0, col_name="test_col")
     assert scaled.isna().all(), "Zero variance scaling should default to NaN"
+
 
 def test_get_min_max_quant_ignores_nans():
     """Verify that get_min_max_quant ignores NaNs and calculates quantiles on valid values."""
@@ -76,18 +83,49 @@ def test_get_min_max_quant_ignores_nans():
     assert min_b == 52.5
     assert max_b == 97.5
 
+
 def test_process_scaling_sparse_metric_with_nans():
     """Verify process_scaling on a sparse metric with NaNs (like CAF data)."""
     # 98 NaNs and 2 valid values (40.0 and 80.0)
-    df = pd.DataFrame({
-        "edu_pe_tx_couverture": [np.nan] * 98 + [40.0, 80.0]
-    })
+    df = pd.DataFrame({"edu_pe_tx_couverture": [np.nan] * 98 + [40.0, 80.0]})
     process_scaling(df, "edu_pe_tx_couverture", "edu_petite_enfance_scaled")
     assert "edu_petite_enfance_scaled" in df.columns
     # NaNs should remain NaN so scoring excludes them from denominator
     assert df["edu_petite_enfance_scaled"].isna().sum() == 98
     assert df["edu_petite_enfance_scaled"].iloc[-1] == 1.0
     assert df["edu_petite_enfance_scaled"].iloc[-2] == 0.0
+
+
+def test_jaccueille_scores_are_calculated_live_from_published_salesforce_data():
+    scores_config = get_scores_config()
+
+    assert scores_config["heb_jaccueille_accueillants_score"]["computation"] == "live"
+    assert scores_config["heb_jaccueille_prospects_score"]["computation"] == "live"
+
+
+def test_bv_aggregation_is_weighted_without_fragmenting_intermediate_columns():
+    communes = pd.DataFrame(
+        {
+            "bassin_de_vie": ["A", "A", "B"],
+            "population": [100.0, 50.0, 200.0],
+            "score_a": [1.0, np.nan, 0.5],
+            "score_b": [0.0, 1.0, np.nan],
+            "raw_count": [2.0, 3.0, 5.0],
+        }
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", pd.errors.PerformanceWarning)
+        result = aggregate_commune_metrics_by_bv(
+            communes, ["score_a", "score_b"], ["raw_count"]
+        )
+
+    assert result.loc["A", "score_a"] == 1.0
+    assert result.loc["A", "score_b"] == pytest.approx(1 / 3)
+    assert result.loc["B", "score_a"] == 0.5
+    assert pd.isna(result.loc["B", "score_b"])
+    assert result.loc["A", "raw_count"] == 5.0
+    assert not any(column.endswith(("_w", "_population")) for column in communes)
 
 
 def test_scale_series_preserves_nan():

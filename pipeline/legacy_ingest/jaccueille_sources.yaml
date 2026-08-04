@@ -1,0 +1,9 @@
+# Archived manual inputs. Paths are intentionally not production defaults.
+jaccueille_hosts_csv:
+  format: csv
+  description: Historical J'Accueille hosts export by postal code.
+
+jaccueille_prospects_xlsx:
+  format: xlsx
+  description: Historical J'Accueille prospects export by postal code.
+  header: 13

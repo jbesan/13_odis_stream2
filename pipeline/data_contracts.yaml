@@ -1,0 +1,68 @@
+version: 1
+
+source_contracts:
+  housing_occupation:
+    version: 1
+    odace_table: fact_occupation_logement
+    reference_year: "2022"
+    required_columns:
+      - commune_insee_code
+      - annee
+      - indicateur_occupation
+      - valeur
+    primary_key:
+      - commune_insee_code
+      - annee
+      - indicateur_occupation
+    required_indicators:
+      - MOD_OVER_OCC
+      - MOD_UNDER_OCC
+      - SEV_OVER_OCC
+      - SEV_UNDER_OCC
+      - STD_OCC
+      - VSEV_UNDER_OCC
+    minimum_communes: 30000
+    minimum_communes_per_indicator: 30000
+    require_complete_indicator_set_per_commune: true
+    value:
+      minimum: 0
+      nullable: false
+
+release:
+  required_artifacts:
+    - odis_communes.parquet
+    - odis_bassins_de_vie.parquet
+    - odis_pois.parquet
+    - odis_associations_agg.parquet
+    - odis_formations_agg.parquet
+    - odis_ccas.parquet
+    - odis_refugee_associations.parquet
+    - odis_ft_jobs_agg.parquet
+    - odis_ft_jobs_coverage.parquet
+    - odis_inclusion_jobs.parquet
+    - odis_inclusion_jobs_coverage.parquet
+    - salesforce_jaccueille_bdv.parquet
+
+communes:
+  primary_key: codgeo
+  min_rows: 30000
+  required_columns:
+    - codgeo
+    - population
+    - dep_code
+    - reg_code
+    - epci_code
+    - bassin_de_vie
+  geography:
+    dep_code: 0.995
+    reg_code: 0.995
+    epci_code: 0.995
+    bassin_de_vie: 0.995
+  scoring:
+    min_non_null_fraction: 0.001
+
+joins:
+  - source_column: bassin_de_vie
+    target_artifact: odis_bassins_de_vie.parquet
+    target_key: bassin_de_vie
+    max_orphan_fraction: 0.005

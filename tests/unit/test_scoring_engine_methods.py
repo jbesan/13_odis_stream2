@@ -3,6 +3,7 @@ import pandas as pd
 import geopandas as gpd
 from core import scoring
 from core.models import SearchCriterias, CriteriaItem
+from pipeline.employment_coverage import METROPOLITAN_DEPARTMENTS
 
 
 @pytest.fixture
@@ -138,7 +139,13 @@ def test_compute_employment_scores_direct(base_sample_data, live_scores_cat):
         associations_data=pd.DataFrame(),
         formations_data=pd.DataFrame(),
         live_jobs_data=live_jobs,
+        live_jobs_coverage=pd.DataFrame(
+            {"department": METROPOLITAN_DEPARTMENTS, "status": "success"}
+        ),
         siae_jobs_data=siae_jobs,
+        siae_jobs_coverage=pd.DataFrame(
+            {"department": METROPOLITAN_DEPARTMENTS, "status": "success"}
+        ),
     )
 
     config = SearchCriterias(
@@ -161,3 +168,31 @@ def test_compute_employment_scores_direct(base_sample_data, live_scores_cat):
 
     # Marseille has SIAE match for K130 (first 3 chars prefix match)
     assert res.loc["13055", "met_siae_match_adult1"] == 1.0
+
+
+def test_employment_scores_stay_unavailable_without_complete_coverage(
+    base_sample_data, live_scores_cat
+):
+    engine = scoring.ScoringEngine(
+        df_all_communes=base_sample_data,
+        df_bv_geo=gpd.GeoDataFrame(),
+        scores_cat=live_scores_cat,
+        incl_index=pd.DataFrame(),
+        associations_data=pd.DataFrame(),
+        formations_data=pd.DataFrame(),
+        live_jobs_data=pd.DataFrame(),
+        live_jobs_coverage=pd.DataFrame(
+            {"department": ["13"], "status": ["success"]}
+        ),
+    )
+    config = SearchCriterias(
+        nb_adultes=1,
+        nb_enfants=0,
+        codes_metiers=[[CriteriaItem(code="K1302", label="Aide domicile")]],
+        codes_formations=[[]],
+    )
+
+    res = engine._compute_employment_scores(base_sample_data.copy(), config)
+
+    assert "met_match_adult1_scaled" not in res.columns
+    assert "met_match_adult1_scaled" in engine._unavailable_runtime_scores
