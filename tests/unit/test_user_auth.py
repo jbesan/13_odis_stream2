@@ -80,6 +80,29 @@ def test_check_password_cloud_run_forced_auth_injects_idle_sleep():
             mock_idle.assert_called_once_with(timeout_minutes=10)
 
 
+def test_check_password_rejects_partial_authenticated_cloud_run_session():
+    """A reset must not leave Cloud Run with auth=True but no org context."""
+    mock_session = {"password_correct": True, "username": "stale@example.com"}
+    with (
+        patch("utils.auth.inject_idle_sleep"),
+        patch("utils.auth.st.session_state", mock_session),
+        patch("utils.auth.st.user", None, create=True),
+        patch("utils.auth.st.container"),
+        patch("utils.auth.st.form"),
+        patch("utils.auth.st.subheader"),
+        patch("utils.auth.st.text_input"),
+        patch("utils.auth.st.form_submit_button", return_value=False),
+    ):
+        with patch.dict(
+            os.environ,
+            {"K_SERVICE": "odis-service", "ODIS_FORCE_AUTH": "True"},
+            clear=True,
+        ):
+            assert check_password() is False
+
+    assert mock_session["password_correct"] is False
+
+
 def test_apply_logged_in_org_defaults():
     """Verify that apply_logged_in_org_defaults correctly applies Pydantic Org defaults to the options dictionary."""
     mock_org = Org(
@@ -142,6 +165,5 @@ def test_logout_oidc():
         logout()
         mock_session.clear.assert_called_once()
         mock_st_logout.assert_called_once()
-
 
 

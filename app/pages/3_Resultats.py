@@ -62,29 +62,28 @@ if "active_ccas_index" not in st.session_state:
 
 # --- PDF Modal Execution (moved to bottom for reliability) ---
 
-# Ensure app data and session state are initialized with heavy datasets
-with st.spinner("Chargement des indicateurs et données territoriales..."):
-    data_loader.ensure_data_initialized(load_heavy=True)
-    app_data = data_loader.get_app_data(load_heavy=True)
-
-# DO NOT REMOVE: This makes sure the ui_ form state persists as expected
 # --- Shared Search Restoration (Direct link access) ---
+# This runs after authentication and before choosing the data tier. An immutable
+# snapshot must never rescore itself against today's datasets just to render.
 if "search" in st.query_params:
-    share_id = st.query_params.get("search")
-    if share_id and st.session_state.get("active_share_id") != share_id:
-        from services import share_service
-        try:
-            config_obj, results_obj = share_service.load_shared_search(share_id)
-            if config_obj and results_obj:
-                share_service.restore_shared_search_to_session_state(config_obj, results_obj, share_id)
-            else:
-                err_msg = f"La recherche partagée '{share_id}' est introuvable ou a expiré."
-                st.toast(err_msg, icon="⚠️")
-                st.error(f"⚠️ {err_msg}")
-        except Exception as e:
-            err_msg = f"Impossible de restaurer la recherche '{share_id}' : {e}"
-            st.toast(err_msg, icon="⚠️")
-            st.error(f"⚠️ {err_msg}")
+    from services import share_service
+
+    share_service.restore_shared_search_from_query_params()
+
+if "share_error" in st.session_state and st.session_state.share_error:
+    err_msg = st.session_state.pop("share_error")
+    st.toast(err_msg, icon="⚠️")
+    st.error(f"⚠️ {err_msg}")
+
+is_immutable_snapshot = bool(st.session_state.get("immutable_shared_snapshot"))
+is_editing_snapshot = bool(st.session_state.get("shared_snapshot_editing"))
+
+# Immutable display only needs the light reference tier used by the criteria
+# adapter. Editing/forking or a normal search uses the full scoring tier.
+with st.spinner("Chargement des indicateurs et données territoriales..."):
+    data_loader.ensure_data_initialized(
+        load_heavy=not is_immutable_snapshot or is_editing_snapshot
+    )
 
 search_results: SearchResultsData = st.session_state.get("search_results")
 
@@ -101,6 +100,13 @@ def run_search():
     st.session_state["pdf_data"] = None
     st.session_state["pdf_modal_data"] = None
     st.session_state["active_share_id"] = None
+    st.session_state["immutable_shared_snapshot"] = False
+    st.session_state.pop("shared_snapshot_editing", None)
+    st.session_state.pop("shared_snapshot_version", None)
+    st.session_state.pop("shared_snapshot_data_release", None)
+    st.session_state.pop("shared_snapshot_created_at", None)
+    st.session_state.pop("shared_snapshot_has_map", None)
+    st.session_state.pop("snapshot_current_map_context", None)
 
     from services import telemetry
 
@@ -110,6 +116,9 @@ def run_search():
     st.session_state["config"] = config
 
     # Get required dataframes from global cached app_data
+    # Capture the release identity at execution time. It travels with any
+    # immutable shared snapshot produced from this search.
+    st.session_state["active_data_release"] = data_loader.get_data_mtime()
     app_data = data_loader.get_app_data(load_heavy=True)
     df_all_communes = app_data["odis"]
     df_bv_geo = app_data["bv_geo"]
@@ -236,15 +245,6 @@ if st.session_state.get("processed_gdf") is None and st.session_state.get(
 # --- UI LAYOUT ---
 
 
-# Fragment-based action buttons container (polled while background tasks are running)
-@st.fragment(run_every=3.0)
-def action_buttons_container_polling(h: str):
-    ui_results.render_export_pdf_button(h)
-    ui_results.render_share_search_button(
-        h=h, button_text="Partager", key_prefix="sidebar_share"
-    )
-
-
 def action_buttons_container_static(h: str):
     ui_results.render_export_pdf_button(h)
     ui_results.render_share_search_button(
@@ -279,16 +279,9 @@ with st.sidebar:
     # --- Export to PDF & Partager ---
     if st.session_state.get("search_results") is not None:
         h = st.session_state.search_results.search_hash
-        bg_res = odis_get_bg_result(h)
-        # Stop polling if both pitches and enrichment are done
-        is_done = (
-            isinstance(bg_res, dict) and "pitches" in bg_res and "enrichment" in bg_res
-        )
-
-        if is_done:
-            action_buttons_container_static(h)
-        else:
-            action_buttons_container_polling(h)
+        # Deterministic results are immediately shareable/exportable. Optional
+        # providers must not hold these actions in a permanent loading state.
+        action_buttons_container_static(h)
 
     st.divider()
 
@@ -317,17 +310,20 @@ with st.container(border=False, key="top_menu"):
     with col_tabs:
         st.markdown(f"## Projet de vie {ui.get_person_accompanied_str()}")
 
-    # Compute if criteria have changed since the last search
+    # Compute if criteria have changed since the last search. A shared snapshot
+    # is immutable: re-running it is an explicit fork onto current data, even
+    # when the criteria hash has not changed.
     current_config = ui_forms.create_search_criterias_from_inputs()
     last_results = st.session_state.get("search_results")
-    if last_results is not None:
+    snapshot_mode = bool(st.session_state.get("immutable_shared_snapshot"))
+    if last_results is not None and not snapshot_mode:
         disable_search = current_config.compute_hash() == last_results.search_hash
     else:
         disable_search = False
 
     with col_btn_search:
         st.button(
-            "Rechercher",
+            "Recalculer sur les données actuelles" if snapshot_mode else "Rechercher",
             on_click=run_search,
             type="primary",
             disabled=disable_search,
@@ -342,8 +338,25 @@ with st.container(border=False, key="top_menu"):
     #             button_text="Partager",
     #             key_prefix="top_share",
     #         )
-    with st.expander("🔎 Modifier les critères de recherche", expanded=False):
-        ui_forms.display_input_tabs()
+    if snapshot_mode:
+        release = st.session_state.get("shared_snapshot_data_release", "inconnue")
+        st.info(
+            "Vous consultez un instantané partagé et immuable "
+            f"(release de données : `{release}`). Modifier les critères puis "
+            "recalculer crée une nouvelle recherche avec les données actuelles."
+        )
+        if not st.session_state.get("shared_snapshot_editing"):
+            if st.button(
+                "Modifier les critères pour créer une nouvelle recherche",
+                key="fork_shared_snapshot",
+                icon=":material/edit:",
+            ):
+                st.session_state["shared_snapshot_editing"] = True
+                st.rerun()
+
+    if not snapshot_mode or st.session_state.get("shared_snapshot_editing"):
+        with st.expander("🔎 Modifier les critères de recherche", expanded=False):
+            ui_forms.display_input_tabs()
 
 
 # Global Pitch (Strategic intro + Loading state)
@@ -362,21 +375,10 @@ with col_results:
         # st.subheader("Meilleurs résultats")
         st.space()
 
-        # State-aware Results Polling
+        # The deterministic score is ready at this point. AI and external
+        # enrichment update individual details, but never gate Top-5 review.
         h = st.session_state.search_results.search_hash
-        bg_res = odis_get_bg_result(h)
-        is_ready = isinstance(bg_res, dict) and bg_res.get("status_refiner") == "done"
-
-        if not is_ready:
-
-            @st.fragment(run_every=2.0)
-            def results_list_container_polling():
-                ui_results.display_results_list()
-
-            results_list_container_polling()
-        else:
-            # Static render when done (no more polling logs!)
-            ui_results.display_results_list()
+        ui_results.display_results_list()
 
         with st.container(height=40, vertical_alignment="center", border=False):
             st.caption(
@@ -391,6 +393,10 @@ with col_map:
         config = st.session_state.get("config")
         search_results = st.session_state.get("search_results")
         h = search_results.search_hash if search_results else None
+        snapshot_mode = bool(st.session_state.get("immutable_shared_snapshot"))
+        current_map_context = st.session_state.get("snapshot_current_map_context")
+        if not isinstance(current_map_context, pd.DataFrame):
+            current_map_context = st.session_state.processed_gdf
 
         # Default zoom if not set
         if st.session_state.get("zoom") is None:
@@ -412,8 +418,13 @@ with col_map:
             if search_results and search_results.current_geo:
                 maps.build_current_loc_layer(
                     search_results.current_geo,
-                    gdf_context=st.session_state.processed_gdf,
+                    gdf_context=current_map_context,
                 ).add_to(fg_scores)
+        elif snapshot_mode:
+            st.info(
+                "Cet ancien instantané ne contient pas la géométrie de la carte. "
+                "Les résultats affichés restent ceux qui ont été partagés."
+            )
 
         fg_scores.add_to(m)
 
@@ -421,7 +432,7 @@ with col_map:
         fg_dynamic = flm.FeatureGroup(name="ODIS_Dynamic_Layers")
         # B. User-selected Layers (Pills)
         pill_options = [{"id": "top_5", "label": "🥇 Top 5"}]
-        if config:
+        if config and not snapshot_mode:
             if config.nb_enfants > 0:
                 pill_options.append({"id": "edu", "label": "🎓 Éducation"})
             if getattr(config, "besoin_sante", []):
@@ -446,39 +457,42 @@ with col_map:
         if search_results and search_results.commune_pressentie:
             legend_items.append({"color": "yellow", "text": "Ville Souhaitée"})
 
-        # C. POI & Top 5 Rendering
+        # C. POI & Top 5 Rendering. POI layers are live reference data, so they
+        # are intentionally omitted from an immutable shared snapshot.
         if config and search_results:
             target_codgeos = {str(c.codgeo) for c in search_results.results}
             if search_results.commune_pressentie:
                 target_codgeos.add(str(search_results.commune_pressentie.codgeo))
 
-            # Always-on Mairie layer
-            maps.build_mairies_layer(
-                data_loader.get_app_data()["pois"], target_codgeos
-            ).add_to(m)
-            legend_items.append(
-                {"color": "#F5D819", "text": "Mairie (BPE)", "icon": "circle"}
-            )
+            if not snapshot_mode:
+                pois = data_loader.get_app_data()["pois"]
+                # Always-on Mairie layer
+                maps.build_mairies_layer(pois, target_codgeos).add_to(m)
+                legend_items.append(
+                    {"color": "#F5D819", "text": "Mairie (BPE)", "icon": "circle"}
+                )
 
-            if "edu" in selected_ids:
-                maps.build_ecoles_layer(
-                    data_loader.get_app_data()["pois"], target_codgeos, config
-                ).add_to(fg_dynamic)
-                legend_items.append(
-                    {"color": "green", "icon": "pencil", "text": "Écoles"}
-                )
-            if "sante" in selected_ids:
-                maps.build_sante_layer(
-                    data_loader.get_app_data()["pois"], target_codgeos, config
-                ).add_to(fg_dynamic)
-                legend_items.append({"color": "blue", "icon": "plus", "text": "Santé"})
-            if "inc" in selected_ids:
-                maps.build_services_layer(
-                    data_loader.get_app_data()["pois"], target_codgeos, config
-                ).add_to(fg_dynamic)
-                legend_items.append(
-                    {"color": "purple", "icon": "heart", "text": "Inclusion"}
-                )
+                if "edu" in selected_ids:
+                    maps.build_ecoles_layer(pois, target_codgeos, config).add_to(
+                        fg_dynamic
+                    )
+                    legend_items.append(
+                        {"color": "green", "icon": "pencil", "text": "Écoles"}
+                    )
+                if "sante" in selected_ids:
+                    maps.build_sante_layer(pois, target_codgeos, config).add_to(
+                        fg_dynamic
+                    )
+                    legend_items.append(
+                        {"color": "blue", "icon": "plus", "text": "Santé"}
+                    )
+                if "inc" in selected_ids:
+                    maps.build_services_layer(pois, target_codgeos, config).add_to(
+                        fg_dynamic
+                    )
+                    legend_items.append(
+                        {"color": "purple", "icon": "heart", "text": "Inclusion"}
+                    )
 
             show_top_5 = "top_5" in selected_ids
             is_highlighted, highlighted_index = st.session_state.highlighted_result

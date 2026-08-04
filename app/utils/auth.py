@@ -227,9 +227,18 @@ def check_password() -> bool:
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
 
-    # 2. Short-circuit if already authenticated this session
+    # 2. Short-circuit only for a complete authenticated session.  Search resets
+    # deliberately keep identity, but a partial/stale session must re-enter the
+    # OIDC resolution path rather than silently operating without organization
+    # defaults or access context.
     if st.session_state.get("password_correct"):
-        return True
+        if st.session_state.get("user") is not None and st.session_state.get("org") is not None:
+            return True
+        logger.warning(
+            "Authenticated flag found without complete user/org context; "
+            "re-establishing authentication context."
+        )
+        st.session_state["password_correct"] = False
 
     # 3. OIDC: if st.user.is_logged_in is True, Streamlit has already enforced
     #    allowed_emails / allowed_domains from secrets.toml — just resolve org.
@@ -311,4 +320,3 @@ def logout() -> None:
             st.switch_page("pages/1_Accueil.py")
         except Exception:
             st.rerun()
-

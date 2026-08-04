@@ -12,12 +12,18 @@ def reset_app_state():
     """
     logger.info("🧹 [MEMORY] Resetting session state...")
 
-    # Define keys to preserve (auth and heavy caches)
+    # Define keys to preserve (auth context and heavy caches).  `password_correct`
+    # alone is not a complete authenticated identity in production: organization
+    # defaults and access policy are derived from `user` and `org`.
     to_keep = {
         "app_data",  # cached datasets
         "_data_hash",  # caching verification
         "password_correct",  # auth status
         "username",  # current user
+        "user",  # resolved authenticated identity
+        "org",  # resolved organization profile
+        "login_session_id",  # audit/session correlation for the authenticated user
+        "org_defaults_applied",  # prevents a duplicate org-profile initialization toast
         "rna_rag_service",  # AI tools
         "rna_rag_status",  # AI tools
     }

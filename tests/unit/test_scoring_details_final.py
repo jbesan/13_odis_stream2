@@ -169,3 +169,15 @@ def test_format_city_details_no_config(scoring_engine, base_df):
         item.score_id for cat_list in details.scores.values() for item in cat_list
     ]
     assert len(all_scores) > 0
+
+
+def test_format_city_details_reports_job_source_availability(
+    scoring_engine, base_df, base_config
+):
+    """Coverage state must be represented by the EmploymentMetrics model."""
+    details = scoring_engine.format_city_details(base_df.loc["33063"], base_config)
+
+    assert details.employment.source_availability == {
+        "france_travail": "unavailable",
+        "emplois_inclusion": "unavailable",
+    }

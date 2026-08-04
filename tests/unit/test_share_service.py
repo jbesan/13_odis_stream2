@@ -1,5 +1,15 @@
+from unittest.mock import patch
+
+import pandas as pd
+from shapely.geometry import Point
+
 from core.models import SearchCriterias, SearchResultsData, CommuneResult, CriteriaItem
-from services.share_service import save_shared_search, load_shared_search
+from services.share_service import (
+    load_shared_search,
+    load_shared_search_snapshot,
+    restore_shared_search_to_session_state,
+    save_shared_search,
+)
 
 
 def test_save_and_load_shared_search_roundtrip(monkeypatch):
@@ -59,12 +69,33 @@ def test_save_and_load_shared_search_roundtrip(monkeypatch):
         global_pitch="Analyse globale du projet de vie",
     )
 
+    processed_gdf = pd.DataFrame(
+        {
+            "libgeo": ["Lyon"],
+            "weighted_score": [0.855],
+            "polygon": [Point(4.8357, 45.7640).wkb],
+        },
+        index=pd.Index(["69123"], name="codgeo"),
+    )
+    selected_geo = pd.DataFrame(
+        {
+            "libgeo": ["Paris"],
+            "polygon": [Point(2.3522, 48.8566).wkb],
+        },
+        index=pd.Index(["75056"], name="codgeo"),
+    )
+
     # 1. Save
     share_id = save_shared_search(
         config=config,
         search_results=search_results,
         username="test_user",
         org_id="test_org",
+        processed_gdf=processed_gdf,
+        selected_geo=selected_geo,
+        data_release="release-2026-08-04",
+        map_center=[46.0, 3.0],
+        map_zoom=8,
     )
 
     assert isinstance(share_id, str)
@@ -86,6 +117,80 @@ def test_save_and_load_shared_search_roundtrip(monkeypatch):
     assert loaded_results.results[0].name == "Lyon"
     assert loaded_results.results[0].global_score == 85.5
     assert loaded_results.results[0].refiner_pitch == "Excellente opportunité d'emploi et de logement."
+
+    snapshot = load_shared_search_snapshot(share_id)
+    assert snapshot is not None
+    assert snapshot.version == "2.0"
+    assert snapshot.data_release == "release-2026-08-04"
+    assert snapshot.map_view == {"center": [46.0, 3.0], "zoom": 8}
+    assert snapshot.has_map_context
+    assert snapshot.map_context[0]["codgeo"] == "69123"
+
+
+def test_restore_snapshot_hydrates_ui_without_rescoring():
+    """Restoration uses the saved display payload and never rebuilds an engine."""
+    config = SearchCriterias(
+        commune_actuelle=CriteriaItem(code="75056", label="Paris"), nb_adultes=2
+    )
+    results = SearchResultsData(
+        search_hash="snapshot-hash",
+        results=[CommuneResult(codgeo="69123", name="Lyon", global_score=0.855)],
+        current_geo=CommuneResult(codgeo="75056", name="Paris", global_score=0.7),
+    )
+
+    from services.share_service import SharedSearchSnapshot
+
+    point_wkb_b64 = "AQEAAAAAAAAAAACAAAAAAAAAAAA="
+    snapshot = SharedSearchSnapshot(
+        share_id="deadbeef",
+        version="2.0",
+        created_at="2026-08-04T12:00:00+02:00",
+        data_release="release-2026-08-04",
+        config=config,
+        search_results=results,
+        map_context=[
+            {
+                "codgeo": "69123",
+                "libgeo": "Lyon",
+                "weighted_score": 0.855,
+                "polygon_wkb_b64": point_wkb_b64,
+            }
+        ],
+        current_map_context=[
+            {
+                "codgeo": "75056",
+                "libgeo": "Paris",
+                "weighted_score": 0.0,
+                "polygon_wkb_b64": point_wkb_b64,
+            }
+        ],
+        map_view={"center": [46.0, 3.0], "zoom": 8},
+    )
+    state = {
+        "engine": object(),
+        "odis_bg_store": {
+            "snapshot-hash": {"status_refiner": "done"},
+            "analysis_snapshot-hash_69123": {"status": "done"},
+        },
+    }
+    applied = []
+
+    with patch("streamlit.session_state", state), patch(
+        "utils.data_loader.ensure_data_initialized"
+    ) as ensure_data, patch(
+        "utils.data_loader.apply_search_criteria_to_ui",
+        side_effect=lambda criteria: applied.append(criteria),
+    ):
+        restore_shared_search_to_session_state(config, results, "deadbeef", snapshot)
+
+    ensure_data.assert_called_once_with(load_heavy=False)
+    assert applied == [config]
+    assert state["immutable_shared_snapshot"] is True
+    assert state["shared_snapshot_data_release"] == "release-2026-08-04"
+    assert state["processed_gdf"].loc["69123", "weighted_score"] == 0.855
+    assert "engine" not in state
+    assert "snapshot-hash" not in state["odis_bg_store"]
+    assert "analysis_snapshot-hash_69123" not in state["odis_bg_store"]
 
 
 def test_load_shared_search_invalid_id(monkeypatch):
