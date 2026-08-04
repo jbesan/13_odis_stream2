@@ -10,6 +10,7 @@ from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from dotenv import load_dotenv
 from pipeline.employment_coverage import METROPOLITAN_DEPARTMENTS
+from pipeline.common import CONFIG_FILE, load_config
 
 # Load environment variables
 load_dotenv("app/.env")
@@ -20,7 +21,10 @@ STRUCTURES_PATH = Path("pipeline/cache/output/odis_inclusion_structures.parquet"
 COVERAGE_OUTPUT_PATH = Path("pipeline/cache/output/odis_inclusion_jobs_coverage.parquet")
 SIAE_LOOKUP_PATH = Path("pipeline/cache/raw/structures_inclusion.parquet")
 API_URL = "https://emplois.inclusion.beta.gouv.fr/api/v1/siaes/"
-TTL_DAYS = 7
+
+def _ttl_days() -> int:
+    """Read the inclusion-jobs cache policy from the source catalog."""
+    return load_config(CONFIG_FILE)["local_files"]["inclusion_jobs"]["ttl_days"]
 
 # Relevant SIAE types (ACI, AI, EI, ETTI, EITI)
 SIAE_TYPES_RELEVANT = {"ACI", "AI", "EI", "ETTI", "EITI"}
@@ -44,21 +48,22 @@ def get_inclusion_jobs_status() -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: A dictionary with data availability status, age in days, and TTL metrics.
     """
+    ttl_days = _ttl_days()
     if not OUTPUT_PATH.exists():
         return {
             "exists": False,
             "within_ttl": False,
             "age_days": None,
-            "ttl_days": TTL_DAYS,
+            "ttl_days": ttl_days,
         }
 
     mtime = datetime.fromtimestamp(OUTPUT_PATH.stat().st_mtime)
     age_days = (datetime.now() - mtime).days
     return {
         "exists": True,
-        "within_ttl": age_days < TTL_DAYS,
+        "within_ttl": age_days < ttl_days,
         "age_days": age_days,
-        "ttl_days": TTL_DAYS,
+        "ttl_days": ttl_days,
         "path": str(OUTPUT_PATH),
     }
 

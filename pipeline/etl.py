@@ -288,7 +288,7 @@ def main():
                                     local_path.stat().st_mtime
                                 )
                                 age_days = (datetime.now() - mtime).days
-                                ttl = source_cfg.get("ttl_days", 30)
+                                ttl = source_cfg["ttl_days"]
                                 expired_reminders.append(
                                     f"  - {name}: age={age_days} days (TTL={ttl} days)"
                                 )

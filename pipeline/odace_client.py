@@ -35,9 +35,7 @@ class OdaceClient:
             )
             self.config = {}
 
-    def _fetch_table_export(
-        self, table_name: str, ttl_seconds: int = 30 * 24 * 60 * 60
-    ) -> pd.DataFrame:
+    def _fetch_table_export(self, table_name: str, ttl_seconds: int) -> pd.DataFrame:
         """Downloads table data via the new export endpoint and reads the Parquet file."""
         cache_file = CACHE_DIR / f"odace_{table_name}.parquet"
 
@@ -101,10 +99,11 @@ class OdaceClient:
                 self.logger.log_source(f"odace_{table_name}", "ERROR", error_msg)
             return pd.DataFrame()
 
-    def fetch_dim_commune(self) -> pd.DataFrame:
-        """Fetches dim_commune (falling back to dim_geo) and returns as DataFrame (1 year TTL)."""
+    def fetch_dim_commune(self, ttl_days: int) -> pd.DataFrame:
+        """Fetches dim_commune (falling back to dim_geo) with a caller-configured TTL."""
+        ttl_seconds = ttl_days * 24 * 60 * 60
         try:
-            df_geo = self._fetch_table_export("dim_geo", ttl_seconds=365 * 24 * 60 * 60)
+            df_geo = self._fetch_table_export("dim_geo", ttl_seconds=ttl_seconds)
             if not df_geo.empty:
                 # Include both communes and arrondissements for Paris, Lyon, Marseille (PLM) compatibility
                 df_commune = df_geo[
@@ -135,22 +134,24 @@ class OdaceClient:
             )
 
         logging.warning("OdaceClient: Falling back to direct dim_commune fetch.")
-        return self._fetch_table_export("dim_commune", ttl_seconds=365 * 24 * 60 * 60)
+        return self._fetch_table_export("dim_commune", ttl_seconds=ttl_seconds)
 
-    def fetch_dim_gare(self) -> pd.DataFrame:
-        """Fetches dim_gare and returns as DataFrame (1 year TTL)."""
-        return self._fetch_table_export("dim_gare", ttl_seconds=365 * 24 * 60 * 60)
+    def fetch_dim_gare(self, ttl_days: int) -> pd.DataFrame:
+        """Fetches dim_gare with a caller-configured TTL."""
+        return self._fetch_table_export("dim_gare", ttl_seconds=ttl_days * 24 * 60 * 60)
 
-    def fetch_fact_loyer_annonce(self, limit: int = 200000) -> pd.DataFrame:
-        """Fetches fact_loyer_annonce and returns as DataFrame (1 month TTL)."""
+    def fetch_fact_loyer_annonce(
+        self, ttl_days: int, limit: int = 200000
+    ) -> pd.DataFrame:
+        """Fetches fact_loyer_annonce with a caller-configured TTL."""
         return self._fetch_table_export(
-            "fact_loyer_annonce", ttl_seconds=30 * 24 * 60 * 60
+            "fact_loyer_annonce", ttl_seconds=ttl_days * 24 * 60 * 60
         )
 
-    def fetch_ref_logement_profil(self) -> pd.DataFrame:
-        """Fetches ref_logement_profil and returns as DataFrame."""
+    def fetch_ref_logement_profil(self, ttl_days: int) -> pd.DataFrame:
+        """Fetches ref_logement_profil with a caller-configured TTL."""
         return self._fetch_table_export(
-            "ref_logement_profil", ttl_seconds=365 * 24 * 60 * 60
+            "ref_logement_profil", ttl_seconds=ttl_days * 24 * 60 * 60
         )
 
     def fetch_table(
@@ -161,37 +162,24 @@ class OdaceClient:
         sort_by: str = None,
     ) -> pd.DataFrame:
         """Generic fetch for any silver table from Odace API."""
-        if table_name == "dim_commune":
-            return self.fetch_dim_commune()
         if ttl_days is None:
-            # 1. Try to find the TTL in sources.yaml configuration
+            # Resolve the table policy exclusively from sources.yaml.
             if self.config and "sources" in self.config:
                 for name, source_cfg in self.config["sources"].items():
                     if source_cfg.get("odace_table") == table_name:
-                        ttl_days = source_cfg.get("ttl_days")
-                        if ttl_days is not None:
-                            logging.info(
-                                f"OdaceClient: Resolved TTL for '{table_name}' from sources configuration: {ttl_days} days"
-                            )
-                            break
-
-            # 2. Fallback to hardcoded defaults for common dimension/reference tables not in sources.yaml
-            if ttl_days is None:
-                default_ttls = {
-                    "dim_commune": 365,
-                    "dim_gare": 365,
-                    "ref_logement_profil": 365,
-                }
-                ttl_days = default_ttls.get(table_name, 30)
-                logging.info(
-                    f"OdaceClient: Resolved default TTL for '{table_name}': {ttl_days} days"
-                )
+                        ttl_days = source_cfg["ttl_days"]
+                        logging.info(
+                            f"OdaceClient: Resolved TTL for '{table_name}' from sources configuration: {ttl_days} days"
+                        )
+                        break
+        if ttl_days is None:
+            raise ValueError(f"No TTL configured for Odace table '{table_name}'")
+        if table_name == "dim_commune":
+            return self.fetch_dim_commune(ttl_days)
 
         return self._fetch_table_export(table_name, ttl_seconds=ttl_days * 24 * 60 * 60)
 
-    def execute_query(
-        self, sql: str, cache_name: str, ttl_seconds: int = 30 * 24 * 60 * 60
-    ) -> pd.DataFrame:
+    def execute_query(self, sql: str, cache_name: str, ttl_seconds: int) -> pd.DataFrame:
         """Executes a custom SQL query via the Odace query API (with pagination) and caches the result."""
         cache_file = CACHE_DIR / f"{cache_name}.parquet"
 

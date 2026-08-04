@@ -71,7 +71,7 @@ def test_odace_client_fetch_table_success(mock_get, temp_cache_dirs):
         os.environ, {"ODACE_API_KEY": "test-key", "ODACE_API_URL": "https://api-test"}
     ):
         client = OdaceClient()
-        df = client.fetch_table("dim_etablissement_sante")
+        df = client.fetch_table("dim_etablissement_sante", ttl_days=30)
 
         assert not df.empty
         assert len(df) == 1
@@ -331,43 +331,42 @@ def test_clean_communes_keeps_odace_commune_sk_for_candidate_joins(
 
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
-    mock_client.fetch_table.side_effect = [
-        pd.DataFrame(
-            {
-                "commune_insee_code": ["75001"],
-                "geometrie_geojson": [
-                    json.dumps(
-                        {
-                            "type": "Polygon",
-                            "coordinates": [
-                                [
-                                    [2.3, 48.8],
-                                    [2.31, 48.8],
-                                    [2.31, 48.81],
-                                    [2.3, 48.8],
-                                ]
-                            ],
-                        }
-                    )
-                ],
-            }
-        ),
-        pd.DataFrame(
-            {
-                "commune_sk": ["odace-sk-75001"],
-                "commune_insee_code": ["75001"],
-                "commune_label": ["Paris 1er"],
-                "departement_code": ["75"],
-                "region_code": ["11"],
-            }
-        ),
-    ]
+    mock_client.fetch_table.return_value = pd.DataFrame(
+        {
+            "commune_insee_code": ["75001"],
+            "geometrie_geojson": [
+                json.dumps(
+                    {
+                        "type": "Polygon",
+                        "coordinates": [
+                            [
+                                [2.3, 48.8],
+                                [2.31, 48.8],
+                                [2.31, 48.81],
+                                [2.3, 48.8],
+                            ]
+                        ],
+                    }
+                )
+            ],
+        }
+    )
+    mock_client.fetch_dim_commune.return_value = pd.DataFrame(
+        {
+            "commune_sk": ["odace-sk-75001"],
+            "commune_insee_code": ["75001"],
+            "commune_label": ["Paris 1er"],
+            "departement_code": ["75"],
+            "region_code": ["11"],
+        }
+    )
 
     config = {
         "sources": {
             "communes": {
                 "use_odace": True,
                 "odace_table": "ref_commune_geo",
+                "ttl_days": 30,
             },
             "ref_epci": {},
         }

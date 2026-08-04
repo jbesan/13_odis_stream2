@@ -1,7 +1,7 @@
 import argparse
 import logging
 import requests
-from datetime import datetime
+from datetime import datetime, timezone
 import pandas as pd
 import numpy as np
 import json
@@ -108,6 +108,11 @@ def _materialize_employment_output_pair(
     )
 
 
+def _artifact_observed_at(path: Path) -> str:
+    """Return an artifact mtime as an unambiguous UTC provenance timestamp."""
+    return datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat()
+
+
 def resolve_codgeo(insee_code, dept_code) -> str:
     """Helper to cleanly resolve 5-digit INSEE commune codes from raw inputs."""
     if pd.isna(insee_code):
@@ -165,7 +170,7 @@ def fetch_source(
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
     # 1. Check if cache is still valid
-    ttl_days = source_cfg.get("ttl_days", 30)
+    ttl_days = source_cfg["ttl_days"]
     if is_cache_valid(name, source_cfg):
         logging.info(
             f"[Fetch] {name}: Local cache is valid (TTL={ttl_days} days). Skipping fetch."
@@ -347,16 +352,17 @@ def fetch_source(
 def fetch_rome_referential(
     config: Dict[str, Any], logger: PipelineLogger
 ) -> Optional[Path]:
-    """Fetches ROME referential from France Travail API with 1-year TTL, falls back to static JSON."""
+    """Fetches the ROME referential using its configured TTL."""
     local_path = CACHE_DIR / "rome_referential_api.parquet"
+    ttl_days = config["sources"]["rome"]["ttl_days"]
 
-    # 1. 1-Year TTL Check
+    # 1. Configured TTL check
     if local_path.exists():
         mtime = datetime.fromtimestamp(local_path.stat().st_mtime)
         age_days = (datetime.now() - mtime).days
-        if age_days < 365:
+        if age_days < ttl_days:
             logging.info(
-                f"[ROME] Referential is {age_days} days old. Using cache (TTL=1 year)."
+                f"[ROME] Referential is {age_days} days old. Using cache (TTL={ttl_days} days)."
             )
             return local_path
         logging.info(f"[ROME] Referential is {age_days} days old. Refreshing...")
@@ -570,7 +576,7 @@ def clean_rpls(config: Dict[str, Any], logger: PipelineLogger):
                     max_year = df_odace["annee"].max()
                     logging.info(f"Odace RPLS: Filtering for max year {max_year}")
                     df_odace = df_odace[df_odace["annee"] == max_year]
-                df_commune = client.fetch_dim_commune()
+                df_commune = client.fetch_dim_commune(source["ttl_days"])
                 if not df_commune.empty:
                     merged = df_odace.merge(
                         df_commune[["commune_sk", "commune_insee_code"]],
@@ -939,7 +945,7 @@ def clean_refugee_associations(config: Dict[str, Any], logger: PipelineLogger):
     """Filters RNA for refugee associations and augments data."""
     output_path = CLEAN_DIR / "refugee_associations.parquet"
     shared_path = SHARED_CLEAN_DIR / output_path.name
-    ttl_days = config.get("sources", {}).get("rna_rag", {}).get("ttl_days", 365)
+    ttl_days = config["sources"]["rna_rag"]["ttl_days"]
 
     cache_details = _materialize_rag_cache(
         output_path,
@@ -1115,7 +1121,7 @@ def clean_communes(config: Dict[str, Any], logger: PipelineLogger):
                         logging.error(f"Error parsing ref_epci mapping: {e}")
 
                 # 2. Fetch dim_commune for labels, departement, and region
-                df_commune = client.fetch_table("dim_commune")
+                df_commune = client.fetch_dim_commune(source["ttl_days"])
 
                 df_odace.rename(columns={"commune_insee_code": "codgeo"}, inplace=True)
                 df_odace["codgeo"] = df_odace["codgeo"].astype(str).str.zfill(5)
@@ -1879,8 +1885,9 @@ def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
     output_act_cols = CLEAN_DIR / "bpe_action_sociale_cols.parquet"
     output_gares_cols = CLEAN_DIR / "bpe_gares_cols.parquet"
     output_pois = CLEAN_DIR / "bpe_pois.parquet"
+    source = config["sources"]["bpe"]
 
-    # 1-Year TTL Check (as requested by user)
+    # Configured TTL check.
     needs_refresh = True
     if (
         output_edu_cols.exists()
@@ -1892,9 +1899,11 @@ def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
     ):
         mtime = datetime.fromtimestamp(output_edu_cols.stat().st_mtime)
         age_days = (datetime.now() - mtime).days
-        if age_days < 365:
+        if age_days < source["ttl_days"]:
             logging.info(
-                f"[BPE] BPE stats are {age_days} days old. Using cache (TTL=1 year)."
+                "[BPE] BPE stats are %s days old. Using cache (TTL=%s days).",
+                age_days,
+                source["ttl_days"],
             )
             needs_refresh = False
 
@@ -1902,15 +1911,13 @@ def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
         return
 
     logger.log_step("clean_bpe", "STARTED")
-    source = config["sources"]["bpe"]
-
     df = None
     if source.get("use_odace", False):
         try:
             client = get_odace_client(logger)
             df_odace = client.fetch_table(
                 source.get("odace_table", "dim_equipement_territoire"),
-                ttl_days=source.get("ttl_days", 365),
+                ttl_days=source["ttl_days"],
             )
             if not df_odace.empty:
                 rename_dict = {
@@ -2407,7 +2414,7 @@ def clean_hebergement_rna(config: Dict[str, Any], logger: PipelineLogger):
     """Extracts accommodation-related associations from RNA using RAG (IML & Citoyen)."""
     output_agg = CLEAN_DIR / "hebergement_rna_cols.parquet"
     shared_path = SHARED_CLEAN_DIR / output_agg.name
-    ttl_days = config.get("sources", {}).get("rna_rag", {}).get("ttl_days", 365)
+    ttl_days = config["sources"]["rna_rag"]["ttl_days"]
 
     cache_details = _materialize_rag_cache(
         output_agg,
@@ -2688,10 +2695,17 @@ def clean_inclusion_jobs(
         if _materialize_employment_output_pair(
             INCLUSION_OUTPUT_PATH, INCLUSION_COVERAGE_SHARED_OUTPUT_PATH
         ):
+            candidate_path = OUTPUT_DIR / INCLUSION_OUTPUT_PATH.name
+            logger.log_source(
+                "inclusion_jobs",
+                "REFRESHED",
+                candidate_path,
+                observed_at=_artifact_observed_at(INCLUSION_OUTPUT_PATH),
+            )
             logger.log_step(
                 "clean_inclusion_jobs",
                 "COMPLETED",
-                {"path": str(OUTPUT_DIR / INCLUSION_OUTPUT_PATH.name)},
+                {"path": str(candidate_path)},
             )
         else:
             logger.log_step("clean_inclusion_jobs", "FAILED")
@@ -2702,12 +2716,20 @@ def clean_inclusion_jobs(
         if not skip and _materialize_employment_output_pair(
             INCLUSION_OUTPUT_PATH, INCLUSION_COVERAGE_SHARED_OUTPUT_PATH
         ):
+            candidate_path = OUTPUT_DIR / INCLUSION_OUTPUT_PATH.name
+            logger.log_source(
+                "inclusion_jobs",
+                "CACHED",
+                candidate_path,
+                observed_at=_artifact_observed_at(INCLUSION_OUTPUT_PATH),
+            )
             logger.log_step(
                 "clean_inclusion_jobs",
                 "COMPLETED",
-                {"path": str(OUTPUT_DIR / INCLUSION_OUTPUT_PATH.name), "cached": True},
+                {"path": str(candidate_path), "cached": True},
             )
         elif skip:
+            logger.log_source("inclusion_jobs", "SKIPPED")
             logger.log_step("clean_inclusion_jobs", "SKIPPED")
         else:
             reason = (
@@ -2725,16 +2747,9 @@ def get_live_jobs_status() -> Dict[str, Any]:
     cache_path = OUTPUT_DIR / "odis_ft_jobs_agg.parquet"
     data_path = Path("data/odis_ft_jobs_agg.parquet")
 
-    # Dynamic TTL check
-    try:
-        config = load_config(CONFIG_FILE)
-        ttl_days = (
-            config.get("local_files", {})
-            .get("france_travail_live", {})
-            .get("ttl_days", 7)
-        )
-    except:
-        ttl_days = 7
+    ttl_days = load_config(CONFIG_FILE)["local_files"]["france_travail_live"][
+        "ttl_days"
+    ]
 
     files = [cache_path, FT_SHARED_OUTPUT_PATH, data_path]
     coverage_files = [
@@ -2778,14 +2793,7 @@ def get_inclusion_jobs_status() -> Dict[str, Any]:
     cache_path = OUTPUT_DIR / "odis_inclusion_jobs.parquet"
     data_path = Path("data/odis_inclusion_jobs.parquet")
 
-    # Dynamic TTL check
-    try:
-        config = load_config(CONFIG_FILE)
-        ttl_days = (
-            config.get("local_files", {}).get("inclusion_jobs", {}).get("ttl_days", 7)
-        )
-    except:
-        ttl_days = 7
+    ttl_days = load_config(CONFIG_FILE)["local_files"]["inclusion_jobs"]["ttl_days"]
 
     files = [cache_path, INCLUSION_SHARED_OUTPUT_PATH, data_path]
     coverage_files = [
@@ -2849,6 +2857,12 @@ def clean_live_jobs(config: Dict[str, Any], logger: PipelineLogger, skip: bool =
         if path and _materialize_employment_output_pair(
             Path(path), FT_COVERAGE_SHARED_OUTPUT_PATH
         ):
+            logger.log_source(
+                "france_travail_live",
+                "REFRESHED",
+                candidate_path,
+                observed_at=_artifact_observed_at(Path(path)),
+            )
             logger.log_step(
                 "clean_live_jobs", "COMPLETED", {"path": str(candidate_path)}
             )
@@ -2862,12 +2876,19 @@ def clean_live_jobs(config: Dict[str, Any], logger: PipelineLogger, skip: bool =
         if not skip and _materialize_employment_output_pair(
             FT_SHARED_OUTPUT_PATH, FT_COVERAGE_SHARED_OUTPUT_PATH
         ):
+            logger.log_source(
+                "france_travail_live",
+                "CACHED",
+                candidate_path,
+                observed_at=_artifact_observed_at(FT_SHARED_OUTPUT_PATH),
+            )
             logger.log_step(
                 "clean_live_jobs",
                 "COMPLETED",
                 {"path": str(candidate_path), "cached": True},
             )
         elif skip:
+            logger.log_source("france_travail_live", "SKIPPED")
             logger.log_step("clean_live_jobs", "SKIPPED")
         else:
             reason = (
@@ -2895,9 +2916,19 @@ class MutedPipelineLogger:
             self.errors.append((step_name, details))
 
     def log_source(
-        self, source_name: str, status: str, file_path: Optional[str] = None
+        self,
+        source_name: str,
+        status: str,
+        file_path: Optional[str] = None,
+        *,
+        observed_at: Optional[str] = None,
     ):
-        self.real_logger.log_source(source_name, status, file_path)
+        self.real_logger.log_source(
+            source_name,
+            status,
+            file_path,
+            observed_at=observed_at,
+        )
 
 
 def run_clean_step_safely(
@@ -3191,14 +3222,23 @@ def clean_salesforce_jaccueille(config: Dict[str, Any], logger: PipelineLogger):
     """Build the candidate J'accueille release from the Salesforce source cache."""
     logger.log_step("clean_salesforce_jaccueille", "STARTED")
     try:
-        from pipeline.salesforce_ingest import run_salesforce_ingest
+        from pipeline.salesforce_ingest import get_salesforce_status, run_salesforce_ingest
 
         output_path = OUTPUT_DIR / "salesforce_jaccueille_bdv.parquet"
+        cached_source = get_salesforce_status()
         run_salesforce_ingest(
             force=False,
             output_bdv_path=output_path,
             postal_codes_path=CLEAN_DIR / "codes_postaux.parquet",
             communes_path=OUTPUT_DIR / "odis_communes_pre.parquet",
+        )
+        source_status = get_salesforce_status()
+        source_path = Path(source_status["path"])
+        logger.log_source(
+            "salesforce_jaccueille",
+            "CACHED" if cached_source.get("within_ttl") else "REFRESHED",
+            output_path,
+            observed_at=_artifact_observed_at(source_path),
         )
         logger.log_step(
             "clean_salesforce_jaccueille", "COMPLETED", {"path": str(output_path)}
@@ -3530,8 +3570,13 @@ def clean_odace_rent(config: Dict[str, Any], logger: PipelineLogger):
     client = get_odace_client(logger)
 
     # Fetch Data
-    df_rent = client.fetch_fact_loyer_annonce()
-    df_profil = client.fetch_ref_logement_profil()
+    odace_tables = config["sources"]["loyers_apparts"]["odace_tables"]
+    df_rent = client.fetch_fact_loyer_annonce(
+        odace_tables["fact_loyer_annonce"]["ttl_days"]
+    )
+    df_profil = client.fetch_ref_logement_profil(
+        odace_tables["ref_logement_profil"]["ttl_days"]
+    )
 
     if df_rent.empty or df_profil.empty:
         error_msg = (
@@ -3619,7 +3664,7 @@ def fetch_rna_rag_stats(
     shared_path = SHARED_CLEAN_DIR / local_path.name
     if config is None:
         config = load_config(CONFIG_FILE)
-    ttl_days = config.get("sources", {}).get("rna_rag", {}).get("ttl_days", 365)
+    ttl_days = config["sources"]["rna_rag"]["ttl_days"]
 
     cache_details = _materialize_rag_cache(
         local_path,

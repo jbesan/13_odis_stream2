@@ -6,7 +6,6 @@ from pipeline.salesforce_ingest import (
     aggregate_salesforce_data,
     get_salesforce_status,
     run_salesforce_ingest,
-    TTL_DAYS,
 )
 
 
@@ -78,7 +77,21 @@ def test_get_salesforce_status(tmp_path, monkeypatch):
     status_after = get_salesforce_status()
     assert status_after["exists"]
     assert status_after["within_ttl"]
-    assert status_after["ttl_days"] == TTL_DAYS
+    assert status_after["ttl_days"] == 7
+
+
+def test_get_salesforce_status_uses_catalog_ttl(tmp_path, monkeypatch):
+    mock_output = tmp_path / "salesforce_jaccueille.parquet"
+    pd.DataFrame([{"code_postal": "75015", "total_jaccueille_count": 1}]).to_parquet(
+        mock_output
+    )
+    monkeypatch.setattr("pipeline.salesforce_ingest.OUTPUT_PATH", mock_output)
+    monkeypatch.setattr(
+        "pipeline.salesforce_ingest.load_config",
+        lambda _: {"local_files": {"salesforce_jaccueille": {"ttl_days": 3}}},
+    )
+
+    assert get_salesforce_status()["ttl_days"] == 3
 
 
 def test_salesforce_bdv_release_omits_record_ids(tmp_path, monkeypatch):
@@ -127,6 +140,16 @@ def test_salesforce_cleaner_builds_the_artifact_from_candidate_references(
     monkeypatch.setattr("pipeline.ingest.OUTPUT_DIR", candidate_output_dir)
     monkeypatch.setattr("pipeline.ingest.CLEAN_DIR", candidate_clean_dir)
     expected_output = candidate_output_dir / "salesforce_jaccueille_bdv.parquet"
+    source_cache = tmp_path / "salesforce_jaccueille.parquet"
+    source_cache.write_bytes(b"source cache")
+    monkeypatch.setattr(
+        "pipeline.salesforce_ingest.get_salesforce_status",
+        lambda: {
+            "exists": True,
+            "within_ttl": True,
+            "path": str(source_cache),
+        },
+    )
     monkeypatch.setattr(
         "pipeline.salesforce_ingest.run_salesforce_ingest",
         lambda force, **kwargs: (
@@ -147,6 +170,12 @@ def test_salesforce_cleaner_builds_the_artifact_from_candidate_references(
         {"bassin_de_vie": "75056"}
     ]
     assert expected_output == candidate_artifact
+    logger.log_source.assert_called_once()
+    assert logger.log_source.call_args.args[:2] == (
+        "salesforce_jaccueille",
+        "CACHED",
+    )
+    assert logger.log_source.call_args.kwargs["observed_at"].endswith("+00:00")
 
 
 @patch("pipeline.salesforce_ingest.get_salesforce_jwt_token")

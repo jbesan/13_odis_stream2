@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 from dotenv import load_dotenv
+from pipeline.common import CONFIG_FILE, load_config
 
 # Load environment variables from pipeline/.env
 load_dotenv(Path(__file__).parent / ".env")
@@ -22,7 +23,10 @@ OUTPUT_BDV_PATH = Path("pipeline/cache/output/salesforce_jaccueille_bdv.parquet"
 CODES_POSTAUX_PATH = Path("pipeline/cache/clean/codes_postaux.parquet")
 COMMUNES_PATH = Path("pipeline/cache/output/odis_communes.parquet")
 
-TTL_DAYS = 7
+
+def _ttl_days() -> int:
+    """Read the Salesforce cache policy from the source catalog."""
+    return load_config(CONFIG_FILE)["local_files"]["salesforce_jaccueille"]["ttl_days"]
 
 
 def get_salesforce_status() -> Dict[str, Any]:
@@ -31,6 +35,7 @@ def get_salesforce_status() -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: Status info containing exists, within_ttl, age_days, and ttl_days.
     """
+    ttl_days = _ttl_days()
     # The postal-code aggregate is the cached Salesforce source artefact.  The
     # BDV aggregate is deliberately rebuilt for every candidate because its
     # commune and postal-code mappings belong to that candidate run.
@@ -39,16 +44,16 @@ def get_salesforce_status() -> Dict[str, Any]:
             "exists": False,
             "within_ttl": False,
             "age_days": None,
-            "ttl_days": TTL_DAYS,
+            "ttl_days": ttl_days,
         }
 
     mtime = datetime.fromtimestamp(OUTPUT_PATH.stat().st_mtime)
     age_days = (datetime.now() - mtime).days
     return {
         "exists": True,
-        "within_ttl": age_days < TTL_DAYS,
+        "within_ttl": age_days < ttl_days,
         "age_days": age_days,
-        "ttl_days": TTL_DAYS,
+        "ttl_days": ttl_days,
         "path": str(OUTPUT_PATH),
     }
 
@@ -322,7 +327,7 @@ def run_salesforce_ingest(
         logging.info(
             "[Salesforce] Local source cache is valid (%s days old < TTL %s days).",
             status["age_days"],
-            TTL_DAYS,
+            status["ttl_days"],
         )
         clean_cp_df = pd.read_parquet(OUTPUT_PATH)
     else:
