@@ -1,7 +1,23 @@
 import os
+import json
+import logging
 from unittest.mock import MagicMock, patch
 
-from utils.logger import setup_logfire
+from utils.logger import JsonFormatter, setup_logfire
+
+
+def test_cloud_run_json_log_is_single_line(monkeypatch):
+    record = logging.LogRecord(
+        name="test", level=logging.ERROR, pathname=__file__, lineno=1,
+        msg="provider unavailable", args=(), exc_info=None,
+    )
+    record.extra_data = {"error_code": "P3-07-CHECK"}
+
+    monkeypatch.setenv("K_SERVICE", "odis-app")
+    payload = JsonFormatter().format(record)
+
+    assert "\n" not in payload
+    assert json.loads(payload)["severity"] == "ERROR"
 
 
 def test_setup_logfire_prod():

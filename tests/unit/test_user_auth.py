@@ -42,10 +42,9 @@ def test_check_password_local_dev_autologin():
 
 
 def test_check_password_local_dev_forced_auth():
-    """Verify that check_password does NOT bypass authentication in local development if ODIS_FORCE_AUTH is set to True, and does NOT inject idle sleep."""
+    """Forced auth must not use the local-development identity bypass."""
     mock_session = {}
     with (
-        patch("utils.auth.inject_idle_sleep") as mock_idle,
         patch("utils.auth.st.session_state", mock_session),
         patch("utils.auth.st.container"),
         patch("utils.auth.st.form"),
@@ -58,26 +57,28 @@ def test_check_password_local_dev_forced_auth():
             res = check_password()
             assert res is False
             assert "user" not in mock_session
-            mock_idle.assert_not_called()
 
 
-def test_check_password_cloud_run_forced_auth_injects_idle_sleep():
-    """Verify that check_password injects idle sleep ONLY when on Cloud Run AND ODIS_FORCE_AUTH is True."""
-    mock_session = {}
+def test_check_password_rejects_partial_authenticated_cloud_run_session():
+    """A reset must not leave Cloud Run with auth=True but no org context."""
+    mock_session = {"password_correct": True, "username": "stale@example.com"}
     with (
-        patch("utils.auth.inject_idle_sleep") as mock_idle,
         patch("utils.auth.st.session_state", mock_session),
+        patch("utils.auth.st.user", None, create=True),
         patch("utils.auth.st.container"),
         patch("utils.auth.st.form"),
         patch("utils.auth.st.subheader"),
         patch("utils.auth.st.text_input"),
-        patch("utils.auth.st.form_submit_button") as mock_submit,
+        patch("utils.auth.st.form_submit_button", return_value=False),
     ):
-        mock_submit.return_value = False
-        with patch.dict(os.environ, {"K_SERVICE": "odis-service", "ODIS_FORCE_AUTH": "True"}, clear=True):
-            res = check_password()
-            assert res is False
-            mock_idle.assert_called_once_with(timeout_minutes=10)
+        with patch.dict(
+            os.environ,
+            {"K_SERVICE": "odis-service", "ODIS_FORCE_AUTH": "True"},
+            clear=True,
+        ):
+            assert check_password() is False
+
+    assert mock_session["password_correct"] is False
 
 
 def test_apply_logged_in_org_defaults():
@@ -142,6 +143,4 @@ def test_logout_oidc():
         logout()
         mock_session.clear.assert_called_once()
         mock_st_logout.assert_called_once()
-
-
 

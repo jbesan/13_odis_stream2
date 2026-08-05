@@ -1,44 +1,26 @@
-import json
 import logging
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-from utils import auth
-from ui import components as ui_comp
-from utils import common as utils
-from services import telemetry, analytics_data
+from ui import page_shell
+from services import analytics_data
 
 logger = logging.getLogger("pages.analytics")
 
 # --- Page Config ---
 st.set_page_config(page_title="OD&IS - Analytics", page_icon="📊", layout="wide")
 
-# --- Auth Guard ---
-if not auth.check_password():
-    st.stop()
-
-if not auth.is_admin():
-    st.error("🔒 Accès refusé : Cette page est réservée aux administrateurs.")
-    st.stop()
-
-telemetry.log_page_view("Analytics")
+page_shell.enter_page("Analytics", admin_only=True)
 
 # --- Sidebar ---
 with st.sidebar:
-    logo_path = utils.get_asset_path("logo-jaccueille-singa.png")
-    logo_b64 = utils.get_base64_image(logo_path)
-    if logo_b64:
-        st.markdown(
-            f'<img src="data:image/png;base64,{logo_b64}" width="150" style="margin-bottom: 20px;">',
-            unsafe_allow_html=True,
-        )
+    page_shell.render_sidebar_logo()
     st.header("📊 Administration")
     st.write("Bienvenue sur le tableau de bord d'analyse de l'usage et des recommandations d'OD&IS.")
     st.divider()
-    ui_comp.start_over()
-    ui_comp.render_sources_sidebar_link()
-    ui_comp.render_logout_sidebar_button()
+    page_shell.render_primary_sidebar_actions(show_home=True)
+    page_shell.render_account_sidebar_actions(show_admin=False)
 
 
 
@@ -72,12 +54,42 @@ with col_filter3:
     st.write("")  # Vertical spacing for alignment with selectbox
     st.write("")
     if st.button("🔄 Rafraîchir", help="Forcer le rafraîchissement des données depuis BigQuery"):
-        st.cache_data.clear()
+        analytics_data.clear_analytics_cache()
         st.rerun()
 
 
 with st.spinner("Chargement des données BigQuery..."):
-    df_searches, df_usage = analytics_data.fetch_analytics_data(client, period_days)
+    analytics_result = analytics_data.fetch_analytics_data(client, period_days)
+
+if analytics_result.status == analytics_data.OutcomeStatus.UNAUTHORIZED:
+    st.error(
+        "❌ **Accès aux données Analytics indisponible**. "
+        "Réessayez plus tard ou contactez le support (code : ANALYTICS-BQ-UNAUTHORIZED)."
+    )
+    st.stop()
+if analytics_result.status == analytics_data.OutcomeStatus.UNAVAILABLE:
+    st.error(
+        "❌ **Données Analytics temporairement indisponibles**. "
+        "Réessayez dans quelques instants (code : ANALYTICS-BQ-UNAVAILABLE)."
+    )
+    st.stop()
+if analytics_result.status == analytics_data.OutcomeStatus.PARTIAL:
+    failed_tables = []
+    if not analytics_result.searches.is_success:
+        failed_tables.append("recherches")
+    if not analytics_result.usage.is_success:
+        failed_tables.append("événements d'usage")
+    st.warning(
+        "⚠️ Affichage partiel : les données suivantes sont temporairement indisponibles : "
+        f"{', '.join(failed_tables)} (code : ANALYTICS-BQ-UNAVAILABLE)."
+    )
+
+df_searches = analytics_result.searches.value
+df_usage = analytics_result.usage.value
+if df_searches is None:
+    df_searches = pd.DataFrame()
+if df_usage is None:
+    df_usage = pd.DataFrame()
 
 # Filter by Org if data exists
 all_orgs = sorted(
@@ -241,27 +253,36 @@ with tab_recommandations:
     with col_rec1:
         if not df_searches.empty and "top_results" in df_searches.columns:
             city_records = []
+            top_results_stats = analytics_data.ParseStats()
             for idx, row in df_searches.iterrows():
                 top_res_str = row.get("top_results")
                 if top_res_str:
-                    try:
-                        top_list = (
-                            json.loads(top_res_str)
-                            if isinstance(top_res_str, str)
-                            else top_res_str
+                    top_list = analytics_data.parse_json_payload(
+                        top_res_str, top_results_stats, expected_type=list
+                    )
+                    if top_list is None:
+                        continue
+                    for rank, city in enumerate(top_list, start=1):
+                        if not isinstance(city, dict):
+                            top_results_stats.invalid_rows += 1
+                            continue
+                        city_records.append(
+                            {
+                                "codgeo": city.get("codgeo"),
+                                "libgeo": city.get("libgeo"),
+                                "score": city.get("score", 0.0),
+                                "rank": rank,
+                                "org_id": row.get("org_id"),
+                            }
                         )
-                        for rank, city in enumerate(top_list, start=1):
-                            city_records.append(
-                                {
-                                    "codgeo": city.get("codgeo"),
-                                    "libgeo": city.get("libgeo"),
-                                    "score": city.get("score", 0.0),
-                                    "rank": rank,
-                                    "org_id": row.get("org_id"),
-                                }
-                            )
-                    except Exception:
-                        pass
+
+            analytics_data.log_invalid_payload_summary(
+                "top_recommended_cities", top_results_stats
+            )
+            if top_results_stats.invalid_rows:
+                st.caption(
+                    f"{top_results_stats.invalid_rows} résultat(s) invalide(s) ont été écartés."
+                )
 
             if city_records:
                 df_cities = pd.DataFrame(city_records)
@@ -290,7 +311,20 @@ with tab_recommandations:
                 fig_top_cities.update_layout(yaxis={"categoryorder": "total ascending"})
                 st.plotly_chart(fig_top_cities, width="content")
             else:
-                st.info("Aucun détail de ville disponible dans les résultats de recherche.")
+                if top_results_stats.invalid_rows:
+                    logger.error(
+                        "Analytics recommendations widget has no usable rows",
+                        extra={
+                            "extra_data": {
+                                "operation": "analytics_payload_parse",
+                                "widget": "top_recommended_cities",
+                                "error_code": "ANALYTICS-PAYLOAD-INVALID",
+                            }
+                        },
+                    )
+                    st.warning("Données insuffisantes ou invalides pour afficher les villes recommandées.")
+                else:
+                    st.info("Aucun détail de ville disponible dans les résultats de recherche.")
         else:
             st.info("Aucune donnée de recherche à analyser.")
 
@@ -300,17 +334,26 @@ with tab_recommandations:
             df_details = df_usage[df_usage["event_name"] == "view_commune_details"]
             if not df_details.empty:
                 consult_records = []
+                consult_stats = analytics_data.ParseStats()
                 for _, row in df_details.iterrows():
                     payload_raw = row.get("payload")
                     if payload_raw:
-                        try:
-                            p = json.loads(payload_raw) if isinstance(payload_raw, str) else payload_raw
-                            consult_records.append({
-                                "codgeo": p.get("codgeo"),
-                                "name": p.get("name", p.get("codgeo")),
-                            })
-                        except Exception:
-                            pass
+                        p = analytics_data.parse_json_payload(
+                            payload_raw, consult_stats, expected_type=dict
+                        )
+                        if p is None:
+                            continue
+                        consult_records.append({
+                            "codgeo": p.get("codgeo"),
+                            "name": p.get("name", p.get("codgeo")),
+                        })
+                analytics_data.log_invalid_payload_summary(
+                    "most_consulted_cities", consult_stats
+                )
+                if consult_stats.invalid_rows:
+                    st.caption(
+                        f"{consult_stats.invalid_rows} événement(s) invalide(s) ont été écartés."
+                    )
                 if consult_records:
                     df_consult = pd.DataFrame(consult_records)
                     top_consult = df_consult["name"].value_counts().reset_index()
@@ -329,7 +372,20 @@ with tab_recommandations:
                     fig_consult.update_layout(yaxis={"categoryorder": "total ascending"})
                     st.plotly_chart(fig_consult, width="content")
                 else:
-                    st.info("Aucune consultation de commune enregistrée.")
+                    if consult_stats.invalid_rows:
+                        logger.error(
+                            "Analytics consultations widget has no usable rows",
+                            extra={
+                                "extra_data": {
+                                    "operation": "analytics_payload_parse",
+                                    "widget": "most_consulted_cities",
+                                    "error_code": "ANALYTICS-PAYLOAD-INVALID",
+                                }
+                            },
+                        )
+                        st.warning("Données insuffisantes ou invalides pour afficher les consultations.")
+                    else:
+                        st.info("Aucune consultation de commune enregistrée.")
             else:
                 st.info("Aucun événement de consultation 'En savoir plus' trouvé pour cette période.")
         else:
@@ -360,32 +416,53 @@ with tab_recommandations:
             "territoire": "Territoire",
         }
 
+        breakdown_stats = analytics_data.ParseStats()
         for _, row in df_searches.iterrows():
             db_raw = row.get("detailed_breakdown")
             if db_raw:
-                try:
-                    db = json.loads(db_raw) if isinstance(db_raw, str) else db_raw
-                    for codgeo, city_data in db.items():
-                        scores_dict = city_data.get("scores", {})
-                        for cat_key, cat_name in cat_mapping.items():
-                            items = scores_dict.get(cat_key, [])
-                            for item in items:
-                                val = None
-                                if isinstance(item, dict):
-                                    val = item.get("score_normalise")
-                                    if val is None:
-                                        val = item.get("score", 0.0)
-                                else:
-                                    val = getattr(item, "score_normalise", getattr(item, "score", 0.0))
-                                if val is not None:
-                                    cat_scores_accumulator[cat_name].append(float(val))
-                except Exception:
-                    pass
+                db = analytics_data.parse_json_payload(
+                    db_raw, breakdown_stats, expected_type=dict
+                )
+                if db is None:
+                    continue
+                for city_data in db.values():
+                    if not isinstance(city_data, dict):
+                        breakdown_stats.invalid_rows += 1
+                        continue
+                    scores_dict = city_data.get("scores", {})
+                    if not isinstance(scores_dict, dict):
+                        breakdown_stats.invalid_rows += 1
+                        continue
+                    for cat_key, cat_name in cat_mapping.items():
+                        items = scores_dict.get(cat_key, [])
+                        if not isinstance(items, list):
+                            breakdown_stats.invalid_rows += 1
+                            continue
+                        for item in items:
+                            if isinstance(item, dict):
+                                val = item.get("score_normalise", item.get("score"))
+                            else:
+                                val = getattr(
+                                    item, "score_normalise", getattr(item, "score", None)
+                                )
+                            if val is None:
+                                continue
+                            try:
+                                cat_scores_accumulator[cat_name].append(float(val))
+                            except (TypeError, ValueError):
+                                breakdown_stats.invalid_rows += 1
+
+        analytics_data.log_invalid_payload_summary("category_score_radar", breakdown_stats)
+        if breakdown_stats.invalid_rows:
+            st.caption(
+                f"{breakdown_stats.invalid_rows} donnée(s) invalide(s) ont été écartées du radar."
+            )
 
         radar_data = []
         for cat_name, scores in cat_scores_accumulator.items():
-            mean_val = (sum(scores) / len(scores)) * 100 if scores else 50.0
-            radar_data.append({"Catégorie": cat_name, "Score Moyen (%)": round(mean_val, 1)})
+            if scores:
+                mean_val = (sum(scores) / len(scores)) * 100
+                radar_data.append({"Catégorie": cat_name, "Score Moyen (%)": round(mean_val, 1)})
 
         df_radar = pd.DataFrame(radar_data)
 
@@ -400,7 +477,7 @@ with tab_recommandations:
             fig_radar.update_traces(fill="toself", fillcolor="rgba(27, 68, 41, 0.4)", line_color="#1B4429")
             st.plotly_chart(fig_radar, width="content")
         else:
-            st.info("Données insuffisantes pour générer le graphique radar.")
+            st.warning("Données insuffisantes ou invalides pour générer le graphique radar.")
 
 
 # ==========================================
@@ -411,23 +488,32 @@ with tab_profiles:
 
     if not df_searches.empty and "search_criteria" in df_searches.columns:
         parsed_criteria = []
-        parsed_weights = []
+        parsed_weights_by_criteria = []
+        criteria_stats = analytics_data.ParseStats()
+        weights_stats = analytics_data.ParseStats()
 
         for _, row in df_searches.iterrows():
             sc_raw = row.get("search_criteria")
             w_raw = row.get("weights")
-            if sc_raw:
-                try:
-                    c_dict = json.loads(sc_raw) if isinstance(sc_raw, str) else sc_raw
-                    parsed_criteria.append(c_dict)
-                except Exception:
-                    pass
-            if w_raw:
-                try:
-                    w_dict = json.loads(w_raw) if isinstance(w_raw, str) else w_raw
-                    parsed_weights.append(w_dict)
-                except Exception:
-                    pass
+            c_dict = analytics_data.parse_json_payload(
+                sc_raw, criteria_stats, expected_type=dict
+            )
+            w_dict = analytics_data.parse_json_payload(
+                w_raw, weights_stats, expected_type=dict
+            )
+            if c_dict is not None:
+                parsed_criteria.append(c_dict)
+                # Keep weights aligned with their own criteria record; the old
+                # independent lists could pair two different searches.
+                parsed_weights_by_criteria.append(w_dict or {})
+
+        analytics_data.log_invalid_payload_summary("search_criteria", criteria_stats)
+        analytics_data.log_invalid_payload_summary("search_weights", weights_stats)
+        invalid_profile_rows = criteria_stats.invalid_rows + weights_stats.invalid_rows
+        if invalid_profile_rows:
+            st.caption(
+                f"{invalid_profile_rows} donnée(s) de profil invalide(s) ont été écartées."
+            )
 
         df_crit = pd.DataFrame(parsed_criteria)
 
@@ -464,7 +550,7 @@ with tab_profiles:
                 p = c.get("weight_profile")
                 if not p or p == "None" or not str(p).strip():
                     # Infer from weights if available
-                    w = parsed_weights[idx] if idx < len(parsed_weights) else {}
+                    w = parsed_weights_by_criteria[idx]
                     if isinstance(w, dict) and w:
                         vals = [float(v) for v in w.values() if v is not None]
                         if vals and all(v == 1.0 for v in vals):

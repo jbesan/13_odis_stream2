@@ -1,18 +1,41 @@
 import streamlit as st
 import pandas as pd
 import logging
+from typing import Any
 import config as cfg
 from core.models import SearchCriterias, CriteriaItem
-from utils.data_loader import get_app_data
 from ui.components import inject_custom_css
+from ui.form_state import FormState, health_key, housing_key
 
 # Configure Logging
 logger = logging.getLogger("ui.forms")
 
 
-def render_localisation_form() -> None:
+def get_commune_options_for_form(app_data: dict) -> dict[str, str]:
+    """Return population-ranked commune choices with department disambiguation."""
+    odis = app_data.get("odis", pd.DataFrame())
+    if not odis.empty and {"population", "libgeo"}.issubset(odis.columns):
+        candidates = (
+            odis.dropna(subset=["population", "libgeo"])
+            .sort_values(by="population", ascending=False)
+            .head(1000)
+        )
+    else:
+        candidates = app_data.get("depcom_df", pd.DataFrame())
+
+    if candidates.empty:
+        return {}
+
+    options = {}
+    for codgeo, row in candidates.dropna(subset=["libgeo"]).iterrows():
+        name = str(row["libgeo"])
+        dep = str(row.get("dep_code", ""))
+        options[str(codgeo)] = f"{name} ({dep})" if dep else name
+    return options
+
+
+def render_localisation_form(app_data: dict[str, Any]) -> None:
     """Renders the UI for the 'Localisation Actuelle' form section."""
-    app_data = get_app_data()
     dept_details = app_data.get("dept_details", {})
     options_dep = app_data["coddep_set"]
 
@@ -97,10 +120,9 @@ def render_education_form() -> None:
                 st.selectbox(f"Niveau enfant {i + 1}", options, key=key)
 
 
-def render_employment_form() -> None:
+def render_employment_form(app_data: dict[str, Any]) -> None:
     """Renders the UI for the 'Emploi & Formation' form section."""
     inject_custom_css()
-    app_data = get_app_data()
     col1, col2 = st.columns(2)
     rome_full_index = app_data["rome_index"]
     rome_top_index = app_data.get(
@@ -121,9 +143,11 @@ def render_employment_form() -> None:
                 if code in rome_full_index.index:
                     row = rome_full_index.loc[code]
                     label = row["label"]
-                    count = row.get("total_postes", 0)
-                    count_str = f"{int(count):,}".replace(",", " ")
-                    return f"{label} [{count_str} postes]"
+                    count = row.get("total_postes")
+                    if pd.notna(count):
+                        count_str = f"{int(count):,}".replace(",", " ")
+                        return f"{label} [{count_str} postes]"
+                    return str(label)
                 return str(code)
 
             st.multiselect(
@@ -147,23 +171,14 @@ def render_housing_form() -> None:
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("Hébergement cible à court terme")
-        current_heb = st.session_state.get("ui_hebergement_cible", [])
-
-        # Callback to compile selected checkboxes into ui_hebergement_cible list
-        def on_heb_change():
-            selected = []
-            for opt in cfg.HEBERGEMENT_OPTIONS:
-                cb_key = f"ui_heb_cb_{opt.replace(' ', '_').lower()}"
-                if st.session_state.get(cb_key):
-                    selected.append(opt)
-            st.session_state["ui_hebergement_cible"] = selected
+        form_state = FormState(st.session_state)
+        current_heb = form_state.selected_housing()
 
         for opt in cfg.HEBERGEMENT_OPTIONS:
-            cb_key = f"ui_heb_cb_{opt.replace(' ', '_').lower()}"
+            cb_key = housing_key(opt)
             if cb_key not in st.session_state:
                 st.session_state[cb_key] = opt in current_heb
-
-            st.checkbox(opt, key=cb_key, on_change=on_heb_change)
+            st.checkbox(opt, key=cb_key)
 
     with col2:
         st.subheader("Logement cible à long terme")
@@ -174,7 +189,7 @@ def render_housing_form() -> None:
             label_visibility="hidden",
         )
 
-    heb_sel = st.session_state.get("ui_hebergement_cible", [])
+    heb_sel = form_state.selected_housing()
     if (
         "Location avec Intermédiation" in heb_sel
         or st.session_state.get("ui_logement") == "Location"
@@ -200,43 +215,19 @@ def render_housing_form() -> None:
 def render_health_form() -> None:
     """Renders the UI for the 'Santé' form section."""
     st.subheader("Support médical à proximité")
-    current_sante = st.session_state.get("ui_besoin_sante", [])
-
-    # Callback to compile selected checkboxes into ui_besoin_sante list
-    def on_sante_change():
-        selected = []
-        for opt in cfg.SANTE_OPTIONS:
-            safe_opt = (
-                opt.replace(" ", "_")
-                .replace("'", "_")
-                .replace("(", "")
-                .replace(")", "")
-                .lower()
-            )
-            cb_key = f"ui_sante_cb_{safe_opt}"
-            if st.session_state.get(cb_key):
-                selected.append(opt)
-        st.session_state["ui_besoin_sante"] = selected
+    form_state = FormState(st.session_state)
+    current_sante = form_state.selected_health()
 
     for opt in cfg.SANTE_OPTIONS:
-        safe_opt = (
-            opt.replace(" ", "_")
-            .replace("'", "_")
-            .replace("(", "")
-            .replace(")", "")
-            .lower()
-        )
-        cb_key = f"ui_sante_cb_{safe_opt}"
+        cb_key = health_key(opt)
         if cb_key not in st.session_state:
             st.session_state[cb_key] = opt in current_sante
+        st.checkbox(opt, key=cb_key)
 
-        st.checkbox(opt, key=cb_key, on_change=on_sante_change)
 
-
-def render_other_needs_form() -> None:
+def render_other_needs_form(app_data: dict[str, Any]) -> None:
     """Renders the UI for the 'Autres Besoins' (Inclusion) section."""
     inject_custom_css()
-    app_data = get_app_data()
 
     col1, col2 = st.columns(2)
     with col2:
@@ -259,23 +250,22 @@ def render_other_needs_form() -> None:
                 count_str = f"{int(row['count']):,}".replace(",", " ")
                 item_map[item.code] = f"{item.label.title()} [{count_str} assos]"
 
-            if "ui_inc_asso_add_selection" not in st.session_state:
-                st.session_state.ui_inc_asso_add_selection = st.session_state.get(
-                    "demo_data", {}
-                ).get("inc_asso_add_selection", [])
+            if "ui_inc_asso_add_selection_raw" not in st.session_state:
+                legacy_values = st.session_state.get(
+                    "ui_inc_asso_add_selection", []
+                )
+                st.session_state["ui_inc_asso_add_selection_raw"] = [
+                    item.code if hasattr(item, "code") else str(item)
+                    for item in legacy_values
+                ]
 
-            selected_codes = st.multiselect(
+            st.multiselect(
                 "Centres d'intérêt",
                 options=[item.code for item in options_items],
                 format_func=lambda x: item_map.get(x, x),
                 key="ui_inc_asso_add_selection_raw",
                 label_visibility="collapsed",
             )
-
-            st.session_state.ui_inc_asso_add_selection = [
-                next(item for item in options_items if item.code == code)
-                for code in selected_codes
-            ]
         else:
             st.warning("Référentiel WALDEC non chargé.")
 
@@ -320,7 +310,7 @@ def render_other_needs_form() -> None:
                 return str(val.iloc[0] if isinstance(val, pd.Series) else val)
             return slug
 
-        selected_raw = st.multiselect(
+        st.multiselect(
             "Services d'inclusion requis",
             options=options,
             format_func=format_service_label,
@@ -329,25 +319,11 @@ def render_other_needs_form() -> None:
             label_visibility="collapsed",
         )
 
-        # Keep ui_inc_services_selection in sync
-        inc_services_mapped = []
-        for code in selected_raw:
-            if not inclusion_index.empty and code in inclusion_index.index:
-                val = inclusion_index.loc[code, "label"]
-                label = str(val.iloc[0] if isinstance(val, pd.Series) else val)
-            else:
-                label = str(code)
-            inc_services_mapped.append(CriteriaItem(code=str(code), label=label))
-
-        st.session_state.ui_inc_services_selection = inc_services_mapped
-
 
 def render_other_notes_form() -> None:
     """Renders the UI for entering free-text qualitative notes (F-48 update)."""
     if "ui_notes_qualitatives" not in st.session_state:
-        st.session_state.ui_notes_qualitatives = st.session_state.get(
-            "demo_data", {}
-        ).get("notes_qualitatives", "")
+        st.session_state.ui_notes_qualitatives = ""
 
     st.text(
         "Précisez ici tout élément supplémentaire potentiellement utile pour la recherche (origine culturelle, contexte familial, passions, contraintes spécifiques, etc.)."
@@ -362,9 +338,8 @@ def render_other_notes_form() -> None:
     )
 
 
-def render_mobility_form() -> None:
+def render_mobility_form(app_data: dict[str, Any]) -> None:
     """Renders the UI for the 'Mobilité' form section (Consolidated)."""
-    app_data = get_app_data()
     dept_details = app_data.get("dept_details", {})
     regions_dict = app_data.get("regions_names", {})
 
@@ -494,39 +469,20 @@ def render_mobility_form() -> None:
     )
 
     if has_pressentie:
-        # Get top 1000 communes by population or fallback to depcom_df
-        odis_df = app_data.get("odis", pd.DataFrame())
-        communes_dict = {}
-        if not odis_df.empty and "population" in odis_df.columns:
-            top_1000 = (
-                odis_df.dropna(subset=["population", "libgeo"])
-                .sort_values(by="population", ascending=False)
-                .head(1000)
-            )
-            for codgeo, row in top_1000.iterrows():
-                dep = row.get("dep_code", "")
-                communes_dict[str(codgeo)] = f"{row['libgeo']} ({dep})"
-        else:
-            depcom = app_data.get("depcom_df", pd.DataFrame())
-            if not depcom.empty:
-                for codgeo, row in depcom.iterrows():
-                    dep = row.get("dep_code", "")
-                    communes_dict[str(codgeo)] = f"{row['libgeo']} ({dep})"
+        # The complete form bundle keeps this population-ranked shortlist
+        # available without a control-level data fetch.
+        communes_dict = get_commune_options_for_form(app_data)
 
         # Ensure active/restored commune code is present in options if set
         current_val = st.session_state.get("ui_commune_pressentie")
         curr_code = (
-            current_val.code if hasattr(current_val, "code") else current_val
-        ) if current_val else None
+            (current_val.code if hasattr(current_val, "code") else current_val)
+            if current_val
+            else None
+        )
 
         if curr_code and curr_code not in communes_dict:
-            if not odis_df.empty and curr_code in odis_df.index:
-                row = odis_df.loc[curr_code]
-                lib = row.get("libgeo", curr_code)
-                dep = row.get("dep_code", "")
-                communes_dict[str(curr_code)] = f"{lib} ({dep})" if dep else str(lib)
-            else:
-                communes_dict[str(curr_code)] = str(curr_code)
+            communes_dict[str(curr_code)] = str(curr_code)
 
         options = sorted(communes_dict.keys(), key=lambda c: communes_dict[c])
 
@@ -544,7 +500,7 @@ def render_mobility_form() -> None:
         st.session_state["ui_commune_pressentie"] = None
 
 
-def render_org_profile_form() -> None:
+def render_org_profile_form(app_data: dict[str, Any]) -> None:
     """Renders the organization-specific preamble component (F-54)."""
     org = st.session_state.get("org")
     if not org:
@@ -558,7 +514,6 @@ def render_org_profile_form() -> None:
     # st.divider()
 
     # --- Strategic Locations Multi-select ---
-    app_data = get_app_data(load_heavy=False)
     zone_type = org.zone_type
 
     if zone_type == "departement":
@@ -618,8 +573,6 @@ def render_org_profile_form() -> None:
         )
 
         boost_config = org_defaults["org_boosts"]
-        new_boosts = {}
-
         for criterion_id, default_val in boost_config.items():
             # Get label from config
             label = criterion_id
@@ -630,14 +583,10 @@ def render_org_profile_form() -> None:
                 label = score_row.iloc[0]["label"]
 
             # Key for session state
-            ui_key = f"ui_org_boost_{criterion_id}"
             slider_key = f"ui_org_boost_slider_{criterion_id}"
 
-            # Ensure session state is initialized if not present
-            if ui_key not in st.session_state:
-                st.session_state[ui_key] = float(default_val)
             if slider_key not in st.session_state:
-                st.session_state[slider_key] = int(st.session_state[ui_key])
+                st.session_state[slider_key] = int(default_val)
 
             with st.container(horizontal=True):
                 # col1, col2 = st.columns([1, 2])
@@ -645,7 +594,7 @@ def render_org_profile_form() -> None:
                 st.space(size="medium")
                 st.markdown(f"##### {label}")
                 # with col2:
-                val = st.slider(
+                st.slider(
                     f"Boost pour : {label}",
                     min_value=1,
                     max_value=5,
@@ -656,13 +605,7 @@ def render_org_profile_form() -> None:
                     format="x%d",
                     width=100,
                     label_visibility="collapsed",
-                    on_change=lambda k=ui_key, sk=slider_key: st.session_state.update(
-                        {k: float(st.session_state[sk])}
-                    ),
                 )
-            new_boosts[criterion_id] = float(val)
-
-        st.session_state["ui_org_boosts"] = new_boosts
 
     # st.markdown("---")
     # st.caption("Vous pouvez modifier ces paramètres manuellement dans les autres onglets si nécessaire.")
@@ -673,16 +616,10 @@ def render_weight_profile_form() -> None:
 
     def _update_weights_from_profile():
         profile = st.session_state.ui_weight_profile
-        if profile == "Profil personnalisé":
-            st.session_state.ui_expert_weights = True
-        elif profile in cfg.WEIGHT_PROFILES:
-            st.session_state.ui_expert_weights = False
+        if profile in cfg.WEIGHT_PROFILES:
             weights = cfg.WEIGHT_PROFILES[profile]
             for key, value in weights.items():
                 st.session_state[f"ui_{key}"] = value
-
-        st.session_state["processed_gdf"] = None
-        st.session_state["search_results"] = None
 
     weight_profiles = list(cfg.WEIGHT_PROFILES.keys()) + ["Profil personnalisé"]
     if (
@@ -690,11 +627,6 @@ def render_weight_profile_form() -> None:
         or st.session_state["ui_weight_profile"] not in weight_profiles
     ):
         st.session_state["ui_weight_profile"] = weight_profiles[0]
-
-    if "ui_expert_weights" not in st.session_state:
-        st.session_state.ui_expert_weights = (
-            st.session_state["ui_weight_profile"] == "Profil personnalisé"
-        )
 
     st.text(
         "Pour améliorer la pertinence des résultats de la recherche, vous pouvez ajuster les poids des différentes catégories de critères de recherche en utilisant soit un profil de pondération (recommandé) soit une pondération sur-mesure."
@@ -708,10 +640,6 @@ def render_weight_profile_form() -> None:
             key="ui_weight_profile",
             on_change=_update_weights_from_profile,
         )
-
-    def _invalidate_results():
-        st.session_state["processed_gdf"] = None
-        st.session_state["search_results"] = None
 
     weight_keys = [
         "ui_poids_education",
@@ -733,7 +661,9 @@ def render_weight_profile_form() -> None:
 
     format_pct = lambda x: f"{int(x * 100)}%"
 
-    sliders_disabled = not st.session_state.get("ui_expert_weights", False)
+    sliders_disabled = (
+        st.session_state.get("ui_weight_profile") != "Profil personnalisé"
+    )
 
     labels_map = {
         "ui_poids_education": "Education",
@@ -762,11 +692,10 @@ def render_weight_profile_form() -> None:
                     disabled=sliders_disabled,
                     key=p_key,
                     label_visibility="collapsed",
-                    on_change=_invalidate_results,
                 )
 
 
-def display_input_tabs() -> None:
+def display_input_tabs(app_data: dict[str, Any]) -> None:
     """Displays the main tabs for user input, composed of modular rendering functions."""
     inject_custom_css()
 
@@ -791,17 +720,17 @@ def display_input_tabs() -> None:
     current_tab_idx = 0
     if org:
         with tabs[current_tab_idx]:
-            render_org_profile_form()
+            render_org_profile_form(app_data)
         current_tab_idx += 1
 
     with tabs[current_tab_idx]:
         col1, col2 = st.columns([1, 2])
         with col1:
             st.markdown("##### Localisation actuelle")
-            render_localisation_form()
+            render_localisation_form(app_data)
         with col2:
             st.markdown("##### Zone de recherche")
-            render_mobility_form()
+            render_mobility_form(app_data)
     current_tab_idx += 1
 
     with tabs[current_tab_idx]:
@@ -813,7 +742,7 @@ def display_input_tabs() -> None:
     current_tab_idx += 1
 
     with tabs[current_tab_idx]:
-        render_employment_form()
+        render_employment_form(app_data)
     current_tab_idx += 1
 
     with tabs[current_tab_idx]:
@@ -825,7 +754,7 @@ def display_input_tabs() -> None:
     current_tab_idx += 1
 
     with tabs[current_tab_idx]:
-        render_other_needs_form()
+        render_other_needs_form(app_data)
     current_tab_idx += 1
 
     with tabs[current_tab_idx]:
@@ -836,210 +765,6 @@ def display_input_tabs() -> None:
         render_weight_profile_form()
 
 
-def create_search_criterias_from_inputs() -> SearchCriterias:
-    """Gathers all user inputs from session_state and creates a SearchCriterias object."""
-    app_data = get_app_data()
-
-    # Location
-    dept_code = st.session_state.get(
-        "ui_departement", cfg.DEMO_DATA_DEFAULT["departement_actuel"]
-    )
-    commune_lib = st.session_state.get(
-        "ui_commune", cfg.DEMO_DATA_DEFAULT["commune_actuelle"]
-    )
-
-    commune_codgeo = app_data["depcom_df"][
-        (app_data["depcom_df"].dep_code == dept_code)
-        & (app_data["depcom_df"].libgeo == commune_lib)
-    ].index[0]
-
-    commune_actuelle = CriteriaItem(code=str(commune_codgeo), label=str(commune_lib))
-
-    # Shortlisted city
-    commune_pressentie = None
-    if st.session_state.get("ui_has_commune_pressentie") and st.session_state.get(
-        "ui_commune_pressentie"
-    ):
-        p_code = st.session_state.get("ui_commune_pressentie")
-        commune_names = app_data.get("commune_names", {})
-        odis = app_data.get("odis", pd.DataFrame())
-        p_lib = (
-            odis.loc[p_code, "libgeo"]
-            if not odis.empty and p_code in odis.index
-            else commune_names.get(p_code, p_code)
-        )
-        commune_pressentie = CriteriaItem(code=str(p_code), label=str(p_lib))
-
-    # New Mobility Logic (F-53)
-    if st.session_state.get("ui_france_search"):
-        loc_search_area = "france"
-        loc_search_code = []
-    elif st.session_state.get("ui_region_search"):
-        loc_search_area = "region"
-        selected_regs = st.session_state.get("ui_mobility_region", [])
-        loc_search_code = (
-            selected_regs if isinstance(selected_regs, list) else [selected_regs]
-        )
-    else:
-        loc_search_area = "departement"
-        selected_depts = st.session_state.get("ui_mobility_dept", [])
-        loc_search_code = (
-            selected_depts if isinstance(selected_depts, list) else [selected_depts]
-        )
-
-    # Education
-    nb_enfants = st.session_state.get("ui_nb_enfants", 0)
-    classe_enfants = []
-    for i in range(nb_enfants):
-        val = st.session_state.get(f"ui_classe_enfant_{i}")
-        if val is not None:
-            classe_enfants.append(str(val))
-        else:
-            # Fallback to the first class option if not rendered yet
-            classe_enfants.append(
-                cfg.CLASSES_SCOLAIRES[0] if cfg.CLASSES_SCOLAIRES else ""
-            )
-
-    # Employment (Enrich with CriteriaItem)
-    nb_adultes = st.session_state.get("ui_nb_adultes", 1)
-    rome_index = app_data.get("rome_index", pd.DataFrame())
-    codes_metiers = []
-    for i in range(nb_adultes):
-        raw_codes = st.session_state.get(f"ui_metiers_adult_{i}", [])
-        if not isinstance(raw_codes, list):
-            raw_codes = [raw_codes] if raw_codes else []
-        enriched_list = []
-        for code in raw_codes:
-            label = (
-                rome_index.loc[code, "label"]
-                if not rome_index.empty and code in rome_index.index
-                else str(code)
-            )
-            enriched_list.append(CriteriaItem(code=str(code), label=str(label)))
-        codes_metiers.append(enriched_list)
-
-    form_index = app_data.get("codformations_index", pd.DataFrame())
-    codes_formations = []
-    for i in range(nb_adultes):
-        raw_codes = st.session_state.get(f"ui_formations_adult_{i}", [])
-        if not isinstance(raw_codes, list):
-            raw_codes = [raw_codes] if raw_codes else []
-        enriched_list = []
-        for code in raw_codes:
-            label = (
-                form_index.loc[code, "label"]
-                if not form_index.empty and code in form_index.index
-                else str(code)
-            )
-            enriched_list.append(CriteriaItem(code=str(code), label=str(label)))
-        codes_formations.append(enriched_list)
-
-    # F-48 Logic: Consolidate Inclusion Services (Checkbox + Multiselect)
-    inc_index = app_data.get("inclusion_services_index", pd.DataFrame())
-
-    # Read the raw multiselect state if present, fallback to ui_inc_services_selection
-    raw_services = st.session_state.get("ui_inc_services_selection_raw")
-    if raw_services is not None:
-        all_inc_services = set(raw_services)
-    else:
-        # Fallback for API / tests / init
-        inc_services = st.session_state.get("ui_inc_services_selection", [])
-        all_inc_services = set()
-        for x in inc_services:
-            all_inc_services.add(x.code if hasattr(x, "code") else str(x))
-
-    inc_services_mapped = []
-    for code in sorted(list(all_inc_services)):
-        # Recover label
-        if not inc_index.empty and code in inc_index.index:
-            val = inc_index.loc[code, "label"]
-            label = str(val.iloc[0] if isinstance(val, pd.Series) else val)
-        else:
-            label = str(code)
-        inc_services_mapped.append(CriteriaItem(code=str(code), label=label))
-
-    # F-15: Compute Criteria Weights (Default empty dict, customized weights via org_boosts or API)
-    criteria_weights = {}
-
-    # Enrich Inclusion Associations (WALDEC Logic F-48)
-    waldec_index = app_data.get("waldec_index", pd.DataFrame())
-    inc_assos_mapped = []
-    for item in st.session_state.get("ui_inc_asso_add_selection", []):
-        if isinstance(item, CriteriaItem):
-            inc_assos_mapped.append(item)
-        elif isinstance(item, str):
-            val = (
-                waldec_index.loc[item, "label"]
-                if not waldec_index.empty and item in waldec_index.index
-                else item
-            )
-            label = str(val.iloc[0] if isinstance(val, pd.Series) else val)
-            inc_assos_mapped.append(CriteriaItem(code=str(item), label=label))
-
-    # Type Logement Enrich
-    type_log = None
-    ui_type_log = st.session_state.get("ui_type_logement", "appt_all")
-    if ui_type_log in cfg.HOUSING_TYPE_OPTIONS:
-        type_log = CriteriaItem(
-            code=ui_type_log, label=cfg.HOUSING_TYPE_OPTIONS[ui_type_log]
-        )
-
-    # Weights & Profile
-    profile = st.session_state.get("ui_weight_profile", "Équilibré")
-
-    # Population mapping based on selected city size label
-    selected_city_label = st.session_state.get("ui_target_city_size_label")
-    mapping = cfg.CITY_SIZE_MAPPING.get(
-        selected_city_label, {"mu": cfg.DEFAULT_MU, "sigma": cfg.DEFAULT_SIGMA}
-    )
-    target_pop = mapping["mu"]
-    target_sigma = mapping["sigma"]
-    # Hébergement & Fréquence
-    heb_sel = st.session_state.get("ui_hebergement_cible", [])
-    freq = st.session_state.get("ui_freq_retour", "Pas d'attache particulière")
-
-    return SearchCriterias(
-        weight_profile=profile,
-        poids_emploi=st.session_state.get("ui_poids_emploi", 0.5),
-        poids_logement=st.session_state.get("ui_poids_logement", 0.5),
-        poids_education=st.session_state.get("ui_poids_education", 0.5),
-        poids_inclusion=st.session_state.get("ui_poids_inclusion", 0.5),
-        poids_sante=st.session_state.get("ui_poids_sante", 0.5),
-        poids_mobilite=st.session_state.get("ui_poids_mobilite", 0.5),
-        criteria_weights=criteria_weights,
-        target_population=target_pop,
-        target_population_sigma=target_sigma,
-        commune_actuelle=commune_actuelle,
-        commune_pressentie=commune_pressentie,
-        loc_search_area=loc_search_area,
-        loc_search_code=loc_search_code,
-        nb_adultes=nb_adultes,
-        nb_enfants=nb_enfants,
-        hebergement_cible=heb_sel,
-        logement=st.session_state.get("ui_logement", "Location"),
-        type_logement=type_log,
-        freq_retour=freq,
-        codes_metiers=codes_metiers,
-        codes_formations=codes_formations,
-        classe_enfants=classe_enfants,
-        besoin_sante=st.session_state.get("ui_besoin_sante", []),
-        # Consolidated inclusion services field
-        inc_services_selection=inc_services_mapped,
-        inc_asso_add_selection=inc_assos_mapped,
-        notes_qualitatives=[st.session_state.get("ui_notes_qualitatives", "")]
-        if st.session_state.get("ui_notes_qualitatives")
-        else [],
-        # Org Specifics
-        org_context=st.session_state.get("org").id
-        if st.session_state.get("org")
-        else None,
-        org_strategic_locations=st.session_state.get("ui_org_strategic_locations", []),
-        org_strategic_locations_type=st.session_state.get(
-            "ui_org_strategic_locations_type", "departement"
-        ),
-        org_strategic_locations_filter=st.session_state.get(
-            "ui_org_strategic_locations_filter", False
-        ),
-        org_boosts=st.session_state.get("ui_org_boosts", {}),
-        poids_territoire=st.session_state.get("ui_poids_territoire", 1.0),
-    )
+def create_search_criterias_from_inputs(app_data: dict[str, Any]) -> SearchCriterias:
+    """Build the immutable search input from Streamlit's widget state."""
+    return FormState(st.session_state).collect(app_data)

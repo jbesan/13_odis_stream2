@@ -29,7 +29,7 @@ def test_enrich_rome_index_sorting():
     assert len(top) == 3  # All items since total < 200
 
 
-def test_enrich_rome_index_truncation():
+def test_enrich_rome_index_keeps_all_rome_codes():
     # Setup: 250 items
     codes = [f"J{i:03d}" for i in range(250)]
     rome_index = pd.DataFrame({"label": codes}, index=codes)
@@ -45,9 +45,9 @@ def test_enrich_rome_index_truncation():
 
     # Assertions
     assert len(enriched) == 250
-    assert len(top) == 200
+    assert len(top) == 250
     assert top.index[0] == "J249"
-    assert top.index[-1] == "J050"
+    assert top.index[-1] == "J000"
 
 
 def test_enrich_rome_index_empty():

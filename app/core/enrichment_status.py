@@ -28,6 +28,10 @@ TERMINAL_ENRICHMENT_STATUSES = frozenset(
     }
 )
 
+# The refiner predates the provider status enum. Keep its small compatibility
+# boundary here so views do not scatter their own `done`/`error` checks.
+TERMINAL_REFINER_STATUSES = frozenset({"done", "error", "timeout", "not_configured"})
+
 
 def enrichment_result(
     status: EnrichmentStatus,
@@ -57,3 +61,8 @@ def enrichment_result(
 def is_terminal_enrichment_status(status: str | None) -> bool:
     """Return whether a status stops Streamlit polling."""
     return status in {item.value for item in TERMINAL_ENRICHMENT_STATUSES}
+
+
+def is_terminal_refiner_status(status: str | None) -> bool:
+    """Return whether the optional refiner has reached a final state."""
+    return status in TERMINAL_REFINER_STATUSES

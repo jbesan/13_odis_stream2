@@ -1,21 +1,18 @@
 import streamlit as st
 from streamlit_folium import st_folium
-from core import scoring
-import config as cfg
 from ui import components as ui
 from ui import forms as ui_forms
 from ui import results as ui_results
-from ui import feedback
-from utils import common as utils
+from ui import page_shell
 from core import maps
 import folium as flm
 from utils import data_loader
 import pandas as pd
 import logging
-import gc
-from agents.utils import odis_get_bg_result
-from core.postscoring import launch_post_scoring_tasks
 from core.models import SearchResultsData
+from services.app_session import AppSession
+from services.search_controller import SearchController
+from ui.form_state import FormState
 
 logger = logging.getLogger(__name__)
 
@@ -33,216 +30,82 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- Authentication ---
-from utils import auth
-from services import telemetry
-
-if not auth.check_password():
-    st.stop()
-
-telemetry.log_page_view("Resultats")
+page_shell.enter_page("Resultats", handle_shared_search=True)
 
 
-# --- Session State Initialization ---
-if "highlighted_result" not in st.session_state:
-    st.session_state["highlighted_result"] = [False, None]
-if "fgs_to_show" not in st.session_state:
-    st.session_state["fgs_to_show"] = set()
-if "center" not in st.session_state:
-    st.session_state["center"] = [46.5, 2.5]  # Default France
-if "zoom" not in st.session_state:
-    st.session_state["zoom"] = 6
-if "active_ia_city_index" not in st.session_state:
-    st.session_state["active_ia_city_index"] = None
-if "active_details_index" not in st.session_state:
-    st.session_state["active_details_index"] = None
-if "active_ccas_index" not in st.session_state:
-    st.session_state["active_ccas_index"] = None
+# --- Session/controller convention ---
+app_session = AppSession(st.session_state)
+app_session.ensure_result_view()
+search_controller = SearchController(app_session)
 
 
 # --- PDF Modal Execution (moved to bottom for reliability) ---
 
-# Ensure app data and session state are initialized with heavy datasets
-with st.spinner("Chargement des indicateurs et données territoriales..."):
-    data_loader.ensure_data_initialized(load_heavy=True)
-    app_data = data_loader.get_app_data(load_heavy=True)
+is_immutable_snapshot = bool(st.session_state.get("immutable_shared_snapshot"))
+is_editing_snapshot = bool(st.session_state.get("shared_snapshot_editing"))
 
-# DO NOT REMOVE: This makes sure the ui_ form state persists as expected
-# --- Shared Search Restoration (Direct link access) ---
-if "search" in st.query_params:
-    share_id = st.query_params.get("search")
-    if share_id and st.session_state.get("active_share_id") != share_id:
-        from services import share_service
-        try:
-            config_obj, results_obj = share_service.load_shared_search(share_id)
-            if config_obj and results_obj:
-                share_service.restore_shared_search_to_session_state(config_obj, results_obj, share_id)
-            else:
-                err_msg = f"La recherche partagée '{share_id}' est introuvable ou a expiré."
-                st.toast(err_msg, icon="⚠️")
-                st.error(f"⚠️ {err_msg}")
-        except Exception as e:
-            err_msg = f"Impossible de restaurer la recherche '{share_id}' : {e}"
-            st.toast(err_msg, icon="⚠️")
-            st.error(f"⚠️ {err_msg}")
+# A snapshot is self-contained. Only a live search or an explicit fork loads
+# the complete release, including the referentials dataset.
+if is_immutable_snapshot and not is_editing_snapshot:
+    data_loader.initialize_session_state()
+    app_data = None
+else:
+    with st.spinner("Chargement des indicateurs et données territoriales..."):
+        app_data = data_loader.ensure_data_initialized()
+
+# This page deliberately does not render the form except inside the dialog.
+# Keep native widget keys alive across full Results-page reruns so Streamlit's
+# multipage cleanup cannot turn an unsaved draft back into defaults.
+if not is_immutable_snapshot or is_editing_snapshot:
+    FormState(st.session_state).preserve_widgets_across_steps()
 
 search_results: SearchResultsData = st.session_state.get("search_results")
 
 
-def run_search():
-    """
-    Callback function for the 'Lancer la recherche' button.
-    It orchestrates the new filtering and scoring logic.
-    """
-    logging.info("--- Running new search with refactored logic ---")
-    gc.collect()
+def run_search() -> None:
+    """Collect the draft and delegate the complete lifecycle to the controller."""
+    complete_data = data_loader.ensure_data_initialized()
+    config = ui_forms.create_search_criterias_from_inputs(complete_data)
+    search_controller.execute(config, complete_data)
 
-    # Clear any previously generated PDF data and share ID on new search
-    st.session_state["pdf_data"] = None
-    st.session_state["pdf_modal_data"] = None
-    st.session_state["active_share_id"] = None
 
-    from services import telemetry
-
-    telemetry.reset_interaction_id()
-
-    config = ui_forms.create_search_criterias_from_inputs()
-    st.session_state["config"] = config
-
-    # Get required dataframes from global cached app_data
-    app_data = data_loader.get_app_data(load_heavy=True)
-    df_all_communes = app_data["odis"]
-    df_bv_geo = app_data["bv_geo"]
-    start_commune = df_all_communes.loc[[config.commune_actuelle.code]]
-
-    # --- Run Scoring Pipeline (Optimized) ---
-    # Instantiate the stateless engine with current data
-    engine = scoring.ScoringEngine(
-        df_all_communes=df_all_communes,
-        df_bv_geo=df_bv_geo,
-        scores_cat=app_data["scores_cat"],
-        incl_index=app_data["incl_index"],
-        associations_data=app_data["associations_data"],
-        formations_data=app_data["formations_data"],
-        codformations_index=app_data["codformations_index"],
-        waldec_index=app_data["waldec_index"],
-        global_stats={},
-        refugee_associations_data=app_data["refugee_associations_data"],
-        live_jobs_data=app_data["live_jobs_data"],
-        live_jobs_coverage=app_data.get("live_jobs_coverage", pd.DataFrame()),
-        siae_jobs_data=app_data["siae_jobs_data"],
-        siae_jobs_coverage=app_data.get("siae_jobs_coverage", pd.DataFrame()),
-        annuaire_ecoles=app_data.get("annuaire_ecoles", pd.DataFrame()),
-        annuaire_sante=app_data.get("annuaire_sante", pd.DataFrame()),
-        annuaire_inclusion=app_data.get("annuaire_inclusion", pd.DataFrame()),
-        inclusion_services_index=app_data.get(
-            "inclusion_services_index", pd.DataFrame()
-        ),
-        rome_index=app_data.get("rome_index", pd.DataFrame()),
-        bv_data=app_data.get("bv_data"),
+def prepare_search_criteria_editor(complete_data: dict) -> None:
+    """Restore the active search exactly once before opening its editor."""
+    active_config = st.session_state.get("config")
+    if active_config is None:
+        return
+    FormState(st.session_state).prepare_editor(
+        active_config,
+        source_hash=active_config.compute_hash(),
+        app_data=complete_data,
     )
 
-    # 1. Run optimized scoring (returns model and pruned GDF)
-    search_results, processed_gdf = engine.run_optimized(config, log_prefix="classic")
 
-    # 3. 🧪 SOTA: Lightweight Geometry Hydration (Raw WKB)
-    # Join raw WKB bytes from odis_geo (pd.Series indexed by codgeo) onto results.
-    # Decoding to Shapely happens JIT in maps.py — never here.
-    odis_geo = app_data.get("odis_geo")
-    if odis_geo is not None and not odis_geo.empty:
-        logging.info(
-            f"💾 [HYDRATION] Attaching WKB geometries for {len(processed_gdf)} results..."
-        )
-        processed_gdf = processed_gdf.join(odis_geo.rename("polygon"), how="left")
-
-    # --- State Update ---
-    st.session_state["processed_gdf"] = processed_gdf
-    st.session_state["unaggregated_gdf"] = processed_gdf
-    st.session_state["engine"] = engine
-    st.session_state["search_results"] = search_results
-
-    # --- Unified Telemetry & Logging is now handled in background (launch_post_scoring_tasks) ---
-
-    # Prepare cities for background AI agents
-    top_cities_full = [
-        {
-            "codgeo": str(c.codgeo),
-            "libgeo": c.name,
-            "weighted_score": c.global_score,
-            "scores": c.scores,
-            # "details": c.model_dump(include={
-            #     'population', 'scores', 'employment', 'housing',
-            #     'education', 'health', 'inclusion', 'mobility',
-            #     'codgeo_bdv', 'name_bdv'
-            # })
-        }
-        for c in search_results.results
-    ]
-
-    h = search_results.search_hash
-    st.session_state["active_search_hash"] = h
-
-    # Trigger all background tasks via unified orchestrator (SOTA Pattern)
-    if odis_get_bg_result(h) is None:
-        launch_post_scoring_tasks(engine, config, search_results, h)
-
-    # Calculate center for map (Use Top 5 Average Centroid - much better UX for distant searches)
-    # Stateful Centering: Only reset the map center if this is a NEW search.
-    # This prevents the map from "snapping back" during heartbeats or sidebar interactions.
-    if st.session_state.get("last_centered_hash") != h:
-        top_5_results = search_results.results[:5]
-        if top_5_results:
-            odis_df = data_loader.get_app_data()["odis"]
-            top_codgeos = [str(c.codgeo) for c in top_5_results]
-            top_data = odis_df.loc[odis_df.index.isin(top_codgeos)]
-
-            if not top_data.empty and "centroid_lon" in top_data.columns:
-                # Average EPSG:2154 coordinates
-                avg_x = top_data["centroid_lon"].mean()
-                avg_y = top_data["centroid_lat"].mean()
-
-                # Project from Lambert-93 (2154) to Lat/Lon (4326) for Folium
-                lon, lat = utils.project_point(
-                    avg_x, avg_y, from_crs=cfg.PROJECTED_CRS, to_crs="EPSG:4326"
-                )
-                final_center_y, final_center_x = lat, lon
-            else:
-                final_center_y, final_center_x = cfg.DEFAULT_MAP_CENTER
-        else:
-            final_center_y, final_center_x = cfg.DEFAULT_MAP_CENTER
-
-        st.session_state["center"] = [final_center_y, final_center_x]
-        st.session_state["zoom"] = maps.get_map_zoom(config.loc_search_area)
-        st.session_state["last_centered_hash"] = h
-        st.session_state["selected_geo"] = (
-            data_loader.get_app_data()["odis"]
-            .loc[[config.commune_actuelle.code]]
-            .copy()
-        )
-
-    # We no longer pre-build Top 5 layers here to avoid Folium serialization issues in session state.
-    # They are now rebuilt on the fly in the map rendering block.
-    st.session_state["fgs_to_show"] = set()
-    st.session_state["highlighted_result"] = [False, None]
+@st.dialog(
+    "Modifier les critères de recherche",
+    width="large",
+    icon=":material/edit:",
+    on_dismiss="rerun",
+)
+def edit_search_criteria_dialog(complete_data: dict) -> None:
+    """Edit widget state without rerunning the results page or Folium map."""
+    ui_forms.display_input_tabs(complete_data)
+    if st.button(
+        "Relancer la recherche",
+        type="primary",
+        icon=":material/search:",
+        key="rerun_search_from_criteria_editor",
+    ):
+        run_search()
+        st.rerun()
 
 
-# Automatically run the search if not already processed and form is completed
-if st.session_state.get("processed_gdf") is None and st.session_state.get(
-    "form_completed"
-):
+# Submit from the form always replaces a prior result with the current draft.
+if st.session_state.get("form_completed"):
     run_search()
     st.session_state["form_completed"] = False
 
 # --- UI LAYOUT ---
-
-
-# Fragment-based action buttons container (polled while background tasks are running)
-@st.fragment(run_every=3.0)
-def action_buttons_container_polling(h: str):
-    ui_results.render_export_pdf_button(h)
-    ui_results.render_share_search_button(
-        h=h, button_text="Partager", key_prefix="sidebar_share"
-    )
 
 
 def action_buttons_container_static(h: str):
@@ -254,15 +117,7 @@ def action_buttons_container_static(h: str):
 
 # Sidebar
 with st.sidebar:
-    logo_path = utils.get_asset_path("logo-jaccueille-singa.png")
-    logo_b64 = utils.get_base64_image(logo_path)
-    if logo_b64:
-        st.markdown(
-            f'<img src="data:image/png;base64,{logo_b64}" width="150" style="margin-bottom: 20px;">',
-            unsafe_allow_html=True,
-        )
-    else:
-        st.error("Logo not found")
+    page_shell.render_sidebar_logo()
 
     st.write("")
     st.markdown(
@@ -271,69 +126,49 @@ with st.sidebar:
     )
     st.divider()
     # --- Retour à l'Accueil ---
-    ui.start_over()
-
-    # --- Bouton Feedback ---
-    feedback.render_feedback_button()
+    page_shell.render_primary_sidebar_actions(show_home=True, show_feedback=True)
 
     # --- Export to PDF & Partager ---
     if st.session_state.get("search_results") is not None:
         h = st.session_state.search_results.search_hash
-        bg_res = odis_get_bg_result(h)
-        # Stop polling if both pitches and enrichment are done
-        is_done = (
-            isinstance(bg_res, dict) and "pitches" in bg_res and "enrichment" in bg_res
-        )
+        # Deterministic results are immediately shareable/exportable. Optional
+        # providers must not hold these actions in a permanent loading state.
+        action_buttons_container_static(h)
 
-        if is_done:
-            action_buttons_container_static(h)
-        else:
-            action_buttons_container_polling(h)
-
-    st.divider()
-
-    # --- Dashboard Admin Analytics & Sources ---
-    ui.render_admin_sidebar_link()
-    ui.render_sources_sidebar_link()
-    ui.render_logout_sidebar_button()
+    page_shell.render_account_sidebar_actions()
 
     # --- Weights --- (MOVED TO TOP FILTER FORM)
 
 
 # Top filter Form
 with st.container(border=False, key="top_menu"):
-    st.markdown(
-        """
-    <style>
-        .st-key-top_menu {background-color:whitesmoke; padding:20px; border-radius:10px} 
-        .st-key-top_menu h2 {padding:0px} 
-        .stTabs div div button div p {font-size:1rem}
-    </style>
-    """,
-        unsafe_allow_html=True,
-    )
+    # st.markdown(
+    #     """
+    # <style>
+    #     .st-key-top_menu {background-color:whitesmoke; padding:20px; border-radius:10px} 
+    #     .st-key-top_menu h2 {padding:0px} 
+    #     .stTabs div div button div p {font-size:1rem}
+    # </style>
+    # """,
+    #     unsafe_allow_html=True,
+    # )
 
-    col_tabs, col_btn_search = st.columns([5.0, 1.0])
+    col_tabs, col_btn_edit = st.columns([5.0, 1.0])
     with col_tabs:
         st.markdown(f"## Projet de vie {ui.get_person_accompanied_str()}")
 
-    # Compute if criteria have changed since the last search
-    current_config = ui_forms.create_search_criterias_from_inputs()
-    last_results = st.session_state.get("search_results")
-    if last_results is not None:
-        disable_search = current_config.compute_hash() == last_results.search_hash
-    else:
-        disable_search = False
+    snapshot_mode = bool(st.session_state.get("immutable_shared_snapshot"))
 
-    with col_btn_search:
-        st.button(
-            "Rechercher",
-            on_click=run_search,
-            type="primary",
-            disabled=disable_search,
-            width="stretch",
-            icon=":material/search:"
-        )
+    with col_btn_edit:
+        if not snapshot_mode or st.session_state.get("shared_snapshot_editing"):
+            if st.button(
+                "Modifier",
+                width="stretch",
+                icon=":material/edit:",
+                key="open_results_criteria_editor",
+            ):
+                prepare_search_criteria_editor(app_data)
+                edit_search_criteria_dialog(app_data)
 
     # with col_btn_share:
     #     if st.session_state.get("search_results"):
@@ -342,9 +177,21 @@ with st.container(border=False, key="top_menu"):
     #             button_text="Partager",
     #             key_prefix="top_share",
     #         )
-    with st.expander("🔎 Modifier les critères de recherche", expanded=False):
-        ui_forms.display_input_tabs()
-
+    if snapshot_mode:
+        release = st.session_state.get("shared_snapshot_data_release", "inconnue")
+        st.info(
+            "Vous consultez un instantané partagé et immuable "
+            f"(release de données : `{release}`). Modifier les critères puis "
+            "relancer la recherche crée une nouvelle recherche avec les données actuelles."
+        )
+        if not st.session_state.get("shared_snapshot_editing"):
+            if st.button(
+                "Modifier les critères pour créer une nouvelle recherche",
+                key="fork_shared_snapshot",
+                icon=":material/edit:",
+            ):
+                search_controller.begin_snapshot_edit()
+                st.rerun()
 
 # Global Pitch (Strategic intro + Loading state)
 # if st.session_state.get('search_results'):
@@ -362,21 +209,10 @@ with col_results:
         # st.subheader("Meilleurs résultats")
         st.space()
 
-        # State-aware Results Polling
+        # The deterministic score is ready at this point. AI and external
+        # enrichment update individual details, but never gate Top-5 review.
         h = st.session_state.search_results.search_hash
-        bg_res = odis_get_bg_result(h)
-        is_ready = isinstance(bg_res, dict) and bg_res.get("status_refiner") == "done"
-
-        if not is_ready:
-
-            @st.fragment(run_every=2.0)
-            def results_list_container_polling():
-                ui_results.display_results_list()
-
-            results_list_container_polling()
-        else:
-            # Static render when done (no more polling logs!)
-            ui_results.display_results_list()
+        ui_results.display_results_list()
 
         with st.container(height=40, vertical_alignment="center", border=False):
             st.caption(
@@ -391,6 +227,10 @@ with col_map:
         config = st.session_state.get("config")
         search_results = st.session_state.get("search_results")
         h = search_results.search_hash if search_results else None
+        snapshot_mode = bool(st.session_state.get("immutable_shared_snapshot"))
+        current_map_context = st.session_state.get("snapshot_current_map_context")
+        if not isinstance(current_map_context, pd.DataFrame):
+            current_map_context = st.session_state.processed_gdf
 
         # Default zoom if not set
         if st.session_state.get("zoom") is None:
@@ -412,8 +252,13 @@ with col_map:
             if search_results and search_results.current_geo:
                 maps.build_current_loc_layer(
                     search_results.current_geo,
-                    gdf_context=st.session_state.processed_gdf,
+                    gdf_context=current_map_context,
                 ).add_to(fg_scores)
+        elif snapshot_mode:
+            st.info(
+                "Cet ancien instantané ne contient pas la géométrie de la carte. "
+                "Les résultats affichés restent ceux qui ont été partagés."
+            )
 
         fg_scores.add_to(m)
 
@@ -421,7 +266,7 @@ with col_map:
         fg_dynamic = flm.FeatureGroup(name="ODIS_Dynamic_Layers")
         # B. User-selected Layers (Pills)
         pill_options = [{"id": "top_5", "label": "🥇 Top 5"}]
-        if config:
+        if config and not snapshot_mode:
             if config.nb_enfants > 0:
                 pill_options.append({"id": "edu", "label": "🎓 Éducation"})
             if getattr(config, "besoin_sante", []):
@@ -446,39 +291,42 @@ with col_map:
         if search_results and search_results.commune_pressentie:
             legend_items.append({"color": "yellow", "text": "Ville Souhaitée"})
 
-        # C. POI & Top 5 Rendering
+        # C. POI & Top 5 Rendering. POI layers are live reference data, so they
+        # are intentionally omitted from an immutable shared snapshot.
         if config and search_results:
             target_codgeos = {str(c.codgeo) for c in search_results.results}
             if search_results.commune_pressentie:
                 target_codgeos.add(str(search_results.commune_pressentie.codgeo))
 
-            # Always-on Mairie layer
-            maps.build_mairies_layer(
-                data_loader.get_app_data()["pois"], target_codgeos
-            ).add_to(m)
-            legend_items.append(
-                {"color": "#F5D819", "text": "Mairie (BPE)", "icon": "circle"}
-            )
+            if not snapshot_mode:
+                pois = app_data["pois"]
+                # Always-on Mairie layer
+                maps.build_mairies_layer(pois, target_codgeos).add_to(m)
+                legend_items.append(
+                    {"color": "#F5D819", "text": "Mairie (BPE)", "icon": "circle"}
+                )
 
-            if "edu" in selected_ids:
-                maps.build_ecoles_layer(
-                    data_loader.get_app_data()["pois"], target_codgeos, config
-                ).add_to(fg_dynamic)
-                legend_items.append(
-                    {"color": "green", "icon": "pencil", "text": "Écoles"}
-                )
-            if "sante" in selected_ids:
-                maps.build_sante_layer(
-                    data_loader.get_app_data()["pois"], target_codgeos, config
-                ).add_to(fg_dynamic)
-                legend_items.append({"color": "blue", "icon": "plus", "text": "Santé"})
-            if "inc" in selected_ids:
-                maps.build_services_layer(
-                    data_loader.get_app_data()["pois"], target_codgeos, config
-                ).add_to(fg_dynamic)
-                legend_items.append(
-                    {"color": "purple", "icon": "heart", "text": "Inclusion"}
-                )
+                if "edu" in selected_ids:
+                    maps.build_ecoles_layer(pois, target_codgeos, config).add_to(
+                        fg_dynamic
+                    )
+                    legend_items.append(
+                        {"color": "green", "icon": "pencil", "text": "Écoles"}
+                    )
+                if "sante" in selected_ids:
+                    maps.build_sante_layer(pois, target_codgeos, config).add_to(
+                        fg_dynamic
+                    )
+                    legend_items.append(
+                        {"color": "blue", "icon": "plus", "text": "Santé"}
+                    )
+                if "inc" in selected_ids:
+                    maps.build_services_layer(pois, target_codgeos, config).add_to(
+                        fg_dynamic
+                    )
+                    legend_items.append(
+                        {"color": "purple", "icon": "heart", "text": "Inclusion"}
+                    )
 
             show_top_5 = "top_5" in selected_ids
             is_highlighted, highlighted_index = st.session_state.highlighted_result

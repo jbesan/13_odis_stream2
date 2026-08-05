@@ -58,6 +58,7 @@ EXPOSE 8080
 CMD python3 generate_secrets.py && streamlit run main.py \
     --server.port=8080 \
     --server.address=0.0.0.0 \
+    --server.enableStaticServing=true \
     --server.enableCORS=false \
     --server.enableXsrfProtection=false \
     --server.enableWebsocketCompression=false

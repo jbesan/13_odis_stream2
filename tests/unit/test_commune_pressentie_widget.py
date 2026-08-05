@@ -61,8 +61,7 @@ def test_render_commune_pressentie_form_initialization():
             val = options[0]
         return val
 
-    with patch("app.ui.forms.get_app_data", return_value=mock_app_data), \
-         patch("app.ui.forms.st.session_state", session_state), \
+    with patch("app.ui.forms.st.session_state", session_state), \
          patch("app.ui.forms.st.checkbox", side_effect=mock_checkbox), \
          patch("app.ui.forms.st.selectbox", side_effect=mock_selectbox), \
          patch("app.ui.forms.st.multiselect"), \
@@ -72,7 +71,7 @@ def test_render_commune_pressentie_form_initialization():
          patch("app.ui.forms.st.columns", return_value=[MagicMock(), MagicMock()]), \
          patch("app.ui.forms.st.container", return_value=MagicMock()):
         
-        render_mobility_form()
+        render_mobility_form(mock_app_data)
 
         assert "ui_commune_pressentie" in session_state
         assert session_state["ui_commune_pressentie"] == "69123"
@@ -87,8 +86,7 @@ def test_render_mobility_form_handles_missing_regions():
     }
     session_state = SessionStateDict({"ui_departement": "75"})
 
-    with patch("app.ui.forms.get_app_data", return_value=mock_app_data), \
-         patch("app.ui.forms.st.session_state", session_state), \
+    with patch("app.ui.forms.st.session_state", session_state), \
          patch("app.ui.forms.st.columns", return_value=[MagicMock(), MagicMock()]), \
          patch("app.ui.forms.st.multiselect", return_value=[]), \
          patch("app.ui.forms.st.checkbox", return_value=False), \
@@ -96,7 +94,7 @@ def test_render_mobility_form_handles_missing_regions():
          patch("app.ui.forms.st.divider"), \
          patch("app.ui.forms.st.container", return_value=MagicMock()), \
          patch("app.ui.forms.st.radio"):
-        render_mobility_form()
+        render_mobility_form(mock_app_data)
 
     assert session_state["ui_mobility_region"] == []
 
@@ -119,17 +117,16 @@ def test_city_size_radio_hash_invalidation():
         "ui_target_city_size_label": "🏘️ Petite Ville",
     })
 
-    with patch("app.ui.forms.get_app_data", return_value=mock_app_data), \
-         patch("app.ui.forms.st.session_state", session_state):
+    with patch("app.ui.forms.st.session_state", session_state):
         
-        criterias1 = create_search_criterias_from_inputs()
+        criterias1 = create_search_criterias_from_inputs(mock_app_data)
         pop1 = criterias1.target_population
         hash1 = criterias1.compute_hash()
 
         # Change city size radio selection
         session_state["ui_target_city_size_label"] = "🏙️ Ville moyenne"
 
-        criterias2 = create_search_criterias_from_inputs()
+        criterias2 = create_search_criterias_from_inputs(mock_app_data)
         pop2 = criterias2.target_population
         hash2 = criterias2.compute_hash()
 

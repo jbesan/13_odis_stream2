@@ -9,6 +9,10 @@ def test_reset_app_state():
         "app_data": "heavy_cache",
         "password_correct": True,
         "username": "user1",
+        "user": {"username": "user1", "org_id": "test_org"},
+        "org": {"id": "test_org"},
+        "login_session_id": "login-123",
+        "org_defaults_applied": "test_org",
         "temp_key_1": "to_be_deleted",
         "temp_key_2": 123,
     }
@@ -20,6 +24,10 @@ def test_reset_app_state():
         assert "app_data" in st.session_state
         assert "password_correct" in st.session_state
         assert "username" in st.session_state
+        assert "user" in st.session_state
+        assert "org" in st.session_state
+        assert "login_session_id" in st.session_state
+        assert "org_defaults_applied" in st.session_state
 
         # Verify temporary keys are removed
         assert "temp_key_1" not in st.session_state

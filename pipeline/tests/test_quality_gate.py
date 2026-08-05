@@ -122,6 +122,26 @@ def test_quality_gate_rejects_geographic_orphans(tmp_path):
         )
 
 
+def test_quality_gate_keeps_coverage_as_a_validation_only_artifact(tmp_path):
+    contracts_path, scores_path = _write_contracts(tmp_path)
+    contracts = yaml.safe_load(contracts_path.read_text(encoding="utf-8"))
+    contracts["release"]["validation_artifacts"] = ["jobs_coverage.parquet"]
+    contracts_path.write_text(yaml.safe_dump(contracts), encoding="utf-8")
+
+    _valid_communes().to_parquet(tmp_path / "odis_communes.parquet", index=False)
+    pd.DataFrame({"bassin_de_vie": ["BV1", "BV2"]}).to_parquet(
+        tmp_path / "odis_bassins_de_vie.parquet", index=False
+    )
+
+    with pytest.raises(QualityGateFailureError, match="coverage.jobs_coverage.parquet"):
+        run_quality_gate(
+            output_dir=tmp_path,
+            contracts_path=contracts_path,
+            scores_config_path=scores_path,
+            check_release_artifacts=True,
+        )
+
+
 def test_quality_gate_never_replaces_failed_candidate(tmp_path):
     contracts_path, scores_path = _write_contracts(tmp_path)
     candidate = _valid_communes()

@@ -5,17 +5,32 @@ import pandas as pd
 import streamlit as st
 
 from utils.data_loader import load_active_data_manifest
+from services.service_outcomes import OutcomeStatus, ServiceOutcome
 
 logger = logging.getLogger(__name__)
 
 @st.cache_data(show_spinner=False, ttl=300)
-def load_manifest() -> Optional[Dict[str, Any]]:
+def load_manifest() -> ServiceOutcome[Dict[str, Any]]:
     """Load the verified manifest belonging to the active dataset release."""
     try:
-        return load_active_data_manifest()
-    except Exception as exc:
-        logger.warning("Failed to load active data manifest: %s", exc)
-        return None
+        return ServiceOutcome(
+            status=OutcomeStatus.SUCCESS, value=load_active_data_manifest()
+        )
+    except Exception:
+        logger.error(
+            "Active data manifest could not be loaded",
+            extra={
+                "extra_data": {
+                    "operation": "load_data_manifest",
+                    "error_code": "DATA-MANIFEST-UNAVAILABLE",
+                }
+            },
+            exc_info=True,
+        )
+        return ServiceOutcome(
+            status=OutcomeStatus.UNAVAILABLE,
+            error_code="DATA-MANIFEST-UNAVAILABLE",
+        )
 
 
 
@@ -34,11 +49,15 @@ def format_iso_date(iso_str: Optional[str]) -> str:
 @st.dialog("À propos des données utilisées par l'application", width="large")
 def show_sources_dialog():
     """Renders the Streamlit dialog modal showing the Data Manifest sources table."""
-    manifest = load_manifest()
+    manifest_outcome = load_manifest()
 
-    if not manifest:
-        st.warning("⚠️ Aucun fichier de Manifest de données n'est disponible actuellement.")
+    if not manifest_outcome.is_success or manifest_outcome.value is None:
+        st.warning(
+            "⚠️ Le manifeste de données est temporairement indisponible "
+            "(code : DATA-MANIFEST-UNAVAILABLE)."
+        )
         return
+    manifest = manifest_outcome.value
 
     manifest_version = manifest.get("manifest_version", "v1.0")
     release_version = manifest.get("active_release_version") or manifest.get(
@@ -72,7 +91,7 @@ def show_sources_dialog():
                 "Source": s.get("name") or s.get("source_key"),
                 "Méthode": s.get("method") or "Open Data",
                 "Année réf.": annee_ref,
-                "Statut": s.get("acquisition_status", "inconnu"),
+                # "Statut": s.get("acquisition_status", "inconnu"),
                 "Mise à jour constatée": format_iso_date(s.get("acquired_at")),
                 "Âge / TTL": _format_age_and_ttl(s),
                 "Volumétrie": formatted_rows,

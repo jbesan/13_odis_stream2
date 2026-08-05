@@ -58,6 +58,9 @@ def confirm_reset_dialog():
     col1, col2 = st.columns(2)
     with col1:
         if st.button("Oui", width="stretch"):
+            from utils import memory
+
+            memory.reset_app_state()
             st.switch_page("pages/1_Accueil.py")
     with col2:
         if st.button("Annuler", width="stretch"):
@@ -76,6 +79,9 @@ def start_over() -> None:
         if "search_results" in st.session_state:
             confirm_reset_dialog()
         else:
+            from utils import memory
+
+            memory.reset_app_state()
             st.switch_page("pages/1_Accueil.py")
 
 

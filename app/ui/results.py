@@ -10,8 +10,13 @@ from core.models import (
     InclusionServiceDetail,
 )
 from core.scoring import _format_kpi_value
-from core.enrichment_status import EnrichmentStatus
-from utils.data_loader import get_app_data, fetch_salesforce_jaccueille_bdv
+from core.enrichment_status import (
+    EnrichmentStatus,
+    is_terminal_enrichment_status,
+    is_terminal_refiner_status,
+)
+from core.postscoring import generate_static_pitch
+from utils.data_loader import fetch_salesforce_jaccueille_bdv
 
 from agents.utils import odis_get_bg_result, launch_background_city_analysis
 from typing import List, Optional, Any
@@ -49,13 +54,33 @@ def pdf_modal():
     ):
         with st.spinner("Veuillez patienter, nous générons votre document..."):
             search_results = st.session_state.get("search_results")
-
-            pdf_bytes = generate_pdf_report(
-                search_results=search_results,
-                config=st.session_state.config,
-                processed_gdf=st.session_state.get("processed_gdf"),
-            )
+            pdf_warnings: List[str] = []
+            try:
+                pdf_bytes = generate_pdf_report(
+                    search_results=search_results,
+                    config=st.session_state.config,
+                    processed_gdf=st.session_state.get("processed_gdf"),
+                    person_name=st.session_state.get("ui_nom"),
+                    generation_warnings=pdf_warnings,
+                )
+            except Exception:
+                logger.error(
+                    "PDF export failed",
+                    extra={
+                        "extra_data": {
+                            "operation": "pdf_export",
+                            "error_code": "PDF-EXPORT-FAILED",
+                        }
+                    },
+                    exc_info=True,
+                )
+                st.error(
+                    "Impossible de générer le PDF. Réessayez plus tard "
+                    "(code : PDF-EXPORT-FAILED)."
+                )
+                return
             st.session_state.pdf_modal_data = pdf_bytes
+            st.session_state["pdf_modal_warnings"] = sorted(set(pdf_warnings))
             telemetry.log_usage_event(
                 "export_pdf",
                 {"search_hash": search_results.search_hash if search_results else ""},
@@ -64,7 +89,14 @@ def pdf_modal():
 
     # State 2: Download Ready
     if st.session_state.get("pdf_modal_data"):
-        st.success("Votre document est prêt !")
+        pdf_warnings = st.session_state.get("pdf_modal_warnings", [])
+        if pdf_warnings:
+            st.warning(
+                "Votre document est prêt, mais certaines visualisations sont "
+                f"indisponibles ({', '.join(pdf_warnings)})."
+            )
+        else:
+            st.success("Votre document est prêt !")
         col1, col2 = st.columns(2)
         with col1:
             st.download_button(
@@ -79,40 +111,23 @@ def pdf_modal():
         with col2:
             if st.button("Fermer", width="stretch"):
                 st.session_state.pdf_modal_data = None
+                st.session_state.pop("pdf_modal_warnings", None)
                 st.rerun()
 
 
 def render_export_pdf_button(h: str):
-    """Component to handle background status and PDF triggering."""
-    if not h:
+    """Export deterministic results; enrichment remains best-effort."""
+    if not h or not st.session_state.get("search_results"):
         return
 
-    refiner_res = odis_get_bg_result(h)
-
-    # 🧪 SOTA: Robust check for BOTH Scorer and Enrichment completion
-    has_pitches = isinstance(refiner_res, dict) and "pitches" in refiner_res
-    has_enrichment = isinstance(refiner_res, dict) and "enrichment" in refiner_res
-
-    if has_pitches and has_enrichment:
-        if st.button(
-            "Exporter résultats",
-            icon=":material/picture_as_pdf:",
-            type="secondary",
-            width="stretch",
-            key=f"pdf_btn_{h}",  # Keyed by hash to ensure fresh button per search
-        ):
-            pdf_modal()
-    elif isinstance(refiner_res, dict) and "pitches_error" in refiner_res:
-        st.error(refiner_res["pitches_error"])
-    else:
-        # Still running or not started
-        st.button(
-            "Patientez...",
-            disabled=True,
-            icon=":material/hourglass_empty:",
-            type="secondary",
-            width="stretch",
-        )
+    if st.button(
+        "Exporter résultats",
+        icon=":material/picture_as_pdf:",
+        type="secondary",
+        width="stretch",
+        key=f"pdf_btn_{h}",
+    ):
+        pdf_modal()
 
 
 @st.dialog("Partager cette recherche")
@@ -131,7 +146,13 @@ def share_search_modal():
             from services import share_service
             try:
                 share_id = share_service.save_shared_search(
-                    config=config, search_results=search_results
+                    config=config,
+                    search_results=search_results,
+                    processed_gdf=st.session_state.get("processed_gdf"),
+                    selected_geo=st.session_state.get("selected_geo"),
+                    data_release=st.session_state.get("active_data_release"),
+                    map_center=st.session_state.get("center"),
+                    map_zoom=st.session_state.get("zoom"),
                 )
             except RuntimeError as exc:
                 st.error(str(exc))
@@ -154,7 +175,8 @@ def share_search_modal():
     permalink = f"{base_url}/?search={share_id}"
 
     st.markdown(
-        "Ce lien permet à vos collègues d'accéder directement à ces résultats de recherche et de continuer à affiner les critères."
+        "Ce lien ouvre un instantané immuable de ces résultats. Les critères peuvent "
+        "être repris pour créer explicitement une nouvelle recherche avec les données actuelles."
     )
 
     st.code(permalink, language=None)
@@ -192,35 +214,21 @@ def render_share_search_button(
     key_prefix: str = "share_btn",
     width: str = "stretch",
 ):
-    """Component to trigger the Share Search modal, disabled until post-scoring is complete."""
+    """Share deterministic results without waiting for optional enrichment."""
     if not h and "search_results" in st.session_state and st.session_state.search_results:
         h = st.session_state.search_results.search_hash
 
-    refiner_res = odis_get_bg_result(h) if h else None
+    if not st.session_state.get("search_results"):
+        return
 
-    # 🧪 SOTA: Robust check for BOTH Scorer and Enrichment completion
-    has_pitches = isinstance(refiner_res, dict) and "pitches" in refiner_res
-    has_enrichment = isinstance(refiner_res, dict) and "enrichment" in refiner_res
-
-    if has_pitches and has_enrichment:
-        if st.button(
-            button_text,
-            icon=":material/share:",
-            type="secondary",
-            width=width,
-            key=f"{key_prefix}_{h}",
-        ):
-            share_search_modal()
-    else:
-        # Still running or not started
-        st.button(
-            "Patientez...",
-            disabled=True,
-            icon=":material/hourglass_empty:",
-            type="secondary",
-            width=width,
-            key=f"{key_prefix}_disabled_{h}",
-        )
+    if st.button(
+        button_text,
+        icon=":material/share:",
+        type="secondary",
+        width=width,
+        key=f"{key_prefix}_{h}",
+    ):
+        share_search_modal()
 
 
 
@@ -329,9 +337,39 @@ def polling_chat_fragment(
             st.write("✨ _Recherche de la réponse en cours (Job Hunter / Scouts)..._")
 
 
-@st.fragment(run_every=3.0)
-def polling_associations_fragment(commune: CommuneResult, h: Optional[str]):
-    """Fragment that automatically polls for association enrichment every 3s."""
+def _enrichment_status_for_city(
+    h: Optional[str], status_key: str, codgeo: str
+) -> Optional[str]:
+    if not h:
+        return None
+    bg_res = odis_get_bg_result(h)
+    if not isinstance(bg_res, dict):
+        return None
+    status_data = bg_res.get(status_key, {}).get(str(codgeo))
+    return status_data.get("status") if isinstance(status_data, dict) else None
+
+
+def _should_poll_enrichment(
+    h: Optional[str], status_key: str, codgeo: str
+) -> bool:
+    """Only run a timed fragment while a task is genuinely non-terminal."""
+    if st.session_state.get("immutable_shared_snapshot"):
+        return False
+    status = _enrichment_status_for_city(h, status_key, codgeo)
+    return status is None or status == EnrichmentStatus.PENDING.value
+
+
+def _should_poll_refiner(h: Optional[str]) -> bool:
+    """Poll only while the optional refiner has no terminal outcome."""
+    if st.session_state.get("immutable_shared_snapshot"):
+        return False
+    bg_res = odis_get_bg_result(h) if h else None
+    status = bg_res.get("status_refiner") if isinstance(bg_res, dict) else None
+    return not is_terminal_refiner_status(status)
+
+
+def render_associations_enrichment(commune: CommuneResult, h: Optional[str]):
+    """Render association enrichment once; polling is controlled by the caller."""
     inc_data = commune.inclusion
     if h and not inc_data.asso_inclusion_list_by_cat:
         bg_res = odis_get_bg_result(h)
@@ -383,21 +421,26 @@ def polling_associations_fragment(commune: CommuneResult, h: Optional[str]):
             else None
         )
         status = status_data.get("status") if isinstance(status_data, dict) else None
-        if status in {EnrichmentStatus.ERROR.value, EnrichmentStatus.TIMEOUT.value, EnrichmentStatus.NOT_CONFIGURED.value}:
+        if st.session_state.get("immutable_shared_snapshot"):
+            st.caption("Associations non incluses dans cet instantané partagé.")
+        elif status in {EnrichmentStatus.ERROR.value, EnrichmentStatus.TIMEOUT.value, EnrichmentStatus.NOT_CONFIGURED.value}:
             st.info("Associations temporairement indisponibles.")
         elif status == EnrichmentStatus.PARTIAL.value:
             st.warning("Liste d'associations partielle : certaines données sont temporairement indisponibles.")
         elif status == EnrichmentStatus.PENDING.value:
-            st.write("⌛ _Chargement des associations..._")
+            st.caption("Traitement des associations locales en cours…")
         elif h and (not isinstance(bg_res, dict) or "association_enrichment_status" not in bg_res):
-            st.write("⌛ _Chargement des associations..._")
+            st.caption("Traitement des associations locales en cours…")
         else:
             st.info("Aucune association répertoriée.")
 
 
-@st.fragment(run_every=3.0)
-def polling_inclusion_services_fragment(commune: CommuneResult, h: Optional[str]):
-    """Fragment that automatically polls for detailed inclusion services enrichment every 3s."""
+def render_inclusion_services_enrichment(commune: CommuneResult, h: Optional[str]):
+    """Render stable score data, then append terminal provider details.
+
+    The scored service list is never replaced by a later provider response.
+    Data Inclusion only adds descriptions and links beneath that stable list.
+    """
     inc_data = commune.inclusion
     if h and not inc_data.services_detailed:
         bg_res = odis_get_bg_result(h)
@@ -412,102 +455,112 @@ def polling_inclusion_services_fragment(commune: CommuneResult, h: Optional[str]
                 }
                 st.rerun()
 
+    services_grouped = inc_data.services_grouped
+    if services_grouped:
+        st.caption("Services pris en compte dans le score")
+        for thematique, names in sorted(services_grouped.items()):
+            items = sorted({name for name in names if pd.notna(name)})
+            if items:
+                with st.expander(f"{thematique} ({len(items)})", expanded=False):
+                    for name in items:
+                        st.write(f"• {name}")
+    elif not inc_data.services_detailed:
+        st.info("Aucun service spécifique référencé.")
+
     if inc_data.services_detailed:
-        # Global deduplication: each structure appears in at most one expander
+        st.markdown("##### Détails et liens Data Inclusion")
+        # Each structure appears in at most one expander.
         seen_struct_keys: set[str] = set()
         for thematique, services in sorted(inc_data.services_detailed.items()):
             if not services:
                 continue
-            # Deduplicate by structure within this thematique, accumulating service names
             struct_map: dict[str, dict] = {}
             for srv in services:
                 struct_key = srv.structure_id or srv.nom_structure or srv.name
                 if struct_key in seen_struct_keys:
-                    continue  # already shown in a prior thematique expander
+                    continue
                 if struct_key not in struct_map:
                     struct_map[struct_key] = {
                         "nom": srv.nom_structure.title() or srv.name.title(),
-                        "presentation_structure": getattr(srv, "presentation_structure", None) or "",
+                        "presentation_structure": getattr(
+                            srv, "presentation_structure", None
+                        )
+                        or "",
                         "lien_source": srv.lien_source,
                         "services": [],
                     }
                 svc_label = srv.name
-                if svc_label and not any(s["name"] == svc_label.capitalize() for s in struct_map[struct_key]["services"]):
-                    struct_map[struct_key]["services"].append({
-                        "name": svc_label.capitalize(),
-                        "description": srv.description or ""
-                    })
-
-            if not struct_map:
-                continue  # all structures for this thematique already shown elsewhere
-
-            # Mark these structures as seen globally
-            seen_struct_keys.update(struct_map.keys())
-
-            with st.expander(
-                f"{thematique} ({len(struct_map)})", expanded=False
-            ):
-                for struct_data in sorted(struct_map.values(), key=lambda s: s["nom"]):
-                    struct_name = struct_data["nom"]
-                    presentation = struct_data["presentation_structure"]
-                    url_part = (
-                        f" [↗ Fiche]({struct_data['lien_source']})"
-                        if struct_data['lien_source']
-                        else ""
+                if svc_label and not any(
+                    item["name"] == svc_label.capitalize()
+                    for item in struct_map[struct_key]["services"]
+                ):
+                    struct_map[struct_key]["services"].append(
+                        {
+                            "name": svc_label.capitalize(),
+                            "description": srv.description or "",
+                        }
                     )
 
-                    # 1. Display structure with help tooltip if presentation is available
-                    if presentation:
-                        st.markdown(f"• **{struct_name}** {url_part}", help=presentation)
+            if not struct_map:
+                continue
+            seen_struct_keys.update(struct_map.keys())
+
+            with st.expander(f"{thematique} ({len(struct_map)})", expanded=False):
+                for struct_data in sorted(
+                    struct_map.values(), key=lambda item: item["nom"]
+                ):
+                    url_part = (
+                        f" [↗ Fiche]({struct_data['lien_source']})"
+                        if struct_data["lien_source"]
+                        else ""
+                    )
+                    if struct_data["presentation_structure"]:
+                        st.markdown(
+                            f"• **{struct_data['nom']}** {url_part}",
+                            help=struct_data["presentation_structure"],
+                        )
                     else:
-                        st.markdown(f"• **{struct_name}** {url_part}")
+                        st.markdown(f"• **{struct_data['nom']}** {url_part}")
 
-                    # 2. Display services as nested items with help tooltips
-                    for svc in struct_data["services"]:
-                        name = svc["name"]
-                        desc = svc["description"]
-                        if desc:
-                            st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;└ {name}", help=desc)
+                    for service in struct_data["services"]:
+                        if service["description"]:
+                            st.caption(
+                                f"&nbsp;&nbsp;&nbsp;&nbsp;└ {service['name']}",
+                                help=service["description"],
+                            )
                         else:
-                            st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;└ {name}")
-    else:
-        services_grouped = inc_data.services_grouped
-        if services_grouped:
-            for thematique, names in sorted(services_grouped.items()):
-                items = sorted(list(set([n for n in names if pd.notna(n)])))
-                if items:
-                    with st.expander(f"{thematique} ({len(items)})", expanded=False):
-                        for name in items:
-                            st.write(f"• {name}")
-        else:
-            st.info("Aucun service spécifique référencé.")
+                            st.caption(
+                                f"&nbsp;&nbsp;&nbsp;&nbsp;└ {service['name']}"
+                            )
 
-        if h:
-            bg_res = odis_get_bg_result(h)
-            status_data = (
-                bg_res.get("inclusion_services_status", {}).get(str(commune.codgeo))
-                if isinstance(bg_res, dict)
-                else None
-            )
-            status = status_data.get("status") if isinstance(status_data, dict) else None
-            if (
-                not isinstance(bg_res, dict)
-                or "inclusion_services_status" not in bg_res
-            ):
-                st.caption(
-                    "⌛ _Chargement des descriptions et liens depuis l'API Data Inclusion..._"
-                )
-            elif status in {EnrichmentStatus.ERROR.value, EnrichmentStatus.TIMEOUT.value, EnrichmentStatus.NOT_CONFIGURED.value}:
-                st.caption("Descriptions et liens Data Inclusion temporairement indisponibles.")
-            elif status == EnrichmentStatus.PARTIAL.value:
-                st.caption("Descriptions et liens Data Inclusion partiels.")
-            elif status == EnrichmentStatus.PENDING.value:
-                st.caption("⌛ _Chargement des descriptions et liens depuis l'API Data Inclusion..._")
+    if not h:
+        return
+
+    bg_res = odis_get_bg_result(h)
+    status_data = (
+        bg_res.get("inclusion_services_status", {}).get(str(commune.codgeo))
+        if isinstance(bg_res, dict)
+        else None
+    )
+    status = status_data.get("status") if isinstance(status_data, dict) else None
+    if st.session_state.get("immutable_shared_snapshot"):
+        st.caption("Descriptions Data Inclusion non incluses dans cet instantané partagé.")
+    elif not isinstance(bg_res, dict) or "inclusion_services_status" not in bg_res:
+        st.caption("Traitement des détails Data Inclusion en cours…")
+    elif status in {
+        EnrichmentStatus.ERROR.value,
+        EnrichmentStatus.TIMEOUT.value,
+        EnrichmentStatus.NOT_CONFIGURED.value,
+    }:
+        st.caption("Descriptions et liens Data Inclusion temporairement indisponibles.")
+    elif status == EnrichmentStatus.PARTIAL.value:
+        st.caption("Descriptions et liens Data Inclusion partiels.")
+    elif status == EnrichmentStatus.PENDING.value:
+        st.caption("Traitement des détails Data Inclusion en cours…")
 
 
-@st.fragment(run_every=3.0)
-def polling_jobs_fragment(commune: CommuneResult, h: Optional[str]):
-    """Fragment that automatically polls for France Travail job enrichment every 3s."""
+def render_jobs_enrichment(commune: CommuneResult, h: Optional[str]):
+    """Render job enrichment once; polling is controlled by the caller."""
     emp_data = commune.employment
     matching_total = emp_data.standard_jobs_matching_total
 
@@ -625,11 +678,37 @@ def polling_jobs_fragment(commune: CommuneResult, h: Optional[str]):
         with st.expander("💼 Offres d'emploi directes", expanded=True):
             st.warning("⚠️ Offres d'emploi partielles : certaines recherches sont temporairement indisponibles.")
     elif jobs_city_data and jobs_city_data.get("status") == EnrichmentStatus.PENDING.value:
-        st.write("⌛ _Chargement des offres d'emploi en cours..._")
+        st.caption("Traitement des offres d'emploi locales en cours…")
+    elif st.session_state.get("immutable_shared_snapshot"):
+        st.caption("Offres d'emploi en direct non incluses dans cet instantané partagé.")
     elif h and (not bg_res or "jobs_enrichment" not in bg_res or not jobs_city_data):
-        st.write("⌛ _Chargement des offres d'emploi en cours..._")
+        st.caption("Traitement des offres d'emploi locales en cours…")
     else:
         st.info("Aucune offre d'emploi directe répertoriée dans le rayon de recherche.")
+
+
+@st.fragment(run_every=3.0)
+def polling_associations_fragment(commune: CommuneResult, h: Optional[str]):
+    """Poll associations only until their provider state becomes terminal."""
+    render_associations_enrichment(commune, h)
+    if not _should_poll_enrichment(h, "association_enrichment_status", commune.codgeo):
+        st.rerun()
+
+
+@st.fragment(run_every=3.0)
+def polling_inclusion_services_fragment(commune: CommuneResult, h: Optional[str]):
+    """Poll inclusion services only until their provider state becomes terminal."""
+    render_inclusion_services_enrichment(commune, h)
+    if not _should_poll_enrichment(h, "inclusion_services_status", commune.codgeo):
+        st.rerun()
+
+
+@st.fragment(run_every=3.0)
+def polling_jobs_fragment(commune: CommuneResult, h: Optional[str]):
+    """Poll job offers only until their provider state becomes terminal."""
+    render_jobs_enrichment(commune, h)
+    if not _should_poll_enrichment(h, "jobs_enrichment", commune.codgeo):
+        st.rerun()
 
 
 def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
@@ -715,18 +794,45 @@ def show_ia_analysis_dialog(index: Any):
     ia_analysis_content(nom, codgeo, search_criterias)
 
 
-def ai_pitch_container(main_code: str, h: Optional[str]):
-    """
-    Displays the AI-generated pitch for a city.
-    Assumes data is already synced into the CommuneResult model.
-    """
-    if "search_results" in st.session_state and st.session_state.search_results:
-        commune = st.session_state.search_results.get_by_code(main_code)
-        if commune and commune.refiner_pitch:
-            st.markdown(commune.refiner_pitch)
-            return
+def render_refiner_panel(commune: CommuneResult, h: Optional[str]) -> bool:
+    """Render one stable refiner-panel state and return whether it is final.
 
-    st.info("✨ _L'analyse des points forts est en cours..._")
+    The panel deliberately stays in a processing state until the refiner has a
+    terminal result. This avoids replacing a deterministic summary while the
+    user is reading it. A terminal failure falls back to the deterministic top
+    three contributors instead of leaving an empty AI-shaped gap.
+    """
+    if st.session_state.get("immutable_shared_snapshot"):
+        st.caption("Analyse IA non incluse dans cet instantané partagé.")
+        return True
+
+    sync_background_data(commune, h)
+    if commune.refiner_pitch:
+        st.markdown(commune.refiner_pitch)
+        return True
+
+    bg_res = odis_get_bg_result(h) if h else None
+    refiner_status = bg_res.get("status_refiner") if isinstance(bg_res, dict) else None
+    if is_terminal_refiner_status(refiner_status):
+        st.caption(
+            "Analyse personnalisée indisponible. Voici les principaux "
+            "indicateurs déterministes de ce territoire."
+        )
+        st.markdown(generate_static_pitch(commune))
+        return True
+
+    st.info("Analyse des points forts en cours...")
+    st.caption(
+        "La synthèse personnalisée apparaîtra ici lorsqu'elle sera prête."
+    )
+    return False
+
+
+@st.fragment(run_every=3.0)
+def polling_refiner_panel(commune: CommuneResult, h: Optional[str]):
+    """Refresh the processing panel once, then stop polling at its final state."""
+    if render_refiner_panel(commune, h):
+        st.rerun()
 
 
 def sync_background_data(commune: CommuneResult, h: Optional[str]):
@@ -767,7 +873,12 @@ def sync_background_data(commune: CommuneResult, h: Optional[str]):
         jobs_city_data = bg_res["jobs_enrichment"].get(str(commune.codgeo))
         if (
             jobs_city_data
-            and jobs_city_data.get("status") == "done"
+            and jobs_city_data.get("status")
+            in {
+                EnrichmentStatus.SUCCESS_NONEMPTY.value,
+                EnrichmentStatus.SUCCESS_EMPTY.value,
+                EnrichmentStatus.PARTIAL.value,
+            }
             and not commune.employment.matching_job_offers
         ):
             logging.debug(f"✨ [SYNC] Jobs sync for {commune.codgeo}")
@@ -838,11 +949,14 @@ def show_ccas_dialog(index: Any):
     commune = st.session_state.search_results.get_by_code(index)
     codgeo = commune.codgeo
     libgeo = commune.name
-    structures_df = get_app_data().get("structures_ccas", pd.DataFrame())
+    # The Results page owns a complete, single app-data snapshot. Reuse it here
+    # instead of triggering an unrelated loader call from a dialog.
+    app_data = st.session_state.get("app_data", {})
+    structures_df = app_data.get("structures_ccas", pd.DataFrame())
 
     target_codes = [codgeo.strip()]
     # Optional logic for binome if needed (fallback to df_all_communes)
-    df_all = get_app_data().get("odis", pd.DataFrame())
+    df_all = app_data.get("odis", pd.DataFrame())
     if codgeo in df_all.index:
         row = df_all.loc[codgeo]
         if "binome" in row and row["binome"] and "codgeo_binome" in row:
@@ -1130,7 +1244,10 @@ def show_details_dialog(index: Any):
                     )
 
                 # 1. Hydrated live France Travail job offers first
-                polling_jobs_fragment(commune, h)
+                if _should_poll_enrichment(h, "jobs_enrichment", commune.codgeo):
+                    polling_jobs_fragment(commune, h)
+                else:
+                    render_jobs_enrichment(commune, h)
 
                 # 2. SIAE matching or local listings second
                 matching_siae = employment_data.inclusive_jobs_matching_summary
@@ -1262,11 +1379,21 @@ def show_details_dialog(index: Any):
         with c1:
             with st.container(border=False):
                 st.markdown("#### :material/volunteer_activism: Services d'Inclusion")
-                polling_inclusion_services_fragment(commune, h)
+                if _should_poll_enrichment(
+                    h, "inclusion_services_status", commune.codgeo
+                ):
+                    polling_inclusion_services_fragment(commune, h)
+                else:
+                    render_inclusion_services_enrichment(commune, h)
 
                 st.markdown("#### :material/groups: Associations de l'inclusion")
 
-                polling_associations_fragment(commune, h)
+                if _should_poll_enrichment(
+                    h, "association_enrichment_status", commune.codgeo
+                ):
+                    polling_associations_fragment(commune, h)
+                else:
+                    render_associations_enrichment(commune, h)
 
         with c2:
             st.markdown("#### :material/diversity_3: Indicateurs Inclusion")
@@ -1420,10 +1547,11 @@ def render_global_pitch(h: Optional[str] = None):
 
     bg_res = odis_get_bg_result(h) if h else None
     refiner_status = bg_res.get("status_refiner") if isinstance(bg_res, dict) else None
-    is_ready = refiner_status == "done"
-
-    if not is_ready:
-        st.info("✨ _Analyse stratégique des résultats en cours..._")
+    if refiner_status != "done":
+        if is_terminal_refiner_status(refiner_status):
+            st.caption("Analyse stratégique IA indisponible pour cette recherche.")
+        else:
+            st.info("✨ _Analyse stratégique des résultats en cours..._")
         return
 
     if bg_res and "pitches" in bg_res:
@@ -1467,18 +1595,15 @@ def display_results_list(display_gdf: Optional[pd.DataFrame] = None) -> None:
 
     is_highlighted, highlighted_rank = st.session_state.highlighted_result
 
-    # UI Guardrail (F-58): Check if Refiner is done
+    # Optional enrichment can update the briefing, but never gates exploration.
     bg_res = odis_get_bg_result(h) if h else None
-    refiner_status = bg_res.get("status_refiner") if isinstance(bg_res, dict) else None
-    is_ready = refiner_status == "done"
-
-    if is_ready:
-        # Sync global data once (handled in render_global_pitch now, but keeping brief sync here for safety)
-        if bg_res and "odis_brief" in bg_res and st.session_state.get("config"):
-            brief_val = bg_res["odis_brief"]
-            if brief_val and st.session_state.config.odis_brief != brief_val:
-                st.session_state.config.odis_brief = brief_val
-                st.rerun()
+    # Sync global data once (handled in render_global_pitch now, but keeping
+    # this brief sync for safety).
+    if bg_res and "odis_brief" in bg_res and st.session_state.get("config"):
+        brief_val = bg_res["odis_brief"]
+        if brief_val and st.session_state.config.odis_brief != brief_val:
+            st.session_state.config.odis_brief = brief_val
+            st.rerun()
     # Shortlisted City (Ville Pressentie) Button (Feature F-61)
     if search_results.commune_pressentie:
         st.markdown(
@@ -1515,11 +1640,10 @@ def display_results_list(display_gdf: Optional[pd.DataFrame] = None) -> None:
             key="btn_pressentie",
             type="primary",
             icon=":material/push_pin:",
-            disabled=not is_ready,
         )
 
         if is_highlighted and highlighted_rank == -1:
-            _display_result_details(p_commune, is_ready)
+            _display_result_details(p_commune)
 
         st.text("Alternatives : ")
 
@@ -1534,15 +1658,14 @@ def display_results_list(display_gdf: Optional[pd.DataFrame] = None) -> None:
             key=f"button_top{i + 1}",
             type="primary",
             icon=f":material/counter_{i + 1}:",
-            disabled=not is_ready,
         )
 
         # Check if this row's index matches the highlighted index
         if is_highlighted and i == highlighted_rank:
-            _display_result_details(commune, is_ready)
+            _display_result_details(commune)
 
 
-def _display_result_details(commune: CommuneResult, is_ready: bool = False) -> None:
+def _display_result_details(commune: CommuneResult) -> None:
     """Displays the detailed information for a single search result (Commune)."""
     h = st.session_state.get("active_search_hash")
 
@@ -1556,11 +1679,13 @@ def _display_result_details(commune: CommuneResult, is_ready: bool = False) -> N
             f"**{libgeo}** ({population} habitants) fait partie du bassin de vie de : **{commune.name_bdv}**.  L'indice pondéré de cette recherche est de **{score_percent}**."
         )
 
-        # Sync background results into model if available
-        sync_background_data(commune, h)
-
-        # --- AI Pitch Fragment ---
-        ai_pitch_container(commune.codgeo, h)
+        # The narrative stays a processing panel until it reaches one final
+        # state (AI result or deterministic fallback). It never replaces text
+        # that was already shown as a provisional summary.
+        if _should_poll_refiner(h):
+            polling_refiner_panel(commune, h)
+        else:
+            render_refiner_panel(commune, h)
 
         st.space("small")
         c1, c2 = st.columns(2)
@@ -1581,6 +1706,13 @@ def _display_result_details(commune: CommuneResult, is_ready: bool = False) -> N
                 icon=":material/phone:",
                 type="secondary",
                 width="stretch",
+                disabled=bool(st.session_state.get("immutable_shared_snapshot")),
+                help=(
+                    "Les coordonnées locales en direct ne font pas partie de "
+                    "cet instantané partagé."
+                    if st.session_state.get("immutable_shared_snapshot")
+                    else None
+                ),
             ):
                 st.session_state.active_ccas_index = commune.codgeo
                 st.rerun()
@@ -1594,9 +1726,12 @@ def _display_result_details(commune: CommuneResult, is_ready: bool = False) -> N
                 unsafe_allow_html=True,
             )
 
-            # Premium Guardrail (F-IA): Verify if background hydrations (jobs & associations) are completed
+            # Premium Guardrail (F-IA): verify terminal background states rather
+            # than legacy data-key presence. Immutable snapshots never launch new
+            # AI work because that would mutate the saved experience.
             jobs_ready = False
             assos_ready = False
+            immutable_snapshot = bool(st.session_state.get("immutable_shared_snapshot"))
 
             # Model level fallbacks (e.g. for restored shared search snapshots)
             if hasattr(commune, "siae_jobs") and getattr(commune, "siae_jobs", None) is not None:
@@ -1614,21 +1749,22 @@ def _display_result_details(commune: CommuneResult, is_ready: bool = False) -> N
                     jobs_city_data = bg_res.get("jobs_enrichment", {}).get(
                         str(commune.codgeo)
                     )
-                    if jobs_city_data and jobs_city_data.get("status") in [
-                        "done",
-                        "error",
-                    ]:
+                    if jobs_city_data and is_terminal_enrichment_status(
+                        jobs_city_data.get("status")
+                    ):
                         jobs_ready = True
 
                     # Check associations hydration status
-                    enrich_data = bg_res.get("enrichment", {}).get(
-                        str(commune.codgeo)
+                    association_status = bg_res.get(
+                        "association_enrichment_status", {}
+                    ).get(
+                        str(commune.codgeo), {}
                     )
-                    if enrich_data is not None:
+                    if is_terminal_enrichment_status(association_status.get("status")):
                         assos_ready = True
 
-            if not is_ready:
-                btn_label = "Analyse Avancée (Calcul...)"
+            if immutable_snapshot:
+                btn_label = "Analyse Avancée (indisponible pour l'instantané)"
                 btn_disabled = True
             elif not jobs_ready or not assos_ready:
                 btn_label = "Analyse Avancée (Préparation...)"

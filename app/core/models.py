@@ -803,6 +803,11 @@ class EmploymentMetrics(BaseModel):
             ]
         },
     )
+    source_availability: Dict[str, Literal["available", "unavailable"]] = Field(
+        default_factory=dict,
+        description="Disponibilité des sources d'offres utilisées par les indicateurs emploi",
+        json_schema_extra={"odis_visibility": ["ui_details", "pdf_report"]},
+    )
     standard_jobs_total: int = Field(
         0,
         description="Total offres d'emploi",

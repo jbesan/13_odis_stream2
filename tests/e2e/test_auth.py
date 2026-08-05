@@ -74,7 +74,6 @@ def test_check_password_oidc_logged_in_resolves_org_by_domain():
     mock_secrets.__contains__ = lambda self, key: False
 
     with (
-        patch("utils.auth.inject_idle_sleep"),
         patch("utils.auth.st.user", mock_user, create=True),
         patch("utils.auth.st.session_state", mock_session),
         patch("utils.auth.st.secrets", mock_secrets),
@@ -103,7 +102,6 @@ def test_check_password_oidc_logged_in_resolves_org_from_secrets():
     )
 
     with (
-        patch("utils.auth.inject_idle_sleep"),
         patch("utils.auth.st.user", mock_user, create=True),
         patch("utils.auth.st.session_state", mock_session),
         patch("utils.auth.st.secrets", mock_secrets),
@@ -125,7 +123,6 @@ def test_check_password_oidc_not_logged_in_shows_login_form():
     mock_user.is_logged_in = False  # Streamlit rejected the user (not in allowed_emails/domains)
 
     with (
-        patch("utils.auth.inject_idle_sleep"),
         patch("utils.auth.st.user", mock_user, create=True),
         patch("utils.auth.st.session_state", mock_session),
         patch("utils.auth.st.container"),

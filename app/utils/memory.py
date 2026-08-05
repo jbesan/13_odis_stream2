@@ -1,6 +1,7 @@
 import streamlit as st
 import gc
 import logging
+from services.app_session import AppSession
 
 logger = logging.getLogger(__name__)
 
@@ -12,22 +13,7 @@ def reset_app_state():
     """
     logger.info("🧹 [MEMORY] Resetting session state...")
 
-    # Define keys to preserve (auth and heavy caches)
-    to_keep = {
-        "app_data",  # cached datasets
-        "_data_hash",  # caching verification
-        "password_correct",  # auth status
-        "username",  # current user
-        "rna_rag_service",  # AI tools
-        "rna_rag_status",  # AI tools
-    }
-
-    cleared_count = 0
-    # Must use list() to avoid RuntimeError: dictionary changed size during iteration
-    for key in list(st.session_state.keys()):
-        if key not in to_keep:
-            del st.session_state[key]
-            cleared_count += 1
+    cleared_count = AppSession(st.session_state).reset_for_home()
 
     if cleared_count > 0:
         logger.info(f"🧹 [MEMORY] Removed {cleared_count} objects from session state.")

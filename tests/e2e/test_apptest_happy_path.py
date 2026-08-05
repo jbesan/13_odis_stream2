@@ -5,7 +5,7 @@ from core.models import SearchCriterias
 
 
 # Mocking custom components that require JS/HTML environments or external API hits
-@patch("utils.auth.inject_idle_sleep")
+@patch("ui.page_shell.inject_idle_disconnect")
 @patch("streamlit_folium.st_folium")
 @patch("core.postscoring.launch_post_scoring_tasks")
 @patch("utils.data_loader.fetch_salesforce_jaccueille_bdv")
@@ -15,7 +15,7 @@ def test_happy_path_end_to_end(
     mock_fetch_salesforce,
     mock_launch_post_scoring_tasks,
     mock_st_folium,
-    mock_inject_idle_sleep,
+    mock_inject_idle_disconnect,
 ):
     """
     E2E test using Streamlit AppTest framework.
@@ -146,8 +146,8 @@ def test_happy_path_end_to_end(
     assert len(at.exception) == 0
     at.selectbox(key="ui_weight_profile").select("Équilibré").run()
 
-    # Click "Voir les résultats" to transition to Results page
-    btn = next(b for b in at.button if b.label == "Voir les résultats")
+    # The sidebar action submits the form and launches the deterministic search.
+    btn = next(b for b in at.button if b.label == "Passer aux résultats")
     btn.click().run(timeout=20)
     assert len(at.exception) == 0
 

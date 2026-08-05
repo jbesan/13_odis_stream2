@@ -2,51 +2,32 @@ import time
 import streamlit as st
 import config as cfg
 import logging
-from utils import memory, auth, data_loader
+from utils import memory, data_loader
 from utils import common as utils
 
 
 # --- Page Configuration ---
 st.set_page_config(page_title="OD&IS", page_icon="👋", layout="wide")
 
-# --- RESET: Clear search memory when returning to home (unless opening a shared permalink) ---
-if "search" in st.query_params:
-    share_id = st.query_params.get("search")
-    if share_id:
-        from services import share_service
-        try:
-            config_obj, results_obj = share_service.load_shared_search(share_id)
-            if config_obj and results_obj:
-                share_service.restore_shared_search_to_session_state(config_obj, results_obj, share_id)
-                st.switch_page("pages/3_Resultats.py")
-            else:
-                st.session_state["share_error"] = f"La recherche partagée '{share_id}' est introuvable ou a expiré."
-        except Exception as e:
-            st.session_state["share_error"] = f"Impossible de lire la recherche partagée '{share_id}' : {e}"
+# --- Authentication ---
 
-# Display toast & error banner if a shared search failed to load
-if "share_error" in st.session_state and st.session_state.share_error:
-    err_msg = st.session_state.pop("share_error")
-    st.toast(err_msg, icon="⚠️")
-    st.error(f"⚠️ {err_msg}")
+from services import telemetry
+from ui import page_shell
+
+page_shell.enter_page(
+    "Accueil", handle_shared_search=True, redirect_shared_to_results=True
+)
 
 if "search_results" in st.session_state:
     memory.reset_app_state()
 
-# --- Authentication ---
-
-from services import telemetry
-from ui import components as ui_comp
-
-if not auth.check_password():
-    st.stop()
-
-telemetry.log_page_view("Accueil")
-
 logging.info(f"--- App re-run at {time.ctime(time.time())} ---")
 
 # --- Main App Execution ---
-data_loader.ensure_data_initialized(load_heavy=False)
+# Accueil intentionally renders without synchronously reading GCS datasets.
+# The Formulaire page owns the first required complete bundle.
+data_loader.initialize_session_state()
+data_loader.preload_scoring_datasets_async()
 
 # --- Sidebar / Org Context ---
 with st.sidebar:
@@ -55,21 +36,9 @@ with st.sidebar:
             st.query_params.clear()
             st.rerun()
 
-    # Always show logo and badge in sidebar if org is active
-    org = st.session_state.get("org")
-    if org:
-        if org.id == "jaccueille":
-            logo_path = utils.get_asset_path("logo-jaccueille-singa.png")
-            logo_b64 = utils.get_base64_image(logo_path)
-            if logo_b64:
-                st.markdown(
-                    f'<img src="data:image/png;base64,{logo_b64}" width="150" style="margin-bottom: 20px;">',
-                    unsafe_allow_html=True,
-                )
-
-    ui_comp.render_admin_sidebar_link()
-    ui_comp.render_sources_sidebar_link()
-    ui_comp.render_logout_sidebar_button()
+    if st.session_state.get("org"):
+        page_shell.render_sidebar_logo()
+    page_shell.render_account_sidebar_actions()
 
 
 

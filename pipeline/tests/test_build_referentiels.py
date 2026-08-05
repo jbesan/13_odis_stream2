@@ -6,6 +6,12 @@ import pandas as pd
 import pipeline.build as build
 
 
+def test_normalize_geographic_codes_preserves_leading_zeroes():
+    codes = build.normalize_geographic_codes(pd.Series([1, "02", "2A", 971.0]))
+
+    assert codes.tolist() == ["01", "02", "2A", "971"]
+
+
 def test_generate_referentiels_falls_back_to_raw_regions(tmp_path, monkeypatch):
     clean_dir = tmp_path / "clean"
     raw_dir = tmp_path / "raw"
@@ -28,14 +34,15 @@ def test_generate_referentiels_falls_back_to_raw_regions(tmp_path, monkeypatch):
     ).to_parquet(clean_dir / "departements.parquet", engine="fastparquet")
     pd.DataFrame(
         {
-            "geo_level": ["commune", "commune"],
-            "region_code": ["11", "84"],
-            "departement_code": ["75", "69"],
+            "geo_level": ["commune", "commune", "commune"],
+            "region_code": ["01", "11", "84"],
+            "departement_code": ["75", "75", "69"],
         }
     ).to_parquet(raw_dir / "odace_dim_geo.parquet", engine="fastparquet")
     (raw_dir / "referentiel_regions.json").write_text(
         json.dumps(
             [
+                {"REG": 1, "LIBELLE": "Guadeloupe"},
                 {"REG": "11", "LIBELLE": "Île-de-France"},
                 {"REG": "84", "LIBELLE": "Auvergne-Rhône-Alpes"},
                 {"REG": "93", "LIBELLE": "Provence-Alpes-Côte d'Azur"},
@@ -43,19 +50,34 @@ def test_generate_referentiels_falls_back_to_raw_regions(tmp_path, monkeypatch):
         ),
         encoding="utf-8",
     )
-
+    pd.DataFrame(
+        {
+            "code": ["M1805", "K1302"],
+            "label": ["Développement informatique", "Aide à domicile"],
+        }
+    ).to_parquet(raw_dir / "rome_referential_api.parquet", engine="fastparquet")
     monkeypatch.setattr(build, "CLEAN_DIR", clean_dir)
     monkeypatch.setattr(build, "CACHE_DIR", raw_dir)
     monkeypatch.setattr(build, "OUTPUT_DIR", output_dir)
 
     build.generate_referentiels(
-        {"sources": {"regions_ref": {"format": "json", "local_name": "referentiel_regions.json"}}},
+        {
+            "sources": {
+                "regions_ref": {
+                    "format": "json",
+                    "local_name": "referentiel_regions.json",
+                }
+            }
+        },
         MagicMock(),
     )
 
-    refs = pd.read_parquet(output_dir / "odis_referentiels.parquet", engine="fastparquet")
+    refs = pd.read_parquet(
+        output_dir / "odis_referentiels.parquet", engine="fastparquet"
+    )
     regions = refs.loc[refs["key"] == "regions"].set_index("code")["label"].to_dict()
     assert regions == {
+        "01": "Guadeloupe",
         "11": "Île-de-France",
         "84": "Auvergne-Rhône-Alpes",
     }

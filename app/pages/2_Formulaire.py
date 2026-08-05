@@ -3,44 +3,26 @@ import streamlit as st
 st.set_page_config(page_title="OD&IS", page_icon="👋", layout="wide")
 
 
-# --- Authentication ---
-from utils import auth
-from services import telemetry
+from ui import page_shell
 
-if not auth.check_password():
-    st.stop()
+page_shell.enter_page("Formulaire")
 
-telemetry.log_page_view("Formulaire")
-
-from ui import components as ui
 from ui import forms as ui_forms
+from ui.form_state import FormState
 from utils import data_loader
 
-# Ensure app data and session state are initialized
-data_loader.ensure_data_initialized(load_heavy=False)
+# The form owns a single complete data bundle. Home has already started a
+# best-effort warm-up; on a cold instance this is the one honest wait point
+# rather than letting individual form controls discover missing Tier-2 fields.
+with st.spinner("Préparation du formulaire..."):
+    app_data = data_loader.ensure_data_initialized(initialize_rag=False)
 
-# DO NOT REMOVE: This makes sure the ui_ form state persists as expected
-for k, v in st.session_state.items():
-    if str(k).startswith("ui_"):
-        st.session_state[k] = v
-app_data = data_loader.get_app_data(load_heavy=False)
-
+FormState(st.session_state).preserve_widgets_across_steps()
 import logging
-from utils import common as utils
 
 # Sidebar
 with st.sidebar:
-    logo_path = utils.get_asset_path("logo-jaccueille-singa.png")
-    logo_b64 = utils.get_base64_image(logo_path)
-    if logo_b64:
-        st.markdown(
-            f'<img src="data:image/png;base64,{logo_b64}" width="150" style="margin-bottom: 20px;">',
-            unsafe_allow_html=True,
-        )
-    else:
-        st.error("Logo not found")
-
-
+    page_shell.render_sidebar_logo()
 
     st.text(
         "Remplissez ce formulaire afin de préciser le projet de vie de la ou des personnes accompagnées."
@@ -48,10 +30,7 @@ with st.sidebar:
 
     st.divider()
 
-    ui.start_over()
-    from ui import feedback
-
-    feedback.render_feedback_button()
+    page_shell.render_primary_sidebar_actions(show_home=True, show_feedback=True)
 
     if st.button(
         "Passer aux résultats",
@@ -59,14 +38,10 @@ with st.sidebar:
         width="stretch",
         icon=":material/fast_forward:",
     ):
+        st.session_state["form_completed"] = True
         st.switch_page("pages/3_Resultats.py")
 
-    st.divider()
-
-    # --- Dashboard Admin Analytics & Sources ---
-    ui.render_admin_sidebar_link()
-    ui.render_sources_sidebar_link()
-    ui.render_logout_sidebar_button()
+    page_shell.render_account_sidebar_actions()
 
 org = st.session_state.get("org")
 
@@ -102,13 +77,13 @@ def display_localisation_actuelle_page():
     col1, col2, col3 = st.columns([3, 1, 5])
     with col1:
         st.markdown("**Localisation actuelle**")
-        ui_forms.render_localisation_form()
+        ui_forms.render_localisation_form(app_data)
     with col2:
         st.space("large")
         st.header(":material/arrow_forward_ios:", text_alignment="center")
     with col3:
         st.markdown("**Zone de recherche**")
-        ui_forms.render_mobility_form()
+        ui_forms.render_mobility_form(app_data)
 
 
 def display_family_situation_page():
@@ -123,7 +98,7 @@ def display_education_page():
 
 def display_professional_project_page():
     st.subheader(f"Métiers et formations {get_person_accompanied_str()}")
-    ui_forms.render_employment_form()
+    ui_forms.render_employment_form(app_data)
 
 
 def display_housing_page():
@@ -138,7 +113,7 @@ def display_health_page():
 
 def display_other_needs_page():
     st.subheader(f"Inclusion et vie sociale {get_person_accompanied_str()}")
-    ui_forms.render_other_needs_form()
+    ui_forms.render_other_needs_form(app_data)
 
 
 def display_other_notes_page():
@@ -153,7 +128,7 @@ def display_profile_page():
 
 def display_org_page():
     # Title is handled by render_org_profile_form but we can add context here if needed
-    ui_forms.render_org_profile_form()
+    ui_forms.render_org_profile_form(app_data)
 
 
 if "form_page" not in st.session_state:

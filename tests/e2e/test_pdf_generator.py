@@ -146,9 +146,6 @@ def sample_search_results():
     )
 
 
-from unittest.mock import patch
-
-
 def test_generate_pdf_report(sample_session_state, sample_search_results):
     """
     Tests that generate_pdf_report runs without errors and produces a valid PDF bytes object.
@@ -157,10 +154,12 @@ def test_generate_pdf_report(sample_session_state, sample_search_results):
     session_state = sample_session_state
     search_results = sample_search_results
 
-    # Act
-    # Use patch to mock streamlit's session_state for the duration of the call
-    with patch("core.pdf_generator.ui.st.session_state", session_state):
-        pdf_bytes = generate_pdf_report(search_results, session_state.config)
+    # Act: the core renderer receives all UI context explicitly.
+    pdf_bytes = generate_pdf_report(
+        search_results,
+        session_state.config,
+        person_name=session_state.get("ui_nom"),
+    )
 
     # Assert
     # 1. Check that the output is a bytes object

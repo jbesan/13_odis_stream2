@@ -1,96 +1,103 @@
+"""Disconnect inactive browser tabs so Cloud Run can eventually scale to zero."""
+
+from __future__ import annotations
+
 import streamlit as st
 
 
-def inject_idle_sleep(timeout_minutes: int = 10):
-    """
-    Injects the Idle Sleep monitor using the new V2 Component API (Streamlit 1.51+).
-    This API allows JS to interact directly with the main document.
-    """
+_IDLE_DISCONNECT_JS = r"""
+export default function(component) {
+    const configuredTimeoutMs = Number(component.data?.timeout_ms);
+    const timeoutMs = Number.isFinite(configuredTimeoutMs) && configuredTimeoutMs > 0
+        ? Math.max(1000, configuredTimeoutMs)
+        : 10 * 60 * 1000;
+    const componentHost = component.parentElement.host || component.parentElement;
+    const activityEvents = [
+        "keydown",
+        "pointerdown",
+        "scroll",
+        "touchstart",
+    ];
+    const storedLastActivity = Number(
+        componentHost.dataset.idleDisconnectLastActivity
+    );
+    let lastActivity = Number.isFinite(storedLastActivity) && storedLastActivity > 0
+        ? storedLastActivity
+        : Date.now();
+    let disconnecting = false;
 
-    timeout_ms = int(timeout_minutes * 60 * 1000)
+    componentHost.dataset.idleDisconnect = "active";
+    componentHost.dataset.idleDisconnectTimeoutMs = String(timeoutMs);
+    componentHost.dataset.idleDisconnectLastActivity = String(lastActivity);
 
-    # JavaScript using the st.components.v2 contract
-    # Double braces {{ }} are used for f-string escaping
-    js_code = f"""
-    export default function(component) {{
-        const targetWin = window.top;
-        const targetDoc = targetWin.document;
-        const TIMEOUT = {timeout_ms};
-        const STORAGE_KEY = 'odis_last_activity';
-        let idleTimer;
+    function recordActivity() {
+        lastActivity = Date.now();
+        componentHost.dataset.idleDisconnectLastActivity = String(lastActivity);
+    }
 
-        console.log("Eco-Mode V2 (Bidi) Monitor Active.");
+    function handlePageShow(event) {
+        if (event.persisted) recordActivity();
+    }
 
-        function showSleepMode() {{
-            if (targetDoc.getElementById('idle-sleep-overlay')) return;
+    function disconnect() {
+        if (disconnecting) return;
+        disconnecting = true;
 
-            const overlay = targetDoc.createElement('div');
-            overlay.id = 'idle-sleep-overlay';
-            overlay.style.cssText = "position:fixed;top:0;left:0;width:100vw;height:100vh;background:#1B4429;z-index:9999999;display:flex;flex-direction:column;align-items:center;justify-content:center;color:white;font-family:sans-serif;text-align:center;padding:20px;backdrop-filter:blur(10px);";
-            overlay.innerHTML = `
-                <div style="background:rgba(0,0,0,0.2); padding:50px; border-radius:30px; border:1px solid rgba(255,255,255,0.1); box-shadow:0 25px 50px -12px rgba(0,0,0,0.5);">
-                    <h1 style="color:#FFD700; margin-bottom:24px; font-size:3rem; font-weight:800;">🌳 Mode Éco</h1>
-                    <p style="margin-bottom:40px; font-size:1.3rem; max-width:450px; line-height:1.6;">
-                        Session interrompue pour économiser des ressources.<br>
-                        <b>L'instance Cloud Run est maintenant en veille.</b>
-                    </p>
-                    <button id="eco-resume-btn" style="background:#FFD700; color:#1B4429; border:none; padding:18px 50px; font-weight:800; border-radius:12px; cursor:pointer; font-size:1.2rem; box-shadow:0 4px 15px rgba(0,0,0,0.3);">REPRENDRE LA SESSION</button>
-                </div>
-            `;
-            targetDoc.body.appendChild(overlay);
-            targetDoc.getElementById('eco-resume-btn').onclick = () => targetWin.location.reload();
+        // A normal document navigation unloads Streamlit and closes its
+        // WebSocket. The static response completes immediately and keeps no
+        // active request open against Cloud Run.
+        const idleUrl = new URL("app/static/idle.png", window.location.href);
+        window.location.assign(idleUrl);
+    }
 
-            // 1. Stop all current loading
-            targetWin.stop();
+    function checkIdleTime() {
+        if (Date.now() - lastActivity >= timeoutMs) disconnect();
+    }
 
-            // 2. Kill all timers (Heartbeats, Fragments, etc.)
-            const maxId = targetWin.setTimeout(() => {{}}, 0);
-            for (let i = 0; i <= maxId; i++) {{
-                targetWin.clearTimeout(i);
-                targetWin.clearInterval(i);
-            }}
+    activityEvents.forEach((eventName) => {
+        document.addEventListener(eventName, recordActivity, {
+            capture: true,
+            passive: true,
+        });
+    });
+    window.addEventListener("pageshow", handlePageShow);
+    // Check synchronously as well as on an interval. Streamlit can remount a
+    // V2 renderer before its first timer tick; the persisted timestamp keeps
+    // those remounts from postponing the deadline indefinitely.
+    checkIdleTime();
+    const intervalId = disconnecting
+        ? null
+        : window.setInterval(checkIdleTime, 2000);
 
-            // 3. Sabotage outgoing network APIs to prevent further contact
-            try {{
-                targetWin.fetch = () => new Promise(() => {{}});
-                targetWin.XMLHttpRequest.prototype.open = function() {{ 
-                    console.log("Eco-Mode: Connection Blocked.");
-                }};
-                targetWin.XMLHttpRequest.prototype.send = function() {{}};
-            }} catch (e) {{
-                console.error("Eco-Mode: Error blocking network", e);
-            }}
+    // Streamlit V2 invokes this cleanup when the component is unmounted.
+    return () => {
+        if (intervalId !== null) window.clearInterval(intervalId);
+        activityEvents.forEach((eventName) => {
+            document.removeEventListener(eventName, recordActivity, {
+                capture: true,
+            });
+        });
+        window.removeEventListener("pageshow", handlePageShow);
+    };
+}
+"""
 
-            console.log("Eco-Mode: Application connectivity severed.");
-        }}
 
-        function updateActivity() {{
-            localStorage.setItem(STORAGE_KEY, Date.now());
-        }}
+# Register once per Python module. Defining a V2 component inside the mounting
+# function re-registers it on each script run and produces avoidable lifecycle work.
+_idle_disconnect_component = st.components.v2.component(
+    "odis_idle_disconnect",
+    js=_IDLE_DISCONNECT_JS,
+    isolate_styles=True,
+)
 
-        function check() {{
-            const last = parseInt(localStorage.getItem(STORAGE_KEY) || Date.now());
-            if (Date.now() - last > TIMEOUT) {{
-                showSleepMode();
-            }}
-        }}
 
-        // --- KEY FIX: Listen to the PARENT document for activity! ---
-        ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'].forEach(type => {{
-            targetDoc.addEventListener(type, updateActivity, true);
-        }});
+def inject_idle_disconnect(timeout_minutes: int = 10) -> None:
+    """Mount a per-tab inactivity monitor that disconnects the Streamlit session."""
+    if timeout_minutes <= 0:
+        raise ValueError("timeout_minutes must be greater than zero")
 
-        updateActivity();
-        setInterval(check, 2000);
-    }}
-    """
-
-    # 1. Declare the component
-    # We set isolate_styles=False to ensure we can reach out of the component container easily.
-    # Note: Streamlit 1.51.0 confirmed having st.components.v2.
-    eco_comp = st.components.v2.component(
-        "eco_mode_v2", js=js_code, isolate_styles=False
+    _idle_disconnect_component(
+        data={"timeout_ms": int(timeout_minutes * 60 * 1000)},
+        key="odis_idle_disconnect_monitor",
     )
-
-    # 2. Mount the component
-    eco_comp()

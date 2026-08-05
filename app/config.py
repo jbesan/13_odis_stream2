@@ -21,18 +21,7 @@ load_dotenv(os.path.join(APP_DIR, ".env"))
 # Try loading from root .env (Fallback/Override depending on behavior, but good to have both)
 load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
 
-LOCAL_DATA_PATH: str = os.path.join(APP_DIR, "data/")
 ASSETS_DIR: str = os.path.join(APP_DIR, "ui", "assets")
-
-
-def get_data_path() -> str:
-    """
-    Returns the appropriate data path based on the environment.
-    The bootstrap files stay local; generated scoring datasets are resolved lazily
-    by ``utils.data_loader`` from the local dev mirror or the active GCS release.
-    """
-
-    return LOCAL_DATA_PATH
 
 
 # --- Constants ---
@@ -48,10 +37,9 @@ AGG_FORMATIONS_FILE = "odis_formations_agg.parquet"
 CCAS_FILE = "odis_ccas.parquet"
 REFUGEE_ASSOCIATIONS_FILE = "odis_refugee_associations.parquet"
 LIVE_JOBS_FILE = "odis_ft_jobs_agg.parquet"
-LIVE_JOBS_COVERAGE_FILE = "odis_ft_jobs_coverage.parquet"
 SIAE_JOBS_FILE = "odis_inclusion_jobs.parquet"
-SIAE_JOBS_COVERAGE_FILE = "odis_inclusion_jobs_coverage.parquet"
 SIAE_STRUCTURES_FILE = "odis_inclusion_structures.parquet"
+SALESFORCE_JACCUEILLE_BDV_FILE = "salesforce_jaccueille_bdv.parquet"
 SCORES_CAT_FILE = "scores_config.yaml"
 
 # Paris, Lyon, Marseille Global Codes -> Arrondissement Prefix

@@ -69,9 +69,11 @@ def ensure_data_context() -> None:
                     # Fallback: standalone MCP mode (e.g. running as separate process)
                     try:
                         logger.info(
-                            "⚙️ [MCP] Loading full data context (fallback direct load)..."
+                            "⚙️ [MCP] Loading a verified release bundle (fallback direct load)..."
                         )
-                        DATA_CONTEXT = load_all_data_raw()
+                        from utils.data_loader import get_active_release_context
+
+                        DATA_CONTEXT = load_all_data_raw(get_active_release_context())
                     except Exception as e2:
                         logger.error(f"Failed to load data context: {e2}")
                         raise RuntimeError(f"Failed to load ODIS data: {e2}")
@@ -97,9 +99,7 @@ def get_scoring_engine() -> ScoringEngine:
             "refugee_associations_data", pd.DataFrame()
         ),
         live_jobs_data=DATA_CONTEXT.get("live_jobs_data", pd.DataFrame()),
-        live_jobs_coverage=DATA_CONTEXT.get("live_jobs_coverage", pd.DataFrame()),
         siae_jobs_data=DATA_CONTEXT.get("siae_jobs_data", pd.DataFrame()),
-        siae_jobs_coverage=DATA_CONTEXT.get("siae_jobs_coverage", pd.DataFrame()),
     )
 
 

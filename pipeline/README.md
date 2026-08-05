@@ -37,7 +37,7 @@ complete all 96 valid department identifiers (`01`–`95` excluding `20`, plus
 `2A` and `2B`) with at least one collected offer per department, and publishes
 a companion coverage Parquet with department and page outcomes. A missing,
 partial, or empty-department coverage report makes the candidate fail;
-the runtime never turns an uncollected department into zero opportunities.
+the report is validation-only and is not published to the runtime release.
 
 ### Build a candidate
 

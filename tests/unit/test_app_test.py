@@ -1,15 +1,20 @@
 from streamlit.testing.v1 import AppTest
 from unittest.mock import patch
+import config
+from core.models import User
 
 
-@patch("utils.data_loader.ensure_data_initialized")
-@patch("utils.auth.inject_idle_sleep")
-def test_main_app_redirect_authenticated(mock_idle, mock_ensure_init):
+@patch("utils.data_loader.preload_scoring_datasets_async")
+@patch("utils.data_loader.initialize_session_state")
+@patch("services.telemetry.log_page_view")
+@patch("utils.auth.check_password", return_value=True)
+def test_main_app_redirect_authenticated(
+    mock_auth, mock_page_view, mock_initialize, mock_preload
+):
     at = AppTest.from_file("app/main.py")
-    # Simulate already authenticated user
-    at.session_state["password_correct"] = True
-    # Seed required session state dictionary for demo data
-    at.session_state["demo_data"] = {}
+    at.session_state["username"] = "user"
+    at.session_state["user"] = User(username="user", org_id="jaccueille")
+    at.session_state["org"] = config.ORGANIZATION_PROFILES["jaccueille"]
 
     # Run the AppTest with a safe timeout
     at.run(timeout=10)
@@ -18,18 +23,20 @@ def test_main_app_redirect_authenticated(mock_idle, mock_ensure_init):
     assert len(at.exception) == 0
 
 
-@patch("utils.data_loader.ensure_data_initialized")
-@patch("utils.auth.inject_idle_sleep")
-def test_main_app_blocks_unauthenticated(mock_idle, mock_ensure_init):
+@patch("utils.data_loader.preload_scoring_datasets_async")
+@patch("utils.data_loader.initialize_session_state")
+@patch("services.telemetry.log_page_view")
+@patch("utils.auth.check_password", return_value=False)
+@patch("ui.page_shell.inject_idle_disconnect")
+def test_main_app_blocks_unauthenticated(
+    mock_idle_disconnect, mock_auth, mock_page_view, mock_initialize, mock_preload
+):
     # Set Cloud Run env so check_password logic actually triggers the form
     with patch("os.environ", {"K_SERVICE": "yes"}):
         at = AppTest.from_file("app/main.py")
-        at.session_state["password_correct"] = False
-
         at.run(timeout=10)
 
-        # Verify it didn't switch page, and rendered the login header/form instead
+        # Verify the common shell stopped before initialization/navigation.
         assert len(at.exception) == 0
-        # Since it blocks and shows the login container, it will render "Accès ODIS" subheader
-        subheaders = [s.value for s in at.subheader]
-        assert "Accès ODIS" in subheaders
+        mock_initialize.assert_not_called()
+        mock_preload.assert_not_called()
