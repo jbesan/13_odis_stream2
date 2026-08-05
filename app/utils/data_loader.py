@@ -90,8 +90,19 @@ def _preload_scoring_datasets_in_background() -> None:
                 return
         _get_scoring_datasets_for_release(release_context)
         completed = True
-    except Exception as e:
-        logger.error("Asynchronous scoring-data preload failed: %s", e)
+    except Exception:
+        # This is the outer fault boundary of a background thread. It must
+        # preserve the traceback because no request handler will surface it.
+        logger.error(
+            "Asynchronous scoring-data preload failed",
+            extra={
+                "extra_data": {
+                    "operation": "scoring_data_preload",
+                    "error_code": "SCORING-DATA-UNAVAILABLE",
+                }
+            },
+            exc_info=True,
+        )
     finally:
         with _SCORING_PRELOAD_STATUS["lock"]:
             _SCORING_PRELOAD_STATUS["in_progress"] = False
@@ -915,9 +926,18 @@ def load_scoring_datasets_raw(
             if col in odis.columns:
                 odis[col] = odis[col].astype(str)
 
-    except Exception as e:
-        logger.error(f"Failed to load ODIS data: {e}")
-        raise e
+    except Exception:
+        logger.error(
+            "Failed to load ODIS data",
+            extra={
+                "extra_data": {
+                    "operation": "load_odis_data",
+                    "error_code": "SCORING-DATA-UNAVAILABLE",
+                }
+            },
+            exc_info=True,
+        )
+        raise
 
     # 2. Load POIs
     pois_path = cfg.POIS_FILE

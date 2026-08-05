@@ -54,14 +54,33 @@ def pdf_modal():
     ):
         with st.spinner("Veuillez patienter, nous générons votre document..."):
             search_results = st.session_state.get("search_results")
-
-            pdf_bytes = generate_pdf_report(
-                search_results=search_results,
-                config=st.session_state.config,
-                processed_gdf=st.session_state.get("processed_gdf"),
-                person_name=st.session_state.get("ui_nom"),
-            )
+            pdf_warnings: List[str] = []
+            try:
+                pdf_bytes = generate_pdf_report(
+                    search_results=search_results,
+                    config=st.session_state.config,
+                    processed_gdf=st.session_state.get("processed_gdf"),
+                    person_name=st.session_state.get("ui_nom"),
+                    generation_warnings=pdf_warnings,
+                )
+            except Exception:
+                logger.error(
+                    "PDF export failed",
+                    extra={
+                        "extra_data": {
+                            "operation": "pdf_export",
+                            "error_code": "PDF-EXPORT-FAILED",
+                        }
+                    },
+                    exc_info=True,
+                )
+                st.error(
+                    "Impossible de générer le PDF. Réessayez plus tard "
+                    "(code : PDF-EXPORT-FAILED)."
+                )
+                return
             st.session_state.pdf_modal_data = pdf_bytes
+            st.session_state["pdf_modal_warnings"] = sorted(set(pdf_warnings))
             telemetry.log_usage_event(
                 "export_pdf",
                 {"search_hash": search_results.search_hash if search_results else ""},
@@ -70,7 +89,14 @@ def pdf_modal():
 
     # State 2: Download Ready
     if st.session_state.get("pdf_modal_data"):
-        st.success("Votre document est prêt !")
+        pdf_warnings = st.session_state.get("pdf_modal_warnings", [])
+        if pdf_warnings:
+            st.warning(
+                "Votre document est prêt, mais certaines visualisations sont "
+                f"indisponibles ({', '.join(pdf_warnings)})."
+            )
+        else:
+            st.success("Votre document est prêt !")
         col1, col2 = st.columns(2)
         with col1:
             st.download_button(
@@ -85,6 +111,7 @@ def pdf_modal():
         with col2:
             if st.button("Fermer", width="stretch"):
                 st.session_state.pdf_modal_data = None
+                st.session_state.pop("pdf_modal_warnings", None)
                 st.rerun()
 
 

@@ -16,6 +16,7 @@ import re
 
 # Basic constants
 PDF_TITLE = "Synthèse de votre recherche de territoire"
+logger = logging.getLogger(__name__)
 
 
 def _setup_unicode_font(pdf: FPDF) -> None:
@@ -29,11 +30,12 @@ def _setup_unicode_font(pdf: FPDF) -> None:
             "DejaVu", "BI", os.path.join(font_dir, "DejaVuSans-BoldOblique.ttf")
         )
         pdf.set_font("DejaVu", size=12)
-    except Exception as e:
-        logging.warning(
-            f"--- WARNING: Could not load local Unicode font. Falling back to Helvetica. Error: {e} ---"
+    except Exception:
+        logger.warning(
+            "Could not load local Unicode font; falling back to Helvetica",
+            exc_info=True,
         )
-        logging.warning(
+        logger.warning(
             "--- Please ensure you have downloaded the font files as per the instructions. ---"
         )
         # Fallback to Helvetica if font setup fails
@@ -136,7 +138,7 @@ def _generate_static_map_image(
     # 1. Get scored GeoDataFrame
     gdf = processed_gdf
     if gdf is None or gdf.empty:
-        logging.warning(
+        logger.warning(
             "⚠️ [PDF-MAP] processed_gdf is missing or empty. Map will be skipped."
         )
         return b""
@@ -258,8 +260,12 @@ def _generate_static_map_image(
     # Add basemap
     try:
         ctx.add_basemap(ax, source=ctx.providers.CartoDB.Positron)
-    except Exception as e:
-        logging.error(f"Error adding basemap: {e}")
+    except Exception:
+        # A basemap is decorative: keep the local score map, but retain the
+        # provider failure in logs without failing the complete PDF export.
+        logger.warning(
+            "PDF basemap unavailable; rendering local map only", exc_info=True
+        )
 
     # Remove axes
     ax.set_axis_off()
@@ -278,11 +284,13 @@ def generate_pdf_report(
     active_search_hash: Optional[str] = None,
     processed_gdf: Optional[gpd.GeoDataFrame] = None,
     person_name: Optional[str] = None,
+    generation_warnings: Optional[List[str]] = None,
 ) -> bytes:
     """
     Generates a PDF report with the top 5 results and search criteria using a Unicode font.
     Decoupled from st.session_state for better testability and clean architecture.
     """
+    warnings = generation_warnings if generation_warnings is not None else []
     pdf = FPDF()
     _setup_unicode_font(pdf)
     pdf.add_page()
@@ -446,9 +454,18 @@ def generate_pdf_report(
             target_width = 150
             x_pos = (pdf.w - target_width) / 2
             pdf.image(map_image_stream, x=x_pos, w=target_width)
-    except Exception as e:
+    except Exception:
+        warning_code = "PDF-MAP-UNAVAILABLE"
+        warnings.append(warning_code)
+        logger.error(
+            "PDF map generation failed",
+            extra={
+                "extra_data": {"operation": "pdf_export", "error_code": warning_code}
+            },
+            exc_info=True,
+        )
         pdf.set_font("DejaVu", "I", 8)
-        pdf.multi_cell(0, 6, f"Erreur lors de la generation de la carte: {e}")
+        pdf.multi_cell(0, 6, f"Carte indisponible (code : {warning_code}).")
     pdf.ln(5)
 
     # Top 5 Summary
@@ -690,9 +707,23 @@ def generate_pdf_report(
                     )
                     pdf.ln(2)
 
-        except Exception as e:
+        except Exception:
+            warning_code = "PDF-CHART-UNAVAILABLE"
+            warnings.append(warning_code)
+            logger.error(
+                "PDF score chart generation failed: commune=%s",
+                commune.codgeo,
+                extra={
+                    "extra_data": {
+                        "operation": "pdf_export",
+                        "error_code": warning_code,
+                        "codgeo": commune.codgeo,
+                    }
+                },
+                exc_info=True,
+            )
             pdf.set_font("DejaVu", "I", 8)
-            pdf.multi_cell(0, 6, f"Erreur lors de la generation du graphique: {e}")
+            pdf.multi_cell(0, 6, f"Graphique indisponible (code : {warning_code}).")
         pdf.ln(5)
 
         # --- Detailed Indicator Tables (Loop per category) ---

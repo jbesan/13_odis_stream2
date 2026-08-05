@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Optional
 
 import streamlit as st
@@ -9,7 +10,23 @@ import streamlit as st
 from services import telemetry
 from services.app_session import AppSession
 from ui import components
+from ui.idle_sleep import inject_idle_disconnect
 from utils import auth, common
+
+
+IDLE_DISCONNECT_TIMEOUT_MINUTES = 10
+
+
+def _mount_idle_disconnect_when_configured() -> None:
+    """Mount the production inactivity guard without coupling it to auth logic."""
+    is_cloud_run = os.environ.get("K_SERVICE") is not None
+    enabled = os.environ.get("ODIS_IDLE_DISCONNECT_ENABLED", "True").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
+    if is_cloud_run and enabled:
+        inject_idle_disconnect(timeout_minutes=IDLE_DISCONNECT_TIMEOUT_MINUTES)
 
 
 def enter_page(
@@ -20,7 +37,11 @@ def enter_page(
     redirect_shared_to_results: bool = False,
 ) -> None:
     """Apply the common authenticated page lifecycle after page config."""
-    if not auth.check_password():
+    authenticated = auth.check_password()
+    # Mount on the login screen too: an abandoned unauthenticated tab also owns
+    # a WebSocket and would otherwise keep a Cloud Run request active.
+    _mount_idle_disconnect_when_configured()
+    if not authenticated:
         st.stop()
     AppSession(st.session_state).identity()
     if admin_only and not auth.is_admin():

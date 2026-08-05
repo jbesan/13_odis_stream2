@@ -38,6 +38,7 @@ with st.sidebar:
         width="stretch",
         icon=":material/fast_forward:",
     ):
+        st.session_state["form_completed"] = True
         st.switch_page("pages/3_Resultats.py")
 
     page_shell.render_account_sidebar_actions()

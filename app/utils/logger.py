@@ -26,11 +26,14 @@ class JsonFormatter(logging.Formatter):
             "funcName": record.funcName,
             "line": record.lineno,
         }
-        # Merge extra attributes if available
+        # Merge extra attributes if available. Cloud Run structured logging
+        # requires one JSON object per physical line; a pretty-printed record
+        # can otherwise be split before its ``severity`` is interpreted.
         indent = None
         if hasattr(record, "extra_data"):
             log_record.update(record.extra_data)  # type: ignore
-            indent = 4
+            if not os.environ.get("K_SERVICE"):
+                indent = 4
 
         json_out = json.dumps(
             log_record, ensure_ascii=False, default=str, indent=indent

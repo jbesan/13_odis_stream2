@@ -23,7 +23,10 @@ import config as cfg
 from core.models import SearchCriterias, SearchResultsData
 from services.app_session import AppSession
 from services.search_controller import SearchController
+from services.service_outcomes import OutcomeStatus, ServiceOutcome
 from google.cloud import storage, bigquery
+from google.api_core import exceptions as google_exceptions
+from pydantic import ValidationError
 
 logger = logging.getLogger("services.share_service")
 
@@ -62,8 +65,12 @@ def _get_gcs_client():
         return None
     try:
         return storage.Client()
-    except Exception as e:
-        logger.warning(f"GCS client initialization failed: {e}")
+    except Exception:
+        logger.error(
+            "Shared-search GCS client initialization failed",
+            extra={"extra_data": {"error_code": "SHARE-GCS-UNAVAILABLE"}},
+            exc_info=True,
+        )
         return None
 
 
@@ -73,8 +80,11 @@ def _get_bq_client():
         return None
     try:
         return bigquery.Client()
-    except Exception as e:
-        logger.warning(f"BQ client initialization failed: {e}")
+    except Exception:
+        logger.warning(
+            "Shared-search telemetry BigQuery client initialization failed",
+            exc_info=True,
+        )
         return None
 
 
@@ -301,6 +311,7 @@ def save_shared_search(
     # Log telemetry only after the durable snapshot has been stored.
     try:
         from services import telemetry
+
         telemetry.log_usage_event(
             "search_shared",
             {
@@ -318,41 +329,124 @@ def save_shared_search(
     return share_id
 
 
-def load_shared_search_snapshot(share_id: str) -> Optional[SharedSearchSnapshot]:
-    """
-    Loads and deserializes a saved search snapshot by share_id.
-    Loads the snapshot from GCS.
-    Supports both gzipped and uncompressed JSON payloads.
-    Returns a versioned immutable snapshot, or ``None`` when it cannot be
-    loaded. The compatibility wrapper below keeps the original tuple API for
-    callers that only need models.
-    """
-    if not share_id or not isinstance(share_id, str):
-        return None
+def _share_load_failure(
+    status: OutcomeStatus,
+    error_code: str,
+    share_id: str,
+    *,
+    exc_info: bool = False,
+) -> ServiceOutcome[SharedSearchSnapshot]:
+    """Record one classified shared-search failure at the GCS boundary."""
+    logger.error(
+        "Shared search load failed: status=%s code=%s share_id=%s",
+        status.value,
+        error_code,
+        share_id,
+        extra={
+            "extra_data": {
+                "operation": "load_shared_search",
+                "outcome": status.value,
+                "error_code": error_code,
+                "share_id": share_id,
+            }
+        },
+        exc_info=exc_info,
+    )
+    return ServiceOutcome(status=status, error_code=error_code)
 
-    # Sanitize share_id
+
+def load_shared_search_snapshot_outcome(
+    share_id: str,
+) -> ServiceOutcome[SharedSearchSnapshot]:
+    """Load a shared snapshot without conflating absence and system failures."""
+    if not share_id or not isinstance(share_id, str) or not share_id.strip():
+        return ServiceOutcome(
+            status=OutcomeStatus.NOT_FOUND,
+            error_code="SHARE-NOT-FOUND",
+        )
+
     share_id = share_id.strip()
-
-    payload_dict: Optional[Dict[str, Any]] = None
-
     gcs_client = _get_gcs_client()
     if not gcs_client:
-        logger.error("❌ GCS client unavailable while loading shared search %s", share_id)
-        return None
+        return _share_load_failure(
+            OutcomeStatus.UNAVAILABLE, "SHARE-GCS-UNAVAILABLE", share_id
+        )
 
     try:
         bucket = gcs_client.bucket(GCS_BUCKET_NAME)
         blob = bucket.blob(f"searches/{share_id}.json")
-        if blob.exists():
-            data_bytes = blob.download_as_bytes()
-            payload_dict = _decompress_payload_bytes(data_bytes)
-            logger.info(f"✅ Loaded shared search snapshot from GCS for {share_id}")
-    except Exception as e:
-        logger.error(f"❌ Failed fetching GCS shared search {share_id}: {e}")
+        exists = blob.exists()
+    except google_exceptions.NotFound:
+        exists = False
+    except (google_exceptions.Forbidden, google_exceptions.Unauthorized):
+        return _share_load_failure(
+            OutcomeStatus.UNAUTHORIZED,
+            "SHARE-GCS-UNAUTHORIZED",
+            share_id,
+            exc_info=True,
+        )
+    except google_exceptions.GoogleAPICallError:
+        return _share_load_failure(
+            OutcomeStatus.UNAVAILABLE, "SHARE-GCS-UNAVAILABLE", share_id, exc_info=True
+        )
+    except Exception:
+        return _share_load_failure(
+            OutcomeStatus.UNAVAILABLE, "SHARE-GCS-UNAVAILABLE", share_id, exc_info=True
+        )
 
-    if not payload_dict or "config" not in payload_dict or "search_results" not in payload_dict:
-        logger.warning(f"⚠️ Shared search snapshot not found for ID: {share_id}")
-        return None
+    if not exists:
+        logger.info("Shared search snapshot not found: share_id=%s", share_id)
+        return ServiceOutcome(
+            status=OutcomeStatus.NOT_FOUND,
+            error_code="SHARE-NOT-FOUND",
+        )
+
+    try:
+        data_bytes = blob.download_as_bytes()
+    except (google_exceptions.Forbidden, google_exceptions.Unauthorized):
+        return _share_load_failure(
+            OutcomeStatus.UNAUTHORIZED,
+            "SHARE-GCS-UNAUTHORIZED",
+            share_id,
+            exc_info=True,
+        )
+    except google_exceptions.GoogleAPICallError:
+        return _share_load_failure(
+            OutcomeStatus.UNAVAILABLE, "SHARE-GCS-UNAVAILABLE", share_id, exc_info=True
+        )
+    except Exception:
+        return _share_load_failure(
+            OutcomeStatus.UNAVAILABLE, "SHARE-GCS-UNAVAILABLE", share_id, exc_info=True
+        )
+
+    try:
+        payload_dict = _decompress_payload_bytes(data_bytes)
+    except (gzip.BadGzipFile, UnicodeDecodeError, json.JSONDecodeError):
+        return _share_load_failure(
+            OutcomeStatus.INVALID_PAYLOAD,
+            "SHARE-PAYLOAD-INVALID",
+            share_id,
+            exc_info=True,
+        )
+    except Exception:
+        return _share_load_failure(
+            OutcomeStatus.INVALID_PAYLOAD,
+            "SHARE-PAYLOAD-INVALID",
+            share_id,
+            exc_info=True,
+        )
+
+    if (
+        not isinstance(payload_dict, dict)
+        or {
+            "config",
+            "search_results",
+        }
+        - payload_dict.keys()
+    ):
+        return _share_load_failure(
+            OutcomeStatus.INVALID_PAYLOAD, "SHARE-PAYLOAD-INVALID", share_id
+        )
 
     try:
         cfg_clean = _clean_set_strings(payload_dict["config"])
@@ -363,7 +457,7 @@ def load_shared_search_snapshot(share_id: str) -> Optional[SharedSearchSnapshot]
         if not isinstance(snapshot_data, dict):
             snapshot_data = {}
         map_view = snapshot_data.get("map_view")
-        return SharedSearchSnapshot(
+        snapshot = SharedSearchSnapshot(
             share_id=share_id,
             version=str(payload_dict.get("version", "1.0")),
             created_at=payload_dict.get("created_at"),
@@ -374,9 +468,28 @@ def load_shared_search_snapshot(share_id: str) -> Optional[SharedSearchSnapshot]
             current_map_context=snapshot_data.get("current_map_context", []),
             map_view=map_view if isinstance(map_view, dict) else {},
         )
-    except Exception as e:
-        logger.error(f"❌ Deserialization failed for shared search {share_id}: {e}", exc_info=True)
-        return None
+    except (ValidationError, TypeError, ValueError, KeyError):
+        return _share_load_failure(
+            OutcomeStatus.INVALID_PAYLOAD,
+            "SHARE-PAYLOAD-INVALID",
+            share_id,
+            exc_info=True,
+        )
+    except Exception:
+        return _share_load_failure(
+            OutcomeStatus.INVALID_PAYLOAD,
+            "SHARE-PAYLOAD-INVALID",
+            share_id,
+            exc_info=True,
+        )
+
+    logger.info("Loaded shared search snapshot from GCS: share_id=%s", share_id)
+    return ServiceOutcome(status=OutcomeStatus.SUCCESS, value=snapshot)
+
+
+def load_shared_search_snapshot(share_id: str) -> Optional[SharedSearchSnapshot]:
+    """Compatibility wrapper returning only a successfully loaded snapshot."""
+    return load_shared_search_snapshot_outcome(share_id).value
 
 
 def load_shared_search(
@@ -451,14 +564,32 @@ def restore_shared_search_from_query_params() -> bool:
     if not share_id or st.session_state.get("active_share_id") == share_id:
         return False
 
-    snapshot = load_shared_search_snapshot(share_id)
-    if snapshot is None:
-        st.session_state["share_error"] = (
-            f"La recherche partagée '{share_id}' est introuvable ou a expiré."
+    outcome = load_shared_search_snapshot_outcome(share_id)
+    if not outcome.is_success or outcome.value is None:
+        messages = {
+            OutcomeStatus.NOT_FOUND: (
+                f"La recherche partagée '{share_id}' est introuvable ou a expiré."
+            ),
+            OutcomeStatus.UNAVAILABLE: (
+                "Le service des recherches partagées est temporairement indisponible. "
+                "Réessayez dans quelques instants (code : SHARE-GCS-UNAVAILABLE)."
+            ),
+            OutcomeStatus.UNAUTHORIZED: (
+                "Le service des recherches partagées est indisponible. "
+                "Réessayez plus tard (code : SHARE-GCS-UNAUTHORIZED)."
+            ),
+            OutcomeStatus.INVALID_PAYLOAD: (
+                "Cette recherche partagée est invalide ou endommagée. "
+                "Contactez le support avec le code SHARE-PAYLOAD-INVALID."
+            ),
+        }
+        st.session_state["share_error"] = messages.get(
+            outcome.status,
+            "Impossible de charger cette recherche partagée. Réessayez plus tard.",
         )
         return False
 
     restore_shared_search_to_session_state(
-        snapshot.config, snapshot.search_results, share_id, snapshot
+        outcome.value.config, outcome.value.search_results, share_id, outcome.value
     )
     return True

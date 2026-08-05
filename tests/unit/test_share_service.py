@@ -7,9 +7,11 @@ from core.models import SearchCriterias, SearchResultsData, CommuneResult, Crite
 from services.share_service import (
     load_shared_search,
     load_shared_search_snapshot,
+    load_shared_search_snapshot_outcome,
     restore_shared_search_to_session_state,
     save_shared_search,
 )
+from services.service_outcomes import OutcomeStatus
 
 
 def test_save_and_load_shared_search_roundtrip(monkeypatch):
@@ -41,7 +43,9 @@ def test_save_and_load_shared_search_roundtrip(monkeypatch):
     monkeypatch.setattr(
         "services.share_service._get_gcs_client", lambda: FakeGcsClient()
     )
-    monkeypatch.setattr("services.telemetry.log_usage_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "services.telemetry.log_usage_event", lambda *args, **kwargs: None
+    )
 
     config = SearchCriterias(
         commune_actuelle=CriteriaItem(code="75056", label="Paris"),
@@ -116,7 +120,10 @@ def test_save_and_load_shared_search_roundtrip(monkeypatch):
     assert loaded_results.results[0].codgeo == "69123"
     assert loaded_results.results[0].name == "Lyon"
     assert loaded_results.results[0].global_score == 85.5
-    assert loaded_results.results[0].refiner_pitch == "Excellente opportunité d'emploi et de logement."
+    assert (
+        loaded_results.results[0].refiner_pitch
+        == "Excellente opportunité d'emploi et de logement."
+    )
 
     snapshot = load_shared_search_snapshot(share_id)
     assert snapshot is not None
@@ -175,11 +182,13 @@ def test_restore_snapshot_hydrates_ui_without_rescoring():
     }
     applied = []
 
-    with patch("streamlit.session_state", state), patch(
-        "utils.data_loader.initialize_session_state"
-    ) as initialize_state, patch(
-        "utils.data_loader.apply_search_criteria_to_ui",
-        side_effect=lambda criteria: applied.append(criteria),
+    with (
+        patch("streamlit.session_state", state),
+        patch("utils.data_loader.initialize_session_state") as initialize_state,
+        patch(
+            "utils.data_loader.apply_search_criteria_to_ui",
+            side_effect=lambda criteria: applied.append(criteria),
+        ),
     ):
         restore_shared_search_to_session_state(config, results, "deadbeef", snapshot)
 
@@ -199,3 +208,54 @@ def test_load_shared_search_invalid_id(monkeypatch):
     cfg, res = load_shared_search("non_existent_id_99999")
     assert cfg is None
     assert res is None
+
+
+def test_shared_search_outcome_distinguishes_missing_from_unavailable(monkeypatch):
+    class MissingBlob:
+        def exists(self):
+            return False
+
+    class MissingBucket:
+        def blob(self, name):
+            return MissingBlob()
+
+    class MissingClient:
+        def bucket(self, name):
+            return MissingBucket()
+
+    monkeypatch.setattr(
+        "services.share_service._get_gcs_client", lambda: MissingClient()
+    )
+    missing = load_shared_search_snapshot_outcome("deadbeef")
+    assert missing.status == OutcomeStatus.NOT_FOUND
+    assert missing.value is None
+
+    monkeypatch.setattr("services.share_service._get_gcs_client", lambda: None)
+    unavailable = load_shared_search_snapshot_outcome("deadbeef")
+    assert unavailable.status == OutcomeStatus.UNAVAILABLE
+    assert unavailable.error_code == "SHARE-GCS-UNAVAILABLE"
+
+
+def test_shared_search_outcome_marks_corrupt_payload(monkeypatch):
+    class CorruptBlob:
+        def exists(self):
+            return True
+
+        def download_as_bytes(self):
+            return b"this is not JSON"
+
+    class CorruptBucket:
+        def blob(self, name):
+            return CorruptBlob()
+
+    class CorruptClient:
+        def bucket(self, name):
+            return CorruptBucket()
+
+    monkeypatch.setattr(
+        "services.share_service._get_gcs_client", lambda: CorruptClient()
+    )
+    outcome = load_shared_search_snapshot_outcome("deadbeef")
+
+    assert outcome.status == OutcomeStatus.INVALID_PAYLOAD
+    assert outcome.error_code == "SHARE-PAYLOAD-INVALID"

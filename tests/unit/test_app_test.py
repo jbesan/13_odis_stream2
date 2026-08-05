@@ -27,8 +27,9 @@ def test_main_app_redirect_authenticated(
 @patch("utils.data_loader.initialize_session_state")
 @patch("services.telemetry.log_page_view")
 @patch("utils.auth.check_password", return_value=False)
+@patch("ui.page_shell.inject_idle_disconnect")
 def test_main_app_blocks_unauthenticated(
-    mock_auth, mock_page_view, mock_initialize, mock_preload
+    mock_idle_disconnect, mock_auth, mock_page_view, mock_initialize, mock_preload
 ):
     # Set Cloud Run env so check_password logic actually triggers the form
     with patch("os.environ", {"K_SERVICE": "yes"}):

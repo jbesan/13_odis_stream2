@@ -12,6 +12,7 @@ import logging
 from core.models import SearchResultsData
 from services.app_session import AppSession
 from services.search_controller import SearchController
+from ui.form_state import FormState
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,12 @@ else:
     with st.spinner("Chargement des indicateurs et données territoriales..."):
         app_data = data_loader.ensure_data_initialized()
 
+# This page deliberately does not render the form except inside the dialog.
+# Keep native widget keys alive across full Results-page reruns so Streamlit's
+# multipage cleanup cannot turn an unsaved draft back into defaults.
+if not is_immutable_snapshot or is_editing_snapshot:
+    FormState(st.session_state).preserve_widgets_across_steps()
+
 search_results: SearchResultsData = st.session_state.get("search_results")
 
 
@@ -62,10 +69,39 @@ def run_search() -> None:
     search_controller.execute(config, complete_data)
 
 
-# Automatically run the search if not already processed and form is completed
-if st.session_state.get("processed_gdf") is None and st.session_state.get(
-    "form_completed"
-):
+def prepare_search_criteria_editor(complete_data: dict) -> None:
+    """Restore the active search exactly once before opening its editor."""
+    active_config = st.session_state.get("config")
+    if active_config is None:
+        return
+    FormState(st.session_state).prepare_editor(
+        active_config,
+        source_hash=active_config.compute_hash(),
+        app_data=complete_data,
+    )
+
+
+@st.dialog(
+    "Modifier les critères de recherche",
+    width="large",
+    icon=":material/edit:",
+    on_dismiss="rerun",
+)
+def edit_search_criteria_dialog(complete_data: dict) -> None:
+    """Edit widget state without rerunning the results page or Folium map."""
+    ui_forms.display_input_tabs(complete_data)
+    if st.button(
+        "Relancer la recherche",
+        type="primary",
+        icon=":material/search:",
+        key="rerun_search_from_criteria_editor",
+    ):
+        run_search()
+        st.rerun()
+
+
+# Submit from the form always replaces a prior result with the current draft.
+if st.session_state.get("form_completed"):
     run_search()
     st.session_state["form_completed"] = False
 
@@ -106,41 +142,33 @@ with st.sidebar:
 
 # Top filter Form
 with st.container(border=False, key="top_menu"):
-    st.markdown(
-        """
-    <style>
-        .st-key-top_menu {background-color:whitesmoke; padding:20px; border-radius:10px} 
-        .st-key-top_menu h2 {padding:0px} 
-        .stTabs div div button div p {font-size:1rem}
-    </style>
-    """,
-        unsafe_allow_html=True,
-    )
+    # st.markdown(
+    #     """
+    # <style>
+    #     .st-key-top_menu {background-color:whitesmoke; padding:20px; border-radius:10px} 
+    #     .st-key-top_menu h2 {padding:0px} 
+    #     .stTabs div div button div p {font-size:1rem}
+    # </style>
+    # """,
+    #     unsafe_allow_html=True,
+    # )
 
-    col_tabs, col_btn_search = st.columns([5.0, 1.0])
+    col_tabs, col_btn_edit = st.columns([5.0, 1.0])
     with col_tabs:
         st.markdown(f"## Projet de vie {ui.get_person_accompanied_str()}")
 
-    # Compute if criteria have changed since the last search. A shared snapshot
-    # is immutable: re-running it is an explicit fork onto current data, even
-    # when the criteria hash has not changed.
-    last_results = st.session_state.get("search_results")
     snapshot_mode = bool(st.session_state.get("immutable_shared_snapshot"))
-    if snapshot_mode or last_results is None:
-        disable_search = False
-    else:
-        current_config = ui_forms.create_search_criterias_from_inputs(app_data)
-        disable_search = current_config.compute_hash() == last_results.search_hash
 
-    with col_btn_search:
-        st.button(
-            "Recalculer sur les données actuelles" if snapshot_mode else "Rechercher",
-            on_click=run_search,
-            type="primary",
-            disabled=disable_search,
-            width="stretch",
-            icon=":material/search:"
-        )
+    with col_btn_edit:
+        if not snapshot_mode or st.session_state.get("shared_snapshot_editing"):
+            if st.button(
+                "Modifier",
+                width="stretch",
+                icon=":material/edit:",
+                key="open_results_criteria_editor",
+            ):
+                prepare_search_criteria_editor(app_data)
+                edit_search_criteria_dialog(app_data)
 
     # with col_btn_share:
     #     if st.session_state.get("search_results"):
@@ -154,7 +182,7 @@ with st.container(border=False, key="top_menu"):
         st.info(
             "Vous consultez un instantané partagé et immuable "
             f"(release de données : `{release}`). Modifier les critères puis "
-            "recalculer crée une nouvelle recherche avec les données actuelles."
+            "relancer la recherche crée une nouvelle recherche avec les données actuelles."
         )
         if not st.session_state.get("shared_snapshot_editing"):
             if st.button(
@@ -164,11 +192,6 @@ with st.container(border=False, key="top_menu"):
             ):
                 search_controller.begin_snapshot_edit()
                 st.rerun()
-
-    if not snapshot_mode or st.session_state.get("shared_snapshot_editing"):
-        with st.expander("🔎 Modifier les critères de recherche", expanded=False):
-            ui_forms.display_input_tabs(app_data)
-
 
 # Global Pitch (Strategic intro + Loading state)
 # if st.session_state.get('search_results'):

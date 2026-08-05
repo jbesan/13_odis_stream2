@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import patch
 
 from services.telemetry import get_manifest_version
+from services.service_outcomes import OutcomeStatus, ServiceOutcome
 from ui.sources_dialog import load_manifest, format_iso_date
 
 
@@ -30,10 +31,23 @@ def test_load_manifest_reads_the_active_release():
     with patch(
         "ui.sources_dialog.load_active_data_manifest", return_value=active_manifest
     ):
-        data = load_manifest()
-        assert data is not None
-        assert data["manifest_version"] == "v2-abc123"
-        assert len(data["sources"]) == 1
+        fn = getattr(load_manifest, "__wrapped__", load_manifest)
+        outcome = fn()
+        assert outcome.status == OutcomeStatus.SUCCESS
+        assert outcome.value is not None
+        assert outcome.value["manifest_version"] == "v2-abc123"
+        assert len(outcome.value["sources"]) == 1
+
+
+def test_load_manifest_marks_provider_failure_unavailable():
+    with patch(
+        "ui.sources_dialog.load_active_data_manifest",
+        side_effect=RuntimeError("GCS unavailable"),
+    ):
+        fn = getattr(load_manifest, "__wrapped__", load_manifest)
+        outcome = fn()
+        assert outcome.status == OutcomeStatus.UNAVAILABLE
+        assert outcome.error_code == "DATA-MANIFEST-UNAVAILABLE"
 
 
 def test_show_sources_dialog_dataframe_urls():
@@ -54,7 +68,10 @@ def test_show_sources_dialog_dataframe_urls():
         ],
     }
 
-    with patch("ui.sources_dialog.load_manifest", return_value=mock_manifest), \
+    with patch(
+        "ui.sources_dialog.load_manifest",
+        return_value=ServiceOutcome(OutcomeStatus.SUCCESS, value=mock_manifest),
+    ), \
          patch("streamlit.dataframe") as mock_st_dataframe, \
          patch("streamlit.markdown"), \
          patch("streamlit.caption"):

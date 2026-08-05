@@ -6,7 +6,6 @@ import secrets
 import json
 import logging
 from typing import Dict, Any, Optional
-from ui.idle_sleep import inject_idle_sleep
 from core.models import User, Org
 import config as cfg
 
@@ -218,10 +217,6 @@ def check_password() -> bool:
             st.session_state["username"] = LOCAL_DEV_USERNAME
         st.session_state["password_correct"] = True
         return True
-
-    # Only on Cloud Run when auth is forced: inject idle sleep monitor
-    if is_cloud_run and force_auth:
-        inject_idle_sleep(timeout_minutes=10)
 
     # Initialize auth state
     if "password_correct" not in st.session_state:

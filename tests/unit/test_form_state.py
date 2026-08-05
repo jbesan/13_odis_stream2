@@ -88,3 +88,48 @@ def test_named_weight_profile_is_derived_without_expert_flag():
     assert state["ui_poids_education"] == 1.0
     assert "ui_expert_weights" not in state
 
+
+def test_prepare_editor_restores_active_commune_and_preserves_unsaved_draft():
+    state = {"org": None}
+    app_data = _app_data()
+    app_data["depcom_df"] = pd.DataFrame(
+        {
+            "dep_code": ["33", "75"],
+            "libgeo": ["Bordeaux", "Paris"],
+        },
+        index=["33063", "75056"],
+    )
+    criteria = SearchCriterias(
+        commune_actuelle=CriteriaItem(code="75056", label="Paris"),
+        loc_search_area="departement",
+        loc_search_code=["75"],
+        nb_adultes=2,
+    )
+    form = FormState(state)
+
+    assert form.prepare_editor(
+        criteria,
+        source_hash=criteria.compute_hash(),
+        app_data=app_data,
+    )
+    assert state["ui_departement"] == "75"
+    assert state["ui_commune"] == "Paris"
+    assert state["ui_nb_adultes"] == 2
+
+    # A dialog may be closed and reopened before a new search is launched.
+    # Keep that user draft instead of injecting the previous active criteria.
+    state["ui_nb_adultes"] = 3
+    assert not form.prepare_editor(
+        criteria,
+        source_hash=criteria.compute_hash(),
+        app_data=app_data,
+    )
+    assert state["ui_nb_adultes"] == 3
+
+    newer_criteria = criteria.model_copy(update={"nb_adultes": 1})
+    assert form.prepare_editor(
+        newer_criteria,
+        source_hash=newer_criteria.compute_hash(),
+        app_data=app_data,
+    )
+    assert state["ui_nb_adultes"] == 1

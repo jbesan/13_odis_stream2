@@ -18,6 +18,8 @@ from core.models import CriteriaItem, SearchCriterias
 
 
 FORM_INITIALIZED_KEY = "_form_state_initialized"
+EDITOR_SOURCE_HASH_KEY = "_criteria_editor_source_hash"
+EDITOR_WIDGET_KEYS = ("ui_departement", "ui_commune")
 
 
 def _safe_option(value: str) -> str:
@@ -102,7 +104,7 @@ class FormState:
         self.state[FORM_INITIALIZED_KEY] = True
 
     def preserve_widgets_across_steps(self) -> None:
-        """Interrupt Streamlit cleanup for widgets hidden by the stepper.
+        """Interrupt Streamlit cleanup while a page temporarily hides form widgets.
 
         Streamlit removes state for widgets that are not rendered in a run.
         Self-assignment is its documented multipage persistence convention;
@@ -111,6 +113,35 @@ class FormState:
         for key in list(self.state):
             if str(key).startswith("ui_"):
                 self.state[key] = self.state[key]
+
+    def prepare_editor(
+        self,
+        criteria: SearchCriterias | Mapping[str, Any] | Any,
+        *,
+        source_hash: str,
+        app_data: Mapping[str, Any] | None = None,
+    ) -> bool:
+        """Prepare a criteria editor without overwriting an existing draft.
+
+        Results normally keeps the native ``ui_*`` keys alive while the form is
+        hidden.  If a page transition or a restored snapshot has removed them,
+        the immutable criteria of the active search is the only authoritative
+        source from which to rebuild the editor.  A new source hash also means
+        a new completed search, so it deliberately replaces the former draft.
+
+        This method is called only while opening the dialog, never from the
+        dialog body: Streamlit re-runs a dialog fragment for every interaction.
+        """
+        draft_is_materialized = all(key in self.state for key in EDITOR_WIDGET_KEYS)
+        if (
+            self.state.get(EDITOR_SOURCE_HASH_KEY) == source_hash
+            and draft_is_materialized
+        ):
+            return False
+
+        self.hydrate(criteria, app_data=app_data, overwrite=True)
+        self.state[EDITOR_SOURCE_HASH_KEY] = source_hash
+        return True
 
     def hydrate(
         self,
@@ -134,6 +165,8 @@ class FormState:
         else:
             values = dict(vars(criteria))
 
+        bundle = app_data or self.state.get("app_data", {})
+
         for field, key in self.FIELD_KEYS.items():
             if field not in values or values[field] is None:
                 continue
@@ -148,6 +181,23 @@ class FormState:
             elif field == "notes_qualitatives" and isinstance(value, list):
                 value = "\n".join(str(item) for item in value)
             self._put(key, value, overwrite=overwrite)
+
+        # ``SearchCriterias`` persists the current commune as an INSEE item,
+        # not a separate department field.  A complete form bundle lets us
+        # faithfully restore the dependent department selectbox too; otherwise
+        # Streamlit would select the first department when the editor appears.
+        current_commune_code = _code(values.get("commune_actuelle"))
+        depcom_df = bundle.get("depcom_df") if bundle else None
+        if current_commune_code is not None and isinstance(depcom_df, pd.DataFrame):
+            commune_matches = depcom_df.loc[
+                depcom_df.index.astype(str) == str(current_commune_code)
+            ]
+            if not commune_matches.empty and "dep_code" in commune_matches:
+                self._put(
+                    "ui_departement",
+                    str(commune_matches.iloc[0]["dep_code"]),
+                    overwrite=overwrite,
+                )
 
         housing = values.get("hebergement_cible")
         if housing is not None:
@@ -246,7 +296,6 @@ class FormState:
         # Use an already loaded complete bundle to infer the region for a
         # restored department search.
         if area == "departement" and codes:
-            bundle = app_data or self.state.get("app_data", {})
             dept_details = bundle.get("dept_details", {}) if bundle else {}
             region = dept_details.get(codes[0], {}).get("reg_code")
             if region:
