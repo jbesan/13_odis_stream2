@@ -1,12 +1,9 @@
-.agent/
+
 .agents/
 AGENTS.md
 __pycache__
 .pytest_cache
-csv_large/
-csv_not_used/
-csv/
-csv_old/
+
 app/__pycache__
 app/cached_df
 app/cached_df.parquet
@@ -18,6 +15,7 @@ pipeline/cache/
 .DS_Store
 CONSTITUTION.md
 GEMINI.md
+AGENTS.md
 pipeline/.env
 app/.env
 app/.streamlit/secrets.toml
