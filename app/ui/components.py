@@ -85,13 +85,6 @@ def start_over() -> None:
             st.switch_page("pages/1_Accueil.py")
 
 
-def get_person_accompanied_str() -> str:
-    """Returns a string describing the person accompanied, using their name if available."""
-    if st.session_state.get("ui_nom"):
-        return f"de {st.session_state.ui_nom}"
-    return "de la personne accompagnée"
-
-
 def render_admin_sidebar_link() -> None:
     """Renders the Analytics Dashboard button in the sidebar if the current user is an admin."""
     from utils import auth

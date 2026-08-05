@@ -55,3 +55,29 @@ def test_refiner_panel_keeps_the_completed_refiner_output():
         assert render_refiner_panel(commune, "search-hash") is True
 
     markdown.assert_called_once_with("Analyse personnalisée")
+
+
+def test_refiner_panel_shared_snapshot_uses_refiner_pitch_if_present():
+    commune = _commune()
+    commune.refiner_pitch = "Pitch partagé"
+    with (
+        patch("ui.results.st.session_state", {"immutable_shared_snapshot": True}),
+        patch("ui.results.st.markdown") as markdown,
+    ):
+        assert render_refiner_panel(commune, "search-hash") is True
+
+    markdown.assert_called_once_with("Pitch partagé")
+
+
+def test_refiner_panel_shared_snapshot_falls_back_to_static_pitch():
+    commune = _commune()
+    with (
+        patch("ui.results.st.session_state", {"immutable_shared_snapshot": True}),
+        patch("ui.results.generate_static_pitch", return_value="- pitch statique") as pitch,
+        patch("ui.results.st.markdown") as markdown,
+    ):
+        assert render_refiner_panel(commune, "search-hash") is True
+
+    pitch.assert_called_once_with(commune)
+    markdown.assert_called_once_with("- pitch statique")
+

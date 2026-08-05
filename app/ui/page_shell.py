@@ -29,6 +29,30 @@ def _mount_idle_disconnect_when_configured() -> None:
         inject_idle_disconnect(timeout_minutes=IDLE_DISCONNECT_TIMEOUT_MINUTES)
 
 
+def _inject_common_styles() -> None:
+    """Inject global CSS rules for sidebar primary buttons (J'accueille dark green text #1B4429)."""
+    st.markdown(
+        """
+        <style>
+            [data-testid="stSidebar"] button[kind="primary"] p,
+            [data-testid="stSidebar"] button[kind="primary"] span,
+            [data-testid="stSidebar"] button[kind="primary"] div,
+            [data-testid="stSidebar"] button[data-testid="stBaseButton-primary"] p,
+            [data-testid="stSidebar"] button[data-testid="stBaseButton-primary"] span,
+            [data-testid="stSidebar"] button[data-testid="stBaseButton-primary"] div {
+                color: #1B4429 !important;
+            }
+            [data-testid="stSidebar"] button[kind="primary"] svg,
+            [data-testid="stSidebar"] button[data-testid="stBaseButton-primary"] svg {
+                fill: #1B4429 !important;
+                color: #1B4429 !important;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def enter_page(
     page_name: Optional[str],
     *,
@@ -43,6 +67,7 @@ def enter_page(
     _mount_idle_disconnect_when_configured()
     if not authenticated:
         st.stop()
+    _inject_common_styles()
     AppSession(st.session_state).identity()
     if admin_only and not auth.is_admin():
         st.error("🔒 Accès refusé : cette page est réservée aux administrateurs.")

@@ -36,6 +36,10 @@ def housing_key(option: str) -> str:
     return f"ui_heb_cb_{_safe_option(option)}"
 
 
+def long_term_housing_key(option: str) -> str:
+    return f"ui_logement_cb_{_safe_option(option)}"
+
+
 def health_key(option: str) -> str:
     return f"ui_sante_cb_{_safe_option(option)}"
 
@@ -69,7 +73,6 @@ class FormState:
     """Owns the mapping rules for ODIS form widget keys."""
 
     FIELD_KEYS = {
-        "nom": "ui_nom",
         "departement_actuel": "ui_departement",
         "commune_actuelle": "ui_commune",
         "nb_adultes": "ui_nb_adultes",
@@ -168,9 +171,12 @@ class FormState:
         bundle = app_data or self.state.get("app_data", {})
 
         for field, key in self.FIELD_KEYS.items():
-            if field not in values or values[field] is None:
+            if field not in values:
                 continue
             value = values[field]
+            if value is None:
+                self._put(key, None, overwrite=overwrite)
+                continue
             if field == "commune_actuelle":
                 if isinstance(value, Mapping):
                     value = value.get("label", value.get("code"))
@@ -204,6 +210,18 @@ class FormState:
             selected = set(housing if isinstance(housing, list) else [housing])
             for option in cfg.HEBERGEMENT_OPTIONS:
                 self._put(housing_key(option), option in selected, overwrite=overwrite)
+
+        logement_val = values.get("logement")
+        if logement_val is not None:
+            selected_logement = set(
+                logement_val if isinstance(logement_val, list) else [logement_val]
+            )
+            for option in cfg.LOGEMENT_OPTIONS:
+                self._put(
+                    long_term_housing_key(option),
+                    option in selected_logement,
+                    overwrite=overwrite,
+                )
 
         health = values.get("besoin_sante", values.get("sante"))
         if health is not None:
@@ -317,6 +335,20 @@ class FormState:
             return list(self.state.get("ui_hebergement_cible") or [])
         return selected
 
+    def selected_long_term_housing(self) -> list[str]:
+        selected = [
+            option
+            for option in cfg.LOGEMENT_OPTIONS
+            if self.state.get(long_term_housing_key(option), False)
+        ]
+        if not selected and "ui_logement" in self.state:
+            val = self.state.get("ui_logement")
+            if isinstance(val, list):
+                return val
+            elif isinstance(val, str) and val:
+                return [val]
+        return selected
+
     def selected_health(self) -> list[str]:
         selected = [
             option
@@ -329,21 +361,18 @@ class FormState:
 
     def collect(self, app_data: Mapping[str, Any]) -> SearchCriterias:
         """Build the immutable domain input from the current widget values."""
-        dept_code = self.state.get(
-            "ui_departement", cfg.DEMO_DATA_DEFAULT["departement_actuel"]
-        )
-        commune_label = self.state.get(
-            "ui_commune", cfg.DEMO_DATA_DEFAULT["commune_actuelle"]
-        )
-        matches = app_data["depcom_df"]
-        matches = matches[
-            (matches.dep_code == dept_code) & (matches.libgeo == commune_label)
-        ]
-        if matches.empty:
-            raise ValueError(
-                f"Commune introuvable dans le référentiel: {commune_label} ({dept_code})"
-            )
-        commune = CriteriaItem(code=str(matches.index[0]), label=str(commune_label))
+        dept_code = self.state.get("ui_departement")
+        commune_label = self.state.get("ui_commune")
+        commune = None
+        if dept_code and commune_label:
+            matches = app_data["depcom_df"]
+            matches = matches[
+                (matches.dep_code == dept_code) & (matches.libgeo == commune_label)
+            ]
+            if not matches.empty:
+                commune = CriteriaItem(
+                    code=str(matches.index[0]), label=str(commune_label)
+                )
 
         commune_pressentie = None
         if self.state.get("ui_has_commune_pressentie") and self.state.get(
@@ -462,7 +491,7 @@ class FormState:
             nb_adultes=adults_count,
             nb_enfants=children_count,
             hebergement_cible=self.selected_housing(),
-            logement=self.state.get("ui_logement", "Location"),
+            logement=self.selected_long_term_housing(),
             type_logement=housing_type,
             freq_retour=self.state.get(
                 "ui_freq_retour", "Pas d'attache particulière"

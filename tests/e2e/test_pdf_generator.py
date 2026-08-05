@@ -95,7 +95,6 @@ def sample_session_state():
             "ui_commune": "Bordeaux",
             "binome": False,
             "app_data": mock_app_data,
-            "ui_nom": "Test User",
             "processed_gdf": None,
             "map_object": None,
         }
@@ -158,7 +157,6 @@ def test_generate_pdf_report(sample_session_state, sample_search_results):
     pdf_bytes = generate_pdf_report(
         search_results,
         session_state.config,
-        person_name=session_state.get("ui_nom"),
     )
 
     # Assert

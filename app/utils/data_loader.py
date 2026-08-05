@@ -483,11 +483,11 @@ def _ensure_release_artifacts_cached(
     if not artifacts:
         return {}
 
-    logger.info(
-        "[GCS] Ensuring %d release artifacts are available locally (up to %d downloads in parallel)",
-        len(artifacts),
-        min(_GCS_DOWNLOAD_WORKERS, len(artifacts)),
-    )
+    # logger.info(
+    #     "[GCS] Ensuring %d release artifacts are available locally (up to %d downloads in parallel)",
+    #     len(artifacts),
+    #     min(_GCS_DOWNLOAD_WORKERS, len(artifacts)),
+    # )
     paths: Dict[str, str] = {}
     errors: Dict[str, Exception] = {}
     with ThreadPoolExecutor(

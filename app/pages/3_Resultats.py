@@ -90,14 +90,15 @@ def prepare_search_criteria_editor(complete_data: dict) -> None:
 def edit_search_criteria_dialog(complete_data: dict) -> None:
     """Edit widget state without rerunning the results page or Folium map."""
     ui_forms.display_input_tabs(complete_data)
-    if st.button(
-        "Relancer la recherche",
-        type="primary",
-        icon=":material/search:",
-        key="rerun_search_from_criteria_editor",
-    ):
-        run_search()
-        st.rerun()
+    with st.container(horizontal=True, horizontal_alignment="right"):
+        if st.button(
+            "Relancer la recherche",
+            type="primary",
+            icon=":material/search:",
+            key="rerun_search_from_criteria_editor",
+        ):
+            run_search()
+            st.rerun()
 
 
 # Submit from the form always replaces a prior result with the current draft.
@@ -111,7 +112,7 @@ if st.session_state.get("form_completed"):
 def action_buttons_container_static(h: str):
     ui_results.render_export_pdf_button(h)
     ui_results.render_share_search_button(
-        h=h, button_text="Partager", key_prefix="sidebar_share"
+        h=h, button_text="Partager les résultats", key_prefix="sidebar_share"
     )
 
 
@@ -125,8 +126,29 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
     st.divider()
-    # --- Retour à l'Accueil ---
-    page_shell.render_primary_sidebar_actions(show_home=True, show_feedback=True)
+
+    # --- Action de modification des critères ---
+    if not is_immutable_snapshot or is_editing_snapshot:
+        if st.button(
+            "Modifier la recherche",
+            width="stretch",
+            type="primary",
+            icon=":material/edit:",
+            key="open_results_criteria_editor",
+        ):
+            prepare_search_criteria_editor(app_data)
+            edit_search_criteria_dialog(app_data)
+    else:
+        if st.button(
+            "Modifier les critères",
+            width="stretch",
+            type="primary",
+            key="fork_shared_snapshot",
+            icon=":material/edit:",
+        ):
+            search_controller.begin_snapshot_edit()
+            st.rerun()
+
 
     # --- Export to PDF & Partager ---
     if st.session_state.get("search_results") is not None:
@@ -135,63 +157,21 @@ with st.sidebar:
         # providers must not hold these actions in a permanent loading state.
         action_buttons_container_static(h)
 
+    st.divider()
+    # --- Navigation / Actions secondaires ---
+    page_shell.render_primary_sidebar_actions(show_home=True, show_feedback=True)
     page_shell.render_account_sidebar_actions()
 
-    # --- Weights --- (MOVED TO TOP FILTER FORM)
 
-
-# Top filter Form
+# Top header
 with st.container(border=False, key="top_menu"):
-    # st.markdown(
-    #     """
-    # <style>
-    #     .st-key-top_menu {background-color:whitesmoke; padding:20px; border-radius:10px} 
-    #     .st-key-top_menu h2 {padding:0px} 
-    #     .stTabs div div button div p {font-size:1rem}
-    # </style>
-    # """,
-    #     unsafe_allow_html=True,
-    # )
+    # st.subheader("Résultats de la recherche pour ce projet de vie")
 
-    col_tabs, col_btn_edit = st.columns([5.0, 1.0])
-    with col_tabs:
-        st.markdown(f"## Projet de vie {ui.get_person_accompanied_str()}")
-
-    snapshot_mode = bool(st.session_state.get("immutable_shared_snapshot"))
-
-    with col_btn_edit:
-        if not snapshot_mode or st.session_state.get("shared_snapshot_editing"):
-            if st.button(
-                "Modifier",
-                width="stretch",
-                icon=":material/edit:",
-                key="open_results_criteria_editor",
-            ):
-                prepare_search_criteria_editor(app_data)
-                edit_search_criteria_dialog(app_data)
-
-    # with col_btn_share:
-    #     if st.session_state.get("search_results"):
-    #         ui_results.render_share_search_button(
-    #             h=st.session_state.search_results.search_hash,
-    #             button_text="Partager",
-    #             key_prefix="top_share",
-    #         )
-    if snapshot_mode:
+    if is_immutable_snapshot:
         release = st.session_state.get("shared_snapshot_data_release", "inconnue")
         st.info(
-            "Vous consultez un instantané partagé et immuable "
-            f"(release de données : `{release}`). Modifier les critères puis "
-            "relancer la recherche crée une nouvelle recherche avec les données actuelles."
+            "Vous consultez une page de résultats partagée. Modifier les critères puis relancer la recherche crée une nouvelle recherche avec les données actuelles."
         )
-        if not st.session_state.get("shared_snapshot_editing"):
-            if st.button(
-                "Modifier les critères pour créer une nouvelle recherche",
-                key="fork_shared_snapshot",
-                icon=":material/edit:",
-            ):
-                search_controller.begin_snapshot_edit()
-                st.rerun()
 
 # Global Pitch (Strategic intro + Loading state)
 # if st.session_state.get('search_results'):
@@ -275,7 +255,7 @@ with col_map:
                 pill_options.append({"id": "inc", "label": "🤝 Inclusion"})
 
         with st.container(horizontal=True, horizontal_alignment="center"):
-            st.text("Afficher")
+            st.text("Afficher sur la carte :")
             selected_objs = st.pills(
                 "Afficher sur la carte :",
                 pill_options,

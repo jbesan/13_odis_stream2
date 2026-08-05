@@ -1,3 +1,4 @@
+import copy
 import pandas as pd
 
 import config as cfg
@@ -30,8 +31,8 @@ def test_initialize_uses_widget_keys_without_unprefixed_mirrors():
     state = {}
     FormState(state).initialize(cfg.DEMO_DATA_DEFAULT)
 
-    assert state["ui_departement"] == "33"
-    assert state["ui_commune"] == "Bordeaux"
+    assert state["ui_departement"] is None
+    assert state["ui_commune"] is None
     assert "departement_actuel" not in state
     assert "commune_actuelle" not in state
     assert "demo_data" not in state
@@ -133,3 +134,42 @@ def test_prepare_editor_restores_active_commune_and_preserves_unsaved_draft():
         app_data=app_data,
     )
     assert state["ui_nb_adultes"] == 1
+
+
+def test_jaccueille_org_defaults():
+    from utils import data_loader
+
+    jaccueille_org = cfg.ORGANIZATION_PROFILES["jaccueille"]
+    defaults = copy.deepcopy(cfg.DEMO_DATA_DEFAULT)
+    state = {"org": jaccueille_org}
+
+    # Simulate apply_logged_in_org_defaults with jaccueille org active
+    st_mock = state
+    defaults["org_context"] = jaccueille_org.id
+    defaults["org_strategic_locations"] = jaccueille_org.default_zones
+    defaults["org_strategic_locations_type"] = jaccueille_org.zone_type
+    for key, val in jaccueille_org.defaults.items():
+        defaults[key] = val
+
+    form = FormState(st_mock)
+    form.initialize(defaults)
+    assert st_mock.get("ui_org_strategic_locations_filter") is True
+
+
+def test_long_term_housing_checkboxes_and_cada_cph_hidden():
+    from ui.form_state import long_term_housing_key
+
+    # 1. Verify CADA and CPH are not in active HEBERGEMENT_OPTIONS
+    assert "Centre d'accueil de demandeurs d'asile (CADA)" not in cfg.HEBERGEMENT_OPTIONS
+    assert "Centre provisoire d'hébergement (CPH)" not in cfg.HEBERGEMENT_OPTIONS
+
+    # 2. Test hydration and collection of long-term housing checkboxes
+    state = {}
+    form = FormState(state)
+    form.hydrate({"logement": ["Location", "Logement Social"]}, overwrite=True)
+
+    assert state[long_term_housing_key("Location")] is True
+    assert state[long_term_housing_key("Logement Social")] is True
+    assert form.selected_long_term_housing() == ["Location", "Logement Social"]
+
+

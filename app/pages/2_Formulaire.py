@@ -34,7 +34,7 @@ with st.sidebar:
 
     if st.button(
         "Passer aux résultats",
-        type="secondary",
+        type="primary",
         width="stretch",
         icon=":material/fast_forward:",
     ):
@@ -46,8 +46,9 @@ with st.sidebar:
 org = st.session_state.get("org")
 
 PAGES = {}
-if org:
-    PAGES["org"] = org.name
+# Note: Org settings step is hidden from the form wizard flow by default, but preserved.
+# if org:
+#     PAGES["org"] = org.name
 
 PAGES.update(
     {
@@ -65,15 +66,9 @@ PAGES.update(
 PAGES_LIST = list(PAGES.keys())
 
 
-def get_person_accompanied_str():
-    if st.session_state.get("ui_nom"):
-        return f"de {st.session_state.ui_nom}"
-    return "de la personne accompagnée"
-
-
 # These functions now act as simple wrappers, calling the centralized UI components.
 def display_localisation_actuelle_page():
-    st.subheader(f"Localisation {get_person_accompanied_str()}")
+    st.subheader("Localisation de la personne accompagnée")
     col1, col2, col3 = st.columns([3, 1, 5])
     with col1:
         st.markdown("**Localisation actuelle**")
@@ -87,37 +82,37 @@ def display_localisation_actuelle_page():
 
 
 def display_family_situation_page():
-    st.subheader(f"Composition du foyer {get_person_accompanied_str()}")
+    st.subheader("Composition du foyer de la personne accompagnée")
     ui_forms.render_family_form()
 
 
 def display_education_page():
-    st.subheader(f"Niveau d'étude des enfants {get_person_accompanied_str()}")
+    st.subheader("Niveau d'étude des enfants de la personne accompagnée")
     ui_forms.render_education_form()
 
 
 def display_professional_project_page():
-    st.subheader(f"Métiers et formations {get_person_accompanied_str()}")
+    st.subheader("Métiers et formations de la personne accompagnée")
     ui_forms.render_employment_form(app_data)
 
 
 def display_housing_page():
-    st.subheader(f"Logement et hébergement {get_person_accompanied_str()}")
+    st.subheader("Logement et hébergement de la personne accompagnée")
     ui_forms.render_housing_form()
 
 
 def display_health_page():
-    st.subheader(f"Besoin(s) en santé {get_person_accompanied_str()}")
+    st.subheader("Besoin(s) en santé de la personne accompagnée")
     ui_forms.render_health_form()
 
 
 def display_other_needs_page():
-    st.subheader(f"Inclusion et vie sociale {get_person_accompanied_str()}")
+    st.subheader("Inclusion et vie sociale de la personne accompagnée")
     ui_forms.render_other_needs_form(app_data)
 
 
 def display_other_notes_page():
-    st.subheader(f"Autres informations {get_person_accompanied_str()}")
+    st.subheader("Autres informations de la personne accompagnée")
     ui_forms.render_other_notes_form()
 
 

@@ -283,7 +283,6 @@ def generate_pdf_report(
     config: SearchCriterias,
     active_search_hash: Optional[str] = None,
     processed_gdf: Optional[gpd.GeoDataFrame] = None,
-    person_name: Optional[str] = None,
     generation_warnings: Optional[List[str]] = None,
 ) -> bytes:
     """
@@ -304,9 +303,8 @@ def generate_pdf_report(
     pdf.set_font("DejaVu", "B", 16)
     pdf.cell(pdf.epw, 10, PDF_TITLE, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
 
-    # Subtitle with beneficiary's name
-    subject = f"de {person_name}" if person_name else "de la personne accompagnée"
-    subtitle = f"Pour le projet de vie {subject}"
+    # Subtitle
+    subtitle = "Pour le projet de vie de la personne accompagnée"
     pdf.set_font("DejaVu", "", 12)
     pdf.cell(pdf.epw, 10, subtitle, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
     pdf.ln(10)
