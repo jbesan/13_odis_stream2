@@ -1,18 +1,40 @@
 import streamlit as st
 import pandas as pd
 import logging
+from typing import Any
 import config as cfg
 from core.models import SearchCriterias, CriteriaItem
-from utils.data_loader import get_app_data
 from ui.components import inject_custom_css
 
 # Configure Logging
 logger = logging.getLogger("ui.forms")
 
 
-def render_localisation_form() -> None:
+def get_commune_options_for_form(app_data: dict) -> dict[str, str]:
+    """Return population-ranked commune choices with department disambiguation."""
+    odis = app_data.get("odis", pd.DataFrame())
+    if not odis.empty and {"population", "libgeo"}.issubset(odis.columns):
+        candidates = (
+            odis.dropna(subset=["population", "libgeo"])
+            .sort_values(by="population", ascending=False)
+            .head(1000)
+        )
+    else:
+        candidates = app_data.get("depcom_df", pd.DataFrame())
+
+    if candidates.empty:
+        return {}
+
+    options = {}
+    for codgeo, row in candidates.dropna(subset=["libgeo"]).iterrows():
+        name = str(row["libgeo"])
+        dep = str(row.get("dep_code", ""))
+        options[str(codgeo)] = f"{name} ({dep})" if dep else name
+    return options
+
+
+def render_localisation_form(app_data: dict[str, Any]) -> None:
     """Renders the UI for the 'Localisation Actuelle' form section."""
-    app_data = get_app_data()
     dept_details = app_data.get("dept_details", {})
     options_dep = app_data["coddep_set"]
 
@@ -97,10 +119,9 @@ def render_education_form() -> None:
                 st.selectbox(f"Niveau enfant {i + 1}", options, key=key)
 
 
-def render_employment_form() -> None:
+def render_employment_form(app_data: dict[str, Any]) -> None:
     """Renders the UI for the 'Emploi & Formation' form section."""
     inject_custom_css()
-    app_data = get_app_data()
     col1, col2 = st.columns(2)
     rome_full_index = app_data["rome_index"]
     rome_top_index = app_data.get(
@@ -121,9 +142,11 @@ def render_employment_form() -> None:
                 if code in rome_full_index.index:
                     row = rome_full_index.loc[code]
                     label = row["label"]
-                    count = row.get("total_postes", 0)
-                    count_str = f"{int(count):,}".replace(",", " ")
-                    return f"{label} [{count_str} postes]"
+                    count = row.get("job_count", row.get("total_postes"))
+                    if pd.notna(count):
+                        count_str = f"{int(count):,}".replace(",", " ")
+                        return f"{label} [{count_str} postes]"
+                    return str(label)
                 return str(code)
 
             st.multiselect(
@@ -233,10 +256,9 @@ def render_health_form() -> None:
         st.checkbox(opt, key=cb_key, on_change=on_sante_change)
 
 
-def render_other_needs_form() -> None:
+def render_other_needs_form(app_data: dict[str, Any]) -> None:
     """Renders the UI for the 'Autres Besoins' (Inclusion) section."""
     inject_custom_css()
-    app_data = get_app_data()
 
     col1, col2 = st.columns(2)
     with col2:
@@ -362,9 +384,8 @@ def render_other_notes_form() -> None:
     )
 
 
-def render_mobility_form() -> None:
+def render_mobility_form(app_data: dict[str, Any]) -> None:
     """Renders the UI for the 'Mobilité' form section (Consolidated)."""
-    app_data = get_app_data()
     dept_details = app_data.get("dept_details", {})
     regions_dict = app_data.get("regions_names", {})
 
@@ -494,39 +515,20 @@ def render_mobility_form() -> None:
     )
 
     if has_pressentie:
-        # Get top 1000 communes by population or fallback to depcom_df
-        odis_df = app_data.get("odis", pd.DataFrame())
-        communes_dict = {}
-        if not odis_df.empty and "population" in odis_df.columns:
-            top_1000 = (
-                odis_df.dropna(subset=["population", "libgeo"])
-                .sort_values(by="population", ascending=False)
-                .head(1000)
-            )
-            for codgeo, row in top_1000.iterrows():
-                dep = row.get("dep_code", "")
-                communes_dict[str(codgeo)] = f"{row['libgeo']} ({dep})"
-        else:
-            depcom = app_data.get("depcom_df", pd.DataFrame())
-            if not depcom.empty:
-                for codgeo, row in depcom.iterrows():
-                    dep = row.get("dep_code", "")
-                    communes_dict[str(codgeo)] = f"{row['libgeo']} ({dep})"
+        # The complete form bundle keeps this population-ranked shortlist
+        # available without a control-level data fetch.
+        communes_dict = get_commune_options_for_form(app_data)
 
         # Ensure active/restored commune code is present in options if set
         current_val = st.session_state.get("ui_commune_pressentie")
         curr_code = (
-            current_val.code if hasattr(current_val, "code") else current_val
-        ) if current_val else None
+            (current_val.code if hasattr(current_val, "code") else current_val)
+            if current_val
+            else None
+        )
 
         if curr_code and curr_code not in communes_dict:
-            if not odis_df.empty and curr_code in odis_df.index:
-                row = odis_df.loc[curr_code]
-                lib = row.get("libgeo", curr_code)
-                dep = row.get("dep_code", "")
-                communes_dict[str(curr_code)] = f"{lib} ({dep})" if dep else str(lib)
-            else:
-                communes_dict[str(curr_code)] = str(curr_code)
+            communes_dict[str(curr_code)] = str(curr_code)
 
         options = sorted(communes_dict.keys(), key=lambda c: communes_dict[c])
 
@@ -544,7 +546,7 @@ def render_mobility_form() -> None:
         st.session_state["ui_commune_pressentie"] = None
 
 
-def render_org_profile_form() -> None:
+def render_org_profile_form(app_data: dict[str, Any]) -> None:
     """Renders the organization-specific preamble component (F-54)."""
     org = st.session_state.get("org")
     if not org:
@@ -558,7 +560,6 @@ def render_org_profile_form() -> None:
     # st.divider()
 
     # --- Strategic Locations Multi-select ---
-    app_data = get_app_data(load_heavy=False)
     zone_type = org.zone_type
 
     if zone_type == "departement":
@@ -766,7 +767,7 @@ def render_weight_profile_form() -> None:
                 )
 
 
-def display_input_tabs() -> None:
+def display_input_tabs(app_data: dict[str, Any]) -> None:
     """Displays the main tabs for user input, composed of modular rendering functions."""
     inject_custom_css()
 
@@ -791,17 +792,17 @@ def display_input_tabs() -> None:
     current_tab_idx = 0
     if org:
         with tabs[current_tab_idx]:
-            render_org_profile_form()
+            render_org_profile_form(app_data)
         current_tab_idx += 1
 
     with tabs[current_tab_idx]:
         col1, col2 = st.columns([1, 2])
         with col1:
             st.markdown("##### Localisation actuelle")
-            render_localisation_form()
+            render_localisation_form(app_data)
         with col2:
             st.markdown("##### Zone de recherche")
-            render_mobility_form()
+            render_mobility_form(app_data)
     current_tab_idx += 1
 
     with tabs[current_tab_idx]:
@@ -813,7 +814,7 @@ def display_input_tabs() -> None:
     current_tab_idx += 1
 
     with tabs[current_tab_idx]:
-        render_employment_form()
+        render_employment_form(app_data)
     current_tab_idx += 1
 
     with tabs[current_tab_idx]:
@@ -825,7 +826,7 @@ def display_input_tabs() -> None:
     current_tab_idx += 1
 
     with tabs[current_tab_idx]:
-        render_other_needs_form()
+        render_other_needs_form(app_data)
     current_tab_idx += 1
 
     with tabs[current_tab_idx]:
@@ -836,9 +837,8 @@ def display_input_tabs() -> None:
         render_weight_profile_form()
 
 
-def create_search_criterias_from_inputs() -> SearchCriterias:
+def create_search_criterias_from_inputs(app_data: dict[str, Any]) -> SearchCriterias:
     """Gathers all user inputs from session_state and creates a SearchCriterias object."""
-    app_data = get_app_data()
 
     # Location
     dept_code = st.session_state.get(

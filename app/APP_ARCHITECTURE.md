@@ -67,9 +67,10 @@ ODIS implements a secure, role-based organizational profile context enforced imm
         *   **Lists**: Performs a Union of default arrays (e.g. adding partner-specific housing lists to global defaults).
         *   **Scalars**: Performs a direct override of scalars (e.g. strategic weight boosts take precedence).
     *   **Toast Gating**: Gated in session state via `org_defaults_applied` to ensure the activation notification toast is only displayed once per login/session.
-3.  **Two-Tier Pre-Warming & Async Toast Notification (`app/utils/data_loader.py`)**:
-    *   Calling `ensure_data_initialized(load_heavy=False)` on initial pages (`1_Accueil.py`, `2_Formulaire.py`) loads Tier 1 referentiels instantly (< 1.5s) and launches a daemon background thread (`_bg_preload_scoring_datasets`) to pre-warm the heavy Tier 2 scoring dataset cache in `@st.cache_resource`.
-    *   As soon as the background thread finishes, `st.toast("Chargement des données terminé", icon="✅")` is rendered on whichever page the user is currently interacting with. When the user proceeds to `3_Resultats.py`, Tier 2 datasets are retrieved from RAM with 0ms delay.
+3.  **Explicit data lifecycle and cache warm-up (`app/utils/data_loader.py`)**:
+    *   The home page calls `ensure_data_initialized(load_heavy=False)`: it loads only the data required to render that page, then starts a best-effort daemon task to warm the complete scoring-data cache. The task never writes Streamlit session state or changes visible content.
+    *   `2_Formulaire.py` explicitly requests one complete `app_data` bundle before rendering its controls. The controls in `ui/forms.py` receive that bundle as an argument; they do not independently fetch datasets. This keeps their ordering/filtering metrics (ROME job counts, WALDEC association counts, prospective-city population) available and consistent.
+    *   `3_Resultats.py` likewise owns one complete bundle for a live search. An immutable shared-result snapshot stays light until the user chooses to edit or recompute it. A cold cache only delays the page that actually needs the complete data, while a warm cache makes that request immediate.
 
 ---
 

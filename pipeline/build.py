@@ -1372,6 +1372,27 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
             rome_df = pd.read_parquet(rome_path, engine="fastparquet")
             # Expected: code, label
             if "code" in rome_df.columns and "label" in rome_df.columns:
+                job_count = pd.Series(dtype="Int64")
+                jobs_path = OUTPUT_DIR / "odis_ft_jobs_agg.parquet"
+                if jobs_path.exists():
+                    jobs_df = pd.read_parquet(
+                        jobs_path,
+                        columns=["romeCode", "total_postes"],
+                        engine="fastparquet",
+                    )
+                    if {"romeCode", "total_postes"}.issubset(jobs_df.columns):
+                        job_count = (
+                            jobs_df.assign(
+                                romeCode=jobs_df["romeCode"].astype(str),
+                                total_postes=pd.to_numeric(
+                                    jobs_df["total_postes"], errors="coerce"
+                                ).fillna(0),
+                            )
+                            .groupby("romeCode")["total_postes"]
+                            .sum()
+                            .astype("Int64")
+                        )
+
                 rome_ref = pd.DataFrame(
                     {
                         "key": "rome_codes",
@@ -1379,6 +1400,8 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
                         "label": rome_df["label"],
                     }
                 )
+                if not job_count.empty:
+                    rome_ref["job_count"] = rome_ref["code"].map(job_count)
                 refs_list.append(rome_ref)
                 logger.log_step(
                     "generate_referentiels", "ROME_CODES", {"count": len(rome_ref)}

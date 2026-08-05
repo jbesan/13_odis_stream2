@@ -16,7 +16,7 @@ from core.enrichment_status import (
     is_terminal_refiner_status,
 )
 from core.postscoring import generate_static_pitch
-from utils.data_loader import get_app_data, fetch_salesforce_jaccueille_bdv
+from utils.data_loader import fetch_salesforce_jaccueille_bdv
 
 from agents.utils import odis_get_bg_result, launch_background_city_analysis
 from typing import List, Optional, Any
@@ -921,11 +921,14 @@ def show_ccas_dialog(index: Any):
     commune = st.session_state.search_results.get_by_code(index)
     codgeo = commune.codgeo
     libgeo = commune.name
-    structures_df = get_app_data().get("structures_ccas", pd.DataFrame())
+    # The Results page owns a complete, single app-data snapshot. Reuse it here
+    # instead of triggering an unrelated loader call from a dialog.
+    app_data = st.session_state.get("app_data", {})
+    structures_df = app_data.get("structures_ccas", pd.DataFrame())
 
     target_codes = [codgeo.strip()]
     # Optional logic for binome if needed (fallback to df_all_communes)
-    df_all = get_app_data().get("odis", pd.DataFrame())
+    df_all = app_data.get("odis", pd.DataFrame())
     if codgeo in df_all.index:
         row = df_all.loc[codgeo]
         if "binome" in row and row["binome"] and "codgeo_binome" in row:

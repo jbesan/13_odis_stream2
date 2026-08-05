@@ -43,19 +43,43 @@ def test_generate_referentiels_falls_back_to_raw_regions(tmp_path, monkeypatch):
         ),
         encoding="utf-8",
     )
+    pd.DataFrame(
+        {
+            "code": ["M1805", "K1302"],
+            "label": ["Développement informatique", "Aide à domicile"],
+        }
+    ).to_parquet(raw_dir / "rome_referential_api.parquet", engine="fastparquet")
+    pd.DataFrame(
+        {
+            "romeCode": ["M1805", "M1805", "K1302"],
+            "total_postes": [4, 6, 3],
+        }
+    ).to_parquet(output_dir / "odis_ft_jobs_agg.parquet", engine="fastparquet")
 
     monkeypatch.setattr(build, "CLEAN_DIR", clean_dir)
     monkeypatch.setattr(build, "CACHE_DIR", raw_dir)
     monkeypatch.setattr(build, "OUTPUT_DIR", output_dir)
 
     build.generate_referentiels(
-        {"sources": {"regions_ref": {"format": "json", "local_name": "referentiel_regions.json"}}},
+        {
+            "sources": {
+                "regions_ref": {
+                    "format": "json",
+                    "local_name": "referentiel_regions.json",
+                }
+            }
+        },
         MagicMock(),
     )
 
-    refs = pd.read_parquet(output_dir / "odis_referentiels.parquet", engine="fastparquet")
+    refs = pd.read_parquet(
+        output_dir / "odis_referentiels.parquet", engine="fastparquet"
+    )
     regions = refs.loc[refs["key"] == "regions"].set_index("code")["label"].to_dict()
     assert regions == {
         "11": "Île-de-France",
         "84": "Auvergne-Rhône-Alpes",
     }
+    rome = refs.loc[refs["key"] == "rome_codes"].set_index("code")
+    assert rome.loc["M1805", "job_count"] == 10
+    assert rome.loc["K1302", "job_count"] == 3

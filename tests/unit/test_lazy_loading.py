@@ -12,6 +12,8 @@ def test_load_referentiels_raw_speed_and_keys():
     assert "coddep_set" in data
     assert "scores_cat" in data
     assert "rome_index" in data
+    assert "job_count" in data["rome_index"].columns
+    assert len(data["rome_top_index"]) == len(data["rome_index"])
     assert "codformations_index" in data
     assert "inclusion_services_index" in data
     assert "waldec_index" in data
@@ -37,3 +39,15 @@ def test_get_app_data_tier1_vs_tier2():
     tier2_data = data_loader.get_app_data(load_heavy=True)
     assert not tier2_data["odis"].empty
     assert not tier2_data["pois"].empty
+    assert "count" in tier2_data["waldec_index"].columns
+
+
+def test_waldec_enrichment_supplies_zero_counts_without_association_data():
+    raw_index = pd.DataFrame(
+        {"label": ["Culture", "Sport"]}, index=pd.Index(["006001", "011002"])
+    )
+
+    enriched, top = data_loader._enrich_waldec_index(raw_index, pd.DataFrame())
+
+    assert enriched["count"].to_dict() == {"006001": 0, "011002": 0}
+    assert top.equals(enriched)

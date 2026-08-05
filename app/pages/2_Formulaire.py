@@ -16,15 +16,18 @@ from ui import components as ui
 from ui import forms as ui_forms
 from utils import data_loader
 
-# Ensure app data and session state are initialized
-data_loader.ensure_data_initialized(load_heavy=False)
+# The form owns a single complete data bundle. Home has already started a
+# best-effort warm-up; on a cold instance this is the one honest wait point
+# rather than letting individual form controls discover missing Tier-2 fields.
+with st.spinner("Préparation du formulaire..."):
+    app_data = data_loader.ensure_data_initialized(
+        load_heavy=True, initialize_rag=False
+    )
 
 # DO NOT REMOVE: This makes sure the ui_ form state persists as expected
 for k, v in st.session_state.items():
     if str(k).startswith("ui_"):
         st.session_state[k] = v
-app_data = data_loader.get_app_data(load_heavy=False)
-
 import logging
 from utils import common as utils
 
@@ -102,13 +105,13 @@ def display_localisation_actuelle_page():
     col1, col2, col3 = st.columns([3, 1, 5])
     with col1:
         st.markdown("**Localisation actuelle**")
-        ui_forms.render_localisation_form()
+        ui_forms.render_localisation_form(app_data)
     with col2:
         st.space("large")
         st.header(":material/arrow_forward_ios:", text_alignment="center")
     with col3:
         st.markdown("**Zone de recherche**")
-        ui_forms.render_mobility_form()
+        ui_forms.render_mobility_form(app_data)
 
 
 def display_family_situation_page():
@@ -123,7 +126,7 @@ def display_education_page():
 
 def display_professional_project_page():
     st.subheader(f"Métiers et formations {get_person_accompanied_str()}")
-    ui_forms.render_employment_form()
+    ui_forms.render_employment_form(app_data)
 
 
 def display_housing_page():
@@ -138,7 +141,7 @@ def display_health_page():
 
 def display_other_needs_page():
     st.subheader(f"Inclusion et vie sociale {get_person_accompanied_str()}")
-    ui_forms.render_other_needs_form()
+    ui_forms.render_other_needs_form(app_data)
 
 
 def display_other_notes_page():
@@ -153,7 +156,7 @@ def display_profile_page():
 
 def display_org_page():
     # Title is handled by render_org_profile_form but we can add context here if needed
-    ui_forms.render_org_profile_form()
+    ui_forms.render_org_profile_form(app_data)
 
 
 if "form_page" not in st.session_state:

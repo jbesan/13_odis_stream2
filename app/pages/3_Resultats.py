@@ -81,7 +81,7 @@ is_editing_snapshot = bool(st.session_state.get("shared_snapshot_editing"))
 # Immutable display only needs the light reference tier used by the criteria
 # adapter. Editing/forking or a normal search uses the full scoring tier.
 with st.spinner("Chargement des indicateurs et données territoriales..."):
-    data_loader.ensure_data_initialized(
+    app_data = data_loader.ensure_data_initialized(
         load_heavy=not is_immutable_snapshot or is_editing_snapshot
     )
 
@@ -112,14 +112,16 @@ def run_search():
 
     telemetry.reset_interaction_id()
 
-    config = ui_forms.create_search_criterias_from_inputs()
+    # A new search always owns the complete bundle, including menu metrics and
+    # scoring inputs. This is already warm in the usual case.
+    app_data = data_loader.ensure_data_initialized(load_heavy=True)
+    config = ui_forms.create_search_criterias_from_inputs(app_data)
     st.session_state["config"] = config
 
     # Get required dataframes from global cached app_data
     # Capture the release identity at execution time. It travels with any
     # immutable shared snapshot produced from this search.
     st.session_state["active_data_release"] = data_loader.get_data_mtime()
-    app_data = data_loader.get_app_data(load_heavy=True)
     df_all_communes = app_data["odis"]
     df_bv_geo = app_data["bv_geo"]
     start_commune = df_all_communes.loc[[config.commune_actuelle.code]]
@@ -201,7 +203,7 @@ def run_search():
     if st.session_state.get("last_centered_hash") != h:
         top_5_results = search_results.results[:5]
         if top_5_results:
-            odis_df = data_loader.get_app_data()["odis"]
+            odis_df = app_data["odis"]
             top_codgeos = [str(c.codgeo) for c in top_5_results]
             top_data = odis_df.loc[odis_df.index.isin(top_codgeos)]
 
@@ -223,11 +225,9 @@ def run_search():
         st.session_state["center"] = [final_center_y, final_center_x]
         st.session_state["zoom"] = maps.get_map_zoom(config.loc_search_area)
         st.session_state["last_centered_hash"] = h
-        st.session_state["selected_geo"] = (
-            data_loader.get_app_data()["odis"]
-            .loc[[config.commune_actuelle.code]]
-            .copy()
-        )
+        st.session_state["selected_geo"] = app_data["odis"].loc[
+            [config.commune_actuelle.code]
+        ].copy()
 
     # We no longer pre-build Top 5 layers here to avoid Folium serialization issues in session state.
     # They are now rebuilt on the fly in the map rendering block.
@@ -313,7 +313,7 @@ with st.container(border=False, key="top_menu"):
     # Compute if criteria have changed since the last search. A shared snapshot
     # is immutable: re-running it is an explicit fork onto current data, even
     # when the criteria hash has not changed.
-    current_config = ui_forms.create_search_criterias_from_inputs()
+    current_config = ui_forms.create_search_criterias_from_inputs(app_data)
     last_results = st.session_state.get("search_results")
     snapshot_mode = bool(st.session_state.get("immutable_shared_snapshot"))
     if last_results is not None and not snapshot_mode:
@@ -356,7 +356,7 @@ with st.container(border=False, key="top_menu"):
 
     if not snapshot_mode or st.session_state.get("shared_snapshot_editing"):
         with st.expander("🔎 Modifier les critères de recherche", expanded=False):
-            ui_forms.display_input_tabs()
+            ui_forms.display_input_tabs(app_data)
 
 
 # Global Pitch (Strategic intro + Loading state)
@@ -465,7 +465,7 @@ with col_map:
                 target_codgeos.add(str(search_results.commune_pressentie.codgeo))
 
             if not snapshot_mode:
-                pois = data_loader.get_app_data()["pois"]
+                pois = app_data["pois"]
                 # Always-on Mairie layer
                 maps.build_mairies_layer(pois, target_codgeos).add_to(m)
                 legend_items.append(

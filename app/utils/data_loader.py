@@ -20,20 +20,45 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 _HEAVY_PRELOAD_STATUS: Dict[str, Any] = {
-    "started": False,
-    "completed": False,
+    "in_progress_release": None,
+    "completed_release": None,
     "lock": threading.Lock(),
 }
+_SCORING_DATASET_LOAD_LOCK = threading.RLock()
 
 
 def _bg_preload_scoring_datasets(data_hash: str) -> None:
-    """Background task to pre-warm Tier 2 heavy datasets cache."""
+    """Best-effort cache warm-up; it never changes session-owned app data."""
+    completed = False
     try:
-        get_scoring_datasets(data_hash)
-        with _HEAVY_PRELOAD_STATUS["lock"]:
-            _HEAVY_PRELOAD_STATUS["completed"] = True
+        _get_scoring_datasets_for_release(data_hash)
+        completed = True
     except Exception as e:
         logger.error(f"Background preload of heavy datasets failed: {e}")
+    finally:
+        with _HEAVY_PRELOAD_STATUS["lock"]:
+            if _HEAVY_PRELOAD_STATUS["in_progress_release"] == data_hash:
+                _HEAVY_PRELOAD_STATUS["in_progress_release"] = None
+            if completed:
+                _HEAVY_PRELOAD_STATUS["completed_release"] = data_hash
+
+
+def warm_scoring_datasets(data_hash: str) -> None:
+    """Warm one release in the background when it is not already cached/loading."""
+    with _HEAVY_PRELOAD_STATUS["lock"]:
+        if data_hash in {
+            _HEAVY_PRELOAD_STATUS["in_progress_release"],
+            _HEAVY_PRELOAD_STATUS["completed_release"],
+        }:
+            return
+        _HEAVY_PRELOAD_STATUS["in_progress_release"] = data_hash
+
+    thread = threading.Thread(
+        target=_bg_preload_scoring_datasets,
+        args=(data_hash,),
+        daemon=True,
+    )
+    thread.start()
 
 
 def load_scores_config_as_df(config_path: str) -> pd.DataFrame:
@@ -351,8 +376,15 @@ def apply_search_criteria_to_ui(criteria: Any) -> None:
         st.session_state["ui_inc_asso_add_selection_raw"] = asso_codes
 
 
-def ensure_data_initialized(load_heavy: bool = False) -> None:
-    """Ensures that the session state and datasets are initialized."""
+def ensure_data_initialized(
+    load_heavy: bool = False, *, initialize_rag: bool = True
+) -> Dict[str, Any]:
+    """Initialize session defaults and return the requested data bundle.
+
+    The foreground caller owns ``st.session_state['app_data']``. A light entry
+    point may warm the full cache, but that worker never swaps a session from
+    light to heavy data behind the UI's back.
+    """
     # Force re-initialization IF a demo parameter is present in query string
     force_refresh = "demo" in st.query_params
 
@@ -382,22 +414,21 @@ def ensure_data_initialized(load_heavy: bool = False) -> None:
 
     # Load datasets based on Tier requirement
     if load_heavy:
-        st.session_state["app_data"] = get_app_data(load_heavy=True)
-        with _HEAVY_PRELOAD_STATUS["lock"]:
-            _HEAVY_PRELOAD_STATUS["completed"] = True
+        app_data = get_app_data(load_heavy=True)
+        st.session_state["app_data"] = app_data
 
-        try:
-            if "heavy_data_toast_shown" not in st.session_state:
-                app_data = st.session_state.get("app_data", {})
-                load_errors = app_data.get("_load_errors", []) if isinstance(app_data, dict) else []
-                if load_errors:
-                    st.toast("Toutes les données n'ont pas pu être chargées, les résultats peuvent en être affectés", icon="⚠️")
-                st.session_state["heavy_data_toast_shown"] = True
-        except Exception:
-            pass
+        if "heavy_data_toast_shown" not in st.session_state:
+            load_errors = app_data.get("_load_errors", [])
+            if load_errors:
+                st.toast(
+                    "Toutes les données n'ont pas pu être chargées, les résultats peuvent en être affectés",
+                    icon="⚠️",
+                )
+            st.session_state["heavy_data_toast_shown"] = True
 
-        # --- RNA RAG Initialization (Deferred to Heavy Load) ---
-        if "rna_rag_service" not in st.session_state:
+        # RAG is not required to render form controls. Keep it opt-in for
+        # foreground flows that actually use analysis/enrichment.
+        if initialize_rag and "rna_rag_service" not in st.session_state:
             try:
                 from services.rna_rag import RNARagService
 
@@ -411,38 +442,16 @@ def ensure_data_initialized(load_heavy: bool = False) -> None:
                     "Assurez-vous d'avoir configuré vos identifiants GCP (gcloud auth application-default login)."
                 )
     else:
-        st.session_state["app_data"] = get_app_data(load_heavy=False)
+        app_data = get_app_data(load_heavy=False)
+        st.session_state["app_data"] = app_data
 
-        # Trigger background pre-warming of heavy datasets if not started
+        # The home/snapshot flow stays light. Warming is only a cache
+        # optimization; the form will load the complete bundle itself if the
+        # worker has not finished by navigation time.
         mtime = get_data_mtime()
-        should_start = False
-        with _HEAVY_PRELOAD_STATUS["lock"]:
-            if not _HEAVY_PRELOAD_STATUS["started"]:
-                _HEAVY_PRELOAD_STATUS["started"] = True
-                should_start = True
+        warm_scoring_datasets(mtime)
 
-        if should_start:
-            t = threading.Thread(
-                target=_bg_preload_scoring_datasets,
-                args=(mtime,),
-                daemon=True,
-            )
-            t.start()
-
-        # Check if background thread finished and notify user via toast
-        is_completed = False
-        with _HEAVY_PRELOAD_STATUS["lock"]:
-            is_completed = _HEAVY_PRELOAD_STATUS["completed"]
-
-        if is_completed and "heavy_data_toast_shown" not in st.session_state:
-            try:
-                app_data = get_app_data(load_heavy=True)
-                load_errors = app_data.get("_load_errors", []) if isinstance(app_data, dict) else []
-                if load_errors:
-                    st.toast("Toutes les données n'ont pas pu être chargées, les résultats peuvent en être affectés", icon="⚠️")
-                st.session_state["heavy_data_toast_shown"] = True
-            except Exception:
-                pass
+    return app_data
 
 
 def resolve_dataset_path(filename_or_path: str) -> Optional[str]:
@@ -679,14 +688,22 @@ def _enrich_waldec_index(
     Enriches the WALDEC index with association counts and returns both the full
     sorted index and the top items list.
     """
-    if waldec_index.empty or associations_data.empty:
-        return waldec_index, waldec_index.head(500)
-
-    topo_assos = associations_data.groupby("id_waldec")["count"].sum().to_frame()
+    if waldec_index.empty:
+        return waldec_index, waldec_index
 
     enriched_waldec = waldec_index.copy()
-    enriched_waldec = enriched_waldec.join(topo_assos, how="left")
-    enriched_waldec["count"] = enriched_waldec["count"].fillna(0).astype(int)
+    if not associations_data.empty and {"id_waldec", "count"}.issubset(
+        associations_data.columns
+    ):
+        topo_assos = associations_data.groupby("id_waldec")["count"].sum()
+        enriched_waldec["count"] = enriched_waldec.index.map(topo_assos)
+    else:
+        enriched_waldec["count"] = 0
+    enriched_waldec["count"] = (
+        pd.to_numeric(enriched_waldec["count"], errors="coerce")
+        .fillna(0)
+        .astype(int)
+    )
 
     enriched_waldec = enriched_waldec.sort_values(
         by=["count", "label"], ascending=[False, True]
@@ -705,7 +722,7 @@ def _enrich_rome_index(
     sorted index and the top items list.
     """
     if rome_index.empty or live_jobs_data.empty:
-        return rome_index, rome_index.head(1000)
+        return rome_index, rome_index
 
     jobs_top = live_jobs_data.groupby("romeCode")["total_postes"].sum().to_frame()
 
@@ -717,9 +734,7 @@ def _enrich_rome_index(
         by=["total_postes", "label"], ascending=[False, True]
     )
 
-    rome_top_index = enriched_rome.head(200)
-
-    return enriched_rome, rome_top_index
+    return enriched_rome, enriched_rome
 
 
 def load_referentiels_raw() -> Dict[str, Any]:
@@ -779,7 +794,7 @@ def load_referentiels_raw() -> Dict[str, Any]:
         elif not depcom_df.empty:
             coddep_set = sorted(depcom_df["dep_code"].unique().tolist())
 
-    rome_index = pd.DataFrame(columns=["label"])
+    rome_index = pd.DataFrame(columns=["label", "job_count"])
     codformations_index = pd.DataFrame(columns=["label"])
     inclusion_services_index = pd.DataFrame(columns=["label"])
     waldec_index = pd.DataFrame(columns=["label"])
@@ -787,11 +802,25 @@ def load_referentiels_raw() -> Dict[str, Any]:
     if not refs_df.empty:
         rome_ref_df = refs_df[refs_df["key"] == "rome_codes"]
         if not rome_ref_df.empty:
+            rome_columns = ["code", "label"]
+            if "job_count" in rome_ref_df.columns:
+                rome_columns.append("job_count")
             rome_index = (
-                rome_ref_df[["code", "label"]]
+                rome_ref_df[rome_columns]
                 .drop_duplicates(subset=["code"])
                 .set_index("code")
             )
+            if "job_count" in rome_index.columns:
+                rome_index["job_count"] = pd.to_numeric(
+                    rome_index["job_count"], errors="coerce"
+                )
+                rome_index = rome_index.sort_values(
+                    by=["job_count", "label"],
+                    ascending=[False, True],
+                    na_position="last",
+                )
+            else:
+                rome_index = rome_index.sort_values(by="label")
 
         form_ref_df = refs_df[refs_df["key"] == "formation_codes"]
         if not form_ref_df.empty:
@@ -820,7 +849,7 @@ def load_referentiels_raw() -> Dict[str, Any]:
         "coddep_set": coddep_set,
         "scores_cat": scores_cat,
         "rome_index": rome_index,
-        "rome_top_index": rome_index.head(200),
+        "rome_top_index": rome_index,
         "codformations_index": codformations_index,
         "inclusion_services_index": inclusion_services_index,
         "waldec_index": waldec_index,
@@ -1214,6 +1243,12 @@ def get_scoring_datasets(data_hash: str) -> Dict[str, Any]:
     return load_scoring_datasets_raw(refs)
 
 
+def _get_scoring_datasets_for_release(data_hash: str) -> Dict[str, Any]:
+    """Serialize the cold load shared by foreground form entry and warm-up."""
+    with _SCORING_DATASET_LOAD_LOCK:
+        return get_scoring_datasets(data_hash)
+
+
 def get_app_data(load_heavy: bool = True) -> Dict[str, Any]:
     """
     Universal entry point to get the shared datasets (cached).
@@ -1223,4 +1258,4 @@ def get_app_data(load_heavy: bool = True) -> Dict[str, Any]:
     mtime = get_data_mtime()
     if not load_heavy:
         return get_referentiels_data(mtime)
-    return get_scoring_datasets(mtime)
+    return _get_scoring_datasets_for_release(mtime)

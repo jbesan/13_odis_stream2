@@ -153,7 +153,7 @@ def run_test_scenario(scenario_id, app_data):
     # We use unittest.mock.patch to temporarily replace streamlit's session_state
     # with our dictionary for the duration of the call.
     with patch("ui.forms.st.session_state", mock_session_state):
-        scoring_config = ui_forms.create_search_criterias_from_inputs()
+        scoring_config = ui_forms.create_search_criterias_from_inputs(app_data)
         print(f"DEBUG Scenario {scenario_id}: {scoring_config}")
 
     # 5. Instantiate ScoringEngine
@@ -283,7 +283,7 @@ def test_result_details_display(app_data):
         }
     )
     with patch("ui.forms.st.session_state", mock_config_state):
-        scoring_config = ui_forms.create_search_criterias_from_inputs()
+        scoring_config = ui_forms.create_search_criterias_from_inputs(app_data)
 
     # 3. Set up a mock session state for the UI functions
 

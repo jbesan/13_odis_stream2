@@ -16,7 +16,10 @@ if not auth.check_password():
 
 # --- Initialize Data ---
 with logfire.span("ODIS Session"):
-    data_loader.ensure_data_initialized()
+    # Keep the entry route responsive. The home page warms the scoring cache;
+    # pages that render form controls or execute a search request the complete
+    # bundle explicitly.
+    data_loader.ensure_data_initialized(load_heavy=False)
 
 # --- Shared Search Interception ---
 if "search" in st.query_params:
