@@ -128,7 +128,9 @@ def test_log_search_complete(mock_client_class):
         mock_ss.interaction_id = "test-id"
         mock_ss.__contains__.side_effect = lambda k: k == "interaction_id"
 
-        with patch("os.getenv", return_value="test-project"):
+        with patch(
+            "services.telemetry.get_manifest_version", return_value="v_test_manifest"
+        ):
             telemetry.log_search_complete(
                 config=config,
                 search_results=search_results,

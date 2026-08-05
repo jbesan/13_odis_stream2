@@ -117,7 +117,7 @@ def test_happy_path_end_to_end(
     at.run(timeout=10)
     assert len(at.exception) == 0
     at.checkbox(key="ui_heb_cb_location_avec_intermédiation").check().run()
-    at.radio(key="ui_logement").set_value("Location").run()
+    at.checkbox(key="ui_logement_cb_location").check().run()
     at.selectbox(key="ui_type_logement").select("appt_t1_t2").run()
 
     # --- PAGE 6: Santé ---
@@ -161,7 +161,7 @@ def test_happy_path_end_to_end(
     assert config.nb_adultes == 2
     assert config.nb_enfants == 1
     assert config.classe_enfants == ["Maternelle"]
-    assert config.logement == "Location"
+    assert "Location" in config.logement
     assert config.besoin_sante == ["Hôpital"]
     assert "Location avec Intermédiation" in config.hebergement_cible
 

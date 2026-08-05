@@ -36,7 +36,7 @@ def test_initialize_uses_widget_keys_without_unprefixed_mirrors():
     assert "departement_actuel" not in state
     assert "commune_actuelle" not in state
     assert "demo_data" not in state
-    assert state[housing_key("Location avec Intermédiation")] is True
+    assert state[housing_key("Location avec Intermédiation")] is False
 
 
 def test_hydrate_and_collect_use_one_canonical_value_per_composite():

@@ -84,9 +84,12 @@ def make_search_criterias(raw_scenario_data: dict) -> SearchCriterias:
             raw_data[pw_key] = pw_val
 
     # Resolve commune codes
-    commune_name = raw_data.get("commune_actuelle", "Bordeaux")
-    commune_code = COMMUNE_TO_CODE.get(commune_name, commune_name)
-    commune_actuelle = {"code": commune_code, "label": commune_name}
+    commune_name = raw_data.get("commune_actuelle")
+    if commune_name:
+        commune_code = COMMUNE_TO_CODE.get(commune_name, commune_name)
+        commune_actuelle = {"code": commune_code, "label": commune_name}
+    else:
+        commune_actuelle = None
 
     commune_pressentie = None
     if raw_data.get("commune_pressentie"):

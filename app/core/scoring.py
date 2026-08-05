@@ -1173,6 +1173,8 @@ class ScoringEngine:
                     emploi_data.standard_jobs_total = 0
                     emploi_data.standard_jobs_matching_total = 0
                     emploi_data.top_professions = []
+            else:
+                emploi_data.source_availability["france_travail"] = "unavailable"
 
             # --- SIAE Jobs Match (New F-39) ---
             if not self.siae_jobs_data.empty:
@@ -1234,6 +1236,8 @@ class ScoringEngine:
                     emploi_data.inclusive_jobs_summary = {}
                     emploi_data.inclusive_jobs_matching_summary = {}
                     emploi_data.inclusive_jobs_matching_total = 0
+            else:
+                emploi_data.source_availability["emplois_inclusion"] = "unavailable"
 
             # Formations logic remains
             if not self.formations_data.empty:
