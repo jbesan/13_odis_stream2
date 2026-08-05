@@ -94,10 +94,11 @@ def test_feedback_submission(mock_client_class):
 
 
 @patch("services.telemetry.bigquery.Client")
-def test_log_search_complete(mock_client_class):
+def test_log_search_complete(mock_client_class, monkeypatch):
     """Test that log_search_complete formats and logs data correctly to BQ."""
     import json
 
+    monkeypatch.setenv("GCP_PROJECT", "test-project")
     mock_client = mock_client_class.return_value
     mock_client.project = "test-project"
     mock_client.insert_rows_json.return_value = []

@@ -378,7 +378,9 @@ def main():
             # Publish only the validated candidate before updating the local
             # development mirror.  A failed candidate never changes the
             # runtime pointer.
-            bucket_name = os.getenv("GCS_DATASETS_BUCKET", "odis-stream2-eu")
+            bucket_name = os.getenv("GCS_DATASETS_BUCKET")
+            if not bucket_name:
+                raise RuntimeError("GCS_DATASETS_BUCKET must be configured for deploy")
             publication_started = True
             _publish_datasets_to_gcs(
                 source_dir, bucket_name, release_version=run.run_id

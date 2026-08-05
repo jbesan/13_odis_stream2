@@ -80,7 +80,7 @@ sources:
 
   rna_rag:
     provider: "bigquery"
-    table: "odis-stream2.rna_rag.rna_rag"
+    table: "rna_rag.rna_rag"
     format: "parquet"
     local_name: "rna_inclusion_agg.parquet"
     ttl_days: 365

@@ -1,6 +1,5 @@
 import streamlit as st
 from streamlit_folium import st_folium
-from ui import components as ui
 from ui import forms as ui_forms
 from ui import results as ui_results
 from ui import page_shell

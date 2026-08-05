@@ -1,5 +1,6 @@
 import argparse
 import logging
+import os
 import requests
 from datetime import datetime, timezone
 import pandas as pd
@@ -33,12 +34,37 @@ from pipeline.run_context import PipelineRunError
 
 
 FT_SHARED_OUTPUT_PATH = Path("pipeline/cache/output/odis_ft_jobs_agg.parquet")
-FT_COVERAGE_SHARED_OUTPUT_PATH = Path("pipeline/cache/output/odis_ft_jobs_coverage.parquet")
+FT_COVERAGE_SHARED_OUTPUT_PATH = Path(
+    "pipeline/cache/output/odis_ft_jobs_coverage.parquet"
+)
 INCLUSION_SHARED_OUTPUT_PATH = Path("pipeline/cache/output/odis_inclusion_jobs.parquet")
-INCLUSION_COVERAGE_SHARED_OUTPUT_PATH = Path("pipeline/cache/output/odis_inclusion_jobs_coverage.parquet")
+INCLUSION_COVERAGE_SHARED_OUTPUT_PATH = Path(
+    "pipeline/cache/output/odis_inclusion_jobs_coverage.parquet"
+)
 INCLUSION_OUTPUT_PATH = INCLUSION_SHARED_OUTPUT_PATH
 SHARED_CLEAN_DIR = Path("pipeline/cache/clean")
 DATA_CONTRACTS_FILE = Path("pipeline/data_contracts.yaml")
+
+
+def _data_project() -> str:
+    project = os.getenv("ODIS_DATA_PROJECT") or os.getenv("GOOGLE_CLOUD_PROJECT")
+    if not project:
+        raise RuntimeError(
+            "ODIS_DATA_PROJECT or GOOGLE_CLOUD_PROJECT must be configured for RNA RAG"
+        )
+    return project
+
+
+def _rna_rag_table_id(config: Optional[Dict[str, Any]] = None) -> str:
+    """Resolve the target RNA table from config without a source-project default."""
+    source_config = (config or {}).get("sources", {}).get("rna_rag", {})
+    table = source_config.get("table", "rna_rag.rna_rag")
+    if not isinstance(table, str) or table.count(".") != 1:
+        raise ValueError(
+            "sources.rna_rag.table must use the dataset.table form (for example "
+            "rna_rag.rna_rag)"
+        )
+    return f"{_data_project()}.{table}"
 
 
 def _materialize_rag_cache(
@@ -967,15 +993,15 @@ def clean_refugee_associations(config: Dict[str, Any], logger: PipelineLogger):
 
     # Updated to fetch from BigQuery using is_refugee_focused flag (Harmonization)
     try:
-        client = bigquery.Client()
-        query = """
+        client = bigquery.Client(project=_data_project())
+        query = f"""
         SELECT 
             id,
             codgeo,
             titre_court as name,
             description,
             primary_category as waldec_code -- Using primary_category as it contains more useful semantic grouping
-        FROM `odis-stream2.rna_rag.rna_rag`
+        FROM `{_rna_rag_table_id(config)}`
         WHERE is_refugee_focused = True
         """
         logging.info(
@@ -1576,9 +1602,7 @@ def transform_housing_occupation_odace(
     commune_codes = df["commune_insee_code"].astype(str).str.strip()
     df["annee"] = df["annee"].astype(str).str.strip()
     df["indicateur_occupation"] = df["indicateur_occupation"].astype(str).str.strip()
-    if (commune_codes == "").any() or (
-        df["indicateur_occupation"] == ""
-    ).any():
+    if (commune_codes == "").any() or (df["indicateur_occupation"] == "").any():
         raise PipelineRunError(
             "Odace fact_occupation_logement has blank commune or indicator identifiers"
         )
@@ -1593,7 +1617,9 @@ def transform_housing_occupation_odace(
     df["valeur"] = pd.to_numeric(df["valeur"], errors="coerce")
     value_contract = contract["value"]
     if not value_contract.get("nullable", True) and df["valeur"].isna().any():
-        raise PipelineRunError("Odace fact_occupation_logement has null or invalid values")
+        raise PipelineRunError(
+            "Odace fact_occupation_logement has null or invalid values"
+        )
     minimum_value = value_contract.get("minimum")
     if minimum_value is not None and (df["valeur"] < minimum_value).any():
         raise PipelineRunError(
@@ -2365,11 +2391,13 @@ def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
         logger.log_step("clean_bpe", "PARTIAL", {"msg": "No POIs generated"})
 
 
-def compute_rna_rag_counts(query_text: str, threshold: float = 0.65) -> pd.DataFrame:
+def compute_rna_rag_counts(
+    query_text: str,
+    threshold: float = 0.65,
+    config: Optional[Dict[str, Any]] = None,
+) -> pd.DataFrame:
     """Computes semantic counts for a query using BigQuery Vector Search (ML.DISTANCE)."""
-    import os
-
-    project = os.getenv("GOOGLE_CLOUD_PROJECT", "odis-stream2")
+    project = _data_project()
     location = os.getenv("GOOGLE_CLOUD_LOCATION", "europe-west1")
     client = bigquery.Client(project=project)
     genai_client = genai.Client(vertexai=True, project=project, location=location)
@@ -2386,11 +2414,11 @@ def compute_rna_rag_counts(query_text: str, threshold: float = 0.65) -> pd.DataF
     # Threshold 0.8 similarity => 0.2 distance
     distance_threshold = 1.0 - threshold
 
-    sql = """
+    sql = f"""
     SELECT 
         codgeo,
         COUNT(*) as count
-    FROM `odis-stream2.rna_rag.rna_rag`
+    FROM `{_rna_rag_table_id(config)}`
     WHERE is_inclusion_relevant = True
     AND ML.DISTANCE(ARRAY(SELECT element FROM UNNEST(embedding_128.list)), @query_vec, 'COSINE') < @dist_threshold
     GROUP BY 1
@@ -2437,12 +2465,14 @@ def clean_hebergement_rna(config: Dict[str, Any], logger: PipelineLogger):
     try:
         # A. IML Counts
         df_iml = compute_rna_rag_counts(
-            "Bail solidaire et Intermediation Locative (IML)"
+            "Bail solidaire et Intermediation Locative (IML)", config=config
         )
         df_iml = df_iml.rename(columns={"count": "heb_loc_iml_count"})
 
         # B. Citoyen Counts
-        df_cit = compute_rna_rag_counts("hébergement citoyen chez l'habitant")
+        df_cit = compute_rna_rag_counts(
+            "hébergement citoyen chez l'habitant", config=config
+        )
         df_cit = df_cit.rename(columns={"count": "heb_habitant_count"})
 
         # Merge and finalize
@@ -3222,7 +3252,10 @@ def clean_salesforce_jaccueille(config: Dict[str, Any], logger: PipelineLogger):
     """Build the candidate J'accueille release from the Salesforce source cache."""
     logger.log_step("clean_salesforce_jaccueille", "STARTED")
     try:
-        from pipeline.salesforce_ingest import get_salesforce_status, run_salesforce_ingest
+        from pipeline.salesforce_ingest import (
+            get_salesforce_status,
+            run_salesforce_ingest,
+        )
 
         output_path = OUTPUT_DIR / "salesforce_jaccueille_bdv.parquet"
         cached_source = get_salesforce_status()
@@ -3685,15 +3718,16 @@ def fetch_rna_rag_stats(
     logging.info("[RNA RAG] Stats cache is missing or expired. Refreshing...")
 
     try:
-        client = bigquery.Client()
+        client = bigquery.Client(project=_data_project())
+        rna_rag_table = _rna_rag_table_id(config)
 
         # 1. Fetch Category Counts
-        query_cats = """
+        query_cats = f"""
         SELECT 
             codgeo,
             primary_category,
             COUNT(*) as count
-        FROM `odis-stream2.rna_rag.rna_rag`
+        FROM `{rna_rag_table}`
         WHERE is_inclusion_relevant = True
         GROUP BY 1, 2
         """
@@ -3701,11 +3735,11 @@ def fetch_rna_rag_stats(
         df_cats = client.query(query_cats).to_dataframe()
 
         # 2. Fetch Refugee-specific Counts
-        query_refug = """
+        query_refug = f"""
         SELECT 
             codgeo,
             COUNT(*) as inc_asso_refug_count
-        FROM `odis-stream2.rna_rag.rna_rag`
+        FROM `{rna_rag_table}`
         WHERE is_refugee_focused = True
         GROUP BY 1
         """
@@ -3747,7 +3781,11 @@ def fetch_rna_rag_stats(
         logger.log_step(
             "fetch_rna_rag_stats",
             "COMPLETED",
-            {"path": str(local_path), "rows": len(df_pivot), "cache_status": "refreshed"},
+            {
+                "path": str(local_path),
+                "rows": len(df_pivot),
+                "cache_status": "refreshed",
+            },
         )
         return local_path
 

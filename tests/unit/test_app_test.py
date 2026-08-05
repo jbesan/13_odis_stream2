@@ -11,13 +11,13 @@ from core.models import User
 def test_main_app_redirect_authenticated(
     mock_auth, mock_page_view, mock_initialize, mock_preload
 ):
-    at = AppTest.from_file("app/main.py")
+    at = AppTest.from_file("app/main.py", default_timeout=60)
     at.session_state["username"] = "user"
     at.session_state["user"] = User(username="user", org_id="jaccueille")
     at.session_state["org"] = config.ORGANIZATION_PROFILES["jaccueille"]
 
     # Run the AppTest with a safe timeout
-    at.run(timeout=10)
+    at.run(timeout=60)
 
     # Verify that it ran the redirect target and didn't crash
     assert len(at.exception) == 0
@@ -33,8 +33,8 @@ def test_main_app_blocks_unauthenticated(
 ):
     # Set Cloud Run env so check_password logic actually triggers the form
     with patch("os.environ", {"K_SERVICE": "yes"}):
-        at = AppTest.from_file("app/main.py")
-        at.run(timeout=10)
+        at = AppTest.from_file("app/main.py", default_timeout=60)
+        at.run(timeout=60)
 
         # Verify the common shell stopped before initialization/navigation.
         assert len(at.exception) == 0

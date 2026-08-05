@@ -137,8 +137,6 @@ def test_prepare_editor_restores_active_commune_and_preserves_unsaved_draft():
 
 
 def test_jaccueille_org_defaults():
-    from utils import data_loader
-
     jaccueille_org = cfg.ORGANIZATION_PROFILES["jaccueille"]
     defaults = copy.deepcopy(cfg.DEMO_DATA_DEFAULT)
     state = {"org": jaccueille_org}
@@ -171,5 +169,4 @@ def test_long_term_housing_checkboxes_and_cada_cph_hidden():
     assert state[long_term_housing_key("Location")] is True
     assert state[long_term_housing_key("Logement Social")] is True
     assert form.selected_long_term_housing() == ["Location", "Logement Social"]
-
 

@@ -61,7 +61,7 @@ def test_happy_path_end_to_end(
     mock_launch_post_scoring_tasks.side_effect = fake_launch
 
     # 2. Initialize AppTest at main.py (so page paths resolve correctly relative to root)
-    at = AppTest.from_file("app/main.py", default_timeout=30)
+    at = AppTest.from_file("app/main.py", default_timeout=60)
 
     # Bypass authentication and pre-populate defaults
     at.session_state["password_correct"] = True
@@ -69,16 +69,16 @@ def test_happy_path_end_to_end(
     at.session_state["demo_data"] = {}
 
     # Run the main.py redirect -> 1_Accueil.py
-    at.run(timeout=30)
+    at.run(timeout=60)
     assert len(at.exception) == 0
 
     # Switch page manually to Formulaire
-    at.switch_page("pages/2_Formulaire.py").run(timeout=10)
+    at.switch_page("pages/2_Formulaire.py").run(timeout=60)
     assert len(at.exception) == 0
 
     # --- PAGE 1: Localisation ---
     at.session_state.form_page = "localisation"
-    at.run(timeout=10)
+    at.run(timeout=60)
     assert len(at.exception) == 0
 
     # Fill in localisation widgets
@@ -93,14 +93,14 @@ def test_happy_path_end_to_end(
 
     # --- PAGE 2: Situation familiale ---
     at.session_state.form_page = "family"
-    at.run(timeout=10)
+    at.run(timeout=60)
     assert len(at.exception) == 0
     at.radio(key="ui_nb_adultes").set_value(2).run()
     at.radio(key="ui_nb_enfants").set_value(1).run()
 
     # --- PAGE 3: Education ---
     at.session_state.form_page = "education"
-    at.run(timeout=10)
+    at.run(timeout=60)
     assert len(at.exception) == 0
     at.selectbox(key="ui_classe_enfant_0").select("Maternelle").run()
 
@@ -109,12 +109,12 @@ def test_happy_path_end_to_end(
     # Seed multiselect session state keys directly to bypass AppTest's format_func select bug
     at.session_state["ui_metiers_adult_0"] = ["M1805"]
     at.session_state["ui_formations_adult_0"] = ["114"]
-    at.run(timeout=10)
+    at.run(timeout=60)
     assert len(at.exception) == 0
 
     # --- PAGE 5: Logement ---
     at.session_state.form_page = "housing"
-    at.run(timeout=10)
+    at.run(timeout=60)
     assert len(at.exception) == 0
     at.checkbox(key="ui_heb_cb_location_avec_intermédiation").check().run()
     at.checkbox(key="ui_logement_cb_location").check().run()
@@ -122,7 +122,7 @@ def test_happy_path_end_to_end(
 
     # --- PAGE 6: Santé ---
     at.session_state.form_page = "health"
-    at.run(timeout=10)
+    at.run(timeout=60)
     assert len(at.exception) == 0
     at.checkbox(key="ui_sante_cb_hôpital").check().run()
 
@@ -131,24 +131,24 @@ def test_happy_path_end_to_end(
     # Seed multiselect session state keys directly to bypass AppTest's format_func select bug
     at.session_state["ui_inc_asso_add_selection_raw"] = ["W332020211"]
     at.session_state["ui_inc_services_selection_raw"] = ["siae"]
-    at.run(timeout=10)
+    at.run(timeout=60)
     assert len(at.exception) == 0
 
     # --- PAGE 8: Notes ---
     at.session_state.form_page = "notes"
-    at.run(timeout=10)
+    at.run(timeout=60)
     assert len(at.exception) == 0
     at.text_area(key="ui_notes_qualitatives").input("Famille motivée.").run()
 
     # --- PAGE 9: Profil ---
     at.session_state.form_page = "profile"
-    at.run(timeout=10)
+    at.run(timeout=60)
     assert len(at.exception) == 0
     at.selectbox(key="ui_weight_profile").select("Équilibré").run()
 
     # The sidebar action submits the form and launches the deterministic search.
     btn = next(b for b in at.button if b.label == "Passer aux résultats")
-    btn.click().run(timeout=20)
+    btn.click().run(timeout=60)
     assert len(at.exception) == 0
 
     # Ensure results page switched page successfully

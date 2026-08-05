@@ -146,9 +146,11 @@ def setup_logfire() -> None:
         return
 
     try:
-        # Determine environment dynamically: 'prod' on Cloud Run, 'local' on developer machine
+        # Cloud Run staging and production receive an explicit deployment label.
         is_cloud_run = os.environ.get("K_SERVICE") is not None
-        logfire_env = "prod" if is_cloud_run else "local"
+        logfire_env = os.getenv("ODIS_DEPLOYMENT_ENV") or (
+            "prod" if is_cloud_run else "local"
+        )
 
         logfire.configure(
             service_name="odis-stream2",
@@ -320,9 +322,8 @@ def log_search_results(
     for i, commune in enumerate(search_results.results):
         eval_cities.append((f"{i + 1}", commune))
 
-    if (
-        search_results.commune_pressentie
-        and not any(c.codgeo == pressentie_codgeo for _, c in eval_cities)
+    if search_results.commune_pressentie and not any(
+        c.codgeo == pressentie_codgeo for _, c in eval_cities
     ):
         eval_cities.append(("pressentie", search_results.commune_pressentie))
 
