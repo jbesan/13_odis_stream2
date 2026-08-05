@@ -191,11 +191,8 @@ def run_quality_gate(
             )
 
         for coverage_name in (
-            "odis_ft_jobs_coverage.parquet",
-            "odis_inclusion_jobs_coverage.parquet",
+            contracts["release"].get("validation_artifacts", [])
         ):
-            if coverage_name not in contracts["release"]["required_artifacts"]:
-                continue
             coverage_path = output_dir / coverage_name
             check_name = f"coverage.{coverage_name}"
             if not coverage_path.exists():

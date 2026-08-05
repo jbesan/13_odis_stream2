@@ -19,43 +19,43 @@ from google.cloud import storage
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-_HEAVY_PRELOAD_STATUS: Dict[str, Any] = {
-    "in_progress_release": None,
+_SCORING_PRELOAD_STATUS: Dict[str, Any] = {
+    "in_progress": False,
     "completed_release": None,
     "lock": threading.Lock(),
 }
 _SCORING_DATASET_LOAD_LOCK = threading.RLock()
 
 
-def _bg_preload_scoring_datasets(data_hash: str) -> None:
-    """Best-effort cache warm-up; it never changes session-owned app data."""
+def _preload_scoring_datasets_in_background() -> None:
+    """Preload the active scoring release without touching session state."""
+    release_id = None
     completed = False
     try:
-        _get_scoring_datasets_for_release(data_hash)
+        release_id = get_data_mtime()
+        with _SCORING_PRELOAD_STATUS["lock"]:
+            if _SCORING_PRELOAD_STATUS["completed_release"] == release_id:
+                return
+        _get_scoring_datasets_for_release(release_id)
         completed = True
     except Exception as e:
-        logger.error(f"Background preload of heavy datasets failed: {e}")
+        logger.error("Asynchronous scoring-data preload failed: %s", e)
     finally:
-        with _HEAVY_PRELOAD_STATUS["lock"]:
-            if _HEAVY_PRELOAD_STATUS["in_progress_release"] == data_hash:
-                _HEAVY_PRELOAD_STATUS["in_progress_release"] = None
-            if completed:
-                _HEAVY_PRELOAD_STATUS["completed_release"] = data_hash
+        with _SCORING_PRELOAD_STATUS["lock"]:
+            _SCORING_PRELOAD_STATUS["in_progress"] = False
+            if completed and release_id:
+                _SCORING_PRELOAD_STATUS["completed_release"] = release_id
 
 
-def warm_scoring_datasets(data_hash: str) -> None:
-    """Warm one release in the background when it is not already cached/loading."""
-    with _HEAVY_PRELOAD_STATUS["lock"]:
-        if data_hash in {
-            _HEAVY_PRELOAD_STATUS["in_progress_release"],
-            _HEAVY_PRELOAD_STATUS["completed_release"],
-        }:
+def preload_scoring_datasets_async() -> None:
+    """Start one non-blocking preload for the active scoring-data release."""
+    with _SCORING_PRELOAD_STATUS["lock"]:
+        if _SCORING_PRELOAD_STATUS["in_progress"]:
             return
-        _HEAVY_PRELOAD_STATUS["in_progress_release"] = data_hash
+        _SCORING_PRELOAD_STATUS["in_progress"] = True
 
     thread = threading.Thread(
-        target=_bg_preload_scoring_datasets,
-        args=(data_hash,),
+        target=_preload_scoring_datasets_in_background,
         daemon=True,
     )
     thread.start()
@@ -112,10 +112,12 @@ def apply_demo_data_if_present(defaults: Dict[str, Any]) -> None:
             if key in defaults:
                 defaults[key] = value
 
-        st.toast(
-            f"Mode Démo activé (Scénario {demo_id if demo_id != 'true' else 'Défaut'})",
-            icon="ℹ️",
-        )
+        if st.session_state.get("_demo_toast_id") != demo_id:
+            st.toast(
+                f"Mode Démo activé (Scénario {demo_id if demo_id != 'true' else 'Défaut'})",
+                icon="ℹ️",
+            )
+            st.session_state["_demo_toast_id"] = demo_id
 
 
 def apply_logged_in_org_defaults(defaults: Dict[str, Any]) -> None:
@@ -164,15 +166,8 @@ def apply_search_criteria_to_ui(
     FormState(st.session_state).hydrate(criteria, app_data=app_data)
 
 
-def ensure_data_initialized(
-    load_heavy: bool = False, *, initialize_rag: bool = True
-) -> Dict[str, Any]:
-    """Initialize session defaults and return the requested data bundle.
-
-    The foreground caller owns ``st.session_state['app_data']``. A light entry
-    point may warm the full cache, but that worker never swaps a session from
-    light to heavy data behind the UI's back.
-    """
+def initialize_session_state() -> None:
+    """Initialize form state without loading any dataset from GCS."""
     from ui.form_state import FORM_INITIALIZED_KEY, FormState
 
     defaults = copy.deepcopy(cfg.DEMO_DATA_DEFAULT)
@@ -190,44 +185,38 @@ def ensure_data_initialized(
         form_state.hydrate(defaults, overwrite=True, exclude_unset=False)
     st.session_state["_form_source_id"] = source_id
 
-    # Load datasets based on Tier requirement
-    if load_heavy:
-        app_data = get_app_data(load_heavy=True)
-        st.session_state["app_data"] = app_data
 
-        if "heavy_data_toast_shown" not in st.session_state:
-            load_errors = app_data.get("_load_errors", [])
-            if load_errors:
-                st.toast(
-                    "Toutes les données n'ont pas pu être chargées, les résultats peuvent en être affectés",
-                    icon="⚠️",
-                )
-            st.session_state["heavy_data_toast_shown"] = True
+def ensure_data_initialized(*, initialize_rag: bool = True) -> Dict[str, Any]:
+    """Initialize state and return the complete active GCS data bundle."""
+    initialize_session_state()
 
-        # RAG is not required to render form controls. Keep it opt-in for
-        # foreground flows that actually use analysis/enrichment.
-        if initialize_rag and "rna_rag_service" not in st.session_state:
-            try:
-                from services.rna_rag import RNARagService
+    app_data = get_app_data()
+    st.session_state["app_data"] = app_data
 
-                st.session_state["rna_rag_service"] = RNARagService()
-                st.session_state["rna_rag_status"] = "connected"
-            except Exception as e:
-                st.session_state["rna_rag_status"] = "failed"
-                st.error(
-                    f"🚨 **Erreur de connexion BigQuery/Vertex AI** : {e}\n\n"
-                    "Le service de recherche sémantique (RAG) ne sera pas disponible. "
-                    "Assurez-vous d'avoir configuré vos identifiants GCP (gcloud auth application-default login)."
-                )
-    else:
-        app_data = get_app_data(load_heavy=False)
-        st.session_state["app_data"] = app_data
+    if "heavy_data_toast_shown" not in st.session_state:
+        load_errors = app_data.get("_load_errors", [])
+        if load_errors:
+            st.toast(
+                "Toutes les données n'ont pas pu être chargées, les résultats peuvent en être affectés",
+                icon="⚠️",
+            )
+        st.session_state["heavy_data_toast_shown"] = True
 
-        # The home/snapshot flow stays light. Warming is only a cache
-        # optimization; the form will load the complete bundle itself if the
-        # worker has not finished by navigation time.
-        mtime = get_data_mtime()
-        warm_scoring_datasets(mtime)
+    # RAG is not required to render form controls. Keep it opt-in for
+    # foreground flows that actually use analysis/enrichment.
+    if initialize_rag and "rna_rag_service" not in st.session_state:
+        try:
+            from services.rna_rag import RNARagService
+
+            st.session_state["rna_rag_service"] = RNARagService()
+            st.session_state["rna_rag_status"] = "connected"
+        except Exception as e:
+            st.session_state["rna_rag_status"] = "failed"
+            st.error(
+                f"🚨 **Erreur de connexion BigQuery/Vertex AI** : {e}\n\n"
+                "Le service de recherche sémantique (RAG) ne sera pas disponible. "
+                "Assurez-vous d'avoir configuré vos identifiants GCP (gcloud auth application-default login)."
+            )
 
     return app_data
 
@@ -596,12 +585,10 @@ def load_referentiels_raw() -> Dict[str, Any]:
         "bv_geo": pd.DataFrame(),
         "bv_data": pd.DataFrame(),
         "live_jobs_data": pd.DataFrame(),
-        "live_jobs_coverage": pd.DataFrame(),
         "structures_ccas": pd.DataFrame(),
         "pois": pd.DataFrame(),
         "refugee_associations_data": pd.DataFrame(),
         "siae_jobs_data": pd.DataFrame(),
-        "siae_jobs_coverage": pd.DataFrame(),
         "_load_errors": [],
     }
 
@@ -767,9 +754,6 @@ def load_scoring_datasets_raw(refs_data: Optional[Dict[str, Any]] = None) -> Dic
     live_jobs_data = _load_parquet(
         cfg.LIVE_JOBS_FILE, error_list=load_errors
     )
-    live_jobs_coverage = _load_parquet(
-        cfg.LIVE_JOBS_COVERAGE_FILE, error_list=load_errors
-    )
     associations_data = _load_parquet(
         cfg.AGG_ASSOCIATIONS_FILE, error_list=load_errors
     )
@@ -793,9 +777,6 @@ def load_scoring_datasets_raw(refs_data: Optional[Dict[str, Any]] = None) -> Dic
 
     siae_jobs_data = _load_parquet(
         cfg.SIAE_JOBS_FILE, error_list=load_errors
-    )
-    siae_jobs_coverage = _load_parquet(
-        cfg.SIAE_JOBS_COVERAGE_FILE, error_list=load_errors
     )
 
     # --- Enrichment: Index Sorting & Truncation ---
@@ -880,7 +861,6 @@ def load_scoring_datasets_raw(refs_data: Optional[Dict[str, Any]] = None) -> Dic
             "bv_geo": bv_geo,
             "bv_data": bv_geo,
             "live_jobs_data": live_jobs_data,
-            "live_jobs_coverage": live_jobs_coverage,
             "structures_ccas": structures_ccas,
             "pois": pois_df,
             "refugee_associations_data": refugee_associations_data,
@@ -889,7 +869,6 @@ def load_scoring_datasets_raw(refs_data: Optional[Dict[str, Any]] = None) -> Dic
             "rome_index": rome_index,
             "rome_top_index": rome_top_index,
             "siae_jobs_data": siae_jobs_data,
-            "siae_jobs_coverage": siae_jobs_coverage,
             "_load_errors": load_errors,
         }
     )
@@ -941,13 +920,7 @@ def _get_scoring_datasets_for_release(data_hash: str) -> Dict[str, Any]:
         return get_scoring_datasets(data_hash)
 
 
-def get_app_data(load_heavy: bool = True) -> Dict[str, Any]:
-    """
-    Universal entry point to get the shared datasets (cached).
-    - load_heavy=False: Returns the lightweight reference bundle.
-    - load_heavy=True: Returns the complete scoring bundle.
-    """
+def get_app_data() -> Dict[str, Any]:
+    """Return the complete data bundle for the active immutable GCS release."""
     mtime = get_data_mtime()
-    if not load_heavy:
-        return get_referentiels_data(mtime)
     return _get_scoring_datasets_for_release(mtime)

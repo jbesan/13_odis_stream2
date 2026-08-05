@@ -5,8 +5,6 @@ from fpdf.enums import TextEmphasis, XPos, YPos
 
 import os
 import config as cfg
-from ui import components as ui
-import streamlit as st
 from core import maps
 from core.models import SearchCriterias, SearchResultsData
 import logging
@@ -279,6 +277,7 @@ def generate_pdf_report(
     config: SearchCriterias,
     active_search_hash: Optional[str] = None,
     processed_gdf: Optional[gpd.GeoDataFrame] = None,
+    person_name: Optional[str] = None,
 ) -> bytes:
     """
     Generates a PDF report with the top 5 results and search criteria using a Unicode font.
@@ -298,7 +297,8 @@ def generate_pdf_report(
     pdf.cell(pdf.epw, 10, PDF_TITLE, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
 
     # Subtitle with beneficiary's name
-    subtitle = f"Pour le projet de vie {ui.get_person_accompanied_str()}"
+    subject = f"de {person_name}" if person_name else "de la personne accompagnée"
+    subtitle = f"Pour le projet de vie {subject}"
     pdf.set_font("DejaVu", "", 12)
     pdf.cell(pdf.epw, 10, subtitle, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
     pdf.ln(10)
@@ -379,10 +379,9 @@ def generate_pdf_report(
             )
 
         # Profile & Weights (At the bottom)
-        is_expert = st.session_state.get("ui_expert_weights", False)
         profile_name = (
             "Personnalisé"
-            if is_expert
+            if config.weight_profile == "Profil personnalisé"
             else (config.weight_profile if config.weight_profile else "Équilibré")
         )
         criteria["Profil de poids"] = profile_name

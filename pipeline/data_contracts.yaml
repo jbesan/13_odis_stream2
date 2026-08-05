@@ -30,6 +30,7 @@ source_contracts:
 
 release:
   required_artifacts:
+    - odis_referentiels.parquet
     - odis_communes.parquet
     - odis_bassins_de_vie.parquet
     - odis_pois.parquet
@@ -38,10 +39,11 @@ release:
     - odis_ccas.parquet
     - odis_refugee_associations.parquet
     - odis_ft_jobs_agg.parquet
-    - odis_ft_jobs_coverage.parquet
     - odis_inclusion_jobs.parquet
-    - odis_inclusion_jobs_coverage.parquet
     - salesforce_jaccueille_bdv.parquet
+  validation_artifacts:
+    - odis_ft_jobs_coverage.parquet
+    - odis_inclusion_jobs_coverage.parquet
 
 communes:
   primary_key: codgeo

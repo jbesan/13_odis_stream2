@@ -4,41 +4,24 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-from utils import auth
-from ui import components as ui_comp
-from utils import common as utils
-from services import telemetry, analytics_data
+from ui import page_shell
+from services import analytics_data
 
 logger = logging.getLogger("pages.analytics")
 
 # --- Page Config ---
 st.set_page_config(page_title="OD&IS - Analytics", page_icon="📊", layout="wide")
 
-# --- Auth Guard ---
-if not auth.check_password():
-    st.stop()
-
-if not auth.is_admin():
-    st.error("🔒 Accès refusé : Cette page est réservée aux administrateurs.")
-    st.stop()
-
-telemetry.log_page_view("Analytics")
+page_shell.enter_page("Analytics", admin_only=True)
 
 # --- Sidebar ---
 with st.sidebar:
-    logo_path = utils.get_asset_path("logo-jaccueille-singa.png")
-    logo_b64 = utils.get_base64_image(logo_path)
-    if logo_b64:
-        st.markdown(
-            f'<img src="data:image/png;base64,{logo_b64}" width="150" style="margin-bottom: 20px;">',
-            unsafe_allow_html=True,
-        )
+    page_shell.render_sidebar_logo()
     st.header("📊 Administration")
     st.write("Bienvenue sur le tableau de bord d'analyse de l'usage et des recommandations d'OD&IS.")
     st.divider()
-    ui_comp.start_over()
-    ui_comp.render_sources_sidebar_link()
-    ui_comp.render_logout_sidebar_button()
+    page_shell.render_primary_sidebar_actions(show_home=True)
+    page_shell.render_account_sidebar_actions(show_admin=False)
 
 
 

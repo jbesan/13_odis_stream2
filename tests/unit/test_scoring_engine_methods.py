@@ -3,7 +3,6 @@ import pandas as pd
 import geopandas as gpd
 from core import scoring
 from core.models import SearchCriterias, CriteriaItem
-from pipeline.employment_coverage import METROPOLITAN_DEPARTMENTS
 
 
 @pytest.fixture
@@ -139,13 +138,7 @@ def test_compute_employment_scores_direct(base_sample_data, live_scores_cat):
         associations_data=pd.DataFrame(),
         formations_data=pd.DataFrame(),
         live_jobs_data=live_jobs,
-        live_jobs_coverage=pd.DataFrame(
-            {"department": METROPOLITAN_DEPARTMENTS, "status": "success"}
-        ),
         siae_jobs_data=siae_jobs,
-        siae_jobs_coverage=pd.DataFrame(
-            {"department": METROPOLITAN_DEPARTMENTS, "status": "success"}
-        ),
     )
 
     config = SearchCriterias(
@@ -170,7 +163,7 @@ def test_compute_employment_scores_direct(base_sample_data, live_scores_cat):
     assert res.loc["13055", "met_siae_match_adult1"] == 1.0
 
 
-def test_employment_scores_stay_unavailable_without_complete_coverage(
+def test_employment_scores_stay_unavailable_without_job_dataset(
     base_sample_data, live_scores_cat
 ):
     engine = scoring.ScoringEngine(
@@ -181,9 +174,6 @@ def test_employment_scores_stay_unavailable_without_complete_coverage(
         associations_data=pd.DataFrame(),
         formations_data=pd.DataFrame(),
         live_jobs_data=pd.DataFrame(),
-        live_jobs_coverage=pd.DataFrame(
-            {"department": ["13"], "status": ["success"]}
-        ),
     )
     config = SearchCriterias(
         nb_adultes=1,

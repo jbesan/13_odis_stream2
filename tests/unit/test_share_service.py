@@ -176,14 +176,14 @@ def test_restore_snapshot_hydrates_ui_without_rescoring():
     applied = []
 
     with patch("streamlit.session_state", state), patch(
-        "utils.data_loader.ensure_data_initialized"
-    ) as ensure_data, patch(
+        "utils.data_loader.initialize_session_state"
+    ) as initialize_state, patch(
         "utils.data_loader.apply_search_criteria_to_ui",
         side_effect=lambda criteria: applied.append(criteria),
     ):
         restore_shared_search_to_session_state(config, results, "deadbeef", snapshot)
 
-    ensure_data.assert_called_once_with(load_heavy=False)
+    initialize_state.assert_called_once_with()
     assert applied == [config]
     assert state["immutable_shared_snapshot"] is True
     assert state["shared_snapshot_data_release"] == "release-2026-08-04"

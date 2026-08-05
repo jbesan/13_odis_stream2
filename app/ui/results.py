@@ -59,6 +59,7 @@ def pdf_modal():
                 search_results=search_results,
                 config=st.session_state.config,
                 processed_gdf=st.session_state.get("processed_gdf"),
+                person_name=st.session_state.get("ui_nom"),
             )
             st.session_state.pdf_modal_data = pdf_bytes
             telemetry.log_usage_event(

@@ -21,6 +21,8 @@ import pandas as pd
 import streamlit as st
 import config as cfg
 from core.models import SearchCriterias, SearchResultsData
+from services.app_session import AppSession
+from services.search_controller import SearchController
 from google.cloud import storage, bigquery
 
 logger = logging.getLogger("services.share_service")
@@ -414,36 +416,12 @@ def restore_shared_search_to_session_state(
             map_view={},
         )
 
-    # Light reference data is enough to hydrate the editable criteria.  The
-    # immutable result/map snapshot must not trigger a new scoring run.
-    data_loader.ensure_data_initialized(load_heavy=False)
+    # An immutable snapshot contains all data needed for display. It must not
+    # download a special reference bundle before the user explicitly forks it.
+    data_loader.initialize_session_state()
     data_loader.apply_search_criteria_to_ui(config_obj)
     processed_gdf = _deserialize_map_context(snapshot.map_context)
     current_map_context = _deserialize_map_context(snapshot.current_map_context)
-
-    st.session_state["config"] = config_obj
-    st.session_state["search_results"] = results_obj
-    st.session_state["processed_gdf"] = processed_gdf
-    st.session_state["unaggregated_gdf"] = processed_gdf
-    st.session_state["active_search_hash"] = results_obj.search_hash
-    st.session_state["active_share_id"] = share_id
-    st.session_state["form_completed"] = False
-    st.session_state["immutable_shared_snapshot"] = True
-    st.session_state["shared_snapshot_version"] = snapshot.version
-    st.session_state["shared_snapshot_data_release"] = snapshot.data_release or "unknown"
-    st.session_state["shared_snapshot_created_at"] = snapshot.created_at
-    st.session_state["shared_snapshot_has_map"] = snapshot.has_map_context
-    st.session_state["snapshot_current_map_context"] = current_map_context
-    st.session_state.pop("engine", None)
-
-    # Do not fabricate task completion. Remove any same-hash state left in this
-    # browser session so a saved snapshot cannot be mutated by current workers.
-    bg_store = st.session_state.get("odis_bg_store")
-    if isinstance(bg_store, dict):
-        bg_store.pop(results_obj.search_hash, None)
-        for key in list(bg_store):
-            if key.startswith(f"analysis_{results_obj.search_hash}_"):
-                bg_store.pop(key, None)
 
     map_view = snapshot.map_view
     center = map_view.get("center")
@@ -452,10 +430,19 @@ def restore_shared_search_to_session_state(
     zoom = map_view.get("zoom")
     if not isinstance(zoom, int):
         zoom = maps.get_map_zoom(config_obj.loc_search_area)
-    st.session_state["center"] = center
-    st.session_state["zoom"] = zoom
-    st.session_state["last_centered_hash"] = results_obj.search_hash
-    st.session_state["highlighted_result"] = [False, None]
+    SearchController(AppSession(st.session_state)).restore_snapshot(
+        config=config_obj,
+        search_results=results_obj,
+        share_id=share_id,
+        processed_gdf=processed_gdf,
+        current_map_context=current_map_context,
+        version=snapshot.version,
+        data_release=snapshot.data_release,
+        created_at=snapshot.created_at,
+        has_map=snapshot.has_map_context,
+        center=center,
+        zoom=zoom,
+    )
 
 
 def restore_shared_search_from_query_params() -> bool:

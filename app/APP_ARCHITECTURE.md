@@ -42,7 +42,7 @@ graph TD
 ODIS implements a secure, role-based organizational profile context enforced immediately upon app startup.
 
 1.  **Security Gate (`app/utils/auth.py`)**:
-    *   Every page calls `auth.check_password()` before rendering.
+    *   Every page enters through `ui/page_shell.py`, which applies the authentication guard before rendering and centralizes telemetry, shared-link routing and standard sidebar actions.
     *   **Local Development**: By default (when Cloud Run environment variable `K_SERVICE` is not detected), the app auto-logins with a fallback developer user (`jacques-local`) belonging to the `jaccueille` organization.
     *   **Forced Auth Override**: Setting `ODIS_FORCE_AUTH=True` in environment variables disables this bypass, forcing the Streamlit login screen to render even during local development.
     *   **Production Authentication (Hybrid)**: On Cloud Run, users can authenticate via two methods presented side-by-side:
@@ -67,10 +67,22 @@ ODIS implements a secure, role-based organizational profile context enforced imm
         *   **Lists**: Performs a Union of default arrays (e.g. adding partner-specific housing lists to global defaults).
         *   **Scalars**: Performs a direct override of scalars (e.g. strategic weight boosts take precedence).
     *   **Toast Gating**: Gated in session state via `org_defaults_applied` to ensure the activation notification toast is only displayed once per login/session.
-3.  **Explicit data lifecycle and cache warm-up (`app/utils/data_loader.py`)**:
-    *   The home page calls `ensure_data_initialized(load_heavy=False)`: it loads only the data required to render that page from the active versioned GCS release, then starts a best-effort daemon task to warm the complete scoring-data cache. The task never writes Streamlit session state or changes visible content.
+3.  **Explicit data lifecycle and asynchronous preload (`app/utils/data_loader.py`)**:
+    *   The home page initializes only Streamlit form state and starts a non-blocking preload. It makes no synchronous GCS data read. The preload obtains the active release and prepares the complete bundle without writing Streamlit session state or changing visible content.
     *   `2_Formulaire.py` explicitly requests one complete `app_data` bundle before rendering its controls. The controls in `ui/forms.py` receive that bundle as an argument; they do not independently fetch datasets. This keeps their ordering/filtering metrics (ROME job counts, WALDEC association counts, prospective-city population) available and consistent.
-    *   `3_Resultats.py` likewise owns one complete bundle for a live search. An immutable shared-result snapshot stays light until the user chooses to edit or recompute it. A cold cache only delays the page that actually needs the complete data, while a warm cache makes that request immediate.
+    *   `3_Resultats.py` likewise owns one complete bundle for a live search. An immutable shared-result snapshot is self-contained and reads no data release until the user chooses to edit or recompute it. A cold cache only delays the page that actually needs the complete data, while a preloaded cache makes that request immediate.
+
+### 1.6 Page shell, loading path and session ownership
+
+| Entry/page | Page-load data | Post-load work | State owner |
+| --- | --- | --- | --- |
+| `main.py` | No data bundle | Authenticated shared-link routing, then redirect to Accueil; starts an asynchronous complete-bundle preload | `page_shell` + `FormState` defaults |
+| `1_Accueil.py` | No data bundle | Optional interviewer/auto-detection; confirmed criteria hydrate form widgets before navigation | `FormState` |
+| `2_Formulaire.py` | Complete bundle, without RAG initialization | Interactive wizard only; individual controls never fetch data | Streamlit widget keys through `FormState` |
+| `3_Resultats.py` | Complete bundle for a live run/edit; none for immutable shared display | `SearchController` runs deterministic scoring, publishes results, then launches optional post-scoring work | `AppSession` + `SearchController` |
+| `4_Analytics.py` | No ODIS scoring bundle | BigQuery analytics query after admin authorization | Page-local filters/cache |
+
+`ui/page_shell.py` owns the common entry convention. `ui/form_state.py` owns the translation between native widget keys and an immutable `SearchCriterias`. `services/app_session.py` owns active-search/reset transitions, while `services/search_controller.py` is the only normal deterministic execution path.
 
 ---
 
@@ -138,6 +150,8 @@ When initiating long-running scoring or AI swarm tasks:
 3.  The thread writes state updates to the session-specific `st.session_state['odis_bg_store']`.
 4.  Once the status changes to `"done"`, the UI triggers a page rerun to render the new state.
 
+Form widget state is intentionally not wrapped in a second reactive store. Each widget has one native `ui_*` Session State value. `FormState.hydrate()` applies defaults, organization/demo profiles, auto-detection and shared criteria before widgets render; `FormState.collect()` is the sole conversion to `SearchCriterias`. Composite mirrors such as checkbox-list copies, expert flags and organization boost dictionaries are derived instead of persisted.
+
 ### 3.3 The State Reducer Pattern
 Because background threads and the `pydantic-graph` swarm run outside the main Streamlit thread, ODIS implements a **state reducer pattern** (`merge_search_results` in `app/agents/state.py`) to update the UI:
 - Upon background thread completion, the reducer intercepts the newly generated `expert_analysis` and `refiner_pitch` payloads.
@@ -160,7 +174,7 @@ ODIS implements a degraded execution mode ("AI-free" mode) where all Vertex AI /
 ## 4. Key App Components
 
 ### 4.1 Search Criteria Form Wizard (`app/pages/2_Formulaire.py` & `app/ui/forms.py`)
-A multi-step, interactive wizard that guides the user through profiling a beneficiary's situation. It maps UI widgets (select boxes, text inputs, sliders) directly to the properties of the `SearchCriterias` Pydantic model.
+A multi-step, interactive wizard that guides the user through profiling a beneficiary's situation. Widgets retain native Streamlit keys; `app/ui/form_state.py` is the single hydration/collection adapter to the `SearchCriterias` Pydantic model.
 
 ### 4.2 Scoring Engine (`app/core/scoring.py`)
 The mathematical engine of the application. It loads local parquet files and calculates normalized, weighted compatibility scores across all 36,000+ French communes.
@@ -169,7 +183,7 @@ The mathematical engine of the application. It loads local parquet files and cal
 - Evaluates mandatory baseline criteria and incorporates regional boosts.
 - Details are documented in [SCORING.md](file:///Users/jacques/dev/13_odis_stream2/SCORING.md).
 
-### 4.3 Post-Scoring Hydration (`app/services/postscoring.py`)
+### 4.3 Post-Scoring Hydration (`app/core/postscoring.py`)
 An asynchronous service that runs immediately after scoring. It queries external APIs (France Travail for live jobs, Les emplois de l'inclusion for solidarity structures) and runs database-level RAG searches for associations in BigQuery, packing the returned records into the `CommuneResult` model.
 
 ### 4.4 Results UI & "En Savoir Plus" Pane (`app/pages/3_Resultats.py` & `app/ui/results.py`)
@@ -209,7 +223,9 @@ app/
 │   └── pdf_generator.py  # ReportLab document layout builder
 ├── ui/
 │   ├── components.py     # UI cards, tables, admin sidebar links, and metric displays
+│   ├── form_state.py      # Native widget-state hydration and criteria collection
 │   ├── forms.py          # Form input wizard layout fields
+│   ├── page_shell.py      # Common auth, routing, telemetry, and sidebar conventions
 │   ├── results.py        # Polling fragments and detail views
 │   └── idle_sleep.py     # Iframe activity listeners & idle monitors
 ├── pages/
@@ -218,6 +234,8 @@ app/
 │   ├── 3_Resultats.py    # Map, rankings list, and chatbot page
 │   └── 4_Analytics.py    # Admin BI analytics dashboard
 ├── services/
+│   ├── app_session.py     # Identity/resource-preserving search state transitions
+│   ├── search_controller.py # Deterministic execution and result publication
 │   ├── share_service.py  # Snapshot persistence, GCS upload, and session restoration
 │   ├── telemetry.py      # BigQuery search & usage events logger
 │   └── bq_logger.py      # Agent state and chat trajectory BigQuery logger
@@ -237,8 +255,8 @@ app/
 
 #### Adding a New UI Page
 1.  Add the page file under `app/pages/` (following Streamlit's numeric naming convention: `X_Name.py`).
-2.  Import `auth` and run `auth.check_password()` at the very top to secure the page and initialize the `idle_sleep` monitor.
-3.  Utilize components from `app/ui/components.py` to render standard layouts.
+2.  Call `st.set_page_config()` first, then `page_shell.enter_page()` with the page telemetry name and any admin/shared-link policy.
+3.  Use `page_shell` sidebar primitives and feature-specific components from `app/ui/components.py`.
 
 #### Adding an AI Agent Skill Card
 1.  Create a new Markdown file with YAML frontmatter under `app/agents/skills/`.
@@ -257,9 +275,10 @@ ODIS supports sharing search results via unique permalink URLs (`?search=<share_
 * **Telemetry**: Logs a `search_shared` event to BigQuery `odis_logs.usage_events`.
 
 ### 6.2 URL Parameter Interception & Session Hydration
-* **URL Parameter Interception**: `app/main.py`, `app/pages/1_Accueil.py`, and `app/pages/3_Resultats.py` check `st.query_params.get("search")`.
+* **URL Parameter Interception**: the relevant entry scripts call `page_shell.enter_page()`; the query parsing, authentication ordering and redirect policy live in one helper.
 * **Session State Restoration**: `restore_shared_search_to_session_state()` re-hydrates `st.session_state` with:
   * `config` (`SearchCriterias`) and `search_results` (`SearchResultsData`).
-  * `processed_gdf` (Lambert-93 / EPSG:4326 geometries).
-  * `st.session_state["odis_bg_store"][hash]` pre-populated with `pitches`, `enrichment`, `jobs_enrichment`, and city `analysis_key` statuses (`"done"`).
+  * the saved scored map context and view.
+  * immutable snapshot metadata through `AppSession.restore_snapshot()`.
+  * No engine or fabricated background-task completion is created for a snapshot.
 * **Fork on Edit**: Fine-tuning search criteria and re-running a search from a permalink generates a fresh `share_id` snapshot without altering the original sender's permalink.

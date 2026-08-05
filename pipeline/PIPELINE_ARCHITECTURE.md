@@ -74,8 +74,9 @@ The two job datasets are metropolitan-only scoring inputs. Their collectors
 must complete the 96 valid metropolitan department identifiers and publish
 per-department, page-level coverage artifacts; France Travail additionally
 requires at least one offer in every department. The quality gate rejects a
-candidate with incomplete coverage; at runtime a missing coverage artifact
-means employment opportunities are unavailable rather than zero.
+candidate with incomplete coverage. These validation artifacts are retained
+with the candidate and quality report; they are not release artifacts and are
+never read by the application.
 - INSEE, education, electoral, postal-code, formation and other reference
 inputs remain active where the build requires them.
 

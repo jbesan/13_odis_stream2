@@ -3,9 +3,18 @@
 from __future__ import annotations
 
 from collections.abc import MutableMapping
+from dataclasses import dataclass
 from typing import Any
 
 import config as cfg
+
+
+@dataclass(frozen=True)
+class IdentityContext:
+    username: str
+    user: Any
+    org: Any
+    login_session_id: str | None = None
 
 
 class AppSession:
@@ -50,6 +59,20 @@ class AppSession:
     def __init__(self, state: MutableMapping[str, Any]):
         self.state = state
 
+    def identity(self) -> IdentityContext:
+        """Return the complete authenticated identity or reject partial state."""
+        user = self.state.get("user")
+        org = self.state.get("org")
+        username = self.state.get("username")
+        if not username or user is None or org is None:
+            raise RuntimeError("Authenticated session has incomplete identity context")
+        return IdentityContext(
+            username=str(username),
+            user=user,
+            org=org,
+            login_session_id=self.state.get("login_session_id"),
+        )
+
     def ensure_result_view(self) -> None:
         for key, factory in self.RESULT_VIEW_DEFAULTS.items():
             if key not in self.state:
@@ -65,6 +88,11 @@ class AppSession:
             self.state.pop(key, None)
         self.state["config"] = config
         self.state["active_data_release"] = data_release
+        self.state["search_results"] = None
+        self.state["processed_gdf"] = None
+        self.state["unaggregated_gdf"] = None
+        self.state["engine"] = None
+        self.state["active_search_hash"] = None
 
     def complete_search(
         self,
@@ -138,4 +166,3 @@ class AppSession:
                 del self.state[key]
                 removed += 1
         return removed
-

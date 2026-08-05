@@ -28,6 +28,15 @@ class SearchController:
     def __init__(self, session: AppSession):
         self.session = session
 
+    def restore_snapshot(self, **snapshot_state: Any) -> None:
+        """Publish a snapshot prepared by the persistence service."""
+        self.session.restore_snapshot(**snapshot_state)
+
+    def begin_snapshot_edit(self) -> None:
+        """Expose snapshot criteria for an explicit fork on current data."""
+        if self.session.state.get("immutable_shared_snapshot"):
+            self.session.state["shared_snapshot_editing"] = True
+
     def execute(
         self, config: SearchCriterias, app_data: Mapping[str, Any]
     ) -> SearchResultsData:
@@ -72,9 +81,7 @@ class SearchController:
             global_stats={},
             refugee_associations_data=app_data["refugee_associations_data"],
             live_jobs_data=app_data["live_jobs_data"],
-            live_jobs_coverage=app_data.get("live_jobs_coverage", pd.DataFrame()),
             siae_jobs_data=app_data["siae_jobs_data"],
-            siae_jobs_coverage=app_data.get("siae_jobs_coverage", pd.DataFrame()),
             annuaire_ecoles=app_data.get("annuaire_ecoles", pd.DataFrame()),
             annuaire_sante=app_data.get("annuaire_sante", pd.DataFrame()),
             annuaire_inclusion=app_data.get("annuaire_inclusion", pd.DataFrame()),
@@ -130,4 +137,3 @@ class SearchController:
             state["selected_geo"] = app_data["odis"].loc[
                 [config.commune_actuelle.code]
             ].copy()
-

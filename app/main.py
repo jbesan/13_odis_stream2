@@ -2,31 +2,20 @@ import streamlit as st
 import logfire
 import utils.logger  # noqa: F401  # Import configures logging before any spans are created.
 from utils import data_loader
+from ui import page_shell
 
 # --- Page Configuration (Standard ODIS) ---
 st.set_page_config(page_title="OD&IS", page_icon="👋", layout="wide")
 
-# --- Authentication (Standard ODIS) ---
-# We check passwords here too to ensure that hitting the root URL with
-# query params (e.g. ?demo=3) doesn't reset the session or bypass auth.
-from utils import auth
+# Authentication and shared-link routing always run before data initialization.
+page_shell.enter_page(
+    None, handle_shared_search=True, redirect_shared_to_results=True
+)
 
-if not auth.check_password():
-    st.stop()
-
-# --- Initialize Data ---
+# --- Initialize State / Start Async Preload ---
 with logfire.span("ODIS Session"):
-    # Keep the entry route responsive. The home page warms the scoring cache;
-    # pages that render form controls or execute a search request the complete
-    # bundle explicitly.
-    data_loader.ensure_data_initialized(load_heavy=False)
-
-# --- Shared Search Interception ---
-if "search" in st.query_params:
-    from services import share_service
-
-    if share_service.restore_shared_search_from_query_params():
-        st.switch_page("pages/3_Resultats.py")
+    data_loader.initialize_session_state()
+    data_loader.preload_scoring_datasets_async()
 
 # --- Silent Redirect ---
 # This makes main.py purely an entry point that leads to the first page

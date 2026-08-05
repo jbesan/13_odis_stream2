@@ -26,9 +26,7 @@ DATASET_FILES = [
     "odis_ccas.parquet",
     "odis_refugee_associations.parquet",
     "odis_ft_jobs_agg.parquet",
-    "odis_ft_jobs_coverage.parquet",
     "odis_inclusion_jobs.parquet",
-    "odis_inclusion_jobs_coverage.parquet",
     "salesforce_jaccueille_bdv.parquet",
 ]
 RELEASE_MANIFEST_FILE = "data_manifest.json"

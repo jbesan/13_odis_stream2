@@ -44,6 +44,8 @@ def test_publish_datasets_uploads_files_before_pointer(mock_client_class, tmp_pa
 
     assert version == "v-test-1"
     assert "odis_referentiels.parquet" in etl.DATASET_FILES
+    assert "odis_ft_jobs_coverage.parquet" not in etl.DATASET_FILES
+    assert "odis_inclusion_jobs_coverage.parquet" not in etl.DATASET_FILES
     assert [event[1] for event in events[:-1]] == [
         f"datasets/releases/v-test-1/{filename}" for filename in etl.DATASET_FILES
     ] + ["datasets/releases/v-test-1/data_manifest.json"]

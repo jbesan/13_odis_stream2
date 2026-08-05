@@ -72,7 +72,7 @@ def show_sources_dialog():
                 "Source": s.get("name") or s.get("source_key"),
                 "Méthode": s.get("method") or "Open Data",
                 "Année réf.": annee_ref,
-                "Statut": s.get("acquisition_status", "inconnu"),
+                # "Statut": s.get("acquisition_status", "inconnu"),
                 "Mise à jour constatée": format_iso_date(s.get("acquired_at")),
                 "Âge / TTL": _format_age_and_ttl(s),
                 "Volumétrie": formatted_rows,

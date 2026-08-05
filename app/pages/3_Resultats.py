@@ -1,11 +1,9 @@
 import streamlit as st
 from streamlit_folium import st_folium
-import config as cfg
 from ui import components as ui
 from ui import forms as ui_forms
 from ui import results as ui_results
-from ui import feedback
-from utils import common as utils
+from ui import page_shell
 from core import maps
 import folium as flm
 from utils import data_loader
@@ -31,54 +29,37 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- Authentication ---
-from utils import auth
-from services import telemetry
-
-if not auth.check_password():
-    st.stop()
-
-telemetry.log_page_view("Resultats")
+page_shell.enter_page("Resultats", handle_shared_search=True)
 
 
 # --- Session/controller convention ---
 app_session = AppSession(st.session_state)
 app_session.ensure_result_view()
+search_controller = SearchController(app_session)
 
 
 # --- PDF Modal Execution (moved to bottom for reliability) ---
 
-# --- Shared Search Restoration (Direct link access) ---
-# This runs after authentication and before choosing the data tier. An immutable
-# snapshot must never rescore itself against today's datasets just to render.
-if "search" in st.query_params:
-    from services import share_service
-
-    share_service.restore_shared_search_from_query_params()
-
-if "share_error" in st.session_state and st.session_state.share_error:
-    err_msg = st.session_state.pop("share_error")
-    st.toast(err_msg, icon="⚠️")
-    st.error(f"⚠️ {err_msg}")
-
 is_immutable_snapshot = bool(st.session_state.get("immutable_shared_snapshot"))
 is_editing_snapshot = bool(st.session_state.get("shared_snapshot_editing"))
 
-# Immutable display only needs the light reference tier used by the criteria
-# adapter. Editing/forking or a normal search uses the full scoring tier.
-with st.spinner("Chargement des indicateurs et données territoriales..."):
-    app_data = data_loader.ensure_data_initialized(
-        load_heavy=not is_immutable_snapshot or is_editing_snapshot
-    )
+# A snapshot is self-contained. Only a live search or an explicit fork loads
+# the complete release, including the referentials dataset.
+if is_immutable_snapshot and not is_editing_snapshot:
+    data_loader.initialize_session_state()
+    app_data = None
+else:
+    with st.spinner("Chargement des indicateurs et données territoriales..."):
+        app_data = data_loader.ensure_data_initialized()
 
 search_results: SearchResultsData = st.session_state.get("search_results")
 
 
 def run_search() -> None:
     """Collect the draft and delegate the complete lifecycle to the controller."""
-    complete_data = data_loader.ensure_data_initialized(load_heavy=True)
+    complete_data = data_loader.ensure_data_initialized()
     config = ui_forms.create_search_criterias_from_inputs(complete_data)
-    SearchController(app_session).execute(config, complete_data)
+    search_controller.execute(config, complete_data)
 
 
 # Automatically run the search if not already processed and form is completed
@@ -100,15 +81,7 @@ def action_buttons_container_static(h: str):
 
 # Sidebar
 with st.sidebar:
-    logo_path = utils.get_asset_path("logo-jaccueille-singa.png")
-    logo_b64 = utils.get_base64_image(logo_path)
-    if logo_b64:
-        st.markdown(
-            f'<img src="data:image/png;base64,{logo_b64}" width="150" style="margin-bottom: 20px;">',
-            unsafe_allow_html=True,
-        )
-    else:
-        st.error("Logo not found")
+    page_shell.render_sidebar_logo()
 
     st.write("")
     st.markdown(
@@ -117,10 +90,7 @@ with st.sidebar:
     )
     st.divider()
     # --- Retour à l'Accueil ---
-    ui.start_over()
-
-    # --- Bouton Feedback ---
-    feedback.render_feedback_button()
+    page_shell.render_primary_sidebar_actions(show_home=True, show_feedback=True)
 
     # --- Export to PDF & Partager ---
     if st.session_state.get("search_results") is not None:
@@ -129,12 +99,7 @@ with st.sidebar:
         # providers must not hold these actions in a permanent loading state.
         action_buttons_container_static(h)
 
-    st.divider()
-
-    # --- Dashboard Admin Analytics & Sources ---
-    ui.render_admin_sidebar_link()
-    ui.render_sources_sidebar_link()
-    ui.render_logout_sidebar_button()
+    page_shell.render_account_sidebar_actions()
 
     # --- Weights --- (MOVED TO TOP FILTER FORM)
 
@@ -159,13 +124,13 @@ with st.container(border=False, key="top_menu"):
     # Compute if criteria have changed since the last search. A shared snapshot
     # is immutable: re-running it is an explicit fork onto current data, even
     # when the criteria hash has not changed.
-    current_config = ui_forms.create_search_criterias_from_inputs(app_data)
     last_results = st.session_state.get("search_results")
     snapshot_mode = bool(st.session_state.get("immutable_shared_snapshot"))
-    if last_results is not None and not snapshot_mode:
-        disable_search = current_config.compute_hash() == last_results.search_hash
-    else:
+    if snapshot_mode or last_results is None:
         disable_search = False
+    else:
+        current_config = ui_forms.create_search_criterias_from_inputs(app_data)
+        disable_search = current_config.compute_hash() == last_results.search_hash
 
     with col_btn_search:
         st.button(
@@ -197,7 +162,7 @@ with st.container(border=False, key="top_menu"):
                 key="fork_shared_snapshot",
                 icon=":material/edit:",
             ):
-                st.session_state["shared_snapshot_editing"] = True
+                search_controller.begin_snapshot_edit()
                 st.rerun()
 
     if not snapshot_mode or st.session_state.get("shared_snapshot_editing"):

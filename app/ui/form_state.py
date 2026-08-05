@@ -101,6 +101,17 @@ class FormState:
         self.hydrate(defaults, overwrite=False)
         self.state[FORM_INITIALIZED_KEY] = True
 
+    def preserve_widgets_across_steps(self) -> None:
+        """Interrupt Streamlit cleanup for widgets hidden by the stepper.
+
+        Streamlit removes state for widgets that are not rendered in a run.
+        Self-assignment is its documented multipage persistence convention;
+        keeping it here makes the workaround explicit and centrally scoped.
+        """
+        for key in list(self.state):
+            if str(key).startswith("ui_"):
+                self.state[key] = self.state[key]
+
     def hydrate(
         self,
         criteria: SearchCriterias | Mapping[str, Any] | Any,
@@ -232,8 +243,8 @@ class FormState:
                     "ui_weight_profile", "Profil personnalisé", overwrite=overwrite
                 )
 
-        # During the compatibility window, use an already loaded light bundle
-        # to infer the region for a restored department search.
+        # Use an already loaded complete bundle to infer the region for a
+        # restored department search.
         if area == "departement" and codes:
             bundle = app_data or self.state.get("app_data", {})
             dept_details = bundle.get("dept_details", {}) if bundle else {}
@@ -427,4 +438,3 @@ class FormState:
             org_boosts=boosts,
             poids_territoire=self.state.get("ui_poids_territoire", 1.0),
         )
-

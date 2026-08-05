@@ -52,28 +52,44 @@ def test_load_referentiels_raw_builds_lightweight_form_indices(monkeypatch):
     assert data["pois"].empty
 
 
-def test_get_app_data_uses_one_release_key_for_light_and_complete_bundles(monkeypatch):
-    """Both bundle types derive from the same active GCS release identity."""
-    tier1_data = {"odis": pd.DataFrame(), "depcom_df": pd.DataFrame({"libgeo": ["Bordeaux"]})}
-    tier2_data = {
+def test_get_app_data_uses_the_active_release_complete_bundle(monkeypatch):
+    """All app data, including referentials, comes from one release key."""
+    complete_data = {
         "odis": pd.DataFrame({"libgeo": ["Bordeaux"]}),
         "pois": pd.DataFrame({"name": ["Mairie"]}),
         "waldec_index": pd.DataFrame({"count": [0]}),
     }
     monkeypatch.setattr(data_loader, "get_data_mtime", lambda: "gcs:run-123")
-    monkeypatch.setattr(data_loader, "get_referentiels_data", lambda _: tier1_data)
     monkeypatch.setattr(
-        data_loader, "_get_scoring_datasets_for_release", lambda _: tier2_data
+        data_loader, "_get_scoring_datasets_for_release", lambda _: complete_data
     )
 
-    tier1_data = data_loader.get_app_data(load_heavy=False)
-    assert tier1_data["odis"].empty
-    assert not tier1_data["depcom_df"].empty
+    app_data = data_loader.get_app_data()
+    assert not app_data["odis"].empty
+    assert not app_data["pois"].empty
+    assert "count" in app_data["waldec_index"].columns
 
-    tier2_data = data_loader.get_app_data(load_heavy=True)
-    assert not tier2_data["odis"].empty
-    assert not tier2_data["pois"].empty
-    assert "count" in tier2_data["waldec_index"].columns
+
+def test_async_preload_does_not_resolve_gcs_before_its_thread_runs(monkeypatch):
+    calls = []
+
+    class DeferredThread:
+        def __init__(self, *, target, daemon):
+            self.target = target
+            self.daemon = daemon
+
+        def start(self):
+            calls.append("thread_started")
+
+    monkeypatch.setattr(data_loader.threading, "Thread", DeferredThread)
+    monkeypatch.setattr(
+        data_loader, "get_data_mtime", lambda: calls.append("gcs_resolved")
+    )
+    monkeypatch.setitem(data_loader._SCORING_PRELOAD_STATUS, "in_progress", False)
+
+    data_loader.preload_scoring_datasets_async()
+
+    assert calls == ["thread_started"]
 
 
 def test_waldec_enrichment_supplies_zero_counts_without_association_data():
