@@ -1,10 +1,10 @@
 import requests
-import os
 import logging
 import re
 from typing import Dict, Any, Optional
 import pandas as pd
 import config as cfg
+from utils.data_loader import load_parquet_dataset
 
 logger = logging.getLogger("mcp_inclusion")
 
@@ -125,14 +125,9 @@ def _get_inclusion_job_details_logic(siae_id: str) -> Dict[str, Any]:
     dept = None
     siae_id_str = str(siae_id)
 
-    # Load local parquet cache once if it exists
-    df_cache = None
-    parquet_path = os.path.join(cfg.get_data_path(), cfg.SIAE_JOBS_FILE)
-    if os.path.exists(parquet_path):
-        try:
-            df_cache = pd.read_parquet(parquet_path)
-        except Exception as e:
-            logger.warning(f"[Inclusion] Failed to load parquet cache: {e}")
+    # Read the active release through the shared GCS resolver. The loader's
+    # versioned /tmp cache prevents repeated downloads within this revision.
+    df_cache = load_parquet_dataset(cfg.SIAE_JOBS_FILE)
 
     # 1. If siae_id is a SIRET (14 digits)
     if len(siae_id_str) == 14 and siae_id_str.isdigit():

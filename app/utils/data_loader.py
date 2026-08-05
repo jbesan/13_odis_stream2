@@ -455,45 +455,23 @@ def ensure_data_initialized(
 
 
 def resolve_dataset_path(filename_or_path: str) -> Optional[str]:
-    """
-    Resolves the physical path of a dataset file with Dual-Mode strategy:
-    1. Direct path if specified and exists
-    2. app/data/datasets/{filename} (local dev mirror)
-    3. Versioned /tmp/odis_data_cache/{release}/{filename} (GCS cache)
-    4. GCS download from the active release in gs://{GCS_BUCKET_NAME}/datasets/
-    """
+    """Resolve a release artifact from the active GCS version into ``/tmp``."""
     filename = os.path.basename(filename_or_path)
 
-    # 1. Direct path check
-    if os.path.exists(filename_or_path):
-        return filename_or_path
-
-    # 2. Local app/data/datasets/ (local dev mirror)
-    local_datasets_path = os.path.join(cfg.APP_DIR, "data", "datasets", filename)
-    if os.path.exists(local_datasets_path):
-        logger.debug(f"📦 [DATASET] Loaded '{filename}' from local datasets mirror.")
-        return local_datasets_path
-
-    # 3-4. Resolve and download from the active immutable GCS release.
+    # Resolve and download from the active immutable GCS release. The process
+    # cache is versioned, so a changed pointer cannot mix old and new parquet.
     try:
         bucket_name = os.getenv("GCS_DATASETS_BUCKET", "odis-stream2-eu")
         datasets_prefix = os.getenv("GCS_DATASETS_PREFIX", "datasets").strip("/")
         client = storage.Client()
         bucket = client.bucket(bucket_name)
         release_version = _read_gcs_release_version(bucket, datasets_prefix)
-        if release_version:
-            remote_prefix = f"{datasets_prefix}/releases/{release_version}"
-            cache_namespace = release_version
-        else:
-            # Temporary compatibility with buckets populated by the previous layout.
-            remote_prefix = datasets_prefix
-            cache_namespace = "legacy"
-            logger.warning(
-                "⚠️ [GCS] No current dataset release pointer found; trying legacy path."
-            )
+        if not release_version:
+            raise RuntimeError("Active GCS dataset release pointer is missing")
+        remote_prefix = f"{datasets_prefix}/releases/{release_version}"
 
         tmp_cache_dir = os.path.join(
-            tempfile.gettempdir(), "odis_data_cache", cache_namespace
+            tempfile.gettempdir(), "odis_data_cache", release_version
         )
         tmp_cache_path = os.path.join(tmp_cache_dir, filename)
         if os.path.exists(tmp_cache_path):
@@ -551,9 +529,7 @@ def _read_gcs_release_version(bucket: Any, datasets_prefix: str) -> Optional[str
 def load_active_data_manifest() -> Dict[str, Any]:
     """Load and verify the manifest belonging to the active GCS dataset release.
 
-    Cloud Run must never report the bootstrap manifest embedded in the image once
-    a dataset pointer exists.  A local manifest remains a development-only
-    fallback so contributors can run the app without GCS credentials.
+    The manifest, like every parquet artifact, belongs to the active GCS release.
     """
     try:
         bucket_name = os.getenv("GCS_DATASETS_BUCKET", "odis-stream2-eu")
@@ -589,19 +565,7 @@ def load_active_data_manifest() -> Dict[str, Any]:
         manifest["active_release_version"] = release_version
         return manifest
     except Exception as exc:
-        # Cloud Run must surface a broken release rather than falling back to a
-        # potentially stale image manifest.  Local development intentionally has
-        # no release pointer and can still use its checked-out artifact.
-        if os.getenv("K_SERVICE"):
-            raise RuntimeError(f"Unable to load active data manifest: {exc}") from exc
-        local_manifest_path = os.path.join(cfg.LOCAL_DATA_PATH, "data_manifest.json")
-        if not os.path.exists(local_manifest_path):
-            raise RuntimeError(f"Unable to load active data manifest: {exc}") from exc
-        logger.info("Using local development data manifest after GCS lookup failed: %s", exc)
-        with open(local_manifest_path, encoding="utf-8") as handle:
-            manifest = json.load(handle)
-        manifest["active_release_version"] = manifest.get("pipeline_run_id")
-        return manifest
+        raise RuntimeError(f"Unable to load active data manifest: {exc}") from exc
 
 
 @st.cache_data(ttl=3600)
@@ -739,12 +703,13 @@ def _enrich_rome_index(
 
 def load_referentiels_raw() -> Dict[str, Any]:
     """
-    Tier 1: Fast loading of lightweight lookups and referentiel indices (< 100ms).
-    Used for instant form rendering.
+    Load the lightweight reference indices from the active GCS release.
+
+    Used by the home/snapshot flow; form controls use the complete bundle.
     """
-    base_path = cfg.get_data_path()
-    ref_path = os.path.join(base_path, cfg.REFERENTIELS_FILE)
-    refs_df = _load_parquet(ref_path)
+    refs_df = _load_parquet(cfg.REFERENTIELS_FILE)
+    if refs_df.empty:
+        raise RuntimeError("Active GCS release has no usable referentials dataset")
 
     commune_names = {}
     bv_names = {}
@@ -794,7 +759,7 @@ def load_referentiels_raw() -> Dict[str, Any]:
         elif not depcom_df.empty:
             coddep_set = sorted(depcom_df["dep_code"].unique().tolist())
 
-    rome_index = pd.DataFrame(columns=["label", "job_count"])
+    rome_index = pd.DataFrame(columns=["label"])
     codformations_index = pd.DataFrame(columns=["label"])
     inclusion_services_index = pd.DataFrame(columns=["label"])
     waldec_index = pd.DataFrame(columns=["label"])
@@ -802,25 +767,12 @@ def load_referentiels_raw() -> Dict[str, Any]:
     if not refs_df.empty:
         rome_ref_df = refs_df[refs_df["key"] == "rome_codes"]
         if not rome_ref_df.empty:
-            rome_columns = ["code", "label"]
-            if "job_count" in rome_ref_df.columns:
-                rome_columns.append("job_count")
             rome_index = (
-                rome_ref_df[rome_columns]
+                rome_ref_df[["code", "label"]]
                 .drop_duplicates(subset=["code"])
                 .set_index("code")
             )
-            if "job_count" in rome_index.columns:
-                rome_index["job_count"] = pd.to_numeric(
-                    rome_index["job_count"], errors="coerce"
-                )
-                rome_index = rome_index.sort_values(
-                    by=["job_count", "label"],
-                    ascending=[False, True],
-                    na_position="last",
-                )
-            else:
-                rome_index = rome_index.sort_values(by="label")
+            rome_index = rome_index.sort_values(by="label")
 
         form_ref_df = refs_df[refs_df["key"] == "formation_codes"]
         if not form_ref_df.empty:
@@ -884,11 +836,10 @@ def load_scoring_datasets_raw(refs_data: Optional[Dict[str, Any]] = None) -> Dic
         refs_data = load_referentiels_raw()
 
     res = copy.copy(refs_data)
-    base_path = cfg.get_data_path()
-    logger.info(f"Loading heavy scoring datasets from: {base_path}")
+    logger.info("Loading heavy scoring datasets from the active GCS release")
 
     # 1. Load Main ODIS Communes Data
-    odis_path = os.path.join(base_path, cfg.ODIS_FILE)
+    odis_path = cfg.ODIS_FILE
 
     try:
         temp_df = _load_parquet(odis_path)
@@ -982,7 +933,7 @@ def load_scoring_datasets_raw(refs_data: Optional[Dict[str, Any]] = None) -> Dic
         raise e
 
     # 2. Load POIs
-    pois_path = os.path.join(base_path, cfg.POIS_FILE)
+    pois_path = cfg.POIS_FILE
     pois_df = _load_parquet(pois_path)
     if not pois_df.empty and "lat" in pois_df.columns and "lon" in pois_df.columns:
         pois_df["geometry"] = gpd.points_from_xy(pois_df.lon, pois_df.lat)
@@ -1036,19 +987,19 @@ def load_scoring_datasets_raw(refs_data: Optional[Dict[str, Any]] = None) -> Dic
     load_errors: List[str] = []
 
     live_jobs_data = _load_parquet(
-        os.path.join(base_path, cfg.LIVE_JOBS_FILE), error_list=load_errors
+        cfg.LIVE_JOBS_FILE, error_list=load_errors
     )
     live_jobs_coverage = _load_parquet(
-        os.path.join(base_path, cfg.LIVE_JOBS_COVERAGE_FILE), error_list=load_errors
+        cfg.LIVE_JOBS_COVERAGE_FILE, error_list=load_errors
     )
     associations_data = _load_parquet(
-        os.path.join(base_path, cfg.AGG_ASSOCIATIONS_FILE), error_list=load_errors
+        cfg.AGG_ASSOCIATIONS_FILE, error_list=load_errors
     )
     refugee_associations_data = _load_parquet(
-        os.path.join(base_path, cfg.REFUGEE_ASSOCIATIONS_FILE), error_list=load_errors
+        cfg.REFUGEE_ASSOCIATIONS_FILE, error_list=load_errors
     )
     formations_data = _load_parquet(
-        os.path.join(base_path, cfg.AGG_FORMATIONS_FILE), error_list=load_errors
+        cfg.AGG_FORMATIONS_FILE, error_list=load_errors
     )
 
     if not formations_data.empty and "formation_code" in formations_data.columns:
@@ -1059,14 +1010,14 @@ def load_scoring_datasets_raw(refs_data: Optional[Dict[str, Any]] = None) -> Dic
         )
 
     structures_ccas = _load_parquet(
-        os.path.join(base_path, cfg.CCAS_FILE), error_list=load_errors
+        cfg.CCAS_FILE, error_list=load_errors
     )
 
     siae_jobs_data = _load_parquet(
-        os.path.join(base_path, cfg.SIAE_JOBS_FILE), error_list=load_errors
+        cfg.SIAE_JOBS_FILE, error_list=load_errors
     )
     siae_jobs_coverage = _load_parquet(
-        os.path.join(base_path, cfg.SIAE_JOBS_COVERAGE_FILE), error_list=load_errors
+        cfg.SIAE_JOBS_COVERAGE_FILE, error_list=load_errors
     )
 
     # --- Enrichment: Index Sorting & Truncation ---
@@ -1078,7 +1029,7 @@ def load_scoring_datasets_raw(refs_data: Optional[Dict[str, Any]] = None) -> Dic
     )
 
     # 5. Bassins de Vie Geo
-    bv_path = os.path.join(base_path, cfg.BV_FILE)
+    bv_path = cfg.BV_FILE
     bv_geo = _load_parquet(bv_path, error_list=load_errors)
     if not bv_geo.empty:
         if "polygon" in bv_geo.columns:
@@ -1178,34 +1129,7 @@ def load_all_data_raw() -> Dict[str, Any]:
 
 
 def get_data_mtime() -> str:
-    """Return a cache identity that changes when local or GCS data changes."""
-    base_path = cfg.get_data_path()
-    local_mirror_dir = os.path.join(base_path, "datasets")
-    local_mirror_files = []
-    if os.path.isdir(local_mirror_dir):
-        local_mirror_files = [
-            entry.path
-            for entry in os.scandir(local_mirror_dir)
-            if entry.is_file() and entry.name.endswith(".parquet")
-        ]
-    legacy_dataset_path = os.path.join(base_path, cfg.ODIS_FILE)
-    local_critical_files = local_mirror_files + [
-        legacy_dataset_path,
-        os.path.join(cfg.APP_DIR, cfg.SCORES_CAT_FILE),
-        os.path.join(base_path, "data_manifest.json"),
-    ]
-    local_mtimes = []
-    for f in local_critical_files:
-        if os.path.exists(f):
-            local_mtimes.append(os.path.getmtime(f))
-
-    # Local mirrors are intentionally authoritative for local development. In Cloud
-    # Run they are excluded from the image, so the active GCS release becomes the
-    # cache key and a monthly pipeline publication invalidates Streamlit's resource
-    # cache without a container rebuild.
-    if local_mirror_files or os.path.exists(legacy_dataset_path):
-        return "local:" + ":".join(f"{mtime:.6f}" for mtime in sorted(local_mtimes))
-
+    """Return the active immutable GCS release ID used as the cache key."""
     try:
         bucket_name = os.getenv("GCS_DATASETS_BUCKET", "odis-stream2-eu")
         datasets_prefix = os.getenv("GCS_DATASETS_PREFIX", "datasets").strip("/")
@@ -1213,21 +1137,11 @@ def get_data_mtime() -> str:
             storage.Client().bucket(bucket_name), datasets_prefix
         )
     except Exception as e:
-        logger.warning(f"⚠️ [GCS] Could not read dataset release pointer: {e}")
-        release_version = None
+        raise RuntimeError(f"Unable to read active GCS dataset release: {e}") from e
 
-    if release_version:
-        scores_path = os.path.join(cfg.APP_DIR, cfg.SCORES_CAT_FILE)
-        scores_mtime = (
-            f"{os.path.getmtime(scores_path):.6f}"
-            if os.path.exists(scores_path)
-            else "missing"
-        )
-        return f"gcs:{release_version}:scores:{scores_mtime}"
-
-    if local_mtimes:
-        return "local:" + ":".join(f"{mtime:.6f}" for mtime in sorted(local_mtimes))
-    return "empty"
+    if not release_version:
+        raise RuntimeError("Active GCS dataset release pointer is missing")
+    return f"gcs:{release_version}"
 
 
 @st.cache_resource
@@ -1252,8 +1166,8 @@ def _get_scoring_datasets_for_release(data_hash: str) -> Dict[str, Any]:
 def get_app_data(load_heavy: bool = True) -> Dict[str, Any]:
     """
     Universal entry point to get the shared datasets (cached).
-    - load_heavy=False: Returns Tier 1 referentiels (< 100ms).
-    - load_heavy=True: Returns full Tier 1 + Tier 2 scoring datasets.
+    - load_heavy=False: Returns the lightweight reference bundle.
+    - load_heavy=True: Returns the complete scoring bundle.
     """
     mtime = get_data_mtime()
     if not load_heavy:

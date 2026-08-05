@@ -1,5 +1,3 @@
-import pandas as pd
-import os
 from app import config as cfg
 
 
@@ -12,8 +10,6 @@ def test_formation_codes_intersection():
     while referentiels expected integer-strings (e.g. "100").
     """
 
-    data_path = cfg.get_data_path()
-
     # 1. Load Formations Data via Data Loader (Verify Hotfix)
     # We simulate what init_datasets does for this specific file, or use it directly if possible.
     # To avoid loading everything, we'll replicate the hotfix logic or just call init_datasets().
@@ -21,8 +17,7 @@ def test_formation_codes_intersection():
 
     from utils import data_loader
 
-    formations_path = os.path.join(data_path, cfg.AGG_FORMATIONS_FILE)
-    formations_df = data_loader.load_parquet_dataset(formations_path)
+    formations_df = data_loader.load_parquet_dataset(cfg.AGG_FORMATIONS_FILE)
 
     if not formations_df.empty and "formation_code" in formations_df.columns:
         formations_df["formation_code"] = (
@@ -38,10 +33,7 @@ def test_formation_codes_intersection():
     print(f"\nSample Formation Codes (Cleaned): {sample_codes}")
 
     # 2. Load Referentiels
-    ref_path = os.path.join(data_path, cfg.REFERENTIELS_FILE)
-    assert os.path.exists(ref_path), f"File not found: {ref_path}"
-
-    ref_df = pd.read_parquet(ref_path)
+    ref_df = data_loader.load_parquet_dataset(cfg.REFERENTIELS_FILE)
     form_ref = ref_df[ref_df["key"] == "formation_codes"]
 
     assert not form_ref.empty, "No formation codes found in referentiels"

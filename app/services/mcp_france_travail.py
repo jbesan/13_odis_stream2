@@ -27,12 +27,6 @@ logger = logging.getLogger("agent_tools")
 AUTH_URL = "https://entreprise.francetravail.fr/connexion/oauth2/access_token?realm=/partenaire"
 BASE_URL = "https://api.francetravail.io/partenaire/offresdemploi/v2"
 
-# Robust Path Calculation
-import config as cfg
-
-REFERENTIELS_PATH = os.path.join(cfg.get_data_path(), cfg.REFERENTIELS_FILE)
-# logger.info(f"📍 [FranceTravail] Module loaded. Referentiels: {REFERENTIELS_PATH}")
-
 # Initialize FastMCP Server
 mcp = FastMCP("France-Travail")
 

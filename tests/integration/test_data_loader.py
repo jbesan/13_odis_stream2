@@ -52,9 +52,9 @@ def mock_parquet_data():
 @patch("utils.data_loader.fetch_salesforce_jaccueille_bdv")
 @patch("utils.data_loader.os.path.exists")
 @patch("utils.data_loader.pd.read_parquet")
-@patch("config.get_data_path")
+@patch("utils.data_loader.resolve_dataset_path", side_effect=lambda path: path)
 def test_init_datasets(
-    mock_get_data_path,
+    mock_resolve_dataset_path,
     mock_read_parquet,
     mock_exists,
     mock_fetch_salesforce,
@@ -62,7 +62,6 @@ def test_init_datasets(
 ):
     """Tests the initialization of datasets."""
     mock_exists.return_value = True
-    mock_get_data_path.return_value = "/mock/path"
     mock_fetch_salesforce.return_value = pd.DataFrame(
         columns=["bassin_de_vie", "contact_count", "lead_count"]
     )
@@ -129,23 +128,9 @@ def test_get_salesforce_jaccueille_counts(monkeypatch):
     ]
 
 
-def test_resolve_dataset_path_local_datasets(tmp_path, monkeypatch):
-    """Tests that resolve_dataset_path finds files in app/data/datasets/."""
-    datasets_dir = tmp_path / "app" / "data" / "datasets"
-    datasets_dir.mkdir(parents=True)
-    test_file = datasets_dir / "test_dataset.parquet"
-    test_file.write_text("dummy")
-
-    monkeypatch.setattr(data_loader.cfg, "APP_DIR", str(tmp_path / "app"))
-
-    resolved = data_loader.resolve_dataset_path("test_dataset.parquet")
-    assert resolved == str(test_file)
-
-
 @patch("utils.data_loader.storage.Client")
 def test_resolve_dataset_path_gcs_fallback(mock_storage_client_cls, tmp_path, monkeypatch):
-    """Tests that resolve_dataset_path falls back to GCS download when file is not local."""
-    monkeypatch.setattr(data_loader.cfg, "APP_DIR", str(tmp_path / "nonexistent_app"))
+    """Tests that every dataset is resolved from the active GCS release."""
     monkeypatch.setattr(data_loader.tempfile, "gettempdir", lambda: str(tmp_path / "tmp"))
     
     mock_client = MagicMock()

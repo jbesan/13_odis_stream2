@@ -142,7 +142,7 @@ def render_employment_form(app_data: dict[str, Any]) -> None:
                 if code in rome_full_index.index:
                     row = rome_full_index.loc[code]
                     label = row["label"]
-                    count = row.get("job_count", row.get("total_postes"))
+                    count = row.get("total_postes")
                     if pd.notna(count):
                         count_str = f"{int(count):,}".replace(",", " ")
                         return f"{label} [{count_str} postes]"

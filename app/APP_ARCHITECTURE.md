@@ -68,7 +68,7 @@ ODIS implements a secure, role-based organizational profile context enforced imm
         *   **Scalars**: Performs a direct override of scalars (e.g. strategic weight boosts take precedence).
     *   **Toast Gating**: Gated in session state via `org_defaults_applied` to ensure the activation notification toast is only displayed once per login/session.
 3.  **Explicit data lifecycle and cache warm-up (`app/utils/data_loader.py`)**:
-    *   The home page calls `ensure_data_initialized(load_heavy=False)`: it loads only the data required to render that page, then starts a best-effort daemon task to warm the complete scoring-data cache. The task never writes Streamlit session state or changes visible content.
+    *   The home page calls `ensure_data_initialized(load_heavy=False)`: it loads only the data required to render that page from the active versioned GCS release, then starts a best-effort daemon task to warm the complete scoring-data cache. The task never writes Streamlit session state or changes visible content.
     *   `2_Formulaire.py` explicitly requests one complete `app_data` bundle before rendering its controls. The controls in `ui/forms.py` receive that bundle as an argument; they do not independently fetch datasets. This keeps their ordering/filtering metrics (ROME job counts, WALDEC association counts, prospective-city population) available and consistent.
     *   `3_Resultats.py` likewise owns one complete bundle for a live search. An immutable shared-result snapshot stays light until the user chooses to edit or recompute it. A cold cache only delays the page that actually needs the complete data, while a warm cache makes that request immediate.
 

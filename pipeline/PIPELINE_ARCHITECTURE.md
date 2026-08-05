@@ -219,12 +219,13 @@ Deployment requires all of the following:
 5. quality-report metadata in that manifest;
 6. every required release artifact present and non-empty.
 
-The deployment operation uploads the validated dataset files and manifest under
-the GCS release prefix, then advances `datasets/current.json` with the manifest
-checksum only after the upload. Cloud Run resolves that manifest from the
-active release for source display and telemetry; it does not report the baked
-bootstrap manifest. The local `app/data` mirror is updated after successful
-publication. A failed candidate cannot advance the active release pointer.
+The deployment operation uploads every validated parquet dataset — including
+`odis_referentiels.parquet` — and the manifest under the GCS release prefix,
+then advances `datasets/current.json` with the manifest checksum only after the
+upload. Cloud Run resolves all release artifacts from that active version into
+its ephemeral `/tmp` cache; no parquet is baked into the application image or
+maintained as a local mirror. A failed candidate cannot advance the active
+release pointer.
 
 ## 7. File roles
 

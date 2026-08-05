@@ -2,7 +2,6 @@ import argparse
 import json
 import logging
 import re
-import shutil
 import os
 import sys
 from datetime import datetime, timezone
@@ -16,15 +15,9 @@ from google.cloud import storage
 from pipeline.run_context import PipelineRun, PipelineRunError, bind_run_paths
 
 SOURCE_DIR = Path("pipeline/cache/output")
-DEST_DATA_DIR = Path("app/data")
-DEST_DATASETS_DIR = Path("app/data/datasets")
-
-BOOTSTRAP_FILES = [
-    "odis_referentiels.parquet",
-    "data_manifest.json",
-]
 
 DATASET_FILES = [
+    "odis_referentiels.parquet",
     "odis_communes.parquet",
     "odis_bassins_de_vie.parquet",
     "odis_pois.parquet",
@@ -375,20 +368,13 @@ def main():
         if args.step == "deploy" or args.deploy:
             logging.info("=== Starting Deployment Phase ===")
             _assert_deployable_candidate(source_dir, run)
-            DEST_DATA_DIR.mkdir(parents=True, exist_ok=True)
-            DEST_DATASETS_DIR.mkdir(parents=True, exist_ok=True)
-
-            missing_bootstrap = [
-                f for f in BOOTSTRAP_FILES if not (source_dir / f).exists()
-            ]
             missing_datasets = [
                 f for f in DATASET_FILES if not (source_dir / f).exists()
             ]
-            if missing_bootstrap or missing_datasets:
-                missing = missing_bootstrap + missing_datasets
+            if missing_datasets:
                 raise FileNotFoundError(
                     "Deployment source is incomplete; missing files: "
-                    + ", ".join(missing)
+                    + ", ".join(missing_datasets)
                 )
 
             # Publish only the validated candidate before updating the local
@@ -399,12 +385,6 @@ def main():
             _publish_datasets_to_gcs(
                 source_dir, bucket_name, release_version=run.run_id
             )
-
-            # Keep the development mirror in sync after successful publication.
-            for f in BOOTSTRAP_FILES:
-                shutil.copy2(source_dir / f, DEST_DATA_DIR / f)
-            for f in DATASET_FILES:
-                shutil.copy2(source_dir / f, DEST_DATASETS_DIR / f)
 
             logging.info("=== Deployment Phase Completed ===")
     except Exception as exc:
