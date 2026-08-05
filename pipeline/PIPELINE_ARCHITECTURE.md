@@ -223,9 +223,10 @@ Deployment requires all of the following:
 The deployment operation uploads every validated parquet dataset — including
 `odis_referentiels.parquet` — and the manifest under the GCS release prefix,
 then advances `datasets/current.json` with the manifest checksum only after the
-upload. Cloud Run resolves all release artifacts from that active version into
-its ephemeral `/tmp` cache; no parquet is baked into the application image or
-maintained as a local mirror. A failed candidate cannot advance the active
+upload. Cloud Run reads the pointer and manifest once per bundle, then resolves
+the runtime artifacts from that frozen version into its ephemeral `/tmp` cache
+with bounded parallel downloads and checksum verification; no parquet is baked
+into the application image or maintained as a local mirror. A failed candidate cannot advance the active
 release pointer.
 
 ## 7. File roles

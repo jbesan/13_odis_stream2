@@ -69,6 +69,7 @@ ODIS implements a secure, role-based organizational profile context enforced imm
     *   **Toast Gating**: Gated in session state via `org_defaults_applied` to ensure the activation notification toast is only displayed once per login/session.
 3.  **Explicit data lifecycle and asynchronous preload (`app/utils/data_loader.py`)**:
     *   The home page initializes only Streamlit form state and starts a non-blocking preload. It makes no synchronous GCS data read. The preload obtains the active release and prepares the complete bundle without writing Streamlit session state or changing visible content.
+    *   A `ReleaseContext` reads `current.json` and the checksummed manifest once, freezes the release ID, then fetches missing runtime Parquets into the versioned `/tmp` cache with bounded parallelism. Every downloaded file is checked against the manifest checksum before Pandas reads it. Coverage artifacts remain pipeline-only and are never part of this bundle.
     *   `2_Formulaire.py` explicitly requests one complete `app_data` bundle before rendering its controls. The controls in `ui/forms.py` receive that bundle as an argument; they do not independently fetch datasets. This keeps their ordering/filtering metrics (ROME job counts, WALDEC association counts, prospective-city population) available and consistent.
     *   `3_Resultats.py` likewise owns one complete bundle for a live search. An immutable shared-result snapshot is self-contained and reads no data release until the user chooses to edit or recompute it. A cold cache only delays the page that actually needs the complete data, while a preloaded cache makes that request immediate.
 
@@ -177,7 +178,7 @@ ODIS implements a degraded execution mode ("AI-free" mode) where all Vertex AI /
 A multi-step, interactive wizard that guides the user through profiling a beneficiary's situation. Widgets retain native Streamlit keys; `app/ui/form_state.py` is the single hydration/collection adapter to the `SearchCriterias` Pydantic model.
 
 ### 4.2 Scoring Engine (`app/core/scoring.py`)
-The mathematical engine of the application. It loads local parquet files and calculates normalized, weighted compatibility scores across all 36,000+ French communes.
+The mathematical engine of the application. It receives the verified GCS release bundle and calculates normalized, weighted compatibility scores across all 36,000+ French communes.
 - Performs quantile normalizations to eliminate outliers.
 - Applies centile ranking to categories to enforce balanced weights.
 - Evaluates mandatory baseline criteria and incorporates regional boosts.

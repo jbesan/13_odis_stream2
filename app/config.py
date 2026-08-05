@@ -39,6 +39,7 @@ REFUGEE_ASSOCIATIONS_FILE = "odis_refugee_associations.parquet"
 LIVE_JOBS_FILE = "odis_ft_jobs_agg.parquet"
 SIAE_JOBS_FILE = "odis_inclusion_jobs.parquet"
 SIAE_STRUCTURES_FILE = "odis_inclusion_structures.parquet"
+SALESFORCE_JACCUEILLE_BDV_FILE = "salesforce_jaccueille_bdv.parquet"
 SCORES_CAT_FILE = "scores_config.yaml"
 
 # Paris, Lyon, Marseille Global Codes -> Arrondissement Prefix

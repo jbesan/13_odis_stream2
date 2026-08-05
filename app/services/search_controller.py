@@ -43,7 +43,13 @@ class SearchController:
         logger.info("--- Running deterministic search ---")
         gc.collect()
         telemetry.reset_interaction_id()
-        self.session.begin_search(config, data_loader.get_data_mtime())
+        # The bundle was resolved before this search. Reusing its release ID
+        # keeps the saved search coherent even if `current.json` moves while
+        # the user is filling in the form.
+        self.session.begin_search(
+            config,
+            app_data.get("_release_id") or data_loader.get_data_mtime(),
+        )
 
         engine = self._build_engine(app_data)
         search_results, processed_gdf = engine.run_optimized(

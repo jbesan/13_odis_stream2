@@ -1,5 +1,6 @@
 import pytest
 import pandas as pd
+import hashlib
 from unittest.mock import MagicMock, patch
 from utils import data_loader
 
@@ -130,7 +131,7 @@ def test_get_salesforce_jaccueille_counts(monkeypatch):
 
 @patch("utils.data_loader.storage.Client")
 def test_resolve_dataset_path_gcs_fallback(mock_storage_client_cls, tmp_path, monkeypatch):
-    """Tests that every dataset is resolved from the active GCS release."""
+    """Tests that a declared artifact is resolved from its frozen release."""
     monkeypatch.setattr(data_loader.tempfile, "gettempdir", lambda: str(tmp_path / "tmp"))
     
     mock_client = MagicMock()
@@ -138,29 +139,37 @@ def test_resolve_dataset_path_gcs_fallback(mock_storage_client_cls, tmp_path, mo
     mock_bucket = MagicMock()
     mock_client.bucket.return_value = mock_bucket
 
-    pointer_blob = MagicMock()
-    pointer_blob.exists.return_value = True
-    pointer_blob.download_as_bytes.return_value = b'{"version": "v-test-1"}'
-
     dataset_blob = MagicMock()
-    dataset_blob.exists.return_value = True
+    payload = b"gcs_data"
 
     # Simulate download_to_filename writing dummy file
     def mock_download(target_path):
         from pathlib import Path
         Path(target_path).parent.mkdir(parents=True, exist_ok=True)
-        Path(target_path).write_text("gcs_data")
+        Path(target_path).write_bytes(payload)
 
     dataset_blob.download_to_filename.side_effect = mock_download
 
     def get_blob(blob_path):
-        if blob_path == "datasets/current.json":
-            return pointer_blob
         return dataset_blob
 
     mock_bucket.blob.side_effect = get_blob
 
-    resolved = data_loader.resolve_dataset_path("salesforce_jaccueille_bdv.parquet")
+    release_context = data_loader.ReleaseContext(
+        bucket_name="odis-stream2-eu",
+        datasets_prefix="datasets",
+        version="v-test-1",
+        artifacts=(
+            data_loader.ReleaseArtifact(
+                name="salesforce_jaccueille_bdv.parquet",
+                sha256=hashlib.sha256(payload).hexdigest(),
+                size_bytes=len(payload),
+            ),
+        ),
+    )
+    resolved = data_loader.resolve_dataset_path(
+        "salesforce_jaccueille_bdv.parquet", release_context=release_context
+    )
     assert resolved is not None
     assert "salesforce_jaccueille_bdv.parquet" in resolved
     assert "v-test-1" in resolved

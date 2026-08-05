@@ -8,11 +8,14 @@ import os
 import yaml
 import logging
 import re
-from typing import Dict, Any, List, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
+from typing import Dict, Any, Iterable, List, Optional
 import config as cfg
 import copy
 import tempfile
 import threading
+import uuid
 from google.cloud import storage
 
 # Configure logging
@@ -25,26 +28,75 @@ _SCORING_PRELOAD_STATUS: Dict[str, Any] = {
     "lock": threading.Lock(),
 }
 _SCORING_DATASET_LOAD_LOCK = threading.RLock()
+_VERIFIED_RELEASE_ARTIFACTS: set[tuple[str, str, str]] = set()
+_VERIFIED_RELEASE_ARTIFACTS_LOCK = threading.Lock()
+
+# The application always loads this complete scoring bundle.  Validation-only
+# artefacts (such as the France Travail and Inclusion coverage files) are not
+# part of this runtime contract.
+_RUNTIME_DATASET_FILENAMES = (
+    cfg.REFERENTIELS_FILE,
+    cfg.ODIS_FILE,
+    cfg.BV_FILE,
+    cfg.POIS_FILE,
+    cfg.AGG_ASSOCIATIONS_FILE,
+    cfg.AGG_FORMATIONS_FILE,
+    cfg.CCAS_FILE,
+    cfg.REFUGEE_ASSOCIATIONS_FILE,
+    cfg.LIVE_JOBS_FILE,
+    cfg.SIAE_JOBS_FILE,
+    cfg.SALESFORCE_JACCUEILLE_BDV_FILE,
+)
+_GCS_DOWNLOAD_WORKERS = 4
+
+
+@dataclass(frozen=True)
+class ReleaseArtifact:
+    """One verified runtime artifact from an immutable GCS release."""
+
+    name: str
+    sha256: str
+    size_bytes: int
+
+
+@dataclass(frozen=True)
+class ReleaseContext:
+    """The immutable dataset release selected once for one complete load."""
+
+    bucket_name: str
+    datasets_prefix: str
+    version: str
+    artifacts: tuple[ReleaseArtifact, ...]
+
+    @property
+    def identity(self) -> str:
+        return f"gcs:{self.version}"
+
+    def artifact(self, filename: str) -> ReleaseArtifact:
+        for artifact in self.artifacts:
+            if artifact.name == filename:
+                return artifact
+        raise KeyError(f"Dataset '{filename}' is not declared by release {self.version}")
 
 
 def _preload_scoring_datasets_in_background() -> None:
     """Preload the active scoring release without touching session state."""
-    release_id = None
+    release_context = None
     completed = False
     try:
-        release_id = get_data_mtime()
+        release_context = get_active_release_context()
         with _SCORING_PRELOAD_STATUS["lock"]:
-            if _SCORING_PRELOAD_STATUS["completed_release"] == release_id:
+            if _SCORING_PRELOAD_STATUS["completed_release"] == release_context.identity:
                 return
-        _get_scoring_datasets_for_release(release_id)
+        _get_scoring_datasets_for_release(release_context)
         completed = True
     except Exception as e:
         logger.error("Asynchronous scoring-data preload failed: %s", e)
     finally:
         with _SCORING_PRELOAD_STATUS["lock"]:
             _SCORING_PRELOAD_STATUS["in_progress"] = False
-            if completed and release_id:
-                _SCORING_PRELOAD_STATUS["completed_release"] = release_id
+            if completed and release_context:
+                _SCORING_PRELOAD_STATUS["completed_release"] = release_context.identity
 
 
 def preload_scoring_datasets_async() -> None:
@@ -221,140 +273,287 @@ def ensure_data_initialized(*, initialize_rag: bool = True) -> Dict[str, Any]:
     return app_data
 
 
-def resolve_dataset_path(filename_or_path: str) -> Optional[str]:
-    """Resolve a release artifact from the active GCS version into ``/tmp``."""
-    filename = os.path.basename(filename_or_path)
-
-    # Resolve and download from the active immutable GCS release. The process
-    # cache is versioned, so a changed pointer cannot mix old and new parquet.
-    try:
-        bucket_name = os.getenv("GCS_DATASETS_BUCKET", "odis-stream2-eu")
-        datasets_prefix = os.getenv("GCS_DATASETS_PREFIX", "datasets").strip("/")
-        client = storage.Client()
-        bucket = client.bucket(bucket_name)
-        release_version = _read_gcs_release_version(bucket, datasets_prefix)
-        if not release_version:
-            raise RuntimeError("Active GCS dataset release pointer is missing")
-        remote_prefix = f"{datasets_prefix}/releases/{release_version}"
-
-        tmp_cache_dir = os.path.join(
-            tempfile.gettempdir(), "odis_data_cache", release_version
-        )
-        tmp_cache_path = os.path.join(tmp_cache_dir, filename)
-        if os.path.exists(tmp_cache_path):
-            logger.debug(
-                f"💾 [GCS CACHE] Loaded '{filename}' from local temp cache ({tmp_cache_path})."
-            )
-            return tmp_cache_path
-
-        blob_path = f"{remote_prefix}/{filename}"
-        blob = bucket.blob(blob_path)
-        if blob.exists():
-            os.makedirs(tmp_cache_dir, exist_ok=True)
-            tmp_download_path = f"{tmp_cache_path}.{os.getpid()}.tmp"
-            logger.info(
-                f"📡 [GCS] Downloading dataset '{filename}' from gs://{bucket_name}/{blob_path}..."
-            )
-            try:
-                blob.download_to_filename(tmp_download_path)
-                os.replace(tmp_download_path, tmp_cache_path)
-            finally:
-                if os.path.exists(tmp_download_path):
-                    os.remove(tmp_download_path)
-            logger.info(
-                f"✅ [GCS] Successfully cached '{filename}' to {tmp_cache_path}"
-            )
-            return tmp_cache_path
-        else:
-            logger.warning(
-                f"⚠️ [GCS] Blob '{blob_path}' not found in bucket 'gs://{bucket_name}'"
-            )
-    except Exception as e:
-        logger.warning(f"⚠️ [GCS] Failed to fetch dataset '{filename}' from GCS: {e}")
-
-    return None
-
-
-def _read_gcs_release_version(bucket: Any, datasets_prefix: str) -> Optional[str]:
-    """Read the active release pointer without caching it in process memory."""
+def _active_release_payload() -> tuple[str, str, Dict[str, Any], Dict[str, Any]]:
+    """Read ``current.json`` and its verified manifest exactly once."""
+    bucket_name = os.getenv("GCS_DATASETS_BUCKET", "odis-stream2-eu")
+    datasets_prefix = os.getenv("GCS_DATASETS_PREFIX", "datasets").strip("/")
+    bucket = storage.Client().bucket(bucket_name)
     pointer_blob = bucket.blob(f"{datasets_prefix}/current.json")
     if not pointer_blob.exists():
-        return None
+        raise RuntimeError("Active dataset release pointer is missing")
 
-    raw_pointer = pointer_blob.download_as_bytes()
-    if isinstance(raw_pointer, bytes):
-        raw_pointer = raw_pointer.decode("utf-8")
-    pointer = json.loads(raw_pointer)
+    try:
+        pointer = json.loads(pointer_blob.download_as_bytes())
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("Active dataset release pointer is invalid JSON") from exc
+
     release_version = pointer.get("version")
+    manifest_info = pointer.get("manifest")
     if not isinstance(release_version, str) or not re.fullmatch(
         r"[A-Za-z0-9._-]+", release_version
     ):
-        raise ValueError("Invalid version in GCS dataset release pointer")
-    return release_version
+        raise RuntimeError("Invalid version in GCS dataset release pointer")
+    if not isinstance(manifest_info, dict):
+        raise RuntimeError("Active dataset release pointer has no manifest metadata")
+
+    manifest_name = manifest_info.get("name")
+    expected_sha256 = manifest_info.get("sha256")
+    if (
+        manifest_name != "data_manifest.json"
+        or not isinstance(expected_sha256, str)
+        or not re.fullmatch(r"[a-f0-9]{64}", expected_sha256)
+    ):
+        raise RuntimeError("Active dataset manifest metadata is invalid")
+
+    manifest_blob = bucket.blob(
+        f"{datasets_prefix}/releases/{release_version}/{manifest_name}"
+    )
+    manifest_bytes = manifest_blob.download_as_bytes()
+    actual_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
+    if actual_sha256 != expected_sha256:
+        raise RuntimeError("Active dataset manifest checksum mismatch")
+    try:
+        manifest = json.loads(manifest_bytes)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("Active dataset manifest is invalid JSON") from exc
+    if manifest.get("pipeline_run_id") != release_version:
+        raise RuntimeError("Active dataset manifest does not belong to its release")
+    return bucket_name, datasets_prefix, pointer, manifest
 
 
 def load_active_data_manifest() -> Dict[str, Any]:
-    """Load and verify the manifest belonging to the active GCS dataset release.
-
-    The manifest, like every parquet artifact, belongs to the active GCS release.
-    """
+    """Load and verify the provenance manifest of the active GCS release."""
     try:
-        bucket_name = os.getenv("GCS_DATASETS_BUCKET", "odis-stream2-eu")
-        datasets_prefix = os.getenv("GCS_DATASETS_PREFIX", "datasets").strip("/")
-        bucket = storage.Client().bucket(bucket_name)
-        pointer_blob = bucket.blob(f"{datasets_prefix}/current.json")
-        if not pointer_blob.exists():
-            raise RuntimeError("Active dataset release pointer is missing")
-        pointer = json.loads(pointer_blob.download_as_bytes())
-        release_version = pointer.get("version")
-        manifest_info = pointer.get("manifest")
-        if not isinstance(release_version, str) or not re.fullmatch(
-            r"[A-Za-z0-9._-]+", release_version
-        ):
-            raise ValueError("Invalid version in GCS dataset release pointer")
-        if not isinstance(manifest_info, dict):
-            raise ValueError("Active dataset release pointer has no manifest metadata")
-
-        manifest_name = manifest_info.get("name")
-        expected_sha256 = manifest_info.get("sha256")
-        if manifest_name != "data_manifest.json" or not isinstance(expected_sha256, str):
-            raise ValueError("Active dataset manifest metadata is invalid")
-        manifest_blob = bucket.blob(
-            f"{datasets_prefix}/releases/{release_version}/{manifest_name}"
-        )
-        manifest_bytes = manifest_blob.download_as_bytes()
-        actual_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
-        if actual_sha256 != expected_sha256:
-            raise ValueError("Active dataset manifest checksum mismatch")
-        manifest = json.loads(manifest_bytes)
-        if manifest.get("pipeline_run_id") != release_version:
-            raise ValueError("Active dataset manifest does not belong to its release")
-        manifest["active_release_version"] = release_version
-        return manifest
+        _, _, pointer, manifest = _active_release_payload()
     except Exception as exc:
         raise RuntimeError(f"Unable to load active data manifest: {exc}") from exc
+    manifest["active_release_version"] = pointer["version"]
+    return manifest
+
+
+def get_active_release_context() -> ReleaseContext:
+    """Freeze the active release and validate the complete runtime contract."""
+    try:
+        bucket_name, datasets_prefix, pointer, manifest = _active_release_payload()
+        release_version = pointer["version"]
+        files = pointer.get("files")
+        if not isinstance(files, list) or not all(isinstance(item, str) for item in files):
+            raise RuntimeError("Active dataset release has no valid artifact list")
+
+        output_by_name = {
+            item.get("name"): item
+            for item in manifest.get("outputs", [])
+            if isinstance(item, dict) and isinstance(item.get("name"), str)
+        }
+        artifacts = []
+        for filename in _RUNTIME_DATASET_FILENAMES:
+            if filename not in files:
+                raise RuntimeError(
+                    f"Active dataset release is missing required runtime artifact '{filename}'"
+                )
+            metadata = output_by_name.get(filename)
+            if not isinstance(metadata, dict):
+                raise RuntimeError(
+                    f"Active manifest has no integrity metadata for '{filename}'"
+                )
+            checksum = metadata.get("sha256")
+            size_bytes = metadata.get("size_bytes")
+            if (
+                not isinstance(checksum, str)
+                or not re.fullmatch(r"[a-f0-9]{64}", checksum)
+                or not isinstance(size_bytes, int)
+                or size_bytes < 0
+            ):
+                raise RuntimeError(
+                    f"Active manifest integrity metadata is invalid for '{filename}'"
+                )
+            artifacts.append(
+                ReleaseArtifact(
+                    name=filename,
+                    sha256=checksum,
+                    size_bytes=size_bytes,
+                )
+            )
+        return ReleaseContext(
+            bucket_name=bucket_name,
+            datasets_prefix=datasets_prefix,
+            version=release_version,
+            artifacts=tuple(artifacts),
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Unable to resolve active dataset release: {exc}") from exc
+
+
+def _release_cache_path(context: ReleaseContext, artifact: ReleaseArtifact) -> str:
+    return os.path.join(
+        tempfile.gettempdir(), "odis_data_cache", context.version, artifact.name
+    )
+
+
+def _verified_artifact_key(
+    context: ReleaseContext, artifact: ReleaseArtifact
+) -> tuple[str, str, str]:
+    return context.version, artifact.name, artifact.sha256
+
+
+def _verify_cached_artifact(
+    context: ReleaseContext,
+    artifact: ReleaseArtifact,
+    path: str,
+    *,
+    remember: bool = True,
+) -> bool:
+    """Verify a cached artifact once per process and release checksum."""
+    if not os.path.isfile(path) or os.path.getsize(path) != artifact.size_bytes:
+        return False
+
+    verification_key = _verified_artifact_key(context, artifact)
+    with _VERIFIED_RELEASE_ARTIFACTS_LOCK:
+        if verification_key in _VERIFIED_RELEASE_ARTIFACTS:
+            return True
+
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    if digest.hexdigest() != artifact.sha256:
+        return False
+
+    if remember:
+        with _VERIFIED_RELEASE_ARTIFACTS_LOCK:
+            _VERIFIED_RELEASE_ARTIFACTS.add(verification_key)
+    return True
+
+
+def _download_release_artifact(
+    context: ReleaseContext, artifact: ReleaseArtifact
+) -> str:
+    """Atomically download and checksum one known artifact into the `/tmp` cache."""
+    cache_path = _release_cache_path(context, artifact)
+    if _verify_cached_artifact(context, artifact, cache_path):
+        return cache_path
+
+    os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+    remote_path = (
+        f"{context.datasets_prefix}/releases/{context.version}/{artifact.name}"
+    )
+    tmp_path = f"{cache_path}.{os.getpid()}.{uuid.uuid4().hex}.tmp"
+    logger.info(
+        "[GCS] Downloading dataset '%s' from gs://%s/%s",
+        artifact.name,
+        context.bucket_name,
+        remote_path,
+    )
+    try:
+        bucket = storage.Client().bucket(context.bucket_name)
+        bucket.blob(remote_path).download_to_filename(tmp_path)
+        if not _verify_cached_artifact(context, artifact, tmp_path, remember=False):
+            raise RuntimeError(
+                f"Downloaded artifact '{artifact.name}' does not match its manifest"
+            )
+        os.replace(tmp_path, cache_path)
+        if not _verify_cached_artifact(context, artifact, cache_path):
+            raise RuntimeError(
+                f"Cached artifact '{artifact.name}' failed verification after download"
+            )
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+    logger.info("[GCS] Cached verified dataset '%s'", artifact.name)
+    return cache_path
+
+
+def _ensure_release_artifacts_cached(
+    context: ReleaseContext, artifact_names: Iterable[str]
+) -> Dict[str, str]:
+    """Download missing release artifacts concurrently with bounded parallelism."""
+    artifacts = [context.artifact(name) for name in artifact_names]
+    if not artifacts:
+        return {}
+
+    logger.info(
+        "[GCS] Ensuring %d release artifacts are available locally (up to %d downloads in parallel)",
+        len(artifacts),
+        min(_GCS_DOWNLOAD_WORKERS, len(artifacts)),
+    )
+    paths: Dict[str, str] = {}
+    errors: Dict[str, Exception] = {}
+    with ThreadPoolExecutor(
+        max_workers=min(_GCS_DOWNLOAD_WORKERS, len(artifacts)),
+        thread_name_prefix="odis-gcs-download",
+    ) as executor:
+        pending = {
+            executor.submit(_download_release_artifact, context, artifact): artifact.name
+            for artifact in artifacts
+        }
+        for future in as_completed(pending):
+            filename = pending[future]
+            try:
+                paths[filename] = future.result()
+            except Exception as exc:
+                errors[filename] = exc
+
+    if errors:
+        details = "; ".join(
+            f"{filename}: {error}" for filename, error in sorted(errors.items())
+        )
+        raise RuntimeError(f"Failed to cache active dataset release {context.version}: {details}")
+    return paths
+
+
+def _ensure_complete_release_cached(context: ReleaseContext) -> None:
+    """Prefetch the entire app bundle before any Parquet is read."""
+    _ensure_release_artifacts_cached(
+        context, (artifact.name for artifact in context.artifacts)
+    )
+
+
+def resolve_dataset_path(
+    filename_or_path: str, *, release_context: Optional[ReleaseContext] = None
+) -> Optional[str]:
+    """Resolve one manifest-declared release artifact into the `/tmp` cache."""
+    filename = os.path.basename(filename_or_path)
+    if filename != filename_or_path:
+        raise ValueError("Dataset paths must be release artifact filenames")
+    context = release_context or get_active_release_context()
+    artifact = context.artifact(filename)
+    cache_path = _release_cache_path(context, artifact)
+    if _verify_cached_artifact(context, artifact, cache_path):
+        return cache_path
+    return _ensure_release_artifacts_cached(context, (filename,))[filename]
 
 
 @st.cache_data(ttl=3600)
-def fetch_salesforce_jaccueille_bdv() -> pd.DataFrame:
+def fetch_salesforce_jaccueille_bdv(
+    release_context: Optional[ReleaseContext] = None,
+) -> pd.DataFrame:
     """Loads the pre-aggregated Salesforce J'accueille BDV table using the unified dataset loader."""
     logger.info("📡 [SALESFORCE] Fetching Salesforce J'accueille BDV dataset...")
-    df = load_parquet_dataset("salesforce_jaccueille_bdv.parquet")
+    df = load_parquet_dataset(
+        cfg.SALESFORCE_JACCUEILLE_BDV_FILE, release_context=release_context
+    )
     if not df.empty:
-        logger.info(f"✅ [SALESFORCE] Loaded {len(df)} rows from salesforce_jaccueille_bdv.parquet")
+        logger.info(
+            "✅ [SALESFORCE] Loaded %s rows from %s",
+            len(df),
+            cfg.SALESFORCE_JACCUEILLE_BDV_FILE,
+        )
     else:
-        logger.warning("⚠️ [SALESFORCE] salesforce_jaccueille_bdv.parquet is missing or empty")
+        logger.warning("⚠️ [SALESFORCE] J'accueille BDV dataset is missing or empty")
     return df
 
 
-def get_salesforce_jaccueille_counts() -> pd.DataFrame:
+def get_salesforce_jaccueille_counts(
+    source_data: Optional[pd.DataFrame] = None,
+) -> pd.DataFrame:
     """Return the single Salesforce-derived source of J'Accueille score inputs.
 
     The published BDV dataset deliberately drives both the score inputs and the
     result-page details.  Do not add a runtime BigQuery or local-file fallback:
     it would mix versions and make the data source ambiguous.
     """
-    df = fetch_salesforce_jaccueille_bdv()
+    df = source_data if source_data is not None else fetch_salesforce_jaccueille_bdv()
     required = {"bassin_de_vie", "contact_count", "lead_count"}
     if df.empty or not required.issubset(df.columns):
         missing = sorted(required - set(df.columns)) if not df.empty else sorted(required)
@@ -384,10 +583,17 @@ def get_salesforce_jaccueille_counts() -> pd.DataFrame:
 
 
 def _load_parquet(
-    path: str, columns: Optional[list] = None, error_list: Optional[list] = None
+    path: str,
+    columns: Optional[list] = None,
+    error_list: Optional[list] = None,
+    *,
+    release_context: Optional[ReleaseContext] = None,
 ) -> pd.DataFrame:
     """Internal non-cached loader with error tracking and GCS dataset resolution."""
-    resolved_path = resolve_dataset_path(path)
+    if release_context is None:
+        resolved_path = resolve_dataset_path(path)
+    else:
+        resolved_path = resolve_dataset_path(path, release_context=release_context)
     if not resolved_path or not os.path.exists(resolved_path):
         fname = os.path.basename(path)
         logger.error(f"File not found: {path} (Critical for this feature)")
@@ -400,9 +606,13 @@ def _load_parquet(
 
 
 @st.cache_resource
-def load_parquet_dataset(path: str, columns: Optional[list] = None) -> pd.DataFrame:
+def load_parquet_dataset(
+    path: str,
+    columns: Optional[list] = None,
+    release_context: Optional[ReleaseContext] = None,
+) -> pd.DataFrame:
     """Generic loader for parquet datasets with caching."""
-    return _load_parquet(path, columns)
+    return _load_parquet(path, columns, release_context=release_context)
 
 
 def get_pois_by_category(pois_df: pd.DataFrame, category: str) -> pd.DataFrame:
@@ -468,13 +678,18 @@ def _enrich_rome_index(
     return enriched_rome, enriched_rome
 
 
-def load_referentiels_raw() -> Dict[str, Any]:
+def load_referentiels_raw(
+    release_context: Optional[ReleaseContext] = None,
+) -> Dict[str, Any]:
     """
-    Load the lightweight reference indices from the active GCS release.
+    Build reference indices from the active GCS release.
 
-    Used by the home/snapshot flow; form controls use the complete bundle.
+    In the application this is always called as part of the complete scoring
+    bundle. The optional context only keeps test and MCP entry points usable.
     """
-    refs_df = _load_parquet(cfg.REFERENTIELS_FILE)
+    refs_df = _load_parquet(
+        cfg.REFERENTIELS_FILE, release_context=release_context
+    )
     if refs_df.empty:
         raise RuntimeError("Active GCS release has no usable referentials dataset")
 
@@ -593,12 +808,15 @@ def load_referentiels_raw() -> Dict[str, Any]:
     }
 
 
-def load_scoring_datasets_raw(refs_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def load_scoring_datasets_raw(
+    refs_data: Optional[Dict[str, Any]] = None,
+    release_context: Optional[ReleaseContext] = None,
+) -> Dict[str, Any]:
     """
     Tier 2: Heavy dataset loading (ODIS communes, WKB geometries, POIs, vertical files, BQ).
     """
     if refs_data is None:
-        refs_data = load_referentiels_raw()
+        refs_data = load_referentiels_raw(release_context)
 
     res = copy.copy(refs_data)
     logger.info("Loading heavy scoring datasets from the active GCS release")
@@ -607,7 +825,7 @@ def load_scoring_datasets_raw(refs_data: Optional[Dict[str, Any]] = None) -> Dic
     odis_path = cfg.ODIS_FILE
 
     try:
-        temp_df = _load_parquet(odis_path)
+        temp_df = _load_parquet(odis_path, release_context=release_context)
         all_cols = temp_df.columns.tolist()
         del temp_df
 
@@ -662,7 +880,11 @@ def load_scoring_datasets_raw(refs_data: Optional[Dict[str, Any]] = None) -> Dic
         except Exception as e:
             logger.warning(f"Could not load raw metrics from config: {e}")
 
-        odis = _load_parquet(odis_path, columns=list(columns_to_load))
+        odis = _load_parquet(
+            odis_path,
+            columns=list(columns_to_load),
+            release_context=release_context,
+        )
 
         # Geometry processing (JIT DEHYDRATION)
         odis_geo = pd.Series(dtype="object")
@@ -699,7 +921,7 @@ def load_scoring_datasets_raw(refs_data: Optional[Dict[str, Any]] = None) -> Dic
 
     # 2. Load POIs
     pois_path = cfg.POIS_FILE
-    pois_df = _load_parquet(pois_path)
+    pois_df = _load_parquet(pois_path, release_context=release_context)
     if not pois_df.empty and "lat" in pois_df.columns and "lon" in pois_df.columns:
         pois_df["geometry"] = gpd.points_from_xy(pois_df.lon, pois_df.lat)
         pois_df = gpd.GeoDataFrame(pois_df, geometry="geometry", crs="EPSG:4326")
@@ -752,16 +974,24 @@ def load_scoring_datasets_raw(refs_data: Optional[Dict[str, Any]] = None) -> Dic
     load_errors: List[str] = []
 
     live_jobs_data = _load_parquet(
-        cfg.LIVE_JOBS_FILE, error_list=load_errors
+        cfg.LIVE_JOBS_FILE,
+        error_list=load_errors,
+        release_context=release_context,
     )
     associations_data = _load_parquet(
-        cfg.AGG_ASSOCIATIONS_FILE, error_list=load_errors
+        cfg.AGG_ASSOCIATIONS_FILE,
+        error_list=load_errors,
+        release_context=release_context,
     )
     refugee_associations_data = _load_parquet(
-        cfg.REFUGEE_ASSOCIATIONS_FILE, error_list=load_errors
+        cfg.REFUGEE_ASSOCIATIONS_FILE,
+        error_list=load_errors,
+        release_context=release_context,
     )
     formations_data = _load_parquet(
-        cfg.AGG_FORMATIONS_FILE, error_list=load_errors
+        cfg.AGG_FORMATIONS_FILE,
+        error_list=load_errors,
+        release_context=release_context,
     )
 
     if not formations_data.empty and "formation_code" in formations_data.columns:
@@ -772,11 +1002,15 @@ def load_scoring_datasets_raw(refs_data: Optional[Dict[str, Any]] = None) -> Dic
         )
 
     structures_ccas = _load_parquet(
-        cfg.CCAS_FILE, error_list=load_errors
+        cfg.CCAS_FILE,
+        error_list=load_errors,
+        release_context=release_context,
     )
 
     siae_jobs_data = _load_parquet(
-        cfg.SIAE_JOBS_FILE, error_list=load_errors
+        cfg.SIAE_JOBS_FILE,
+        error_list=load_errors,
+        release_context=release_context,
     )
 
     # --- Enrichment: Index Sorting & Truncation ---
@@ -789,7 +1023,11 @@ def load_scoring_datasets_raw(refs_data: Optional[Dict[str, Any]] = None) -> Dic
 
     # 5. Bassins de Vie Geo
     bv_path = cfg.BV_FILE
-    bv_geo = _load_parquet(bv_path, error_list=load_errors)
+    bv_geo = _load_parquet(
+        bv_path,
+        error_list=load_errors,
+        release_context=release_context,
+    )
     if not bv_geo.empty:
         if "polygon" in bv_geo.columns:
             if isinstance(bv_geo["polygon"].iloc[0], bytes):
@@ -812,7 +1050,12 @@ def load_scoring_datasets_raw(refs_data: Optional[Dict[str, Any]] = None) -> Dic
         )
 
     # --- 5b. Enrich with the published Salesforce J'Accueille dataset ---
-    df_jaccueille = get_salesforce_jaccueille_counts()
+    salesforce_bdv = _load_parquet(
+        cfg.SALESFORCE_JACCUEILLE_BDV_FILE,
+        error_list=load_errors,
+        release_context=release_context,
+    )
+    df_jaccueille = get_salesforce_jaccueille_counts(salesforce_bdv)
 
     if df_jaccueille.empty:
         logger.error("❌ [J'ACCUEILLE] Salesforce BDV data is missing or incomplete.")
@@ -875,52 +1118,58 @@ def load_scoring_datasets_raw(refs_data: Optional[Dict[str, Any]] = None) -> Dic
     return res
 
 
-def load_all_data_raw() -> Dict[str, Any]:
+def load_all_data_raw(
+    release_context: Optional[ReleaseContext] = None,
+) -> Dict[str, Any]:
     """
-    Initializes and loads all necessary datasets for the application.
-    (Non-cached version for MCP usage or testing)
+    Load the full data bundle without Streamlit resource caching.
+
+    Runtime callers pass a frozen release context and therefore use the same
+    verified concurrent fetch as the Streamlit path. The context-free branch is
+    retained solely for existing local tests that mock individual file paths.
     """
     print("################### DATA RELOADED ###################")
+    if release_context is not None:
+        _ensure_complete_release_cached(release_context)
+        refs = load_referentiels_raw(release_context)
+        data = load_scoring_datasets_raw(refs, release_context)
+        data["_release_id"] = release_context.identity
+        return data
+
     refs = load_referentiels_raw()
     return load_scoring_datasets_raw(refs)
 
 
 def get_data_mtime() -> str:
     """Return the active immutable GCS release ID used as the cache key."""
-    try:
-        bucket_name = os.getenv("GCS_DATASETS_BUCKET", "odis-stream2-eu")
-        datasets_prefix = os.getenv("GCS_DATASETS_PREFIX", "datasets").strip("/")
-        release_version = _read_gcs_release_version(
-            storage.Client().bucket(bucket_name), datasets_prefix
-        )
-    except Exception as e:
-        raise RuntimeError(f"Unable to read active GCS dataset release: {e}") from e
-
-    if not release_version:
-        raise RuntimeError("Active GCS dataset release pointer is missing")
-    return f"gcs:{release_version}"
+    return get_active_release_context().identity
 
 
 @st.cache_resource
-def get_referentiels_data(data_hash: str) -> Dict[str, Any]:
-    """Cached wrapper for Tier 1 Referentiels."""
-    return load_referentiels_raw()
+def get_referentiels_data(release_context: ReleaseContext) -> Dict[str, Any]:
+    """Cached reference indices for one immutable release context."""
+    return load_referentiels_raw(release_context)
 
 
 @st.cache_resource
-def get_scoring_datasets(data_hash: str) -> Dict[str, Any]:
-    """Cached wrapper for Tier 2 Heavy Scoring datasets."""
-    refs = get_referentiels_data(data_hash)
-    return load_scoring_datasets_raw(refs)
+def get_scoring_datasets(release_context: ReleaseContext) -> Dict[str, Any]:
+    """Cached complete scoring bundle for one immutable release context."""
+    refs = get_referentiels_data(release_context)
+    data = load_scoring_datasets_raw(refs, release_context)
+    data["_release_id"] = release_context.identity
+    return data
 
 
-def _get_scoring_datasets_for_release(data_hash: str) -> Dict[str, Any]:
-    """Serialize the cold load shared by foreground form entry and warm-up."""
+def _get_scoring_datasets_for_release(
+    release_context: ReleaseContext,
+) -> Dict[str, Any]:
+    """Serialize one complete verified cold load shared by form and preload."""
     with _SCORING_DATASET_LOAD_LOCK:
-        return get_scoring_datasets(data_hash)
+        _ensure_complete_release_cached(release_context)
+        return get_scoring_datasets(release_context)
 
 
 def get_app_data() -> Dict[str, Any]:
     """Return the complete data bundle for the active immutable GCS release."""
-    mtime = get_data_mtime()
-    return _get_scoring_datasets_for_release(mtime)
+    release_context = get_active_release_context()
+    return _get_scoring_datasets_for_release(release_context)
