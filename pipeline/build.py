@@ -28,6 +28,18 @@ def extract_polygonal(geom):
     return None
 
 
+def normalize_geographic_codes(values: pd.Series) -> pd.Series:
+    """Normalize COG/ODACE codes without losing zero-padded identifiers."""
+    codes = (
+        values.astype("string")
+        .str.strip()
+        .str.upper()
+        .str.replace(r"\.0$", "", regex=True)
+    )
+    numeric_codes = codes.str.fullmatch(r"\d+")
+    return codes.where(~numeric_codes, codes.str.zfill(2))
+
+
 from pipeline.common import (
     PipelineLogger,
     load_config,
@@ -1269,10 +1281,14 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
     except Exception as e:
         logger.log_step("generate_referentiels", "ERROR_BASSINS_VIE", {"error": str(e)})
 
+    geo_path = CACHE_DIR / "odace_dim_geo.parquet"
+    geo_df = pd.DataFrame()
+    if geo_path.exists():
+        geo_df = pd.read_parquet(geo_path, engine="fastparquet")
+
     try:
-        # Regions.  Run-scoped candidates do not currently materialize the
-        # legacy ``clean/regions.parquet`` file, so fall back to the canonical
-        # raw COG referential instead of silently publishing no regions.
+        # Regions. Run-scoped candidates do not materialize the legacy
+        # ``clean/regions.parquet`` file, so use the canonical raw COG source.
         regions_path = CLEAN_DIR / "regions.parquet"
         regions_df = None
         if regions_path.exists():
@@ -1297,23 +1313,16 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
         # since this ODACE export exposes region_code but no region-level rows
         # or region labels of its own.
         geo_region_codes = None
-        geo_path = CACHE_DIR / "odace_dim_geo.parquet"
-        if geo_path.exists():
-            geo_df = pd.read_parquet(geo_path, engine="fastparquet")
-            if "region_code" in geo_df.columns:
-                geo_region_codes = set(
-                    geo_df["region_code"]
-                    .dropna()
-                    .astype(str)
-                    .str.strip()
-                    .str.upper()
-                )
+        if "region_code" in geo_df.columns:
+            geo_region_codes = set(
+                normalize_geographic_codes(geo_df["region_code"].dropna())
+            )
 
         if regions_df is not None and {"code", "label"}.issubset(regions_df.columns):
             regions_ref = pd.DataFrame(
                 {
                     "key": "regions",
-                    "code": regions_df["code"].astype(str).str.strip().str.upper(),
+                    "code": normalize_geographic_codes(regions_df["code"]),
                     "label": regions_df["label"].astype(str).str.strip(),
                 }
             ).drop_duplicates(subset=["code"])
@@ -1330,7 +1339,10 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
             logger.log_step(
                 "generate_referentiels", "REGIONS", {"count": len(regions_ref)}
             )
+    except Exception as e:
+        logger.log_step("generate_referentiels", "ERROR_REGIONS", {"error": str(e)})
 
+    try:
         # Departements
         deps_path = CLEAN_DIR / "departements.parquet"
         if deps_path.exists():
@@ -1338,22 +1350,20 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
             deps_ref = pd.DataFrame(
                 {
                     "key": "departements",
-                    "code": deps_df["code"],
+                    "code": normalize_geographic_codes(deps_df["code"]),
                     "label": deps_df["label"],
-                    "reg_code": deps_df.get("reg_code", None),
+                    "reg_code": (
+                        normalize_geographic_codes(deps_df["reg_code"])
+                        if "reg_code" in deps_df.columns
+                        else None
+                    ),
                 }
             )
-            if geo_path.exists() and "departement_code" in geo_df.columns:
+            if "departement_code" in geo_df.columns:
                 geo_department_codes = set(
-                    geo_df["departement_code"]
-                    .dropna()
-                    .astype(str)
-                    .str.strip()
-                    .str.upper()
+                    normalize_geographic_codes(geo_df["departement_code"].dropna())
                 )
-                department_codes = set(
-                    deps_ref["code"].astype(str).str.strip().str.upper()
-                )
+                department_codes = set(deps_ref["code"])
                 missing_departments = geo_department_codes - department_codes
                 if missing_departments:
                     raise PipelineRunError(
@@ -1365,7 +1375,12 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
             logger.log_step(
                 "generate_referentiels", "DEPARTEMENTS", {"count": len(deps_ref)}
             )
+    except Exception as e:
+        logger.log_step(
+            "generate_referentiels", "ERROR_DEPARTEMENTS", {"error": str(e)}
+        )
 
+    try:
         # ROME Codes (Referential from API)
         rome_path = CACHE_DIR / "rome_referential_api.parquet"
         if rome_path.exists():
@@ -1383,11 +1398,8 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
                 logger.log_step(
                     "generate_referentiels", "ROME_CODES", {"count": len(rome_ref)}
                 )
-
     except Exception as e:
-        logger.log_step(
-            "generate_referentiels", "ERROR_REG_DEP_MAPPING", {"error": str(e)}
-        )
+        logger.log_step("generate_referentiels", "ERROR_ROME_CODES", {"error": str(e)})
 
     # A release without these keys makes the first form page unusable.  Fail
     # the candidate here rather than publishing a referential that only fails

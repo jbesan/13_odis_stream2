@@ -149,231 +149,19 @@ def apply_logged_in_org_defaults(defaults: Dict[str, Any]) -> None:
 
 
 def session_states_init(defaults: Dict[str, Any]) -> None:
-    """Initializes session state with defaults if not already set."""
-    if "demo_data" not in st.session_state:
-        st.session_state["demo_data"] = defaults
+    """Initialize missing Streamlit widget values through the form adapter."""
+    from ui.form_state import FormState
 
-    key_mapping = {
-        "commune_actuelle": "ui_commune",
-        "departement_actuel": "ui_departement",
-    }
-
-    for key, value in defaults.items():
-        ui_key = key_mapping.get(key, f"ui_{key}")
-        if ui_key not in st.session_state:
-            st.session_state[ui_key] = value
-        if key not in st.session_state:
-            st.session_state[key] = value
-
-    # List inputs
-    for key_base, key_in_defaults in [
-        ("ui_classe_enfant", "classe_enfants"),
-        ("ui_metiers_adult", "codes_metiers"),
-        ("ui_formations_adult", "codes_formations"),
-    ]:
-        if key_in_defaults in defaults and isinstance(defaults[key_in_defaults], list):
-            for i, val in enumerate(defaults[key_in_defaults]):
-                k = f"{key_base}_{i}"
-                if k not in st.session_state:
-                    st.session_state[k] = val
-
-    # Initialize individual organization boosts keys (F-54 Expansion)
-    # This prevents Streamlit widget warning loops when rendering boost sliders.
-    org_boosts = st.session_state.get("ui_org_boosts") or defaults.get("org_boosts")
-    if org_boosts and isinstance(org_boosts, dict):
-        for criterion_id, default_val in org_boosts.items():
-            ui_key = f"ui_org_boost_{criterion_id}"
-            slider_key = f"ui_org_boost_slider_{criterion_id}"
-            if ui_key not in st.session_state:
-                st.session_state[ui_key] = float(default_val)
-            if slider_key not in st.session_state:
-                st.session_state[slider_key] = int(st.session_state[ui_key])
+    FormState(st.session_state).initialize(defaults)
 
 
-def apply_search_criteria_to_ui(criteria: Any) -> None:
-    """
-    Maps a SearchCriterias model (from AI extraction) to the ui_ session states.
-    Uses dynamic iteration over model fields to ensure 100% parity with UI variables.
-    """
-    if not criteria:
-        return
+def apply_search_criteria_to_ui(
+    criteria: Any, app_data: Optional[Dict[str, Any]] = None
+) -> None:
+    """Hydrate form widgets from AI extraction or a shared-search snapshot."""
+    from ui.form_state import FormState
 
-    # Convert model to dict - ONLY include fields that were explicitly set by the AI
-    # This prevents default values (like weights=0.0) from overwriting profile values.
-    crit_dict = (
-        criteria.model_dump(exclude_unset=True)
-        if hasattr(criteria, "model_dump")
-        else criteria.__dict__
-    )
-
-    # 1. Generic flattening (extract code/label from CriteriaItems)
-    def flatten_val(key, v):
-        if isinstance(v, dict) and "code" in v and "label" in v:
-            # We want the label for commune input, but codes for everything else
-            return v["label"] if key == "commune_actuelle" else v["code"]
-        if isinstance(v, list):
-            return [flatten_val(key, item) for item in v]
-        return v
-
-    flat_crit = {}
-    for k, v in crit_dict.items():
-        if v is not None:
-            flat_crit[k] = flatten_val(k, v)
-
-    # 2. Iterate and set all ui_ dynamically
-    for k, v in flat_crit.items():
-        st.session_state[f"ui_{k}"] = v
-
-    # Mapping specific values that are used directly in component initialization
-    if "commune_actuelle" in flat_crit:
-        st.session_state["ui_commune"] = flat_crit["commune_actuelle"]
-        # Try to infer department from the original code ONLY if it looks like an INSEE code (5 digits)
-        code = criteria.commune_actuelle.code
-        if code and len(code) == 5 and code.isdigit():
-            st.session_state["ui_departement"] = code[:2]
-        elif code and len(code) == 5 and code[:2].isdigit():  # Handle 2A/2B
-            st.session_state["ui_departement"] = code[:2]
-
-    # Handle 'sante' field properly
-    val_sante = flat_crit.get("besoin_sante") or flat_crit.get("sante")
-    if val_sante is None or val_sante == "Aucun":
-        st.session_state["ui_besoin_sante"] = []
-    elif isinstance(val_sante, list):
-        st.session_state["ui_besoin_sante"] = val_sante
-    else:
-        st.session_state["ui_besoin_sante"] = [val_sante]
-
-    # Synchronize checkboxes for housing and health to loaded states (F-53 Checkboxes Sync)
-    current_heb = st.session_state.get("ui_hebergement_cible", [])
-    for opt in cfg.HEBERGEMENT_OPTIONS:
-        cb_key = f"ui_heb_cb_{opt.replace(' ', '_').lower()}"
-        st.session_state[cb_key] = opt in current_heb
-
-    current_sante = st.session_state.get("ui_besoin_sante", [])
-    for opt in cfg.SANTE_OPTIONS:
-        safe_opt = (
-            opt.replace(" ", "_")
-            .replace("'", "_")
-            .replace("(", "")
-            .replace(")", "")
-            .lower()
-        )
-        cb_key = f"ui_sante_cb_{safe_opt}"
-        st.session_state[cb_key] = opt in current_sante
-
-    # 3. Handle specific lists mapping that have index suffixes (e.g. metiers_adult_0)
-    for key_base, crit_key in [
-        ("ui_classe_enfant", "classe_enfants"),
-        ("ui_metiers_adult", "codes_metiers"),
-        ("ui_formations_adult", "codes_formations"),
-    ]:
-        if crit_key in flat_crit and isinstance(flat_crit[crit_key], list):
-            for i, val in enumerate(flat_crit[crit_key]):
-                st.session_state[f"{key_base}_{i}"] = val
-
-    # 4. Handle Mobility Form special case (which deviates from 1-to-1 parsing)
-    loc_area = flat_crit.get("loc_search_area")
-    loc_code = flat_crit.get("loc_search_code") or []  # Now a list
-
-    if loc_area == "france":
-        st.session_state["ui_france_search"] = True
-        st.session_state["ui_region_search"] = False
-    elif loc_area == "region":
-        st.session_state["ui_france_search"] = False
-        st.session_state["ui_region_search"] = True
-        if loc_code:
-            st.session_state["ui_mobility_region"] = (
-                loc_code if isinstance(loc_code, list) else [loc_code]
-            )
-    elif loc_area == "departement" and loc_code:
-        st.session_state["ui_france_search"] = False
-        st.session_state["ui_region_search"] = False
-
-        # loc_code is a list of department codes
-        st.session_state["ui_mobility_dept"] = (
-            loc_code if isinstance(loc_code, list) else [loc_code]
-        )
-
-        # Infer region from the first department
-        first_dept = loc_code[0] if isinstance(loc_code, list) else loc_code
-        app_data = st.session_state.get("app_data", {})
-        dept_details = app_data.get("dept_details", {})
-        reg_code = dept_details.get(first_dept, {}).get("reg_code")
-        if reg_code:
-            st.session_state["ui_mobility_region"] = [reg_code]
-
-    # 5. Handle notes_qualitatives (UI expects a string, model provides a list of strings)
-    if "notes_qualitatives" in flat_crit:
-        val = flat_crit["notes_qualitatives"]
-        if isinstance(val, list):
-            st.session_state["ui_notes_qualitatives"] = "\n".join(val)
-        else:
-            st.session_state["ui_notes_qualitatives"] = str(val) if val else ""
-
-    # 6. Handle Weight Profile & Weights (F-15 & User Feedback)
-    # If a profile is selected, we MUST set the individual ui_poids_... keys
-    # because Streamlit widgets don't trigger on_change when set programmatically.
-    profile = flat_crit.get("weight_profile")
-    if profile in cfg.WEIGHT_PROFILES:
-        profile_weights = cfg.WEIGHT_PROFILES[profile]
-        for pw_key, pw_val in profile_weights.items():
-            # Profiles in config are already 0-100
-            st.session_state[f"ui_{pw_key}"] = pw_val
-
-    # Finally, if any explicit weights were extracted (higher priority), apply them
-    # Now unified: everything is 0.0-1.0
-    has_custom_weights = False
-    for k, v in flat_crit.items():
-        if k.startswith("poids_"):
-            st.session_state[f"ui_{k}"] = float(v)
-            has_custom_weights = True
-
-    # If custom weights are present, activate the "Expert Weights" toggle
-    if has_custom_weights:
-        st.session_state["ui_expert_weights"] = True
-
-    # 6b. Handle Organization Boosts
-    if "org_boosts" in flat_crit and isinstance(flat_crit["org_boosts"], dict):
-        st.session_state["ui_org_boosts"] = flat_crit["org_boosts"]
-        for b_key, b_val in flat_crit["org_boosts"].items():
-            st.session_state[f"ui_org_boost_{b_key}"] = float(b_val)
-            st.session_state[f"ui_org_boost_slider_{b_key}"] = int(b_val)
-
-    # 7. Town Size Reverse Lookup (Sync Radio Button with Mu/Sigma)
-    target_pop = flat_crit.get("target_population")
-    target_sigma = flat_crit.get("target_population_sigma")
-    if target_pop and target_sigma:
-        for label, mapping in cfg.CITY_SIZE_MAPPING.items():
-            if mapping["mu"] == target_pop and mapping["sigma"] == target_sigma:
-                st.session_state["ui_target_city_size_label"] = label
-                break
-
-    # 8. Inclusion Services Sync (Checkboxes + Multiselect)
-    # inc_services_selection in flat_crit is a list of CODES
-    inc_codes = flat_crit.get("inc_services_selection", [])
-    if inc_codes:
-        # Standard list for the composite key
-        st.session_state["ui_inc_services_selection"] = inc_codes
-
-        # Checkboxes sync
-        checkbox_slugs = set(cfg.INC_SERVICES_CHECKBOX_MAPPING.keys())
-        for slug in checkbox_slugs:
-            cb_key = f"ui_cb_inc_{slug.replace('-', '_')}"
-            st.session_state[cb_key] = slug in inc_codes
-
-        # Multiselect sync (Labels)
-        inclusion_index = app_data.get("inclusion_services_index", pd.DataFrame())
-        multi_labels = []
-        if not inclusion_index.empty:
-            for c in inc_codes:
-                if c in inclusion_index.index and c not in checkbox_slugs:
-                    multi_labels.append(inclusion_index.loc[c, "label"])
-        st.session_state["ui_inc_services_multi_only"] = multi_labels
-
-    # 9. Inclusion Associations Sync
-    asso_codes = flat_crit.get("inc_asso_add_selection", [])
-    if asso_codes:
-        st.session_state["ui_inc_asso_add_selection_raw"] = asso_codes
+    FormState(st.session_state).hydrate(criteria, app_data=app_data)
 
 
 def ensure_data_initialized(
@@ -385,32 +173,22 @@ def ensure_data_initialized(
     point may warm the full cache, but that worker never swaps a session from
     light to heavy data behind the UI's back.
     """
-    # Force re-initialization IF a demo parameter is present in query string
-    force_refresh = "demo" in st.query_params
+    from ui.form_state import FORM_INITIALIZED_KEY, FormState
 
-    if "demo_data" not in st.session_state or force_refresh:
-        defaults = copy.deepcopy(cfg.DEMO_DATA_DEFAULT)
+    defaults = copy.deepcopy(cfg.DEMO_DATA_DEFAULT)
+    apply_demo_data_if_present(defaults)
+    apply_logged_in_org_defaults(defaults)
 
-        # Apply demo scenario if present
-        apply_demo_data_if_present(defaults)
-
-        # Apply logged in org defaults
-        apply_logged_in_org_defaults(defaults)
-
-        st.session_state["demo_data"] = defaults
-
-    # Always ensure session states are initialized if missing
-    session_states_init(st.session_state["demo_data"])
-
-    # If we just loaded a demo/org, or on first run, we dispatch the model to the UI
-    if force_refresh:
-        from core.models import SearchCriterias
-
-        try:
-            criteria = SearchCriterias(**st.session_state["demo_data"])
-            apply_search_criteria_to_ui(criteria)
-        except Exception as e:
-            logger.error(f"Failed to apply demo via SearchCriterias: {e}")
+    demo_value = st.query_params.get("demo") if "demo" in st.query_params else None
+    org = st.session_state.get("org")
+    source_id = f"org={getattr(org, 'id', 'none')}|demo={demo_value or 'none'}"
+    form_state = FormState(st.session_state)
+    if not st.session_state.get(FORM_INITIALIZED_KEY):
+        form_state.initialize(defaults)
+    elif st.session_state.get("_form_source_id") != source_id and demo_value:
+        # A newly selected demo is an explicit request to replace the draft.
+        form_state.hydrate(defaults, overwrite=True, exclude_unset=False)
+    st.session_state["_form_source_id"] = source_id
 
     # Load datasets based on Tier requirement
     if load_heavy:

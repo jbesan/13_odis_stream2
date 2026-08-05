@@ -6,6 +6,12 @@ import pandas as pd
 import pipeline.build as build
 
 
+def test_normalize_geographic_codes_preserves_leading_zeroes():
+    codes = build.normalize_geographic_codes(pd.Series([1, "02", "2A", 971.0]))
+
+    assert codes.tolist() == ["01", "02", "2A", "971"]
+
+
 def test_generate_referentiels_falls_back_to_raw_regions(tmp_path, monkeypatch):
     clean_dir = tmp_path / "clean"
     raw_dir = tmp_path / "raw"
@@ -28,14 +34,15 @@ def test_generate_referentiels_falls_back_to_raw_regions(tmp_path, monkeypatch):
     ).to_parquet(clean_dir / "departements.parquet", engine="fastparquet")
     pd.DataFrame(
         {
-            "geo_level": ["commune", "commune"],
-            "region_code": ["11", "84"],
-            "departement_code": ["75", "69"],
+            "geo_level": ["commune", "commune", "commune"],
+            "region_code": ["01", "11", "84"],
+            "departement_code": ["75", "75", "69"],
         }
     ).to_parquet(raw_dir / "odace_dim_geo.parquet", engine="fastparquet")
     (raw_dir / "referentiel_regions.json").write_text(
         json.dumps(
             [
+                {"REG": 1, "LIBELLE": "Guadeloupe"},
                 {"REG": "11", "LIBELLE": "Île-de-France"},
                 {"REG": "84", "LIBELLE": "Auvergne-Rhône-Alpes"},
                 {"REG": "93", "LIBELLE": "Provence-Alpes-Côte d'Azur"},
@@ -70,6 +77,7 @@ def test_generate_referentiels_falls_back_to_raw_regions(tmp_path, monkeypatch):
     )
     regions = refs.loc[refs["key"] == "regions"].set_index("code")["label"].to_dict()
     assert regions == {
+        "01": "Guadeloupe",
         "11": "Île-de-France",
         "84": "Auvergne-Rhône-Alpes",
     }

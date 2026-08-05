@@ -158,10 +158,6 @@ def _get_inclusion_job_details_logic(siae_id: str) -> Dict[str, Any]:
             dept_state = st.session_state.get("ui_departement")
             if dept_state:
                 dept = str(dept_state)
-            else:
-                demo_data = st.session_state.get("demo_data", {})
-                if isinstance(demo_data, dict) and "departement_actuel" in demo_data:
-                    dept = str(demo_data["departement_actuel"])
         except Exception:
             pass
 

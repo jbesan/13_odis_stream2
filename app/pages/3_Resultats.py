@@ -1,6 +1,5 @@
 import streamlit as st
 from streamlit_folium import st_folium
-from core import scoring
 import config as cfg
 from ui import components as ui
 from ui import forms as ui_forms
@@ -12,10 +11,9 @@ import folium as flm
 from utils import data_loader
 import pandas as pd
 import logging
-import gc
-from agents.utils import odis_get_bg_result
-from core.postscoring import launch_post_scoring_tasks
 from core.models import SearchResultsData
+from services.app_session import AppSession
+from services.search_controller import SearchController
 
 logger = logging.getLogger(__name__)
 
@@ -43,21 +41,9 @@ if not auth.check_password():
 telemetry.log_page_view("Resultats")
 
 
-# --- Session State Initialization ---
-if "highlighted_result" not in st.session_state:
-    st.session_state["highlighted_result"] = [False, None]
-if "fgs_to_show" not in st.session_state:
-    st.session_state["fgs_to_show"] = set()
-if "center" not in st.session_state:
-    st.session_state["center"] = [46.5, 2.5]  # Default France
-if "zoom" not in st.session_state:
-    st.session_state["zoom"] = 6
-if "active_ia_city_index" not in st.session_state:
-    st.session_state["active_ia_city_index"] = None
-if "active_details_index" not in st.session_state:
-    st.session_state["active_details_index"] = None
-if "active_ccas_index" not in st.session_state:
-    st.session_state["active_ccas_index"] = None
+# --- Session/controller convention ---
+app_session = AppSession(st.session_state)
+app_session.ensure_result_view()
 
 
 # --- PDF Modal Execution (moved to bottom for reliability) ---
@@ -88,151 +74,11 @@ with st.spinner("Chargement des indicateurs et données territoriales..."):
 search_results: SearchResultsData = st.session_state.get("search_results")
 
 
-def run_search():
-    """
-    Callback function for the 'Lancer la recherche' button.
-    It orchestrates the new filtering and scoring logic.
-    """
-    logging.info("--- Running new search with refactored logic ---")
-    gc.collect()
-
-    # Clear any previously generated PDF data and share ID on new search
-    st.session_state["pdf_data"] = None
-    st.session_state["pdf_modal_data"] = None
-    st.session_state["active_share_id"] = None
-    st.session_state["immutable_shared_snapshot"] = False
-    st.session_state.pop("shared_snapshot_editing", None)
-    st.session_state.pop("shared_snapshot_version", None)
-    st.session_state.pop("shared_snapshot_data_release", None)
-    st.session_state.pop("shared_snapshot_created_at", None)
-    st.session_state.pop("shared_snapshot_has_map", None)
-    st.session_state.pop("snapshot_current_map_context", None)
-
-    from services import telemetry
-
-    telemetry.reset_interaction_id()
-
-    # A new search always owns the complete bundle, including menu metrics and
-    # scoring inputs. This is already warm in the usual case.
-    app_data = data_loader.ensure_data_initialized(load_heavy=True)
-    config = ui_forms.create_search_criterias_from_inputs(app_data)
-    st.session_state["config"] = config
-
-    # Get required dataframes from global cached app_data
-    # Capture the release identity at execution time. It travels with any
-    # immutable shared snapshot produced from this search.
-    st.session_state["active_data_release"] = data_loader.get_data_mtime()
-    df_all_communes = app_data["odis"]
-    df_bv_geo = app_data["bv_geo"]
-    start_commune = df_all_communes.loc[[config.commune_actuelle.code]]
-
-    # --- Run Scoring Pipeline (Optimized) ---
-    # Instantiate the stateless engine with current data
-    engine = scoring.ScoringEngine(
-        df_all_communes=df_all_communes,
-        df_bv_geo=df_bv_geo,
-        scores_cat=app_data["scores_cat"],
-        incl_index=app_data["incl_index"],
-        associations_data=app_data["associations_data"],
-        formations_data=app_data["formations_data"],
-        codformations_index=app_data["codformations_index"],
-        waldec_index=app_data["waldec_index"],
-        global_stats={},
-        refugee_associations_data=app_data["refugee_associations_data"],
-        live_jobs_data=app_data["live_jobs_data"],
-        live_jobs_coverage=app_data.get("live_jobs_coverage", pd.DataFrame()),
-        siae_jobs_data=app_data["siae_jobs_data"],
-        siae_jobs_coverage=app_data.get("siae_jobs_coverage", pd.DataFrame()),
-        annuaire_ecoles=app_data.get("annuaire_ecoles", pd.DataFrame()),
-        annuaire_sante=app_data.get("annuaire_sante", pd.DataFrame()),
-        annuaire_inclusion=app_data.get("annuaire_inclusion", pd.DataFrame()),
-        inclusion_services_index=app_data.get(
-            "inclusion_services_index", pd.DataFrame()
-        ),
-        rome_index=app_data.get("rome_index", pd.DataFrame()),
-        bv_data=app_data.get("bv_data"),
-    )
-
-    # 1. Run optimized scoring (returns model and pruned GDF)
-    search_results, processed_gdf = engine.run_optimized(config, log_prefix="classic")
-
-    # 3. 🧪 SOTA: Lightweight Geometry Hydration (Raw WKB)
-    # Join raw WKB bytes from odis_geo (pd.Series indexed by codgeo) onto results.
-    # Decoding to Shapely happens JIT in maps.py — never here.
-    odis_geo = app_data.get("odis_geo")
-    if odis_geo is not None and not odis_geo.empty:
-        logging.info(
-            f"💾 [HYDRATION] Attaching WKB geometries for {len(processed_gdf)} results..."
-        )
-        processed_gdf = processed_gdf.join(odis_geo.rename("polygon"), how="left")
-
-    # --- State Update ---
-    st.session_state["processed_gdf"] = processed_gdf
-    st.session_state["unaggregated_gdf"] = processed_gdf
-    st.session_state["engine"] = engine
-    st.session_state["search_results"] = search_results
-
-    # --- Unified Telemetry & Logging is now handled in background (launch_post_scoring_tasks) ---
-
-    # Prepare cities for background AI agents
-    top_cities_full = [
-        {
-            "codgeo": str(c.codgeo),
-            "libgeo": c.name,
-            "weighted_score": c.global_score,
-            "scores": c.scores,
-            # "details": c.model_dump(include={
-            #     'population', 'scores', 'employment', 'housing',
-            #     'education', 'health', 'inclusion', 'mobility',
-            #     'codgeo_bdv', 'name_bdv'
-            # })
-        }
-        for c in search_results.results
-    ]
-
-    h = search_results.search_hash
-    st.session_state["active_search_hash"] = h
-
-    # Trigger all background tasks via unified orchestrator (SOTA Pattern)
-    if odis_get_bg_result(h) is None:
-        launch_post_scoring_tasks(engine, config, search_results, h)
-
-    # Calculate center for map (Use Top 5 Average Centroid - much better UX for distant searches)
-    # Stateful Centering: Only reset the map center if this is a NEW search.
-    # This prevents the map from "snapping back" during heartbeats or sidebar interactions.
-    if st.session_state.get("last_centered_hash") != h:
-        top_5_results = search_results.results[:5]
-        if top_5_results:
-            odis_df = app_data["odis"]
-            top_codgeos = [str(c.codgeo) for c in top_5_results]
-            top_data = odis_df.loc[odis_df.index.isin(top_codgeos)]
-
-            if not top_data.empty and "centroid_lon" in top_data.columns:
-                # Average EPSG:2154 coordinates
-                avg_x = top_data["centroid_lon"].mean()
-                avg_y = top_data["centroid_lat"].mean()
-
-                # Project from Lambert-93 (2154) to Lat/Lon (4326) for Folium
-                lon, lat = utils.project_point(
-                    avg_x, avg_y, from_crs=cfg.PROJECTED_CRS, to_crs="EPSG:4326"
-                )
-                final_center_y, final_center_x = lat, lon
-            else:
-                final_center_y, final_center_x = cfg.DEFAULT_MAP_CENTER
-        else:
-            final_center_y, final_center_x = cfg.DEFAULT_MAP_CENTER
-
-        st.session_state["center"] = [final_center_y, final_center_x]
-        st.session_state["zoom"] = maps.get_map_zoom(config.loc_search_area)
-        st.session_state["last_centered_hash"] = h
-        st.session_state["selected_geo"] = app_data["odis"].loc[
-            [config.commune_actuelle.code]
-        ].copy()
-
-    # We no longer pre-build Top 5 layers here to avoid Folium serialization issues in session state.
-    # They are now rebuilt on the fly in the map rendering block.
-    st.session_state["fgs_to_show"] = set()
-    st.session_state["highlighted_result"] = [False, None]
+def run_search() -> None:
+    """Collect the draft and delegate the complete lifecycle to the controller."""
+    complete_data = data_loader.ensure_data_initialized(load_heavy=True)
+    config = ui_forms.create_search_criterias_from_inputs(complete_data)
+    SearchController(app_session).execute(config, complete_data)
 
 
 # Automatically run the search if not already processed and form is completed
