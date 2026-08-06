@@ -21,7 +21,7 @@ def test_cloud_run_json_log_is_single_line(monkeypatch):
 
 
 def test_setup_logfire_prod():
-    # Test that setup_logfire configures environment as 'prod' when K_SERVICE is set
+    # Test that setup_logfire configures environment as 'prod' and disables remote sending on GCP (GDPR compliance)
     mock_logfire = MagicMock()
     mock_logfire.DEFAULT_LOGFIRE_INSTANCE.config.environment = None
 
@@ -37,7 +37,7 @@ def test_setup_logfire_prod():
         mock_logfire.configure.assert_called_once_with(
             service_name="odis-stream2",
             environment="prod",
-            send_to_logfire="if-token-present",
+            send_to_logfire=False,
         )
         mock_logfire.instrument_pydantic_ai.assert_called_once()
         mock_logfire.instrument_httpx.assert_called_once()

@@ -3,6 +3,7 @@ import os
 import numpy as np
 from google.cloud import bigquery
 from typing import List, Dict, Any, Optional
+from agents.agent_config import get_gemini_client
 
 logger = logging.getLogger("RNARagService")
 
@@ -26,11 +27,14 @@ class RNARagService:
 
             # BigQuery and Vertex use the injected target project in Cloud Run.
             self.bq_client = bigquery.Client(project=self.data_project)
-            # Vertex-based GenAI Client for embeddings
+            # Vertex-based GenAI Client for embeddings (regional endpoint required)
             # (Ensures compatibility with text-multilingual-embedding-002)
-            from agents.agent_config import get_gemini_client
-
-            self.genai_client = get_gemini_client()
+            embedding_location = (
+                os.getenv("ODIS_EMBEDDING_LOCATION")
+                or os.getenv("GOOGLE_CLOUD_LOCATION")
+                or "europe-west1"
+            )
+            self.genai_client = get_gemini_client(location=embedding_location)
             self.embedding_model = "text-multilingual-embedding-002"
         except Exception as e:
             logger.error(f"Failed to initialize RNARagService: {e}")
