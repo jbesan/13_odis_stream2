@@ -33,7 +33,7 @@ class KnowledgeStore:
         """Initializes the skills directory and touches self.db_path if provided."""
         try:
             os.makedirs(self.skills_dir, exist_ok=True)
-            logger.info(f"Skills directory initialized at {self.skills_dir}")
+            logger.debug(f"Skills directory initialized at {self.skills_dir}")
             if self.db_path:
                 os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
                 with open(self.db_path, "a") as f:

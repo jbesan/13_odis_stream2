@@ -167,6 +167,7 @@ def setup_logfire() -> None:
             service_name="odis-stream2",
             environment=logfire_env,
             send_to_logfire=send_to_logfire,
+            console=False,
         )
         logfire.instrument_pydantic_ai()
         logfire.instrument_httpx()

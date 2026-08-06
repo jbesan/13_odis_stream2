@@ -38,6 +38,7 @@ def test_setup_logfire_prod():
             service_name="odis-stream2",
             environment="prod",
             send_to_logfire=False,
+            console=False,
         )
         mock_logfire.instrument_pydantic_ai.assert_called_once()
         mock_logfire.instrument_httpx.assert_called_once()
@@ -60,6 +61,7 @@ def test_setup_logfire_local():
             service_name="odis-stream2",
             environment="local",
             send_to_logfire="if-token-present",
+            console=False,
         )
         mock_logfire.instrument_pydantic_ai.assert_called_once()
         mock_logfire.instrument_httpx.assert_called_once()
