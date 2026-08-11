@@ -901,6 +901,15 @@ def generate_pdf_report(
                 new_x=XPos.LMARGIN,
                 new_y=YPos.NEXT,
             )
+            pdf.set_font("DejaVu", "I", 9)
+            pdf.multi_cell(
+                pdf.epw,
+                5,
+                "Cette synthèse est générée par une intelligence artificielle. "
+                "Elle est fournie à titre indicatif et peut comporter des inexactitudes : "
+                "pensez à vérifier les informations.",
+            )
+            pdf.ln(3)
             pdf.set_font("DejaVu", "", 9)
 
             for msg in commune.odis_synthesis:

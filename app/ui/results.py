@@ -788,6 +788,11 @@ def show_ia_analysis_dialog(index: Any):
     telemetry.log_usage_event("run_ia_analysis", {"codgeo": codgeo, "name": nom})
 
     st.header(f"Analyse OD&IS pour {nom}")
+    st.info(
+        "Cette synthèse est générée par une intelligence artificielle. "
+        "Elle est fournie à titre indicatif et peut comporter des inexactitudes : "
+        "pensez à vérifier les informations."
+    )
 
     search_criterias = st.session_state.config
     ia_analysis_content(nom, codgeo, search_criterias)
