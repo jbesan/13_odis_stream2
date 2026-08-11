@@ -84,7 +84,7 @@ def test_reset_for_home_preserves_identity_and_resources_only():
         "user": object(),
         "org": object(),
         "search_results": object(),
-        "ui_nom": "Draft",
+        "ui_notes_qualitatives": "Draft",
     }
 
     removed = AppSession(state).reset_for_home()
@@ -94,7 +94,7 @@ def test_reset_for_home_preserves_identity_and_resources_only():
     assert "user" in state
     assert "org" in state
     assert "search_results" not in state
-    assert "ui_nom" not in state
+    assert "ui_notes_qualitatives" not in state
 
 
 def test_identity_rejects_partial_authenticated_state():

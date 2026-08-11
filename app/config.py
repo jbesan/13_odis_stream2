@@ -77,8 +77,8 @@ LOC_SEARCH_AREA_OPTIONS = {
 HEBERGEMENT_OPTIONS = [
     "Location avec Intermédiation",
     "Centre d'hébergement et de réinsertion sociale (CHRS)",
-    "Centre provisoire d'hébergement (CPH)",
-    "Centre d'accueil de demandeurs d'asile (CADA)",
+    # "Centre provisoire d'hébergement (CPH)",
+    # "Centre d'accueil de demandeurs d'asile (CADA)",
     "Foyer de Jeunes Travailleurs (FJT)",
     "Pensions de Famille",
     "Chez l'habitant",
@@ -190,6 +190,7 @@ ORGANIZATION_PROFILES: Dict[str, Org] = {
         ],
         defaults={
             "hebergement_cible": ["Chez l'habitant"],
+            "org_strategic_locations_filter": True,
             "org_boosts": {
                 "heb_jaccueille_accueillants_score": 3.0,
                 "heb_jaccueille_prospects_score": 3.0,
@@ -296,7 +297,6 @@ INC_SERVICES_CHECKBOX_MAPPING = {
 
 # --- Demo Scenarios ---
 DEMO_DATA_DEFAULT: Dict[str, Any] = {
-    "nom": None,
     "poids_emploi": 0.5,
     "poids_logement": 0.5,
     "poids_education": 0.5,
@@ -304,10 +304,10 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     "poids_mobilite": 0.5,
     "poids_sante": 0.5,
     "poids_territoire": 1.0,
-    "departement_actuel": "33",
-    "commune_actuelle": "Bordeaux",
+    "departement_actuel": None,
+    "commune_actuelle": None,
     "loc_search_area": "departement",
-    "hebergement_cible": ["Location avec Intermédiation"],
+    "hebergement_cible": [],
     "logement": "Location",
     "sante": [],
     "nb_adultes": 1,
@@ -334,7 +334,6 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
 
 DEMO_SCENARIOS = {
     "1": {
-        "nom": "Profil 1 - Jeune actif",
         "departement_actuel": "33",
         "commune_actuelle": "Bordeaux",
         "loc_search_area": "departement",
@@ -345,7 +344,6 @@ DEMO_SCENARIOS = {
         "notes_qualitatives": "Jeune actif à la recherche d'une solution de cohabitation solidaire.",
     },
     "2": {
-        "nom": "Profil 2 - Famille",
         "departement_actuel": "75",
         "commune_actuelle": "Paris",
         "loc_search_area": "region",

@@ -228,7 +228,7 @@ class SearchCriterias(BaseModel):
             ]
         },
     )
-    logement: Optional[str] = Field(
+    logement: Optional[Union[List[str], str]] = Field(
         None,
         description="Type de logement (ex: Logement Social)",
         json_schema_extra={

@@ -60,7 +60,6 @@ def pdf_modal():
                     search_results=search_results,
                     config=st.session_state.config,
                     processed_gdf=st.session_state.get("processed_gdf"),
-                    person_name=st.session_state.get("ui_nom"),
                     generation_warnings=pdf_warnings,
                 )
             except Exception:
@@ -789,6 +788,11 @@ def show_ia_analysis_dialog(index: Any):
     telemetry.log_usage_event("run_ia_analysis", {"codgeo": codgeo, "name": nom})
 
     st.header(f"Analyse OD&IS pour {nom}")
+    st.info(
+        "Cette synthèse est générée par une intelligence artificielle. "
+        "Elle est fournie à titre indicatif et peut comporter des inexactitudes : "
+        "pensez à vérifier les informations."
+    )
 
     search_criterias = st.session_state.config
     ia_analysis_content(nom, codgeo, search_criterias)
@@ -803,7 +807,10 @@ def render_refiner_panel(commune: CommuneResult, h: Optional[str]) -> bool:
     three contributors instead of leaving an empty AI-shaped gap.
     """
     if st.session_state.get("immutable_shared_snapshot"):
-        st.caption("Analyse IA non incluse dans cet instantané partagé.")
+        if commune.refiner_pitch:
+            st.markdown(commune.refiner_pitch)
+        else:
+            st.markdown(generate_static_pitch(commune))
         return True
 
     sync_background_data(commune, h)

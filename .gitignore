@@ -17,6 +17,7 @@ CONSTITUTION.md
 GEMINI.md
 AGENTS.md
 pipeline/.env
+docs/
 app/.env
 app/.streamlit/secrets.toml
 .streamlit/

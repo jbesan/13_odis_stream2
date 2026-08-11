@@ -135,6 +135,21 @@ agent_settings = AgentSettings()
 DEFAULT_MODEL = "google:gemini-3.1-flash-lite"
 
 
+def get_gcp_project() -> str:
+    """Resolve the Vertex project without retaining a source-project fallback."""
+    project = (
+        agent_settings.gcp_project
+        or os.getenv("GOOGLE_CLOUD_PROJECT")
+        or os.getenv("ODIS_DATA_PROJECT")
+    )
+    if not project:
+        raise RuntimeError(
+            "ODIS_AGENT_GCP_PROJECT, GOOGLE_CLOUD_PROJECT or ODIS_DATA_PROJECT "
+            "must be configured for Vertex AI"
+        )
+    return project
+
+
 def get_model(agent_name: str) -> str:
     """Returns the model string for a given agent."""
     return agent_settings.get_config(agent_name).model
@@ -154,11 +169,7 @@ def get_p_model(agent_name: str, client: genai.Client | None = None) -> GoogleMo
     else:
         model_name = mod_id
 
-    project = (
-        agent_settings.gcp_project
-        or os.getenv("GOOGLE_CLOUD_PROJECT")
-        or "odis-stream2"
-    )
+    project = get_gcp_project()
     location = agent_settings.gcp_location
 
     if client is not None:
@@ -194,15 +205,10 @@ def get_gemini_client(attempts: int = 3, location: str | None = None) -> genai.C
 
     Uses Vertex AI on the configured location unconditionally.
     """
-    import os
     from google import genai
     from google.genai import types
 
-    project = (
-        agent_settings.gcp_project
-        or os.getenv("GOOGLE_CLOUD_PROJECT")
-        or "odis-stream2"
-    )
+    project = get_gcp_project()
     loc = location or agent_settings.gcp_location or "eu"
 
     # For Vertex AI in 'eu' multi-region, we must specify the correct endpoint URL

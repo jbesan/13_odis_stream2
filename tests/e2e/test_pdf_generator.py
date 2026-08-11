@@ -95,7 +95,6 @@ def sample_session_state():
             "ui_commune": "Bordeaux",
             "binome": False,
             "app_data": mock_app_data,
-            "ui_nom": "Test User",
             "processed_gdf": None,
             "map_object": None,
         }
@@ -158,7 +157,6 @@ def test_generate_pdf_report(sample_session_state, sample_search_results):
     pdf_bytes = generate_pdf_report(
         search_results,
         session_state.config,
-        person_name=session_state.get("ui_nom"),
     )
 
     # Assert
@@ -171,3 +169,26 @@ def test_generate_pdf_report(sample_session_state, sample_search_results):
     # 3. Check for the PDF magic number (%PDF-)
     # This is a reliable way to confirm we have a PDF file without a complex parser.
     assert pdf_bytes.startswith(b"%PDF-")
+
+
+def test_generate_pdf_report_with_odis_synthesis(
+    sample_session_state, sample_search_results
+):
+    """Tests PDF report generation when a commune has an ODIS synthesis."""
+    session_state = sample_session_state
+    search_results = sample_search_results
+
+    # Populate odis_synthesis for the top commune
+    search_results.results[0].odis_synthesis = [
+        {"role": "assistant", "content": "Synthèse IA générée pour la commune."}
+    ]
+
+    pdf_bytes = generate_pdf_report(
+        search_results,
+        session_state.config,
+    )
+
+    assert isinstance(pdf_bytes, bytes)
+    assert len(pdf_bytes) > 0
+    assert pdf_bytes.startswith(b"%PDF-")
+

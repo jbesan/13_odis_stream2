@@ -6,6 +6,7 @@
 !tests/
 !requirements-dev.txt
 !cloudbuild.yaml
+!cloudbuild-promote.yaml
 !.dockerignore
 !ruff.toml
 !ty.toml

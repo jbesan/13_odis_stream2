@@ -9,7 +9,7 @@ from app.services.rna_rag import RNARagService
 def mock_clients():
     with (
         patch("app.services.rna_rag.bigquery.Client") as mock_bq,
-        patch("agents.agent_config.get_gemini_client") as mock_gemini,
+        patch("app.services.rna_rag.get_gemini_client") as mock_gemini,
     ):
         # Mock BQ client project
         mock_bq_instance = mock_bq.return_value

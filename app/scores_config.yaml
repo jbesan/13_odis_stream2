@@ -142,7 +142,7 @@ scores:
     strong_point_text: La couleur politique de la localité n'est pas défavorable
     high_value_adjective: pas défavorable
     show: false
-    unit: None
+    unit: ''
     display_factor: 1
     tooltip: Affiliation à un parti politique d'extrème droite
     format: '{:.1f}'
@@ -161,7 +161,7 @@ scores:
     strong_point_text: Le territoire est membre du réseau ANVITA
     high_value_adjective: oui
     show: false
-    unit: None
+    unit: 'adhésion'
     display_factor: 1
     tooltip: Commune, EPCI, Département ou Région membre de l'ANVITA
     format: '{:.1f}'
@@ -180,7 +180,7 @@ scores:
     strong_point_text: Le territoire est signataire d'un CTAI
     high_value_adjective: oui
     show: false
-    unit: None
+    unit: 'contrat signé'
     display_factor: 1
     tooltip: Commune, EPCI, Département ou Région signataire d'un Contrat territorial
       d'accueil et d'intégration (CTAI)
@@ -1018,7 +1018,7 @@ scores:
     strong_point_text: Excellente accessibilité aux médecins généralistes
     high_value_adjective: excellente
     show: true
-    unit: APL
+    unit: 'consultations/hab.'
     display_factor: 1
     tooltip: Indicateur d'Accessibilité Potentielle Localisée (Source DREES)
     format: '{:,.0f}'

@@ -5,7 +5,7 @@ from typing import Any
 import config as cfg
 from core.models import SearchCriterias, CriteriaItem
 from ui.components import inject_custom_css
-from ui.form_state import FormState, health_key, housing_key
+from ui.form_state import FormState, health_key, housing_key, long_term_housing_key
 
 # Configure Logging
 logger = logging.getLogger("ui.forms")
@@ -39,21 +39,41 @@ def render_localisation_form(app_data: dict[str, Any]) -> None:
     dept_details = app_data.get("dept_details", {})
     options_dep = app_data["coddep_set"]
 
+    if "ui_departement" not in st.session_state:
+        st.session_state["ui_departement"] = None
+
     departement_actuel = st.selectbox(
-        "Département",
+        "Département :red[*]",
         options_dep,
         key="ui_departement",
+        placeholder="Sélectionnez un département",
         format_func=lambda x: (
             f"{x} - {dept_details.get(x, {}).get('label', x)}" if dept_details else x
         ),
     )
 
-    communes = app_data["depcom_df"][
-        app_data["depcom_df"].dep_code == departement_actuel
-    ]["libgeo"].tolist()
-    if st.session_state.get("ui_commune") not in communes:
-        st.session_state["ui_commune"] = communes[0]
-    st.selectbox("Commune", communes, key="ui_commune")
+    if departement_actuel:
+        communes = app_data["depcom_df"][
+            app_data["depcom_df"].dep_code == departement_actuel
+        ]["libgeo"].tolist()
+        if st.session_state.get("ui_commune") not in communes:
+            st.session_state["ui_commune"] = communes[0] if communes else None
+
+        st.selectbox(
+            "Commune :red[*]",
+            communes,
+            key="ui_commune",
+            placeholder="Sélectionnez une commune",
+        )
+    else:
+        st.session_state["ui_commune"] = None
+        st.selectbox(
+            "Commune :red[*]",
+            [],
+            key="ui_commune_disabled",
+            disabled=True,
+            placeholder="Sélectionnez d'abord un département",
+        )
 
     st.markdown("---")
 
@@ -76,7 +96,7 @@ def render_localisation_form(app_data: dict[str, Any]) -> None:
         ]
         freq_disabled = False
 
-    st.markdown("##### Ancrage au lieu de vie actuel")
+    st.markdown("###### Ancrage au lieu de vie actuel")
     st.selectbox(
         "A quelle fréquence pense-t-il/elle revenir dans son lieu de vie actuel ?",
         options=freq_options,
@@ -169,9 +189,9 @@ def render_employment_form(app_data: dict[str, Any]) -> None:
 def render_housing_form() -> None:
     """Renders the UI for the 'Logement' form section."""
     col1, col2 = st.columns(2)
+    form_state = FormState(st.session_state)
     with col1:
         st.subheader("Hébergement cible à court terme")
-        form_state = FormState(st.session_state)
         current_heb = form_state.selected_housing()
 
         for opt in cfg.HEBERGEMENT_OPTIONS:
@@ -182,17 +202,19 @@ def render_housing_form() -> None:
 
     with col2:
         st.subheader("Logement cible à long terme")
-        st.radio(
-            "Logement",
-            cfg.LOGEMENT_OPTIONS,
-            key="ui_logement",
-            label_visibility="hidden",
-        )
+        current_logement = form_state.selected_long_term_housing()
+
+        for opt in cfg.LOGEMENT_OPTIONS:
+            cb_key = long_term_housing_key(opt)
+            if cb_key not in st.session_state:
+                st.session_state[cb_key] = opt in current_logement
+            st.checkbox(opt, key=cb_key)
 
     heb_sel = form_state.selected_housing()
+    logement_sel = form_state.selected_long_term_housing()
     if (
         "Location avec Intermédiation" in heb_sel
-        or st.session_state.get("ui_logement") == "Location"
+        or "Location" in logement_sel
     ):
         housing_type_options = list(cfg.HOUSING_TYPE_OPTIONS.keys())
         if (
@@ -362,7 +384,7 @@ def render_mobility_form(app_data: dict[str, Any]) -> None:
     if "ui_region_search" not in st.session_state:
         st.session_state["ui_region_search"] = False
     if "ui_mobility_region" not in st.session_state:
-        st.session_state["ui_mobility_region"] = default_region
+        st.session_state["ui_mobility_region"] = []
     elif isinstance(st.session_state["ui_mobility_region"], str):
         st.session_state["ui_mobility_region"] = [
             st.session_state["ui_mobility_region"]
@@ -372,14 +394,12 @@ def render_mobility_form(app_data: dict[str, Any]) -> None:
     valid_selected_regions = [
         r for r in st.session_state["ui_mobility_region"] if r in region_codes
     ]
-    if not valid_selected_regions:
-        valid_selected_regions = default_region
     st.session_state["ui_mobility_region"] = valid_selected_regions
 
-    col_reg_1, col_reg_2 = st.columns([3, 1])
+    col_reg_1, col_reg_2 = st.columns([2, 1])
     with col_reg_1:
         selected_regions = st.multiselect(
-            "Régions",
+            "Région(s) :red[*]",
             region_codes,
             format_func=lambda x: regions_dict.get(x, x),
             key="ui_mobility_region",
@@ -389,22 +409,23 @@ def render_mobility_form(app_data: dict[str, Any]) -> None:
     with col_reg_2:
         st.space(20)
         st.checkbox(
-            "France Métro.",
+            "Toute la France",
             key="ui_france_search",
             help="Rechercher sur l'ensemble du territoire.",
         )
 
-    depts_in_region = [
-        code
-        for code, details in dept_details.items()
-        if details.get("reg_code") in selected_regions
-    ]
-    depts_in_region.sort()
+    if selected_regions:
+        depts_in_region = [
+            code
+            for code, details in dept_details.items()
+            if details.get("reg_code") in selected_regions
+        ]
+        depts_in_region.sort()
+    else:
+        depts_in_region = sorted(list(dept_details.keys()))
 
     if "ui_mobility_dept" not in st.session_state:
-        st.session_state["ui_mobility_dept"] = (
-            [current_dept_code] if current_dept_code in depts_in_region else []
-        )
+        st.session_state["ui_mobility_dept"] = []
     elif isinstance(st.session_state["ui_mobility_dept"], str):
         old_val = st.session_state["ui_mobility_dept"]
         st.session_state["ui_mobility_dept"] = (
@@ -415,11 +436,11 @@ def render_mobility_form(app_data: dict[str, Any]) -> None:
             d for d in st.session_state["ui_mobility_dept"] if d in depts_in_region
         ]
 
-    col_dept_1, col_dept_2 = st.columns([3, 1])
+    col_dept_1, col_dept_2 = st.columns([2, 1])
     with col_dept_2:
         st.space(20)
         st.checkbox(
-            "Toutes les régions",
+            "Tous les départements",
             key="ui_region_search",
             disabled=st.session_state.ui_france_search,
             help="Rechercher dans tous les départements des régions sélectionnées.",
@@ -427,7 +448,7 @@ def render_mobility_form(app_data: dict[str, Any]) -> None:
 
     with col_dept_1:
         st.multiselect(
-            "Départements",
+            "Département(s) :red[*]",
             depts_in_region,
             format_func=lambda x: f"{x} - {dept_details.get(x, {}).get('label', x)}",
             key="ui_mobility_dept",
@@ -445,7 +466,7 @@ def render_mobility_form(app_data: dict[str, Any]) -> None:
         )
         st.session_state["ui_target_city_size_label"] = default_label
 
-    st.markdown("##### Taille de la ville recherchée")
+    st.markdown("###### Taille de la ville recherchée")
     with st.container(horizontal=True, width="stretch", horizontal_alignment="center"):
         st.radio(
             "Taille de la ville recherchée",
@@ -458,7 +479,7 @@ def render_mobility_form(app_data: dict[str, Any]) -> None:
 
     st.divider()
 
-    st.markdown("##### Une idée de ville en tête ?")
+    st.markdown("###### Une idée de ville en tête ?")
     if "ui_has_commune_pressentie" not in st.session_state:
         st.session_state["ui_has_commune_pressentie"] = False
 
@@ -555,7 +576,7 @@ def render_org_profile_form(app_data: dict[str, Any]) -> None:
     # Special filter checkbox for J'Accueille (only if org == "jaccueille")
     if org.id == "jaccueille":
         if "ui_org_strategic_locations_filter" not in st.session_state:
-            st.session_state["ui_org_strategic_locations_filter"] = False
+            st.session_state["ui_org_strategic_locations_filter"] = True
 
         st.checkbox(
             "Restreindre la recherche uniquement aux zones opérationnelles J'Accueille",
@@ -711,17 +732,18 @@ def display_input_tabs(app_data: dict[str, Any]) -> None:
         "Profil",
     ]
 
-    org = st.session_state.get("org")
-    if org:
-        tab_names.insert(0, org.name)
+    # Note: Org settings step/tab is hidden by default from forms, but preserved.
+    # org = st.session_state.get("org")
+    # if org:
+    #     tab_names.insert(0, org.name)
 
     tabs = st.tabs(tab_names)
 
     current_tab_idx = 0
-    if org:
-        with tabs[current_tab_idx]:
-            render_org_profile_form(app_data)
-        current_tab_idx += 1
+    # if org:
+    #     with tabs[current_tab_idx]:
+    #         render_org_profile_form(app_data)
+    #     current_tab_idx += 1
 
     with tabs[current_tab_idx]:
         col1, col2 = st.columns([1, 2])

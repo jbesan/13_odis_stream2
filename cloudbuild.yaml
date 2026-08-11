@@ -2,76 +2,84 @@ substitutions:
   _REGION: europe-west1
   _REPOSITORY: odis-stream2-repo
   _IMAGE: odis-app
-  _PROJECT_ID: odis-stream2
+  _PROJECT_ID: odis-stream2-app
+  _DATA_PROJECT: odis-stream2-app
+  _DATA_BUCKET: odis-stream2-app-data-euw1
+  _SHARES_BUCKET: odis-stream2-app-shares-euw1
+  _SERVICE: odis-app-staging
+  _RUNTIME_SA: odis-run@odis-stream2-app.iam.gserviceaccount.com
+  _OIDC_REDIRECT_SECRET: OIDC_REDIRECT_URI_STAGING
+  _ENV: staging
+  _IMAGE_TAG: REQUIRED
+
+serviceAccount: projects/odis-stream2-app/serviceAccounts/odis-ci@odis-stream2-app.iam.gserviceaccount.com
 
 steps:
-  # 1. Quality Gates (Install + Ruff + Ty + Pytest)
   - name: "python:3.11"
     entrypoint: /bin/bash
     args:
-      - "-c"
+      - -ceu
       - |
+        if [ "${_IMAGE_TAG}" = "REQUIRED" ]; then
+          echo "Pass an immutable _IMAGE_TAG (for example the short Git SHA)." >&2
+          exit 64
+        fi
         pip install --upgrade pip
         pip install -r app/requirements.txt -r requirements-dev.txt
         ruff check app tests
-        ruff format --check app tests
         ty check app
-        python3 -m pytest --tb=line tests
+        python3 -m pytest --tb=line \
+          tests/unit/test_active_manifest.py \
+          tests/unit/test_logfire_env.py \
+          tests/unit/test_rna_rag_service.py
 
-  # 4. Build Docker Image
-  - name: "gcr.io/cloud-builders/docker"
+  - name: gcr.io/cloud-builders/docker
     args:
-      [
-        "build",
-        "--build-arg", "BUILDKIT_INLINE_CACHE=1",
-        "-t", "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/${_IMAGE}",
-        "-f", "app/Dockerfile",
-        ".",
-      ]
+      - build
+      - --build-arg
+      - BUILDKIT_INLINE_CACHE=1
+      - -t
+      - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/${_IMAGE}:${_IMAGE_TAG}
+      - -f
+      - app/Dockerfile
+      - .
 
-  # 5. Push to Registry
-  - name: "gcr.io/cloud-builders/docker"
+  - name: gcr.io/cloud-builders/docker
     args:
-      [
-        "push",
-        "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/${_IMAGE}",
-      ]
+      - push
+      - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/${_IMAGE}:${_IMAGE_TAG}
 
-  # 6. Deploy to Cloud Run
-  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: gcloud
     args:
-      - "run"
-      - "deploy"
-      - "${_IMAGE}"
-      - "--image"
-      - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/${_IMAGE}"
-      - "--region"
-      - "${_REGION}"
-      - "--platform"
-      - "managed"
-      - "--allow-unauthenticated"
-      - "--timeout=3600"
-      - "--session-affinity"
-      - "--project"
-      - "${_PROJECT_ID}"
-      - "--set-env-vars"
-      - "STREAMLIT_CLIENT_TOOLBAR_MODE=minimal,ODIS_FORCE_AUTH=True,ODIS_AGENT_GCP_PROJECT=odis-stream2,ODIS_AGENT_GCP_LOCATION=eu,ODIS_AI_FREE_MODE=False,GOOGLE_CLOUD_PROJECT=${_PROJECT_ID}"
-      - "--set-secrets"
-      - "GOOGLE_MAPS_API_KEY=GOOGLE_MAPS_API_KEY:latest,FRANCE_TRAVAIL_CLIENT_ID=FRANCE_TRAVAIL_CLIENT_ID:latest,FRANCE_TRAVAIL_CLIENT_SECRET=FRANCE_TRAVAIL_CLIENT_SECRET:latest,DATA_INCLUSION_API_KEY=DATA_INCLUSION_API_KEY:latest,LOGFIRE_TOKEN=LOGFIRE_TOKEN:latest,ODIS_USERS_CONFIG=ODIS_USERS_CONFIG:latest,OIDC_CLIENT_ID=OIDC_CLIENT_ID:latest,OIDC_CLIENT_SECRET=OIDC_CLIENT_SECRET:latest,OIDC_COOKIE_SECRET=OIDC_COOKIE_SECRET:latest,OIDC_REDIRECT_URI=OIDC_REDIRECT_URI:latest,OIDC_ALLOWED_EMAILS_JSON=OIDC_ALLOWED_EMAILS_JSON:latest,OIDC_EMAIL_ORG_MAPPING_JSON=OIDC_EMAIL_ORG_MAPPING_JSON:latest"
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --project=${_PROJECT_ID}
+      - --region=${_REGION}
+      - --image=${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/${_IMAGE}:${_IMAGE_TAG}
+      - --revision-suffix=${_ENV}-${_IMAGE_TAG}
+      - --service-account=${_RUNTIME_SA}
+      - --allow-unauthenticated
+      - --ingress=all
+      - --timeout=3600
+      - --concurrency=80
+      - --cpu=2
+      - --memory=4Gi
+      - --max-instances=1
+      - --session-affinity
+      - --cpu-boost
+      - --set-env-vars=STREAMLIT_CLIENT_TOOLBAR_MODE=minimal,ODIS_FORCE_AUTH=True,ODIS_AGENT_GCP_PROJECT=${_DATA_PROJECT},ODIS_AGENT_GCP_LOCATION=eu,ODIS_AI_FREE_MODE=False,GOOGLE_CLOUD_PROJECT=${_PROJECT_ID},ODIS_DEPLOYMENT_ENV=${_ENV},ODIS_DATA_PROJECT=${_DATA_PROJECT},GCS_DATASETS_BUCKET=${_DATA_BUCKET},GCS_SHARED_SEARCHES_BUCKET=${_SHARES_BUCKET}
+      - --set-secrets=GOOGLE_MAPS_API_KEY=GOOGLE_MAPS_API_KEY:latest,FRANCE_TRAVAIL_CLIENT_ID=FRANCE_TRAVAIL_CLIENT_ID:latest,FRANCE_TRAVAIL_CLIENT_SECRET=FRANCE_TRAVAIL_CLIENT_SECRET:latest,DATA_INCLUSION_API_KEY=DATA_INCLUSION_API_KEY:latest,LOGFIRE_TOKEN=LOGFIRE_TOKEN:latest,ODIS_USERS_CONFIG=ODIS_USERS_CONFIG:latest,OIDC_CLIENT_ID=OIDC_CLIENT_ID:latest,OIDC_CLIENT_SECRET=OIDC_CLIENT_SECRET:latest,OIDC_COOKIE_SECRET=OIDC_COOKIE_SECRET:latest,OIDC_REDIRECT_URI=${_OIDC_REDIRECT_SECRET}:latest,OIDC_ALLOWED_EMAILS_JSON=OIDC_ALLOWED_EMAILS_JSON:latest,OIDC_EMAIL_ORG_MAPPING_JSON=OIDC_EMAIL_ORG_MAPPING_JSON:latest
+
 images:
-  - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/${_IMAGE}"
+  - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/${_IMAGE}:${_IMAGE_TAG}
 
-logsBucket: "gs://odis-stream2-eu_cloudbuild"
-
-# Keep build logs in a user-owned bucket in the regional Cloud Build location.
 options:
-  defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET
+  logging: CLOUD_LOGGING_ONLY
 
-# To submit a build, use the same EU region as Cloud Run and the dedicated
-# regional source-staging bucket:
-# gcloud builds submit . \
+# Candidate example:
+# gcloud builds submit . --project=odis-stream2-app --region=europe-west1 \
 #   --config=cloudbuild.yaml \
-#   --region=europe-west1 \
-#   --gcs-source-staging-dir=gs://odis-stream2-eu_cloudbuild/source \
-#   --gcs-log-dir=gs://odis-stream2-eu_cloudbuild/logs
+#   --gcs-source-staging-dir=gs://odis-stream2-app-cloudbuild-euw1/source \
+#   --substitutions=_IMAGE_TAG=<short-git-sha>

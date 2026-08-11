@@ -50,12 +50,9 @@ def test_search_inclusion_jobs_public_no_auth():
 def test_get_inclusion_job_details_fallback_siret(mock_parquet_data):
     """Verify that details lookup for a SIRET resolves department via parquet and queries public API."""
     with (
-        patch("pandas.read_parquet", return_value=mock_parquet_data),
         patch(
-            "os.path.exists",
-            side_effect=lambda p: (
-                True if "odis_inclusion_jobs.parquet" in str(p) else False
-            ),
+            "services.mcp_inclusion.load_parquet_dataset",
+            return_value=mock_parquet_data,
         ),
         patch("requests.get") as mock_get,
     ):
@@ -93,12 +90,9 @@ def test_get_inclusion_job_details_fallback_siret(mock_parquet_data):
 def test_get_inclusion_job_details_not_found_returns_cache_stub(mock_parquet_data):
     """Verify that if live public query fails to find the structure, we fall back to a clean cache stub."""
     with (
-        patch("pandas.read_parquet", return_value=mock_parquet_data),
         patch(
-            "os.path.exists",
-            side_effect=lambda p: (
-                True if "odis_inclusion_jobs.parquet" in str(p) else False
-            ),
+            "services.mcp_inclusion.load_parquet_dataset",
+            return_value=mock_parquet_data,
         ),
         patch("requests.get") as mock_get,
     ):

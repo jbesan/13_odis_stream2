@@ -76,7 +76,9 @@ class ReleaseContext:
         for artifact in self.artifacts:
             if artifact.name == filename:
                 return artifact
-        raise KeyError(f"Dataset '{filename}' is not declared by release {self.version}")
+        raise KeyError(
+            f"Dataset '{filename}' is not declared by release {self.version}"
+        )
 
 
 def _preload_scoring_datasets_in_background() -> None:
@@ -286,7 +288,9 @@ def ensure_data_initialized(*, initialize_rag: bool = True) -> Dict[str, Any]:
 
 def _active_release_payload() -> tuple[str, str, Dict[str, Any], Dict[str, Any]]:
     """Read ``current.json`` and its verified manifest exactly once."""
-    bucket_name = os.getenv("GCS_DATASETS_BUCKET", "odis-stream2-eu")
+    bucket_name = os.getenv("GCS_DATASETS_BUCKET")
+    if not bucket_name:
+        raise RuntimeError("GCS_DATASETS_BUCKET must be configured")
     datasets_prefix = os.getenv("GCS_DATASETS_PREFIX", "datasets").strip("/")
     bucket = storage.Client().bucket(bucket_name)
     pointer_blob = bucket.blob(f"{datasets_prefix}/current.json")
@@ -348,7 +352,9 @@ def get_active_release_context() -> ReleaseContext:
         bucket_name, datasets_prefix, pointer, manifest = _active_release_payload()
         release_version = pointer["version"]
         files = pointer.get("files")
-        if not isinstance(files, list) or not all(isinstance(item, str) for item in files):
+        if not isinstance(files, list) or not all(
+            isinstance(item, str) for item in files
+        ):
             raise RuntimeError("Active dataset release has no valid artifact list")
 
         output_by_name = {
@@ -483,11 +489,11 @@ def _ensure_release_artifacts_cached(
     if not artifacts:
         return {}
 
-    logger.info(
-        "[GCS] Ensuring %d release artifacts are available locally (up to %d downloads in parallel)",
-        len(artifacts),
-        min(_GCS_DOWNLOAD_WORKERS, len(artifacts)),
-    )
+    # logger.info(
+    #     "[GCS] Ensuring %d release artifacts are available locally (up to %d downloads in parallel)",
+    #     len(artifacts),
+    #     min(_GCS_DOWNLOAD_WORKERS, len(artifacts)),
+    # )
     paths: Dict[str, str] = {}
     errors: Dict[str, Exception] = {}
     with ThreadPoolExecutor(
@@ -495,7 +501,9 @@ def _ensure_release_artifacts_cached(
         thread_name_prefix="odis-gcs-download",
     ) as executor:
         pending = {
-            executor.submit(_download_release_artifact, context, artifact): artifact.name
+            executor.submit(
+                _download_release_artifact, context, artifact
+            ): artifact.name
             for artifact in artifacts
         }
         for future in as_completed(pending):
@@ -509,7 +517,9 @@ def _ensure_release_artifacts_cached(
         details = "; ".join(
             f"{filename}: {error}" for filename, error in sorted(errors.items())
         )
-        raise RuntimeError(f"Failed to cache active dataset release {context.version}: {details}")
+        raise RuntimeError(
+            f"Failed to cache active dataset release {context.version}: {details}"
+        )
     return paths
 
 
@@ -567,7 +577,9 @@ def get_salesforce_jaccueille_counts(
     df = source_data if source_data is not None else fetch_salesforce_jaccueille_bdv()
     required = {"bassin_de_vie", "contact_count", "lead_count"}
     if df.empty or not required.issubset(df.columns):
-        missing = sorted(required - set(df.columns)) if not df.empty else sorted(required)
+        missing = (
+            sorted(required - set(df.columns)) if not df.empty else sorted(required)
+        )
         logger.error(
             "[J'ACCUEILLE] Salesforce BDV dataset is unavailable or incomplete; "
             "missing columns: %s",
@@ -585,12 +597,9 @@ def get_salesforce_jaccueille_counts(
     counts["prospects_count"] = pd.to_numeric(
         counts["lead_count"], errors="coerce"
     ).fillna(0)
-    return (
-        counts.groupby("bassin_de_vie", as_index=False)[
-            ["heb_accueillants_count", "prospects_count"]
-        ]
-        .sum()
-    )
+    return counts.groupby("bassin_de_vie", as_index=False)[
+        ["heb_accueillants_count", "prospects_count"]
+    ].sum()
 
 
 def _load_parquet(
@@ -652,9 +661,7 @@ def _enrich_waldec_index(
     else:
         enriched_waldec["count"] = 0
     enriched_waldec["count"] = (
-        pd.to_numeric(enriched_waldec["count"], errors="coerce")
-        .fillna(0)
-        .astype(int)
+        pd.to_numeric(enriched_waldec["count"], errors="coerce").fillna(0).astype(int)
     )
 
     enriched_waldec = enriched_waldec.sort_values(
@@ -698,9 +705,7 @@ def load_referentiels_raw(
     In the application this is always called as part of the complete scoring
     bundle. The optional context only keeps test and MCP entry points usable.
     """
-    refs_df = _load_parquet(
-        cfg.REFERENTIELS_FILE, release_context=release_context
-    )
+    refs_df = _load_parquet(cfg.REFERENTIELS_FILE, release_context=release_context)
     if refs_df.empty:
         raise RuntimeError("Active GCS release has no usable referentials dataset")
 
@@ -1085,8 +1090,12 @@ def load_scoring_datasets_raw(
         bv_geo = bv_geo.reset_index()
         if not df_jaccueille.empty:
             bv_geo = bv_geo.merge(df_jaccueille, on="bassin_de_vie", how="left")
-        bv_geo["heb_accueillants_count"] = bv_geo.get("heb_accueillants_count", pd.Series(0.0, index=bv_geo.index)).fillna(0)
-        bv_geo["prospects_count"] = bv_geo.get("prospects_count", pd.Series(0.0, index=bv_geo.index)).fillna(0)
+        bv_geo["heb_accueillants_count"] = bv_geo.get(
+            "heb_accueillants_count", pd.Series(0.0, index=bv_geo.index)
+        ).fillna(0)
+        bv_geo["prospects_count"] = bv_geo.get(
+            "prospects_count", pd.Series(0.0, index=bv_geo.index)
+        ).fillna(0)
         bv_geo["heb_jaccueille_accueillants_score"] = (
             bv_geo["heb_accueillants_count"] > 0
         ).astype(float)
@@ -1099,11 +1108,15 @@ def load_scoring_datasets_raw(
         odis = odis.reset_index()
         if not df_jaccueille.empty:
             odis = odis.merge(df_jaccueille, on="bassin_de_vie", how="left")
-        odis["heb_accueillants_count"] = odis.get("heb_accueillants_count", pd.Series(0.0, index=odis.index)).fillna(0)
-        odis["prospects_count"] = odis.get("prospects_count", pd.Series(0.0, index=odis.index)).fillna(0)
-        odis["heb_jaccueille_accueillants_score"] = (odis["heb_accueillants_count"] > 0).astype(
-            float
-        )
+        odis["heb_accueillants_count"] = odis.get(
+            "heb_accueillants_count", pd.Series(0.0, index=odis.index)
+        ).fillna(0)
+        odis["prospects_count"] = odis.get(
+            "prospects_count", pd.Series(0.0, index=odis.index)
+        ).fillna(0)
+        odis["heb_jaccueille_accueillants_score"] = (
+            odis["heb_accueillants_count"] > 0
+        ).astype(float)
         odis["heb_jaccueille_prospects_score"] = (odis["prospects_count"] > 0).astype(
             float
         )

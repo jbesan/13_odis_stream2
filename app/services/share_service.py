@@ -30,9 +30,14 @@ from pydantic import ValidationError
 
 logger = logging.getLogger("services.share_service")
 
-# GCS & BQ Settings
-GCS_BUCKET_NAME = os.getenv("GCS_SHARED_SEARCHES_BUCKET", "odis-stream2-eu")
 SHARE_SNAPSHOT_VERSION = "2.0"
+
+
+def _get_shared_searches_bucket_name() -> str:
+    bucket_name = os.getenv("GCS_SHARED_SEARCHES_BUCKET")
+    if not bucket_name:
+        raise RuntimeError("GCS_SHARED_SEARCHES_BUCKET must be configured")
+    return bucket_name
 
 
 @dataclass(frozen=True)
@@ -242,9 +247,7 @@ def save_shared_search(
         timestamp_str = datetime.now().isoformat()
 
     config_dict = (
-        config.model_dump(mode="json")
-        if hasattr(config, "model_dump")
-        else config
+        config.model_dump(mode="json") if hasattr(config, "model_dump") else config
     )
     results_dict = (
         search_results.model_dump(mode="json")
@@ -295,18 +298,23 @@ def save_shared_search(
         raise RuntimeError("Le stockage GCS des recherches partagées est indisponible.")
 
     try:
-        bucket = gcs_client.bucket(GCS_BUCKET_NAME)
+        bucket_name = _get_shared_searches_bucket_name()
+        bucket = gcs_client.bucket(bucket_name)
         blob = bucket.blob(f"searches/{share_id}.json")
         blob.content_encoding = "gzip"
         blob.upload_from_string(
             compressed_bytes,
             content_type="application/json",
         )
-        gcs_uri = f"gs://{GCS_BUCKET_NAME}/searches/{share_id}.json"
-        logger.info(f"✅ Saved gzipped shared search snapshot to GCS at {gcs_uri} ({len(compressed_bytes)} bytes)")
+        gcs_uri = f"gs://{bucket_name}/searches/{share_id}.json"
+        logger.info(
+            f"✅ Saved gzipped shared search snapshot to GCS at {gcs_uri} ({len(compressed_bytes)} bytes)"
+        )
     except Exception as e:
         logger.error(f"❌ GCS upload failed for {share_id}: {e}")
-        raise RuntimeError("Impossible d'enregistrer la recherche partagée dans GCS.") from e
+        raise RuntimeError(
+            "Impossible d'enregistrer la recherche partagée dans GCS."
+        ) from e
 
     # Log telemetry only after the durable snapshot has been stored.
     try:
@@ -373,7 +381,7 @@ def load_shared_search_snapshot_outcome(
         )
 
     try:
-        bucket = gcs_client.bucket(GCS_BUCKET_NAME)
+        bucket = gcs_client.bucket(_get_shared_searches_bucket_name())
         blob = bucket.blob(f"searches/{share_id}.json")
         exists = blob.exists()
     except google_exceptions.NotFound:

@@ -81,6 +81,7 @@ def setup_logging() -> None:
     # --- Reduce verbosity of third-party libraries ---
     loggers_to_silence = [
         "google.genai",
+        "google_genai",
         "httpx",
         "google",
         "FPDF",
@@ -93,12 +94,14 @@ def setup_logging() -> None:
         "watchdog",
         "pydantic",
         "pydantic_ai",
+        "pydantic_graph",
+        "odis_graph",
     ]
 
     for logger_name in loggers_to_silence:
         l = logging.getLogger(logger_name)
-        # Set google.genai to ERROR to silence non-critical warnings like AFC compatibility
-        if logger_name == "google.genai":
+        # Set google.genai and google_genai to ERROR to silence non-critical warnings like AFC compatibility
+        if logger_name in ("google.genai", "google_genai"):
             l.setLevel(logging.ERROR)
         else:
             l.setLevel(logging.WARNING)
@@ -106,12 +109,13 @@ def setup_logging() -> None:
         if l.hasHandlers():
             l.handlers.clear()
 
-    # Specifically for google.genai.models which is very chatty (e.g. AFC warnings)
-    m_logger = logging.getLogger("google.genai.models")
-    m_logger.setLevel(logging.ERROR)
-    m_logger.propagate = False
-    if m_logger.hasHandlers():
-        m_logger.handlers.clear()
+    # Specifically for google.genai.models and google_genai.models which are very chatty (e.g. AFC warnings)
+    for model_logger_name in ("google.genai.models", "google_genai.models"):
+        m_logger = logging.getLogger(model_logger_name)
+        m_logger.setLevel(logging.ERROR)
+        m_logger.propagate = False
+        if m_logger.hasHandlers():
+            m_logger.handlers.clear()
 
     try:
         from absl import logging as absl_logging
@@ -146,22 +150,37 @@ def setup_logfire() -> None:
         return
 
     try:
-        # Determine environment dynamically: 'prod' on Cloud Run, 'local' on developer machine
+        # Cloud Run staging and production receive an explicit deployment label.
         is_cloud_run = os.environ.get("K_SERVICE") is not None
-        logfire_env = "prod" if is_cloud_run else "local"
+        logfire_env = os.getenv("ODIS_DEPLOYMENT_ENV") or (
+            "prod" if is_cloud_run else "local"
+        )
+
+        # GDPR Constraint: Disable sending telemetry to Logfire cloud on GCP/Cloud Run
+        send_to_logfire = (
+            False
+            if (is_cloud_run or logfire_env in ("prod", "staging"))
+            else "if-token-present"
+        )
 
         logfire.configure(
             service_name="odis-stream2",
             environment=logfire_env,
-            send_to_logfire="if-token-present",
+            send_to_logfire=send_to_logfire,
+            console=False,
         )
         logfire.instrument_pydantic_ai()
         logfire.instrument_httpx()
         # Suppress BigQuery automatic tracing to reduce noise (as requested)
         logfire.suppress_scopes("google.cloud.bigquery.opentelemetry_tracing")
-        logger.info(
-            f"🔥 Logfire instrumentation enabled in '{logfire_env}' environment."
-        )
+        if send_to_logfire is False:
+            logger.info(
+                f"🔒 Logfire remote telemetry disabled in '{logfire_env}' environment (GCP GDPR compliance)."
+            )
+        else:
+            logger.info(
+                f"🔥 Logfire instrumentation enabled in '{logfire_env}' environment."
+            )
     except Exception as e:
         logger.warning(f"⚠️ Failed to initialize Logfire: {e}")
 
@@ -320,9 +339,8 @@ def log_search_results(
     for i, commune in enumerate(search_results.results):
         eval_cities.append((f"{i + 1}", commune))
 
-    if (
-        search_results.commune_pressentie
-        and not any(c.codgeo == pressentie_codgeo for _, c in eval_cities)
+    if search_results.commune_pressentie and not any(
+        c.codgeo == pressentie_codgeo for _, c in eval_cities
     ):
         eval_cities.append(("pressentie", search_results.commune_pressentie))
 

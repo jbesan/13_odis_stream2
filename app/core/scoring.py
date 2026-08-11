@@ -724,7 +724,12 @@ class ScoringEngine:
 
         # Rent scaling activation (if Location or IML)
         logement_type = getattr(config, "logement", "Location")
-        if logement_type == "Location" or "Location avec Intermédiation" in heb_sel:
+        is_location = (
+            logement_type == "Location"
+            or (isinstance(logement_type, list) and "Location" in logement_type)
+            or "Location avec Intermédiation" in heb_sel
+        )
+        if is_location:
             active.add("log_vac_scaled")
             type_log_attr = getattr(config, "type_logement", "appt_all")
             type_log = (
@@ -732,7 +737,11 @@ class ScoringEngine:
             )
             active.add(f"log_loyer_moyen_{type_log}_scaled")
 
-        if logement_type == "Logement Social":
+        is_logement_social = (
+            logement_type == "Logement Social"
+            or (isinstance(logement_type, list) and "Logement Social" in logement_type)
+        )
+        if is_logement_social:
             active.add("log_soc_inoc_scaled")
             active.add("log_soc_delay_scaled")
 
@@ -1164,6 +1173,8 @@ class ScoringEngine:
                     emploi_data.standard_jobs_total = 0
                     emploi_data.standard_jobs_matching_total = 0
                     emploi_data.top_professions = []
+            else:
+                emploi_data.source_availability["france_travail"] = "unavailable"
 
             # --- SIAE Jobs Match (New F-39) ---
             if not self.siae_jobs_data.empty:
@@ -1225,6 +1236,8 @@ class ScoringEngine:
                     emploi_data.inclusive_jobs_summary = {}
                     emploi_data.inclusive_jobs_matching_summary = {}
                     emploi_data.inclusive_jobs_matching_total = 0
+            else:
+                emploi_data.source_availability["emplois_inclusion"] = "unavailable"
 
             # Formations logic remains
             if not self.formations_data.empty:
