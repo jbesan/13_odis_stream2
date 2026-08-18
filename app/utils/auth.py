@@ -8,6 +8,7 @@ import logging
 from typing import Dict, Any, Optional
 from core.models import User, Org
 import config as cfg
+from utils.oidc_policy import normalize_domain, normalize_email
 
 logger = logging.getLogger(__name__)
 
@@ -123,56 +124,63 @@ def verify_credentials(
     return False
 
 
-def resolve_org_for_oidc(email: str) -> Org:
-    """Resolves the Org profile for an OIDC-authenticated email.
+def _normalized_mapping(mapping: Dict[str, str], key_normalizer) -> Dict[str, str]:
+    """Normalize a config mapping without allowing a malformed key to match."""
+    normalized: Dict[str, str] = {}
+    for key, value in mapping.items():
+        normalized_key = key_normalizer(key)
+        if normalized_key and isinstance(value, str) and value.strip():
+            normalized[normalized_key] = value.strip()
+    return normalized
 
-    Reads org mappings from st.secrets (written by generate_secrets.py at startup),
-    then falls back to config defaults.
 
-    Args:
-        email: The authenticated OIDC email address (already verified by Streamlit).
+def resolve_org_for_oidc(email: str) -> Optional[Org]:
+    """Authorize an OIDC identity and return its configured organization.
 
-    Returns:
-        The mapped Org profile. Defaults to a generic Org if no mapping found.
+    OIDC verifies that the identity exists. This application-level check decides
+    whether that identity may access OD&IS and which organization context it
+    may use. Every successful identity must be explicitly authorized and map to
+    an existing profile; no generic fallback organization is permitted.
     """
-    org_id = None
-    if email:
-        email_lower = email.lower()
+    normalized_email = normalize_email(email)
+    if not normalized_email:
+        return None
 
-        # Read mappings from st.secrets (populated by generate_secrets.py)
-        try:
-            email_mapping = dict(st.secrets.get("auth", {}).get("email_org_mapping", {}))
-            if email_lower in {k.lower() for k in email_mapping}:
-                org_id = next(v for k, v in email_mapping.items() if k.lower() == email_lower)
-        except Exception:
-            pass
+    domain = normalized_email.rsplit("@", maxsplit=1)[1]
+    allowed_domains = {
+        normalized_domain
+        for raw_domain in cfg.OIDC_ALLOWED_DOMAINS
+        if (normalized_domain := normalize_domain(raw_domain))
+    }
+    allowed_emails = {
+        normalized_allowed_email
+        for raw_email in cfg.OIDC_ALLOWED_EMAILS
+        if (normalized_allowed_email := normalize_email(raw_email))
+    }
+    email_mapping = _normalized_mapping(cfg.OIDC_EMAIL_ORG_MAPPING, normalize_email)
+    domain_mapping = _normalized_mapping(cfg.OIDC_DOMAIN_ORG_MAPPING, normalize_domain)
 
-        # Fall back to domain mapping
-        if not org_id and "@" in email_lower:
-            domain = email_lower.split("@")[-1]
-            try:
-                domain_mapping = dict(st.secrets.get("auth", {}).get("domain_org_mapping", {}))
-                if domain in {k.lower() for k in domain_mapping}:
-                    org_id = next(v for k, v in domain_mapping.items() if k.lower() == domain)
-            except Exception:
-                pass
+    if normalized_email not in allowed_emails and domain not in allowed_domains:
+        return None
 
-        # Final fallback to config
-        if not org_id:
-            org_id = cfg.OIDC_DOMAIN_ORG_MAPPING.get(email_lower.split("@")[-1] if "@" in email_lower else "")
-
+    # A specifically authorized email may override the organization assigned to
+    # its otherwise authorized domain. Both paths still require a known profile.
+    org_id = email_mapping.get(normalized_email) or domain_mapping.get(domain)
     if not org_id:
-        org_id = "default"
+        return None
+    return cfg.ORGANIZATION_PROFILES.get(org_id)
 
-    org = cfg.ORGANIZATION_PROFILES.get(org_id)
-    if not org:
-        org = Org(
-            id=org_id,
-            name=org_id.capitalize(),
-            zone_type="departement",
-            default_zones=[],
-        )
-    return org
+
+def _clear_authenticated_context() -> None:
+    """Remove identity and data that could belong to the prior identity."""
+    st.session_state.clear()
+
+
+def _render_oidc_denied() -> None:
+    """Show a generic denial without exposing allowlist membership."""
+    st.error("🔒 Votre compte n'est pas autorisé à accéder à OD&IS.")
+    if st.button("Se déconnecter", key="oidc_denied_logout"):
+        st.logout()
 
 
 def get_login_session_id() -> str:
@@ -198,52 +206,74 @@ def is_admin(username: Optional[str] = None) -> bool:
 def check_password() -> bool:
     """Checks if the user has authenticated.
 
-    Delegates OIDC authorization entirely to Streamlit's native [auth] secrets.toml
-    enforcement. Custom logic is limited to org resolution and legacy form login.
+    Streamlit OIDC authenticates the identity; this function separately enforces
+    OD&IS authorization and organization assignment.
 
     Returns:
         True if the user is authenticated (or local dev bypass is active), False otherwise.
     """
     # Detect Cloud Run environment or forced auth flag
     is_cloud_run = os.environ.get("K_SERVICE") is not None
-    force_auth = os.environ.get("ODIS_FORCE_AUTH", "False").lower() in ("true", "1", "yes")
+    force_auth = os.environ.get("ODIS_FORCE_AUTH", "False").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
 
     # 1. Local dev bypass (no Cloud Run, no forced auth)
     if not is_cloud_run and not force_auth:
         if "user" not in st.session_state or "org" not in st.session_state:
             org = cfg.ORGANIZATION_PROFILES.get("jaccueille")
-            st.session_state["user"] = User(username=LOCAL_DEV_USERNAME, org_id="jaccueille")
+            st.session_state["user"] = User(
+                username=LOCAL_DEV_USERNAME, org_id="jaccueille"
+            )
             st.session_state["org"] = org
             st.session_state["username"] = LOCAL_DEV_USERNAME
         st.session_state["password_correct"] = True
+        st.session_state["auth_method"] = "local"
         return True
 
     # Initialize auth state
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
 
-    # 2. Short-circuit only for a complete authenticated session.  Search resets
-    # deliberately keep identity, but a partial/stale session must re-enter the
-    # OIDC resolution path rather than silently operating without organization
-    # defaults or access context.
-    if st.session_state.get("password_correct"):
-        if st.session_state.get("user") is not None and st.session_state.get("org") is not None:
-            return True
-        logger.warning(
-            "Authenticated flag found without complete user/org context; "
-            "re-establishing authentication context."
-        )
-        st.session_state["password_correct"] = False
-
-    # 3. OIDC: if st.user.is_logged_in is True, Streamlit has already enforced
-    #    allowed_emails / allowed_domains from secrets.toml — just resolve org.
     user_obj = getattr(st, "user", None)
-    if user_obj and getattr(user_obj, "is_logged_in", False):
+    oidc_logged_in = bool(user_obj and getattr(user_obj, "is_logged_in", False))
+
+    # 2. A legacy/local identity has no Streamlit OIDC state to re-check. OIDC
+    # identities are re-authorized on every page entry so an existing session
+    # cannot retain access after an allowlist or organization mapping change.
+    if st.session_state.get("password_correct"):
+        has_complete_identity = (
+            st.session_state.get("user") is not None
+            and st.session_state.get("org") is not None
+        )
+        auth_method = st.session_state.get("auth_method")
+        if has_complete_identity and auth_method in {"local", "legacy"}:
+            return True
+        if auth_method == "oidc" and not oidc_logged_in:
+            _clear_authenticated_context()
+        elif not oidc_logged_in:
+            logger.warning("Authenticated session has no verifiable identity context.")
+            _clear_authenticated_context()
+
+    # 3. OIDC: Streamlit has authenticated the identity; OD&IS now authorizes
+    # it against the Secret Manager policy and resolves a known organization.
+    if oidc_logged_in:
         email = getattr(user_obj, "email", None)
+        normalized_email = normalize_email(email)
         org = resolve_org_for_oidc(email or "")
+        if not normalized_email or not org:
+            logger.warning(
+                "OIDC-authenticated identity denied by authorization policy."
+            )
+            _clear_authenticated_context()
+            _render_oidc_denied()
+            return False
         st.session_state["password_correct"] = True
-        st.session_state["username"] = email
-        st.session_state["user"] = User(username=email, org_id=org.id)
+        st.session_state["auth_method"] = "oidc"
+        st.session_state["username"] = normalized_email
+        st.session_state["user"] = User(username=normalized_email, org_id=org.id)
         st.session_state["org"] = org
         return True
 
@@ -251,10 +281,14 @@ def check_password() -> bool:
     with st.container(width="stretch", horizontal_alignment="center"):
         with st.container(width=400, border=True, horizontal_alignment="center"):
             st.subheader("Accès ODIS")
-            st.info("👋 Bienvenue ! Veuillez vous connecter avec l'une des méthodes ci-dessous.")
+            st.info(
+                "👋 Bienvenue ! Veuillez vous connecter avec l'une des méthodes ci-dessous."
+            )
 
             # --- OPTION A : Google Workspace (OIDC) ---
-            if st.button("🔑 Se connecter avec Google", type="primary", width="stretch"):
+            if st.button(
+                "🔑 Se connecter avec Google", type="primary", width="stretch"
+            ):
                 st.login("google")
                 st.stop()
 
@@ -290,7 +324,10 @@ def check_password() -> bool:
                             default_zones=[],
                         )
                         st.session_state["password_correct"] = True
-                        st.session_state["user"] = User(username=username, org_id=org_id)
+                        st.session_state["auth_method"] = "legacy"
+                        st.session_state["user"] = User(
+                            username=username, org_id=org_id
+                        )
                         st.session_state["org"] = org
                         st.session_state["username"] = username
                         st.rerun()

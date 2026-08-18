@@ -1,0 +1,90 @@
+# ==============================================================================
+# OD&IS Stream 2 — GCP Deployment & Operations Template (Makefile.example)
+# ==============================================================================
+# Copy this file to Makefile (which is gitignored) and customize variables,
+# or define them in .env / .env.deploy.
+# ==============================================================================
+
+-include .env
+-include .env.deploy
+
+PROJECT_ID ?= $(ODIS_GCP_PROJECT_ID)
+REGION ?= $(if $(ODIS_GCP_REGION),$(ODIS_GCP_REGION),europe-west1)
+STAGING_SOURCE_BUCKET ?= $(ODIS_GCP_CLOUDBUILD_BUCKET)
+GIT_SHA ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+TAG ?= $(GIT_SHA)
+
+.PHONY: help deploy-staging promote-prod harden-buckets check-us-buckets clean-us-staging test lint check-config
+
+help:
+	@echo "OD&IS Stream 2 - Operations Commands:"
+	@echo "  make deploy-staging [TAG=<sha>]   Build and deploy candidate to staging Cloud Run (default TAG: current git short SHA)"
+	@echo "  make promote-prod TAG=<sha>       Promote verified image digest from staging to production Cloud Run"
+	@echo "  make harden-buckets               Apply UBLA, PAP, and 7-day lifecycle to regional Cloud Build source bucket"
+	@echo "  make check-us-buckets             List any accidental or legacy US Cloud Build buckets"
+	@echo "  make clean-us-staging             Empty objects from unintended US staging buckets"
+	@echo "  make test                         Run local unit tests via uv pytest"
+	@echo "  make lint                         Run local ruff and ty quality checks"
+
+check-config:
+	@if [ -z "$(PROJECT_ID)" ] || [ -z "$(STAGING_SOURCE_BUCKET)" ]; then \
+		echo "ERROR: PROJECT_ID or STAGING_SOURCE_BUCKET is not set." >&2; \
+		echo "Please set ODIS_GCP_PROJECT_ID and ODIS_GCP_CLOUDBUILD_BUCKET in .env/.env.deploy or in Makefile." >&2; \
+		exit 1; \
+	fi
+
+deploy-staging: check-config
+	@if [ "$(TAG)" = "unknown" ] || [ -z "$(TAG)" ]; then \
+		echo "ERROR: Valid Git SHA or TAG required for deploy-staging." >&2; exit 1; \
+	fi
+	@echo "Submitting staging build for TAG: $(TAG) to regional source bucket: $(STAGING_SOURCE_BUCKET)/source"
+	gcloud builds submit . \
+		--project=$(PROJECT_ID) \
+		--region=$(REGION) \
+		--config=cloudbuild.yaml \
+		--gcs-source-staging-dir=$(STAGING_SOURCE_BUCKET)/source \
+		--substitutions=_IMAGE_TAG=$(TAG)
+
+promote-prod: check-config
+	@if [ -z "$(TAG)" ] || [ "$(TAG)" = "REQUIRED" ] || [ "$(TAG)" = "unknown" ]; then \
+		echo "ERROR: Must specify approved immutable TAG=<short-sha> to promote to production." >&2; \
+		echo "Example: make promote-prod TAG=428cc48" >&2; \
+		exit 1; \
+	fi
+	@echo "Promoting verified image TAG: $(TAG) to production Cloud Run"
+	gcloud builds submit . \
+		--project=$(PROJECT_ID) \
+		--region=$(REGION) \
+		--config=cloudbuild-promote.yaml \
+		--gcs-source-staging-dir=$(STAGING_SOURCE_BUCKET)/source \
+		--substitutions=_IMAGE_TAG=$(TAG)
+
+harden-buckets: check-config
+	@echo "Configuring Uniform Bucket-Level Access on $(STAGING_SOURCE_BUCKET)..."
+	gcloud storage buckets update $(STAGING_SOURCE_BUCKET) --uniform-bucket-level-access
+	@echo "Configuring Public Access Prevention on $(STAGING_SOURCE_BUCKET)..."
+	gcloud storage buckets update $(STAGING_SOURCE_BUCKET) --public-access-prevention
+	@echo "Applying 7-day source lifecycle rule on $(STAGING_SOURCE_BUCKET)..."
+	gcloud storage buckets update $(STAGING_SOURCE_BUCKET) --lifecycle-file=.agents/GCP_migration/lifecycle-cloudbuild-source-7d.json
+	@echo "Bucket hardening complete."
+
+check-us-buckets: check-config
+	@echo "Inspecting default / non-regional US Cloud Build buckets in $(PROJECT_ID)..."
+	gcloud storage buckets list --project=$(PROJECT_ID) --filter="name~cloudbuild AND NOT name~euw1"
+
+clean-us-staging: check-config
+	@echo "Checking for accidental US staging buckets..."
+	@US_BUCKET=$$(gcloud storage buckets list --project=$(PROJECT_ID) --filter="name~cloudbuild AND NOT name~euw1" --format="value(name)" | head -n 1); \
+	if [ -n "$$US_BUCKET" ]; then \
+		echo "Found US staging bucket: gs://$$US_BUCKET. Purging source archives..."; \
+		gcloud storage rm -r gs://$$US_BUCKET/source/ || true; \
+	else \
+		echo "No US staging bucket detected."; \
+	fi
+
+test:
+	uv run pytest tests/unit -v
+
+lint:
+	uv run ruff check app tests
+	uv run ty check app

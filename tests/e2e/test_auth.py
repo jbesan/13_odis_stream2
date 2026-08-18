@@ -1,6 +1,6 @@
 from unittest.mock import patch, MagicMock
 
-from utils.auth import verify_credentials, check_password
+from utils.auth import check_password, resolve_org_for_oidc, verify_credentials
 
 
 def test_verify_credentials_success():
@@ -23,12 +23,17 @@ def test_verify_credentials_no_secrets():
 
 
 def test_check_password_flow_authenticated():
-    """Test that check_password returns True when already logged in."""
-    mock_secrets = MagicMock()
-    mock_session = {"password_correct": True}
+    """A complete legacy-authenticated session remains valid."""
+    mock_session = {
+        "password_correct": True,
+        "auth_method": "legacy",
+        "user": MagicMock(),
+        "org": MagicMock(),
+    }
     with (
-        patch("utils.auth.st.secrets", mock_secrets),
         patch("utils.auth.st.session_state", mock_session),
+        patch("utils.auth.st.user", None, create=True),
+        patch("utils.auth.os.environ", {"K_SERVICE": "test"}),
     ):
         assert check_password() is True
 
@@ -59,53 +64,42 @@ def test_check_password_flow_unauthenticated():
 
 
 def test_check_password_oidc_logged_in_resolves_org_by_domain():
-    """Test that check_password sets correct org when Streamlit confirms OIDC login (domain match).
-
-    Streamlit enforces allowed_domains natively via secrets.toml.
-    Our code only needs to handle org resolution after is_logged_in is True.
-    """
+    """An explicitly authorized domain receives its configured organization."""
     mock_session = {}
     mock_user = MagicMock()
     mock_user.is_logged_in = True
     mock_user.email = "contact@lahso.org"
 
-    mock_secrets = MagicMock()
-    mock_secrets.get.return_value = {}
-    mock_secrets.__contains__ = lambda self, key: False
-
     with (
         patch("utils.auth.st.user", mock_user, create=True),
         patch("utils.auth.st.session_state", mock_session),
-        patch("utils.auth.st.secrets", mock_secrets),
         patch("utils.auth.os.environ", {"K_SERVICE": "test"}),
+        patch("config.OIDC_ALLOWED_DOMAINS", {"lahso.org"}),
         patch("config.OIDC_DOMAIN_ORG_MAPPING", {"lahso.org": "emile_aura"}),
+        patch("config.OIDC_ALLOWED_EMAILS", set()),
+        patch("config.OIDC_EMAIL_ORG_MAPPING", {}),
     ):
         assert check_password() is True
         assert mock_session["password_correct"] is True
+        assert mock_session["auth_method"] == "oidc"
         assert mock_session["org"].id == "emile_aura"
 
 
-def test_check_password_oidc_logged_in_resolves_org_from_secrets():
-    """Test that check_password reads org mapping from st.secrets when present."""
+def test_check_password_oidc_logged_in_resolves_exact_email():
+    """An explicitly authorized email receives its configured organization."""
     mock_session = {}
     mock_user = MagicMock()
     mock_user.is_logged_in = True
     mock_user.email = "user@example.com"
 
-    mock_auth_section = {
-        "email_org_mapping": {"user@example.com": "jaccueille"},
-        "domain_org_mapping": {},
-    }
-    mock_secrets = MagicMock()
-    mock_secrets.get.side_effect = lambda key, default=None: (
-        mock_auth_section if key == "auth" else default
-    )
-
     with (
         patch("utils.auth.st.user", mock_user, create=True),
         patch("utils.auth.st.session_state", mock_session),
-        patch("utils.auth.st.secrets", mock_secrets),
         patch("utils.auth.os.environ", {"K_SERVICE": "test"}),
+        patch("config.OIDC_ALLOWED_DOMAINS", set()),
+        patch("config.OIDC_DOMAIN_ORG_MAPPING", {}),
+        patch("config.OIDC_ALLOWED_EMAILS", {"user@example.com"}),
+        patch("config.OIDC_EMAIL_ORG_MAPPING", {"user@example.com": "jaccueille"}),
     ):
         assert check_password() is True
         assert mock_session["password_correct"] is True
@@ -113,14 +107,10 @@ def test_check_password_oidc_logged_in_resolves_org_from_secrets():
 
 
 def test_check_password_oidc_not_logged_in_shows_login_form():
-    """Test that when st.user.is_logged_in is False (unauthorized or not yet authenticated),
-    the login form is shown and check_password returns False.
-
-    Streamlit sets is_logged_in=False for unauthorized users — we never need to check the email ourselves.
-    """
+    """A user who has not authenticated with OIDC sees the login form."""
     mock_session = {}
     mock_user = MagicMock()
-    mock_user.is_logged_in = False  # Streamlit rejected the user (not in allowed_emails/domains)
+    mock_user.is_logged_in = False
 
     with (
         patch("utils.auth.st.user", mock_user, create=True),
@@ -138,3 +128,52 @@ def test_check_password_oidc_not_logged_in_shows_login_form():
         mock_button.return_value = False
         mock_submit.return_value = False
         assert check_password() is False
+
+
+def test_oidc_unknown_domain_is_denied_and_clears_prior_context():
+    """An authenticated but unapproved identity cannot retain a prior session."""
+    mock_session = {
+        "password_correct": True,
+        "auth_method": "oidc",
+        "user": MagicMock(),
+        "org": MagicMock(),
+        "search_results": MagicMock(),
+    }
+    mock_user = MagicMock()
+    mock_user.is_logged_in = True
+    mock_user.email = "outsider@example.net"
+
+    with (
+        patch("utils.auth.st.user", mock_user, create=True),
+        patch("utils.auth.st.session_state", mock_session),
+        patch("utils.auth.st.error"),
+        patch("utils.auth.st.button", return_value=False),
+        patch("utils.auth.os.environ", {"K_SERVICE": "test"}),
+        patch("config.OIDC_ALLOWED_DOMAINS", {"lahso.org"}),
+        patch("config.OIDC_DOMAIN_ORG_MAPPING", {"lahso.org": "emile_aura"}),
+        patch("config.OIDC_ALLOWED_EMAILS", set()),
+        patch("config.OIDC_EMAIL_ORG_MAPPING", {}),
+    ):
+        assert check_password() is False
+
+    assert mock_session == {}
+
+
+def test_oidc_authorization_requires_a_known_mapped_organization():
+    with (
+        patch("config.OIDC_ALLOWED_DOMAINS", {"lahso.org"}),
+        patch("config.OIDC_DOMAIN_ORG_MAPPING", {"lahso.org": "missing_org"}),
+        patch("config.OIDC_ALLOWED_EMAILS", set()),
+        patch("config.OIDC_EMAIL_ORG_MAPPING", {}),
+    ):
+        assert resolve_org_for_oidc("CONTACT@LAHSO.ORG") is None
+
+
+def test_oidc_exact_email_requires_explicit_allowlist_membership():
+    with (
+        patch("config.OIDC_ALLOWED_DOMAINS", set()),
+        patch("config.OIDC_DOMAIN_ORG_MAPPING", {}),
+        patch("config.OIDC_ALLOWED_EMAILS", set()),
+        patch("config.OIDC_EMAIL_ORG_MAPPING", {"partner@example.org": "agir33"}),
+    ):
+        assert resolve_org_for_oidc("partner@example.org") is None

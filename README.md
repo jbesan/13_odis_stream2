@@ -104,6 +104,18 @@ L'application intègre une gestion d'utilisateurs et de profils d'organisations 
   ```bash
   ODIS_FORCE_AUTH=True streamlit run app/1_Accueil.py
   ```
+* **Autorisation OIDC en Cloud Run :** L'identité Google est authentifiée par Streamlit, puis autorisée par l'application avec le secret Secret Manager `OIDC_AUTHORIZATION_POLICY_JSON`. Le secret doit contenir uniquement les deux objets suivants, qui associent chaque domaine ou adresse autorisée à un profil d'organisation existant :
+  ```json
+  {
+    "allowed_domains": {
+      "partner.example.org": "jaccueille"
+    },
+    "allowed_emails": {
+      "trusted.user@example.net": "agir33"
+    }
+  }
+  ```
+  Une identité non listée, une organisation inconnue ou un secret absent/invalide est refusé. Ne stockez pas ce fichier dans le dépôt : Cloud Run doit le recevoir depuis Secret Manager.
 * **Configuration des utilisateurs (`ODIS_USERS_CONFIG`) :** La liste des utilisateurs autorisés est définie via la variable d'environnement (ou secret) `ODIS_USERS_CONFIG` sous format JSON :
   ```json
   {
