@@ -6,6 +6,7 @@ import sys
 import base64
 import math
 import ast
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Tuple, Optional, Any, Dict, List
@@ -31,6 +32,14 @@ from pydantic import ValidationError
 logger = logging.getLogger("services.share_service")
 
 SHARE_SNAPSHOT_VERSION = "2.0"
+_SHARE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{4,64}$")
+
+
+def is_valid_share_id(share_id: str) -> bool:
+    """Validate that a share identifier is well-formed and safe."""
+    return bool(
+        isinstance(share_id, str) and _SHARE_ID_PATTERN.fullmatch(share_id.strip())
+    )
 
 
 def _get_shared_searches_bucket_name() -> str:
@@ -58,6 +67,8 @@ class SharedSearchSnapshot:
     map_context: List[Dict[str, Any]]
     current_map_context: List[Dict[str, Any]]
     map_view: Dict[str, Any]
+    org_id: Optional[str] = None
+    username: Optional[str] = None
 
     @property
     def has_map_context(self) -> bool:
@@ -305,11 +316,17 @@ def save_shared_search(
         blob.upload_from_string(
             compressed_bytes,
             content_type="application/json",
+            if_generation_match=0,
         )
         gcs_uri = f"gs://{bucket_name}/searches/{share_id}.json"
         logger.info(
             f"✅ Saved gzipped shared search snapshot to GCS at {gcs_uri} ({len(compressed_bytes)} bytes)"
         )
+    except google_exceptions.PreconditionFailed as e:
+        logger.error(f"❌ Shared search collision for {share_id}: {e}")
+        raise RuntimeError(
+            "Un identifiant de recherche partagée identique existe déjà. Veuillez réessayer."
+        ) from e
     except Exception as e:
         logger.error(f"❌ GCS upload failed for {share_id}: {e}")
         raise RuntimeError(
@@ -363,17 +380,35 @@ def _share_load_failure(
     return ServiceOutcome(status=status, error_code=error_code)
 
 
+def _resolve_caller_org_id() -> Optional[str]:
+    """Extract authenticated org_id from Streamlit session state if present."""
+    try:
+        org = st.session_state.get("org")
+        if org and hasattr(org, "id") and org.id:
+            return str(org.id)
+        user = st.session_state.get("user")
+        if user and hasattr(user, "org_id") and user.org_id:
+            return str(user.org_id)
+    except Exception:
+        pass
+    return None
+
+
 def load_shared_search_snapshot_outcome(
     share_id: str,
+    *,
+    caller_org_id: Optional[str] = None,
 ) -> ServiceOutcome[SharedSearchSnapshot]:
-    """Load a shared snapshot without conflating absence and system failures."""
-    if not share_id or not isinstance(share_id, str) or not share_id.strip():
+    """Load a shared snapshot without conflating absence, authorization, and system failures."""
+    if not share_id or not is_valid_share_id(share_id):
         return ServiceOutcome(
             status=OutcomeStatus.NOT_FOUND,
             error_code="SHARE-NOT-FOUND",
         )
 
     share_id = share_id.strip()
+    active_caller_org = caller_org_id or _resolve_caller_org_id()
+
     gcs_client = _get_gcs_client()
     if not gcs_client:
         return _share_load_failure(
@@ -456,6 +491,28 @@ def load_shared_search_snapshot_outcome(
             OutcomeStatus.INVALID_PAYLOAD, "SHARE-PAYLOAD-INVALID", share_id
         )
 
+    # Check caller authentication & organization membership
+    if not active_caller_org:
+        return _share_load_failure(
+            OutcomeStatus.UNAUTHORIZED,
+            "SHARE-UNAUTHENTICATED",
+            share_id,
+        )
+
+    snapshot_org_id = payload_dict.get("org_id")
+    if not snapshot_org_id or snapshot_org_id != active_caller_org:
+        logger.warning(
+            "Cross-organization shared search access denied: share_id=%s snapshot_org=%s caller_org=%s",
+            share_id,
+            snapshot_org_id,
+            active_caller_org,
+        )
+        return _share_load_failure(
+            OutcomeStatus.UNAUTHORIZED,
+            "SHARE-ORG-MISMATCH",
+            share_id,
+        )
+
     try:
         cfg_clean = _clean_set_strings(payload_dict["config"])
         res_clean = _clean_set_strings(payload_dict["search_results"])
@@ -475,6 +532,8 @@ def load_shared_search_snapshot_outcome(
             map_context=snapshot_data.get("map_context", []),
             current_map_context=snapshot_data.get("current_map_context", []),
             map_view=map_view if isinstance(map_view, dict) else {},
+            org_id=snapshot_org_id,
+            username=payload_dict.get("username"),
         )
     except (ValidationError, TypeError, ValueError, KeyError):
         return _share_load_failure(
@@ -495,16 +554,20 @@ def load_shared_search_snapshot_outcome(
     return ServiceOutcome(status=OutcomeStatus.SUCCESS, value=snapshot)
 
 
-def load_shared_search_snapshot(share_id: str) -> Optional[SharedSearchSnapshot]:
+def load_shared_search_snapshot(
+    share_id: str, *, caller_org_id: Optional[str] = None
+) -> Optional[SharedSearchSnapshot]:
     """Compatibility wrapper returning only a successfully loaded snapshot."""
-    return load_shared_search_snapshot_outcome(share_id).value
+    return load_shared_search_snapshot_outcome(
+        share_id, caller_org_id=caller_org_id
+    ).value
 
 
 def load_shared_search(
-    share_id: str,
+    share_id: str, *, caller_org_id: Optional[str] = None
 ) -> Tuple[Optional[SearchCriterias], Optional[SearchResultsData]]:
     """Compatibility wrapper for callers that need only config and results."""
-    snapshot = load_shared_search_snapshot(share_id)
+    snapshot = load_shared_search_snapshot(share_id, caller_org_id=caller_org_id)
     if snapshot is None:
         return None, None
     return snapshot.config, snapshot.search_results
@@ -572,29 +635,43 @@ def restore_shared_search_from_query_params() -> bool:
     if not share_id or st.session_state.get("active_share_id") == share_id:
         return False
 
-    outcome = load_shared_search_snapshot_outcome(share_id)
+    caller_org_id = _resolve_caller_org_id()
+    outcome = load_shared_search_snapshot_outcome(
+        share_id, caller_org_id=caller_org_id
+    )
     if not outcome.is_success or outcome.value is None:
-        messages = {
-            OutcomeStatus.NOT_FOUND: (
-                f"La recherche partagée '{share_id}' est introuvable ou a expiré."
-            ),
-            OutcomeStatus.UNAVAILABLE: (
+        if outcome.status == OutcomeStatus.UNAUTHORIZED:
+            if outcome.error_code == "SHARE-ORG-MISMATCH":
+                user_msg = (
+                    "Cette recherche partagée n'est pas accessible pour votre organisation "
+                    "(code : SHARE-FORBIDDEN)."
+                )
+            elif outcome.error_code == "SHARE-UNAUTHENTICATED":
+                user_msg = (
+                    "Vous devez être connecté pour accéder à cette recherche partagée "
+                    "(code : SHARE-UNAUTHORIZED)."
+                )
+            else:
+                user_msg = (
+                    "Le service des recherches partagées est indisponible. "
+                    "Réessayez plus tard (code : SHARE-GCS-UNAUTHORIZED)."
+                )
+        elif outcome.status == OutcomeStatus.NOT_FOUND:
+            user_msg = f"La recherche partagée '{share_id}' est introuvable ou a expiré."
+        elif outcome.status == OutcomeStatus.UNAVAILABLE:
+            user_msg = (
                 "Le service des recherches partagées est temporairement indisponible. "
                 "Réessayez dans quelques instants (code : SHARE-GCS-UNAVAILABLE)."
-            ),
-            OutcomeStatus.UNAUTHORIZED: (
-                "Le service des recherches partagées est indisponible. "
-                "Réessayez plus tard (code : SHARE-GCS-UNAUTHORIZED)."
-            ),
-            OutcomeStatus.INVALID_PAYLOAD: (
+            )
+        elif outcome.status == OutcomeStatus.INVALID_PAYLOAD:
+            user_msg = (
                 "Cette recherche partagée est invalide ou endommagée. "
                 "Contactez le support avec le code SHARE-PAYLOAD-INVALID."
-            ),
-        }
-        st.session_state["share_error"] = messages.get(
-            outcome.status,
-            "Impossible de charger cette recherche partagée. Réessayez plus tard.",
-        )
+            )
+        else:
+            user_msg = "Impossible de charger cette recherche partagée. Réessayez plus tard."
+
+        st.session_state["share_error"] = user_msg
         return False
 
     restore_shared_search_to_session_state(

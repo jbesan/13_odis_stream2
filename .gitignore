@@ -25,3 +25,7 @@ app/data_private/
 pipeline/data_private/
 app/data/datasets/
 .antigravityignore
+Makefile
+.env.deploy
+.env
+

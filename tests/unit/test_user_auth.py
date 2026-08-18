@@ -78,7 +78,7 @@ def test_check_password_rejects_partial_authenticated_cloud_run_session():
         ):
             assert check_password() is False
 
-    assert mock_session["password_correct"] is False
+    assert mock_session == {}
 
 
 def test_apply_logged_in_org_defaults():
@@ -143,4 +143,3 @@ def test_logout_oidc():
         logout()
         mock_session.clear.assert_called_once()
         mock_st_logout.assert_called_once()
-

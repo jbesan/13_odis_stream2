@@ -1034,7 +1034,7 @@ def render_jaccueille_housing_info(commune: CommuneResult):
 
     # 2. Retrieve salesforce pre-aggregated BDV data
     df_bdv = fetch_salesforce_jaccueille_bdv()
-    bdv_code = getattr(commune.territoire, "bassin_de_vie", None) or commune.codgeo
+    bdv_code = commune.codgeo_bdv or getattr(commune.territoire, "bassin_de_vie", None) or commune.codgeo
 
     lead_count = 0
     contact_count = j_count
@@ -1572,7 +1572,7 @@ def render_global_pitch(h: Optional[str] = None):
             {search_results.global_pitch}
         </div>
         """,
-            unsafe_allow_html=True,
+            unsafe_allow_html=False,
         )
 
 

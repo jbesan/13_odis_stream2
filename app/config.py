@@ -224,6 +224,7 @@ DETAIL_MAP_ZOOM = 11
 MAX_MAP_POLYGONS = 5000
 PROJECTED_CRS = "EPSG:2154"  # RGF93 / Lambert-93, suitable for metropolitan France
 
+
 def _get_auth_secret(key: str, default: Any) -> Any:
     """Read an auth configuration value from st.secrets, with a safe fallback.
 
@@ -247,26 +248,14 @@ def _get_auth_secret(key: str, default: Any) -> Any:
         return default
 
 
-DEFAULT_OIDC_ALLOWED_DOMAINS = [
-    "jaccueille.fr",
-    "lahso.org",
-    "groupe-sos.org",
-    "fondationcos.org",
-]
-DEFAULT_OIDC_DOMAIN_ORG_MAPPING = {
-    "jaccueille.fr": "jaccueille",
-    "lahso.org": "emile_aura",
-    "groupe-sos.org": "agir33",
-    "fondationcos.org": "agir33",
-}
-
-# Read from .streamlit/secrets.toml (No PII hardcoded in source control)
-OIDC_ALLOWED_DOMAINS: Set[str] = set(
-    _get_auth_secret("allowed_domains", DEFAULT_OIDC_ALLOWED_DOMAINS)
-)
+# The OIDC authorization policy is supplied by Secret Manager at runtime and
+# written into Streamlit's secrets.toml by generate_secrets.py.  Empty defaults
+# are intentional: a Cloud Run revision without a valid policy must not gain
+# access from source-controlled fallback identities.
+OIDC_ALLOWED_DOMAINS: Set[str] = set(_get_auth_secret("allowed_domains", []))
 OIDC_ALLOWED_EMAILS: Set[str] = set(_get_auth_secret("allowed_emails", []))
 OIDC_DOMAIN_ORG_MAPPING: Dict[str, str] = dict(
-    _get_auth_secret("domain_org_mapping", DEFAULT_OIDC_DOMAIN_ORG_MAPPING)
+    _get_auth_secret("domain_org_mapping", {})
 )
 OIDC_EMAIL_ORG_MAPPING: Dict[str, str] = dict(_get_auth_secret("email_org_mapping", {}))
 
