@@ -587,12 +587,12 @@ def render_inclusion_services_enrichment(commune: CommuneResult, h: Optional[str
                     dist_val = struct_data.get("distance_km")
                     commune_val = struct_data.get("commune_nom")
                     if dist_val == 0:
-                        pill = " :blue-background[📍 Sur place]"
+                        pill = " :blue-badge[Sur place]"
                     elif dist_val is not None:
                         if commune_val:
-                            pill = f" :gray-background[📍 {commune_val} ({dist_val} km)]"
+                            pill = f" :gray-badge[{commune_val} · {dist_val} km]"
                         else:
-                            pill = f" :gray-background[📍 à {dist_val} km]"
+                            pill = f" :gray-badge[{dist_val} km]"
                     else:
                         pill = ""
 
@@ -1509,7 +1509,7 @@ def show_details_dialog(index: Any):
         c1, c2 = st.columns([1, 1], gap="medium")
         with c1:
             with st.container(border=False):
-                st.markdown("#### :material/volunteer_activism: Services d'Inclusion")
+                st.markdown("#### :material/volunteer_activism: Services d'Inclusion à moins de 10km")
                 if _should_poll_enrichment(
                     h, "inclusion_services_status", commune.codgeo
                 ):
