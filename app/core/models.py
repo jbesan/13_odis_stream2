@@ -1250,6 +1250,38 @@ class InclusionServiceDetail(BaseModel):
             ]
         },
     )
+    distance_km: Optional[Union[int, float]] = Field(
+        None,
+        description="Distance à la commune cible en kilomètres",
+        json_schema_extra={
+            "odis_visibility": [
+                "agent_social_integration_expert",
+                "ui_details",
+                "pdf_report",
+            ]
+        },
+    )
+    commune_nom: Optional[str] = Field(
+        None,
+        description="Commune d'implantation de la structure",
+        json_schema_extra={
+            "odis_visibility": [
+                "agent_social_integration_expert",
+                "ui_details",
+                "pdf_report",
+            ]
+        },
+    )
+    code_postal: Optional[str] = Field(
+        None,
+        description="Code postal de la structure",
+        json_schema_extra={
+            "odis_visibility": [
+                "ui_details",
+                "pdf_report",
+            ]
+        },
+    )
 
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 

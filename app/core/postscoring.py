@@ -374,8 +374,54 @@ def launch_background_inclusion_enrichment(
 
         for codgeo in codgeos:
             try:
-                # Fetch services using search endpoint (automatically embeds structure and handles proximity/zones)
+                # 1. Resolve mairie GPS coordinates from engine.pois (with fallback to df_all_communes centroid)
+                target_lat, target_lon = None, None
+                if (
+                    hasattr(engine, "pois")
+                    and engine.pois is not None
+                    and not engine.pois.empty
+                ):
+                    mairie = engine.pois[
+                        (engine.pois["category"] == "mairie")
+                        & (engine.pois["codgeo"] == str(codgeo))
+                    ]
+                    if (
+                        not mairie.empty
+                        and "lat" in mairie.columns
+                        and "lon" in mairie.columns
+                    ):
+                        target_lat = float(mairie.iloc[0]["lat"])
+                        target_lon = float(mairie.iloc[0]["lon"])
+
+                if (
+                    target_lat is None
+                    and hasattr(engine, "df_all_communes")
+                    and engine.df_all_communes is not None
+                    and str(codgeo) in engine.df_all_communes.index
+                ):
+                    row_c = engine.df_all_communes.loc[str(codgeo)]
+                    if (
+                        "centroid_lon" in row_c
+                        and "centroid_lat" in row_c
+                        and pd.notna(row_c["centroid_lon"])
+                    ):
+                        from utils import common
+                        import config as cfg
+
+                        c_lon, c_lat = common.project_point(
+                            row_c["centroid_lon"],
+                            row_c["centroid_lat"],
+                            from_crs=cfg.PROJECTED_CRS,
+                            to_crs="EPSG:4326",
+                        )
+                        target_lat, target_lon = c_lat, c_lon
+
+                # 2. Fetch services using search endpoint (combining code_commune and GPS coordinates)
                 services_params: dict = {"code_commune": codgeo, "size": 100}
+                if target_lat is not None and target_lon is not None:
+                    services_params["lat"] = round(target_lat, 5)
+                    services_params["lon"] = round(target_lon, 5)
+
                 if thematique_slugs:
                     services_params["thematiques"] = thematique_slugs
 
@@ -404,7 +450,9 @@ def launch_background_inclusion_enrichment(
                 # Deduplication key: (structure_id, nom) — avoids duplicates from same structure
                 seen_keys: set[tuple] = set()
                 # Only index codes matching the user's thematique selection
-                active_slugs: set[str] | None = set(thematique_slugs) if thematique_slugs else None
+                active_slugs: set[str] | None = (
+                    set(thematique_slugs) if thematique_slugs else None
+                )
 
                 for item_wrapper in items:
                     service = item_wrapper.get("service") or {}
@@ -413,8 +461,61 @@ def launch_background_inclusion_enrichment(
                     structure_id = service.get("structure_id") or ""
 
                     struct_obj = service.get("structure") or {}
-                    nom_structure = struct_obj.get("nom") or service.get("nom_structure") or ""
-                    presentation_structure = struct_obj.get("presentation_resumee") or struct_obj.get("presentation_detail") or ""
+                    nom_structure = (
+                        struct_obj.get("nom") or service.get("nom_structure") or ""
+                    )
+                    presentation_structure = (
+                        struct_obj.get("presentation_resumee")
+                        or struct_obj.get("presentation_detail")
+                        or ""
+                    )
+                    commune_nom = (
+                        struct_obj.get("commune") or service.get("commune") or ""
+                    )
+                    code_postal = (
+                        struct_obj.get("code_postal")
+                        or service.get("code_postal")
+                        or ""
+                    )
+                    struct_code_insee = (
+                        struct_obj.get("code_insee")
+                        or service.get("code_insee")
+                        or ""
+                    )
+
+                    # Filter 1: Broad diffusion zones exclusion (keep local: commune, epci, or None)
+                    zone_type = (
+                        service.get("zone_diffusion_type") or ""
+                    ).strip().lower()
+                    if zone_type in {"departement", "region", "pays"}:
+                        continue
+
+                    # Filter 2: Max distance <= 10km (when distance is computed by API)
+                    dist_val = item_wrapper.get("distance")
+                    if dist_val is None:
+                        dist_val = service.get("distance")
+                    if dist_val is not None and dist_val > 10:
+                        continue
+
+                    # Filter 3: External CCAS exclusion (keep local CCAS, CIAS, and other structures)
+                    reseaux = struct_obj.get("reseaux_porteurs") or []
+                    typologie = (struct_obj.get("typologie") or "").upper()
+                    is_ccas = (
+                        "ccas-cias" in reseaux
+                        or typologie == "CCAS"
+                        or "CCAS" in nom_structure.upper()
+                        or "CENTRE COMMUNAL D'ACTION SOCIALE"
+                        in nom_structure.upper()
+                    )
+                    is_external = bool(
+                        struct_code_insee and str(struct_code_insee) != str(codgeo)
+                    )
+                    if (
+                        is_ccas
+                        and is_external
+                        and "CIAS" not in nom_structure.upper()
+                    ):
+                        continue
 
                     # Deduplication key: same structure offering same service type
                     dedup_key = (structure_id, nom.strip().lower())
@@ -468,8 +569,22 @@ def launch_background_inclusion_enrichment(
                                 "description": desc,
                                 "lien_source": lien_source,
                                 "source": source,
+                                "distance_km": dist_val,
+                                "commune_nom": commune_nom,
+                                "code_postal": code_postal,
                             }
                         )
+
+                # Sort each thematic category by proximity (distance_km ascending)
+                for cat_label in grouped_services:
+                    grouped_services[cat_label].sort(
+                        key=lambda x: (
+                            x.get("distance_km")
+                            if x.get("distance_km") is not None
+                            else 999,
+                            x.get("name", ""),
+                        )
+                    )
 
                 enrichment_data[str(codgeo)] = grouped_services
                 statuses[str(codgeo)] = enrichment_result(

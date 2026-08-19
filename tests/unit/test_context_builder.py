@@ -325,6 +325,19 @@ def test_inclusion_service_detail_context_formatting():
         == "srv1 | French Lessons par Secours Populaire"
     )
 
+    # When distance and commune are present
+    srv_with_dist = InclusionServiceDetail(
+        id="srv2",
+        name="Numérique",
+        nom_structure="CCAS",
+        distance_km=0,
+        commune_nom="Coutras",
+    )
+    agent_ctx_dist = ODISContextBuilder._auto_build_context(
+        srv_with_dist, "agent_social_integration_expert"
+    )
+    assert agent_ctx_dist == "srv2 | Numérique par CCAS (à 0 km - Coutras)"
+
     # For UI, it should remain a dictionary with all visible fields
     ui_ctx = ODISContextBuilder._auto_build_context(srv, "ui_details")
     assert isinstance(ui_ctx, dict)

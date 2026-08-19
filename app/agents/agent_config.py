@@ -16,13 +16,14 @@ class NodeConfig(BaseModel):
     """Configuration for a specific LLM agent node.
 
     Attributes:
-        model: Pydantic AI model identifier.
+        model: Optional Pydantic AI model identifier override. If None, uses AgentSettings.default_model.
         temperature: LLM temperature (0.0 to 1.0).
         max_tokens: Maximum output tokens.
         thinking: Optional thinking/reasoning effort level (Gemini 3+).
+        timeout: Request timeout in seconds.
     """
 
-    model: str = "google:gemini-3.1-flash-lite"
+    model: str | None = None
     temperature: float = 0.0
     max_tokens: int | None = None
     thinking: Literal["minimal", "low", "medium", "high"] | None = None
@@ -43,74 +44,54 @@ class AgentSettings(BaseSettings):
     """Centralized Agent configuration with environment variable overrides.
 
     Settings can be overridden using the ODIS_AGENT_ prefix, e.g.:
+    ODIS_AGENT_DEFAULT_MODEL=google:gemini-3.5-flash-lite
     ODIS_AGENT_SYNTHESIZER__TEMPERATURE=0.7
     """
 
     model_config = SettingsConfigDict(
         env_prefix="ODIS_AGENT_",
-        env_file=".env",
+        env_file=(".env", "app/.env"),
         env_nested_delimiter="__",
         extra="ignore",
     )
 
+    default_model: str = Field(default="google:gemini-3.1-flash-lite")
+
     router: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(
-            model="google:gemini-3.1-flash-lite", temperature=0.1, thinking="low"
-        )
+        default_factory=lambda: NodeConfig(temperature=0.1, thinking="low")
     )
     interviewer: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(
-            model="google:gemini-3.1-flash-lite", temperature=0.5, thinking="medium"
-        )
+        default_factory=lambda: NodeConfig(temperature=0.5, thinking="medium")
     )
     ts_agent: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(
-            model="google:gemini-3.1-flash-lite", temperature=0.1, thinking="low"
-        )
+        default_factory=lambda: NodeConfig(temperature=0.1, thinking="low")
     )
     housing_expert: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(
-            model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"
-        )
+        default_factory=lambda: NodeConfig(temperature=0.1, thinking="low")
     )
     mobility_expert: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(
-            model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"
-        )
+        default_factory=lambda: NodeConfig(temperature=0.1, thinking="low")
     )
     healthcare_expert: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(
-            model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"
-        )
+        default_factory=lambda: NodeConfig(temperature=0.1, thinking="low")
     )
     education_expert: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(
-            model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"
-        )
+        default_factory=lambda: NodeConfig(temperature=0.1, thinking="low")
     )
     social_integration_expert: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(
-            model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"
-        )
+        default_factory=lambda: NodeConfig(temperature=0.1, thinking="low")
     )
     job_hunter: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(
-            model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"
-        )
+        default_factory=lambda: NodeConfig(temperature=0.1, thinking="low")
     )
     job_curator: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(
-            model="google:gemini-3.1-flash-lite", temperature=0.1, thinking="low"
-        )
+        default_factory=lambda: NodeConfig(temperature=0.1, thinking="low")
     )
     synthesizer: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(
-            model="google:gemini-3.1-flash-lite", temperature=0.1, thinking="medium"
-        )
-    )  # , max_tokens=8192))
+        default_factory=lambda: NodeConfig(temperature=0.1, thinking="low")
+    )
     refiner: NodeConfig = Field(
         default_factory=lambda: NodeConfig(
-            model="google:gemini-3.1-flash-lite",
             temperature=0.1,
             thinking="minimal",
             max_tokens=4096,
@@ -132,7 +113,7 @@ agent_settings = AgentSettings()
 
 # --- Legacy Compatibility & Helpers ---
 
-DEFAULT_MODEL = "google:gemini-3.1-flash-lite"
+DEFAULT_MODEL = agent_settings.default_model
 
 
 def get_gcp_project() -> str:
@@ -151,8 +132,9 @@ def get_gcp_project() -> str:
 
 
 def get_model(agent_name: str) -> str:
-    """Returns the model string for a given agent."""
-    return agent_settings.get_config(agent_name).model
+    """Returns the model string for a given agent, falling back to default_model."""
+    cfg = agent_settings.get_config(agent_name)
+    return cfg.model or agent_settings.default_model
 
 
 def get_model_settings(agent_name: str) -> ModelSettings:

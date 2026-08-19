@@ -272,7 +272,15 @@ class ODISContextBuilder:
                 name = getattr(model, "name", "")
                 struct = getattr(model, "nom_structure", "") or ""
                 struct_part = f" par {struct}" if struct else ""
-                return f"{srv_id} | {name}{struct_part}"
+                dist = getattr(model, "distance_km", None)
+                commune = getattr(model, "commune_nom", "") or ""
+                if dist is not None:
+                    dist_part = (
+                        f" (à {dist} km{f' - {commune}' if commune else ''})"
+                    )
+                else:
+                    dist_part = ""
+                return f"{srv_id} | {name}{struct_part}{dist_part}"
             # For non-agent visibility, fall through to normal recursion
 
         # 4. Handle Pydantic BaseModel

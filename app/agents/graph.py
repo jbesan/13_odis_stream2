@@ -49,17 +49,13 @@ def capture_usage(result: Any, node_name: str, model_id: str) -> UsageStats:
     """
     try:
         u = result.usage
-        rate_in, rate_out = (
-            (0.25, 1.50)
-            if any(
-                x in model_id.lower()
-                for x in [
-                    "google:gemini-3.1-flash-lite-preview",
-                    "google-gla:gemini-3.1-flash-lite-preview",
-                ]
-            )
-            else (0.10, 0.40)
-        )
+        m_lower = model_id.lower()
+        if "3.5-flash-lite" in m_lower:
+            rate_in, rate_out = (0.30, 2.50)
+        elif "3.1-flash-lite" in m_lower:
+            rate_in, rate_out = (0.25, 1.50)
+        else:
+            rate_in, rate_out = (0.10, 0.40)
         cost = (u.input_tokens * rate_in / 1_000_000) + (
             u.output_tokens * rate_out / 1_000_000
         )

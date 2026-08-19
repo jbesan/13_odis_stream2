@@ -447,7 +447,7 @@ def render_associations_enrichment(commune: CommuneResult, h: Optional[str]):
         inc_data.asso_inclusion_count or 0
     )
     if total_assos > 0:
-        st.info(f"**{total_assos} associations** actives.")
+        # st.info(f"**{total_assos} associations** actives.")
         categories_to_show = {}
         if inc_data.asso_refugee_list:
             categories_to_show["Intégration des réfugiés & migrants"] = (
@@ -496,11 +496,7 @@ def render_associations_enrichment(commune: CommuneResult, h: Optional[str]):
 
 
 def render_inclusion_services_enrichment(commune: CommuneResult, h: Optional[str]):
-    """Render stable score data, then append terminal provider details.
-
-    The scored service list is never replaced by a later provider response.
-    Data Inclusion only adds descriptions and links beneath that stable list.
-    """
+    """Render structured inclusion services with Data Inclusion details, or fallback to grouped services."""
     inc_data = commune.inclusion
     if h and not inc_data.services_detailed:
         bg_res = odis_get_bg_result(h)
@@ -515,21 +511,21 @@ def render_inclusion_services_enrichment(commune: CommuneResult, h: Optional[str
                 }
                 st.rerun()
 
-    services_grouped = inc_data.services_grouped
-    if services_grouped:
-        st.caption("Services pris en compte dans le score")
-        for thematique, names in sorted(services_grouped.items()):
-            items = sorted({name for name in names if pd.notna(name)})
-            if items:
-                with st.expander(f"{thematique} ({len(items)})", expanded=False):
-                    for name in items:
-                        st.write(f"• {name}")
-    elif not inc_data.services_detailed:
-        st.info("Aucun service spécifique référencé.")
+    bg_res = odis_get_bg_result(h) if h else None
+    status_data = (
+        bg_res.get("inclusion_services_status", {}).get(str(commune.codgeo))
+        if isinstance(bg_res, dict)
+        else None
+    )
+    status = status_data.get("status") if isinstance(status_data, dict) else None
+    is_loading = (
+        bool(h)
+        and not st.session_state.get("immutable_shared_snapshot")
+        and (status is None or status == EnrichmentStatus.PENDING.value)
+    )
 
     if inc_data.services_detailed:
-        st.markdown("##### Détails et liens Data Inclusion")
-        # Each structure appears in at most one expander.
+        # Global deduplication: each structure appears in at most one expander.
         seen_struct_keys: set[str] = set()
         for thematique, services in sorted(inc_data.services_detailed.items()):
             if not services:
@@ -547,8 +543,15 @@ def render_inclusion_services_enrichment(commune: CommuneResult, h: Optional[str
                         )
                         or "",
                         "lien_source": srv.lien_source,
+                        "distance_km": getattr(srv, "distance_km", None),
+                        "commune_nom": getattr(srv, "commune_nom", "") or "",
                         "services": [],
                     }
+                elif getattr(srv, "distance_km", None) is not None:
+                    curr_dist = struct_map[struct_key]["distance_km"]
+                    if curr_dist is None or srv.distance_km < curr_dist:
+                        struct_map[struct_key]["distance_km"] = srv.distance_km
+
                 svc_label = srv.name
                 if svc_label and not any(
                     item["name"] == svc_label.capitalize()
@@ -566,21 +569,41 @@ def render_inclusion_services_enrichment(commune: CommuneResult, h: Optional[str
             seen_struct_keys.update(struct_map.keys())
 
             with st.expander(f"{thematique} ({len(struct_map)})", expanded=False):
-                for struct_data in sorted(
-                    struct_map.values(), key=lambda item: item["nom"]
-                ):
+                sorted_structs = sorted(
+                    struct_map.values(),
+                    key=lambda item: (
+                        item["distance_km"]
+                        if item.get("distance_km") is not None
+                        else 999,
+                        item["nom"],
+                    ),
+                )
+                for struct_data in sorted_structs:
                     url_part = (
                         f" [↗ Fiche]({struct_data['lien_source']})"
                         if struct_data["lien_source"]
                         else ""
                     )
+                    dist_val = struct_data.get("distance_km")
+                    commune_val = struct_data.get("commune_nom")
+                    if dist_val == 0:
+                        pill = " :blue-background[📍 Sur place]"
+                    elif dist_val is not None:
+                        if commune_val:
+                            pill = f" :gray-background[📍 {commune_val} ({dist_val} km)]"
+                        else:
+                            pill = f" :gray-background[📍 à {dist_val} km]"
+                    else:
+                        pill = ""
+
+                    header_text = f"• **{struct_data['nom']}**{pill}{url_part}"
                     if struct_data["presentation_structure"]:
                         st.markdown(
-                            f"• **{struct_data['nom']}** {url_part}",
+                            header_text,
                             help=struct_data["presentation_structure"],
                         )
                     else:
-                        st.markdown(f"• **{struct_data['nom']}** {url_part}")
+                        st.markdown(header_text)
 
                     for service in struct_data["services"]:
                         if service["description"]:
@@ -590,33 +613,36 @@ def render_inclusion_services_enrichment(commune: CommuneResult, h: Optional[str
                             )
                         else:
                             st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;└ {service['name']}")
+    else:
+        services_grouped = inc_data.services_grouped
+        if services_grouped:
+            for thematique, names in sorted(services_grouped.items()):
+                items = sorted({name for name in names if pd.notna(name)})
+                if items:
+                    with st.expander(f"{thematique} ({len(items)})", expanded=False):
+                        for name in items:
+                            st.write(f"• {name}")
+        elif not is_loading:
+            st.info("Aucun service spécifique référencé.")
+
+        if is_loading:
+            st.caption("⌛ _Chargement des détails des services depuis Data Inclusion..._")
 
     if not h:
         return
 
-    bg_res = odis_get_bg_result(h)
-    status_data = (
-        bg_res.get("inclusion_services_status", {}).get(str(commune.codgeo))
-        if isinstance(bg_res, dict)
-        else None
-    )
-    status = status_data.get("status") if isinstance(status_data, dict) else None
     if st.session_state.get("immutable_shared_snapshot"):
         st.caption(
-            "Descriptions Data Inclusion non incluses dans cet instantané partagé."
+            "Détails des services Data Inclusion non inclus dans cet instantané partagé."
         )
-    elif not isinstance(bg_res, dict) or "inclusion_services_status" not in bg_res:
-        st.caption("Traitement des détails Data Inclusion en cours…")
     elif status in {
         EnrichmentStatus.ERROR.value,
         EnrichmentStatus.TIMEOUT.value,
         EnrichmentStatus.NOT_CONFIGURED.value,
     }:
-        st.caption("Descriptions et liens Data Inclusion temporairement indisponibles.")
+        st.caption("Détails des services Data Inclusion temporairement indisponibles.")
     elif status == EnrichmentStatus.PARTIAL.value:
-        st.caption("Descriptions et liens Data Inclusion partiels.")
-    elif status == EnrichmentStatus.PENDING.value:
-        st.caption("Traitement des détails Data Inclusion en cours…")
+        st.caption("Détails des services Data Inclusion partiels.")
 
 
 def render_jobs_enrichment(commune: CommuneResult, h: Optional[str]):
