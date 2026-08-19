@@ -18,7 +18,11 @@ from core.enrichment_status import (
 from core.postscoring import generate_static_pitch
 from utils.data_loader import fetch_salesforce_jaccueille_bdv
 
-from agents.utils import odis_get_bg_result, launch_background_city_analysis
+from agents.utils import (
+    cancel_background_city_analysis,
+    launch_background_city_analysis,
+    odis_get_bg_result,
+)
 from typing import List, Optional, Any
 import plotly.graph_objects as go
 from core import maps
@@ -28,7 +32,6 @@ from services import telemetry
 
 # Configure Logging
 logger = logging.getLogger("ui.results")
-
 
 
 # --- Dialog Dismiss Callbacks (Necessary for modular UI state management) ---
@@ -85,7 +88,6 @@ def pdf_modal():
                 {"search_hash": search_results.search_hash if search_results else ""},
             )
 
-
     # State 2: Download Ready
     if st.session_state.get("pdf_modal_data"):
         pdf_warnings = st.session_state.get("pdf_modal_warnings", [])
@@ -140,9 +142,13 @@ def share_search_modal():
         return
 
     # Generate or retrieve active share_id
-    if "active_share_id" not in st.session_state or not st.session_state.active_share_id:
+    if (
+        "active_share_id" not in st.session_state
+        or not st.session_state.active_share_id
+    ):
         with st.spinner("Génération du lien de partage..."):
             from services import share_service
+
             try:
                 share_id = share_service.save_shared_search(
                     config=config,
@@ -163,10 +169,18 @@ def share_search_modal():
     # Construct public shareable URL
     base_url = "https://myapp.fr"
     try:
-        headers = st.context.headers if hasattr(st, "context") and hasattr(st.context, "headers") else {}
+        headers = (
+            st.context.headers
+            if hasattr(st, "context") and hasattr(st.context, "headers")
+            else {}
+        )
         host = headers.get("host") or headers.get("Host")
         if host:
-            scheme = "https" if "localhost" not in host and "127.0.0.1" not in host else "http"
+            scheme = (
+                "https"
+                if "localhost" not in host and "127.0.0.1" not in host
+                else "http"
+            )
             base_url = f"{scheme}://{host}"
     except Exception:
         pass
@@ -214,7 +228,11 @@ def render_share_search_button(
     width: str = "stretch",
 ):
     """Share deterministic results without waiting for optional enrichment."""
-    if not h and "search_results" in st.session_state and st.session_state.search_results:
+    if (
+        not h
+        and "search_results" in st.session_state
+        and st.session_state.search_results
+    ):
         h = st.session_state.search_results.search_hash
 
     if not st.session_state.get("search_results"):
@@ -228,7 +246,6 @@ def render_share_search_button(
         key=f"{key_prefix}_{h}",
     ):
         share_search_modal()
-
 
 
 # --- Module Level Fragments for Stability ---
@@ -295,13 +312,40 @@ def polling_synthesis_fragment(
         import time
 
         start_time = status_data.get("start_time", time.time())
+        deadline_at = status_data.get("deadline_at")
         elapsed = time.time() - start_time
-        progress = min(1.0, elapsed / 30.0)
-        st.progress(progress, text="Préparation de la synthèse (~30 secondes)...")
-    elif status_data.get("status") == "error":
-        st.error(f"Erreur d'analyse : {status_data.get('error')}")
-        if st.button("Réessayer"):
-            del st.session_state.odis_bg_store[task_key]
+        timeout_seconds = (
+            max(1.0, float(deadline_at) - float(start_time))
+            if deadline_at is not None
+            else 60.0
+        )
+        progress = min(1.0, elapsed / timeout_seconds)
+        st.progress(
+            progress,
+            text=f"Préparation de la synthèse (jusqu'à {timeout_seconds:.0f} secondes)...",
+        )
+        if st.button("Annuler l'analyse", key=f"cancel_analysis_{task_key}"):
+            cancel_background_city_analysis(task_key)
+            st.rerun()
+    elif status_data.get("status") in {"error", "timeout", "cancelled"}:
+        st.error(
+            status_data.get("error")
+            or "L'analyse IA n'a pas pu être réalisée. Réessayez."
+        )
+        if st.button("Réessayer", key=f"retry_analysis_{task_key}"):
+            # Product decision: a retry replaces the prior displayed analysis.
+            # Clearing the live object also makes ia_analysis_content return to
+            # the polling state immediately after the rerun.
+            commune.odis_synthesis.clear()
+            commune.expert_analysis.clear()
+            launch_background_city_analysis(
+                nom,
+                codgeo,
+                search_criterias,
+                st.session_state.search_results,
+                h,
+                retry=True,
+            )
             st.rerun()
     elif status_data.get("status") == "done":
         _merge_agent_results(status_data.get("result"), codgeo, commune)
@@ -326,14 +370,24 @@ def polling_chat_fragment(
         if chat_task_key in st.session_state:
             del st.session_state[chat_task_key]
         st.rerun()  # Full dialog rerun
-    elif status_data and status_data.get("status") == "error":
-        st.error(f"Erreur de l'agent : {status_data.get('error')}")
+    elif status_data and status_data.get("status") in {
+        "error",
+        "timeout",
+        "cancelled",
+    }:
+        st.error(
+            status_data.get("error")
+            or "La réponse IA n'a pas pu être générée. Réessayez."
+        )
         if chat_task_key in st.session_state:
             del st.session_state[chat_task_key]
         st.rerun()
     else:
         with st.chat_message("assistant"):
             st.write("✨ _Recherche de la réponse en cours (Job Hunter / Scouts)..._")
+            if st.button("Annuler", key=f"cancel_chat_{task_key}"):
+                cancel_background_city_analysis(task_key)
+                st.rerun()
 
 
 def _enrichment_status_for_city(
@@ -348,9 +402,7 @@ def _enrichment_status_for_city(
     return status_data.get("status") if isinstance(status_data, dict) else None
 
 
-def _should_poll_enrichment(
-    h: Optional[str], status_key: str, codgeo: str
-) -> bool:
+def _should_poll_enrichment(h: Optional[str], status_key: str, codgeo: str) -> bool:
     """Only run a timed fragment while a task is genuinely non-terminal."""
     if st.session_state.get("immutable_shared_snapshot"):
         return False
@@ -422,13 +474,22 @@ def render_associations_enrichment(commune: CommuneResult, h: Optional[str]):
         status = status_data.get("status") if isinstance(status_data, dict) else None
         if st.session_state.get("immutable_shared_snapshot"):
             st.caption("Associations non incluses dans cet instantané partagé.")
-        elif status in {EnrichmentStatus.ERROR.value, EnrichmentStatus.TIMEOUT.value, EnrichmentStatus.NOT_CONFIGURED.value}:
+        elif status in {
+            EnrichmentStatus.ERROR.value,
+            EnrichmentStatus.TIMEOUT.value,
+            EnrichmentStatus.NOT_CONFIGURED.value,
+        }:
             st.info("Associations temporairement indisponibles.")
         elif status == EnrichmentStatus.PARTIAL.value:
-            st.warning("Liste d'associations partielle : certaines données sont temporairement indisponibles.")
+            st.warning(
+                "Liste d'associations partielle : certaines données sont temporairement indisponibles."
+            )
         elif status == EnrichmentStatus.PENDING.value:
             st.caption("Traitement des associations locales en cours…")
-        elif h and (not isinstance(bg_res, dict) or "association_enrichment_status" not in bg_res):
+        elif h and (
+            not isinstance(bg_res, dict)
+            or "association_enrichment_status" not in bg_res
+        ):
             st.caption("Traitement des associations locales en cours…")
         else:
             st.info("Aucune association répertoriée.")
@@ -528,9 +589,7 @@ def render_inclusion_services_enrichment(commune: CommuneResult, h: Optional[str
                                 help=service["description"],
                             )
                         else:
-                            st.caption(
-                                f"&nbsp;&nbsp;&nbsp;&nbsp;└ {service['name']}"
-                            )
+                            st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;└ {service['name']}")
 
     if not h:
         return
@@ -543,7 +602,9 @@ def render_inclusion_services_enrichment(commune: CommuneResult, h: Optional[str
     )
     status = status_data.get("status") if isinstance(status_data, dict) else None
     if st.session_state.get("immutable_shared_snapshot"):
-        st.caption("Descriptions Data Inclusion non incluses dans cet instantané partagé.")
+        st.caption(
+            "Descriptions Data Inclusion non incluses dans cet instantané partagé."
+        )
     elif not isinstance(bg_res, dict) or "inclusion_services_status" not in bg_res:
         st.caption("Traitement des détails Data Inclusion en cours…")
     elif status in {
@@ -673,13 +734,23 @@ def render_jobs_enrichment(commune: CommuneResult, h: Optional[str]):
     }:
         with st.expander("💼 Offres d'emploi directes", expanded=True):
             st.info("⚠️ Offres d'emploi temporairement indisponibles.")
-    elif jobs_city_data and jobs_city_data.get("status") == EnrichmentStatus.PARTIAL.value:
+    elif (
+        jobs_city_data
+        and jobs_city_data.get("status") == EnrichmentStatus.PARTIAL.value
+    ):
         with st.expander("💼 Offres d'emploi directes", expanded=True):
-            st.warning("⚠️ Offres d'emploi partielles : certaines recherches sont temporairement indisponibles.")
-    elif jobs_city_data and jobs_city_data.get("status") == EnrichmentStatus.PENDING.value:
+            st.warning(
+                "⚠️ Offres d'emploi partielles : certaines recherches sont temporairement indisponibles."
+            )
+    elif (
+        jobs_city_data
+        and jobs_city_data.get("status") == EnrichmentStatus.PENDING.value
+    ):
         st.caption("Traitement des offres d'emploi locales en cours…")
     elif st.session_state.get("immutable_shared_snapshot"):
-        st.caption("Offres d'emploi en direct non incluses dans cet instantané partagé.")
+        st.caption(
+            "Offres d'emploi en direct non incluses dans cet instantané partagé."
+        )
     elif h and (not bg_res or "jobs_enrichment" not in bg_res or not jobs_city_data):
         st.caption("Traitement des offres d'emploi locales en cours…")
     else:
@@ -829,9 +900,7 @@ def render_refiner_panel(commune: CommuneResult, h: Optional[str]) -> bool:
         return True
 
     st.info("Analyse des points forts en cours...")
-    st.caption(
-        "La synthèse personnalisée apparaîtra ici lorsqu'elle sera prête."
-    )
+    st.caption("La synthèse personnalisée apparaîtra ici lorsqu'elle sera prête.")
     return False
 
 
@@ -1015,7 +1084,9 @@ def render_jaccueille_housing_info(commune: CommuneResult):
     Renders J'Accueille hosts & prospects counts with report links if org_context == 'jaccueille'.
     """
     housing_data = commune.housing
-    j_count = int(housing_data.host_count) if housing_data and housing_data.host_count else 0
+    j_count = (
+        int(housing_data.host_count) if housing_data and housing_data.host_count else 0
+    )
 
     # 1. Check org profile (jaccueille only)
     org_is_jaccueille = False
@@ -1034,7 +1105,11 @@ def render_jaccueille_housing_info(commune: CommuneResult):
 
     # 2. Retrieve salesforce pre-aggregated BDV data
     df_bdv = fetch_salesforce_jaccueille_bdv()
-    bdv_code = commune.codgeo_bdv or getattr(commune.territoire, "bassin_de_vie", None) or commune.codgeo
+    bdv_code = (
+        commune.codgeo_bdv
+        or getattr(commune.territoire, "bassin_de_vie", None)
+        or commune.codgeo
+    )
 
     lead_count = 0
     contact_count = j_count
@@ -1053,7 +1128,9 @@ def render_jaccueille_housing_info(commune: CommuneResult):
                 try:
                     import json
 
-                    codes_postaux = json.loads(cp_json) if isinstance(cp_json, str) else cp_json
+                    codes_postaux = (
+                        json.loads(cp_json) if isinstance(cp_json, str) else cp_json
+                    )
                 except Exception:
                     pass
 
@@ -1067,7 +1144,9 @@ def render_jaccueille_housing_info(commune: CommuneResult):
         prosp_report_base = cfg.SF_REPORT_PROSPECTS_URL
 
         acc_url = f"{acc_report_base}?fv0={cp_param}" if cp_param else acc_report_base
-        prosp_url = f"{prosp_report_base}?fv0={cp_param}" if cp_param else prosp_report_base
+        prosp_url = (
+            f"{prosp_report_base}?fv0={cp_param}" if cp_param else prosp_report_base
+        )
 
         st.info(
             f"**{contact_count} accueillants** J'Accueille dans le bassin de vie ([voir la liste]({acc_url}))  \n"
@@ -1081,13 +1160,9 @@ def render_jaccueille_housing_info(commune: CommuneResult):
             )
 
 
-
-
-
 @st.dialog(
     title="Détails du Territoire", width="large", on_dismiss=_on_details_dialog_dismiss
 )
-
 def show_details_dialog(index: Any):
     """Displays thematic details for a city in a large modal."""
     if (
@@ -1104,7 +1179,9 @@ def show_details_dialog(index: Any):
         st.error("Détails non disponibles.")
         return
 
-    telemetry.log_usage_event("view_commune_details", {"codgeo": commune.codgeo, "name": commune.name})
+    telemetry.log_usage_event(
+        "view_commune_details", {"codgeo": commune.codgeo, "name": commune.name}
+    )
 
     # --- Header ---
     st.markdown(f"## 📍 {commune.name} (code INSEE: {commune.codgeo})")
@@ -1195,16 +1272,37 @@ def show_details_dialog(index: Any):
                         unsafe_allow_html=True,
                     )
 
-                    val_kpi_c = s.valeur_kpi_commune if s.valeur_kpi_commune is not None else s.valeur_kpi
-                    c_val_fmt = _format_kpi_value(val_kpi_c, s.unit, s.score_id, s.score_normalise_commune or s.score_normalise)
+                    val_kpi_c = (
+                        s.valeur_kpi_commune
+                        if s.valeur_kpi_commune is not None
+                        else s.valeur_kpi
+                    )
+                    c_val_fmt = _format_kpi_value(
+                        val_kpi_c,
+                        s.unit,
+                        s.score_id,
+                        s.score_normalise_commune or s.score_normalise,
+                    )
                     unit_str = f" {s.unit}" if s.unit and s.unit != "None" else ""
-                    c_txt = f"{c_val_fmt}" if c_val_fmt is not None else "Donnée indisponible"
+                    c_txt = (
+                        f"{c_val_fmt}"
+                        if c_val_fmt is not None
+                        else "Donnée indisponible"
+                    )
 
                     if getattr(s, "bdv_applied", False):
-                        b_val_fmt = _format_kpi_value(s.valeur_kpi_bdv, s.unit, s.score_id, s.score_normalise_bdv)    
-                        b_txt = f"{b_val_fmt}" if b_val_fmt is not None else "Donnée indisponible"
+                        b_val_fmt = _format_kpi_value(
+                            s.valeur_kpi_bdv, s.unit, s.score_id, s.score_normalise_bdv
+                        )
+                        b_txt = (
+                            f"{b_val_fmt}"
+                            if b_val_fmt is not None
+                            else "Donnée indisponible"
+                        )
 
-                        st.caption(f"Commune : {c_txt} | Bassin de Vie : {b_txt}{unit_str}")
+                        st.caption(
+                            f"Commune : {c_txt} | Bassin de Vie : {b_txt}{unit_str}"
+                        )
                     else:
                         st.caption(f"Commune : {c_txt}{unit_str}")
                 with c_val:
@@ -1212,7 +1310,7 @@ def show_details_dialog(index: Any):
                         score_pct_str = f"{p_val * 100:.0f}%"
                     else:
                         score_pct_str = "N/A"
-                    st.space('small')
+                    st.space("small")
                     st.subheader(f"{score_pct_str}")
             st.markdown("<br>", unsafe_allow_html=True)  # Minor spacing
 
@@ -1241,9 +1339,13 @@ def show_details_dialog(index: Any):
                 availability = employment_data.source_availability
 
                 if availability.get("france_travail") == "unavailable":
-                    st.info("Données France Travail indisponibles pour cette release : elles ne sont pas comptées dans le score.")
+                    st.info(
+                        "Données France Travail indisponibles pour cette release : elles ne sont pas comptées dans le score."
+                    )
                 if availability.get("emplois_inclusion") == "unavailable":
-                    st.info("Données Emplois de l'inclusion indisponibles pour cette release : elles ne sont pas comptées dans le score.")
+                    st.info(
+                        "Données Emplois de l'inclusion indisponibles pour cette release : elles ne sont pas comptées dans le score."
+                    )
 
                 if live_total > 0:
                     st.info(
@@ -1316,7 +1418,6 @@ def show_details_dialog(index: Any):
             render_scores_for_category("emploi")
 
     with tab_logement:
-
         housing_data = commune.housing
         c1, c2 = st.columns([1, 1], gap="medium")
 
@@ -1332,9 +1433,6 @@ def show_details_dialog(index: Any):
             st.markdown("#### :material/home: Indicateurs Logement")
             render_jaccueille_housing_info(commune)
             render_scores_for_category("logement", scores_list=scores_left)
-
-
-
 
         with c2:
             st.markdown("#### :material/home: Indicateurs Logement (suite)")
@@ -1455,7 +1553,11 @@ def show_details_dialog(index: Any):
                                 }
                                 for item in muni_list
                             ]
-                            st.dataframe(pd.DataFrame(rows_muni), hide_index=True, width="content")
+                            st.dataframe(
+                                pd.DataFrame(rows_muni),
+                                hide_index=True,
+                                width="content",
+                            )
 
                         if pres_list:
                             st.markdown("##### 🗳️ Élections Présidentielles")
@@ -1468,11 +1570,13 @@ def show_details_dialog(index: Any):
                                 }
                                 for item in pres_list
                             ]
-                            st.dataframe(pd.DataFrame(rows_pres), hide_index=True, width="content")
+                            st.dataframe(
+                                pd.DataFrame(rows_pres),
+                                hide_index=True,
+                                width="content",
+                            )
                     elif isinstance(history, list) and history:
-                        st.markdown(
-                            "##### 🗳️ Historique Électoral"
-                        )
+                        st.markdown("##### 🗳️ Historique Électoral")
                         table_rows = [
                             {
                                 "Scrutin": item.get("election", ""),
@@ -1482,7 +1586,9 @@ def show_details_dialog(index: Any):
                             }
                             for item in history
                         ]
-                        st.dataframe(pd.DataFrame(table_rows), hide_index=True, width="content")
+                        st.dataframe(
+                            pd.DataFrame(table_rows), hide_index=True, width="content"
+                        )
                 except Exception as e:
                     st.caption("Erreur lors du chargement de l'historique électoral.")
         with c2:
@@ -1741,9 +1847,15 @@ def _display_result_details(commune: CommuneResult) -> None:
             immutable_snapshot = bool(st.session_state.get("immutable_shared_snapshot"))
 
             # Model level fallbacks (e.g. for restored shared search snapshots)
-            if hasattr(commune, "siae_jobs") and getattr(commune, "siae_jobs", None) is not None:
+            if (
+                hasattr(commune, "siae_jobs")
+                and getattr(commune, "siae_jobs", None) is not None
+            ):
                 jobs_ready = True
-            if hasattr(commune, "associations_details") and getattr(commune, "associations_details", None) is not None:
+            if (
+                hasattr(commune, "associations_details")
+                and getattr(commune, "associations_details", None) is not None
+            ):
                 assos_ready = True
             if getattr(commune, "odis_synthesis", None):
                 jobs_ready = True
@@ -1764,9 +1876,7 @@ def _display_result_details(commune: CommuneResult) -> None:
                     # Check associations hydration status
                     association_status = bg_res.get(
                         "association_enrichment_status", {}
-                    ).get(
-                        str(commune.codgeo), {}
-                    )
+                    ).get(str(commune.codgeo), {})
                     if is_terminal_enrichment_status(association_status.get("status")):
                         assos_ready = True
 
@@ -1872,9 +1982,12 @@ def _display_result_details(commune: CommuneResult) -> None:
         if search_results and search_results.current_geo:
             _, vals_current = get_radar_data(search_results.current_geo, active_cats)
             current_name = search_results.current_geo.name or "Votre ville"
-            
-            st.text(f"Comparaison avec {current_name}", help=f"Comparaison des profils : la zone verte représente **{commune.name}**, la zone bleue **{current_name}**. Une plus grande surface indique une meilleure adéquation avec vos critères.")
-            
+
+            st.text(
+                f"Comparaison avec {current_name}",
+                help=f"Comparaison des profils : la zone verte représente **{commune.name}**, la zone bleue **{current_name}**. Une plus grande surface indique une meilleure adéquation avec vos critères.",
+            )
+
             fig.add_trace(
                 go.Scatterpolar(
                     r=vals_current,
@@ -1886,8 +1999,7 @@ def _display_result_details(commune: CommuneResult) -> None:
                     hovertemplate="%{theta}: %{r:.1f}%<extra></extra>",
                 )
             )
-            
-        
+
             fig.update_layout(
                 polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
                 showlegend=True,
@@ -1898,7 +2010,6 @@ def _display_result_details(commune: CommuneResult) -> None:
             )
 
             st.plotly_chart(fig, width="stretch", height=300, config=None)
-
 
         st.divider()
         with st.container(

@@ -124,14 +124,21 @@ async def triage_step(
         usage = capture_usage(result, "ts_agent", mod_id)
         ctx.state.usage.merge(usage)
 
+        # The validated coordinator plan is the only authority for the route.
+        # The launcher has no semantic knowledge of whether a follow-up needs a
+        # targeted answer or a fresh full analysis.
+        ctx.state.execution_mode = plan.swarm_mode
+
         # 1. DIRECT ANSWER BYPASS (Bypassing Swarm & Synthesizer)
         if plan.swarm_mode == "direct_answer":
-            direct_ans = plan.direct_answer or "Pas de réponse directe générée."
+            # SwarmPlan's execution-contract validator guarantees this value.
+            assert plan.direct_answer is not None
+            direct_ans = plan.direct_answer
             logger.info(f"🧠 [TS_AGENT] Direct Answer generated: {direct_ans[:100]}...")
 
             # Build odis_synthesis
             new_odis_synthesis = []
-            if ctx.state.execution_mode == "specific_ask" and ctx.state.messages:
+            if ctx.state.messages:
                 last_user_msg = ctx.state.messages[-1]
                 if last_user_msg.get("role") == "user":
                     new_odis_synthesis.append(last_user_msg)
@@ -192,55 +199,17 @@ async def triage_step(
 
     except Exception as e:
         logger.error(f"❌ [TS_AGENT] Planning failed: {e}", exc_info=True)
-        # Fallback list of experts
-        default_experts = [
-            "housing_expert",
-            "mobility_expert",
-            "social_integration_expert",
-        ]
-        if ctx.state.search_criteria.nb_adultes > 0:
-            default_experts.append("job_hunter")
-        if (
-            ctx.state.search_criteria.nb_enfants > 0
-            or ctx.state.search_criteria.classe_enfants
-        ):
-            default_experts.append("education_expert")
-        if ctx.state.search_criteria.besoin_sante:
-            default_experts.append("healthcare_expert")
-
-        fallback_skills = {
-            "housing_expert": ["housing_full_analysis"],
-            "mobility_expert": ["mobility_full_analysis"],
-            "healthcare_expert": ["healthcare_full_analysis"],
-            "education_expert": ["education_full_analysis"],
-            "social_integration_expert": ["social_full_analysis"],
-            "job_hunter": ["job_full_analysis"],
-        }
-
-        ctx.state.expert_skill_instructions = {}
-        from services.knowledge_store import KnowledgeStore
-
-        store = KnowledgeStore()
-
-        for exp in default_experts:
-            ctx.state.expert_tasks[exp] = "Analyse de terrain standard."
-            # Load default skill instructions
-            skill_insts = []
-            for skill_id in fallback_skills.get(exp, []):
-                card = store.get_skill_card(skill_id)
-                if card and card.get("instructions"):
-                    skill_insts.append(
-                        f"--- Skill Card: {skill_id} ---\n{card.get('instructions')}"
-                    )
-
-            if skill_insts:
-                ctx.state.expert_skill_instructions[exp] = "\n\n".join(skill_insts)
-            else:
-                ctx.state.expert_skill_instructions[exp] = (
-                    "Aucune consigne spécifique de Skill Card active."
+        failure_message = (
+            "⚠️ L'analyse IA n'a pas pu être planifiée. "
+            "Les résultats de classement restent disponibles ; réessayez l'analyse."
+        )
+        if ctx.state.search_results and ctx.state.focus_city:
+            city_res = ctx.state.search_results.get_by_code(ctx.state.focus_city.codgeo)
+            if city_res:
+                city_res.odis_synthesis.append(
+                    {"role": "assistant", "content": failure_message}
                 )
-
-        return ExpertList(experts=default_experts)
+        return End(failure_message)
 
 
 async def extract_domains(

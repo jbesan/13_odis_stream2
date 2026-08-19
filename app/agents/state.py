@@ -62,11 +62,17 @@ class GraphState:
     search_results: Optional[SearchResultsData] = None
     focus_city: Optional[CommuneResult] = None
     criteria_hash: Optional[str] = None
-    execution_mode: Literal["full_analysis", "specific_ask"] = "full_analysis"
+    execution_mode: Literal["full_analysis", "specific_ask", "direct_answer"] = (
+        "full_analysis"
+    )
     odis_brief: str = ""
     messages: List[Dict[str, Any]] = field(default_factory=list)
     interaction_id: str = "unknown"
     username: str = "unknown"
+    organization_id: str = "unknown"
+    run_id: str = "unknown"
+    run_attempt: int = 1
+    run_deadline_at: float | None = None
     usage: UsageStats = field(default_factory=UsageStats)
     active_skills: List[str] = field(default_factory=list)
     expert_tasks: Dict[str, str] = field(

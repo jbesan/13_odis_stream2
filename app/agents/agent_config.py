@@ -22,7 +22,7 @@ class NodeConfig(BaseModel):
         thinking: Optional thinking/reasoning effort level (Gemini 3+).
     """
 
-    model: str = "google:gemini-3.1-flash-lite-preview"
+    model: str = "google:gemini-3.1-flash-lite"
     temperature: float = 0.0
     max_tokens: int | None = None
     thinking: Literal["minimal", "low", "medium", "high"] | None = None
