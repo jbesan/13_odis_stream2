@@ -178,7 +178,7 @@ def search_rna_rag(
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """
     Recherche sémantique d'associations dans une commune spécifique (RAG).
-    Retourne les associations les plus pertinentes (score > 0.8) triées par pertinence.
+    Retourne les associations les plus pertinentes (score > 0.70) triées par pertinence.
 
     Args:
         query: Terme de recherche (ex: 'football', 'hébergement d'urgence').

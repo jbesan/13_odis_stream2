@@ -376,7 +376,7 @@ scores:
   weight: 1.0
   min_bound: 0.0
   max_bound: 1.0
-  missing_strategy: exclude
+  missing_strategy: zero
 - id: edu_petite_enfance_scaled
   category: education
   source_metric: edu_pe_tx_couverture
@@ -396,7 +396,7 @@ scores:
   min_bound: null
   max_bound: null
   quantile_level: 0.05
-  missing_strategy: exclude
+  missing_strategy: zero
 - id: edu_maternelle_scaled
   category: education
   source_metric: edu_maternelle
@@ -679,7 +679,7 @@ scores:
   baseline: true
   computation: precomputed
   display:
-    name: Dynamisme Population Active
+    name: Déclin de la population active
     strong_point_text: Décroissance de la population active
     high_value_adjective: forte
     show: true

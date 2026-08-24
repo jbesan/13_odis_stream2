@@ -17,7 +17,7 @@ fastmcp
 google-genai==1.70.0
 pydantic
 python-dotenv
-pydantic-ai-slim[google,logfire]==2.0.0
+pydantic-ai-slim[google,logfire]==2.27.0
 google-cloud-bigquery
 google-cloud-bigquery-storage
 google-cloud-storage

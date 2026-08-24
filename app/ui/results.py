@@ -807,6 +807,59 @@ def polling_jobs_fragment(commune: CommuneResult, h: Optional[str]):
         st.rerun()
 
 
+def _render_initial_analysis_report(
+    content: str, expert_analysis: dict[str, str]
+) -> None:
+    """Renders the initial full analysis report with executive brief, tabs for experts, and CTA at the end."""
+    expert_tab_defs = [
+        ("🏠 Logement", "housing_expert"),
+        ("🚆 Mobilité", "mobility_expert"),
+        ("🏥 Santé", "healthcare_expert"),
+        ("🎓 Éducation", "education_expert"),
+        ("🤝 Insertion", "social_integration_expert"),
+        ("💼 Emploi", "job_hunter"),
+    ]
+
+    active_tabs = [
+        (label, key)
+        for label, key in expert_tab_defs
+        if expert_analysis.get(key) and expert_analysis.get(key, "").strip()
+    ]
+
+    marker = "## 🧭 Fiches Détaillées des Experts"
+    if active_tabs and marker in content:
+        # Split content into top part (Executive Overview + Comparator) and bottom part (Gaps, CCAS, Et ensuite)
+        parts = content.split(marker, 1)
+        top_part = parts[0].strip().rstrip("-").strip()
+        remaining = parts[1] if len(parts) > 1 else ""
+
+        # Find where bottom sections start (e.g. ## ⚠️ or ### 🏛️ or ## ❓)
+        bottom_markers = ["\n---\n\n## ⚠️", "\n---\n\n### 🏛️", "\n---\n\n## ❓"]
+        bottom_part = ""
+        for bm in bottom_markers:
+            if bm in remaining:
+                bottom_part = remaining[remaining.index(bm) :].strip()
+                break
+
+        # 1. Render Top (Executive Brief + Comparator)
+        if top_part:
+            st.markdown(top_part)
+
+        # 2. Render Tabs for Domain Experts
+        st.subheader("🧭 Fiches Détaillées des Experts")
+        tab_objs = st.tabs([label for label, _ in active_tabs])
+        for tab_obj, (_, key) in zip(tab_objs, active_tabs):
+            with tab_obj:
+                st.markdown(expert_analysis[key])
+
+        # 3. Render Bottom (Gaps, CCAS Contact, Next Steps)
+        if bottom_part:
+            st.markdown(bottom_part)
+    else:
+        # Standard fallback rendering
+        st.markdown(content)
+
+
 def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
     """Main component for AI synthesis, rendered inside a @st.dialog."""
 
@@ -836,9 +889,18 @@ def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
     # Container for chat history
     history_container = st.container()
     with history_container:
-        for msg in history:
-            with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
+        if history:
+            # Render first message (initial full report) with tabbed layout
+            with st.chat_message(history[0]["role"]):
+                _render_initial_analysis_report(
+                    history[0]["content"],
+                    getattr(commune, "expert_analysis", {}) or {},
+                )
+
+            # Render follow-up Q&A messages
+            for msg in history[1:]:
+                with st.chat_message(msg["role"]):
+                    st.markdown(msg["content"])
 
     # Check if a follow-up chat task is running
     chat_task_key = f"chat_active_flag_{codgeo}"
@@ -1014,7 +1076,7 @@ def sync_background_data(commune: CommuneResult, h: Optional[str]):
         if isinstance(pitches_data, dict):
             # A. City-specific pitch
             if "pitches" in pitches_data:
-                pitch_for_city = pitches_data["pitches"].get(str(commune.codgeo))
+                pitch_for_city = pitches_data["pitches"].get(str(commune.codgeo).strip())
                 if pitch_for_city and not commune.refiner_pitch:
                     logging.debug(f"✨ [SYNC] Pitch sync for {commune.codgeo}")
                     commune.refiner_pitch = pitch_for_city

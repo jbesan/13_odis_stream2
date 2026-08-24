@@ -19,15 +19,15 @@ class NodeConfig(BaseModel):
         model: Optional Pydantic AI model identifier override. If None, uses AgentSettings.default_model.
         temperature: LLM temperature (0.0 to 1.0).
         max_tokens: Maximum output tokens.
-        thinking: Optional thinking/reasoning effort level (Gemini 3+).
+        thinking: Optional thinking/reasoning effort level (Gemini 3+) or False to disable.
         timeout: Request timeout in seconds.
     """
 
     model: str | None = None
     temperature: float = 0.0
     max_tokens: int | None = None
-    thinking: Literal["minimal", "low", "medium", "high"] | None = None
-    timeout: float | None = 60.0
+    thinking: Literal["minimal", "low", "medium", "high"] | bool | None = False
+    timeout: float | None = 120.0
 
     @property
     def model_settings(self) -> ModelSettings:
@@ -58,42 +58,42 @@ class AgentSettings(BaseSettings):
     default_model: str = Field(default="google:gemini-3.1-flash-lite")
 
     router: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(temperature=0.1, thinking="low")
+        default_factory=lambda: NodeConfig(temperature=0.0, thinking=False)
     )
     interviewer: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(temperature=0.5, thinking="medium")
+        default_factory=lambda: NodeConfig(temperature=0.7, thinking="medium")
     )
     ts_agent: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(temperature=0.1, thinking="low")
+        default_factory=lambda: NodeConfig(temperature=0.0, thinking=False)
     )
     housing_expert: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(temperature=0.1, thinking="low")
+        default_factory=lambda: NodeConfig(temperature=0.0, thinking=False)
     )
     mobility_expert: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(temperature=0.1, thinking="low")
+        default_factory=lambda: NodeConfig(temperature=0.0, thinking=False)
     )
     healthcare_expert: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(temperature=0.1, thinking="low")
+        default_factory=lambda: NodeConfig(temperature=0.0, thinking=False)
     )
     education_expert: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(temperature=0.1, thinking="low")
+        default_factory=lambda: NodeConfig(temperature=0.0, thinking=False)
     )
     social_integration_expert: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(temperature=0.1, thinking="low")
+        default_factory=lambda: NodeConfig(temperature=0.0, thinking=False)
     )
     job_hunter: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(temperature=0.1, thinking="low")
+        default_factory=lambda: NodeConfig(temperature=0.0, thinking=False)
     )
     job_curator: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(temperature=0.1, thinking="low")
+        default_factory=lambda: NodeConfig(temperature=0.0, thinking=False)
     )
     synthesizer: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(temperature=0.1, thinking="low")
+        default_factory=lambda: NodeConfig(temperature=0.7, thinking="low")
     )
     refiner: NodeConfig = Field(
         default_factory=lambda: NodeConfig(
-            temperature=0.1,
-            thinking="minimal",
+            temperature=0.0,
+            thinking=False,
             max_tokens=4096,
         )
     )
@@ -221,8 +221,8 @@ def get_swarm_boilerplate(
             "**Contexte de collaboration (Swarm d'agents IA)** :\n"
             "- Tu es un expert thématique faisant partie d'un swarm d'agents IA. La demande provient de l'agent coordinateur.\n"
             "- L'utilisateur final est un **Travailleur Social humain** qui accompagne un bénéficiaire (généralement une personne réfugiée et sa famille) dans sa relocalisation.\n"
-            "- Formule tes analyses à partir de tes recherches qualitatives en plus des données quantitatives du dossier JSON joint.\n"
-            "- Soit hyper factuel et ajoute toujours une section sur les éléments spécifiques que tu n'as pas pu trouver ou vérifier.\n"
+            "- Formule tes analyses à partir de tes recherches qualitatives en plus des données quantitatives du dossier joint.\n"
+            "- Sois hyper factuel. Si des éléments essentiels sont manquants ou non vérifiables, formalise-les explicitement sous une section titrée '#### ⚠️ Éléments non vérifiés / manquants' (et non comme une simple note de bas de page).\n"
         )
     elif agent_type == "coordinator":
         return (
@@ -236,8 +236,8 @@ def get_swarm_boilerplate(
             "**Contexte de collaboration (Swarm d'agents IA)** :\n"
             "- Tu es le synthétiseur final d'un swarm d'agents IA thématiques.\n"
             "- L'utilisateur final est un **Travailleur Social humain** qui accompagne un bénéficiaire (généralement une personne réfugiée et sa famille) dans sa relocalisation.\n"
-            "- Synthétise les retours des experts et du dossier JSON pour l'aider dans son accompagnement.\n"
-            "- Soit hyper factuel et ajoute toujours une section sur les éléments spécifiques que tu n'as pas pu trouver ou vérifier.\n"
+            "- Synthétise les retours des experts pour éclairer la décision du travailleur social.\n"
+            "- Sois hyper factuel et identifie clairement les points d'arbitrage et les vigilances.\n"
         )
     elif agent_type == "job_curator":
         return (

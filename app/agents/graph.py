@@ -2,7 +2,6 @@ import logging
 import asyncio
 import logfire
 from typing import Any
-from dataclasses import dataclass
 
 from pydantic_graph import End
 from pydantic_graph.graph_builder import GraphBuilder, Graph
@@ -18,6 +17,7 @@ from agents.state import (
     UsageStats,
     compute_criteria_hash,
     ExpertList,
+    AgentArtifact,
 )
 from agents.ts_agent import ts_agent, SwarmPlan
 from agents.utils import sanitize_llm_markdown
@@ -28,6 +28,8 @@ from agents.healthcare_expert import healthcare_expert_agent
 from agents.education_expert import education_expert_agent
 from agents.social_integration_expert import social_integration_expert_agent
 from agents.synthesizer import synthesizer_agent
+from agents.comparator import compute_city_comparison
+from agents.ccas_worker import locate_ccas_deterministic
 from utils.logger import log_agent_trace
 import services.bq_logger as bq_logger
 from agents.agent_config import get_model, get_p_model, get_model_settings
@@ -84,14 +86,6 @@ def capture_usage(result: Any, node_name: str, model_id: str) -> UsageStats:
     except Exception as e:
         logger.warning(f"⚠️ [USAGE] capture_usage failed for {node_name}: {e}")
         return UsageStats()
-
-
-@dataclass
-class AgentArtifact:
-    domain: str
-    result: str  # Markdown formatted string with the result
-    usage: UsageStats
-
 
 # --- Graph Nodes ---
 @logfire.instrument("Node: triage")
@@ -188,6 +182,14 @@ async def triage_step(
         # Deduplicate active skills
         ctx.state.active_skills = list(set(ctx.state.active_skills))
 
+        # 3. APPEND LOCAL DETERMINISTIC WORKERS IN FULL ANALYSIS MODE
+        if plan.swarm_mode == "full_analysis":
+            for local_worker in ("city_comparator", "ccas_locator"):
+                if local_worker not in experts_to_run:
+                    experts_to_run.append(local_worker)
+                    ctx.state.expert_tasks[local_worker] = "Analyse déterministe locale"
+                    ctx.state.expert_skill_instructions[local_worker] = "Traitement déterministe Python"
+
         logger.info(
             f"🧠 [TS_AGENT] Swarm Plan: experts={experts_to_run}, skills={ctx.state.active_skills}"
         )
@@ -219,7 +221,7 @@ async def extract_domains(
 async def expert_worker_step(
     ctx: StepContext[GraphState, ODISDeps, str],
 ) -> AgentArtifact:
-    """Parallel worker that delegates to the appropriate domain expert agent."""
+    """Parallel worker that delegates to domain expert agents or local deterministic workers."""
     domain = ctx.inputs
     user_msg = ctx.state.messages[-1]["content"] if ctx.state.messages else ""
     focus = (
@@ -229,7 +231,24 @@ async def expert_worker_step(
     ctx.state.criteria_hash = h
     logfire.info("Processing Expert Node for {search_hash}", search_hash=h)
 
-    # 1. CACHE BYPASS
+    # 1. RESOLVE FULL COMMUNE RESULT FROM SEARCH RESULTS
+    city_res = None
+    if ctx.state.search_results and ctx.state.focus_city and ctx.state.focus_city.codgeo:
+        city_res = ctx.state.search_results.get_by_code(ctx.state.focus_city.codgeo)
+    target_city = city_res or ctx.state.focus_city
+
+    # 2. LOCAL DETERMINISTIC WORKERS (Phase 1: 0 tokens, <15ms)
+    if domain == "city_comparator":
+        logger.info(f"⚡ [CITY_COMPARATOR] Running local deterministic comparison for {focus}.")
+        ref_geo = ctx.state.search_results.current_geo if ctx.state.search_results else None
+        press_geo = ctx.state.search_results.commune_pressentie if ctx.state.search_results else None
+        return compute_city_comparison(target_city, ref_geo, press_geo)
+
+    if domain == "ccas_locator":
+        logger.info(f"⚡ [CCAS_LOCATOR] Running local deterministic CCAS search for {focus}.")
+        return locate_ccas_deterministic(target_city)
+
+    # 3. CACHE BYPASS
     if (
         ctx.state.execution_mode == "full_analysis"
         and ctx.state.search_results
@@ -248,7 +267,7 @@ async def expert_worker_step(
                 usage=UsageStats(),
             )
 
-    # 2. RUN EXPERT
+    # 3. RUN EXPERT LLM
     logger.info(f"🚀 [{domain.upper()}] Node started for {focus}.")
     mod_id = get_model(domain)
     model = get_p_model(domain, client=ctx.deps.client)
@@ -283,7 +302,7 @@ async def expert_worker_step(
         log_agent_trace(domain, mod_id, result)
         logger.info(f"✅ [{domain.upper()}] Node finished for {focus}.")
 
-        artifact_str = f"### Recherches effectuées\n{result.output.searched}\n\n### Resultats\n{result.output.result}"
+        artifact_str = result.output.result.strip()
         usage = capture_usage(result, domain, mod_id)
         return AgentArtifact(domain=domain, result=artifact_str, usage=usage)
     except Exception as e:
@@ -323,7 +342,7 @@ async def synthesizer_step(
     mod_id = get_model("synthesizer")
     model = get_p_model("synthesizer", client=ctx.deps.client)
 
-    final_content = ""
+    synth_output = None
     try:
         result = await synthesizer_agent.run(
             input_msg,
@@ -333,7 +352,7 @@ async def synthesizer_step(
             usage_limits=UsageLimits(request_limit=10),
         )
         log_agent_trace("synthesizer", mod_id, result)
-        final_content = sanitize_llm_markdown(result.output)
+        synth_output = result.output
 
         # Merge Usage
         usage = capture_usage(result, "synthesizer", mod_id)
@@ -341,7 +360,7 @@ async def synthesizer_step(
 
     except Exception as e:
         logger.error(f"❌ [SYNTHESIZER-FAILURE] Agent run failed: {e}", exc_info=True)
-        final_content = "⚠️ _Désolé, une erreur technique est survenue lors de la synthèse finale. Les experts ont cependant fini leur travail._"
+        synth_output = "⚠️ _Désolé, une erreur technique est survenue lors de la synthèse finale. Les experts ont cependant fini leur travail._"
 
     # BQ Logging
     try:
@@ -370,6 +389,76 @@ async def synthesizer_step(
     except Exception as e:
         logger.warning(f"⚠️ [BQ-LOG] Synthesis logging failed: {e}")
 
+    # 3. BUILD COMPLETE COMPOSITE REPORT (Decoupled Synthesis + As-is Domain Artifacts)
+    city_res = None
+    if ctx.state.search_results and ctx.state.focus_city:
+        city_res = ctx.state.search_results.get_by_code(ctx.state.focus_city.codgeo)
+
+    if ctx.state.execution_mode == "full_analysis":
+        # Extract structured synthesizer fields
+        if hasattr(synth_output, "avis_global"):
+            avis_global = synth_output.avis_global.strip()
+            analyse_comp = (
+                getattr(synth_output, "analyse_comparative", "") or ""
+            ).strip()
+            elements_non_verifies = (
+                synth_output.elements_non_verifies.strip()
+                if synth_output.elements_non_verifies
+                else ""
+            )
+            et_ensuite = synth_output.et_ensuite.strip()
+        else:
+            avis_global = sanitize_llm_markdown(str(synth_output))
+            analyse_comp = ""
+            elements_non_verifies = ""
+            et_ensuite = ""
+
+        report_sections = []
+
+        # 1. Executive overview (Top)
+        report_sections.append(f"## 🧭 Avis Global d'Orientation pour {city_name}\n\n{avis_global}")
+
+        # 2. Digested territorial comparison
+        if analyse_comp:
+            report_sections.append(f"## ⚖️ Analyse Comparative Territoriale\n\n{analyse_comp}")
+
+        # 3. Domain Expert Artifacts (displayed as-is without LLM rephrasing)
+        domain_display_order = [
+            ("housing_expert", "🏠 Logement & Hébergement"),
+            ("mobility_expert", "🚆 Mobilité & Transports"),
+            ("healthcare_expert", "🏥 Santé & Accompagnement Médical"),
+            ("education_expert", "🎓 Éducation & Petite Enfance"),
+            ("social_integration_expert", "🤝 Insertion Sociale & Solidarité"),
+            ("job_hunter", "💼 Emploi & Insertion Professionnelle"),
+        ]
+        expert_sections = []
+        if city_res:
+            for domain_key, domain_label in domain_display_order:
+                content = city_res.expert_analysis.get(domain_key)
+                if content and content.strip():
+                    expert_sections.append(f"### {domain_label}\n\n{content.strip()}")
+
+        if expert_sections:
+            report_sections.append("## 🧭 Fiches Détaillées des Experts\n\n" + "\n\n---\n\n".join(expert_sections))
+
+        # 4. Unverified elements / gaps as a proper section (Requirement 4)
+        if elements_non_verifies:
+            report_sections.append(f"## ⚠️ Éléments Non Vérifiés & Vigilances\n\n{elements_non_verifies}")
+
+        # 5. Call to Action: CCAS Contact at the end (Requirement 1)
+        if city_res and "ccas_locator" in city_res.expert_analysis:
+            ccas_content = city_res.expert_analysis["ccas_locator"].strip()
+            if ccas_content:
+                report_sections.append(ccas_content)
+
+        # 6. Call to Action: Et ensuite ? at the end (Requirement 1)
+        if et_ensuite:
+            report_sections.append(f"## ❓ Et ensuite ? (Pistes d'action)\n\n{et_ensuite}")
+
+        full_report = "\n\n---\n\n".join(report_sections)
+    else:
+        full_report = sanitize_llm_markdown(str(synth_output))
+
     # Build odis_synthesis
     new_odis_synthesis = []
     if ctx.state.execution_mode == "specific_ask" and ctx.state.messages:
@@ -377,17 +466,15 @@ async def synthesizer_step(
         if last_user_msg.get("role") == "user":
             new_odis_synthesis.append(last_user_msg)
 
-    new_odis_synthesis.append({"role": "assistant", "content": final_content})
+    new_odis_synthesis.append({"role": "assistant", "content": full_report})
 
     # Apply back to the city result if possible
-    if ctx.state.search_results and ctx.state.focus_city:
-        city_res = ctx.state.search_results.get_by_code(ctx.state.focus_city.codgeo)
-        if city_res:
-            if not city_res.odis_synthesis:
-                city_res.odis_synthesis = []
-            city_res.odis_synthesis.extend(new_odis_synthesis)
+    if city_res:
+        if not city_res.odis_synthesis:
+            city_res.odis_synthesis = []
+        city_res.odis_synthesis.extend(new_odis_synthesis)
 
-    return End(final_content)
+    return End(full_report)
 
 
 def create_odis_graph() -> Graph[GraphState, ODISDeps, None, str]:

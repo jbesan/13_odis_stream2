@@ -6,9 +6,7 @@ from pydantic import BaseModel, Field
 from .state import ODISDeps, ODISContextBuilder
 from .agent_config import create_agent, get_swarm_boilerplate
 from .tools import (
-    search_refugee_associations,
     search_rna_rag_batch,
-    search_ccas,
     search_places_batch,
 )
 
@@ -25,7 +23,8 @@ class SocialIntegrationResult(BaseModel):
 SOCIAL_INTEGRATION_EXPERT_SYSTEM_PROMPT = """
 {SWARM_BOILERPLATE}
 **Rôle** : Agent thématique Accompagnement Social & Intégration (Social Integration Expert).
-**Règle** : Reste STRICTEMENT sur l'Intégration Sociale (CCAS local, associations d'aide, cours de français/FLE, loisirs/sports). Ne traite aucun autre sujet (logement, transport, santé, écoles, emploi), d'autres experts s'en chargent.
+**Règle** : Reste STRICTEMENT sur l'Intégration Sociale (associations d'aide, cours de français/FLE, loisirs/sports, inclusion locale). Ne traite aucun autre sujet (logement, transport, santé, écoles, emploi), d'autres experts s'en chargent.
+**Note importante sur le CCAS** : Ne recherche PAS les coordonnées ou missions du CCAS. Le contact et la localisation du CCAS sont déjà récupérés automatiquement par le système (`ccas_locator`).
 
 # Contexte du dossier :
 ```json
@@ -39,15 +38,11 @@ SOCIAL_INTEGRATION_EXPERT_SYSTEM_PROMPT = """
 {SKILL_INSTRUCTIONS}
 
 **DIRECTIVES DE TRAVAIL** :
-1. **Recherches Web** : Utilise Google Search avec parcimonie:  limite-toi à maximum 1 recherche par objet de recherche/sujet distinct. Ne fais JAMAIS de requêtes similaires, de reformulations ou de variations pour un même sujet. Si l'information est introuvable après un essai, n'insiste pas et signale-le.
-2. **Priorisation des outils** : Utilise en priorité `search_ccas_tool`, `search_refugee_associations_tool`, `search_rna_rag_batch_tool` et `search_places_batch_tool` (FLE, sports, centres sociaux, mairies).
-3. **Formatage** : Sois hyper concis dans tes réponses.
+1. **Recherches Web & Exploration terrain** : Utilise Google Search avec parcimonie: limite-toi à maximum 1 recherche par objet de recherche/sujet distinct. Ne fais JAMAIS de requêtes similaires, de reformulations ou de variations pour un même sujet. Si l'information est introuvable après un essai, n'insiste pas et signale-le.
+2. **Associations d'aide aux réfugiés (RNA)** : Les associations d'accueil et d'aide aux réfugiés issues du Répertoire National des Associations (RNA) officiel sont déjà injectées dans ton contexte (`Données inclusion`). Si aucune association n'est recensée au RNA officiel, tu peux vérifier (via Google Search ou Google Maps / Places) s'il existe des collectifs locaux, antennes citoyennes ou initiatives informelles non répertoriées au RNA si cela apporte une valeur directe au bénéficiaire.
+3. **Priorisation des outils** : Utilise en priorité `search_rna_rag_batch_tool` (recherche sémantique RNA pour loisirs, sports, culture, entraide) et `search_places_batch_tool` (FLE, centres sociaux, mairies, équipements). Ne cherche PAS le CCAS.
+4. **Formatage** : Sois hyper concis dans tes réponses.
 """
-
-
-def search_refugee_associations_tool(codgeo: str) -> List[Dict[str, Any]]:
-    """Recherche les associations dédiées à l'aide aux réfugiés pour une commune."""
-    return search_refugee_associations(codgeo)
 
 
 async def search_rna_rag_batch_tool(
@@ -67,11 +62,6 @@ async def search_rna_rag_batch_tool(
     return await search_rna_rag_batch(queries, codgeo, top_k=top_k)
 
 
-def search_ccas_tool(codgeo: str) -> List[Dict[str, Any]]:
-    """Recherche les coordonnées du CCAS pour une commune."""
-    return search_ccas(codgeo)
-
-
 async def search_places_batch_tool(queries: List[str], location: str) -> Dict[str, Any]:
     """Recherche des centres sociaux, mairies, bibliothèques ou autres équipements en mode batch.
     Args:
@@ -86,9 +76,7 @@ social_integration_expert_agent: Agent[ODISDeps, SocialIntegrationResult] = (
         "social_integration_expert",
         deps_type=ODISDeps,
         tools=[
-            search_refugee_associations_tool,
             search_rna_rag_batch_tool,
-            search_ccas_tool,
             search_places_batch_tool,
         ],
         capabilities=[WebSearch()],

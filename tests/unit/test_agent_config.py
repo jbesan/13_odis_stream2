@@ -68,20 +68,20 @@ def test_thinking_levels_preserved():
     """Verify that each agent retains its distinct thinking level and temperature."""
     settings = AgentSettings()
 
-    assert settings.router.thinking == "low"
-    assert settings.router.temperature == 0.1
+    assert settings.router.thinking is False
+    assert settings.router.temperature == 0.0
 
     assert settings.interviewer.thinking == "medium"
-    assert settings.interviewer.temperature == 0.5
+    assert settings.interviewer.temperature == 0.7
 
-    assert settings.ts_agent.thinking == "low"
-    assert settings.ts_agent.temperature == 0.1
+    assert settings.ts_agent.thinking is False
+    assert settings.ts_agent.temperature == 0.0
 
-    assert settings.synthesizer.thinking == "medium"
-    assert settings.synthesizer.temperature == 0.1
+    assert settings.synthesizer.thinking == "low"
+    assert settings.synthesizer.temperature == 0.7
 
-    assert settings.refiner.thinking == "minimal"
-    assert settings.refiner.temperature == 0.1
+    assert settings.refiner.thinking is False
+    assert settings.refiner.temperature == 0.0
     assert settings.refiner.max_tokens == 4096
 
 
@@ -95,8 +95,8 @@ def test_get_model_and_settings_helper():
         assert get_model("ts_agent") == "google:gemini-3.5-flash-lite"
 
         ms = get_model_settings("synthesizer")
-        assert ms.get("thinking") == "medium"
-        assert ms.get("temperature") == 0.1
+        assert ms.get("thinking") == "low"
+        assert ms.get("temperature") == 0.7
 
 
 def test_env_var_default_model_override():

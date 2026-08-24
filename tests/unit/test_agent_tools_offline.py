@@ -149,7 +149,7 @@ async def test_healthcare_agent_tool_calling_offline(mock_deps):
 async def test_housing_agent_tool_calling_offline(mock_deps):
     """
     Verifies offline that housing_expert_agent interprets intent to call
-    its batch and ccas tools and outputs structural HousingResult.
+    its batch places and route tools and outputs structural HousingResult.
     """
 
     def call_model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
@@ -159,16 +159,20 @@ async def test_housing_agent_tool_calling_offline(mock_deps):
                 "location": "Saint-Jean-d'Angély, Nouvelle-Aquitaine",
             }
             return ModelResponse(parts=[ToolCallPart("search_places_batch_tool", args)])
-        elif len(messages) == 3:  # After first tool response, call ccas tool
-            args = {"codgeo": "17347"}
-            return ModelResponse(parts=[ToolCallPart("search_ccas_tool", args)])
+        elif len(messages) == 3:  # After first tool response, call route tool
+            args = {
+                "origin": "Saint-Jean-d'Angély",
+                "destination": "Niort",
+                "mode": "transit",
+            }
+            return ModelResponse(parts=[ToolCallPart("compute_routes_tool", args)])
         else:
             result_tool_name = (
                 info.output_tools[0].name if info.output_tools else "final_result"
             )
             args = {
-                "searched": "Recherche de CADA, CHRS et CCAS",
-                "result": "Analyse: structures identifiées.",
+                "searched": "Recherche de CADA, CHRS et calcul de trajet vers Niort",
+                "result": "Analyse: structures identifiées et trajet 45min.",
             }
             return ModelResponse(parts=[ToolCallPart(result_tool_name, args)])
 
@@ -178,22 +182,27 @@ async def test_housing_agent_tool_calling_offline(mock_deps):
                 "agents.housing_expert.search_places_batch", new_callable=AsyncMock
             ) as mock_search,
             patch(
-                "agents.housing_expert.search_ccas",
-                return_value=[{"name": "CCAS local"}],
-            ) as mock_ccas,
+                "agents.housing_expert.compute_routes",
+                return_value={"duration": "45min"},
+            ) as mock_routes,
         ):
             mock_search.return_value = [{"name": "CADA 1"}]
 
             result = await housing_expert_agent.run(
-                "Quels sont les hébergements et le CCAS ?", deps=mock_deps
+                "Quels sont les hébergements et le trajet vers Niort ?", deps=mock_deps
             )
 
             mock_search.assert_called_once_with(
                 ["CADA", "CHRS"], "Saint-Jean-d'Angély, Nouvelle-Aquitaine"
             )
-            mock_ccas.assert_called_once_with("17347")
+            mock_routes.assert_called_once_with(
+                "Saint-Jean-d'Angély", "Niort", "transit"
+            )
             assert isinstance(result.output, HousingResult)
-            assert result.output.searched == "Recherche de CADA, CHRS et CCAS"
+            assert (
+                result.output.searched
+                == "Recherche de CADA, CHRS et calcul de trajet vers Niort"
+            )
 
 
 @pytest.mark.asyncio

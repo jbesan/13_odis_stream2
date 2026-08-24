@@ -2511,7 +2511,7 @@ def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
         logger.log_step("clean_bpe", "PARTIAL", {"msg": "No POIs generated"})
 
 
-def compute_rna_rag_counts(query_text: str, threshold: float = 0.65) -> pd.DataFrame:
+def compute_rna_rag_counts(query_text: str, threshold: float = 0.70) -> pd.DataFrame:
     """Computes semantic counts for a query using BigQuery Vector Search (ML.DISTANCE)."""
     import os
 

@@ -2393,7 +2393,7 @@ def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
 
 def compute_rna_rag_counts(
     query_text: str,
-    threshold: float = 0.65,
+    threshold: float = 0.70,
     config: Optional[Dict[str, Any]] = None,
 ) -> pd.DataFrame:
     """Computes semantic counts for a query using BigQuery Vector Search (ML.DISTANCE)."""

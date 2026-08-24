@@ -48,6 +48,17 @@ def compute_criteria_hash(criteria: SearchCriterias) -> str:
 
 
 @dataclass
+class AgentArtifact:
+    domain: str
+    result: str  # Markdown formatted string with the result
+    usage: UsageStats = field(default_factory=UsageStats)
+
+
+# Polymorphic domain artifact alias (Phase 1)
+DomainArtifact = AgentArtifact
+
+
+@dataclass
 class ExpertList:
     """DTO for the Spreading pattern to route to parallel experts."""
 
@@ -112,20 +123,241 @@ class ODISContextBuilder:
     """
     Centralized service for building LLM-ready context blocks for all ODIS sub-agents.
 
-    This class enforces an allow-list per agent and uses Pydantic field descriptions
-    as human-readable JSON keys to maximize LLM readability and minimize token usage.
+    Uses an Object-Level Domain Routing model to assemble clean, token-efficient
+    envelopes for each agent without fragile attribute-level field annotations.
 
     All public methods return a JSON string ready to be injected into a prompt.
     """
 
-    # -------------------------------------------------------------------------
-    # PUBLIC ENTRY POINT
-    # -------------------------------------------------------------------------
+    @classmethod
+    def _format_criteria_value(cls, val: Any) -> Any:
+        """Helper to recursively simplify CriteriaItem instances into labels."""
+        if val is None:
+            return None
+        if val.__class__.__name__ == "CriteriaItem" or isinstance(val, CriteriaItem):
+            return getattr(val, "label", str(val))
+        if isinstance(val, list):
+            return [
+                cls._format_criteria_value(item) for item in val if item is not None
+            ]
+        if isinstance(val, dict):
+            return {
+                k: cls._format_criteria_value(v)
+                for k, v in val.items()
+                if v is not None
+            }
+        if isinstance(val, BaseModel):
+            return cls._format_model(val)
+        return val
+
+    @classmethod
+    def _format_criteria(cls, criteria: SearchCriterias) -> Dict[str, Any]:
+        """Serializes SearchCriterias with readable labels, excluding internal flags and odis_brief."""
+        exclude_fields = {
+            "odis_brief",
+            "active_criteria",
+            "active_categories",
+            "criteria_weights",
+            "poids_emploi",
+            "poids_logement",
+            "poids_education",
+            "poids_inclusion",
+            "poids_mobilite",
+            "poids_sante",
+            "poids_territoire",
+            "target_population_sigma",
+            "org_boosts",
+        }
+        ctx = {}
+        for name, fld in criteria.__class__.model_fields.items():
+            if name in exclude_fields:
+                continue
+            val = getattr(criteria, name)
+            if val is None:
+                continue
+            if isinstance(val, (list, dict)) and len(val) == 0:
+                continue
+
+            label = fld.description or name
+            ctx[label] = cls._format_criteria_value(val)
+        return ctx
+
+    @classmethod
+    def _format_commune_identity(cls, commune: CommuneResult) -> Dict[str, Any]:
+        """Formats the base commune identification header."""
+        return {
+            "Code INSEE": commune.codgeo,
+            "Nom": commune.name,
+            "Population": commune.population,
+            "Bassin de vie": commune.name_bdv or commune.codgeo_bdv or "N/A",
+            "Score global": int((commune.global_score or 0.0) * 100),
+        }
+
+    @classmethod
+    def _format_association(cls, item: Any) -> str:
+        """Formats association item as 'ID | Nom | Description'."""
+        asso_id = (getattr(item, "id", None) or "").strip()
+        name = (getattr(item, "name", None) or "").strip()
+        desc = (getattr(item, "description", None) or "").strip()
+        parts = [p for p in [asso_id, name, desc] if p]
+        return " | ".join(parts)
+
+    @classmethod
+    def _format_job_offer(cls, item: Any) -> str:
+        """Formats job offer as 'ID | Titre chez Entreprise (Contrat) [ROME: Code] - Description'."""
+        oid = (getattr(item, "id", None) or "").strip()
+        title = (getattr(item, "title", None) or "").strip()
+        comp = (getattr(item, "company", None) or "").strip()
+        comp_str = f" chez {comp}" if comp else ""
+        ctype = (
+            getattr(item, "contract_type", None)
+            or getattr(item, "contract_label", None)
+            or ""
+        ).strip()
+        ctype_str = f" ({ctype})" if ctype else ""
+        rome = (getattr(item, "rome_code", None) or "").strip()
+        rome_str = f" [ROME: {rome}]" if rome else ""
+
+        desc = (getattr(item, "description", None) or "").strip()
+        if desc:
+            desc_clean = " ".join(desc.split())
+            if len(desc_clean) > 200:
+                desc_clean = desc_clean[:197] + "..."
+            desc_str = f" - {desc_clean}"
+        else:
+            desc_str = ""
+
+        header = f"{title}{comp_str}{ctype_str}{rome_str}"
+        if oid:
+            return f"{oid} | {header}{desc_str}"
+        return f"{header}{desc_str}"
+
+    @classmethod
+    def _format_inclusion_services(
+        cls, services_dict: Dict[str, List[Any]]
+    ) -> Dict[str, List[str]]:
+        """Formats inclusion services grouped by thématique -> list of unique structures with distance/commune."""
+        result: Dict[str, List[str]] = {}
+        for theme, srv_list in services_dict.items():
+            if not srv_list:
+                continue
+            structures: List[str] = []
+            seen: set[str] = set()
+            for srv in srv_list:
+                struct_name = (
+                    getattr(srv, "nom_structure", None) or "Structure locale"
+                ).strip()
+                dist = getattr(srv, "distance_km", None)
+                commune = (getattr(srv, "commune_nom", None) or "").strip()
+
+                dist_parts = []
+                if dist is not None:
+                    dist_parts.append(f"{dist} km")
+                if commune:
+                    dist_parts.append(commune)
+
+                dist_str = f" ({' - '.join(dist_parts)})" if dist_parts else ""
+                struct_key = f"{struct_name}{dist_str}"
+
+                if struct_key not in seen:
+                    seen.add(struct_key)
+                    structures.append(struct_key)
+
+            if structures:
+                result[theme] = structures
+        return result
+
+    @classmethod
+    def _format_detail_item(cls, item: Any) -> Any:
+        """Formats individual detail items compactly."""
+        if item is None:
+            return None
+        cname = item.__class__.__name__
+        if cname == "CriteriaItem" or isinstance(item, CriteriaItem):
+            return getattr(item, "label", str(item))
+
+        if cname == "AssociationDetail":
+            return cls._format_association(item)
+
+        if cname == "JobOfferDetail":
+            return cls._format_job_offer(item)
+
+        if cname == "InclusionServiceDetail":
+            srv_name = getattr(item, "name", "")
+            struct = getattr(item, "nom_structure", "") or ""
+            struct_part = f" par {struct}" if struct else ""
+            dist = getattr(item, "distance_km", None)
+            commune = getattr(item, "commune_nom", "") or ""
+            dist_part = (
+                f" (à {dist} km{f' - {commune}' if commune else ''})"
+                if dist is not None
+                else ""
+            )
+            return f"{srv_name}{struct_part}{dist_part}"
+
+        if cname == "CommuneScoreDetail":
+            label = getattr(item, "label", "N/A")
+            vkpi = getattr(item, "valeur_kpi", None)
+            unit = getattr(item, "unit", "")
+            score = getattr(item, "score_normalise", 0.0)
+            weight = getattr(item, "relative_weight", 0.0)
+            if vkpi is not None:
+                unit_clean = unit.strip()
+                kpi_str = f"{vkpi} {unit_clean}" if unit_clean else f"{vkpi}"
+            else:
+                kpi_str = "N/A"
+            return f"{label}: {kpi_str}, score: {round(float(score), 2)}, poids relatif: {weight}%"
+
+        if isinstance(item, BaseModel):
+            return cls._format_model(item)
+        if isinstance(item, list):
+            return [cls._format_detail_item(x) for x in item]
+        if isinstance(item, dict):
+            return {k: cls._format_detail_item(v) for k, v in item.items()}
+        return item
+
+    @classmethod
+    def _format_model(cls, model: BaseModel) -> Dict[str, Any]:
+        """Formats a domain metric sub-model with human-readable descriptions and compact detail items."""
+        ctx = {}
+        for name, fld in model.__class__.model_fields.items():
+            val = getattr(model, name)
+            if val is None:
+                continue
+
+            label = fld.description or name
+
+            # Skip raw un-geocoded services_grouped; keep rich services_detailed only
+            if name == "services_grouped":
+                continue
+
+            # Special Handling for refugee associations in RNA
+            if name == "asso_refugee_list":
+                if not val:
+                    ctx[label] = (
+                        "Aucune association spécifique recensée dans le Répertoire National des Associations (RNA) pour cette commune."
+                    )
+                else:
+                    ctx[label] = cls._format_detail_item(val)
+                continue
+
+            if isinstance(val, (list, dict)) and len(val) == 0:
+                continue
+
+            # Special Handling for inclusion services grouped by structure
+            if name == "services_detailed" and isinstance(val, dict):
+                formatted_srvs = cls._format_inclusion_services(val)
+                if formatted_srvs:
+                    ctx[label] = formatted_srvs
+                continue
+
+            ctx[label] = cls._format_detail_item(val)
+        return ctx
 
     @classmethod
     def agent_context(cls, state: "GraphState", agent_name: str) -> str:
         """
-        Assembles the full dynamic context block for a given agent.
+        Assembles the full dynamic context block for a given agent using Object-Level Domain Routing.
 
         Args:
             state: The current GraphState.
@@ -136,14 +368,12 @@ class ODISContextBuilder:
         Returns:
             A formatted JSON string ready to inject into a system prompt.
         """
-        visibility_key = f"agent_{agent_name}"
-
-        # 1. Resolve raw Pydantic instances from GraphState
         criteria = state.search_criteria
-
         focus_city = None
         if state.focus_city and state.search_results:
             focus_city = state.search_results.get_by_code(state.focus_city.codgeo)
+        if not focus_city:
+            focus_city = state.focus_city
 
         current_geo = state.search_results.current_geo if state.search_results else None
         commune_pressentie = (
@@ -152,66 +382,116 @@ class ODISContextBuilder:
 
         ctx = {}
 
-        # 2. Build filtered contexts using _auto_build_context
+        # 1. Root-Level Briefing (Injected once for all agents except interviewer)
         if state.odis_brief and agent_name != "interviewer":
             ctx["Résumé du dossier (Briefing)"] = state.odis_brief
 
-        if agent_name == "synthesizer":
-            if criteria and criteria.notes_qualitatives:
-                ctx["Notes qualitatives"] = criteria.notes_qualitatives
-
+        # 2. Search Criteria (Universally injected for all agents)
         if criteria:
-            key = (
+            crit_key = (
                 "Critères identifiés"
                 if agent_name == "interviewer"
                 else "Critères de recherche"
             )
-            ctx[key] = cls._auto_build_context(criteria, visibility_key)
+            ctx[crit_key] = cls._format_criteria(criteria)
 
-        if focus_city:
-            ctx["Ville analysée"] = cls._auto_build_context(focus_city, visibility_key)
-        elif state.focus_city:
-            ctx["Ville analysée"] = cls._auto_build_context(
-                state.focus_city, visibility_key
-            )
-
-        current_geo_field = SearchResultsData.model_fields.get("current_geo")
-        if current_geo and current_geo_field:
-            extra = current_geo_field.json_schema_extra or {}
-            visibility = extra.get("odis_visibility", [])
-            if visibility_key in visibility or "all" in visibility:
-                ctx["Ville actuelle (référence)"] = cls._auto_build_context(
-                    current_geo, visibility_key
+        # 3. Target City Data by Agent Role
+        if agent_name == "refiner":
+            if current_geo:
+                ctx["Ville actuelle (référence)"] = cls._format_commune_identity(
+                    current_geo
                 )
-
-        if commune_pressentie and (
-            not focus_city or commune_pressentie.codgeo != focus_city.codgeo
-        ):
-            ctx["Commune pressentie (pour comparaison)"] = cls._auto_build_context(
-                commune_pressentie, visibility_key
-            )
-
-        # 3. Handle specific collections
-        results_field = SearchResultsData.model_fields.get("results")
-        if results_field and state.search_results and state.search_results.results:
-            extra = results_field.json_schema_extra or {}
-            visibility = extra.get("odis_visibility", [])
-            if visibility_key in visibility or "all" in visibility:
-                ctx["Top 5 communes identifiées (Détails métriques)"] = [
-                    {"Rang": i + 1, **cls._auto_build_context(r, visibility_key)}
+            if state.search_results and state.search_results.results:
+                ctx["Top 5 communes identifiées"] = [
+                    {
+                        "Rang": i + 1,
+                        **cls._format_commune_identity(r),
+                        **(
+                            {
+                                "Scores thématiques": {
+                                    cat: [cls._format_detail_item(d) for d in details]
+                                    for cat, details in r.scores.items()
+                                }
+                            }
+                            if r.scores
+                            else {}
+                        ),
+                    }
                     for i, r in enumerate(state.search_results.results[:5])
                 ]
-
-        # 4. Handle Router / TS_AGENT specific target city name
-        if agent_name in ("router", "ts_agent"):
-            if state.focus_city:
-                ctx["Ville cible"] = (
-                    f"{state.focus_city.name} ({state.focus_city.codgeo})"
+            if commune_pressentie:
+                ctx["Commune pressentie (pour comparaison)"] = {
+                    **cls._format_commune_identity(commune_pressentie),
+                    **(
+                        {
+                            "Scores thématiques": {
+                                cat: [cls._format_detail_item(d) for d in details]
+                                for cat, details in commune_pressentie.scores.items()
+                            }
+                        }
+                        if commune_pressentie.scores
+                        else {}
+                    ),
+                }
+        elif focus_city:
+            # A. Domain Experts: Identity + Dedicated Domain Metrics
+            if agent_name == "education_expert":
+                ctx["Commune analysée (Identité)"] = cls._format_commune_identity(
+                    focus_city
                 )
-            else:
-                ctx["Ville cible"] = "Non définie"
+                ctx["Données éducation"] = cls._format_model(focus_city.education)
+            elif agent_name == "housing_expert":
+                ctx["Commune analysée (Identité)"] = cls._format_commune_identity(
+                    focus_city
+                )
+                ctx["Données logement"] = cls._format_model(focus_city.housing)
+            elif agent_name == "healthcare_expert":
+                ctx["Commune analysée (Identité)"] = cls._format_commune_identity(
+                    focus_city
+                )
+                ctx["Données santé"] = cls._format_model(focus_city.health)
+            elif agent_name == "mobility_expert":
+                ctx["Commune analysée (Identité)"] = cls._format_commune_identity(
+                    focus_city
+                )
+                ctx["Données mobilité"] = cls._format_model(focus_city.mobility)
+            elif agent_name == "job_hunter":
+                ctx["Commune analysée (Identité)"] = cls._format_commune_identity(
+                    focus_city
+                )
+                ctx["Données emploi et formation"] = cls._format_model(
+                    focus_city.employment
+                )
+            elif agent_name == "social_integration_expert":
+                ctx["Commune analysée (Identité)"] = cls._format_commune_identity(
+                    focus_city
+                )
+                ctx["Données inclusion"] = cls._format_model(focus_city.inclusion)
+                if focus_city.territoire and (
+                    focus_city.territoire.ter_insecurite is not None
+                    or focus_city.territoire.maire_extreme_droite
+                ):
+                    ctx["Données territoire (Contexte local)"] = cls._format_model(
+                        focus_city.territoire
+                    )
 
-        # 5. Handle conversation messages
+            # B. TS Coordinator: Ville cible + High-level Score Overview + Territory flags
+            elif agent_name in ("router", "ts_agent"):
+                ctx["Ville cible"] = f"{focus_city.name} ({focus_city.codgeo})"
+                if focus_city.scores:
+                    ctx["Scores thématiques"] = {
+                        cat: [cls._format_detail_item(d) for d in details]
+                        for cat, details in focus_city.scores.items()
+                    }
+                if focus_city.territoire:
+                    ctx["Données territoire"] = cls._format_model(focus_city.territoire)
+
+            # C. Synthesizer: notes qualitatives if present
+            elif agent_name == "synthesizer":
+                if criteria and criteria.notes_qualitatives:
+                    ctx["Notes qualitatives"] = criteria.notes_qualitatives
+
+        # 4. Message History Handling
         if state.messages:
             if agent_name == "refiner":
                 ctx["Historique récent"] = state.messages[-5:]
@@ -227,96 +507,23 @@ class ODISContextBuilder:
         return result
 
     @classmethod
-    def _auto_build_context(cls, model: Any, visibility_key: str) -> Any:
-        """
-        Recursively builds context, filtering Pydantic models by visibility.
-        Handles dicts, lists, Pydantic BaseModels, and specific special types.
-        """
+    def _auto_build_context(cls, model: Any, visibility_key: str = "all") -> Any:
+        """Backward-compatible helper redirecting to typed formatting."""
         if model is None:
             return None
-
-        # 1. Special Case: CriteriaItem (Simplify to Label for LLM)
         if isinstance(model, CriteriaItem):
             return model.label
-
-        # 2. Special Case: CommuneScoreDetail (Compact representation for agents)
-        if model.__class__.__name__ == "CommuneScoreDetail":
-            if visibility_key.startswith("agent_"):
-                label = getattr(model, "label", "N/A")
-                vkpi = getattr(model, "valeur_kpi", None)
-                unit = getattr(model, "unit", "")
-                score = getattr(model, "score_normalise", 0.0)
-                weight = getattr(model, "relative_weight", 0.0)
-
-                if vkpi is not None:
-                    unit_clean = unit.strip()
-                    kpi_str = f"{vkpi} {unit_clean}" if unit_clean else f"{vkpi}"
-                else:
-                    kpi_str = "N/A"
-                return f"{label}: {kpi_str}, score: {round(float(score), 2)}, poids relatif: {weight}%"
-            # For non-agent visibility (like UI/PDF), fall through to normal recursion
-
-        # 3. Special Case: AssociationDetail (Compact representation for agents)
-        if model.__class__.__name__ == "AssociationDetail":
-            if visibility_key.startswith("agent_"):
-                asso_id = getattr(model, "id", "")
-                name = getattr(model, "name", "")
-                desc = getattr(model, "description", "") or ""
-                return f"{asso_id} | {name} | {desc}"
-            # For non-agent visibility, fall through to normal recursion
-
-        # 3b. Special Case: InclusionServiceDetail (Compact representation for agents)
-        if model.__class__.__name__ == "InclusionServiceDetail":
-            if visibility_key.startswith("agent_"):
-                srv_id = getattr(model, "id", "")
-                name = getattr(model, "name", "")
-                struct = getattr(model, "nom_structure", "") or ""
-                struct_part = f" par {struct}" if struct else ""
-                dist = getattr(model, "distance_km", None)
-                commune = getattr(model, "commune_nom", "") or ""
-                if dist is not None:
-                    dist_part = (
-                        f" (à {dist} km{f' - {commune}' if commune else ''})"
-                    )
-                else:
-                    dist_part = ""
-                return f"{srv_id} | {name}{struct_part}{dist_part}"
-            # For non-agent visibility, fall through to normal recursion
-
-        # 4. Handle Pydantic BaseModel
         if isinstance(model, BaseModel):
-            ctx = {}
-            for name, field in model.__class__.model_fields.items():
-                extra = field.json_schema_extra
-                if not isinstance(extra, dict):
-                    continue
-
-                visibility = extra.get("odis_visibility", [])
-                if visibility_key not in visibility and "all" not in visibility:
-                    continue
-
-                val = getattr(model, name)
-                label = field.description or name
-
-                if val is None:
-                    continue
-
-                ctx[label] = cls._auto_build_context(val, visibility_key)
-            return ctx
-
-        # 5. Handle List
+            return cls._format_model(model)
         if isinstance(model, list):
             return [cls._auto_build_context(item, visibility_key) for item in model]
-
-        # 6. Handle Dict
         if isinstance(model, dict):
             return {
                 k: cls._auto_build_context(v, visibility_key) for k, v in model.items()
             }
-
         return model
 
     @classmethod
-    def _process_value(cls, val: Any, visibility_key: str) -> Any:
-        """Redirects to _auto_build_context for backward compatibility and testing."""
-        return cls._auto_build_context(val, visibility_key)
+    def _process_value(cls, val: Any, visibility_key: str = "all") -> Any:
+        """Backward-compatible helper redirecting to _format_detail_item."""
+        return cls._format_detail_item(val)

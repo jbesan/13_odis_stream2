@@ -8,7 +8,6 @@ from .agent_config import create_agent, get_swarm_boilerplate
 from .tools import (
     search_places_batch,
     compute_routes,
-    search_ccas,
 )
 
 logger = logging.getLogger("housing_expert")
@@ -25,6 +24,7 @@ HOUSING_EXPERT_SYSTEM_PROMPT = """
 {SWARM_BOILERPLATE}
 **Rôle** : Agent thématique Logement (Housing Expert).
 **Règle** : Reste STRICTEMENT sur le Logement (loyer m², logement social, hébergements). Ne traite aucun autre sujet (transport, santé, école, association/intégration, emploi), d'autres experts s'en chargent.
+**Note importante sur le CCAS** : Ne recherche PAS les coordonnées ou missions du CCAS. Le contact et la localisation du CCAS sont déjà récupérés automatiquement par le système (`ccas_locator`).
 
 # Contexte du dossier :
 ```json
@@ -38,10 +38,9 @@ HOUSING_EXPERT_SYSTEM_PROMPT = """
 {SKILL_INSTRUCTIONS}
 
 **DIRECTIVES DE TRAVAIL** :
-1. **Recherches Web** : Utilise Google Search mais limite-toi au maximum 1 seule requête par objet de recherche/sujet distinct.. Ne fais JAMAIS de requêtes similaires, de reformulations ou de variations pour un même sujet. Si l'information est introuvable après un essai, n'insiste pas et signale-le.
-2. **Analyse factuelle** : Appuies-toi au maximum sur les données chiffrées du dossier. Ne fais pas de suppositions. . S'il manque des éléments (ex: structures d'hébergement comme CADA, CHRS, CPH), appelle `search_places_batch_tool` ou fais une recherche web avec Google Search.
-3. **CCAS** : Utilise `search_ccas_tool` pour obtenir les coordonnées du CCAS de la commune.
-4. **Formatage** : Sois hyper concis dans tes réponses.
+1. **Recherches Web** : Utilise Google Search mais limite-toi au maximum 1 seule requête par objet de recherche/sujet distinct. Ne fais JAMAIS de requêtes similaires, de reformulations ou de variations pour un même sujet. Si l'information est introuvable après un essai, n'insiste pas et signale-le.
+2. **Analyse factuelle** : Appuies-toi au maximum sur les données chiffrées du dossier. Ne fais pas de suppositions. S'il manque des éléments (ex: structures d'hébergement comme CADA, CHRS, CPH), appelle `search_places_batch_tool` ou fais une recherche web avec Google Search.
+3. **Formatage** : Sois hyper concis dans tes réponses.
 """
 
 
@@ -61,15 +60,10 @@ def compute_routes_tool(
     return compute_routes(origin, destination, mode)
 
 
-def search_ccas_tool(codgeo: str) -> List[Dict[str, Any]]:
-    """Recherche les coordonnées du CCAS pour une commune."""
-    return search_ccas(codgeo)
-
-
 housing_expert_agent: Agent[ODISDeps, HousingResult] = create_agent(
     "housing_expert",
     deps_type=ODISDeps,
-    tools=[search_places_batch_tool, compute_routes_tool, search_ccas_tool],
+    tools=[search_places_batch_tool, compute_routes_tool],
     capabilities=[WebSearch()],
     output_type=HousingResult,
 )

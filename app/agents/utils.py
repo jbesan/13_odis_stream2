@@ -685,7 +685,7 @@ def rehydrate_graph_state(input_data: dict) -> "GraphState":
             else sr_data
         )
 
-    # 3. Focus City
+    # 3. Focus City (Pointer to target city in SearchResultsData)
     fc_data = input_data.get("focus_city")
     fc = None
     if fc_data:

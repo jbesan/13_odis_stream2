@@ -1,5 +1,6 @@
 import string
 from typing import Any, Dict, List, Optional
+import pandas as pd
 import streamlit as st
 import threading
 import logging
@@ -133,7 +134,7 @@ def launch_background_refining(
                 pitches_dict = {
                     "global": sanitize_llm_markdown(response_obj.global_pitch),
                     "pitches": {
-                        p.codgeo: sanitize_llm_markdown(p.pitch)
+                        str(p.codgeo).strip(): sanitize_llm_markdown(p.pitch)
                         for p in response_obj.pitches_per_city
                     },
                 }
@@ -494,7 +495,7 @@ def launch_background_inclusion_enrichment(
                     dist_val = item_wrapper.get("distance")
                     if dist_val is None:
                         dist_val = service.get("distance")
-                    if dist_val is not None and dist_val > 10:
+                    if dist_val is not None and dist_val > 5:
                         continue
 
                     # Filter 3: External CCAS exclusion (keep local CCAS, CIAS, and other structures)
