@@ -7,9 +7,12 @@ from ui import feedback
 @pytest.fixture
 def mock_session_state():
     """Mock Streamlit session state with support for attribute and item access."""
+    store = {}
     state = MagicMock()
-    # Mock __contains__ so 'in st.session_state' works
-    state.__contains__.side_effect = lambda k: k in state.__dict__
+    state.__contains__.side_effect = lambda k: k in store
+    state.__getitem__.side_effect = lambda k: store[k]
+    state.__setitem__.side_effect = lambda k, v: store.__setitem__(k, v)
+    state.get.side_effect = lambda k, d=None: store.get(k, d)
     return state
 
 
@@ -167,25 +170,74 @@ def test_is_admin_check(monkeypatch):
 
 @patch("services.telemetry.bigquery.Client")
 def test_log_usage_event(mock_client_class):
-    """Test log_usage_event inserts structured rows to BQ."""
+    """Test log_usage_event inserts structured rows to BQ with login_session_id."""
     mock_client = mock_client_class.return_value
     mock_client.project = "test-project"
     mock_client.insert_rows_json.return_value = []
 
+    mock_state = {"login_session_id": "session-abc-123"}
     with patch("streamlit.session_state", MagicMock()) as mock_ss:
         mock_ss.get.side_effect = lambda k, d=None: (
-            "test_user" if k == "username" else ("jaccueille" if k == "org" else d)
+            "test_user"
+            if k == "username"
+            else (
+                "jaccueille"
+                if k == "org"
+                else mock_state.get(k, d)
+            )
+        )
+        mock_ss.__contains__.side_effect = lambda k: k in (
+            "interaction_id",
+            "username",
+            "login_session_id",
         )
         mock_ss.interaction_id = "test-id"
-        mock_ss.__contains__.side_effect = lambda k: k in ("interaction_id", "username")
 
-        with patch("os.getenv", return_value="test-project"):
+        with patch("os.getenv", return_value="test-project"), patch(
+            "utils.auth.get_login_session_id", return_value="session-abc-123"
+        ):
             telemetry.log_usage_event("click_button", {"button": "en_savoir_plus"})
             assert mock_client.insert_rows_json.called
             args, _ = mock_client.insert_rows_json.call_args
             row = args[1][0]
             assert row["event_name"] == "click_button"
+            assert row["login_session_id"] == "session-abc-123"
             assert "en_savoir_plus" in row["payload"]
+
+
+def test_capture_usage_defensive():
+    """Test capture_usage handles None tokens, callable usage, and model rates gracefully."""
+    from agents.graph import capture_usage
+    from pydantic_ai.usage import RunUsage
+    from unittest.mock import MagicMock
+
+    # 1. Real-like RunUsage object
+    real_run_usage = RunUsage(input_tokens=1000, output_tokens=500)
+    mock_result = MagicMock()
+    mock_result.usage = real_run_usage
+
+    stats = capture_usage(mock_result, "test_node", "google:gemini-3.1-flash-lite")
+    assert stats.total_tokens == 1500
+    assert stats.cost_usd > 0.0
+
+    # 2. None / empty usage
+    mock_result_none = MagicMock()
+    mock_result_none.usage = None
+
+    stats_none = capture_usage(
+        mock_result_none, "test_node", "google:gemini-3.1-flash-lite"
+    )
+    assert stats_none.cost_usd == 0.0
+    assert stats_none.total_tokens == 0
+
+    # 3. Callable usage returning RunUsage
+    mock_callable_result = MagicMock()
+    mock_callable_result.usage = MagicMock(return_value=real_run_usage)
+    stats_callable = capture_usage(
+        mock_callable_result, "test_node", "google:gemini-3.1-flash-lite"
+    )
+    assert stats_callable.total_tokens == 1500
+    assert stats_callable.cost_usd > 0.0
 
 
 def test_log_page_view_deduplication():

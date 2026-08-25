@@ -229,6 +229,7 @@ def check_password() -> bool:
             )
             st.session_state["org"] = org
             st.session_state["username"] = LOCAL_DEV_USERNAME
+        get_login_session_id()
         st.session_state["password_correct"] = True
         st.session_state["auth_method"] = "local"
         return True
@@ -250,6 +251,7 @@ def check_password() -> bool:
         )
         auth_method = st.session_state.get("auth_method")
         if has_complete_identity and auth_method in {"local", "legacy"}:
+            get_login_session_id()
             return True
         if auth_method == "oidc" and not oidc_logged_in:
             _clear_authenticated_context()
@@ -275,6 +277,7 @@ def check_password() -> bool:
         st.session_state["username"] = normalized_email
         st.session_state["user"] = User(username=normalized_email, org_id=org.id)
         st.session_state["org"] = org
+        get_login_session_id()
         return True
 
     # 4. Show login UI (Google OIDC + legacy form)
@@ -330,6 +333,7 @@ def check_password() -> bool:
                         )
                         st.session_state["org"] = org
                         st.session_state["username"] = username
+                        get_login_session_id()
                         st.rerun()
                     else:
                         st.error("❌ Identifiants incorrects.")

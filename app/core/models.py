@@ -855,6 +855,14 @@ class CommuneResult(BaseModel):
         default_factory=dict,
         description="Analyses experts",
     )
+    expert_artifacts: Dict[str, Dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Artefacts experts typés et sérialisés (preuves et lacunes)",
+    )
+    expert_sources: Dict[str, List[Dict[str, Any]]] = Field(
+        default_factory=dict,
+        description="Sources applicatives consultées par fiche expert",
+    )
     odis_synthesis: List[Dict[str, str]] = Field(
         default_factory=list,
         description="List of messages (conversation thread) for the city analysis",

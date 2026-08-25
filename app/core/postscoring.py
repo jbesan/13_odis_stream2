@@ -1013,6 +1013,7 @@ def launch_background_audit_log(
     h: str,
     interaction_id: Optional[str] = None,
     username: Optional[str] = None,
+    org_id: Optional[str] = None,
 ):
     """
     Launches a background thread to log search results to Markdown and Telemetry.
@@ -1046,6 +1047,7 @@ def launch_background_audit_log(
                     source_flow="classic",
                     interaction_id=interaction_id,
                     username=username,
+                    org_id=org_id,
                 )
             except Exception as e:
                 logging.error(
@@ -1166,6 +1168,19 @@ def launch_post_scoring_tasks(engine: Any, config: Any, search_results: Any, h: 
     if h not in store:
         store[h] = {}
 
+    # Capture session metadata FROM THE MAIN THREAD
+    try:
+        from services.telemetry import get_interaction_id
+
+        interaction_id = get_interaction_id()
+        username = st.session_state.get("username", "unknown")
+        org = st.session_state.get("org")
+        org_id = org.id if org and hasattr(org, "id") else "unknown"
+    except:
+        interaction_id = "unknown"
+        username = "unknown"
+        org_id = "unknown"
+
     if cfg.is_ai_free_mode():
         # Compute static pitches for results
         pitches = {}
@@ -1196,22 +1211,19 @@ def launch_post_scoring_tasks(engine: Any, config: Any, search_results: Any, h: 
         ]
         launch_background_inclusion_enrichment(engine, target_codgeos, h, thematique_slugs or None)
         launch_background_job_curation(target_codgeos, config, h, search_results)
-        launch_background_audit_log(config, search_results, h)
+        launch_background_audit_log(
+            config,
+            search_results,
+            h,
+            interaction_id=interaction_id,
+            username=username,
+            org_id=org_id,
+        )
         return
 
     store[h]["status_refiner"] = "running"
 
-    # 1. Capture session metadata FROM THE MAIN THREAD
-    try:
-        from services.telemetry import get_interaction_id
-
-        interaction_id = get_interaction_id()
-        username = st.session_state.get("username", "unknown")
-    except:
-        interaction_id = "unknown"
-        username = "unknown"
-
-    # 2. Extract city data for Scorer Agent (using mode='json' for safe cross-thread serialization)
+    # Extract city data for Scorer Agent (using mode='json' for safe cross-thread serialization)
     top_cities_full = [c.model_dump(mode="json") for c in search_results.results]
     current_geo_full = (
         search_results.current_geo.model_dump(mode="json")
@@ -1252,5 +1264,10 @@ def launch_post_scoring_tasks(engine: Any, config: Any, search_results: Any, h: 
 
     # 5. Launch Logging & Telemetry
     launch_background_audit_log(
-        config, search_results, h, interaction_id=interaction_id, username=username
+        config,
+        search_results,
+        h,
+        interaction_id=interaction_id,
+        username=username,
+        org_id=org_id,
     )

@@ -281,6 +281,14 @@ def _merge_agent_results(final_state_results, codgeo: str, commune: CommuneResul
             if expert_data and isinstance(expert_data, dict):
                 commune.expert_analysis.update(expert_data)
 
+            artifact_data = _get_field(city_data, "expert_artifacts", {})
+            if artifact_data and isinstance(artifact_data, dict):
+                commune.expert_artifacts.update(artifact_data)
+
+            source_data = _get_field(city_data, "expert_sources", {})
+            if source_data and isinstance(source_data, dict):
+                commune.expert_sources.update(source_data)
+
             new_pitch = _get_field(city_data, "refiner_pitch")
             if new_pitch:
                 commune.refiner_pitch = new_pitch
@@ -338,6 +346,8 @@ def polling_synthesis_fragment(
             # the polling state immediately after the rerun.
             commune.odis_synthesis.clear()
             commune.expert_analysis.clear()
+            commune.expert_artifacts.clear()
+            commune.expert_sources.clear()
             launch_background_city_analysis(
                 nom,
                 codgeo,
@@ -807,8 +817,66 @@ def polling_jobs_fragment(commune: CommuneResult, h: Optional[str]):
         st.rerun()
 
 
+def _render_evidence_details(artifact_data: dict[str, Any] | None) -> None:
+    """Render provenance and unresolved gaps without changing the report Markdown."""
+    if not artifact_data:
+        return
+    from core.evidence import DomainArtifact
+
+    try:
+        artifact = DomainArtifact.model_validate(artifact_data)
+    except Exception:
+        return
+    if not artifact.evidence and not artifact.gaps:
+        return
+    with st.expander("Sources et points à vérifier", expanded=False):
+        for record in artifact.evidence:
+            source = record.source_tag
+            if record.source_url:
+                source = f"[{source}]({record.source_url})"
+            st.markdown(f"- {source} — **{record.status}** : {record.summary}")
+        unresolved = [gap for gap in artifact.gaps if gap.status != "resolved"]
+        if unresolved:
+            st.markdown("**Points non résolus**")
+            for gap in unresolved:
+                st.markdown(
+                    f"- {gap.question} — **{gap.status}** : "
+                    f"{gap.impact_if_unresolved}"
+                )
+
+
+def _render_sources_popover(
+    source_data: list[dict[str, Any]] | None,
+    domain: str,
+) -> None:
+    """Render compact, application-owned source provenance beside a fiche."""
+    from agents.source_registry import source_references_for_result
+
+    references = source_data or source_references_for_result(domain, None)
+    with st.popover("ⓘ Sources"):
+        st.caption("Sources utilisées par cette fiche")
+        for reference in references:
+            label = reference.get("label", reference.get("source_key", "Source"))
+            status = reference.get("status", "contexte")
+            note = reference.get("note", "")
+            source_url = reference.get("source_url")
+            if source_url:
+                st.markdown(f"- [{label}]({source_url}) — **{status}**")
+            else:
+                st.markdown(f"- **{label}** — **{status}**")
+            if note:
+                st.caption(note)
+        if not source_data:
+            st.caption(
+                "Historique détaillé des appels indisponible pour cette fiche persistée."
+            )
+
+
 def _render_initial_analysis_report(
-    content: str, expert_analysis: dict[str, str]
+    content: str,
+    expert_analysis: dict[str, str],
+    expert_artifacts: dict[str, dict[str, Any]] | None = None,
+    expert_sources: dict[str, list[dict[str, Any]]] | None = None,
 ) -> None:
     """Renders the initial full analysis report with executive brief, tabs for experts, and CTA at the end."""
     expert_tab_defs = [
@@ -850,7 +918,15 @@ def _render_initial_analysis_report(
         tab_objs = st.tabs([label for label, _ in active_tabs])
         for tab_obj, (_, key) in zip(tab_objs, active_tabs):
             with tab_obj:
-                st.markdown(expert_analysis[key])
+                report_col, source_col = st.columns([0.88, 0.12])
+                with report_col:
+                    st.markdown(expert_analysis[key])
+                with source_col:
+                    _render_sources_popover(
+                        (expert_sources or {}).get(key),
+                        key,
+                    )
+                _render_evidence_details((expert_artifacts or {}).get(key))
 
         # 3. Render Bottom (Gaps, CCAS Contact, Next Steps)
         if bottom_part:
@@ -895,6 +971,8 @@ def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
                 _render_initial_analysis_report(
                     history[0]["content"],
                     getattr(commune, "expert_analysis", {}) or {},
+                    getattr(commune, "expert_artifacts", {}) or {},
+                    getattr(commune, "expert_sources", {}) or {},
                 )
 
             # Render follow-up Q&A messages
@@ -992,11 +1070,10 @@ def render_refiner_panel(commune: CommuneResult, h: Optional[str]) -> bool:
     return False
 
 
-@st.fragment(run_every=3.0)
+@st.fragment(run_every=2.0)
 def polling_refiner_panel(commune: CommuneResult, h: Optional[str]):
-    """Refresh the processing panel once, then stop polling at its final state."""
-    if render_refiner_panel(commune, h):
-        st.rerun()
+    """Refresh the processing panel in-place until final pitch is ready."""
+    render_refiner_panel(commune, h)
 
 
 def sync_background_data(commune: CommuneResult, h: Optional[str]):
@@ -1076,10 +1153,27 @@ def sync_background_data(commune: CommuneResult, h: Optional[str]):
         if isinstance(pitches_data, dict):
             # A. City-specific pitch
             if "pitches" in pitches_data:
-                pitch_for_city = pitches_data["pitches"].get(str(commune.codgeo).strip())
-                if pitch_for_city and not commune.refiner_pitch:
-                    logging.debug(f"✨ [SYNC] Pitch sync for {commune.codgeo}")
-                    commune.refiner_pitch = pitch_for_city
+                city_pitches = pitches_data["pitches"]
+                if isinstance(city_pitches, dict):
+                    cg = str(commune.codgeo).strip()
+                    cname = commune.name.lower().strip() if commune.name else ""
+                    pitch_for_city = (
+                        city_pitches.get(cg)
+                        or city_pitches.get(cg.zfill(5))
+                        or city_pitches.get(cg.lstrip("0"))
+                        or city_pitches.get(cname)
+                        or next(
+                            (
+                                v
+                                for k, v in city_pitches.items()
+                                if k.lower().strip() == cname
+                            ),
+                            None,
+                        )
+                    )
+                    if pitch_for_city and not commune.refiner_pitch:
+                        logging.debug(f"✨ [SYNC] Pitch sync for {commune.codgeo}")
+                        commune.refiner_pitch = pitch_for_city
 
             # B. Global introduction (Global Pitch)
             if "global" in pitches_data and "search_results" in st.session_state:
@@ -1796,15 +1890,17 @@ def display_results_list(display_gdf: Optional[pd.DataFrame] = None) -> None:
 
     is_highlighted, highlighted_rank = st.session_state.highlighted_result
 
-    # Optional enrichment can update the briefing, but never gates exploration.
+    # Hydrate all search results if background data is available
     bg_res = odis_get_bg_result(h) if h else None
-    # Sync global data once (handled in render_global_pitch now, but keeping
-    # this brief sync for safety).
-    if bg_res and "odis_brief" in bg_res and st.session_state.get("config"):
-        brief_val = bg_res["odis_brief"]
-        if brief_val and st.session_state.config.odis_brief != brief_val:
-            st.session_state.config.odis_brief = brief_val
-            st.rerun()
+    if bg_res:
+        for c in search_results.results:
+            sync_background_data(c, h)
+        if search_results.commune_pressentie:
+            sync_background_data(search_results.commune_pressentie, h)
+        if "odis_brief" in bg_res and st.session_state.get("config"):
+            brief_val = bg_res["odis_brief"]
+            if brief_val and st.session_state.config.odis_brief != brief_val:
+                st.session_state.config.odis_brief = brief_val
     # Shortlisted City (Ville Pressentie) Button (Feature F-61)
     if search_results.commune_pressentie:
         st.markdown(

@@ -136,6 +136,8 @@ def _clear_city_ai_analysis(search_results: Any, codgeo: str) -> None:
             if str(city_code) != str(codgeo):
                 continue
             city["expert_analysis"] = {}
+            city["expert_artifacts"] = {}
+            city["expert_sources"] = {}
             city["odis_synthesis"] = []
             return
 
@@ -145,6 +147,16 @@ def _clear_city_ai_analysis(search_results: Any, codgeo: str) -> None:
                 expert_analysis.clear()
             else:
                 setattr(city, "expert_analysis", {})
+            expert_artifacts = getattr(city, "expert_artifacts", None)
+            if isinstance(expert_artifacts, dict):
+                expert_artifacts.clear()
+            else:
+                setattr(city, "expert_artifacts", {})
+            expert_sources = getattr(city, "expert_sources", None)
+            if isinstance(expert_sources, dict):
+                expert_sources.clear()
+            else:
+                setattr(city, "expert_sources", {})
             synthesis = getattr(city, "odis_synthesis", None)
             if isinstance(synthesis, list):
                 synthesis.clear()
@@ -455,6 +467,13 @@ def launch_background_city_analysis(
     except Exception:
         current_username = username or "unknown"
 
+    try:
+        from services.telemetry import get_interaction_id
+
+        current_interaction_id = interaction_id or get_interaction_id()
+    except Exception:
+        current_interaction_id = interaction_id or "unknown"
+
     now = time.time()
     record = GraphRunRecord(
         task_key=task_key,
@@ -490,7 +509,7 @@ def launch_background_city_analysis(
                 "content": f"Fais une analyse complète pour {nom}.",
             }
         ],
-        "interaction_id": interaction_id or "unknown",
+        "interaction_id": str(current_interaction_id),
         "username": str(current_username),
         "organization_id": record["organization_id"],
         "run_id": identity.run_id,

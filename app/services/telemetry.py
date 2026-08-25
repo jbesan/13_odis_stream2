@@ -14,6 +14,7 @@ import os
 from google.cloud import bigquery
 from core.models import SearchCriterias, SearchResultsData
 from typing import Any, Optional
+from utils import auth
 
 # Use root logger for critical visibility in background threads
 logger = logging.getLogger(__name__)
@@ -42,17 +43,42 @@ if not _telemetry_logger.handlers:
     _telemetry_logger.addHandler(handler)
 
 
-def get_interaction_id():
+def get_interaction_id() -> str:
     """Retrieves or generates a unique interaction ID for the current session state."""
-    if "interaction_id" not in st.session_state:
-        st.session_state.interaction_id = str(uuid.uuid4())[:8]
-    return st.session_state.interaction_id
+    val = getattr(st.session_state, "interaction_id", None)
+    if not isinstance(val, str):
+        try:
+            val = st.session_state.get("interaction_id")
+        except Exception:
+            val = None
+
+    if not isinstance(val, str):
+        new_id = str(uuid.uuid4())[:8]
+        try:
+            st.session_state["interaction_id"] = new_id
+        except Exception:
+            pass
+        try:
+            st.session_state.interaction_id = new_id
+        except Exception:
+            pass
+        return new_id
+
+    return str(val)
 
 
-def reset_interaction_id():
+def reset_interaction_id() -> str:
     """Generates a new interaction ID (e.g., on a new search)."""
-    st.session_state.interaction_id = str(uuid.uuid4())[:8]
-    return st.session_state.interaction_id
+    new_id = str(uuid.uuid4())[:8]
+    try:
+        st.session_state["interaction_id"] = new_id
+    except Exception:
+        pass
+    try:
+        st.session_state.interaction_id = new_id
+    except Exception:
+        pass
+    return new_id
 
 
 def log_event(
@@ -111,7 +137,7 @@ def log_usage_event(
             if not org_id:
                 org = st.session_state.get("org")
                 org_id = org.id if org and hasattr(org, "id") else "unknown"
-            login_session_id = st.session_state.get("login_session_id", "unknown")
+            login_session_id = auth.get_login_session_id()
         except:
             username = username or "unknown"
             interaction_id = interaction_id or "unknown"

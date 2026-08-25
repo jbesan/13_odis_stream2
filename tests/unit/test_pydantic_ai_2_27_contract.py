@@ -1,79 +1,10 @@
-from typing import Annotated, Literal, Union
 import asyncio
 import pytest
-from pydantic import BaseModel, Field, JsonValue
 from pydantic_ai import Agent, ModelMessage, ModelResponse, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from agents.agent_config import create_agent
 from agents.graph import capture_usage
-
-
-# --- Representative Domain Contracts from EXPERT_AGENTS_REARCHITECTURE.md ---
-
-
-class Finding(BaseModel):
-    statement: str
-    evidence_ids: list[str] = []
-    status: Literal["observed", "inferred", "uncertain"] = "observed"
-    limitation: str | None = None
-
-
-class EvidenceGap(BaseModel):
-    gap_id: str
-    question: str
-    materiality: Literal["low", "medium", "high"] = "medium"
-    impact_if_unresolved: str
-    status: Literal[
-        "open",
-        "resolved",
-        "empty",
-        "not_found",
-        "partial",
-        "unavailable",
-        "timeout",
-        "conflicting",
-        "out_of_scope",
-    ] = "open"
-
-
-class ToolRequest(BaseModel):
-    request_id: str
-    gap_ids: list[str]
-    tool_id: str
-    arguments: dict[str, JsonValue] = {}
-
-
-class ConditionalWebFallback(BaseModel):
-    gap_ids: list[str]
-    query: str
-    reason: str
-    run_when: set[Literal["not_found", "unavailable"]] = {"not_found", "unavailable"}
-
-
-class ExpertWorkingState(BaseModel):
-    findings: list[Finding] = []
-    gaps: list[EvidenceGap] = []
-
-
-class EvidencePlan(BaseModel):
-    kind: Literal["evidence_plan"] = "evidence_plan"
-    working_state: ExpertWorkingState
-    trusted_requests: list[ToolRequest] = []
-    web_fallbacks: list[ConditionalWebFallback] = []
-
-
-class FinalExpertReport(BaseModel):
-    kind: Literal["final_report"] = "final_report"
-    findings: list[Finding]
-    resolved_gaps: list[EvidenceGap] = []
-    unresolved_gaps: list[EvidenceGap] = []
-    concise_narrative: str
-
-
-ExpertStep = Annotated[
-    Union[FinalExpertReport, EvidencePlan],
-    Field(discriminator="kind"),
-]
+from core.evidence import EvidencePlan, ExpertStep, FinalExpertReport
 
 
 # --- Offline Tests ---
@@ -89,16 +20,14 @@ async def test_discriminated_union_final_report_fast_path():
         )
         args = {
             "kind": "final_report",
-            "findings": [
+            "analysis": [
                 {
-                    "statement": "Le bassin d'emploi est favorable.",
+                    "text": "Le bassin d'emploi est favorable.",
                     "evidence_ids": ["E-criteria-01"],
-                    "status": "observed",
+                    "status": "supported",
                 }
             ],
-            "resolved_gaps": [],
-            "unresolved_gaps": [],
-            "concise_narrative": "Évaluation positive immédiate sans besoin d'outil.",
+            "recommended_actions": [],
         }
         return ModelResponse(parts=[ToolCallPart(result_tool_name, args)])
 
@@ -110,8 +39,8 @@ async def test_discriminated_union_final_report_fast_path():
     result = await agent.run("Analyse le bassin d'emploi.")
     assert isinstance(result.output, FinalExpertReport)
     assert result.output.kind == "final_report"
-    assert len(result.output.findings) == 1
-    assert result.output.findings[0].statement == "Le bassin d'emploi est favorable."
+    assert len(result.output.analysis) == 1
+    assert result.output.analysis[0].text == "Le bassin d'emploi est favorable."
 
 
 @pytest.mark.asyncio
@@ -124,8 +53,7 @@ async def test_discriminated_union_evidence_plan_branch():
             (
                 t.name
                 for t in info.output_tools
-                if "evidenceplan" in t.name.lower()
-                or "evidence_plan" in t.name.lower()
+                if "evidenceplan" in t.name.lower() or "evidence_plan" in t.name.lower()
             ),
             info.output_tools[0].name if info.output_tools else "final_result",
         )
@@ -171,9 +99,7 @@ async def test_discriminated_union_evidence_plan_branch():
     assert result.output.kind == "evidence_plan"
     assert len(result.output.working_state.gaps) == 1
     assert len(result.output.trusted_requests) == 1
-    assert (
-        result.output.trusted_requests[0].tool_id == "search_rna_rag_batch_tool"
-    )
+    assert result.output.trusted_requests[0].tool_id == "search_rna_rag_batch_tool"
 
 
 @pytest.mark.asyncio
@@ -197,10 +123,14 @@ async def test_toolless_planner_has_no_executable_tools():
         )
         args = {
             "kind": "final_report",
-            "findings": [],
-            "resolved_gaps": [],
-            "unresolved_gaps": [],
-            "concise_narrative": "No tools needed.",
+            "analysis": [
+                {
+                    "text": "No tools needed.",
+                    "evidence_ids": ["E-01"],
+                    "status": "supported",
+                }
+            ],
+            "recommended_actions": [],
         }
         return ModelResponse(parts=[ToolCallPart(result_tool, args)])
 

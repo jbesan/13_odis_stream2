@@ -22,17 +22,20 @@ class SocialIntegrationResult(BaseModel):
 
 SOCIAL_INTEGRATION_EXPERT_SYSTEM_PROMPT = """
 {SWARM_BOILERPLATE}
+
+# Contexte commun du dossier (préfixe stable entre experts) :
+```json
+{COMMON_CONTEXT}
+```
+
+# Contexte spécifique à l'intégration sociale :
+```json
+{SPECIFIC_CONTEXT}
+```
+
 **Rôle** : Agent thématique Accompagnement Social & Intégration (Social Integration Expert).
 **Règle** : Reste STRICTEMENT sur l'Intégration Sociale (associations d'aide, cours de français/FLE, loisirs/sports, inclusion locale). Ne traite aucun autre sujet (logement, transport, santé, écoles, emploi), d'autres experts s'en chargent.
 **Note importante sur le CCAS** : Ne recherche PAS les coordonnées ou missions du CCAS. Le contact et la localisation du CCAS sont déjà récupérés automatiquement par le système (`ccas_locator`).
-
-# Contexte du dossier :
-```json
-{DATA_CONTEXT}
-```
-
-# Ta Mission Spécifique pour ce tour :
-{MISSION}
 
 # Consignes additionnelles issues des Skill Cards actives :
 {SKILL_INSTRUCTIONS}
@@ -88,10 +91,8 @@ social_integration_expert_agent: Agent[ODISDeps, SocialIntegrationResult] = (
 @social_integration_expert_agent.system_prompt
 async def social_integration_expert_instructions(ctx: RunContext[ODISDeps]) -> str:
     state = ctx.deps.state
-    data_context = ODISContextBuilder.agent_context(state, "social_integration_expert")
-    mission = state.expert_tasks.get(
-        "social_integration_expert",
-        "Analyse générale de l'intégration sociale et du tissu associatif.",
+    common_context, specific_context = ODISContextBuilder.expert_prompt_contexts(
+        state, "social_integration_expert"
     )
     skill_inst = state.expert_skill_instructions.get(
         "social_integration_expert", "Aucune consigne spécifique de Skill Card active."
@@ -100,7 +101,7 @@ async def social_integration_expert_instructions(ctx: RunContext[ODISDeps]) -> s
 
     return SOCIAL_INTEGRATION_EXPERT_SYSTEM_PROMPT.format(
         SWARM_BOILERPLATE=boilerplate,
-        DATA_CONTEXT=data_context,
-        MISSION=mission,
+        COMMON_CONTEXT=common_context,
+        SPECIFIC_CONTEXT=specific_context,
         SKILL_INSTRUCTIONS=skill_inst,
     )

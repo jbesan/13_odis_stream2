@@ -174,6 +174,7 @@ async def test_graph_end_to_end_with_local_nodes_offline():
 
     with (
         patch("agents.ccas_worker.search_ccas", return_value=[{"nom": "CCAS Local", "codgeo": "17347"}]),
+        patch("agents.graph.bq_logger.log_agent_state_to_bq", return_value=None),
         ts_agent.override(model=FunctionModel(mock_ts_model)),
         housing_expert_agent.override(model=FunctionModel(mock_expert_model)),
         synthesizer_agent.override(model=FunctionModel(mock_synth_model)),

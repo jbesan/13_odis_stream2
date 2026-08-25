@@ -27,7 +27,7 @@ class NodeConfig(BaseModel):
     temperature: float = 0.0
     max_tokens: int | None = None
     thinking: Literal["minimal", "low", "medium", "high"] | bool | None = False
-    timeout: float | None = 120.0
+    timeout: float | None = 60.0
 
     @property
     def model_settings(self) -> ModelSettings:
@@ -223,6 +223,9 @@ def get_swarm_boilerplate(
             "- L'utilisateur final est un **Travailleur Social humain** qui accompagne un bénéficiaire (généralement une personne réfugiée et sa famille) dans sa relocalisation.\n"
             "- Formule tes analyses à partir de tes recherches qualitatives en plus des données quantitatives du dossier joint.\n"
             "- Sois hyper factuel. Si des éléments essentiels sont manquants ou non vérifiables, formalise-les explicitement sous une section titrée '#### ⚠️ Éléments non vérifiés / manquants' (et non comme une simple note de bas de page).\n"
+            "- La mission ciblée arrive dans le message utilisateur final de ce tour : ne la duplique pas dans le contexte système.\n"
+            "- Si plusieurs recherches indépendantes utilisent la même famille d'outil, regroupe-les dans un seul appel batch. Quand plusieurs familles sont nécessaires, demande-les ensemble si possible; ne reformule pas une recherche déjà effectuée.\n"
+            "- Les intitulés internes du contexte (par exemple 'Données logement') ne sont pas des citations et ne doivent pas être transformés en références Markdown.\n"
         )
     elif agent_type == "coordinator":
         return (

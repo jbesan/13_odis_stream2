@@ -103,7 +103,8 @@ This is deliberately **best effort and session-local**: Cloud Run restart or ses
 Expert findings are encapsulated in `AgentArtifact` objects:
 - `domain`: The expert name.
 - `result`: Markdown analysis.
-- `usage`: Token and cost breakdown.
+- `usage`: Token, request, tool-call, and Gemini prompt-cache breakdown.
+- `sources`: Application-owned source references derived from recorded tool calls; the model-authored `searched` field is not treated as a citation ledger.
 
 ---
 
@@ -114,8 +115,18 @@ We use `g.decision().branch()` to route flows based on the return type of the tr
 
 ### 📊 Cumulative Usage & Cost Tracking
 *   Every node execution captures `pydantic-ai` `UsageStats`.
-*   A custom `.merge()` method on `UsageStats` accumulates inputs, outputs, request counts, cost USD, and breakdown mappings.
+*   A custom `.merge()` method on `UsageStats` accumulates inputs, outputs, request counts, tool calls, cache reads/writes, cache-hit ratio, cost USD, and breakdown mappings.
 *   Merged usage is stored in `ctx.state.usage` at every step, ensuring BigQuery logs and token reports are complete.
+
+### 🧱 Legacy expert prompt/cache contract
+The six legacy experts share one prompt layout. The compact, deterministic prefix contains the dossier brief, search criteria, and commune identity. The domain-specific context, role instructions, and Skill Card instructions follow it. The coordinator's mission is sent once as the final user message, and Pydantic AI appends native tool-call/tool-result messages during the ReAct loop. Run IDs and end-user trace identifiers stay in Logfire attributes rather than entering the model prompt.
+
+The graph fan-out remains parallel. Each expert is explicitly instructed to group independent searches per tool family in one batch call, and to request independent tool families together when possible. This reduces ReAct turns without introducing tool-result TTL caching.
+
+The social adaptive pilot is dormant; the active graph always uses the legacy `social_integration_expert` agent. Its isolated evidence package remains available for a later web-child experiment.
+
+### 🧾 End-user source traceability
+Each expert card persists `expert_sources` alongside its Markdown. The UI renders these references in an inline `ⓘ Sources` popover. Dossier context is labelled separately from providers whose tool call was actually recorded. Numeric footnotes and model-generated source labels are not resolved or displayed as citations.
 
 ### 🧪 Integration Testing
 Tested and verified via:

@@ -52,7 +52,10 @@ async def test_direct_answer_bypass(mock_deps):
     usage_mock.requests = 1
     mock_ts_res.usage = MagicMock(return_value=usage_mock)
 
-    with patch.object(ts_agent, "run", new_callable=AsyncMock) as mock_ts_run:
+    with (
+        patch.object(ts_agent, "run", new_callable=AsyncMock) as mock_ts_run,
+        patch("services.bq_logger.log_agent_state_to_bq") as mock_bq_log,
+    ):
         mock_ts_run.return_value = mock_ts_res
 
         final_answer_end = await graph.run(state=mock_deps.state, deps=mock_deps)
@@ -61,6 +64,7 @@ async def test_direct_answer_bypass(mock_deps):
         assert hasattr(final_answer_end, "data")
         assert final_answer_end.data == "Le loyer moyen à Marseille est de 15€/m²."
         assert mock_deps.state.execution_mode == "direct_answer"
+        assert mock_bq_log.called
 
         # Verify odis_synthesis is updated
         city_res = mock_deps.state.search_results.get_by_code("13001")

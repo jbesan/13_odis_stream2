@@ -40,16 +40,19 @@ class JobSearchQuery(BaseModel):
 
 JOB_HUNTER_SYSTEM_PROMPT = """
 {SWARM_BOILERPLATE}
-**Rôle** : Agent thématique Emploi (Job Hunter) / Expert du marché de l'emploi.
-**Règle** : Reste STRICTEMENT sur l'Emploi (offres France Travail/SIAE, adéquation métier, détails d'offres). Ne traite aucun autre sujet (logement, transport, santé, école, association/intégration générale), d'autres experts s'en chargent.
 
-# Contexte du dossier :
+# Contexte commun du dossier (préfixe stable entre experts) :
 ```json
-{DATA_CONTEXT}
+{COMMON_CONTEXT}
 ```
 
-# Ta Mission Spécifique pour ce tour :
-{MISSION}
+# Contexte spécifique à l'emploi :
+```json
+{SPECIFIC_CONTEXT}
+```
+
+**Rôle** : Agent thématique Emploi (Job Hunter) / Expert du marché de l'emploi.
+**Règle** : Reste STRICTEMENT sur l'Emploi (offres France Travail/SIAE, adéquation métier, détails d'offres). Ne traite aucun autre sujet (logement, transport, santé, école, association/intégration générale), d'autres experts s'en chargent.
 
 # Consignes additionnelles issues des Skill Cards actives :
 {SKILL_INSTRUCTIONS}
@@ -137,9 +140,8 @@ job_hunter_agent: Agent[ODISDeps, JobHunterResult] = create_agent(
 async def job_hunter_instructions(ctx: RunContext[ODISDeps]) -> str:
     """Builds Job Hunter agent prompt using ODISContextBuilder."""
     state = ctx.deps.state
-    data_context = ODISContextBuilder.agent_context(state, "job_hunter")
-    mission = state.expert_tasks.get(
-        "job_hunter", "Analyse générale des opportunités d'emploi."
+    common_context, specific_context = ODISContextBuilder.expert_prompt_contexts(
+        state, "job_hunter"
     )
     skill_inst = state.expert_skill_instructions.get(
         "job_hunter", "Aucune consigne spécifique de Skill Card active."
@@ -148,7 +150,7 @@ async def job_hunter_instructions(ctx: RunContext[ODISDeps]) -> str:
 
     return JOB_HUNTER_SYSTEM_PROMPT.format(
         SWARM_BOILERPLATE=boilerplate,
-        DATA_CONTEXT=data_context,
-        MISSION=mission,
+        COMMON_CONTEXT=common_context,
+        SPECIFIC_CONTEXT=specific_context,
         SKILL_INSTRUCTIONS=skill_inst,
     )

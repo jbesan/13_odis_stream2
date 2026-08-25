@@ -5,10 +5,7 @@ from pydantic_ai.capabilities import WebSearch
 from pydantic import BaseModel, Field
 from .state import ODISDeps, ODISContextBuilder
 from .agent_config import create_agent, get_swarm_boilerplate
-from .tools import (
-    search_places_batch,
-    search_rna_rag_batch,
-)
+from .tools import search_places_batch
 
 logger = logging.getLogger("education_expert")
 
@@ -22,16 +19,19 @@ class EducationResult(BaseModel):
 
 EDUCATION_EXPERT_SYSTEM_PROMPT = """
 {SWARM_BOILERPLATE}
-**Rôle** : Agent thématique Éducation (Education Expert).
-**Règle** : Reste STRICTEMENT sur l'Éducation (crèches, écoles, collèges, lycées, modalités scolaires). Ne traite aucun autre sujet (logement, transport, santé, association/intégration, emploi), d'autres experts s'en chargent.
 
-# Contexte du dossier :
+# Contexte commun du dossier (préfixe stable entre experts) :
 ```json
-{DATA_CONTEXT}
+{COMMON_CONTEXT}
 ```
 
-# Ta Mission Spécifique pour ce tour :
-{MISSION}
+# Contexte spécifique à l'éducation :
+```json
+{SPECIFIC_CONTEXT}
+```
+
+**Rôle** : Agent thématique Éducation (Education Expert).
+**Règle** : Reste STRICTEMENT sur l'Éducation (crèches, écoles, collèges, lycées, modalités scolaires). Ne traite aucun autre sujet (logement, transport, santé, association/intégration, emploi), d'autres experts s'en chargent.
 
 # Consignes additionnelles issues des Skill Cards actives :
 {SKILL_INSTRUCTIONS}
@@ -55,27 +55,27 @@ async def search_places_batch_tool(queries: List[str], location: str) -> Dict[st
     return await search_places_batch(queries, location)
 
 
-async def search_rna_rag_batch_tool(
-    queries: List[str], codgeo: str, top_k: int = 10
-) -> List[Dict[str, Any]]:
-    """
-    Recherche sémantique d'associations d'accompagnement scolaire ou de parents d'élèves (RNA).
+# async def search_rna_rag_batch_tool(
+#     queries: List[str], codgeo: str, top_k: int = 10
+# ) -> List[Dict[str, Any]]:
+#     """
+#     Recherche sémantique d'associations d'accompagnement scolaire ou de parents d'élèves (RNA).
 
-    Args:
-        queries: Liste de termes de recherche.
-                 ATTENTION : Ne mets JAMAIS le nom de la ville dans ces requêtes car le filtrage géographique est déjà géré par l'outil via `codgeo`.
-                 Exemple correct : ['cours de langue FLE', 'accompagnement administratif'].
-                 Exemple incorrect : ['FLE Aix-en-Provence'].
-        codgeo: Code INSEE de la commune.
-        top_k: Nombre maximum de résultats.
-    """
-    return await search_rna_rag_batch(queries, codgeo, top_k=top_k)
+#     Args:
+#         queries: Liste de termes de recherche.
+#                  ATTENTION : Ne mets JAMAIS le nom de la ville dans ces requêtes car le filtrage géographique est déjà géré par l'outil via `codgeo`.
+#                  Exemple correct : ['cours de langue FLE', 'accompagnement administratif'].
+#                  Exemple incorrect : ['FLE Aix-en-Provence'].
+#         codgeo: Code INSEE de la commune.
+#         top_k: Nombre maximum de résultats.
+#     """
+#     return await search_rna_rag_batch(queries, codgeo, top_k=top_k)
 
 
 education_expert_agent: Agent[ODISDeps, EducationResult] = create_agent(
     "education_expert",
     deps_type=ODISDeps,
-    tools=[search_places_batch_tool, search_rna_rag_batch_tool],
+    tools=[search_places_batch_tool],
     capabilities=[WebSearch()],
     output_type=EducationResult,
 )
@@ -84,10 +84,8 @@ education_expert_agent: Agent[ODISDeps, EducationResult] = create_agent(
 @education_expert_agent.system_prompt
 async def education_expert_instructions(ctx: RunContext[ODISDeps]) -> str:
     state = ctx.deps.state
-    data_context = ODISContextBuilder.agent_context(state, "education_expert")
-    mission = state.expert_tasks.get(
-        "education_expert",
-        "Analyse générale de l'accès à l'éducation et infrastructures scolaires.",
+    common_context, specific_context = ODISContextBuilder.expert_prompt_contexts(
+        state, "education_expert"
     )
     skill_inst = state.expert_skill_instructions.get(
         "education_expert", "Aucune consigne spécifique de Skill Card active."
@@ -96,7 +94,7 @@ async def education_expert_instructions(ctx: RunContext[ODISDeps]) -> str:
 
     return EDUCATION_EXPERT_SYSTEM_PROMPT.format(
         SWARM_BOILERPLATE=boilerplate,
-        DATA_CONTEXT=data_context,
-        MISSION=mission,
+        COMMON_CONTEXT=common_context,
+        SPECIFIC_CONTEXT=specific_context,
         SKILL_INSTRUCTIONS=skill_inst,
     )

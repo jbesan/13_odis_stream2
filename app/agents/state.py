@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 from google import genai
 from core.models import SearchCriterias, SearchResultsData, CommuneResult, CriteriaItem
+from core.evidence import DomainArtifact as EvidenceDomainArtifact
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +17,11 @@ class UsageStats(BaseModel):
     output_tokens: int = 0
     total_tokens: int = 0
     cost_usd: float = 0.0
+    requests: int = 0
+    tool_calls: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    cache_hit_ratio: float = 0.0
     breakdown: Dict[str, Dict[str, Any]] = Field(
         default_factory=dict
     )  # {node_name: {model_id, in_tokens, out_tokens, cost, ...}}
@@ -35,6 +41,13 @@ class UsageStats(BaseModel):
         self.output_tokens += other.output_tokens
         self.total_tokens += other.total_tokens
         self.cost_usd += other.cost_usd
+        self.requests += other.requests
+        self.tool_calls += other.tool_calls
+        self.cache_read_tokens += other.cache_read_tokens
+        self.cache_write_tokens += other.cache_write_tokens
+        self.cache_hit_ratio = (
+            self.cache_read_tokens / self.input_tokens if self.input_tokens else 0.0
+        )
         if other.breakdown:
             for k, v in other.breakdown.items():
                 self.breakdown[k] = v
@@ -52,9 +65,11 @@ class AgentArtifact:
     domain: str
     result: str  # Markdown formatted string with the result
     usage: UsageStats = field(default_factory=UsageStats)
+    evidence_artifact: EvidenceDomainArtifact | None = None
+    sources: list[dict[str, Any]] = field(default_factory=list)
 
 
-# Polymorphic domain artifact alias (Phase 1)
+# Graph transport alias retained for Phase 1 compatibility.
 DomainArtifact = AgentArtifact
 
 
@@ -128,6 +143,17 @@ class ODISContextBuilder:
 
     All public methods return a JSON string ready to be injected into a prompt.
     """
+
+    DOMAIN_EXPERTS = frozenset(
+        {
+            "job_hunter",
+            "housing_expert",
+            "mobility_expert",
+            "healthcare_expert",
+            "education_expert",
+            "social_integration_expert",
+        }
+    )
 
     @classmethod
     def _format_criteria_value(cls, val: Any) -> Any:
@@ -355,6 +381,82 @@ class ODISContextBuilder:
         return ctx
 
     @classmethod
+    def _focus_city(cls, state: "GraphState") -> CommuneResult | None:
+        """Resolve the complete focus-city record used by expert prompts."""
+        focus_city = None
+        if state.focus_city and state.search_results:
+            focus_city = state.search_results.get_by_code(state.focus_city.codgeo)
+        return focus_city or state.focus_city
+
+    @classmethod
+    def _dump_context(cls, context: Dict[str, Any], *, compact: bool) -> str:
+        """Serialize context deterministically while preserving semantic order."""
+        if compact:
+            return json.dumps(
+                context,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+        return json.dumps(context, ensure_ascii=False, indent=2)
+
+    @classmethod
+    def expert_prompt_contexts(
+        cls, state: "GraphState", agent_name: str
+    ) -> tuple[str, str]:
+        """Return the stable shared prefix and the expert-specific context.
+
+        The shared block is assembled identically for every legacy expert and
+        is serialized compactly so Gemini can recognize the same prompt prefix
+        across the parallel expert runs.  The expert-specific block is kept
+        after it; the current mission remains the final user message and is
+        therefore deliberately absent here.
+        """
+        if agent_name not in cls.DOMAIN_EXPERTS:
+            raise ValueError(f"{agent_name!r} is not a domain expert")
+
+        common: Dict[str, Any] = {}
+        if state.odis_brief:
+            common["Résumé du dossier (Briefing)"] = state.odis_brief
+        if state.search_criteria:
+            common["Critères de recherche"] = cls._format_criteria(
+                state.search_criteria
+            )
+
+        focus_city = cls._focus_city(state)
+        if focus_city:
+            common["Commune analysée (Identité)"] = cls._format_commune_identity(
+                focus_city
+            )
+
+        specific: Dict[str, Any] = {}
+        if focus_city:
+            if agent_name == "education_expert":
+                specific["Données éducation"] = cls._format_model(focus_city.education)
+            elif agent_name == "housing_expert":
+                specific["Données logement"] = cls._format_model(focus_city.housing)
+            elif agent_name == "healthcare_expert":
+                specific["Données santé"] = cls._format_model(focus_city.health)
+            elif agent_name == "mobility_expert":
+                specific["Données mobilité"] = cls._format_model(focus_city.mobility)
+            elif agent_name == "job_hunter":
+                specific["Données emploi et formation"] = cls._format_model(
+                    focus_city.employment
+                )
+            elif agent_name == "social_integration_expert":
+                specific["Données inclusion"] = cls._format_model(focus_city.inclusion)
+                if focus_city.territoire and (
+                    focus_city.territoire.ter_insecurite is not None
+                    or focus_city.territoire.maire_extreme_droite
+                ):
+                    specific["Données territoire (Contexte local)"] = cls._format_model(
+                        focus_city.territoire
+                    )
+
+        return cls._dump_context(common, compact=True), cls._dump_context(
+            specific, compact=True
+        )
+
+    @classmethod
     def agent_context(cls, state: "GraphState", agent_name: str) -> str:
         """
         Assembles the full dynamic context block for a given agent using Object-Level Domain Routing.
@@ -368,6 +470,15 @@ class ODISContextBuilder:
         Returns:
             A formatted JSON string ready to inject into a system prompt.
         """
+        if agent_name in cls.DOMAIN_EXPERTS:
+            common_context, specific_context = cls.expert_prompt_contexts(
+                state, agent_name
+            )
+            common = json.loads(common_context)
+            specific = json.loads(specific_context)
+            common.update(specific)
+            return cls._dump_context(common, compact=False)
+
         criteria = state.search_criteria
         focus_city = None
         if state.focus_city and state.search_results:
