@@ -105,6 +105,7 @@ Expert findings are encapsulated in `AgentArtifact` objects:
 - `result`: Markdown analysis.
 - `usage`: Token, request, tool-call, and Gemini prompt-cache breakdown.
 - `sources`: Application-owned source references derived from recorded tool calls; the model-authored `searched` field is not treated as a citation ledger.
+- `searched`: Reserved for a future judge/audit mode and intentionally omitted from the active legacy output schema; when reintroduced, it must summarize observed tool activity rather than repeat findings.
 
 ---
 
@@ -121,7 +122,7 @@ We use `g.decision().branch()` to route flows based on the return type of the tr
 ### 🧱 Legacy expert prompt/cache contract
 The six legacy experts share one prompt layout. The compact, deterministic prefix contains the dossier brief, search criteria, and commune identity. The domain-specific context, role instructions, and Skill Card instructions follow it. The coordinator's mission is sent once as the final user message, and Pydantic AI appends native tool-call/tool-result messages during the ReAct loop. Run IDs and end-user trace identifiers stay in Logfire attributes rather than entering the model prompt.
 
-The graph fan-out remains parallel. Each expert is explicitly instructed to group independent searches per tool family in one batch call, and to request independent tool families together when possible. This reduces ReAct turns without introducing tool-result TTL caching.
+The graph fan-out remains parallel. Each expert is explicitly instructed to group independent searches per tool family in one batch call, request independent tool families in the same response, avoid dependent follow-up calls, and stop reformulating an already attempted search. The prompt also states the strict five-model-request budget (follow-up requests included) so the expert can reserve a turn for its final answer. This reduces ReAct turns without introducing tool-result TTL caching.
 
 The social adaptive pilot is dormant; the active graph always uses the legacy `social_integration_expert` agent. Its isolated evidence package remains available for a later web-child experiment.
 

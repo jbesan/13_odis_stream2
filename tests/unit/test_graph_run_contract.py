@@ -3,12 +3,16 @@ import threading
 import time
 from unittest.mock import patch
 
+import pytest
+
 from agents.utils import (
     DEFAULT_GRAPH_RUN_TIMEOUT_SECONDS,
     cancel_background_city_analysis,
     get_graph_run_timeout_seconds,
     launch_background_city_analysis,
+    run_logic,
 )
+from agents.state import GraphState
 
 
 def wait_for(predicate, timeout: float = 2.0):
@@ -24,6 +28,49 @@ def test_default_graph_deadline_is_sixty_seconds(monkeypatch):
     monkeypatch.delenv("ODIS_GRAPH_RUN_TIMEOUT_SECONDS", raising=False)
     assert DEFAULT_GRAPH_RUN_TIMEOUT_SECONDS == 60.0
     assert get_graph_run_timeout_seconds() == 60.0
+
+
+@pytest.mark.asyncio
+async def test_run_logic_passes_identity_bearing_span_to_graph():
+    captured = {}
+    span = object()
+
+    class FakeGraph:
+        async def run(self, **kwargs):
+            captured["run_kwargs"] = kwargs
+
+    def fake_span(name, **attributes):
+        captured["span_name"] = name
+        captured["span_attributes"] = attributes
+        return span
+
+    with (
+        patch("agents.utils.rehydrate_graph_state", return_value=GraphState()),
+        patch("agents.utils.logfire.span", side_effect=fake_span),
+        patch("agents.agent_config.get_gemini_client", return_value=object()),
+        patch("agents.graph.create_odis_graph", return_value=FakeGraph()),
+    ):
+        result = await run_logic(
+            {
+                "criteria_hash": "criteria-hash",
+                "interaction_id": "interaction-123",
+                "run_id": "run-123",
+                "run_attempt": 2,
+                "organization_id": "jaccueille",
+                "run_timeout_seconds": 1.0,
+            }
+        )
+
+    assert result["run_id"] == "unknown"
+    assert captured["span_name"] == "ODIS Graph Logic"
+    assert captured["span_attributes"] == {
+        "interaction_id": "interaction-123",
+        "run_id": "run-123",
+        "run_attempt": 2,
+        "organization_id": "jaccueille",
+        "search_hash": "criteria-hash",
+    }
+    assert captured["run_kwargs"]["span"] is span
 
 
 def test_background_run_snapshots_input_and_records_lifecycle_metadata():
@@ -51,6 +98,7 @@ def test_background_run_snapshots_input_and_records_lifecycle_metadata():
             criteria,
             results,
             "criteria-hash",
+            interaction_id="interaction-123",
             username="ts@example.org",
             timeout_seconds=1.0,
         )
@@ -64,6 +112,8 @@ def test_background_run_snapshots_input_and_records_lifecycle_metadata():
         assert record["attempt"] == 1
         assert record["owner_username"] == "ts@example.org"
         assert record["organization_id"] == "jaccueille"
+        assert record["interaction_id"] == "interaction-123"
+        assert seen_inputs[0]["interaction_id"] == "interaction-123"
         assert record["deadline_at"] > record["start_time"]
 
         release.set()

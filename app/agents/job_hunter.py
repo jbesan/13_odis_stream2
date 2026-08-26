@@ -16,7 +16,19 @@ logger = logging.getLogger("job_hunter_agent_v2")
 
 
 class JobHunterResult(BaseModel):
-    searched: str = Field(..., description="Liste des codes ROME et lieux recherchés.")
+    # Champ réservé à un futur mode « juge/audit » (désactivé volontairement).
+    # Il devra être produit uniquement à partir des appels effectivement
+    # observés, et rester distinct de l'analyse finale pour éviter les doublons.
+    #
+    # searched: str = Field(
+    #     ...,
+    #     max_length=300,
+    #     description=(
+    #         "Résumé factuel et très court des recherches exécutées : "
+    #         "outils/thèmes généraux et compteurs uniquement. "
+    #         "Aucun résultat, URL, adresse, citation, note ou Markdown."
+    #     ),
+    # )
     result: str = Field(
         ..., description="Synthèse des offres d'emploi pertinentes trouvées."
     )
@@ -63,9 +75,6 @@ JOB_HUNTER_SYSTEM_PROMPT = """
    - Pour la recherche d'offres France Travail : vérifie TOUJOURS si des offres correspondantes pré-chargées sont disponibles sous `Données emploi et formation`. Si oui, **n'appelle pas** `search_job_offers_batch_tool`, utilise-les directement.
    - Pour obtenir le détail d'une offre (lorsqu'un ID d'offre est demandé ou spécifié dans ta mission) : appelle immédiatement `get_job_details_tool` pour cet ID.
    - Pour les métiers en insertion : utilise `search_inclusion_jobs_batch_tool` si demandé.
-3. **Réponse (STRUCTURED)** : Tu DOIS retourner un objet `JobHunterResult`.
-   - `searched` : Liste concise des codes ROME, localisations ou IDs consultés.
-   - `result` : Ton analyse détaillée des opportunités d'emploi correspondantes ou le détail structuré de l'offre consultée.
 """
 
 

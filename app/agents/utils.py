@@ -52,6 +52,7 @@ class GraphRunRecord:
     focus_city_code: str
     owner_username: str
     organization_id: str
+    interaction_id: str
     started_at: float
     deadline_at: float
     policy_version: str = GRAPH_RUN_POLICY_VERSION
@@ -67,6 +68,7 @@ class GraphRunRecord:
             "focus_city_code": self.focus_city_code,
             "owner_username": self.owner_username,
             "organization_id": self.organization_id,
+            "interaction_id": self.interaction_id,
             "start_time": self.started_at,
             "deadline_at": self.deadline_at,
             "policy_version": self.policy_version,
@@ -468,11 +470,11 @@ def launch_background_city_analysis(
         current_username = username or "unknown"
 
     try:
-        from services.telemetry import get_interaction_id
+        from services.telemetry import resolve_interaction_id
 
-        current_interaction_id = interaction_id or get_interaction_id()
+        current_interaction_id = resolve_interaction_id(interaction_id)
     except Exception:
-        current_interaction_id = interaction_id or "unknown"
+        current_interaction_id = uuid.uuid4().hex[:8]
 
     now = time.time()
     record = GraphRunRecord(
@@ -483,6 +485,7 @@ def launch_background_city_analysis(
         focus_city_code=str(codgeo),
         owner_username=str(current_username),
         organization_id=_owner_organization_id(search_criterias, organization_id),
+        interaction_id=current_interaction_id,
         started_at=now,
         deadline_at=now + timeout_seconds,
     ).as_store_value()
@@ -620,12 +623,12 @@ def run_async_safe(input_data: dict):
     """
     # 1. Harvest Telemetry Metadata (Main Thread)
     try:
-        from services.telemetry import get_interaction_id
+        from services.telemetry import resolve_interaction_id
 
-        interaction_id = get_interaction_id()
+        interaction_id = resolve_interaction_id(input_data.get("interaction_id"))
         username = st.session_state.get("username", "unknown")
     except:
-        interaction_id = "unknown"
+        interaction_id = uuid.uuid4().hex[:8]
         username = "unknown"
 
     # 2. Inject into input_data
@@ -731,14 +734,22 @@ def rehydrate_graph_state(input_data: dict) -> "GraphState":
     )
 
 
-@logfire.instrument("ODIS Graph Logic")
 async def run_logic(input_data: dict):
     """Execute one graph against a detached input snapshot within a deadline."""
-    # Label the trace with metadata if available
+    # Resolve the trace identity before creating the graph-owned span. Passing
+    # the span explicitly to pydantic-graph makes these attributes land on the
+    # actual graph execution span rather than on a wrapper span that may not be
+    # exported with the graph trace.
     h = input_data.get("criteria_hash")
-    iid = input_data.get("interaction_id")
+    try:
+        from services.telemetry import resolve_interaction_id
+
+        iid = resolve_interaction_id(input_data.get("interaction_id"))
+    except Exception:
+        iid = uuid.uuid4().hex[:8]
+    input_data["interaction_id"] = iid
     run_id = input_data.get("run_id", "unknown")
-    run_attempt = input_data.get("run_attempt", 1)
+    run_attempt = int(input_data.get("run_attempt", 1))
     timeout_seconds = input_data.get("run_timeout_seconds")
     if timeout_seconds is None:
         timeout_seconds = get_graph_run_timeout_seconds()
@@ -746,11 +757,22 @@ async def run_logic(input_data: dict):
     if timeout_seconds <= 0:
         raise ValueError("run_timeout_seconds must be positive")
 
+    span_attributes: dict[str, Any] = {
+        "interaction_id": iid,
+        "run_id": str(run_id),
+        "run_attempt": run_attempt,
+    }
+    organization_id = input_data.get("organization_id")
+    if organization_id:
+        span_attributes["organization_id"] = str(organization_id)
+    if h:
+        span_attributes["search_hash"] = str(h)
+
     logfire.info(
         "Processing ODIS Graph Logic for {search_hash}",
         search_hash=h or "unknown",
-        interaction_id=iid or "unknown",
-        run_id=run_id,
+        interaction_id=iid,
+        run_id=str(run_id),
         run_attempt=run_attempt,
     )
 
@@ -772,7 +794,12 @@ async def run_logic(input_data: dict):
     # cancellation event so that a user retry cannot publish a late completion.
     try:
         await asyncio.wait_for(
-            app.run(state=input_state, deps=deps), timeout=timeout_seconds
+            app.run(
+                state=input_state,
+                deps=deps,
+                span=logfire.span("ODIS Graph Logic", **span_attributes),
+            ),
+            timeout=timeout_seconds,
         )
     except asyncio.TimeoutError as exc:
         raise GraphRunTimedOut() from exc

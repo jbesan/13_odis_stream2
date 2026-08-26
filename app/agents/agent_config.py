@@ -8,6 +8,8 @@ from pydantic_ai.models import ModelSettings
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.providers.google_cloud import GoogleCloudProvider
 
+from agents.google_model import GroundingGoogleModel
+
 
 # --- Configuration Models ---
 
@@ -27,7 +29,7 @@ class NodeConfig(BaseModel):
     temperature: float = 0.0
     max_tokens: int | None = None
     thinking: Literal["minimal", "low", "medium", "high"] | bool | None = False
-    timeout: float | None = 60.0
+    timeout: float | None = 30.0
 
     @property
     def model_settings(self) -> ModelSettings:
@@ -175,7 +177,7 @@ def get_p_model(agent_name: str, client: genai.Client | None = None) -> GoogleMo
     except Exception:
         pass
 
-    return GoogleModel(
+    return GroundingGoogleModel(
         model_name,
         provider=provider,
         profile=profile,
@@ -223,9 +225,12 @@ def get_swarm_boilerplate(
             "- L'utilisateur final est un **Travailleur Social humain** qui accompagne un bénéficiaire (généralement une personne réfugiée et sa famille) dans sa relocalisation.\n"
             "- Formule tes analyses à partir de tes recherches qualitatives en plus des données quantitatives du dossier joint.\n"
             "- Sois hyper factuel. Si des éléments essentiels sont manquants ou non vérifiables, formalise-les explicitement sous une section titrée '#### ⚠️ Éléments non vérifiés / manquants' (et non comme une simple note de bas de page).\n"
-            "- La mission ciblée arrive dans le message utilisateur final de ce tour : ne la duplique pas dans le contexte système.\n"
-            "- Si plusieurs recherches indépendantes utilisent la même famille d'outil, regroupe-les dans un seul appel batch. Quand plusieurs familles sont nécessaires, demande-les ensemble si possible; ne reformule pas une recherche déjà effectuée.\n"
-            "- Les intitulés internes du contexte (par exemple 'Données logement') ne sont pas des citations et ne doivent pas être transformés en références Markdown.\n"
+            "**Instructions opérationnelles**:\n"
+            "- Ne recherche jamais une deuxième fois des éléments déjà à ta disposition.\n"
+            "- Priorisation des outils : N'utilise Google Search que lorsque les autres outils n'ont rien donné ou ne sont pas pertinents sur un point essentiel: web search doit être utilisé avec parcimonie.\n"
+            "- Pour un outil donné, regroupe toutes les recherches indépendantes dans un seul appel batch.\n"
+            "- Si plusieurs outils sont indépendants, appelle-les dans la même réponse, sans attendre le premier résultat.\n"
+            "- Budget limité : tu disposes d'au plus 5 requêtes au modèle pour cette mission, appels de suivi compris. Ce budget concerne les tours du modèle, pas le nombre de recherches regroupées dans un batch : planifie dès le premier tour et garde un tour pour la réponse finale.\n"
         )
     elif agent_type == "coordinator":
         return (

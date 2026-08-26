@@ -1,9 +1,10 @@
 """Application-owned source labels for expert traceability.
 
-The legacy experts return free-form Markdown and a model-authored ``searched``
-field.  That field is useful to the model but is not a reliable citation
-ledger.  This module derives the user-facing source list from the tool calls
-recorded by Pydantic AI and from the data already present in the dossier.
+The legacy experts return free-form Markdown.  Their former model-authored
+``searched`` field is intentionally disabled in the active output schema and
+kept as a documented placeholder for a future judge/audit mode.  This module
+derives the user-facing source list from the tool calls recorded by Pydantic AI
+and from the data already present in the dossier.
 """
 
 from __future__ import annotations
@@ -11,10 +12,12 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
+from agents.grounding import extract_web_grounding
+
 
 SOURCE_CATALOG: dict[str, dict[str, Any]] = {
     "dossier": {
-        "label": "Dossier OD&IS — indicateurs territoriaux",
+        "label": "Dossier OD&IS — indicateurs territoriaux (INSEE, DataGouv, etc.)",
         "note": "Brief, critères et indicateurs préchargés dans le dossier.",
         "source_url": None,
     },
@@ -29,7 +32,7 @@ SOURCE_CATALOG: dict[str, dict[str, Any]] = {
         "source_url": "https://api.data.inclusion.gouv.fr",
     },
     "places": {
-        "label": "Google Places — lieux et services",
+        "label": "Google Maps — lieux et services",
         "note": "Recherche de lieux, équipements et structures locales.",
         "source_url": None,
     },
@@ -50,7 +53,7 @@ SOURCE_CATALOG: dict[str, dict[str, Any]] = {
     },
     "web": {
         "label": "Recherche Web Google",
-        "note": "Recherche Web appelée; les références détaillées ne sont pas encore exposées par le chemin legacy.",
+        "note": "Recherche Web Google; les liens affichés proviennent du GroundingMetadata Gemini lorsqu'il est disponible.",
         "source_url": None,
     },
 }
@@ -180,14 +183,58 @@ def source_references_for_result(
     ):
         if source_key in tool_called:
             ordered_keys.append(source_key)
-    return _references_for_keys(ordered_keys, tool_called=tool_called)
+    references = _references_for_keys(ordered_keys, tool_called=tool_called)
+
+    # Gemini native search may return several grounded web chunks for one
+    # search call. Expose those URLs as individual application-owned sources;
+    # never parse URLs from the expert's Markdown answer.
+    if "web" in tool_called:
+        grounding = extract_web_grounding(result)
+        grounded_sources = grounding.get("sources", [])
+        if grounded_sources:
+            expanded: list[dict[str, Any]] = []
+            for reference in references:
+                if reference.get("source_key") != "web":
+                    expanded.append(reference)
+                    continue
+                for source in grounded_sources:
+                    url = source.get("url")
+                    if not isinstance(url, str) or not url:
+                        continue
+                    title = source.get("title") or source.get("domain") or "Source Web Google"
+                    expanded.append(
+                        {
+                            **reference,
+                            "label": title,
+                            "note": "Lien fourni par le GroundingMetadata Gemini.",
+                            "source_url": url,
+                            "grounding_domain": source.get("domain"),
+                            "grounding_queries": grounding.get("queries", []),
+                        }
+                    )
+            references = expanded
+        else:
+            for reference in references:
+                if reference.get("source_key") == "web":
+                    reference["grounding_queries"] = grounding.get("queries", [])
+                    reference["note"] = (
+                        "Recherche Google appelée; Gemini n'a pas exposé de lien "
+                        "GroundingMetadata dans cette réponse."
+                    )
+    return references
 
 
 def source_keys(references: Iterable[dict[str, Any]]) -> list[str]:
     """Extract canonical source keys for compact Logfire attributes."""
 
-    return [
-        str(reference["source_key"])
-        for reference in references
-        if reference.get("source_key")
-    ]
+    keys: list[str] = []
+    seen: set[str] = set()
+    for reference in references:
+        value = reference.get("source_key")
+        if not value:
+            continue
+        key = str(value)
+        if key not in seen:
+            seen.add(key)
+            keys.append(key)
+    return keys

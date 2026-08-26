@@ -20,6 +20,7 @@ from agents.evidence.registry import RegisteredTool, SOCIAL_TOOL_REGISTRY
 from agents.evidence.rendering import render_final_report
 from agents.evidence.web_child import WebChildDeps, provider_sources, web_child_agent
 from agents.state import GraphState, UsageStats
+from agents.usage import capture_usage_stats
 from core.evidence import (
     DomainArtifact,
     EvidencePlan,
@@ -68,40 +69,7 @@ def _cited_dossier_records(
 
 
 def _capture_usage(result: Any, node: str, model_id: str) -> UsageStats:
-    usage = result.usage
-    model_name = model_id.lower()
-    if "3.5-flash-lite" in model_name:
-        rate_in, rate_out = (0.30, 2.50)
-    elif "3.1-flash-lite" in model_name:
-        rate_in, rate_out = (0.25, 1.50)
-    else:
-        rate_in, rate_out = (0.10, 0.40)
-    cost = (usage.input_tokens * rate_in + usage.output_tokens * rate_out) / 1_000_000
-    return UsageStats(
-        input_tokens=usage.input_tokens,
-        output_tokens=usage.output_tokens,
-        total_tokens=usage.total_tokens,
-        cost_usd=cost,
-        cache_read_tokens=getattr(usage, "cache_read_tokens", 0),
-        cache_write_tokens=getattr(usage, "cache_write_tokens", 0),
-        cache_hit_ratio=getattr(usage, "cache_hit_ratio", 0.0),
-        requests=getattr(usage, "requests", 0),
-        tool_calls=getattr(usage, "tool_calls", 0),
-        breakdown={
-            node: {
-                "model": model_id,
-                "input": usage.input_tokens,
-                "output": usage.output_tokens,
-                "total": usage.total_tokens,
-                "cost": cost,
-                "requests": getattr(usage, "requests", 0),
-                "tool_calls": getattr(usage, "tool_calls", 0),
-                "cache_read_tokens": getattr(usage, "cache_read_tokens", 0),
-                "cache_write_tokens": getattr(usage, "cache_write_tokens", 0),
-                "cache_hit_ratio": getattr(usage, "cache_hit_ratio", 0.0),
-            }
-        },
-    )
+    return capture_usage_stats(result, node, model_id)
 
 
 async def _default_web_runner(
@@ -254,7 +222,11 @@ async def run_adaptive_social_expert(
                         EvidenceRecord(
                             evidence_id=f"{state.run_id}:social_integration_expert:web:{index}",
                             gap_ids=fallback.gap_ids,
-                            source_tag="Source Web Vérifiée (URL)",
+                            source_tag=(
+                                f"Source Web Vérifiée — {source.title}"
+                                if source.title
+                                else "Source Web Vérifiée (URL)"
+                            ),
                             trust_tier="discovery",
                             status=bundle.status,
                             summary=bundle.summary,

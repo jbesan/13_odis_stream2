@@ -864,6 +864,12 @@ def _render_sources_popover(
                 st.markdown(f"- [{label}]({source_url}) — **{status}**")
             else:
                 st.markdown(f"- **{label}** — **{status}**")
+            domain_name = reference.get("grounding_domain")
+            if domain_name:
+                st.caption(f"Domaine : {domain_name}")
+            queries = reference.get("grounding_queries") or []
+            if queries:
+                st.caption("Requête Grounding : " + " · ".join(str(q) for q in queries))
             if note:
                 st.caption(note)
         if not source_data:
@@ -894,7 +900,7 @@ def _render_initial_analysis_report(
         if expert_analysis.get(key) and expert_analysis.get(key, "").strip()
     ]
 
-    marker = "## 🧭 Fiches Détaillées des Experts"
+    marker = "# 🔬 Analyses Thématiques Détaillées"
     if active_tabs and marker in content:
         # Split content into top part (Executive Overview + Comparator) and bottom part (Gaps, CCAS, Et ensuite)
         parts = content.split(marker, 1)
@@ -914,7 +920,8 @@ def _render_initial_analysis_report(
             st.markdown(top_part)
 
         # 2. Render Tabs for Domain Experts
-        st.subheader("🧭 Fiches Détaillées des Experts")
+        st.divider()
+        st.header("🔬 Analyses Thématiques Détaillées")
         tab_objs = st.tabs([label for label, _ in active_tabs])
         for tab_obj, (_, key) in zip(tab_objs, active_tabs):
             with tab_obj:

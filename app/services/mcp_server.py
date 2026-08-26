@@ -1,4 +1,5 @@
 from fastmcp import FastMCP
+import logfire
 from typing import Dict, Any, List, Optional, Union
 import asyncio
 import threading
@@ -17,6 +18,7 @@ from services.mcp_inclusion import (
     _search_inclusion_jobs_logic,
     _get_inclusion_job_details_logic,
 )
+from services.ai_pricing import estimate_places_cost_eur
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO)
@@ -538,7 +540,7 @@ def _call_google_v1(
         "X-Goog-FieldMask": field_mask,
     }
     try:
-        response = requests.post(endpoint, json=body, headers=headers)
+        response = requests.post(endpoint, json=body, headers=headers, timeout=(5, 15))
         if response.status_code != 200:
             logger.error(
                 f"❌ [REST] Google V1 call failed ({response.status_code}): {response.text}"
@@ -555,9 +557,12 @@ async def _search_places_logic(queries: List[str], location: str) -> Dict[str, A
     try:
         # Google Places V1 - Text Search (New)
         endpoint = "https://places.googleapis.com/v1/places:searchText"
+        # ``editorialSummary`` is intentionally retained for now: its current
+        # response contract is consumed by the expert and maps to the
+        # Enterprise + Atmosphere Places SKU recorded in the rate card.
         field_mask = "places.displayName,places.types,places.editorialSummary,places.formattedAddress,places.id"
 
-        logger.info(
+        logger.debug(
             f"🚀 [MCP] search_places parallel start: {len(queries)} queries for {location}"
         )
 
@@ -570,7 +575,8 @@ async def _search_places_logic(queries: List[str], location: str) -> Dict[str, A
             # REST call -> wrap in to_thread
             return await asyncio.to_thread(_call_google_v1, endpoint, body, field_mask)
 
-        tasks = [_single_place_search(q) for q in queries[:20]]  # Reasonable limit
+        bounded_queries = queries[:20]
+        tasks = [_single_place_search(q) for q in bounded_queries]
         batch_responses = await asyncio.gather(*tasks)
 
         all_places = []
@@ -596,6 +602,16 @@ async def _search_places_logic(queries: List[str], location: str) -> Dict[str, A
 
         logger.info(
             f"✅ [MCP] search_places (V1) finished. Total results: {len(all_places)}"
+        )
+        logfire.info(
+            "Google Places batch finished",
+            provider="google_places",
+            request_count=len(bounded_queries),
+            returned_places=len(all_places),
+            pricing_sku="Places Text Search Enterprise + Atmosphere",
+            cost_eur=estimate_places_cost_eur(len(bounded_queries)),
+            free_tier_requests=1_000,
+            cost_basis="rate-card estimate; monthly account usage not available",
         )
         return sanitize_for_json({"type": "places", "data": all_places})
     except Exception as e:

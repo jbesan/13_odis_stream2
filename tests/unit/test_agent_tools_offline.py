@@ -80,7 +80,6 @@ async def test_education_agent_tool_calling_offline(mock_deps):
                 info.output_tools[0].name if info.output_tools else "final_result"
             )
             args = {
-                "searched": "Recherche de crèches et écoles",
                 "result": "Analyse: 2 crèches et 3 écoles trouvées.",
             }
             return ModelResponse(parts=[ToolCallPart(result_tool_name, args)])
@@ -99,7 +98,6 @@ async def test_education_agent_tool_calling_offline(mock_deps):
                 ["crèche", "école primaire"], "Saint-Jean-d'Angély, Nouvelle-Aquitaine"
             )
             assert isinstance(result.output, EducationResult)
-            assert result.output.searched == "Recherche de crèches et écoles"
             assert result.output.result == "Analyse: 2 crèches et 3 écoles trouvées."
 
 
@@ -122,7 +120,6 @@ async def test_healthcare_agent_tool_calling_offline(mock_deps):
                 info.output_tools[0].name if info.output_tools else "final_result"
             )
             args = {
-                "searched": "Recherche d'hôpitaux et PMI",
                 "result": "Analyse: 1 hôpital et 1 PMI trouvés.",
             }
             return ModelResponse(parts=[ToolCallPart(result_tool_name, args)])
@@ -141,7 +138,6 @@ async def test_healthcare_agent_tool_calling_offline(mock_deps):
                 ["hôpital", "PMI"], "Saint-Jean-d'Angély, Nouvelle-Aquitaine"
             )
             assert isinstance(result.output, HealthcareResult)
-            assert result.output.searched == "Recherche d'hôpitaux et PMI"
             assert result.output.result == "Analyse: 1 hôpital et 1 PMI trouvés."
 
 
@@ -171,7 +167,6 @@ async def test_housing_agent_tool_calling_offline(mock_deps):
                 info.output_tools[0].name if info.output_tools else "final_result"
             )
             args = {
-                "searched": "Recherche de CADA, CHRS et calcul de trajet vers Niort",
                 "result": "Analyse: structures identifiées et trajet 45min.",
             }
             return ModelResponse(parts=[ToolCallPart(result_tool_name, args)])
@@ -199,10 +194,7 @@ async def test_housing_agent_tool_calling_offline(mock_deps):
                 "Saint-Jean-d'Angély", "Niort", "transit"
             )
             assert isinstance(result.output, HousingResult)
-            assert (
-                result.output.searched
-                == "Recherche de CADA, CHRS et calcul de trajet vers Niort"
-            )
+            assert result.output.result == "Analyse: structures identifiées et trajet 45min."
 
 
 @pytest.mark.asyncio
@@ -225,7 +217,6 @@ async def test_mobility_agent_tool_calling_offline(mock_deps):
                 info.output_tools[0].name if info.output_tools else "final_result"
             )
             args = {
-                "searched": "Calcul d'itinéraire",
                 "result": "Itinéraire trouvé: 1h30 en train.",
             }
             return ModelResponse(parts=[ToolCallPart(result_tool_name, args)])
@@ -242,7 +233,7 @@ async def test_mobility_agent_tool_calling_offline(mock_deps):
                 "Saint-Jean-d'Angély", "Bordeaux", "transit"
             )
             assert isinstance(result.output, MobilityResult)
-            assert result.output.searched == "Calcul d'itinéraire"
+            assert result.output.result == "Itinéraire trouvé: 1h30 en train."
 
 
 @pytest.mark.asyncio
@@ -263,7 +254,6 @@ async def test_job_hunter_agent_tool_calling_offline(mock_deps):
                 info.output_tools[0].name if info.output_tools else "final_result"
             )
             args = {
-                "searched": "Offres mécanicien (I1604) à Saint-Jean-d'Angély",
                 "result": "Analyse: 3 offres trouvées.",
             }
             return ModelResponse(parts=[ToolCallPart(result_tool_name, args)])
@@ -280,10 +270,7 @@ async def test_job_hunter_agent_tool_calling_offline(mock_deps):
 
             mock_jobs.assert_called_once_with([{"location": "17347", "rome": "I1604"}])
             assert isinstance(result.output, JobHunterResult)
-            assert (
-                result.output.searched
-                == "Offres mécanicien (I1604) à Saint-Jean-d'Angély"
-            )
+            assert result.output.result == "Analyse: 3 offres trouvées."
 
 
 @pytest.mark.asyncio
@@ -304,7 +291,6 @@ async def test_social_integration_agent_tool_calling_offline(mock_deps):
                 info.output_tools[0].name if info.output_tools else "final_result"
             )
             args = {
-                "searched": "Recherche associations de français et football",
                 "result": "Analyse: 2 associations trouvées.",
             }
             return ModelResponse(parts=[ToolCallPart(result_tool_name, args)])
@@ -324,7 +310,4 @@ async def test_social_integration_agent_tool_calling_offline(mock_deps):
                 ["cours de français", "football"], "17347", top_k=10
             )
             assert isinstance(result.output, SocialIntegrationResult)
-            assert (
-                result.output.searched
-                == "Recherche associations de français et football"
-            )
+            assert result.output.result == "Analyse: 2 associations trouvées."

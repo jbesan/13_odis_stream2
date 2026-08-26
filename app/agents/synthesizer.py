@@ -19,7 +19,7 @@ class SynthesizerResult(BaseModel):
     """Structured output for the decoupled composite synthesizer."""
 
     avis_global: str = Field(
-        description="Avis Global d'Orientation (150 à 200 mots : adéquation globale entre besoins du bénéficiaire et atouts de la commune, points cardinaux en gras)"
+        description="Avis Global d'Orientation (150 à 200 mots : adéquation globale entre besoins du bénéficiaire et atouts de la commune, points cardinaux en gras, utilise des bullet points)"
     )
     analyse_comparative: str = Field(
         description="Analyse comparative territoriale digérée : un court tableau Markdown des écarts clés (3 à 5 lignes max) suivi d'une phrase de synthèse qualitative / conclusion pour le bénéficiaire, en s'appuyant strictement sur les chiffres fournis sans recalculer."
@@ -52,7 +52,7 @@ SYNTH_SYSTEM_PROMPT_ANALYSIS = """
 {COMPOSITE_CONTEXT}
 
 # Instructions de renseignement des champs structurés :
-1. **avis_global** : Rédige 150 à 200 mots percutants sur l'adéquation globale entre le profil du bénéficiaire et les atouts de {FOCUS_CITY}. Mets en gras les arbitrages majeurs.
+1. **avis_global** : Rédige 150 à 200 mots percutants sur l'adéquation globale entre le profil du bénéficiaire et les atouts de {FOCUS_CITY}. Mets en gras les arbitrages majeurs et utilise des liste à puces.
 2. **analyse_comparative** : Produis une synthèse comparative claire et digérée par rapport à {CURRENT_CITY_NAME} : un court tableau Markdown (3 à 5 critères majeurs : Critère, {FOCUS_CITY}, {CURRENT_CITY_NAME}, Écart relatif) suivi d'une phrase concise sur le gain territorial ou les arbitrages pour le bénéficiaire.
 3. **elements_non_verifies** : Si les experts ont signalé des éléments non vérifiés, données manquantes ou vigilances, regroupe-les ici de manière claire et factuelle (ou laisse à None si aucun manque n'est signalé).
 4. **et_ensuite** : Liste 2 à 3 démarches concrètes et prioritaires pour le travailleur social.

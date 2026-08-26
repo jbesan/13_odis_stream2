@@ -124,9 +124,7 @@ async def test_swarm_and_synthesis_flow(mock_deps):
     usage_mock_ts.requests = 1
     mock_ts_res.usage = MagicMock(return_value=usage_mock_ts)
 
-    housing_out = HousingResult(
-        searched="Recherche loyer", result="Loyer moyen: 15€/m²"
-    )
+    housing_out = HousingResult(result="Loyer moyen: 15€/m²")
     mock_housing_res = MagicMock()
     mock_housing_res.output = housing_out
     usage_mock_house = MagicMock()

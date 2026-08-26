@@ -145,6 +145,8 @@ class GapRecord(FrozenModel):
 class WebSource(FrozenModel):
     title: str | None = None
     url: str
+    domain: str | None = None
+    query: str | None = None
 
 
 class WebEvidenceBundle(FrozenModel):

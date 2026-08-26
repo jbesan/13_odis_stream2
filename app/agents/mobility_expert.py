@@ -14,7 +14,19 @@ logger = logging.getLogger("mobility_expert")
 
 
 class MobilityResult(BaseModel):
-    searched: str = Field(..., description="Résumé des outils et termes recherchés.")
+    # Champ réservé à un futur mode « juge/audit » (désactivé volontairement).
+    # Il devra être produit uniquement à partir des appels effectivement
+    # observés, et rester distinct de l'analyse finale pour éviter les doublons.
+    #
+    # searched: str = Field(
+    #     ...,
+    #     max_length=300,
+    #     description=(
+    #         "Résumé factuel et très court des recherches exécutées : "
+    #         "outils/thèmes généraux et compteurs uniquement. "
+    #         "Aucun résultat, URL, adresse, citation, note ou Markdown."
+    #     ),
+    # )
     result: str = Field(
         ..., description="Analyse détaillée des découvertes sur la mobilité."
     )
@@ -39,11 +51,6 @@ MOBILITY_EXPERT_SYSTEM_PROMPT = """
 # Consignes additionnelles issues des Skill Cards actives :
 {SKILL_INSTRUCTIONS}
 
-**DIRECTIVES DE TRAVAIL** :
-1. **Recherches Web** : Utilise Google Search mais limite-toi au maximum 1 seule requête par objet de recherche/sujet distinct. Ne fais JAMAIS de requêtes similaires, de reformulations ou de variations pour un même sujet. Si l'information est introuvable après un essai, n'insiste pas et signale-le.
-2. **Priorisation des outils** : Utilise en priorité `compute_routes_tool` et `search_places_batch_tool` pour les itinéraires et infrastructures de transport locaux. N'utilise Google Search qu'en dernier recours pour des tarifs ou aides spécifiques.
-3. **Analyse factuelle** : Appuies-toi au maximum sur les données chiffrées du dossier. Ne fais pas de suppositions. 
-4. **Formatage** : Sois hyper concis dans tes réponses.
 """
 
 
@@ -67,7 +74,7 @@ mobility_expert_agent: Agent[ODISDeps, MobilityResult] = create_agent(
     "mobility_expert",
     deps_type=ODISDeps,
     tools=[search_places_batch_tool, compute_routes_tool],
-    capabilities=[WebSearch()],
+    capabilities=[WebSearch(max_uses=1)],
     output_type=MobilityResult,
 )
 

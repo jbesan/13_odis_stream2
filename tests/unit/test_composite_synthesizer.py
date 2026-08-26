@@ -155,7 +155,7 @@ async def test_graph_end_to_end_with_local_nodes_offline():
     def mock_expert_model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         from pydantic_ai import ToolCallPart
         tool_name = info.output_tools[0].name if info.output_tools else "final_result"
-        args = {"searched": "Logement", "result": "Disponibilité confirmée."}
+        args = {"result": "Disponibilité confirmée."}
         return ModelResponse(parts=[ToolCallPart(tool_name, args)])
 
     def mock_synth_model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:

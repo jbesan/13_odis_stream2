@@ -88,11 +88,12 @@ def log_agent_state_to_bq(
                     break
 
         usage = agent_state.get("usage", {})
-        cost = (
-            usage.get("cost_usd", 0.0)
+        usage_value = lambda name, default=0: (
+            usage.get(name, default)
             if isinstance(usage, dict)
-            else getattr(usage, "cost_usd", 0.0)
+            else getattr(usage, name, default)
         )
+        cost_eur = usage_value("cost_eur", 0.0)
 
         # Map new search_results to old columns for BQ schema compatibility
         sr = agent_state.get("search_results")
@@ -123,6 +124,89 @@ def log_agent_state_to_bq(
                     )
                     artifacts_data[r.get("codgeo", "")] = r.get("expert_analysis", {})
 
+        # ``cost_eur`` is the first-class billing field in the migrated
+        # ``agent_state_logs`` schema.  The detailed rate-card and grounding
+        # breakdown remains in the existing JSON ``artifacts`` column.
+        usage_summary = {
+            "cost_eur": float(cost_eur or 0.0),
+            "cost_eur_available": bool(usage_value("eur_priced", True)),
+            "token_cost_eur": float(usage_value("token_cost_eur", 0.0) or 0.0),
+            "input_tokens": int(usage_value("input_tokens", 0) or 0),
+            "input_tokens_new": int(usage_value("input_tokens_new", 0) or 0),
+            "input_tokens_cached": int(
+                usage_value("cache_read_tokens", 0) or 0
+            ),
+            "output_tokens": int(usage_value("output_tokens", 0) or 0),
+            "cache_write_tokens": int(
+                usage_value("cache_write_tokens", 0) or 0
+            ),
+            "cache_hit_ratio": float(
+                usage_value("cache_hit_ratio", 0.0) or 0.0
+            ),
+            "requests": int(usage_value("requests", 0) or 0),
+            "tool_calls": int(usage_value("tool_calls", 0) or 0),
+            "grounding_queries": int(
+                usage_value("grounding_queries", 0) or 0
+            ),
+            "grounding_cost_eur": float(
+                usage_value("grounding_cost_eur", 0.0) or 0.0
+            ),
+            "places_requests": int(usage_value("places_requests", 0) or 0),
+            "places_cost_eur": float(
+                usage_value("places_cost_eur", 0.0) or 0.0
+            ),
+            "unpriced_model_requests": int(
+                usage_value("unpriced_model_requests", 0) or 0
+            ),
+        }
+        breakdown = usage_value("breakdown", {})
+        if isinstance(breakdown, dict):
+            grounding_queries: list[str] = []
+            grounding_sources: list[dict[str, Any]] = []
+            grounding_supports: list[dict[str, Any]] = []
+            google_usage_metadata: list[dict[str, Any]] = []
+            pricing_cards: list[dict[str, Any]] = []
+            seen_urls: set[str] = set()
+            for entry in breakdown.values():
+                if not isinstance(entry, dict):
+                    continue
+                for query in entry.get("grounding_queries", []) or []:
+                    if isinstance(query, str) and query not in grounding_queries:
+                        grounding_queries.append(query)
+                for source in entry.get("grounding_sources", []) or []:
+                    if not isinstance(source, dict):
+                        continue
+                    url = source.get("url")
+                    if isinstance(url, str) and url not in seen_urls:
+                        seen_urls.add(url)
+                        grounding_sources.append(source)
+                for support in entry.get("grounding_supports", []) or []:
+                    if isinstance(support, dict):
+                        grounding_supports.append(support)
+                for usage_metadata in entry.get("google_usage_metadata", []) or []:
+                    if isinstance(usage_metadata, dict):
+                        google_usage_metadata.append(usage_metadata)
+                pricing_card = {
+                    key: entry.get(key)
+                    for key in (
+                        "model_id",
+                        "model_family",
+                        "pricing_status",
+                        "pricing_source",
+                        "rates_per_million",
+                        "skus",
+                    )
+                    if entry.get(key) is not None
+                }
+                if pricing_card:
+                    pricing_cards.append(pricing_card)
+            usage_summary["grounding_query_values"] = grounding_queries
+            usage_summary["grounding_sources"] = grounding_sources
+            usage_summary["grounding_supports"] = grounding_supports
+            usage_summary["google_usage_metadata"] = google_usage_metadata
+            usage_summary["pricing_cards"] = pricing_cards
+        artifacts_data["__usage__"] = usage_summary
+
         row = {
             "interaction_id": interaction_id,
             "timestamp": timestamp_paris,
@@ -142,7 +226,7 @@ def log_agent_state_to_bq(
                 _safe_json_format(artifacts_data), default=str, ensure_ascii=False
             ),
             "execution_mode": str(agent_state.get("execution_mode", "full_analysis")),
-            "cost_usd": float(cost),
+            "cost_eur": float(cost_eur or 0.0),
         }
 
         # Fire to BigQuery

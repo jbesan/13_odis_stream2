@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, ConfigDict, model_validator
 from google import genai
 from core.models import SearchCriterias, SearchResultsData, CommuneResult, CriteriaItem
 from core.evidence import DomainArtifact as EvidenceDomainArtifact
+from services.ai_pricing import estimate_google_grounding_cost_eur, estimate_places_cost_eur
 
 logger = logging.getLogger(__name__)
 
@@ -14,14 +15,23 @@ class UsageStats(BaseModel):
     """Cumulative usage statistics for the graph."""
 
     input_tokens: int = 0
+    input_tokens_new: int = 0
     output_tokens: int = 0
     total_tokens: int = 0
     cost_usd: float = 0.0
+    cost_eur: float = 0.0
+    token_cost_eur: float = 0.0
     requests: int = 0
     tool_calls: int = 0
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
     cache_hit_ratio: float = 0.0
+    grounding_queries: int = 0
+    grounding_cost_eur: float = 0.0
+    places_requests: int = 0
+    places_cost_eur: float = 0.0
+    eur_priced: bool = True
+    unpriced_model_requests: int = 0
     breakdown: Dict[str, Dict[str, Any]] = Field(
         default_factory=dict
     )  # {node_name: {model_id, in_tokens, out_tokens, cost, ...}}
@@ -38,13 +48,35 @@ class UsageStats(BaseModel):
     def merge(self, other: "UsageStats") -> None:
         """Merges other usage statistics into this instance."""
         self.input_tokens += other.input_tokens
+        self.input_tokens_new += other.input_tokens_new or max(
+            other.input_tokens - other.cache_read_tokens, 0
+        )
         self.output_tokens += other.output_tokens
         self.total_tokens += other.total_tokens
         self.cost_usd += other.cost_usd
+        self.token_cost_eur += other.token_cost_eur
         self.requests += other.requests
         self.tool_calls += other.tool_calls
         self.cache_read_tokens += other.cache_read_tokens
         self.cache_write_tokens += other.cache_write_tokens
+        self.grounding_queries += other.grounding_queries
+        self.places_requests += other.places_requests
+        self.eur_priced = self.eur_priced and other.eur_priced
+        self.unpriced_model_requests += other.unpriced_model_requests
+        # Grounding and Places free tiers are aggregate counters. Recalculate
+        # them after merging parallel expert runs instead of charging each
+        # expert as if it owned a separate monthly quota.
+        self.grounding_cost_eur = estimate_google_grounding_cost_eur(
+            self.grounding_queries
+        )
+        self.places_cost_eur = estimate_places_cost_eur(self.places_requests)
+        self.cost_eur = (
+            self.token_cost_eur
+            + self.grounding_cost_eur
+            + self.places_cost_eur
+            if self.eur_priced
+            else 0.0
+        )
         self.cache_hit_ratio = (
             self.cache_read_tokens / self.input_tokens if self.input_tokens else 0.0
         )

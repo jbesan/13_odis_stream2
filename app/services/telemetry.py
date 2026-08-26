@@ -43,16 +43,31 @@ if not _telemetry_logger.handlers:
     _telemetry_logger.addHandler(handler)
 
 
+_INVALID_INTERACTION_IDS = frozenset({"", "unknown", "none", "null"})
+
+
+def normalize_interaction_id(value: Any) -> Optional[str]:
+    """Return a usable interaction ID, rejecting missing-value sentinels."""
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    if not normalized or normalized.casefold() in _INVALID_INTERACTION_IDS:
+        return None
+    return normalized
+
+
 def get_interaction_id() -> str:
     """Retrieves or generates a unique interaction ID for the current session state."""
-    val = getattr(st.session_state, "interaction_id", None)
-    if not isinstance(val, str):
+    val = normalize_interaction_id(
+        getattr(st.session_state, "interaction_id", None)
+    )
+    if val is None:
         try:
-            val = st.session_state.get("interaction_id")
+            val = normalize_interaction_id(st.session_state.get("interaction_id"))
         except Exception:
             val = None
 
-    if not isinstance(val, str):
+    if val is None:
         new_id = str(uuid.uuid4())[:8]
         try:
             st.session_state["interaction_id"] = new_id
@@ -65,6 +80,12 @@ def get_interaction_id() -> str:
         return new_id
 
     return str(val)
+
+
+def resolve_interaction_id(value: Any = None) -> str:
+    """Prefer an explicit ID, otherwise return the current/generated session ID."""
+    explicit = normalize_interaction_id(value)
+    return explicit or get_interaction_id()
 
 
 def reset_interaction_id() -> str:

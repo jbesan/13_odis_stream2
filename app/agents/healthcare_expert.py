@@ -1,7 +1,6 @@
 import logging
 from typing import List, Dict, Any
 from pydantic_ai import Agent, RunContext
-from pydantic_ai.capabilities import WebSearch
 from pydantic import BaseModel, Field
 from .state import ODISDeps, ODISContextBuilder
 from .agent_config import create_agent, get_swarm_boilerplate
@@ -14,7 +13,19 @@ logger = logging.getLogger("healthcare_expert")
 
 
 class HealthcareResult(BaseModel):
-    searched: str = Field(..., description="Résumé des outils et termes recherchés.")
+    # Champ réservé à un futur mode « juge/audit » (désactivé volontairement).
+    # Il devra être produit uniquement à partir des appels effectivement
+    # observés, et rester distinct de l'analyse finale pour éviter les doublons.
+    #
+    # searched: str = Field(
+    #     ...,
+    #     max_length=300,
+    #     description=(
+    #         "Résumé factuel et très court des recherches exécutées : "
+    #         "outils/thèmes généraux et compteurs uniquement. "
+    #         "Aucun résultat, URL, adresse, citation, note ou Markdown."
+    #     ),
+    # )
     result: str = Field(
         ..., description="Analyse détaillée des découvertes sur la santé."
     )
@@ -39,11 +50,6 @@ HEALTHCARE_EXPERT_SYSTEM_PROMPT = """
 # Consignes additionnelles issues des Skill Cards actives :
 {SKILL_INSTRUCTIONS}
 
-**DIRECTIVES DE TRAVAIL** :
-1. **Recherches Web** : Utilise Google Search mais limite-toi au maximum 1 seule requête par objet de recherche/sujet distinct. Ne fais JAMAIS de requêtes similaires, de reformulations ou de variations pour un même sujet. Si l'information est introuvable après un essai, n'insiste pas et signale-le.
-2. **Priorisation des outils** : Utilise en priorité `search_places_batch_tool` (pour PMI, hôpitaux, cabinets) et `search_rna_rag_batch_tool` (pour les associations). N'utilise Google Search qu'en dernier recours pour des structures introuvables.
-3. **Analyse de terrain** : Interroge les données de santé pré-chargées (APL, liste des établissements de santé).
-4. **Formatage** : Sois hyper concis dans tes réponses.
 """
 
 
@@ -77,7 +83,6 @@ healthcare_expert_agent: Agent[ODISDeps, HealthcareResult] = create_agent(
     "healthcare_expert",
     deps_type=ODISDeps,
     tools=[search_places_batch_tool, search_rna_rag_batch_tool],
-    capabilities=[WebSearch()],
     output_type=HealthcareResult,
 )
 

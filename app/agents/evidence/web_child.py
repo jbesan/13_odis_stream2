@@ -1,6 +1,5 @@
 """Isolated Gemini native-search child used only after approved trusted failures."""
 
-import re
 from dataclasses import dataclass
 
 from pydantic_ai import Agent
@@ -8,6 +7,7 @@ from pydantic_ai.capabilities import WebSearch
 from pydantic_ai.output import NativeOutput
 
 from agents.agent_config import create_agent
+from agents.grounding import extract_web_grounding
 from core.evidence import WebEvidenceBundle, WebSource
 
 
@@ -30,13 +30,18 @@ web_child_agent: Agent[WebChildDeps, WebEvidenceBundle] = create_agent(
 
 
 def provider_sources(messages: list[object]) -> list[WebSource]:
-    """Best-effort extraction of provider-returned URLs; never trusts model prose."""
-    found: dict[str, WebSource] = {}
-    for message in messages:
-        for part in getattr(message, "parts", []):
-            if getattr(part, "part_kind", "") != "builtin-tool-return":
-                continue
-            raw = repr((getattr(part, "content", None), getattr(part, "provider_details", None)))
-            for url in re.findall(r"https?://[^\s'\"<>),]+", raw):
-                found[url] = WebSource(url=url)
-    return list(found.values())
+    """Extract provider-grounded URLs; never trusts model prose."""
+
+    grounding = extract_web_grounding(messages)
+    queries = grounding.get("queries", [])
+    query = queries[0] if queries else None
+    return [
+        WebSource(
+            title=source.get("title"),
+            url=source["url"],
+            domain=source.get("domain"),
+            query=query,
+        )
+        for source in grounding.get("sources", [])
+        if isinstance(source.get("url"), str) and source["url"]
+    ]

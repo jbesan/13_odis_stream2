@@ -1,11 +1,20 @@
 import json
 from types import SimpleNamespace
 
+import pytest
 from pydantic_ai import ModelResponse, ToolCallPart
 
 from agents.agent_config import get_swarm_boilerplate
+from agents.education_expert import EducationResult
 from agents.graph import capture_usage
-from agents.social_integration_expert import SOCIAL_INTEGRATION_EXPERT_SYSTEM_PROMPT
+from agents.healthcare_expert import HealthcareResult
+from agents.housing_expert import HousingResult
+from agents.job_hunter import JobHunterResult
+from agents.mobility_expert import MobilityResult
+from agents.social_integration_expert import (
+    SOCIAL_INTEGRATION_EXPERT_SYSTEM_PROMPT,
+    SocialIntegrationResult,
+)
 from agents.source_registry import source_references_for_result
 from agents.state import GraphState, ODISContextBuilder
 from core.models import CommuneResult, SearchCriterias
@@ -42,9 +51,13 @@ def test_expert_context_has_stable_common_prefix_and_no_duplicate_question():
     assert "{MISSION}" not in SOCIAL_INTEGRATION_EXPERT_SYSTEM_PROMPT
     assert "{COMMON_CONTEXT}" in SOCIAL_INTEGRATION_EXPERT_SYSTEM_PROMPT
     assert "{SPECIFIC_CONTEXT}" in SOCIAL_INTEGRATION_EXPERT_SYSTEM_PROMPT
-    assert "regroupe-les dans un seul appel batch" in get_swarm_boilerplate(
-        "expert"
+    expert_boilerplate = get_swarm_boilerplate("expert")
+    assert "regroupe toutes les recherches indépendantes dans un seul appel batch" in (
+        expert_boilerplate
     )
+    assert "appelle-les dans la même réponse" in expert_boilerplate
+    assert "au plus 5 requêtes au modèle" in expert_boilerplate
+    assert "appels de suivi compris" in expert_boilerplate
 
 
 def test_source_ledger_uses_recorded_tool_calls_not_model_searched_text():
@@ -67,6 +80,26 @@ def test_source_ledger_uses_recorded_tool_calls_not_model_searched_text():
     assert by_key["dossier"]["status"] == "contexte"
     assert by_key["rna"]["status"] == "consultée"
     assert "web" not in by_key
+
+
+@pytest.mark.parametrize(
+    "result_type",
+    [
+        EducationResult,
+        HealthcareResult,
+        HousingResult,
+        MobilityResult,
+        JobHunterResult,
+        SocialIntegrationResult,
+    ],
+)
+def test_legacy_expert_output_reserves_searched_for_future_judge(result_type):
+    """The audit field stays documented but is absent from Gemini's schema."""
+    schema = result_type.model_json_schema()
+
+    assert set(schema["properties"]) == {"result"}
+    assert schema["required"] == ["result"]
+    assert not hasattr(result_type(result="Analyse"), "searched")
 
 
 def test_capture_usage_exposes_prompt_cache_metrics():

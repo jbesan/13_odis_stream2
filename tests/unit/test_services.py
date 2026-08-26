@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from unittest.mock import MagicMock, patch
 from services import telemetry, bq_logger
@@ -44,6 +46,23 @@ def test_interaction_id_logic():
         assert val == "test-id"
 
 
+def test_missing_interaction_id_sentinel_is_replaced():
+    with patch("streamlit.session_state", {"interaction_id": "unknown"}):
+        value = telemetry.get_interaction_id()
+
+    assert value != "unknown"
+    assert len(value) == 8
+
+
+def test_resolve_interaction_id_prefers_valid_explicit_value():
+    with patch("services.telemetry.get_interaction_id") as get_current:
+        assert telemetry.resolve_interaction_id(" interaction-123 ") == (
+            "interaction-123"
+        )
+
+    get_current.assert_not_called()
+
+
 @patch("services.bq_logger.bigquery.Client")
 def test_log_agent_state_to_bq(mock_client_class):
     """Test that agent state is correctly formatted for BQ."""
@@ -61,7 +80,7 @@ def test_log_agent_state_to_bq(mock_client_class):
         with patch("os.getenv", return_value="test-project"):
             agent_state = {
                 "messages": [{"role": "user", "content": "hello"}],
-                "usage": {"cost_usd": 0.01},
+                "usage": {"cost_eur": 0.01, "cost_usd": 99.0},
             }
             bq_logger.log_agent_state_to_bq("hello", agent_state)
 
@@ -70,6 +89,12 @@ def test_log_agent_state_to_bq(mock_client_class):
             row = args[1][0]  # client.insert_rows_json(table_ref, [row])
             assert row["username"] == "test_user"
             assert row["last_user_message"] == "hello"
+            assert row["cost_eur"] == 0.01
+            assert "cost_usd" not in row
+            usage_payload = json.loads(row["artifacts"])
+            assert usage_payload["__usage__"]["cost_eur"] == 0.01
+            assert "cost_usd" not in usage_payload["__usage__"]
+            assert "cost_eur" in usage_payload["__usage__"]
 
 
 @patch("ui.feedback.bigquery.Client")
@@ -274,4 +299,3 @@ def test_log_page_view_deduplication():
         assert fake_state.get("previous_page") == "Accueil"
         assert mock_log_usage.called
         assert mock_log_usage.call_args[0][1]["origin"] == "Accueil"
-

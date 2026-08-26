@@ -10,7 +10,7 @@ from pydantic_graph.step import StepContext
 from pydantic_graph.util import TypeExpression
 from pydantic_graph.join import reduce_list_append
 
-from pydantic_ai.usage import UsageLimits, RunUsage
+from pydantic_ai.usage import UsageLimits
 
 from agents.state import (
     ODISDeps,
@@ -32,6 +32,7 @@ from agents.synthesizer import synthesizer_agent
 from agents.comparator import compute_city_comparison
 from agents.ccas_worker import locate_ccas_deterministic
 from agents.source_registry import source_keys, source_references_for_result
+from agents.usage import capture_usage_stats, usage_trace_attributes
 from utils.logger import log_agent_trace
 import services.bq_logger as bq_logger
 from agents.agent_config import get_model, get_p_model, get_model_settings
@@ -54,116 +55,9 @@ def adaptive_expert_enabled(domain: str) -> bool:
 
 
 def capture_usage(result: Any, node_name: str, model_id: str) -> UsageStats:
-    """
-    Captures usage metrics from an agent run result and returns a UsageStats object.
+    """Backward-compatible public wrapper around the shared usage extractor."""
 
-    Args:
-        result: The RunResult from pydantic-ai.
-        node_name: The name of the node where the agent was executed.
-        model_id: The ID of the model used for the execution.
-
-    Returns:
-        A UsageStats object containing tokens, cost, and breakdown.
-    """
-    try:
-        u = getattr(result, "usage", None)
-        if isinstance(u, RunUsage):
-            pass
-        elif callable(u):
-            u = u()
-        if u is None:
-            return UsageStats()
-
-        raw_in = getattr(u, "input_tokens", 0)
-        raw_out = getattr(u, "output_tokens", 0)
-        raw_tot = getattr(u, "total_tokens", 0)
-
-        input_tokens = int(raw_in) if isinstance(raw_in, (int, float)) else 0
-        output_tokens = int(raw_out) if isinstance(raw_out, (int, float)) else 0
-        total_tokens = (
-            int(raw_tot)
-            if isinstance(raw_tot, (int, float))
-            else (input_tokens + output_tokens)
-        )
-
-        m_lower = model_id.lower()
-        if "3.5-flash-lite" in m_lower:
-            rate_in, rate_out = (0.30, 2.50)
-        elif "3.1-flash-lite" in m_lower:
-            rate_in, rate_out = (0.25, 1.50)
-        else:
-            rate_in, rate_out = (0.10, 0.40)
-        cost = (input_tokens * rate_in / 1_000_000) + (
-            output_tokens * rate_out / 1_000_000
-        )
-
-        req_count = (
-            int(getattr(u, "requests", 1))
-            if isinstance(getattr(u, "requests", None), (int, float))
-            else 1
-        )
-        tool_calls = (
-            int(getattr(u, "tool_calls", 0))
-            if isinstance(getattr(u, "tool_calls", None), (int, float))
-            else 0
-        )
-        cache_read = (
-            int(getattr(u, "cache_read_tokens", 0))
-            if isinstance(getattr(u, "cache_read_tokens", None), (int, float))
-            else 0
-        )
-        cache_write = (
-            int(getattr(u, "cache_write_tokens", 0))
-            if isinstance(getattr(u, "cache_write_tokens", None), (int, float))
-            else 0
-        )
-        cache_hit = (
-            float(getattr(u, "cache_hit_ratio", 0.0))
-            if isinstance(getattr(u, "cache_hit_ratio", None), (int, float))
-            else 0.0
-        )
-
-        logger.info(
-            "📊 [USAGE] %s: %s t ($%.4f) over %s requests; "
-            "tool_calls=%s cache_read=%s cache_write=%s cache_hit_ratio=%.3f",
-            node_name,
-            total_tokens,
-            cost,
-            req_count,
-            tool_calls,
-            cache_read,
-            cache_write,
-            cache_hit,
-        )
-
-        breakdown_entry = {
-            "model": model_id,
-            "input": input_tokens,
-            "output": output_tokens,
-            "total": total_tokens,
-            "cost": float(cost),
-            "requests": req_count,
-            "tool_calls": tool_calls,
-            "cache_read_tokens": cache_read,
-            "cache_write_tokens": cache_write,
-            "cache_hit_ratio": cache_hit,
-        }
-
-        return UsageStats(
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            total_tokens=total_tokens,
-            cost_usd=cost,
-            requests=req_count,
-            tool_calls=tool_calls,
-            cache_read_tokens=cache_read,
-            cache_write_tokens=cache_write,
-            cache_hit_ratio=cache_hit,
-            breakdown={node_name: breakdown_entry},
-        )
-    except Exception as e:
-        logger.warning(f"⚠️ [USAGE] capture_usage failed for {node_name}: {e}")
-        return UsageStats()
+    return capture_usage_stats(result, node_name, model_id)
 
 # --- Graph Nodes ---
 @logfire.instrument("Node: triage")
@@ -191,6 +85,13 @@ async def triage_step(
         # Capture usage and merge it
         usage = capture_usage(result, "ts_agent", mod_id)
         ctx.state.usage.merge(usage)
+        logfire.info(
+            "Triage run finished",
+            interaction_id=ctx.state.interaction_id,
+            run_id=ctx.state.run_id,
+            model_id=mod_id,
+            **usage_trace_attributes(result, usage),
+        )
 
         # The validated coordinator plan is the only authority for the route.
         # The launcher has no semantic knowledge of whether a follow-up needs a
@@ -468,6 +369,7 @@ async def expert_worker_step(
             cache_write_tokens=usage.cache_write_tokens,
             cache_hit_ratio=usage.cache_hit_ratio,
             source_keys=source_keys(sources),
+            **usage_trace_attributes(result, usage),
         )
         return AgentArtifact(
             domain=domain,
@@ -540,6 +442,13 @@ async def synthesizer_step(
         # Merge Usage
         usage = capture_usage(result, "synthesizer", mod_id)
         ctx.state.usage.merge(usage)
+        logfire.info(
+            "Synthesizer run finished",
+            interaction_id=ctx.state.interaction_id,
+            run_id=ctx.state.run_id,
+            model_id=mod_id,
+            **usage_trace_attributes(result, usage),
+        )
 
     except Exception as e:
         logger.error(f"❌ [SYNTHESIZER-FAILURE] Agent run failed: {e}", exc_info=True)
@@ -568,6 +477,33 @@ async def synthesizer_step(
             state_dict,
             ctx.state.interaction_id,
             ctx.state.username,
+        )
+        # ``usage_events.payload`` remains a flexible JSON column and mirrors
+        # the EUR rate-card breakdown stored in ``agent_state_logs.cost_eur``.
+        from services.telemetry import log_usage_event
+
+        await asyncio.to_thread(
+            log_usage_event,
+            "ai_run_usage",
+            {
+                "cost_eur": ctx.state.usage.cost_eur,
+                "cost_eur_available": ctx.state.usage.eur_priced,
+                "token_cost_eur": ctx.state.usage.token_cost_eur,
+                "input_tokens": ctx.state.usage.input_tokens,
+                "input_tokens_new": ctx.state.usage.input_tokens_new,
+                "input_tokens_cached": ctx.state.usage.cache_read_tokens,
+                "output_tokens": ctx.state.usage.output_tokens,
+                "cache_hit_ratio": ctx.state.usage.cache_hit_ratio,
+                "grounding_queries": ctx.state.usage.grounding_queries,
+                "grounding_cost_eur": ctx.state.usage.grounding_cost_eur,
+                "places_requests": ctx.state.usage.places_requests,
+                "places_cost_eur": ctx.state.usage.places_cost_eur,
+                "unpriced_model_requests": ctx.state.usage.unpriced_model_requests,
+                "cost_basis": "EUR rate-card estimate; free-tier/account aggregation may differ from invoice",
+            },
+            ctx.state.interaction_id,
+            ctx.state.username,
+            ctx.state.organization_id,
         )
     except Exception as e:
         logger.warning(f"⚠️ [BQ-LOG] Synthesis logging failed: {e}")
@@ -622,7 +558,7 @@ async def synthesizer_step(
                     expert_sections.append(f"### {domain_label}\n\n{content.strip()}")
 
         if expert_sections:
-            report_sections.append("## 🧭 Fiches Détaillées des Experts\n\n" + "\n\n---\n\n".join(expert_sections))
+            report_sections.append("# 🔬 Analyses Thématiques Détaillées\n\n" + "\n\n---\n\n".join(expert_sections))
 
         # 4. Unverified elements / gaps as a proper section (Requirement 4)
         if elements_non_verifies:
