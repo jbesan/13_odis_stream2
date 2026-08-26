@@ -42,7 +42,7 @@ def locate_ccas_deterministic(focus_city: Optional[CommuneResult]) -> AgentArtif
         logger.warning(f"⚠️ [CCAS-LOCATOR] Error querying CCAS for {codgeo}: {e}")
         return AgentArtifact(
             domain="ccas_locator",
-            result=f"### 🏛️ Contact du CCAS de {focus_name}\n\n*Information CCAS temporairement indisponible.*",
+            result=f"# 🏛️ Contact du CCAS de {focus_name}\n\n*Information CCAS temporairement indisponible.*",
             usage=UsageStats(),
         )
 
@@ -50,7 +50,7 @@ def locate_ccas_deterministic(focus_city: Optional[CommuneResult]) -> AgentArtif
         return AgentArtifact(
             domain="ccas_locator",
             result=(
-                f"### 🏛️ Contact du CCAS de {focus_name}\n\n"
+                f"# 🏛️ Contact du CCAS de {focus_name}\n\n"
                 f"*Aucun CCAS n'est référencé pour la ville visée ni dans son bassin de vie immédiat.*"
             ),
             usage=UsageStats(),
@@ -60,7 +60,7 @@ def locate_ccas_deterministic(focus_city: Optional[CommuneResult]) -> AgentArtif
     direct_matches = [r for r in records if str(r.get("codgeo", "")) == codgeo]
     bv_matches = [r for r in records if str(r.get("codgeo", "")) != codgeo]
 
-    lines = [f"### 🏛️ Contact du CCAS de {focus_name}", ""]
+    lines = [f"# 🏛️ Contact du CCAS de {focus_name}", ""]
 
     if direct_matches:
         for r in direct_matches:
