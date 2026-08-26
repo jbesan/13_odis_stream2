@@ -421,15 +421,6 @@ def _should_poll_enrichment(h: Optional[str], status_key: str, codgeo: str) -> b
     return status is None or status == EnrichmentStatus.PENDING.value
 
 
-def _should_poll_refiner(h: Optional[str]) -> bool:
-    """Poll only while the optional refiner has no terminal outcome."""
-    if st.session_state.get("immutable_shared_snapshot"):
-        return False
-    bg_res = odis_get_bg_result(h) if h else None
-    status = bg_res.get("status_refiner") if isinstance(bg_res, dict) else None
-    return not is_terminal_refiner_status(status)
-
-
 def _is_postscoring_ready_for_city(commune: CommuneResult, h: Optional[str]) -> bool:
     """Return True if all background post-scoring tasks for this commune have reached a terminal state."""
     if st.session_state.get("immutable_shared_snapshot"):
@@ -508,15 +499,9 @@ def _is_postscoring_ready_for_city(commune: CommuneResult, h: Optional[str]) -> 
     return True
 
 
-def _should_poll_ai_button(commune: CommuneResult, h: Optional[str]) -> bool:
-    """Poll only while background post-scoring tasks for this commune are non-terminal."""
-    if st.session_state.get("immutable_shared_snapshot"):
-        return False
-    return not _is_postscoring_ready_for_city(commune, h)
-
-
+@st.fragment(run_every=2.0)
 def render_ai_trigger_button(commune: CommuneResult, h: Optional[str]) -> bool:
-    """Renders the AI Analysis trigger button with up-to-date state."""
+    """Renders the AI Analysis trigger button with up-to-date state in-place."""
     ready = _is_postscoring_ready_for_city(commune, h)
     immutable_snapshot = bool(st.session_state.get("immutable_shared_snapshot"))
 
@@ -541,12 +526,6 @@ def render_ai_trigger_button(commune: CommuneResult, h: Optional[str]) -> bool:
         st.rerun()
 
     return ready
-
-
-@st.fragment(run_every=2.0)
-def polling_ai_trigger_button(commune: CommuneResult, h: Optional[str]) -> None:
-    """Refresh the AI trigger button in-place every 2s until background tasks complete."""
-    render_ai_trigger_button(commune, h)
 
 
 def render_associations_enrichment(commune: CommuneResult, h: Optional[str]):
@@ -1162,6 +1141,7 @@ def show_ia_analysis_dialog(index: Any):
     ia_analysis_content(nom, codgeo, search_criterias)
 
 
+@st.fragment(run_every=2.0)
 def render_refiner_panel(commune: CommuneResult, h: Optional[str]) -> bool:
     """Render one stable refiner-panel state and return whether it is final.
 
@@ -1195,12 +1175,6 @@ def render_refiner_panel(commune: CommuneResult, h: Optional[str]) -> bool:
     st.info("Analyse des points forts en cours...")
     st.caption("La synthèse personnalisée apparaîtra ici lorsqu'elle sera prête.")
     return False
-
-
-@st.fragment(run_every=2.0)
-def polling_refiner_panel(commune: CommuneResult, h: Optional[str]):
-    """Refresh the processing panel in-place until final pitch is ready."""
-    render_refiner_panel(commune, h)
 
 
 def sync_background_data(commune: CommuneResult, h: Optional[str]):
@@ -2106,10 +2080,7 @@ def _display_result_details(commune: CommuneResult) -> None:
         # The narrative stays a processing panel until it reaches one final
         # state (AI result or deterministic fallback). It never replaces text
         # that was already shown as a provisional summary.
-        if _should_poll_refiner(h):
-            polling_refiner_panel(commune, h)
-        else:
-            render_refiner_panel(commune, h)
+        render_refiner_panel(commune, h)
 
         st.space("small")
         c1, c2 = st.columns(2)
@@ -2148,10 +2119,7 @@ def _display_result_details(commune: CommuneResult) -> None:
                 unsafe_allow_html=True,
             )
 
-            if _should_poll_ai_button(commune, h):
-                polling_ai_trigger_button(commune, h)
-            else:
-                render_ai_trigger_button(commune, h)
+            render_ai_trigger_button(commune, h)
 
         # --- Radar Chart with Comparison ---
         st.space("small")
