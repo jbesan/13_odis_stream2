@@ -55,6 +55,7 @@ class GraphRunRecord:
     interaction_id: str
     started_at: float
     deadline_at: float
+    trigger: str = "user_modal"
     policy_version: str = GRAPH_RUN_POLICY_VERSION
 
     def as_store_value(self) -> dict[str, Any]:
@@ -64,6 +65,7 @@ class GraphRunRecord:
             "attempt": self.identity.attempt,
             "task_key": self.task_key,
             "task_type": self.task_type,
+            "trigger": self.trigger,
             "criteria_hash": self.criteria_hash,
             "focus_city_code": self.focus_city_code,
             "owner_username": self.owner_username,
@@ -435,6 +437,7 @@ def launch_background_city_analysis(
     organization_id: Optional[str] = None,
     timeout_seconds: Optional[float] = None,
     retry: bool = False,
+    trigger: str = "user_modal",
 ) -> dict[str, Any]:
     """
     Launch one attempt-safe, bounded background city analysis.
@@ -488,6 +491,7 @@ def launch_background_city_analysis(
         interaction_id=current_interaction_id,
         started_at=now,
         deadline_at=now + timeout_seconds,
+        trigger=str(trigger),
     ).as_store_value()
     cancel_event, _ = _run_control(record)
     store[task_key] = record
@@ -519,6 +523,7 @@ def launch_background_city_analysis(
         "run_attempt": identity.attempt,
         "run_deadline_at": record["deadline_at"],
         "run_timeout_seconds": timeout_seconds,
+        "trigger": str(trigger),
     }
 
     def bg_analysis_task(
@@ -757,10 +762,12 @@ async def run_logic(input_data: dict):
     if timeout_seconds <= 0:
         raise ValueError("run_timeout_seconds must be positive")
 
+    trigger = input_data.get("trigger", "user_modal")
     span_attributes: dict[str, Any] = {
         "interaction_id": iid,
         "run_id": str(run_id),
         "run_attempt": run_attempt,
+        "trigger": str(trigger),
     }
     organization_id = input_data.get("organization_id")
     if organization_id:
@@ -774,6 +781,7 @@ async def run_logic(input_data: dict):
         interaction_id=iid,
         run_id=str(run_id),
         run_attempt=run_attempt,
+        trigger=str(trigger),
     )
 
     from agents.state import ODISDeps

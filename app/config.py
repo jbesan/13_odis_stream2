@@ -477,3 +477,22 @@ def is_ai_free_mode() -> bool:
         pass
 
     return False
+
+
+def is_auto_analyse_top_cities_enabled() -> bool:
+    """Checks if background AI analyses should be automatically triggered for top 5 cities.
+
+    Returns True if ODIS_AUTO_ANALYSE_TOP_CITIES is set to 'true', '1' or 'yes' in environment.
+    Note that this feature is automatically disabled if AI-free mode is active.
+
+    Returns:
+        bool: True if auto analysis of top 5 cities is enabled and AI mode is active.
+    """
+    if is_ai_free_mode():
+        return False
+    return os.environ.get("ODIS_AUTO_ANALYSE_TOP_CITIES", "False").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
+

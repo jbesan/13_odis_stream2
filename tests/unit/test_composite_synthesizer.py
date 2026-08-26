@@ -199,7 +199,7 @@ async def test_graph_end_to_end_with_local_nodes_offline():
         assert "## 🧭 Avis Global d'Orientation pour Saint-Jean-d'Angély" in output
         assert "## ⚖️ Analyse Comparative Territoriale" in output
         assert "Loyer beaucoup plus abordable" in output
-        assert "## 🧭 Fiches Détaillées des Experts" in output
+        assert "# 🔬 Analyses Thématiques Détaillées" in output
         assert "### 🏠 Logement & Hébergement" in output
         assert "## ⚠️ Éléments Non Vérifiés & Vigilances" in output
         assert "Places en crèche à confirmer" in output
@@ -209,7 +209,7 @@ async def test_graph_end_to_end_with_local_nodes_offline():
         # Verify section order: Executive overview < Comparative analysis < Expert fiches < Unverified < CCAS < Next steps
         idx_exec = output.index("## 🧭 Avis Global d'Orientation")
         idx_comp = output.index("## ⚖️ Analyse Comparative Territoriale")
-        idx_experts = output.index("## 🧭 Fiches Détaillées des Experts")
+        idx_experts = output.index("# 🔬 Analyses Thématiques Détaillées")
         idx_unverified = output.index("## ⚠️ Éléments Non Vérifiés & Vigilances")
         idx_ccas = output.index("### 🏛️ Contact du CCAS")
         idx_next_steps = output.index("## ❓ Et ensuite ? (Pistes d'action)")

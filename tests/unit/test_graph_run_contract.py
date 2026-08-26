@@ -69,6 +69,7 @@ async def test_run_logic_passes_identity_bearing_span_to_graph():
         "run_attempt": 2,
         "organization_id": "jaccueille",
         "search_hash": "criteria-hash",
+        "trigger": "user_modal",
     }
     assert captured["run_kwargs"]["span"] is span
 

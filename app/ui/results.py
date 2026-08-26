@@ -20,6 +20,7 @@ from utils.data_loader import fetch_salesforce_jaccueille_bdv
 
 from agents.utils import (
     cancel_background_city_analysis,
+    is_terminal_graph_run_status,
     launch_background_city_analysis,
     odis_get_bg_result,
 )
@@ -427,6 +428,125 @@ def _should_poll_refiner(h: Optional[str]) -> bool:
     bg_res = odis_get_bg_result(h) if h else None
     status = bg_res.get("status_refiner") if isinstance(bg_res, dict) else None
     return not is_terminal_refiner_status(status)
+
+
+def _is_postscoring_ready_for_city(commune: CommuneResult, h: Optional[str]) -> bool:
+    """Return True if all background post-scoring tasks for this commune have reached a terminal state."""
+    if st.session_state.get("immutable_shared_snapshot"):
+        return False
+
+    if getattr(commune, "odis_synthesis", None):
+        return True
+
+    if not h:
+        return True
+
+    bg_res = odis_get_bg_result(h)
+    if not isinstance(bg_res, dict):
+        return False
+
+    # 1. Refiner status (pitches & briefing)
+    refiner_status = bg_res.get("status_refiner")
+    if not is_terminal_refiner_status(refiner_status):
+        return False
+
+    codgeo_str = str(commune.codgeo)
+
+    # 2. Jobs enrichment status
+    if hasattr(commune, "siae_jobs") and getattr(commune, "siae_jobs", None) is not None:
+        jobs_ready = True
+    else:
+        jobs_status = (
+            bg_res.get("jobs_enrichment", {}).get(codgeo_str, {}).get("status")
+        )
+        jobs_ready = is_terminal_enrichment_status(jobs_status)
+    if not jobs_ready:
+        return False
+
+    # 3. Associations enrichment status
+    if (
+        hasattr(commune, "associations_details")
+        and getattr(commune, "associations_details", None) is not None
+    ):
+        assos_ready = True
+    else:
+        assos_status = (
+            bg_res.get("association_enrichment_status", {})
+            .get(codgeo_str, {})
+            .get("status")
+        )
+        assos_ready = is_terminal_enrichment_status(assos_status)
+    if not assos_ready:
+        return False
+
+    # 4. Inclusion services enrichment status
+    if (
+        hasattr(commune, "inclusion")
+        and getattr(commune.inclusion, "services_detailed", None) is not None
+    ):
+        inclusions_ready = True
+    else:
+        inclusion_status = (
+            bg_res.get("inclusion_enrichment_status", {})
+            .get(codgeo_str, {})
+            .get("status")
+        )
+        inclusions_ready = (
+            inclusion_status is None or is_terminal_enrichment_status(inclusion_status)
+        )
+    if not inclusions_ready:
+        return False
+
+    # 5. Automated city analysis status (if enabled)
+    if cfg.is_auto_analyse_top_cities_enabled():
+        auto_run = odis_get_bg_result(f"analysis_{h}_{codgeo_str}")
+        if isinstance(auto_run, dict):
+            auto_status = auto_run.get("status")
+            if not is_terminal_graph_run_status(auto_status):
+                return False
+
+    return True
+
+
+def _should_poll_ai_button(commune: CommuneResult, h: Optional[str]) -> bool:
+    """Poll only while background post-scoring tasks for this commune are non-terminal."""
+    if st.session_state.get("immutable_shared_snapshot"):
+        return False
+    return not _is_postscoring_ready_for_city(commune, h)
+
+
+def render_ai_trigger_button(commune: CommuneResult, h: Optional[str]) -> bool:
+    """Renders the AI Analysis trigger button with up-to-date state."""
+    ready = _is_postscoring_ready_for_city(commune, h)
+    immutable_snapshot = bool(st.session_state.get("immutable_shared_snapshot"))
+
+    if immutable_snapshot:
+        btn_label = "Analyse Avancée (indisponible pour l'instantané)"
+        btn_disabled = True
+    elif not ready:
+        btn_label = "Analyse Avancée (Préparation...)"
+        btn_disabled = True
+    else:
+        btn_label = "Analyse Avancée"
+        btn_disabled = False
+
+    if st.button(
+        btn_label,
+        key=f"btn_ia_comm_{commune.codgeo}",
+        icon=":material/wand_stars:",
+        width="stretch",
+        disabled=btn_disabled,
+    ):
+        st.session_state.active_ia_city_index = commune.codgeo
+        st.rerun()
+
+    return ready
+
+
+@st.fragment(run_every=2.0)
+def polling_ai_trigger_button(commune: CommuneResult, h: Optional[str]) -> None:
+    """Refresh the AI trigger button in-place every 2s until background tasks complete."""
+    render_ai_trigger_button(commune, h)
 
 
 def render_associations_enrichment(commune: CommuneResult, h: Optional[str]):
@@ -2023,74 +2143,15 @@ def _display_result_details(commune: CommuneResult) -> None:
 
         # F-IA: AI Dialog Trigger (Session State based)
         if not cfg.is_ai_free_mode():
-            # col1, col2, col3 = st.columns([1, 2, 1])
-            # with col2:
             st.markdown(
                 '<style> [class*="st-key-btn_ia"] .stButton button { background-color: #F5D819; color: #1B4429; } </style>',
                 unsafe_allow_html=True,
             )
 
-            # Premium Guardrail (F-IA): verify terminal background states rather
-            # than legacy data-key presence. Immutable snapshots never launch new
-            # AI work because that would mutate the saved experience.
-            jobs_ready = False
-            assos_ready = False
-            immutable_snapshot = bool(st.session_state.get("immutable_shared_snapshot"))
-
-            # Model level fallbacks (e.g. for restored shared search snapshots)
-            if (
-                hasattr(commune, "siae_jobs")
-                and getattr(commune, "siae_jobs", None) is not None
-            ):
-                jobs_ready = True
-            if (
-                hasattr(commune, "associations_details")
-                and getattr(commune, "associations_details", None) is not None
-            ):
-                assos_ready = True
-            if getattr(commune, "odis_synthesis", None):
-                jobs_ready = True
-                assos_ready = True
-
-            if h and not (jobs_ready and assos_ready):
-                bg_res = odis_get_bg_result(h)
-                if isinstance(bg_res, dict):
-                    # Check jobs hydration status
-                    jobs_city_data = bg_res.get("jobs_enrichment", {}).get(
-                        str(commune.codgeo)
-                    )
-                    if jobs_city_data and is_terminal_enrichment_status(
-                        jobs_city_data.get("status")
-                    ):
-                        jobs_ready = True
-
-                    # Check associations hydration status
-                    association_status = bg_res.get(
-                        "association_enrichment_status", {}
-                    ).get(str(commune.codgeo), {})
-                    if is_terminal_enrichment_status(association_status.get("status")):
-                        assos_ready = True
-
-            if immutable_snapshot:
-                btn_label = "Analyse Avancée (indisponible pour l'instantané)"
-                btn_disabled = True
-            elif not jobs_ready or not assos_ready:
-                btn_label = "Analyse Avancée (Préparation...)"
-                btn_disabled = True
+            if _should_poll_ai_button(commune, h):
+                polling_ai_trigger_button(commune, h)
             else:
-                btn_label = "Analyse Avancée"
-                btn_disabled = False
-
-            if st.button(
-                btn_label,
-                key=f"btn_ia_comm_{commune.codgeo}",
-                icon=":material/wand_stars:",
-                width="stretch",
-                # type="primary",
-                disabled=btn_disabled,
-            ):
-                st.session_state.active_ia_city_index = commune.codgeo
-                st.rerun()
+                render_ai_trigger_button(commune, h)
 
         # --- Radar Chart with Comparison ---
         st.space("small")

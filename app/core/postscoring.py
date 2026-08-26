@@ -9,7 +9,12 @@ import logfire
 import config as cfg
 from core.enrichment_status import EnrichmentStatus, enrichment_result
 from core.models import CommuneResult
-from agents.utils import get_odis_bg_store, sanitize_llm_markdown, rehydrate_graph_state
+from agents.utils import (
+    get_odis_bg_store,
+    launch_background_city_analysis,
+    rehydrate_graph_state,
+    sanitize_llm_markdown,
+)
 
 logger = logging.getLogger(__name__)
 ENRICHMENT_DEADLINE_SECONDS = 30
@@ -1261,6 +1266,28 @@ def launch_post_scoring_tasks(engine: Any, config: Any, search_results: Any, h: 
 
     # 4b. Launch Employment Enrichment (Detailed Jobs - France Travail)
     launch_background_job_curation(target_codgeos, config, h, search_results)
+
+    # 4c. Launch Automated City Analysis (if enabled)
+    if not cfg.is_ai_free_mode() and cfg.is_auto_analyse_top_cities_enabled():
+        for city in (getattr(search_results, "results", []) or [])[:5]:
+            nom = getattr(city, "name", None) or (
+                city.get("name") if isinstance(city, dict) else ""
+            )
+            codgeo = getattr(city, "codgeo", None) or (
+                city.get("codgeo") if isinstance(city, dict) else ""
+            )
+            if nom and codgeo:
+                launch_background_city_analysis(
+                    nom=nom,
+                    codgeo=str(codgeo),
+                    search_criterias=config,
+                    search_results=search_results,
+                    h=h,
+                    interaction_id=interaction_id,
+                    username=username,
+                    organization_id=org_id,
+                    trigger="post_scoring_auto",
+                )
 
     # 5. Launch Logging & Telemetry
     launch_background_audit_log(
