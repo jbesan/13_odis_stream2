@@ -3,14 +3,17 @@
 The legacy experts return free-form Markdown.  Their former model-authored
 ``searched`` field is intentionally disabled in the active output schema and
 kept as a documented placeholder for a future judge/audit mode.  This module
-derives the user-facing source list from the tool calls recorded by Pydantic AI
-and from the data already present in the dossier.
+derives the user-facing source list from recorded function-tool calls (including
+the direct Gemini web batch) and from the data already present in the dossier.
 """
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable
+from collections.abc import Mapping
 from typing import Any
+from urllib.parse import urlparse
 
 from agents.grounding import extract_web_grounding
 
@@ -53,7 +56,7 @@ SOURCE_CATALOG: dict[str, dict[str, Any]] = {
     },
     "web": {
         "label": "Recherche Web Google",
-        "note": "Recherche Web Google; les liens affichés proviennent du GroundingMetadata Gemini lorsqu'il est disponible.",
+        "note": "Recherche effectuée avec Google ; les pages sources retournées sont affichées ci-dessous lorsqu'elles sont disponibles.",
         "source_url": None,
     },
 }
@@ -89,7 +92,32 @@ TOOL_SOURCE_KEYS: dict[str, str] = {
     "get_inclusion_job_details": "inclusion",
     "search_referentiels_batch_tool": "referentials",
     "search_referentiels_batch": "referentials",
+    "search_web_batch_tool": "web",
+    "web_search_batch": "web",
 }
+
+
+def is_vertex_grounding_redirect(url: str | None) -> bool:
+    """Return whether a URL is a Google/Vertex grounding redirect."""
+
+    if not isinstance(url, str) or not url.strip():
+        return False
+    parsed = urlparse(url)
+    return (
+        parsed.hostname == "vertexaisearch.cloud.google.com"
+        and parsed.path.startswith("/grounding-api-redirect/")
+    )
+
+
+def _messages_from_result(result: Any) -> list[Any]:
+    """Read a result's message history without depending on one result type."""
+
+    if result is None or not hasattr(result, "all_messages"):
+        return []
+    try:
+        return list(result.all_messages())
+    except Exception:
+        return []
 
 
 def _tool_names_from_result(result: Any) -> set[str]:
@@ -101,21 +129,50 @@ def _tool_names_from_result(result: Any) -> set[str]:
     function tool parts.
     """
 
-    if result is None or not hasattr(result, "all_messages"):
-        return set()
-
-    try:
-        messages = result.all_messages()
-    except Exception:
-        return set()
-
     names: set[str] = set()
-    for message in messages:
+    for message in _messages_from_result(result):
         for part in getattr(message, "parts", ()):
             name = getattr(part, "tool_name", None)
             if name:
                 names.add(str(name))
     return names
+
+
+def _web_search_terms_from_result(result: Any) -> list[str]:
+    """Return submitted key terms without presenting them as provider queries."""
+
+    terms: list[str] = []
+    seen: set[str] = set()
+    for message in _messages_from_result(result):
+        for part in getattr(message, "parts", ()):
+            tool_name = str(getattr(part, "tool_name", "") or "")
+            if _source_key_for_tool(tool_name) != "web":
+                continue
+            args: Any = getattr(part, "args", None)
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except (TypeError, ValueError):
+                    args = None
+            if not isinstance(args, Mapping):
+                continue
+            searches = args.get("searches")
+            if not isinstance(searches, list):
+                continue
+            for search in searches:
+                if not isinstance(search, Mapping):
+                    continue
+                key_terms = search.get("key_terms")
+                if not isinstance(key_terms, list):
+                    continue
+                for term in key_terms:
+                    if not isinstance(term, str):
+                        continue
+                    clean_term = term.strip()
+                    if clean_term and clean_term not in seen:
+                        seen.add(clean_term)
+                        terms.append(clean_term)
+    return terms[:32]
 
 
 def _source_key_for_tool(tool_name: str) -> str | None:
@@ -125,7 +182,10 @@ def _source_key_for_tool(tool_name: str) -> str | None:
         return TOOL_SOURCE_KEYS[tool_name]
 
     normalized = tool_name.lower()
-    if any(token in normalized for token in ("google_search", "web_search", "websearch")):
+    if any(
+        token in normalized
+        for token in ("google_search", "web_search", "search_web", "websearch")
+    ):
         return "web"
     return None
 
@@ -159,10 +219,10 @@ def source_references_for_result(
     """Build the source ledger for one expert result.
 
     The dossier entries are always present because they are part of the
-    prompt.  External providers are added only when their tool call appears in
-    the recorded run history.  Passing ``None`` is useful for old persisted
-    results: the UI can still show the prompt-level source context without
-    inventing historical tool calls.
+    prompt.  External providers are added when their tool call or provider
+    grounding metadata appears in the recorded run history.  Passing ``None``
+    is useful for old persisted results: the UI can still show the prompt-level
+    source context without inventing historical tool calls.
     """
 
     tool_names = _tool_names_from_result(result)
@@ -171,6 +231,24 @@ def source_references_for_result(
         for tool_name in tool_names
         if (source_key := _source_key_for_tool(tool_name)) is not None
     }
+    # Provider metadata is an independent evidence of a Google search.  It can
+    # survive even when the native web-search part is absent from the recorded
+    # PydanticAI history, so do not require a tool part before extracting it.
+    grounding = extract_web_grounding(result)
+    submitted_search_terms = _web_search_terms_from_result(result)
+    grounding_confirmed = bool(
+        grounding.get("queries")
+        or grounding.get("sources")
+        or grounding.get("supports")
+    )
+    if (
+        grounding.get("queries")
+        or grounding.get("sources")
+        or grounding.get("supports")
+        or grounding.get("metadata_responses")
+    ):
+        tool_called.add("web")
+
     ordered_keys = list(DOMAIN_CONTEXT_SOURCES.get(domain, ("dossier",)))
     for source_key in (
         "rna",
@@ -185,14 +263,15 @@ def source_references_for_result(
             ordered_keys.append(source_key)
     references = _references_for_keys(ordered_keys, tool_called=tool_called)
 
-    # Gemini native search may return several grounded web chunks for one
-    # search call. Expose those URLs as individual application-owned sources;
-    # never parse URLs from the expert's Markdown answer.
+    # The direct web wrapper (and legacy persisted native-search runs) may
+    # return several grounded web chunks for one search call. Expose those
+    # URLs as individual application-owned sources; never parse URLs from the
+    # expert's Markdown answer.
     if "web" in tool_called:
-        grounding = extract_web_grounding(result)
         grounded_sources = grounding.get("sources", [])
         if grounded_sources:
             expanded: list[dict[str, Any]] = []
+            web_reference_number = 0
             for reference in references:
                 if reference.get("source_key") != "web":
                     expanded.append(reference)
@@ -202,14 +281,19 @@ def source_references_for_result(
                     if not isinstance(url, str) or not url:
                         continue
                     title = source.get("title") or source.get("domain") or "Source Web Google"
+                    web_reference_number += 1
                     expanded.append(
                         {
                             **reference,
+                            "reference_id": f"Ref-{web_reference_number}",
                             "label": title,
-                            "note": "Lien fourni par le GroundingMetadata Gemini.",
+                            "note": "Page source retournée par Google.",
                             "source_url": url,
                             "grounding_domain": source.get("domain"),
                             "grounding_queries": grounding.get("queries", []),
+                            "search_terms": submitted_search_terms,
+                            "grounding_confirmed": True,
+                            "grounding_supports": grounding.get("supports", []),
                         }
                     )
             references = expanded
@@ -217,10 +301,20 @@ def source_references_for_result(
             for reference in references:
                 if reference.get("source_key") == "web":
                     reference["grounding_queries"] = grounding.get("queries", [])
-                    reference["note"] = (
-                        "Recherche Google appelée; Gemini n'a pas exposé de lien "
-                        "GroundingMetadata dans cette réponse."
-                    )
+                    reference["search_terms"] = submitted_search_terms
+                    reference["grounding_confirmed"] = grounding_confirmed
+                    reference["grounding_supports"] = grounding.get("supports", [])
+                    if not grounding_confirmed:
+                        reference["status"] = "non confirmée"
+                        reference["note"] = (
+                            "L'outil a été appelé, mais Google n'a confirmé aucune "
+                            "recherche. Aucun résumé Web n'est retenu comme preuve."
+                        )
+                    else:
+                        reference["note"] = (
+                            "Google a été consulté, mais n'a transmis aucune URL "
+                            "de page source exploitable."
+                        )
     return references
 
 

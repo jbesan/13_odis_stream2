@@ -328,3 +328,15 @@ def test_analyze_trace_counts_application_failure_events() -> None:
 
     assert summary["counts"]["exceptions"] == 1
     assert "report an exception or error" in summary["anomalies"][0]
+
+
+def test_analyze_trace_recognizes_city_suffixed_root_span() -> None:
+    summary = analyze_records(
+        [
+            _record("ODIS Graph Logic - Marseille", 0.0, 3.2),
+            _record("invoke_agent job_hunter", 0.1, 1.0),
+        ]
+    )
+
+    assert summary["time"]["duration_s"] == 3.2
+    assert summary["time"]["observed_window_s"] == 3.2

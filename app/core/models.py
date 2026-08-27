@@ -783,6 +783,123 @@ class TerritoryMetrics(BaseModel):
     )
 
 
+class DomainReport(BaseModel):
+    """Rapport structuré d'un expert thématique (Logement, Mobilité, Santé, etc.)."""
+
+    domain_key: str = Field(
+        description="Identifiant unique de l'expert (ex: housing_expert, mobility_expert)"
+    )
+    label: str = Field(
+        description="Libellé complet de la section (ex: 🏠 Logement & Hébergement)"
+    )
+    short_label: str = Field(
+        description="Libellé court pour l'onglet UI (ex: 🏠 Logement)"
+    )
+    content: str = Field(
+        description="Contenu textuel Markdown de la fiche expert"
+    )
+    sources: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Sources et requêtes de grounding associées",
+    )
+    artifacts: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Artefact de preuves et lacunes typé (DomainArtifact)",
+    )
+
+    model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
+
+
+class CityAnalysisReport(BaseModel):
+    """Rapport d'analyse stratégique complet et structuré d'une commune cible."""
+
+    city_name: str = Field(
+        description="Nom de la commune analysée"
+    )
+    city_code: str = Field(
+        description="Code INSEE (CODGEO) de la commune"
+    )
+    avis_global: str = Field(
+        description="Avis Global d'Orientation stratégique pour la commune"
+    )
+    domains: Dict[str, DomainReport] = Field(
+        default_factory=dict,
+        description="Fiches thématiques structurées indexées par domain_key",
+    )
+    analyse_comparative: Optional[str] = Field(
+        default=None,
+        description="Tableau comparatif territorial digéré et synthèse des écarts",
+    )
+    elements_non_verifies: Optional[str] = Field(
+        default=None,
+        description="Points non vérifiés, données manquantes ou vigilances signalées",
+    )
+    ccas_contact: Optional[str] = Field(
+        default=None,
+        description="Fiche contact déterministe du CCAS communal ou de proximité",
+    )
+    et_ensuite: Optional[str] = Field(
+        default=None,
+        description="Pistes d'action concrètes et prochaines étapes",
+    )
+
+    def to_flat_markdown(self) -> str:
+        """Assemble the complete analysis report in sequential Markdown format.
+
+        Order:
+        1. Avis Global d'Orientation
+        2. Analyses Thématiques Détaillées (fiches experts)
+        3. Analyse Comparative Territoriale
+        4. Éléments Non Vérifiés & Vigilances
+        5. Contact du CCAS
+        6. Et ensuite ? (Pistes d'action)
+        """
+        report_sections: list[str] = []
+
+        # 1. Executive overview (Top)
+        if self.avis_global and self.avis_global.strip():
+            report_sections.append(
+                f"## 🧭 Avis Global d'Orientation pour {self.city_name}\n\n{self.avis_global.strip()}"
+            )
+
+        # 2. Domain Expert Artifacts (displayed as-is without LLM rephrasing)
+        expert_sections = []
+        for domain in self.domains.values():
+            if domain.content and domain.content.strip():
+                expert_sections.append(f"### {domain.label}\n\n{domain.content.strip()}")
+
+        if expert_sections:
+            report_sections.append(
+                "# 🔬 Analyses Thématiques Détaillées\n\n" + "\n\n---\n\n".join(expert_sections)
+            )
+
+        # 3. Digested territorial comparison
+        if self.analyse_comparative and self.analyse_comparative.strip():
+            report_sections.append(
+                f"## ⚖️ Analyse Comparative Territoriale\n\n{self.analyse_comparative.strip()}"
+            )
+
+        # 4. Unverified elements / gaps
+        if self.elements_non_verifies and self.elements_non_verifies.strip():
+            report_sections.append(
+                f"## ⚠️ Éléments Non Vérifiés & Vigilances\n\n{self.elements_non_verifies.strip()}"
+            )
+
+        # 5. Call to Action: CCAS Contact
+        if self.ccas_contact and self.ccas_contact.strip():
+            report_sections.append(self.ccas_contact.strip())
+
+        # 6. Call to Action: Et ensuite ?
+        if self.et_ensuite and self.et_ensuite.strip():
+            report_sections.append(
+                f"## ❓ Et ensuite ? (Pistes d'action)\n\n{self.et_ensuite.strip()}"
+            )
+
+        return "\n\n---\n\n".join(report_sections)
+
+    model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
+
+
 class CommuneResult(BaseModel):
     """Encapsulates identity, scores, and metadata for a specific commune."""
 
@@ -867,6 +984,10 @@ class CommuneResult(BaseModel):
         default_factory=list,
         description="List of messages (conversation thread) for the city analysis",
     )
+    analysis_report: Optional[CityAnalysisReport] = Field(
+        default=None,
+        description="Rapport d'analyse stratégique complet et structuré",
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -937,6 +1058,7 @@ class Org(BaseModel):
     default_zones: List[str] = Field(default_factory=list)
     defaults: Dict[str, Any] = Field(default_factory=dict)
     ai_free_mode: bool = False
+    enable_interactive_chat: bool = False
 
     model_config = ConfigDict(populate_by_name=True, revalidate_instances="never")
 

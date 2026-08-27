@@ -149,6 +149,71 @@ class WebSource(FrozenModel):
     query: str | None = None
 
 
+class WebGroundingSupport(FrozenModel):
+    """Provider mapping between generated text segments and source chunks."""
+
+    grounding_chunk_indices: list[int] = Field(default_factory=list, max_length=16)
+    text: str | None = None
+    start_index: int | None = None
+    end_index: int | None = None
+    confidence_scores: list[float] = Field(default_factory=list, max_length=16)
+
+
+class WebSearchNeed(FrozenModel):
+    """One concise web-search need submitted by a domain expert.
+
+    ``request_id`` is optional on purpose: the application assigns a stable
+    ``web-N`` id when the tool receives the batch.  This keeps the function
+    tool schema light while giving the free-text batch response stable section
+    labels without requiring the application to parse those sections.
+    """
+
+    key_terms: list[str] = Field(
+        min_length=1,
+        max_length=8,
+        description="Mots clés courts et complémentaires à rechercher, sans reformulation redondante.",
+    )
+    question: str | None = Field(
+        default=None,
+        max_length=500,
+        description="Question factuelle à vérifier, si les seuls mots clés sont ambigus.",
+    )
+    location: str | None = Field(
+        default=None,
+        max_length=200,
+        description="Ville, département ou territoire à utiliser pour la recherche.",
+    )
+    request_id: str | None = Field(
+        default=None,
+        max_length=64,
+        description="Identifiant facultatif ; l'application en attribue un automatiquement.",
+    )
+
+
+class WebSearchBatchResult(FrozenModel):
+    """Compact function-tool result; URLs/supports come from provider metadata."""
+
+    status: EvidenceStatus
+    summary: str | None = Field(
+        default=None,
+        max_length=12000,
+        description=(
+            "Texte libre retourné par le sous-appel Gemini et conservé sans "
+            "parsing afin que les offsets de grounding_supports restent valides."
+        ),
+    )
+    queries: list[str] = Field(default_factory=list, max_length=32)
+    sources: list[WebSource] = Field(default_factory=list, max_length=32)
+    grounding_supports: list[WebGroundingSupport] = Field(
+        default_factory=list,
+        max_length=64,
+        description=(
+            "Segments de la réponse Web reliés aux indices de grounding_chunks "
+            "retournés par Google."
+        ),
+    )
+
+
 class WebEvidenceBundle(FrozenModel):
     status: EvidenceStatus
     summary: str

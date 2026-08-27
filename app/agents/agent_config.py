@@ -227,9 +227,10 @@ def get_swarm_boilerplate(
             "- Sois hyper factuel. Si des éléments essentiels sont manquants ou non vérifiables, formalise-les explicitement sous une section titrée '#### ⚠️ Éléments non vérifiés / manquants' (et non comme une simple note de bas de page).\n"
             "**Instructions opérationnelles**:\n"
             "- Ne recherche jamais une deuxième fois des éléments déjà à ta disposition.\n"
-            "- Priorisation des outils : N'utilise Google Search que lorsque les autres outils n'ont rien donné ou ne sont pas pertinents sur un point essentiel: web search doit être utilisé avec parcimonie.\n"
+            "- Priorisation des outils : N'utilise `search_web_batch_tool` que lorsque les autres outils n'ont rien donné ou ne sont pas pertinents sur un point essentiel.\n"
             "- Pour un outil donné, regroupe toutes les recherches indépendantes dans un seul appel batch.\n"
             "- Si plusieurs outils sont indépendants, appelle-les dans la même réponse, sans attendre le premier résultat.\n"
+            "- `search_web_batch_tool` est limité à un seul appel par mission : donne-lui une liste de besoins indépendants (termes clés, question et lieu si nécessaire), jamais une recherche à la fois.\n"
             "- Budget limité : tu disposes d'au plus 5 requêtes au modèle pour cette mission, appels de suivi compris. Ce budget concerne les tours du modèle, pas le nombre de recherches regroupées dans un batch : planifie dès le premier tour et garde un tour pour la réponse finale.\n"
         )
     elif agent_type == "coordinator":

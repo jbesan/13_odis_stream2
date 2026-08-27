@@ -823,7 +823,10 @@ def analyze_records(records: Iterable[Mapping[str, Any]]) -> JsonObject:
     root_candidates = [
         record
         for record in normalized
-        if str(record.get("span_name") or "") == "ODIS Graph Logic"
+        if (
+            str(record.get("span_name") or "") == "ODIS Graph Logic"
+            or str(record.get("span_name") or "").startswith("ODIS Graph Logic - ")
+        )
     ]
     root = max(root_candidates, key=lambda item: _duration(item) or 0.0, default=None)
     root_duration = _duration(root) if root else None

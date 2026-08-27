@@ -2,12 +2,19 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
-from pydantic_ai.messages import ModelResponse
+from pydantic_ai.messages import (
+    ModelMessagesTypeAdapter,
+    ModelResponse,
+    NativeToolReturnPart,
+)
 
 from agents.google_model import GroundingGoogleModel
 from agents.graph import capture_usage
-from agents.grounding import extract_web_grounding
-from agents.source_registry import source_references_for_result
+from agents.grounding import extract_web_grounding, normalize_provider_grounding_metadata
+from agents.source_registry import (
+    is_vertex_grounding_redirect,
+    source_references_for_result,
+)
 from services.ai_pricing import calculate_gemini_cost
 
 
@@ -91,6 +98,62 @@ def test_grounding_metadata_is_normalized_and_not_double_counted_with_native_cal
         }
     ]
     assert grounding["supports"][0]["grounding_chunk_indices"] == [0]
+
+
+def test_provider_grounding_collects_all_candidates_and_camel_case_fields():
+    grounding = normalize_provider_grounding_metadata(
+        {
+            "candidates": [
+                {
+                    "groundingMetadata": {
+                        "webSearchQueries": ["première recherche"],
+                        "groundingChunks": [
+                            {"web": {"uri": "https://example.org/one"}}
+                        ],
+                    }
+                },
+                {
+                    "groundingMetadata": {
+                        "webSearchQueries": ["deuxième recherche"],
+                        "groundingChunks": [
+                            {"web": {"uri": "https://example.org/two"}}
+                        ],
+                    }
+                },
+            ]
+        }
+    )
+
+    assert grounding["queries"] == ["première recherche", "deuxième recherche"]
+    assert [source["url"] for source in grounding["sources"]] == [
+        "https://example.org/one",
+        "https://example.org/two",
+    ]
+
+
+def test_provider_grounding_reads_queries_from_server_side_search_call():
+    grounding = normalize_provider_grounding_metadata(
+        SimpleNamespace(
+            candidates=[
+                SimpleNamespace(
+                    grounding_metadata=None,
+                    content=SimpleNamespace(
+                        parts=[
+                            SimpleNamespace(
+                                tool_call=SimpleNamespace(
+                                    tool_type="GOOGLE_SEARCH_WEB",
+                                    args={"queries": ["résultat Libourne"]},
+                                )
+                            )
+                        ]
+                    ),
+                )
+            ]
+        )
+    )
+
+    assert grounding["queries"] == ["résultat Libourne"]
+    assert grounding["sources"] == []
 
 
 def test_extract_web_grounding_preserves_adapter_normalized_metadata():
@@ -191,6 +254,67 @@ def test_source_ledger_exposes_provider_grounded_urls():
     assert web[0]["grounding_queries"] == ["association locale"]
 
 
+def test_vertex_grounding_redirect_is_only_a_link_target():
+    assert is_vertex_grounding_redirect(
+        "https://vertexaisearch.cloud.google.com/grounding-api-redirect/token"
+    )
+    assert not is_vertex_grounding_redirect("https://tcl.fr/tarification-solidaire")
+    assert not is_vertex_grounding_redirect(
+        "https://vertexaisearch.cloud.google.com/search/token"
+    )
+
+
+def test_source_ledger_uses_grounding_metadata_without_a_recorded_web_part():
+    message = SimpleNamespace(
+        metadata={
+            "google_grounding_metadata": {
+                "webSearchQueries": ["aide permis Gironde"],
+                "groundingChunks": [
+                    {
+                        "web": {
+                            "uri": "https://example.org/permis",
+                            "title": "Aide au permis",
+                        }
+                    }
+                ],
+            }
+        },
+        parts=[],
+    )
+    result = SimpleNamespace(all_messages=lambda: [message])
+
+    references = source_references_for_result("social_integration_expert", result)
+
+    web = [reference for reference in references if reference["source_key"] == "web"]
+    assert len(web) == 1
+    assert web[0]["source_url"] == "https://example.org/permis"
+    assert web[0]["grounding_queries"] == ["aide permis Gironde"]
+
+
+def test_query_only_web_source_uses_non_technical_popover_copy():
+    result = SimpleNamespace(
+        all_messages=lambda: [
+            SimpleNamespace(
+                parts=[
+                    SimpleNamespace(
+                        tool_name="web_search",
+                        args={"queries": ["tarification solidaire TBM"]},
+                        content=None,
+                    )
+                ]
+            )
+        ]
+    )
+
+    references = source_references_for_result("social_integration_expert", result)
+    web = [reference for reference in references if reference["source_key"] == "web"]
+
+    assert web[0]["note"] == (
+        "Google a été consulté, mais n'a transmis aucune URL de page source exploitable."
+    )
+    assert "GroundingMetadata" not in web[0]["note"]
+
+
 def test_capture_usage_records_grounding_and_places_requests():
     usage = SimpleNamespace(
         input_tokens=1_000,
@@ -259,3 +383,53 @@ def test_grounding_google_model_keeps_normalized_provider_metadata():
     assert (
         converted.metadata["google_usage_metadata"]["cached_content_token_count"] == 5
     )
+
+
+def test_grounding_google_model_retains_chunks_on_mixed_native_web_return():
+    response = SimpleNamespace(
+        candidates=[
+            SimpleNamespace(
+                grounding_metadata={
+                    "web_search_queries": ["aide FLE Bordeaux"],
+                    "grounding_chunks": [
+                        {
+                            "web": {
+                                "uri": "https://example.org/fle",
+                                "title": "Cours de français",
+                            }
+                        }
+                    ],
+                }
+            )
+        ],
+        usage_metadata=None,
+    )
+    native_return = NativeToolReturnPart(tool_name="web_search", content=None)
+    base_response = ModelResponse(parts=[native_return])
+
+    with patch.object(
+        GroundingGoogleModel.__mro__[1], "_process_response", return_value=base_response
+    ):
+        model = object.__new__(GroundingGoogleModel)
+        converted = model._process_response(response)
+
+    assert converted.metadata["google_grounding_metadata"]["sources"][0]["url"] == (
+        "https://example.org/fle"
+    )
+    assert native_return.metadata["google_grounding_metadata"]["queries"] == [
+        "aide FLE Bordeaux"
+    ]
+
+    extracted = extract_web_grounding(
+        SimpleNamespace(all_messages=lambda: [converted])
+    )
+    assert extracted["query_count"] == 1
+    assert extracted["sources"][0]["url"] == "https://example.org/fle"
+
+    # The retained part metadata also survives PydanticAI's message-history
+    # serialization, which is the boundary used by persisted run state.
+    restored = ModelMessagesTypeAdapter.validate_json(
+        ModelMessagesTypeAdapter.dump_json([converted])
+    )
+    restored_extracted = extract_web_grounding(restored)
+    assert restored_extracted["sources"][0]["url"] == "https://example.org/fle"

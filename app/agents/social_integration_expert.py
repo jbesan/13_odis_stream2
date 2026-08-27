@@ -1,7 +1,6 @@
 import logging
 from typing import List, Dict, Any
 from pydantic_ai import Agent, RunContext
-from pydantic_ai.capabilities import WebSearch
 from pydantic import BaseModel, Field
 from .state import ODISDeps, ODISContextBuilder
 from .agent_config import create_agent, get_swarm_boilerplate
@@ -53,9 +52,9 @@ SOCIAL_INTEGRATION_EXPERT_SYSTEM_PROMPT = """
 {SKILL_INSTRUCTIONS}
 
 **DIRECTIVES DE TRAVAIL** :
-1. **Recherches Web & Exploration terrain** : Utilise Google Search avec parcimonie: limite-toi à maximum 1 recherche par objet de recherche/sujet distinct. Ne fais JAMAIS de requêtes similaires, de reformulations ou de variations pour un même sujet. Si l'information est introuvable après un essai, n'insiste pas et signale-le.
+1. **Recherches Web & Exploration terrain** : Si les outils fiables ne suffisent pas sur un point essentiel, utilise une seule fois le tool `search_web_batch_tool` avec toutes les recherches indépendantes regroupées dans une même liste. Ne fais JAMAIS de requêtes similaires, de reformulations ou de variations pour un même sujet. Si l'information est introuvable après cet essai, n'insiste pas et signale-le.
 2. **Associations d'aide aux réfugiés (RNA)** : Les associations d'accueil et d'aide aux réfugiés issues du Répertoire National des Associations (RNA) officiel sont déjà injectées dans ton contexte (`Données inclusion`). Si aucune association n'est recensée au RNA officiel, tu peux vérifier (via Google Search ou Google Maps / Places) s'il existe des collectifs locaux, antennes citoyennes ou initiatives informelles non répertoriées au RNA si cela apporte une valeur directe au bénéficiaire.
-3. **Priorisation des outils** : Utilise en priorité `search_rna_rag_batch_tool` (recherche sémantique RNA pour loisirs, sports, culture, entraide) et `search_places_batch_tool` (FLE, centres sociaux, mairies, équipements). Ne cherche PAS le CCAS.
+3. **Priorisation des outils** : Utilise en priorité `search_rna_rag_batch_tool` (recherche sémantique RNA pour loisirs, sports, culture, entraide) et `search_places_batch_tool` (FLE, centres sociaux, mairies, équipements). Utilise `search_web_batch_tool` seulement pour les lacunes essentielles restantes. Ne cherche PAS le CCAS.
 """
 
 
@@ -93,7 +92,6 @@ social_integration_expert_agent: Agent[ODISDeps, SocialIntegrationResult] = (
             search_rna_rag_batch_tool,
             search_places_batch_tool,
         ],
-        capabilities=[WebSearch(max_uses=1)],
         output_type=SocialIntegrationResult,
     )
 )

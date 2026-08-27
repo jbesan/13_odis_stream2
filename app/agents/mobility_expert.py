@@ -1,7 +1,6 @@
 import logging
 from typing import List, Dict, Any
 from pydantic_ai import Agent, RunContext
-from pydantic_ai.capabilities import WebSearch
 from pydantic import BaseModel, Field
 from .state import ODISDeps, ODISContextBuilder
 from .agent_config import create_agent, get_swarm_boilerplate
@@ -74,7 +73,6 @@ mobility_expert_agent: Agent[ODISDeps, MobilityResult] = create_agent(
     "mobility_expert",
     deps_type=ODISDeps,
     tools=[search_places_batch_tool, compute_routes_tool],
-    capabilities=[WebSearch(max_uses=1)],
     output_type=MobilityResult,
 )
 

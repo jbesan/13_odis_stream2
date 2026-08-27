@@ -139,6 +139,9 @@ class GraphState:
     expert_skill_instructions: Dict[str, str] = field(
         default_factory=dict
     )  # Maps expert domain -> skill cards instructions
+    expert_skill_tools: Dict[str, List[str]] = field(
+        default_factory=dict
+    )  # Maps expert domain -> tools allowed by active skill cards
 
     def __post_init__(self):
         # Sync briefing from criteria if not explicitly set
@@ -160,6 +163,11 @@ class GraphState:
 class ODISDeps:
     state: GraphState  # Shared States/Data
     client: genai.Client | None = None  # Shared Client
+    # Direct Gemini web-search tool usage is collected per expert run.  The
+    # graph merges it after the PydanticAI run completes, so parallel workers
+    # never mutate the aggregate UsageStats concurrently.
+    web_search_usage: Dict[str, UsageStats] = field(default_factory=dict)
+    web_search_call_counts: Dict[str, int] = field(default_factory=dict)
 
     # Allow arbitrary types for genai.Client
     class Meta:

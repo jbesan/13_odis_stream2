@@ -4,10 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic_ai.messages import ModelResponse
+from pydantic_ai.messages import ModelResponse, NativeToolReturnPart
 from pydantic_ai.models.google import GoogleModel
 
-from agents.grounding import normalize_grounding_metadata, normalize_usage_metadata
+from agents.grounding import (
+    WEB_TOOL_NAMES,
+    normalize_provider_grounding_metadata,
+    normalize_usage_metadata,
+)
 
 
 class GroundingGoogleModel(GoogleModel):
@@ -27,15 +31,8 @@ class GroundingGoogleModel(GoogleModel):
     def _process_response(self, response: Any) -> ModelResponse:
         model_response = super()._process_response(response)
 
-        candidate = None
-        candidates = getattr(response, "candidates", None)
-        if candidates:
-            candidate = candidates[0]
-
         metadata: dict[str, Any] = {}
-        grounding = normalize_grounding_metadata(
-            getattr(candidate, "grounding_metadata", None)
-        )
+        grounding = normalize_provider_grounding_metadata(response)
         if grounding:
             metadata["google_grounding_metadata"] = grounding
 
@@ -48,4 +45,22 @@ class GroundingGoogleModel(GoogleModel):
                 **(model_response.metadata or {}),
                 **metadata,
             }
+
+        # In mixed built-in/custom-tool responses, PydanticAI may keep the
+        # native web return but omit the provider chunks from its content.
+        # Part metadata is application-only and is not sent back to Gemini,
+        # so it is a safe second retention point for the source ledger.
+        if grounding:
+            for part in model_response.parts:
+                if not isinstance(part, NativeToolReturnPart):
+                    continue
+                if str(part.tool_name or "").strip().lower() not in WEB_TOOL_NAMES:
+                    continue
+                existing_metadata = (
+                    part.metadata if isinstance(part.metadata, dict) else {}
+                )
+                part.metadata = {
+                    **existing_metadata,
+                    "google_grounding_metadata": grounding,
+                }
         return model_response

@@ -143,6 +143,7 @@ def _clear_city_ai_analysis(search_results: Any, codgeo: str) -> None:
             city["expert_artifacts"] = {}
             city["expert_sources"] = {}
             city["odis_synthesis"] = []
+            city["analysis_report"] = None
             return
 
         if str(getattr(city, "codgeo", "")) == str(codgeo):
@@ -166,6 +167,7 @@ def _clear_city_ai_analysis(search_results: Any, codgeo: str) -> None:
                 synthesis.clear()
             else:
                 setattr(city, "odis_synthesis", [])
+            setattr(city, "analysis_report", None)
             return
 
 
@@ -775,24 +777,59 @@ async def run_logic(input_data: dict):
     if h:
         span_attributes["search_hash"] = str(h)
 
-    logfire.info(
-        "Processing ODIS Graph Logic for {search_hash}",
-        search_hash=h or "unknown",
-        interaction_id=iid,
-        run_id=str(run_id),
-        run_attempt=run_attempt,
-        trigger=str(trigger),
-    )
-
     from agents.state import ODISDeps
     from agents.graph import create_odis_graph
     from agents.agent_config import get_gemini_client
 
-    # 1. Client Local (Centralized helper)
-    client = get_gemini_client()
-
-    # 2. State & Deps
+    # 1. State & Deps
     input_state = rehydrate_graph_state(input_data)
+
+    focus_city_name = None
+    focus_city_code = None
+    if input_state.focus_city:
+        if isinstance(input_state.focus_city, str):
+            focus_city_name = input_state.focus_city
+        else:
+            focus_city_name = getattr(input_state.focus_city, "name", None)
+            focus_city_code = getattr(input_state.focus_city, "codgeo", None)
+        if not focus_city_name and focus_city_code and input_state.search_results:
+            resolved_city = input_state.search_results.get_by_code(focus_city_code)
+            if resolved_city:
+                focus_city_name = resolved_city.name
+
+    if focus_city_name:
+        span_attributes["focus_city"] = str(focus_city_name)
+    if focus_city_code:
+        span_attributes["focus_city_code"] = str(focus_city_code)
+
+    span_name = (
+        f"ODIS Graph Logic - {focus_city_name}"
+        if focus_city_name
+        else "ODIS Graph Logic"
+    )
+
+    if focus_city_name:
+        logfire.info(
+            "Processing ODIS Graph Logic for {search_hash} ({focus_city})",
+            search_hash=h or "unknown",
+            focus_city=str(focus_city_name),
+            interaction_id=iid,
+            run_id=str(run_id),
+            run_attempt=run_attempt,
+            trigger=str(trigger),
+        )
+    else:
+        logfire.info(
+            "Processing ODIS Graph Logic for {search_hash}",
+            search_hash=h or "unknown",
+            interaction_id=iid,
+            run_id=str(run_id),
+            run_attempt=run_attempt,
+            trigger=str(trigger),
+        )
+
+    # 2. Client Local (Centralized helper)
+    client = get_gemini_client()
     deps = ODISDeps(state=input_state, client=client)
 
     # 3. Graphe
@@ -805,7 +842,7 @@ async def run_logic(input_data: dict):
             app.run(
                 state=input_state,
                 deps=deps,
-                span=logfire.span("ODIS Graph Logic", **span_attributes),
+                span=logfire.span(span_name, **span_attributes),
             ),
             timeout=timeout_seconds,
         )

@@ -11,6 +11,8 @@ from agents.grounding import (
     extract_google_usage_metadata,
     extract_places_request_count,
     extract_web_grounding,
+    normalize_provider_grounding_metadata,
+    normalize_usage_metadata,
 )
 from agents.state import UsageStats
 from services.ai_pricing import calculate_gemini_cost
@@ -134,6 +136,96 @@ def capture_usage_stats(result: Any, node_name: str, model_id: str) -> UsageStat
         )
     except Exception as exc:
         logger.warning("[USAGE] capture failed for %s: %s", node_name, exc)
+        return UsageStats()
+
+
+def capture_direct_google_usage(
+    response: Any, node_name: str, model_id: str
+) -> UsageStats:
+    """Capture usage from a direct ``google-genai`` response.
+
+    This path is needed for ``search_web_batch_tool`` because the nested
+    request intentionally bypasses PydanticAI.  Gemini's prompt counter is
+    inclusive of cached input; candidate and thought counters form the output
+    bucket used for the application-owned EUR rate card.
+    """
+
+    try:
+        raw_usage = getattr(response, "usage_metadata", None)
+        details = normalize_usage_metadata(raw_usage)
+        input_tokens = _integer(details.get("prompt_token_count"))
+        cached_input = _integer(details.get("cached_content_token_count"))
+        candidate_tokens = _integer(details.get("candidates_token_count"))
+        thought_tokens = _integer(details.get("thoughts_token_count"))
+        tool_use_prompt_tokens = _integer(
+            details.get("tool_use_prompt_token_count")
+        )
+        total_tokens = _integer(details.get("total_token_count"))
+
+        # ``candidates_token_count`` excludes thinking tokens on Gemini.  The
+        # rate card charges generated thinking/output together, so include both
+        # when the provider exposes them.  Older responses only expose total.
+        if candidate_tokens or thought_tokens:
+            output_tokens = candidate_tokens + thought_tokens
+        else:
+            output_tokens = max(
+                total_tokens - input_tokens - tool_use_prompt_tokens, 0
+            )
+        if not total_tokens:
+            total_tokens = input_tokens + output_tokens + tool_use_prompt_tokens
+
+        grounding = normalize_provider_grounding_metadata(response)
+        grounding_queries = _integer(grounding.get("query_count", 0))
+        estimate = calculate_gemini_cost(
+            model_id,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cache_read_tokens=cached_input,
+            grounding_queries=grounding_queries,
+        )
+        cache_hit_ratio = cached_input / input_tokens if input_tokens else 0.0
+        breakdown_entry = {
+            **estimate.as_dict(),
+            "model": model_id,
+            "cost": estimate.token_cost_usd,
+            "cost_usd": estimate.token_cost_usd,
+            "input": input_tokens,
+            "output": output_tokens,
+            "total": total_tokens,
+            "requests": 1,
+            "tool_calls": 0,
+            "cache_read_tokens": cached_input,
+            "cache_write_tokens": 0,
+            "cache_hit_ratio": cache_hit_ratio,
+            "provider_usage_details": details,
+            "grounding_queries": grounding.get("queries", []),
+            "grounding_sources": grounding.get("sources", []),
+            "grounding_supports": grounding.get("supports", []),
+            "google_usage_metadata": details,
+        }
+        return UsageStats(
+            input_tokens=input_tokens,
+            input_tokens_new=estimate.new_input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
+            cost_usd=estimate.token_cost_usd,
+            cost_eur=estimate.total_cost_eur,
+            token_cost_eur=estimate.token_cost_eur,
+            requests=1,
+            tool_calls=0,
+            cache_read_tokens=cached_input,
+            cache_write_tokens=0,
+            cache_hit_ratio=cache_hit_ratio,
+            grounding_queries=grounding_queries,
+            grounding_cost_eur=estimate.grounding_cost_eur,
+            places_requests=0,
+            places_cost_eur=0.0,
+            eur_priced=estimate.eur_priced,
+            unpriced_model_requests=0 if estimate.eur_priced else 1,
+            breakdown={node_name: breakdown_entry},
+        )
+    except Exception as exc:
+        logger.warning("[USAGE] direct capture failed for %s: %s", node_name, exc)
         return UsageStats()
 
 

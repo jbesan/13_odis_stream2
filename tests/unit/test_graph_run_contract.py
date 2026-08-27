@@ -13,6 +13,7 @@ from agents.utils import (
     run_logic,
 )
 from agents.state import GraphState
+from core.models import CommuneResult
 
 
 def wait_for(predicate, timeout: float = 2.0):
@@ -70,6 +71,57 @@ async def test_run_logic_passes_identity_bearing_span_to_graph():
         "organization_id": "jaccueille",
         "search_hash": "criteria-hash",
         "trigger": "user_modal",
+    }
+    assert captured["run_kwargs"]["span"] is span
+
+
+@pytest.mark.asyncio
+async def test_run_logic_passes_focus_city_span_name_and_attributes():
+    captured = {}
+    span = object()
+
+    class FakeGraph:
+        async def run(self, **kwargs):
+            captured["run_kwargs"] = kwargs
+
+    def fake_span(name, **attributes):
+        captured["span_name"] = name
+        captured["span_attributes"] = attributes
+        return span
+
+    with (
+        patch(
+            "agents.utils.rehydrate_graph_state",
+            return_value=GraphState(
+                focus_city=CommuneResult(name="Marseille", codgeo="13055")
+            ),
+        ),
+        patch("agents.utils.logfire.span", side_effect=fake_span),
+        patch("agents.agent_config.get_gemini_client", return_value=object()),
+        patch("agents.graph.create_odis_graph", return_value=FakeGraph()),
+    ):
+        result = await run_logic(
+            {
+                "criteria_hash": "criteria-hash",
+                "interaction_id": "interaction-123",
+                "run_id": "run-123",
+                "run_attempt": 1,
+                "organization_id": "jaccueille",
+                "run_timeout_seconds": 1.0,
+            }
+        )
+
+    assert result["run_id"] == "unknown"
+    assert captured["span_name"] == "ODIS Graph Logic - Marseille"
+    assert captured["span_attributes"] == {
+        "interaction_id": "interaction-123",
+        "run_id": "run-123",
+        "run_attempt": 1,
+        "organization_id": "jaccueille",
+        "search_hash": "criteria-hash",
+        "trigger": "user_modal",
+        "focus_city": "Marseille",
+        "focus_city_code": "13055",
     }
     assert captured["run_kwargs"]["span"] is span
 
