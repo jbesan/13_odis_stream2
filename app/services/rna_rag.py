@@ -88,7 +88,7 @@ class RNARagService:
         bv_code: Optional[str] = None,
         top_k: int = 10,
         inclusion_only: bool = True,
-        threshold: float = 0.65,
+        threshold: float = 0.70,
     ) -> List[Dict[str, Any]]:
         """
         Performs semantic lookup for associations in a specific commune or Bassin de Vie.
@@ -100,7 +100,7 @@ class RNARagService:
             bv_code: Optional Bassin de Vie code for broader search
             top_k: Number of results to return
             inclusion_only: If True, filters for is_inclusion_relevant associations
-            threshold: Minimum similarity score (default 0.65)
+            threshold: Minimum similarity score (default 0.70)
 
         Returns:
             List of matching associations with scores > threshold, sorted by score DESC.

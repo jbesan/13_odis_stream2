@@ -1,22 +1,39 @@
 import logging
 from typing import List, Optional, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from pydantic_ai import Agent, RunContext
 from .state import ODISDeps, ODISContextBuilder
 from .agent_config import create_agent, get_swarm_boilerplate
 
 logger = logging.getLogger("ts_agent")
 
+ExpertName = Literal[
+    "job_hunter",
+    "housing_expert",
+    "mobility_expert",
+    "healthcare_expert",
+    "education_expert",
+    "social_integration_expert",
+]
+
+# The plan is an executable security and quality boundary, not just LLM output.
+# Keep this allow-list next to the model until the wider AgentSpec/ToolSpec registry
+# from P5-08 is introduced. Unknown cards must fail closed rather than silently
+# running an expert without the requested instructions.
+SKILL_CARD_EXPERT: dict[str, ExpertName] = {
+    "education_full_analysis": "education_expert",
+    "healthcare_full_analysis": "healthcare_expert",
+    "housing_full_analysis": "housing_expert",
+    "job_extend_job_search": "job_hunter",
+    "job_fetch_specific_offer": "job_hunter",
+    "job_full_analysis": "job_hunter",
+    "mobility_full_analysis": "mobility_expert",
+    "social_full_analysis": "social_integration_expert",
+}
+
 
 class ExpertTask(BaseModel):
-    expert: Literal[
-        "job_hunter",
-        "housing_expert",
-        "mobility_expert",
-        "healthcare_expert",
-        "education_expert",
-        "social_integration_expert",
-    ] = Field(..., description="L'expert thématique ciblé.")
+    expert: ExpertName = Field(..., description="L'expert thématique ciblé.")
     task_description: str = Field(
         ...,
         description="Description très spécifique et ciblée de la mission de l'expert pour cette étape. Exemple : 'Recherche les structures CADA de la ville et les associations locales pour une personne réfugiée seule.'",
@@ -40,6 +57,44 @@ class SwarmPlan(BaseModel):
         default_factory=list,
         description="Liste des tâches à exécuter en parallèle par les agents experts. Requis uniquement si swarm_mode est 'full_analysis' ou 'specific_ask'. Laisser vide si swarm_mode est 'direct_answer'.",
     )
+
+    @model_validator(mode="after")
+    def validate_execution_contract(self) -> "SwarmPlan":
+        """Reject plans that cannot be executed safely and unambiguously."""
+        if self.swarm_mode == "direct_answer":
+            if not self.direct_answer or not self.direct_answer.strip():
+                raise ValueError(
+                    "direct_answer doit être renseignée pour le mode direct_answer"
+                )
+            if self.tasks:
+                raise ValueError(
+                    "direct_answer ne peut pas contenir de tâches d'experts"
+                )
+            return self
+
+        if self.direct_answer is not None:
+            raise ValueError(
+                "direct_answer doit être null pour un mode d'analyse d'experts"
+            )
+        if not self.tasks:
+            raise ValueError("Un mode d'analyse d'experts requiert au moins une tâche")
+
+        experts = [task.expert for task in self.tasks]
+        if len(experts) != len(set(experts)):
+            raise ValueError("Un expert ne peut apparaître qu'une seule fois par plan")
+
+        for task in self.tasks:
+            for skill_id in task.skill_cards:
+                skill_expert = SKILL_CARD_EXPERT.get(skill_id)
+                if skill_expert is None:
+                    raise ValueError(f"Skill Card inconnue : {skill_id}")
+                if skill_expert != task.expert:
+                    raise ValueError(
+                        f"La Skill Card {skill_id} appartient à {skill_expert}, "
+                        f"pas à {task.expert}"
+                    )
+
+        return self
 
 
 TS_AGENT_SYSTEM_PROMPT = """

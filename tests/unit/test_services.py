@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from unittest.mock import MagicMock, patch
 from services import telemetry, bq_logger
@@ -7,9 +9,12 @@ from ui import feedback
 @pytest.fixture
 def mock_session_state():
     """Mock Streamlit session state with support for attribute and item access."""
+    store = {}
     state = MagicMock()
-    # Mock __contains__ so 'in st.session_state' works
-    state.__contains__.side_effect = lambda k: k in state.__dict__
+    state.__contains__.side_effect = lambda k: k in store
+    state.__getitem__.side_effect = lambda k: store[k]
+    state.__setitem__.side_effect = lambda k, v: store.__setitem__(k, v)
+    state.get.side_effect = lambda k, d=None: store.get(k, d)
     return state
 
 
@@ -41,6 +46,23 @@ def test_interaction_id_logic():
         assert val == "test-id"
 
 
+def test_missing_interaction_id_sentinel_is_replaced():
+    with patch("streamlit.session_state", {"interaction_id": "unknown"}):
+        value = telemetry.get_interaction_id()
+
+    assert value != "unknown"
+    assert len(value) == 8
+
+
+def test_resolve_interaction_id_prefers_valid_explicit_value():
+    with patch("services.telemetry.get_interaction_id") as get_current:
+        assert telemetry.resolve_interaction_id(" interaction-123 ") == (
+            "interaction-123"
+        )
+
+    get_current.assert_not_called()
+
+
 @patch("services.bq_logger.bigquery.Client")
 def test_log_agent_state_to_bq(mock_client_class):
     """Test that agent state is correctly formatted for BQ."""
@@ -58,7 +80,7 @@ def test_log_agent_state_to_bq(mock_client_class):
         with patch("os.getenv", return_value="test-project"):
             agent_state = {
                 "messages": [{"role": "user", "content": "hello"}],
-                "usage": {"cost_usd": 0.01},
+                "usage": {"cost_eur": 0.01, "cost_usd": 99.0},
             }
             bq_logger.log_agent_state_to_bq("hello", agent_state)
 
@@ -67,6 +89,12 @@ def test_log_agent_state_to_bq(mock_client_class):
             row = args[1][0]  # client.insert_rows_json(table_ref, [row])
             assert row["username"] == "test_user"
             assert row["last_user_message"] == "hello"
+            assert row["cost_eur"] == 0.01
+            assert "cost_usd" not in row
+            usage_payload = json.loads(row["artifacts"])
+            assert usage_payload["__usage__"]["cost_eur"] == 0.01
+            assert "cost_usd" not in usage_payload["__usage__"]
+            assert "cost_eur" in usage_payload["__usage__"]
 
 
 @patch("ui.feedback.bigquery.Client")
@@ -167,25 +195,74 @@ def test_is_admin_check(monkeypatch):
 
 @patch("services.telemetry.bigquery.Client")
 def test_log_usage_event(mock_client_class):
-    """Test log_usage_event inserts structured rows to BQ."""
+    """Test log_usage_event inserts structured rows to BQ with login_session_id."""
     mock_client = mock_client_class.return_value
     mock_client.project = "test-project"
     mock_client.insert_rows_json.return_value = []
 
+    mock_state = {"login_session_id": "session-abc-123"}
     with patch("streamlit.session_state", MagicMock()) as mock_ss:
         mock_ss.get.side_effect = lambda k, d=None: (
-            "test_user" if k == "username" else ("jaccueille" if k == "org" else d)
+            "test_user"
+            if k == "username"
+            else (
+                "jaccueille"
+                if k == "org"
+                else mock_state.get(k, d)
+            )
+        )
+        mock_ss.__contains__.side_effect = lambda k: k in (
+            "interaction_id",
+            "username",
+            "login_session_id",
         )
         mock_ss.interaction_id = "test-id"
-        mock_ss.__contains__.side_effect = lambda k: k in ("interaction_id", "username")
 
-        with patch("os.getenv", return_value="test-project"):
+        with patch("os.getenv", return_value="test-project"), patch(
+            "utils.auth.get_login_session_id", return_value="session-abc-123"
+        ):
             telemetry.log_usage_event("click_button", {"button": "en_savoir_plus"})
             assert mock_client.insert_rows_json.called
             args, _ = mock_client.insert_rows_json.call_args
             row = args[1][0]
             assert row["event_name"] == "click_button"
+            assert row["login_session_id"] == "session-abc-123"
             assert "en_savoir_plus" in row["payload"]
+
+
+def test_capture_usage_defensive():
+    """Test capture_usage handles None tokens, callable usage, and model rates gracefully."""
+    from agents.graph import capture_usage
+    from pydantic_ai.usage import RunUsage
+    from unittest.mock import MagicMock
+
+    # 1. Real-like RunUsage object
+    real_run_usage = RunUsage(input_tokens=1000, output_tokens=500)
+    mock_result = MagicMock()
+    mock_result.usage = real_run_usage
+
+    stats = capture_usage(mock_result, "test_node", "google:gemini-3.1-flash-lite")
+    assert stats.total_tokens == 1500
+    assert stats.cost_usd > 0.0
+
+    # 2. None / empty usage
+    mock_result_none = MagicMock()
+    mock_result_none.usage = None
+
+    stats_none = capture_usage(
+        mock_result_none, "test_node", "google:gemini-3.1-flash-lite"
+    )
+    assert stats_none.cost_usd == 0.0
+    assert stats_none.total_tokens == 0
+
+    # 3. Callable usage returning RunUsage
+    mock_callable_result = MagicMock()
+    mock_callable_result.usage = MagicMock(return_value=real_run_usage)
+    stats_callable = capture_usage(
+        mock_callable_result, "test_node", "google:gemini-3.1-flash-lite"
+    )
+    assert stats_callable.total_tokens == 1500
+    assert stats_callable.cost_usd > 0.0
 
 
 def test_log_page_view_deduplication():
@@ -222,4 +299,3 @@ def test_log_page_view_deduplication():
         assert fake_state.get("previous_page") == "Accueil"
         assert mock_log_usage.called
         assert mock_log_usage.call_args[0][1]["origin"] == "Accueil"
-

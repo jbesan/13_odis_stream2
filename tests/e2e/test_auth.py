@@ -23,7 +23,7 @@ def test_verify_credentials_no_secrets():
 
 
 def test_check_password_flow_authenticated():
-    """A complete legacy-authenticated session remains valid."""
+    """A complete legacy-authenticated session remains valid and maintains login_session_id."""
     mock_session = {
         "password_correct": True,
         "auth_method": "legacy",
@@ -36,6 +36,8 @@ def test_check_password_flow_authenticated():
         patch("utils.auth.os.environ", {"K_SERVICE": "test"}),
     ):
         assert check_password() is True
+        assert "login_session_id" in mock_session
+        assert len(mock_session["login_session_id"]) > 0
 
 
 def test_check_password_flow_unauthenticated():
@@ -64,7 +66,7 @@ def test_check_password_flow_unauthenticated():
 
 
 def test_check_password_oidc_logged_in_resolves_org_by_domain():
-    """An explicitly authorized domain receives its configured organization."""
+    """An explicitly authorized domain receives its configured organization and a login_session_id."""
     mock_session = {}
     mock_user = MagicMock()
     mock_user.is_logged_in = True
@@ -83,10 +85,12 @@ def test_check_password_oidc_logged_in_resolves_org_by_domain():
         assert mock_session["password_correct"] is True
         assert mock_session["auth_method"] == "oidc"
         assert mock_session["org"].id == "emile_aura"
+        assert "login_session_id" in mock_session
+        assert len(mock_session["login_session_id"]) > 0
 
 
 def test_check_password_oidc_logged_in_resolves_exact_email():
-    """An explicitly authorized email receives its configured organization."""
+    """An explicitly authorized email receives its configured organization and a login_session_id."""
     mock_session = {}
     mock_user = MagicMock()
     mock_user.is_logged_in = True
@@ -104,6 +108,8 @@ def test_check_password_oidc_logged_in_resolves_exact_email():
         assert check_password() is True
         assert mock_session["password_correct"] is True
         assert mock_session["org"].id == "jaccueille"
+        assert "login_session_id" in mock_session
+        assert len(mock_session["login_session_id"]) > 0
 
 
 def test_check_password_oidc_not_logged_in_shows_login_form():

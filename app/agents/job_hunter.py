@@ -16,7 +16,19 @@ logger = logging.getLogger("job_hunter_agent_v2")
 
 
 class JobHunterResult(BaseModel):
-    searched: str = Field(..., description="Liste des codes ROME et lieux recherchés.")
+    # Champ réservé à un futur mode « juge/audit » (désactivé volontairement).
+    # Il devra être produit uniquement à partir des appels effectivement
+    # observés, et rester distinct de l'analyse finale pour éviter les doublons.
+    #
+    # searched: str = Field(
+    #     ...,
+    #     max_length=300,
+    #     description=(
+    #         "Résumé factuel et très court des recherches exécutées : "
+    #         "outils/thèmes généraux et compteurs uniquement. "
+    #         "Aucun résultat, URL, adresse, citation, note ou Markdown."
+    #     ),
+    # )
     result: str = Field(
         ..., description="Synthèse des offres d'emploi pertinentes trouvées."
     )
@@ -40,16 +52,19 @@ class JobSearchQuery(BaseModel):
 
 JOB_HUNTER_SYSTEM_PROMPT = """
 {SWARM_BOILERPLATE}
-**Rôle** : Agent thématique Emploi (Job Hunter) / Expert du marché de l'emploi.
-**Règle** : Reste STRICTEMENT sur l'Emploi (offres France Travail/SIAE, adéquation métier, détails d'offres). Ne traite aucun autre sujet (logement, transport, santé, école, association/intégration générale), d'autres experts s'en chargent.
 
-# Contexte du dossier :
+# Contexte commun du dossier (préfixe stable entre experts) :
 ```json
-{DATA_CONTEXT}
+{COMMON_CONTEXT}
 ```
 
-# Ta Mission Spécifique pour ce tour :
-{MISSION}
+# Contexte spécifique à l'emploi :
+```json
+{SPECIFIC_CONTEXT}
+```
+
+**Rôle** : Agent thématique Emploi (Job Hunter) / Expert du marché de l'emploi.
+**Règle** : Reste STRICTEMENT sur l'Emploi (offres France Travail/SIAE, adéquation métier, détails d'offres). Ne traite aucun autre sujet (logement, transport, santé, école, association/intégration générale), d'autres experts s'en chargent.
 
 # Consignes additionnelles issues des Skill Cards actives :
 {SKILL_INSTRUCTIONS}
@@ -60,9 +75,6 @@ JOB_HUNTER_SYSTEM_PROMPT = """
    - Pour la recherche d'offres France Travail : vérifie TOUJOURS si des offres correspondantes pré-chargées sont disponibles sous `Données emploi et formation`. Si oui, **n'appelle pas** `search_job_offers_batch_tool`, utilise-les directement.
    - Pour obtenir le détail d'une offre (lorsqu'un ID d'offre est demandé ou spécifié dans ta mission) : appelle immédiatement `get_job_details_tool` pour cet ID.
    - Pour les métiers en insertion : utilise `search_inclusion_jobs_batch_tool` si demandé.
-3. **Réponse (STRUCTURED)** : Tu DOIS retourner un objet `JobHunterResult`.
-   - `searched` : Liste concise des codes ROME, localisations ou IDs consultés.
-   - `result` : Ton analyse détaillée des opportunités d'emploi correspondantes ou le détail structuré de l'offre consultée.
 """
 
 
@@ -137,9 +149,8 @@ job_hunter_agent: Agent[ODISDeps, JobHunterResult] = create_agent(
 async def job_hunter_instructions(ctx: RunContext[ODISDeps]) -> str:
     """Builds Job Hunter agent prompt using ODISContextBuilder."""
     state = ctx.deps.state
-    data_context = ODISContextBuilder.agent_context(state, "job_hunter")
-    mission = state.expert_tasks.get(
-        "job_hunter", "Analyse générale des opportunités d'emploi."
+    common_context, specific_context = ODISContextBuilder.expert_prompt_contexts(
+        state, "job_hunter"
     )
     skill_inst = state.expert_skill_instructions.get(
         "job_hunter", "Aucune consigne spécifique de Skill Card active."
@@ -148,7 +159,7 @@ async def job_hunter_instructions(ctx: RunContext[ODISDeps]) -> str:
 
     return JOB_HUNTER_SYSTEM_PROMPT.format(
         SWARM_BOILERPLATE=boilerplate,
-        DATA_CONTEXT=data_context,
-        MISSION=mission,
+        COMMON_CONTEXT=common_context,
+        SPECIFIC_CONTEXT=specific_context,
         SKILL_INSTRUCTIONS=skill_inst,
     )

@@ -1,37 +1,39 @@
-# ODIS Graph Architecture (v6.0)
+# ODIS Graph Architecture (v7.0)
 
 This document defines the technical architecture of the ODIS multi-agent orchestration, powered by `pydantic-graph`.
 
-## 🏗️ Pipeline Topology (PM-Driven MapReduce Swarm)
+## 🏗️ Pipeline Topology (PM-Driven MapReduce Swarm & Local Workers)
 
-ODIS follows a PM-driven **MapReduce (Spreading)** pattern for high-performance territorial analysis. The graph is designed to process user requests via a Project Manager (`ts_agent`) triage step that plans the swarm execution.
+ODIS follows a PM-driven **MapReduce (Spreading)** pattern for high-performance territorial analysis. The graph is designed to process user requests via a Project Manager (`ts_agent`) triage step that plans the swarm execution, combining parallel LLM expert agents with fast, zero-cost deterministic Python workers.
 
 ```mermaid
 graph TD
     Input([SearchCriterias + User Question]) --> Graph
     
-    subgraph Graph [pydantic-graph: PM-Driven Swarm]
+    subgraph Graph [pydantic-graph: PM-Driven Swarm & Local Workers]
         direction TB
         GStart((START)) --> Triage[1. TRIAGE / TS_AGENT Node]
         
         %% PM Planning / Routing
         Triage -.->|1. Lookup instructions by ID| Db[(Skills: Markdown Files)]
         Triage -->|2. Route: Direct Answer| GEnd((END))
-        Triage -->|2. Route: Expert Tasks| Map[2. MAP: Domains to Run]
+        Triage -->|2. Route: Parallel Fan-out| Map[2. MAP: Domains to Run]
         
-        subgraph ParallelSwarm [Parallel Expert Swarm]
+        subgraph ParallelSwarm [Parallel Swarm: LLM Experts & Local Deterministic Workers]
             direction LR
-            Map --> JH[job_hunter]
-            Map --> HE[housing_expert]
-            Map --> ME[mobility_expert]
-            Map --> HC[healthcare_expert]
-            Map --> EE[education_expert]
-            Map --> SI[social_integration_expert]
+            Map --> JH[job_hunter (LLM)]
+            Map --> HE[housing_expert (LLM)]
+            Map --> ME[mobility_expert (LLM)]
+            Map --> HC[healthcare_expert (LLM)]
+            Map --> EE[education_expert (LLM)]
+            Map --> SI[social_integration_expert (LLM)]
+            Map --> CC[city_comparator (Local Python, 0 tokens)]
+            Map --> CL[ccas_locator (Local Python, 0 tokens)]
             
-            JH & HE & ME & HC & EE & SI --> Join[3. REDUCE: Join Results]
+            JH & HE & ME & HC & EE & SI & CC & CL --> Join[3. REDUCE: Join Results]
         end
         
-        Join --> Synth[4. SYNTHESIZER Node]
+        Join --> Synth[4. COMPOSITE SYNTHESIZER Node]
         Synth --> GEnd
     end
     
@@ -44,20 +46,24 @@ graph TD
 ### 🧠 Core Orchestration Nodes
 
 1.  **Triage Node / TS_AGENT (The Project Manager)**:
-    *   **Planning**: Receives the user question, search criteria, and context. Runs a fast LLM (`ts_agent`) to evaluate the dossier, identify which experts to run, formulate custom task missions for each domain, and select the relevant **Skill Cards** by ID from the database.
-    *   **Decoupled File Fetching**: In a single synchronous pass, triage loads the selected skill card instructions from Markdown files using `KnowledgeStore`, storing them in `GraphState.expert_skill_instructions` to prevent concurrent file I/O during parallel worker runs.
+    *   **Planning**: Receives the user question, search criteria, and context. Runs a fast LLM (`ts_agent`) to evaluate the dossier, identify which experts to run, formulate custom task missions for each domain, and select the relevant **Skill Cards** by ID from the Markdown catalogue.
+    *   **Validated routing contract**: `SwarmPlan` is the sole routing authority after triage. It rejects empty expert plans, direct answers without an answer, tasks attached to direct answers, duplicate experts, unknown Skill Cards, and Skill Cards owned by a different expert. The validated `swarm_mode` is copied into `GraphState` before any downstream node runs.
+    *   **Decoupled File Fetching**: In a single synchronous pass, triage loads the selected skill card instructions and declared tool IDs from Markdown files using `KnowledgeStore`, storing them in `GraphState.expert_skill_instructions` and `GraphState.expert_skill_tools` to prevent concurrent file I/O during parallel worker runs.
     *   **Direct Answer Bypass**: If the user's question can be answered completely using the existing context, `ts_agent` generates a `direct_answer` and the triage node returns `End(direct_answer)` immediately, completely bypassing the MapReduce swarm and the Synthesizer.
+    *   **Deterministic Workers Inclusion**: In `full_analysis` mode, `city_comparator` and `ccas_locator` are automatically appended to the fan-out execution list.
 2.  **Extract Domains (Map)**: Fans out the chosen list of active domains into parallel worker nodes.
-3.  **Expert Workers (6 Domain Experts)**:
+3.  **Parallel Workers (6 LLM Domain Experts + 2 Local Deterministic Workers)**:
     *   `job_hunter`: Finds ROME job offers (France Travail / SIAE).
-    *   `housing_expert`: Evaluates rent m², housing delay, and CCAS.
+    *   `housing_expert`: Evaluates rent m², housing delay, and housing availability.
     *   `mobility_expert`: Examines bus/tram networks and transit solidary pricing.
     *   `healthcare_expert`: Analyzes APL access indexes, hospitals, and PMI.
     *   `education_expert`: Lists local schools, kindergartens, and registration processes.
     *   `social_integration_expert`: Identifies refugee support associations, CCAS, and RNA resources.
-    *   Each active expert runs in a **single turn** (no ReAct tool calling loops), reading its specific instructions directly from `GraphState.expert_skill_instructions` and querying its specific APIs/tools.
+    *   `city_comparator` (Local Python Worker): Compares indicators between the focus city and reference city using direction-aware scoring catalogue deltas and relative weights. Consumes 0 tokens, 0 cost, <15ms.
+    *   `ccas_locator` (Local Python Worker): Deterministically retrieves and formats CCAS contact details for the commune or Bassin de Vie fallback. Consumes 0 tokens, 0 cost, <15ms.
+    *   Each active expert returns an `AgentArtifact` (or `DomainArtifact`).
 4.  **Join Node (Reduce)**: Accumulates `AgentArtifact` payloads from all parallel worker threads, merging their results and cumulative usage.
-5.  **Synthesizer Node**: Consumes the aggregated expert analysis and user situation to compile the final markdown response (global pitch or targeted chatbot answer).
+5.  **Composite Synthesizer Node**: Consumes pre-digested artifact snippets (Beneficiary briefing, Comparator metrics, CCAS card, and Expert summaries) to generate a concise **Executive Overview (150–250 words)**, a **Digested Territorial Comparison (short table + qualitative synthesis without recalculating math)**, **Unverified Elements**, and **Actionable Next Steps** (~300–400 tokens, ~1.5–2.0s), leaving domain expert cards to render directly in the UI without LLM rewriting.
 
 ---
 
@@ -85,13 +91,22 @@ The triage node (`ts_agent`) dynamically determines how the user query should be
 We use a pure Python `@dataclass` for graph state to ensure compatibility with Streamlit's serialization. New fields include:
 - `expert_tasks`: Maps active experts to custom task instructions generated by `ts_agent`.
 - `expert_skill_instructions`: Holds the resolved skill cards instructions retrieved by the triage node from Markdown files.
+- `expert_skill_tools`: Holds the tool IDs allowed by the selected Skill Cards; per-run additions such as `search_web_batch_tool` are injected from this allow-list without mutating global agents.
 - `usage`: Tracks cumulative token counts, requests, costs, and breakdown details.
+- `run_id`, `run_attempt`, `run_deadline_at`, and `organization_id`: identify the detached optional-AI attempt and preserve its execution contract in graph telemetry/state.
+
+### ⏱️ Session-local background run contract
+`launch_background_city_analysis()` snapshots the input before starting a daemon worker. Every visible task has a random `run_id`, an `attempt` number, an owner/organization marker, a configurable `ODIS_GRAPH_RUN_TIMEOUT_SECONDS` deadline (60 seconds by default), and a cancellation event. A retry keeps the logical run ID, increments the attempt, and clears the prior city AI analysis from both the visible state and the retry snapshot. Completion uses run ID plus attempt matching, so a cancelled or superseded worker cannot overwrite the current result.
+
+This is deliberately **best effort and session-local**: Cloud Run restart or session loss still discards the task. The UI exposes cancellation and retry. Cancellation prevents publication of a result, while an upstream provider request may still finish in the background. A durable queue/run store is required only if the product later promises continuation across restart or an independent service boundary.
 
 ### 🧩 Result Aggregation
 Expert findings are encapsulated in `AgentArtifact` objects:
 - `domain`: The expert name.
 - `result`: Markdown analysis.
-- `usage`: Token and cost breakdown.
+- `usage`: Token, request, tool-call, and Gemini prompt-cache breakdown.
+- `sources`: Application-owned source references derived from recorded tool calls; the model-authored `searched` field is not treated as a citation ledger.
+- `searched`: Reserved for a future judge/audit mode and intentionally omitted from the active legacy output schema; when reintroduced, it must summarize observed tool activity rather than repeat findings.
 
 ---
 
@@ -102,18 +117,30 @@ We use `g.decision().branch()` to route flows based on the return type of the tr
 
 ### 📊 Cumulative Usage & Cost Tracking
 *   Every node execution captures `pydantic-ai` `UsageStats`.
-*   A custom `.merge()` method on `UsageStats` accumulates inputs, outputs, request counts, cost USD, and breakdown mappings.
+*   A custom `.merge()` method on `UsageStats` accumulates inputs, outputs, request counts, tool calls, cache reads/writes, cache-hit ratio, cost USD, and breakdown mappings.
 *   Merged usage is stored in `ctx.state.usage` at every step, ensuring BigQuery logs and token reports are complete.
+
+### 🧱 Legacy expert prompt/cache contract
+The six legacy experts share one prompt layout. The compact, deterministic prefix contains the dossier brief, search criteria, and commune identity. The domain-specific context, role instructions, and Skill Card instructions follow it. The coordinator's mission is sent once as the final user message, and Pydantic AI appends native tool-call/tool-result messages during the ReAct loop. Run IDs and end-user trace identifiers stay in Logfire attributes rather than entering the model prompt.
+
+The graph fan-out remains parallel. Each expert is explicitly instructed to group independent searches per tool family in one batch call, request independent tool families in the same response, avoid dependent follow-up calls, and stop reformulating an already attempted search. The prompt also states the strict five-model-request budget (follow-up requests included) so the expert can reserve a turn for its final answer. This reduces ReAct turns without introducing tool-result TTL caching.
+
+The social adaptive pilot is dormant; the active graph always uses the legacy `social_integration_expert` agent. Its isolated evidence package remains available for a later web-child experiment.
+
+### 🧾 End-user source traceability
+Each expert card persists `expert_sources` alongside its Markdown. The UI renders these references in an inline `ⓘ Sources` popover. Dossier context is labelled separately from providers whose tool call was actually recorded. Numeric footnotes and model-generated source labels are not resolved or displayed as citations.
 
 ### 🧪 Integration Testing
 Tested and verified via:
-- [test_direct_answer.py](file:///Users/jacques/dev/13_odis_stream2/tests/test_direct_answer.py): Asserts the Direct Answer bypass, swarm map-reduce, and synthesizer integration.
-- [test_skills_store.py](file:///Users/jacques/dev/13_odis_stream2/tests/test_skills_store.py): Verifies file-based Markdown store CRUD and domain search operations.
+- [test_direct_answer.py](file:///Users/jacques/dev/13_odis_stream2/tests/unit/test_direct_answer.py): Asserts direct-answer bypass plus the coordinator-to-synthesizer route handoff.
+- [test_swarm_plan_validation.py](file:///Users/jacques/dev/13_odis_stream2/tests/unit/test_swarm_plan_validation.py): Rejects invalid routing and Skill Card ownership combinations.
+- [test_graph_run_contract.py](file:///Users/jacques/dev/13_odis_stream2/tests/unit/test_graph_run_contract.py): Verifies snapshots, attempts, stale-write rejection, timeout, and cancellation.
+- [test_skills_store.py](file:///Users/jacques/dev/13_odis_stream2/tests/unit/test_skills_store.py): Verifies file-based Markdown store CRUD and domain search operations.
 
 ### 🔧 Pydantic AI Upgrade & Tool Grounding Support
-* **Native Tool Combination**: ODIS leverages Gemini's native tools (e.g. Google Search Grounding for web searches) alongside custom Python function tools defined via `@agent.tool` on the expert agents.
-* **Library Upgrade**: The project was upgraded to `pydantic-ai-slim[google,logfire]==1.107.0` (from `1.76.0`) to resolve a critical runtime validation error where the Google GenAI provider would throw `UserError: Google does not support function tools and built-in tools at the same time` when both types of tools were attached to the same agent.
-* **Seamless Integration**: With version `1.107.0`+, `pydantic-ai` natively manages combining custom function tools and native Gemini tools on the Google provider, allowing expert agents to perform local tool lookups while concurrently utilizing the native `WebSearchTool`.
+* **Per-run Web Grounding Tool**: Legacy domain experts no longer combine PydanticAI's native `WebSearch` capability with custom tools. When a selected Skill Card declares `search_web_batch_tool`, `expert_worker_step` injects a per-run `FunctionToolset` containing that ordinary function tool. The wrapper makes one direct `google-genai` `generate_content` call for the complete batch with Gemini's native Google Search grounding, and returns compact typed findings plus provider URLs and grounding supports.
+* **Library Version**: The current dependency pin is `pydantic-ai-slim[google,logfire]==2.27.0`.
+* **Grounding isolation**: The direct call uses `gemini-3.1-flash-lite` and a prompt-level JSON envelope that contains no URL field. URLs and `groundingSupports` are copied only from provider GroundingMetadata; the direct usage/cost record is merged into the expert artifact after the PydanticAI loop. A task-local guard allows at most one wrapper invocation per expert run. The source popover uses the provider title/domain as visible link text and keeps opaque `vertexaisearch.cloud.google.com` redirect URIs only as `href` targets. Inline markers in the final expert Markdown remain deferred because provider segment offsets refer to the nested Web Search response, not necessarily to the expert's rewritten report.
 
 ---
 
@@ -148,4 +175,3 @@ For RAG-based search of inclusion-relevant associations, ODIS uses native BigQue
 - **Database-Level Distance**: In `get_associations_semantic` in [rna_rag.py](file:///Users/jacques/dev/13_odis_stream2/app/services/rna_rag.py), the query embedding is generated via Vertex AI, L2-normalized, and passed to BigQuery, which calculates similarity natively using `1.0 - ML.DISTANCE(..., 'COSINE')`.
 - **Minimal Network Overhead**: This avoids transferring large float arrays (representing candidate embeddings) over the network for local NumPy dot-product comparisons, minimizing memory footprint and network latency.
 - **Search Query Optimization**: To prevent geographical words from diluting semantic match scores, expert tools enforce a strict rule instructing LLMs not to include the city name in the query. Partitioning and filtering are handled via `codgeo` at the SQL level.
-

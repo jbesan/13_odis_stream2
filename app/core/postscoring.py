@@ -1,5 +1,6 @@
 import string
 from typing import Any, Dict, List, Optional
+import pandas as pd
 import streamlit as st
 import threading
 import logging
@@ -8,7 +9,12 @@ import logfire
 import config as cfg
 from core.enrichment_status import EnrichmentStatus, enrichment_result
 from core.models import CommuneResult
-from agents.utils import get_odis_bg_store, sanitize_llm_markdown, rehydrate_graph_state
+from agents.utils import (
+    get_odis_bg_store,
+    launch_background_city_analysis,
+    rehydrate_graph_state,
+    sanitize_llm_markdown,
+)
 
 logger = logging.getLogger(__name__)
 ENRICHMENT_DEADLINE_SECONDS = 30
@@ -133,7 +139,7 @@ def launch_background_refining(
                 pitches_dict = {
                     "global": sanitize_llm_markdown(response_obj.global_pitch),
                     "pitches": {
-                        p.codgeo: sanitize_llm_markdown(p.pitch)
+                        str(p.codgeo).strip(): sanitize_llm_markdown(p.pitch)
                         for p in response_obj.pitches_per_city
                     },
                 }
@@ -374,8 +380,54 @@ def launch_background_inclusion_enrichment(
 
         for codgeo in codgeos:
             try:
-                # Fetch services using search endpoint (automatically embeds structure and handles proximity/zones)
+                # 1. Resolve mairie GPS coordinates from engine.pois (with fallback to df_all_communes centroid)
+                target_lat, target_lon = None, None
+                if (
+                    hasattr(engine, "pois")
+                    and engine.pois is not None
+                    and not engine.pois.empty
+                ):
+                    mairie = engine.pois[
+                        (engine.pois["category"] == "mairie")
+                        & (engine.pois["codgeo"] == str(codgeo))
+                    ]
+                    if (
+                        not mairie.empty
+                        and "lat" in mairie.columns
+                        and "lon" in mairie.columns
+                    ):
+                        target_lat = float(mairie.iloc[0]["lat"])
+                        target_lon = float(mairie.iloc[0]["lon"])
+
+                if (
+                    target_lat is None
+                    and hasattr(engine, "df_all_communes")
+                    and engine.df_all_communes is not None
+                    and str(codgeo) in engine.df_all_communes.index
+                ):
+                    row_c = engine.df_all_communes.loc[str(codgeo)]
+                    if (
+                        "centroid_lon" in row_c
+                        and "centroid_lat" in row_c
+                        and pd.notna(row_c["centroid_lon"])
+                    ):
+                        from utils import common
+                        import config as cfg
+
+                        c_lon, c_lat = common.project_point(
+                            row_c["centroid_lon"],
+                            row_c["centroid_lat"],
+                            from_crs=cfg.PROJECTED_CRS,
+                            to_crs="EPSG:4326",
+                        )
+                        target_lat, target_lon = c_lat, c_lon
+
+                # 2. Fetch services using search endpoint (combining code_commune and GPS coordinates)
                 services_params: dict = {"code_commune": codgeo, "size": 100}
+                if target_lat is not None and target_lon is not None:
+                    services_params["lat"] = round(target_lat, 5)
+                    services_params["lon"] = round(target_lon, 5)
+
                 if thematique_slugs:
                     services_params["thematiques"] = thematique_slugs
 
@@ -404,7 +456,9 @@ def launch_background_inclusion_enrichment(
                 # Deduplication key: (structure_id, nom) — avoids duplicates from same structure
                 seen_keys: set[tuple] = set()
                 # Only index codes matching the user's thematique selection
-                active_slugs: set[str] | None = set(thematique_slugs) if thematique_slugs else None
+                active_slugs: set[str] | None = (
+                    set(thematique_slugs) if thematique_slugs else None
+                )
 
                 for item_wrapper in items:
                     service = item_wrapper.get("service") or {}
@@ -413,8 +467,61 @@ def launch_background_inclusion_enrichment(
                     structure_id = service.get("structure_id") or ""
 
                     struct_obj = service.get("structure") or {}
-                    nom_structure = struct_obj.get("nom") or service.get("nom_structure") or ""
-                    presentation_structure = struct_obj.get("presentation_resumee") or struct_obj.get("presentation_detail") or ""
+                    nom_structure = (
+                        struct_obj.get("nom") or service.get("nom_structure") or ""
+                    )
+                    presentation_structure = (
+                        struct_obj.get("presentation_resumee")
+                        or struct_obj.get("presentation_detail")
+                        or ""
+                    )
+                    commune_nom = (
+                        struct_obj.get("commune") or service.get("commune") or ""
+                    )
+                    code_postal = (
+                        struct_obj.get("code_postal")
+                        or service.get("code_postal")
+                        or ""
+                    )
+                    struct_code_insee = (
+                        struct_obj.get("code_insee")
+                        or service.get("code_insee")
+                        or ""
+                    )
+
+                    # Filter 1: Broad diffusion zones exclusion (keep local: commune, epci, or None)
+                    zone_type = (
+                        service.get("zone_diffusion_type") or ""
+                    ).strip().lower()
+                    if zone_type in {"departement", "region", "pays"}:
+                        continue
+
+                    # Filter 2: Max distance <= 10km (when distance is computed by API)
+                    dist_val = item_wrapper.get("distance")
+                    if dist_val is None:
+                        dist_val = service.get("distance")
+                    if dist_val is not None and dist_val > 5:
+                        continue
+
+                    # Filter 3: External CCAS exclusion (keep local CCAS, CIAS, and other structures)
+                    reseaux = struct_obj.get("reseaux_porteurs") or []
+                    typologie = (struct_obj.get("typologie") or "").upper()
+                    is_ccas = (
+                        "ccas-cias" in reseaux
+                        or typologie == "CCAS"
+                        or "CCAS" in nom_structure.upper()
+                        or "CENTRE COMMUNAL D'ACTION SOCIALE"
+                        in nom_structure.upper()
+                    )
+                    is_external = bool(
+                        struct_code_insee and str(struct_code_insee) != str(codgeo)
+                    )
+                    if (
+                        is_ccas
+                        and is_external
+                        and "CIAS" not in nom_structure.upper()
+                    ):
+                        continue
 
                     # Deduplication key: same structure offering same service type
                     dedup_key = (structure_id, nom.strip().lower())
@@ -468,8 +575,22 @@ def launch_background_inclusion_enrichment(
                                 "description": desc,
                                 "lien_source": lien_source,
                                 "source": source,
+                                "distance_km": dist_val,
+                                "commune_nom": commune_nom,
+                                "code_postal": code_postal,
                             }
                         )
+
+                # Sort each thematic category by proximity (distance_km ascending)
+                for cat_label in grouped_services:
+                    grouped_services[cat_label].sort(
+                        key=lambda x: (
+                            x.get("distance_km")
+                            if x.get("distance_km") is not None
+                            else 999,
+                            x.get("name", ""),
+                        )
+                    )
 
                 enrichment_data[str(codgeo)] = grouped_services
                 statuses[str(codgeo)] = enrichment_result(
@@ -897,6 +1018,7 @@ def launch_background_audit_log(
     h: str,
     interaction_id: Optional[str] = None,
     username: Optional[str] = None,
+    org_id: Optional[str] = None,
 ):
     """
     Launches a background thread to log search results to Markdown and Telemetry.
@@ -930,6 +1052,7 @@ def launch_background_audit_log(
                     source_flow="classic",
                     interaction_id=interaction_id,
                     username=username,
+                    org_id=org_id,
                 )
             except Exception as e:
                 logging.error(
@@ -1050,6 +1173,19 @@ def launch_post_scoring_tasks(engine: Any, config: Any, search_results: Any, h: 
     if h not in store:
         store[h] = {}
 
+    # Capture session metadata FROM THE MAIN THREAD
+    try:
+        from services.telemetry import get_interaction_id
+
+        interaction_id = get_interaction_id()
+        username = st.session_state.get("username", "unknown")
+        org = st.session_state.get("org")
+        org_id = org.id if org and hasattr(org, "id") else "unknown"
+    except:
+        interaction_id = "unknown"
+        username = "unknown"
+        org_id = "unknown"
+
     if cfg.is_ai_free_mode():
         # Compute static pitches for results
         pitches = {}
@@ -1080,22 +1216,19 @@ def launch_post_scoring_tasks(engine: Any, config: Any, search_results: Any, h: 
         ]
         launch_background_inclusion_enrichment(engine, target_codgeos, h, thematique_slugs or None)
         launch_background_job_curation(target_codgeos, config, h, search_results)
-        launch_background_audit_log(config, search_results, h)
+        launch_background_audit_log(
+            config,
+            search_results,
+            h,
+            interaction_id=interaction_id,
+            username=username,
+            org_id=org_id,
+        )
         return
 
     store[h]["status_refiner"] = "running"
 
-    # 1. Capture session metadata FROM THE MAIN THREAD
-    try:
-        from services.telemetry import get_interaction_id
-
-        interaction_id = get_interaction_id()
-        username = st.session_state.get("username", "unknown")
-    except:
-        interaction_id = "unknown"
-        username = "unknown"
-
-    # 2. Extract city data for Scorer Agent (using mode='json' for safe cross-thread serialization)
+    # Extract city data for Scorer Agent (using mode='json' for safe cross-thread serialization)
     top_cities_full = [c.model_dump(mode="json") for c in search_results.results]
     current_geo_full = (
         search_results.current_geo.model_dump(mode="json")
@@ -1134,7 +1267,34 @@ def launch_post_scoring_tasks(engine: Any, config: Any, search_results: Any, h: 
     # 4b. Launch Employment Enrichment (Detailed Jobs - France Travail)
     launch_background_job_curation(target_codgeos, config, h, search_results)
 
+    # 4c. Launch Automated City Analysis (if enabled)
+    if not cfg.is_ai_free_mode() and cfg.is_auto_analyse_top_cities_enabled():
+        for city in (getattr(search_results, "results", []) or [])[:5]:
+            nom = getattr(city, "name", None) or (
+                city.get("name") if isinstance(city, dict) else ""
+            )
+            codgeo = getattr(city, "codgeo", None) or (
+                city.get("codgeo") if isinstance(city, dict) else ""
+            )
+            if nom and codgeo:
+                launch_background_city_analysis(
+                    nom=nom,
+                    codgeo=str(codgeo),
+                    search_criterias=config,
+                    search_results=search_results,
+                    h=h,
+                    interaction_id=interaction_id,
+                    username=username,
+                    organization_id=org_id,
+                    trigger="post_scoring_auto",
+                )
+
     # 5. Launch Logging & Telemetry
     launch_background_audit_log(
-        config, search_results, h, interaction_id=interaction_id, username=username
+        config,
+        search_results,
+        h,
+        interaction_id=interaction_id,
+        username=username,
+        org_id=org_id,
     )

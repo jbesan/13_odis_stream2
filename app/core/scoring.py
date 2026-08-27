@@ -580,6 +580,7 @@ class ScoringEngine:
             live_jobs_data=app_data.get("live_jobs_data", pd.DataFrame()),
             siae_jobs_data=app_data.get("siae_jobs_data", pd.DataFrame()),
             rna_rag_service=app_data.get("rna_rag_service"),
+            pois=app_data.get("pois", pd.DataFrame()),
         )
 
     def __init__(
@@ -604,6 +605,7 @@ class ScoringEngine:
         live_jobs_data: pd.DataFrame = pd.DataFrame(),
         siae_jobs_data: pd.DataFrame = pd.DataFrame(),
         rna_rag_service: Optional[RNARagService] = None,
+        pois: pd.DataFrame = pd.DataFrame(),
     ):
         self.current_city_scored_row = None
         self.df_all_communes = df_all_communes
@@ -624,6 +626,7 @@ class ScoringEngine:
         self.refugee_associations_data = refugee_associations_data
         self.live_jobs_data = live_jobs_data
         self.siae_jobs_data = siae_jobs_data
+        self.pois = pois
         self._unavailable_runtime_scores: set[str] = set()
 
         # Initialize RNA RAG Service if not provided

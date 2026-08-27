@@ -26,6 +26,7 @@ def get_map_zoom(search_area: str) -> int:
 def create_base_map(center: List[float], zoom: int) -> flm.Map:
     """
     Creates the base Folium map.
+    Uses OpenStreetMap France Humanitarian (HOT) tiles for softer pastel colors and full French toponymy.
     🧪 SOTA: 'prefer_canvas=True' is critical for 35k+ polygons at France-wide scale.
     """
     if center is None:
@@ -33,7 +34,11 @@ def create_base_map(center: List[float], zoom: int) -> flm.Map:
     if zoom is None:
         zoom = get_map_zoom(st.session_state.config.loc_search_area)
     return flm.Map(
-        location=center, zoom_start=zoom, tiles="cartodbpositron", prefer_canvas=True
+        location=center,
+        zoom_start=zoom,
+        tiles="https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png",
+        attr='&copy; OpenStreetMap France | &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        prefer_canvas=True,
     )
 
 

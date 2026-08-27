@@ -8,6 +8,8 @@ from pydantic_ai.models import ModelSettings
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.providers.google_cloud import GoogleCloudProvider
 
+from agents.google_model import GroundingGoogleModel
+
 
 # --- Configuration Models ---
 
@@ -16,17 +18,18 @@ class NodeConfig(BaseModel):
     """Configuration for a specific LLM agent node.
 
     Attributes:
-        model: Pydantic AI model identifier.
+        model: Optional Pydantic AI model identifier override. If None, uses AgentSettings.default_model.
         temperature: LLM temperature (0.0 to 1.0).
         max_tokens: Maximum output tokens.
-        thinking: Optional thinking/reasoning effort level (Gemini 3+).
+        thinking: Optional thinking/reasoning effort level (Gemini 3+) or False to disable.
+        timeout: Request timeout in seconds.
     """
 
-    model: str = "google:gemini-3.1-flash-lite-preview"
+    model: str | None = None
     temperature: float = 0.0
     max_tokens: int | None = None
-    thinking: Literal["minimal", "low", "medium", "high"] | None = None
-    timeout: float | None = 60.0
+    thinking: Literal["minimal", "low", "medium", "high"] | bool | None = False
+    timeout: float | None = 30.0
 
     @property
     def model_settings(self) -> ModelSettings:
@@ -43,76 +46,56 @@ class AgentSettings(BaseSettings):
     """Centralized Agent configuration with environment variable overrides.
 
     Settings can be overridden using the ODIS_AGENT_ prefix, e.g.:
+    ODIS_AGENT_DEFAULT_MODEL=google:gemini-3.5-flash-lite
     ODIS_AGENT_SYNTHESIZER__TEMPERATURE=0.7
     """
 
     model_config = SettingsConfigDict(
         env_prefix="ODIS_AGENT_",
-        env_file=".env",
+        env_file=(".env", "app/.env"),
         env_nested_delimiter="__",
         extra="ignore",
     )
 
+    default_model: str = Field(default="google:gemini-3.1-flash-lite")
+
     router: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(
-            model="google:gemini-3.1-flash-lite", temperature=0.1, thinking="low"
-        )
+        default_factory=lambda: NodeConfig(temperature=0.0, thinking=False)
     )
     interviewer: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(
-            model="google:gemini-3.1-flash-lite", temperature=0.5, thinking="medium"
-        )
+        default_factory=lambda: NodeConfig(temperature=0.7, thinking="medium")
     )
     ts_agent: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(
-            model="google:gemini-3.1-flash-lite", temperature=0.1, thinking="low"
-        )
+        default_factory=lambda: NodeConfig(temperature=0.0, thinking=False)
     )
     housing_expert: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(
-            model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"
-        )
+        default_factory=lambda: NodeConfig(temperature=0.0, thinking=False)
     )
     mobility_expert: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(
-            model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"
-        )
+        default_factory=lambda: NodeConfig(temperature=0.0, thinking=False)
     )
     healthcare_expert: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(
-            model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"
-        )
+        default_factory=lambda: NodeConfig(temperature=0.0, thinking=False)
     )
     education_expert: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(
-            model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"
-        )
+        default_factory=lambda: NodeConfig(temperature=0.0, thinking=False)
     )
     social_integration_expert: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(
-            model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"
-        )
+        default_factory=lambda: NodeConfig(temperature=0.0, thinking=False)
     )
     job_hunter: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(
-            model="google:gemini-3.1-flash-lite", temperature=0.3, thinking="low"
-        )
+        default_factory=lambda: NodeConfig(temperature=0.0, thinking=False)
     )
     job_curator: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(
-            model="google:gemini-3.1-flash-lite", temperature=0.1, thinking="low"
-        )
+        default_factory=lambda: NodeConfig(temperature=0.0, thinking=False)
     )
     synthesizer: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(
-            model="google:gemini-3.1-flash-lite", temperature=0.1, thinking="medium"
-        )
-    )  # , max_tokens=8192))
+        default_factory=lambda: NodeConfig(temperature=0.7, thinking="low")
+    )
     refiner: NodeConfig = Field(
         default_factory=lambda: NodeConfig(
-            model="google:gemini-3.1-flash-lite",
-            temperature=0.1,
-            thinking="minimal",
+            temperature=0.0,
+            thinking=False,
             max_tokens=4096,
         )
     )
@@ -132,7 +115,7 @@ agent_settings = AgentSettings()
 
 # --- Legacy Compatibility & Helpers ---
 
-DEFAULT_MODEL = "google:gemini-3.1-flash-lite"
+DEFAULT_MODEL = agent_settings.default_model
 
 
 def get_gcp_project() -> str:
@@ -151,8 +134,9 @@ def get_gcp_project() -> str:
 
 
 def get_model(agent_name: str) -> str:
-    """Returns the model string for a given agent."""
-    return agent_settings.get_config(agent_name).model
+    """Returns the model string for a given agent, falling back to default_model."""
+    cfg = agent_settings.get_config(agent_name)
+    return cfg.model or agent_settings.default_model
 
 
 def get_model_settings(agent_name: str) -> ModelSettings:
@@ -193,7 +177,7 @@ def get_p_model(agent_name: str, client: genai.Client | None = None) -> GoogleMo
     except Exception:
         pass
 
-    return GoogleModel(
+    return GroundingGoogleModel(
         model_name,
         provider=provider,
         profile=profile,
@@ -239,8 +223,15 @@ def get_swarm_boilerplate(
             "**Contexte de collaboration (Swarm d'agents IA)** :\n"
             "- Tu es un expert thématique faisant partie d'un swarm d'agents IA. La demande provient de l'agent coordinateur.\n"
             "- L'utilisateur final est un **Travailleur Social humain** qui accompagne un bénéficiaire (généralement une personne réfugiée et sa famille) dans sa relocalisation.\n"
-            "- Formule tes analyses à partir de tes recherches qualitatives en plus des données quantitatives du dossier JSON joint.\n"
-            "- Soit hyper factuel et ajoute toujours une section sur les éléments spécifiques que tu n'as pas pu trouver ou vérifier.\n"
+            "- Formule tes analyses à partir de tes recherches qualitatives en plus des données quantitatives du dossier joint.\n"
+            "- Sois hyper factuel. Si des éléments essentiels sont manquants ou non vérifiables, formalise-les explicitement sous une section titrée '#### ⚠️ Éléments non vérifiés / manquants' (et non comme une simple note de bas de page).\n"
+            "**Instructions opérationnelles**:\n"
+            "- Ne recherche jamais une deuxième fois des éléments déjà à ta disposition.\n"
+            "- Priorisation des outils : N'utilise `search_web_batch_tool` que lorsque les autres outils n'ont rien donné ou ne sont pas pertinents sur un point essentiel.\n"
+            "- Pour un outil donné, regroupe toutes les recherches indépendantes dans un seul appel batch.\n"
+            "- Si plusieurs outils sont indépendants, appelle-les dans la même réponse, sans attendre le premier résultat.\n"
+            "- `search_web_batch_tool` est limité à un seul appel par mission : donne-lui une liste de besoins indépendants (termes clés, question et lieu si nécessaire), jamais une recherche à la fois.\n"
+            "- Budget limité : tu disposes d'au plus 5 requêtes au modèle pour cette mission, appels de suivi compris. Ce budget concerne les tours du modèle, pas le nombre de recherches regroupées dans un batch : planifie dès le premier tour et garde un tour pour la réponse finale.\n"
         )
     elif agent_type == "coordinator":
         return (
@@ -254,8 +245,8 @@ def get_swarm_boilerplate(
             "**Contexte de collaboration (Swarm d'agents IA)** :\n"
             "- Tu es le synthétiseur final d'un swarm d'agents IA thématiques.\n"
             "- L'utilisateur final est un **Travailleur Social humain** qui accompagne un bénéficiaire (généralement une personne réfugiée et sa famille) dans sa relocalisation.\n"
-            "- Synthétise les retours des experts et du dossier JSON pour l'aider dans son accompagnement.\n"
-            "- Soit hyper factuel et ajoute toujours une section sur les éléments spécifiques que tu n'as pas pu trouver ou vérifier.\n"
+            "- Synthétise les retours des experts pour éclairer la décision du travailleur social.\n"
+            "- Sois hyper factuel et identifie clairement les points d'arbitrage et les vigilances.\n"
         )
     elif agent_type == "job_curator":
         return (

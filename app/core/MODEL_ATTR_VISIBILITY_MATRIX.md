@@ -1,119 +1,86 @@
-# ODIS Model Attributes Visibility Matrix
+# ODIS Domain Context Routing Specification (Object-Level ACL)
 
-This matrix defines data access rights across all agents and interfaces based on the `odis_visibility` tags in `app/core/models.py`.
-
-**Legend:**
-- **Ref**: Refiner Agent
-- **Syn**: Synthesizer Agent
-- **Sct**: Scout Agent
-- **Job**: Job Hunter Agent
-- **Web**: Web Agent
-- **UI**: Streamlit UI Details
-- **PDF**: PDF Export Report
+This document defines the data access contract across all ODIS agents and presentation layers.
+Instead of fragile field-level metadata annotations, context assembly is governed by an **Object-Level Domain Routing** model managed deterministically by `ODISContextBuilder`.
 
 ---
 
-## 1. SearchCriterias (The User Dossier)
+## 1. Context Consumers (Actors)
 
-*All fields in SearchCriterias are visible to Refiner and included in PDF.*
-
-| Field | Ref | Syn | Sct | Job | Web | UI | PDF |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| `commune_actuelle` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `loc_search_area` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `loc_search_code` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `nb_adultes` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `nb_enfants` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `classe_enfants` | ✅ | ✅ | ✅ | | | ✅ | ✅ |
-| `codes_metiers` | ✅ | ✅ | | ✅ | | ✅ | ✅ |
-| `codes_formations` | ✅ | ✅ | | ✅ | | ✅ | ✅ |
-| `inc_services_selection` | ✅ | ✅ | | | | ✅ | ✅ |
-| `inc_asso_add` | ✅ | ✅ | | | | ✅ | ✅ |
-| `hebergement_cible` | ✅ | ✅ | ✅ | | | ✅ | ✅ |
-| `logement` | ✅ | ✅ | ✅ | | | ✅ | ✅ |
-| `type_logement` | ✅ | ✅ | ✅ | | | ✅ | ✅ |
-| `besoin_sante` | ✅ | ✅ | ✅ | | | ✅ | ✅ |
-| `freq_retour` | ✅ | ✅ | ✅ | | | ✅ | ✅ |
-| `notes_qualitatives` | ✅ | ✅ | ✅ | | ✅ | | ✅ |
-| `weight_profile` | ✅ | ✅ | | | | | ✅ |
-| `criteria_weights` | ✅ | | | | | | ✅ |
-| `poids_{cat}` | ✅ | | | | | | ✅ |
-| `org_context` | ✅ | ✅ | | | | | ✅ |
-| `org_strategic_loc` | ✅ | | | | | | ✅ |
-| `target_pop` | ✅ | | | | | | ✅ |
-| `org_boosts` | ✅ | | | | | | ✅ |
-| `odis_brief` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Key | Consumer / Agent | Role in Swarm |
+| :--- | :--- | :--- |
+| `ui_details` | Streamlit UI | Direct model dump — full access to all objects and attributes without ACL filtering |
+| `pdf_report` | PDF Export Generator | Direct model dump — full access to all objects and attributes |
+| `agent_refiner` | Refiner Agent | Produces initial narrative briefing (`odis_brief`) and city pitch |
+| `agent_ts_agent` | TS Coordinator | Evaluates beneficiary needs, plans expert tasks, and selects skill cards |
+| `agent_synthesizer` | Synthesizer Agent | Produces executive cross-domain overview and next steps (from pre-digested cards) |
+| `agent_job_hunter` | Job Hunter Expert | France Travail job offers, SIAE insertion opportunities, ROME skills matching |
+| `agent_housing_expert` | Housing Expert | Rents, social housing wait times, temporary shelters (CADA/CHRS), J'Accueille |
+| `agent_mobility_expert` | Mobility Expert | Public transport density, train/bus/tram stops, interurban travel, routes |
+| `agent_healthcare_expert` | Healthcare Expert | Health access index (APL), hospitals, clinics, maternal and child healthcare (PMI) |
+| `agent_education_expert` | Education Expert | School infrastructure (crèche, école, collège, lycée), local schooling registration |
+| `agent_social_integration_expert` | Social Integration Expert | Refugee aid associations, Data Inclusion services (Soliguide/Dora), civic fabric |
 
 ---
 
-## 2. CommuneResult (Main City Model)
+## 2. Standardized Context Envelope
 
-| Field | Ref | Syn | Sct | Job | Web | UI | PDF |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| `codgeo` / `name` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `population` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `name_bdv` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `global_score` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `scores` (Details) | ✅ | ✅ | | | | ✅ | ✅ |
-| `employment` | | ✅ | | | | ✅ | ✅ |
-| `housing` | | ✅ | | | | ✅ | ✅ |
-| `education` | | ✅ | | | | ✅ | ✅ |
-| `health` | | ✅ | | | | ✅ | ✅ |
-| `inclusion` | | ✅ | | | | ✅ | ✅ |
-| `mobility` | | ✅ | | | | ✅ | ✅ |
-| `territoire` | ✅ | | | | | ✅ | ✅ |
-| `refiner_pitch` | | ✅ | | | | ✅ | ✅ |
-| `expert_analysis` | | ✅ | | | | ✅ | ✅ |
-| `odis_synthesis` | | ✅ | | | | ✅ | ✅ |
+Every agent receives a clean, domain-scoped JSON context envelope structured as follows:
+
+```json
+{
+  "Résumé du dossier (Briefing)": "Synthèse narrative complète...",
+  "Critères de recherche": {
+    "Commune actuelle": "Paris (75056)",
+    "Nombre d'adultes": 1,
+    "Nombre d'enfants": 2,
+    "Niveaux scolaires recherchés": ["École élémentaire", "Collège"],
+    "Métiers ciblés": [["Boulangerie"]],
+    "Notes qualitatives": ["Proche de la mer", "Transports accessibles"]
+  },
+  "Commune analysée (Identité)": {
+    "Code INSEE": "33063",
+    "Nom": "Bordeaux",
+    "Population": 260958,
+    "Bassin de vie": "Bordeaux",
+    "Score global": 85
+  },
+  "Données <domaine>": {
+    "... Données métriques et objets détails spécifiques au domaine ..."
+  }
+}
+```
 
 ---
 
-## 3. Detailed Metrics
+## 3. Object-Level Domain Routing Table
 
-### EmploymentMetrics
-| Field | Ref | Syn | Sct | Job | Web | UI | PDF |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| `cat_score` | ✅ | ✅ | | | | ✅ | ✅ |
-| `jobs_total` | ✅ | ✅ | | | | ✅ | ✅ |
-| `jobs_summary` | ✅ | ✅ | | ✅ | | ✅ | ✅ |
-| `jobs_matching_total`| ✅ | ✅ | | ✅ | | ✅ | ✅ |
-| `jobs_match_summary` | ✅ | ✅ | | ✅ | | ✅ | ✅ |
-| `top_professions` | ✅ | ✅ | | ✅ | | ✅ | ✅ |
-| `inclusive_jobs_tot` | ✅ | ✅ | | ✅ | | ✅ | ✅ |
-| `inclusive_jobs_sum` | ✅ | ✅ | | ✅ | | ✅ | ✅ |
-| `training_programs` | ✅ | ✅ | | ✅ | | ✅ | ✅ |
+| Component / Agent | Criteria Injected | Target Commune Data Injected | Pre-loaded Detail Collections (`XxxDetail`) |
+| :--- | :--- | :--- | :--- |
+| **UI & PDF** | Full `SearchCriterias` | Full `CommuneResult` (100%) | All collections (`JobOfferDetail`, `AssociationDetail`, `InclusionServiceDetail`, `facility_details`) |
+| **Refiner** | Full `SearchCriterias` + Notes | Full `CommuneResult` summary + `scores` map | High-level summary of top 5 communes |
+| **TS Coordinator** | Full `SearchCriterias` + `odis_brief` | Base Commune Identity + Category Scores Overview | Territory strategic flags (`is_strategic`) |
+| **Synthesizer** | Pre-digested composite snippets | Composite cards (Briefing, Comparator, Expert summaries, CCAS, Territory) | Executive artifact summaries |
+| **Job Hunter** | Full `SearchCriterias` + `odis_brief` | Base Identity + `commune.employment` (`EmploymentMetrics`) | `matching_job_offers` (`JobOfferDetail` in compact format) |
+| **Housing Expert** | Full `SearchCriterias` + `odis_brief` | Base Identity + `commune.housing` (`HousingMetrics`) | `housing_price_variants`, `log_soc_delay`, `host_count` |
+| **Mobility Expert** | Full `SearchCriterias` + `odis_brief` | Base Identity + `commune.mobility` (`MobilityMetrics`) | Stop counts (`bus_stops`, `train_stops`, etc.), density, distance |
+| **Healthcare Expert** | Full `SearchCriterias` + `odis_brief` | Base Identity + `commune.health` (`HealthMetrics`) | `facility_details` (hospitals, PMI, specialized centers) |
+| **Education Expert** | Full `SearchCriterias` + `odis_brief` | Base Identity + `commune.education` (`EducationMetrics`) | `facility_details` (school names by level: crèche, maternelle, primaire, etc.) |
+| **Social Integration** | Full `SearchCriterias` + `odis_brief` | Base Identity + `commune.inclusion` (`InclusionMetrics`) | `asso_refugee_list`, `asso_inclusion_list_by_cat` (`AssociationDetail`), `services_detailed` (`InclusionServiceDetail`) |
 
-### HousingMetrics
-| Field | Ref | Syn | Sct | Job | Web | UI | PDF |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| `cat_score` | ✅ | ✅ | | | | ✅ | ✅ |
-| `host_count` | ✅ | ✅ | ✅ | | | ✅ | ✅ |
-| `price_per_sqm` | ✅ | ✅ | ✅ | | | ✅ | ✅ |
-| `housing_price_variants` | ✅ | ✅ | | | | ✅ | ✅ |
+---
 
-### Education & Health
-| Field | Ref | Syn | Sct | Job | Web | UI | PDF |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| `cat_score` | ✅ | ✅ | | | | ✅ | ✅ |
-| `facility_counts` | ✅ | ✅ | | | | ✅ | ✅ |
-| `facility_details` | ✅ | ✅ | ✅ | | | ✅ | ✅ |
+## 4. Token & Representation Invariants
 
-### Inclusion Metrics
-| Field | Ref | Syn | Sct | Job | Web | UI | PDF |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| `cat_score` | ✅ | ✅ | | | | ✅ | ✅ |
-| `asso_incl_count` | ✅ | ✅ | | | | ✅ | ✅ |
-| `asso_incl_list` | | | ✅ | | | ✅ | ✅ |
-| `asso_refugee_count`| ✅ | ✅ | | | | ✅ | ✅ |
-| `asso_refugee_list` | | | ✅ | | | ✅ | ✅ |
-| `services_grouped` | | | ✅ | | | ✅ | ✅ |
+1. **Deduplication of Briefing**:
+   * The briefing narrative `odis_brief` is injected exactly once at root key `"Résumé du dossier (Briefing)"`.
+   * When serializing `SearchCriterias`, the field `odis_brief` is excluded (`exclude={"odis_brief"}`) to prevent prompt duplication.
 
-### Mobility Metrics
-| Field | Ref | Syn | Sct | Job | Web | UI | PDF |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| `cat_score` | ✅ | ✅ | | | | ✅ | ✅ |
-| `stops_{type}` | ✅ | ✅ | ✅ | | | ✅ | ✅ |
-| `total_stops` | ✅ | ✅ | ✅ | | | ✅ | ✅ |
-| `stop_density` | ✅ | ✅ | ✅ | | | ✅ | ✅ |
-| `is_same_epci` | ✅ | ✅ | | | | ✅ | ✅ |
-| `distance_km` | ✅ | ✅ | | | | ✅ | ✅ |
+2. **Compact Detail Formatting**:
+   * Detail objects (`AssociationDetail`, `InclusionServiceDetail`, `JobOfferDetail`) are serialized as concise pipe-separated strings (`ID | Name | Key Details`) rather than verbose nested JSON trees to preserve context window and model attention.
+
+3. **Zero Empty Dictionaries**:
+   * Domain experts receive only their corresponding domain metric container. Unrelated domain containers (`Données logement: {}`, `Données éducation: {}`) are never emitted in an expert's context.
+
+4. **Territory Metrics**:
+   * `TerritoryMetrics` (`commune.territoire`) is surfaced for the `Synthesizer`, `Refiner`, and `TS_AGENT` (with eventual migration of CTAI, ANVITA, and SIAE indicators to `inclusion`).

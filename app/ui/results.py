@@ -8,6 +8,8 @@ from core.models import (
     SearchResultsData,
     AssociationDetail,
     InclusionServiceDetail,
+    CityAnalysisReport,
+    DomainReport,
 )
 from core.scoring import _format_kpi_value
 from core.enrichment_status import (
@@ -18,7 +20,12 @@ from core.enrichment_status import (
 from core.postscoring import generate_static_pitch
 from utils.data_loader import fetch_salesforce_jaccueille_bdv
 
-from agents.utils import odis_get_bg_result, launch_background_city_analysis
+from agents.utils import (
+    cancel_background_city_analysis,
+    is_terminal_graph_run_status,
+    launch_background_city_analysis,
+    odis_get_bg_result,
+)
 from typing import List, Optional, Any
 import plotly.graph_objects as go
 from core import maps
@@ -28,7 +35,6 @@ from services import telemetry
 
 # Configure Logging
 logger = logging.getLogger("ui.results")
-
 
 
 # --- Dialog Dismiss Callbacks (Necessary for modular UI state management) ---
@@ -85,7 +91,6 @@ def pdf_modal():
                 {"search_hash": search_results.search_hash if search_results else ""},
             )
 
-
     # State 2: Download Ready
     if st.session_state.get("pdf_modal_data"):
         pdf_warnings = st.session_state.get("pdf_modal_warnings", [])
@@ -114,17 +119,73 @@ def pdf_modal():
                 st.rerun()
 
 
+def _is_postscoring_ready_for_search(h: Optional[str]) -> bool:
+    """Return True if all background post-scoring tasks for all search results have reached a terminal state."""
+    if st.session_state.get("immutable_shared_snapshot"):
+        return True
+
+    if not h:
+        return True
+
+    search_results: Optional[SearchResultsData] = st.session_state.get("search_results")
+    if not search_results or not search_results.results:
+        return True
+
+    communes = list(search_results.results)
+    if search_results.commune_pressentie:
+        communes.append(search_results.commune_pressentie)
+
+    bg_res = odis_get_bg_result(h)
+    if not isinstance(bg_res, dict):
+        return False
+
+    # 1. Refiner status (pitches & briefing)
+    refiner_status = bg_res.get("status_refiner")
+    if not is_terminal_refiner_status(refiner_status):
+        return False
+
+    # 2. Check each commune's enrichments
+    for commune in communes:
+        codgeo_str = str(commune.codgeo)
+
+        # Jobs
+        if not (hasattr(commune, "siae_jobs") and getattr(commune, "siae_jobs", None) is not None):
+            jobs_status = bg_res.get("jobs_enrichment", {}).get(codgeo_str, {}).get("status")
+            if not is_terminal_enrichment_status(jobs_status):
+                return False
+
+        # Associations
+        if not (hasattr(commune, "associations_details") and getattr(commune, "associations_details", None) is not None):
+            assos_status = bg_res.get("association_enrichment_status", {}).get(codgeo_str, {}).get("status")
+            if not is_terminal_enrichment_status(assos_status):
+                return False
+
+        # Inclusion services
+        if not (hasattr(commune, "inclusion") and getattr(commune.inclusion, "services_detailed", None) is not None):
+            inc_status = bg_res.get("inclusion_enrichment_status", {}).get(codgeo_str, {}).get("status")
+            if inc_status is not None and not is_terminal_enrichment_status(inc_status):
+                return False
+
+    return True
+
+
+@st.fragment(run_every=2.0)
 def render_export_pdf_button(h: str):
-    """Export deterministic results; enrichment remains best-effort."""
+    """Export results once post-scoring completes, updating in-place."""
     if not h or not st.session_state.get("search_results"):
         return
 
+    ready = _is_postscoring_ready_for_search(h)
+    btn_label = "Exporter résultats" if ready else "Exporter résultats (Préparation...)"
+    btn_disabled = not ready
+
     if st.button(
-        "Exporter résultats",
+        btn_label,
         icon=":material/picture_as_pdf:",
         type="secondary",
         width="stretch",
         key=f"pdf_btn_{h}",
+        disabled=btn_disabled,
     ):
         pdf_modal()
 
@@ -140,9 +201,13 @@ def share_search_modal():
         return
 
     # Generate or retrieve active share_id
-    if "active_share_id" not in st.session_state or not st.session_state.active_share_id:
+    if (
+        "active_share_id" not in st.session_state
+        or not st.session_state.active_share_id
+    ):
         with st.spinner("Génération du lien de partage..."):
             from services import share_service
+
             try:
                 share_id = share_service.save_shared_search(
                     config=config,
@@ -163,10 +228,18 @@ def share_search_modal():
     # Construct public shareable URL
     base_url = "https://myapp.fr"
     try:
-        headers = st.context.headers if hasattr(st, "context") and hasattr(st.context, "headers") else {}
+        headers = (
+            st.context.headers
+            if hasattr(st, "context") and hasattr(st.context, "headers")
+            else {}
+        )
         host = headers.get("host") or headers.get("Host")
         if host:
-            scheme = "https" if "localhost" not in host and "127.0.0.1" not in host else "http"
+            scheme = (
+                "https"
+                if "localhost" not in host and "127.0.0.1" not in host
+                else "http"
+            )
             base_url = f"{scheme}://{host}"
     except Exception:
         pass
@@ -207,28 +280,37 @@ def share_search_modal():
         )
 
 
+@st.fragment(run_every=2.0)
 def render_share_search_button(
     h: str = "",
     button_text: str = "Partager la recherche",
     key_prefix: str = "share_btn",
     width: str = "stretch",
 ):
-    """Share deterministic results without waiting for optional enrichment."""
-    if not h and "search_results" in st.session_state and st.session_state.search_results:
+    """Share results once post-scoring completes, updating in-place."""
+    if (
+        not h
+        and "search_results" in st.session_state
+        and st.session_state.search_results
+    ):
         h = st.session_state.search_results.search_hash
 
     if not st.session_state.get("search_results"):
         return
 
+    ready = _is_postscoring_ready_for_search(h)
+    btn_label = button_text if ready else f"{button_text} (Préparation...)"
+    btn_disabled = not ready
+
     if st.button(
-        button_text,
+        btn_label,
         icon=":material/share:",
         type="secondary",
         width=width,
         key=f"{key_prefix}_{h}",
+        disabled=btn_disabled,
     ):
         share_search_modal()
-
 
 
 # --- Module Level Fragments for Stability ---
@@ -252,22 +334,51 @@ def _merge_agent_results(final_state_results, codgeo: str, commune: CommuneResul
         )
 
     # 2. Find and update the specific focus city
-    new_results = _get_field(final_state_results, "results", [])
-    for city_data in new_results:
-        city_codgeo = _get_field(city_data, "codgeo")
-        if str(city_codgeo) == str(codgeo):
-            new_synth = _get_field(city_data, "odis_synthesis", [])
-            if new_synth:
-                commune.odis_synthesis = new_synth
+    target_city = None
+    if hasattr(final_state_results, "get_by_code"):
+        target_city = final_state_results.get_by_code(codgeo)
+    if not target_city:
+        new_results = _get_field(final_state_results, "results", []) or []
+        for city_data in new_results:
+            if str(_get_field(city_data, "codgeo")) == str(codgeo):
+                target_city = city_data
+                break
+        if not target_city and _get_field(final_state_results, "commune_pressentie"):
+            cp = _get_field(final_state_results, "commune_pressentie")
+            if str(_get_field(cp, "codgeo")) == str(codgeo):
+                target_city = cp
+        if not target_city and _get_field(final_state_results, "current_geo"):
+            cg = _get_field(final_state_results, "current_geo")
+            if str(_get_field(cg, "codgeo")) == str(codgeo):
+                target_city = cg
 
-            expert_data = _get_field(city_data, "expert_analysis", {})
-            if expert_data and isinstance(expert_data, dict):
-                commune.expert_analysis.update(expert_data)
+    if target_city:
+        new_synth = _get_field(target_city, "odis_synthesis", [])
+        if new_synth:
+            commune.odis_synthesis = new_synth
 
-            new_pitch = _get_field(city_data, "refiner_pitch")
-            if new_pitch:
-                commune.refiner_pitch = new_pitch
-            break
+        expert_data = _get_field(target_city, "expert_analysis", {})
+        if expert_data and isinstance(expert_data, dict):
+            commune.expert_analysis.update(expert_data)
+
+        artifact_data = _get_field(target_city, "expert_artifacts", {})
+        if artifact_data and isinstance(artifact_data, dict):
+            commune.expert_artifacts.update(artifact_data)
+
+        source_data = _get_field(target_city, "expert_sources", {})
+        if source_data and isinstance(source_data, dict):
+            commune.expert_sources.update(source_data)
+
+        new_pitch = _get_field(target_city, "refiner_pitch")
+        if new_pitch:
+            commune.refiner_pitch = new_pitch
+
+        new_report = _get_field(target_city, "analysis_report")
+        if new_report:
+            if isinstance(new_report, dict):
+                commune.analysis_report = CityAnalysisReport.model_validate(new_report)
+            else:
+                commune.analysis_report = new_report
 
 
 # --- Module Level Polling Helpers ---
@@ -295,13 +406,42 @@ def polling_synthesis_fragment(
         import time
 
         start_time = status_data.get("start_time", time.time())
+        deadline_at = status_data.get("deadline_at")
         elapsed = time.time() - start_time
-        progress = min(1.0, elapsed / 30.0)
-        st.progress(progress, text="Préparation de la synthèse (~30 secondes)...")
-    elif status_data.get("status") == "error":
-        st.error(f"Erreur d'analyse : {status_data.get('error')}")
-        if st.button("Réessayer"):
-            del st.session_state.odis_bg_store[task_key]
+        timeout_seconds = (
+            max(1.0, float(deadline_at) - float(start_time))
+            if deadline_at is not None
+            else 60.0
+        )
+        progress = min(1.0, elapsed / timeout_seconds)
+        st.progress(
+            progress,
+            text=f"Préparation de la synthèse (jusqu'à {timeout_seconds:.0f} secondes)...",
+        )
+        if st.button("Annuler l'analyse", key=f"cancel_analysis_{task_key}"):
+            cancel_background_city_analysis(task_key)
+            st.rerun()
+    elif status_data.get("status") in {"error", "timeout", "cancelled"}:
+        st.error(
+            status_data.get("error")
+            or "L'analyse IA n'a pas pu être réalisée. Réessayez."
+        )
+        if st.button("Réessayer", key=f"retry_analysis_{task_key}"):
+            # Product decision: a retry replaces the prior displayed analysis.
+            # Clearing the live object also makes ia_analysis_content return to
+            # the polling state immediately after the rerun.
+            commune.odis_synthesis.clear()
+            commune.expert_analysis.clear()
+            commune.expert_artifacts.clear()
+            commune.expert_sources.clear()
+            launch_background_city_analysis(
+                nom,
+                codgeo,
+                search_criterias,
+                st.session_state.search_results,
+                h,
+                retry=True,
+            )
             st.rerun()
     elif status_data.get("status") == "done":
         _merge_agent_results(status_data.get("result"), codgeo, commune)
@@ -326,14 +466,24 @@ def polling_chat_fragment(
         if chat_task_key in st.session_state:
             del st.session_state[chat_task_key]
         st.rerun()  # Full dialog rerun
-    elif status_data and status_data.get("status") == "error":
-        st.error(f"Erreur de l'agent : {status_data.get('error')}")
+    elif status_data and status_data.get("status") in {
+        "error",
+        "timeout",
+        "cancelled",
+    }:
+        st.error(
+            status_data.get("error")
+            or "La réponse IA n'a pas pu être générée. Réessayez."
+        )
         if chat_task_key in st.session_state:
             del st.session_state[chat_task_key]
         st.rerun()
     else:
         with st.chat_message("assistant"):
             st.write("✨ _Recherche de la réponse en cours (Job Hunter / Scouts)..._")
+            if st.button("Annuler", key=f"cancel_chat_{task_key}"):
+                cancel_background_city_analysis(task_key)
+                st.rerun()
 
 
 def _enrichment_status_for_city(
@@ -348,9 +498,7 @@ def _enrichment_status_for_city(
     return status_data.get("status") if isinstance(status_data, dict) else None
 
 
-def _should_poll_enrichment(
-    h: Optional[str], status_key: str, codgeo: str
-) -> bool:
+def _should_poll_enrichment(h: Optional[str], status_key: str, codgeo: str) -> bool:
     """Only run a timed fragment while a task is genuinely non-terminal."""
     if st.session_state.get("immutable_shared_snapshot"):
         return False
@@ -358,13 +506,142 @@ def _should_poll_enrichment(
     return status is None or status == EnrichmentStatus.PENDING.value
 
 
-def _should_poll_refiner(h: Optional[str]) -> bool:
-    """Poll only while the optional refiner has no terminal outcome."""
+def _is_hydration_ready_for_city(commune: CommuneResult, h: Optional[str]) -> bool:
+    """Return True if all data hydrations (jobs, associations, inclusions) for this commune are terminal."""
+    if st.session_state.get("immutable_shared_snapshot"):
+        return True
+
+    if not h:
+        return True
+
+    bg_res = odis_get_bg_result(h)
+    if not isinstance(bg_res, dict):
+        return False
+
+    codgeo_str = str(commune.codgeo)
+
+    # 1. Jobs enrichment status
+    if not (hasattr(commune, "siae_jobs") and getattr(commune, "siae_jobs", None) is not None):
+        jobs_status = (
+            bg_res.get("jobs_enrichment", {}).get(codgeo_str, {}).get("status")
+        )
+        if not is_terminal_enrichment_status(jobs_status):
+            return False
+
+    # 2. Associations enrichment status
+    if not (
+        hasattr(commune, "associations_details")
+        and getattr(commune, "associations_details", None) is not None
+    ):
+        assos_status = (
+            bg_res.get("association_enrichment_status", {})
+            .get(codgeo_str, {})
+            .get("status")
+        )
+        if not is_terminal_enrichment_status(assos_status):
+            return False
+
+    # 3. Inclusion services enrichment status
+    if not (
+        hasattr(commune, "inclusion")
+        and getattr(commune.inclusion, "services_detailed", None) is not None
+    ):
+        inc_status = (
+            bg_res.get("inclusion_enrichment_status", {})
+            .get(codgeo_str, {})
+            .get("status")
+        )
+        if inc_status is not None and not is_terminal_enrichment_status(inc_status):
+            return False
+
+    return True
+
+
+def _is_postscoring_ready_for_city(commune: CommuneResult, h: Optional[str]) -> bool:
+    """Return True if all background post-scoring tasks for this commune have reached a terminal state."""
     if st.session_state.get("immutable_shared_snapshot"):
         return False
-    bg_res = odis_get_bg_result(h) if h else None
-    status = bg_res.get("status_refiner") if isinstance(bg_res, dict) else None
-    return not is_terminal_refiner_status(status)
+
+    if getattr(commune, "odis_synthesis", None):
+        return True
+
+    if not h:
+        return True
+
+    # 1. Verify data hydrations are complete
+    if not _is_hydration_ready_for_city(commune, h):
+        return False
+
+    bg_res = odis_get_bg_result(h)
+    if not isinstance(bg_res, dict):
+        return False
+
+    # 2. Refiner status (pitches & briefing)
+    refiner_status = bg_res.get("status_refiner")
+    if not is_terminal_refiner_status(refiner_status):
+        return False
+
+    codgeo_str = str(commune.codgeo)
+
+    # 3. Automated city analysis status (if enabled)
+    if cfg.is_auto_analyse_top_cities_enabled():
+        auto_run = odis_get_bg_result(f"analysis_{h}_{codgeo_str}")
+        if isinstance(auto_run, dict):
+            auto_status = auto_run.get("status")
+            if not is_terminal_graph_run_status(auto_status):
+                return False
+
+    return True
+
+
+@st.fragment(run_every=2.0)
+def render_details_trigger_button(commune: CommuneResult, h: Optional[str]) -> bool:
+    """Renders the 'En savoir plus' button with up-to-date hydration state in-place."""
+    ready = _is_hydration_ready_for_city(commune, h)
+    btn_label = "En savoir plus" if ready else "En savoir plus (Préparation...)"
+    btn_disabled = not ready
+
+    if st.button(
+        btn_label,
+        key=f"btn_details_comm_{commune.codgeo}",
+        icon=":material/data_exploration:",
+        type="primary",
+        width="stretch",
+        disabled=btn_disabled,
+    ):
+        st.session_state.active_details_index = commune.codgeo
+        st.rerun()
+
+    return ready
+
+
+@st.fragment(run_every=2.0)
+def render_ai_trigger_button(commune: CommuneResult, h: Optional[str]) -> bool:
+    """Renders the AI Analysis trigger button with up-to-date state in-place."""
+    ready = _is_postscoring_ready_for_city(commune, h)
+    immutable_snapshot = bool(st.session_state.get("immutable_shared_snapshot"))
+
+    if immutable_snapshot:
+        btn_label = "Analyse Avancée (indisponible pour l'instantané)"
+        btn_disabled = True
+    elif not ready:
+        btn_label = "Analyse Avancée (Préparation...)"
+        btn_disabled = True
+    else:
+        btn_label = "Analyse Avancée"
+        btn_disabled = False
+
+    if st.button(
+        btn_label,
+        key=f"btn_ia_comm_{commune.codgeo}",
+        icon=":material/wand_stars:",
+        width="stretch",
+        disabled=btn_disabled,
+    ):
+        st.session_state.active_ia_city_index = commune.codgeo
+        st.rerun()
+
+    return ready
 
 
 def render_associations_enrichment(commune: CommuneResult, h: Optional[str]):
@@ -395,7 +672,7 @@ def render_associations_enrichment(commune: CommuneResult, h: Optional[str]):
         inc_data.asso_inclusion_count or 0
     )
     if total_assos > 0:
-        st.info(f"**{total_assos} associations** actives.")
+        # st.info(f"**{total_assos} associations** actives.")
         categories_to_show = {}
         if inc_data.asso_refugee_list:
             categories_to_show["Intégration des réfugiés & migrants"] = (
@@ -422,24 +699,29 @@ def render_associations_enrichment(commune: CommuneResult, h: Optional[str]):
         status = status_data.get("status") if isinstance(status_data, dict) else None
         if st.session_state.get("immutable_shared_snapshot"):
             st.caption("Associations non incluses dans cet instantané partagé.")
-        elif status in {EnrichmentStatus.ERROR.value, EnrichmentStatus.TIMEOUT.value, EnrichmentStatus.NOT_CONFIGURED.value}:
+        elif status in {
+            EnrichmentStatus.ERROR.value,
+            EnrichmentStatus.TIMEOUT.value,
+            EnrichmentStatus.NOT_CONFIGURED.value,
+        }:
             st.info("Associations temporairement indisponibles.")
         elif status == EnrichmentStatus.PARTIAL.value:
-            st.warning("Liste d'associations partielle : certaines données sont temporairement indisponibles.")
+            st.warning(
+                "Liste d'associations partielle : certaines données sont temporairement indisponibles."
+            )
         elif status == EnrichmentStatus.PENDING.value:
             st.caption("Traitement des associations locales en cours…")
-        elif h and (not isinstance(bg_res, dict) or "association_enrichment_status" not in bg_res):
+        elif h and (
+            not isinstance(bg_res, dict)
+            or "association_enrichment_status" not in bg_res
+        ):
             st.caption("Traitement des associations locales en cours…")
         else:
             st.info("Aucune association répertoriée.")
 
 
 def render_inclusion_services_enrichment(commune: CommuneResult, h: Optional[str]):
-    """Render stable score data, then append terminal provider details.
-
-    The scored service list is never replaced by a later provider response.
-    Data Inclusion only adds descriptions and links beneath that stable list.
-    """
+    """Render structured inclusion services with Data Inclusion details, or fallback to grouped services."""
     inc_data = commune.inclusion
     if h and not inc_data.services_detailed:
         bg_res = odis_get_bg_result(h)
@@ -454,21 +736,21 @@ def render_inclusion_services_enrichment(commune: CommuneResult, h: Optional[str
                 }
                 st.rerun()
 
-    services_grouped = inc_data.services_grouped
-    if services_grouped:
-        st.caption("Services pris en compte dans le score")
-        for thematique, names in sorted(services_grouped.items()):
-            items = sorted({name for name in names if pd.notna(name)})
-            if items:
-                with st.expander(f"{thematique} ({len(items)})", expanded=False):
-                    for name in items:
-                        st.write(f"• {name}")
-    elif not inc_data.services_detailed:
-        st.info("Aucun service spécifique référencé.")
+    bg_res = odis_get_bg_result(h) if h else None
+    status_data = (
+        bg_res.get("inclusion_services_status", {}).get(str(commune.codgeo))
+        if isinstance(bg_res, dict)
+        else None
+    )
+    status = status_data.get("status") if isinstance(status_data, dict) else None
+    is_loading = (
+        bool(h)
+        and not st.session_state.get("immutable_shared_snapshot")
+        and (status is None or status == EnrichmentStatus.PENDING.value)
+    )
 
     if inc_data.services_detailed:
-        st.markdown("##### Détails et liens Data Inclusion")
-        # Each structure appears in at most one expander.
+        # Global deduplication: each structure appears in at most one expander.
         seen_struct_keys: set[str] = set()
         for thematique, services in sorted(inc_data.services_detailed.items()):
             if not services:
@@ -486,8 +768,15 @@ def render_inclusion_services_enrichment(commune: CommuneResult, h: Optional[str
                         )
                         or "",
                         "lien_source": srv.lien_source,
+                        "distance_km": getattr(srv, "distance_km", None),
+                        "commune_nom": getattr(srv, "commune_nom", "") or "",
                         "services": [],
                     }
+                elif getattr(srv, "distance_km", None) is not None:
+                    curr_dist = struct_map[struct_key]["distance_km"]
+                    if curr_dist is None or srv.distance_km < curr_dist:
+                        struct_map[struct_key]["distance_km"] = srv.distance_km
+
                 svc_label = srv.name
                 if svc_label and not any(
                     item["name"] == svc_label.capitalize()
@@ -505,21 +794,41 @@ def render_inclusion_services_enrichment(commune: CommuneResult, h: Optional[str
             seen_struct_keys.update(struct_map.keys())
 
             with st.expander(f"{thematique} ({len(struct_map)})", expanded=False):
-                for struct_data in sorted(
-                    struct_map.values(), key=lambda item: item["nom"]
-                ):
+                sorted_structs = sorted(
+                    struct_map.values(),
+                    key=lambda item: (
+                        item["distance_km"]
+                        if item.get("distance_km") is not None
+                        else 999,
+                        item["nom"],
+                    ),
+                )
+                for struct_data in sorted_structs:
                     url_part = (
                         f" [↗ Fiche]({struct_data['lien_source']})"
                         if struct_data["lien_source"]
                         else ""
                     )
+                    dist_val = struct_data.get("distance_km")
+                    commune_val = struct_data.get("commune_nom")
+                    if dist_val == 0:
+                        pill = " :blue-badge[Sur place]"
+                    elif dist_val is not None:
+                        if commune_val:
+                            pill = f" :gray-badge[{commune_val} · {dist_val} km]"
+                        else:
+                            pill = f" :gray-badge[{dist_val} km]"
+                    else:
+                        pill = ""
+
+                    header_text = f"• **{struct_data['nom']}**{pill}{url_part}"
                     if struct_data["presentation_structure"]:
                         st.markdown(
-                            f"• **{struct_data['nom']}** {url_part}",
+                            header_text,
                             help=struct_data["presentation_structure"],
                         )
                     else:
-                        st.markdown(f"• **{struct_data['nom']}** {url_part}")
+                        st.markdown(header_text)
 
                     for service in struct_data["services"]:
                         if service["description"]:
@@ -528,34 +837,37 @@ def render_inclusion_services_enrichment(commune: CommuneResult, h: Optional[str
                                 help=service["description"],
                             )
                         else:
-                            st.caption(
-                                f"&nbsp;&nbsp;&nbsp;&nbsp;└ {service['name']}"
-                            )
+                            st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;└ {service['name']}")
+    else:
+        services_grouped = inc_data.services_grouped
+        if services_grouped:
+            for thematique, names in sorted(services_grouped.items()):
+                items = sorted({name for name in names if pd.notna(name)})
+                if items:
+                    with st.expander(f"{thematique} ({len(items)})", expanded=False):
+                        for name in items:
+                            st.write(f"• {name}")
+        elif not is_loading:
+            st.info("Aucun service spécifique référencé.")
+
+        if is_loading:
+            st.caption("⌛ _Chargement des détails des services depuis Data Inclusion..._")
 
     if not h:
         return
 
-    bg_res = odis_get_bg_result(h)
-    status_data = (
-        bg_res.get("inclusion_services_status", {}).get(str(commune.codgeo))
-        if isinstance(bg_res, dict)
-        else None
-    )
-    status = status_data.get("status") if isinstance(status_data, dict) else None
     if st.session_state.get("immutable_shared_snapshot"):
-        st.caption("Descriptions Data Inclusion non incluses dans cet instantané partagé.")
-    elif not isinstance(bg_res, dict) or "inclusion_services_status" not in bg_res:
-        st.caption("Traitement des détails Data Inclusion en cours…")
+        st.caption(
+            "Détails des services Data Inclusion non inclus dans cet instantané partagé."
+        )
     elif status in {
         EnrichmentStatus.ERROR.value,
         EnrichmentStatus.TIMEOUT.value,
         EnrichmentStatus.NOT_CONFIGURED.value,
     }:
-        st.caption("Descriptions et liens Data Inclusion temporairement indisponibles.")
+        st.caption("Détails des services Data Inclusion temporairement indisponibles.")
     elif status == EnrichmentStatus.PARTIAL.value:
-        st.caption("Descriptions et liens Data Inclusion partiels.")
-    elif status == EnrichmentStatus.PENDING.value:
-        st.caption("Traitement des détails Data Inclusion en cours…")
+        st.caption("Détails des services Data Inclusion partiels.")
 
 
 def render_jobs_enrichment(commune: CommuneResult, h: Optional[str]):
@@ -673,13 +985,23 @@ def render_jobs_enrichment(commune: CommuneResult, h: Optional[str]):
     }:
         with st.expander("💼 Offres d'emploi directes", expanded=True):
             st.info("⚠️ Offres d'emploi temporairement indisponibles.")
-    elif jobs_city_data and jobs_city_data.get("status") == EnrichmentStatus.PARTIAL.value:
+    elif (
+        jobs_city_data
+        and jobs_city_data.get("status") == EnrichmentStatus.PARTIAL.value
+    ):
         with st.expander("💼 Offres d'emploi directes", expanded=True):
-            st.warning("⚠️ Offres d'emploi partielles : certaines recherches sont temporairement indisponibles.")
-    elif jobs_city_data and jobs_city_data.get("status") == EnrichmentStatus.PENDING.value:
+            st.warning(
+                "⚠️ Offres d'emploi partielles : certaines recherches sont temporairement indisponibles."
+            )
+    elif (
+        jobs_city_data
+        and jobs_city_data.get("status") == EnrichmentStatus.PENDING.value
+    ):
         st.caption("Traitement des offres d'emploi locales en cours…")
     elif st.session_state.get("immutable_shared_snapshot"):
-        st.caption("Offres d'emploi en direct non incluses dans cet instantané partagé.")
+        st.caption(
+            "Offres d'emploi en direct non incluses dans cet instantané partagé."
+        )
     elif h and (not bg_res or "jobs_enrichment" not in bg_res or not jobs_city_data):
         st.caption("Traitement des offres d'emploi locales en cours…")
     else:
@@ -710,15 +1032,217 @@ def polling_jobs_fragment(commune: CommuneResult, h: Optional[str]):
         st.rerun()
 
 
+
+
+def _render_sources_popover(
+    source_data: list[dict[str, Any]] | None,
+    domain: str,
+) -> None:
+    """Render compact, application-owned source provenance beside a fiche."""
+    from agents.source_registry import (
+        is_vertex_grounding_redirect,
+        source_references_for_result,
+    )
+
+    references = source_data or source_references_for_result(domain, None)
+    with st.popover("ⓘ Sources"):
+        st.markdown("**Sources utilisées par cette fiche**")
+        lines = []
+        for reference in references:
+            label = reference.get("label", reference.get("source_key", "Source"))
+            status = reference.get("status", "contexte")
+            note = reference.get("note", "")
+            source_url = reference.get("source_url")
+            reference_id = reference.get("reference_id")
+            # Persisted runs may contain the previous technical wording. Keep
+            # the user-facing popover stable even before a run is recomputed.
+            if reference.get("source_key") == "web":
+                if source_url:
+                    note = ""
+                elif reference.get("grounding_confirmed") is False:
+                    note = (
+                        "L'outil a été appelé, mais Google n'a confirmé aucune "
+                        "recherche. Aucun résumé Web n'est retenu comme preuve."
+                    )
+                elif reference.get("grounding_queries"):
+                    note = (
+                        "Google a été consulté, mais n'a transmis aucune URL "
+                        "de page source exploitable."
+                    )
+                else:
+                    note = "Aucune page source n'a été transmise pour cette recherche."
+
+            # Top level list item
+            if source_url:
+                if reference_id:
+                    lines.append(
+                        f"- **{reference_id}** — [{label}]({source_url}) — *{status}*"
+                    )
+                else:
+                    lines.append(f"- [{label}]({source_url}) — *{status}*")
+                if not is_vertex_grounding_redirect(source_url):
+                    lines.append(
+                        f"  - <small style='color: gray;'>URL : {source_url}</small>"
+                    )
+            else:
+                lines.append(f"- **{label}** — *{status}*")
+
+            # Sub-items (formatted as nested bullets in caption style)
+            domain_name = reference.get("grounding_domain")
+            if domain_name:
+                lines.append(
+                    f"  - <small style='color: gray;'>Domaine : {domain_name}</small>"
+                )
+            queries = reference.get("grounding_queries") or []
+            if queries:
+                lines.append(
+                    f"  - <small style='color: gray;'>Mots clés : {' · '.join(str(q) for q in queries)}</small>"
+                )
+            elif reference.get("search_terms"):
+                lines.append(
+                    f"  - <small style='color: gray;'>Mots clés demandés : {' · '.join(str(term) for term in reference['search_terms'])}</small>"
+                )
+            if note:
+                lines.append(f"  - <small style='color: gray;'>{note}</small>")
+
+        if lines:
+            st.markdown("\n".join(lines), unsafe_allow_html=True)
+        if not source_data:
+            st.caption(
+                "Historique détaillé des appels indisponible pour cette fiche persistée."
+            )
+
+
+def _get_or_build_analysis_report(
+    commune: CommuneResult,
+    fallback_content: str = "",
+) -> CityAnalysisReport | None:
+    """Retrieves or builds the CityAnalysisReport from structured commune data."""
+    report = getattr(commune, "analysis_report", None)
+    if isinstance(report, dict):
+        try:
+            report = CityAnalysisReport.model_validate(report)
+            commune.analysis_report = report
+            return report
+        except Exception:
+            pass
+    if isinstance(report, CityAnalysisReport):
+        return report
+
+    # Auto-build from structured expert_analysis on commune if available
+    expert_analysis = getattr(commune, "expert_analysis", {}) or {}
+    if not expert_analysis:
+        return None
+
+    domain_defs = [
+        ("housing_expert", "🏠 Logement & Hébergement", "🏠 Logement"),
+        ("mobility_expert", "🚆 Mobilité & Transports", "🚆 Mobilité"),
+        ("healthcare_expert", "🏥 Santé & Accompagnement Médical", "🏥 Santé"),
+        ("education_expert", "🎓 Éducation & Petite Enfance", "🎓 Éducation"),
+        ("social_integration_expert", "🤝 Insertion Sociale & Solidarité", "🤝 Insertion"),
+        ("job_hunter", "💼 Emploi & Insertion Professionnelle", "💼 Emploi"),
+    ]
+    domains: dict[str, DomainReport] = {}
+    sources_map = getattr(commune, "expert_sources", {}) or {}
+    artifacts_map = getattr(commune, "expert_artifacts", {}) or {}
+
+    for key, label, short_label in domain_defs:
+        content = expert_analysis.get(key)
+        if content and content.strip():
+            domains[key] = DomainReport(
+                domain_key=key,
+                label=label,
+                short_label=short_label,
+                content=content.strip(),
+                sources=sources_map.get(key, []),
+                artifacts=artifacts_map.get(key),
+            )
+
+    if not domains:
+        return None
+
+    ccas_content = expert_analysis.get("ccas_locator")
+    report = CityAnalysisReport(
+        city_name=commune.name,
+        city_code=commune.codgeo,
+        avis_global=fallback_content,
+        domains=domains,
+        ccas_contact=ccas_content.strip() if ccas_content and ccas_content.strip() else None,
+    )
+    commune.analysis_report = report
+    return report
+
+
+def _render_initial_analysis_report(
+    commune: CommuneResult,
+    fallback_content: str = "",
+) -> None:
+    """Renders the initial full analysis report with executive brief, tabs for experts, and CTA at the end."""
+    report = _get_or_build_analysis_report(commune, fallback_content)
+    if report:
+        # 1. Executive overview (Top)
+        if report.avis_global:
+            avis_text = report.avis_global.strip()
+            if not avis_text.startswith("## 🧭") and not avis_text.startswith("# 🧭"):
+                avis_text = f"## 🧭 Avis Global d'Orientation pour {report.city_name}\n\n{avis_text}"
+            st.markdown(avis_text)
+
+        # 2. Render Tabs for Domain Experts
+        active_domains = [
+            d for d in report.domains.values() if d.content and d.content.strip()
+        ]
+        if active_domains:
+            st.divider()
+            st.header("🔬 Analyses Thématiques Détaillées")
+            tab_objs = st.tabs([d.short_label for d in active_domains])
+            for tab_obj, domain in zip(tab_objs, active_domains):
+                with tab_obj:
+                    report_col, source_col = st.columns([0.88, 0.12])
+                    with report_col:
+                        st.markdown(domain.content)
+                    with source_col:
+                        _render_sources_popover(domain.sources, domain.domain_key)
+
+        # 3. Digested territorial comparison
+        if report.analyse_comparative:
+            comp_text = report.analyse_comparative.strip()
+            if not comp_text.startswith("## ⚖️") and not comp_text.startswith("# ⚖️"):
+                comp_text = f"## ⚖️ Analyse Comparative Territoriale\n\n{comp_text}"
+            st.divider()
+            st.markdown(comp_text)
+
+        # 4. Unverified elements / gaps
+        if report.elements_non_verifies:
+            gap_text = report.elements_non_verifies.strip()
+            if not gap_text.startswith("## ⚠️") and not gap_text.startswith("# ⚠️"):
+                gap_text = f"## ⚠️ Éléments Non Vérifiés & Vigilances\n\n{gap_text}"
+            st.divider()
+            st.markdown(gap_text)
+
+        # 5. Call to Action: CCAS Contact
+        if report.ccas_contact:
+            st.divider()
+            st.markdown(report.ccas_contact.strip())
+
+        # 6. Call to Action: Et ensuite ?
+        if report.et_ensuite:
+            next_text = report.et_ensuite.strip()
+            if not next_text.startswith("## ❓") and not next_text.startswith("# ❓"):
+                next_text = f"## ❓ Et ensuite ? (Pistes d'action)\n\n{next_text}"
+            st.divider()
+            st.markdown(next_text)
+    else:
+        # Standard fallback rendering
+        st.markdown(fallback_content)
+
+
 def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
     """Main component for AI synthesis, rendered inside a @st.dialog."""
 
-    # 1. Access Single Source of Truth from unified state
-    if "search_results" not in st.session_state or not st.session_state.search_results:
+    results: SearchResultsData = st.session_state.get("search_results")
+    if not results:
         st.error("Résultats introuvables.")
         return
-
-    results: SearchResultsData = st.session_state.search_results
     commune = results.get_by_code(codgeo)
     if not commune:
         st.error(f"Détails introuvables pour {nom} ({codgeo}).")
@@ -733,13 +1257,25 @@ def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
         polling_synthesis_fragment(task_key, nom, codgeo, search_criterias, commune, h)
         return
 
-    # 3. Display Synthesis and Chat History
+    # 3. Render Full Structured Analysis Report directly
     history = list(commune.odis_synthesis)
+    _render_initial_analysis_report(
+        commune,
+        history[0]["content"] if history else "",
+    )
 
-    # Container for chat history
-    history_container = st.container()
-    with history_container:
-        for msg in history:
+    # 4. Check if Interactive Chat is enabled for the active organization
+    active_org = st.session_state.get("org")
+    if not cfg.is_interactive_chat_enabled(active_org, search_criterias):
+        return
+
+    # 5. Interactive Chat Section (Enabled for J'Accueille / authorized orgs)
+    st.divider()
+    st.subheader(f"💬 Questions complémentaires sur {nom}")
+
+    # Render follow-up Q&A messages (skip message 0 which is the full report)
+    if len(history) > 1:
+        for msg in history[1:]:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
 
@@ -749,7 +1285,7 @@ def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
     if st.session_state.get(chat_task_key):
         polling_chat_fragment(task_key, chat_task_key, codgeo, commune)
 
-    # 4. Handle follow-up questions
+    # Handle follow-up questions
     question = st.chat_input(
         f"Ex: Quelles associations facilitent le logement à {nom} ?",
         key=f"chat_input_ia_{codgeo}",
@@ -798,6 +1334,7 @@ def show_ia_analysis_dialog(index: Any):
     ia_analysis_content(nom, codgeo, search_criterias)
 
 
+@st.fragment(run_every=2.0)
 def render_refiner_panel(commune: CommuneResult, h: Optional[str]) -> bool:
     """Render one stable refiner-panel state and return whether it is final.
 
@@ -821,25 +1358,16 @@ def render_refiner_panel(commune: CommuneResult, h: Optional[str]) -> bool:
     bg_res = odis_get_bg_result(h) if h else None
     refiner_status = bg_res.get("status_refiner") if isinstance(bg_res, dict) else None
     if is_terminal_refiner_status(refiner_status):
-        st.caption(
-            "Analyse personnalisée indisponible. Voici les principaux "
-            "indicateurs déterministes de ce territoire."
-        )
+        # st.caption(
+        #     "Analyse personnalisée indisponible. Voici les principaux "
+        #     "indicateurs déterministes de ce territoire."
+        # )
         st.markdown(generate_static_pitch(commune))
         return True
 
     st.info("Analyse des points forts en cours...")
-    st.caption(
-        "La synthèse personnalisée apparaîtra ici lorsqu'elle sera prête."
-    )
+    st.caption("La synthèse personnalisée apparaîtra ici lorsqu'elle sera prête.")
     return False
-
-
-@st.fragment(run_every=3.0)
-def polling_refiner_panel(commune: CommuneResult, h: Optional[str]):
-    """Refresh the processing panel once, then stop polling at its final state."""
-    if render_refiner_panel(commune, h):
-        st.rerun()
 
 
 def sync_background_data(commune: CommuneResult, h: Optional[str]):
@@ -919,10 +1447,27 @@ def sync_background_data(commune: CommuneResult, h: Optional[str]):
         if isinstance(pitches_data, dict):
             # A. City-specific pitch
             if "pitches" in pitches_data:
-                pitch_for_city = pitches_data["pitches"].get(str(commune.codgeo))
-                if pitch_for_city and not commune.refiner_pitch:
-                    logging.debug(f"✨ [SYNC] Pitch sync for {commune.codgeo}")
-                    commune.refiner_pitch = pitch_for_city
+                city_pitches = pitches_data["pitches"]
+                if isinstance(city_pitches, dict):
+                    cg = str(commune.codgeo).strip()
+                    cname = commune.name.lower().strip() if commune.name else ""
+                    pitch_for_city = (
+                        city_pitches.get(cg)
+                        or city_pitches.get(cg.zfill(5))
+                        or city_pitches.get(cg.lstrip("0"))
+                        or city_pitches.get(cname)
+                        or next(
+                            (
+                                v
+                                for k, v in city_pitches.items()
+                                if k.lower().strip() == cname
+                            ),
+                            None,
+                        )
+                    )
+                    if pitch_for_city and not commune.refiner_pitch:
+                        logging.debug(f"✨ [SYNC] Pitch sync for {commune.codgeo}")
+                        commune.refiner_pitch = pitch_for_city
 
             # B. Global introduction (Global Pitch)
             if "global" in pitches_data and "search_results" in st.session_state:
@@ -1015,7 +1560,9 @@ def render_jaccueille_housing_info(commune: CommuneResult):
     Renders J'Accueille hosts & prospects counts with report links if org_context == 'jaccueille'.
     """
     housing_data = commune.housing
-    j_count = int(housing_data.host_count) if housing_data and housing_data.host_count else 0
+    j_count = (
+        int(housing_data.host_count) if housing_data and housing_data.host_count else 0
+    )
 
     # 1. Check org profile (jaccueille only)
     org_is_jaccueille = False
@@ -1034,7 +1581,11 @@ def render_jaccueille_housing_info(commune: CommuneResult):
 
     # 2. Retrieve salesforce pre-aggregated BDV data
     df_bdv = fetch_salesforce_jaccueille_bdv()
-    bdv_code = commune.codgeo_bdv or getattr(commune.territoire, "bassin_de_vie", None) or commune.codgeo
+    bdv_code = (
+        commune.codgeo_bdv
+        or getattr(commune.territoire, "bassin_de_vie", None)
+        or commune.codgeo
+    )
 
     lead_count = 0
     contact_count = j_count
@@ -1053,7 +1604,9 @@ def render_jaccueille_housing_info(commune: CommuneResult):
                 try:
                     import json
 
-                    codes_postaux = json.loads(cp_json) if isinstance(cp_json, str) else cp_json
+                    codes_postaux = (
+                        json.loads(cp_json) if isinstance(cp_json, str) else cp_json
+                    )
                 except Exception:
                     pass
 
@@ -1067,7 +1620,9 @@ def render_jaccueille_housing_info(commune: CommuneResult):
         prosp_report_base = cfg.SF_REPORT_PROSPECTS_URL
 
         acc_url = f"{acc_report_base}?fv0={cp_param}" if cp_param else acc_report_base
-        prosp_url = f"{prosp_report_base}?fv0={cp_param}" if cp_param else prosp_report_base
+        prosp_url = (
+            f"{prosp_report_base}?fv0={cp_param}" if cp_param else prosp_report_base
+        )
 
         st.info(
             f"**{contact_count} accueillants** J'Accueille dans le bassin de vie ([voir la liste]({acc_url}))  \n"
@@ -1081,13 +1636,9 @@ def render_jaccueille_housing_info(commune: CommuneResult):
             )
 
 
-
-
-
 @st.dialog(
     title="Détails du Territoire", width="large", on_dismiss=_on_details_dialog_dismiss
 )
-
 def show_details_dialog(index: Any):
     """Displays thematic details for a city in a large modal."""
     if (
@@ -1104,7 +1655,9 @@ def show_details_dialog(index: Any):
         st.error("Détails non disponibles.")
         return
 
-    telemetry.log_usage_event("view_commune_details", {"codgeo": commune.codgeo, "name": commune.name})
+    telemetry.log_usage_event(
+        "view_commune_details", {"codgeo": commune.codgeo, "name": commune.name}
+    )
 
     # --- Header ---
     st.markdown(f"## 📍 {commune.name} (code INSEE: {commune.codgeo})")
@@ -1195,16 +1748,37 @@ def show_details_dialog(index: Any):
                         unsafe_allow_html=True,
                     )
 
-                    val_kpi_c = s.valeur_kpi_commune if s.valeur_kpi_commune is not None else s.valeur_kpi
-                    c_val_fmt = _format_kpi_value(val_kpi_c, s.unit, s.score_id, s.score_normalise_commune or s.score_normalise)
+                    val_kpi_c = (
+                        s.valeur_kpi_commune
+                        if s.valeur_kpi_commune is not None
+                        else s.valeur_kpi
+                    )
+                    c_val_fmt = _format_kpi_value(
+                        val_kpi_c,
+                        s.unit,
+                        s.score_id,
+                        s.score_normalise_commune or s.score_normalise,
+                    )
                     unit_str = f" {s.unit}" if s.unit and s.unit != "None" else ""
-                    c_txt = f"{c_val_fmt}" if c_val_fmt is not None else "Donnée indisponible"
+                    c_txt = (
+                        f"{c_val_fmt}"
+                        if c_val_fmt is not None
+                        else "Donnée indisponible"
+                    )
 
                     if getattr(s, "bdv_applied", False):
-                        b_val_fmt = _format_kpi_value(s.valeur_kpi_bdv, s.unit, s.score_id, s.score_normalise_bdv)    
-                        b_txt = f"{b_val_fmt}" if b_val_fmt is not None else "Donnée indisponible"
+                        b_val_fmt = _format_kpi_value(
+                            s.valeur_kpi_bdv, s.unit, s.score_id, s.score_normalise_bdv
+                        )
+                        b_txt = (
+                            f"{b_val_fmt}"
+                            if b_val_fmt is not None
+                            else "Donnée indisponible"
+                        )
 
-                        st.caption(f"Commune : {c_txt} | Bassin de Vie : {b_txt}{unit_str}")
+                        st.caption(
+                            f"Commune : {c_txt} | Bassin de Vie : {b_txt}{unit_str}"
+                        )
                     else:
                         st.caption(f"Commune : {c_txt}{unit_str}")
                 with c_val:
@@ -1212,7 +1786,7 @@ def show_details_dialog(index: Any):
                         score_pct_str = f"{p_val * 100:.0f}%"
                     else:
                         score_pct_str = "N/A"
-                    st.space('small')
+                    st.space("small")
                     st.subheader(f"{score_pct_str}")
             st.markdown("<br>", unsafe_allow_html=True)  # Minor spacing
 
@@ -1241,9 +1815,13 @@ def show_details_dialog(index: Any):
                 availability = employment_data.source_availability
 
                 if availability.get("france_travail") == "unavailable":
-                    st.info("Données France Travail indisponibles pour cette release : elles ne sont pas comptées dans le score.")
+                    st.info(
+                        "Données France Travail indisponibles pour cette release : elles ne sont pas comptées dans le score."
+                    )
                 if availability.get("emplois_inclusion") == "unavailable":
-                    st.info("Données Emplois de l'inclusion indisponibles pour cette release : elles ne sont pas comptées dans le score.")
+                    st.info(
+                        "Données Emplois de l'inclusion indisponibles pour cette release : elles ne sont pas comptées dans le score."
+                    )
 
                 if live_total > 0:
                     st.info(
@@ -1316,7 +1894,6 @@ def show_details_dialog(index: Any):
             render_scores_for_category("emploi")
 
     with tab_logement:
-
         housing_data = commune.housing
         c1, c2 = st.columns([1, 1], gap="medium")
 
@@ -1332,9 +1909,6 @@ def show_details_dialog(index: Any):
             st.markdown("#### :material/home: Indicateurs Logement")
             render_jaccueille_housing_info(commune)
             render_scores_for_category("logement", scores_list=scores_left)
-
-
-
 
         with c2:
             st.markdown("#### :material/home: Indicateurs Logement (suite)")
@@ -1385,7 +1959,7 @@ def show_details_dialog(index: Any):
         c1, c2 = st.columns([1, 1], gap="medium")
         with c1:
             with st.container(border=False):
-                st.markdown("#### :material/volunteer_activism: Services d'Inclusion")
+                st.markdown("#### :material/volunteer_activism: Services d'Inclusion à moins de 10km")
                 if _should_poll_enrichment(
                     h, "inclusion_services_status", commune.codgeo
                 ):
@@ -1455,7 +2029,11 @@ def show_details_dialog(index: Any):
                                 }
                                 for item in muni_list
                             ]
-                            st.dataframe(pd.DataFrame(rows_muni), hide_index=True, width="content")
+                            st.dataframe(
+                                pd.DataFrame(rows_muni),
+                                hide_index=True,
+                                width="content",
+                            )
 
                         if pres_list:
                             st.markdown("##### 🗳️ Élections Présidentielles")
@@ -1468,11 +2046,13 @@ def show_details_dialog(index: Any):
                                 }
                                 for item in pres_list
                             ]
-                            st.dataframe(pd.DataFrame(rows_pres), hide_index=True, width="content")
+                            st.dataframe(
+                                pd.DataFrame(rows_pres),
+                                hide_index=True,
+                                width="content",
+                            )
                     elif isinstance(history, list) and history:
-                        st.markdown(
-                            "##### 🗳️ Historique Électoral"
-                        )
+                        st.markdown("##### 🗳️ Historique Électoral")
                         table_rows = [
                             {
                                 "Scrutin": item.get("election", ""),
@@ -1482,7 +2062,9 @@ def show_details_dialog(index: Any):
                             }
                             for item in history
                         ]
-                        st.dataframe(pd.DataFrame(table_rows), hide_index=True, width="content")
+                        st.dataframe(
+                            pd.DataFrame(table_rows), hide_index=True, width="content"
+                        )
                 except Exception as e:
                     st.caption("Erreur lors du chargement de l'historique électoral.")
         with c2:
@@ -1602,15 +2184,17 @@ def display_results_list(display_gdf: Optional[pd.DataFrame] = None) -> None:
 
     is_highlighted, highlighted_rank = st.session_state.highlighted_result
 
-    # Optional enrichment can update the briefing, but never gates exploration.
+    # Hydrate all search results if background data is available
     bg_res = odis_get_bg_result(h) if h else None
-    # Sync global data once (handled in render_global_pitch now, but keeping
-    # this brief sync for safety).
-    if bg_res and "odis_brief" in bg_res and st.session_state.get("config"):
-        brief_val = bg_res["odis_brief"]
-        if brief_val and st.session_state.config.odis_brief != brief_val:
-            st.session_state.config.odis_brief = brief_val
-            st.rerun()
+    if bg_res:
+        for c in search_results.results:
+            sync_background_data(c, h)
+        if search_results.commune_pressentie:
+            sync_background_data(search_results.commune_pressentie, h)
+        if "odis_brief" in bg_res and st.session_state.get("config"):
+            brief_val = bg_res["odis_brief"]
+            if brief_val and st.session_state.config.odis_brief != brief_val:
+                st.session_state.config.odis_brief = brief_val
     # Shortlisted City (Ville Pressentie) Button (Feature F-61)
     if search_results.commune_pressentie:
         st.markdown(
@@ -1689,23 +2273,12 @@ def _display_result_details(commune: CommuneResult) -> None:
         # The narrative stays a processing panel until it reaches one final
         # state (AI result or deterministic fallback). It never replaces text
         # that was already shown as a provisional summary.
-        if _should_poll_refiner(h):
-            polling_refiner_panel(commune, h)
-        else:
-            render_refiner_panel(commune, h)
+        render_refiner_panel(commune, h)
 
         st.space("small")
         c1, c2 = st.columns(2)
         with c1:
-            if st.button(
-                "En savoir plus",
-                key=f"btn_details_comm_{commune.codgeo}",
-                icon=":material/data_exploration:",
-                type="primary",
-                width="stretch",
-            ):
-                st.session_state.active_details_index = commune.codgeo
-                st.rerun()
+            render_details_trigger_button(commune, h)
         with c2:
             if st.button(
                 "Contact local",
@@ -1726,70 +2299,12 @@ def _display_result_details(commune: CommuneResult) -> None:
 
         # F-IA: AI Dialog Trigger (Session State based)
         if not cfg.is_ai_free_mode():
-            # col1, col2, col3 = st.columns([1, 2, 1])
-            # with col2:
             st.markdown(
                 '<style> [class*="st-key-btn_ia"] .stButton button { background-color: #F5D819; color: #1B4429; } </style>',
                 unsafe_allow_html=True,
             )
 
-            # Premium Guardrail (F-IA): verify terminal background states rather
-            # than legacy data-key presence. Immutable snapshots never launch new
-            # AI work because that would mutate the saved experience.
-            jobs_ready = False
-            assos_ready = False
-            immutable_snapshot = bool(st.session_state.get("immutable_shared_snapshot"))
-
-            # Model level fallbacks (e.g. for restored shared search snapshots)
-            if hasattr(commune, "siae_jobs") and getattr(commune, "siae_jobs", None) is not None:
-                jobs_ready = True
-            if hasattr(commune, "associations_details") and getattr(commune, "associations_details", None) is not None:
-                assos_ready = True
-            if getattr(commune, "odis_synthesis", None):
-                jobs_ready = True
-                assos_ready = True
-
-            if h and not (jobs_ready and assos_ready):
-                bg_res = odis_get_bg_result(h)
-                if isinstance(bg_res, dict):
-                    # Check jobs hydration status
-                    jobs_city_data = bg_res.get("jobs_enrichment", {}).get(
-                        str(commune.codgeo)
-                    )
-                    if jobs_city_data and is_terminal_enrichment_status(
-                        jobs_city_data.get("status")
-                    ):
-                        jobs_ready = True
-
-                    # Check associations hydration status
-                    association_status = bg_res.get(
-                        "association_enrichment_status", {}
-                    ).get(
-                        str(commune.codgeo), {}
-                    )
-                    if is_terminal_enrichment_status(association_status.get("status")):
-                        assos_ready = True
-
-            if immutable_snapshot:
-                btn_label = "Analyse Avancée (indisponible pour l'instantané)"
-                btn_disabled = True
-            elif not jobs_ready or not assos_ready:
-                btn_label = "Analyse Avancée (Préparation...)"
-                btn_disabled = True
-            else:
-                btn_label = "Analyse Avancée"
-                btn_disabled = False
-
-            if st.button(
-                btn_label,
-                key=f"btn_ia_comm_{commune.codgeo}",
-                icon=":material/wand_stars:",
-                width="stretch",
-                # type="primary",
-                disabled=btn_disabled,
-            ):
-                st.session_state.active_ia_city_index = commune.codgeo
-                st.rerun()
+            render_ai_trigger_button(commune, h)
 
         # --- Radar Chart with Comparison ---
         st.space("small")
@@ -1872,9 +2387,12 @@ def _display_result_details(commune: CommuneResult) -> None:
         if search_results and search_results.current_geo:
             _, vals_current = get_radar_data(search_results.current_geo, active_cats)
             current_name = search_results.current_geo.name or "Votre ville"
-            
-            st.text(f"Comparaison avec {current_name}", help=f"Comparaison des profils : la zone verte représente **{commune.name}**, la zone bleue **{current_name}**. Une plus grande surface indique une meilleure adéquation avec vos critères.")
-            
+
+            st.text(
+                f"Comparaison avec {current_name}",
+                help=f"Comparaison des profils : la zone verte représente **{commune.name}**, la zone bleue **{current_name}**. Une plus grande surface indique une meilleure adéquation avec vos critères.",
+            )
+
             fig.add_trace(
                 go.Scatterpolar(
                     r=vals_current,
@@ -1886,8 +2404,7 @@ def _display_result_details(commune: CommuneResult) -> None:
                     hovertemplate="%{theta}: %{r:.1f}%<extra></extra>",
                 )
             )
-            
-        
+
             fig.update_layout(
                 polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
                 showlegend=True,
@@ -1898,7 +2415,6 @@ def _display_result_details(commune: CommuneResult) -> None:
             )
 
             st.plotly_chart(fig, width="stretch", height=300, config=None)
-
 
         st.divider()
         with st.container(

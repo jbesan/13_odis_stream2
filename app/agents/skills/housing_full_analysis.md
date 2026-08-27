@@ -10,7 +10,8 @@ tags:
 - social
 tools:
 - search_places_batch_tool
-- search_ccas_tool
+- compute_routes_tool
+- search_web_batch_tool
 version: 1.0.0
 ---
 
@@ -18,4 +19,4 @@ Tu es l'expert logement d'ODIS.
 Consignes :
 1. Analyse le loyer moyen au m² pour le parc privé et le parc social.
 2. Identifie les structures d'hébergement temporaires ou d'urgence de la commune (CADA, CHRS, CPH) en utilisant le tool `search_places_batch_tool`.
-3. Obtiens les détails et missions du CCAS local avec le tool `search_ccas_tool` pour orienter les demandes d'hébergement.
+3. Ne recherche PAS le CCAS : les coordonnées et missions du CCAS local sont déjà récupérées automatiquement par le système (`ccas_locator`). Pour toute lacune essentielle restante, utilise une seule fois `search_web_batch_tool` avec les besoins indépendants regroupés.

@@ -52,7 +52,10 @@ async def test_direct_answer_bypass(mock_deps):
     usage_mock.requests = 1
     mock_ts_res.usage = MagicMock(return_value=usage_mock)
 
-    with patch.object(ts_agent, "run", new_callable=AsyncMock) as mock_ts_run:
+    with (
+        patch.object(ts_agent, "run", new_callable=AsyncMock) as mock_ts_run,
+        patch("services.bq_logger.log_agent_state_to_bq") as mock_bq_log,
+    ):
         mock_ts_run.return_value = mock_ts_res
 
         final_answer_end = await graph.run(state=mock_deps.state, deps=mock_deps)
@@ -60,6 +63,8 @@ async def test_direct_answer_bypass(mock_deps):
         # Extract direct answer from End node
         assert hasattr(final_answer_end, "data")
         assert final_answer_end.data == "Le loyer moyen à Marseille est de 15€/m²."
+        assert mock_deps.state.execution_mode == "direct_answer"
+        assert mock_bq_log.called
 
         # Verify odis_synthesis is updated
         city_res = mock_deps.state.search_results.get_by_code("13001")
@@ -70,6 +75,29 @@ async def test_direct_answer_bypass(mock_deps):
             city_res.odis_synthesis[-1]["content"]
             == "Le loyer moyen à Marseille est de 15€/m²."
         )
+
+
+@pytest.mark.asyncio
+async def test_planning_failure_is_visible_and_does_not_launch_a_fallback_swarm(
+    mock_deps,
+):
+    graph = create_odis_graph()
+
+    with (
+        patch.object(
+            ts_agent, "run", new_callable=AsyncMock, side_effect=RuntimeError("offline")
+        ),
+        patch.object(
+            housing_expert_agent, "run", new_callable=AsyncMock
+        ) as mock_housing_run,
+    ):
+        result = await graph.run(state=mock_deps.state, deps=mock_deps)
+
+    assert result.data.startswith("⚠️ L'analyse IA n'a pas pu être planifiée.")
+    mock_housing_run.assert_not_called()
+    city_res = mock_deps.state.search_results.get_by_code("13001")
+    assert city_res is not None
+    assert city_res.odis_synthesis[-1]["content"] == result.data
 
 
 @pytest.mark.asyncio
@@ -96,9 +124,7 @@ async def test_swarm_and_synthesis_flow(mock_deps):
     usage_mock_ts.requests = 1
     mock_ts_res.usage = MagicMock(return_value=usage_mock_ts)
 
-    housing_out = HousingResult(
-        searched="Recherche loyer", result="Loyer moyen: 15€/m²"
-    )
+    housing_out = HousingResult(result="Loyer moyen: 15€/m²")
     mock_housing_res = MagicMock()
     mock_housing_res.output = housing_out
     usage_mock_house = MagicMock()
@@ -125,6 +151,7 @@ async def test_swarm_and_synthesis_flow(mock_deps):
         patch.object(
             synthesizer_agent, "run", new_callable=AsyncMock
         ) as mock_synth_run,
+        patch("agents.graph.bq_logger.log_agent_state_to_bq"),
     ):
         mock_ts_run.return_value = mock_ts_res
         mock_housing_run.return_value = mock_housing_res
@@ -134,6 +161,10 @@ async def test_swarm_and_synthesis_flow(mock_deps):
 
         assert hasattr(final_answer_end, "data")
         assert final_answer_end.data == "Synthèse finale de Marseille"
+        assert mock_deps.state.execution_mode == "specific_ask"
+        assert mock_synth_run.call_args.kwargs["deps"].state.execution_mode == (
+            "specific_ask"
+        )
 
         # Verify expert analysis was merged
         city_res = mock_deps.state.search_results.get_by_code("13001")

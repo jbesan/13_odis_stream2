@@ -1,6 +1,6 @@
 import os
 import warnings
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 
 from core.models import Org
 
@@ -196,6 +196,7 @@ ORGANIZATION_PROFILES: Dict[str, Org] = {
                 "heb_jaccueille_prospects_score": 3.0,
             },
         },
+        enable_interactive_chat=True,
     ),
     "emile_aura": Org(
         id="emile_aura",
@@ -477,3 +478,63 @@ def is_ai_free_mode() -> bool:
         pass
 
     return False
+
+
+def is_auto_analyse_top_cities_enabled() -> bool:
+    """Checks if background AI analyses should be automatically triggered for top 5 cities.
+
+    Returns True if ODIS_AUTO_ANALYSE_TOP_CITIES is set to 'true', '1' or 'yes' in environment.
+    Note that this feature is automatically disabled if AI-free mode is active.
+
+    Returns:
+        bool: True if auto analysis of top 5 cities is enabled and AI mode is active.
+    """
+    if is_ai_free_mode():
+        return False
+    return os.environ.get("ODIS_AUTO_ANALYSE_TOP_CITIES", "False").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
+
+
+def is_interactive_chat_enabled(
+    org: Optional[Org] = None,
+    search_config: Any = None,
+) -> bool:
+    """Checks if interactive chat under city analysis is enabled.
+
+    Interactive chat is enabled if the active organization profile explicitly enables it
+    (or if ODIS_ENABLE_INTERACTIVE_CHAT is set to 'true' in the environment).
+    It is automatically disabled if AI-free mode is active.
+
+    Returns:
+        bool: True if interactive chat is allowed for the active session.
+    """
+    if is_ai_free_mode():
+        return False
+
+    env_override = os.environ.get("ODIS_ENABLE_INTERACTIVE_CHAT", "").strip().lower()
+    if env_override in ("true", "1", "yes"):
+        return True
+
+    active_org = org
+    if not active_org:
+        import streamlit as st
+
+        try:
+            active_org = st.session_state.get("org")
+        except Exception:
+            pass
+
+    if active_org and getattr(active_org, "enable_interactive_chat", False):
+        return True
+
+    org_context = (
+        getattr(search_config, "org_context", None) if search_config else None
+    )
+    if org_context and org_context in ORGANIZATION_PROFILES:
+        return ORGANIZATION_PROFILES[org_context].enable_interactive_chat
+
+    return False
+

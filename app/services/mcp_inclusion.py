@@ -12,8 +12,48 @@ logger = logging.getLogger("mcp_inclusion")
 API_URL = "https://emplois.inclusion.beta.gouv.fr/api/v1/siaes/"
 
 
-def _prune_inclusion_offer(offer: Dict[str, Any]) -> Dict[str, Any]:
-    """Standardizes SIAE offer format for the agent.
+def _prune_inclusion_job(job: Dict[str, Any]) -> Dict[str, Any]:
+    """Prunes an individual SIAE job posting (poste) to keep essential fields and limit description length.
+
+    Args:
+        job: The raw job posting dict from the SIAE structure's 'postes' list.
+
+    Returns:
+        Dict[str, Any]: The pruned job posting dict.
+    """
+    desc = job.get("description")
+    if desc:
+        desc = (desc[:500] + "...") if len(desc) > 500 else desc
+
+    profil = job.get("profil_recherche")
+    if profil:
+        profil = (profil[:500] + "...") if len(profil) > 500 else profil
+
+    lieu_raw = job.get("lieu")
+    lieu = None
+    if isinstance(lieu_raw, dict):
+        lieu = {
+            "nom": lieu_raw.get("nom"),
+            "departement": lieu_raw.get("departement"),
+            "code_insee": lieu_raw.get("code_insee"),
+            "code_postaux": lieu_raw.get("code_postaux"),
+        }
+
+    return {
+        "id": job.get("id"),
+        "rome": job.get("rome"),
+        "appellation_modifiee": job.get("appellation_modifiee"),
+        "type_contrat": job.get("type_contrat"),
+        "nombre_postes_ouverts": job.get("nombre_postes_ouverts"),
+        "lieu": lieu,
+        "description": desc,
+        "profil_recherche": profil,
+        "recrutement_ouvert": job.get("recrutement_ouvert"),
+    }
+
+
+def _prune_inclusion_structure(offer: Dict[str, Any]) -> Dict[str, Any]:
+    """Standardizes SIAE structure format and prunes nested job postings for the agent.
 
     Args:
         offer: The raw SIAE structure dict from the API.
@@ -21,15 +61,22 @@ def _prune_inclusion_offer(offer: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: The standardized/pruned structure dict containing key attributes.
     """
-    # The API returns SIAE structures with a list of 'postes'
-    # We need to flatten this or return the SIAE with job details
+    desc = offer.get("description")
+    if desc:
+        desc = (desc[:500] + "...") if len(desc) > 500 else desc
+
+    raw_postes = offer.get("postes", [])
+    pruned_postes = [
+        _prune_inclusion_job(p) if isinstance(p, dict) else p for p in raw_postes
+    ]
+
     return {
         "id": offer.get("id"),
-        "name": offer.get("enseigne") or offer.get("raison_sociale"),
+        "name": offer.get("enseigne") or offer.get("raison_sociale") or offer.get("name"),
         "type": offer.get("type"),
         "siret": offer.get("siret"),
-        "description": offer.get("description"),
-        "postes": offer.get("postes", []),
+        "description": desc,
+        "postes": pruned_postes,
     }
 
 
@@ -105,7 +152,7 @@ def _search_inclusion_jobs_logic(
             if match_postes:
                 siae_copy = siae.copy()
                 siae_copy["postes"] = match_postes
-                filtered.append(_prune_inclusion_offer(siae_copy))
+                filtered.append(_prune_inclusion_structure(siae_copy))
 
         return {"offres": filtered, "total": len(filtered)}
     except Exception as e:
@@ -124,10 +171,13 @@ def _get_inclusion_job_details_logic(siae_id: str) -> Dict[str, Any]:
     """
     dept = None
     siae_id_str = str(siae_id)
-
-    # Read the active release through the shared GCS resolver. The loader's
-    # versioned /tmp cache prevents repeated downloads within this revision.
-    df_cache = load_parquet_dataset(cfg.SIAE_JOBS_FILE)
+    df_cache = None
+    try:
+        # Read the active release through the shared GCS resolver. The loader's
+        # versioned /tmp cache prevents repeated downloads within this revision.
+        df_cache = load_parquet_dataset(cfg.SIAE_JOBS_FILE)
+    except Exception as e:
+        logger.warning(f"[Inclusion] Parquet dataset cache load failed: {e}")
 
     # 1. If siae_id is a SIRET (14 digits)
     if len(siae_id_str) == 14 and siae_id_str.isdigit():
@@ -179,13 +229,13 @@ def _get_inclusion_job_details_logic(siae_id: str) -> Dict[str, Any]:
         # Search for a match in results (either by siret, id [UUID], or job id inside postes)
         for siae in results:
             if siae.get("siret") == siae_id_str or siae.get("id") == siae_id_str:
-                return _prune_inclusion_offer(siae)
+                return _prune_inclusion_structure(siae)
 
             # Check if any job ID matches
             postes = siae.get("postes", [])
             for p in postes:
                 if str(p.get("id")) == siae_id_str:
-                    return _prune_inclusion_offer(siae)
+                    return _prune_inclusion_structure(siae)
 
         # If not found in the list, construct a basic fallback stub using the already loaded parquet cache
         logger.warning(

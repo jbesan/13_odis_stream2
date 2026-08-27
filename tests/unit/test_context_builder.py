@@ -1,335 +1,370 @@
 import os
 import sys
-from pydantic import BaseModel, Field
-from typing import List, Optional
+import json
 
 # Ensure 'app' directory is in python path
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "app"))
 
-from agents.state import ODISContextBuilder
-from core.models import CriteriaItem
+from agents.state import ODISContextBuilder, GraphState, SearchResultsData
+from core.models import (
+    CriteriaItem,
+    SearchCriterias,
+    CommuneResult,
+    EducationMetrics,
+    HousingMetrics,
+    EmploymentMetrics,
+    InclusionMetrics,
+    TerritoryMetrics,
+    JobOfferDetail,
+    AssociationDetail,
+    InclusionServiceDetail,
+    CommuneScoreDetail,
+)
 
 
-class SubModel(BaseModel):
-    sub_field: str = Field(
-        "sub",
-        description="Sub field",
-        json_schema_extra={"odis_visibility": ["agent_test"]},
+def test_education_expert_context_object_level():
+    """Verify education_expert receives its full EducationMetrics with facility_details and zero empty dicts."""
+    criteria = SearchCriterias(
+        nb_adultes=1,
+        nb_enfants=2,
+        classe_enfants=["maternelle", "elementaire"],
+        odis_brief="Mère célibataire avec 2 enfants cherchant une école primaire.",
     )
-    hidden_field: str = Field(
-        "hidden", description="Hidden", json_schema_extra={"odis_visibility": ["other"]}
+    edu_metrics = EducationMetrics(
+        cat_score=0.85,
+        facility_counts={"ecoles_maternelles": 4, "ecoles_elementaires": 6},
+        facility_details={
+            "ecoles_elementaires": ["École Pasteur", "École Jean Jaurès"]
+        },
+    )
+    commune = CommuneResult(
+        codgeo="33063",
+        name="Bordeaux",
+        population=260958,
+        name_bdv="Bordeaux",
+        global_score=0.78,
+        education=edu_metrics,
+        housing=HousingMetrics(cat_score=0.5, price_per_sqm=15.0),
+    )
+    state = GraphState(
+        search_criteria=criteria,
+        focus_city=commune,
+        odis_brief=criteria.odis_brief,
     )
 
+    ctx_str = ODISContextBuilder.agent_context(state, "education_expert")
+    ctx = json.loads(ctx_str)
 
-class MockModel(BaseModel):
-    public_field: str = Field(
-        "public",
-        description="Public field",
-        json_schema_extra={"odis_visibility": ["all"]},
-    )
-    scout_field: str = Field(
-        "scout",
-        description="Scout field",
-        json_schema_extra={"odis_visibility": ["agent_scout"]},
-    )
-    ui_field: str = Field(
-        "ui",
-        description="UI field",
-        json_schema_extra={"odis_visibility": ["ui_details"]},
-    )
-    nested: SubModel = Field(
-        default_factory=SubModel,
-        description="Nested model",
-        json_schema_extra={"odis_visibility": ["agent_test"]},
-    )
-    items: List[CriteriaItem] = Field(
-        default_factory=lambda: [CriteriaItem(code="C1", label="Label 1")],
-        description="Items",
-        json_schema_extra={"odis_visibility": ["agent_scout"]},
-    )
-    empty_list: List[str] = Field(
-        default_factory=list,
-        description="Empty List",
-        json_schema_extra={"odis_visibility": ["all"]},
-    )
+    # 1. Briefing and criteria
+    assert "Résumé du dossier (Briefing)" in ctx
+    assert ctx["Résumé du dossier (Briefing)"] == criteria.odis_brief
+    assert "Critères de recherche" in ctx
+    assert "odis_brief" not in ctx["Critères de recherche"]
+    assert "Niveaux scolaires recherchés" in ctx["Critères de recherche"]
 
+    # 2. Base Identity
+    assert "Commune analysée (Identité)" in ctx
+    ident = ctx["Commune analysée (Identité)"]
+    assert ident["Code INSEE"] == "33063"
+    assert ident["Nom"] == "Bordeaux"
 
-def test_auto_build_context_filtering():
-    model = MockModel()
+    # 3. Domain metrics & details present
+    assert "Données éducation" in ctx
+    edu_ctx = ctx["Données éducation"]
+    assert "Nombre d'établissements scolaires" in edu_ctx
+    assert "Noms des établissements par type" in edu_ctx
+    assert edu_ctx["Noms des établissements par type"]["ecoles_elementaires"] == [
+        "École Pasteur",
+        "École Jean Jaurès",
+    ]
 
-    # Test Scout visibility
-    scout_ctx = ODISContextBuilder._auto_build_context(model, "agent_scout")
-    assert "Public field" in scout_ctx
-    assert "Scout field" in scout_ctx
-    assert "UI field" not in scout_ctx
-    assert scout_ctx["Public field"] == "public"
-    assert scout_ctx["Scout field"] == "scout"
-
-    # Test UI visibility
-    ui_ctx = ODISContextBuilder._auto_build_context(model, "ui_details")
-    assert "Public field" in ui_ctx
-    assert "UI field" in ui_ctx
-    assert "Scout field" not in ui_ctx
-
-
-def test_auto_build_context_recursion():
-    model = MockModel()
-
-    # Test recursion for agent_test
-    test_ctx = ODISContextBuilder._auto_build_context(model, "agent_test")
-    assert "Nested model" in test_ctx
-    assert test_ctx["Nested model"]["Sub field"] == "sub"
-    assert "Hidden" not in test_ctx["Nested model"]
-
-
-def test_auto_build_context_simplification():
-    model = MockModel()
-
-    # CriteriaItem should be simplified to its label
-    scout_ctx = ODISContextBuilder._auto_build_context(model, "agent_scout")
-    assert scout_ctx["Items"] == ["Label 1"]
-    assert isinstance(scout_ctx["Items"][0], str)
-
-
-def test_auto_build_context_none_handling():
-    class OptionalModel(BaseModel):
-        opt: Optional[str] = Field(
-            None, description="Optional", json_schema_extra={"odis_visibility": ["all"]}
-        )
-
-    model = OptionalModel(opt=None)
-    ctx = ODISContextBuilder._auto_build_context(model, "all")
-    assert "Optional" not in ctx
-
-
-def test_auto_build_context_empty_list_handling():
-    model = MockModel(empty_list=[])
-    ctx = ODISContextBuilder._auto_build_context(model, "all")
-    # Empty lists should be included if they are not None
-    assert "Empty List" in ctx
-    assert ctx["Empty List"] == []
-
-
-def test_auto_build_context_commune_score_detail_formatting():
-    from core.models import CommuneScoreDetail
-
-    # Test case 1: Unit with no leading space
-    detail1 = CommuneScoreDetail(
-        label="Test metric 1",
-        score_id="m1",
-        score_normalise=0.85,
-        relative_weight=1.5,
-        valeur_kpi=2,
-        unit="associations",
-    )
-    val1 = ODISContextBuilder._process_value(detail1, "agent_scout")
-    assert val1 == "Test metric 1: 2 associations, score: 0.85, poids relatif: 1.5%"
-
-    # Test case 2: Unit with leading space (should not result in double spaces)
-    detail2 = CommuneScoreDetail(
-        label="Test metric 2",
-        score_id="m2",
-        score_normalise=0.5,
-        relative_weight=2.0,
-        valeur_kpi=3,
-        unit=" offres",
-    )
-    val2 = ODISContextBuilder._process_value(detail2, "agent_scout")
-    assert val2 == "Test metric 2: 3 offres, score: 0.5, poids relatif: 2.0%"
-
-    # Test case 3: Empty unit
-    detail3 = CommuneScoreDetail(
-        label="Test metric 3",
-        score_id="m3",
-        score_normalise=0.99,
-        relative_weight=1.0,
-        valeur_kpi=4.5,
-        unit="",
-    )
-    val3 = ODISContextBuilder._process_value(detail3, "agent_scout")
-    assert val3 == "Test metric 3: 4.5, score: 0.99, poids relatif: 1.0%"
+    # 4. Zero empty dicts from unrelated domains
+    assert "Données logement" not in ctx
+    assert "Données santé" not in ctx
+    assert "Données mobilité" not in ctx
+    assert "Données emploi et formation" not in ctx
+    assert "Données inclusion" not in ctx
 
 
 def test_job_hunter_context_includes_matching_jobs():
-    """Verifies that CommuneResult's matching_job_offers are correctly extracted in the context built for agent_job_hunter."""
-    from core.models import CommuneResult, JobOfferDetail, EmploymentMetrics
-
+    """Verifies that Job Hunter receives EmploymentMetrics and matching_job_offers with ID, company, ROME, and description."""
     offer = JobOfferDetail(
-        id="OFFER_MOCK_123",
-        title="Conseiller Clientèle",
-        company="Banque Populaire",
+        id="OFFER_123",
+        title="Boulanger",
+        company="Fournil Moderne",
         contract_type="CDI",
-        contract_label="Contrat à durée indéterminée",
-        description="Gestion d'un portefeuille de clients.",
-        location="Paris",
-        location_insee="75056",
-        salary="30K-35K",
-        url="https://example.com/apply-conseiller",
-        rome_code="C1201",
-        rome_label="Conseil clientèle en assurances",
+        rome_code="D1102",
+        rome_label="Boulangerie",
+        location="Bordeaux",
+        description="Fabrication de pain traditionnel et viennoiseries.",
     )
-
+    emp_metrics = EmploymentMetrics(
+        cat_score=0.9,
+        matching_job_offers=[[offer]],
+    )
     commune = CommuneResult(
-        codgeo="75056",
-        name="Paris",
-        population=2148271,
-        global_score=0.88,
-        employment=EmploymentMetrics(cat_score=0.9, matching_job_offers=[[offer]]),
+        codgeo="33063",
+        name="Bordeaux",
+        population=260958,
+        global_score=0.8,
+        employment=emp_metrics,
+    )
+    state = GraphState(
+        search_criteria=SearchCriterias(
+            nb_adultes=1,
+            codes_metiers=[[CriteriaItem(code="D1102", label="Boulangerie")]],
+        ),
+        focus_city=commune,
     )
 
-    ctx = ODISContextBuilder._auto_build_context(commune, "agent_job_hunter")
+    ctx_str = ODISContextBuilder.agent_context(state, "job_hunter")
+    ctx = json.loads(ctx_str)
 
-    # Assert employment metrics are present
     assert "Données emploi et formation" in ctx
     emp_ctx = ctx["Données emploi et formation"]
-
-    # Assert matching job offers are present
-    assert (
-        "Liste des offres d'emploi correspondantes séparées par adulte du ménage"
-        in emp_ctx
-    )
-    offers_list = emp_ctx[
+    offers = emp_ctx[
         "Liste des offres d'emploi correspondantes séparées par adulte du ménage"
     ]
+    assert len(offers) == 1
+    assert len(offers[0]) == 1
+    job_str = offers[0][0]
+    assert "OFFER_123" in job_str
+    assert "Boulanger" in job_str
+    assert "Fournil Moderne" in job_str
+    assert "CDI" in job_str
+    assert "[ROME: D1102]" in job_str
+    assert "Fabrication de pain traditionnel" in job_str
 
-    assert len(offers_list) == 1
-    assert len(offers_list[0]) == 1
 
-    job_ctx = offers_list[0][0]
-    assert job_ctx["Identifiant unique de l'offre"] == "OFFER_MOCK_123"
-    assert job_ctx["Intitulé du poste"] == "Conseiller Clientèle"
-    assert job_ctx["Code INSEE du lieu de travail"] == "75056"
-    assert job_ctx["Code ROME de l'offre"] == "C1201"
-    assert job_ctx["Libellé ROME de l'offre"] == "Conseil clientèle en assurances"
+def test_social_integration_expert_context_includes_details():
+    """Verifies that Social Integration Expert receives InclusionMetrics, associations (with ID/desc), and services in Option 2 structure."""
+    asso = AssociationDetail(
+        id="W332001234",
+        name="Accueil Réfugiés Gironde",
+        description="Aide administrative et cours de français.",
+        waldec_label="Action Sociale",
+        refugee_focused=True,
+    )
+    srv = InclusionServiceDetail(
+        id="srv_456",
+        name="Cours FLE",
+        nom_structure="Maison Solidaire",
+        distance_km=2.5,
+        commune_nom="Bordeaux",
+    )
+    inc_metrics = InclusionMetrics(
+        cat_score=0.88,
+        asso_refugee_list=[asso],
+        services_detailed={"apprentissage_francais": [srv]},
+    )
+    commune = CommuneResult(
+        codgeo="33063",
+        name="Bordeaux",
+        population=260958,
+        global_score=0.82,
+        inclusion=inc_metrics,
+        territoire=TerritoryMetrics(ter_insecurite=12.4, maire_extreme_droite=False),
+    )
+    state = GraphState(
+        search_criteria=SearchCriterias(),
+        focus_city=commune,
+    )
+
+    ctx_str = ODISContextBuilder.agent_context(state, "social_integration_expert")
+    ctx = json.loads(ctx_str)
+
+    assert "Données inclusion" in ctx
+    inc_ctx = ctx["Données inclusion"]
+    assos = inc_ctx["Liste des associations d'aide aux réfugiés (source: RNA officiel)"]
+    assert len(assos) == 1
+    # Formatted with ID and description
+    assert (
+        assos[0]
+        == "W332001234 | Accueil Réfugiés Gironde | Aide administrative et cours de français."
+    )
+
+    # Formatted as list of unique structures with distance/commune under theme
+    srvs = inc_ctx["Services d'inclusion détaillés groupés par thématique (source: Data Inclusion)"]
+    assert "apprentissage_francais" in srvs
+    assert srvs["apprentissage_francais"] == ["Maison Solidaire (2.5 km - Bordeaux)"]
+
+    # Context includes local territory indicators
+    assert "Données territoire (Contexte local)" in ctx
+    ter_ctx = ctx["Données territoire (Contexte local)"]
+    assert ter_ctx["Indice d'insécurité (taux cumulé)"] == 12.4
 
 
-def test_ts_agent_context_explicit_visibility():
-    """Verifies that ts_agent's context only contains fields explicitly tagged with 'agent_ts_agent' or 'all'."""
+def test_social_integration_expert_context_empty_refugee_assos_message():
+    """Verifies that Social Integration Expert receives an explicit message when no refugee associations are in RNA."""
+    inc_metrics = InclusionMetrics(
+        cat_score=0.5,
+        asso_refugee_list=[],
+        asso_refugee_count=0,
+    )
+    commune = CommuneResult(
+        codgeo="33063",
+        name="Bordeaux",
+        population=260958,
+        global_score=0.75,
+        inclusion=inc_metrics,
+    )
+    state = GraphState(
+        search_criteria=SearchCriterias(),
+        focus_city=commune,
+    )
 
-    class ExpertData(BaseModel):
-        all_field: str = Field(
-            "all",
-            description="All field",
-            json_schema_extra={"odis_visibility": ["all"]},
-        )
-        ts_field: str = Field(
-            "ts",
-            description="TS field",
-            json_schema_extra={"odis_visibility": ["agent_ts_agent"]},
-        )
-        synth_field: str = Field(
-            "synth",
-            description="Synthesizer field",
-            json_schema_extra={"odis_visibility": ["agent_synthesizer"]},
-        )
+    ctx_str = ODISContextBuilder.agent_context(state, "social_integration_expert")
+    ctx = json.loads(ctx_str)
 
-    model = ExpertData()
-    ctx = ODISContextBuilder._auto_build_context(model, "agent_ts_agent")
-
-    assert "All field" in ctx
-    assert "TS field" in ctx
-    assert "Synthesizer field" not in ctx
-    assert ctx["All field"] == "all"
-    assert ctx["TS field"] == "ts"
+    assert "Données inclusion" in ctx
+    inc_ctx = ctx["Données inclusion"]
+    assert (
+        inc_ctx["Liste des associations d'aide aux réfugiés (source: RNA officiel)"]
+        == "Aucune association spécifique recensée dans le Répertoire National des Associations (RNA) pour cette commune."
+    )
 
 
 def test_ts_agent_context_excludes_unwanted_sections():
-    """Verifies that the generated context for ts_agent excludes 'Ville actuelle (référence)' and 'Top 5 communes identifiées (Détails métriques)'."""
-    from agents.state import (
-        GraphState,
-        ODISContextBuilder,
-        SearchResultsData,
-        CommuneResult,
-    )
-    from core.models import SearchCriterias
-    import json
-
-    criteria = SearchCriterias()
+    """Verifies that ts_agent context contains search criteria, target city, score overview, and territory metrics."""
+    criteria = SearchCriterias(nb_adultes=1, nb_enfants=0)
     current = CommuneResult(codgeo="75056", name="Paris", population=2148271)
-    rec1 = CommuneResult(codgeo="13055", name="Marseille", population=870018)
+    rec1 = CommuneResult(
+        codgeo="13055",
+        name="Marseille",
+        population=870018,
+        scores={
+            "emploi": [
+                CommuneScoreDetail(
+                    label="Offres",
+                    score_id="job1",
+                    score_normalise=0.8,
+                    relative_weight=1.0,
+                    unit="",
+                )
+            ]
+        },
+        territoire=TerritoryMetrics(cat_score=0.7, is_strategic=True),
+    )
 
     results_data = SearchResultsData(
         search_hash="abc", current_geo=current, results=[rec1]
     )
 
-    state = GraphState(search_criteria=criteria, search_results=results_data)
+    state = GraphState(
+        search_criteria=criteria,
+        search_results=results_data,
+        focus_city=rec1,
+        odis_brief="Brief",
+    )
 
-    # Context for ts_agent
     ts_ctx_str = ODISContextBuilder.agent_context(state, "ts_agent")
     ts_ctx = json.loads(ts_ctx_str)
 
     assert "Ville actuelle (référence)" not in ts_ctx
-    assert "Top 5 communes identifiées (Détails métriques)" not in ts_ctx
+    assert "Top 5 communes identifiées" not in ts_ctx
+    assert "Ville cible" in ts_ctx
+    assert ts_ctx["Ville cible"] == "Marseille (13055)"
+    assert "Scores thématiques" in ts_ctx
+    assert "Données territoire" in ts_ctx
 
-    # Context for refiner should include them
+    # Refiner context includes comparison cities and top 5
     refiner_ctx_str = ODISContextBuilder.agent_context(state, "refiner")
     refiner_ctx = json.loads(refiner_ctx_str)
     assert "Ville actuelle (référence)" in refiner_ctx
-    assert "Top 5 communes identifiées (Détails métriques)" in refiner_ctx
+    assert "Top 5 communes identifiées" in refiner_ctx
 
 
-def test_association_detail_context_formatting():
-    """Verifies that AssociationDetail objects are formatted as pipe-separated strings for agents, but normal dicts for UI."""
-    from core.models import AssociationDetail
+def test_refiner_context_without_focus_city_includes_all_candidates_and_scores():
+    """Verifies that refiner context correctly populates Top 5, scores, and shortlisted city when focus_city is None (post-scoring runtime)."""
+    criteria = SearchCriterias(nb_adultes=1, nb_enfants=0)
+    current = CommuneResult(codgeo="75056", name="Paris", population=2148271)
+    rec1 = CommuneResult(
+        codgeo="13055",
+        name="Marseille",
+        population=870018,
+        scores={
+            "emploi": [
+                CommuneScoreDetail(
+                    label="Offres d'emploi",
+                    score_id="job1",
+                    score_normalise=0.8,
+                    relative_weight=1.0,
+                    valeur_kpi=42,
+                    unit="offres",
+                )
+            ]
+        },
+    )
+    pressentie = CommuneResult(
+        codgeo="69123",
+        name="Lyon",
+        population=522250,
+        scores={
+            "logement": [
+                CommuneScoreDetail(
+                    label="Loyer moyen",
+                    score_id="loy1",
+                    score_normalise=0.7,
+                    relative_weight=2.0,
+                    valeur_kpi=15.0,
+                    unit="€/m²",
+                )
+            ]
+        },
+    )
+    results_data = SearchResultsData(
+        search_hash="abc",
+        current_geo=current,
+        results=[rec1],
+        commune_pressentie=pressentie,
+    )
+
+    # Runtime state for postscoring: focus_city is None
+    state = GraphState(
+        search_criteria=criteria,
+        search_results=results_data,
+        focus_city=None,
+        odis_brief="Brief profile",
+    )
+
+    refiner_ctx_str = ODISContextBuilder.agent_context(state, "refiner")
+    refiner_ctx = json.loads(refiner_ctx_str)
+
+    assert "Critères de recherche" in refiner_ctx
+    assert "Ville actuelle (référence)" in refiner_ctx
+    assert refiner_ctx["Ville actuelle (référence)"]["Code INSEE"] == "75056"
+
+    assert "Top 5 communes identifiées" in refiner_ctx
+    top5 = refiner_ctx["Top 5 communes identifiées"]
+    assert len(top5) == 1
+    assert top5[0]["Code INSEE"] == "13055"
+    assert "Scores thématiques" in top5[0]
+    assert "emploi" in top5[0]["Scores thématiques"]
+
+    assert "Commune pressentie (pour comparaison)" in refiner_ctx
+    cp = refiner_ctx["Commune pressentie (pour comparaison)"]
+    assert cp["Code INSEE"] == "69123"
+    assert "Scores thématiques" in cp
+    assert "logement" in cp["Scores thématiques"]
+
+
+def test_detail_formatting_helpers():
+    """Verifies individual detail formatting helper outputs."""
+    detail = CommuneScoreDetail(
+        label="Loyer moyen",
+        score_id="loy1",
+        score_normalise=0.75,
+        relative_weight=2.5,
+        valeur_kpi=12.5,
+        unit="€/m²",
+    )
+    val = ODISContextBuilder._process_value(detail)
+    assert val == "Loyer moyen: 12.5 €/m², score: 0.75, poids relatif: 2.5%"
 
     asso = AssociationDetail(
-        id="W123456789",
-        name="Test Association",
-        description="Providing test assistance and social support.",
-        waldec_label="Action Sociale",
-        refugee_focused=True,
+        id="W123",
+        name="Asso Test",
+        description="Aide",
+        waldec_label="Social",
     )
-
-    # For an agent, it should be simplified to a pipe-separated string
-    agent_ctx = ODISContextBuilder._auto_build_context(
-        asso, "agent_social_integration_expert"
-    )
-    assert (
-        agent_ctx
-        == "W123456789 | Test Association | Providing test assistance and social support."
-    )
-
-    # For UI, it should remain a dictionary with all visible fields
-    ui_ctx = ODISContextBuilder._auto_build_context(asso, "ui_details")
-    assert isinstance(ui_ctx, dict)
-    assert ui_ctx["Identifiant unique (WALDEC)"] == "W123456789"
-    assert ui_ctx["Nom de l'association"] == "Test Association"
-    assert (
-        ui_ctx["Description de l'activité"]
-        == "Providing test assistance and social support."
-    )
-    assert ui_ctx["Libellé de la catégorie WALDEC"] == "Action Sociale"
-    assert ui_ctx["Si l'association est dédiée aux réfugiés"] is True
-
-
-def test_inclusion_service_detail_context_formatting():
-    """Verifies that InclusionServiceDetail objects are formatted as pipe-separated strings for agents, but normal dicts for UI."""
-    from core.models import InclusionServiceDetail
-
-    srv = InclusionServiceDetail(
-        id="srv1",
-        name="French Lessons",
-        nom_structure="Secours Populaire",
-        structure_id="struct123",
-        description="Free French learning classes.",
-        lien_source="https://soliguide.fr/service/1",
-        source="soliguide",
-    )
-
-    # For an agent, it should be simplified to a pipe-separated string
-    agent_ctx = ODISContextBuilder._auto_build_context(
-        srv, "agent_social_integration_expert"
-    )
-    assert (
-        agent_ctx
-        == "srv1 | French Lessons par Secours Populaire"
-    )
-
-    # For UI, it should remain a dictionary with all visible fields
-    ui_ctx = ODISContextBuilder._auto_build_context(srv, "ui_details")
-    assert isinstance(ui_ctx, dict)
-    assert ui_ctx["Identifiant unique du service"] == "srv1"
-    assert ui_ctx["Nom du service"] == "French Lessons"
-    assert ui_ctx["Nom de la structure proposant le service"] == "Secours Populaire"
-    assert ui_ctx["Description du service"] == "Free French learning classes."
-
+    assert ODISContextBuilder._process_value(asso) == "W123 | Asso Test | Aide"

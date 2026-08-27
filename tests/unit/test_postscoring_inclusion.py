@@ -7,8 +7,8 @@ from core.postscoring import launch_background_inclusion_enrichment
 
 def test_launch_background_inclusion_enrichment():
     """Tests that launch_background_inclusion_enrichment correctly calls the Data Inclusion API
-
-    and updates the background store with the grouped services.
+    with GPS coordinates from POIs, excludes external CCAS and distant/broad services,
+    and updates the background store with sorted local services.
     """
     # 1. Setup Mock Engine & Index
     mock_engine = MagicMock()
@@ -21,10 +21,30 @@ def test_launch_background_inclusion_enrichment():
         ]
     ).set_index("code")
 
-    # Mocked API response items — two different services with same (structure_id, nom) = duplicate
-    # Wrapped inside "service" structure like the real /search/services response
+    # Setup POIs with mairie for 94041
+    mock_engine.pois = pd.DataFrame(
+        [
+            {
+                "category": "mairie",
+                "codgeo": "94041",
+                "name": "Mairie de Test",
+                "lat": 48.8000,
+                "lon": 2.4500,
+            }
+        ]
+    )
+
+    # Mocked API response items:
+    # 1. Local service (dist 1km, code_insee 94041) -> Keep
+    # 2. Local CCAS (dist 0km, code_insee 94041) -> Keep
+    # 3. External CCAS (dist 4km, code_insee 94000) -> Exclude
+    # 4. External CIAS (dist 5km, code_insee 94000, CIAS) -> Keep
+    # 5. Distant service (dist 15km) -> Exclude (> 10km)
+    # 6. Broad zone service (dist 2km, zone_diffusion_type="departement") -> Exclude
+    # 7. Duplicate of local service -> Exclude (dedup)
     mock_items = [
         {
+            "distance": 1,
             "service": {
                 "id": "srv1",
                 "nom": "Cours de français A1",
@@ -36,39 +56,101 @@ def test_launch_background_inclusion_enrichment():
                 "structure": {
                     "id": "struct-alpha",
                     "nom": "Centre Social Alpha",
-                }
-            }
+                    "commune": "Ville Test",
+                    "code_insee": "94041",
+                },
+            },
         },
         {
+            "distance": 0,
             "service": {
-                "id": "srv2",
-                "nom": "Cours de français B2",
-                "structure_id": "struct-beta",
-                "description": "Niveau avancé.",
-                "lien_source": "https://example.com/srv2",
-                "source": "soliguide",
+                "id": "srv_ccas_local",
+                "nom": "Aide sociale",
+                "structure_id": "struct-ccas-local",
                 "thematiques": ["lecture-ecriture-calcul--maitriser-le-francais"],
                 "structure": {
-                    "id": "struct-beta",
-                    "nom": "CCAS Beta",
-                }
-            }
+                    "id": "struct-ccas-local",
+                    "nom": "Centre Communal d'Action Sociale (CCAS) - Ville Test",
+                    "commune": "Ville Test",
+                    "code_insee": "94041",
+                    "reseaux_porteurs": ["ccas-cias"],
+                    "typologie": "CCAS",
+                },
+            },
         },
-        # Duplicate: same structure_id + same nom as srv1 → should be deduplicated
         {
+            "distance": 4,
             "service": {
-                "id": "srv3-duplicate",
+                "id": "srv_ccas_ext",
+                "nom": "Aide sociale externe",
+                "structure_id": "struct-ccas-ext",
+                "thematiques": ["lecture-ecriture-calcul--maitriser-le-francais"],
+                "structure": {
+                    "id": "struct-ccas-ext",
+                    "nom": "CCAS Voisin",
+                    "commune": "Ville Voisine",
+                    "code_insee": "94000",
+                    "reseaux_porteurs": ["ccas-cias"],
+                    "typologie": "CCAS",
+                },
+            },
+        },
+        {
+            "distance": 5,
+            "service": {
+                "id": "srv_cias",
+                "nom": "Aide intercommunale",
+                "structure_id": "struct-cias",
+                "thematiques": ["lecture-ecriture-calcul--maitriser-le-francais"],
+                "structure": {
+                    "id": "struct-cias",
+                    "nom": "CIAS du Territoire",
+                    "commune": "Ville Voisine",
+                    "code_insee": "94000",
+                    "reseaux_porteurs": ["ccas-cias"],
+                },
+            },
+        },
+        {
+            "distance": 15,
+            "service": {
+                "id": "srv_distant",
+                "nom": "Cours de français loin",
+                "structure_id": "struct-distant",
+                "thematiques": ["lecture-ecriture-calcul--maitriser-le-francais"],
+                "structure": {
+                    "id": "struct-distant",
+                    "nom": "Centre Loin",
+                    "commune": "Ville Loin",
+                },
+            },
+        },
+        {
+            "distance": 2,
+            "service": {
+                "id": "srv_broad",
+                "nom": "Dispositif Départemental",
+                "structure_id": "struct-broad",
+                "zone_diffusion_type": "departement",
+                "thematiques": ["lecture-ecriture-calcul--maitriser-le-francais"],
+                "structure": {
+                    "id": "struct-broad",
+                    "nom": "Conseil Départemental",
+                },
+            },
+        },
+        {
+            "distance": 1,
+            "service": {
+                "id": "srv1-dup",
                 "nom": "Cours de français A1",
                 "structure_id": "struct-alpha",
-                "description": "Version doublon du même service.",
-                "lien_source": "https://example.com/srv3",
-                "source": "dora",
                 "thematiques": ["lecture-ecriture-calcul--maitriser-le-francais"],
                 "structure": {
                     "id": "struct-alpha",
                     "nom": "Centre Social Alpha",
-                }
-            }
+                },
+            },
         },
     ]
 
@@ -110,32 +192,32 @@ def test_launch_background_inclusion_enrichment():
         assert "Maitriser le français" in city_data
         services = city_data["Maitriser le français"]
 
-        # srv3 is a duplicate of srv1 (same structure_id + nom) → only 2 unique services
-        assert len(services) == 2
+        # Kept: srv_ccas_local (dist 0), srv1 (dist 1), srv_cias (dist 5)
+        # Excluded: srv_ccas_ext (ext CCAS), srv_distant (>10km), srv_broad (departement), srv1-dup (dedup)
+        assert len(services) == 3
 
-        assert services[0]["id"] == "srv1"
-        assert services[0]["name"] == "Cours de français A1"
-        assert services[0]["nom_structure"] == "Centre Social Alpha"
-        assert services[0]["structure_id"] == "struct-alpha"
-        assert (
-            services[0]["description"] == "Apprentissage du français langue étrangère."
-        )
-        assert services[0]["lien_source"] == "https://example.com/srv1"
-        assert services[0]["source"] == "dora"
+        # Verify sorted by proximity (distance ascending)
+        assert services[0]["id"] == "srv_ccas_local"
+        assert services[0]["distance_km"] == 0
+        assert services[0]["commune_nom"] == "Ville Test"
 
-        assert services[1]["id"] == "srv2"
-        assert services[1]["name"] == "Cours de français B2"
-        assert services[1]["nom_structure"] == "CCAS Beta"
-        assert services[1]["description"] == "Niveau avancé."
-        assert services[1]["lien_source"] == "https://example.com/srv2"
-        assert services[1]["source"] == "soliguide"
+        assert services[1]["id"] == "srv1"
+        assert services[1]["distance_km"] == 1
 
-        # Verify only 1 GET call was made
+        assert services[2]["id"] == "srv_cias"
+        assert services[2]["distance_km"] == 5
+
+        # Verify GET call was made with code_commune and GPS coordinates
         assert mock_get.call_count == 1
         mock_get.assert_called_once_with(
             "https://api.data.inclusion.gouv.fr/api/v1/search/services",
             headers={"Authorization": "Bearer fake_api_key"},
-            params={"code_commune": "94041", "size": 100},
+            params={
+                "code_commune": "94041",
+                "lat": 48.8,
+                "lon": 2.45,
+                "size": 100,
+            },
             timeout=10,
         )
 

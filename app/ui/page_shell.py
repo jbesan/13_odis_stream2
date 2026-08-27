@@ -69,6 +69,7 @@ def enter_page(
         st.stop()
     _inject_common_styles()
     AppSession(st.session_state).identity()
+    auth.get_login_session_id()
     if admin_only and not auth.is_admin():
         st.error("🔒 Accès refusé : cette page est réservée aux administrateurs.")
         st.stop()
