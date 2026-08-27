@@ -1358,10 +1358,10 @@ def render_refiner_panel(commune: CommuneResult, h: Optional[str]) -> bool:
     bg_res = odis_get_bg_result(h) if h else None
     refiner_status = bg_res.get("status_refiner") if isinstance(bg_res, dict) else None
     if is_terminal_refiner_status(refiner_status):
-        st.caption(
-            "Analyse personnalisée indisponible. Voici les principaux "
-            "indicateurs déterministes de ce territoire."
-        )
+        # st.caption(
+        #     "Analyse personnalisée indisponible. Voici les principaux "
+        #     "indicateurs déterministes de ce territoire."
+        # )
         st.markdown(generate_static_pitch(commune))
         return True
 
