@@ -150,13 +150,15 @@ def test_format_city_details_consistency(scoring_engine, base_df, base_config):
     # Since display_factor is 100 in the live config and scaled score is 0.5, it should be 50.0
     assert float(vac_item.valeur_kpi) == 50.0
 
-    # Check that mob_gare_scaled fell back to scaled score and formatted to "Oui"
+    # Check that mob_gare_scaled fell back to scaled score and formatted to discrete label
     gare_item = next(
         item
         for item in details.scores["mobilite"]
         if item.score_id == "mob_gare_scaled"
     )
-    assert gare_item.valeur_kpi == "Oui"
+    assert gare_item.valeur_kpi == "Gare présente"
+    assert gare_item.status_label == "Gare présente"
+    assert gare_item.metric_type == "discrete"
 
 
 def test_format_city_details_no_config(scoring_engine, base_df):

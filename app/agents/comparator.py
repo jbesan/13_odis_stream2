@@ -158,7 +158,7 @@ def compute_city_comparison(
         "",
         f"- **Score global** : **{int((focus_city.global_score or 0) * 100)}%** pour {focus_name} "
         f"contre **{int((ref_city.global_score or 0) * 100)}%** pour {ref_name}.",
-        f"- **Adéquation démographie** : **{focus_pop_match}%** ({focus_pop_str} hab.) pour {focus_name} "
+        f"- **Adéquation démographique** : **{focus_pop_match}%** ({focus_pop_str} hab.) pour {focus_name} "
         f"contre **{ref_pop_match}%** ({ref_pop_str} hab.) pour {ref_name}.",
         "",
     ]

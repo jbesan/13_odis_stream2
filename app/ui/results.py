@@ -1684,7 +1684,7 @@ def show_details_dialog(index: Any):
                 else 1.0
             )
             st.metric(
-                "Adéquation démographie",
+                "Adéquation démographique",
                 f"{pop_coeff_val * 100:.0f}%",
                 help="Correspondance avec la taille de ville ciblée, calculée sur la population du Bassin de Vie pour prendre en compte le cadre de vie réel et les services du quotidien.",
             )
@@ -1698,7 +1698,7 @@ def show_details_dialog(index: Any):
             st.metric(
                 "Indice global",
                 f"{commune.global_score * 100:.1f}%",
-                help="Indice global = Adéquation besoins × Adéquation démographie.",
+                help="Indice global = Adéquation besoins × Adéquation démographique.",
             )
 
     # --- Helper to render scores table ---
@@ -1725,81 +1725,104 @@ def show_details_dialog(index: Any):
 
         with st.container(border=False):
             for s in scores:
-                c_label, c_val = st.columns([3, 1])
-                with c_label:
-                    st.subheader(f"{s.label}")
-                    p_val_raw = s.score_normalise
-                    p_val = (
-                        float(max(0.0, min(1.0, p_val_raw)))
-                        if p_val_raw is not None and pd.notna(p_val_raw)
-                        else 0.0
-                    )
+                p_val_raw = s.score_normalise
+                p_val = (
+                    float(max(0.0, min(1.0, p_val_raw)))
+                    if p_val_raw is not None and pd.notna(p_val_raw)
+                    else 0.0
+                )
 
-                    # Auto color based on score value
-                    if p_val < 0.05:
-                        p_val_bar = 0.05
-                        bar_color = "linear-gradient(90deg, #505050, #000000)"  # Soft to dark Red
-                    elif p_val < 0.35:
-                        p_val_bar = p_val
-                        bar_color = "linear-gradient(90deg, #f87171, #ef4444)"  # Soft to dark Red
-                    elif p_val < 0.65:
-                        p_val_bar = p_val
-                        bar_color = "linear-gradient(90deg, #fbbf24, #f59e0b)"  # Warm Orange/Yellow
-                    else:
-                        p_val_bar = p_val
-                        bar_color = (
-                            "linear-gradient(90deg, #34d399, #10b981)"  # Emerald Green
-                        )
-
-                    st.markdown(
-                        f"""
-                        <div style="width: 100%; background-color: rgba(128, 128, 128, 0.15); border-radius: 4px; height: 10px; margin-top: -15px; overflow: hidden;">
-                            <div style="width: {p_val_bar * 100}%; background: {bar_color}; height: 100%; border-radius: 4px;"></div>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-
-                    val_kpi_c = (
-                        s.valeur_kpi_commune
-                        if s.valeur_kpi_commune is not None
-                        else s.valeur_kpi
-                    )
-                    c_val_fmt = _format_kpi_value(
-                        val_kpi_c,
-                        s.unit,
-                        s.score_id,
-                        s.score_normalise_commune or s.score_normalise,
-                    )
-                    unit_str = f" {s.unit}" if s.unit and s.unit != "None" else ""
-                    c_txt = (
-                        f"{c_val_fmt}"
-                        if c_val_fmt is not None
+                if s.metric_type == "discrete":
+                    status_c = s.status_label or (
+                        str(s.valeur_kpi_commune or s.valeur_kpi)
+                        if (s.valeur_kpi_commune or s.valeur_kpi) is not None
                         else "Donnée indisponible"
                     )
+                    if p_val < 0.35:
+                        badge_color = "gray"
+                        badge_icon = ":material/cancel:"
+                    elif p_val < 0.65:
+                        badge_color = "orange"
+                        badge_icon = ":material/info:"
+                    else:
+                        badge_color = "green"
+                        badge_icon = ":material/check_circle:"
 
-                    if getattr(s, "bdv_applied", False):
-                        b_val_fmt = _format_kpi_value(
-                            s.valeur_kpi_bdv, s.unit, s.score_id, s.score_normalise_bdv
+                    st.subheader(
+                        f"{s.label} &nbsp; :{badge_color}-badge[{badge_icon} {status_c}]"
+                    )
+                    if getattr(s, "bdv_applied", False) and s.status_label_bdv:
+                        st.caption(f"Bassin de Vie : {s.status_label_bdv}")
+                else:
+                    c_label, c_val = st.columns([3, 1])
+                    with c_label:
+                        st.subheader(f"{s.label}")
+
+                        # Auto color based on score value
+                        if p_val < 0.05:
+                            p_val_bar = 0.05
+                            bar_color = "linear-gradient(90deg, #505050, #000000)"  # Soft to dark Red
+                        elif p_val < 0.35:
+                            p_val_bar = p_val
+                            bar_color = "linear-gradient(90deg, #f87171, #ef4444)"  # Soft to dark Red
+                        elif p_val < 0.65:
+                            p_val_bar = p_val
+                            bar_color = "linear-gradient(90deg, #fbbf24, #f59e0b)"  # Warm Orange/Yellow
+                        else:
+                            p_val_bar = p_val
+                            bar_color = (
+                                "linear-gradient(90deg, #34d399, #10b981)"  # Emerald Green
+                            )
+
+                        st.markdown(
+                            f"""
+                            <div style="width: 100%; background-color: rgba(128, 128, 128, 0.15); border-radius: 4px; height: 10px; margin-top: -15px; overflow: hidden;">
+                                <div style="width: {p_val_bar * 100}%; background: {bar_color}; height: 100%; border-radius: 4px;"></div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
                         )
-                        b_txt = (
-                            f"{b_val_fmt}"
-                            if b_val_fmt is not None
+
+                        val_kpi_c = (
+                            s.valeur_kpi_commune
+                            if s.valeur_kpi_commune is not None
+                            else s.valeur_kpi
+                        )
+                        c_val_fmt = _format_kpi_value(
+                            val_kpi_c,
+                            s.unit,
+                            s.score_id,
+                            s.score_normalise_commune or s.score_normalise,
+                        )
+                        unit_str = f" {s.unit}" if s.unit and s.unit != "None" else ""
+                        c_txt = (
+                            f"{c_val_fmt}"
+                            if c_val_fmt is not None
                             else "Donnée indisponible"
                         )
 
-                        st.caption(
-                            f"Commune : {c_txt} | Bassin de Vie : {b_txt}{unit_str}"
-                        )
-                    else:
-                        st.caption(f"Commune : {c_txt}{unit_str}")
-                with c_val:
-                    if p_val_raw is not None and pd.notna(p_val_raw):
-                        score_pct_str = f"{p_val * 100:.0f}%"
-                    else:
-                        score_pct_str = "N/A"
-                    st.space("small")
-                    st.subheader(f"{score_pct_str}")
+                        if getattr(s, "bdv_applied", False):
+                            b_val_fmt = _format_kpi_value(
+                                s.valeur_kpi_bdv, s.unit, s.score_id, s.score_normalise_bdv
+                            )
+                            b_txt = (
+                                f"{b_val_fmt}"
+                                if b_val_fmt is not None
+                                else "Donnée indisponible"
+                            )
+
+                            st.caption(
+                                f"Commune : {c_txt} | Bassin de Vie : {b_txt}{unit_str}"
+                            )
+                        else:
+                            st.caption(f"Commune : {c_txt}{unit_str}")
+                    with c_val:
+                        if p_val_raw is not None and pd.notna(p_val_raw):
+                            score_pct_str = f"{p_val * 100:.0f}%"
+                        else:
+                            score_pct_str = "N/A"
+                        st.space("small")
+                        st.subheader(f"{score_pct_str}")
             st.markdown("<br>", unsafe_allow_html=True)  # Minor spacing
 
     # --- Tabs ---

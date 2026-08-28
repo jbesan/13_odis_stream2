@@ -16,6 +16,7 @@ ScoreCategory = Literal[
 ]
 ScoreComputation = Literal["precomputed", "live", "calculated"]
 ScoreMissingStrategy = Literal["exclude", "zero"]
+ScoreMetricType = Literal["continuous", "discrete"]
 
 
 class ScoreDisplayConfigSchema(BaseModel):
@@ -27,6 +28,8 @@ class ScoreDisplayConfigSchema(BaseModel):
     display_factor: Optional[Union[int, float]] = 1
     tooltip: Optional[str] = None
     format: Optional[str] = None
+    metric_type: ScoreMetricType = "continuous"
+    discrete_mapping: Optional[Dict[Union[float, int, str], str]] = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -456,6 +459,18 @@ class CommuneScoreDetail(BaseModel):
     high_value_adjective: Optional[str] = Field(
         "",
         description="Adjectif pour les valeurs élevées",
+    )
+    metric_type: Literal["continuous", "discrete"] = Field(
+        "continuous",
+        description="Type de métrique : continue (score 0-1) ou discrète (statut catégoriel)",
+    )
+    status_label: Optional[str] = Field(
+        None,
+        description="Libellé textuel du statut résolu pour les métriques discrètes",
+    )
+    status_label_bdv: Optional[str] = Field(
+        None,
+        description="Libellé textuel du statut résolu pour le Bassin de Vie",
     )
 
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)

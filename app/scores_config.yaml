@@ -141,11 +141,15 @@ scores:
     name: Couleur politique de l'équipe municipale
     strong_point_text: La couleur politique de la localité n'est pas défavorable
     high_value_adjective: pas défavorable
-    show: false
+    show: true
     unit: ''
     display_factor: 1
     tooltip: Affiliation à un parti politique d'extrème droite
     format: '{:.1f}'
+    metric_type: discrete
+    discrete_mapping:
+      1.0: "Hors extrême droite"
+      0.0: "Maire classé extrême droite"
   weight: 1.0
   min_bound: 0.0
   max_bound: 1.0
@@ -160,11 +164,16 @@ scores:
     name: Adhésion Réseau ANVITA
     strong_point_text: Le territoire est membre du réseau ANVITA
     high_value_adjective: oui
-    show: false
+    show: true
     unit: 'adhésion'
     display_factor: 1
     tooltip: Commune, EPCI, Département ou Région membre de l'ANVITA
     format: '{:.1f}'
+    metric_type: discrete
+    discrete_mapping:
+      1.0: "Commune / EPCI adhérent"
+      0.5: "Département / Région adhérent"
+      0.0: "Non adhérent"
   weight: 3.0
   min_bound: 0.0
   max_bound: 1.0
@@ -179,12 +188,17 @@ scores:
     name: Signataire CTAI
     strong_point_text: Le territoire est signataire d'un CTAI
     high_value_adjective: oui
-    show: false
+    show: true
     unit: 'contrat signé'
     display_factor: 1
     tooltip: Commune, EPCI, Département ou Région signataire d'un Contrat territorial
       d'accueil et d'intégration (CTAI)
     format: '{:.1f}'
+    metric_type: discrete
+    discrete_mapping:
+      1.0: "Commune / EPCI signataire"
+      0.5: "Département signataire"
+      0.0: "Non signataire"
   weight: 3.0
   min_bound: 0.0
   max_bound: 1.0
@@ -236,11 +250,15 @@ scores:
     name: Même agglomération que la localisation actuelle
     strong_point_text: La localité proposée est bien connectée à la commune actuelle
     high_value_adjective: proche
-    show: false
+    show: true
     unit: ''
     display_factor: 1
     tooltip: ''
     format: '{:.1f}'
+    metric_type: discrete
+    discrete_mapping:
+      1.0: "Même agglomération"
+      0.0: "Autre agglomération"
   weight: 1.0
   min_bound: 0.0
   max_bound: 1.0
@@ -609,6 +627,10 @@ scores:
     display_factor: 1
     tooltip: Présence d'une gare ferroviaire dans la commune
     format: bool
+    metric_type: discrete
+    discrete_mapping:
+      1.0: "Gare présente"
+      0.0: "Aucune gare"
   weight: 1.0
   min_bound: 0.0
   max_bound: 1.0
@@ -946,6 +968,10 @@ scores:
     display_factor: 1
     tooltip: Au moins un prospect inscrit dans le bassin de vie (Source J'Accueille)
     format: '{:,.0f}'
+    metric_type: discrete
+    discrete_mapping:
+      1.0: "Prospects présents"
+      0.0: "Aucun prospect"
   weight: 2.0
   min_bound: 0.0
   max_bound: 1.0
@@ -964,6 +990,10 @@ scores:
     display_factor: 1
     tooltip: Commune située dans une zone stratégique pour l'organisation
     format: '{:.1f}'
+    metric_type: discrete
+    discrete_mapping:
+      1.0: "Zone prioritaire"
+      0.0: "Hors zone"
   weight: 3.0
   min_bound: 0.0
   max_bound: 1.0

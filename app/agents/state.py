@@ -263,7 +263,7 @@ class ODISContextBuilder:
             "Bassin de vie": commune.name_bdv or commune.codgeo_bdv or "N/A",
             "Score global": int((commune.global_score or 0.0) * 100),
             "Adéquation besoins": int((commune.score_besoins or commune.global_score or 0.0) * 100),
-            "Adéquation démographie": int((commune.coeff_population_gauss or 1.0) * 100),
+            "Adéquation démographique": int((commune.coeff_population_gauss or 1.0) * 100),
         }
 
     @classmethod
@@ -370,10 +370,14 @@ class ODISContextBuilder:
 
         if cname == "CommuneScoreDetail":
             label = getattr(item, "label", "N/A")
+            metric_type = getattr(item, "metric_type", "continuous")
+            status_label = getattr(item, "status_label", None)
             vkpi = getattr(item, "valeur_kpi", None)
             unit = getattr(item, "unit", "")
             score = getattr(item, "score_normalise", 0.0)
             weight = getattr(item, "relative_weight", 0.0)
+            if metric_type == "discrete" and status_label:
+                return f"{label}: {status_label} (score: {round(float(score), 2)}, poids relatif: {weight}%)"
             if vkpi is not None:
                 unit_clean = unit.strip()
                 kpi_str = f"{vkpi} {unit_clean}" if unit_clean else f"{vkpi}"

@@ -155,6 +155,13 @@ def load_scores_config_as_df(config_path: str) -> pd.DataFrame:
                 "baseline": item.get("baseline", False),
                 "format": item.get("display", {}).get("format", None),
                 "missing_strategy": item.get("missing_strategy", "exclude"),
+                "show": item.get("display", {}).get("show", True),
+                "metric_type": item.get("display", {}).get(
+                    "metric_type", "continuous"
+                ),
+                "discrete_mapping": item.get("display", {}).get(
+                    "discrete_mapping", None
+                ),
             }
         )
     return pd.DataFrame(data)

@@ -12,7 +12,7 @@ Ce document détaille le fonctionnement interne du moteur de scoring de l'applic
 
 Le score global est régi par une architecture à **Multiplicateur Transverse** :
 
-$$\text{Score global} = \text{Adéquation besoins} \times \text{Adéquation démographie}$$
+$$\text{Score global} = \text{Adéquation besoins} \times \text{Adéquation démographique}$$
 
 ```mermaid
 graph TD
@@ -43,7 +43,7 @@ graph TD
         %% Dynamic Calculations
         H3 --> I1["1. Matchs Thématiques (Emploi, Santé, Formations...)"]
         H3 --> I2["2. Proximité Géographique (Décroissance linéaire)"]
-        H3 --> I3["3. Adéquation Démographie (Trapèze Bassin de Vie + Plancher 15%)"]
+        H3 --> I3["3. Adéquation Démographique (Trapèze Bassin de Vie + Plancher 15%)"]
         
         %% BdV Boost on domain criteria
         I1 & I2 --> J["Boost Bassin de Vie (bdv_factor par critère)"]
@@ -53,7 +53,7 @@ graph TD
         K --> L["Score Besoins (Moyenne Pondérée des 7 Catégories)"]
         
         %% Global Multiplier
-        L & I3 --> M["Multiplicateur Global : Score Besoins × Adéquation Démographie"]
+        L & I3 --> M["Multiplicateur Global : Score Besoins × Adéquation Démographique"]
         M --> N["Cutoff Map (Top 5000 pour la Carte Folium)"]
     end
 ```
