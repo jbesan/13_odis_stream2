@@ -1,7 +1,7 @@
 import pandas as pd
 import streamlit as st
-from app.core.models import CommuneResult, HousingMetrics
-from app.ui.results import render_jaccueille_housing_info
+from core.models import CommuneResult, HousingMetrics
+from ui.results import render_jaccueille_housing_info
 
 
 def test_render_jaccueille_housing_info_uses_codgeo_bdv(monkeypatch):
@@ -26,7 +26,7 @@ def test_render_jaccueille_housing_info_uses_codgeo_bdv(monkeypatch):
         ]
     )
     monkeypatch.setattr(
-        "app.ui.results.fetch_salesforce_jaccueille_bdv", lambda: mock_df_bdv
+        "ui.details_dialog.fetch_salesforce_jaccueille_bdv", lambda: mock_df_bdv
     )
 
     # Commune Le Bouscat (codgeo=33069, codgeo_bdv=33063)

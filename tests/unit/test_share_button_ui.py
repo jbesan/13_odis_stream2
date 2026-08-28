@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock
 import streamlit as st
-from app.ui.results import render_share_search_button, render_export_pdf_button
+from ui.results import render_share_search_button, render_export_pdf_button, render_details_trigger_button
 from core.models import SearchResultsData, CommuneResult
 
 
@@ -35,8 +35,8 @@ def test_render_share_search_button_disabled_when_postscoring_not_done(monkeypat
 
     monkeypatch.setattr(st, "button", mock_button)
     search_results = _create_mock_search_results()
-    monkeypatch.setattr("app.ui.results.st.session_state", {"search_results": search_results})
-    monkeypatch.setattr("app.ui.results.odis_get_bg_result", lambda h: None)
+    monkeypatch.setattr("ui.results_actions.st.session_state", {"search_results": search_results})
+    monkeypatch.setattr("ui.results_actions.odis_get_bg_result", lambda h: None)
 
     _call_fn(render_share_search_button, h="hash_123", button_text="Partager")
 
@@ -56,14 +56,14 @@ def test_render_share_search_button_enabled_when_postscoring_done(monkeypatch):
 
     monkeypatch.setattr(st, "button", mock_button)
     search_results = _create_mock_search_results("69123")
-    monkeypatch.setattr("app.ui.results.st.session_state", {"search_results": search_results})
+    monkeypatch.setattr("ui.results_actions.st.session_state", {"search_results": search_results})
     mock_bg_res = {
         "status_refiner": "done",
         "jobs_enrichment": {"69123": {"status": "success_nonempty"}},
         "association_enrichment_status": {"69123": {"status": "success_nonempty"}},
         "inclusion_enrichment_status": {"69123": {"status": "success_nonempty"}},
     }
-    monkeypatch.setattr("app.ui.results.odis_get_bg_result", lambda h: mock_bg_res)
+    monkeypatch.setattr("ui.results_actions.odis_get_bg_result", lambda h: mock_bg_res)
 
     _call_fn(render_share_search_button, h="hash_123", button_text="Partager")
 
@@ -83,10 +83,10 @@ def test_render_export_pdf_button_states(monkeypatch):
 
     monkeypatch.setattr(st, "button", mock_button)
     search_results = _create_mock_search_results("69123")
-    monkeypatch.setattr("app.ui.results.st.session_state", {"search_results": search_results})
+    monkeypatch.setattr("ui.results_actions.st.session_state", {"search_results": search_results})
 
     # 1. Not done
-    monkeypatch.setattr("app.ui.results.odis_get_bg_result", lambda h: None)
+    monkeypatch.setattr("ui.results_actions.odis_get_bg_result", lambda h: None)
     _call_fn(render_export_pdf_button, h="hash_123")
     assert len(button_calls) == 1
     assert button_calls[0][0] == "Exporter résultats (Préparation...)"
@@ -99,7 +99,7 @@ def test_render_export_pdf_button_states(monkeypatch):
         "association_enrichment_status": {"69123": {"status": "success_nonempty"}},
         "inclusion_enrichment_status": {"69123": {"status": "success_nonempty"}},
     }
-    monkeypatch.setattr("app.ui.results.odis_get_bg_result", lambda h: mock_bg_res)
+    monkeypatch.setattr("ui.results_actions.odis_get_bg_result", lambda h: mock_bg_res)
     _call_fn(render_export_pdf_button, h="hash_123")
     assert len(button_calls) == 2
     assert button_calls[1][0] == "Exporter résultats"
@@ -117,11 +117,10 @@ def test_render_details_trigger_button_states(monkeypatch):
     monkeypatch.setattr(st, "button", mock_button)
     search_results = _create_mock_search_results("69123")
     commune = search_results.results[0]
-    monkeypatch.setattr("app.ui.results.st.session_state", {"search_results": search_results})
+    monkeypatch.setattr("ui.results.st.session_state", {"search_results": search_results})
 
     # 1. Hydration running
-    monkeypatch.setattr("app.ui.results.odis_get_bg_result", lambda h: None)
-    from app.ui.results import render_details_trigger_button
+    monkeypatch.setattr("ui.results.odis_get_bg_result", lambda h: None)
     _call_fn(render_details_trigger_button, commune=commune, h="hash_123")
     assert len(button_calls) == 1
     assert button_calls[0][0] == "En savoir plus (Préparation...)"
@@ -134,7 +133,7 @@ def test_render_details_trigger_button_states(monkeypatch):
         "association_enrichment_status": {"69123": {"status": "success_nonempty"}},
         "inclusion_enrichment_status": {"69123": {"status": "success_nonempty"}},
     }
-    monkeypatch.setattr("app.ui.results.odis_get_bg_result", lambda h: mock_bg_res)
+    monkeypatch.setattr("ui.results.odis_get_bg_result", lambda h: mock_bg_res)
     _call_fn(render_details_trigger_button, commune=commune, h="hash_123")
     assert len(button_calls) == 2
     assert button_calls[1][0] == "En savoir plus"

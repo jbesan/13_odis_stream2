@@ -326,7 +326,7 @@ def test_commune_result_with_analysis_report():
 
 def test_render_initial_analysis_report_with_structured_report():
     """Verify that _render_initial_analysis_report creates st.tabs when analysis_report is present."""
-    from ui.results import _render_initial_analysis_report
+    from ui.ai_analysis_dialog import _render_initial_analysis_report
 
     report = CityAnalysisReport(
         city_name="Bordeaux",
@@ -345,12 +345,12 @@ def test_render_initial_analysis_report_with_structured_report():
     commune = CommuneResult(codgeo="33063", name="Bordeaux", analysis_report=report)
 
     with (
-        patch("ui.results.st.markdown") as mock_md,
-        patch("ui.results.st.header") as mock_hdr,
-        patch("ui.results.st.tabs", return_value=[MagicMock()]) as mock_tabs,
-        patch("ui.results.st.divider"),
-        patch("ui.results.st.columns", return_value=(MagicMock(), MagicMock())),
-        patch("ui.results._render_sources_popover") as mock_sources,
+        patch("ui.ai_analysis_dialog.st.markdown") as mock_md,
+        patch("ui.ai_analysis_dialog.st.header") as mock_hdr,
+        patch("ui.ai_analysis_dialog.st.tabs", return_value=[MagicMock()]) as mock_tabs,
+        patch("ui.ai_analysis_dialog.st.divider"),
+        patch("ui.ai_analysis_dialog.st.columns", return_value=(MagicMock(), MagicMock())),
+        patch("ui.ai_analysis_dialog._render_sources_popover") as mock_sources,
     ):
         _render_initial_analysis_report(commune, "")
 
@@ -363,11 +363,11 @@ def test_render_initial_analysis_report_with_structured_report():
 
 def test_render_initial_analysis_report_fallback_markdown():
     """Verify that _render_initial_analysis_report falls back to st.markdown when analysis_report is absent."""
-    from ui.results import _render_initial_analysis_report
+    from ui.ai_analysis_dialog import _render_initial_analysis_report
 
     commune = CommuneResult(codgeo="33063", name="Bordeaux")
 
-    with patch("ui.results.st.markdown") as mock_md:
+    with patch("ui.ai_analysis_dialog.st.markdown") as mock_md:
         _render_initial_analysis_report(commune, "Contenu brut de secours")
         mock_md.assert_called_once_with("Contenu brut de secours")
 
@@ -394,7 +394,7 @@ def test_interactive_chat_enabled_logic():
 
 def test_ia_analysis_content_chat_disabled_for_default_org():
     """Verify that ia_analysis_content does NOT render chat input if chat is disabled for the org."""
-    from ui.results import ia_analysis_content
+    from ui.ai_analysis_dialog import ia_analysis_content
     from core.models import SearchResultsData, Org
 
     commune = CommuneResult(
@@ -412,13 +412,13 @@ def test_ia_analysis_content_chat_disabled_for_default_org():
     )
 
     with (
-        patch("ui.results.st.session_state", {
+        patch("ui.ai_analysis_dialog.st.session_state", {
             "search_results": search_results,
             "active_search_hash": "test_h",
             "org": Org(id="emile_aura", name="EMILE", enable_interactive_chat=False),
         }),
-        patch("ui.results._render_initial_analysis_report") as mock_render_report,
-        patch("ui.results.st.chat_input") as mock_chat_input,
+        patch("ui.ai_analysis_dialog._render_initial_analysis_report") as mock_render_report,
+        patch("ui.ai_analysis_dialog.st.chat_input") as mock_chat_input,
     ):
         ia_analysis_content("Bordeaux", "33063", None)
         mock_render_report.assert_called_once()
@@ -428,7 +428,7 @@ def test_ia_analysis_content_chat_disabled_for_default_org():
 
 def test_ia_analysis_content_chat_enabled_for_jaccueille():
     """Verify that ia_analysis_content renders chat input if chat is enabled for J'Accueille."""
-    from ui.results import ia_analysis_content
+    from ui.ai_analysis_dialog import ia_analysis_content
     from core.models import SearchResultsData
     import config as cfg
 
@@ -451,17 +451,17 @@ def test_ia_analysis_content_chat_enabled_for_jaccueille():
     )
 
     with (
-        patch("ui.results.st.session_state", {
+        patch("ui.ai_analysis_dialog.st.session_state", {
             "search_results": search_results,
             "active_search_hash": "test_h",
             "org": cfg.ORGANIZATION_PROFILES["jaccueille"],
         }),
-        patch("ui.results._render_initial_analysis_report") as mock_render_report,
-        patch("ui.results.st.divider"),
-        patch("ui.results.st.subheader"),
-        patch("ui.results.st.chat_message") as mock_chat_msg,
-        patch("ui.results.st.markdown"),
-        patch("ui.results.st.chat_input") as mock_chat_input,
+        patch("ui.ai_analysis_dialog._render_initial_analysis_report") as mock_render_report,
+        patch("ui.ai_analysis_dialog.st.divider"),
+        patch("ui.ai_analysis_dialog.st.subheader"),
+        patch("ui.ai_analysis_dialog.st.chat_message") as mock_chat_msg,
+        patch("ui.ai_analysis_dialog.st.markdown"),
+        patch("ui.ai_analysis_dialog.st.chat_input") as mock_chat_input,
     ):
         ia_analysis_content("Bordeaux", "33063", None)
         mock_render_report.assert_called_once()
@@ -473,7 +473,7 @@ def test_ia_analysis_content_chat_enabled_for_jaccueille():
 
 def test_render_sources_popover_list_and_sublist_format():
     """Verify that _render_sources_popover formats items as list with sublist captions."""
-    from ui.results import _render_sources_popover
+    from ui.ai_analysis_dialog import _render_sources_popover
 
     source_data = [
         {
@@ -487,8 +487,8 @@ def test_render_sources_popover_list_and_sublist_format():
     ]
 
     with (
-        patch("ui.results.st.popover") as mock_popover,
-        patch("ui.results.st.markdown") as mock_markdown,
+        patch("ui.ai_analysis_dialog.st.popover") as mock_popover,
+        patch("ui.ai_analysis_dialog.st.markdown") as mock_markdown,
     ):
         mock_popover.return_value.__enter__.return_value = MagicMock()
         _render_sources_popover(source_data, "housing_expert")

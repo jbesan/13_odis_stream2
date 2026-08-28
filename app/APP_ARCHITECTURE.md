@@ -227,7 +227,13 @@ app/
 │   ├── form_state.py      # Native widget-state hydration and criteria collection
 │   ├── forms.py          # Form input wizard layout fields
 │   ├── page_shell.py      # Common auth, routing, telemetry, and sidebar conventions
-│   ├── results.py        # Polling fragments and detail views
+│   ├── results.py        # Results listing orchestrator, radar comparison, refiner panel
+│   ├── details_dialog.py # 'En savoir plus' dialog & territory score enrichments
+│   ├── ai_analysis_dialog.py # 'Analyse avancée' AI swarm synthesis & interactive chat
+│   ├── ccas_dialog.py    # Local CCAS/CIAS contacts modal
+│   ├── results_actions.py # PDF export and search sharing dialogs
+│   ├── sources_dialog.py # Verified data manifest sources modal
+│   ├── feedback.py       # Modal feedback submission
 │   └── idle_sleep.py     # Iframe activity listeners & idle monitors
 ├── pages/
 │   ├── 1_Accueil.py      # Entry screen
