@@ -528,7 +528,12 @@ def generate_pdf_report(
         bdv_text = f"Fait partie du bassin de vie de : {commune.name_bdv}"
         pdf.cell(pdf.epw, 6, bdv_text, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
-        score_percent = f"Adéquation globale : {commune.global_score * 100:.1f}%"
+        score_besoins_val = getattr(commune, "score_besoins", commune.global_score) or 0.0
+        pop_coeff_val = getattr(commune, "coeff_population_gauss", 1.0) or 1.0
+        score_percent = (
+            f"Adéquation globale : {commune.global_score * 100:.1f}% "
+            f"(Besoins : {score_besoins_val * 100:.1f}% | Démographie : {pop_coeff_val * 100:.0f}%)"
+        )
         pdf.set_font("DejaVu", "B", 10)
         pdf.cell(pdf.epw, 6, score_percent, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(4)

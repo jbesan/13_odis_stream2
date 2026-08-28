@@ -231,7 +231,12 @@ class ODISContextBuilder:
             "poids_mobilite",
             "poids_sante",
             "poids_territoire",
+            "target_population",
             "target_population_sigma",
+            "target_population_a",
+            "target_population_b",
+            "target_population_c",
+            "target_population_d",
             "org_boosts",
         }
         ctx = {}
@@ -257,6 +262,8 @@ class ODISContextBuilder:
             "Population": commune.population,
             "Bassin de vie": commune.name_bdv or commune.codgeo_bdv or "N/A",
             "Score global": int((commune.global_score or 0.0) * 100),
+            "Adéquation besoins": int((commune.score_besoins or commune.global_score or 0.0) * 100),
+            "Adéquation démographie": int((commune.coeff_population_gauss or 1.0) * 100),
         }
 
     @classmethod

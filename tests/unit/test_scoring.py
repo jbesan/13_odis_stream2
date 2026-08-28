@@ -214,7 +214,6 @@ class TestScoringLogic:
         df_with_dist["taux_couverture"] = 50.0
         df_with_dist["met_scaled"] = 0.5
         df_with_dist["log_vac_scaled"] = 0.5
-        df_with_dist["ter_population_scaled"] = 0.5
         df_with_dist["ter_pol_scaled"] = 0.5
         df_with_dist["log_occup_scaled"] = 0.5
         df_with_dist["log_soc_inoc_scaled"] = 0.5
@@ -237,7 +236,6 @@ class TestScoringLogic:
             "met_match_adult1_scaled",
             "met_match_adult1_tension_scaled",
             "log_vac_scaled",
-            "ter_population_scaled",
             "inc_services_incl_scaled",
             "inc_asso_core_scaled",
             "inc_asso_add_scaled",
@@ -290,8 +288,6 @@ class TestScoringLogic:
         df_with_dist["log_vac_scaled"] = 0.5
         df_with_dist["edu_maternelle_scaled"] = 0.5  # Needed for partial selection test
         df_with_dist["edu_classes_ferm_scaled"] = 0.5
-        df_with_dist["ter_population_scaled"] = 0.5
-        df_with_dist["ter_population_scaled"] = 0.5
         df_with_dist["ter_pol_scaled"] = 0.5
         df_with_dist["inc_asso_core_scaled"] = 0.5
         default_config.codes_metiers = [["A1234"]]
@@ -567,8 +563,6 @@ class TestConditionalScoring:
         df_with_dist = engine._compute_distance_score(sample_data, default_config)
         df_with_dist["met_scaled"] = 0.5
         df_with_dist["log_vac_scaled"] = 0.5
-        df_with_dist["ter_population_scaled"] = 0.5
-        df_with_dist["ter_population_scaled"] = 0.5
         df_with_dist["ter_pol_scaled"] = 0.5
         df_with_dist["inc_asso_core_scaled"] = 0.5
         df_with_dist["be_codfap_top"] = [["A1", "B2"], ["A1"], [], [], []]
@@ -855,7 +849,7 @@ class TestHousingScoresLogic:
             "met_scaled": [0.5, 0.5],
             "inc_services_incl_scaled": [0.0, 0.0],
             "inc_asso_core_scaled": [0.0, 0.0],
-            "ter_population_scaled": [0.0, 0.0],
+            "coeff_population_gauss": [0.0, 0.0],
             "ter_pol_scaled": [0.0, 0.0],
             "dist_current_loc": [1000, 1000],
             "epci_code": ["1", "2"],
@@ -1478,6 +1472,46 @@ class TestP108TieBreak:
         idx_c1 = results_tied.index.get_loc(c1)
         idx_c2 = results_tied.index.get_loc(c2)
         assert idx_c2 < idx_c1, f"Expected c2 ({c2}) to be ordered before c1 ({c1}) due to territoire_cat_score tie-break"
+
+    def test_compute_demographic_modifier(
+        self, sample_data, live_scores_cat, global_stats
+    ):
+        """Tests the Gaussian demographic modifier computation."""
+        engine = scoring.ScoringEngine(
+            df_all_communes=sample_data,
+            df_bv_geo=gpd.GeoDataFrame(),
+            scores_cat=live_scores_cat,
+            incl_index=pd.DataFrame(),
+            associations_data=pd.DataFrame(columns=["codgeo", "id_waldec", "count"]),
+            formations_data=pd.DataFrame(columns=["codgeo", "formation_code"]),
+            codformations_index=pd.DataFrame(columns=["label"]),
+            global_stats=global_stats,
+        )
+
+        test_df = pd.DataFrame(
+            {
+                "population": [28000, 800, 500000, 300, 45000],
+                "population_bv_bdv": [65000, 65000, 2000000, 5000, 1700000],
+            },
+            index=["petite_ville_centre", "petite_ville_satellite", "metropole_centre", "village_rural", "suburb_of_metropole"]
+        )
+
+        # Target: "🏘️ Petite Ville" (a=10k, b=30k, c=200k, d=450k, floor=0.15)
+        config = SearchCriterias(target_city_size="🏘️ Petite Ville")
+        modifier = engine._compute_demographic_modifier(test_df, config)
+
+        # Bergerac centre (BdV 65k) is on the 100% plateau
+        assert abs(modifier["petite_ville_centre"] - 1.0) < 1e-5
+        # Satellite village in Bergerac BdV (BdV 65k) is on the 100% plateau
+        assert abs(modifier["petite_ville_satellite"] - 1.0) < 1e-5
+        # Metropole centre (BdV 2M) is beyond d (450k) -> residual floor 0.15
+        assert abs(modifier["metropole_centre"] - 0.15) < 1e-5
+        # Suburb of metropole (commune 45k, but BdV 1.7M) is beyond d (450k) -> residual floor 0.15
+        assert abs(modifier["suburb_of_metropole"] - 0.15) < 1e-5
+        # Deep rural village (BdV 5k) is below a (10k) -> residual floor 0.15
+        assert abs(modifier["village_rural"] - 0.15) < 1e-5
+        # All bounded in [0.15, 1.0]
+        assert (modifier >= 0.15).all() and (modifier <= 1.0).all()
 
 
 

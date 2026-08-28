@@ -3,7 +3,7 @@ import yaml
 from pathlib import Path
 from pydantic import ValidationError
 
-from app.core.models import validate_scores_config, get_valid_score_ids
+from app.core.models import ScoresConfigFileSchema
 
 
 def test_scores_config_yaml_is_valid():
@@ -14,9 +14,9 @@ def test_scores_config_yaml_is_valid():
     with open(config_path, "r", encoding="utf-8") as f:
         cfg_data = yaml.safe_load(f)
 
-    validated = validate_scores_config(cfg_data)
+    validated = ScoresConfigFileSchema.model_validate(cfg_data)
     assert len(validated.scores) > 0
-    assert len(get_valid_score_ids()) == len(validated.scores)
+    assert len(ScoresConfigFileSchema.get_valid_ids()) == len(validated.scores)
 
 
 def test_scores_config_schema_rejects_invalid_computation():
@@ -31,7 +31,7 @@ def test_scores_config_schema_rejects_invalid_computation():
         ]
     }
     with pytest.raises(ValidationError) as exc_info:
-        validate_scores_config(invalid_cfg)
+        ScoresConfigFileSchema.model_validate(invalid_cfg)
     assert "computation" in str(exc_info.value)
 
 
@@ -47,7 +47,7 @@ def test_scores_config_schema_rejects_invalid_category():
         ]
     }
     with pytest.raises(ValidationError) as exc_info:
-        validate_scores_config(invalid_cfg)
+        ScoresConfigFileSchema.model_validate(invalid_cfg)
     assert "category" in str(exc_info.value)
 
 
@@ -64,5 +64,5 @@ def test_scores_config_schema_rejects_extra_fields():
         ]
     }
     with pytest.raises(ValidationError) as exc_info:
-        validate_scores_config(invalid_cfg)
+        ScoresConfigFileSchema.model_validate(invalid_cfg)
     assert "unknown_extra_field" in str(exc_info.value)

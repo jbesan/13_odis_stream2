@@ -189,26 +189,6 @@ scores:
   min_bound: 0.0
   max_bound: 1.0
   missing_strategy: zero
-- id: ter_population_scaled
-  category: territoire
-  source_metric: population
-  bdv_factor: -0.8
-  baseline: true
-  computation: live
-  display:
-    name: Population de la commune
-    strong_point_text: La taille de la commune est correspondante.
-    high_value_adjective: correspondante
-    show: false
-    unit: habitants
-    display_factor: 1
-    tooltip: Population totale de la commune
-    format: '{:,.0f}'
-  weight: 5.0
-  scaling_type: gaussian
-  mu: 50000
-  sigma: 25000
-  missing_strategy: exclude
 - id: form_match_adult1_scaled
   category: emploi
   source_metric: form_match_adult1

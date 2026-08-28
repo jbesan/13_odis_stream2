@@ -120,15 +120,15 @@ def test_city_size_radio_hash_invalidation():
     with patch("app.ui.forms.st.session_state", session_state):
         
         criterias1 = create_search_criterias_from_inputs(mock_app_data)
-        pop1 = criterias1.target_population
+        size1 = criterias1.target_city_size
         hash1 = criterias1.compute_hash()
 
         # Change city size radio selection
         session_state["ui_target_city_size_label"] = "🏙️ Ville moyenne"
 
         criterias2 = create_search_criterias_from_inputs(mock_app_data)
-        pop2 = criterias2.target_population
+        size2 = criterias2.target_city_size
         hash2 = criterias2.compute_hash()
 
-        assert pop1 != pop2, f"Expected target populations to differ but got {pop1} == {pop2}"
+        assert size1 != size2, f"Expected target city sizes to differ but got {size1} == {size2}"
         assert hash1 != hash2, "Expected search criteria hash to change when city size radio changes"

@@ -1669,7 +1669,7 @@ def show_details_dialog(index: Any):
     sync_background_data(commune, h)
 
     with st.container(border=False):
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
             st.metric(
                 "Population",
@@ -1677,16 +1677,28 @@ def show_details_dialog(index: Any):
                 help="Population totale de la commune",
             )
         with col2:
+            pop_coeff_display = getattr(commune, "coeff_population_gauss", 1.0)
+            pop_coeff_val = (
+                float(pop_coeff_display)
+                if pop_coeff_display is not None and pd.notna(pop_coeff_display)
+                else 1.0
+            )
+            st.metric(
+                "Adéquation démographie",
+                f"{pop_coeff_val * 100:.0f}%",
+                help="Correspondance avec la taille de ville ciblée, calculée sur la population du Bassin de Vie pour prendre en compte le cadre de vie réel et les services du quotidien.",
+            )
+        with col3:
             st.metric(
                 "Bassin de Vie",
                 commune.name_bdv,
                 help="Territoire d'influence économique et sociale",
             )
-        with col3:
+        with col4:
             st.metric(
                 "Indice global",
                 f"{commune.global_score * 100:.1f}%",
-                help="Indice pondéré (0–100), non calibré comme une probabilité ; il sert à comparer les communes de cette recherche.",
+                help="Indice global = Adéquation besoins × Adéquation démographie.",
             )
 
     # --- Helper to render scores table ---

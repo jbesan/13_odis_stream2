@@ -221,7 +221,6 @@ def global_stats():
         "edu_classes_ferm_scaled": {"min": 0.0, "max": 0.1},
         "inc_asso_core_scaled": {"min": 0.0, "max": 10.0},
         "inc_asso_add_scaled": {"min": 0.0, "max": 10.0},
-        "ter_population_scaled": {"min": 0.0, "max": 100000.0},
         "edu_petite_enfance_scaled": {"min": 0.0, "max": 100.0},
     }
 
