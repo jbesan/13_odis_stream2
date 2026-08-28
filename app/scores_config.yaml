@@ -950,6 +950,10 @@ scores:
     display_factor: 1
     tooltip: Au moins un accueillant actif dans le bassin de vie (Source J'Accueille)
     format: '{:,.0f}'
+    metric_type: discrete
+    discrete_mapping:
+      1.0: "Accueillants présents"
+      0.0: "Aucun accueillant"
   weight: 3.0
   min_bound: 0.0
   max_bound: 1.0

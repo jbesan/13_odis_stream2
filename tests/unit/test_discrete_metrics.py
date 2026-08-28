@@ -62,6 +62,7 @@ def test_scores_config_discrete_indicators_present():
         "ter_ctai_scaled",
         "ter_pol_scaled",
         "ter_strategic_locations_scaled",
+        "heb_jaccueille_accueillants_score",
         "heb_jaccueille_prospects_score",
     ]
 

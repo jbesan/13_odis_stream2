@@ -186,7 +186,7 @@ def _generate_static_map_image(
         vmin=0.0,
         vmax=1.0,
         legend_kwds={
-            "label": "Indice global (0–100)",
+            "label": "Score (0–100)",
             "orientation": "horizontal",
             "shrink": 0.5,
             "pad": 0.05,

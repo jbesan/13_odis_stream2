@@ -26,7 +26,7 @@ from agents.utils import (
     launch_background_city_analysis,
     odis_get_bg_result,
 )
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Tuple
 import plotly.graph_objects as go
 from core import maps
 from core.pdf_generator import generate_pdf_report
@@ -1555,16 +1555,10 @@ def show_ccas_dialog(index: Any):
         st.warning("Données structures non disponibles.")
 
 
-def render_jaccueille_housing_info(commune: CommuneResult):
-    """
-    Renders J'Accueille hosts & prospects counts with report links if org_context == 'jaccueille'.
-    """
-    housing_data = commune.housing
-    j_count = (
-        int(housing_data.host_count) if housing_data and housing_data.host_count else 0
-    )
-
-    # 1. Check org profile (jaccueille only)
+def _get_jaccueille_salesforce_urls(
+    commune: CommuneResult,
+) -> Tuple[Optional[str], Optional[str]]:
+    """Returns (acc_url, prosp_url) if org_context == 'jaccueille', else (None, None)."""
     org_is_jaccueille = False
     org = st.session_state.get("org")
     if org:
@@ -1579,7 +1573,9 @@ def render_jaccueille_housing_info(commune: CommuneResult):
     if st.session_state.get("ui_org_context") == "jaccueille":
         org_is_jaccueille = True
 
-    # 2. Retrieve salesforce pre-aggregated BDV data
+    if not org_is_jaccueille:
+        return None, None
+
     df_bdv = fetch_salesforce_jaccueille_bdv()
     bdv_code = (
         commune.codgeo_bdv
@@ -1587,18 +1583,11 @@ def render_jaccueille_housing_info(commune: CommuneResult):
         or commune.codgeo
     )
 
-    lead_count = 0
-    contact_count = j_count
     codes_postaux = []
-
     if not df_bdv.empty and "bassin_de_vie" in df_bdv.columns:
         row = df_bdv[df_bdv["bassin_de_vie"] == str(bdv_code)]
         if not row.empty:
             r = row.iloc[0]
-            if "contact_count" in r and pd.notna(r["contact_count"]):
-                contact_count = int(r["contact_count"])
-            if "lead_count" in r and pd.notna(r["lead_count"]):
-                lead_count = int(r["lead_count"])
             cp_json = r.get("codes_postaux")
             if cp_json:
                 try:
@@ -1607,33 +1596,57 @@ def render_jaccueille_housing_info(commune: CommuneResult):
                     codes_postaux = (
                         json.loads(cp_json) if isinstance(cp_json, str) else cp_json
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("Error parsing codes_postaux JSON for J'Accueille SF link: %s", e)
 
-    # 3. Main control flow: J'Accueille special case vs standard organization
-    if org_is_jaccueille:
-        if contact_count == 0 and lead_count == 0:
-            return
+    cp_param = ",".join(str(cp) for cp in codes_postaux) if codes_postaux else ""
+    acc_report_base = cfg.SF_REPORT_ACCUEILLANTS_URL
+    prosp_report_base = cfg.SF_REPORT_PROSPECTS_URL
 
-        cp_param = ",".join(codes_postaux) if codes_postaux else ""
-        acc_report_base = cfg.SF_REPORT_ACCUEILLANTS_URL
-        prosp_report_base = cfg.SF_REPORT_PROSPECTS_URL
+    acc_url = f"{acc_report_base}?fv0={cp_param}" if cp_param else acc_report_base
+    prosp_url = (
+        f"{prosp_report_base}?fv0={cp_param}" if cp_param else prosp_report_base
+    )
+    return acc_url, prosp_url
 
-        acc_url = f"{acc_report_base}?fv0={cp_param}" if cp_param else acc_report_base
-        prosp_url = (
-            f"{prosp_report_base}?fv0={cp_param}" if cp_param else prosp_report_base
-        )
 
-        st.info(
-            f"**{contact_count} accueillants** J'Accueille dans le bassin de vie ([voir la liste]({acc_url}))  \n"
-            f"**{lead_count} prospects** J'Accueille dans le bassin de vie ([voir la liste]({prosp_url}))"
-        )
-    else:
-        # Standard default behavior for non-J'Accueille organizations
-        if contact_count > 0:
-            st.info(
-                f"**{contact_count} accueillants** J'Accueille dans le bassin de vie."
-            )
+def render_jaccueille_housing_info(commune: CommuneResult):
+    """
+    Renders J'Accueille hosts & prospects counts with report links if org_context == 'jaccueille'.
+    """
+    acc_url, prosp_url = _get_jaccueille_salesforce_urls(commune)
+    if not acc_url and not prosp_url:
+        return
+
+    housing_data = commune.housing
+    j_count = (
+        int(housing_data.host_count) if housing_data and housing_data.host_count else 0
+    )
+
+    df_bdv = fetch_salesforce_jaccueille_bdv()
+    bdv_code = (
+        commune.codgeo_bdv
+        or getattr(commune.territoire, "bassin_de_vie", None)
+        or commune.codgeo
+    )
+    lead_count = 0
+    contact_count = j_count
+    if not df_bdv.empty and "bassin_de_vie" in df_bdv.columns:
+        row = df_bdv[df_bdv["bassin_de_vie"] == str(bdv_code)]
+        if not row.empty:
+            r = row.iloc[0]
+            if "contact_count" in r and pd.notna(r["contact_count"]):
+                contact_count = int(r["contact_count"])
+            if "lead_count" in r and pd.notna(r["lead_count"]):
+                lead_count = int(r["lead_count"])
+
+    if contact_count == 0 and lead_count == 0:
+        return
+
+    st.info(
+        f"**{contact_count} accueillants** J'Accueille dans le bassin de vie ([voir la liste sur SalesForce]({acc_url}))  \n"
+        f"**{lead_count} prospects** J'Accueille dans le bassin de vie ([voir la liste sur SalesForce]({prosp_url}))"
+    )
 
 
 @st.dialog(
@@ -1668,6 +1681,9 @@ def show_details_dialog(index: Any):
     # Sync background results into model if available
     sync_background_data(commune, h)
 
+    # Salesforce J'Accueille report links (org == jaccueille)
+    acc_url, prosp_url = _get_jaccueille_salesforce_urls(commune)
+
     with st.container(border=False):
         col1, col2, col3, col4 = st.columns(4)
         with col1:
@@ -1696,32 +1712,46 @@ def show_details_dialog(index: Any):
             )
         with col4:
             st.metric(
-                "Indice global",
-                f"{commune.global_score * 100:.1f}%",
-                help="Indice global = Adéquation besoins × Adéquation démographique.",
+                "Score",
+                f"{commune.global_score * 100:.0f}/100",
+                help="Score = Adéquation besoins × Adéquation démographique.",
             )
 
     # --- Helper to render scores table ---
+    # --- Helper to render scores table ---
     def render_scores_for_category(
-        category_key: str, scores_list: Optional[List[CommuneScoreDetail]] = None
+        category_key: str,
+        metric_filter: Optional[str] = None,  # "discrete", "continuous", or None
+        scores_list: Optional[List[CommuneScoreDetail]] = None,
     ):
-        # category_key: emploi, logement, education, sante, inclusion, mobilite
+        # category_key: emploi, logement, education, sante, inclusion, mobilite, territoire
         scores: List[CommuneScoreDetail] = (
             scores_list
             if scores_list is not None
             else commune.scores.get(category_key, [])
         )
+        if metric_filter == "discrete":
+            scores = [s for s in scores if s.metric_type == "discrete"]
+        elif metric_filter == "continuous":
+            scores = [s for s in scores if s.metric_type != "discrete"]
+
         if not scores:
-            st.info("Aucun indicateur spécifique pour cette catégorie.")
+            if metric_filter == "continuous":
+                st.info("Aucun indicateur continu pour cette catégorie.")
             return
 
         # Filter out redundant education presence scores if we have the counts tab
         if category_key == "education" and scores_list is None:
             scores = [s for s in scores if not s.label.startswith("Présence")]
 
-        # Sort by score_id to keep criteria in a predictable, grouped order
-        if scores_list is None:
-            scores = sorted(scores, key=lambda x: x.score_id)
+        # Always sort discrete metrics first (if mixed), then alphabetical by score_id
+        scores = sorted(
+            scores,
+            key=lambda x: (
+                0 if getattr(x, "metric_type", "continuous") == "discrete" else 1,
+                x.score_id,
+            ),
+        )
 
         with st.container(border=False):
             for s in scores:
@@ -1733,6 +1763,7 @@ def show_details_dialog(index: Any):
                 )
 
                 if s.metric_type == "discrete":
+                    c_label, c_val = st.columns([2.5, 1.3], vertical_alignment="center")
                     status_c = s.status_label or (
                         str(s.valeur_kpi_commune or s.valeur_kpi)
                         if (s.valeur_kpi_commune or s.valeur_kpi) is not None
@@ -1748,35 +1779,35 @@ def show_details_dialog(index: Any):
                         badge_color = "green"
                         badge_icon = ":material/check_circle:"
 
-                    st.subheader(
-                        f"{s.label} &nbsp; :{badge_color}-badge[{badge_icon} {status_c}]"
-                    )
-                    if getattr(s, "bdv_applied", False) and s.status_label_bdv:
-                        st.caption(f"Bassin de Vie : {s.status_label_bdv}")
-                else:
-                    c_label, c_val = st.columns([3, 1])
                     with c_label:
-                        st.subheader(f"{s.label}")
+                        st.markdown(f"**{s.label}**")
+                        if s.score_id == "heb_jaccueille_accueillants_score" and acc_url:
+                            st.caption(f"[:material/open_in_new: Voir la liste]({acc_url})")
+                        elif s.score_id == "heb_jaccueille_prospects_score" and prosp_url:
+                            st.caption(f"[:material/open_in_new: Voir la liste]({prosp_url})")
+                    with c_val:
+                        st.badge(status_c, icon=badge_icon, color=badge_color)
 
-                        # Auto color based on score value
-                        if p_val < 0.05:
-                            p_val_bar = 0.05
-                            bar_color = "linear-gradient(90deg, #505050, #000000)"  # Soft to dark Red
-                        elif p_val < 0.35:
-                            p_val_bar = p_val
-                            bar_color = "linear-gradient(90deg, #f87171, #ef4444)"  # Soft to dark Red
-                        elif p_val < 0.65:
-                            p_val_bar = p_val
-                            bar_color = "linear-gradient(90deg, #fbbf24, #f59e0b)"  # Warm Orange/Yellow
-                        else:
-                            p_val_bar = p_val
-                            bar_color = (
-                                "linear-gradient(90deg, #34d399, #10b981)"  # Emerald Green
-                            )
+                else:
+                    c_label, c_val = st.columns([2.8, 1.2], vertical_alignment="center")
+                    if p_val < 0.05:
+                        p_val_bar = 0.05
+                        bar_color = "linear-gradient(90deg, #505050, #000000)"
+                    elif p_val < 0.35:
+                        p_val_bar = p_val
+                        bar_color = "linear-gradient(90deg, #f87171, #ef4444)"
+                    elif p_val < 0.65:
+                        p_val_bar = p_val
+                        bar_color = "linear-gradient(90deg, #fbbf24, #f59e0b)"
+                    else:
+                        p_val_bar = p_val
+                        bar_color = "linear-gradient(90deg, #34d399, #10b981)"
 
+                    with c_label:
+                        st.markdown(f"**{s.label}**")
                         st.markdown(
                             f"""
-                            <div style="width: 100%; background-color: rgba(128, 128, 128, 0.15); border-radius: 4px; height: 10px; margin-top: -15px; overflow: hidden;">
+                            <div style="width: 100%; background-color: rgba(128, 128, 128, 0.15); border-radius: 4px; height: 8px; margin-top: 2px; overflow: hidden;">
                                 <div style="width: {p_val_bar * 100}%; background: {bar_color}; height: 100%; border-radius: 4px;"></div>
                             </div>
                             """,
@@ -1810,20 +1841,22 @@ def show_details_dialog(index: Any):
                                 if b_val_fmt is not None
                                 else "Donnée indisponible"
                             )
-
                             st.caption(
                                 f"Commune : {c_txt} | Bassin de Vie : {b_txt}{unit_str}"
                             )
                         else:
                             st.caption(f"Commune : {c_txt}{unit_str}")
+
                     with c_val:
                         if p_val_raw is not None and pd.notna(p_val_raw):
-                            score_pct_str = f"{p_val * 100:.0f}%"
+                            score_pct_str = f"{p_val * 100:.0f}/100"
                         else:
                             score_pct_str = "N/A"
-                        st.space("small")
-                        st.subheader(f"{score_pct_str}")
-            st.markdown("<br>", unsafe_allow_html=True)  # Minor spacing
+                        st.markdown(
+                            f"<div style='text-align: right; font-weight: 600; font-size: 1.05rem;'>{score_pct_str}</div>",
+                            unsafe_allow_html=True,
+                        )
+            st.markdown("<br>", unsafe_allow_html=True)
 
     # --- Tabs ---
     tab_emploi, tab_logement, tab_edu, tab_sante, tab_vie, tab_mob, tab_ter = st.tabs(
@@ -1924,30 +1957,34 @@ def show_details_dialog(index: Any):
                             "Aucune formation spécifique listée pour ce territoire."
                         )
 
+                # Discrete indicators for employment (if configured)
+                render_scores_for_category("emploi", metric_filter="discrete")
+
         with c2:
-            st.markdown("#### :material/monitoring: Indicateurs Emploi")
-            render_scores_for_category("emploi")
+            c_h_title, c_h_score = st.columns([2.8, 1.2], vertical_alignment="bottom")
+            with c_h_title:
+                st.markdown("#### :material/monitoring: Indicateurs Emploi")
+            with c_h_score:
+                with st.container(border=False, width="stretch", horizontal=True, horizontal_alignment='right'):
+                    st.text("Score", help="Score relatif aux scores des autres territoires de la recherche")
+            render_scores_for_category("emploi", metric_filter="continuous")
 
     with tab_logement:
         housing_data = commune.housing
         c1, c2 = st.columns([1, 1], gap="medium")
 
-        # Split housing indicators equally
-        housing_scores = commune.scores.get("logement", [])
-        housing_scores = sorted(housing_scores, key=lambda x: x.score_id)
-
-        mid = (len(housing_scores) + 1) // 2
-        scores_left = housing_scores[:mid]
-        scores_right = housing_scores[mid:]
-
         with c1:
-            st.markdown("#### :material/home: Indicateurs Logement")
-            render_jaccueille_housing_info(commune)
-            render_scores_for_category("logement", scores_list=scores_left)
+            st.markdown("#### :material/check_circle: Statuts & Partenariats")
+            render_scores_for_category("logement", metric_filter="discrete")
 
         with c2:
-            st.markdown("#### :material/home: Indicateurs Logement (suite)")
-            render_scores_for_category("logement", scores_list=scores_right)
+            c_h_title, c_h_score = st.columns([2.8, 1.2], vertical_alignment="bottom")
+            with c_h_title:
+                st.markdown("#### :material/home: Indicateurs Logement")
+            with c_h_score:
+                with st.container(border=False, width="stretch", horizontal=True, horizontal_alignment='right'):
+                    st.text("Score", help="Score relatif aux scores des autres territoires de la recherche")
+            render_scores_for_category("logement", metric_filter="continuous")
 
     with tab_edu:
         education_data = commune.education
@@ -1965,16 +2002,23 @@ def show_details_dialog(index: Any):
                                     st.write(f"• {name}")
                 else:
                     st.info("Aucune information détaillée sur les établissements.")
+
+                render_scores_for_category("education", metric_filter="discrete")
         with c2:
-            st.markdown("#### :material/analytics: Indicateurs Éducation")
-            render_scores_for_category("education")
+            c_h_title, c_h_score = st.columns([2.8, 1.2], vertical_alignment="bottom")
+            with c_h_title:
+                st.markdown("#### :material/analytics: Indicateurs Éducation")
+            with c_h_score:
+                with st.container(border=False, width="stretch", horizontal=True, horizontal_alignment='right'):
+                    st.text("Score", help="Score relatif aux scores des autres territoires de la recherche")
+            render_scores_for_category("education", metric_filter="continuous")
 
     with tab_sante:
         health_data = commune.health
         c1, c2 = st.columns([1, 1], gap="medium")
         with c1:
             with st.container(border=False):
-                st.markdown("#### :material/medical_services: Établissements de Santé")
+                st.markdown("#### :material/medical_services: Structures & Professionnels")
                 facility_details = health_data.facility_details
                 if facility_details:
                     for cat, names in sorted(facility_details.items()):
@@ -1985,9 +2029,16 @@ def show_details_dialog(index: Any):
                                     st.write(f"• {name}")
                 else:
                     st.info("Aucune information détaillée sur les structures de santé.")
+
+                render_scores_for_category("sante", metric_filter="discrete")
         with c2:
-            st.markdown("#### :material/medical_services: Indicateurs Santé")
-            render_scores_for_category("sante")
+            c_h_title, c_h_score = st.columns([2.8, 1.2], vertical_alignment="bottom")
+            with c_h_title:
+                st.markdown("#### :material/medical_services: Indicateurs Santé")
+            with c_h_score:
+                with st.container(border=False, width="stretch", horizontal=True, horizontal_alignment='right'):
+                    st.text("Score", help="Score relatif aux scores des autres territoires de la recherche")
+            render_scores_for_category("sante", metric_filter="continuous")
 
     with tab_vie:
         inclusion_data = commune.inclusion
@@ -2011,24 +2062,30 @@ def show_details_dialog(index: Any):
                 else:
                     render_associations_enrichment(commune, h)
 
+                render_scores_for_category("inclusion", metric_filter="discrete")
+
         with c2:
-            st.markdown("#### :material/diversity_3: Indicateurs Inclusion")
-            render_scores_for_category("inclusion")
+            c_h_title, c_h_score = st.columns([2.8, 1.2], vertical_alignment="bottom")
+            with c_h_title:
+                st.markdown("#### :material/diversity_3: Indicateurs Inclusion")
+            with c_h_score:
+                with st.container(border=False, width="stretch", horizontal=True, horizontal_alignment='right'):
+                    st.text("Score", help="Score relatif aux scores des autres territoires de la recherche")
+            render_scores_for_category("inclusion", metric_filter="continuous")
 
     with tab_mob:
         c1, c2 = st.columns([1, 1], gap="medium")
-        mob_scores = commune.scores.get("mobilite", [])
-        mob_scores = sorted(mob_scores, key=lambda x: x.score_id)
-        mid = (len(mob_scores) + 1) // 2
-        scores_left = mob_scores[:mid]
-        scores_right = mob_scores[mid:]
-
         with c1:
-            st.markdown("#### :material/commute: Mobilité")
-            render_scores_for_category("mobilite", scores_list=scores_left)
+            st.markdown("#### :material/commute: Réseaux & Connexions")
+            render_scores_for_category("mobilite", metric_filter="discrete")
         with c2:
-            st.markdown("#### :material/commute: Mobilité")
-            render_scores_for_category("mobilite", scores_list=scores_right)
+            c_h_title, c_h_score = st.columns([2.8, 1.2], vertical_alignment="bottom")
+            with c_h_title:
+                st.markdown("#### :material/commute: Indicateurs Mobilité")
+            with c_h_score:
+                with st.container(border=False, width="stretch", horizontal=True, horizontal_alignment='right'):
+                    st.text("Score", help="Score relatif aux scores des autres territoires de la recherche")
+            render_scores_for_category("mobilite", metric_filter="continuous")
 
     with tab_ter:
         c1, c2 = st.columns([1, 1], gap="medium")
@@ -2044,6 +2101,8 @@ def show_details_dialog(index: Any):
                     "⚠️ **Municipalité** : Le maire actuel est classé à l'extrême droite."
                 )
 
+            render_scores_for_category("territoire", metric_filter="discrete")
+
             if commune.territoire.electoral_history:
                 try:
                     import json
@@ -2054,57 +2113,64 @@ def show_details_dialog(index: Any):
                         pres_list = history.get("presidentielles", [])
 
                         if muni_list:
-                            st.markdown("##### 🗳️ Élections Municipales")
-                            rows_muni = [
-                                {
-                                    "Scrutin": item.get("election", ""),
-                                    "Tour": item.get("tour", ""),
-                                    "Nuance Majoritaire": item.get("nuance", ""),
-                                    "Score": f"{item.get('percentage', 0):.1f}%",
-                                }
-                                for item in muni_list
-                            ]
-                            st.dataframe(
-                                pd.DataFrame(rows_muni),
-                                hide_index=True,
-                                width="content",
-                            )
+                            with st.expander("🗳️ Élections Municipales"):
+                                rows_muni = [
+                                    {
+                                        "Scrutin": item.get("election", ""),
+                                        "Tour": item.get("tour", ""),
+                                        "Nuance Majoritaire": item.get("nuance", ""),
+                                        "Score": f"{item.get('percentage', 0):.1f}%",
+                                    }
+                                    for item in muni_list
+                                ]
+                                st.dataframe(
+                                    pd.DataFrame(rows_muni),
+                                    hide_index=True,
+                                    width="stretch",
+                                )
 
                         if pres_list:
-                            st.markdown("##### 🗳️ Élections Présidentielles")
-                            rows_pres = [
+                            with st.expander("🗳️ Élections Présidentielles"):
+                                rows_pres = [
+                                    {
+                                        "Scrutin": item.get("election", ""),
+                                        "Tour": item.get("tour", ""),
+                                        "Nuance Majoritaire": item.get("nuance", ""),
+                                        "Score": f"{item.get('percentage', 0):.1f}%",
+                                    }
+                                    for item in pres_list
+                                ]
+                                st.dataframe(
+                                    pd.DataFrame(rows_pres),
+                                    hide_index=True,
+                                    width="stretch",
+                                )
+                    elif isinstance(history, list) and history:
+                        with st.expander("🗳️ Historique Électoral"):
+                            table_rows = [
                                 {
                                     "Scrutin": item.get("election", ""),
-                                    "Tour": item.get("tour", ""),
+                                    "Tour": item.get("tour", "-"),
                                     "Nuance Majoritaire": item.get("nuance", ""),
                                     "Score": f"{item.get('percentage', 0):.1f}%",
                                 }
-                                for item in pres_list
+                                for item in history
                             ]
                             st.dataframe(
-                                pd.DataFrame(rows_pres),
-                                hide_index=True,
-                                width="content",
+                                pd.DataFrame(table_rows), hide_index=True, width="stretch"
                             )
-                    elif isinstance(history, list) and history:
-                        st.markdown("##### 🗳️ Historique Électoral")
-                        table_rows = [
-                            {
-                                "Scrutin": item.get("election", ""),
-                                "Tour": item.get("tour", "-"),
-                                "Nuance Majoritaire": item.get("nuance", ""),
-                                "Score": f"{item.get('percentage', 0):.1f}%",
-                            }
-                            for item in history
-                        ]
-                        st.dataframe(
-                            pd.DataFrame(table_rows), hide_index=True, width="content"
-                        )
                 except Exception as e:
                     st.caption("Erreur lors du chargement de l'historique électoral.")
+
+            
         with c2:
-            st.markdown("#### :material/security: Indicateurs Territoriaux")
-            render_scores_for_category("territoire")
+            c_h_title, c_h_score = st.columns([2.8, 1.2], vertical_alignment="bottom")
+            with c_h_title:
+                st.markdown("#### :material/security: Indicateurs Territoriaux")
+            with c_h_score:
+                with st.container(border=False, width="stretch", horizontal=True, horizontal_alignment='right'):
+                    st.text("Score", help="Score relatif aux scores des autres territoires de la recherche")
+            render_scores_for_category("territoire", metric_filter="continuous")
 
 
 def _result_highlight_callback(index: int) -> None:
@@ -2256,7 +2322,7 @@ def display_results_list(display_gdf: Optional[pd.DataFrame] = None) -> None:
         )
 
         p_commune = search_results.commune_pressentie
-        title_p = f"**{p_commune.global_score * 100:.1f}%**  |  {p_commune.name} (Ville Souhaitée)"
+        title_p = f"**{p_commune.global_score * 100:.0f}/100**  -  {p_commune.name} (Ville Souhaitée)"
 
         st.button(
             title_p,
@@ -2274,7 +2340,7 @@ def display_results_list(display_gdf: Optional[pd.DataFrame] = None) -> None:
         st.text("Alternatives : ")
 
     for i, commune in enumerate(search_results.results):
-        title = f"**{commune.global_score * 100:.1f}%**  |  {commune.name}"
+        title = f"**{commune.global_score * 100:.0f}/100**  -  {commune.name}"
 
         st.button(
             title,
@@ -2299,10 +2365,10 @@ def _display_result_details(commune: CommuneResult) -> None:
         # --- Pitch ---
         population = f"{commune.population:,}".replace(",", " ")
         libgeo = commune.name
-        score_percent = f"{commune.global_score * 100:.1f}%"
+        score_val = f"{commune.global_score * 100:.0f}/100"
 
         st.markdown(
-            f"**{libgeo}** ({population} habitants) fait partie du bassin de vie de : **{commune.name_bdv}**.  L'indice pondéré de cette recherche est de **{score_percent}**."
+            f"**{libgeo}** ({population} habitants) fait partie du bassin de vie de : **{commune.name_bdv}**.  Le score de cette recherche est de **{score_val}**."
         )
 
         # The narrative stays a processing panel until it reaches one final
@@ -2414,7 +2480,7 @@ def _display_result_details(commune: CommuneResult) -> None:
                 name=libgeo,
                 fillcolor="rgba(0, 98, 104, 0.5)",
                 line=dict(color="#006268"),
-                hovertemplate="%{theta}: %{r:.1f}%<extra></extra>",
+                hovertemplate="%{theta}: %{r:.0f}/100<extra></extra>",
             )
         )
 
@@ -2436,7 +2502,7 @@ def _display_result_details(commune: CommuneResult) -> None:
                     name=current_name,
                     fillcolor="rgba(31, 119, 180, 0.4)",
                     line=dict(color="#1f77b4"),
-                    hovertemplate="%{theta}: %{r:.1f}%<extra></extra>",
+                    hovertemplate="%{theta}: %{r:.0f}/100<extra></extra>",
                 )
             )
 

@@ -74,56 +74,53 @@ def get_effective_weight(
 
 
 def _resolve_discrete_label(
-    val: Any,
+    scaled_score: Optional[float],
     mapping: Optional[Dict[Any, str]],
 ) -> Optional[str]:
-    """Resolves a human-readable label from a discrete mapping dictionary."""
-    if val is None or pd.isna(val) or not mapping:
+    """Resolves a discrete status label from a normalized score (e.g. 1.0, 0.5, 0.0)."""
+    if scaled_score is None or pd.isna(scaled_score) or not mapping:
         return None
 
-    # 1. Exact match
-    if val in mapping:
-        return str(mapping[val])
+    try:
+        f_score = float(scaled_score)
+    except (ValueError, TypeError):
+        f_score = None
 
-    # 2. Match numeric keys with float comparison tolerance
-    if isinstance(val, (int, float, np.integer, np.floating)):
-        f_val = float(val)
+    if f_score is not None:
         for k, label in mapping.items():
-            if isinstance(k, (int, float, np.integer, np.floating)):
-                if abs(float(k) - f_val) < 1e-4:
+            try:
+                if abs(float(k) - f_score) < 1e-4:
                     return str(label)
+            except (ValueError, TypeError):
+                pass
 
-    # 3. Match string representations
-    str_val = str(val).strip()
-    for k, label in mapping.items():
-        if str(k).strip() == str_val:
-            return str(label)
+    # Fallback to direct key match (e.g. string key "1.0")
+    if scaled_score in mapping:
+        return str(mapping[scaled_score])
 
     logger.warning(
-        f"Valeur '{val}' non trouvée dans le mapping discret: {mapping}"
+        f"Score normalisé '{scaled_score}' non trouvé dans le mapping discret: {mapping}"
     )
-    return str(val)
+    return None
 
 
 def _format_kpi_value(
     val_raw: Any,
-    unit: str,
-    score_id: str,
+    unit: str = "",
+    score_id: str = "",
     val_scaled: Optional[float] = None,
     fmt: Optional[str] = None,
     metric_type: Optional[str] = None,
     discrete_mapping: Optional[Dict[Any, str]] = None,
 ) -> Any:
+    """Formats a KPI value for display. For discrete metrics, resolves the status label."""
+    if metric_type == "discrete" and discrete_mapping:
+        resolved = _resolve_discrete_label(val_scaled, discrete_mapping)
+        if resolved is not None:
+            return resolved
+
     if val_raw is None or pd.isna(val_raw):
         return None
-    if metric_type == "discrete" and discrete_mapping:
-        label = _resolve_discrete_label(val_raw, discrete_mapping)
-        if label is not None:
-            return label
-        if val_scaled is not None and not pd.isna(val_scaled):
-            label_scaled = _resolve_discrete_label(val_scaled, discrete_mapping)
-            if label_scaled is not None:
-                return label_scaled
     if fmt == "bool" or (score_id == "mob_gare_scaled" and val_scaled is not None):
         return "Oui" if (val_raw == 1 or val_scaled == 1.0) else "Non"
     if isinstance(val_raw, (int, float, np.integer, np.floating)):
@@ -135,7 +132,6 @@ def _format_kpi_value(
                 logger.warning(
                     f"Erreur de formatage '{fmt}' pour l'indicateur '{score_id}' avec la valeur {f_val}: {e}"
                 )
-                return str(f_val)
         if unit == "habitants":
             v_int = int(round(f_val))
             return f"{v_int:,}".replace(",", " ") if v_int > 1000 else v_int
@@ -1115,6 +1111,13 @@ class ScoringEngine:
             if not isinstance(discrete_mapping, dict):
                 discrete_mapping = None
 
+            # Resolve discrete status label directly from val_scaled
+            status_label = (
+                _resolve_discrete_label(val_scaled, discrete_mapping)
+                if metric_type == "discrete" and discrete_mapping
+                else None
+            )
+
             val_raw = _format_kpi_value(
                 val_raw,
                 unit,
@@ -1124,13 +1127,6 @@ class ScoringEngine:
                 metric_type=metric_type,
                 discrete_mapping=discrete_mapping,
             )
-
-            # Resolve discrete status label
-            status_label = None
-            if metric_type == "discrete" and discrete_mapping:
-                status_label = _resolve_discrete_label(val_raw, discrete_mapping)
-                if status_label is None and val_scaled is not None:
-                    status_label = _resolve_discrete_label(val_scaled, discrete_mapping)
 
             # Impact = (w_crit / sum_weights_in_cat) * (cat_weight / total_cat_weight)
             rel_weight = (w_crit / cat_internal_weights[norm_cat]) * (
@@ -1196,10 +1192,11 @@ class ScoringEngine:
                             metric_type=metric_type,
                             discrete_mapping=discrete_mapping,
                         )
-                        if metric_type == "discrete" and discrete_mapping:
-                            status_label_bdv = _resolve_discrete_label(val_kpi_bdv, discrete_mapping)
-                            if status_label_bdv is None and score_norm_bdv is not None:
-                                status_label_bdv = _resolve_discrete_label(score_norm_bdv, discrete_mapping)
+                        status_label_bdv = (
+                            _resolve_discrete_label(score_norm_bdv, discrete_mapping)
+                            if metric_type == "discrete" and discrete_mapping
+                            else None
+                        )
 
             structured_scores[norm_cat].append(
                 CommuneScoreDetail(
