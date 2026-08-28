@@ -126,7 +126,7 @@
         "sante_rdv_delay_scaled",
         "ter_insecurite_scaled",
         "ter_pol_scaled",
-        "ter_population_scaled",
+        "coeff_population_gauss",
         "workclass_decline_scaled",
         "youth_decline_scaled"
       ],

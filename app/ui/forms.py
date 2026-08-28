@@ -459,12 +459,9 @@ def render_mobility_form(app_data: dict[str, Any]) -> None:
 
     st.divider()
 
-    target_options = list(cfg.CITY_SIZE_MAPPING.keys())
+    target_options = getattr(cfg, "TARGET_CITY_SIZE_OPTIONS", list(cfg.CITY_SIZE_MAPPING.keys())[:4])
     if "ui_target_city_size_label" not in st.session_state:
-        default_label = next(
-            (l for l in target_options if "Petite Ville" in l), target_options[2]
-        )
-        st.session_state["ui_target_city_size_label"] = default_label
+        st.session_state["ui_target_city_size_label"] = cfg.DEFAULT_CITY_SIZE
 
     st.markdown("###### Taille de la ville recherchée")
     with st.container(horizontal=True, width="stretch", horizontal_alignment="center"):
@@ -473,7 +470,7 @@ def render_mobility_form(app_data: dict[str, Any]) -> None:
             options=target_options,
             key="ui_target_city_size_label",
             horizontal=True,
-            help="Définit la taille idéale de la commune recherchée. Le score de population sera maximal pour cette catégorie.",
+            help="Définit la taille idéale du cadre de vie (calculé sur la population du Bassin de Vie pour prendre en compte le bassin de vie réel et les services du quotidien).",
             label_visibility="collapsed",
         )
 

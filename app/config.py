@@ -1,8 +1,7 @@
 import os
 import warnings
-from typing import Any, Dict, List, Optional, Set
-
-from core.models import Org
+from typing import Any, Dict, List, Optional, Set, Literal
+from pydantic import BaseModel, Field, ConfigDict
 
 # Suppress annoying warnings from third-party libraries (especially in Python 3.14+)
 warnings.filterwarnings("ignore", module="langchain_core.*")
@@ -101,16 +100,17 @@ HOUSING_TYPE_OPTIONS = {
     "house_all": "Maison",
 }
 
-# --- Population Target Options (F-50) ---
-POPULATION_TARGET_OPTIONS = [5000, 10000, 20000, 50000, 100000, 150000, 200000]
+# --- Bassin de Vie Demographic Sizing (Trapezoidal Membership) ---
 CITY_SIZE_MAPPING = {
-    "🚜 Commune rurale": {"mu": 5000, "sigma": 2500},
-    "🏡 Bourg": {"mu": 20000, "sigma": 10000},
-    "🏘️ Petite Ville": {"mu": 50000, "sigma": 25000},
-    "🏙️ Ville moyenne": {"mu": 150000, "sigma": 75000},
+    "🚜 Commune rurale": {"a": 0, "b": 1000, "c": 30000, "d": 60000},
+    "🏡 Bourg": {"a": 2000, "b": 10000, "c": 70000, "d": 130000},
+    "🏘️ Petite Ville": {"a": 10000, "b": 30000, "c": 200000, "d": 450000},
+    "🏙️ Ville moyenne": {"a": 30000, "b": 80000, "c": 500000, "d": 1200000},
 }
-DEFAULT_MU = 50000
-DEFAULT_SIGMA = 25000
+DEFAULT_CITY_SIZE = "🏘️ Petite Ville"
+DEFAULT_TRAPEZOID = CITY_SIZE_MAPPING[DEFAULT_CITY_SIZE]
+TARGET_CITY_SIZE_OPTIONS = list(CITY_SIZE_MAPPING.keys())
+DEMOGRAPHIC_MIN_FLOOR = 0.15
 
 # --- Weight Profiles (F-15) ---
 WEIGHT_PROFILES = {
@@ -152,7 +152,31 @@ WEIGHT_PROFILES = {
     },
 }
 
-# --- Organization Profiles (F-54) ---
+# --- Organization Model & Profiles (F-54) ---
+class Org(BaseModel):
+    """Represents an organization profile with its default configurations and settings."""
+
+    id: str
+    name: str
+    description: Optional[str] = None
+    zone_type: Literal["departement", "bassin_de_vie"] = "departement"
+    default_zones: List[str] = Field(default_factory=list)
+    defaults: Dict[str, Any] = Field(default_factory=dict)
+    ai_free_mode: bool = False
+    enable_interactive_chat: bool = False
+
+    model_config = ConfigDict(populate_by_name=True, revalidate_instances="never")
+
+
+class User(BaseModel):
+    """Represents a logged-in user and their associated organization profile."""
+
+    username: str
+    org_id: str
+
+    model_config = ConfigDict(populate_by_name=True, revalidate_instances="never")
+
+
 ORGANIZATION_PROFILES: Dict[str, Org] = {
     "jaccueille": Org(
         id="jaccueille",
@@ -314,8 +338,11 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     "besoin_sante": [],
     "notes_qualitatives": "",
     "freq_retour": "1 fois/mois",
-    "target_population": DEFAULT_MU,
-    "target_population_sigma": DEFAULT_SIGMA,
+    "target_city_size": DEFAULT_CITY_SIZE,
+    "target_population_a": DEFAULT_TRAPEZOID["a"],
+    "target_population_b": DEFAULT_TRAPEZOID["b"],
+    "target_population_c": DEFAULT_TRAPEZOID["c"],
+    "target_population_d": DEFAULT_TRAPEZOID["d"],
     "org_context": None,
     "org_strategic_locations": [],
     "org_strategic_locations_type": "departement",
@@ -394,8 +421,11 @@ DEMO_SCENARIOS = {
         "poids_mobilite": 0.25,
         "besoin_sante": ["Soutien Psychologique", "Addictologie"],
         "notes_qualitatives": "Recherche un logement et un emploi dans un cadre adapté.",
-        "target_population": 20000,
-        "target_population_sigma": 10000,
+        "target_city_size": "🏡 Bourg",
+        "target_population_a": CITY_SIZE_MAPPING["🏡 Bourg"]["a"],
+        "target_population_b": CITY_SIZE_MAPPING["🏡 Bourg"]["b"],
+        "target_population_c": CITY_SIZE_MAPPING["🏡 Bourg"]["c"],
+        "target_population_d": CITY_SIZE_MAPPING["🏡 Bourg"]["d"],
     },
     "emile": {
         "nb_adultes": 1,
@@ -422,8 +452,11 @@ DEMO_SCENARIOS = {
         "poids_mobilite": 0.25,
         "besoin_sante": ["Soutien Psychologique", "Addictologie"],
         "notes_qualitatives": "Accompagnement mobilité vers logement social et emploi.",
-        "target_population": 20000,
-        "target_population_sigma": 10000,
+        "target_city_size": "🏡 Bourg",
+        "target_population_a": CITY_SIZE_MAPPING["🏡 Bourg"]["a"],
+        "target_population_b": CITY_SIZE_MAPPING["🏡 Bourg"]["b"],
+        "target_population_c": CITY_SIZE_MAPPING["🏡 Bourg"]["c"],
+        "target_population_d": CITY_SIZE_MAPPING["🏡 Bourg"]["d"],
     },
 }
 

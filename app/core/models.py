@@ -5,6 +5,8 @@ import logging
 from pathlib import Path
 import yaml
 from pydantic import BaseModel, Field, ConfigDict, model_validator, field_validator
+import config as cfg
+from config import Org, User
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +16,7 @@ ScoreCategory = Literal[
 ]
 ScoreComputation = Literal["precomputed", "live", "calculated"]
 ScoreMissingStrategy = Literal["exclude", "zero"]
-ScoreScalingType = Literal["linear", "gaussian"]
+ScoreMetricType = Literal["continuous", "discrete"]
 
 
 class ScoreDisplayConfigSchema(BaseModel):
@@ -26,6 +28,8 @@ class ScoreDisplayConfigSchema(BaseModel):
     display_factor: Optional[Union[int, float]] = 1
     tooltip: Optional[str] = None
     format: Optional[str] = None
+    metric_type: ScoreMetricType = "continuous"
+    discrete_mapping: Optional[Dict[Union[float, int, str], str]] = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -43,9 +47,6 @@ class ScoreConfigItemSchema(BaseModel):
     quantile_level: Optional[float] = Field(None, ge=0.0, le=0.5)
     missing_strategy: ScoreMissingStrategy = "exclude"
     baseline: bool = False
-    scaling_type: Optional[ScoreScalingType] = None
-    mu: Optional[float] = None
-    sigma: Optional[float] = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -55,22 +56,21 @@ class ScoresConfigFileSchema(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    @classmethod
+    @functools.lru_cache(maxsize=1)
+    def load_default(cls) -> "ScoresConfigFileSchema":
+        """Loads, validates, and caches the score catalog from scores_config.yaml."""
+        config_path = Path(__file__).parent.parent / "scores_config.yaml"
+        if not config_path.exists():
+            return cls(scores=[])
+        with open(config_path, "r", encoding="utf-8") as f:
+            cfg_data = yaml.safe_load(f) or {}
+        return cls.model_validate(cfg_data)
 
-def validate_scores_config(config_data: Dict[str, Any]) -> ScoresConfigFileSchema:
-    """Validates the raw dictionary loaded from scores_config.yaml against the Pydantic schema."""
-    return ScoresConfigFileSchema.model_validate(config_data)
-
-
-@functools.lru_cache(maxsize=1)
-def get_valid_score_ids() -> Set[str]:
-    """Loads, validates, and caches valid score IDs defined in scores_config.yaml."""
-    config_path = Path(__file__).parent.parent / "scores_config.yaml"
-    if not config_path.exists():
-        return set()
-    with open(config_path, "r", encoding="utf-8") as f:
-        cfg_data = yaml.safe_load(f)
-    validated_cfg = validate_scores_config(cfg_data)
-    return {item.id for item in validated_cfg.scores}
+    @classmethod
+    def get_valid_ids(cls) -> Set[str]:
+        """Returns the set of all valid criterion IDs in scores_config.yaml."""
+        return {item.id for item in cls.load_default().scores}
 
 
 class CriteriaItem(BaseModel):
@@ -194,7 +194,7 @@ class SearchCriterias(BaseModel):
     def validate_criteria_weights(cls, v: Any) -> Dict[str, float]:
         if not isinstance(v, dict):
             return {}
-        valid_ids = get_valid_score_ids()
+        valid_ids = ScoresConfigFileSchema.get_valid_ids()
         if not valid_ids:
             return {str(k): float(val) for k, val in v.items()}
         sanitized = {}
@@ -256,14 +256,34 @@ class SearchCriterias(BaseModel):
         description="Restreindre aux zones opérationnelles",
     )
 
-    # Population target (F-50)
-    target_population: int = Field(
-        50000,
-        description="Population cible",
+    # Bassin de Vie demographic target (Trapezoid bounds: a, b, c, d)
+    target_city_size: Optional[str] = Field(
+        default_factory=lambda: cfg.DEFAULT_CITY_SIZE,
+        description="Type de territoire / bassin de vie cible",
     )
-    target_population_sigma: int = Field(
-        25000,
-        description="Tolerance population",
+    target_population_a: int = Field(
+        default_factory=lambda: cfg.DEFAULT_TRAPEZOID["a"],
+        description="Plancher absolu (a)",
+    )
+    target_population_b: int = Field(
+        default_factory=lambda: cfg.DEFAULT_TRAPEZOID["b"],
+        description="Début du plateau idéal (b)",
+    )
+    target_population_c: int = Field(
+        default_factory=lambda: cfg.DEFAULT_TRAPEZOID["c"],
+        description="Fin du plateau idéal (c)",
+    )
+    target_population_d: int = Field(
+        default_factory=lambda: cfg.DEFAULT_TRAPEZOID["d"],
+        description="Plafond d'exclusion (d)",
+    )
+    target_population: Optional[int] = Field(
+        None,
+        description="Legacy target population (deprecated in favor of trapezoid bounds)",
+    )
+    target_population_sigma: Optional[int] = Field(
+        None,
+        description="Legacy target population sigma (deprecated in favor of trapezoid bounds)",
     )
 
     # Organization Specific Boosts (F-54 Expansion)
@@ -353,6 +373,29 @@ class SearchCriterias(BaseModel):
         if "notes_qualitatives" in data and isinstance(data["notes_qualitatives"], str):
             data["notes_qualitatives"] = [data["notes_qualitatives"]]
 
+        # Synchronize trapezoid bounds from target_city_size or legacy target_population
+        size_label = data.get("target_city_size") or data.get("ui_target_city_size_label")
+        if size_label and size_label in cfg.CITY_SIZE_MAPPING:
+            bounds = cfg.CITY_SIZE_MAPPING[size_label]
+            data.setdefault("target_population_a", bounds["a"])
+            data.setdefault("target_population_b", bounds["b"])
+            data.setdefault("target_population_c", bounds["c"])
+            data.setdefault("target_population_d", bounds["d"])
+        elif data.get("target_population") is not None and "target_population_a" not in data:
+            pop = data["target_population"]
+            if pop <= 10000:
+                bounds = cfg.CITY_SIZE_MAPPING["🚜 Commune rurale"]
+            elif pop <= 30000:
+                bounds = cfg.CITY_SIZE_MAPPING["🏡 Bourg"]
+            elif pop <= 80000:
+                bounds = cfg.CITY_SIZE_MAPPING["🏘️ Petite Ville"]
+            else:
+                bounds = cfg.CITY_SIZE_MAPPING["🏙️ Ville moyenne"]
+            data["target_population_a"] = bounds["a"]
+            data["target_population_b"] = bounds["b"]
+            data["target_population_c"] = bounds["c"]
+            data["target_population_d"] = bounds["d"]
+
         return data
 
     def compute_hash(self) -> str:
@@ -416,6 +459,18 @@ class CommuneScoreDetail(BaseModel):
     high_value_adjective: Optional[str] = Field(
         "",
         description="Adjectif pour les valeurs élevées",
+    )
+    metric_type: Literal["continuous", "discrete"] = Field(
+        "continuous",
+        description="Type de métrique : continue (score 0-1) ou discrète (statut catégoriel)",
+    )
+    status_label: Optional[str] = Field(
+        None,
+        description="Libellé textuel du statut résolu pour les métriques discrètes",
+    )
+    status_label_bdv: Optional[str] = Field(
+        None,
+        description="Libellé textuel du statut résolu pour le Bassin de Vie",
     )
 
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
@@ -924,7 +979,15 @@ class CommuneResult(BaseModel):
     # Global score
     global_score: float = Field(
         default=0.0,
-        description="Score global",
+        description="Score global final = score_besoins * coeff_population_gauss",
+    )
+    score_besoins: float = Field(
+        default=0.0,
+        description="Score moyen d'adéquation aux besoins (moyenne pondérée des catégories)",
+    )
+    coeff_population_gauss: float = Field(
+        default=1.0,
+        description="Coefficient global de correspondance démographique (0.0 à 1.0)",
     )
 
     # Thematic scores (grouped by category)
@@ -1036,42 +1099,3 @@ class SearchResultsData(BaseModel):
         if self.current_geo and self.current_geo.codgeo == codgeo:
             return self.current_geo
         return next((c for c in self.results if c.codgeo == codgeo), None)
-
-
-class Org(BaseModel):
-    """Represents an organization profile with its default configurations and settings.
-
-    Attributes:
-        id: Unique identifier for the organization.
-        name: Human-readable name of the organization.
-        description: A description of the organization's purpose.
-        zone_type: The geographical level of target regions (e.g. departement).
-        default_zones: Initial targeted zone codes.
-        defaults: Default feature or filter overrides for the organization.
-        ai_free_mode: Flag specifying whether the organization operates in AI-free mode.
-    """
-
-    id: str
-    name: str
-    description: Optional[str] = None
-    zone_type: Literal["departement", "bassin_de_vie"] = "departement"
-    default_zones: List[str] = Field(default_factory=list)
-    defaults: Dict[str, Any] = Field(default_factory=dict)
-    ai_free_mode: bool = False
-    enable_interactive_chat: bool = False
-
-    model_config = ConfigDict(populate_by_name=True, revalidate_instances="never")
-
-
-class User(BaseModel):
-    """Represents a logged-in user and their associated organization profile.
-
-    Attributes:
-        username: The user's unique identifier.
-        org_id: The ID of the organization the user belongs to.
-    """
-
-    username: str
-    org_id: str
-
-    model_config = ConfigDict(populate_by_name=True, revalidate_instances="never")

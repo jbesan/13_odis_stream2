@@ -73,34 +73,75 @@ def get_effective_weight(
     return weight
 
 
+def _resolve_discrete_label(
+    scaled_score: Optional[float],
+    mapping: Optional[Dict[Any, str]],
+) -> Optional[str]:
+    """Resolves a discrete status label from a normalized score (e.g. 1.0, 0.5, 0.0)."""
+    if scaled_score is None or pd.isna(scaled_score) or not mapping:
+        return None
+
+    try:
+        f_score = float(scaled_score)
+    except (ValueError, TypeError):
+        f_score = None
+
+    if f_score is not None:
+        for k, label in mapping.items():
+            try:
+                if abs(float(k) - f_score) < 1e-4:
+                    return str(label)
+            except (ValueError, TypeError):
+                pass
+
+    # Fallback to direct key match (e.g. string key "1.0")
+    if scaled_score in mapping:
+        return str(mapping[scaled_score])
+
+    logger.warning(
+        f"Score normalisé '{scaled_score}' non trouvé dans le mapping discret: {mapping}"
+    )
+    return None
+
+
 def _format_kpi_value(
     val_raw: Any,
-    unit: str,
-    score_id: str,
+    unit: str = "",
+    score_id: str = "",
     val_scaled: Optional[float] = None,
     fmt: Optional[str] = None,
+    metric_type: Optional[str] = None,
+    discrete_mapping: Optional[Dict[Any, str]] = None,
 ) -> Any:
+    """Formats a KPI value for display. For discrete metrics, resolves the status label."""
+    if metric_type == "discrete" and discrete_mapping:
+        resolved = _resolve_discrete_label(val_scaled, discrete_mapping)
+        if resolved is not None:
+            return resolved
+
     if val_raw is None or pd.isna(val_raw):
         return None
     if fmt == "bool" or (score_id == "mob_gare_scaled" and val_scaled is not None):
         return "Oui" if (val_raw == 1 or val_scaled == 1.0) else "Non"
     if isinstance(val_raw, (int, float, np.integer, np.floating)):
-        try:
-            f_val = float(val_raw)
-            if fmt and fmt != "bool":
+        f_val = float(val_raw)
+        if fmt and fmt != "bool":
+            try:
                 return fmt.format(f_val).replace(",", " ")
-            if unit == "habitants":
-                v_int = int(round(f_val))
-                return f"{v_int:,}".replace(",", " ") if v_int > 1000 else v_int
-            elif unit in ["%", "assos/1000 hab.", "crimes+délits/1000 hab."]:
-                return round(f_val, 1)
-            elif f_val.is_integer():
-                v_int = int(f_val)
-                return f"{v_int:,}".replace(",", " ") if v_int > 1000 else v_int
-            else:
-                return round(f_val, 1)
-        except Exception:
-            return val_raw
+            except Exception as e:
+                logger.warning(
+                    f"Erreur de formatage '{fmt}' pour l'indicateur '{score_id}' avec la valeur {f_val}: {e}"
+                )
+        if unit == "habitants":
+            v_int = int(round(f_val))
+            return f"{v_int:,}".replace(",", " ") if v_int > 1000 else v_int
+        elif unit in ["%", "assos/1000 hab.", "crimes+délits/1000 hab."]:
+            return round(f_val, 1)
+        elif f_val.is_integer():
+            v_int = int(f_val)
+            return f"{v_int:,}".replace(",", " ") if v_int > 1000 else v_int
+        else:
+            return round(f_val, 1)
     return val_raw
 
 
@@ -183,16 +224,41 @@ class ScoringEngine:
         series: pd.Series,
         min_val: float,
         max_val: float,
-        scaling_type: str = "linear",
-        mu: Optional[float] = None,
-        sigma: Optional[float] = None,
     ) -> pd.Series:
-        if scaling_type == "gaussian" and mu is not None and sigma is not None:
-            return np.exp(-0.5 * ((series - mu) / sigma) ** 2)
-
+        """Min-max scales a pandas Series into [0.0, 1.0]."""
         if max_val == min_val:
             return pd.Series(0.0, index=series.index)
-        return ((series - min_val) / (max_val - min_val)).clip(0, 1)
+        return ((series - min_val) / (max_val - min_val)).clip(0.0, 1.0)
+
+    @staticmethod
+    def _trapezoid_series(
+        series: pd.Series,
+        a: float,
+        b: float,
+        c: float,
+        d: float,
+        floor: float = 0.15,
+    ) -> pd.Series:
+        """Evaluates a trapezoidal fuzzy membership function with a residual floor on a pandas Series.
+
+        Args:
+            series: Input numerical series (e.g. population of Bassin de Vie).
+            a: Low zero bound (below which score reaches the floor).
+            b: Ideal plateau start (score reaches 1.0).
+            c: Ideal plateau end (score stays 1.0).
+            d: High zero bound (above which score reaches the floor).
+            floor: Minimum residual demographic score (default 0.15) to prevent
+                entire territorial basins from being hard-zeroed on the map.
+
+        Returns:
+            pd.Series in [floor, 1.0].
+        """
+        s = series.astype(float)
+        left_ramp = (s - a) / (b - a) if b > a else pd.Series(1.0, index=s.index)
+        right_ramp = (d - s) / (d - c) if d > c else pd.Series(1.0, index=s.index)
+        raw_trap = np.minimum(np.minimum(left_ramp, 1.0), right_ramp).clip(0.0, 1.0)
+        res = floor + (1.0 - floor) * raw_trap
+        return pd.Series(res, index=s.index, dtype=float).clip(floor, 1.0)
 
     def _get_bounds(self, score_id: str) -> Tuple[float, float]:
         if self.global_stats and score_id in self.global_stats:
@@ -288,6 +354,47 @@ class ScoringEngine:
             df.loc[:, "mob_dist_current_loc_scaled"] = 1.0 - scaled
 
         return df
+
+    def _compute_demographic_modifier(
+        self, df: pd.DataFrame, config: Optional[SearchCriterias]
+    ) -> pd.Series:
+        """Computes the demographic matching modifier (0.0 to 1.0) using Bassin de Vie trapezoidal sizing.
+
+        Args:
+            df: DataFrame containing 'population_bv_bdv' or 'population'.
+            config: Search criteria with trapezoid bounds (a, b, c, d) or target_city_size.
+
+        Returns:
+            pd.Series in [0.0, 1.0] representing reconciled demographic fit.
+        """
+        if df.empty:
+            return pd.Series(1.0, index=df.index, dtype=float)
+
+        # 1. Resolve population of Bassin de Vie (fallback to commune population if BdV is unavailable)
+        pop_col = "population_bv_bdv" if "population_bv_bdv" in df.columns else "population"
+        if pop_col not in df.columns:
+            return pd.Series(1.0, index=df.index, dtype=float)
+
+        pop_series = df[pop_col].fillna(df.get("population", 0)).astype(float)
+
+        # 2. Resolve trapezoid bounds
+        if (
+            config is not None
+            and getattr(config, "target_population_a", None) is not None
+        ):
+            a = float(config.target_population_a)
+            b = float(config.target_population_b)
+            c = float(config.target_population_c)
+            d = float(config.target_population_d)
+        else:
+            default_bounds = cfg.DEFAULT_TRAPEZOID
+            a = float(default_bounds["a"])
+            b = float(default_bounds["b"])
+            c = float(default_bounds["c"])
+            d = float(default_bounds["d"])
+
+        floor = float(getattr(cfg, "DEMOGRAPHIC_MIN_FLOOR", 0.15))
+        return self._trapezoid_series(pop_series, a, b, c, d, floor=floor)
 
     def _compute_category_scores(
         self, df: pd.DataFrame, config: SearchCriterias
@@ -533,10 +640,7 @@ class ScoringEngine:
             ):
                 active_ids = set(config.active_criteria)
             else:
-                try:
-                    active_ids = set(self._get_active_criteria(config))
-                except Exception:
-                    pass
+                active_ids = self._get_active_criteria(config)
 
             if active_ids:
                 scaled_cols = [c for c in df.columns if c.endswith("_scaled")]
@@ -884,8 +988,8 @@ class ScoringEngine:
                 lon, lat = project_point(
                     curr_x, curr_y, from_crs="EPSG:2154", to_crs="EPSG:4326"
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Could not project centroid for commune {row.name}: {e}")
 
         # Use cached active criteria if available
         active_ids = (
@@ -987,7 +1091,7 @@ class ScoringEngine:
                 else:
                     try:
                         val_raw = float(val) * d_factor
-                    except:
+                    except (ValueError, TypeError):
                         val_raw = val
             elif score_id in row and pd.notna(row[score_id]):
                 # Fallback to the scaled score itself if the raw metric is missing from the dataset (e.g. for precomputed indicators like has_gare)
@@ -1001,7 +1105,28 @@ class ScoringEngine:
             # Format val_raw and val_kpi_bdv using canonical formatting helper
             unit = score_row.get("unit", score_row.get("description", ""))
             fmt = score_row.get("format", None)
-            val_raw = _format_kpi_value(val_raw, unit, score_id, val_scaled, fmt)
+            m_type_raw = score_row.get("metric_type", "continuous")
+            metric_type = m_type_raw if m_type_raw in ["continuous", "discrete"] else "continuous"
+            discrete_mapping = score_row.get("discrete_mapping", None)
+            if not isinstance(discrete_mapping, dict):
+                discrete_mapping = None
+
+            # Resolve discrete status label directly from val_scaled
+            status_label = (
+                _resolve_discrete_label(val_scaled, discrete_mapping)
+                if metric_type == "discrete" and discrete_mapping
+                else None
+            )
+
+            val_raw = _format_kpi_value(
+                val_raw,
+                unit,
+                score_id,
+                val_scaled,
+                fmt,
+                metric_type=metric_type,
+                discrete_mapping=discrete_mapping,
+            )
 
             # Impact = (w_crit / sum_weights_in_cat) * (cat_weight / total_cat_weight)
             rel_weight = (w_crit / cat_internal_weights[norm_cat]) * (
@@ -1015,6 +1140,7 @@ class ScoringEngine:
             val_kpi_bdv = None
             score_norm_commune = None
             score_norm_bdv = None
+            status_label_bdv = None
 
             if bdv_f != 0.0:
                 sid_bdv = f"{score_id}_bdv"
@@ -1057,7 +1183,20 @@ class ScoringEngine:
                             raw_b = float(b_val * d_factor)
                         else:
                             raw_b = b_val
-                        val_kpi_bdv = _format_kpi_value(raw_b, unit, score_id, score_norm_bdv, fmt)
+                        val_kpi_bdv = _format_kpi_value(
+                            raw_b,
+                            unit,
+                            score_id,
+                            score_norm_bdv,
+                            fmt,
+                            metric_type=metric_type,
+                            discrete_mapping=discrete_mapping,
+                        )
+                        status_label_bdv = (
+                            _resolve_discrete_label(score_norm_bdv, discrete_mapping)
+                            if metric_type == "discrete" and discrete_mapping
+                            else None
+                        )
 
             structured_scores[norm_cat].append(
                 CommuneScoreDetail(
@@ -1079,6 +1218,9 @@ class ScoringEngine:
                     high_value_adjective=str(score_row.get("high_value_adjective"))
                     if pd.notna(score_row.get("high_value_adjective"))
                     else "",
+                    metric_type=metric_type,
+                    status_label=status_label,
+                    status_label_bdv=status_label_bdv,
                 )
             )
 
@@ -1377,18 +1519,13 @@ class ScoringEngine:
                         grouped_incl = {}
                         for code, names in grouped_incl_raw.items():
                             label = code
-                            try:
-                                if (
-                                    hasattr(self, "inclusion_services_index")
-                                    and self.inclusion_services_index is not None
-                                    and code in self.inclusion_services_index.index
-                                ):
-                                    val = self.inclusion_services_index.loc[
-                                        code, "label"
-                                    ]
-                                    label = val if isinstance(val, str) else val.iloc[0]
-                            except:
-                                pass
+                            if (
+                                hasattr(self, "inclusion_services_index")
+                                and self.inclusion_services_index is not None
+                                and code in self.inclusion_services_index.index
+                            ):
+                                val = self.inclusion_services_index.loc[code, "label"]
+                                label = val if isinstance(val, str) else str(val.iloc[0])
                             grouped_incl[label] = sorted(list(set(names)))
 
                         incl_data.services_grouped = grouped_incl
@@ -1439,6 +1576,9 @@ class ScoringEngine:
             row.get("ter_strategic_locations_scaled", 0.0) == 1.0
         )
 
+        pop_coeff_val = float(row.get("coeff_population_gauss", 1.0))
+        score_besoins_val = float(row.get("score_besoins", row.get("weighted_score", 0.0)))
+
         return CommuneResult(
             codgeo=str(row.name),
             name=static_row.get("libgeo", "Inconnu"),
@@ -1446,6 +1586,8 @@ class ScoringEngine:
             codgeo_bdv=str(static_row.get("bassin_de_vie", "Inconnu")),
             name_bdv=static_row.get("libelle_bassin_de_vie", "Inconnu"),
             global_score=float(row.get("weighted_score", 0.0)),
+            score_besoins=score_besoins_val,
+            coeff_population_gauss=pop_coeff_val,
             scores=structured_scores,
             employment=emploi_data,
             housing=logement_data,
@@ -1708,8 +1850,20 @@ class ScoringEngine:
 
         odis_scored = self._compute_criteria_scores(odis_search, config)
         odis_exploded = self._compute_category_scores(odis_scored, config)
-        odis_exploded["weighted_score"] = self._compute_weighted_score(
+
+        # 1. Base needs score across categories
+        odis_exploded["score_besoins"] = self._compute_weighted_score(
             odis_exploded, config
+        )
+
+        # 2. Global demographic matching modifier
+        odis_exploded["coeff_population_gauss"] = self._compute_demographic_modifier(
+            odis_exploded, config
+        )
+
+        # 3. Final reconciled global score
+        odis_exploded["weighted_score"] = (
+            odis_exploded["score_besoins"] * odis_exploded["coeff_population_gauss"]
         )
 
         # Final pruning
@@ -1836,69 +1990,21 @@ class ScoringEngine:
                     df[col_bdv_raw] = np.nan
 
                 # Scaling
-                s_def = (
-                    self.scores_cat[
-                        self.scores_cat["score"] == f"{col_raw}_scaled"
-                    ].iloc[0]
-                    if not self.scores_cat[
-                        self.scores_cat["score"] == f"{col_raw}_scaled"
-                    ].empty
-                    else {}
-                )
                 min_c, max_c = self._get_bounds(f"{col_raw}_scaled")
                 if pd.isna(max_c):
                     max_c = 10.0
-                df[f"{col_raw}_scaled"] = self._scale_series(
-                    df[col_raw],
-                    min_c,
-                    max_c,
-                    scaling_type=s_def.get("scaling_type", "linear"),
-                    mu=s_def.get("mu"),
-                    sigma=s_def.get("sigma"),
-                )
+                df[f"{col_raw}_scaled"] = self._scale_series(df[col_raw], min_c, max_c)
                 df[f"{col_raw}_scaled__available"] = available
 
-                s_def_bdv = (
-                    self.scores_cat[
-                        self.scores_cat["score"] == f"{col_raw}_scaled_bdv"
-                    ].iloc[0]
-                    if not self.scores_cat[
-                        self.scores_cat["score"] == f"{col_raw}_scaled_bdv"
-                    ].empty
-                    else {}
-                )
                 min_b, max_b = self._get_bounds(f"{col_raw}_scaled_bdv")
                 if pd.isna(max_b):
                     max_b = 50.0
-                df[f"{col_raw}_scaled_bdv"] = self._scale_series(
-                    df[col_bdv_raw],
-                    min_b,
-                    max_b,
-                    scaling_type=s_def_bdv.get("scaling_type", "linear"),
-                    mu=s_def_bdv.get("mu"),
-                    sigma=s_def_bdv.get("sigma"),
-                )
+                df[f"{col_raw}_scaled_bdv"] = self._scale_series(df[col_bdv_raw], min_b, max_b)
 
-                s_def_t = (
-                    self.scores_cat[
-                        self.scores_cat["score"] == f"{col_tension_raw}_scaled"
-                    ].iloc[0]
-                    if not self.scores_cat[
-                        self.scores_cat["score"] == f"{col_tension_raw}_scaled"
-                    ].empty
-                    else {}
-                )
                 min_t, max_t = self._get_bounds(f"{col_tension_raw}_scaled")
                 if pd.isna(max_t):
                     max_t = 5.0
-                df[f"{col_tension_raw}_scaled"] = self._scale_series(
-                    df[col_tension_raw],
-                    min_t,
-                    max_t,
-                    scaling_type=s_def_t.get("scaling_type", "linear"),
-                    mu=s_def_t.get("mu"),
-                    sigma=s_def_t.get("sigma"),
-                )
+                df[f"{col_tension_raw}_scaled"] = self._scale_series(df[col_tension_raw], min_t, max_t)
                 df[f"{col_tension_raw}_scaled__available"] = available
 
                 # --- SIAE Jobs Matching (New F-39) ---
@@ -1919,26 +2025,10 @@ class ScoringEngine:
                     ].fillna(0)
 
                 # Scaling SIAE
-                s_def_s = (
-                    self.scores_cat[
-                        self.scores_cat["score"] == f"{col_siae_raw}_scaled"
-                    ].iloc[0]
-                    if not self.scores_cat[
-                        self.scores_cat["score"] == f"{col_siae_raw}_scaled"
-                    ].empty
-                    else {}
-                )
                 min_s, max_s = self._get_bounds(f"{col_siae_raw}_scaled")
                 if pd.isna(max_s):
                     max_s = 5.0
-                df[f"{col_siae_raw}_scaled"] = self._scale_series(
-                    df[col_siae_raw],
-                    min_s,
-                    max_s,
-                    scaling_type=s_def_s.get("scaling_type", "linear"),
-                    mu=s_def_s.get("mu"),
-                    sigma=s_def_s.get("sigma"),
-                )
+                df[f"{col_siae_raw}_scaled"] = self._scale_series(df[col_siae_raw], min_s, max_s)
                 df[f"{col_siae_raw}_scaled__available"] = (
                     available if siae_jobs_available else False
                 )
@@ -1981,25 +2071,11 @@ class ScoringEngine:
                     df[score_key] = df.index.map(
                         lambda c: len(form_map.get(c, set()).intersection(prefs))
                     )
-                    s_def_fl = (
-                        self.scores_cat[
-                            self.scores_cat["score"] == f"{score_key}_scaled"
-                        ].iloc[0]
-                        if not self.scores_cat[
-                            self.scores_cat["score"] == f"{score_key}_scaled"
-                        ].empty
-                        else {}
-                    )
                     min_b, max_b = self._get_bounds(f"{score_key}_scaled")
                     if pd.isna(max_b):
                         max_b = float(len(prefs))
                     df[f"{score_key}_scaled"] = self._scale_series(
-                        df[score_key].fillna(0),
-                        min_b,
-                        max_b,
-                        scaling_type=s_def_fl.get("scaling_type", "linear"),
-                        mu=s_def_fl.get("mu"),
-                        sigma=s_def_fl.get("sigma"),
+                        df[score_key].fillna(0), min_b, max_b
                     )
 
                     # Match Score BdV
@@ -2009,25 +2085,11 @@ class ScoringEngine:
                                 form_map_bdv.get(b, set()).intersection(prefs)
                             )
                         )
-                        s_def_fb = (
-                            self.scores_cat[
-                                self.scores_cat["score"] == f"{score_key}_scaled_bdv"
-                            ].iloc[0]
-                            if not self.scores_cat[
-                                self.scores_cat["score"] == f"{score_key}_scaled_bdv"
-                            ].empty
-                            else {}
-                        )
-                        min_b, max_b = self._get_bounds(f"{score_key}_scaled_bdv")
-                        if pd.isna(max_b):
-                            max_b = float(len(prefs))
+                        min_b_bdv, max_b_bdv = self._get_bounds(f"{score_key}_scaled_bdv")
+                        if pd.isna(max_b_bdv):
+                            max_b_bdv = float(len(prefs))
                         df[f"{score_key}_scaled_bdv"] = self._scale_series(
-                            df[f"{score_key}_bdv"].fillna(0),
-                            min_b,
-                            max_b,
-                            scaling_type=s_def_fb.get("scaling_type", "linear"),
-                            mu=s_def_fb.get("mu"),
-                            sigma=s_def_fb.get("sigma"),
+                            df[f"{score_key}_bdv"].fillna(0), min_b_bdv, max_b_bdv
                         )
 
             # Aggregate formation names
@@ -2070,25 +2132,11 @@ class ScoringEngine:
         if "nb_stops_total" in df.columns:
             population = df["population"].where(df["population"] > 0)
             df["mob_trans_pub_stop_density"] = (df["nb_stops_total"] / population) * 1000
-            s_def_mob = (
-                self.scores_cat[
-                    self.scores_cat["score"] == "mob_trans_pub_density_scaled"
-                ].iloc[0]
-                if not self.scores_cat[
-                    self.scores_cat["score"] == "mob_trans_pub_density_scaled"
-                ].empty
-                else {}
-            )
             min_b, max_b = self._get_bounds("mob_trans_pub_density_scaled")
             if pd.isna(max_b):
                 max_b = 10.0
             df["mob_trans_pub_density_scaled"] = self._scale_series(
-                df["mob_trans_pub_stop_density"],
-                min_b,
-                max_b,
-                scaling_type=s_def_mob.get("scaling_type", "linear"),
-                mu=s_def_mob.get("mu"),
-                sigma=s_def_mob.get("sigma"),
+                df["mob_trans_pub_stop_density"], min_b, max_b
             )
 
         # --- EPCI Bonus ---
@@ -2140,29 +2188,6 @@ class ScoringEngine:
     ) -> pd.DataFrame:
         # Operating in-place
 
-        # Population Score (F-50) - Dynamic re-calculation
-        if (
-            "ter_population_scaled" in self._get_active_criteria(config)
-            and "population" in df.columns
-        ):
-            mu = getattr(config, "target_population", 50000)
-            sigma = getattr(config, "target_population_sigma", 25000)
-
-            df["ter_population_scaled"] = self._scale_series(
-                df["population"], 0, 0, scaling_type="gaussian", mu=mu, sigma=sigma
-            )
-
-            # --- F-13: BdV Saturation Check ---
-            if "population_bv_bdv" in df.columns:
-                df["ter_population_scaled_bdv"] = self._scale_series(
-                    df["population_bv_bdv"],
-                    0,
-                    0,
-                    scaling_type="gaussian",
-                    mu=mu,
-                    sigma=sigma,
-                )
-
         # Affinities
         inc_asso_add = getattr(config, "inc_asso_add_selection", [])
         if inc_asso_add:
@@ -2199,22 +2224,8 @@ class ScoringEngine:
                 else:
                     df["affinite_density"] = np.nan
                 min_b, max_b = self._get_bounds("inc_asso_add_scaled")
-                s_def_inc = (
-                    self.scores_cat[
-                        self.scores_cat["score"] == "inc_asso_add_scaled"
-                    ].iloc[0]
-                    if not self.scores_cat[
-                        self.scores_cat["score"] == "inc_asso_add_scaled"
-                    ].empty
-                    else {}
-                )
                 df["inc_asso_add_scaled"] = self._scale_series(
-                    df["affinite_density"],
-                    min_b,
-                    max_b,
-                    scaling_type=s_def_inc.get("scaling_type", "linear"),
-                    mu=s_def_inc.get("mu"),
-                    sigma=s_def_inc.get("sigma"),
+                    df["affinite_density"], min_b, max_b
                 )
             else:
                 if "inc_asso_add_scaled" in df.columns:

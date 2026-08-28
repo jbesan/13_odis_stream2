@@ -148,11 +148,18 @@ def compute_city_comparison(
     top_advantages = [c for c in comparisons if c["delta"] > 0][:5]
     top_vigilances = [c for c in sorted(comparisons, key=lambda x: x["weighted_impact"]) if c["delta"] < -0.05][:3]
 
+    focus_pop_match = int(round((getattr(focus_city, "coeff_population_gauss", 1.0) or 1.0) * 100))
+    ref_pop_match = int(round((getattr(ref_city, "coeff_population_gauss", 1.0) or 1.0) * 100)) if ref_city else 0
+    focus_pop_str = f"{focus_city.population:,}".replace(",", " ")
+    ref_pop_str = f"{ref_city.population:,}".replace(",", " ") if ref_city else "0"
+
     lines = [
         f"### ⚖️ Comparatif territorial : {focus_name} vs {ref_name}",
         "",
-        f"**Score global** : **{int((focus_city.global_score or 0) * 100)}%** pour {focus_name} "
+        f"- **Score global** : **{int((focus_city.global_score or 0) * 100)}%** pour {focus_name} "
         f"contre **{int((ref_city.global_score or 0) * 100)}%** pour {ref_name}.",
+        f"- **Adéquation démographique** : **{focus_pop_match}%** ({focus_pop_str} hab.) pour {focus_name} "
+        f"contre **{ref_pop_match}%** ({ref_pop_str} hab.) pour {ref_name}.",
         "",
     ]
 
