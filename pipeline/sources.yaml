@@ -75,7 +75,7 @@ sources:
   associations:
     use_odace: true
     odace_table: "dim_association"
-    ttl_days: 30
+    ttl_days: 90
     description: "RNA agrégé (Associations)"
 
   rna_rag:
@@ -262,7 +262,7 @@ sources:
   population_details:
     use_odace: true
     odace_table: "fact_demographie"
-    ttl_days: 30
+    ttl_days: 365
     description: "Population détaillée 2022 (Historique 2011, 2016)"
 
   regions_ref:

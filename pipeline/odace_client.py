@@ -57,7 +57,7 @@ class OdaceClient:
         url = f"{self.api_url}/api/data/export/{table_name}?format=parquet"
         try:
             logging.info(f"OdaceClient: Downloading {table_name} via export API...")
-            response = requests.get(url, headers=self.headers, stream=True, timeout=120)
+            response = requests.get(url, headers=self.headers, stream=True, timeout=300)
             response.raise_for_status()
 
             # Download and parse a staging file before atomically replacing the

@@ -121,7 +121,7 @@ def get_salesforce_jwt_token() -> Tuple[str, str]:
         with open(key_path, "r", encoding="utf-8") as f:
             private_key = f.read()
     elif key_content:
-        private_key = key_content
+        private_key = key_content.replace("\\n", "\n")
 
     if not private_key:
         raise ValueError(

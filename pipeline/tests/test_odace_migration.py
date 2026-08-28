@@ -85,7 +85,7 @@ def test_odace_client_fetch_table_success(mock_get, temp_cache_dirs):
                 "Content-Type": "application/json",
             },
             stream=True,
-            timeout=120,
+            timeout=300,
         )
 
 
