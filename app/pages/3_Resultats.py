@@ -1,31 +1,204 @@
-import streamlit as st
-from streamlit_folium import st_folium
-from ui import forms as ui_forms
-from ui import results as ui_results
-from ui import page_shell
-from core import maps
-import folium as flm
-from utils import data_loader
-import pandas as pd
 import logging
+import pandas as pd
+import streamlit as st
+
+from core import maps_deck
 from core.models import SearchResultsData
 from services.app_session import AppSession
 from services.search_controller import SearchController
+from ui import forms as ui_forms
+from ui import page_shell
+from ui import results as ui_results
 from ui.form_state import FormState
+from utils import data_loader
 
 logger = logging.getLogger(__name__)
 
 st.set_page_config(page_title="OD&IS", page_icon="👋", layout="wide")
 
-# Reduce padding around results
+# Full-bleed edge-to-edge layout for results map with comprehensive line-by-line comments
 st.markdown(
     """
-<style>
-    .stMainBlockContainer {
-        padding: 2rem;
+    <style>
+    /* ==========================================================================
+       1. VERROUILLAGE GLOBAL DU SCROLL & SUPPRESSION DES GAPS
+       ========================================================================== */
+    html, body, [data-testid="stAppViewContainer"], [data-testid="stAppViewBlockContainer"] {
+        overflow: hidden !important;          /* Empêche l'apparition des barres de défilement globales du navigateur */
+        height: 100vh !important;            /* Force la page à occuper exactement 100% de la hauteur de l'écran */
+        max-height: 100vh !important;        /* Empêche tout dépassement vertical au survol ou lors des animations */
     }
-</style>
-""",
+
+
+
+    /* ==========================================================================
+       2. CONTENEUR PRINCIPAL STREAMLIT (Zone de travail à droite de la sidebar)
+       ========================================================================== */
+    .stMainBlockContainer,
+    div[data-testid="stMainBlockContainer"] {
+        padding: 0 !important;                /* Supprime les marges blanches internes par défaut de Streamlit */
+        margin: 0 !important;                 /* Supprime les marges externes */
+        max-width: 100% !important;           /* Permet d'occuper 100% de la largeur disponible */
+        height: 100vh !important;            /* Hauteur totale 100vh */
+        max-height: 100vh !important;        /* Bloque la hauteur maximale */
+        overflow: hidden !important;          /* Aucun débordement possible en dehors du conteneur */
+        position: relative !important;        /* Repère de référence pour le positionnement absolu des panneaux flottants */
+    }
+
+    /* Supprime l'espace vide en haut lié au header Streamlit par défaut */
+    div[data-testid="stAppViewBlockContainer"] > div:first-child {
+        padding-top: 0 !important;            /* 0 espace au-dessus de la carte */
+    }
+
+    /* ==========================================================================
+       3. CARTE WEBGL PYDECK (Fond d'écran 100% plein écran)
+       ========================================================================== */
+    div:has(> div[data-testid="stPydeckChart"]),
+    div[data-testid="stPydeckChart"],
+    div[data-testid="stPydeckChart"] > div,
+    div[data-testid="stPydeckChart"] iframe,
+    div[data-testid="stPydeckChart"] canvas {
+        position: absolute !important;        /* Place la carte en arrière-plan absolu */
+        top: 0 !important;                    /* Commence tout en haut (0px) */
+        left: 0 !important;                   /* Commence tout à gauche (0px) */
+        width: 100% !important;               /* Étirement sur 100% de la largeur */
+        height: 100vh !important;            /* Étirement sur 100% de la hauteur de l'écran */
+        min-height: 100vh !important;        /* Hauteur minimale garantie */
+        max-height: 100vh !important;        /* Hauteur maximale verrouillée */
+        z-index: 1 !important;                /* Niveau de profondeur : 1 (derrière les éléments flottants) */
+        border-radius: 0 !important;          /* Bords nets sans arrondi pour le fond */
+    }
+
+    /* ==========================================================================
+       4. NEUTRALISATION DES ENVELOPPES STREAMLIT (Supprime l'effet boîte dans boîte)
+       ========================================================================== */
+    /* Les wrappers générés automatiquement par Streamlit deviennent invisibles et sans épaisseur */
+    div:has(> div[class*="st-key-top_pills_bar"]),
+    div:has(> div[class*="st-key-results_floating_panel"]),
+    div:has(> div[class*="st-key-legend_floating_box"]) {
+        position: absolute !important;
+        height: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        border: none !important;
+        background: transparent !important;
+        box-shadow: none !important;
+    }
+
+    /* Les wrappers générés automatiquement par Streamlit deviennent invisibles et sans épaisseur */
+    div:has(> div[class*="st-key-top_pills_bar"]){
+        width: 15% !important;
+    }
+    div:has(> div[class*="st-key-results_floating_panel"]){
+        width: 30% !important;
+    }
+    div:has(> div[class*="st-key-legend_floating_box"]) {
+        width: 30% !important;
+    }
+
+    /* Neutralise les sous-wrappers internes créés par stLayoutWrapper / stVerticalBlockBorderWrapper */
+    div[class*="st-key-top_pills_bar"] div[data-testid="stLayoutWrapper"],
+    div[class*="st-key-top_pills_bar"] div[data-testid="stVerticalBlockBorderWrapper"],
+    div[class*="st-key-results_floating_panel"] div[data-testid="stLayoutWrapper"],
+    div[class*="st-key-results_floating_panel"] div[data-testid="stVerticalBlockBorderWrapper"],
+    div[class*="st-key-legend_floating_box"] div[data-testid="stLayoutWrapper"],
+    div[class*="st-key-legend_floating_box"] div[data-testid="stVerticalBlockBorderWrapper"] {
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+
+    /* ==========================================================================
+       5. BOÎTE FLOTTANTE 1 : PASTILLES DE COUCHES (Top-Left)
+       ========================================================================== */
+    div[class*="st-key-top_pills_bar"] {
+        position: absolute !important;        /* Flotte au-dessus de la carte */
+        top: 1rem !important;                 /* Distance depuis le haut */
+        left: 70rem !important;              /* Marge gauche par rapport au bord */
+        z-index: 1000 !important;             /* Profondeur élevée pour rester au-dessus de la carte */
+        background: rgba(255, 255, 255, 0.95) !important; /* Fond blanc opaque à 95% */
+        backdrop-filter: blur(14px) !important;          /* Effet de flou verre dépoli */
+        -webkit-backdrop-filter: blur(14px) !important;  /* Compatibilité Safari/WebKit */
+        border-radius: 30px !important;       /* Forme de pilule arrondie */
+        padding: 6px 14px !important;         /* Espacement interne */
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.06) !important; /* Ombre douce */
+        border: none !important;              /* Pas de double bordure */
+        height: auto !important;              /* Hauteur automatique selon le contenu */
+        margin: 0 !important;                 /* Aucune marge externe */
+    }
+
+    /* ==========================================================================
+       6. BOÎTE FLOTTANTE 2 : LÉGENDE DE LA CARTE (Top-Right)
+       ========================================================================== */
+    div[class*="st-key-legend_floating_box"] {
+        position: absolute !important;        /* Flotte au-dessus de la carte */
+        top: 1rem !important;                 /* Distance depuis le haut */
+        right: 1.5rem !important;             /* Alignement en haut à droite */
+        z-index: 1000 !important;             /* Même niveau que la barre de pills */
+        background: rgba(255, 255, 255, 0.95) !important; /* Fond blanc opaque à 95% */
+        backdrop-filter: blur(14px) !important;          /* Effet de flou verre dépoli */
+        -webkit-backdrop-filter: blur(14px) !important;  /* Compatibilité Safari/WebKit */
+        border-radius: 30px !important;       /* Forme de pilule arrondie */
+        padding: 8px 18px !important;         /* Espacement interne */
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.06) !important; /* Ombre douce */
+        border: none !important;              /* Pas de bordure parasite */
+        height: auto !important;              /* Hauteur automatique selon le contenu */
+        margin: 0 !important;                 /* Aucune marge externe */
+    }
+
+    /* ==========================================================================
+       7. BOÎTE FLOTTANTE 3 : VOLET DE RÉSULTATS (Top 5 + Accordéon à gauche)
+       ========================================================================== */
+    div[class*="st-key-results_floating_panel"] {
+        position: absolute !important;        /* Flotte au-dessus de la carte */
+        top: 4.8rem !important;               /* Position sous la barre de pastilles */
+        left: 1.5rem !important;              /* Alignement sur la même marge gauche */
+        width: 450px !important;              /* Largeur fixe du panneau de résultats */
+        max-width: 90vw !important;           /* Sécurité sur petits écrans */
+        max-height: calc(100vh - 6rem) !important; /* Hauteur maximale dynamique */
+        overflow-y: auto !important;          /* Active le défilement vertical uniquement si nécessaire */
+        overflow-x: hidden !important;        /* Désactive le défilement horizontal */
+        z-index: 999 !important;              /* Profondeur sous la barre du haut mais au-dessus de la carte */
+        background: rgba(255, 255, 255, 0.95) !important; /* Fond blanc translucide */
+        backdrop-filter: blur(16px) !important;          /* Effet de flou verre dépoli */
+        -webkit-backdrop-filter: blur(16px) !important;  /* Compatibilité Safari */
+        border-radius: 16px !important;       /* Arrondi des angles du volet */
+        padding: 14px 16px !important;        /* Espacement intérieur unique */
+        box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.22), 0 0 0 1px rgba(0, 0, 0, 0.08) !important; /* Ombre nette unique */
+        border: none !important;              /* Pas de bordure parasite */
+        margin: 0 !important;                 /* Aucune marge parasite */
+    }
+
+    /* ==========================================================================
+       8. BARRE DE DÉFILEMENT DU VOLET DE RÉSULTATS (Design sobre et discret)
+       ========================================================================== */
+    div[class*="st-key-results_floating_panel"]::-webkit-scrollbar {
+        width: 5px;                           /* Épaisseur de l'ascenseur (fin et discret) */
+    }
+    div[class*="st-key-results_floating_panel"]::-webkit-scrollbar-track {
+        background: transparent;              /* Fond de la piste invisible */
+    }
+    div[class*="st-key-results_floating_panel"]::-webkit-scrollbar-thumb {
+        background: rgba(0, 0, 0, 0.2);       /* Couleur du curseur de défilement (gris translucide) */
+        border-radius: 4px;                   /* Bouts arrondis du curseur */
+    }
+
+    /* ==========================================================================
+       9. RESPONSIVE / PETITS ÉCRANS (Tablettes et Mobiles < 960px)
+       ========================================================================== */
+    @media (max-width: 960px) {
+        div[class*="st-key-top_pills_bar"],
+        div[class*="st-key-legend_floating_box"],
+        div[class*="st-key-results_floating_panel"] {
+            position: static !important;      /* Repasse en affichage vertical standard sur petit écran */
+            width: 100% !important;           /* Occupe toute la largeur disponible */
+            max-width: 100% !important;       /* Pas de restriction de largeur */
+        }
+    }
+    </style>
+    """,
     unsafe_allow_html=True,
 )
 
@@ -162,15 +335,10 @@ with st.sidebar:
     page_shell.render_account_sidebar_actions()
 
 
-# Top header
-with st.container(border=False, key="top_menu"):
-    # st.subheader("Résultats de la recherche pour ce projet de vie")
-
-    if is_immutable_snapshot:
-        release = st.session_state.get("shared_snapshot_data_release", "inconnue")
-        st.info(
-            "Vous consultez une page de résultats partagée. Modifier les critères puis relancer la recherche crée une nouvelle recherche avec les données actuelles."
-        )
+if is_immutable_snapshot:
+    st.info(
+        "Vous consultez une page de résultats partagée. Modifier les critères puis relancer la recherche crée une nouvelle recherche avec les données actuelles."
+    )
 
 # Global Pitch (Strategic intro + Loading state)
 # if st.session_state.get('search_results'):
@@ -180,206 +348,145 @@ with st.container(border=False, key="top_menu"):
 #     ui_results.render_global_pitch(h)
 # global_pitch_container(h)
 
-# Main two sections: results and map
-col_map, col_results = st.columns([2, 1])
+# Main results & full-screen map layout
+if st.session_state.get("processed_gdf") is not None:
+    config = st.session_state.get("config")
+    search_results = st.session_state.get("search_results")
+    h = search_results.search_hash if search_results else None
+    snapshot_mode = bool(st.session_state.get("immutable_shared_snapshot"))
+    current_map_context = st.session_state.get("snapshot_current_map_context")
+    if not isinstance(current_map_context, pd.DataFrame):
+        current_map_context = st.session_state.processed_gdf
 
-with col_results:
-    if st.session_state.get("search_results") is not None:
-        # st.subheader("Meilleurs résultats")
-        st.space()
-
-        # The deterministic score is ready at this point. AI and external
-        # enrichment update individual details, but never gate Top-5 review.
-        h = st.session_state.search_results.search_hash
-        ui_results.display_results_list()
-
-        with st.container(height=40, vertical_alignment="center", border=False):
-            st.caption(
-                "Cliquez sur un résultat ⬆ pour le détail du score",
-                text_alignment="center",
-                width="stretch",
-            )
-
-with col_map:
-    if st.session_state.get("processed_gdf") is not None:
-        # 1. Map View State (Driven by search_results.search_hash)
-        config = st.session_state.get("config")
-        search_results = st.session_state.get("search_results")
-        h = search_results.search_hash if search_results else None
-        snapshot_mode = bool(st.session_state.get("immutable_shared_snapshot"))
-        current_map_context = st.session_state.get("snapshot_current_map_context")
-        if not isinstance(current_map_context, pd.DataFrame):
-            current_map_context = st.session_state.processed_gdf
-
-        # Default zoom if not set
-        if st.session_state.get("zoom") is None:
-            st.session_state["zoom"] = maps.get_map_zoom(
-                config.loc_search_area if config else "departement"
-            )
-
-        # 2. Fresh Map Instance (Mandatory for st-folium React mount)
-        m = maps.create_base_map(
-            st.session_state.get("center"), st.session_state.get("zoom")
+    # Default zoom if not set
+    if st.session_state.get("zoom") is None:
+        st.session_state["zoom"] = maps_deck.get_map_zoom(
+            config.loc_search_area if config else "departement"
         )
 
-        # 3. Build Dynamic FeatureGroup (Freshly built on every rerun to prevent Folium ReferenceErrors)
-        fg_scores = flm.FeatureGroup(name="Scores (Chaleur)")
-        if not st.session_state.processed_gdf.empty:
-            compiled_fg, _ = maps.build_scores_layer(st.session_state["processed_gdf"])
-            compiled_fg.add_to(fg_scores)
+    # 1. Floating Box 1: Pastilles de couches (Top-Left)
+    selected_ids = set()
+    with st.container(key="top_pills_bar"):
+        pill_options = ["🥇 Top 5", "🎓 Éducation", "🏥 Santé", "🤝 Inclusion"]
+        pill_id_map = {
+            "🥇 Top 5": "top_5",
+            "🎓 Éducation": "edu",
+            "🏥 Santé": "sante",
+            "🤝 Inclusion": "inc",
+        }
+        selected_pills = st.pills(
+            "Afficher sur la carte :",
+            pill_options,
+            selection_mode="multi",
+            default=["🥇 Top 5"],
+            key="map_layers_pills",
+            label_visibility="collapsed",
+        )
+        selected_ids = {pill_id_map[p] for p in (selected_pills or []) if p in pill_id_map}
+        show_top_5 = "top_5" in selected_ids
 
-            if search_results and search_results.current_geo:
-                maps.build_current_loc_layer(
-                    search_results.current_geo,
-                    gdf_context=current_map_context,
-                ).add_to(fg_scores)
-        elif snapshot_mode:
-            st.info(
-                "Cet ancien instantané ne contient pas la géométrie de la carte. "
-                "Les résultats affichés restent ceux qui ont été partagés."
-            )
-
-        fg_scores.add_to(m)
-
-        # 4. Build Transient Group (Pills & Top 5)
-        fg_dynamic = flm.FeatureGroup(name="ODIS_Dynamic_Layers")
-        # B. User-selected Layers (Pills)
-        pill_options = [{"id": "top_5", "label": "🥇 Top 5"}]
-        if config and not snapshot_mode:
-            if config.nb_enfants > 0:
-                pill_options.append({"id": "edu", "label": "🎓 Éducation"})
-            if getattr(config, "besoin_sante", []):
-                pill_options.append({"id": "sante", "label": "🏥 Santé"})
-            if config.inc_services_selection:
-                pill_options.append({"id": "inc", "label": "🤝 Inclusion"})
-
-        with st.container(horizontal=True, horizontal_alignment="center"):
-            st.text("Afficher sur la carte :")
-            selected_objs = st.pills(
-                "Afficher sur la carte :",
-                pill_options,
-                selection_mode="multi",
-                default=[pill_options[0]],
-                format_func=lambda x: x["label"],
-                key="map_layers_pills",
-                label_visibility="collapsed",
-            )
-
-        selected_ids = {obj["id"] for obj in selected_objs} if selected_objs else set()
-        legend_items = [{"color": "red", "text": "Top 5", "icon": "circle"}]
-        if search_results and search_results.commune_pressentie:
-            legend_items.append({"color": "yellow", "text": "Ville Souhaitée"})
-
-        # C. POI & Top 5 Rendering. POI layers are live reference data, so they
-        # are intentionally omitted from an immutable shared snapshot.
-        if config and search_results:
-            target_codgeos = {str(c.codgeo) for c in search_results.results}
-            if search_results.commune_pressentie:
-                target_codgeos.add(str(search_results.commune_pressentie.codgeo))
-
-            if not snapshot_mode:
-                pois = app_data["pois"]
-                # Always-on Mairie layer
-                maps.build_mairies_layer(pois, target_codgeos).add_to(m)
-                legend_items.append(
-                    {"color": "#F5D819", "text": "Mairie (BPE)", "icon": "circle"}
-                )
-
-                if "edu" in selected_ids:
-                    maps.build_ecoles_layer(pois, target_codgeos, config).add_to(
-                        fg_dynamic
-                    )
-                    legend_items.append(
-                        {"color": "green", "icon": "pencil", "text": "Écoles"}
-                    )
-                if "sante" in selected_ids:
-                    maps.build_sante_layer(pois, target_codgeos, config).add_to(
-                        fg_dynamic
-                    )
-                    legend_items.append(
-                        {"color": "blue", "icon": "plus", "text": "Santé"}
-                    )
-                if "inc" in selected_ids:
-                    maps.build_services_layer(pois, target_codgeos, config).add_to(
-                        fg_dynamic
-                    )
-                    legend_items.append(
-                        {"color": "purple", "icon": "heart", "text": "Inclusion"}
-                    )
-
-            show_top_5 = "top_5" in selected_ids
-            is_highlighted, highlighted_index = st.session_state.highlighted_result
-
-            if show_top_5:
-                for i, commune_result in enumerate(search_results.results[:5]):
-                    maps.build_top_result_layer(
-                        commune_result, i, gdf_context=st.session_state.processed_gdf
-                    ).add_to(fg_dynamic)
-                if search_results.commune_pressentie:
-                    maps.build_top_result_layer(
-                        search_results.commune_pressentie,
-                        -1,
-                        gdf_context=st.session_state.processed_gdf,
-                    ).add_to(fg_dynamic)
-
-            if is_highlighted:
-                if highlighted_index == -1:
-                    commune_result = search_results.commune_pressentie
-                else:
-                    commune_result = search_results.results[highlighted_index]
-                if commune_result:
-                    maps.build_top_result_layer(
-                        commune_result,
-                        highlighted_index,
-                        gdf_context=st.session_state.processed_gdf,
-                    ).add_to(fg_dynamic)
-
-        # 4. Legend Rendering
-        if legend_items:
-            legend_html = maps.build_legend(legend_items)
-            fg_dynamic.add_child(flm.Element(legend_html))
-
-        # 5. Final Rendering (Streamlit Integration)
-        try:
-            st_folium(
-                m,
-                center=st.session_state.get("center"),
-                zoom=st.session_state.get("zoom"),
-                feature_group_to_add=fg_dynamic,
-                key="odis_main_map",
-                width="content",
-                returned_objects=[],
-            )
-        except Exception as e:
-            st.error(f"Erreur d'affichage de la carte: {e}")
-            logging.error(f"❌ [MAP-ERROR] st_folium: {e}")
-
+    # 2. Floating Box 2: Légende de la carte (Top-Right)
+    with st.container(key="legend_floating_box"):
         st.markdown(
-            "<style>.stCustomComponentV1 {border-radius:10px}</style>",
+            """
+            <div style="display: flex; gap: 14px; font-size: 12.5px; color: #374151; align-items: center; justify-content: center; flex-wrap: wrap;">
+                <span>🟢 <b>Score élevé</b></span>
+                <span>🟡 <b>Score moyen</b></span>
+                <span>🏛️ <b>Mairies</b></span>
+                <span>🔴 <b>Top 5</b></span>
+            </div>
+            """,
             unsafe_allow_html=True,
         )
 
-    # st.caption(f"⚠️ Seules les {cfg.MAX_MAP_POLYGONS} meilleures communes sont affichées")
+    is_highlighted, highlighted_index = st.session_state.highlighted_result
 
-# Do not remove, useful to debug states
-# Detect Cloud Run environment
-# is_cloud_run = os.environ.get("K_SERVICE") is not None
-# st.dataframe(st.session_state.processed_gdf[["ter_insecurite_scaled"]])
+    # 3. Floating Box 3: Volet de résultats (Top 5 + Accordéon à gauche)
+    with st.container(key="results_floating_panel", border=False):
+        if search_results and search_results.results:
+            bg_res = ui_results.odis_get_bg_result(h) if h else None
+            if bg_res:
+                for c in search_results.results:
+                    ui_results.sync_background_data(c, h)
+                if search_results.commune_pressentie:
+                    ui_results.sync_background_data(search_results.commune_pressentie, h)
+                if "odis_brief" in bg_res and st.session_state.get("config"):
+                    brief_val = bg_res["odis_brief"]
+                    if brief_val and st.session_state.config.odis_brief != brief_val:
+                        st.session_state.config.odis_brief = brief_val
 
-# 1. Skip if not running on Cloud Run (Local Dev)
-# if not is_cloud_run:
-#     with st.expander("Debug", expanded=False):
-#         # try:
-#         # 🧪 SOTA: Drop geometry columns to avoid 'pyarrow.lib.ArrowTypeError'
-#         # Streamlits Arrow serialization doesn't support GeoPandas objects in st.dataframe
-#         debug_df = st.session_state.get('processed_gdf')
-#         if debug_df is not None:
-#             st.text(f"Lignes: {len(debug_df)}")
-#     st.text(f"colonnes: {len(debug_df.columns)}")
-#     mem_usage = debug_df.memory_usage(deep=True).sum() / (1024 * 1024)
-#     st.text(f"Mémoire RAM: {mem_usage:.2f} Mo")
-# st.dataframe(st.session_state['processed_gdf'].drop(columns=['polygon', 'centroid'], errors='ignore'))
-# st.json(search_results.results)
+            st.markdown("##### 🏆 Meilleurs Résultats")
 
-# except:
-#     pass
+            # A. Ville Souhaitée (if present)
+            if search_results.commune_pressentie:
+                p_commune = search_results.commune_pressentie
+                is_active = is_highlighted and highlighted_index == -1
+                btn_type = "primary" if is_active else "secondary"
+                score_pct = f"{p_commune.global_score * 100:.0f}%"
+
+                st.button(
+                    f"⭐ {p_commune.name} — {score_pct}",
+                    help=f"Ville Souhaitée : {p_commune.name}",
+                    key="btn_top_pressentie",
+                    type=btn_type,
+                    width="stretch",
+                    on_click=ui_results._result_highlight_callback,
+                    args=(-1,),
+                )
+                if is_active:
+                    with st.container(border=True):
+                        ui_results._display_result_details(p_commune)
+                    st.write("")
+
+            # B. Top 5 Results (Vertical list)
+            for i, c in enumerate(search_results.results[:5]):
+                is_active = is_highlighted and highlighted_index == i
+                btn_type = "primary" if is_active else "secondary"
+                score_pct = f"{c.global_score * 100:.0f}%"
+
+                st.button(
+                    f"#{i+1} {c.name} — {score_pct}",
+                    help=f"Top {i+1} : {c.name}",
+                    key=f"btn_top_{i+1}",
+                    type=btn_type,
+                    width="stretch",
+                    on_click=ui_results._result_highlight_callback,
+                    args=(i,),
+                )
+                if is_active:
+                    with st.container(border=True):
+                        ui_results._display_result_details(c)
+                    st.write("")
+
+            if not is_highlighted:
+                st.caption("💡 Cliquez sur une ville pour afficher l'analyse détaillée et le comparatif.")
+
+    # 3. Main Full-Screen PyDeck Map (Background canvas)
+    # Offset center slightly to the right to leave space for left overlay panel
+    zoom_current = st.session_state.get("zoom", 6) or 6
+    offset_lon = 1.1 * (2 ** max(0, 6 - zoom_current))
+
+    deck = maps_deck.create_deck_map(
+        gdf_scores=st.session_state.processed_gdf,
+        center=st.session_state.get("center"),
+        zoom=st.session_state.get("zoom"),
+        search_results=search_results,
+        config=config,
+        pois_df=app_data.get("pois") if (app_data and not snapshot_mode) else None,
+        selected_ids=selected_ids,
+        highlighted_rank=highlighted_index if is_highlighted else None,
+        show_top_5=show_top_5,
+        current_map_context=current_map_context,
+        center_offset_lon=offset_lon,
+    )
+
+    try:
+        st.pydeck_chart(
+            deck,
+            width="stretch",
+            height=1500,
+            key="odis_main_pydeck_map",
+        )
+    except Exception as e:
+        st.error(f"Erreur d'affichage de la carte: {e}")
+        logger.error(f"❌ [MAP-ERROR] pydeck: {e}")
