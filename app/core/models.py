@@ -6,7 +6,7 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, Field, ConfigDict, model_validator, field_validator
 import config as cfg
-from config import Org, User
+from config import Org as Org, User as User
 
 logger = logging.getLogger(__name__)
 

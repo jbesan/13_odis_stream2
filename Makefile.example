@@ -11,15 +11,17 @@
 PROJECT_ID ?= $(ODIS_GCP_PROJECT_ID)
 REGION ?= $(if $(ODIS_GCP_REGION),$(ODIS_GCP_REGION),europe-west1)
 STAGING_SOURCE_BUCKET ?= $(ODIS_GCP_CLOUDBUILD_BUCKET)
+DATASETS_BUCKET ?= $(if $(GCS_DATASETS_BUCKET),$(GCS_DATASETS_BUCKET),odis-stream2-app-data-euw1)
 GIT_SHA ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 TAG ?= $(GIT_SHA)
 
-.PHONY: help deploy-staging promote-prod harden-buckets check-us-buckets clean-us-staging test lint check-config
+.PHONY: help deploy-staging promote-prod deploy-datasets harden-buckets check-us-buckets clean-us-staging test lint check-config
 
 help:
 	@echo "OD&IS Stream 2 - Operations Commands:"
 	@echo "  make deploy-staging [TAG=<sha>]   Build and deploy candidate to staging Cloud Run (default TAG: current git short SHA)"
 	@echo "  make promote-prod TAG=<sha>       Promote verified image digest from staging to production Cloud Run"
+	@echo "  make deploy-datasets RUN_ID=<id>  Publish validated pipeline candidate datasets to GCS release bucket"
 	@echo "  make harden-buckets               Apply UBLA, PAP, and 7-day lifecycle to regional Cloud Build source bucket"
 	@echo "  make check-us-buckets             List any accidental or legacy US Cloud Build buckets"
 	@echo "  make clean-us-staging             Empty objects from unintended US staging buckets"
@@ -58,6 +60,15 @@ promote-prod: check-config
 		--config=cloudbuild-promote.yaml \
 		--gcs-source-staging-dir=$(STAGING_SOURCE_BUCKET)/source \
 		--substitutions=_IMAGE_TAG=$(TAG)
+
+deploy-datasets:
+	@if [ -z "$(RUN_ID)" ]; then \
+		echo "ERROR: Must specify RUN_ID=<candidate-run-id> to deploy datasets." >&2; \
+		echo "Example: make deploy-datasets RUN_ID=run-20260828T144045Z-236d0f3f" >&2; \
+		exit 1; \
+	fi
+	@echo "Deploying candidate datasets $(RUN_ID) to gs://$(DATASETS_BUCKET)..."
+	GCS_DATASETS_BUCKET=$(DATASETS_BUCKET) uv run python -m pipeline.etl --step deploy --run-id $(RUN_ID)
 
 harden-buckets: check-config
 	@echo "Configuring Uniform Bucket-Level Access on $(STAGING_SOURCE_BUCKET)..."
