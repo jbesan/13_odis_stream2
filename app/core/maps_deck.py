@@ -12,6 +12,7 @@ Features:
 from __future__ import annotations
 
 import logging
+from html import escape
 from typing import Any, List, Optional, Set, Tuple, Union
 
 import geopandas as gpd
@@ -67,6 +68,41 @@ def compute_choropleth_colors(
     a = np.full(len(arr), alpha, dtype=int)
 
     return np.column_stack([r, g, b, a]).tolist()
+
+
+def build_choropleth_legend_html(
+    marker_items: Optional[List[Tuple[str, str]]] = None,
+) -> str:
+    """Build the application-owned legend for the YlGn choropleth scale."""
+    gradient_stops = ", ".join(
+        f"rgb({int(red)}, {int(green)}, {int(blue)})"
+        for red, green, blue in YLGN_RGB_STOPS
+    )
+    markers = "".join(
+        (
+            '<span class="odis-map-legend-marker-item">'
+            f'<span class="odis-map-legend-marker" '
+            f'style="background:{escape(color, quote=True)}"></span>'
+            f"{escape(label)}"
+            "</span>"
+        )
+        for color, label in marker_items or []
+    )
+    marker_section = (
+        f'<div class="odis-map-legend-markers">{markers}</div>' if markers else ""
+    )
+    return f"""
+<div class="odis-map-legend" role="img" aria-label="Score d'adéquation, de faible à élevé">
+  <div class="odis-map-legend-title">Score d'adéquation des communes</div>
+  <div class="odis-map-legend-scale">
+    <span>0%</span>
+    <span class="odis-map-legend-gradient" style="background:linear-gradient(90deg, {gradient_stops})"></span>
+    <span>100%</span>
+  </div>
+  <div class="odis-map-legend-range"><span>Faible</span><span>Élevé</span></div>
+  {marker_section}
+</div>
+"""
 
 
 def _get_geom(

@@ -16,186 +16,207 @@ logger = logging.getLogger(__name__)
 
 st.set_page_config(page_title="OD&IS", page_icon="👋", layout="wide")
 
-# Full-bleed edge-to-edge layout for results map with comprehensive line-by-line comments
+# Full-bleed map with a small number of stable, page-owned overlay selectors.
 st.markdown(
     """
     <style>
-    /* ==========================================================================
-       1. VERROUILLAGE GLOBAL DU SCROLL & SUPPRESSION DES GAPS
-       ========================================================================== */
-    html, body, [data-testid="stAppViewContainer"], [data-testid="stAppViewBlockContainer"] {
-        overflow: hidden !important;          /* Empêche l'apparition des barres de défilement globales du navigateur */
-        height: 100vh !important;            /* Force la page à occuper exactement 100% de la hauteur de l'écran */
-        max-height: 100vh !important;        /* Empêche tout dépassement vertical au survol ou lors des animations */
+    /* The page content is the containing block for the map and overlays. */
+    [data-testid="stMain"],
+    [data-testid="stMainBlockContainer"] {
+        position: relative !important;
+        overflow: hidden !important;
+    }
+    [data-testid="stMainBlockContainer"] {
+        width: 100% !important;
+        max-width: none !important;
+        height: 100vh !important;
+        min-height: 100vh !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        isolation: isolate;
+    }
+    [data-testid="stAppViewBlockContainer"] > div:first-child {
+        padding-top: 0 !important;
     }
 
-
-
-    /* ==========================================================================
-       2. CONTENEUR PRINCIPAL STREAMLIT (Zone de travail à droite de la sidebar)
-       ========================================================================== */
-    .stMainBlockContainer,
-    div[data-testid="stMainBlockContainer"] {
-        padding: 0 !important;                /* Supprime les marges blanches internes par défaut de Streamlit */
-        margin: 0 !important;                 /* Supprime les marges externes */
-        max-width: 100% !important;           /* Permet d'occuper 100% de la largeur disponible */
-        height: 100vh !important;            /* Hauteur totale 100vh */
-        max-height: 100vh !important;        /* Bloque la hauteur maximale */
-        overflow: hidden !important;          /* Aucun débordement possible en dehors du conteneur */
-        position: relative !important;        /* Repère de référence pour le positionnement absolu des panneaux flottants */
-    }
-
-    /* Supprime l'espace vide en haut lié au header Streamlit par défaut */
-    div[data-testid="stAppViewBlockContainer"] > div:first-child {
-        padding-top: 0 !important;            /* 0 espace au-dessus de la carte */
-    }
-
-    /* ==========================================================================
-       3. CARTE WEBGL PYDECK (Fond d'écran 100% plein écran)
-       ========================================================================== */
-    div:has(> div[data-testid="stPydeckChart"]),
-    div[data-testid="stPydeckChart"],
-    div[data-testid="stPydeckChart"] > div,
-    div[data-testid="stPydeckChart"] iframe,
-    div[data-testid="stPydeckChart"] canvas {
-        position: absolute !important;        /* Place la carte en arrière-plan absolu */
-        top: 0 !important;                    /* Commence tout en haut (0px) */
-        left: 0 !important;                   /* Commence tout à gauche (0px) */
-        width: 100% !important;               /* Étirement sur 100% de la largeur */
-        height: 100vh !important;            /* Étirement sur 100% de la hauteur de l'écran */
-        min-height: 100vh !important;        /* Hauteur minimale garantie */
-        max-height: 100vh !important;        /* Hauteur maximale verrouillée */
-        z-index: 1 !important;                /* Niveau de profondeur : 1 (derrière les éléments flottants) */
-        border-radius: 0 !important;          /* Bords nets sans arrondi pour le fond */
-    }
-
-    /* ==========================================================================
-       4. NEUTRALISATION DES ENVELOPPES STREAMLIT (Supprime l'effet boîte dans boîte)
-       ========================================================================== */
-    /* Les wrappers générés automatiquement par Streamlit deviennent invisibles et sans épaisseur */
-    div:has(> div[class*="st-key-top_pills_bar"]),
-    div:has(> div[class*="st-key-results_floating_panel"]),
-    div:has(> div[class*="st-key-legend_floating_box"]) {
+    /* Streamlit currently exposes the PyDeck canvas as stDeckGlJsonChart. */
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stFullScreenFrame"] > div[data-testid="stDeckGlJsonChart"]) {
         position: absolute !important;
-        height: 0 !important;
+        inset: 0 !important;
+        width: 100% !important;
+        height: 100vh !important;
+        min-height: 100vh !important;
         padding: 0 !important;
         margin: 0 !important;
-        border: none !important;
-        background: transparent !important;
-        box-shadow: none !important;
+        z-index: 0 !important;
+    }
+    div[data-testid="stFullScreenFrame"]:has(> div[data-testid="stDeckGlJsonChart"]),
+    div[data-testid="stDeckGlJsonChart"],
+    div[data-testid="stDeckGlJsonChart"] > div,
+    div[data-testid="stDeckGlJsonChart"] .mapboxgl-map,
+    div[data-testid="stDeckGlJsonChart"] .mapboxgl-canvas-container {
+        position: absolute !important;
+        inset: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        min-height: 0 !important;
+    }
+    div[data-testid="stDeckGlJsonChart"] canvas.mapboxgl-canvas {
+        width: 100% !important;
+        height: 100% !important;
     }
 
-    /* Les wrappers générés automatiquement par Streamlit deviennent invisibles et sans épaisseur */
-    div:has(> div[class*="st-key-top_pills_bar"]){
-        width: 15% !important;
+    /* Shared-search notice: visible, but it does not consume map height. */
+    div[class*="st-key-results_snapshot_notice"] {
+        position: absolute !important;
+        top: 1rem !important;
+        left: 50% !important;
+        transform: translateX(-50%) !important;
+        width: min(38rem, calc(100% - 2rem)) !important;
+        z-index: 10 !important;
+        pointer-events: none;
     }
-    div:has(> div[class*="st-key-results_floating_panel"]){
-        width: 30% !important;
-    }
-    div:has(> div[class*="st-key-legend_floating_box"]) {
-        width: 30% !important;
-    }
-
-    /* Neutralise les sous-wrappers internes créés par stLayoutWrapper / stVerticalBlockBorderWrapper */
-    div[class*="st-key-top_pills_bar"] div[data-testid="stLayoutWrapper"],
-    div[class*="st-key-top_pills_bar"] div[data-testid="stVerticalBlockBorderWrapper"],
-    div[class*="st-key-results_floating_panel"] div[data-testid="stLayoutWrapper"],
-    div[class*="st-key-results_floating_panel"] div[data-testid="stVerticalBlockBorderWrapper"],
-    div[class*="st-key-legend_floating_box"] div[data-testid="stLayoutWrapper"],
-    div[class*="st-key-legend_floating_box"] div[data-testid="stVerticalBlockBorderWrapper"] {
-        background: transparent !important;
-        border: none !important;
-        box-shadow: none !important;
-        padding: 0 !important;
+    div[class*="st-key-results_snapshot_notice"] [data-testid="stAlert"] {
+        pointer-events: auto;
         margin: 0 !important;
     }
 
-    /* ==========================================================================
-       5. BOÎTE FLOTTANTE 1 : PASTILLES DE COUCHES (Top-Left)
-       ========================================================================== */
+    /* Floating controls. Their own keyed blocks are the only positioned nodes. */
     div[class*="st-key-top_pills_bar"] {
-        position: absolute !important;        /* Flotte au-dessus de la carte */
-        top: 1rem !important;                 /* Distance depuis le haut */
-        left: 70rem !important;              /* Marge gauche par rapport au bord */
-        z-index: 1000 !important;             /* Profondeur élevée pour rester au-dessus de la carte */
-        background: rgba(255, 255, 255, 0.95) !important; /* Fond blanc opaque à 95% */
-        backdrop-filter: blur(14px) !important;          /* Effet de flou verre dépoli */
-        -webkit-backdrop-filter: blur(14px) !important;  /* Compatibilité Safari/WebKit */
-        border-radius: 30px !important;       /* Forme de pilule arrondie */
-        padding: 6px 14px !important;         /* Espacement interne */
-        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.06) !important; /* Ombre douce */
-        border: none !important;              /* Pas de double bordure */
-        height: auto !important;              /* Hauteur automatique selon le contenu */
-        margin: 0 !important;                 /* Aucune marge externe */
+        position: absolute !important;
+        top: 1rem !important;
+        right: 1rem !important;
+        left: auto !important;
+        width: fit-content !important;
+        max-width: calc(100% - 2rem) !important;
+        padding: 0.35rem 0.5rem !important;
+        z-index: 30 !important;
+        background: rgba(255, 255, 255, 0.94) !important;
+        backdrop-filter: blur(12px) !important;
+        -webkit-backdrop-filter: blur(12px) !important;
+        border-radius: 999px !important;
+        box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.14), 0 0 0 1px rgba(0, 0, 0, 0.06) !important;
+    }
+    div[class*="st-key-top_pills_bar"] [data-testid="stHorizontalBlock"] {
+        width: fit-content !important;
+        max-width: 100% !important;
     }
 
-    /* ==========================================================================
-       6. BOÎTE FLOTTANTE 2 : LÉGENDE DE LA CARTE (Top-Right)
-       ========================================================================== */
+    /* Legend stays below the result panel and explains the choropleth scale. */
     div[class*="st-key-legend_floating_box"] {
-        position: absolute !important;        /* Flotte au-dessus de la carte */
-        top: 1rem !important;                 /* Distance depuis le haut */
-        right: 1.5rem !important;             /* Alignement en haut à droite */
-        z-index: 1000 !important;             /* Même niveau que la barre de pills */
-        background: rgba(255, 255, 255, 0.95) !important; /* Fond blanc opaque à 95% */
-        backdrop-filter: blur(14px) !important;          /* Effet de flou verre dépoli */
-        -webkit-backdrop-filter: blur(14px) !important;  /* Compatibilité Safari/WebKit */
-        border-radius: 30px !important;       /* Forme de pilule arrondie */
-        padding: 8px 18px !important;         /* Espacement interne */
-        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.06) !important; /* Ombre douce */
-        border: none !important;              /* Pas de bordure parasite */
-        height: auto !important;              /* Hauteur automatique selon le contenu */
-        margin: 0 !important;                 /* Aucune marge externe */
+        position: absolute !important;
+        left: 1rem !important;
+        right: auto !important;
+        top: auto !important;
+        bottom: 1rem !important;
+        width: min(24rem, calc(100% - 2rem)) !important;
+        max-width: calc(100% - 2rem) !important;
+        box-sizing: border-box !important;
+        padding: 0.75rem 1rem !important;
+        z-index: 25 !important;
+        background: rgba(255, 255, 255, 0.94) !important;
+        backdrop-filter: blur(12px) !important;
+        -webkit-backdrop-filter: blur(12px) !important;
+        border-radius: 0.9rem !important;
+        box-shadow: 0 0.75rem 2rem rgba(0, 0, 0, 0.16), 0 0 0 1px rgba(0, 0, 0, 0.07) !important;
     }
 
-    /* ==========================================================================
-       7. BOÎTE FLOTTANTE 3 : VOLET DE RÉSULTATS (Top 5 + Accordéon à gauche)
-       ========================================================================== */
     div[class*="st-key-results_floating_panel"] {
-        position: absolute !important;        /* Flotte au-dessus de la carte */
-        top: 4.8rem !important;               /* Position sous la barre de pastilles */
-        left: 1.5rem !important;              /* Alignement sur la même marge gauche */
-        width: 450px !important;              /* Largeur fixe du panneau de résultats */
-        max-width: 90vw !important;           /* Sécurité sur petits écrans */
-        max-height: calc(100vh - 6rem) !important; /* Hauteur maximale dynamique */
-        overflow-y: auto !important;          /* Active le défilement vertical uniquement si nécessaire */
-        overflow-x: hidden !important;        /* Désactive le défilement horizontal */
-        z-index: 999 !important;              /* Profondeur sous la barre du haut mais au-dessus de la carte */
-        background: rgba(255, 255, 255, 0.95) !important; /* Fond blanc translucide */
-        backdrop-filter: blur(16px) !important;          /* Effet de flou verre dépoli */
-        -webkit-backdrop-filter: blur(16px) !important;  /* Compatibilité Safari */
-        border-radius: 16px !important;       /* Arrondi des angles du volet */
-        padding: 14px 16px !important;        /* Espacement intérieur unique */
-        box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.22), 0 0 0 1px rgba(0, 0, 0, 0.08) !important; /* Ombre nette unique */
-        border: none !important;              /* Pas de bordure parasite */
-        margin: 0 !important;                 /* Aucune marge parasite */
+        position: absolute !important;
+        top: 1rem !important;
+        left: 1rem !important;
+        width: min(26rem, calc(100% - 2rem)) !important;
+        max-width: calc(100% - 2rem) !important;
+        max-height: calc(100vh - 10rem) !important;
+        box-sizing: border-box !important;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+        padding: 1rem !important;
+        z-index: 20 !important;
+        background: rgba(255, 255, 255, 0.94) !important;
+        backdrop-filter: blur(16px) !important;
+        -webkit-backdrop-filter: blur(16px) !important;
+        border-radius: 1rem !important;
+        box-shadow: 0 1.25rem 2.5rem rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 0, 0, 0.08) !important;
     }
-
-    /* ==========================================================================
-       8. BARRE DE DÉFILEMENT DU VOLET DE RÉSULTATS (Design sobre et discret)
-       ========================================================================== */
     div[class*="st-key-results_floating_panel"]::-webkit-scrollbar {
-        width: 5px;                           /* Épaisseur de l'ascenseur (fin et discret) */
-    }
-    div[class*="st-key-results_floating_panel"]::-webkit-scrollbar-track {
-        background: transparent;              /* Fond de la piste invisible */
+        width: 5px;
     }
     div[class*="st-key-results_floating_panel"]::-webkit-scrollbar-thumb {
-        background: rgba(0, 0, 0, 0.2);       /* Couleur du curseur de défilement (gris translucide) */
-        border-radius: 4px;                   /* Bouts arrondis du curseur */
+        background: rgba(0, 0, 0, 0.22);
+        border-radius: 4px;
     }
 
-    /* ==========================================================================
-       9. RESPONSIVE / PETITS ÉCRANS (Tablettes et Mobiles < 960px)
-       ========================================================================== */
-    @media (max-width: 960px) {
-        div[class*="st-key-top_pills_bar"],
-        div[class*="st-key-legend_floating_box"],
-        div[class*="st-key-results_floating_panel"] {
-            position: static !important;      /* Repasse en affichage vertical standard sur petit écran */
-            width: 100% !important;           /* Occupe toute la largeur disponible */
-            max-width: 100% !important;       /* Pas de restriction de largeur */
+    @media (max-width: 900px) {
+        div[class*="st-key-top_pills_bar"] {
+            top: 0.75rem !important;
+            right: 0.75rem !important;
+            left: 0.75rem !important;
+            width: auto !important;
+            overflow-x: auto !important;
         }
+        div[class*="st-key-results_floating_panel"] {
+            top: 4.5rem !important;
+            left: 0.75rem !important;
+            width: calc(100% - 1.5rem) !important;
+            max-width: calc(100% - 1.5rem) !important;
+            max-height: calc(100vh - 12rem) !important;
+        }
+        div[class*="st-key-legend_floating_box"] {
+            left: 0.75rem !important;
+            bottom: 0.75rem !important;
+            width: calc(100% - 1.5rem) !important;
+            max-width: calc(100% - 1.5rem) !important;
+        }
+    }
+    .odis-map-legend {
+        display: grid;
+        gap: 0.4rem;
+        color: #374151;
+        font-size: 0.78rem;
+        line-height: 1.2;
+    }
+    .odis-map-legend-title {
+        color: #1b4429;
+        font-weight: 700;
+    }
+    .odis-map-legend-scale {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        gap: 0.5rem;
+        align-items: center;
+    }
+    .odis-map-legend-gradient {
+        display: block;
+        height: 0.65rem;
+        min-width: 8rem;
+        border-radius: 999px;
+    }
+    .odis-map-legend-range,
+    .odis-map-legend-markers {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+    .odis-map-legend-range {
+        justify-content: space-between;
+        color: #6b7280;
+    }
+    .odis-map-legend-markers {
+        padding-top: 0.15rem;
+        border-top: 1px solid rgba(27, 68, 41, 0.12);
+    }
+    .odis-map-legend-marker-item {
+        display: inline-flex;
+        gap: 0.3rem;
+        align-items: center;
+        white-space: nowrap;
+    }
+    .odis-map-legend-marker {
+        width: 0.65rem;
+        height: 0.65rem;
+        border: 1px solid rgba(27, 68, 41, 0.45);
+        border-radius: 50%;
     }
     </style>
     """,
@@ -260,7 +281,7 @@ def prepare_search_criteria_editor(complete_data: dict) -> None:
     on_dismiss="rerun",
 )
 def edit_search_criteria_dialog(complete_data: dict) -> None:
-    """Edit widget state without rerunning the results page or Folium map."""
+    """Edit widget state without rerunning the results page or PyDeck map."""
     ui_forms.display_input_tabs(complete_data)
     with st.container(horizontal=True, horizontal_alignment="right"):
         if st.button(
@@ -335,10 +356,16 @@ with st.sidebar:
     page_shell.render_account_sidebar_actions()
 
 
+# The custom results layout does not call display_results_list(), so dispatch
+# active result dialogs explicitly on the full rerun triggered by each action.
+ui_results.render_active_dialogs()
+
+
 if is_immutable_snapshot:
-    st.info(
-        "Vous consultez une page de résultats partagée. Modifier les critères puis relancer la recherche crée une nouvelle recherche avec les données actuelles."
-    )
+    with st.container(key="results_snapshot_notice", border=False):
+        st.info(
+            "Vous consultez une page de résultats partagée. Modifier les critères puis relancer la recherche crée une nouvelle recherche avec les données actuelles."
+        )
 
 # Global Pitch (Strategic intro + Loading state)
 # if st.session_state.get('search_results'):
@@ -364,38 +391,55 @@ if st.session_state.get("processed_gdf") is not None:
             config.loc_search_area if config else "departement"
         )
 
-    # 1. Floating Box 1: Pastilles de couches (Top-Left)
+    # 1. Floating Box 1: pastilles de couches (top-right)
     selected_ids = set()
     with st.container(key="top_pills_bar"):
-        pill_options = ["🥇 Top 5", "🎓 Éducation", "🏥 Santé", "🤝 Inclusion"]
-        pill_id_map = {
-            "🥇 Top 5": "top_5",
-            "🎓 Éducation": "edu",
-            "🏥 Santé": "sante",
-            "🤝 Inclusion": "inc",
-        }
+        pill_specs = [("🥇 Top 5", "top_5")]
+        if config and not snapshot_mode:
+            if config.nb_enfants > 0:
+                pill_specs.append(("🎓 Éducation", "edu"))
+            if getattr(config, "besoin_sante", []):
+                pill_specs.append(("🏥 Santé", "sante"))
+            if config.inc_services_selection:
+                pill_specs.append(("🤝 Inclusion", "inc"))
+
+        pill_options = [label for label, _ in pill_specs]
+        pill_id_map = dict(pill_specs)
+        existing_pills = st.session_state.get("map_layers_pills")
+        if not isinstance(existing_pills, list):
+            st.session_state["map_layers_pills"] = [pill_options[0]]
+        else:
+            st.session_state["map_layers_pills"] = [
+                pill for pill in existing_pills if pill in pill_options
+            ]
         selected_pills = st.pills(
             "Afficher sur la carte :",
             pill_options,
             selection_mode="multi",
-            default=["🥇 Top 5"],
             key="map_layers_pills",
             label_visibility="collapsed",
         )
         selected_ids = {pill_id_map[p] for p in (selected_pills or []) if p in pill_id_map}
         show_top_5 = "top_5" in selected_ids
 
-    # 2. Floating Box 2: Légende de la carte (Top-Right)
+    # 2. Floating Box 2: choropleth legend (bottom-left)
+    legend_markers = []
+    if show_top_5:
+        legend_markers.append(("#D63E2A", "Top 5"))
+        if search_results and search_results.commune_pressentie:
+            legend_markers.append(("#F5D819", "Ville souhaitée"))
+    if not snapshot_mode:
+        legend_markers.append(("#F5D819", "Mairies"))
+        if "edu" in selected_ids:
+            legend_markers.append(("#22C55E", "Écoles"))
+        if "sante" in selected_ids:
+            legend_markers.append(("#3B82F6", "Santé"))
+        if "inc" in selected_ids:
+            legend_markers.append(("#A855F7", "Inclusion"))
+
     with st.container(key="legend_floating_box"):
         st.markdown(
-            """
-            <div style="display: flex; gap: 14px; font-size: 12.5px; color: #374151; align-items: center; justify-content: center; flex-wrap: wrap;">
-                <span>🟢 <b>Score élevé</b></span>
-                <span>🟡 <b>Score moyen</b></span>
-                <span>🏛️ <b>Mairies</b></span>
-                <span>🔴 <b>Top 5</b></span>
-            </div>
-            """,
+            maps_deck.build_choropleth_legend_html(legend_markers),
             unsafe_allow_html=True,
         )
 

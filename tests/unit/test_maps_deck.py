@@ -5,6 +5,7 @@ from shapely.geometry import Point, Polygon
 
 from app.core.maps_deck import (
     compute_choropleth_colors,
+    build_choropleth_legend_html,
     build_choropleth_layer,
     build_top_results_layers,
     build_poi_layers,
@@ -20,6 +21,14 @@ def test_compute_choropleth_colors_vectorized():
     assert colors[0][:3] == [255, 255, 229]  # 0.0 YlGn anchor
     assert colors[2][:3] == [0, 69, 41]      # 1.0 YlGn anchor
     assert all(c[3] == 165 for c in colors)
+
+
+def test_build_choropleth_legend_uses_the_map_palette():
+    legend = build_choropleth_legend_html([("#D63E2A", "Top 5")])
+    assert "linear-gradient" in legend
+    assert "rgb(255, 255, 229)" in legend
+    assert "rgb(0, 69, 41)" in legend
+    assert "Top 5" in legend
 
 
 def test_build_choropleth_layer_synthetic():

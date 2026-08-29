@@ -105,6 +105,7 @@ __all__ = [
     "_render_initial_analysis_report",
     "_merge_agent_results",
     # Main results listing
+    "render_active_dialogs",
     "display_results_list",
     "_display_result_details",
     "_result_highlight_callback",
@@ -335,6 +336,21 @@ def _on_result_feedback(cid: str, c_name: str, score: float, fb_key: str) -> Non
             logger.error(f"Failed to submit result feedback: {e}")
 
 
+def render_active_dialogs() -> None:
+    """Open any result dialog requested by a button on the current rerun."""
+    active_ia_index = st.session_state.get("active_ia_city_index")
+    if active_ia_index is not None:
+        show_ia_analysis_dialog(active_ia_index)
+
+    active_details_index = st.session_state.get("active_details_index")
+    if active_details_index is not None:
+        show_details_dialog(active_details_index)
+
+    active_ccas_index = st.session_state.get("active_ccas_index")
+    if active_ccas_index is not None:
+        show_ccas_dialog(active_ccas_index)
+
+
 def render_global_pitch(h: Optional[str] = None):
     """Renders the global intro pitch if available, or a loading message."""
     search_results: SearchResultsData = st.session_state.get("search_results")
@@ -377,15 +393,8 @@ def display_results_list(display_gdf: Optional[pd.DataFrame] = None) -> None:
         st.info("Aucun résultat à afficher.")
         return
 
-    # Handle Active Dialogs (at page/list rendering level)
-    if st.session_state.get("active_ia_city_index") is not None:
-        show_ia_analysis_dialog(st.session_state.active_ia_city_index)
-
-    if st.session_state.get("active_details_index") is not None:
-        show_details_dialog(st.session_state.active_details_index)
-
-    if st.session_state.get("active_ccas_index") is not None:
-        show_ccas_dialog(st.session_state.active_ccas_index)
+    # Keep the legacy renderer's behavior when it is used by other pages.
+    render_active_dialogs()
 
     st.markdown(
         '<style> [class*="st-key-button_top"] .stButton button div, [class*="st-key-button_top"] .stButton button p { justify-content: flex-start !important; text-align: left !important; width: 100%; } </style>',
