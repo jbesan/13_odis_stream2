@@ -85,7 +85,7 @@ st.markdown(
     div[class*="st-key-top_pills_bar"] {
         position: absolute !important;
         top: 1rem !important;
-        right: 1rem !important;
+        right: 3rem !important;
         left: auto !important;
         width: fit-content !important;
         max-width: calc(100% - 2rem) !important;
@@ -105,8 +105,8 @@ st.markdown(
     /* Legend stays below the result panel and explains the choropleth scale. */
     div[class*="st-key-legend_floating_box"] {
         position: absolute !important;
-        left: 1rem !important;
-        right: auto !important;
+        right: 1rem !important;
+        left: auto !important;
         top: auto !important;
         bottom: 1rem !important;
         width: min(24rem, calc(100% - 2rem)) !important;
@@ -127,7 +127,7 @@ st.markdown(
         left: 1rem !important;
         width: min(26rem, calc(100% - 2rem)) !important;
         max-width: calc(100% - 2rem) !important;
-        max-height: calc(100vh - 10rem) !important;
+        max-height: calc(100vh - 2rem) !important;
         box-sizing: border-box !important;
         overflow-x: hidden !important;
         overflow-y: auto !important;
@@ -163,7 +163,7 @@ st.markdown(
             max-height: calc(100vh - 12rem) !important;
         }
         div[class*="st-key-legend_floating_box"] {
-            left: 0.75rem !important;
+            right: 0.75rem !important;
             bottom: 0.75rem !important;
             width: calc(100% - 1.5rem) !important;
             max-width: calc(100% - 1.5rem) !important;
@@ -171,10 +171,10 @@ st.markdown(
     }
     .odis-map-legend {
         display: grid;
-        gap: 0.4rem;
+        gap: 0.6rem;
         color: #374151;
         font-size: 0.78rem;
-        line-height: 1.2;
+        line-height: 1;
     }
     .odis-map-legend-title {
         color: #1b4429;
@@ -459,20 +459,23 @@ if st.session_state.get("processed_gdf") is not None:
                     if brief_val and st.session_state.config.odis_brief != brief_val:
                         st.session_state.config.odis_brief = brief_val
 
-            st.markdown("##### 🏆 Meilleurs Résultats")
-
+            st.subheader("Meilleurs Résultats")
+            st.markdown(
+                '<style> [class*="st-key-btn_top"] .stButton button div, [class*="st-key-btn_top"] .stButton button p { justify-content: flex-start !important; text-align: left !important; width: 100%; } </style>',
+                unsafe_allow_html=True,
+            )
             # A. Ville Souhaitée (if present)
             if search_results.commune_pressentie:
                 p_commune = search_results.commune_pressentie
                 is_active = is_highlighted and highlighted_index == -1
                 btn_type = "primary" if is_active else "secondary"
-                score_pct = f"{p_commune.global_score * 100:.0f}%"
+                score_pct = f"{p_commune.global_score * 100:.0f}/100"
 
                 st.button(
-                    f"⭐ {p_commune.name} — {score_pct}",
+                    f"**{score_pct}** - {p_commune.name}",
                     help=f"Ville Souhaitée : {p_commune.name}",
                     key="btn_top_pressentie",
-                    type=btn_type,
+                    type="secondary",
                     width="stretch",
                     on_click=ui_results._result_highlight_callback,
                     args=(-1,),
@@ -486,29 +489,30 @@ if st.session_state.get("processed_gdf") is not None:
             for i, c in enumerate(search_results.results[:5]):
                 is_active = is_highlighted and highlighted_index == i
                 btn_type = "primary" if is_active else "secondary"
-                score_pct = f"{c.global_score * 100:.0f}%"
-
+                score_pct = f"{c.global_score * 100:.0f}/100"
                 st.button(
-                    f"#{i+1} {c.name} — {score_pct}",
+                    f"**{score_pct}** - {c.name}",
                     help=f"Top {i+1} : {c.name}",
                     key=f"btn_top_{i+1}",
-                    type=btn_type,
+                    # type=btn_type,
+                    icon=f":material/counter_{i+1}:",
+                    type="primary",
                     width="stretch",
                     on_click=ui_results._result_highlight_callback,
                     args=(i,),
                 )
                 if is_active:
-                    with st.container(border=True):
-                        ui_results._display_result_details(c)
+                    # with st.container(border=True):
+                    ui_results._display_result_details(c)
                     st.write("")
 
             if not is_highlighted:
-                st.caption("💡 Cliquez sur une ville pour afficher l'analyse détaillée et le comparatif.")
+                st.caption("⬆ Cliquez sur une ville pour afficher les détails.")
 
     # 3. Main Full-Screen PyDeck Map (Background canvas)
     # Offset center slightly to the right to leave space for left overlay panel
     zoom_current = st.session_state.get("zoom", 6) or 6
-    offset_lon = 1.1 * (2 ** max(0, 6 - zoom_current))
+    offset_lon = -0.1 * (2 ** max(0, 6 - zoom_current))
 
     deck = maps_deck.create_deck_map(
         gdf_scores=st.session_state.processed_gdf,

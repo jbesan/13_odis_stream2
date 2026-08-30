@@ -100,7 +100,7 @@ def build_choropleth_legend_html(
     <span>100%</span>
   </div>
   <div class="odis-map-legend-range"><span>Faible</span><span>Élevé</span></div>
-  {marker_section}
+  <!-- {marker_section} -->
 </div>
 """
 
