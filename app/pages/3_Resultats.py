@@ -91,7 +91,7 @@ st.markdown(
         max-width: calc(100% - 2rem) !important;
         padding: 0.35rem 0.5rem !important;
         z-index: 30 !important;
-        background: rgba(255, 255, 255, 0.94) !important;
+        background: rgba(255, 255, 255, 0.75) !important;
         backdrop-filter: blur(12px) !important;
         -webkit-backdrop-filter: blur(12px) !important;
         border-radius: 999px !important;
@@ -114,7 +114,7 @@ st.markdown(
         box-sizing: border-box !important;
         padding: 0.75rem 1rem !important;
         z-index: 25 !important;
-        background: rgba(255, 255, 255, 0.94) !important;
+        background: rgba(255, 255, 255, 0.75) !important;
         backdrop-filter: blur(12px) !important;
         -webkit-backdrop-filter: blur(12px) !important;
         border-radius: 0.9rem !important;
@@ -133,7 +133,7 @@ st.markdown(
         overflow-y: auto !important;
         padding: 1rem !important;
         z-index: 20 !important;
-        background: rgba(255, 255, 255, 0.94) !important;
+        background: rgba(255, 255, 255, 0.75) !important;
         backdrop-filter: blur(16px) !important;
         -webkit-backdrop-filter: blur(16px) !important;
         border-radius: 1rem !important;
@@ -175,6 +175,7 @@ st.markdown(
         color: #374151;
         font-size: 0.78rem;
         line-height: 1;
+        margin-bottom: 1rem !important;
     }
     .odis-map-legend-title {
         color: #1b4429;
