@@ -2,6 +2,7 @@ import logging
 import pandas as pd
 import streamlit as st
 
+import config as cfg
 from core import maps_deck
 from core.models import SearchResultsData
 from services.app_session import AppSession
