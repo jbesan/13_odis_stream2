@@ -329,38 +329,83 @@ class FormState:
                 del self.state[key]
 
     def selected_housing(self) -> list[str]:
-        selected = [
+        has_any_key = any(
+            housing_key(option) in self.state for option in cfg.HEBERGEMENT_OPTIONS
+        )
+        if not has_any_key:
+            default_val = cfg.DEMO_DATA_DEFAULT.get("hebergement_cible", [])
+            return list(
+                default_val if isinstance(default_val, list) else [default_val]
+            )
+        return [
             option
             for option in cfg.HEBERGEMENT_OPTIONS
             if self.state.get(housing_key(option), False)
         ]
-        if not selected and "ui_hebergement_cible" in self.state:
-            return list(self.state.get("ui_hebergement_cible") or [])
-        return selected
 
     def selected_long_term_housing(self) -> list[str]:
-        selected = [
+        has_any_key = any(
+            long_term_housing_key(option) in self.state
+            for option in cfg.LOGEMENT_OPTIONS
+        )
+        if not has_any_key:
+            default_val = cfg.DEMO_DATA_DEFAULT.get("logement", ["Location"])
+            return list(
+                default_val if isinstance(default_val, list) else [default_val]
+            )
+        return [
             option
             for option in cfg.LOGEMENT_OPTIONS
             if self.state.get(long_term_housing_key(option), False)
         ]
-        if not selected and "ui_logement" in self.state:
-            val = self.state.get("ui_logement")
-            if isinstance(val, list):
-                return val
-            elif isinstance(val, str) and val:
-                return [val]
-        return selected
 
     def selected_health(self) -> list[str]:
-        selected = [
+        has_any_key = any(
+            health_key(option) in self.state for option in cfg.SANTE_OPTIONS
+        )
+        if not has_any_key:
+            default_val = cfg.DEMO_DATA_DEFAULT.get(
+                "besoin_sante", cfg.DEMO_DATA_DEFAULT.get("sante", [])
+            )
+            return list(
+                default_val if isinstance(default_val, list) else [default_val]
+            )
+        return [
             option
             for option in cfg.SANTE_OPTIONS
             if self.state.get(health_key(option), False)
         ]
-        if not selected and "ui_besoin_sante" in self.state:
-            return list(self.state.get("ui_besoin_sante") or [])
-        return selected
+
+    def get_location_validation_errors(self) -> list[str]:
+        """Validate required location criteria (origin commune & destination search area).
+
+        Returns:
+            List of user-facing error messages detailing missing mandatory criteria.
+            Empty list if all mandatory criteria are valid.
+        """
+        errors: list[str] = []
+
+        # 1. Point de départ (commune et département actuels)
+        dept = self.state.get("ui_departement")
+        commune = self.state.get("ui_commune")
+        if not dept or not commune:
+            errors.append(
+                "Point de départ : veuillez sélectionner un département et une commune actuelle."
+            )
+
+        # 2. Zone de recherche (France entière, région avec tous départements, ou région avec départements spécifiques)
+        is_france = bool(self.state.get("ui_france_search"))
+        regions = _codes(self.state.get("ui_mobility_region", []))
+        all_depts = bool(self.state.get("ui_region_search"))
+        depts = _codes(self.state.get("ui_mobility_dept", []))
+
+        is_search_zone_valid = is_france or (bool(regions) and (all_depts or bool(depts)))
+        if not is_search_zone_valid:
+            errors.append(
+                "Zone de recherche : veuillez cocher « Toute la France » ou sélectionner au moins une région et ses départements cibles."
+            )
+
+        return errors
 
     def collect(self, app_data: Mapping[str, Any]) -> SearchCriterias:
         """Build the immutable domain input from the current widget values."""

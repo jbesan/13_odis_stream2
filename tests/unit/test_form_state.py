@@ -179,3 +179,72 @@ def test_long_term_housing_checkboxes_and_cada_cph_hidden():
     assert state[long_term_housing_key("Logement Social")] is True
     assert form.selected_long_term_housing() == ["Location", "Logement Social"]
 
+
+def test_get_location_validation_errors():
+    # 1. Empty state: both departure and search zone missing
+    state = {}
+    form = FormState(state)
+    errors = form.get_location_validation_errors()
+    assert len(errors) == 2
+    assert "Point de départ" in errors[0]
+    assert "Zone de recherche" in errors[1]
+
+    # 2. Only department set, no commune
+    state["ui_departement"] = "33"
+    assert len(form.get_location_validation_errors()) == 2
+
+    # 3. Departure complete (dept + commune), but search zone empty
+    state["ui_commune"] = "Bordeaux"
+    errors = form.get_location_validation_errors()
+    assert len(errors) == 1
+    assert "Zone de recherche" in errors[0]
+
+    # 4. Departure complete + "Toute la France"
+    state["ui_france_search"] = True
+    assert form.get_location_validation_errors() == []
+
+    # 5. Departure complete + region selected + "Tous les départements"
+    state["ui_france_search"] = False
+    state["ui_mobility_region"] = ["75"]
+    state["ui_region_search"] = True
+    assert form.get_location_validation_errors() == []
+
+    # 6. Departure complete + region selected + specific department
+    state["ui_region_search"] = False
+    state["ui_mobility_dept"] = ["33"]
+    assert form.get_location_validation_errors() == []
+
+    # 7. Departure complete + region selected, but no depts and "Tous les départements" is False
+    state["ui_mobility_dept"] = []
+    errors = form.get_location_validation_errors()
+    assert len(errors) == 1
+    assert "Zone de recherche" in errors[0]
+
+    # 8. Departure missing commune again
+    state["ui_commune"] = None
+    state["ui_france_search"] = True
+    errors = form.get_location_validation_errors()
+    assert len(errors) == 1
+    assert "Point de départ" in errors[0]
+
+
+def test_unvisited_form_steps_fallback_to_defaults():
+    # If the user only fills step 1 and clicks 'Passer aux résultats',
+    # unvisited checkbox groups should fall back to cfg.DEMO_DATA_DEFAULT values.
+    state = {
+        "ui_departement": "33",
+        "ui_commune": "Bordeaux",
+        "ui_france_search": True,
+    }
+    form = FormState(state)
+    assert form.selected_long_term_housing() == ["Location"]
+    assert form.selected_housing() == []
+    assert form.selected_health() == []
+
+    criteria = form.collect(_app_data())
+    assert criteria.logement == ["Location"]
+    assert criteria.nb_adultes == 1
+    assert criteria.nb_enfants == 0
+
+
+

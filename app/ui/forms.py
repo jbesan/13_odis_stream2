@@ -34,6 +34,16 @@ def get_commune_options_for_form(app_data: dict) -> dict[str, str]:
     return options
 
 
+def render_location_validation_warning(errors: list[str]) -> None:
+    """Render a prominent warning banner when required location fields are missing."""
+    if not errors:
+        return
+    bullet_list = "\n".join(f"- {error}" for error in errors)
+    st.warning(
+        f"✋ **Pas si vite !** Pour continuer et calculer les opportunités territoriales, veuillez renseigner les champs obligatoires suivants :\n\n{bullet_list}"
+    )
+
+
 def render_localisation_form(app_data: dict[str, Any]) -> None:
     """Renders the UI for the 'Localisation Actuelle' form section."""
     dept_details = app_data.get("dept_details", {})

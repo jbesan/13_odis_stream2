@@ -1461,8 +1461,10 @@ class ScoringEngine:
             ),
         ]:
             for key, col in mapping.items():
-                if col in row:
+                if col in row and pd.notna(row[col]):
                     data_obj.facility_counts[key] = int(row[col])
+                else:
+                    data_obj.facility_counts[key] = 0
 
             if codgeo_str and not annuaire.empty:
                 # Extra safety: filter by codgeo and category to avoid leaks

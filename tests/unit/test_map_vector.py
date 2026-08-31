@@ -169,3 +169,16 @@ def test_prepare_map_payload_inclusion_filtering():
     assert len(payload_mapped["poi_markers"]) == 1
     assert payload_mapped["poi_markers"][0]["name"] == "Structure A"
     assert payload_mapped["poi_markers"][0]["type"] == "Accès aux droits"
+
+
+def test_prepare_map_payload_center_offset():
+    """Verify that center_offset_lon is correctly added to longitude."""
+    payload = prepare_map_payload(
+        gdf_scores=None,
+        center=[46.5, 2.0],
+        zoom=9,
+        center_offset_lon=-0.5,
+    )
+    assert payload["center"] == [46.5, 1.5]
+    assert payload["zoom"] == 9
+
