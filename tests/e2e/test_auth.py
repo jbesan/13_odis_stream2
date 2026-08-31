@@ -1,39 +1,27 @@
 from unittest.mock import patch, MagicMock
 
-from utils.auth import check_password, resolve_org_for_oidc, verify_credentials
+from utils.auth import check_password, resolve_org_for_oidc
 
 
-def test_verify_credentials_success():
-    """Test verification with correct credentials."""
-    secrets = {"passwords": {"alice": "secret123"}}
-    assert verify_credentials("alice", "secret123", secrets) is True
-
-
-def test_verify_credentials_failure():
-    """Test verification with incorrect credentials."""
-    secrets = {"passwords": {"alice": "secret123"}}
-    assert verify_credentials("alice", "wrong", secrets) is False
-    assert verify_credentials("bob", "secret123", secrets) is False
-
-
-def test_verify_credentials_no_secrets():
-    """Test behavior when secrets are missing."""
-    secrets = {}
-    assert verify_credentials("alice", "secret123", secrets) is False
-
-
-def test_check_password_flow_authenticated():
-    """A complete legacy-authenticated session remains valid and maintains login_session_id."""
+def test_check_password_flow_authenticated_oidc():
+    """A complete OIDC-authenticated session remains valid and maintains login_session_id."""
     mock_session = {
         "password_correct": True,
-        "auth_method": "legacy",
+        "auth_method": "oidc",
         "user": MagicMock(),
         "org": MagicMock(),
     }
+    mock_user = MagicMock()
+    mock_user.is_logged_in = True
+    mock_user.email = "trusted@jaccueille.fr"
     with (
         patch("utils.auth.st.session_state", mock_session),
-        patch("utils.auth.st.user", None, create=True),
+        patch("utils.auth.st.user", mock_user, create=True),
         patch("utils.auth.os.environ", {"K_SERVICE": "test"}),
+        patch("config.OIDC_ALLOWED_DOMAINS", {"jaccueille.fr"}),
+        patch("config.OIDC_DOMAIN_ORG_MAPPING", {"jaccueille.fr": "jaccueille"}),
+        patch("config.OIDC_ALLOWED_EMAILS", set()),
+        patch("config.OIDC_EMAIL_ORG_MAPPING", {}),
     ):
         assert check_password() is True
         assert "login_session_id" in mock_session
@@ -41,26 +29,16 @@ def test_check_password_flow_authenticated():
 
 
 def test_check_password_flow_unauthenticated():
-    """Test that check_password returns False and shows form when not logged in."""
+    """Test that check_password returns False and shows Google login button when not logged in."""
     mock_session = {}
     with (
-        patch("utils.auth.verify_credentials") as mock_verify,
-        patch("utils.auth.st.secrets", {}),
         patch("utils.auth.st.session_state", mock_session),
         patch("utils.auth.st.container"),
-        patch("utils.auth.st.form"),
         patch("utils.auth.st.subheader"),
-        patch("utils.auth.st.text_input"),
-        patch("utils.auth.st.form_submit_button") as mock_submit,
-        patch("utils.auth.st.button") as mock_button,
-        patch("utils.auth.st.markdown"),
-        patch("utils.auth.st.rerun"),
+        patch("utils.auth.st.info"),
+        patch("utils.auth.st.button", return_value=False),
         patch("utils.auth.os.environ", {"K_SERVICE": "test"}),
     ):
-        mock_verify.return_value = False
-        mock_submit.return_value = False
-        mock_button.return_value = False
-
         assert check_password() is False
         assert mock_session["password_correct"] is False
 
@@ -112,8 +90,8 @@ def test_check_password_oidc_logged_in_resolves_exact_email():
         assert len(mock_session["login_session_id"]) > 0
 
 
-def test_check_password_oidc_not_logged_in_shows_login_form():
-    """A user who has not authenticated with OIDC sees the login form."""
+def test_check_password_oidc_not_logged_in_shows_login_card():
+    """A user who has not authenticated with OIDC sees the Google login button."""
     mock_session = {}
     mock_user = MagicMock()
     mock_user.is_logged_in = False
@@ -124,15 +102,9 @@ def test_check_password_oidc_not_logged_in_shows_login_form():
         patch("utils.auth.st.container"),
         patch("utils.auth.st.subheader"),
         patch("utils.auth.st.info"),
-        patch("utils.auth.st.button") as mock_button,
-        patch("utils.auth.st.form"),
-        patch("utils.auth.st.text_input"),
-        patch("utils.auth.st.form_submit_button") as mock_submit,
-        patch("utils.auth.st.markdown"),
+        patch("utils.auth.st.button", return_value=False),
         patch("utils.auth.os.environ", {"K_SERVICE": "test"}),
     ):
-        mock_button.return_value = False
-        mock_submit.return_value = False
         assert check_password() is False
 
 

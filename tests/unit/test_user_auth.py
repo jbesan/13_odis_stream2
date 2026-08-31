@@ -1,24 +1,8 @@
 import os
-from unittest.mock import patch
-from utils.auth import hash_password, verify_password, check_password, logout
+from unittest.mock import patch, MagicMock
+from utils.auth import check_password, logout
 from core.models import User, Org
 from utils.data_loader import apply_logged_in_org_defaults
-from unittest.mock import MagicMock
-
-
-def test_verify_password_pbkdf2_roundtrip():
-    """Verify that hashing and then verifying a password works correctly."""
-    password = "MySecurePassword123"
-    hashed = hash_password(password)
-    assert hashed.startswith("pbkdf2_sha256$")
-    assert verify_password(password, hashed) is True
-
-
-def test_verify_password_wrong_password():
-    """Verify that verify_password returns False for incorrect password."""
-    password = "MySecurePassword123"
-    hashed = hash_password(password)
-    assert verify_password("WrongPassword", hashed) is False
 
 
 def test_check_password_local_dev_autologin():
@@ -47,12 +31,10 @@ def test_check_password_local_dev_forced_auth():
     with (
         patch("utils.auth.st.session_state", mock_session),
         patch("utils.auth.st.container"),
-        patch("utils.auth.st.form"),
         patch("utils.auth.st.subheader"),
-        patch("utils.auth.st.text_input"),
-        patch("utils.auth.st.form_submit_button") as mock_submit,
+        patch("utils.auth.st.info"),
+        patch("utils.auth.st.button", return_value=False),
     ):
-        mock_submit.return_value = False
         with patch.dict(os.environ, {"ODIS_FORCE_AUTH": "True"}, clear=True):
             res = check_password()
             assert res is False
@@ -66,10 +48,9 @@ def test_check_password_rejects_partial_authenticated_cloud_run_session():
         patch("utils.auth.st.session_state", mock_session),
         patch("utils.auth.st.user", None, create=True),
         patch("utils.auth.st.container"),
-        patch("utils.auth.st.form"),
         patch("utils.auth.st.subheader"),
-        patch("utils.auth.st.text_input"),
-        patch("utils.auth.st.form_submit_button", return_value=False),
+        patch("utils.auth.st.info"),
+        patch("utils.auth.st.button", return_value=False),
     ):
         with patch.dict(
             os.environ,

@@ -1,11 +1,8 @@
 import streamlit as st
-import hmac
 import os
-import hashlib
 import secrets
-import json
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Optional
 from core.models import User, Org
 import config as cfg
 from utils.oidc_policy import normalize_domain, normalize_email
@@ -14,114 +11,6 @@ logger = logging.getLogger(__name__)
 
 # Constant for fallback local development user
 LOCAL_DEV_USERNAME = "jacques-local"
-
-
-def hash_password(password: str, iterations: int = 20000) -> str:
-    """Hashes a password using PBKDF2-HMAC-SHA256 with a random salt.
-
-    Format: pbkdf2_sha256$iterations$salt$hash
-
-    Args:
-        password: The plain text password to hash.
-        iterations: The number of hashing iterations to perform.
-
-    Returns:
-        The formatted string representing the hashed password containing the algorithm,
-        iterations, salt, and key hash.
-    """
-    salt = secrets.token_hex(16)
-    pw_bytes = password.encode("utf-8")
-    salt_bytes = salt.encode("utf-8")
-    hash_bytes = hashlib.pbkdf2_hmac("sha256", pw_bytes, salt_bytes, iterations)
-    return f"pbkdf2_sha256${iterations}${salt}${hash_bytes.hex()}"
-
-
-def verify_password(password: str, hashed: str) -> bool:
-    """Verifies a password against a PBKDF2-HMAC-SHA256 hash.
-
-    Args:
-        password: The plain text password to verify.
-        hashed: The PBKDF2 hash to compare against.
-
-    Returns:
-        True if the password matches the hash, False otherwise.
-    """
-    if not hashed or not hashed.startswith("pbkdf2_sha256$"):
-        return False
-    try:
-        parts = hashed.split("$")
-        if len(parts) != 4:
-            return False
-        _, iterations_str, salt, hash_hex = parts
-        iterations = int(iterations_str)
-        pw_bytes = password.encode("utf-8")
-        salt_bytes = salt.encode("utf-8")
-        hash_bytes = hashlib.pbkdf2_hmac("sha256", pw_bytes, salt_bytes, iterations)
-        return hmac.compare_digest(hash_bytes.hex(), hash_hex)
-    except Exception as e:
-        logger.error(f"Error verifying password: {e}")
-        return False
-
-
-def load_users_config() -> Dict[str, Any]:
-    """Loads user credential dictionary from environment variable or Streamlit secrets.
-
-    Returns:
-        A dictionary mapping usernames to user details like password hash and org ID.
-        Example: {"username": {"password_hash": "...", "org_id": "..."}}
-    """
-    config_str = os.environ.get("ODIS_USERS_CONFIG")
-    if not config_str:
-        try:
-            config_str = st.secrets.get("ODIS_USERS_CONFIG")
-        except Exception:
-            pass
-
-    if not config_str:
-        return {}
-
-    try:
-        data = json.loads(config_str)
-        return data.get("users", {})
-    except Exception as e:
-        logger.error(f"Error loading ODIS_USERS_CONFIG: {e}")
-        return {}
-
-
-def verify_credentials(
-    username: str, password: str, secrets_dict: Optional[Dict[str, Any]] = None
-) -> bool:
-    """Verifies username and password against credentials config.
-
-    Supports backward compatibility for testing using secrets_dict injection.
-
-    Args:
-        username: The username trying to authenticate.
-        password: The password to check.
-        secrets_dict: Optional dictionary containing backward compatible credentials.
-
-    Returns:
-        True if credentials are valid, False otherwise.
-    """
-    # 1. Use the injected/provided secrets dict if it has passwords mapping (backward compatibility)
-    if secrets_dict and "passwords" in secrets_dict:
-        if username in secrets_dict["passwords"]:
-            hashed = secrets_dict["passwords"][username]
-            # If the secret in test is plaintext, do secure check; if pbkdf2, verify properly
-            if hashed.startswith("pbkdf2_sha256$"):
-                return verify_password(password, hashed)
-            return hmac.compare_digest(password, hashed)
-        return False
-
-    # 2. Standard flow: load from environment config
-    users_config = load_users_config()
-    if username in users_config:
-        user_data = users_config[username]
-        pw_hash = user_data.get("password_hash")
-        if pw_hash:
-            return verify_password(password, pw_hash)
-
-    return False
 
 
 def _normalized_mapping(mapping: Dict[str, str], key_normalizer) -> Dict[str, str]:
@@ -241,8 +130,8 @@ def check_password() -> bool:
     user_obj = getattr(st, "user", None)
     oidc_logged_in = bool(user_obj and getattr(user_obj, "is_logged_in", False))
 
-    # 2. A legacy/local identity has no Streamlit OIDC state to re-check. OIDC
-    # identities are re-authorized on every page entry so an existing session
+    # 2. Re-verify active sessions. Local bypass identities have no OIDC state;
+    # OIDC identities are re-authorized on every page entry so an existing session
     # cannot retain access after an allowlist or organization mapping change.
     if st.session_state.get("password_correct"):
         has_complete_identity = (
@@ -250,7 +139,7 @@ def check_password() -> bool:
             and st.session_state.get("org") is not None
         )
         auth_method = st.session_state.get("auth_method")
-        if has_complete_identity and auth_method in {"local", "legacy"}:
+        if has_complete_identity and auth_method == "local":
             get_login_session_id()
             return True
         if auth_method == "oidc" and not oidc_logged_in:
@@ -280,70 +169,25 @@ def check_password() -> bool:
         get_login_session_id()
         return True
 
-    # 4. Show login UI (Google OIDC + legacy form)
+    # 4. Show login UI (Google Workspace OIDC)
     with st.container(width="stretch", horizontal_alignment="center"):
         with st.container(width=400, border=True, horizontal_alignment="center"):
             st.subheader("Accès ODIS")
             st.info(
-                "👋 Bienvenue ! Veuillez vous connecter avec l'une des méthodes ci-dessous."
+                "👋 Bienvenue ! Veuillez vous connecter avec votre compte Google Workspace."
             )
-
-            # --- OPTION A : Google Workspace (OIDC) ---
             if st.button(
                 "🔑 Se connecter avec Google", type="primary", width="stretch"
             ):
                 st.login("google")
                 st.stop()
-
-            st.markdown(
-                "<div style='text-align: center; color: gray; margin: 15px 0;'>--- ou via vos identifiants classiques ---</div>",
-                unsafe_allow_html=True,
-            )
-
-            # --- OPTION B : Form Login (Legacy) ---
-            with st.form("login_form"):
-                username = st.text_input(
-                    "Identifiant (Email / Nom d'utilisateur)",
-                    autocomplete="username",
-                )
-                password = st.text_input(
-                    "Mot de passe",
-                    type="password",
-                    autocomplete="current-password",
-                )
-                submit = st.form_submit_button("Se connecter", width="stretch")
-
-                if submit:
-                    if not username or not password:
-                        st.error("❌ Veuillez remplir tous les champs.")
-                    elif verify_credentials(username, password):
-                        users_config = load_users_config()
-                        user_data = users_config[username]
-                        org_id = user_data["org_id"]
-                        org = cfg.ORGANIZATION_PROFILES.get(org_id) or Org(
-                            id=org_id,
-                            name=org_id.capitalize(),
-                            zone_type="departement",
-                            default_zones=[],
-                        )
-                        st.session_state["password_correct"] = True
-                        st.session_state["auth_method"] = "legacy"
-                        st.session_state["user"] = User(
-                            username=username, org_id=org_id
-                        )
-                        st.session_state["org"] = org
-                        st.session_state["username"] = username
-                        get_login_session_id()
-                        st.rerun()
-                    else:
-                        st.error("❌ Identifiants incorrects.")
     return False
 
 
 def logout() -> None:
     """Logs out the current user session.
 
-    Supports both native Streamlit OIDC authentication (st.logout()) and direct email/password login.
+    Supports both native Streamlit OIDC authentication (st.logout()) and local dev session clear.
     Clears all session state variables and redirects to the home/login page.
     """
     st.session_state.clear()

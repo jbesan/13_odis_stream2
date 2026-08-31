@@ -116,21 +116,6 @@ L'application intègre une gestion d'utilisateurs et de profils d'organisations 
   }
   ```
   Une identité non listée, une organisation inconnue ou un secret absent/invalide est refusé. Ne stockez pas ce fichier dans le dépôt : Cloud Run doit le recevoir depuis Secret Manager.
-* **Configuration des utilisateurs (`ODIS_USERS_CONFIG`) :** La liste des utilisateurs autorisés est définie via la variable d'environnement (ou secret) `ODIS_USERS_CONFIG` sous format JSON :
-  ```json
-  {
-    "users": {
-      "user1": {
-        "password_hash": "pbkdf2_sha256$20000$salt$hash",
-        "org_id": "jaccueille"
-      }
-    }
-  }
-  ```
-* **Génération de mots de passe hashés :** Utilisez le script CLI fourni pour générer des mots de passe sécurisés à insérer dans la configuration :
-  ```bash
-  python3 scripts/hash_password.py
-  ```
 
 
 ## ⚙️ Fonctionnement : Le Moteur de Scoring
@@ -179,7 +164,7 @@ app/
 │   └── feedback.py         # Module de collecte de retours
 ├── utils/                  # Services transverses
 │   ├── data_loader.py      # Chargement et cache des données (Parquet/BigQuery)
-│   ├── auth.py             # Authentification simple
+│   ├── auth.py             # Authentification OIDC et contrôle d'accès
 │   └── common.py           # Fonctions utilitaires
 ├── agents/                 # Écosystème Multi-Agent (pydantic-graph)
 │   ├── graph.py            # Graphe d'orchestration (MapReduce)

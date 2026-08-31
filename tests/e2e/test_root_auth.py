@@ -15,13 +15,14 @@ from utils.auth import check_password
 
 def test_main_logic_authenticated():
     """Verify that the auth logic in main.py would allow proceeding if authenticated."""
-    mock_session = {"password_correct": True}
+    mock_session = {}
     with (
         patch("streamlit.session_state", mock_session),
         patch("utils.auth.st.session_state", mock_session),
+        patch.dict(os.environ, {}, clear=True),
     ):
         # In main.py: if not auth.check_password(): st.stop()
-        # If check_password returns True, it won't stop.
+        # If check_password returns True (via local dev autologin), it won't stop.
         assert check_password() is True
 
 
@@ -33,10 +34,9 @@ def test_main_logic_unauthenticated():
         patch("streamlit.session_state", mock_session),
         patch("utils.auth.st.session_state", mock_session),
         patch("utils.auth.st.container"),
-        patch("utils.auth.st.form"),
         patch("utils.auth.st.subheader"),
-        patch("utils.auth.st.text_input"),
-        patch("utils.auth.st.form_submit_button", return_value=False),
+        patch("utils.auth.st.info"),
+        patch("utils.auth.st.button", return_value=False),
         patch("utils.auth.os.environ", {"K_SERVICE": "test"}),
     ):
         # In main.py: if not auth.check_password(): st.stop()
