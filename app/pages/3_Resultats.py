@@ -149,7 +149,7 @@ st.html(
         border-radius: 4px;
     }
 
-    div[class="st-key-city_result_card"] {
+    div[class*="st-key-city_result_card"] {
         background: rgba(255, 255, 255, 1.0) !important;
     }
 
@@ -210,8 +210,8 @@ st.html(
         color: #6b7280;
     }
     .odis-map-legend-markers {
-        padding-top: 0.15rem;
-        border-top: 1px solid rgba(27, 68, 41, 0.12);
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid rgba(27, 68, 41, 0.12);
     }
     .odis-map-legend-marker-item {
         display: inline-flex;
@@ -410,7 +410,7 @@ if st.session_state.get("processed_gdf") is not None:
     selected_ids = set()
     with st.container(key="top_pills_bar", horizontal=True, vertical_alignment="center"):
         st.space('xxsmall')
-        st.text("  Afficher: ")
+        st.text("Afficher")
         pill_specs = [
             # ("🥇 Top 5", "top_5"),
         ]
@@ -485,7 +485,7 @@ if st.session_state.get("processed_gdf") is not None:
                     if brief_val and st.session_state.config.odis_brief != brief_val:
                         st.session_state.config.odis_brief = brief_val
 
-            st.subheader("Meilleurs Résultats")
+            st.subheader("Meilleures Propositions")
             if not is_highlighted:
                 st.caption("👇 Cliquez sur une ville pour afficher les détails.", text_alignment="center", width="stretch")
             st.html(

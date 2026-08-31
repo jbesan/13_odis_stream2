@@ -94,6 +94,7 @@ def build_choropleth_legend_html(
     )
     return f"""
 <div class="odis-map-legend" role="img" aria-label="Score d'adéquation, de faible à élevé">
+  {marker_section}
   <div class="odis-map-legend-title">Score d'adéquation territoriale</div>
   <div class="odis-map-legend-scale">
     <span>0%</span>
@@ -101,7 +102,7 @@ def build_choropleth_legend_html(
     <span>100%</span>
   </div>
   <div class="odis-map-legend-range"><span>Faible</span><span>Élevé</span></div>
-  {marker_section}
+  
 </div>
 """
 
