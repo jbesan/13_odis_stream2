@@ -61,4 +61,4 @@ CMD python3 generate_secrets.py && streamlit run main.py \
     --server.enableStaticServing=true \
     --server.enableCORS=false \
     --server.enableXsrfProtection=false \
-    --server.enableWebsocketCompression=false
+    --server.enableWebsocketCompression=true

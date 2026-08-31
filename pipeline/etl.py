@@ -365,6 +365,7 @@ def main():
                 raise
         if args.step == "deploy" or args.deploy:
             logging.info("=== Starting Deployment Phase ===")
+            publication_started = True
             _assert_deployable_candidate(source_dir, run)
             missing_datasets = [
                 f for f in DATASET_FILES if not (source_dir / f).exists()
@@ -381,7 +382,6 @@ def main():
             bucket_name = os.getenv("GCS_DATASETS_BUCKET")
             if not bucket_name:
                 raise RuntimeError("GCS_DATASETS_BUCKET must be configured for deploy")
-            publication_started = True
             _publish_datasets_to_gcs(
                 source_dir, bucket_name, release_version=run.run_id
             )

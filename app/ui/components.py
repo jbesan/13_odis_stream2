@@ -114,7 +114,7 @@ def render_logout_sidebar_button() -> None:
         org_name = org.name if org else None
 
         # st.caption("👤 **Connecté en tant que :**")
-        # st.markdown(f"**{display_name}**")
+        st.text(display_name, text_alignment="center", width="stretch")
         # if org_name:
         #     st.caption(f"🏢 *{org_name}*")
 

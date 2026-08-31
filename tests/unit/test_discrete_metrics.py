@@ -1,9 +1,6 @@
-import pytest
-import pandas as pd
 import numpy as np
 from app.core.models import (
     ScoresConfigFileSchema,
-    ScoreDisplayConfigSchema,
     CommuneScoreDetail,
 )
 from app.core.scoring import _resolve_discrete_label, _format_kpi_value

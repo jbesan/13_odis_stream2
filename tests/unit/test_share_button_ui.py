@@ -1,6 +1,11 @@
 from unittest.mock import MagicMock
 import streamlit as st
-from ui.results import render_share_search_button, render_export_pdf_button, render_details_trigger_button
+from ui.results import (
+    render_share_search_button,
+    render_export_pdf_button,
+    render_details_trigger_button,
+    render_active_dialogs,
+)
 from core.models import SearchResultsData, CommuneResult
 
 
@@ -138,3 +143,24 @@ def test_render_details_trigger_button_states(monkeypatch):
     assert len(button_calls) == 2
     assert button_calls[1][0] == "En savoir plus"
     assert button_calls[1][1].get("disabled") is False
+
+
+def test_render_active_dialogs_dispatches_all_result_dialogs(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr("ui.results.st.session_state", {
+        "active_details_index": "33009",
+        "active_ccas_index": "33009",
+        "active_ia_city_index": "33009",
+    })
+    monkeypatch.setattr("ui.results.show_details_dialog", lambda index: calls.append(("details", index)))
+    monkeypatch.setattr("ui.results.show_ccas_dialog", lambda index: calls.append(("ccas", index)))
+    monkeypatch.setattr("ui.results.show_ia_analysis_dialog", lambda index: calls.append(("ia", index)))
+
+    render_active_dialogs()
+
+    assert calls == [
+        ("ia", "33009"),
+        ("details", "33009"),
+        ("ccas", "33009"),
+    ]
