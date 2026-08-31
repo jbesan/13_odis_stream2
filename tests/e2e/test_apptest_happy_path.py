@@ -64,8 +64,13 @@ def test_happy_path_end_to_end(
     at = AppTest.from_file("app/main.py", default_timeout=60)
 
     # Bypass authentication and pre-populate defaults
+    from core.models import User
+
     at.session_state["password_correct"] = True
+    at.session_state["auth_method"] = "local"
     at.session_state["username"] = "test"
+    at.session_state["user"] = User(username="test")
+    at.session_state["org"] = None
     at.session_state["demo_data"] = {}
 
     # Run the main.py redirect -> 1_Accueil.py

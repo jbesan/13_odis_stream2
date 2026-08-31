@@ -23,17 +23,11 @@ def _normalized_mapping(mapping: Dict[str, str], key_normalizer) -> Dict[str, st
     return normalized
 
 
-def resolve_org_for_oidc(email: str) -> Optional[Org]:
-    """Authorize an OIDC identity and return its configured organization.
-
-    OIDC verifies that the identity exists. This application-level check decides
-    whether that identity may access OD&IS and which organization context it
-    may use. Every successful identity must be explicitly authorized and map to
-    an existing profile; no generic fallback organization is permitted.
-    """
+def is_email_authorized(email: str) -> bool:
+    """Checks if the email or its domain is present in the authorization allowlists."""
     normalized_email = normalize_email(email)
     if not normalized_email:
-        return None
+        return False
 
     domain = normalized_email.rsplit("@", maxsplit=1)[1]
     allowed_domains = {
@@ -46,14 +40,22 @@ def resolve_org_for_oidc(email: str) -> Optional[Org]:
         for raw_email in cfg.OIDC_ALLOWED_EMAILS
         if (normalized_allowed_email := normalize_email(raw_email))
     }
+    return normalized_email in allowed_emails or domain in allowed_domains
+
+
+def resolve_org_for_oidc(email: str) -> Optional[Org]:
+    """Resolves the organization profile for an email identity, or None if not attached to an org.
+
+    A specifically mapped email overrides any domain-level mapping.
+    """
+    normalized_email = normalize_email(email)
+    if not normalized_email:
+        return None
+
+    domain = normalized_email.rsplit("@", maxsplit=1)[1]
     email_mapping = _normalized_mapping(cfg.OIDC_EMAIL_ORG_MAPPING, normalize_email)
     domain_mapping = _normalized_mapping(cfg.OIDC_DOMAIN_ORG_MAPPING, normalize_domain)
 
-    if normalized_email not in allowed_emails and domain not in allowed_domains:
-        return None
-
-    # A specifically authorized email may override the organization assigned to
-    # its otherwise authorized domain. Both paths still require a known profile.
     org_id = email_mapping.get(normalized_email) or domain_mapping.get(domain)
     if not org_id:
         return None
@@ -96,7 +98,7 @@ def check_password() -> bool:
     """Checks if the user has authenticated.
 
     Streamlit OIDC authenticates the identity; this function separately enforces
-    OD&IS authorization and organization assignment.
+    OD&IS authorization and optional organization assignment.
 
     Returns:
         True if the user is authenticated (or local dev bypass is active), False otherwise.
@@ -112,9 +114,11 @@ def check_password() -> bool:
     # 1. Local dev bypass (no Cloud Run, no forced auth)
     if not is_cloud_run and not force_auth:
         if "user" not in st.session_state or "org" not in st.session_state:
-            org = cfg.ORGANIZATION_PROFILES.get("jaccueille")
+            local_email_mapping = _normalized_mapping(cfg.OIDC_EMAIL_ORG_MAPPING, normalize_email)
+            local_org_id = local_email_mapping.get(LOCAL_DEV_USERNAME) or cfg.OIDC_EMAIL_ORG_MAPPING.get(LOCAL_DEV_USERNAME)
+            org = cfg.ORGANIZATION_PROFILES.get(local_org_id) if local_org_id else None
             st.session_state["user"] = User(
-                username=LOCAL_DEV_USERNAME, org_id="jaccueille"
+                username=LOCAL_DEV_USERNAME, org_id=org.id if org else None
             )
             st.session_state["org"] = org
             st.session_state["username"] = LOCAL_DEV_USERNAME
@@ -132,14 +136,11 @@ def check_password() -> bool:
 
     # 2. Re-verify active sessions. Local bypass identities have no OIDC state;
     # OIDC identities are re-authorized on every page entry so an existing session
-    # cannot retain access after an allowlist or organization mapping change.
+    # cannot retain access after an allowlist change.
     if st.session_state.get("password_correct"):
-        has_complete_identity = (
-            st.session_state.get("user") is not None
-            and st.session_state.get("org") is not None
-        )
+        has_user = st.session_state.get("user") is not None
         auth_method = st.session_state.get("auth_method")
-        if has_complete_identity and auth_method == "local":
+        if has_user and auth_method == "local":
             get_login_session_id()
             return True
         if auth_method == "oidc" and not oidc_logged_in:
@@ -148,23 +149,28 @@ def check_password() -> bool:
             logger.warning("Authenticated session has no verifiable identity context.")
             _clear_authenticated_context()
 
-    # 3. OIDC: Streamlit has authenticated the identity; OD&IS now authorizes
-    # it against the Secret Manager policy and resolves a known organization.
+    # 3. OIDC: Streamlit has authenticated the identity; OD&IS authorizes
+    # it against the allowlist and resolves an organization profile if one is mapped.
     if oidc_logged_in:
         email = getattr(user_obj, "email", None)
         normalized_email = normalize_email(email)
-        org = resolve_org_for_oidc(email or "")
-        if not normalized_email or not org:
+        if not normalized_email or not is_email_authorized(normalized_email):
             logger.warning(
-                "OIDC-authenticated identity denied by authorization policy."
+                "OIDC-authenticated identity denied by authorization policy: %s",
+                normalized_email,
             )
             _clear_authenticated_context()
             _render_oidc_denied()
             return False
+
+        org = resolve_org_for_oidc(normalized_email)
         st.session_state["password_correct"] = True
         st.session_state["auth_method"] = "oidc"
         st.session_state["username"] = normalized_email
-        st.session_state["user"] = User(username=normalized_email, org_id=org.id)
+        st.session_state["user"] = User(
+            username=normalized_email,
+            org_id=org.id if org else None,
+        )
         st.session_state["org"] = org
         get_login_session_id()
         return True

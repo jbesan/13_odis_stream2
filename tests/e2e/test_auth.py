@@ -1,5 +1,6 @@
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
+from core.models import Org
 from utils.auth import check_password, resolve_org_for_oidc
 
 
@@ -54,6 +55,7 @@ def test_check_password_oidc_logged_in_resolves_org_by_domain():
         patch("utils.auth.st.user", mock_user, create=True),
         patch("utils.auth.st.session_state", mock_session),
         patch("utils.auth.os.environ", {"K_SERVICE": "test"}),
+        patch("config.ORGANIZATION_PROFILES", {"emile_aura": Org(id="emile_aura", name="EMILE")}),
         patch("config.OIDC_ALLOWED_DOMAINS", {"lahso.org"}),
         patch("config.OIDC_DOMAIN_ORG_MAPPING", {"lahso.org": "emile_aura"}),
         patch("config.OIDC_ALLOWED_EMAILS", set()),
@@ -78,6 +80,7 @@ def test_check_password_oidc_logged_in_resolves_exact_email():
         patch("utils.auth.st.user", mock_user, create=True),
         patch("utils.auth.st.session_state", mock_session),
         patch("utils.auth.os.environ", {"K_SERVICE": "test"}),
+        patch("config.ORGANIZATION_PROFILES", {"jaccueille": Org(id="jaccueille", name="J'Accueille")}),
         patch("config.OIDC_ALLOWED_DOMAINS", set()),
         patch("config.OIDC_DOMAIN_ORG_MAPPING", {}),
         patch("config.OIDC_ALLOWED_EMAILS", {"user@example.com"}),

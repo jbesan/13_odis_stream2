@@ -2,7 +2,7 @@ import copy
 import pandas as pd
 
 import config as cfg
-from core.models import CriteriaItem, SearchCriterias
+from core.models import CriteriaItem, Org, SearchCriterias
 from ui.form_state import FormState, health_key, housing_key
 
 
@@ -136,17 +136,26 @@ def test_prepare_editor_restores_active_commune_and_preserves_unsaved_draft():
     assert state["ui_nb_adultes"] == 1
 
 
-def test_jaccueille_org_defaults():
-    jaccueille_org = cfg.ORGANIZATION_PROFILES["jaccueille"]
+def test_org_defaults_applied_to_form_state():
+    test_org = Org(
+        id="test_org",
+        name="Test Org",
+        zone_type="departement",
+        default_zones=["33", "75"],
+        defaults={
+            "hebergement_cible": ["Chez l'habitant"],
+            "org_strategic_locations_filter": True,
+        },
+    )
     defaults = copy.deepcopy(cfg.DEMO_DATA_DEFAULT)
-    state = {"org": jaccueille_org}
+    state = {"org": test_org}
 
-    # Simulate apply_logged_in_org_defaults with jaccueille org active
+    # Simulate apply_logged_in_org_defaults with org active
     st_mock = state
-    defaults["org_context"] = jaccueille_org.id
-    defaults["org_strategic_locations"] = jaccueille_org.default_zones
-    defaults["org_strategic_locations_type"] = jaccueille_org.zone_type
-    for key, val in jaccueille_org.defaults.items():
+    defaults["org_context"] = test_org.id
+    defaults["org_strategic_locations"] = test_org.default_zones
+    defaults["org_strategic_locations_type"] = test_org.zone_type
+    for key, val in test_org.defaults.items():
         defaults[key] = val
 
     form = FormState(st_mock)

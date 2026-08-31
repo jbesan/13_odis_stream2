@@ -64,7 +64,7 @@ class AppSession:
         user = self.state.get("user")
         org = self.state.get("org")
         username = self.state.get("username")
-        if not username or user is None or org is None:
+        if not username or user is None:
             raise RuntimeError("Authenticated session has incomplete identity context")
         return IdentityContext(
             username=str(username),

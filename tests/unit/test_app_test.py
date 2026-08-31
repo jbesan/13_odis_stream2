@@ -1,7 +1,6 @@
 from streamlit.testing.v1 import AppTest
 from unittest.mock import patch
-import config
-from core.models import User
+from core.models import User, Org
 
 
 @patch("utils.data_loader.preload_scoring_datasets_async")
@@ -13,8 +12,8 @@ def test_main_app_redirect_authenticated(
 ):
     at = AppTest.from_file("app/main.py", default_timeout=60)
     at.session_state["username"] = "user"
-    at.session_state["user"] = User(username="user", org_id="jaccueille")
-    at.session_state["org"] = config.ORGANIZATION_PROFILES["jaccueille"]
+    at.session_state["user"] = User(username="user", org_id="test_org")
+    at.session_state["org"] = Org(id="test_org", name="Test Org")
 
     # Run the AppTest with a safe timeout
     at.run(timeout=60)

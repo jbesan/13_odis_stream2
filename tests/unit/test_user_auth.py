@@ -6,23 +6,35 @@ from utils.data_loader import apply_logged_in_org_defaults
 
 
 def test_check_password_local_dev_autologin():
-    """Verify that check_password bypasses authentication in local development and injects local mock user/org."""
+    """Verify that check_password bypasses authentication in local development and injects local user."""
     mock_session = {}
-    # Simulate local dev (K_SERVICE not set)
     with (
         patch("utils.auth.st.session_state", mock_session),
-        patch("utils.auth.st.sidebar") as mock_sidebar,
+        patch("config.ORGANIZATION_PROFILES", {}),
+        patch("config.OIDC_EMAIL_ORG_MAPPING", {}),
+        patch.dict(os.environ, {}, clear=True),
     ):
-        # Clear K_SERVICE from environ for this block
-        with patch.dict(os.environ, {}, clear=True):
-            res = check_password()
-            assert res is True
-            assert "user" in mock_session
-            assert "org" in mock_session
-            assert isinstance(mock_session["user"], User)
-            assert isinstance(mock_session["org"], Org)
-            assert mock_session["user"].username == "jacques-local"
-            assert mock_session["org"].id == "jaccueille"
+        res = check_password()
+        assert res is True
+        assert "user" in mock_session
+        assert isinstance(mock_session["user"], User)
+        assert mock_session["user"].username == "jacques-local"
+        assert mock_session.get("org") is None
+
+
+def test_check_password_local_dev_autologin_with_org():
+    """Verify that check_password injects org if mapped for local user."""
+    mock_session = {}
+    with (
+        patch("utils.auth.st.session_state", mock_session),
+        patch("config.ORGANIZATION_PROFILES", {"test_org": Org(id="test_org", name="Test Org")}),
+        patch("config.OIDC_EMAIL_ORG_MAPPING", {"jacques-local": "test_org"}),
+        patch.dict(os.environ, {}, clear=True),
+    ):
+        res = check_password()
+        assert res is True
+        assert mock_session["org"] is not None
+        assert mock_session["org"].id == "test_org"
 
 
 def test_check_password_local_dev_forced_auth():
