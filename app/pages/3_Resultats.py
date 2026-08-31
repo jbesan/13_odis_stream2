@@ -466,6 +466,8 @@ if st.session_state.get("processed_gdf") is not None:
                         st.session_state.config.odis_brief = brief_val
 
             st.subheader("Meilleurs Résultats")
+            if not is_highlighted:
+                st.caption("👇 Cliquez sur une ville pour afficher les détails.", text_alignment="center", width="stretch")
             st.html(
                 '<style> [class*="st-key-btn_top"] .stButton button div, [class*="st-key-btn_top"] .stButton button p { justify-content: flex-start !important; text-align: left !important; width: 100%; } </style>',
             )
@@ -511,8 +513,7 @@ if st.session_state.get("processed_gdf") is not None:
                     ui_results._display_result_details(c)
                     st.write("")
 
-            if not is_highlighted:
-                st.caption("⬆ Cliquez sur une ville pour afficher les détails.")
+            
 
     # 3. Main Full-Screen Vector Map (Background canvas)
     # Offset center slightly to the right to leave space for left overlay panel
