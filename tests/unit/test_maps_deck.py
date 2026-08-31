@@ -86,15 +86,45 @@ def test_build_poi_layers_icons():
     }, crs="EPSG:4326")
 
     config = SearchCriterias(classe_enfants=["Elémentaire"])
-    layers = build_poi_layers(
+    # 1. Both Mairie and Edu
+    layers_both = build_poi_layers(
+        pois=pois_df,
+        target_codgeos={"75056"},
+        config=config,
+        selected_ids={"mairie", "edu"},
+    )
+    assert len(layers_both) == 2  # Mairie + École
+    for l in layers_both:
+        assert l.type == "ScatterplotLayer"
+
+    # 2. Only Edu
+    layers_edu = build_poi_layers(
         pois=pois_df,
         target_codgeos={"75056"},
         config=config,
         selected_ids={"edu"},
     )
-    assert len(layers) == 2  # Mairie + École
-    for l in layers:
-        assert l.type == "ScatterplotLayer"
+    assert len(layers_edu) == 1
+    assert layers_edu[0].id == "pois-ecoles-dots"
+
+    # 3. Only Mairie
+    layers_mairie = build_poi_layers(
+        pois=pois_df,
+        target_codgeos={"75056"},
+        config=config,
+        selected_ids={"mairie"},
+    )
+    assert len(layers_mairie) == 1
+    assert layers_mairie[0].id == "pois-mairies-dots"
+
+    # 4. Neither
+    layers_none = build_poi_layers(
+        pois=pois_df,
+        target_codgeos={"75056"},
+        config=config,
+        selected_ids=set(),
+    )
+    assert len(layers_none) == 0
 
 
 def test_create_deck_map_full_assembly():

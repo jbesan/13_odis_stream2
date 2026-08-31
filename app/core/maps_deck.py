@@ -473,41 +473,42 @@ def build_poi_layers(
     pois_work["codgeo_norm"] = pois_work["codgeo"].astype(str).str.strip().str.zfill(5)
     target_codgeos_norm = {str(c).strip().zfill(5) for c in target_codgeos}
 
-    # 1. Always-on Mairies Layer (🏛️)
-    mairies = pois_work[
-        (pois_work["category"] == "mairie") & (pois_work["codgeo_norm"].isin(target_codgeos_norm))
-    ].copy()
-    if not mairies.empty:
-        if "lat" not in mairies.columns and hasattr(mairies, "geometry"):
-            mairies["lat"] = mairies.geometry.y
-            mairies["lon"] = mairies.geometry.x
+    # 1. Mairies Layer (🏛️)
+    if "mairie" in selected_ids:
+        mairies = pois_work[
+            (pois_work["category"] == "mairie") & (pois_work["codgeo_norm"].isin(target_codgeos_norm))
+        ].copy()
+        if not mairies.empty:
+            if "lat" not in mairies.columns and hasattr(mairies, "geometry"):
+                mairies["lat"] = mairies.geometry.y
+                mairies["lon"] = mairies.geometry.x
 
-        mairies["tooltip_html"] = [
-            f"<div style='line-height: 1.4;'>"
-            f"<strong style='color: #F5D819;'>🏛️ Mairie</strong><br/>"
-            f"<strong>{row.get('name', 'Mairie')}</strong><br/>"
-            f"<small>{row.get('type', '')}</small>"
-            f"</div>"
-            for _, row in mairies.iterrows()
-        ]
-        mairies_clean = mairies[["lon", "lat", "tooltip_html"]].dropna()
+            mairies["tooltip_html"] = [
+                f"<div style='line-height: 1.4;'>"
+                f"<strong style='color: #F5D819;'>🏛️ Mairie</strong><br/>"
+                f"<strong>{row.get('name', 'Mairie')}</strong><br/>"
+                f"<small>{row.get('type', '')}</small>"
+                f"</div>"
+                for _, row in mairies.iterrows()
+            ]
+            mairies_clean = mairies[["lon", "lat", "tooltip_html"]].dropna()
 
-        # Dot layer
-        layers.append(
-            pdk.Layer(
-                "ScatterplotLayer",
-                id="pois-mairies-dots",
-                data=mairies_clean,
-                get_position="[lon, lat]",
-                get_radius=6,
-                radius_units="pixels",
-                get_fill_color=[245, 216, 25, 240],  # Gold
-                get_line_color=[27, 68, 41, 255],  # Dark Green
-                line_width_min_pixels=1.5,
-                stroked=True,
-                pickable=True,
+            # Dot layer
+            layers.append(
+                pdk.Layer(
+                    "ScatterplotLayer",
+                    id="pois-mairies-dots",
+                    data=mairies_clean,
+                    get_position="[lon, lat]",
+                    get_radius=6,
+                    radius_units="pixels",
+                    get_fill_color=[245, 216, 25, 240],  # Gold
+                    get_line_color=[27, 68, 41, 255],  # Dark Green
+                    line_width_min_pixels=1.5,
+                    stroked=True,
+                    pickable=True,
+                )
             )
-        )
 
     # 2. Écoles Layer (🎓)
     if "edu" in selected_ids:

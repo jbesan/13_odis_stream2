@@ -9,6 +9,7 @@ from services.search_controller import SearchController
 from ui import forms as ui_forms
 from ui import page_shell
 from ui import results as ui_results
+from ui import map_vector
 from ui.form_state import FormState
 from utils import data_loader
 
@@ -16,16 +17,20 @@ logger = logging.getLogger(__name__)
 
 st.set_page_config(page_title="OD&IS", page_icon="👋", layout="wide")
 
-# Full-bleed map with a small number of stable, page-owned overlay selectors.
-st.markdown(
+# Full-bleed native MapGL map with a small number of stable, page-owned
+# overlay selectors.  Keep the style-only payload outside the normal Markdown
+# flow so it does not leave a layout element behind when pages are switched.
+st.html(
     """
     <style>
-    /* The page content is the containing block for the map and overlays. */
-    [data-testid="stMain"],
+    /* Activate the full-bleed layout only while the Results page is mounted. */
+    [data-testid="stMain"]:has([class*="st-key-top_pills_bar"]),
+    [data-testid="stMain"]:has([class*="st-key-top_pills_bar"])
     [data-testid="stMainBlockContainer"] {
         position: relative !important;
         overflow: hidden !important;
     }
+    [data-testid="stMain"]:has([class*="st-key-top_pills_bar"])
     [data-testid="stMainBlockContainer"] {
         width: 100% !important;
         max-width: none !important;
@@ -35,12 +40,14 @@ st.markdown(
         margin: 0 !important;
         isolation: isolate;
     }
-    [data-testid="stAppViewBlockContainer"] > div:first-child {
+    [data-testid="stAppViewBlockContainer"]:has([class*="st-key-top_pills_bar"])
+    > div:first-child {
         padding-top: 0 !important;
     }
 
-    /* Streamlit currently exposes the PyDeck canvas as stDeckGlJsonChart. */
-    div[data-testid="stElementContainer"]:has(> div[data-testid="stFullScreenFrame"] > div[data-testid="stDeckGlJsonChart"]) {
+    /* Native MapGL is rendered by components.v1.html inside stIFrame. */
+    [data-testid="stMain"]:has([class*="st-key-top_pills_bar"])
+    div[data-testid="stElementContainer"]:has(> iframe[data-testid="stIFrame"]) {
         position: absolute !important;
         inset: 0 !important;
         width: 100% !important;
@@ -50,20 +57,15 @@ st.markdown(
         margin: 0 !important;
         z-index: 0 !important;
     }
-    div[data-testid="stFullScreenFrame"]:has(> div[data-testid="stDeckGlJsonChart"]),
-    div[data-testid="stDeckGlJsonChart"],
-    div[data-testid="stDeckGlJsonChart"] > div,
-    div[data-testid="stDeckGlJsonChart"] .mapboxgl-map,
-    div[data-testid="stDeckGlJsonChart"] .mapboxgl-canvas-container {
+    [data-testid="stMain"]:has([class*="st-key-top_pills_bar"])
+    div[data-testid="stElementContainer"]:has(> iframe[data-testid="stIFrame"])
+    > iframe[data-testid="stIFrame"] {
         position: absolute !important;
         inset: 0 !important;
         width: 100% !important;
         height: 100% !important;
         min-height: 0 !important;
-    }
-    div[data-testid="stDeckGlJsonChart"] canvas.mapboxgl-canvas {
-        width: 100% !important;
-        height: 100% !important;
+        border: 0 !important;
     }
 
     /* Shared-search notice: visible, but it does not consume map height. */
@@ -85,7 +87,7 @@ st.markdown(
     div[class*="st-key-top_pills_bar"] {
         position: absolute !important;
         top: 1rem !important;
-        right: 3rem !important;
+        right: 1rem !important;
         left: auto !important;
         width: fit-content !important;
         max-width: calc(100% - 2rem) !important;
@@ -221,7 +223,6 @@ st.markdown(
     }
     </style>
     """,
-    unsafe_allow_html=True,
 )
 
 page_shell.enter_page("Resultats", handle_shared_search=True)
@@ -387,34 +388,43 @@ if st.session_state.get("processed_gdf") is not None:
 
     # 1. Floating Box 1: pastilles de couches (top-right)
     selected_ids = set()
-    with st.container(key="top_pills_bar"):
-        pill_specs = [("🥇 Top 5", "top_5")]
-        if config and not snapshot_mode:
-            if config.nb_enfants > 0:
-                pill_specs.append(("🎓 Éducation", "edu"))
-            if getattr(config, "besoin_sante", []):
-                pill_specs.append(("🏥 Santé", "sante"))
-            if config.inc_services_selection:
-                pill_specs.append(("🤝 Inclusion", "inc"))
+    with st.container(key="top_pills_bar", horizontal=True):
+        st.text("  Afficher: ")
+        pill_specs = [
+            # ("🥇 Top 5", "top_5"),
+        ]
+        if not snapshot_mode:
+            pill_specs.append(("🏛️ Mairies", "mairie"))
+            if config:
+                if config.nb_enfants > 0:
+                    pill_specs.append(("🎓 Éducation", "edu"))
+                if getattr(config, "besoin_sante", []):
+                    pill_specs.append(("🏥 Santé", "sante"))
+                if config.inc_services_selection:
+                    pill_specs.append(("🤝 Inclusion", "inc"))
 
         pill_options = [label for label, _ in pill_specs]
         pill_id_map = dict(pill_specs)
         existing_pills = st.session_state.get("map_layers_pills")
         if not isinstance(existing_pills, list):
-            st.session_state["map_layers_pills"] = [pill_options[0]]
+            st.session_state["map_layers_pills"] = [pill_options[0]] if pill_options else []
         else:
             st.session_state["map_layers_pills"] = [
                 pill for pill in existing_pills if pill in pill_options
             ]
-        selected_pills = st.pills(
-            "Afficher sur la carte :",
-            pill_options,
-            selection_mode="multi",
-            key="map_layers_pills",
-            label_visibility="collapsed",
-        )
+        if pill_options:
+            selected_pills = st.pills(
+                "Afficher sur la carte :",
+                pill_options,
+                selection_mode="multi",
+                key="map_layers_pills",
+                label_visibility="collapsed",
+            )
+        else:
+            selected_pills = []
         selected_ids = {pill_id_map[p] for p in (selected_pills or []) if p in pill_id_map}
-        show_top_5 = "top_5" in selected_ids
+        # show_top_5 = "top_5" in selected_ids
+        show_top_5 = True
 
     # 2. Floating Box 2: choropleth legend (bottom-left)
     legend_markers = []
@@ -423,7 +433,8 @@ if st.session_state.get("processed_gdf") is not None:
         if search_results and search_results.commune_pressentie:
             legend_markers.append(("#F5D819", "Ville souhaitée"))
     if not snapshot_mode:
-        legend_markers.append(("#F5D819", "Mairies"))
+        if "mairie" in selected_ids:
+            legend_markers.append(("#F5D819", "Mairies"))
         if "edu" in selected_ids:
             legend_markers.append(("#22C55E", "Écoles"))
         if "sante" in selected_ids:
@@ -454,9 +465,8 @@ if st.session_state.get("processed_gdf") is not None:
                         st.session_state.config.odis_brief = brief_val
 
             st.subheader("Meilleurs Résultats")
-            st.markdown(
+            st.html(
                 '<style> [class*="st-key-btn_top"] .stButton button div, [class*="st-key-btn_top"] .stButton button p { justify-content: flex-start !important; text-align: left !important; width: 100%; } </style>',
-                unsafe_allow_html=True,
             )
             # A. Ville Souhaitée (if present)
             if search_results.commune_pressentie:
@@ -503,33 +513,26 @@ if st.session_state.get("processed_gdf") is not None:
             if not is_highlighted:
                 st.caption("⬆ Cliquez sur une ville pour afficher les détails.")
 
-    # 3. Main Full-Screen PyDeck Map (Background canvas)
+    # 3. Main Full-Screen Vector Map (Background canvas)
     # Offset center slightly to the right to leave space for left overlay panel
     zoom_current = st.session_state.get("zoom", 6) or 6
     offset_lon = -0.1 * (2 ** max(0, 6 - zoom_current))
 
-    deck = maps_deck.create_deck_map(
-        gdf_scores=st.session_state.processed_gdf,
-        center=st.session_state.get("center"),
-        zoom=st.session_state.get("zoom"),
-        search_results=search_results,
-        config=config,
-        pois_df=app_data.get("pois") if (app_data and not snapshot_mode) else None,
-        selected_ids=selected_ids,
-        highlighted_rank=highlighted_index if is_highlighted else None,
-        show_top_5=show_top_5,
-        current_map_context=current_map_context,
-        center_offset_lon=offset_lon,
-        search_hash=h,
-    )
-
     try:
-        st.pydeck_chart(
-            deck,
-            width="stretch",
+        map_vector.render_vector_map(
+            gdf_scores=st.session_state.processed_gdf,
+            center=st.session_state.get("center"),
+            zoom=st.session_state.get("zoom"),
+            search_results=search_results,
+            config=config,
+            pois_df=app_data.get("pois") if (app_data and not snapshot_mode) else None,
+            selected_ids=selected_ids,
+            highlighted_rank=highlighted_index if is_highlighted else None,
+            show_top_5=show_top_5,
+            current_map_context=current_map_context,
+            center_offset_lon=offset_lon,
             height=1500,
-            key="odis_main_pydeck_map",
         )
     except Exception as e:
         st.error(f"Erreur d'affichage de la carte: {e}")
-        logger.error(f"❌ [MAP-ERROR] pydeck: {e}")
+        logger.error(f"❌ [MAP-ERROR] map_vector: {e}")

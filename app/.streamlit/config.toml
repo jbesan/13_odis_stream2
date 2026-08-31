@@ -36,6 +36,7 @@ hideTopBar = false
 enableCORS = false
 enableXsrfProtection = false
 headless = true
+enableStaticServing = true
 
 [browser]
 gatherUsageStats = false

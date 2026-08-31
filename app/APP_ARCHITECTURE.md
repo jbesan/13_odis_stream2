@@ -195,8 +195,8 @@ Renders the final sorted list of candidate communes.
 ### 4.5 Full AI Analysis Swarm (`app/agents/graph.py`)
 The background MapReduce pipeline built on `pydantic-graph`. When triggered from the "En Savoir Plus" pane, it coordinates 6 domain expert agents to query Brave Search and internal RAG tables to produce the qualitative briefing text. Details are documented in [app/agents/GRAPH_ARCHITECTURE.md](file:///Users/jacques/dev/13_odis_stream2/app/agents/GRAPH_ARCHITECTURE.md).
 
-### 4.6 Dynamic Folium Map (`app/core/maps.py`)
-Decodes commune boundary geometries from **WKB (Well-Known Binary)** bytes just-in-time and overlays interactive markers and color-coded polygons onto a Leaflet-based map, indicating recommendations and comparison cities.
+### 4.6 Decoupled Vector Map (`app/ui/map_vector.py` & `app/core/maps_deck.py`)
+Renders full-bleed 60 FPS WebGL vector maps using standalone Deck.gl with OpenStreetMap HOT basemap. Decouples static geometry caching (`communes_france.geojson`, 10 MB loaded once into browser memory) from lightweight dynamic score updates (~250 KB JSON payload over WebSocket), eliminating WebSocket network saturation and enabling instantaneous choropleth rendering for all 35,000 communes.
 
 ### 4.7 PDF Report Export (`app/core/pdf_generator.py`)
 Generates structured, multi-page PDF briefings for social workers. It dynamically converts Markdown summaries into ReportLab Paragraph flowables, rendering tables and page counts.
@@ -220,9 +220,10 @@ app/
 ├── core/
 │   ├── models.py         # Core Pydantic models (data contracts)
 │   ├── scoring.py        # Core Pandas scoring and normalization engine
-│   ├── maps.py           # Folium rendering and geometry decoding
+│   ├── maps_deck.py      # Deck.gl palettes, helpers, and geometry utilities
 │   └── pdf_generator.py  # ReportLab document layout builder
 ├── ui/
+│   ├── map_vector.py     # Decoupled Standalone Deck.gl WebGL vector map component
 │   ├── components.py     # UI cards, tables, admin sidebar links, and metric displays
 │   ├── form_state.py      # Native widget-state hydration and criteria collection
 │   ├── forms.py          # Form input wizard layout fields

@@ -246,7 +246,7 @@ DEFAULT_MAP_ZOOM = 10
 DETAIL_MAP_ZOOM = 11
 
 # --- Constants ---
-MAX_MAP_POLYGONS = 5000
+MAX_MAP_POLYGONS = 50000
 PROJECTED_CRS = "EPSG:2154"  # RGF93 / Lambert-93, suitable for metropolitan France
 
 
