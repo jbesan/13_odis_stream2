@@ -114,3 +114,34 @@ def test_create_deck_map_full_assembly():
     assert isinstance(deck, pdk.Deck)
     json_str = deck.to_json()
     assert "CARTO_LIGHT" in json_str or "carto" in json_str.lower() or "choropleth" in json_str
+
+
+def test_build_choropleth_layer_wkb_bytes():
+    p1 = Polygon([[2.0, 46.0], [2.1, 46.0], [2.1, 46.1], [2.0, 46.1]])
+    p2 = Polygon([[2.1, 46.0], [2.2, 46.0], [2.2, 46.1], [2.1, 46.1]])
+    df = pd.DataFrame({
+        "codgeo": ["01001", "01002"],
+        "libgeo": ["Commune A", "Commune B"],
+        "weighted_score": [0.85, 0.42],
+        "polygon": [p1.wkb, p2.wkb],
+    })
+    layer = build_choropleth_layer(df)
+    assert layer is not None
+    assert layer.type == "GeoJsonLayer"
+    assert layer.id == "choropleth-scores-layer"
+
+
+def test_build_choropleth_layer_caching_with_search_hash():
+    p1 = Polygon([[2.0, 46.0], [2.1, 46.0], [2.1, 46.1], [2.0, 46.1]])
+    df = pd.DataFrame({
+        "codgeo": ["01001"],
+        "libgeo": ["Commune A"],
+        "weighted_score": [0.90],
+        "polygon": [p1.wkb],
+    })
+    layer1 = build_choropleth_layer(df, search_hash="test-hash-cache-1")
+    layer2 = build_choropleth_layer(df, search_hash="test-hash-cache-1")
+    assert layer1 is not None
+    assert layer2 is not None
+    assert layer1 is layer2  # Same cached instance in memory
+

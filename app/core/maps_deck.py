@@ -19,6 +19,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import pydeck as pdk
+import streamlit as st
 from shapely import wkb
 
 import config as cfg
@@ -159,42 +160,47 @@ def _get_geom(
     return None
 
 
-def build_choropleth_layer(
-    df: pd.DataFrame,
+@st.cache_resource(show_spinner=False)
+def _decode_wkb_geometries_cached(
+    cache_key: str,
+    _wkb_series: pd.Series,
+) -> gpd.GeoSeries:
+    """Decodes WKB polygon bytes into a GeoSeries, cached in memory across scoring calls."""
+    return gpd.GeoSeries.from_wkb(_wkb_series, crs="EPSG:4326")
+
+
+def _build_choropleth_layer_internal(
+    df_work: pd.DataFrame,
     id_col: str = "codgeo",
     name_col: str = "libgeo",
 ) -> Optional[pdk.Layer]:
-    """
-    Builds the WebGL GeoJsonLayer for the full France / filtered communes choropleth.
-    Applies JIT WKB decoding and column stripping to optimize JSON serialization.
-    """
-    if df.empty:
+    """Internal builder for the choropleth GeoJsonLayer."""
+    if df_work.empty or "polygon" not in df_work.columns:
         return None
 
-    df_work = df.copy()
-    if id_col not in df_work.columns:
-        if df_work.index.name == id_col:
-            df_work = df_work.reset_index()
-        else:
-            df_work = df_work.reset_index()
-            if "index" in df_work.columns:
-                df_work = df_work.rename(columns={"index": id_col})
-
-    if "polygon" not in df_work.columns:
-        logger.warning("build_choropleth_layer: 'polygon' column not found.")
-        return None
-
-    # JIT decode WKB bytes to Shapely geometries
-    first_valid = df_work["polygon"].dropna().iloc[0] if not df_work["polygon"].dropna().empty else None
+    # JIT decode WKB bytes to Shapely geometries with memory caching
+    first_valid = (
+        df_work["polygon"].dropna().iloc[0]
+        if not df_work["polygon"].dropna().empty
+        else None
+    )
     if isinstance(first_valid, (bytes, bytearray)):
-        geom_series = gpd.GeoSeries.from_wkb(df_work["polygon"], crs="EPSG:4326")
+        s = df_work["polygon"]
+        cache_key = (
+            f"{len(s)}_{s.index[0]}_{s.index[-1]}" if not s.empty else "empty"
+        )
+        geom_series = _decode_wkb_geometries_cached(cache_key, s)
     else:
         geom_series = gpd.GeoSeries(df_work["polygon"], crs="EPSG:4326")
 
     # Vectorized score formatting and color assignment
     scores = df_work["weighted_score"]
     fill_colors = compute_choropleth_colors(scores, alpha=165)
-    score_pcts = (scores * 100).round(1).apply(lambda x: f"{x:.1f}%" if pd.notna(x) else "N/A")
+    score_pcts = (
+        (scores * 100)
+        .round(1)
+        .apply(lambda x: f"{x:.1f}%" if pd.notna(x) else "N/A")
+    )
     names = df_work[name_col].fillna("Commune")
 
     tooltip_html = [
@@ -236,6 +242,49 @@ def build_choropleth_layer(
         auto_highlight=True,
         highlight_color=[255, 255, 255, 120],
     )
+
+
+@st.cache_resource(show_spinner=False)
+def _build_choropleth_layer_cached(
+    search_hash: str,
+    _df_work: pd.DataFrame,
+    id_col: str = "codgeo",
+    name_col: str = "libgeo",
+) -> Optional[pdk.Layer]:
+    """Cached entry point keyed by search_hash for instant layer reuse."""
+    return _build_choropleth_layer_internal(_df_work, id_col=id_col, name_col=name_col)
+
+
+def build_choropleth_layer(
+    df: pd.DataFrame,
+    id_col: str = "codgeo",
+    name_col: str = "libgeo",
+    search_hash: Optional[str] = None,
+) -> Optional[pdk.Layer]:
+    """
+    Builds the WebGL GeoJsonLayer for the full France / filtered communes choropleth.
+    Applies two-level caching (geometry decoding + per-search_hash layer cache).
+    """
+    if df.empty:
+        return None
+
+    df_work = df.copy()
+    if id_col not in df_work.columns:
+        if df_work.index.name == id_col:
+            df_work = df_work.reset_index()
+        else:
+            df_work = df_work.reset_index()
+            if "index" in df_work.columns:
+                df_work = df_work.rename(columns={"index": id_col})
+
+    if "polygon" not in df_work.columns:
+        logger.warning("build_choropleth_layer: 'polygon' column not found.")
+        return None
+
+    if search_hash:
+        return _build_choropleth_layer_cached(search_hash, df_work, id_col, name_col)
+
+    return _build_choropleth_layer_internal(df_work, id_col, name_col)
 
 
 def build_current_loc_layer(
@@ -650,6 +699,7 @@ def create_deck_map(
     show_top_5: bool = True,
     current_map_context: Optional[pd.DataFrame] = None,
     center_offset_lon: float = 0.0,
+    search_hash: Optional[str] = None,
 ) -> pdk.Deck:
     """
     Main entry point for generating the complete PyDeck Map.
@@ -658,9 +708,12 @@ def create_deck_map(
     if selected_ids is None:
         selected_ids = set()
 
-    # 1. Base Choropleth Layer (35k communes)
+    if search_hash is None and search_results and hasattr(search_results, "search_hash"):
+        search_hash = getattr(search_results, "search_hash", None)
+
+    # 1. Base Choropleth Layer (35k communes) with two-level caching
     if gdf_scores is not None and not gdf_scores.empty:
-        choro_layer = build_choropleth_layer(gdf_scores)
+        choro_layer = build_choropleth_layer(gdf_scores, search_hash=search_hash)
         if choro_layer:
             layers.append(choro_layer)
 

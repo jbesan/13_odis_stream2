@@ -91,7 +91,7 @@ st.markdown(
         max-width: calc(100% - 2rem) !important;
         padding: 0.35rem 0.5rem !important;
         z-index: 30 !important;
-        background: rgba(255, 255, 255, 0.75) !important;
+        background: rgba(255, 255, 255, 0.5) !important;
         backdrop-filter: blur(12px) !important;
         -webkit-backdrop-filter: blur(12px) !important;
         border-radius: 999px !important;
@@ -114,7 +114,7 @@ st.markdown(
         box-sizing: border-box !important;
         padding: 0.75rem 1rem !important;
         z-index: 25 !important;
-        background: rgba(255, 255, 255, 0.75) !important;
+        background: rgba(255, 255, 255, 0.5) !important;
         backdrop-filter: blur(12px) !important;
         -webkit-backdrop-filter: blur(12px) !important;
         border-radius: 0.9rem !important;
@@ -133,7 +133,7 @@ st.markdown(
         overflow-y: auto !important;
         padding: 1rem !important;
         z-index: 20 !important;
-        background: rgba(255, 255, 255, 0.75) !important;
+        background: rgba(255, 255, 255, 1.0) !important;
         backdrop-filter: blur(16px) !important;
         -webkit-backdrop-filter: blur(16px) !important;
         border-radius: 1rem !important;
@@ -361,13 +361,6 @@ with st.sidebar:
 # active result dialogs explicitly on the full rerun triggered by each action.
 ui_results.render_active_dialogs()
 
-
-if is_immutable_snapshot:
-    with st.container(key="results_snapshot_notice", border=False):
-        st.info(
-            "Vous consultez une page de résultats partagée. Modifier les critères puis relancer la recherche crée une nouvelle recherche avec les données actuelles."
-        )
-
 # Global Pitch (Strategic intro + Loading state)
 # if st.session_state.get('search_results'):
 #     h = st.session_state.search_results.search_hash
@@ -527,6 +520,7 @@ if st.session_state.get("processed_gdf") is not None:
         show_top_5=show_top_5,
         current_map_context=current_map_context,
         center_offset_lon=offset_lon,
+        search_hash=h,
     )
 
     try:
