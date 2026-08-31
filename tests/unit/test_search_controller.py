@@ -74,3 +74,45 @@ def test_execute_does_not_duplicate_existing_background_run():
         controller.execute(config, app_data)
 
     launch_tasks.assert_not_called()
+
+
+def test_center_map_sets_initial_center_and_unhighlight_restores():
+    from ui.results import _result_highlight_callback
+
+    state = {}
+    session = AppSession(state)
+    controller = SearchController(session)
+    config = SearchCriterias(loc_search_area="france")
+    c1 = CommuneResult(codgeo="33063", name="Bordeaux", global_score=0.9)
+    results = SearchResultsData(
+        search_hash="hash-1",
+        results=[c1],
+        current_geo=c1,
+    )
+    app_data = {"odis": pd.DataFrame(), "odis_geo": pd.DataFrame()}
+
+    controller._center_map(config, results, app_data)
+
+    assert "initial_center" in state
+    assert state["initial_center"] == state["center"]
+
+    # Emulate Streamlit session
+    with patch("ui.results.st.session_state", state), patch(
+        "ui.results.maps._get_geom", return_value=Mock(x=-0.58, y=44.84)
+    ):
+        state["search_results"] = results
+        state["highlighted_result"] = [False, None]
+        state["processed_gdf"] = pd.DataFrame()
+
+        # 1. Highlight
+        _result_highlight_callback(0)
+        assert state["highlighted_result"] == [True, 0]
+        assert state["center"] == [44.84, -0.58]
+        assert state["zoom"] == 11
+
+        # 2. Un-highlight (same click)
+        _result_highlight_callback(0)
+        assert state["highlighted_result"] == [False, None]
+        assert state["zoom"] is None
+        assert state["center"] == state["initial_center"]
+

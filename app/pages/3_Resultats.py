@@ -135,7 +135,7 @@ st.html(
         overflow-y: auto !important;
         padding: 1rem !important;
         z-index: 20 !important;
-        background: rgba(255, 255, 255, 1.0) !important;
+        background: rgba(255, 255, 255, 0.5) !important;
         backdrop-filter: blur(16px) !important;
         -webkit-backdrop-filter: blur(16px) !important;
         border-radius: 1rem !important;
@@ -147,6 +147,10 @@ st.html(
     div[class*="st-key-results_floating_panel"]::-webkit-scrollbar-thumb {
         background: rgba(0, 0, 0, 0.22);
         border-radius: 4px;
+    }
+
+    div[class="st-key-city_result_card"] {
+        background: rgba(255, 255, 255, 1.0) !important;
     }
 
     @media (max-width: 900px) {
@@ -392,10 +396,14 @@ if st.session_state.get("processed_gdf") is not None:
     if not isinstance(current_map_context, pd.DataFrame):
         current_map_context = st.session_state.processed_gdf
 
-    # Default zoom if not set
+    # Default zoom & center if not set
     if st.session_state.get("zoom") is None:
         st.session_state["zoom"] = maps_deck.get_map_zoom(
             config.loc_search_area if config else "departement"
+        )
+    if st.session_state.get("center") is None:
+        st.session_state["center"] = st.session_state.get(
+            "initial_center", list(cfg.DEFAULT_MAP_CENTER)
         )
 
     # 1. Floating Box 1: pastilles de couches (top-right)
@@ -500,8 +508,7 @@ if st.session_state.get("processed_gdf") is not None:
                     args=(-1,),
                 )
                 if is_active:
-                    with st.container(border=True):
-                        ui_results._display_result_details(p_commune)
+                    ui_results._display_result_details(p_commune)
                     st.write("")
 
             # B. Top 5 Results (Vertical list)

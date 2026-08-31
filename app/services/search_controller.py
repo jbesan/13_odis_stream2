@@ -138,6 +138,7 @@ class SearchController:
                 center = [lat, lon]
 
         state["center"] = center
+        state["initial_center"] = center
         state["zoom"] = maps.get_map_zoom(config.loc_search_area)
         state["last_centered_hash"] = search_hash
         if config.commune_actuelle is not None:
