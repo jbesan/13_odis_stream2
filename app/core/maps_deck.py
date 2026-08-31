@@ -503,8 +503,8 @@ def build_poi_layers(
                     get_radius=6,
                     radius_units="pixels",
                     get_fill_color=[245, 216, 25, 240],  # Gold
-                    get_line_color=[27, 68, 41, 255],  # Dark Green
-                    line_width_min_pixels=1.5,
+                    get_line_color=[255, 255, 255, 255],  # White border
+                    line_width_min_pixels=1,
                     stroked=True,
                     pickable=True,
                 )

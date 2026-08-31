@@ -100,3 +100,72 @@ def test_prepare_map_payload_poi_filtering():
         selected_ids={"mairie", "edu"},
     )
     assert len(payload_both["poi_markers"]) == 2
+
+
+def test_prepare_map_payload_inclusion_filtering():
+    import geopandas as gpd
+    from shapely.geometry import Point
+    from app.core.models import CriteriaItem, SearchCriterias
+
+    c1 = CommuneResult(
+        codgeo="75056",
+        name="Paris",
+        population=2000000,
+        codgeo_bdv="75056",
+        name_bdv="Paris",
+        global_score=0.92,
+        scores={},
+    )
+    search_results = SearchResultsData(
+        results=[c1],
+        current_geo=c1,
+        commune_pressentie=None,
+        search_hash="test-hash-inc",
+    )
+    pois_df = gpd.GeoDataFrame({
+        "codgeo": ["75056", "75056"],
+        "name": ["Structure A", "Structure B"],
+        "type": ["acces-aux-droits", "logement-hebergement"],
+        "category": ["incl_services", "incl_services"],
+        "geometry": [Point(2.35, 48.85), Point(2.36, 48.86)],
+    }, crs="EPSG:4326")
+
+    # 1. Inclusion active, no specific filter
+    payload = prepare_map_payload(
+        search_results=search_results,
+        pois_df=pois_df,
+        selected_ids={"inc"},
+    )
+    assert len(payload["poi_markers"]) == 2
+    assert payload["poi_markers"][0]["category"] == "incl_services"
+
+    # 2. Inclusion active with thematic filter in config
+    config = SearchCriterias(
+        inc_services_selection=[
+            CriteriaItem(code="acces-aux-droits", label="Accès aux droits")
+        ]
+    )
+    payload_filtered = prepare_map_payload(
+        search_results=search_results,
+        config=config,
+        pois_df=pois_df,
+        selected_ids={"inc"},
+    )
+    assert len(payload_filtered["poi_markers"]) == 1
+    assert payload_filtered["poi_markers"][0]["name"] == "Structure A"
+    assert payload_filtered["poi_markers"][0]["type"] == "acces-aux-droits"
+
+    # 3. Inclusion active with inclusion_services_index mapping
+    inc_index = pd.DataFrame(
+        [{"code": "acces-aux-droits", "label": "Accès aux droits"}]
+    ).set_index("code")
+    payload_mapped = prepare_map_payload(
+        search_results=search_results,
+        config=config,
+        pois_df=pois_df,
+        selected_ids={"inc"},
+        inclusion_services_index=inc_index,
+    )
+    assert len(payload_mapped["poi_markers"]) == 1
+    assert payload_mapped["poi_markers"][0]["name"] == "Structure A"
+    assert payload_mapped["poi_markers"][0]["type"] == "Accès aux droits"

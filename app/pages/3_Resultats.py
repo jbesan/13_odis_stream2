@@ -110,7 +110,7 @@ st.html(
         right: 1rem !important;
         left: auto !important;
         top: auto !important;
-        bottom: 1rem !important;
+        bottom: 2rem !important;
         width: min(24rem, calc(100% - 2rem)) !important;
         max-width: calc(100% - 2rem) !important;
         box-sizing: border-box !important;
@@ -388,7 +388,8 @@ if st.session_state.get("processed_gdf") is not None:
 
     # 1. Floating Box 1: pastilles de couches (top-right)
     selected_ids = set()
-    with st.container(key="top_pills_bar", horizontal=True):
+    with st.container(key="top_pills_bar", horizontal=True, vertical_alignment="center"):
+        st.space('xxsmall')
         st.text("  Afficher: ")
         pill_specs = [
             # ("🥇 Top 5", "top_5"),
@@ -531,6 +532,7 @@ if st.session_state.get("processed_gdf") is not None:
             show_top_5=show_top_5,
             current_map_context=current_map_context,
             center_offset_lon=offset_lon,
+            inclusion_services_index=app_data.get("inclusion_services_index") if app_data else None,
             height=1500,
         )
     except Exception as e:

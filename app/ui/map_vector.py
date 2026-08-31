@@ -35,6 +35,7 @@ def prepare_map_payload(
     show_top_5: bool = True,
     current_map_context: Optional[pd.DataFrame] = None,
     center_offset_lon: float = 0.0,
+    inclusion_services_index: Optional[pd.DataFrame] = None,
 ) -> Dict[str, Any]:
     """Prepares a lightweight JSON payload containing scores, markers, and view state.
 
@@ -52,6 +53,7 @@ def prepare_map_payload(
         show_top_5: Whether to render Top 5 and wished city badges.
         current_map_context: Optional DataFrame context for centroid resolution.
         center_offset_lon: Longitudinal offset applied when sidebars are open.
+        inclusion_services_index: Optional DataFrame mapping inclusion service slugs to human labels.
 
     Returns:
         Dictionary payload containing scores dictionary, marker arrays, and view state coordinates.
@@ -191,20 +193,59 @@ def prepare_map_payload(
 
             # D. Inclusion
             if "inc" in selected_ids:
-                inc = pois_filtered[pois_filtered["category"] == "inclusion"]
-                for _, r in inc.iterrows():
-                    lat_val = r["geometry"].y if hasattr(r.get("geometry"), "y") else r.get("lat")
-                    lon_val = r["geometry"].x if hasattr(r.get("geometry"), "x") else r.get("lon")
-                    if pd.notna(lat_val) and pd.notna(lon_val):
-                        poi_markers.append({
-                            "name": str(r.get("name", "Structure")),
-                            "type": str(r.get("type", "Inclusion")),
-                            "category": "inclusion",
-                            "color": "#A855F7",
-                            "icon": "🤝",
-                            "lat": float(lat_val),
-                            "lon": float(lon_val),
-                        })
+                inc = pois_filtered[
+                    pois_filtered["category"].isin(["incl_services", "inclusion"])
+                ]
+                if not inc.empty:
+                    inc_sel = (
+                        getattr(config, "inc_services_selection", None)
+                        if config
+                        else None
+                    )
+                    if inc_sel:
+                        if isinstance(inc_sel, list):
+                            slugs = [
+                                item.code if hasattr(item, "code") else str(item)
+                                for item in inc_sel
+                            ]
+                            mask = inc["type"].isin(slugs)
+                        elif isinstance(inc_sel, dict):
+                            mask = inc["type"].isin(inc_sel.keys())
+                        else:
+                            mask = pd.Series(False, index=inc.index)
+                        inc = inc[mask]
+
+                    for _, r in inc.iterrows():
+                        lat_val = (
+                            r["geometry"].y
+                            if hasattr(r.get("geometry"), "y")
+                            else r.get("lat")
+                        )
+                        lon_val = (
+                            r["geometry"].x
+                            if hasattr(r.get("geometry"), "x")
+                            else r.get("lon")
+                        )
+                        raw_type = str(r.get("type", "Inclusion"))
+                        display_type = raw_type
+                        if (
+                            inclusion_services_index is not None
+                            and not inclusion_services_index.empty
+                            and raw_type in inclusion_services_index.index
+                        ):
+                            val = inclusion_services_index.loc[raw_type, "label"]
+                            display_type = str(val if isinstance(val, str) else val.iloc[0])
+
+                        if pd.notna(lat_val) and pd.notna(lon_val):
+                            poi_markers.append({
+                                "name": str(r.get("name", "Structure")),
+                                "type": display_type,
+                                "category": "incl_services",
+                                "color": "#A855F7",
+                                "icon": "🤝",
+                                "lat": float(lat_val),
+                                "lon": float(lon_val),
+                            })
 
     return {
         "scores": scores_dict,
@@ -229,6 +270,7 @@ def render_vector_map(
     show_top_5: bool = True,
     current_map_context: Optional[pd.DataFrame] = None,
     center_offset_lon: float = 0.0,
+    inclusion_services_index: Optional[pd.DataFrame] = None,
     height: int = 1500,
 ) -> None:
     """Renders the decoupled Vector Choropleth Map using Deck.gl Standalone WebGL.
@@ -245,6 +287,7 @@ def render_vector_map(
         show_top_5: Whether to render Top 5 and wished city badges.
         current_map_context: Optional DataFrame context for centroid resolution.
         center_offset_lon: Longitudinal offset applied when sidebars are open.
+        inclusion_services_index: Optional DataFrame mapping inclusion service slugs to human labels.
         height: Height in pixels for the map iframe component.
     """
     payload = prepare_map_payload(
@@ -259,6 +302,7 @@ def render_vector_map(
         show_top_5=show_top_5,
         current_map_context=current_map_context,
         center_offset_lon=center_offset_lon,
+        inclusion_services_index=inclusion_services_index,
     )
 
     payload_json = json.dumps(payload)
@@ -496,7 +540,8 @@ def render_vector_map(
                   getPosition: d => [d.lon, d.lat],
                   getFillColor: d => hexToRgba(d.color, 240),
                   getLineColor: [255, 255, 255, 255],
-                  lineWidthMinPixels: 2,
+                  lineWidthMinPixels: 1,
+                  stroked: true,
                   getRadius: 7,
                   radiusUnits: 'pixels',
                   pickable: true,
