@@ -86,8 +86,12 @@ def is_admin(username: Optional[str] = None) -> bool:
     if not username:
         try:
             username = st.session_state.get("username")
-        except Exception:
-            pass
+        except (AttributeError, RuntimeError) as exc:
+            logger.debug("st.session_state is unavailable in is_admin: %s", exc)
+        except Exception as exc:
+            logger.warning(
+                "Error reading username from st.session_state in is_admin: %s", exc
+            )
     if not username:
         return False
     admin_users = getattr(cfg, "ADMIN_USERS", set())
@@ -114,8 +118,12 @@ def check_password() -> bool:
     # 1. Local dev bypass (no Cloud Run, no forced auth)
     if not is_cloud_run and not force_auth:
         if "user" not in st.session_state or "org" not in st.session_state:
-            local_email_mapping = _normalized_mapping(cfg.OIDC_EMAIL_ORG_MAPPING, normalize_email)
-            local_org_id = local_email_mapping.get(LOCAL_DEV_USERNAME) or cfg.OIDC_EMAIL_ORG_MAPPING.get(LOCAL_DEV_USERNAME)
+            local_email_mapping = _normalized_mapping(
+                cfg.OIDC_EMAIL_ORG_MAPPING, normalize_email
+            )
+            local_org_id = local_email_mapping.get(
+                LOCAL_DEV_USERNAME
+            ) or cfg.OIDC_EMAIL_ORG_MAPPING.get(LOCAL_DEV_USERNAME)
             org = cfg.ORGANIZATION_PROFILES.get(local_org_id) if local_org_id else None
             st.session_state["user"] = User(
                 username=LOCAL_DEV_USERNAME, org_id=org.id if org else None

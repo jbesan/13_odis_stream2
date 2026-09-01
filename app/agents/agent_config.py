@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import Literal, Any
 from pydantic_ai import Agent
@@ -9,6 +10,8 @@ from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.providers.google_cloud import GoogleCloudProvider
 
 from agents.google_model import GroundingGoogleModel
+
+logger = logging.getLogger(__name__)
 
 
 # --- Configuration Models ---
@@ -174,8 +177,8 @@ def get_p_model(agent_name: str, client: genai.Client | None = None) -> GoogleMo
                 **default_profile,
                 "google_supports_server_side_tool_invocations": False,
             }
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Could not resolve model profile for '%s': %s", model_name, exc)
 
     return GroundingGoogleModel(
         model_name,

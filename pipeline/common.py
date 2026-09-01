@@ -305,8 +305,6 @@ def validate_dataset_contract(
 
 def atomic_swap(src_path: Path, dst_path: Path):
     """Atomically swaps a staging file to the active cache path."""
-    import os
-
     src_path = Path(src_path)
     dst_path = Path(dst_path)
     if not src_path.exists():
@@ -395,15 +393,8 @@ def finalize_ingest(
             f"⚠️ [INGEST WARNING] Dataset '{source_name}' failed validation contract: {e}"
         )
         # Discard staging files
-        if staging_clean.exists():
-            try:
-                os.remove(staging_clean)
-            except:
-                pass
-        if staging_raw and staging_raw.exists():
-            try:
-                os.remove(staging_raw)
-            except:
-                pass
+        staging_clean.unlink(missing_ok=True)
+        if staging_raw:
+            staging_raw.unlink(missing_ok=True)
         logging.warning(f"⚠️ Reverted to last known good cache for '{source_name}'.")
         return False

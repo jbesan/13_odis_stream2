@@ -277,8 +277,12 @@ def _get_or_build_analysis_report(
             report = CityAnalysisReport.model_validate(report)
             commune.analysis_report = report
             return report
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(
+                "Failed to validate CityAnalysisReport for commune %s: %s",
+                getattr(commune, "codgeo", "unknown"),
+                exc,
+            )
     if isinstance(report, CityAnalysisReport):
         return report
 
@@ -292,7 +296,11 @@ def _get_or_build_analysis_report(
         ("mobility_expert", "🚆 Mobilité & Transports", "🚆 Mobilité"),
         ("healthcare_expert", "🏥 Santé & Accompagnement Médical", "🏥 Santé"),
         ("education_expert", "🎓 Éducation & Petite Enfance", "🎓 Éducation"),
-        ("social_integration_expert", "🤝 Insertion Sociale & Solidarité", "🤝 Insertion"),
+        (
+            "social_integration_expert",
+            "🤝 Insertion Sociale & Solidarité",
+            "🤝 Insertion",
+        ),
         ("job_hunter", "💼 Emploi & Insertion Professionnelle", "💼 Emploi"),
     ]
     domains: dict[str, DomainReport] = {}
@@ -320,7 +328,9 @@ def _get_or_build_analysis_report(
         city_code=commune.codgeo,
         avis_global=fallback_content,
         domains=domains,
-        ccas_contact=ccas_content.strip() if ccas_content and ccas_content.strip() else None,
+        ccas_contact=ccas_content.strip()
+        if ccas_content and ccas_content.strip()
+        else None,
     )
     commune.analysis_report = report
     return report

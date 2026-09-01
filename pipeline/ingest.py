@@ -330,18 +330,10 @@ def fetch_source(
                     f"🔄 [Static Source] Swapping staging files to active for '{name}' immediately."
                 )
                 active_extracted_path = CACHE_DIR / extracted_file
-                if active_extracted_path.exists():
-                    try:
-                        os.remove(active_extracted_path)
-                    except:
-                        pass
+                active_extracted_path.unlink(missing_ok=True)
                 os.rename(staging_extracted_path, active_extracted_path)
 
-                if local_path.exists():
-                    try:
-                        os.remove(local_path)
-                    except:
-                        pass
+                local_path.unlink(missing_ok=True)
                 os.rename(staging_local_path, local_path)
                 return active_extracted_path
 
@@ -351,11 +343,7 @@ def fetch_source(
             logging.info(
                 f"🔄 [Static Source] Swapping staging raw file for '{name}' to active."
             )
-            if local_path.exists():
-                try:
-                    os.remove(local_path)
-                except:
-                    pass
+            local_path.unlink(missing_ok=True)
             os.rename(staging_local_path, local_path)
             return local_path
 
@@ -734,7 +722,7 @@ def clean_services_inclusion(config: Dict[str, Any], logger: PipelineLogger):
 
                         try:
                             raw_extracted = ast.literal_eval(val)
-                        except:
+                        except (ValueError, SyntaxError):
                             raw_extracted = [val]
                 else:
                     raw_extracted = [val]
@@ -756,7 +744,7 @@ def clean_services_inclusion(config: Dict[str, Any], logger: PipelineLogger):
             flatten(raw_extracted)
             return flat_list
         except Exception as e:
-            # logging.warning(f"Error parsing thematiques: {val} -> {e}")
+            logging.warning(f"Error parsing thematiques: {val} -> {e}")
             return []
 
     df["thematique_list"] = df["thematiques"].apply(parse_thematiques)
@@ -842,11 +830,12 @@ def clean_structures_inclusion(config: Dict[str, Any], logger: PipelineLogger):
                     try:
                         # Handle "['a', 'b']"
                         return ast.literal_eval(val)
-                    except:
-                        pass
+                    except (ValueError, SyntaxError):
+                        return [val]
                 return [val]  # Fallback for single string
             return []
-        except:
+        except Exception as exc:
+            logging.debug(f"Failed to parse reseaux_porteurs '{val}': {exc}")
             return []
 
     df["reseaux_parsed"] = df["reseaux_porteurs"].apply(parse_reseaux)
@@ -3131,16 +3120,10 @@ def run_clean_step_safely(
                 {"error": f"Raw validation failed: {str(e)}"},
             )
             # Discard staging files and abort
-            if staging_raw and staging_raw.exists():
-                try:
-                    os.remove(staging_raw)
-                except:
-                    pass
-            if staging_ext and staging_ext.exists():
-                try:
-                    os.remove(staging_ext)
-                except:
-                    pass
+            if staging_raw:
+                staging_raw.unlink(missing_ok=True)
+            if staging_ext:
+                staging_ext.unlink(missing_ok=True)
             logging.warning(f"⚠️ [ABORTED] Retained existing cache for '{step_name}'.")
             raise PipelineRunError(
                 f"Required clean step '{step_name}' failed raw contract validation"
@@ -3201,10 +3184,7 @@ def run_clean_step_safely(
 
         # Success! Commit changes (delete backups)
         for bak_path in backups.values():
-            try:
-                os.remove(bak_path)
-            except:
-                pass
+            bak_path.unlink(missing_ok=True)
         logging.info(
             f"✅ [SUCCESS] Ingested and verified '{step_name}' successfully. Staging committed."
         )
@@ -3222,20 +3202,12 @@ def run_clean_step_safely(
 
         # Rollback!
         # Delete failed active clean parquet
-        if active_clean.exists():
-            try:
-                os.remove(active_clean)
-            except:
-                pass
+        active_clean.unlink(missing_ok=True)
 
         # Move active files back to staging (re-create staging files if we want to preserve them, or delete them)
         # To match Option A "discards staging files", we can delete any active files that were staging
         for active_path, _ in moved_staging:
-            if active_path.exists():
-                try:
-                    os.remove(active_path)
-                except:
-                    pass
+            active_path.unlink(missing_ok=True)
 
         # Restore original active files from backups
         for active_path, bak_path in backups.items():
@@ -3489,7 +3461,10 @@ def clean_formations(config: Dict[str, Any], logger: PipelineLogger):
             df_annuaire = pd.read_csv(
                 annuaire_path, sep=";", on_bad_lines="skip", low_memory=False
             )
-        except:
+        except (pd.errors.ParserError, UnicodeDecodeError, ValueError) as exc:
+            logging.debug(
+                f"Failed to read annuaire CSV with ';' separator ({exc}), retrying with ','."
+            )
             df_annuaire = pd.read_csv(
                 annuaire_path, sep=",", on_bad_lines="skip", low_memory=False
             )
@@ -3641,12 +3616,8 @@ def clean_odace_rent(config: Dict[str, Any], logger: PipelineLogger):
         df_rent = df_rent.drop(columns=["maille_priority"])
 
     # Save to Clean Dir
-    df_rent.to_parquet(
-        CLEAN_DIR / "odace_loyer_annonce.parquet", index=False
-    )
-    df_profil.to_parquet(
-        CLEAN_DIR / "odace_logement_profil.parquet", index=False
-    )
+    df_rent.to_parquet(CLEAN_DIR / "odace_loyer_annonce.parquet", index=False)
+    df_profil.to_parquet(CLEAN_DIR / "odace_logement_profil.parquet", index=False)
 
     logger.log_step(
         "clean_odace_rent",

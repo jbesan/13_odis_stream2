@@ -36,7 +36,7 @@ async def call_tool(session: ClientSession, tool_name: str, arguments: Dict[str,
                 try:
                     data = json.loads(block.text)
                     print(json.dumps(data, indent=2, ensure_ascii=False))
-                except:
+                except (json.JSONDecodeError, TypeError):
                     print(block.text)
             else:
                 print(block)

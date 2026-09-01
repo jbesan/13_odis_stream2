@@ -14,6 +14,9 @@ import pandas as pd
 import streamlit as st
 
 from core.models import SearchCriterias, CriteriaItem
+from services.telemetry import resolve_interaction_id
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from agents.state import GraphState
@@ -471,14 +474,18 @@ def launch_background_city_analysis(
 
     try:
         current_username = username or st.session_state.get("username", "unknown")
-    except Exception:
+    except (AttributeError, RuntimeError):
+        current_username = username or "unknown"
+    except Exception as exc:
+        logger.debug("Error getting username from session state: %s", exc)
         current_username = username or "unknown"
 
     try:
-        from services.telemetry import resolve_interaction_id
-
         current_interaction_id = resolve_interaction_id(interaction_id)
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "Error resolving interaction_id in create_graph_run_record: %s", exc
+        )
         current_interaction_id = uuid.uuid4().hex[:8]
 
     now = time.time()
@@ -628,13 +635,19 @@ def run_async_safe(input_data: dict):
     MAIS on ne la ferme JAMAIS explicitement ici. C'est le thread/process
     qui gérera son cycle de vie.
     """
-    # 1. Harvest Telemetry Metadata (Main Thread)
     try:
-        from services.telemetry import resolve_interaction_id
-
         interaction_id = resolve_interaction_id(input_data.get("interaction_id"))
         username = st.session_state.get("username", "unknown")
-    except:
+    except (AttributeError, RuntimeError) as exc:
+        logger.debug(
+            "st.session_state is unavailable in execute_graph_in_sync_thread: %s", exc
+        )
+        interaction_id = uuid.uuid4().hex[:8]
+        username = "unknown"
+    except Exception as exc:
+        logger.warning(
+            "Error resolving session metadata in execute_graph_in_sync_thread: %s", exc
+        )
         interaction_id = uuid.uuid4().hex[:8]
         username = "unknown"
 
@@ -749,10 +762,11 @@ async def run_logic(input_data: dict):
     # exported with the graph trace.
     h = input_data.get("criteria_hash")
     try:
-        from services.telemetry import resolve_interaction_id
-
         iid = resolve_interaction_id(input_data.get("interaction_id"))
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "Error resolving interaction_id in _execute_graph_with_deadline: %s", exc
+        )
         iid = uuid.uuid4().hex[:8]
     input_data["interaction_id"] = iid
     run_id = input_data.get("run_id", "unknown")

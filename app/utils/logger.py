@@ -4,6 +4,7 @@ import json
 import sys
 import warnings
 import logfire
+import zoneinfo
 from datetime import datetime
 from typing import Optional, Any, List
 from core.models import SearchCriterias, SearchResultsData
@@ -117,12 +118,10 @@ def setup_logging() -> None:
         if m_logger.hasHandlers():
             m_logger.handlers.clear()
 
-    try:
-        from absl import logging as absl_logging
-
-        absl_logging.set_verbosity(absl_logging.ERROR)
-    except ImportError:
-        pass
+    # Specifically silence absl logging via standard logger
+    absl_logger = logging.getLogger("absl")
+    absl_logger.setLevel(logging.ERROR)
+    absl_logger.propagate = False
 
     # Specifically for Streamlit fragment session warnings (harmless racy reruns)
     for fragment_logger in [
@@ -206,13 +205,14 @@ def log_search_results(
 
     # --- Markdown Generation ---
     search_params = config.model_dump()
-    # 🧪 SOTA: Robust Paris Timezone logic
     try:
-        import zoneinfo
-
         paris_tz = zoneinfo.ZoneInfo("Europe/Paris")
         now_paris = datetime.now(paris_tz)
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "Failed to obtain Europe/Paris timezone, falling back to local time: %s",
+            exc,
+        )
         now_paris = datetime.now()
 
     timestamp_str = now_paris.strftime("%Y%m%d_%H%M%S")
@@ -455,12 +455,13 @@ def format_agent_result_to_md(agent_name: str, model_id: str, result: Any) -> st
     md_lines.append(f"* **Model**: `{model_id}`")
 
     try:
-        usage = result.usage
-        md_lines.append(
-            f"* **Usage**: {usage.total_tokens} tokens (In: {usage.input_tokens}, Out: {usage.output_tokens})"
-        )
-    except Exception:
-        pass
+        usage = getattr(result, "usage", None)
+        if usage:
+            md_lines.append(
+                f"* **Usage**: {usage.total_tokens} tokens (In: {usage.input_tokens}, Out: {usage.output_tokens})"
+            )
+    except Exception as exc:
+        logger.debug("Could not format usage tokens for agent trace: %s", exc)
     md_lines.append("")
 
     # --- Conversation History ---

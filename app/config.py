@@ -1,7 +1,11 @@
+import logging
 import os
 import warnings
 from typing import Any, Dict, List, Optional, Set, Literal
+import streamlit as st
 from pydantic import BaseModel, Field, ConfigDict
+
+logger = logging.getLogger(__name__)
 
 # Suppress annoying warnings from third-party libraries (especially in Python 3.14+)
 warnings.filterwarnings("ignore", module="langchain_core.*")
@@ -152,6 +156,7 @@ WEIGHT_PROFILES = {
     },
 }
 
+
 # --- Organization Model & Profiles (F-54) ---
 class Org(BaseModel):
     """Represents an organization profile with its default configurations and settings."""
@@ -183,26 +188,39 @@ def load_organization_profiles() -> Dict[str, Org]:
     Returns an empty dict if no organizations are configured in secrets.
     """
     try:
-        import streamlit as st
+        from streamlit.errors import StreamlitSecretNotFoundError
+    except ImportError:
+        StreamlitSecretNotFoundError = FileNotFoundError  # type: ignore[misc, assignment]
 
-        if "organizations" in st.secrets:
-            raw_orgs = st.secrets["organizations"]
-            if hasattr(raw_orgs, "to_dict"):
-                raw_orgs = raw_orgs.to_dict()
-            elif not isinstance(raw_orgs, dict):
-                raw_orgs = dict(raw_orgs)
+    try:
+        if "organizations" not in st.secrets:
+            return {}
+        raw_orgs = st.secrets["organizations"]
+    except (StreamlitSecretNotFoundError, FileNotFoundError):
+        logger.debug("Streamlit secrets not found, using empty organization profiles.")
+        return {}
+    except Exception as exc:
+        logger.warning("Unable to access Streamlit secrets: %s", exc)
+        return {}
 
-            profiles: Dict[str, Org] = {}
-            for org_id, org_data in raw_orgs.items():
-                if isinstance(org_data, dict) or hasattr(org_data, "items"):
-                    data = dict(org_data)
-                    data.setdefault("id", org_id)
-                    profiles[org_id] = Org(**data)
-            return profiles
-    except Exception:
-        pass
+    try:
+        if hasattr(raw_orgs, "to_dict"):
+            raw_orgs = raw_orgs.to_dict()
+        elif not isinstance(raw_orgs, dict):
+            raw_orgs = dict(raw_orgs)
 
-    return {}
+        profiles: Dict[str, Org] = {}
+        for org_id, org_data in raw_orgs.items():
+            if isinstance(org_data, dict) or hasattr(org_data, "items"):
+                data = dict(org_data)
+                data.setdefault("id", org_id)
+                profiles[org_id] = Org(**data)
+        return profiles
+    except Exception as exc:
+        logger.error(
+            "Failed to parse organization profiles from secrets: %s", exc, exc_info=True
+        )
+        return {}
 
 
 ORGANIZATION_PROFILES: Dict[str, Org] = load_organization_profiles()
@@ -468,14 +486,19 @@ def is_ai_free_mode() -> bool:
     if os.environ.get("ODIS_AI_FREE_MODE", "False").lower() in ("true", "1", "yes"):
         return True
 
-    import streamlit as st
-
     try:
         org = st.session_state.get("org")
         if org and getattr(org, "ai_free_mode", False):
             return True
-    except Exception:
-        pass
+    except (AttributeError, RuntimeError) as exc:
+        logger.debug(
+            "st.session_state is unavailable in current context (is_ai_free_mode): %s",
+            exc,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Error reading org from st.session_state in is_ai_free_mode: %s", exc
+        )
 
     return False
 
@@ -520,21 +543,21 @@ def is_interactive_chat_enabled(
 
     active_org = org
     if not active_org:
-        import streamlit as st
-
         try:
             active_org = st.session_state.get("org")
-        except Exception:
-            pass
+        except (AttributeError, RuntimeError) as exc:
+            logger.debug(
+                "st.session_state is unavailable in current context (is_interactive_chat_enabled): %s",
+                exc,
+            )
+        except Exception as exc:
+            logger.warning("Error reading active_org from st.session_state: %s", exc)
 
     if active_org and getattr(active_org, "enable_interactive_chat", False):
         return True
 
-    org_context = (
-        getattr(search_config, "org_context", None) if search_config else None
-    )
+    org_context = getattr(search_config, "org_context", None) if search_config else None
     if org_context and org_context in ORGANIZATION_PROFILES:
         return ORGANIZATION_PROFILES[org_context].enable_interactive_chat
 
     return False
-

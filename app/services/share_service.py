@@ -120,7 +120,8 @@ def _clean_set_strings(obj: Any) -> Any:
     if isinstance(obj, str) and obj.startswith("{") and obj.endswith("}"):
         try:
             return list(ast.literal_eval(obj))
-        except Exception:
+        except (ValueError, SyntaxError) as exc:
+            logger.debug("String '%s' is not an evaluatable set literal: %s", obj, exc)
             return obj
     if isinstance(obj, dict):
         return {k: _clean_set_strings(v) for k, v in obj.items()}
@@ -140,7 +141,10 @@ def _session_value(key: str, default: Any = None) -> Any:
     """Read optional Streamlit state without making serialization context-bound."""
     try:
         return st.session_state.get(key, default)
-    except Exception:
+    except (AttributeError, RuntimeError):
+        return default
+    except Exception as exc:
+        logger.debug("Error retrieving session value for %s: %s", key, exc)
         return default
 
 
@@ -389,8 +393,12 @@ def _resolve_caller_org_id() -> Optional[str]:
         user = st.session_state.get("user")
         if user and hasattr(user, "org_id") and user.org_id:
             return str(user.org_id)
-    except Exception:
-        pass
+    except (AttributeError, RuntimeError) as exc:
+        logger.debug(
+            "st.session_state is unavailable in _resolve_caller_org_id: %s", exc
+        )
+    except Exception as exc:
+        logger.warning("Error resolving caller org_id from session state: %s", exc)
     return None
 
 
@@ -636,9 +644,7 @@ def restore_shared_search_from_query_params() -> bool:
         return False
 
     caller_org_id = _resolve_caller_org_id()
-    outcome = load_shared_search_snapshot_outcome(
-        share_id, caller_org_id=caller_org_id
-    )
+    outcome = load_shared_search_snapshot_outcome(share_id, caller_org_id=caller_org_id)
     if not outcome.is_success or outcome.value is None:
         if outcome.status == OutcomeStatus.UNAUTHORIZED:
             if outcome.error_code == "SHARE-ORG-MISMATCH":
@@ -657,7 +663,9 @@ def restore_shared_search_from_query_params() -> bool:
                     "Réessayez plus tard (code : SHARE-GCS-UNAUTHORIZED)."
                 )
         elif outcome.status == OutcomeStatus.NOT_FOUND:
-            user_msg = f"La recherche partagée '{share_id}' est introuvable ou a expiré."
+            user_msg = (
+                f"La recherche partagée '{share_id}' est introuvable ou a expiré."
+            )
         elif outcome.status == OutcomeStatus.UNAVAILABLE:
             user_msg = (
                 "Le service des recherches partagées est temporairement indisponible. "
@@ -669,7 +677,9 @@ def restore_shared_search_from_query_params() -> bool:
                 "Contactez le support avec le code SHARE-PAYLOAD-INVALID."
             )
         else:
-            user_msg = "Impossible de charger cette recherche partagée. Réessayez plus tard."
+            user_msg = (
+                "Impossible de charger cette recherche partagée. Réessayez plus tard."
+            )
 
         st.session_state["share_error"] = user_msg
         return False

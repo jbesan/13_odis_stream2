@@ -206,7 +206,12 @@ def _search_referentiels_logic(query: str, domain: str) -> List[Dict[str, Any]]:
         try:
             val = calculate_relevance(row)
             return float(val) if not isinstance(val, (pd.Series, pd.DataFrame)) else 0.0
-        except:
+        except Exception as exc:
+            logger.warning(
+                "Relevance calculation failed for row %s: %s",
+                row.get("code") if hasattr(row, "get") else "unknown",
+                exc,
+            )
             return 0.0
 
     work_df["score"] = work_df.apply(_safe_score, axis=1)

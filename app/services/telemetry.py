@@ -58,25 +58,33 @@ def normalize_interaction_id(value: Any) -> Optional[str]:
 
 def get_interaction_id() -> str:
     """Retrieves or generates a unique interaction ID for the current session state."""
-    val = normalize_interaction_id(
-        getattr(st.session_state, "interaction_id", None)
-    )
+    val = normalize_interaction_id(getattr(st.session_state, "interaction_id", None))
     if val is None:
         try:
             val = normalize_interaction_id(st.session_state.get("interaction_id"))
-        except Exception:
+        except (AttributeError, RuntimeError) as exc:
+            _telemetry_logger.debug(
+                "st.session_state is unavailable in get_interaction_id: %s", exc
+            )
+            val = None
+        except Exception as exc:
+            _telemetry_logger.warning(
+                "Error reading interaction_id from st.session_state: %s", exc
+            )
             val = None
 
     if val is None:
         new_id = str(uuid.uuid4())[:8]
         try:
             st.session_state["interaction_id"] = new_id
-        except Exception:
-            pass
-        try:
-            st.session_state.interaction_id = new_id
-        except Exception:
-            pass
+        except (AttributeError, RuntimeError) as exc:
+            _telemetry_logger.debug(
+                "st.session_state unavailable when storing interaction_id: %s", exc
+            )
+        except Exception as exc:
+            _telemetry_logger.warning(
+                "Failed to store interaction_id in session_state: %s", exc
+            )
         return new_id
 
     return str(val)
@@ -93,12 +101,14 @@ def reset_interaction_id() -> str:
     new_id = str(uuid.uuid4())[:8]
     try:
         st.session_state["interaction_id"] = new_id
-    except Exception:
-        pass
-    try:
-        st.session_state.interaction_id = new_id
-    except Exception:
-        pass
+    except (AttributeError, RuntimeError) as exc:
+        _telemetry_logger.debug(
+            "st.session_state unavailable in reset_interaction_id: %s", exc
+        )
+    except Exception as exc:
+        _telemetry_logger.warning(
+            "Failed to set interaction_id in reset_interaction_id: %s", exc
+        )
     return new_id
 
 
@@ -117,7 +127,14 @@ def log_event(
             username = st.session_state.get("username", "unknown")
         if not interaction_id:
             interaction_id = get_interaction_id()
-    except:
+    except (AttributeError, RuntimeError) as exc:
+        _telemetry_logger.debug("st.session_state unavailable in log_event: %s", exc)
+        username = username or "unknown"
+        interaction_id = interaction_id or "unknown"
+    except Exception as exc:
+        _telemetry_logger.warning(
+            "Failed to resolve session state in log_event: %s", exc
+        )
         username = username or "unknown"
         interaction_id = interaction_id or "unknown"
 
@@ -159,7 +176,18 @@ def log_usage_event(
                 org = st.session_state.get("org")
                 org_id = org.id if org and hasattr(org, "id") else "unknown"
             login_session_id = auth.get_login_session_id()
-        except:
+        except (AttributeError, RuntimeError) as exc:
+            _telemetry_logger.debug(
+                "st.session_state unavailable in log_usage_event: %s", exc
+            )
+            username = username or "unknown"
+            interaction_id = interaction_id or "unknown"
+            org_id = org_id or "unknown"
+            login_session_id = "unknown"
+        except Exception as exc:
+            _telemetry_logger.warning(
+                "Error resolving session metadata in log_usage_event: %s", exc
+            )
             username = username or "unknown"
             interaction_id = interaction_id or "unknown"
             org_id = org_id or "unknown"
@@ -168,7 +196,10 @@ def log_usage_event(
         try:
             paris_tz = zoneinfo.ZoneInfo("Europe/Paris")
             timestamp_str = datetime.now(paris_tz).isoformat()
-        except:
+        except Exception as exc:
+            _telemetry_logger.debug(
+                "Failed to obtain Europe/Paris time in log_usage_event: %s", exc
+            )
             timestamp_str = datetime.now().isoformat()
 
         client = bigquery.Client()
@@ -181,7 +212,9 @@ def log_usage_event(
             "username": username,
             "org_id": org_id,
             "event_name": event_name,
-            "payload": json.dumps(_safe_json_format(payload), default=str, ensure_ascii=False),
+            "payload": json.dumps(
+                _safe_json_format(payload), default=str, ensure_ascii=False
+            ),
         }
 
         errors = client.insert_rows_json(table_ref, [row], timeout=15)
@@ -238,8 +271,6 @@ def get_manifest_version() -> str:
         raise RuntimeError(f"❌ Failed to load active manifest_version: {e}") from e
 
 
-
-
 def log_search_complete(
     config: SearchCriterias,
     search_results: SearchResultsData,
@@ -264,7 +295,17 @@ def log_search_complete(
             if not org_id:
                 org = st.session_state.get("org")
                 org_id = org.id if org and hasattr(org, "id") else "unknown"
-        except:
+        except (AttributeError, RuntimeError) as exc:
+            _telemetry_logger.debug(
+                "st.session_state unavailable in log_search_event: %s", exc
+            )
+            interaction_id = interaction_id or "unknown"
+            username = username or "unknown"
+            org_id = org_id or "unknown"
+        except Exception as exc:
+            _telemetry_logger.warning(
+                "Error resolving session metadata in log_search_event: %s", exc
+            )
             interaction_id = interaction_id or "unknown"
             username = username or "unknown"
             org_id = org_id or "unknown"
@@ -272,7 +313,10 @@ def log_search_complete(
         try:
             paris_tz = zoneinfo.ZoneInfo("Europe/Paris")
             timestamp_str = datetime.now(paris_tz).isoformat()
-        except:
+        except Exception as exc:
+            _telemetry_logger.debug(
+                "Failed to obtain Europe/Paris time in log_search_event: %s", exc
+            )
             timestamp_str = datetime.now().isoformat()
 
         # Compute search hash
@@ -383,7 +427,6 @@ def log_search_complete(
                 _safe_json_format(top_5_breakdown), default=str, ensure_ascii=False
             ),
         }
-
 
         errors = client.insert_rows_json(table_ref, [row], timeout=15)
         if errors:
