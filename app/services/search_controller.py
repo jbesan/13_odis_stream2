@@ -11,7 +11,7 @@ import pandas as pd
 
 import config as cfg
 from agents.utils import odis_get_bg_result
-from core import maps, scoring
+from core import maps_deck, scoring
 from core.models import SearchCriterias, SearchResultsData
 from core.postscoring import launch_post_scoring_tasks
 from services import telemetry
@@ -139,7 +139,7 @@ class SearchController:
 
         state["center"] = center
         state["initial_center"] = center
-        state["zoom"] = maps.get_map_zoom(config.loc_search_area)
+        state["zoom"] = maps_deck.get_map_zoom(config.loc_search_area)
         state["last_centered_hash"] = search_hash
         if config.commune_actuelle is not None:
             state["selected_geo"] = app_data["odis"].loc[

@@ -98,7 +98,7 @@ def test_center_map_sets_initial_center_and_unhighlight_restores():
 
     # Emulate Streamlit session
     with patch("ui.results.st.session_state", state), patch(
-        "ui.results.maps._get_geom", return_value=Mock(x=-0.58, y=44.84)
+        "ui.results.maps_deck._get_geom", return_value=Mock(x=-0.58, y=44.84)
     ):
         state["search_results"] = results
         state["highlighted_result"] = [False, None]

@@ -54,7 +54,7 @@ graph TD
         
         %% Global Multiplier
         L & I3 --> M["Multiplicateur Global : Score Besoins × Adéquation Démographique"]
-        M --> N["Cutoff Map (Top 5000 pour la Carte Folium)"]
+        M --> N["Cutoff Map (Top 5000 pour la Carte Interactive)"]
     end
 ```
 
@@ -248,7 +248,7 @@ Le catalogue `scores_config.yaml` regroupe **56 critères thématiques** répart
 
 ## ⚡ Limitations de Performance (Map Cutoff) 🏁
 
-Pour garantir une expérience utilisateur fluide sur la carte Folium (évitant le gel du navigateur avec des dizaines de milliers de polygones) :
+Pour garantir une expérience utilisateur fluide sur la carte interactive Pydeck / Deck.gl (évitant le gel du navigateur avec des dizaines de milliers de polygones) :
 
 - **Seuil** : 5 000 communes maximum (`MAX_MAP_POLYGONS` dans `app/config.py`).
 - **Logique** : Seules les 5 000 meilleures communes selon le `weighted_score` sont conservées pour l'affichage cartographique.

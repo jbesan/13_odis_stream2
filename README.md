@@ -16,7 +16,7 @@ L'innovation de ce prototyp### 🛠️ Key Features
 - **AI Synthesis (Graph-based)**: Agentic workflow powered by pydantic-graph and Gemini for deep site analysis.
 - **Observability**: Hierarchical tracing and token usage monitoring via Pydantic Logfire.
 - **Background Tasks**: Non-blocking AI execution for Cloud Run stability (Daemon threads + Fragment polling).
-- **Interactive Map**: Folium/Leaflet integration for spatial mediation.
+- **Interactive Map**: Pydeck / Deck.gl vector map integration for high-performance spatial exploration.
 - **PDF Reports**: Automated generation of argued territorial summaries.
  les plus prometteurs pour la réussite d'un projet d'intégration.
 
@@ -142,7 +142,7 @@ Le projet suit une approche rigoureuse de développement piloté par les spécif
 - **Analyse de Données :** [Pandas](https://pandas.pydata.org/), [GeoPandas](https://geopandas.org/), [NumPy](https://numpy.org/)
 - **Observabilité :** [Pydantic Logfire](https://logfire.pydantic.dev/) (Tracing, Télémétrie, Monitoring LLM)
 - **Scoring & Normalisation :** [Scikit-learn](https://scikit-learn.org/)
-- **Cartographie Interactive :** [Folium](https://python-visualization.github.io/folium/) & [streamlit-folium](https://github.com/randyzwitch/streamlit-folium)
+- **Cartographie Interactive :** [Pydeck](https://deckgl.readthedocs.io/) & Deck.gl (Rendu vectoriel haute performance)
 - **Graphiques :** [Plotly Express](https://plotly.com/python/plotly-express/)
 - **Infrastructures Cloud :** [Google BigQuery](https://cloud.google.com/bigquery) (Stockage & Vector Search) et [Vertex AI](https://cloud.google.com/vertex-ai) (Embeddings Multimodal) pour le moteur de recherche d'associations (RAG).
 
@@ -156,8 +156,8 @@ app/
 ├── core/                   # Logique métier ODIS
 │   ├── scoring.py          # Moteur de calcul (Normalisation, Pondération)
 │   ├── models.py           # Modèles de données Pydantic (SearchCriterias, etc.)
-│   ├── maps.py             # Rendu cartographique Folium
-│   └── pdf_generator.py    # Génération de rapports PDF ReportLab
+│   ├── maps_deck.py        # Moteur cartographique Pydeck / Deck.gl
+│   └── pdf_generator.py    # Génération de rapports PDF FPDF2
 ├── ui/                     # Interface et Composants
 │   ├── components.py       # Fragments UI et formulaires
 │   ├── charts.py           # Graphiques Plotly

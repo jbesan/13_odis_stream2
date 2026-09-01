@@ -6,7 +6,6 @@ from core.models import SearchCriterias
 
 # Mocking custom components that require JS/HTML environments or external API hits
 @patch("ui.page_shell.inject_idle_disconnect")
-@patch("streamlit_folium.st_folium")
 @patch("core.postscoring.launch_post_scoring_tasks")
 @patch("utils.data_loader.fetch_salesforce_jaccueille_bdv")
 @patch("services.rna_rag.RNARagService")
@@ -14,7 +13,6 @@ def test_happy_path_end_to_end(
     mock_rna_rag,
     mock_fetch_salesforce,
     mock_launch_post_scoring_tasks,
-    mock_st_folium,
     mock_inject_idle_disconnect,
 ):
     """

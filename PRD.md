@@ -16,7 +16,7 @@
 
 - **Données :** Exclusivement Open Data.
 - **Moteur :** Scoring de pertinence (`scoring.py`) basé sur un profil utilisateur.
-- **Stack :** Streamlit (UI), Pandas/GeoPandas (Data), Folium (Carto).
+- **Stack :** Streamlit (UI), Pandas/GeoPandas (Data), Pydeck / Deck.gl (Carto).
 
 ---
 

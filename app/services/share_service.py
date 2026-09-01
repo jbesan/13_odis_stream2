@@ -585,7 +585,7 @@ def restore_shared_search_to_session_state(
     release. Older v1 shares remain viewable, but do not get a fabricated map.
     """
     from utils import data_loader
-    from core import maps
+    from core import maps_deck
 
     if snapshot is None:
         snapshot = SharedSearchSnapshot(
@@ -613,7 +613,7 @@ def restore_shared_search_to_session_state(
         center = cfg.DEFAULT_MAP_CENTER
     zoom = map_view.get("zoom")
     if not isinstance(zoom, int):
-        zoom = maps.get_map_zoom(config_obj.loc_search_area)
+        zoom = maps_deck.get_map_zoom(config_obj.loc_search_area)
     SearchController(AppSession(st.session_state)).restore_snapshot(
         config=config_obj,
         search_results=results_obj,

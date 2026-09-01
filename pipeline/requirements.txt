@@ -3,5 +3,4 @@ geopandas
 requests
 pyyaml
 openpyxl
-openpyxl
 python-calamine

@@ -18,7 +18,7 @@ from agents.utils import (
     is_terminal_graph_run_status,
     odis_get_bg_result,
 )
-from core import maps
+from core import maps_deck
 
 # Sub-module imports & re-exports for complete backward compatibility
 from ui.results_actions import (
@@ -311,7 +311,7 @@ def _result_highlight_callback(index: int) -> None:
         )
     else:
         st.session_state["highlighted_result"] = [True, index]
-        c_pt = maps._get_geom(
+        c_pt = maps_deck._get_geom(
             commune, "centroid", gdf_context=st.session_state.get("processed_gdf")
         )
         if c_pt:
