@@ -405,9 +405,27 @@ def get_active_release_context() -> ReleaseContext:
         raise RuntimeError(f"Unable to resolve active dataset release: {exc}") from exc
 
 
+def _get_dataset_cache_base_dir() -> str:
+    """Determine dataset cache base directory.
+
+    Priority:
+    1. ODIS_CACHE_DIR environment variable if explicitly configured.
+    2. /tmp/odis_data_cache on Cloud Run (detected via K_SERVICE).
+    3. tempfile.gettempdir()/odis_data_cache during pytest (ensuring test isolation).
+    4. app/data/datasets locally in development (persistent and git-ignored).
+    """
+    if custom_dir := (os.getenv("ODIS_CACHE_DIR") or os.getenv("ODIS_DATA_CACHE_DIR")):
+        return custom_dir
+    if os.getenv("K_SERVICE"):
+        return os.path.join(tempfile.gettempdir(), "odis_data_cache")
+    if "PYTEST_CURRENT_TEST" in os.environ:
+        return os.path.join(tempfile.gettempdir(), "odis_data_cache")
+    return os.path.join(cfg.APP_DIR, "data", "datasets")
+
+
 def _release_cache_path(context: ReleaseContext, artifact: ReleaseArtifact) -> str:
     return os.path.join(
-        tempfile.gettempdir(), "odis_data_cache", context.version, artifact.name
+        _get_dataset_cache_base_dir(), context.version, artifact.name
     )
 
 
