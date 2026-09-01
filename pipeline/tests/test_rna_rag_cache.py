@@ -14,7 +14,7 @@ from pipeline.ingest import (
 def _write_cache(path):
     path.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame({"codgeo": ["75001"], "inc_rna_Logement_count": [3]}).to_parquet(
-        path, engine="fastparquet"
+        path
     )
 
 

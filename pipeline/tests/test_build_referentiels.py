@@ -23,7 +23,7 @@ def test_generate_referentiels_falls_back_to_raw_regions(tmp_path, monkeypatch):
     # Run-scoped clean directories contain these two referentials, but not the
     # legacy regions.parquet file.
     pd.DataFrame({"codgeo": ["75056"], "nom": ["Paris"]}).to_parquet(
-        clean_dir / "communes.parquet", engine="fastparquet"
+        clean_dir / "communes.parquet"
     )
     pd.DataFrame(
         {
@@ -31,14 +31,14 @@ def test_generate_referentiels_falls_back_to_raw_regions(tmp_path, monkeypatch):
             "label": ["Paris", "Rhône"],
             "reg_code": ["11", "84"],
         }
-    ).to_parquet(clean_dir / "departements.parquet", engine="fastparquet")
+    ).to_parquet(clean_dir / "departements.parquet")
     pd.DataFrame(
         {
             "geo_level": ["commune", "commune", "commune"],
             "region_code": ["01", "11", "84"],
             "departement_code": ["75", "75", "69"],
         }
-    ).to_parquet(raw_dir / "odace_dim_geo.parquet", engine="fastparquet")
+    ).to_parquet(raw_dir / "odace_dim_geo.parquet")
     (raw_dir / "referentiel_regions.json").write_text(
         json.dumps(
             [
@@ -55,7 +55,7 @@ def test_generate_referentiels_falls_back_to_raw_regions(tmp_path, monkeypatch):
             "code": ["M1805", "K1302"],
             "label": ["Développement informatique", "Aide à domicile"],
         }
-    ).to_parquet(raw_dir / "rome_referential_api.parquet", engine="fastparquet")
+    ).to_parquet(raw_dir / "rome_referential_api.parquet")
     monkeypatch.setattr(build, "CLEAN_DIR", clean_dir)
     monkeypatch.setattr(build, "CACHE_DIR", raw_dir)
     monkeypatch.setattr(build, "OUTPUT_DIR", output_dir)
@@ -73,7 +73,7 @@ def test_generate_referentiels_falls_back_to_raw_regions(tmp_path, monkeypatch):
     )
 
     refs = pd.read_parquet(
-        output_dir / "odis_referentiels.parquet", engine="fastparquet"
+        output_dir / "odis_referentiels.parquet"
     )
     regions = refs.loc[refs["key"] == "regions"].set_index("code")["label"].to_dict()
     assert regions == {

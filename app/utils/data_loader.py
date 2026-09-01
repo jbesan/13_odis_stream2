@@ -624,9 +624,7 @@ def _load_parquet(
         if error_list is not None:
             error_list.append(fname)
         return pd.DataFrame()
-    if columns:
-        return pd.read_parquet(resolved_path, engine="fastparquet", columns=columns)
-    return pd.read_parquet(resolved_path, engine="fastparquet")
+    return pd.read_parquet(resolved_path, columns=columns)
 
 
 @st.cache_resource

@@ -21,7 +21,6 @@ google-cloud-bigquery-storage
 google-cloud-storage
 pyarrow
 db-dtypes
-fastparquet
 logfire[httpx]
 python-frontmatter
 Authlib>=1.3.2

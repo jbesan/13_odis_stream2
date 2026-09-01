@@ -26,7 +26,6 @@ def configure_logging(level=logging.INFO):
     logging.basicConfig(level=level, format="%(asctime)s - %(levelname)s - %(message)s")
     # Silence extremely verbose third-party loggers
     for logger_name in [
-        "fastparquet",
         "requests",
         "urllib3",
         "pyarrow",
@@ -129,7 +128,7 @@ def load_dataset(path: Path, config: Dict[str, Any], **kwargs) -> pd.DataFrame:
     # Prioritize config format
     encoding = config.get("encoding", None)
     if fmt == "parquet":
-        return pd.read_parquet(path, engine="fastparquet", **kwargs)
+        return pd.read_parquet(path, **kwargs)
     elif fmt == "csv":
         return pd.read_csv(path, sep=None, engine="python", encoding=encoding, **kwargs)
     elif fmt == "json":
@@ -156,7 +155,7 @@ def load_dataset(path: Path, config: Dict[str, Any], **kwargs) -> pd.DataFrame:
 
     # Fallback to extension
     if path.suffix == ".parquet":
-        return pd.read_parquet(path, engine="fastparquet", **kwargs)
+        return pd.read_parquet(path, **kwargs)
     elif path.suffix == ".csv":
         return pd.read_csv(path, sep=None, engine="python", encoding=encoding, **kwargs)
     elif path.suffix == ".json":
@@ -377,7 +376,7 @@ def finalize_ingest(
             return False
 
         # Load staging clean parquet to validate
-        df = pd.read_parquet(staging_clean, engine="fastparquet")
+        df = pd.read_parquet(staging_clean)
         source_cfg = config["sources"].get(source_name) or config.get(
             "local_files", {}
         ).get(source_name)
