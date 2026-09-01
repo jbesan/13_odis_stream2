@@ -557,10 +557,10 @@ async def _search_places_logic(queries: List[str], location: str) -> Dict[str, A
     try:
         # Google Places V1 - Text Search (New)
         endpoint = "https://places.googleapis.com/v1/places:searchText"
-        # ``editorialSummary`` is intentionally retained for now: its current
-        # response contract is consumed by the expert and maps to the
-        # Enterprise + Atmosphere Places SKU recorded in the rate card.
-        field_mask = "places.displayName,places.types,places.editorialSummary,places.formattedAddress,places.id"
+        # ``editorialSummary`` is intentionally omitted to avoid the costly
+        # Enterprise + Atmosphere SKU (35.11 € / 1,000 queries) and retain
+        # the much cheaper Text Search Pro SKU (~4.39 € / 1,000 queries).
+        field_mask = "places.displayName,places.types,places.formattedAddress,places.id"
 
         logger.debug(
             f"🚀 [MCP] search_places parallel start: {len(queries)} queries for {location}"
@@ -575,7 +575,8 @@ async def _search_places_logic(queries: List[str], location: str) -> Dict[str, A
             # REST call -> wrap in to_thread
             return await asyncio.to_thread(_call_google_v1, endpoint, body, field_mask)
 
-        bounded_queries = queries[:20]
+        # Bounded to at most 5 queries to strictly prevent cost amplification
+        bounded_queries = queries[:5]
         tasks = [_single_place_search(q) for q in bounded_queries]
         batch_responses = await asyncio.gather(*tasks)
 
@@ -589,11 +590,10 @@ async def _search_places_logic(queries: List[str], location: str) -> Dict[str, A
             places = res.get("places", [])
             for p in places:
                 name = p.get("displayName", {}).get("text")
-                summary = p.get("editorialSummary", {}).get("text")
                 all_places.append(
                     {
                         "name": name,
-                        "description": summary,
+                        "description": None,
                         "types": p.get("types"),
                         "address": p.get("formattedAddress"),
                         "place_id": p.get("id"),
@@ -608,7 +608,7 @@ async def _search_places_logic(queries: List[str], location: str) -> Dict[str, A
             provider="google_places",
             request_count=len(bounded_queries),
             returned_places=len(all_places),
-            pricing_sku="Places Text Search Enterprise + Atmosphere",
+            pricing_sku="Places Text Search Pro",
             cost_eur=estimate_places_cost_eur(len(bounded_queries)),
             free_tier_requests=1_000,
             cost_basis="rate-card estimate; monthly account usage not available",

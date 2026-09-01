@@ -1,9 +1,7 @@
 branca
-contextily
 folium>=0.14.0
 fpdf2
 geopandas
-matplotlib
 numpy
 pandas
 plotly

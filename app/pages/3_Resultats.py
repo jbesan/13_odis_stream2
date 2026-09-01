@@ -133,8 +133,8 @@ st.html(
         max-height: calc(100vh - 2rem) !important;
         box-sizing: border-box !important;
         overflow-x: hidden !important;
-        overflow-y: auto !important;
-        padding: 1rem !important;
+        overflow-y: hidden !important;
+        padding: 0.75rem !important;
         z-index: 20 !important;
         background: rgba(255, 255, 255, 0.5) !important;
         backdrop-filter: blur(16px) !important;

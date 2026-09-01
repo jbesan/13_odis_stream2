@@ -29,11 +29,18 @@ GEMINI_3_5_FLASH_LITE_REGIONAL_OUTPUT_EUR_PER_MILLION = 2.1945
 GOOGLE_GROUNDING_FREE_QUERIES = 5_000
 GOOGLE_GROUNDING_EUR_PER_THOUSAND = 12.2892
 
-# The current Places request asks for ``editorialSummary``.  Google classifies
-# that field as Text Search Enterprise + Atmosphere.  Keep this SKU explicit
-# so removing that field later can be reflected by changing one card.
-PLACES_TEXT_SEARCH_ENTERPRISE_ATMOSPHERE_FREE_REQUESTS = 1_000
-PLACES_TEXT_SEARCH_ENTERPRISE_ATMOSPHERE_EUR_PER_THOUSAND = 35.112
+# Places Text Search (Pro): fields: displayName, formattedAddress, id, types
+# Google pricing: $5.00 / 1,000 queries (~4.389 € / 1,000 queries).
+# (The previous SKU was Enterprise + Atmosphere at 35.112 € due to editorialSummary).
+PLACES_TEXT_SEARCH_PRO_FREE_REQUESTS = 1_000
+PLACES_TEXT_SEARCH_PRO_EUR_PER_THOUSAND = 4.389
+# Retain backwards-compatible aliases for existing callers
+PLACES_TEXT_SEARCH_ENTERPRISE_ATMOSPHERE_FREE_REQUESTS = (
+    PLACES_TEXT_SEARCH_PRO_FREE_REQUESTS
+)
+PLACES_TEXT_SEARCH_ENTERPRISE_ATMOSPHERE_EUR_PER_THOUSAND = (
+    PLACES_TEXT_SEARCH_PRO_EUR_PER_THOUSAND
+)
 
 
 @dataclass(frozen=True)
@@ -155,12 +162,12 @@ def estimate_google_grounding_cost_eur(query_count: int) -> float:
 
 
 def estimate_places_cost_eur(request_count: int) -> float:
-    """Estimate the current Places Text Search Enterprise + Atmosphere SKU."""
+    """Estimate the current Places Text Search Pro SKU."""
 
     return _tiered_cost_eur(
         request_count,
-        free_requests=PLACES_TEXT_SEARCH_ENTERPRISE_ATMOSPHERE_FREE_REQUESTS,
-        eur_per_thousand=PLACES_TEXT_SEARCH_ENTERPRISE_ATMOSPHERE_EUR_PER_THOUSAND,
+        free_requests=PLACES_TEXT_SEARCH_PRO_FREE_REQUESTS,
+        eur_per_thousand=PLACES_TEXT_SEARCH_PRO_EUR_PER_THOUSAND,
     )
 
 
