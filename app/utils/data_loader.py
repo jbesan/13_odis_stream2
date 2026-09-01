@@ -17,6 +17,7 @@ import tempfile
 import threading
 import uuid
 from google.cloud import storage
+from utils.thread_utils import attach_script_run_ctx
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -119,9 +120,11 @@ def preload_scoring_datasets_async() -> None:
             return
         _SCORING_PRELOAD_STATUS["in_progress"] = True
 
-    thread = threading.Thread(
-        target=_preload_scoring_datasets_in_background,
-        daemon=True,
+    thread = attach_script_run_ctx(
+        threading.Thread(
+            target=_preload_scoring_datasets_in_background,
+            daemon=True,
+        )
     )
     thread.start()
 
@@ -156,9 +159,7 @@ def load_scores_config_as_df(config_path: str) -> pd.DataFrame:
                 "format": item.get("display", {}).get("format", None),
                 "missing_strategy": item.get("missing_strategy", "exclude"),
                 "show": item.get("display", {}).get("show", True),
-                "metric_type": item.get("display", {}).get(
-                    "metric_type", "continuous"
-                ),
+                "metric_type": item.get("display", {}).get("metric_type", "continuous"),
                 "discrete_mapping": item.get("display", {}).get(
                     "discrete_mapping", None
                 ),
@@ -424,9 +425,7 @@ def _get_dataset_cache_base_dir() -> str:
 
 
 def _release_cache_path(context: ReleaseContext, artifact: ReleaseArtifact) -> str:
-    return os.path.join(
-        _get_dataset_cache_base_dir(), context.version, artifact.name
-    )
+    return os.path.join(_get_dataset_cache_base_dir(), context.version, artifact.name)
 
 
 def _verified_artifact_key(

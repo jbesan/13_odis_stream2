@@ -16,6 +16,8 @@ from agents.utils import (
     sanitize_llm_markdown,
 )
 
+from utils.thread_utils import attach_script_run_ctx
+
 logger = logging.getLogger(__name__)
 ENRICHMENT_DEADLINE_SECONDS = 30
 
@@ -185,9 +187,9 @@ def launch_background_refining(
                 loop.close()
 
     # 4. Threading (Non-blocking)
-    import threading
-
-    thread = threading.Thread(target=bg_refiner_task, args=(store, hash_val))
+    thread = attach_script_run_ctx(
+        threading.Thread(target=bg_refiner_task, args=(store, hash_val))
+    )
     thread.daemon = True  # Ensure it doesn't block exit
     thread.start()
 
@@ -319,7 +321,9 @@ def launch_background_association_enrichment(
             }
             results_store[hash_val] = current_val
 
-    thread = threading.Thread(target=bg_enrichment_task, args=(store,))
+    thread = attach_script_run_ctx(
+        threading.Thread(target=bg_enrichment_task, args=(store,))
+    )
     thread.daemon = True
     thread.start()
     _schedule_enrichment_deadline(
@@ -624,7 +628,9 @@ def launch_background_inclusion_enrichment(
             f"✅ [INCLUSION-ENRICH] Background services enrichment finished for hash {hash_val}"
         )
 
-    thread = threading.Thread(target=bg_inclusion_enrichment_task, args=(store,))
+    thread = attach_script_run_ctx(
+        threading.Thread(target=bg_inclusion_enrichment_task, args=(store,))
+    )
     thread.daemon = True
     thread.start()
     _schedule_enrichment_deadline(store, hash_val, "inclusion_services_status", codgeos)
@@ -1005,8 +1011,10 @@ def launch_background_job_curation(
 
     # 4. Spawn a concurrent thread for each target commune code
     for cg in codgeos:
-        thread = threading.Thread(
-            target=bg_jobs_enrichment_for_city_task, args=(str(cg), store)
+        thread = attach_script_run_ctx(
+            threading.Thread(
+                target=bg_jobs_enrichment_for_city_task, args=(str(cg), store)
+            )
         )
         thread.daemon = True
         thread.start()
@@ -1067,7 +1075,7 @@ def launch_background_audit_log(
                 exc_info=True,
             )
 
-    thread = threading.Thread(target=bg_logging_task)
+    thread = attach_script_run_ctx(threading.Thread(target=bg_logging_task))
     thread.daemon = True
     thread.start()
 

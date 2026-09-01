@@ -15,6 +15,7 @@ import streamlit as st
 
 from core.models import SearchCriterias, CriteriaItem
 from services.telemetry import resolve_interaction_id
+from utils.thread_utils import attach_script_run_ctx
 
 logger = logging.getLogger(__name__)
 
@@ -617,11 +618,13 @@ def launch_background_city_analysis(
             if not loop.is_closed():
                 loop.close()
 
-    thread = threading.Thread(
-        target=bg_analysis_task,
-        args=(store, identity, input_data, cancel_event, timeout_seconds),
-        name=f"odis-ai-{codgeo}-{identity.attempt}",
-        daemon=True,
+    thread = attach_script_run_ctx(
+        threading.Thread(
+            target=bg_analysis_task,
+            args=(store, identity, input_data, cancel_event, timeout_seconds),
+            name=f"odis-ai-{codgeo}-{identity.attempt}",
+            daemon=True,
+        )
     )
     thread.start()
     return record
