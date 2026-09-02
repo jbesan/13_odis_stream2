@@ -98,7 +98,7 @@ def test_reset_for_home_preserves_identity_and_resources_only():
 
 
 def test_identity_rejects_partial_authenticated_state():
-    session = AppSession({"username": "user@example.org", "user": object()})
+    session = AppSession({"username": "user@example.org"})
 
     try:
         session.identity()
@@ -106,3 +106,12 @@ def test_identity_rejects_partial_authenticated_state():
         assert "incomplete identity" in str(exc)
     else:
         raise AssertionError("A partial authenticated identity must be rejected")
+
+
+def test_identity_allows_user_without_org():
+    user = object()
+    session = AppSession({"username": "user@example.org", "user": user})
+    ident = session.identity()
+    assert ident.username == "user@example.org"
+    assert ident.user is user
+    assert ident.org is None

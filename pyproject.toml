@@ -1,0 +1,67 @@
+[project]
+name = "odis-stream2"
+version = "0.1.0"
+description = "OD&IS Stream 2 - Application SaaS & Pipeline de Données"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    # --- Web Framework & Authentication ---
+    "streamlit>=1.55.0",
+    "authlib>=1.3.2",
+
+    # --- Data Science & Geospatial ---
+    "numpy",
+    "pandas",
+    "geopandas",
+    "shapely",
+    "pyarrow",
+
+    # --- Visualization & Reporting ---
+    "plotly",
+    "pydeck",
+    "fpdf2",
+
+    # --- AI Agents Swarm & Tools ---
+    "pydantic",
+    "pydantic-ai-slim[google,logfire]>=2.27.0",
+    "google-genai>=1.70.0",
+    "fastmcp<4",
+    "python-frontmatter",
+
+    # --- Google Cloud Platform ---
+    "google-cloud-bigquery",
+    "google-cloud-bigquery-storage",
+    "google-cloud-storage",
+    "db-dtypes",
+
+    # --- Observability, Network & Config ---
+    "logfire[httpx]",
+    "requests",
+    "python-dotenv",
+    "pyyaml",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "ty==0.0.55",
+    "ruff==0.15.20",
+    "vulture",
+    "pydantic-evals>=2.27.0",
+    "psutil",
+]
+pipeline = [
+    "pandas",
+    "geopandas",
+    "requests",
+    "pyyaml",
+    "openpyxl",
+    "python-calamine",
+]
+
+[tool.uv]
+environments = [
+    "sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+]

@@ -1,34 +1,23 @@
 # ---- Builder Stage ----
-# Use a full-featured Python image to build dependencies
-FROM python:3.11-slim-bookworm as builder
+FROM python:3.14-slim-bookworm AS builder
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# Install build dependencies for geospatial libraries
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libgdal-dev \
-    gdal-bin \
-    && rm -rf /var/lib/apt/lists/*
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
+WORKDIR /app
 
-# Set up a virtual environment
-RUN python -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
-
-# Copy and install Python requirements
-RUN pip install --upgrade pip
-COPY app/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install dependencies using uv sync
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
 
 # ---- Final Stage ----
-FROM python:3.11-slim-bookworm
+FROM python:3.14-slim-bookworm
 
 # Environment optimizations
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PATH="/opt/venv/bin:$PATH"
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PATH="/app/.venv/bin:$PATH"
 
 # Install system dependencies (minimal)
-# We might need libgdal if binary wheels aren't self-contained, but usually they are.
-# Keeping it empty for now to minimize size.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libexpat1 \
@@ -41,7 +30,7 @@ RUN groupadd -r odis && useradd -r -m -g odis odis
 WORKDIR /app
 
 # Copy the virtual environment from the builder stage
-COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /app/.venv /app/.venv
 
 # Copy the application code
 COPY --chown=odis:odis app/ .

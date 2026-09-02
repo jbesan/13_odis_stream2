@@ -2,6 +2,7 @@ import pytest
 import pandas as pd
 import geopandas as gpd
 import copy
+import config as cfg
 from core import scoring
 from app.core.models import SearchCriterias, CriteriaItem
 
@@ -1496,22 +1497,23 @@ class TestP108TieBreak:
             index=["petite_ville_centre", "petite_ville_satellite", "metropole_centre", "village_rural", "suburb_of_metropole"]
         )
 
-        # Target: "🏘️ Petite Ville" (a=10k, b=30k, c=200k, d=450k, floor=0.15)
+        # Target: "🏘️ Petite Ville" (a=10k, b=30k, c=200k, d=450k, floor=cfg.DEMOGRAPHIC_MIN_FLOOR)
         config = SearchCriterias(target_city_size="🏘️ Petite Ville")
         modifier = engine._compute_demographic_modifier(test_df, config)
+        floor = cfg.DEMOGRAPHIC_MIN_FLOOR
 
         # Bergerac centre (BdV 65k) is on the 100% plateau
         assert abs(modifier["petite_ville_centre"] - 1.0) < 1e-5
         # Satellite village in Bergerac BdV (BdV 65k) is on the 100% plateau
         assert abs(modifier["petite_ville_satellite"] - 1.0) < 1e-5
-        # Metropole centre (BdV 2M) is beyond d (450k) -> residual floor 0.15
-        assert abs(modifier["metropole_centre"] - 0.15) < 1e-5
-        # Suburb of metropole (commune 45k, but BdV 1.7M) is beyond d (450k) -> residual floor 0.15
-        assert abs(modifier["suburb_of_metropole"] - 0.15) < 1e-5
-        # Deep rural village (BdV 5k) is below a (10k) -> residual floor 0.15
-        assert abs(modifier["village_rural"] - 0.15) < 1e-5
-        # All bounded in [0.15, 1.0]
-        assert (modifier >= 0.15).all() and (modifier <= 1.0).all()
+        # Metropole centre (BdV 2M) is beyond d (450k) -> residual floor
+        assert abs(modifier["metropole_centre"] - floor) < 1e-5
+        # Suburb of metropole (commune 45k, but BdV 1.7M) is beyond d (450k) -> residual floor
+        assert abs(modifier["suburb_of_metropole"] - floor) < 1e-5
+        # Deep rural village (BdV 5k) is below a (10k) -> residual floor
+        assert abs(modifier["village_rural"] - floor) < 1e-5
+        # All bounded in [floor, 1.0]
+        assert (modifier >= floor).all() and (modifier <= 1.0).all()
 
 
 
