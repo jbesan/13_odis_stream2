@@ -393,33 +393,128 @@ def render_vector_map(
           ]
         }};
 
-        window.__communesGeoJsonCache = window.__communesGeoJsonCache || null;
+        const CACHE_NAME = 'odis-communes-v1';
+        const CACHE_TTL_MS = 365 * 24 * 60 * 60 * 1000; // 1 an
+        const CACHE_TIMESTAMP_KEY = 'odis_communes_geojson_cached_at';
+
+        function getTopWindow() {{
+          try {{
+            if (window.parent && window.parent !== window) {{
+              const test = window.parent.location.origin;
+              return window.parent;
+            }}
+          }} catch (e) {{
+            // Fallback en cas d'isolation cross-origin
+          }}
+          return window;
+        }}
 
         async function fetchGeoJson() {{
-          if (window.__communesGeoJsonCache) {{
-            return window.__communesGeoJsonCache;
+          const topWin = getTopWindow();
+
+          // 1. Tier 1 : Cache memoire sur window.parent (survit aux reruns d'iframe, 0 ms, 0 parsing)
+          if (topWin.__communesGeoJsonMemoryCache) {{
+            return topWin.__communesGeoJsonMemoryCache;
           }}
-          const origin = window.location.origin.startsWith('http')
-            ? window.location.origin
-            : (window.parent && window.parent.location.origin.startsWith('http') ? window.parent.location.origin : '');
-          const candidates = [
-            '/app/static/data/communes_france.geojson',
-            '/static/data/communes_france.geojson',
-            origin + '/app/static/data/communes_france.geojson',
-            origin + '/static/data/communes_france.geojson'
-          ];
-          for (const url of candidates) {{
+          if (window.__communesGeoJsonMemoryCache) {{
+            return window.__communesGeoJsonMemoryCache;
+          }}
+
+          // Dedoublonnage des requetes simultanees
+          if (topWin.__communesGeoJsonPromise) {{
+            return await topWin.__communesGeoJsonPromise;
+          }}
+
+          topWin.__communesGeoJsonPromise = (async () => {{
+            const origin = window.location.origin.startsWith('http')
+              ? window.location.origin
+              : (topWin.location.origin.startsWith('http') ? topWin.location.origin : '');
+            const candidates = [
+              '/app/static/data/communes_france.geojson',
+              '/static/data/communes_france.geojson',
+              origin + '/app/static/data/communes_france.geojson',
+              origin + '/static/data/communes_france.geojson'
+            ];
+
+            // 2. Tier 2 : CacheStorage du navigateur (window.caches / topWin.caches) avec TTL de 1 an
+            let cacheStorage = null;
             try {{
-              const res = await fetch(url);
-              if (res.ok) {{
-                window.__communesGeoJsonCache = await res.json();
-                return window.__communesGeoJsonCache;
-              }}
+              cacheStorage = topWin.caches || window.caches || null;
             }} catch (e) {{
-              // try next fallback candidate
+              cacheStorage = null;
             }}
+
+            if (cacheStorage) {{
+              try {{
+                let cachedAt = 0;
+                try {{
+                  const storedTime = (topWin.localStorage || window.localStorage).getItem(CACHE_TIMESTAMP_KEY);
+                  if (storedTime) {{
+                    cachedAt = parseInt(storedTime, 10);
+                  }}
+                }} catch (e) {{
+                  // localStorage inaccessible
+                }}
+
+                const now = Date.now();
+                const isExpired = !cachedAt || (now - cachedAt > CACHE_TTL_MS);
+
+                const cache = await cacheStorage.open(CACHE_NAME);
+                if (!isExpired) {{
+                  for (const url of candidates) {{
+                    const cachedResponse = await cache.match(url);
+                    if (cachedResponse) {{
+                      const data = await cachedResponse.json();
+                      topWin.__communesGeoJsonMemoryCache = data;
+                      window.__communesGeoJsonMemoryCache = data;
+                      return data;
+                    }}
+                  }}
+                }} else {{
+                  for (const url of candidates) {{
+                    await cache.delete(url);
+                  }}
+                }}
+              }} catch (e) {{
+                console.warn('[ODIS-MAP] Erreur lecture CacheStorage:', e);
+              }}
+            }}
+
+            // 3. Tier 3 : Telechargement reseau
+            for (const url of candidates) {{
+              try {{
+                const res = await fetch(url);
+                if (res.ok) {{
+                  if (cacheStorage) {{
+                    try {{
+                      const resClone = res.clone();
+                      const cache = await cacheStorage.open(CACHE_NAME);
+                      await cache.put(url, resClone);
+                      try {{
+                        (topWin.localStorage || window.localStorage).setItem(CACHE_TIMESTAMP_KEY, Date.now().toString());
+                      }} catch (e) {{}}
+                    }} catch (e) {{
+                      console.warn('[ODIS-MAP] Erreur ecriture CacheStorage:', e);
+                    }}
+                  }}
+
+                  const data = await res.json();
+                  topWin.__communesGeoJsonMemoryCache = data;
+                  window.__communesGeoJsonMemoryCache = data;
+                  return data;
+                }}
+              }} catch (e) {{
+                // Essai du candidat suivant
+              }}
+            }}
+            throw new Error('Impossible de charger le fichier communes_france.geojson');
+          }})();
+
+          try {{
+            return await topWin.__communesGeoJsonPromise;
+          }} finally {{
+            topWin.__communesGeoJsonPromise = null;
           }}
-          throw new Error('Impossible de charger le fichier communes_france.geojson');
         }}
 
         function hexToRgba(hex, alpha = 255) {{
@@ -616,8 +711,7 @@ def render_vector_map(
     </html>
     """
 
-    st.components.v1.html(
+    st.iframe(
         html_content,
         height=height,
-        scrolling=False,
     )

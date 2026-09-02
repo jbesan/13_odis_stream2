@@ -182,3 +182,31 @@ def test_prepare_map_payload_center_offset():
     assert payload["center"] == [46.5, 1.5]
     assert payload["zoom"] == 9
 
+
+def test_render_vector_map_caching_and_ttl(monkeypatch):
+    """Verify that render_vector_map injects the multi-tier caching mechanism with 1-year TTL."""
+    from app.ui.map_vector import render_vector_map
+    import streamlit as st
+
+    captured = {}
+
+    def fake_iframe(html, height=1500):
+        captured["html"] = html
+
+    monkeypatch.setattr(st, "iframe", fake_iframe)
+
+    render_vector_map(
+        gdf_scores=None,
+        center=[46.5, 2.0],
+        zoom=7,
+    )
+
+    html = captured.get("html", "")
+    assert len(html) > 0
+    assert "odis-communes-v1" in html
+    assert "365 * 24 * 60 * 60 * 1000" in html
+    assert "__communesGeoJsonMemoryCache" in html
+    assert "__communesGeoJsonPromise" in html
+    assert "cacheStorage.open(CACHE_NAME)" in html
+
+
