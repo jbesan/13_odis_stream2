@@ -1,4 +1,7 @@
 import os
+import sys
+from types import ModuleType
+import warnings
 
 os.environ.setdefault("GOOGLE_API_KEY", "dummy_placeholder_for_tests")
 os.environ.setdefault("GOOGLE_CLOUD_PROJECT", "test-project")
@@ -6,11 +9,6 @@ os.environ.setdefault("GOOGLE_CLOUD_PROJECT", "test-project")
 # bucket name because their storage clients are mocked or their fixtures rely
 # on the published development release.
 os.environ.setdefault("GCS_DATASETS_BUCKET", "odis-stream2-eu")
-import sys
-from types import ModuleType
-import warnings
-
-import geopandas as gpd
 import opentelemetry.trace as otel_trace
 import pandas as pd
 import pytest
@@ -104,6 +102,101 @@ warnings.filterwarnings(
 )
 
 
+# --- Hermetic Offline Storage Fixture ---
+@pytest.fixture(scope="session", autouse=True)
+def mock_storage_client_for_offline_tests():
+    """Hermetic offline GCS mock for unit tests when local datasets are present."""
+    import unittest.mock
+    datasets_base = os.path.join(cfg.APP_DIR, "data", "datasets")
+    if not os.path.isdir(datasets_base):
+        yield
+        return
+
+    versions = [
+        d
+        for d in os.listdir(datasets_base)
+        if os.path.exists(os.path.join(datasets_base, d, "odis_communes.parquet"))
+    ]
+    if not versions:
+        yield
+        return
+
+    active_version = sorted(versions)[-1]
+    version_dir = os.path.join(datasets_base, active_version)
+
+    from utils import data_loader
+    import json
+    import hashlib
+    import shutil
+
+    outputs = []
+    file_map = {}
+    for filename in data_loader._RUNTIME_DATASET_FILENAMES:
+        file_path = os.path.join(version_dir, filename)
+        if os.path.exists(file_path):
+            with open(file_path, "rb") as handle:
+                content = handle.read()
+            sha256 = hashlib.sha256(content).hexdigest()
+            size_bytes = len(content)
+            outputs.append(
+                {"name": filename, "sha256": sha256, "size_bytes": size_bytes}
+            )
+            file_map[filename] = (file_path, content)
+
+    manifest_dict = {"pipeline_run_id": active_version, "outputs": outputs}
+    manifest_bytes = json.dumps(manifest_dict, ensure_ascii=False).encode("utf-8")
+    manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
+
+    pointer_dict = {
+        "version": active_version,
+        "files": [item["name"] for item in outputs],
+        "manifest": {"name": "data_manifest.json", "sha256": manifest_sha256},
+    }
+    pointer_bytes = json.dumps(pointer_dict, ensure_ascii=False).encode("utf-8")
+
+    class MockBlob:
+        def __init__(self, name: str):
+            self.name = name
+
+        def exists(self) -> bool:
+            return True
+
+        def download_as_bytes(self) -> bytes:
+            if self.name.endswith("current.json"):
+                return pointer_bytes
+            if self.name.endswith("data_manifest.json"):
+                return manifest_bytes
+            fname = os.path.basename(self.name)
+            if fname in file_map:
+                return file_map[fname][1]
+            raise FileNotFoundError(f"Mock blob {self.name} not found")
+
+        def download_to_filename(self, target_path: str) -> None:
+            fname = os.path.basename(self.name)
+            if fname in file_map:
+                shutil.copyfile(file_map[fname][0], target_path)
+            else:
+                raise FileNotFoundError(f"Mock blob {self.name} not found")
+
+    class MockBucket:
+        def blob(self, blob_name: str) -> MockBlob:
+            return MockBlob(blob_name)
+
+    class MockStorageClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def bucket(self, bucket_name: str) -> MockBucket:
+            return MockBucket()
+
+    patcher = unittest.mock.patch("utils.data_loader.storage.Client", MockStorageClient)
+    patcher.start()
+    try:
+        yield
+    finally:
+        patcher.stop()
+
+
 # --- Test Fixtures ---
 
 
@@ -148,11 +241,11 @@ def sample_data():
         "log_loyer_moyen_appt_t3_p_scaled": [0.5, 0.2, 0.3, 0.4, 0.8],
         "log_loyer_moyen_house_all_scaled": [0.5, 0.2, 0.3, 0.4, 0.8],
     }
-    gdf = gpd.GeoDataFrame(data, crs="EPSG:4326")
-    gdf = gdf.to_crs(cfg.PROJECTED_CRS)
-    gdf["centroid"] = gdf.geometry.centroid
-    gdf = gdf.set_index("codgeo")
-    return gdf.copy()
+    df = pd.DataFrame(data)
+    df["polygon"] = df["geometry"]
+    df["centroid"] = [g.centroid for g in df["geometry"]]
+    df = df.set_index("codgeo")
+    return df.copy()
 
 
 @pytest.fixture

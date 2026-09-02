@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 import config as cfg
 from core.scoring import ScoringEngine
-import geopandas as gpd
 from shapely.geometry import Point
 
 
@@ -40,9 +39,9 @@ def test_scoring_limit_and_current_city_preservation(live_scores_cat, default_co
 
     df_all = pd.DataFrame(data).set_index("codgeo")
 
-    # Mock GeoDataFrames
-    odis_geo = gpd.GeoDataFrame(
-        {"codgeo": codgeos, "geometry": [Point(0, 0)] * n_rows}, crs="EPSG:4326"
+    # Mock DataFrames
+    odis_geo = pd.DataFrame(
+        {"codgeo": codgeos, "geometry": [Point(0, 0)] * n_rows}
     ).set_index("codgeo")
 
     engine = ScoringEngine(

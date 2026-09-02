@@ -1,6 +1,7 @@
-pytest
-pytest-asyncio
+pytest==9.1.1
+pytest-asyncio==1.4.0
 ty==0.0.55
 ruff==0.15.20
-vulture
-pydantic-evals==2.27.0
+vulture==2.16
+pydantic-evals==2.37.0
+psutil==7.2.2

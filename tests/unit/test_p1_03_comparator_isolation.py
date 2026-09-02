@@ -1,6 +1,5 @@
 import pytest
 import pandas as pd
-import geopandas as gpd
 from shapely.geometry import Point
 
 from app.core.scoring import ScoringEngine
@@ -41,7 +40,7 @@ def mock_comparator_data():
             Point(4.8357, 45.7640),
         ],
     }
-    df = gpd.GeoDataFrame(data, geometry="geometry")
+    df = pd.DataFrame(data)
     df.set_index("codgeo", inplace=True)
     return df
 
@@ -78,7 +77,7 @@ def mock_scores_cat():
 def make_engine(df_all_communes, scores_cat):
     return ScoringEngine(
         df_all_communes=df_all_communes,
-        df_bv_geo=gpd.GeoDataFrame(),
+        df_bv_geo=pd.DataFrame(),
         scores_cat=scores_cat,
         incl_index=pd.DataFrame(),
         associations_data=pd.DataFrame(),

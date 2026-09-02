@@ -4,7 +4,6 @@ import os
 sys.path.append(os.path.join(os.getcwd(), "app"))
 
 import pandas as pd
-import geopandas as gpd
 import core.scoring as scoring
 from core.models import SearchCriterias
 
@@ -22,7 +21,7 @@ def test_live_jobs_scoring_aicha_scenario():
     """
     # 1. Setup Mock Data (Standardized in 4326)
     # Marseille (13055) + some surrounding communes
-    df_all_communes = gpd.GeoDataFrame(
+    df_all_communes = pd.DataFrame(
         {
             "codgeo": ["13055", "13001", "13002", "99999"],
             "libgeo": ["Marseille", "Aix", "Allauch", "Start"],
@@ -41,8 +40,7 @@ def test_live_jobs_scoring_aicha_scenario():
                 Point(5.48, 43.33),
                 Point(0, 0),
             ],
-        },
-        crs="EPSG:4326",
+        }
     ).set_index("codgeo")
 
     # Mock Jobs Data for Marseille
@@ -114,12 +112,11 @@ def test_live_jobs_scoring_aicha_scenario():
         ]
     )
 
-    df_bv_geo = gpd.GeoDataFrame(
+    df_bv_geo = pd.DataFrame(
         {
             "codgeo": ["13055", "13001", "99999"],
             "geometry": [Point(5.37, 43.30), Point(5.45, 43.53), Point(0, 0)],
-        },
-        crs="EPSG:4326",
+        }
     ).set_index("codgeo")
 
     # 2. Instantiate Engine

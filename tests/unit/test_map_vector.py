@@ -50,7 +50,7 @@ def test_prepare_map_payload_minimal_size():
 
 
 def test_prepare_map_payload_poi_filtering():
-    import geopandas as gpd
+    import pandas as pd
     from shapely.geometry import Point
 
     c1 = CommuneResult(
@@ -68,13 +68,13 @@ def test_prepare_map_payload_poi_filtering():
         commune_pressentie=None,
         search_hash="test-hash-pois",
     )
-    pois_df = gpd.GeoDataFrame({
+    pois_df = pd.DataFrame({
         "codgeo": ["75056", "75056"],
         "name": ["Mairie de Paris", "École Primaire"],
         "type": ["Mairie", "École Primaire"],
         "category": ["mairie", "education"],
         "geometry": [Point(2.35, 48.85), Point(2.36, 48.86)],
-    }, crs="EPSG:4326")
+    })
 
     # 1. Mairie selected
     payload_mairie = prepare_map_payload(
@@ -103,7 +103,7 @@ def test_prepare_map_payload_poi_filtering():
 
 
 def test_prepare_map_payload_inclusion_filtering():
-    import geopandas as gpd
+    import pandas as pd
     from shapely.geometry import Point
     from app.core.models import CriteriaItem, SearchCriterias
 
@@ -122,13 +122,13 @@ def test_prepare_map_payload_inclusion_filtering():
         commune_pressentie=None,
         search_hash="test-hash-inc",
     )
-    pois_df = gpd.GeoDataFrame({
+    pois_df = pd.DataFrame({
         "codgeo": ["75056", "75056"],
         "name": ["Structure A", "Structure B"],
         "type": ["acces-aux-droits", "logement-hebergement"],
         "category": ["incl_services", "incl_services"],
         "geometry": [Point(2.35, 48.85), Point(2.36, 48.86)],
-    }, crs="EPSG:4326")
+    })
 
     # 1. Inclusion active, no specific filter
     payload = prepare_map_payload(
@@ -181,4 +181,32 @@ def test_prepare_map_payload_center_offset():
     )
     assert payload["center"] == [46.5, 1.5]
     assert payload["zoom"] == 9
+
+
+def test_render_vector_map_caching_and_ttl(monkeypatch):
+    """Verify that render_vector_map injects the multi-tier caching mechanism with 1-year TTL."""
+    from app.ui.map_vector import render_vector_map
+    import streamlit as st
+
+    captured = {}
+
+    def fake_iframe(html, height=1500):
+        captured["html"] = html
+
+    monkeypatch.setattr(st, "iframe", fake_iframe)
+
+    render_vector_map(
+        gdf_scores=None,
+        center=[46.5, 2.0],
+        zoom=7,
+    )
+
+    html = captured.get("html", "")
+    assert len(html) > 0
+    assert "odis-communes-v1" in html
+    assert "365 * 24 * 60 * 60 * 1000" in html
+    assert "__communesGeoJsonMemoryCache" in html
+    assert "__communesGeoJsonPromise" in html
+    assert "cacheStorage.open(CACHE_NAME)" in html
+
 

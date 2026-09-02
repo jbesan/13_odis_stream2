@@ -15,8 +15,9 @@ substitutions:
 serviceAccount: projects/odis-stream2-app/serviceAccounts/odis-ci@odis-stream2-app.iam.gserviceaccount.com
 
 steps:
-  - name: "python:3.11"
+  - name: "ghcr.io/astral-sh/uv:python3.14-bookworm-slim"
     entrypoint: /bin/bash
+    dir: "/workspace"
     args:
       - -ceu
       - |
@@ -24,12 +25,13 @@ steps:
           echo "Pass an immutable _IMAGE_TAG (for example the short Git SHA)." >&2
           exit 64
         fi
-        pip install --upgrade pip
-        pip install -r app/requirements.txt -r requirements-dev.txt
-        ruff check app tests
-        ty check app
-        python3 -m pytest --tb=line \
+        uv sync --frozen --all-groups
+        uv run python scripts/sync_datasets.py --bucket=${_DATA_BUCKET}
+        uv run ruff check app tests
+        uv run ty check app
+        uv run pytest --tb=line \
           tests/unit/test_active_manifest.py \
+          tests/unit/test_sync_datasets.py \
           tests/unit/test_logfire_env.py \
           tests/unit/test_rna_rag_service.py
 

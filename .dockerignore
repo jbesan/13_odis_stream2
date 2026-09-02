@@ -4,6 +4,9 @@
 # Allow app directory
 !app/
 !data/
+!pyproject.toml
+!uv.lock
+!.python-version
 
 # Ignore specific heavy items inside app/ if any (though !app/ allows it, we can be specific if needed)
 # But generally we want app/
@@ -31,7 +34,7 @@ app/.DS_Store
 app/.env
 app/.streamlit/secrets.toml
 app/data_private/
-app/data/datasets/
+!app/data/datasets/
 app/data/*.parquet
 !app/data/odis_referentiels.parquet
 app/data/shared_searches/

@@ -24,10 +24,7 @@ if "search_results" in st.session_state:
 logging.info(f"--- App re-run at {time.ctime(time.time())} ---")
 
 # --- Main App Execution ---
-# Accueil intentionally renders without synchronously reading GCS datasets.
-# The Formulaire page owns the first required complete bundle.
 data_loader.initialize_session_state()
-data_loader.preload_scoring_datasets_async()
 
 # --- Sidebar / Org Context ---
 with st.sidebar:

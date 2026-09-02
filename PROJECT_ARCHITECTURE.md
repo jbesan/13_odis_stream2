@@ -98,7 +98,7 @@ Cloud Run containers are ephemeral and can scale to zero or reboot at any time.
 ODIS leverages high-performance, Rust-based developer tools to enforce code style and verify type correctness across the codebase:
 
 ### 4.1 Ruff (Linter & Formatter)
-- **Rules & Standards**: Project-wide formatting and lint checking are managed by **Ruff** (configured in [ruff.toml](file:///Users/jacques/dev/13_odis_stream2/ruff.toml)), targeting Python 3.11.
+- **Rules & Standards**: Project-wide formatting and lint checking are managed by **Ruff** (configured in [ruff.toml](file:///Users/jacques/dev/13_odis_stream2/ruff.toml)), targeting Python 3.14.
 - **Ignores**: To maintain compatibility with dynamic runtime behaviors and path overrides (e.g. `sys.path` injection), specific rules like `E402` (module imports not at top), style conventions, and unused variables are ignored.
 
 ### 4.2 Ty (Type Checker)

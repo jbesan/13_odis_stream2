@@ -1,7 +1,8 @@
 # OD&IS - Prototype d'Aide à la Mobilité (Recherche Inversée)
 
-[![Python Version](https://img.shields.io/badge/python-3.10-blue.svg)](https://www.python.org/downloads/release/python-3100/)
+[![Python Version](https://img.shields.io/badge/python-3.14-blue.svg)](https://www.python.org/downloads/release/python-3140/)
 [![Framework](https://img.shields.io/badge/Framework-Streamlit-red.svg)](https://streamlit.io)
+[![Package Manager](https://img.shields.io/badge/uv-fast-purple.svg)](https://astral.sh/uv)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](../../LICENSE)
 
 ## 🎯 Contexte et Objectifs du Projet
@@ -10,15 +11,7 @@ Ce projet, surnommé **"Stream 2"**, est un prototype fonctionnel explorant une 
 
 Il s'inscrit en complément du projet principal [13_odis](https://github.com/dataforgoodfr/13_odis) (ou "Stream 1"), qui se concentre sur l'exploration et la comparaison d'indicateurs pour une commune déjà sélectionnée.
 
-L'innovation de ce prototyp### 🛠️ Key Features
-
-- **Reverse Search Algorithm**: Multi-criteria scoring engine with dynamic weights.
-- **AI Synthesis (Graph-based)**: Agentic workflow powered by pydantic-graph and Gemini for deep site analysis.
-- **Observability**: Hierarchical tracing and token usage monitoring via Pydantic Logfire.
-- **Background Tasks**: Non-blocking AI execution for Cloud Run stability (Daemon threads + Fragment polling).
-- **Interactive Map**: Pydeck / Deck.gl vector map integration for high-performance spatial exploration.
-- **PDF Reports**: Automated generation of argued territorial summaries.
- les plus prometteurs pour la réussite d'un projet d'intégration.
+L'innovation de ce prototype réside dans sa capacité à inverser la démarche : au lieu de demander "que vaut cette ville ?", l'utilisateur renseigne les critères essentiels d'un bénéficiaire (métier, logement, santé, école, etc.) et le système identifie les territoires les plus prometteurs pour la réussite d'un projet d'intégration.
 
 ![Comparaison Stream 1 vs Stream 2](./images/Screenshot-3.png)
 
@@ -53,8 +46,8 @@ Ce prototype a un triple objectif :
 
 ### Prérequis
 
-- [Python 3.10+](https://www.python.org/)
-- Un environnement virtuel (recommandé).
+- [Python 3.14+](https://www.python.org/)
+- [uv](https://astral.sh/uv) (gestionnaire d'environnement et de paquets ultra-rapide)
 
 ### Instructions
 
@@ -62,34 +55,30 @@ Ce prototype a un triple objectif :
 
     ```bash
     git clone https://github.com/jbesan/13_odis_stream2.git
-    cd 13_odis
+    cd 13_odis_stream2
     ```
 
-2.  **Créez et activez un environnement virtuel :**
+2.  **Installez l'environnement et les dépendances avec `uv` :**
 
     ```bash
-    python3 -m venv .venv
-    source .venv/bin/activate
+    uv sync --all-groups
     ```
 
-3.  **Installez les dépendances :**
+3.  **Lancez l'application Streamlit :**
 
     ```bash
-    pip install -r app/requirements.txt
+    uv run streamlit run app/main.py
     ```
 
-4.  **Lancez l'application Streamlit :**
+    L'application s'ouvre automatiquement dans votre navigateur.
 
+4.  **Exécuter les tests (Avant déploiement) :**
     ```bash
-    streamlit run app/1_Accueil.py
-    ```
-
-    L'application devrait s'ouvrir dans votre navigateur web.
-
-5.  **Exécuter les tests (Avant déploiement) :**
-    ```bash
-    source .venv/bin/activate
-    python3 -m pytest tests
+    uv run pytest tests/unit --tb=line
+    uv run pytest pipeline/tests --tb=line
+    uv run pytest tests/integration --tb=line
+    uv run ruff check app tests pipeline
+    uv run ty check app
     ```
 
 6.  **Mettre à jour/Exécuter le pipeline d'ingestion (Optionnel) :**
@@ -139,7 +128,7 @@ Le projet suit une approche rigoureuse de développement piloté par les spécif
 ## 🛠️ Stack Technique
 
 - **Framework Applicatif :** [Streamlit](https://streamlit.io/)
-- **Analyse de Données :** [Pandas](https://pandas.pydata.org/), [GeoPandas](https://geopandas.org/), [NumPy](https://numpy.org/)
+- **Analyse de Données :** [Pandas](https://pandas.pydata.org/), [Shapely](https://shapely.readthedocs.io/), [NumPy](https://numpy.org/), [PyArrow](https://arrow.apache.org/)
 - **Observabilité :** [Pydantic Logfire](https://logfire.pydantic.dev/) (Tracing, Télémétrie, Monitoring LLM)
 - **Scoring & Normalisation :** [Scikit-learn](https://scikit-learn.org/)
 - **Cartographie Interactive :** [Pydeck](https://deckgl.readthedocs.io/) & Deck.gl (Rendu vectoriel haute performance)

@@ -1,3 +1,4 @@
+import pandas as pd
 import pytest
 from unittest.mock import patch
 
@@ -82,4 +83,4 @@ def test_show_sources_dialog_dataframe_urls():
         assert mock_st_dataframe.called
         df_passed = mock_st_dataframe.call_args[0][0]
         assert df_passed.loc[0, "Documentation"] == "https://www.data.gouv.fr/datasets/contours-administratifs/"
-        assert df_passed.loc[1, "Documentation"] is None
+        assert pd.isna(df_passed.loc[1, "Documentation"])

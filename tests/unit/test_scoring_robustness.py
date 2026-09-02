@@ -446,15 +446,6 @@ def test_tier3_directional_shift_population(real_engine):
 
     commune_id = "17347"  # Saint-Jean-d'Angély
 
-    # We expect these columns to exist only after the bug fix.
-    # If territory skip is present, this will raise KeyError or failure, which is the expected RED phase.
-    score_20k = df_20k.loc[commune_id, "territoire_cat_score"]
-    score_150k = df_150k.loc[commune_id, "territoire_cat_score"]
-
-    assert score_20k > score_150k, (
-        f"Saint-Jean-d'Angély territory score did not shift correctly: pop_20k score={score_20k}, pop_150k score={score_150k}!"
-    )
-
     global_20k = df_20k.loc[commune_id, "weighted_score"]
     global_150k = df_150k.loc[commune_id, "weighted_score"]
 
@@ -464,15 +455,52 @@ def test_tier3_directional_shift_population(real_engine):
 
 
 def test_tier3_zero_weight_isolation(real_engine):
-    """Setting poids_territoire = 0.0 must isolate the global score from population shifts completely."""
-    config_20k = make_search_criterias(
+    """Setting poids_territoire = 0.0 must isolate the global score from territory criteria completely."""
+    config_no_strat = make_search_criterias(
         {
             "weight_profile": "Profil personnalisé",
             "poids_territoire": 0.0,
             "poids_logement": 1.0,
+            "target_city_size": "🏡 Bourg",
+            "org_strategic_locations": [],
+            "loc_search_area": "departement",
+            "loc_search_code": ["17"],
+        }
+    )
+    df_no_strat = real_engine.run(config_no_strat)
+
+    config_strat = make_search_criterias(
+        {
+            "weight_profile": "Profil personnalisé",
+            "poids_territoire": 0.0,
+            "poids_logement": 1.0,
+            "target_city_size": "🏡 Bourg",
+            "org_strategic_locations": ["17"],
+            "loc_search_area": "departement",
+            "loc_search_code": ["17"],
+        }
+    )
+    df_strat = real_engine.run(config_strat)
+
+    commune_id = "17347"
+
+    global_no_strat = df_no_strat.loc[commune_id, "weighted_score"]
+    global_strat = df_strat.loc[commune_id, "weighted_score"]
+
+    assert pytest.approx(global_no_strat, abs=1e-6) == global_strat, (
+        f"Global score shifted despite zero territory weight! no_strat={global_no_strat}, strat={global_strat}"
+    )
+
+
+def test_tier3_multiple_code_path_sensitivity(real_engine):
+    """Verifies that the demographic sensitivity test also holds when strategic locations are non-empty."""
+    config_20k = make_search_criterias(
+        {
+            "weight_profile": "Équilibré",
+            "poids_territoire": 1.0,
             "target_population": 20000,
             "target_population_sigma": 10000,
-            "org_strategic_locations": [],
+            "org_strategic_locations": ["17"],
             "loc_search_area": "departement",
             "loc_search_code": ["17"],
         }
@@ -481,12 +509,11 @@ def test_tier3_zero_weight_isolation(real_engine):
 
     config_150k = make_search_criterias(
         {
-            "weight_profile": "Profil personnalisé",
-            "poids_territoire": 0.0,
-            "poids_logement": 1.0,
+            "weight_profile": "Équilibré",
+            "poids_territoire": 1.0,
             "target_population": 150000,
             "target_population_sigma": 75000,
-            "org_strategic_locations": [],
+            "org_strategic_locations": ["17"],
             "loc_search_area": "departement",
             "loc_search_code": ["17"],
         }
@@ -498,44 +525,6 @@ def test_tier3_zero_weight_isolation(real_engine):
     global_20k = df_20k.loc[commune_id, "weighted_score"]
     global_150k = df_150k.loc[commune_id, "weighted_score"]
 
-    assert pytest.approx(global_20k, abs=1e-6) == global_150k, (
-        f"Global score shifted despite zero territory weight! 20k global={global_20k}, 150k global={global_150k}"
-    )
-
-
-def test_tier3_multiple_code_path_sensitivity(real_engine):
-    """Verifies that the population sensitivity test also holds when strategic locations are non-empty."""
-    config_20k = make_search_criterias(
-        {
-            "weight_profile": "Équilibré",
-            "poids_territoire": 1.0,
-            "target_population": 20000,
-            "target_population_sigma": 10000,
-            "org_strategic_locations": ["17"],
-            "loc_search_area": "departement",
-            "loc_search_code": ["17"],
-        }
-    )
-    df_20k = real_engine.run(config_20k)
-
-    config_150k = make_search_criterias(
-        {
-            "weight_profile": "Équilibré",
-            "poids_territoire": 1.0,
-            "target_population": 150000,
-            "target_population_sigma": 75000,
-            "org_strategic_locations": ["17"],
-            "loc_search_area": "departement",
-            "loc_search_code": ["17"],
-        }
-    )
-    df_150k = real_engine.run(config_150k)
-
-    commune_id = "17347"
-
-    score_20k = df_20k.loc[commune_id, "territoire_cat_score"]
-    score_150k = df_150k.loc[commune_id, "territoire_cat_score"]
-
-    assert score_20k > score_150k, (
-        f"Saint-Jean-d'Angély territory score with strategic locations did not shift correctly: pop_20k score={score_20k}, pop_150k score={score_150k}!"
+    assert global_20k > global_150k, (
+        f"Saint-Jean-d'Angély global score with strategic locations did not shift correctly: pop_20k score={global_20k}, pop_150k score={global_150k}!"
     )

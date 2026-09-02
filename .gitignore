@@ -24,6 +24,8 @@ app/.streamlit/secrets.toml
 app/data_private/
 pipeline/data_private/
 app/data/datasets/
+app/static/data/communes_france.geojson
+static/data/
 .antigravityignore
 Makefile
 .env.deploy

@@ -14,8 +14,11 @@ from utils import data_loader
 # The form owns a single complete data bundle. Home has already started a
 # best-effort warm-up; on a cold instance this is the one honest wait point
 # rather than letting individual form controls discover missing Tier-2 fields.
-with st.spinner("Préparation du formulaire..."):
-    app_data = data_loader.ensure_data_initialized(initialize_rag=False)
+if "app_data" not in st.session_state or not st.session_state["app_data"]:
+    with st.spinner("Initialisation des données territoriales..."):
+        app_data = data_loader.ensure_data_initialized()
+else:
+    app_data = data_loader.ensure_data_initialized()
 
 FormState(st.session_state).preserve_widgets_across_steps()
 import logging

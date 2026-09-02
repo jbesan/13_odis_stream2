@@ -55,12 +55,11 @@ class TestEffectiveWeightsAndMappings:
         self, sample_data, live_scores_cat, sample_incl_index, global_stats
     ):
         """Verify that log_soc_delay_scaled is activated when Logement Social is selected."""
-        import geopandas as gpd
         import pandas as pd
 
         engine = ScoringEngine(
             df_all_communes=sample_data,
-            df_bv_geo=gpd.GeoDataFrame(),
+            df_bv_geo=pd.DataFrame(),
             scores_cat=live_scores_cat,
             incl_index=sample_incl_index,
             associations_data=pd.DataFrame(columns=["codgeo", "id_waldec", "count"]),

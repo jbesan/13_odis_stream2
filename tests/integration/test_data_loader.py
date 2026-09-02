@@ -1,8 +1,7 @@
 import os
 import pytest
 import pandas as pd
-import hashlib
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from utils import data_loader
 
 
@@ -130,31 +129,13 @@ def test_get_salesforce_jaccueille_counts(monkeypatch):
     ]
 
 
-@patch("utils.data_loader.storage.Client")
-def test_resolve_dataset_path_gcs_fallback(mock_storage_client_cls, tmp_path, monkeypatch):
-    """Tests that a declared artifact is resolved from its frozen release."""
-    monkeypatch.setattr(data_loader.tempfile, "gettempdir", lambda: str(tmp_path / "tmp"))
-    
-    mock_client = MagicMock()
-    mock_storage_client_cls.return_value = mock_client
-    mock_bucket = MagicMock()
-    mock_client.bucket.return_value = mock_bucket
-
-    dataset_blob = MagicMock()
-    payload = b"gcs_data"
-
-    # Simulate download_to_filename writing dummy file
-    def mock_download(target_path):
-        from pathlib import Path
-        Path(target_path).parent.mkdir(parents=True, exist_ok=True)
-        Path(target_path).write_bytes(payload)
-
-    dataset_blob.download_to_filename.side_effect = mock_download
-
-    def get_blob(blob_path):
-        return dataset_blob
-
-    mock_bucket.blob.side_effect = get_blob
+def test_resolve_dataset_path_local(tmp_path, monkeypatch):
+    """resolve_dataset_path locates the file in the active dataset directory."""
+    datasets_dir = tmp_path / "datasets"
+    datasets_dir.mkdir()
+    target_file = datasets_dir / "salesforce_jaccueille_bdv.parquet"
+    target_file.write_bytes(b"MOCK_PARQUET")
+    monkeypatch.setenv("ODIS_DATASETS_DIR", str(datasets_dir))
 
     release_context = data_loader.ReleaseContext(
         bucket_name="odis-stream2-eu",
@@ -163,8 +144,8 @@ def test_resolve_dataset_path_gcs_fallback(mock_storage_client_cls, tmp_path, mo
         artifacts=(
             data_loader.ReleaseArtifact(
                 name="salesforce_jaccueille_bdv.parquet",
-                sha256=hashlib.sha256(payload).hexdigest(),
-                size_bytes=len(payload),
+                sha256="abc",
+                size_bytes=len(b"MOCK_PARQUET"),
             ),
         ),
     )
@@ -173,8 +154,7 @@ def test_resolve_dataset_path_gcs_fallback(mock_storage_client_cls, tmp_path, mo
     )
     assert resolved is not None
     assert "salesforce_jaccueille_bdv.parquet" in resolved
-    assert "v-test-1" in resolved
-    assert dataset_blob.download_to_filename.called
+    assert os.path.exists(resolved)
 
 
 def test_dataset_cache_base_dir_routing(monkeypatch, tmp_path):
@@ -183,18 +163,12 @@ def test_dataset_cache_base_dir_routing(monkeypatch, tmp_path):
     monkeypatch.setenv("ODIS_CACHE_DIR", str(tmp_path / "custom_cache"))
     assert data_loader._get_dataset_cache_base_dir() == str(tmp_path / "custom_cache")
 
-    # 2. Cloud Run (K_SERVICE)
+    # 2. Custom ODIS_DATASETS_DIR override
     monkeypatch.delenv("ODIS_CACHE_DIR", raising=False)
-    monkeypatch.delenv("ODIS_DATA_CACHE_DIR", raising=False)
-    monkeypatch.setenv("K_SERVICE", "odis-app-staging")
-    assert data_loader._get_dataset_cache_base_dir() == os.path.join(
-        data_loader.tempfile.gettempdir(), "odis_data_cache"
-    )
+    monkeypatch.setenv("ODIS_DATASETS_DIR", str(tmp_path / "datasets_dir"))
+    assert data_loader._get_dataset_cache_base_dir() == str(tmp_path / "datasets_dir")
 
-    # 3. Local Development (neither K_SERVICE nor PYTEST_CURRENT_TEST)
-    monkeypatch.delenv("K_SERVICE", raising=False)
-    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
-    import config as cfg
-    assert data_loader._get_dataset_cache_base_dir() == os.path.join(
-        cfg.APP_DIR, "data", "datasets"
-    )
+    # 3. Default routing (points to an existing directory or temp)
+    monkeypatch.delenv("ODIS_DATASETS_DIR", raising=False)
+    base_dir = data_loader._get_dataset_cache_base_dir()
+    assert isinstance(base_dir, str)

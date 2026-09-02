@@ -295,7 +295,7 @@ def _get_job_details_logic(job_id: str) -> Dict[str, Any]:
 
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
 
-    response = requests.get(f"{BASE_URL}/offres/{job_id}", headers=headers)
+    response = requests.get(f"{BASE_URL}/offres/{job_id}", headers=headers, timeout=10)
 
     if response.status_code == 204:
         return {"error": "Offre non trouvée."}

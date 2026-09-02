@@ -1,6 +1,5 @@
 import pytest
 import pandas as pd
-import geopandas as gpd
 from core import scoring
 from app.core.models import SearchCriterias
 
@@ -9,7 +8,7 @@ from app.core.models import SearchCriterias
 def scoring_engine(sample_data, live_scores_cat, sample_incl_index, global_stats):
     return scoring.ScoringEngine(
         df_all_communes=sample_data,
-        df_bv_geo=gpd.GeoDataFrame(),
+        df_bv_geo=pd.DataFrame(),
         scores_cat=live_scores_cat,
         incl_index=sample_incl_index,
         associations_data=pd.DataFrame(columns=["codgeo", "id_waldec", "count"]),

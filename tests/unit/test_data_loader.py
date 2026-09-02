@@ -1,3 +1,5 @@
+"""Unit tests for app data loader and session state cache."""
+
 import pandas as pd
 from utils import data_loader
 
@@ -41,13 +43,13 @@ def test_load_referentiels_raw_builds_lightweight_form_indices(monkeypatch):
     assert "codformations_index" in data
     assert "inclusion_services_index" in data
     assert "waldec_index" in data
-    
+
     depcom_df = data["depcom_df"]
     assert isinstance(depcom_df, pd.DataFrame)
     assert not depcom_df.empty
     assert "libgeo" in depcom_df.columns
     assert "dep_code" in depcom_df.columns
-    
+
     assert data["odis"].empty
     assert data["pois"].empty
 
@@ -76,30 +78,6 @@ def test_get_app_data_uses_the_active_release_complete_bundle(monkeypatch):
     assert not app_data["odis"].empty
     assert not app_data["pois"].empty
     assert "count" in app_data["waldec_index"].columns
-
-
-def test_async_preload_does_not_resolve_gcs_before_its_thread_runs(monkeypatch):
-    calls = []
-
-    class DeferredThread:
-        def __init__(self, *, target, daemon):
-            self.target = target
-            self.daemon = daemon
-
-        def start(self):
-            calls.append("thread_started")
-
-    monkeypatch.setattr(data_loader.threading, "Thread", DeferredThread)
-    monkeypatch.setattr(
-        data_loader,
-        "get_active_release_context",
-        lambda: calls.append("gcs_resolved"),
-    )
-    monkeypatch.setitem(data_loader._SCORING_PRELOAD_STATUS, "in_progress", False)
-
-    data_loader.preload_scoring_datasets_async()
-
-    assert calls == ["thread_started"]
 
 
 def test_release_context_is_a_stable_streamlit_cache_key(monkeypatch):
@@ -132,3 +110,31 @@ def test_waldec_enrichment_supplies_zero_counts_without_association_data():
 
     assert enriched["count"].to_dict() == {"006001": 0, "011002": 0}
     assert top.equals(enriched)
+
+
+def test_ensure_data_initialized_reuses_session_state(monkeypatch):
+    """ensure_data_initialized reuses app_data in session_state without calling get_app_data."""
+    import streamlit as st
+
+    existing_data = {"existing": "bundle", "_release_id": "test-id"}
+    st.session_state["app_data"] = existing_data
+
+    calls = []
+    monkeypatch.setattr(
+        data_loader, "get_app_data", lambda: calls.append("get_app_data") or {}
+    )
+
+    # 1. Normal call reuses session state without fetching
+    result = data_loader.ensure_data_initialized()
+    assert result == existing_data
+    assert calls == []
+
+    # 2. force_reload=True bypasses the session cache
+    reloaded = data_loader.ensure_data_initialized(force_reload=True)
+    assert reloaded == {}
+    assert calls == ["get_app_data"]
+
+
+def test_active_release_payload_is_cached():
+    """_active_release_payload is wrapped in a Streamlit cache with clear capability."""
+    assert hasattr(data_loader._active_release_payload, "clear")
