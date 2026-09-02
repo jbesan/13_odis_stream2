@@ -13,6 +13,13 @@ from utils import data_loader
 from utils.data_loader import load_active_data_manifest
 
 
+@pytest.fixture(autouse=True)
+def clear_active_release_payload_cache():
+    data_loader._active_release_payload.clear()
+    yield
+    data_loader._active_release_payload.clear()
+
+
 @patch("utils.data_loader.storage.Client")
 def test_load_active_data_manifest_reads_the_pointer_release(mock_client, monkeypatch):
     monkeypatch.delenv("K_SERVICE", raising=False)

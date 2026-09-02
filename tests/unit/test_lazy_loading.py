@@ -132,3 +132,34 @@ def test_waldec_enrichment_supplies_zero_counts_without_association_data():
 
     assert enriched["count"].to_dict() == {"006001": 0, "011002": 0}
     assert top.equals(enriched)
+
+
+def test_ensure_data_initialized_reuses_session_state(monkeypatch):
+    """ensure_data_initialized reuses app_data in session_state without calling get_app_data."""
+    import streamlit as st
+
+    existing_data = {"existing": "bundle", "_release_id": "test-id"}
+    st.session_state["app_data"] = existing_data
+
+    calls = []
+    monkeypatch.setattr(
+        data_loader, "get_app_data", lambda: calls.append("get_app_data") or {}
+    )
+
+    # 1. Normal call reuses session state without fetching
+    result = data_loader.ensure_data_initialized(initialize_rag=False)
+    assert result == existing_data
+    assert calls == []
+
+    # 2. force_reload=True bypasses the session cache
+    reloaded = data_loader.ensure_data_initialized(
+        initialize_rag=False, force_reload=True
+    )
+    assert reloaded == {}
+    assert calls == ["get_app_data"]
+
+
+def test_active_release_payload_is_cached():
+    """_active_release_payload is wrapped in a Streamlit cache with clear capability."""
+    assert hasattr(data_loader._active_release_payload, "clear")
+

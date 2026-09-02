@@ -256,12 +256,17 @@ def initialize_session_state() -> None:
     st.session_state["_form_source_id"] = source_id
 
 
-def ensure_data_initialized(*, initialize_rag: bool = True) -> Dict[str, Any]:
+def ensure_data_initialized(
+    *, initialize_rag: bool = True, force_reload: bool = False
+) -> Dict[str, Any]:
     """Initialize state and return the complete active GCS data bundle."""
     initialize_session_state()
 
-    app_data = get_app_data()
-    st.session_state["app_data"] = app_data
+    if not force_reload and st.session_state.get("app_data"):
+        app_data = st.session_state["app_data"]
+    else:
+        app_data = get_app_data()
+        st.session_state["app_data"] = app_data
 
     if "heavy_data_toast_shown" not in st.session_state:
         load_errors = app_data.get("_load_errors", [])
@@ -291,6 +296,7 @@ def ensure_data_initialized(*, initialize_rag: bool = True) -> Dict[str, Any]:
     return app_data
 
 
+@st.cache_data(ttl=7 * 86400, show_spinner=False)
 def _active_release_payload() -> tuple[str, str, Dict[str, Any], Dict[str, Any]]:
     """Read ``current.json`` and its verified manifest exactly once."""
     bucket_name = os.getenv("GCS_DATASETS_BUCKET")

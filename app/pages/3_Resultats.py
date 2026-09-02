@@ -249,9 +249,11 @@ is_editing_snapshot = bool(st.session_state.get("shared_snapshot_editing"))
 if is_immutable_snapshot and not is_editing_snapshot:
     data_loader.initialize_session_state()
     app_data = None
-else:
+elif "app_data" not in st.session_state or not st.session_state["app_data"]:
     with st.spinner("Chargement des indicateurs et données territoriales..."):
         app_data = data_loader.ensure_data_initialized()
+else:
+    app_data = data_loader.ensure_data_initialized()
 
 # This page deliberately does not render the form except inside the dialog.
 # Keep native widget keys alive across full Results-page reruns so Streamlit's
