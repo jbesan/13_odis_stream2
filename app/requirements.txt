@@ -3,19 +3,19 @@
 # ==============================================================================
 
 # --- Web Framework & Authentication ---
-streamlit>=1.55.0
-Authlib>=1.3.2                      # Required by Streamlit native OIDC (st.login)
+streamlit==1.63.0
+Authlib==1.8.0                      # Required by Streamlit native OIDC (st.login)
 
 # --- Data Science & Geospatial ---
-numpy
-pandas
-shapely
-pyarrow                             # Columnar format for BigQuery & Parquet caching
+numpy==2.5.2
+pandas==3.0.5
+shapely==2.1.2
+pyarrow==25.0.1                     # Columnar format for BigQuery & Parquet caching
 
 # --- Visualization & Reporting ---
-plotly                              # Interactive charts & radar visualisations
-pydeck                              # Vector map layer constructs
-fpdf2                               # PDF territorial summary export
+plotly==7.0.0                       # Interactive charts & radar visualisations
+pydeck==0.9.3                       # Vector map layer constructs
+fpdf2==2.8.8                        # PDF territorial summary export
 
 # --- AI Agents Swarm & Tools ---
 pydantic==2.13.5
@@ -23,17 +23,17 @@ pydantic-settings==2.15.0
 pydantic-ai-slim[google,logfire]==2.37.0
 pydantic-graph==2.37.0
 google-genai==2.21.0                # Gemini SDK & WebSearch grounding
-fastmcp<4                           # MCP microservices (v3.4.x per Decision D4)
-python-frontmatter                  # YAML frontmatter parsing for Skill Cards
+fastmcp==3.4.7                      # MCP microservices (v3.4.x per Decision D4)
+python-frontmatter==1.3.0           # YAML frontmatter parsing for Skill Cards
 
 # --- Google Cloud Platform ---
-google-cloud-bigquery
-google-cloud-bigquery-storage       # Storage Read API for fast to_dataframe()
-google-cloud-storage                # Verified release datasets & snapshot storage
-db-dtypes                           # BigQuery pandas data types integration
+google-cloud-bigquery==3.44.0
+google-cloud-bigquery-storage==2.41.0 # Storage Read API for fast to_dataframe()
+google-cloud-storage==3.13.1        # Verified release datasets & snapshot storage
+db-dtypes==1.7.1                    # BigQuery pandas data types integration
 
 # --- Observability, Network & Config ---
-logfire[httpx]                      # OpenTelemetry tracing & LLM monitoring
-requests                            # External REST APIs (Inclusion, FT)
-python-dotenv                       # Environment variables loading
-PyYAML                              # Configuration YAML parsing (scores_config.yaml)
+logfire[httpx]==4.41.0              # OpenTelemetry tracing & LLM monitoring
+requests==2.34.2                    # External REST APIs (Inclusion, FT)
+python-dotenv==1.2.3                # Environment variables loading
+PyYAML==6.0.3                       # Configuration YAML parsing (scores_config.yaml)

@@ -3,12 +3,8 @@ import json
 import uuid
 import time
 from datetime import datetime
-import sys
 
-if sys.version_info >= (3, 9):
-    import zoneinfo
-else:
-    from backports import zoneinfo as zoneinfo  # type: ignore
+import zoneinfo
 import streamlit as st
 import os
 from google.cloud import bigquery

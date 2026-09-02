@@ -2,7 +2,6 @@ import os
 import json
 import uuid
 import logging
-import sys
 import base64
 import math
 import ast
@@ -11,10 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Tuple, Optional, Any, Dict, List
 
-if sys.version_info >= (3, 9):
-    import zoneinfo
-else:
-    from backports import zoneinfo as zoneinfo  # type: ignore
+import zoneinfo
 
 import gzip
 import pandas as pd

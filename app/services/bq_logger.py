@@ -1,13 +1,9 @@
 import os
 import json
 import logging
-import sys
 from datetime import datetime
 
-if sys.version_info >= (3, 9):
-    import zoneinfo
-else:
-    from backports import zoneinfo as zoneinfo  # type: ignore
+import zoneinfo
 from google.cloud import bigquery
 import streamlit as st
 from typing import Any, Optional
