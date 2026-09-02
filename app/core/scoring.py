@@ -4,7 +4,6 @@ Scoring module for the ODIS application.
 """
 
 from typing import List, Dict, Set, Any, Optional, Union, Tuple, cast
-import geopandas as gpd
 import numpy as np
 import pandas as pd
 import config as cfg
@@ -151,7 +150,7 @@ class ScoringEngine:
     """
 
     df_all_communes: pd.DataFrame
-    df_bv_geo: gpd.GeoDataFrame
+    df_bv_geo: pd.DataFrame
     scores_cat: pd.DataFrame
     incl_index: pd.DataFrame
     associations_data: pd.DataFrame
@@ -159,7 +158,7 @@ class ScoringEngine:
     codformations_index: Optional[pd.DataFrame]
     waldec_index: Optional[pd.DataFrame]
     global_stats: Optional[Dict[str, Any]]
-    bv_data: gpd.GeoDataFrame
+    bv_data: pd.DataFrame
     annuaire_ecoles: pd.DataFrame
     annuaire_sante: pd.DataFrame
     annuaire_inclusion: pd.DataFrame
@@ -710,7 +709,7 @@ class ScoringEngine:
     def __init__(
         self,
         df_all_communes: pd.DataFrame,
-        df_bv_geo: gpd.GeoDataFrame,
+        df_bv_geo: pd.DataFrame,
         scores_cat: pd.DataFrame,
         incl_index: pd.DataFrame,
         associations_data: pd.DataFrame,
@@ -718,7 +717,7 @@ class ScoringEngine:
         codformations_index: Optional[pd.DataFrame] = None,
         waldec_index: Optional[pd.DataFrame] = None,
         global_stats: Optional[Dict[str, Any]] = None,
-        bv_data: gpd.GeoDataFrame = None,
+        bv_data: Optional[pd.DataFrame] = None,
         annuaire_ecoles: pd.DataFrame = pd.DataFrame(),
         annuaire_sante: pd.DataFrame = pd.DataFrame(),
         annuaire_inclusion: pd.DataFrame = pd.DataFrame(),
@@ -1625,7 +1624,7 @@ class ScoringEngine:
         )
 
     def create_search_results(
-        self, processed_gdf: gpd.GeoDataFrame, config: SearchCriterias
+        self, processed_gdf: pd.DataFrame, config: SearchCriterias
     ) -> SearchResultsData:
         """Helper to create a SearchResultsData object from the scoring results."""
 
@@ -1743,11 +1742,10 @@ class ScoringEngine:
         # This reduces the size of the objects stored in Streamlit session state
         self._prune_irrelevant_metrics(results_raw, config, aggressive=True)
 
-        # Convert to standard DataFrame to remove GeoPandas overhead in session state
-        if isinstance(results_raw, gpd.GeoDataFrame):
-            results_raw = pd.DataFrame(
-                results_raw.drop(columns="geometry", errors="ignore")
-            )
+        # Ensure results_raw is a standard DataFrame without heavy geometry for session state
+        results_raw = pd.DataFrame(
+            results_raw.drop(columns="geometry", errors="ignore")
+        )
 
         return model, results_raw
 

@@ -1,6 +1,5 @@
 import pytest
 import pandas as pd
-import geopandas as gpd
 from core import scoring
 from core.models import SearchCriterias, CriteriaItem
 
@@ -26,7 +25,7 @@ def test_compute_sante_scores_direct(base_sample_data, live_scores_cat):
     """Direct test to verify _compute_sante_scores is a no-op passthrough leaving the df clean."""
     engine = scoring.ScoringEngine(
         df_all_communes=base_sample_data,
-        df_bv_geo=gpd.GeoDataFrame(),
+        df_bv_geo=pd.DataFrame(),
         scores_cat=live_scores_cat,
         incl_index=pd.DataFrame(),
         associations_data=pd.DataFrame(),
@@ -54,7 +53,7 @@ def test_compute_territory_scores_direct(base_sample_data, live_scores_cat):
     """Direct test for strategic territory scoring boost."""
     engine = scoring.ScoringEngine(
         df_all_communes=base_sample_data,
-        df_bv_geo=gpd.GeoDataFrame(),
+        df_bv_geo=pd.DataFrame(),
         scores_cat=live_scores_cat,
         incl_index=pd.DataFrame(),
         associations_data=pd.DataFrame(),
@@ -86,7 +85,7 @@ def test_compute_mobility_scores_direct(base_sample_data, live_scores_cat):
     """Direct test for transit stop density and local EPCI matching."""
     engine = scoring.ScoringEngine(
         df_all_communes=base_sample_data,
-        df_bv_geo=gpd.GeoDataFrame(),
+        df_bv_geo=pd.DataFrame(),
         scores_cat=live_scores_cat,
         incl_index=pd.DataFrame(),
         associations_data=pd.DataFrame(),
@@ -132,7 +131,7 @@ def test_compute_employment_scores_direct(base_sample_data, live_scores_cat):
 
     engine = scoring.ScoringEngine(
         df_all_communes=base_sample_data,
-        df_bv_geo=gpd.GeoDataFrame(),
+        df_bv_geo=pd.DataFrame(),
         scores_cat=live_scores_cat,
         incl_index=pd.DataFrame(),
         associations_data=pd.DataFrame(),
@@ -168,7 +167,7 @@ def test_employment_scores_stay_unavailable_without_job_dataset(
 ):
     engine = scoring.ScoringEngine(
         df_all_communes=base_sample_data,
-        df_bv_geo=gpd.GeoDataFrame(),
+        df_bv_geo=pd.DataFrame(),
         scores_cat=live_scores_cat,
         incl_index=pd.DataFrame(),
         associations_data=pd.DataFrame(),

@@ -1,6 +1,5 @@
 import pytest
 import pandas as pd
-import geopandas as gpd
 import copy
 import config as cfg
 from core import scoring
@@ -131,7 +130,6 @@ class TestScoringLogic:
         """Tests that heb_jaccueille_prospects_score is activated and computed correctly."""
         from core.scoring import ScoringEngine
         from app.core.models import SearchCriterias
-        import geopandas as gpd
         
         # When hebergement_cible contains "Chez l'habitant"
         config = SearchCriterias(
@@ -140,7 +138,7 @@ class TestScoringLogic:
         
         engine = ScoringEngine(
             df_all_communes=sample_data,
-            df_bv_geo=gpd.GeoDataFrame(),
+            df_bv_geo=pd.DataFrame(),
             scores_cat=live_scores_cat,
             incl_index=sample_incl_index,
             associations_data=pd.DataFrame(columns=["codgeo", "id_waldec", "count"]),
@@ -191,7 +189,7 @@ class TestScoringLogic:
 
         engine = scoring.ScoringEngine(
             df_all_communes=sample_data,
-            df_bv_geo=gpd.GeoDataFrame(),
+            df_bv_geo=pd.DataFrame(),
             scores_cat=live_scores_cat,
             incl_index=sample_incl_index,
             associations_data=pd.DataFrame(columns=["codgeo", "id_waldec", "count"]),
@@ -265,7 +263,7 @@ class TestScoringLogic:
 
         engine = scoring.ScoringEngine(
             df_all_communes=sample_data,
-            df_bv_geo=gpd.GeoDataFrame(),
+            df_bv_geo=pd.DataFrame(),
             scores_cat=live_scores_cat,
             incl_index=sample_incl_index,
             associations_data=pd.DataFrame(columns=["codgeo", "id_waldec", "count"]),
@@ -319,7 +317,7 @@ class TestScoringLogic:
 
         engine = scoring.ScoringEngine(
             df_all_communes=pd.DataFrame(),
-            df_bv_geo=gpd.GeoDataFrame(),
+            df_bv_geo=pd.DataFrame(),
             scores_cat=scores_cat_subset,
             associations_data=pd.DataFrame(),
             formations_data=pd.DataFrame(),
@@ -358,7 +356,7 @@ class TestScoringLogic:
         # Act
         engine = scoring.ScoringEngine(
             df_all_communes=pd.DataFrame(),
-            df_bv_geo=gpd.GeoDataFrame(),
+            df_bv_geo=pd.DataFrame(),
             scores_cat=live_scores_cat,  # Not used for weighted_score directly
             associations_data=pd.DataFrame(),
             formations_data=pd.DataFrame(),
@@ -400,7 +398,7 @@ class TestScoringLogic:
 
         engine = scoring.ScoringEngine(
             df_all_communes=pd.DataFrame(),
-            df_bv_geo=gpd.GeoDataFrame(),
+            df_bv_geo=pd.DataFrame(),
             scores_cat=live_scores_cat,
             associations_data=pd.DataFrame(),
             formations_data=pd.DataFrame(),
@@ -457,7 +455,7 @@ class TestConditionalScoring:
         # Expected behavior: (1.0*1.0 [emploi] + 1.0*1.0 [logement] + 0.5*1.0 [sante]) / (1.0 + 1.0 + 1.0) = 0.8333333
         engine = scoring.ScoringEngine(
             df_all_communes=pd.DataFrame(),
-            df_bv_geo=gpd.GeoDataFrame(),
+            df_bv_geo=pd.DataFrame(),
             scores_cat=live_scores_cat,
             associations_data=pd.DataFrame(),
             formations_data=pd.DataFrame(),
@@ -511,7 +509,7 @@ class TestConditionalScoring:
         # (1.0*100 + 0.5*100 + 0.5*100) / 300 = 200 / 300 = 0.666...
         engine = scoring.ScoringEngine(
             df_all_communes=pd.DataFrame(),
-            df_bv_geo=gpd.GeoDataFrame(),
+            df_bv_geo=pd.DataFrame(),
             scores_cat=live_scores_cat,
             incl_index=pd.DataFrame(),
             associations_data=pd.DataFrame(),
@@ -535,7 +533,7 @@ class TestConditionalScoring:
         # Prerequisite: distance
         engine = scoring.ScoringEngine(
             df_all_communes=sample_data,
-            df_bv_geo=gpd.GeoDataFrame(),
+            df_bv_geo=pd.DataFrame(),
             scores_cat=live_scores_cat,
             incl_index=sample_incl_index,
             associations_data=pd.DataFrame(columns=["codgeo", "id_waldec", "count"]),
@@ -624,7 +622,7 @@ class TestMCPScenario:
         # In a real scenario, this engine instance might be persistent or created per request with shared data
         engine = scoring.ScoringEngine(
             df_all_communes=sample_data,
-            df_bv_geo=gpd.GeoDataFrame(),  # Not using BV view here
+            df_bv_geo=pd.DataFrame(),  # Not using BV view here
             scores_cat=live_scores_cat,
             incl_index=sample_incl_index,
             associations_data=pd.DataFrame(columns=["codgeo", "id_waldec", "count"]),
@@ -720,7 +718,7 @@ class TestInclusionScoringLogic:
             "inc_asso_core_scaled": [0.5, 0.5],
             "inc_services_incl_scaled": [1.0, 0.5],
         }
-        return gpd.GeoDataFrame(data).set_index("codgeo")
+        return pd.DataFrame(data).set_index("codgeo")
 
     def test_compute_inclusion_score_socle_admin(
         self,
@@ -738,8 +736,8 @@ class TestInclusionScoringLogic:
             inc_asso_add_selection=[],
         )
         engine = scoring.ScoringEngine(
-            df_all_communes=gpd.GeoDataFrame(),
-            df_bv_geo=gpd.GeoDataFrame(),
+            df_all_communes=pd.DataFrame(),
+            df_bv_geo=pd.DataFrame(),
             scores_cat=live_scores_cat,
             incl_index=mock_incl_index,
             associations_data=mock_associations_data,
@@ -767,8 +765,8 @@ class TestInclusionScoringLogic:
             inc_asso_add_selection=["009"], inc_services_selection=[]
         )
         engine = scoring.ScoringEngine(
-            df_all_communes=gpd.GeoDataFrame(),
-            df_bv_geo=gpd.GeoDataFrame(),
+            df_all_communes=pd.DataFrame(),
+            df_bv_geo=pd.DataFrame(),
             scores_cat=live_scores_cat,
             incl_index=mock_incl_index,
             associations_data=mock_associations_data,
@@ -785,8 +783,8 @@ class TestInclusionScoringLogic:
             inc_asso_add_selection=["011"], inc_services_selection=[]
         )
         engine_sport = scoring.ScoringEngine(
-            df_all_communes=gpd.GeoDataFrame(),
-            df_bv_geo=gpd.GeoDataFrame(),
+            df_all_communes=pd.DataFrame(),
+            df_bv_geo=pd.DataFrame(),
             scores_cat=live_scores_cat,
             incl_index=mock_incl_index,
             associations_data=mock_associations_data,
@@ -816,8 +814,8 @@ class TestInclusionScoringLogic:
             inc_asso_add_selection=["Bricolage / Création"],
         )
         engine = scoring.ScoringEngine(
-            df_all_communes=gpd.GeoDataFrame(),
-            df_bv_geo=gpd.GeoDataFrame(),
+            df_all_communes=pd.DataFrame(),
+            df_bv_geo=pd.DataFrame(),
             scores_cat=live_scores_cat,
             incl_index=mock_incl_index,
             associations_data=mock_associations_data,
@@ -857,10 +855,10 @@ class TestHousingScoresLogic:
             "reg_code": ["75", "75"],
             "dep_code": ["75", "75"],
         }
-        df = gpd.GeoDataFrame(data, index=["A", "B"])
+        df = pd.DataFrame(data, index=["A", "B"])
 
         engine = scoring.ScoringEngine(
-            df_all_communes=gpd.GeoDataFrame(
+            df_all_communes=pd.DataFrame(
                 {
                     "epci_code": ["1"],
                     "bassin_de_vie": ["1"],
@@ -869,7 +867,7 @@ class TestHousingScoresLogic:
                 },
                 index=["A"],
             ),
-            df_bv_geo=gpd.GeoDataFrame(),
+            df_bv_geo=pd.DataFrame(),
             scores_cat=pd.DataFrame(
                 [
                     {
@@ -983,10 +981,10 @@ class TestHousingScoresLogic:
             "reg_code": ["75", "75"],
             "dep_code": ["75", "75"],
         }
-        df = gpd.GeoDataFrame(data, index=["A", "B"])
+        df = pd.DataFrame(data, index=["A", "B"])
 
         engine = scoring.ScoringEngine(
-            df_all_communes=gpd.GeoDataFrame(
+            df_all_communes=pd.DataFrame(
                 {
                     "epci_code": ["1"],
                     "bassin_de_vie": ["1"],
@@ -995,7 +993,7 @@ class TestHousingScoresLogic:
                 },
                 index=["A"],
             ),
-            df_bv_geo=gpd.GeoDataFrame(),
+            df_bv_geo=pd.DataFrame(),
             scores_cat=pd.DataFrame(
                 [
                     {
@@ -1140,7 +1138,7 @@ class TestOrganizationBoosts:
 
         engine = scoring.ScoringEngine(
             df_all_communes=pd.DataFrame(),
-            df_bv_geo=gpd.GeoDataFrame(),
+            df_bv_geo=pd.DataFrame(),
             scores_cat=scores_cat,
             associations_data=pd.DataFrame(),
             formations_data=pd.DataFrame(),
@@ -1215,7 +1213,7 @@ class TestShortlistCity:
 
         engine = scoring.ScoringEngine(
             df_all_communes=sample_data,
-            df_bv_geo=gpd.GeoDataFrame(),
+            df_bv_geo=pd.DataFrame(),
             scores_cat=live_scores_cat,
             incl_index=sample_incl_index,
             associations_data=pd.DataFrame(columns=["codgeo", "id_waldec", "count"]),
@@ -1287,7 +1285,7 @@ class TestShortlistCity:
 
         engine = scoring.ScoringEngine(
             df_all_communes=sample_data,
-            df_bv_geo=gpd.GeoDataFrame(),
+            df_bv_geo=pd.DataFrame(),
             scores_cat=live_scores_cat,
             incl_index=sample_incl_index,
             associations_data=pd.DataFrame(columns=["codgeo", "id_waldec", "count"]),
@@ -1353,7 +1351,7 @@ class TestP102ScoringReconciliation:
 
         engine = scoring.ScoringEngine(
             df_all_communes=sample_data,
-            df_bv_geo=gpd.GeoDataFrame(),
+            df_bv_geo=pd.DataFrame(),
             scores_cat=live_scores_cat,
             incl_index=sample_incl_index,
             associations_data=pd.DataFrame(columns=["codgeo", "id_waldec", "count"]),
@@ -1404,7 +1402,7 @@ class TestMissingnessHandling:
 
         engine = scoring.ScoringEngine(
             df_all_communes=df,
-            df_bv_geo=gpd.GeoDataFrame(),
+            df_bv_geo=pd.DataFrame(),
             scores_cat=live_scores_cat,
             incl_index=sample_incl_index,
             associations_data=pd.DataFrame(columns=["codgeo", "id_waldec", "count"]),
@@ -1438,7 +1436,7 @@ class TestP108TieBreak:
 
         engine = scoring.ScoringEngine(
             df_all_communes=df,
-            df_bv_geo=gpd.GeoDataFrame(),
+            df_bv_geo=pd.DataFrame(),
             scores_cat=live_scores_cat,
             incl_index=sample_incl_index,
             associations_data=pd.DataFrame(columns=["codgeo", "id_waldec", "count"]),
@@ -1480,7 +1478,7 @@ class TestP108TieBreak:
         """Tests the Gaussian demographic modifier computation."""
         engine = scoring.ScoringEngine(
             df_all_communes=sample_data,
-            df_bv_geo=gpd.GeoDataFrame(),
+            df_bv_geo=pd.DataFrame(),
             scores_cat=live_scores_cat,
             incl_index=pd.DataFrame(),
             associations_data=pd.DataFrame(columns=["codgeo", "id_waldec", "count"]),

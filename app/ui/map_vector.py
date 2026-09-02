@@ -12,7 +12,6 @@ import json
 import logging
 from typing import Any, Dict, List, Optional, Set
 
-import geopandas as gpd
 import pandas as pd
 import streamlit as st
 
@@ -29,7 +28,7 @@ def prepare_map_payload(
     zoom: Optional[int] = None,
     search_results: Optional[Any] = None,
     config: Optional[SearchCriterias] = None,
-    pois_df: Optional[gpd.GeoDataFrame] = None,
+    pois_df: Optional[pd.DataFrame] = None,
     selected_ids: Optional[Set[str]] = None,
     highlighted_rank: Optional[int] = None,
     show_top_5: bool = True,
@@ -264,7 +263,7 @@ def render_vector_map(
     zoom: Optional[int] = None,
     search_results: Optional[Any] = None,
     config: Optional[SearchCriterias] = None,
-    pois_df: Optional[gpd.GeoDataFrame] = None,
+    pois_df: Optional[pd.DataFrame] = None,
     selected_ids: Optional[Set[str]] = None,
     highlighted_rank: Optional[int] = None,
     show_top_5: bool = True,

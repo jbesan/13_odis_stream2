@@ -1,4 +1,7 @@
 import os
+import sys
+from types import ModuleType
+import warnings
 
 os.environ.setdefault("GOOGLE_API_KEY", "dummy_placeholder_for_tests")
 os.environ.setdefault("GOOGLE_CLOUD_PROJECT", "test-project")
@@ -6,11 +9,6 @@ os.environ.setdefault("GOOGLE_CLOUD_PROJECT", "test-project")
 # bucket name because their storage clients are mocked or their fixtures rely
 # on the published development release.
 os.environ.setdefault("GCS_DATASETS_BUCKET", "odis-stream2-eu")
-import sys
-from types import ModuleType
-import warnings
-
-import geopandas as gpd
 import opentelemetry.trace as otel_trace
 import pandas as pd
 import pytest
@@ -243,11 +241,11 @@ def sample_data():
         "log_loyer_moyen_appt_t3_p_scaled": [0.5, 0.2, 0.3, 0.4, 0.8],
         "log_loyer_moyen_house_all_scaled": [0.5, 0.2, 0.3, 0.4, 0.8],
     }
-    gdf = gpd.GeoDataFrame(data, crs="EPSG:4326")
-    gdf = gdf.to_crs(cfg.PROJECTED_CRS)
-    gdf["centroid"] = gdf.geometry.centroid
-    gdf = gdf.set_index("codgeo")
-    return gdf.copy()
+    df = pd.DataFrame(data)
+    df["polygon"] = df["geometry"]
+    df["centroid"] = [g.centroid for g in df["geometry"]]
+    df = df.set_index("codgeo")
+    return df.copy()
 
 
 @pytest.fixture

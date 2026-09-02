@@ -50,7 +50,7 @@ def test_prepare_map_payload_minimal_size():
 
 
 def test_prepare_map_payload_poi_filtering():
-    import geopandas as gpd
+    import pandas as pd
     from shapely.geometry import Point
 
     c1 = CommuneResult(
@@ -68,13 +68,13 @@ def test_prepare_map_payload_poi_filtering():
         commune_pressentie=None,
         search_hash="test-hash-pois",
     )
-    pois_df = gpd.GeoDataFrame({
+    pois_df = pd.DataFrame({
         "codgeo": ["75056", "75056"],
         "name": ["Mairie de Paris", "École Primaire"],
         "type": ["Mairie", "École Primaire"],
         "category": ["mairie", "education"],
         "geometry": [Point(2.35, 48.85), Point(2.36, 48.86)],
-    }, crs="EPSG:4326")
+    })
 
     # 1. Mairie selected
     payload_mairie = prepare_map_payload(
@@ -103,7 +103,7 @@ def test_prepare_map_payload_poi_filtering():
 
 
 def test_prepare_map_payload_inclusion_filtering():
-    import geopandas as gpd
+    import pandas as pd
     from shapely.geometry import Point
     from app.core.models import CriteriaItem, SearchCriterias
 
@@ -122,13 +122,13 @@ def test_prepare_map_payload_inclusion_filtering():
         commune_pressentie=None,
         search_hash="test-hash-inc",
     )
-    pois_df = gpd.GeoDataFrame({
+    pois_df = pd.DataFrame({
         "codgeo": ["75056", "75056"],
         "name": ["Structure A", "Structure B"],
         "type": ["acces-aux-droits", "logement-hebergement"],
         "category": ["incl_services", "incl_services"],
         "geometry": [Point(2.35, 48.85), Point(2.36, 48.86)],
-    }, crs="EPSG:4326")
+    })
 
     # 1. Inclusion active, no specific filter
     payload = prepare_map_payload(

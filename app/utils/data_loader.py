@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import geopandas as gpd
+import shapely
 import shapely.wkb as wkb
 import json
 import hashlib
@@ -990,8 +990,7 @@ def load_scoring_datasets_raw(
     pois_path = cfg.POIS_FILE
     pois_df = _load_parquet(pois_path, release_context=release_context)
     if not pois_df.empty and "lat" in pois_df.columns and "lon" in pois_df.columns:
-        pois_df["geometry"] = gpd.points_from_xy(pois_df.lon, pois_df.lat)
-        pois_df = gpd.GeoDataFrame(pois_df, geometry="geometry", crs="EPSG:4326")
+        pois_df["geometry"] = shapely.points(pois_df.lon, pois_df.lat)
 
     annuaire_ecoles = get_pois_by_category(pois_df, "education")
     annuaire_sante = get_pois_by_category(pois_df, "sante")
@@ -1099,9 +1098,8 @@ def load_scoring_datasets_raw(
         if "polygon" in bv_geo.columns:
             if isinstance(bv_geo["polygon"].iloc[0], bytes):
                 bv_geo["polygon"] = bv_geo["polygon"].apply(wkb.loads)
-            bv_geo = gpd.GeoDataFrame(bv_geo, geometry="polygon", crs=cfg.PROJECTED_CRS)
             if "centroid" not in bv_geo.columns:
-                bv_geo["centroid"] = bv_geo.geometry.centroid
+                bv_geo["centroid"] = shapely.centroid(bv_geo["polygon"])
 
         key_col = (
             cfg.BV_CODE_COL if cfg.BV_CODE_COL in bv_geo.columns else "bassin_de_vie"

@@ -2,7 +2,6 @@ import pandas as pd
 import pytest
 from core.scoring import ScoringEngine
 from core.models import SearchCriterias
-import geopandas as gpd
 
 
 @pytest.fixture
@@ -42,8 +41,8 @@ def test_weighted_average(mock_config):
 
     # Init engine
     engine = ScoringEngine(
-        df_all_communes=gpd.GeoDataFrame(),
-        df_bv_geo=gpd.GeoDataFrame(),
+        df_all_communes=pd.DataFrame(),
+        df_bv_geo=pd.DataFrame(),
         scores_cat=scores_cat,
         incl_index=pd.DataFrame(),
         associations_data=pd.DataFrame(),
@@ -72,8 +71,8 @@ def test_weighted_average_with_zeros(mock_config):
     Verifies that weighted average correctly handles 0.0 values (active criteria with 0 score).
     """
     engine = ScoringEngine(
-        df_all_communes=gpd.GeoDataFrame(),
-        df_bv_geo=gpd.GeoDataFrame(),
+        df_all_communes=pd.DataFrame(),
+        df_bv_geo=pd.DataFrame(),
         scores_cat=pd.DataFrame(
             {
                 "score": ["crit1", "crit2"],

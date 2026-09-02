@@ -128,7 +128,7 @@ Le projet suit une approche rigoureuse de développement piloté par les spécif
 ## 🛠️ Stack Technique
 
 - **Framework Applicatif :** [Streamlit](https://streamlit.io/)
-- **Analyse de Données :** [Pandas](https://pandas.pydata.org/), [GeoPandas](https://geopandas.org/), [NumPy](https://numpy.org/)
+- **Analyse de Données :** [Pandas](https://pandas.pydata.org/), [Shapely](https://shapely.readthedocs.io/), [NumPy](https://numpy.org/), [PyArrow](https://arrow.apache.org/)
 - **Observabilité :** [Pydantic Logfire](https://logfire.pydantic.dev/) (Tracing, Télémétrie, Monitoring LLM)
 - **Scoring & Normalisation :** [Scikit-learn](https://scikit-learn.org/)
 - **Cartographie Interactive :** [Pydeck](https://deckgl.readthedocs.io/) & Deck.gl (Rendu vectoriel haute performance)

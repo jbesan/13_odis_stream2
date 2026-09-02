@@ -1,5 +1,4 @@
 import pandas as pd
-import geopandas as gpd
 from core import scoring
 
 
@@ -15,7 +14,7 @@ def test_format_city_details_rna_rag_summary(
 
     engine = scoring.ScoringEngine(
         df_all_communes=sample_data,
-        df_bv_geo=gpd.GeoDataFrame(),
+        df_bv_geo=pd.DataFrame(),
         scores_cat=live_scores_cat,
         incl_index=pd.DataFrame(),
         associations_data=pd.DataFrame(),
@@ -67,7 +66,7 @@ def test_scoring_engine_init_with_missing_data(sample_data, live_scores_cat):
     # This simulates the state after cleaning up legacy files
     engine = scoring.ScoringEngine(
         df_all_communes=sample_data,
-        df_bv_geo=gpd.GeoDataFrame(),
+        df_bv_geo=pd.DataFrame(),
         scores_cat=live_scores_cat,
         incl_index=pd.DataFrame(),
         associations_data=pd.DataFrame(),  # EMPTY

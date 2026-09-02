@@ -250,7 +250,7 @@ def share_search_modal():
             "Partager sur Slack",
             slack_share_url,
             icon=":material/chat:",
-            use_container_width=True,
+            width="stretch",
         )
     with col2:
         st.link_button(
@@ -258,7 +258,7 @@ def share_search_modal():
             mailto_url,
             icon=":material/mail:",
             type="primary",
-            use_container_width=True,
+            width="stretch",
         )
 
 

@@ -1,12 +1,11 @@
 import pandas as pd
-import geopandas as gpd
 from core import scoring
 
 
 def get_engine(sample_data, live_scores_cat=None, sample_incl_index=None):
     return scoring.ScoringEngine(
         df_all_communes=sample_data,
-        df_bv_geo=gpd.GeoDataFrame(),
+        df_bv_geo=pd.DataFrame(),
         scores_cat=live_scores_cat if live_scores_cat is not None else pd.DataFrame(),
         incl_index=sample_incl_index
         if sample_incl_index is not None

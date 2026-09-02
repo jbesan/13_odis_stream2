@@ -15,10 +15,10 @@ import logging
 from html import escape
 from typing import Any, List, Optional, Set, Tuple, Union
 
-import geopandas as gpd
 import numpy as np
 import pandas as pd
 import pydeck as pdk
+import shapely
 import streamlit as st
 from shapely import wkb
 
@@ -165,9 +165,9 @@ def _get_geom(
 def _decode_wkb_geometries_cached(
     cache_key: str,
     _wkb_series: pd.Series,
-) -> gpd.GeoSeries:
-    """Decodes WKB polygon bytes into a GeoSeries, cached in memory across scoring calls."""
-    return gpd.GeoSeries.from_wkb(_wkb_series, crs="EPSG:4326")
+) -> pd.Series:
+    """Decodes WKB polygon bytes into a Series of Shapely geometries, cached in memory across scoring calls."""
+    return pd.Series(shapely.from_wkb(_wkb_series), index=_wkb_series.index)
 
 
 def _build_choropleth_layer_internal(
@@ -192,7 +192,7 @@ def _build_choropleth_layer_internal(
         )
         geom_series = _decode_wkb_geometries_cached(cache_key, s)
     else:
-        geom_series = gpd.GeoSeries(df_work["polygon"], crs="EPSG:4326")
+        geom_series = df_work["polygon"]
 
     # Vectorized score formatting and color assignment
     scores = df_work["weighted_score"]
@@ -212,8 +212,8 @@ def _build_choropleth_layer_internal(
         for name, pct in zip(names, score_pcts)
     ]
 
-    # Build minimal stripped GeoDataFrame
-    gdf_clean = gpd.GeoDataFrame(
+    # Build minimal stripped DataFrame with geometry column for Pydeck GeoJsonLayer
+    gdf_clean = pd.DataFrame(
         {
             id_col: df_work[id_col].astype(str),
             "libgeo": names,
@@ -221,8 +221,7 @@ def _build_choropleth_layer_internal(
             "fill_color": fill_colors,
             "tooltip_html": tooltip_html,
             "geometry": geom_series,
-        },
-        crs="EPSG:4326",
+        }
     ).dropna(subset=["geometry"])
 
     if gdf_clean.empty:
@@ -308,10 +307,7 @@ def build_current_loc_layer(
         f"</div>"
     )
 
-    gdf = gpd.GeoDataFrame(
-        [{"tooltip_html": tooltip, "geometry": poly}],
-        crs="EPSG:4326",
-    )
+    gdf = pd.DataFrame([{"tooltip_html": tooltip, "geometry": poly}])
 
     return pdk.Layer(
         "GeoJsonLayer",
@@ -418,7 +414,7 @@ def build_top_results_layers(
 
     # 1. Add Outlines Layer
     if outline_rows:
-        gdf_outlines = gpd.GeoDataFrame(outline_rows, crs="EPSG:4326")
+        gdf_outlines = pd.DataFrame(outline_rows)
         layers.append(
             pdk.Layer(
                 "GeoJsonLayer",
@@ -457,7 +453,7 @@ def build_top_results_layers(
 
 
 def build_poi_layers(
-    pois: gpd.GeoDataFrame,
+    pois: pd.DataFrame,
     target_codgeos: Set[str],
     config: Optional[SearchCriterias],
     selected_ids: Set[str],
@@ -695,7 +691,7 @@ def create_deck_map(
     zoom: Optional[int] = None,
     search_results: Optional[Any] = None,
     config: Optional[SearchCriterias] = None,
-    pois_df: Optional[gpd.GeoDataFrame] = None,
+    pois_df: Optional[pd.DataFrame] = None,
     selected_ids: Optional[Set[str]] = None,
     highlighted_rank: Optional[int] = None,
     show_top_5: bool = True,

@@ -951,7 +951,7 @@ with tab_finops:
                         "Coût Net",
                     ]
                     st.dataframe(
-                        df_top_skus_display, use_container_width=True, hide_index=True
+                        df_top_skus_display, width="stretch", hide_index=True
                     )
                 else:
                     st.info("Aucun détail SKU disponible.")

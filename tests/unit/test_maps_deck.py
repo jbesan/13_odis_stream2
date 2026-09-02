@@ -1,4 +1,3 @@
-import geopandas as gpd
 import pandas as pd
 import pydeck as pdk
 from shapely.geometry import Point, Polygon
@@ -75,7 +74,7 @@ def test_build_top_results_layers_pure_text():
 
 
 def test_build_poi_layers_icons():
-    pois_df = gpd.GeoDataFrame({
+    pois_df = pd.DataFrame({
         "codgeo": ["75056", "75056"],
         "name": ["Mairie du 1er", "École Élémentaire"],
         "type": ["Mairie", "École Élémentaire"],
@@ -83,7 +82,7 @@ def test_build_poi_layers_icons():
         "lat": [48.85, 48.86],
         "lon": [2.35, 2.36],
         "geometry": [Point(2.35, 48.85), Point(2.36, 48.86)],
-    }, crs="EPSG:4326")
+    })
 
     config = SearchCriterias(classe_enfants=["Elémentaire"])
     # 1. Both Mairie and Edu
