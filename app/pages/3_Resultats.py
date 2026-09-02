@@ -521,7 +521,7 @@ if st.session_state.get("processed_gdf") is not None:
                 score_pct = f"{c.global_score * 100:.0f}/100"
                 st.button(
                     f"**{score_pct}** - {c.name}",
-                    help=f"Top {i+1} : {c.name}",
+                    # help=f"Top {i+1} : {c.name}",
                     key=f"btn_top_{i+1}",
                     # type=btn_type,
                     icon=f":material/counter_{i+1}:",

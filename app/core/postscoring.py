@@ -1,10 +1,11 @@
+import asyncio
+import logging
 import string
+import threading
 from typing import Any, Dict, List, Optional
+import logfire
 import pandas as pd
 import streamlit as st
-import threading
-import logging
-import logfire
 
 import config as cfg
 from core.enrichment_status import EnrichmentStatus, enrichment_result
@@ -82,15 +83,12 @@ def launch_background_refining(
             "Refiner background task started for hash: {search_hash}",
             search_hash=hash_val,
         )
-        import asyncio
         from agents.state import ODISDeps
         from agents.refiner import refiner_agent
         from agents.agent_config import get_p_model
 
         try:
             logging.debug(f"🚀 [BG] Starting background refiner for hash {hash_val}")
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
 
             from agents.agent_config import get_gemini_client
 
@@ -132,7 +130,8 @@ def launch_background_refining(
                 )
 
             try:
-                result_run = loop.run_until_complete(run_agent())
+                with asyncio.Runner() as runner:
+                    result_run = runner.run(run_agent())
                 response_obj = result_run.output
                 logging.debug(
                     f"🚀 [BG] Refiner Agent call successful for hash {hash_val}"
@@ -182,9 +181,6 @@ def launch_background_refining(
             )
             current_val["status_refiner"] = "error"
             results_store[hash_val] = current_val
-        finally:
-            if "loop" in locals():
-                loop.close()
 
     # 4. Threading (Non-blocking)
     thread = attach_script_run_ctx(
@@ -659,7 +655,6 @@ def _curate_jobs_with_agent(
         from agents.job_curator import job_curator_agent
         from agents.state import GraphState, ODISDeps
         from core.models import SearchCriterias
-        import asyncio
 
         # Format jobs for the LLM prompt
         jobs_list_str = ""
@@ -676,12 +671,6 @@ def _curate_jobs_with_agent(
                 f"  Durée de travail: {job.get('work_duration') or 'Non spécifiée'}\n"
                 f"  Date de création: {job.get('date_creation') or 'Non spécifiée'}\n\n"
             )
-
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
 
         from agents.agent_config import (
             get_p_model,
@@ -702,14 +691,15 @@ def _curate_jobs_with_agent(
         prompt = f"Voici la liste des offres d'emploi récupérées à trier et curer :\n\n{jobs_list_str}"
 
         # Run the curator agent synchronously within the background thread
-        result = loop.run_until_complete(
-            job_curator_agent.run(
-                prompt,
-                deps=deps,
-                model=model,
-                model_settings=get_model_settings("job_curator"),
+        with asyncio.Runner() as runner:
+            result = runner.run(
+                job_curator_agent.run(
+                    prompt,
+                    deps=deps,
+                    model=model,
+                    model_settings=get_model_settings("job_curator"),
+                )
             )
-        )
         selected_jobs_list = getattr(result.output, "selected_jobs", [])
 
         # Map selected IDs back to job dicts, keeping LLM relevance order

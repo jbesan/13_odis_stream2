@@ -1,5 +1,7 @@
 import asyncio
+import concurrent.futures
 import copy
+import inspect
 import logging
 import os
 import threading
@@ -543,8 +545,6 @@ def launch_background_city_analysis(
         run_cancel_event: threading.Event,
         run_timeout_seconds: float,
     ) -> None:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
         deadline_monotonic = time.monotonic() + run_timeout_seconds
 
         try:
@@ -555,9 +555,10 @@ def launch_background_city_analysis(
                 nom,
                 codgeo,
             )
-            final_state = loop.run_until_complete(
-                _run_until_terminal(run_input, run_cancel_event, deadline_monotonic)
-            )
+            with asyncio.Runner() as runner:
+                final_state = runner.run(
+                    _run_until_terminal(run_input, run_cancel_event, deadline_monotonic)
+                )
             committed = _complete_background_run(
                 results_store,
                 task_key,
@@ -614,9 +615,6 @@ def launch_background_city_analysis(
                 error="L'analyse IA a rencontré une erreur technique. Réessayez.",
                 error_code="graph_run_failed",
             )
-        finally:
-            if not loop.is_closed():
-                loop.close()
 
     thread = attach_script_run_ctx(
         threading.Thread(
@@ -630,13 +628,40 @@ def launch_background_city_analysis(
     return record
 
 
-def run_async_safe(input_data: dict):
+def run_coroutine_sync(coro: Any) -> Any:
+    """Executes an asynchronous coroutine synchronously and cleanly.
+
+    Modernizes event loop execution for Python 3.11+:
+    1. If the input is not awaitable (e.g. static return from a unit test mock),
+       returns it directly without spinning up an event loop.
+    2. If an event loop is already running in the current thread (e.g. inside an
+       async test or async handler), delegates execution to a single-worker
+       ThreadPoolExecutor via asyncio.run() to avoid 'loop is already running' errors.
+    3. Otherwise, uses asyncio.Runner() to manage the complete loop lifecycle:
+       creation, execution, cancelling dangling tasks on error, closing the loop,
+       and unsetting it from thread-local state.
     """
-    Exécute la logique asynchrone de manière sécurisée.
-    Stratégie: "Non-Destructive Loop Management".
-    On réutilise la loop du thread si elle existe, on en crée une si besoin,
-    MAIS on ne la ferme JAMAIS explicitement ici. C'est le thread/process
-    qui gérera son cycle de vie.
+    if not inspect.isawaitable(coro):
+        return coro
+
+    try:
+        running_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        running_loop = None
+
+    if running_loop is not None and running_loop.is_running():
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(asyncio.run, coro).result()
+
+    with asyncio.Runner() as runner:
+        return runner.run(coro)
+
+
+def run_async_safe(input_data: dict) -> Any:
+    """Exécute la logique asynchrone du graphe de manière sécurisée et moderne.
+
+    Gère le cycle de vie via run_coroutine_sync (asyncio.Runner), éliminant
+    les fuites de boucle thread-locale et les warnings sous Python 3.14.
     """
     try:
         interaction_id = resolve_interaction_id(input_data.get("interaction_id"))
@@ -658,48 +683,24 @@ def run_async_safe(input_data: dict):
     input_data["interaction_id"] = interaction_id
     input_data["username"] = username
 
-    try:
-        # 3. Check current loop
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        # 2. If no loop exists, create new
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    if loop.is_closed():
-        # 3. If found loop is closed, replace it
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    # 4. Run without closing
-    return loop.run_until_complete(run_logic(input_data))
+    return run_coroutine_sync(run_logic(input_data))
 
 
 @logfire.instrument("Agent: Interviewer (Auto-Detect)")
-def run_autodetect_safe(text: str):
+def run_autodetect_safe(text: str) -> Any:
     logfire.info("Interviewer Auto-Detect started")
     from agents.interviewer import interviewer_agent
     from agents.agent_config import get_gemini_client, get_p_model
     from agents.state import ODISDeps, GraphState
 
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    if loop.is_closed():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
     client = get_gemini_client()
     deps = ODISDeps(state=GraphState(), client=client)
     model = get_p_model("interviewer", client=client)
 
-    result = loop.run_until_complete(
+    result = run_coroutine_sync(
         interviewer_agent.run(text, deps=deps, model=model)
     )
-    return result.output
+    return getattr(result, "output", result)
 
 
 def rehydrate_graph_state(input_data: dict) -> "GraphState":

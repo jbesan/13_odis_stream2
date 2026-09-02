@@ -1,8 +1,11 @@
+import asyncio
+import pytest
 import pandas as pd
 from unittest.mock import patch, MagicMock
 from app.agents.utils import (
     sanitize_llm_markdown,
     map_ui_config_to_search_criterias,
+    run_coroutine_sync,
     run_async_safe,
     run_autodetect_safe,
 )
@@ -89,3 +92,38 @@ def test_run_autodetect_safe(mock_get_client, mock_agent_run):
     mock_agent_run.return_value = MagicMock(output="detected_intent")
     res = run_autodetect_safe("help me find a job")
     assert res == "detected_intent"
+
+
+def test_run_coroutine_sync_standard():
+    async def sample_coro():
+        await asyncio.sleep(0.01)
+        return "computed_value"
+
+    res = run_coroutine_sync(sample_coro())
+    assert res == "computed_value"
+
+
+def test_run_coroutine_sync_non_awaitable():
+    static_data = {"key": "direct_value"}
+    res = run_coroutine_sync(static_data)
+    assert res is static_data
+
+
+def test_run_coroutine_sync_reentrant():
+    async def inner_coro():
+        return "reentrant_success"
+
+    async def outer_coro():
+        # Calling run_coroutine_sync while an event loop is already active in this thread
+        return run_coroutine_sync(inner_coro())
+
+    res = asyncio.run(outer_coro())
+    assert res == "reentrant_success"
+
+
+def test_run_coroutine_sync_exception_propagation():
+    async def failing_coro():
+        raise ValueError("coroutine_error")
+
+    with pytest.raises(ValueError, match="coroutine_error"):
+        run_coroutine_sync(failing_coro())
