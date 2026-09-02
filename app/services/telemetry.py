@@ -261,12 +261,16 @@ def get_manifest_version() -> str:
 
     try:
         data = load_active_data_manifest()
-        version = data.get("manifest_version")
+        version = (
+            data.get("manifest_version")
+            or data.get("pipeline_run_id")
+            or data.get("active_release_version")
+        )
         if not version or version == "unknown":
             raise RuntimeError(
                 "❌ Invalid or missing 'manifest_version' in the active data release."
             )
-        return version
+        return str(version)
     except Exception as e:
         raise RuntimeError(f"❌ Failed to load active manifest_version: {e}") from e
 

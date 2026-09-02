@@ -3,36 +3,21 @@ import pandas as pd
 import shapely
 import shapely.wkb as wkb
 import json
-import hashlib
 import os
 import yaml
 import logging
-import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Dict, Any, Iterable, List, Optional
+from typing import Dict, Any, List, Optional
 import config as cfg
 import copy
 import tempfile
-import threading
-import uuid
-from google.cloud import storage
-from utils.thread_utils import attach_script_run_ctx
+from google.cloud import storage  # noqa: F401
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-_SCORING_PRELOAD_STATUS: Dict[str, Any] = {
-    "in_progress": False,
-    "completed_release": None,
-    "lock": threading.Lock(),
-}
-_SCORING_DATASET_LOAD_LOCK = threading.RLock()
-_VERIFIED_RELEASE_ARTIFACTS: set[tuple[str, str, str]] = set()
-_VERIFIED_RELEASE_ARTIFACTS_LOCK = threading.Lock()
-
-# The application always loads this complete scoring bundle.  Validation-only
+# The application always loads this complete scoring bundle. Validation-only
 # artefacts (such as the France Travail and Inclusion coverage files) are not
 # part of this runtime contract.
 _RUNTIME_DATASET_FILENAMES = (
@@ -48,12 +33,11 @@ _RUNTIME_DATASET_FILENAMES = (
     cfg.SIAE_JOBS_FILE,
     cfg.SALESFORCE_JACCUEILLE_BDV_FILE,
 )
-_GCS_DOWNLOAD_WORKERS = 4
 
 
 @dataclass(frozen=True)
 class ReleaseArtifact:
-    """One verified runtime artifact from an immutable GCS release."""
+    """One verified runtime artifact from an immutable release."""
 
     name: str
     sha256: str
@@ -82,51 +66,9 @@ class ReleaseContext:
         )
 
 
-def _preload_scoring_datasets_in_background() -> None:
-    """Preload the active scoring release without touching session state."""
-    release_context = None
-    completed = False
-    try:
-        release_context = get_active_release_context()
-        with _SCORING_PRELOAD_STATUS["lock"]:
-            if _SCORING_PRELOAD_STATUS["completed_release"] == release_context.identity:
-                return
-        _get_scoring_datasets_for_release(release_context)
-        completed = True
-    except Exception:
-        # This is the outer fault boundary of a background thread. It must
-        # preserve the traceback because no request handler will surface it.
-        logger.error(
-            "Asynchronous scoring-data preload failed",
-            extra={
-                "extra_data": {
-                    "operation": "scoring_data_preload",
-                    "error_code": "SCORING-DATA-UNAVAILABLE",
-                }
-            },
-            exc_info=True,
-        )
-    finally:
-        with _SCORING_PRELOAD_STATUS["lock"]:
-            _SCORING_PRELOAD_STATUS["in_progress"] = False
-            if completed and release_context:
-                _SCORING_PRELOAD_STATUS["completed_release"] = release_context.identity
-
-
 def preload_scoring_datasets_async() -> None:
-    """Start one non-blocking preload for the active scoring-data release."""
-    with _SCORING_PRELOAD_STATUS["lock"]:
-        if _SCORING_PRELOAD_STATUS["in_progress"]:
-            return
-        _SCORING_PRELOAD_STATUS["in_progress"] = True
-
-    thread = attach_script_run_ctx(
-        threading.Thread(
-            target=_preload_scoring_datasets_in_background,
-            daemon=True,
-        )
-    )
-    thread.start()
+    """No-op retained for backwards compatibility: datasets are baked into the container."""
+    pass
 
 
 def load_scores_config_as_df(config_path: str) -> pd.DataFrame:
@@ -257,9 +199,9 @@ def initialize_session_state() -> None:
 
 
 def ensure_data_initialized(
-    *, initialize_rag: bool = True, force_reload: bool = False
+    *, force_reload: bool = False
 ) -> Dict[str, Any]:
-    """Initialize state and return the complete active GCS data bundle."""
+    """Initialize state and return the complete active data bundle."""
     initialize_session_state()
 
     if not force_reload and st.session_state.get("app_data"):
@@ -277,299 +219,137 @@ def ensure_data_initialized(
             )
         st.session_state["heavy_data_toast_shown"] = True
 
-    # RAG is not required to render form controls. Keep it opt-in for
-    # foreground flows that actually use analysis/enrichment.
-    if initialize_rag and "rna_rag_service" not in st.session_state:
-        try:
-            from services.rna_rag import RNARagService
-
-            st.session_state["rna_rag_service"] = RNARagService()
-            st.session_state["rna_rag_status"] = "connected"
-        except Exception as e:
-            st.session_state["rna_rag_status"] = "failed"
-            st.error(
-                f"🚨 **Erreur de connexion BigQuery/Vertex AI** : {e}\n\n"
-                "Le service de recherche sémantique (RAG) ne sera pas disponible. "
-                "Assurez-vous d'avoir configuré vos identifiants GCP (gcloud auth application-default login)."
-            )
-
     return app_data
 
 
-@st.cache_data(ttl=7 * 86400, show_spinner=False)
-def _active_release_payload() -> tuple[str, str, Dict[str, Any], Dict[str, Any]]:
-    """Read ``current.json`` and its verified manifest exactly once."""
-    bucket_name = os.getenv("GCS_DATASETS_BUCKET")
-    if not bucket_name:
-        raise RuntimeError("GCS_DATASETS_BUCKET must be configured")
-    datasets_prefix = os.getenv("GCS_DATASETS_PREFIX", "datasets").strip("/")
-    bucket = storage.Client().bucket(bucket_name)
-    pointer_blob = bucket.blob(f"{datasets_prefix}/current.json")
-    if not pointer_blob.exists():
-        raise RuntimeError("Active dataset release pointer is missing")
-
-    try:
-        pointer = json.loads(pointer_blob.download_as_bytes())
-    except (TypeError, json.JSONDecodeError) as exc:
-        raise RuntimeError("Active dataset release pointer is invalid JSON") from exc
-
-    release_version = pointer.get("version")
-    manifest_info = pointer.get("manifest")
-    if not isinstance(release_version, str) or not re.fullmatch(
-        r"[A-Za-z0-9._-]+", release_version
-    ):
-        raise RuntimeError("Invalid version in GCS dataset release pointer")
-    if not isinstance(manifest_info, dict):
-        raise RuntimeError("Active dataset release pointer has no manifest metadata")
-
-    manifest_name = manifest_info.get("name")
-    expected_sha256 = manifest_info.get("sha256")
-    if (
-        manifest_name != "data_manifest.json"
-        or not isinstance(expected_sha256, str)
-        or not re.fullmatch(r"[a-f0-9]{64}", expected_sha256)
-    ):
-        raise RuntimeError("Active dataset manifest metadata is invalid")
-
-    manifest_blob = bucket.blob(
-        f"{datasets_prefix}/releases/{release_version}/{manifest_name}"
-    )
-    manifest_bytes = manifest_blob.download_as_bytes()
-    actual_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
-    if actual_sha256 != expected_sha256:
-        raise RuntimeError("Active dataset manifest checksum mismatch")
-    try:
-        manifest = json.loads(manifest_bytes)
-    except (TypeError, json.JSONDecodeError) as exc:
-        raise RuntimeError("Active dataset manifest is invalid JSON") from exc
-    if manifest.get("pipeline_run_id") != release_version:
-        raise RuntimeError("Active dataset manifest does not belong to its release")
-    return bucket_name, datasets_prefix, pointer, manifest
-
-
-def load_active_data_manifest() -> Dict[str, Any]:
-    """Load and verify the provenance manifest of the active GCS release."""
-    try:
-        _, _, pointer, manifest = _active_release_payload()
-    except Exception as exc:
-        raise RuntimeError(f"Unable to load active data manifest: {exc}") from exc
-    manifest["active_release_version"] = pointer["version"]
-    return manifest
-
-
-def get_active_release_context() -> ReleaseContext:
-    """Freeze the active release and validate the complete runtime contract."""
-    try:
-        bucket_name, datasets_prefix, pointer, manifest = _active_release_payload()
-        release_version = pointer["version"]
-        files = pointer.get("files")
-        if not isinstance(files, list) or not all(
-            isinstance(item, str) for item in files
-        ):
-            raise RuntimeError("Active dataset release has no valid artifact list")
-
-        output_by_name = {
-            item.get("name"): item
-            for item in manifest.get("outputs", [])
-            if isinstance(item, dict) and isinstance(item.get("name"), str)
-        }
-        artifacts = []
-        for filename in _RUNTIME_DATASET_FILENAMES:
-            if filename not in files:
-                raise RuntimeError(
-                    f"Active dataset release is missing required runtime artifact '{filename}'"
-                )
-            metadata = output_by_name.get(filename)
-            if not isinstance(metadata, dict):
-                raise RuntimeError(
-                    f"Active manifest has no integrity metadata for '{filename}'"
-                )
-            checksum = metadata.get("sha256")
-            size_bytes = metadata.get("size_bytes")
-            if (
-                not isinstance(checksum, str)
-                or not re.fullmatch(r"[a-f0-9]{64}", checksum)
-                or not isinstance(size_bytes, int)
-                or size_bytes < 0
-            ):
-                raise RuntimeError(
-                    f"Active manifest integrity metadata is invalid for '{filename}'"
-                )
-            artifacts.append(
-                ReleaseArtifact(
-                    name=filename,
-                    sha256=checksum,
-                    size_bytes=size_bytes,
-                )
-            )
-        return ReleaseContext(
-            bucket_name=bucket_name,
-            datasets_prefix=datasets_prefix,
-            version=release_version,
-            artifacts=tuple(artifacts),
-        )
-    except Exception as exc:
-        raise RuntimeError(f"Unable to resolve active dataset release: {exc}") from exc
-
-
 def _get_dataset_cache_base_dir() -> str:
-    """Determine dataset cache base directory.
+    """Determine local dataset directory.
 
     Priority:
-    1. ODIS_CACHE_DIR environment variable if explicitly configured.
-    2. /tmp/odis_data_cache on Cloud Run (detected via K_SERVICE).
-    3. tempfile.gettempdir()/odis_data_cache during pytest (ensuring test isolation).
-    4. app/data/datasets locally in development (persistent and git-ignored).
+    1. ODIS_DATASETS_DIR / ODIS_CACHE_DIR if explicitly configured.
+    2. app/data/datasets/active (standard baked-in location).
+    3. tempfile.gettempdir()/odis_data_cache during test isolation.
     """
-    if custom_dir := (os.getenv("ODIS_CACHE_DIR") or os.getenv("ODIS_DATA_CACHE_DIR")):
+    if custom_dir := (
+        os.getenv("ODIS_DATASETS_DIR")
+        or os.getenv("ODIS_CACHE_DIR")
+        or os.getenv("ODIS_DATA_CACHE_DIR")
+    ):
         return custom_dir
-    if os.getenv("K_SERVICE"):
-        return os.path.join(tempfile.gettempdir(), "odis_data_cache")
-    if "PYTEST_CURRENT_TEST" in os.environ:
-        return os.path.join(tempfile.gettempdir(), "odis_data_cache")
-    return os.path.join(cfg.APP_DIR, "data", "datasets")
 
+    active_dir = os.path.join(cfg.APP_DIR, "data", "datasets", "active")
+    if os.path.isdir(active_dir):
+        return active_dir
 
-def _release_cache_path(context: ReleaseContext, artifact: ReleaseArtifact) -> str:
-    return os.path.join(_get_dataset_cache_base_dir(), context.version, artifact.name)
-
-
-def _verified_artifact_key(
-    context: ReleaseContext, artifact: ReleaseArtifact
-) -> tuple[str, str, str]:
-    return context.version, artifact.name, artifact.sha256
-
-
-def _verify_cached_artifact(
-    context: ReleaseContext,
-    artifact: ReleaseArtifact,
-    path: str,
-    *,
-    remember: bool = True,
-) -> bool:
-    """Verify a cached artifact once per process and release checksum."""
-    if not os.path.isfile(path) or os.path.getsize(path) != artifact.size_bytes:
-        return False
-
-    verification_key = _verified_artifact_key(context, artifact)
-    with _VERIFIED_RELEASE_ARTIFACTS_LOCK:
-        if verification_key in _VERIFIED_RELEASE_ARTIFACTS:
-            return True
-
-    digest = hashlib.sha256()
-    with open(path, "rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    if digest.hexdigest() != artifact.sha256:
-        return False
-
-    if remember:
-        with _VERIFIED_RELEASE_ARTIFACTS_LOCK:
-            _VERIFIED_RELEASE_ARTIFACTS.add(verification_key)
-    return True
-
-
-def _download_release_artifact(
-    context: ReleaseContext, artifact: ReleaseArtifact
-) -> str:
-    """Atomically download and checksum one known artifact into the `/tmp` cache."""
-    cache_path = _release_cache_path(context, artifact)
-    if _verify_cached_artifact(context, artifact, cache_path):
-        return cache_path
-
-    os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-    remote_path = (
-        f"{context.datasets_prefix}/releases/{context.version}/{artifact.name}"
-    )
-    tmp_path = f"{cache_path}.{os.getpid()}.{uuid.uuid4().hex}.tmp"
-    logger.info(
-        "[GCS] Downloading dataset '%s' from gs://%s/%s",
-        artifact.name,
-        context.bucket_name,
-        remote_path,
-    )
-    try:
-        bucket = storage.Client().bucket(context.bucket_name)
-        bucket.blob(remote_path).download_to_filename(tmp_path)
-        if not _verify_cached_artifact(context, artifact, tmp_path, remember=False):
-            raise RuntimeError(
-                f"Downloaded artifact '{artifact.name}' does not match its manifest"
-            )
-        os.replace(tmp_path, cache_path)
-        if not _verify_cached_artifact(context, artifact, cache_path):
-            raise RuntimeError(
-                f"Cached artifact '{artifact.name}' failed verification after download"
-            )
-    finally:
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
-
-    logger.info("[GCS] Cached verified dataset '%s'", artifact.name)
-    return cache_path
-
-
-def _ensure_release_artifacts_cached(
-    context: ReleaseContext, artifact_names: Iterable[str]
-) -> Dict[str, str]:
-    """Download missing release artifacts concurrently with bounded parallelism."""
-    artifacts = [context.artifact(name) for name in artifact_names]
-    if not artifacts:
-        return {}
-
-    # logger.info(
-    #     "[GCS] Ensuring %d release artifacts are available locally (up to %d downloads in parallel)",
-    #     len(artifacts),
-    #     min(_GCS_DOWNLOAD_WORKERS, len(artifacts)),
-    # )
-    paths: Dict[str, str] = {}
-    errors: Dict[str, Exception] = {}
-    with ThreadPoolExecutor(
-        max_workers=min(_GCS_DOWNLOAD_WORKERS, len(artifacts)),
-        thread_name_prefix="odis-gcs-download",
-    ) as executor:
-        pending = {
-            executor.submit(
-                _download_release_artifact, context, artifact
-            ): artifact.name
-            for artifact in artifacts
-        }
-        for future in as_completed(pending):
-            filename = pending[future]
-            try:
-                paths[filename] = future.result()
-            except Exception as exc:
-                errors[filename] = exc
-
-    if errors:
-        details = "; ".join(
-            f"{filename}: {error}" for filename, error in sorted(errors.items())
-        )
-        raise RuntimeError(
-            f"Failed to cache active dataset release {context.version}: {details}"
-        )
-    return paths
-
-
-def _ensure_complete_release_cached(context: ReleaseContext) -> None:
-    """Prefetch the entire app bundle before any Parquet is read."""
-    _ensure_release_artifacts_cached(
-        context, (artifact.name for artifact in context.artifacts)
-    )
+    return os.path.join(tempfile.gettempdir(), "odis_data_cache")
 
 
 def resolve_dataset_path(
     filename_or_path: str, *, release_context: Optional[ReleaseContext] = None
 ) -> Optional[str]:
-    """Resolve one manifest-declared release artifact into the `/tmp` cache."""
+    """Resolve one release artifact filename from the local datasets directory."""
     filename = os.path.basename(filename_or_path)
     if filename != filename_or_path:
         raise ValueError("Dataset paths must be release artifact filenames")
-    context = release_context or get_active_release_context()
-    artifact = context.artifact(filename)
-    cache_path = _release_cache_path(context, artifact)
-    if _verify_cached_artifact(context, artifact, cache_path):
-        return cache_path
-    return _ensure_release_artifacts_cached(context, (filename,))[filename]
+
+    base_dir = _get_dataset_cache_base_dir()
+    direct_path = os.path.join(base_dir, filename)
+    if os.path.isfile(direct_path):
+        return direct_path
+
+    active_path = os.path.join(cfg.APP_DIR, "data", "datasets", "active", filename)
+    if os.path.isfile(active_path):
+        return active_path
+
+    return direct_path
+
+
+@st.cache_data(show_spinner=False)
+def load_active_data_manifest() -> Dict[str, Any]:
+    """Load the provenance manifest of the active local dataset release."""
+    base_dir = _get_dataset_cache_base_dir()
+    manifest_path = os.path.join(base_dir, "data_manifest.json")
+    if not os.path.isfile(manifest_path):
+        manifest_path = os.path.join(
+            cfg.APP_DIR, "data", "datasets", "active", "data_manifest.json"
+        )
+
+    if not os.path.isfile(manifest_path):
+        return {
+            "manifest_version": "local-baked",
+            "pipeline_run_id": "local-baked",
+            "active_release_version": "local-baked",
+            "outputs": [
+                {"name": f, "sha256": "0" * 64, "size_bytes": 0}
+                for f in _RUNTIME_DATASET_FILENAMES
+            ],
+        }
+
+    with open(manifest_path, "r", encoding="utf-8") as handle:
+        manifest = json.load(handle)
+    version = (
+        manifest.get("manifest_version")
+        or manifest.get("pipeline_run_id")
+        or manifest.get("active_release_version")
+        or "local"
+    )
+    manifest["manifest_version"] = version
+    manifest["active_release_version"] = version
+    manifest["pipeline_run_id"] = manifest.get("pipeline_run_id", version)
+    return manifest
+
+
+def get_active_release_context() -> ReleaseContext:
+    """Resolve the active release context from the local dataset manifest."""
+    manifest = load_active_data_manifest()
+    release_version = (
+        manifest.get("pipeline_run_id")
+        or manifest.get("active_release_version")
+        or "local"
+    )
+
+    output_by_name = {
+        item.get("name"): item
+        for item in manifest.get("outputs", [])
+        if isinstance(item, dict) and isinstance(item.get("name"), str)
+    }
+    artifacts = []
+    for filename in _RUNTIME_DATASET_FILENAMES:
+        metadata = output_by_name.get(filename, {})
+        artifacts.append(
+            ReleaseArtifact(
+                name=filename,
+                sha256=metadata.get("sha256", ""),
+                size_bytes=metadata.get("size_bytes", 0),
+            )
+        )
+    return ReleaseContext(
+        bucket_name=os.getenv("GCS_DATASETS_BUCKET", "baked-in"),
+        datasets_prefix="datasets",
+        version=release_version,
+        artifacts=tuple(artifacts),
+    )
+
+
+@st.cache_data(show_spinner=False)
+def _active_release_payload() -> tuple[str, str, Dict[str, Any], Dict[str, Any]]:
+    """Return release payload from local manifest and pointer."""
+    base_dir = _get_dataset_cache_base_dir()
+    manifest = load_active_data_manifest()
+    pointer_path = os.path.join(base_dir, "current.json")
+    if os.path.isfile(pointer_path):
+        with open(pointer_path, "r", encoding="utf-8") as handle:
+            pointer = json.load(handle)
+    else:
+        pointer = {
+            "version": manifest.get("active_release_version", "local"),
+            "files": list(_RUNTIME_DATASET_FILENAMES),
+            "manifest": {
+                "name": "data_manifest.json",
+                "sha256": "0" * 64,
+            },
+        }
+    return os.getenv("GCS_DATASETS_BUCKET", "baked-in"), "datasets", pointer, manifest
 
 
 @st.cache_data(ttl=3600)
@@ -1209,7 +989,6 @@ def load_all_data_raw(
     """
     print("################### DATA RELOADED ###################")
     if release_context is not None:
-        _ensure_complete_release_cached(release_context)
         refs = load_referentiels_raw(release_context)
         data = load_scoring_datasets_raw(refs, release_context)
         data["_release_id"] = release_context.identity
@@ -1220,7 +999,7 @@ def load_all_data_raw(
 
 
 def get_data_mtime() -> str:
-    """Return the active immutable GCS release ID used as the cache key."""
+    """Return the active immutable release ID used as the cache key."""
     return get_active_release_context().identity
 
 
@@ -1242,13 +1021,11 @@ def get_scoring_datasets(release_context: ReleaseContext) -> Dict[str, Any]:
 def _get_scoring_datasets_for_release(
     release_context: ReleaseContext,
 ) -> Dict[str, Any]:
-    """Serialize one complete verified cold load shared by form and preload."""
-    with _SCORING_DATASET_LOAD_LOCK:
-        _ensure_complete_release_cached(release_context)
-        return get_scoring_datasets(release_context)
+    """Return complete scoring bundle for release."""
+    return get_scoring_datasets(release_context)
 
 
 def get_app_data() -> Dict[str, Any]:
-    """Return the complete data bundle for the active immutable GCS release."""
+    """Return the complete data bundle for the active release."""
     release_context = get_active_release_context()
     return _get_scoring_datasets_for_release(release_context)

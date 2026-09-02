@@ -16,9 +16,9 @@ from utils import data_loader
 # rather than letting individual form controls discover missing Tier-2 fields.
 if "app_data" not in st.session_state or not st.session_state["app_data"]:
     with st.spinner("Préparation du formulaire..."):
-        app_data = data_loader.ensure_data_initialized(initialize_rag=False)
+        app_data = data_loader.ensure_data_initialized()
 else:
-    app_data = data_loader.ensure_data_initialized(initialize_rag=False)
+    app_data = data_loader.ensure_data_initialized()
 
 FormState(st.session_state).preserve_widgets_across_steps()
 import logging

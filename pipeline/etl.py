@@ -78,18 +78,34 @@ def _publish_datasets_to_gcs(
     )
     from pipeline.manifest import artifact_metadata
 
-    release_artifacts = DATASET_FILES + [RELEASE_MANIFEST_FILE]
+    release_artifacts = list(DATASET_FILES) + [RELEASE_MANIFEST_FILE]
     for filename in release_artifacts:
         blob_path = f"{release_prefix}/{filename}"
         bucket.blob(blob_path).upload_from_filename(str(source_dir / filename))
         logging.info("Uploaded %s -> gs://%s/%s", filename, bucket_name, blob_path)
+
+    # Optional cartographic geojson upload
+    geojson_candidate = source_dir / "communes_france.geojson"
+    if not geojson_candidate.exists():
+        static_candidate = Path("app/static/data/communes_france.geojson")
+        if static_candidate.exists():
+            geojson_candidate = static_candidate
+
+    release_files = list(DATASET_FILES)
+    if geojson_candidate.exists():
+        blob_path = f"{release_prefix}/communes_france.geojson"
+        bucket.blob(blob_path).upload_from_filename(str(geojson_candidate))
+        logging.info(
+            "Uploaded communes_france.geojson -> gs://%s/%s", bucket_name, blob_path
+        )
+        release_files.append("communes_france.geojson")
 
     manifest_metadata = artifact_metadata(
         source_dir / RELEASE_MANIFEST_FILE, name=RELEASE_MANIFEST_FILE
     ).model_dump()
     pointer = {
         "version": release_version,
-        "files": DATASET_FILES,
+        "files": release_files,
         "manifest": manifest_metadata,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
