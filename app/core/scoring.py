@@ -189,7 +189,12 @@ class ScoringEngine:
             codes = [loc_code] if isinstance(loc_code, str) else (loc_code or [])
             filtered_df = df[df["reg_code"].isin(codes)]
         elif loc_type == "france":
-            filtered_df = df[~df["dep_code"].astype(str).str.startswith(("97", "98"))]
+            if hasattr(cfg, "METROPOLITAN_DEPT_CODES_SET"):
+                filtered_df = df[
+                    df["dep_code"].astype(str).isin(cfg.METROPOLITAN_DEPT_CODES_SET)
+                ]
+            else:
+                filtered_df = df[~df["dep_code"].astype(str).str.startswith(("97", "98"))]
         else:
             filtered_df = pd.DataFrame()
 

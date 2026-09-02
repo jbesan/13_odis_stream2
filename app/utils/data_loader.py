@@ -745,10 +745,18 @@ def load_referentiels_raw(
 
         reg_ref = refs_df[refs_df["key"] == "regions"]
         if not reg_ref.empty:
+            if hasattr(cfg, "METROPOLITAN_REGION_CODES_SET"):
+                reg_ref = reg_ref[
+                    reg_ref["code"].astype(str).isin(cfg.METROPOLITAN_REGION_CODES_SET)
+                ]
             regions_names = reg_ref.set_index("code")["label"].to_dict()
 
         dep_ref = refs_df[refs_df["key"] == "departements"]
         if not dep_ref.empty:
+            if hasattr(cfg, "METROPOLITAN_DEPT_CODES_SET"):
+                dep_ref = dep_ref[
+                    dep_ref["code"].astype(str).isin(cfg.METROPOLITAN_DEPT_CODES_SET)
+                ]
             departements_names = dep_ref.set_index("code")["label"].to_dict()
             cols_to_dict = ["label"]
             if "reg_code" in dep_ref.columns:
@@ -765,13 +773,22 @@ def load_referentiels_raw(
         if not c_ref.empty:
             codes = c_ref["code"].astype(str)
             deps = codes.apply(lambda c: c[:3] if c.startswith("97") else c[:2])
+            mask = (
+                deps.isin(cfg.METROPOLITAN_DEPT_CODES_SET)
+                if hasattr(cfg, "METROPOLITAN_DEPT_CODES_SET")
+                else pd.Series(True, index=c_ref.index)
+            )
             depcom_df = pd.DataFrame(
-                {"libgeo": c_ref["label"].values, "dep_code": deps.values},
-                index=pd.Index(codes.values, name="codgeo"),
+                {"libgeo": c_ref["label"].values[mask], "dep_code": deps.values[mask]},
+                index=pd.Index(codes.values[mask], name="codgeo"),
             )
 
         dep_ref = refs_df[refs_df["key"] == "departements"]
         if not dep_ref.empty:
+            if hasattr(cfg, "METROPOLITAN_DEPT_CODES_SET"):
+                dep_ref = dep_ref[
+                    dep_ref["code"].astype(str).isin(cfg.METROPOLITAN_DEPT_CODES_SET)
+                ]
             coddep_set = sorted(dep_ref["code"].astype(str).unique().tolist())
         elif not depcom_df.empty:
             coddep_set = sorted(depcom_df["dep_code"].unique().tolist())
@@ -949,6 +966,12 @@ def load_scoring_datasets_raw(
         for col in ["dep_code", "reg_code", "epci_code", "bassin_de_vie"]:
             if col in odis.columns:
                 odis[col] = odis[col].astype(str)
+
+        # Restrict communes to metropolitan departments to reduce memory footprint
+        if "dep_code" in odis.columns and hasattr(cfg, "METROPOLITAN_DEPT_CODES_SET"):
+            odis = odis[odis["dep_code"].isin(cfg.METROPOLITAN_DEPT_CODES_SET)]
+            if not odis_geo.empty:
+                odis_geo = odis_geo[odis_geo.index.isin(odis.index)]
 
     except Exception:
         logger.error(
