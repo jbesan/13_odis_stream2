@@ -30,6 +30,33 @@ def _safe_json_format(obj: Any) -> Any:
     return obj
 
 
+def _async_bq_insert(row: dict) -> None:
+    try:
+        client = bigquery.Client()
+        table_ref = f"{client.project}.{DATASET_ID}.{TABLE_STATE_LOGS}"
+        errors = client.insert_rows_json(table_ref, [row])
+        if errors:
+            logger.error(f"BQ Agent State Insert Errors: {errors}")
+        else:
+            logger.debug(
+                "Successfully logged Agent State to BigQuery with granular fields."
+            )
+    except Exception as e:
+        logger.error(f"Failed to log agent state to BQ: {e}")
+
+
+def _submit_agent_state_insert(row: dict):
+    from services.telemetry import _TELEMETRY_EXECUTOR
+
+    future = _TELEMETRY_EXECUTOR.submit(_async_bq_insert, row)
+    if "PYTEST_CURRENT_TEST" in os.environ:
+        try:
+            future.result(timeout=5)
+        except Exception:
+            pass
+    return future
+
+
 def log_agent_state_to_bq(
     user_input: str,
     agent_state: dict,
@@ -76,9 +103,6 @@ def log_agent_state_to_bq(
 
         paris_tz = zoneinfo.ZoneInfo("Europe/Paris")
         timestamp_paris = datetime.now(paris_tz).isoformat()
-
-        client = bigquery.Client()
-        table_ref = f"{client.project}.{DATASET_ID}.{TABLE_STATE_LOGS}"
 
         messages = agent_state.get("messages", [])
         # Extract last agent response
@@ -219,14 +243,8 @@ def log_agent_state_to_bq(
             "cost_eur": float(cost_eur or 0.0),
         }
 
-        # Fire to BigQuery
-        errors = client.insert_rows_json(table_ref, [row])
-        if errors:
-            logger.error(f"BQ Agent State Insert Errors: {errors}")
-        else:
-            logger.debug(
-                "Successfully logged Agent State to BigQuery with granular fields."
-            )
+        # Fire to BigQuery asynchronously
+        _submit_agent_state_insert(row)
 
     except Exception as e:
         logger.error(f"Failed to log agent state to BQ: {str(e)}")

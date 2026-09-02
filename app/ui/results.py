@@ -217,7 +217,7 @@ def render_details_trigger_button(commune: CommuneResult, h: Optional[str]) -> b
         disabled=btn_disabled,
     ):
         st.session_state.active_details_index = commune.codgeo
-        st.rerun()
+        show_details_dialog(commune.codgeo)
 
     return ready
 
@@ -246,7 +246,7 @@ def render_ai_trigger_button(commune: CommuneResult, h: Optional[str]) -> bool:
         disabled=btn_disabled,
     ):
         st.session_state.active_ia_city_index = commune.codgeo
-        st.rerun()
+        show_ia_analysis_dialog(commune.codgeo)
 
     return ready
 
@@ -520,7 +520,7 @@ def _display_result_details(commune: CommuneResult) -> None:
                 ),
             ):
                 st.session_state.active_ccas_index = commune.codgeo
-                st.rerun()
+                show_ccas_dialog(commune.codgeo)
 
         # F-IA: AI Dialog Trigger (Session State based)
         if not cfg.is_ai_free_mode():

@@ -42,6 +42,49 @@ if not _telemetry_logger.handlers:
     handler.setFormatter(JsonFormatter())
     _telemetry_logger.addHandler(handler)
 
+import atexit
+from concurrent.futures import ThreadPoolExecutor
+
+_TELEMETRY_EXECUTOR = ThreadPoolExecutor(
+    max_workers=2, thread_name_prefix="odis-telemetry-worker"
+)
+atexit.register(_TELEMETRY_EXECUTOR.shutdown, wait=False)
+
+
+def _execute_bq_insert(table_name_or_ref: str, row: dict) -> None:
+    """Execute BigQuery streaming insertion in the background."""
+    try:
+        client = bigquery.Client()
+        if "." in table_name_or_ref:
+            table_ref = table_name_or_ref
+        else:
+            table_ref = f"{client.project}.odis_logs.{table_name_or_ref}"
+        errors = client.insert_rows_json(table_ref, [row], timeout=15)
+        if errors:
+            logger.error(f"❌ [TELEMETRY] BQ Insert Error for {table_ref}: {errors}")
+        else:
+            _telemetry_logger.debug(
+                f"✅ [TELEMETRY] Successfully logged event to {table_ref}"
+            )
+    except Exception as e:
+        logger.error(
+            f"❌ [TELEMETRY] Failed to log event to BQ ({table_name_or_ref}): {e}"
+        )
+
+
+def _submit_bq_insert(table_name_or_ref: str, row: dict):
+    """Submit BigQuery insertion task asynchronously (fire-and-forget).
+
+    When running inside pytest, wait synchronously so mock assertions succeed.
+    """
+    future = _TELEMETRY_EXECUTOR.submit(_execute_bq_insert, table_name_or_ref, row)
+    if "PYTEST_CURRENT_TEST" in os.environ:
+        try:
+            future.result(timeout=5)
+        except Exception:
+            pass
+    return future
+
 
 _INVALID_INTERACTION_IDS = frozenset({"", "unknown", "none", "null"})
 
@@ -202,9 +245,6 @@ def log_usage_event(
             )
             timestamp_str = datetime.now().isoformat()
 
-        client = bigquery.Client()
-        table_ref = f"{client.project}.odis_logs.usage_events"
-
         row = {
             "interaction_id": interaction_id,
             "login_session_id": login_session_id,
@@ -217,11 +257,9 @@ def log_usage_event(
             ),
         }
 
-        errors = client.insert_rows_json(table_ref, [row], timeout=15)
-        if errors:
-            logger.error(f"❌ [TELEMETRY] BQ Usage Event Insert Error: {errors}")
+        _submit_bq_insert("usage_events", row)
     except Exception as e:
-        logger.error(f"❌ [TELEMETRY] Failed to log usage event to BQ: {str(e)}")
+        logger.error(f"❌ [TELEMETRY] Failed to queue usage event to BQ: {str(e)}")
 
 
 def log_page_view(page_name: str):
@@ -406,10 +444,6 @@ def log_search_complete(
                 "expert_analysis": c_expert,
             }
 
-        # 3. BigQuery Insert
-        client = bigquery.Client()
-        table_ref = f"{client.project}.odis_logs.search_events"
-
         row = {
             "interaction_id": interaction_id,
             "timestamp": timestamp_str,
@@ -432,15 +466,7 @@ def log_search_complete(
             ),
         }
 
-        errors = client.insert_rows_json(table_ref, [row], timeout=15)
-        if errors:
-            logger.error(
-                f"❌ [TELEMETRY] BQ Insert Error for {interaction_id}: {errors}"
-            )
-        else:
-            _telemetry_logger.debug(
-                f"✅ Successfully logged search event to BQ (ID: {interaction_id})"
-            )
+        _submit_bq_insert("search_events", row)
 
     except Exception as e:
         logger.error(

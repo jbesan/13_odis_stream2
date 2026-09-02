@@ -9,7 +9,7 @@ def _on_ccas_dialog_dismiss():
 
 @st.dialog(
     "Centre Communal d'Action Sociale",
-    width="large",
+    width="medium",
     on_dismiss=_on_ccas_dialog_dismiss,
 )
 def show_ccas_dialog(index: Any):
@@ -44,7 +44,7 @@ def show_ccas_dialog(index: Any):
 
         if not subset.empty:
             for _, struct in subset.iterrows():
-                st.divider()
+                # st.divider()
                 # Layout: Commune First
                 label = struct["commune"] if pd.notna(struct.get("commune")) else libgeo
                 st.subheader(f"📍 {label}")
