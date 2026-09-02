@@ -4,6 +4,9 @@
 # Allow app directory
 !app/
 !data/
+!pyproject.toml
+!uv.lock
+!.python-version
 
 # Ignore specific heavy items inside app/ if any (though !app/ allows it, we can be specific if needed)
 # But generally we want app/

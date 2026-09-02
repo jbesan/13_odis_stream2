@@ -17,6 +17,7 @@ serviceAccount: projects/odis-stream2-app/serviceAccounts/odis-ci@odis-stream2-a
 steps:
   - name: "ghcr.io/astral-sh/uv:python3.14-bookworm-slim"
     entrypoint: /bin/bash
+    dir: "/workspace"
     args:
       - -ceu
       - |
