@@ -21,9 +21,11 @@ dependencies = [
     "fpdf2",
 
     # --- AI Agents Swarm & Tools ---
-    "pydantic",
-    "pydantic-ai-slim[google,logfire]>=2.27.0",
-    "google-genai>=1.70.0",
+    "pydantic==2.13.5",
+    "pydantic-settings==2.15.0",
+    "pydantic-ai-slim[google,logfire]==2.37.0",
+    "pydantic-graph==2.37.0",
+    "google-genai==2.21.0",
     "fastmcp<4",
     "python-frontmatter",
 
@@ -47,7 +49,7 @@ dev = [
     "ty==0.0.55",
     "ruff==0.15.20",
     "vulture",
-    "pydantic-evals>=2.27.0",
+    "pydantic-evals==2.37.0",
     "psutil",
 ]
 pipeline = [

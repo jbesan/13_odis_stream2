@@ -1,4 +1,3 @@
-import logging
 import os
 from typing import Literal, Any
 from pydantic_ai import Agent
@@ -10,9 +9,6 @@ from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.providers.google_cloud import GoogleCloudProvider
 
 from agents.google_model import GroundingGoogleModel
-
-logger = logging.getLogger(__name__)
-
 
 # --- Configuration Models ---
 
@@ -169,22 +165,13 @@ def get_p_model(agent_name: str, client: genai.Client | None = None) -> GoogleMo
             project=project, location=location, base_url=base_url
         )
 
-    profile = None
-    try:
-        default_profile = provider.model_profile(model_name)
-        if default_profile:
-            profile = {
-                **default_profile,
-                "google_supports_server_side_tool_invocations": False,
-            }
-    except Exception as exc:
-        logger.debug("Could not resolve model profile for '%s': %s", model_name, exc)
-
-    return GroundingGoogleModel(
-        model_name,
-        provider=provider,
-        profile=profile,
-    )
+    # PydanticAI 2.37 determines whether this is Vertex or the Gemini API from
+    # the injected client's transport. This matters when a pre-built client
+    # and provider name describe different transports (see #7280). In
+    # particular, do not override the model profile globally: Vertex must omit
+    # ``include_server_side_tool_invocations``, while the Gemini API may need
+    # it for Gemini 3 built-in tools.
+    return GroundingGoogleModel(model_name, provider=provider)
 
 
 def get_gemini_client(attempts: int = 3, location: str | None = None) -> genai.Client:

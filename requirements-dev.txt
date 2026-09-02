@@ -3,5 +3,5 @@ pytest-asyncio
 ty==0.0.55
 ruff==0.15.20
 vulture
-pydantic-evals>=2.27.0
+pydantic-evals==2.37.0
 psutil

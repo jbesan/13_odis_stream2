@@ -18,9 +18,11 @@ pydeck                              # Vector map layer constructs
 fpdf2                               # PDF territorial summary export
 
 # --- AI Agents Swarm & Tools ---
-pydantic
-pydantic-ai-slim[google,logfire]>=2.27.0
-google-genai>=1.70.0                # Gemini SDK & WebSearch grounding
+pydantic==2.13.5
+pydantic-settings==2.15.0
+pydantic-ai-slim[google,logfire]==2.37.0
+pydantic-graph==2.37.0
+google-genai==2.21.0                # Gemini SDK & WebSearch grounding
 fastmcp<4                           # MCP microservices (v3.4.x per Decision D4)
 python-frontmatter                  # YAML frontmatter parsing for Skill Cards
 
