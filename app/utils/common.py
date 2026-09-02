@@ -1,3 +1,4 @@
+import math
 import unicodedata
 from typing import Set, Tuple, Optional, Any
 import pandas as pd
@@ -134,15 +135,73 @@ def get_base64_image(image_path: str) -> str:
         return ""
 
 
-from pyproj import Transformer
+# Official IGN Lambert-93 (EPSG:2154) / GRS80 ellipsoidal parameters
+_L93_A = 6378137.0
+_L93_E = 0.08181919106
+_L93_C = 11754255.426096
+_L93_N = 0.7256077650532473
+_L93_XS = 700000.0
+_L93_YS = 12655612.0499
+_L93_LON0 = 3.0 * math.pi / 180.0
+
+
+def _lambert93_to_wgs84(x: float, y: float) -> Tuple[float, float]:
+    """Converts Lambert-93 (EPSG:2154) meters (x, y) to WGS84 (EPSG:4326) degrees (lon, lat)."""
+    dx = x - _L93_XS
+    dy = _L93_YS - y
+    r = math.hypot(dx, dy)
+    gamma = math.atan2(dx, dy)
+    lon_rad = _L93_LON0 + gamma / _L93_N
+
+    l = -(1.0 / _L93_N) * math.log(abs(r / _L93_C))
+    phi = 2.0 * math.atan(math.exp(l)) - math.pi / 2.0
+    for _ in range(5):
+        esphi = _L93_E * math.sin(phi)
+        phi = 2.0 * math.atan(math.pow((1.0 + esphi) / (1.0 - esphi), _L93_E / 2.0) * math.exp(l)) - math.pi / 2.0
+
+    return math.degrees(lon_rad), math.degrees(phi)
+
+
+def _wgs84_to_lambert93(lon: float, lat: float) -> Tuple[float, float]:
+    """Converts WGS84 (EPSG:4326) degrees (lon, lat) to Lambert-93 (EPSG:2154) meters (x, y)."""
+    phi = math.radians(lat)
+    lam = math.radians(lon)
+    esphi = _L93_E * math.sin(phi)
+    l = math.log(math.tan(math.pi / 4.0 + phi / 2.0) * math.pow((1.0 - esphi) / (1.0 + esphi), _L93_E / 2.0))
+    gamma = (lam - _L93_LON0) * _L93_N
+    r = _L93_C * math.exp(-_L93_N * l)
+    x = _L93_XS + r * math.sin(gamma)
+    y = _L93_YS - r * math.cos(gamma)
+    return x, y
 
 
 def project_point(
     lon: float, lat: float, from_crs: str = "EPSG:4326", to_crs: str = "EPSG:2154"
 ) -> Tuple[float, float]:
+    """Transforms a coordinate pair between Lambert-93 (EPSG:2154) and WGS84 (EPSG:4326).
+
+    Uses the closed-form official IGN projection formulas in pure Python,
+    removing the heavy C/C++ PROJ/pyproj dependency.
+
+    Args:
+        lon: First coordinate (X/easting in meters if Lambert-93, longitude in degrees if WGS84).
+        lat: Second coordinate (Y/northing in meters if Lambert-93, latitude in degrees if WGS84).
+        from_crs: Source CRS identifier (default: "EPSG:4326").
+        to_crs: Destination CRS identifier (default: "EPSG:2154").
+
+    Returns:
+        Tuple[float, float]: Transformed coordinate pair (first, second).
     """
-    Transforms a single coordinate point using scalars to avoid NumPy 1.25+ DeprecationWarning.
-    """
-    transformer = Transformer.from_crs(from_crs, to_crs, always_xy=True)
-    x, y = transformer.transform(lon, lat)
-    return x, y
+    from_norm = str(from_crs).upper().replace("EPSG:", "").strip()
+    to_norm = str(to_crs).upper().replace("EPSG:", "").strip()
+
+    if from_norm == to_norm:
+        return float(lon), float(lat)
+
+    if from_norm == "2154" and to_norm == "4326":
+        return _lambert93_to_wgs84(float(lon), float(lat))
+
+    if from_norm == "4326" and to_norm == "2154":
+        return _wgs84_to_lambert93(float(lon), float(lat))
+
+    raise ValueError(f"Unsupported CRS transformation: {from_crs} -> {to_crs}")
