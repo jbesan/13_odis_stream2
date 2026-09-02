@@ -437,8 +437,6 @@ def render_vector_map(
             const baseData = await fetchGeoJson();
             const scores = payload.scores || {{}};
             const scoreColorMap = new Map();
-            let minLon = 180, minLat = 90, maxLon = -180, maxLat = -90;
-
             for (const [code, sc] of Object.entries(scores)) {{
               if (sc >= 0) {{
                 const idx = Math.min(8, Math.max(0, Math.floor(sc * 8.99)));
@@ -452,20 +450,11 @@ def render_vector_map(
               const code = String(f.properties.codgeo);
               if (scoreColorMap.has(code)) {{
                 scoredFeatures.push(f);
-                const coords = f.geometry && f.geometry.coordinates ? f.geometry.coordinates : [];
-                if (f.geometry.type === 'Polygon' && coords[0]) {{
-                  for (const pt of coords[0]) {{
-                    if (pt[0] < minLon) minLon = pt[0];
-                    if (pt[0] > maxLon) maxLon = pt[0];
-                    if (pt[1] < minLat) minLat = pt[1];
-                    if (pt[1] > maxLat) maxLat = pt[1];
-                  }}
-                }}
               }}
             }}
 
-            const centerLon = (minLon < maxLon && minLon > -10 && maxLon < 20) ? (minLon + maxLon) / 2 : payload.center[1];
-            const centerLat = (minLat < maxLat && minLat > 30 && maxLat < 60) ? (minLat + maxLat) / 2 : payload.center[0];
+            const centerLon = (payload.center && payload.center.length >= 2) ? payload.center[1] : 1.888334;
+            const centerLat = (payload.center && payload.center.length >= 2) ? payload.center[0] : 46.603354;
 
             // 1. Base Choropleth Layer (Level 0)
             const deckLayers = [

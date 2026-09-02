@@ -95,3 +95,70 @@ def test_validate_secrets_toml_rejects_missing_sections():
     missing_auth = 'key = "value"\n'
     with pytest.raises(ValueError, match="Missing or invalid \\[auth\\] section"):
         validate_secrets_toml(missing_auth)
+
+
+def test_serialize_and_validate_secrets_toml_with_organizations():
+    """Ensure TOML serialization generates valid [organizations] section."""
+    policy = OIDCAuthorizationPolicy(
+        allowed_domains={"jaccueille.fr": "jaccueille"},
+        allowed_emails={},
+    )
+    organizations = {
+        "jaccueille": {
+            "name": "J'Accueille",
+            "zone_type": "departement",
+            "default_zones": ["33", "75"],
+            "defaults": {
+                "hebergement_cible": ["Chez l'habitant"],
+                "org_boosts": {"score_boost": 3.0},
+            },
+            "enable_interactive_chat": True,
+        }
+    }
+    content = serialize_secrets_toml(
+        policy=policy,
+        client_id="client-id",
+        client_secret="client-secret",
+        cookie_secret="cookie-secret-32-chars-long-test",
+        redirect_uri="https://test.app/oauth2callback",
+        organizations=organizations,
+    )
+
+    parsed = validate_secrets_toml(content, is_cloud_run=True)
+    assert "organizations" in parsed
+    assert parsed["organizations"]["jaccueille"]["name"] == "J'Accueille"
+    assert parsed["organizations"]["jaccueille"]["defaults"]["hebergement_cible"] == ["Chez l'habitant"]
+    assert parsed["organizations"]["jaccueille"]["defaults"]["org_boosts"]["score_boost"] == 3.0
+    assert parsed["organizations"]["jaccueille"]["enable_interactive_chat"] is True
+
+
+def test_generate_secrets_fails_closed_on_cloud_run_without_orgs(tmp_path, monkeypatch):
+    """Verify Cloud Run runtime boot fails if ORGANIZATIONS_CONFIG_JSON is missing."""
+    target_path = str(tmp_path / "secrets.toml")
+    monkeypatch.setenv("OIDC_AUTHORIZATION_POLICY_JSON", VALID_POLICY_JSON)
+    monkeypatch.delenv("ORGANIZATIONS_CONFIG_JSON", raising=False)
+
+    with pytest.raises(RuntimeError, match="ORGANIZATIONS_CONFIG_JSON must be configured for Cloud Run"):
+        generate_secrets_file(target_path, is_cloud_run=True)
+
+
+def test_generate_secrets_file_cloud_run_success(tmp_path, monkeypatch):
+    """Verify Cloud Run full secrets generation with policy and organizations."""
+    target_path = str(tmp_path / "secrets.toml")
+    monkeypatch.setenv("OIDC_AUTHORIZATION_POLICY_JSON", VALID_POLICY_JSON)
+    monkeypatch.setenv(
+        "ORGANIZATIONS_CONFIG_JSON",
+        '{"jaccueille": {"name": "J\'Accueille", "zone_type": "departement"}}',
+    )
+    monkeypatch.setenv("OIDC_CLIENT_ID", "mock-id")
+    monkeypatch.setenv("OIDC_CLIENT_SECRET", "mock-secret")
+    monkeypatch.setenv("OIDC_COOKIE_SECRET", "mock-cookie-secret-32-chars-long")
+    monkeypatch.setenv("OIDC_REDIRECT_URI", "https://mock.app/oauth2callback")
+
+    created = generate_secrets_file(target_path, is_cloud_run=True)
+    assert created == target_path
+    with open(target_path, "rb") as f:
+        data = tomllib.load(f)
+    assert data["organizations"]["jaccueille"]["name"] == "J'Accueille"
+
+

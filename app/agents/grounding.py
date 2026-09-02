@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Iterable, Mapping
 from typing import Any
 from urllib.parse import urlparse
+
+logger = logging.getLogger(__name__)
 
 
 WEB_TOOL_NAMES = frozenset({"web_search", "google_search", "google_search_retrieval"})
@@ -28,10 +31,15 @@ def _dump(value: Any) -> Any:
         except TypeError:
             try:
                 return model_dump(mode="json", exclude_none=True)
-            except Exception:
-                pass
-        except Exception:
-            pass
+            except TypeError:
+                try:
+                    return model_dump()
+                except Exception as exc:
+                    logger.debug("model_dump failed on object: %s", exc)
+                    return value
+        except Exception as exc:
+            logger.debug("model_dump serialization error: %s", exc)
+            return value
     return value
 
 
@@ -156,7 +164,11 @@ def merge_grounding_metadata(*values: Any) -> dict[str, Any]:
     merged["query_count"] = len(merged["queries"])
     if not merged["queries"] and not merged["sources"] and not merged["supports"]:
         merged.pop("retrieval_metadata", None)
-    return merged if any(merged.get(key) for key in ("queries", "sources", "supports")) else {}
+    return (
+        merged
+        if any(merged.get(key) for key in ("queries", "sources", "supports"))
+        else {}
+    )
 
 
 def normalize_provider_grounding_metadata(response: Any) -> dict[str, Any]:
@@ -386,7 +398,10 @@ def _messages_from(value: Any) -> list[Any]:
     if callable(all_messages):
         try:
             return list(all_messages())
-        except Exception:
+        except (TypeError, AttributeError) as exc:
+            logger.debug(
+                "all_messages callable failed on %s: %s", type(value).__name__, exc
+            )
             return []
     if isinstance(value, Iterable) and not isinstance(value, (str, bytes, Mapping)):
         return list(value)
@@ -398,9 +413,7 @@ def _metadata_from_message(message: Any) -> list[Mapping[str, Any]]:
 
     blocks: list[Mapping[str, Any]] = []
     for field_name in ("metadata", "provider_details"):
-        blocks.extend(
-            _grounding_metadata_from_container(_field(message, field_name))
-        )
+        blocks.extend(_grounding_metadata_from_container(_field(message, field_name)))
     return blocks
 
 
@@ -525,7 +538,9 @@ def extract_web_grounding(value: Any) -> dict[str, Any]:
         message_metadata = merge_grounding_metadata(*_metadata_from_message(message))
         has_provider_metadata_queries = bool(message_metadata.get("queries"))
         if message_metadata:
-            has_provider_metadata_queries = add_metadata(message_metadata) or has_provider_metadata_queries
+            has_provider_metadata_queries = (
+                add_metadata(message_metadata) or has_provider_metadata_queries
+            )
 
         parts = _as_list(_field(message, "parts"))
         for part in parts:

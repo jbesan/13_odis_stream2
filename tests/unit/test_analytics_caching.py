@@ -74,3 +74,83 @@ def test_parse_json_payload_counts_invalid_rows():
 
     assert stats.valid_rows == 1
     assert stats.invalid_rows == 2
+
+
+def test_fetch_gcp_billing_data():
+    """Verify that fetch_gcp_billing_data constructs the query and returns a valid ServiceOutcome."""
+    from services.analytics_data import fetch_gcp_billing_data
+
+    mock_client = MagicMock()
+    mock_client.project = "test-project"
+
+    df_dummy = pd.DataFrame(
+        [
+            {
+                "usage_date": "2026-08-30",
+                "project_id": "odis-stream2-app",
+                "service_name": "Vertex AI",
+                "sku_description": "Generative AI",
+                "currency": "EUR",
+                "cost_gross": 2.50,
+                "credits": 0.0,
+                "cost_net": 2.50,
+            }
+        ]
+    )
+
+    mock_job = MagicMock()
+    mock_job.to_dataframe.return_value = df_dummy
+    mock_client.query.return_value = mock_job
+
+    fn = getattr(fetch_gcp_billing_data, "__wrapped__", fetch_gcp_billing_data)
+    outcome = fn(mock_client, 30)
+
+    assert outcome.status == OutcomeStatus.SUCCESS
+    assert outcome.value is not None
+    assert len(outcome.value) == 1
+    assert outcome.value.iloc[0]["service_name"] == "Vertex AI"
+
+    # Verify query contains INTERVAL 30 DAY and projects filter
+    query_arg = mock_client.query.call_args[0][0]
+    assert "INTERVAL 30 DAY" in query_arg
+    assert "'odis-stream2-app'" in query_arg
+
+
+def test_fetch_gcp_billing_data_none_client():
+    """Verify that fetch_gcp_billing_data handles None client gracefully."""
+    from services.analytics_data import fetch_gcp_billing_data
+
+    fn = getattr(fetch_gcp_billing_data, "__wrapped__", fetch_gcp_billing_data)
+    outcome = fn(None, 30)
+
+    assert outcome.status == OutcomeStatus.UNAVAILABLE
+    assert outcome.value is None
+
+
+def test_fetch_agent_costs_data():
+    """Verify that fetch_agent_costs_data queries agent_state_logs correctly."""
+    from services.analytics_data import fetch_agent_costs_data
+
+    mock_client = MagicMock()
+    mock_client.project = "test-project"
+
+    df_dummy = pd.DataFrame(
+        [
+            {
+                "usage_date": "2026-08-30",
+                "run_count": 5,
+                "total_estimated_cost_eur": 0.12,
+            }
+        ]
+    )
+
+    mock_job = MagicMock()
+    mock_job.to_dataframe.return_value = df_dummy
+    mock_client.query.return_value = mock_job
+
+    fn = getattr(fetch_agent_costs_data, "__wrapped__", fetch_agent_costs_data)
+    outcome = fn(mock_client, 30)
+
+    assert outcome.status == OutcomeStatus.SUCCESS
+    assert outcome.value is not None
+    assert outcome.value.iloc[0]["run_count"] == 5

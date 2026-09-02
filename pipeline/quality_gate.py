@@ -75,7 +75,7 @@ def run_quality_gate(
 
     if not communes_path.exists():
         raise QualityGateFailureError(f"Missing communes artefact: {communes_path}")
-    communes = pd.read_parquet(communes_path, engine="fastparquet")
+    communes = pd.read_parquet(communes_path)
     rows = len(communes)
 
     min_rows = int(communes_contract["min_rows"])
@@ -170,7 +170,7 @@ def run_quality_gate(
                     checks, f"join.{source}", False, reason="missing source or target"
                 )
                 continue
-            target = pd.read_parquet(target_path, engine="fastparquet")
+            target = pd.read_parquet(target_path)
             target_key = join["target_key"]
             if target_key not in target.columns:
                 _add_check(checks, f"join.{source}", False, reason="missing target key")
@@ -198,7 +198,7 @@ def run_quality_gate(
             if not coverage_path.exists():
                 _add_check(checks, check_name, False, reason="missing artifact")
                 continue
-            coverage = pd.read_parquet(coverage_path, engine="fastparquet")
+            coverage = pd.read_parquet(coverage_path)
             if not {"department", "status", "pages_expected", "pages_retrieved"}.issubset(
                 coverage.columns
             ):

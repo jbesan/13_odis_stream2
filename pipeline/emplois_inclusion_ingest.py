@@ -172,7 +172,7 @@ def run_ingestion(departments: List[str] = None) -> None:
     # Load SIAE lookup for code_insee fallback
     if SIAE_LOOKUP_PATH.exists():
         logging.info(f"  [Lookup] Loading SIAE lookup table from {SIAE_LOOKUP_PATH}...")
-        str_inc = pd.read_parquet(SIAE_LOOKUP_PATH, engine="fastparquet")
+        str_inc = pd.read_parquet(SIAE_LOOKUP_PATH)
         # Ensure siret is string for matching
         str_inc["siret"] = str_inc["siret"].astype(str)
     else:
@@ -291,7 +291,7 @@ def run_ingestion(departments: List[str] = None) -> None:
 
         # Save granular data as requested (no aggregation)
         os.makedirs(OUTPUT_PATH.parent, exist_ok=True)
-        df.to_parquet(OUTPUT_PATH, index=False, engine="fastparquet")
+        df.to_parquet(OUTPUT_PATH, index=False)
         logging.info(f"Successfully saved {len(df)} job opening records to {OUTPUT_PATH}")
     else:
         logging.warning("No job data collected.")
@@ -306,14 +306,14 @@ def run_ingestion(departments: List[str] = None) -> None:
                 "rome",
                 "postes",
             ]
-        ).to_parquet(OUTPUT_PATH, index=False, engine="fastparquet")
+        ).to_parquet(OUTPUT_PATH, index=False)
 
     if all_structures:
         df_struct = pd.DataFrame(all_structures)
         # Unique structures per commune
         df_struct = df_struct.drop_duplicates(subset=["codgeo", "siae_siret"])
         os.makedirs(STRUCTURES_PATH.parent, exist_ok=True)
-        df_struct.to_parquet(STRUCTURES_PATH, index=False, engine="fastparquet")
+        df_struct.to_parquet(STRUCTURES_PATH, index=False)
         logging.info(
             f"Successfully saved {len(df_struct)} unique SIAE structure records to {STRUCTURES_PATH}"
         )
@@ -321,7 +321,7 @@ def run_ingestion(departments: List[str] = None) -> None:
         logging.warning("No structure data collected.")
 
     os.makedirs(COVERAGE_OUTPUT_PATH.parent, exist_ok=True)
-    coverage.to_parquet(COVERAGE_OUTPUT_PATH, index=False, engine="fastparquet")
+    coverage.to_parquet(COVERAGE_OUTPUT_PATH, index=False)
 
 
 if __name__ == "__main__":

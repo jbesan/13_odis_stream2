@@ -1,22 +1,36 @@
-import io
+import os
+import re
+import datetime
+import logging
+from typing import Any, Dict, List, Optional, Tuple
+
 from fpdf import FPDF
 from fpdf.fonts import FontFace
 from fpdf.enums import TextEmphasis, XPos, YPos
 
-import os
 import config as cfg
-from core import maps
-from core.models import SearchCriterias, SearchResultsData
-import logging
-from typing import List, Optional
-import matplotlib.pyplot as plt
-import contextily as ctx
-import geopandas as gpd
-import re
+from core.models import (
+    SearchCriterias,
+    SearchResultsData,
+    CommuneResult,
+    CommuneScoreDetail,
+)
 
-# Basic constants
-PDF_TITLE = "Synthèse de votre recherche de territoire"
 logger = logging.getLogger(__name__)
+
+# --- Brand Color Constants (RGB) ---
+COLOR_PRIMARY_TEAL = (0, 98, 104)      # #006268 (Brand Teal)
+COLOR_SECONDARY_TEAL = (22, 139, 141)  # #168B8D
+COLOR_DARK_SLATE = (30, 41, 59)        # #1E293B (Body text)
+COLOR_MUTED_GRAY = (100, 116, 139)     # #64748B (Captions & subtitles)
+COLOR_LIGHT_BG = (248, 250, 252)       # #F8FAFC (Card background)
+COLOR_ALT_ROW = (241, 245, 249)        # #F1F5F9 (Table zebra)
+COLOR_BORDER_LIGHT = (226, 232, 240)   # #E2E8F0 (Subtle borders)
+COLOR_TABLE_HEADER_BG = (235, 245, 245)# #EBF5F5 (Table header fill)
+COLOR_ALERT_BG = (254, 249, 231)       # #FEF9E7 (Warning background)
+COLOR_ALERT_BORDER = (217, 119, 6)     # #D97706 (Warning border)
+COLOR_WHITE = (255, 255, 255)
+COLOR_GOLD_ACCENT = (202, 138, 4)      # Pinned commune accent
 
 
 def _setup_unicode_font(pdf: FPDF) -> None:
@@ -29,902 +43,930 @@ def _setup_unicode_font(pdf: FPDF) -> None:
         pdf.add_font(
             "DejaVu", "BI", os.path.join(font_dir, "DejaVuSans-BoldOblique.ttf")
         )
-        pdf.set_font("DejaVu", size=12)
+        pdf.set_font("DejaVu", size=9)
     except Exception:
         logger.warning(
-            "Could not load local Unicode font; falling back to Helvetica",
+            "Could not load local Unicode DejaVu font; falling back to Helvetica",
             exc_info=True,
         )
-        logger.warning(
-            "--- Please ensure you have downloaded the font files as per the instructions. ---"
-        )
-        # Fallback to Helvetica if font setup fails
-        pdf.set_font("Helvetica", size=12)
-
-
-def _render_markdown_as_blocks(pdf: FPDF, text: str):
-    """
-    Renders markdown text to PDF by splitting it into blocks (Text vs Table).
-    Uses native fpdf2 tables for markdown tables to avoid HTML nesting issues.
-    """
-    if not text:
-        return
-
-    # Normalize newlines
-    text = text.replace("\r\n", "\n")
-    lines = text.split("\n")
-
-    table_buffer = []
-    in_table = False
-
-    for line in lines:
-        is_table_line = "|" in line
-        if is_table_line and not in_table:
-            in_table = True
-            table_buffer = [line]
-        elif in_table:
-            if is_table_line:
-                table_buffer.append(line)
-            else:
-                in_table = False
-                _render_table_block(pdf, table_buffer)
-                table_buffer = []
-                _render_text_block(pdf, line)
-        else:
-            _render_text_block(pdf, line)
-
-    if in_table:
-        _render_table_block(pdf, table_buffer)
-
-
-def _render_text_block(pdf: FPDF, line: str):
-    """Renders a single line of markdown text as HTML."""
-    if not line.strip():
-        pdf.ln(2)
-        return
-    html = html_escape(line)
-    html = re.sub(r"###\s*(.*)", r"<h3>\1</h3>", html)
-    html = re.sub(r"##\s*(.*)", r"<h2>\1</h2>", html)
-    html = re.sub(r"#\s*(.*)", r"<h1>\1</h1>", html)
-    html = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", html)
-    html = re.sub(r"\*(.*?)\*", r"<i>\1</i>", html)
-    html = re.sub(r"^\s*[-*+]\s+", "• ", html)
-    pdf.write_html(html)
-    pdf.ln(1)
-
-
-def _render_table_block(pdf: FPDF, table_lines: List[str]):
-    """Renders a markdown table using native fpdf2 Table API."""
-    rows = []
-    for line in table_lines:
-        if re.match(r"^\s*\|?\s*[:\-]+\s*\|\s*[:\-\s|]+$", line):
-            continue
-        cells = [c.strip() for c in line.split("|")]
-        if not cells[0]:
-            cells.pop(0)
-        if cells and not cells[-1]:
-            cells.pop(-1)
-        if cells:
-            rows.append(cells)
-    if not rows:
-        return
-    with pdf.table(col_widths=None, borders_layout="ALL", line_height=6) as table:
-        for i, row_data in enumerate(rows):
-            row = table.row()
-            for cell_text in row_data:
-                if i == 0:
-                    pdf.set_font("DejaVu", "B", 8)
-                else:
-                    pdf.set_font("DejaVu", "", 8)
-                row.cell(cell_text)
-    pdf.ln(2)
+        pdf.set_font("Helvetica", size=9)
 
 
 def html_escape(text: str) -> str:
-    """Safely escape HTML special characters."""
-    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-
-def _generate_static_map_image(
-    search_results: SearchResultsData, processed_gdf: Optional[gpd.GeoDataFrame] = None
-) -> bytes:
-    """
-    Generates a static map image using Matplotlib and Contextily.
-    Leverages passed processed_gdf for performance and consistency.
-    """
-    if not search_results.results:
-        return b""
-
-    # 1. Get scored GeoDataFrame
-    gdf = processed_gdf
-    if gdf is None or gdf.empty:
-        logger.warning(
-            "⚠️ [PDF-MAP] processed_gdf is missing or empty. Map will be skipped."
-        )
-        return b""
-
-    # Use native 4326
-    inferred_crs = "EPSG:4326"
-
-    # 2. Extract/Hydrate geometries for plotting
-    gdf = gdf.copy()
-    gdf["geometry"] = gdf.apply(lambda row: maps._get_geom(row, "polygon"), axis=1)
-    gdf = gpd.GeoDataFrame(gdf, geometry="geometry", crs=inferred_crs)
-
-    # 3. Handle Current Location Geometry
-    current_df = None
-    if search_results.current_geo:
-        poly = maps._get_geom(search_results.current_geo, "polygon")
-        if poly:
-            current_df = gpd.GeoDataFrame(
-                [
-                    {
-                        "codgeo": search_results.current_geo.codgeo,
-                        "libgeo": search_results.current_geo.name,
-                        "weighted_score": search_results.current_geo.global_score,
-                        "geometry": poly,
-                    }
-                ],
-                crs=inferred_crs,
-            )
-
-    # Project to Web Mercator for Contextily
-    gdf_results_plot = gdf.to_crs(epsg=3857)
-
-    # Initialize figure
-    fig, ax = plt.subplots(figsize=(8, 8))
-
-    # Plot results (choropleth)
-    gdf_results_plot.plot(
-        column="weighted_score",
-        cmap="YlGn",
-        alpha=0.6,
-        edgecolor="grey",
-        linewidth=0.5,
-        ax=ax,
-        legend=True,
-        vmin=0.0,
-        vmax=1.0,
-        legend_kwds={
-            "label": "Score (0–100)",
-            "orientation": "horizontal",
-            "shrink": 0.5,
-            "pad": 0.05,
-        },
+    """Safely escape HTML special characters for fpdf2 write_html."""
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
     )
 
-    # Highlight Current Location (Blue dashed outline + light fill)
-    if current_df is not None:
-        gdf_curr_plot = current_df.to_crs(epsg=3857)
-        gdf_curr_plot.plot(
-            ax=ax,
-            facecolor="#1f77b4",
-            alpha=0.3,
-            edgecolor="#1f77b4",
-            linewidth=3,
-            linestyle="--",
+
+def clean_markdown_text_for_pdf(text: str) -> str:
+    """Cleans emojis and unsupported unicode glyphs from markdown text for DejaVu."""
+    if not text:
+        return ""
+    # Strip emojis cleanly without leaving ugly bracketed tags
+    emojis = [
+        "🧭", "🔬", "🏠", "🚆", "🏥", "🎓", "🤝", "💼", "⚖️", "⚖",
+        "⚠️", "⚠", "❓", "📌", "👤", "💬", "✨", "🔍", "📊", "🎯", "🏷️"
+    ]
+    for emo in emojis:
+        text = text.replace(emo, "")
+
+    # Strip remaining high-plane emojis outside DejaVu range
+    text = re.sub(r"[\U00010000-\U0010ffff]", "", text)
+    # Clean redundant double spaces left after emoji removal
+    text = re.sub(r" {2,}", " ", text)
+    return text.strip()
+
+
+class ODISReportPDF(FPDF):
+    """Custom FPDF document class with standardized ODIS branding, headers, and footers."""
+
+    def __init__(self, search_ref: str = ""):
+        super().__init__(orientation="P", unit="mm", format="A4")
+        self.search_ref = search_ref
+        self.set_margins(12, 12, 12)
+        self.set_auto_page_break(auto=True, margin=15)
+        _setup_unicode_font(self)
+
+    def header(self):
+        """Header rendered on page 2 and onwards."""
+        if self.page_no() > 1:
+            self.set_font("DejaVu", "B", 7.5)
+            self.set_text_color(*COLOR_PRIMARY_TEAL)
+            self.cell(100, 5, "OD&IS  ·  SYNTHÈSE DE RECHERCHE TERRITORIALE", align="L")
+            self.set_font("DejaVu", "", 7.5)
+            self.set_text_color(*COLOR_MUTED_GRAY)
+            self.cell(
+                0,
+                5,
+                f"Dossier J'Accueille  |  {datetime.date.today().strftime('%d/%m/%Y')}",
+                align="R",
+                new_x=XPos.LMARGIN,
+                new_y=YPos.NEXT,
+            )
+            # Thin separator line
+            self.set_draw_color(*COLOR_BORDER_LIGHT)
+            self.set_line_width(0.3)
+            self.line(self.l_margin, self.get_y() + 1, self.w - self.r_margin, self.get_y() + 1)
+            self.ln(5)
+
+    def footer(self):
+        """Standardized footer on all pages."""
+        self.set_y(-12)
+        self.set_draw_color(*COLOR_BORDER_LIGHT)
+        self.set_line_width(0.3)
+        self.line(self.l_margin, self.get_y(), self.w - self.r_margin, self.get_y())
+        self.ln(2)
+        self.set_font("DejaVu", "", 7.5)
+        self.set_text_color(*COLOR_MUTED_GRAY)
+        self.cell(
+            120,
+            4,
+            "Document confidentiel · Accompagnement à la mobilité · J'Accueille",
+            align="L",
+        )
+        self.cell(0, 4, f"Page {self.page_no()} / {{nb}}", align="R")
+
+    def draw_section_title(self, title: str, subtitle: Optional[str] = None):
+        """Renders a primary section header with a brand teal accent."""
+        self.ln(2)
+        self.set_font("DejaVu", "B", 10)
+        self.set_text_color(*COLOR_PRIMARY_TEAL)
+        self.cell(self.epw, 5.5, title.upper(), 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        if subtitle:
+            self.set_font("DejaVu", "I", 7.5)
+            self.set_text_color(*COLOR_MUTED_GRAY)
+            self.cell(self.epw, 4, subtitle, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.set_draw_color(*COLOR_PRIMARY_TEAL)
+        self.set_line_width(0.5)
+        y = self.get_y() + 0.8
+        self.line(self.l_margin, y, self.l_margin + 35, y)
+        self.set_draw_color(*COLOR_BORDER_LIGHT)
+        self.set_line_width(0.2)
+        self.line(self.l_margin + 35, y, self.w - self.r_margin, y)
+        self.ln(2.5)
+
+    def draw_callout_box(
+        self,
+        text: str,
+        title: Optional[str] = None,
+        border_color: Tuple[int, int, int] = COLOR_PRIMARY_TEAL,
+        bg_color: Tuple[int, int, int] = COLOR_LIGHT_BG,
+        text_color: Tuple[int, int, int] = COLOR_DARK_SLATE,
+        italic: bool = False,
+    ):
+        """Renders a stylized card box with a thick left accent border and inline markdown parsing."""
+        if not text:
+            return
+        clean_text = clean_markdown_text_for_pdf(text.strip())
+        clean_text = re.sub(r"^\s*[-*]\s+", "• ", clean_text, flags=re.MULTILINE)
+
+        self.set_font("DejaVu", "I" if italic else "", 8)
+        wrapped_lines = self.multi_cell(
+            self.epw - 10, 4.2, clean_text, markdown=True, output="LINES", dry_run=True
         )
 
-    # Plot outlines for top results (Red)
-    top_5 = gdf_results_plot.head(5)
-    # We use codgeos from search_results to ensure consistency with the list
-    top_codgeos = [c.codgeo for c in search_results.results[:5]]
-    top_5_gdf = gdf_results_plot[gdf_results_plot.index.isin(top_codgeos)]
+        title_extra = 5.5 if title else 0
+        box_h = max(10, len(wrapped_lines) * 4.2 + 5.0 + title_extra)
 
-    top_5_gdf.plot(ax=ax, facecolor="none", edgecolor="red", linewidth=2)
+        # Trigger page break if box won't fit
+        if self.get_y() + box_h > self.h - self.b_margin:
+            self.add_page()
 
-    # Highlight Commune Pressentie if present (Yellow/Gold outline)
+        x = self.get_x()
+        y = self.get_y()
+        w = self.epw
+
+        # Draw background and left border
+        self.set_fill_color(*bg_color)
+        self.set_draw_color(*COLOR_BORDER_LIGHT)
+        self.set_line_width(0.2)
+        self.rect(x, y, w, box_h, style="FD")
+        self.set_fill_color(*border_color)
+        self.rect(x, y, 2.5, box_h, style="F")
+
+        # Render title if present
+        if title:
+            self.set_xy(x + 5, y + 2.5)
+            self.set_font("DejaVu", "B", 8)
+            self.set_text_color(*border_color)
+            self.cell(w - 10, 4.5, title)
+
+        # Render body text
+        self.set_xy(x + 5, y + 2.5 + title_extra)
+        self.set_font("DejaVu", "I" if italic else "", 8)
+        self.set_text_color(*text_color)
+        self.multi_cell(w - 10, 4.2, clean_text, markdown=True)
+
+        self.set_y(y + box_h + 3.0)
+
+
+
+
+class MarkdownReportRenderer:
+    """Renders structured Markdown content without raw HTML colors, oversized fonts, or emoji bugs."""
+
+    def __init__(self, pdf: ODISReportPDF):
+        self.pdf = pdf
+
+    def render(self, md_text: str):
+        """Parses and renders Markdown blocks sequentially."""
+        if not md_text:
+            return
+
+        cleaned_md = clean_markdown_text_for_pdf(md_text.replace("\r\n", "\n"))
+        lines = cleaned_md.split("\n")
+
+        table_buffer: List[str] = []
+        in_table = False
+
+        for line in lines:
+            trimmed = line.strip()
+            is_table_line = "|" in line
+
+            if is_table_line:
+                if not in_table:
+                    in_table = True
+                    table_buffer = [line]
+                else:
+                    table_buffer.append(line)
+                continue
+
+            if in_table:
+                in_table = False
+                self._render_table_block(table_buffer)
+                table_buffer = []
+
+            if not trimmed:
+                self.pdf.ln(1.5)
+                continue
+
+            # Separator rule (---)
+            if re.match(r"^(\-{3,}|\*{3,}|_{3,})$", trimmed):
+                self.pdf.ln(2)
+                self.pdf.set_draw_color(*COLOR_BORDER_LIGHT)
+                self.pdf.set_line_width(0.3)
+                self.pdf.line(
+                    self.pdf.l_margin,
+                    self.pdf.get_y(),
+                    self.pdf.w - self.pdf.r_margin,
+                    self.pdf.get_y(),
+                )
+                self.pdf.ln(3)
+                continue
+
+            # Headers (# to ######)
+            header_match = re.match(r"^(#{1,6})\s+(.*)", trimmed)
+            if header_match:
+                hashes, title_text = header_match.groups()
+                level = len(hashes)
+                if level == 1:
+                    self.pdf.ln(3)
+                    self.pdf.set_font("DejaVu", "B", 11)
+                    self.pdf.set_text_color(*COLOR_PRIMARY_TEAL)
+                    self.pdf.cell(
+                        self.pdf.epw, 6, title_text, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT
+                    )
+                    self.pdf.set_draw_color(*COLOR_PRIMARY_TEAL)
+                    self.pdf.set_line_width(0.4)
+                    self.pdf.line(
+                        self.pdf.l_margin,
+                        self.pdf.get_y(),
+                        self.pdf.l_margin + 25,
+                        self.pdf.get_y(),
+                    )
+                    self.pdf.ln(2)
+                elif level == 2:
+                    self.pdf.ln(2.5)
+                    self.pdf.set_font("DejaVu", "B", 9.5)
+                    self.pdf.set_text_color(*COLOR_PRIMARY_TEAL)
+                    self.pdf.cell(
+                        self.pdf.epw, 5.5, title_text, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT
+                    )
+                    self.pdf.ln(1)
+                elif level == 3:
+                    self.pdf.ln(2)
+                    self.pdf.set_font("DejaVu", "B", 8.5)
+                    self.pdf.set_text_color(*COLOR_DARK_SLATE)
+                    self.pdf.cell(
+                        self.pdf.epw, 5, title_text, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT
+                    )
+                    self.pdf.ln(0.5)
+                elif level == 4:
+                    self.pdf.ln(1.8)
+                    self.pdf.set_font("DejaVu", "B", 8)
+                    self.pdf.set_text_color(*COLOR_PRIMARY_TEAL)
+                    self.pdf.cell(
+                        self.pdf.epw, 4.5, title_text, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT
+                    )
+                    self.pdf.ln(0.5)
+                else:  # level 5 or 6
+                    self.pdf.ln(1.5)
+                    self.pdf.set_font("DejaVu", "BI", 7.5)
+                    self.pdf.set_text_color(*COLOR_DARK_SLATE)
+                    self.pdf.cell(
+                        self.pdf.epw, 4, title_text, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT
+                    )
+                    self.pdf.ln(0.5)
+                continue
+
+            # Blockquotes (> text)
+            if trimmed.startswith(">"):
+                quote_text = re.sub(r"^>\s*", "", trimmed)
+                self.pdf.set_font("DejaVu", "I", 8)
+                self.pdf.set_text_color(*COLOR_MUTED_GRAY)
+                self.pdf.cell(4, 4.5, "▎", 0, align="R")
+                self._render_inline_html_line(quote_text)
+                self.pdf.ln(1)
+                continue
+
+            # List item (bullet or numbered)
+            bullet_match = re.match(r"^(\s*)([-*+•]|\d+\.)\s+(.*)", line)
+            if bullet_match:
+                indent_str, marker, content = bullet_match.groups()
+                indent_level = len(indent_str) // 2
+                x_offset = indent_level * 4
+
+                self.pdf.set_x(self.pdf.l_margin + x_offset)
+                if marker[0].isdigit():
+                    self.pdf.set_font("DejaVu", "B", 8)
+                    self.pdf.set_text_color(*COLOR_PRIMARY_TEAL)
+                    self.pdf.cell(5, 4.2, f"{marker} ")
+                else:
+                    self.pdf.set_font("DejaVu", "", 8)
+                    self.pdf.set_text_color(*COLOR_PRIMARY_TEAL)
+                    self.pdf.cell(4, 4.2, "• ")
+
+                self.pdf.set_font("DejaVu", "", 8)
+                self.pdf.set_text_color(*COLOR_DARK_SLATE)
+                self._render_inline_html_line(content)
+                self.pdf.ln(1)
+                continue
+
+            # Standard paragraph
+            self.pdf.set_font("DejaVu", "", 8)
+            self.pdf.set_text_color(*COLOR_DARK_SLATE)
+            self._render_inline_html_line(line)
+            self.pdf.ln(1.2)
+
+        if in_table:
+            self._render_table_block(table_buffer)
+
+    def _render_inline_html_line(self, raw_line: str):
+        """Renders inline text with bold/italic HTML parsing without altering outer styling."""
+        html = html_escape(raw_line)
+        html = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", html)
+        html = re.sub(r"\*(.*?)\*", r"<i>\1</i>", html)
+        self.pdf.write_html(html)
+
+    def _render_table_block(self, table_lines: List[str]):
+        """Renders Markdown tables using standardized ODIS table styling."""
+        rows: List[List[str]] = []
+        for line in table_lines:
+            if re.match(r"^\s*\|?\s*[:\-]+\s*\|\s*[:\-\s|]+$", line):
+                continue
+            cells = [c.strip() for c in line.split("|")]
+            if cells and not cells[0]:
+                cells.pop(0)
+            if cells and not cells[-1]:
+                cells.pop(-1)
+            if cells:
+                rows.append(cells)
+
+        if not rows:
+            return
+
+        num_cols = len(rows[0])
+        col_w = self.pdf.epw / max(1, num_cols)
+
+        header_style = FontFace(
+            emphasis=TextEmphasis.B,
+            color=COLOR_PRIMARY_TEAL,
+            fill_color=COLOR_TABLE_HEADER_BG,
+            size_pt=7.5,
+        )
+        row_even_style = FontFace(
+            color=COLOR_DARK_SLATE,
+            fill_color=COLOR_WHITE,
+            size_pt=7.5,
+        )
+        row_odd_style = FontFace(
+            color=COLOR_DARK_SLATE,
+            fill_color=COLOR_ALT_ROW,
+            size_pt=7.5,
+        )
+
+        with self.pdf.table(
+            col_widths=col_w,
+            text_align="LEFT",
+            borders_layout="HORIZONTAL_LINES",
+            line_height=4.8,
+            padding=1.2,
+        ) as table:
+            for i, row_data in enumerate(rows):
+                style = header_style if i == 0 else (row_even_style if i % 2 == 0 else row_odd_style)
+                row = table.row(style=style)
+                for cell_text in row_data:
+                    clean_cell = clean_markdown_text_for_pdf(cell_text)
+                    row.cell(clean_cell)
+
+        self.pdf.ln(2.5)
+
+
+def _render_executive_summary_page(
+    pdf: ODISReportPDF,
+    search_results: SearchResultsData,
+    config: SearchCriterias,
+):
+    """
+    Renders Page 1: Single-page Executive Summary.
+    Header, Search Criteria (2 columns card), and Results Podium Table.
+    """
+    pdf.add_page()
+
+    # --- 1. Header Banner ---
+    logo_path = os.path.join(cfg.ASSETS_DIR, "logo_jaccueille_pdf.jpg")
+    if os.path.exists(logo_path):
+        pdf.image(logo_path, x=12, y=8, w=30)
+
+    pdf.set_xy(48, 8)
+    pdf.set_font("DejaVu", "B", 13.5)
+    pdf.set_text_color(*COLOR_PRIMARY_TEAL)
+    pdf.cell(
+        pdf.epw - 36,
+        6,
+        "SYNTHÈSE DE RECHERCHE TERRITORIALE",
+        0,
+        new_x=XPos.LMARGIN,
+        new_y=YPos.NEXT,
+        align="R",
+    )
+    pdf.set_xy(48, 14.5)
+    pdf.set_font("DejaVu", "", 9)
+    pdf.set_text_color(*COLOR_DARK_SLATE)
+    pdf.cell(
+        pdf.epw - 36,
+        5,
+        "Projet de vie et d'orientation de la personne accompagnée",
+        0,
+        new_x=XPos.LMARGIN,
+        new_y=YPos.NEXT,
+        align="R",
+    )
+    pdf.set_xy(48, 20)
+    pdf.set_font("DejaVu", "I", 7.5)
+    pdf.set_text_color(*COLOR_MUTED_GRAY)
+    date_str = datetime.date.today().strftime("%d/%m/%Y")
+    pdf.cell(
+        pdf.epw - 36,
+        4,
+        f"Rapport d'aide à la décision OD&IS  |  Édité le {date_str}",
+        0,
+        new_x=XPos.LMARGIN,
+        new_y=YPos.NEXT,
+        align="R",
+    )
+
+    pdf.set_y(26)
+    pdf.set_draw_color(*COLOR_PRIMARY_TEAL)
+    pdf.set_line_width(0.6)
+    pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
+    pdf.ln(3)
+
+    # --- 2. Search Criteria Card (2 Columns) ---
+    pdf.draw_section_title("1. Vos Critères de Recherche")
+
+    # Extract criteria details safely
+    metier_names = [
+        c.label for sublist in getattr(config, "codes_metiers", []) for c in sublist
+    ]
+    metiers_str = ", ".join(metier_names) if metier_names else "Non spécifié"
+
+    formation_names = [
+        c.label for sublist in getattr(config, "codes_formations", []) for c in sublist
+    ]
+    formations_str = ", ".join(formation_names) if formation_names else "Non spécifié"
+
+    type_logement_str = "Non spécifié"
+    if getattr(config, "type_logement", None):
+        type_logement_str = config.type_logement.label
+    elif getattr(config, "logement", None):
+        type_logement_str = config.logement
+
+    target_pop = getattr(config, "target_population", None)
+    target_sigma = getattr(config, "target_population_sigma", None)
+    if target_pop:
+        pop_str = f"{target_pop:,} hab."
+        if target_sigma:
+            pop_str += f" (± {target_sigma:,})"
+        pop_str = pop_str.replace(",", " ")
+    else:
+        pop_str = "Non restreinte"
+
+    besoin_sante = getattr(config, "besoin_sante", None)
+    besoin_sante_str = (
+        ", ".join(besoin_sante)
+        if isinstance(besoin_sante, list)
+        else (besoin_sante if besoin_sante else "Standard")
+    )
+
+    col1_items = [
+        ("Lieu de départ", config.commune_actuelle.label if getattr(config, "commune_actuelle", None) else "N/A"),
+        ("Zone recherchée", cfg.LOC_SEARCH_AREA_OPTIONS.get(getattr(config, "loc_search_area", ""), str(getattr(config, "loc_search_area", "France entière")))),
+        ("Type de logement", type_logement_str),
+        ("Population cible", pop_str),
+    ]
+    if getattr(config, "commune_pressentie", None):
+        col1_items.insert(1, ("Ville pressentie", config.commune_pressentie.label))
+
+    scolarite_str = (
+        ", ".join(config.classe_enfants)
+        if getattr(config, "classe_enfants", None)
+        else "Sans enfants scolarisés"
+    )
+    famille_str = f"{getattr(config, 'nb_adultes', 1)} adulte(s)"
+    if getattr(config, "nb_enfants", 0) > 0:
+        famille_str += f", {config.nb_enfants} enfant(s) ({scolarite_str})"
+
+    # Category weights
+    weight_map = {
+        "Emp.": getattr(config, "poids_emploi", 1.0),
+        "Log.": getattr(config, "poids_logement", 1.0),
+        "Santé": getattr(config, "poids_sante", 1.0),
+        "Éduc.": getattr(config, "poids_education", 1.0),
+        "Mobil.": getattr(config, "poids_mobilite", 1.0),
+        "Inclus.": getattr(config, "poids_inclusion", 0.5),
+    }
+    weight_summary = ", ".join(
+        [f"{k} {int(v * 100)}%" for k, v in weight_map.items() if v > 0]
+    )
+
+    col2_items = [
+        ("Famille", famille_str),
+        ("Métiers", metiers_str),
+        ("Formations", formations_str),
+        ("Santé", besoin_sante_str),
+        ("Pondérations", weight_summary if weight_summary else "Équilibré"),
+    ]
+
+    # Draw 2-column criteria box
+    card_y = pdf.get_y()
+    card_w = pdf.epw
+    card_h = 36
+
+    pdf.set_fill_color(*COLOR_LIGHT_BG)
+    pdf.set_draw_color(*COLOR_BORDER_LIGHT)
+    pdf.set_line_width(0.2)
+    pdf.rect(pdf.l_margin, card_y, card_w, card_h, style="FD")
+    pdf.set_fill_color(*COLOR_PRIMARY_TEAL)
+    pdf.rect(pdf.l_margin, card_y, 2, card_h, style="F")
+
+    # Render Col 1 (width = 46%)
+    col1_w = (card_w - 8) * 0.46
+    col2_w = (card_w - 8) * 0.54
+
+    pdf.set_xy(pdf.l_margin + 4, card_y + 2)
+    for label, val in col1_items:
+        pdf.set_font("DejaVu", "B", 7)
+        pdf.set_text_color(*COLOR_PRIMARY_TEAL)
+        pdf.cell(28, 5.5, f"{label} :", align="L")
+        pdf.set_font("DejaVu", "", 7)
+        pdf.set_text_color(*COLOR_DARK_SLATE)
+        pdf.cell(col1_w - 28, 5.5, str(val)[:40], align="L", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_x(pdf.l_margin + 4)
+
+    # Render Col 2 (width = 54%)
+    pdf.set_xy(pdf.l_margin + col1_w + 6, card_y + 2)
+    for label, val in col2_items:
+        pdf.set_font("DejaVu", "B", 7)
+        pdf.set_text_color(*COLOR_PRIMARY_TEAL)
+        pdf.cell(22, 5.5, f"{label} :", align="L")
+        pdf.set_font("DejaVu", "", 7)
+        pdf.set_text_color(*COLOR_DARK_SLATE)
+        pdf.cell(col2_w - 22, 5.5, str(val)[:58], align="L", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_x(pdf.l_margin + col1_w + 6)
+
+    pdf.set_y(card_y + card_h + 3.5)
+
+    # --- 3. Results Podium Table ---
+    pdf.draw_section_title("2. Synthèse des Résultats (Podium & Adéquation)")
+
+    table_rows: List[List[str]] = [
+        [
+            "Rang",
+            "Commune",
+            "Bassin de vie / Dép.",
+            "Population",
+            "Adéquation",
+            "Emploi",
+            "Logem.",
+            "Santé",
+            "Éduc.",
+            "Mobil.",
+        ]
+    ]
+
+    # Combine Top 5 + Commune Pressentie
+    results_list = list(search_results.results[:5])
     if search_results.commune_pressentie:
-        p_codgeo = search_results.commune_pressentie.codgeo
-        if p_codgeo in gdf_results_plot.index:
-            p_gdf = gdf_results_plot[gdf_results_plot.index == p_codgeo]
-            p_gdf.plot(
-                ax=ax,
-                facecolor="none",
-                edgecolor="#e0a800",  # Distinct gold/yellow color
-                linewidth=3,
-            )
+        pressentie_codgeo = search_results.commune_pressentie.codgeo
+        if not any(c.codgeo == pressentie_codgeo for c in results_list):
+            results_list.append(search_results.commune_pressentie)
 
-            row = gdf_results_plot.loc[p_codgeo]
-            centroid = row.geometry.centroid
-            ax.annotate(
-                "📌",
-                xy=(centroid.x, centroid.y),
-                xytext=(0, 0),
-                textcoords="offset points",
-                ha="center",
-                va="center",
-                fontsize=10,
-                bbox=dict(boxstyle="circle,pad=0.2", fc="#e0a800", ec="none"),
-            )
+    for i, c in enumerate(results_list, start=1):
+        is_pressentie = (
+            search_results.commune_pressentie
+            and c.codgeo == search_results.commune_pressentie.codgeo
+        )
+        rank_label = f"#{i}"
+        if is_pressentie:
+            rank_label = "📌 Pressentie" if i > 5 else f"#{i} (Press.)"
 
-    # Add numbered markers for top results
-    for i, codgeo in enumerate(top_codgeos):
-        if codgeo in gdf_results_plot.index:
-            row = gdf_results_plot.loc[codgeo]
-            rank = i + 1
-            centroid = row.geometry.centroid
-            ax.annotate(
-                str(rank),
-                xy=(centroid.x, centroid.y),
-                xytext=(0, 0),
-                textcoords="offset points",
-                ha="center",
-                va="center",
-                color="white",
-                weight="bold",
-                fontsize=10,
-                bbox=dict(boxstyle="circle,pad=0.3", fc="#D63E2A", ec="none"),
-            )
+        pop_val = f"{c.population:,} hab.".replace(",", " ")
+        score_val = f"{c.global_score * 100:.1f}%"
+        emp_score = f"{c.employment.cat_score * 100:.0f}%"
+        log_score = f"{c.housing.cat_score * 100:.0f}%"
+        san_score = f"{c.health.cat_score * 100:.0f}%"
+        edu_score = f"{c.education.cat_score * 100:.0f}%"
+        mob_score = f"{c.mobility.cat_score * 100:.0f}%"
 
-    # Add basemap
-    try:
-        ctx.add_basemap(ax, source=ctx.providers.CartoDB.Positron)
-    except Exception:
-        # A basemap is decorative: keep the local score map, but retain the
-        # provider failure in logs without failing the complete PDF export.
-        logger.warning(
-            "PDF basemap unavailable; rendering local map only", exc_info=True
+        table_rows.append(
+            [
+                rank_label,
+                c.name,
+                c.name_bdv or "N/A",
+                pop_val,
+                score_val,
+                emp_score,
+                log_score,
+                san_score,
+                edu_score,
+                mob_score,
+            ]
         )
 
-    # Remove axes
-    ax.set_axis_off()
+    # Total = 186mm
+    col_widths = (22, 28, 30, 24, 22, 12, 12, 12, 12, 12)
 
-    # Save to buffer
-    buf = io.BytesIO()
-    plt.savefig(buf, format="png", dpi=100, bbox_inches="tight", pad_inches=0)
-    plt.close(fig)
-    buf.seek(0)
-    return buf.getvalue()
+    header_style = FontFace(
+        emphasis=TextEmphasis.B,
+        color=COLOR_PRIMARY_TEAL,
+        fill_color=COLOR_TABLE_HEADER_BG,
+        size_pt=7,
+    )
+    row_even_style = FontFace(
+        color=COLOR_DARK_SLATE,
+        fill_color=COLOR_WHITE,
+        size_pt=7,
+    )
+    row_odd_style = FontFace(
+        color=COLOR_DARK_SLATE,
+        fill_color=COLOR_ALT_ROW,
+        size_pt=7,
+    )
+
+    with pdf.table(
+        col_widths=col_widths,
+        text_align="LEFT",
+        borders_layout="HORIZONTAL_LINES",
+        line_height=4.8,
+        padding=1.2,
+    ) as table:
+        for r_idx, r_data in enumerate(table_rows):
+            style = (
+                header_style
+                if r_idx == 0
+                else (row_even_style if r_idx % 2 == 0 else row_odd_style)
+            )
+            row = table.row(style=style)
+            for c_idx, cell_value in enumerate(r_data):
+                if c_idx == 4 and r_idx > 0:
+                    row.cell(cell_value, style=FontFace(emphasis=TextEmphasis.B, color=COLOR_PRIMARY_TEAL, size_pt=7))
+                elif c_idx >= 5 and r_idx > 0:
+                    row.cell(cell_value, align="CENTER")
+                elif c_idx >= 5 and r_idx == 0:
+                    row.cell(cell_value, align="CENTER")
+                else:
+                    row.cell(cell_value)
+
+    pdf.ln(3)
+    pdf.set_font("DejaVu", "I", 7)
+    pdf.set_text_color(*COLOR_MUTED_GRAY)
+    pdf.cell(
+        pdf.epw,
+        4,
+        "Consultez les fiches détaillées ci-après pour les opportunités professionnelles, associatives et l'analyse IA.",
+        align="C",
+    )
+
+
+def _render_commune_sheet(
+    pdf: ODISReportPDF,
+    commune: CommuneResult,
+    rank_prefix: str,
+    config: SearchCriterias,
+):
+    """
+    Renders dedicated sheets for a specific commune.
+    Identity banner, Pitch card, Indicators Table, Local Network (2-col), and Advanced AI Synthesis.
+    """
+    pdf.add_page()
+
+    # --- 1. Identity Banner ---
+    pop_str = f"{commune.population:,} hab.".replace(",", " ")
+    bdv_str = f"Bassin de vie : {commune.name_bdv or 'N/A'}"
+    score_pct = f"{commune.global_score * 100:.1f}%"
+    score_besoins_val = getattr(commune, "score_besoins", commune.global_score) or 0.0
+    pop_coeff_val = getattr(commune, "coeff_population_gauss", 1.0) or 1.0
+    sub_score_str = f"Besoins : {score_besoins_val * 100:.1f}% | Démographie : {pop_coeff_val * 100:.0f}%"
+
+    banner_y = pdf.get_y()
+    banner_w = pdf.epw
+    banner_h = 16
+
+    pdf.set_fill_color(*COLOR_LIGHT_BG)
+    pdf.set_draw_color(*COLOR_PRIMARY_TEAL)
+    pdf.set_line_width(0.3)
+    pdf.rect(pdf.l_margin, banner_y, banner_w, banner_h, style="FD")
+    pdf.set_fill_color(*COLOR_PRIMARY_TEAL)
+    pdf.rect(pdf.l_margin, banner_y, 3, banner_h, style="F")
+
+    # City Title & Details
+    pdf.set_xy(pdf.l_margin + 6, banner_y + 2)
+    pdf.set_font("DejaVu", "B", 12)
+    pdf.set_text_color(*COLOR_PRIMARY_TEAL)
+    pdf.cell(110, 6, f"{rank_prefix} · {commune.name}", align="L")
+
+    # Score Pill (Right side)
+    pdf.set_xy(pdf.w - pdf.r_margin - 50, banner_y + 2)
+    pdf.set_font("DejaVu", "B", 10)
+    pdf.set_text_color(*COLOR_PRIMARY_TEAL)
+    pdf.cell(46, 6, f"Adéquation : {score_pct}", align="R")
+
+    # Subtitle
+    pdf.set_xy(pdf.l_margin + 6, banner_y + 8)
+    pdf.set_font("DejaVu", "", 8)
+    pdf.set_text_color(*COLOR_MUTED_GRAY)
+    pdf.cell(110, 5, f"{bdv_str}  ·  {pop_str}", align="L")
+
+    pdf.set_xy(pdf.w - pdf.r_margin - 75, banner_y + 8)
+    pdf.cell(71, 5, sub_score_str, align="R")
+
+    pdf.set_y(banner_y + banner_h + 3)
+
+    # --- 2. Pitch / Executive Highlights ---
+    pitch = getattr(commune, "refiner_pitch", None)
+    if pitch:
+        pdf.draw_callout_box(
+            text=pitch,
+            title="POINTS SAILLANTS & ORIENTATION LOCALE",
+            border_color=COLOR_PRIMARY_TEAL,
+            bg_color=COLOR_LIGHT_BG,
+            italic=True,
+        )
+
+    # --- 3. Detailed Indicators by Category ---
+    pdf.draw_section_title("Indicateurs Thématiques Détaillés")
+
+    cat_labels = {
+        "emploi": "Emploi & Marché du travail",
+        "logement": "Logement & Cadre de vie",
+        "sante": "Santé & Soins de proximité",
+        "education": "Éducation & Petite Enfance",
+        "mobilite": "Mobilité & Transports",
+        "inclusion": "Vie Sociale & Solidarité",
+    }
+
+    scores_dict: Dict[str, List[CommuneScoreDetail]] = getattr(commune, "scores", {}) or {}
+
+    for cat_key, cat_name in cat_labels.items():
+        cat_scores = scores_dict.get(cat_key, [])
+        if not cat_scores:
+            continue
+
+        # Category small heading
+        pdf.set_font("DejaVu", "B", 8.5)
+        pdf.set_text_color(*COLOR_PRIMARY_TEAL)
+        pdf.cell(pdf.epw, 5, f"▸ {cat_name}", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+        table_rows = [["Indicateur clé", "Valeur locale", "Score"]]
+        for s in sorted(cat_scores, key=lambda x: getattr(x, "score_normalise", 0.0), reverse=True):
+            val_str = f"{s.valeur_kpi}" if s.valeur_kpi is not None else "N/A"
+            if getattr(s, "unit", "") and s.unit != "None":
+                val_str += f" {s.unit}"
+            score_str = f"{s.score_normalise * 100:.1f}%"
+            table_rows.append([s.label, val_str, score_str])
+
+        header_style = FontFace(
+            emphasis=TextEmphasis.B,
+            color=COLOR_PRIMARY_TEAL,
+            fill_color=COLOR_TABLE_HEADER_BG,
+            size_pt=7.5,
+        )
+        row_even_style = FontFace(
+            color=COLOR_DARK_SLATE,
+            fill_color=COLOR_WHITE,
+            size_pt=7.5,
+        )
+        row_odd_style = FontFace(
+            color=COLOR_DARK_SLATE,
+            fill_color=COLOR_ALT_ROW,
+            size_pt=7.5,
+        )
+
+        with pdf.table(
+            col_widths=(95, 55, 36),
+            text_align="LEFT",
+            borders_layout="HORIZONTAL_LINES",
+            line_height=4.8,
+            padding=1.2,
+        ) as table:
+            for r_idx, r_data in enumerate(table_rows):
+                style = (
+                    header_style
+                    if r_idx == 0
+                    else (row_even_style if r_idx % 2 == 0 else row_odd_style)
+                )
+                row = table.row(style=style)
+                row.cell(r_data[0])
+                row.cell(r_data[1])
+                row.cell(r_data[2], align="RIGHT")
+
+        pdf.ln(2.5)
+
+    # --- 4. Local Network & Opportunities (Sequential flow) ---
+    pdf.draw_section_title("Opportunités Professionnelles & Réseau Associatif")
+
+    emp = getattr(commune, "employment", None)
+    inc = getattr(commune, "inclusion", None)
+
+    # 1. Métiers en tension
+    pdf.set_font("DejaVu", "B", 8)
+    pdf.set_text_color(*COLOR_PRIMARY_TEAL)
+    pdf.cell(pdf.epw, 4.5, "▸ Métiers les plus recherchés (Bassin de vie)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.set_font("DejaVu", "", 7.5)
+    pdf.set_text_color(*COLOR_DARK_SLATE)
+    top_profs = emp.top_professions if emp else []
+    if top_profs:
+        for p in top_profs[:4]:
+            pdf.cell(pdf.epw, 4, f"  • {p}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    else:
+        pdf.cell(pdf.epw, 4, "  • Données de tension non disponibles", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.ln(1.5)
+
+    # 2. Offres SIAE
+    pdf.set_font("DejaVu", "B", 8)
+    pdf.set_text_color(*COLOR_PRIMARY_TEAL)
+    pdf.cell(pdf.epw, 4.5, "▸ Offres d'emplois par les SIAE locales (Insertion Professionnelle)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.set_font("DejaVu", "", 7.5)
+    pdf.set_text_color(*COLOR_DARK_SLATE)
+    siae_summary = emp.inclusive_jobs_summary if emp else {}
+    if siae_summary:
+        for sector, count in sorted(siae_summary.items(), key=lambda x: x[1], reverse=True)[:4]:
+            pdf.cell(pdf.epw, 4, f"  • {sector} : {count} offre(s)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    else:
+        pdf.cell(pdf.epw, 4, "  • Aucune offre inclusive active identifiée", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.ln(1.5)
+
+    # 3. Associations Réfugiés & Inclusion
+    pdf.set_font("DejaVu", "B", 8)
+    pdf.set_text_color(*COLOR_PRIMARY_TEAL)
+    pdf.cell(pdf.epw, 4.5, "▸ Associations - Intégration des réfugiés", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.set_font("DejaVu", "", 7.5)
+    pdf.set_text_color(*COLOR_DARK_SLATE)
+    refugee_assos = inc.asso_refugee_list[:4] if inc else []
+    if refugee_assos:
+        for asso in refugee_assos:
+            name = (asso.name or "Inconnu").strip()
+            cat = (asso.waldec_label or "").strip()
+            cat_str = f" ({cat})" if cat else ""
+            desc = (asso.description or "").strip()
+            desc_str = f" : {desc[:75]}..." if len(desc) > 75 else (f" : {desc}" if desc else "")
+            pdf.cell(pdf.epw, 4, f"  • {name}{cat_str}{desc_str}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    else:
+        pdf.cell(pdf.epw, 4, "  • Aucune association spécifique identifiée", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.ln(1.5)
+
+    # 4. Solidarité & Services Locaux
+    pdf.set_font("DejaVu", "B", 8)
+    pdf.set_text_color(*COLOR_PRIMARY_TEAL)
+    pdf.cell(pdf.epw, 4.5, "▸ Réseau solidarité & services locaux", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.set_font("DejaVu", "", 7.5)
+    pdf.set_text_color(*COLOR_DARK_SLATE)
+    inc_by_cat = inc.asso_inclusion_list_by_cat if inc else {}
+    if inc_by_cat:
+        rendered_count = 0
+        for cat_name, assos in sorted(inc_by_cat.items()):
+            for asso in assos[:2]:
+                if rendered_count < 4:
+                    name = (asso.name or "Inconnu").strip()
+                    desc = (asso.description or "").strip()
+                    desc_str = f" : {desc[:65]}..." if len(desc) > 65 else (f" : {desc}" if desc else "")
+                    pdf.cell(pdf.epw, 4, f"  • {name} ({cat_name}){desc_str}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                    rendered_count += 1
+    else:
+        pdf.cell(pdf.epw, 4, "  • Aucun réseau spécifique répertorié", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.ln(3)
+
+    # --- 5. Advanced AI Synthesis (If present) ---
+    synthesis_messages = getattr(commune, "odis_synthesis", None)
+    if synthesis_messages:
+        pdf.draw_section_title(
+            "Analyse Avancée OD&IS (Agents Experts IA)",
+            "Avis synthétique et pistes d'action générés pour le projet de mobilité.",
+        )
+
+        renderer = MarkdownReportRenderer(pdf)
+        for msg in synthesis_messages:
+            role = msg.get("role", "assistant")
+            content = msg.get("content", "")
+            if not content:
+                continue
+
+            if role == "user":
+                pdf.draw_callout_box(
+                    text=content,
+                    title="QUESTION DU TRAVAILLEUR SOCIAL :",
+                    border_color=COLOR_MUTED_GRAY,
+                    bg_color=COLOR_ALT_ROW,
+                )
+            else:
+                renderer.render(content)
+                pdf.ln(3)
 
 
 def generate_pdf_report(
     search_results: SearchResultsData,
     config: SearchCriterias,
     active_search_hash: Optional[str] = None,
-    processed_gdf: Optional[gpd.GeoDataFrame] = None,
+    processed_gdf: Optional[Any] = None,
     generation_warnings: Optional[List[str]] = None,
 ) -> bytes:
     """
-    Generates a PDF report with the top 5 results and search criteria using a Unicode font.
-    Decoupled from st.session_state for better testability and clean architecture.
+    Generates a clean, compact, professional PDF report for OD&IS territorial matching.
+    Decoupled from Streamlit session state and rasterized image dependencies.
     """
-    warnings = generation_warnings if generation_warnings is not None else []
-    pdf = FPDF()
-    _setup_unicode_font(pdf)
-    pdf.add_page()
+    search_ref = active_search_hash or (search_results.search_hash if search_results else "")
+    pdf = ODISReportPDF(search_ref=search_ref)
+    pdf.alias_nb_pages()
 
-    # --- PAGE 1: HEADER & CRITERIA ---
-    # Header
-    logo_path = os.path.join(cfg.ASSETS_DIR, "logo_jaccueille_pdf.jpg")
-    if os.path.exists(logo_path):
-        pdf.image(logo_path, x=10, y=8, w=40)
-    pdf.ln(50)  # Add space for the logo
-    pdf.set_font("DejaVu", "B", 16)
-    pdf.cell(pdf.epw, 10, PDF_TITLE, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
+    # --- Page 1: Executive Summary & Search Criteria ---
+    _render_executive_summary_page(pdf, search_results, config)
 
-    # Subtitle
-    subtitle = "Pour le projet de vie de la personne accompagnée"
-    pdf.set_font("DejaVu", "", 12)
-    pdf.cell(pdf.epw, 10, subtitle, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
-    pdf.ln(10)
-
-    # --- Search Criteria ---
-    pdf.set_font("DejaVu", "B", 12)
-    pdf.cell(
-        pdf.epw,
-        10,
-        "Vos critères de recherche",
-        0,
-        new_x=XPos.LMARGIN,
-        new_y=YPos.NEXT,
-        align="L",
-    )
-    pdf.ln(2)
-
-    if config:
-        metier_names = [c.label for sublist in config.codes_metiers for c in sublist]
-        metiers_str = ", ".join(metier_names) if metier_names else "Non spécifié"
-
-        formation_names = [
-            c.label for sublist in config.codes_formations for c in sublist
-        ]
-        formations_str = (
-            ", ".join(formation_names) if formation_names else "Non spécifié"
-        )
-
-        # Dynamically build the full criteria list
-        criteria = {
-            "Lieu de départ": config.commune_actuelle.label
-            if config.commune_actuelle
-            else "N/A",
-        }
-        if getattr(config, "commune_pressentie", None):
-            criteria["Commune pressentie"] = config.commune_pressentie.label
-
-        criteria.update(
-            {
-                "Zone de recherche": cfg.LOC_SEARCH_AREA_OPTIONS.get(
-                    config.loc_search_area, str(config.loc_search_area)
-                ),
-                "Métiers recherchés": metiers_str,
-                "Formations recherchées": formations_str,
-                "Nb. adultes": config.nb_adultes,
-                "Nb. enfants": config.nb_enfants,
-                "Niveaux scolaires": ", ".join(config.classe_enfants)
-                if config.classe_enfants
-                else "N/A",
-                "Type de logement": config.type_logement.label
-                if config.type_logement
-                else (config.logement if config.logement else "N/A"),
-                "Besoin de santé": config.besoin_sante,
-                "Population cible": f"{config.target_population:,} hab. (+/- {config.target_population_sigma:,})".replace(
-                    ",", " "
-                ),
-                "Fréquence retour": config.freq_retour if config.freq_retour else "N/A",
-                "Autres besoins": ", ".join(
-                    [c.label for c in config.inc_services_selection]
-                )
-                if config.inc_services_selection
-                else "Aucun",
-            }
-        )
-
-        # Add Associations Locales
-        if config.inc_asso_add_selection:
-            criteria["Associations Locales"] = ", ".join(
-                [c.label for c in config.inc_asso_add_selection]
-            )
-
-        # Add Qualitative Notes
-        if config.notes_qualitatives:
-            criteria["Notes qualitatives"] = (
-                ", ".join(config.notes_qualitatives)
-                if isinstance(config.notes_qualitatives, list)
-                else config.notes_qualitatives
-            )
-
-        # Profile & Weights (At the bottom)
-        profile_name = (
-            "Personnalisé"
-            if config.weight_profile == "Profil personnalisé"
-            else (config.weight_profile if config.weight_profile else "Équilibré")
-        )
-        criteria["Profil de poids"] = profile_name
-
-        # Detail of category weights
-        weight_details = []
-        weight_map = {
-            "Emploi": config.poids_emploi,
-            "Logement": config.poids_logement,
-            "Éducation": config.poids_education,
-            "Santé": config.poids_sante,
-            "Inclusion": config.poids_inclusion,
-            "Mobilité": config.poids_mobilite,
-        }
-        for label, val in weight_map.items():
-            if val > 0:
-                # Convert back to percentage (e.g. 0.5 -> 50%)
-                weight_details.append(f"{label}: {int(val * 100)}%")
-
-        if weight_details:
-            criteria["Détails des poids"] = ", ".join(weight_details)
-
-        table_data = [[key, str(value)] for key, value in criteria.items() if value]
-
-        if table_data:
-            pdf.set_font("DejaVu", "", 9)  # Set base font for the table
-            bold_style = FontFace(emphasis=TextEmphasis.B)
-            with pdf.table(
-                col_widths=(50, 130),
-                text_align="LEFT",
-                borders_layout="NONE",
-                width=180,
-            ) as table:
-                for data_row in table_data:
-                    row = table.row()
-                    row.cell(f"{data_row[0]}:", style=bold_style)
-                    row.cell(data_row[1])
-    pdf.ln(5)
-
-    # --- PAGE 2: MAP & SUMMARY ---
-    pdf.add_page()
-
-    # Page 2 Title
-    pdf.set_font("DejaVu", "B", 14)
-    pdf.cell(
-        pdf.epw,
-        10,
-        "Résultats de la recherche",
-        0,
-        new_x=XPos.LMARGIN,
-        new_y=YPos.NEXT,
-        align="C",
-    )
-    pdf.ln(5)
-
-    # Map Generation
-    try:
-        map_png = _generate_static_map_image(search_results, processed_gdf)
-        if map_png:
-            map_image_stream = io.BytesIO(map_png)
-            # Center the image and limit width to avoid it being too big
-            target_width = 150
-            x_pos = (pdf.w - target_width) / 2
-            pdf.image(map_image_stream, x=x_pos, w=target_width)
-    except Exception:
-        warning_code = "PDF-MAP-UNAVAILABLE"
-        warnings.append(warning_code)
-        logger.error(
-            "PDF map generation failed",
-            extra={
-                "extra_data": {"operation": "pdf_export", "error_code": warning_code}
-            },
-            exc_info=True,
-        )
-        pdf.set_font("DejaVu", "I", 8)
-        pdf.multi_cell(0, 6, f"Carte indisponible (code : {warning_code}).")
-    pdf.ln(5)
-
-    # Top 5 Summary
-    pdf.set_font("DejaVu", "B", 12)
-    pdf.cell(
-        pdf.epw,
-        10,
-        "Top 5 des résultats",
-        0,
-        new_x=XPos.LMARGIN,
-        new_y=YPos.NEXT,
-        align="L",
-    )
-    pdf.set_font("DejaVu", "", 9)
-    for rank, commune in enumerate(search_results.results, start=1):
-        score_percent = f"{commune.global_score * 100:.1f}%"
-        pdf.cell(
-            pdf.epw,
-            5,
-            f"  {rank}. {commune.name} - {score_percent}",
-            0,
-            new_x=XPos.LMARGIN,
-            new_y=YPos.NEXT,
-        )
-
-    if search_results.commune_pressentie:
-        p_commune = search_results.commune_pressentie
-        score_percent = f"{p_commune.global_score * 100:.1f}%"
-        pdf.ln(2)
-        pdf.set_font("DejaVu", "B", 9)
-        pdf.cell(
-            pdf.epw,
-            5,
-            f"  📌 Ville pressentie : {p_commune.name} - {score_percent}",
-            0,
-            new_x=XPos.LMARGIN,
-            new_y=YPos.NEXT,
-        )
-        pdf.set_font("DejaVu", "", 9)
-
-    pdf.ln(5)
-
-    # --- INDIVIDUAL RESULT PAGES ---
-    pages_to_render = []
-    for rank, commune in enumerate(search_results.results, start=1):
+    # --- Pages 2+: Individual Commune Sheets ---
+    pages_to_render: List[Tuple[str, CommuneResult]] = []
+    for rank, commune in enumerate(search_results.results[:5], start=1):
         pages_to_render.append((f"Top {rank}", commune))
+
     if search_results.commune_pressentie:
-        pages_to_render.append(
-            ("📌 Ville Pressentie", search_results.commune_pressentie)
-        )
+        p_codgeo = search_results.commune_pressentie.codgeo
+        if not any(c.codgeo == p_codgeo for c in search_results.results[:5]):
+            pages_to_render.append(("Ville Pressentie", search_results.commune_pressentie))
 
-    for prefix, commune in pages_to_render:
-        pdf.add_page()
-
-        # --- Header (Identity) ---
-        population = f"{commune.population:,}".replace(",", " ")
-        title = f"{prefix} | {commune.name} ({population} hab.)"
-        pdf.set_font("DejaVu", "B", 14)
-        pdf.cell(pdf.epw, 8, title, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-
-        pdf.set_font("DejaVu", "I", 10)
-        bdv_text = f"Fait partie du bassin de vie de : {commune.name_bdv}"
-        pdf.cell(pdf.epw, 6, bdv_text, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-
-        score_besoins_val = getattr(commune, "score_besoins", commune.global_score) or 0.0
-        pop_coeff_val = getattr(commune, "coeff_population_gauss", 1.0) or 1.0
-        score_percent = (
-            f"Adéquation globale : {commune.global_score * 100:.1f}% "
-            f"(Besoins : {score_besoins_val * 100:.1f}% | Démographie : {pop_coeff_val * 100:.0f}%)"
-        )
-        pdf.set_font("DejaVu", "B", 10)
-        pdf.cell(pdf.epw, 6, score_percent, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        pdf.ln(4)
-
-        # --- Pitch (AI content as priority) ---
-        pitch = commune.refiner_pitch
-        if not pitch:
-            # Fallback to simple pitch logic if refiner_pitch is missing
-            pitch = f"{commune.name} se distingue particulièrement sur vos critères prioritaires."
-
-        pdf.set_font("DejaVu", "", 10)
-        _render_markdown_as_blocks(pdf, pitch)
-        pdf.ln(5)
-
-        # Radar Chart with Comparison
-        try:
-            # 1. Target Data
-            categories = [
-                "Emploi",
-                "Logement",
-                "Education",
-                "Sante",
-                "Inclusion",
-                "Mobilite",
-            ]
-            raw_values = [
-                commune.employment.cat_score * 100,
-                commune.housing.cat_score * 100,
-                commune.education.cat_score * 100,
-                commune.health.cat_score * 100,
-                commune.inclusion.cat_score * 100,
-                commune.mobility.cat_score * 100,
-            ]
-
-            # filter out inactive categories based on config
-            active_cats = (
-                config.active_categories
-                if config and hasattr(config, "active_categories")
-                else []
-            )
-            if active_cats:
-                cat_map = {
-                    "emploi": "Emploi",
-                    "logement": "Logement",
-                    "education": "Education",
-                    "sante": "Sante",
-                    "inclusion": "Inclusion",
-                    "mobilite": "Mobilite",
-                }
-                filtered_cats = []
-                filtered_vals = []
-                for i, cat in enumerate(
-                    [
-                        "emploi",
-                        "logement",
-                        "education",
-                        "sante",
-                        "inclusion",
-                        "mobilite",
-                    ]
-                ):
-                    if cat in active_cats:
-                        filtered_cats.append(cat_map.get(cat, cat.capitalize()))
-                        filtered_vals.append(raw_values[i])
-                categories = filtered_cats
-                values = filtered_vals
-            else:
-                values = raw_values
-
-            # 2. Current City Data
-            has_comparison = False
-            values_current = []
-            if search_results.current_geo:
-                current_c = search_results.current_geo
-                raw_values_cur = [
-                    current_c.employment.cat_score * 100,
-                    current_c.housing.cat_score * 100,
-                    current_c.education.cat_score * 100,
-                    current_c.health.cat_score * 100,
-                    current_c.inclusion.cat_score * 100,
-                    current_c.mobility.cat_score * 100,
-                ]
-                if active_cats:
-                    filtered_vals_cur = []
-                    for i, cat in enumerate(
-                        [
-                            "emploi",
-                            "logement",
-                            "education",
-                            "sante",
-                            "inclusion",
-                            "mobilite",
-                        ]
-                    ):
-                        if cat in active_cats:
-                            filtered_vals_cur.append(raw_values_cur[i])
-                    values_current = filtered_vals_cur
-                else:
-                    values_current = raw_values_cur
-                has_comparison = True
-
-            N = len(categories)
-            if N > 0:
-                # Compute angles
-                angles = [n / float(N) * 2 * 3.14159 for n in range(N)]
-                angles += angles[:1]  # Close the loop
-
-                fig, ax = plt.subplots(figsize=(4, 4), subplot_kw=dict(polar=True))
-
-                # Draw one axe per variable + add labels
-                plt.xticks(angles[:-1], categories, size=8)
-
-                # Draw ylabels
-                ax.set_rlabel_position(0)  # type: ignore
-                plt.yticks([25, 50, 75], ["25", "50", "75"], color="grey", size=7)
-                plt.ylim(0, 100)
-
-                # Plot target city (Green)
-                vals_target = values + values[:1]
-                ax.plot(
-                    angles,
-                    vals_target,
-                    linewidth=2,
-                    linestyle="solid",
-                    color="#006268",
-                    label=commune.name,
-                )
-                ax.fill(angles, vals_target, "#006268", alpha=0.3)
-
-                # Plot current city (Blue)
-                if has_comparison:
-                    vals_current = values_current + values_current[:1]
-                    label_cur = (
-                        config.commune_actuelle.label
-                        if config.commune_actuelle
-                        else "Actuel"
-                    )
-                    ax.plot(
-                        angles,
-                        vals_current,
-                        linewidth=2,
-                        linestyle="solid",
-                        color="#1f77b4",
-                        label=f"Actuel ({label_cur})",
-                    )
-                    ax.fill(angles, vals_current, "#1f77b4", alpha=0.2)
-                    plt.legend(loc="upper right", bbox_to_anchor=(1.3, 1.1), fontsize=8)
-
-                # Save to buffer
-                buf = io.BytesIO()
-                plt.savefig(buf, format="png", dpi=100, bbox_inches="tight")
-                plt.close(fig)
-                buf.seek(0)
-
-                # Embed in PDF (Centered)
-                chart_w = 100
-                pdf.image(buf, x=(pdf.w - chart_w) / 2, w=chart_w)
-
-                if has_comparison:
-                    pdf.set_font("DejaVu", "I", 8)
-                    label_cur = (
-                        search_results.current_geo.name
-                        if search_results.current_geo
-                        else "votre commune"
-                    )
-                    pdf.cell(
-                        pdf.epw,
-                        5,
-                        f"Comparaison entre {commune.name} (vert) et {label_cur} (bleu).",
-                        0,
-                        new_x=XPos.LMARGIN,
-                        new_y=YPos.NEXT,
-                        align="C",
-                    )
-                    pdf.ln(2)
-
-        except Exception:
-            warning_code = "PDF-CHART-UNAVAILABLE"
-            warnings.append(warning_code)
-            logger.error(
-                "PDF score chart generation failed: commune=%s",
-                commune.codgeo,
-                extra={
-                    "extra_data": {
-                        "operation": "pdf_export",
-                        "error_code": warning_code,
-                        "codgeo": commune.codgeo,
-                    }
-                },
-                exc_info=True,
-            )
-            pdf.set_font("DejaVu", "I", 8)
-            pdf.multi_cell(0, 6, f"Graphique indisponible (code : {warning_code}).")
-        pdf.ln(5)
-
-        # --- Detailed Indicator Tables (Loop per category) ---
-        pdf.set_font("DejaVu", "B", 11)
-        pdf.cell(
-            pdf.epw,
-            10,
-            "Indicateurs détaillés par catégorie",
-            0,
-            new_x=XPos.LMARGIN,
-            new_y=YPos.NEXT,
-        )
-        pdf.ln(2)
-
-        cat_labels = {
-            "emploi": "Emploi & Formation",
-            "logement": "Logement",
-            "education": "Éducation",
-            "sante": "Santé",
-            "inclusion": "Vie Sociale & Inclusion",
-            "mobilite": "Mobilité",
-        }
-
-        for cat_key, cat_name in cat_labels.items():
-            scores_list = commune.scores.get(cat_key, [])
-            if not scores_list:
-                continue
-
-            pdf.set_font("DejaVu", "B", 10)
-            pdf.cell(pdf.epw, 8, cat_name, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-
-            # Category Table
-            pdf.set_font("DejaVu", "", 8)
-            with pdf.table(
-                col_widths=(80, 60, 40),
-                text_align="LEFT",
-                borders_layout="SINGLE_TOP_LINE",
-                width=180,
-            ) as table:
-                header = table.row()
-                header.cell("Indicateur")
-                header.cell("Données")
-                header.cell("Score")
-
-                for s in sorted(
-                    scores_list, key=lambda x: x.score_normalise, reverse=True
-                ):
-                    row = table.row()
-                    row.cell(s.label)
-                    val_str = f"{s.valeur_kpi}" if s.valeur_kpi is not None else "N/A"
-                    if s.unit and s.unit != "None":
-                        val_str += f" {s.unit}"
-                    row.cell(val_str)
-                    row.cell(f"{s.score_normalise * 100:.1f}%")
-            pdf.ln(4)
-
-        # --- Focus Opportunités & Vie Sociale ---
-        pdf.add_page()
-        pdf.set_font("DejaVu", "B", 12)
-        pdf.cell(
-            pdf.epw,
-            10,
-            "Focus Opportunités & Vie Sociale",
-            0,
-            new_x=XPos.LMARGIN,
-            new_y=YPos.NEXT,
-        )
-        pdf.ln(2)
-
-        # 1. Employment Details
-        pdf.set_font("DejaVu", "B", 10)
-        pdf.cell(
-            pdf.epw,
-            8,
-            "Métiers les plus recherchés (Bassin de vie)",
-            0,
-            new_x=XPos.LMARGIN,
-            new_y=YPos.NEXT,
-        )
-        pdf.set_font("DejaVu", "", 9)
-        top_professions = commune.employment.top_professions
-        if top_professions:
-            pdf.multi_cell(pdf.epw, 5, "\n".join([f"• {m}" for m in top_professions]))
-        else:
-            pdf.multi_cell(
-                pdf.epw, 5, "Aucune donnée de tension spécifique disponible."
-            )
-        pdf.ln(3)
-
-        pdf.set_font("DejaVu", "B", 10)
-        pdf.cell(
-            pdf.epw,
-            8,
-            "Offres d'emplois par les SIAE locales",
-            0,
-            new_x=XPos.LMARGIN,
-            new_y=YPos.NEXT,
-        )
-        pdf.set_font("DejaVu", "", 9)
-        inclusive_summary = commune.employment.inclusive_jobs_summary
-        if inclusive_summary:
-            items = [
-                f"• {cat}: {count} offre(s)"
-                for cat, count in sorted(
-                    inclusive_summary.items(), key=lambda x: x[1], reverse=True
-                )
-            ]
-            pdf.multi_cell(pdf.epw, 5, "\n".join(items))
-        else:
-            pdf.multi_cell(pdf.epw, 5, "Aucune offre inclusive active identifiée.")
-        pdf.ln(3)
-
-        # 2. Association Details
-        pdf.set_font("DejaVu", "B", 10)
-        pdf.cell(
-            pdf.epw,
-            8,
-            "Associations - Intégration des réfugiés (Top 10)",
-            0,
-            new_x=XPos.LMARGIN,
-            new_y=YPos.NEXT,
-        )
-        pdf.set_font("DejaVu", "", 8)
-        refugee_assos = commune.inclusion.asso_refugee_list[:10]
-        if refugee_assos:
-            for asso in refugee_assos:
-                name = html_escape(asso.name or "Inconnu")
-                cat = html_escape(asso.waldec_label or "")
-                cat_str = f" ({cat})" if cat else ""
-                desc = html_escape((asso.description or "").strip())
-                line = f"• <b>{name}</b>{cat_str}"
-                if desc:
-                    line += f": {desc}"
-                pdf.write_html(line)
-                pdf.ln(1)
-        else:
-            pdf.multi_cell(pdf.epw, 5, "Aucune association spécifique identifiée.")
-        pdf.ln(3)
-
-        pdf.set_font("DejaVu", "B", 10)
-        pdf.cell(
-            pdf.epw,
-            8,
-            "Réseau inclusion & solidarité (Top 5 par catégorie)",
-            0,
-            new_x=XPos.LMARGIN,
-            new_y=YPos.NEXT,
-        )
-        pdf.set_font("DejaVu", "", 8)
-        inclusion_by_cat = commune.inclusion.asso_inclusion_list_by_cat
-        if inclusion_by_cat:
-            for cat, assos in sorted(inclusion_by_cat.items()):
-                pdf.set_font("DejaVu", "B", 9)
-                pdf.cell(pdf.epw, 6, cat, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                pdf.set_font("DejaVu", "", 8)
-                for asso in assos[:5]:
-                    name = html_escape(asso.name or "Inconnu")
-                    desc = html_escape((asso.description or "").strip())
-                    line = f"• <b>{name}</b>"
-                    if desc:
-                        line += f": {desc}"
-                    pdf.write_html(line)
-                    pdf.ln(1)
-                pdf.ln(2)
-        else:
-            pdf.multi_cell(pdf.epw, 5, "Aucun réseau détaillé répertorié.")
-        pdf.ln(5)
-
-        # --- Synthesis ---
-        if commune.odis_synthesis:
-            pdf.set_font("DejaVu", "B", 12)
-            pdf.cell(
-                pdf.epw,
-                10,
-                "Synthèse de l'analyse OD&IS",
-                0,
-                new_x=XPos.LMARGIN,
-                new_y=YPos.NEXT,
-            )
-            pdf.set_font("DejaVu", "I", 9)
-            pdf.multi_cell(
-                pdf.epw,
-                5,
-                "Cette synthèse est générée par une intelligence artificielle. "
-                "Elle est fournie à titre indicatif et peut comporter des inexactitudes : "
-                "pensez à vérifier les informations.",
-            )
-            pdf.ln(3)
-            pdf.set_font("DejaVu", "", 9)
-
-            for msg in commune.odis_synthesis:
-                role = "OD&IS" if msg.get("role") == "assistant" else "Projet"
-                content = msg.get("content", "")
-
-                pdf.set_font("DejaVu", "B", 10)
-                pdf.cell(pdf.epw, 7, role, 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                pdf.set_font("DejaVu", "", 9)
-                _render_markdown_as_blocks(pdf, content)
-                pdf.ln(5)
+    for rank_prefix, commune in pages_to_render:
+        _render_commune_sheet(pdf, commune, rank_prefix, config)
 
     return bytes(pdf.output())
+

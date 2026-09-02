@@ -274,7 +274,7 @@ def test_run_clean_step_safely_success(mock_load, temp_pipeline_dirs):
     active_raw.write_text("old raw data")
     active_clean = clean_dir / "communes.parquet"
     pd.DataFrame({"codgeo": ["11111"], "name": ["Paris"]}).to_parquet(
-        active_clean, engine="fastparquet"
+        active_clean
     )
 
     # Setup staging raw file (simulating that fetch_source downloaded an update)
@@ -293,7 +293,7 @@ def test_run_clean_step_safely_success(mock_load, temp_pipeline_dirs):
         df_new = pd.DataFrame(
             {"codgeo": ["31000", "33000"], "name": ["Toulouse", "Bordeaux"]}
         )
-        df_new.to_parquet(active_clean, engine="fastparquet")
+        df_new.to_parquet(active_clean)
 
     run_clean_step_safely("communes", clean_communes, config, logger)
 
@@ -304,7 +304,7 @@ def test_run_clean_step_safely_success(mock_load, temp_pipeline_dirs):
 
     # 2. Active files should contain the new content
     assert active_raw.read_text() == "new raw data"
-    df_res = pd.read_parquet(active_clean, engine="fastparquet")
+    df_res = pd.read_parquet(active_clean)
     assert list(df_res["name"]) == ["Toulouse", "Bordeaux"]
 
     # 3. Staging raw should be cleaned up (discarded/moved)
@@ -330,7 +330,7 @@ def test_run_clean_step_safely_failure_rollback(mock_load, temp_pipeline_dirs):
     active_raw.write_text("old raw data")
     active_clean = clean_dir / "communes.parquet"
     df_old = pd.DataFrame({"codgeo": ["11111"], "name": ["Paris"]})
-    df_old.to_parquet(active_clean, engine="fastparquet")
+    df_old.to_parquet(active_clean)
 
     # Case 1: Raw contract validation fails (returns empty df)
     mock_load.return_value = pd.DataFrame()
@@ -366,7 +366,7 @@ def test_run_clean_step_safely_failure_rollback(mock_load, temp_pipeline_dirs):
 
     # Verify rollback successfully restored active files and discarded staging
     assert active_raw.read_text() == "old raw data"
-    df_res = pd.read_parquet(active_clean, engine="fastparquet")
+    df_res = pd.read_parquet(active_clean)
     assert list(df_res["name"]) == ["Paris"]
     assert not (raw_dir / "communes.geojson.active_bak").exists()
     assert not (clean_dir / "communes.parquet.active_bak").exists()

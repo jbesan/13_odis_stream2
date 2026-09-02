@@ -2,6 +2,7 @@ import logging
 import pandas as pd
 import streamlit as st
 
+import config as cfg
 from core import maps_deck
 from core.models import SearchResultsData
 from services.app_session import AppSession
@@ -132,10 +133,10 @@ st.html(
         max-height: calc(100vh - 2rem) !important;
         box-sizing: border-box !important;
         overflow-x: hidden !important;
-        overflow-y: auto !important;
-        padding: 1rem !important;
+        overflow-y: hidden !important;
+        padding: 0.75rem !important;
         z-index: 20 !important;
-        background: rgba(255, 255, 255, 1.0) !important;
+        background: rgba(255, 255, 255, 0.5) !important;
         backdrop-filter: blur(16px) !important;
         -webkit-backdrop-filter: blur(16px) !important;
         border-radius: 1rem !important;
@@ -147,6 +148,10 @@ st.html(
     div[class*="st-key-results_floating_panel"]::-webkit-scrollbar-thumb {
         background: rgba(0, 0, 0, 0.22);
         border-radius: 4px;
+    }
+
+    div[class*="st-key-city_result_card"] {
+        background: rgba(255, 255, 255, 1.0) !important;
     }
 
     @media (max-width: 900px) {
@@ -206,8 +211,8 @@ st.html(
         color: #6b7280;
     }
     .odis-map-legend-markers {
-        padding-top: 0.15rem;
-        border-top: 1px solid rgba(27, 68, 41, 0.12);
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid rgba(27, 68, 41, 0.12);
     }
     .odis-map-legend-marker-item {
         display: inline-flex;
@@ -266,6 +271,7 @@ def run_search() -> None:
 
 def prepare_search_criteria_editor(complete_data: dict) -> None:
     """Restore the active search exactly once before opening its editor."""
+    st.session_state.pop("results_editor_validation_errors", None)
     active_config = st.session_state.get("config")
     if active_config is None:
         return
@@ -284,6 +290,12 @@ def prepare_search_criteria_editor(complete_data: dict) -> None:
 )
 def edit_search_criteria_dialog(complete_data: dict) -> None:
     """Edit widget state without rerunning the results page or PyDeck map."""
+    errors = FormState(st.session_state).get_location_validation_errors()
+    if not errors and "results_editor_validation_errors" in st.session_state:
+        del st.session_state["results_editor_validation_errors"]
+    elif st.session_state.get("results_editor_validation_errors"):
+        ui_forms.render_location_validation_warning(errors)
+
     ui_forms.display_input_tabs(complete_data)
     with st.container(horizontal=True, horizontal_alignment="right"):
         if st.button(
@@ -292,8 +304,13 @@ def edit_search_criteria_dialog(complete_data: dict) -> None:
             icon=":material/search:",
             key="rerun_search_from_criteria_editor",
         ):
-            run_search()
-            st.rerun()
+            if errors:
+                st.session_state["results_editor_validation_errors"] = errors
+                st.rerun()
+            else:
+                st.session_state.pop("results_editor_validation_errors", None)
+                run_search()
+                st.rerun()
 
 
 # Submit from the form always replaces a prior result with the current draft.
@@ -380,17 +397,21 @@ if st.session_state.get("processed_gdf") is not None:
     if not isinstance(current_map_context, pd.DataFrame):
         current_map_context = st.session_state.processed_gdf
 
-    # Default zoom if not set
+    # Default zoom & center if not set
     if st.session_state.get("zoom") is None:
         st.session_state["zoom"] = maps_deck.get_map_zoom(
             config.loc_search_area if config else "departement"
+        )
+    if st.session_state.get("center") is None:
+        st.session_state["center"] = st.session_state.get(
+            "initial_center", list(cfg.DEFAULT_MAP_CENTER)
         )
 
     # 1. Floating Box 1: pastilles de couches (top-right)
     selected_ids = set()
     with st.container(key="top_pills_bar", horizontal=True, vertical_alignment="center"):
         st.space('xxsmall')
-        st.text("  Afficher: ")
+        st.text("Afficher")
         pill_specs = [
             # ("🥇 Top 5", "top_5"),
         ]
@@ -465,7 +486,7 @@ if st.session_state.get("processed_gdf") is not None:
                     if brief_val and st.session_state.config.odis_brief != brief_val:
                         st.session_state.config.odis_brief = brief_val
 
-            st.subheader("Meilleurs Résultats")
+            st.subheader("Meilleures Propositions")
             if not is_highlighted:
                 st.caption("👇 Cliquez sur une ville pour afficher les détails.", text_alignment="center", width="stretch")
             st.html(
@@ -488,8 +509,7 @@ if st.session_state.get("processed_gdf") is not None:
                     args=(-1,),
                 )
                 if is_active:
-                    with st.container(border=True):
-                        ui_results._display_result_details(p_commune)
+                    ui_results._display_result_details(p_commune)
                     st.write("")
 
             # B. Top 5 Results (Vertical list)
@@ -516,9 +536,9 @@ if st.session_state.get("processed_gdf") is not None:
             
 
     # 3. Main Full-Screen Vector Map (Background canvas)
-    # Offset center slightly to the right to leave space for left overlay panel
+    # Offset center slightly to the west (negative longitude) to shift map content right and leave space for left overlay panel
     zoom_current = st.session_state.get("zoom", 6) or 6
-    offset_lon = -0.1 * (2 ** max(0, 6 - zoom_current))
+    offset_lon = -1 * (2 ** (6 - zoom_current))
 
     try:
         map_vector.render_vector_map(

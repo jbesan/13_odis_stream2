@@ -17,6 +17,7 @@ import tempfile
 import threading
 import uuid
 from google.cloud import storage
+from utils.thread_utils import attach_script_run_ctx
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -119,9 +120,11 @@ def preload_scoring_datasets_async() -> None:
             return
         _SCORING_PRELOAD_STATUS["in_progress"] = True
 
-    thread = threading.Thread(
-        target=_preload_scoring_datasets_in_background,
-        daemon=True,
+    thread = attach_script_run_ctx(
+        threading.Thread(
+            target=_preload_scoring_datasets_in_background,
+            daemon=True,
+        )
     )
     thread.start()
 
@@ -156,9 +159,7 @@ def load_scores_config_as_df(config_path: str) -> pd.DataFrame:
                 "format": item.get("display", {}).get("format", None),
                 "missing_strategy": item.get("missing_strategy", "exclude"),
                 "show": item.get("display", {}).get("show", True),
-                "metric_type": item.get("display", {}).get(
-                    "metric_type", "continuous"
-                ),
+                "metric_type": item.get("display", {}).get("metric_type", "continuous"),
                 "discrete_mapping": item.get("display", {}).get(
                     "discrete_mapping", None
                 ),
@@ -405,10 +406,26 @@ def get_active_release_context() -> ReleaseContext:
         raise RuntimeError(f"Unable to resolve active dataset release: {exc}") from exc
 
 
+def _get_dataset_cache_base_dir() -> str:
+    """Determine dataset cache base directory.
+
+    Priority:
+    1. ODIS_CACHE_DIR environment variable if explicitly configured.
+    2. /tmp/odis_data_cache on Cloud Run (detected via K_SERVICE).
+    3. tempfile.gettempdir()/odis_data_cache during pytest (ensuring test isolation).
+    4. app/data/datasets locally in development (persistent and git-ignored).
+    """
+    if custom_dir := (os.getenv("ODIS_CACHE_DIR") or os.getenv("ODIS_DATA_CACHE_DIR")):
+        return custom_dir
+    if os.getenv("K_SERVICE"):
+        return os.path.join(tempfile.gettempdir(), "odis_data_cache")
+    if "PYTEST_CURRENT_TEST" in os.environ:
+        return os.path.join(tempfile.gettempdir(), "odis_data_cache")
+    return os.path.join(cfg.APP_DIR, "data", "datasets")
+
+
 def _release_cache_path(context: ReleaseContext, artifact: ReleaseArtifact) -> str:
-    return os.path.join(
-        tempfile.gettempdir(), "odis_data_cache", context.version, artifact.name
-    )
+    return os.path.join(_get_dataset_cache_base_dir(), context.version, artifact.name)
 
 
 def _verified_artifact_key(
@@ -624,9 +641,7 @@ def _load_parquet(
         if error_list is not None:
             error_list.append(fname)
         return pd.DataFrame()
-    if columns:
-        return pd.read_parquet(resolved_path, engine="fastparquet", columns=columns)
-    return pd.read_parquet(resolved_path, engine="fastparquet")
+    return pd.read_parquet(resolved_path, columns=columns)
 
 
 @st.cache_resource
@@ -730,10 +745,18 @@ def load_referentiels_raw(
 
         reg_ref = refs_df[refs_df["key"] == "regions"]
         if not reg_ref.empty:
+            if hasattr(cfg, "METROPOLITAN_REGION_CODES_SET"):
+                reg_ref = reg_ref[
+                    reg_ref["code"].astype(str).isin(cfg.METROPOLITAN_REGION_CODES_SET)
+                ]
             regions_names = reg_ref.set_index("code")["label"].to_dict()
 
         dep_ref = refs_df[refs_df["key"] == "departements"]
         if not dep_ref.empty:
+            if hasattr(cfg, "METROPOLITAN_DEPT_CODES_SET"):
+                dep_ref = dep_ref[
+                    dep_ref["code"].astype(str).isin(cfg.METROPOLITAN_DEPT_CODES_SET)
+                ]
             departements_names = dep_ref.set_index("code")["label"].to_dict()
             cols_to_dict = ["label"]
             if "reg_code" in dep_ref.columns:
@@ -750,13 +773,22 @@ def load_referentiels_raw(
         if not c_ref.empty:
             codes = c_ref["code"].astype(str)
             deps = codes.apply(lambda c: c[:3] if c.startswith("97") else c[:2])
+            mask = (
+                deps.isin(cfg.METROPOLITAN_DEPT_CODES_SET)
+                if hasattr(cfg, "METROPOLITAN_DEPT_CODES_SET")
+                else pd.Series(True, index=c_ref.index)
+            )
             depcom_df = pd.DataFrame(
-                {"libgeo": c_ref["label"].values, "dep_code": deps.values},
-                index=pd.Index(codes.values, name="codgeo"),
+                {"libgeo": c_ref["label"].values[mask], "dep_code": deps.values[mask]},
+                index=pd.Index(codes.values[mask], name="codgeo"),
             )
 
         dep_ref = refs_df[refs_df["key"] == "departements"]
         if not dep_ref.empty:
+            if hasattr(cfg, "METROPOLITAN_DEPT_CODES_SET"):
+                dep_ref = dep_ref[
+                    dep_ref["code"].astype(str).isin(cfg.METROPOLITAN_DEPT_CODES_SET)
+                ]
             coddep_set = sorted(dep_ref["code"].astype(str).unique().tolist())
         elif not depcom_df.empty:
             coddep_set = sorted(depcom_df["dep_code"].unique().tolist())
@@ -934,6 +966,12 @@ def load_scoring_datasets_raw(
         for col in ["dep_code", "reg_code", "epci_code", "bassin_de_vie"]:
             if col in odis.columns:
                 odis[col] = odis[col].astype(str)
+
+        # Restrict communes to metropolitan departments to reduce memory footprint
+        if "dep_code" in odis.columns and hasattr(cfg, "METROPOLITAN_DEPT_CODES_SET"):
+            odis = odis[odis["dep_code"].isin(cfg.METROPOLITAN_DEPT_CODES_SET)]
+            if not odis_geo.empty:
+                odis_geo = odis_geo[odis_geo.index.isin(odis.index)]
 
     except Exception:
         logger.error(

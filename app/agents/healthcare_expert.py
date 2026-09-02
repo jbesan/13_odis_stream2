@@ -55,8 +55,9 @@ HEALTHCARE_EXPERT_SYSTEM_PROMPT = """
 
 async def search_places_batch_tool(queries: List[str], location: str) -> Dict[str, Any]:
     """Recherche des hôpitaux, centres médicaux ou PMI en mode batch.
+    À utiliser avec parcimonie : un seul appel batch par mission regroupant au maximum 3 à 5 requêtes ciblées indispensables.
     Args:
-        queries: Liste de requêtes (ex: ['PMI', 'hôpital', 'médecin généraliste']).
+        queries: Liste de requêtes ciblées (ex: ['PMI', 'hôpital', 'centre médical'], max 5).
         location: Ville cible (ex: 'Bordeaux, Nouvelle-Aquitaine').
     """
     return await search_places_batch(queries, location)

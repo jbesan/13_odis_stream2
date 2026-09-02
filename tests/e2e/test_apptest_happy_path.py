@@ -6,7 +6,6 @@ from core.models import SearchCriterias
 
 # Mocking custom components that require JS/HTML environments or external API hits
 @patch("ui.page_shell.inject_idle_disconnect")
-@patch("streamlit_folium.st_folium")
 @patch("core.postscoring.launch_post_scoring_tasks")
 @patch("utils.data_loader.fetch_salesforce_jaccueille_bdv")
 @patch("services.rna_rag.RNARagService")
@@ -14,7 +13,6 @@ def test_happy_path_end_to_end(
     mock_rna_rag,
     mock_fetch_salesforce,
     mock_launch_post_scoring_tasks,
-    mock_st_folium,
     mock_inject_idle_disconnect,
 ):
     """
@@ -64,8 +62,13 @@ def test_happy_path_end_to_end(
     at = AppTest.from_file("app/main.py", default_timeout=60)
 
     # Bypass authentication and pre-populate defaults
+    from core.models import User
+
     at.session_state["password_correct"] = True
+    at.session_state["auth_method"] = "local"
     at.session_state["username"] = "test"
+    at.session_state["user"] = User(username="test")
+    at.session_state["org"] = None
     at.session_state["demo_data"] = {}
 
     # Run the main.py redirect -> 1_Accueil.py

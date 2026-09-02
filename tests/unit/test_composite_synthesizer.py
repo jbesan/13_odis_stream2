@@ -1,5 +1,6 @@
-import pytest
+import os
 from unittest.mock import MagicMock, patch
+import pytest
 from pydantic_ai import ModelMessage, ModelResponse, TextPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
@@ -373,23 +374,17 @@ def test_render_initial_analysis_report_fallback_markdown():
 
 
 def test_interactive_chat_enabled_logic():
-    """Verify that is_interactive_chat_enabled returns True for J'Accueille and False by default."""
+    """Verify that is_interactive_chat_enabled returns True for chat-enabled orgs and False by default."""
     import config as cfg
+    from core.models import Org
 
-    # J'Accueille org has enable_interactive_chat=True
-    jaccueille_org = cfg.ORGANIZATION_PROFILES.get("jaccueille")
-    assert jaccueille_org is not None
-    assert jaccueille_org.enable_interactive_chat is True
-    assert cfg.is_interactive_chat_enabled(jaccueille_org) is True
+    chat_org = Org(id="chat_org", name="Chat Org", enable_interactive_chat=True)
+    no_chat_org = Org(id="no_chat_org", name="No Chat Org", enable_interactive_chat=False)
 
-    # Other orgs default to False
-    emile_org = cfg.ORGANIZATION_PROFILES.get("emile_aura")
-    assert emile_org is not None
-    assert emile_org.enable_interactive_chat is False
-    assert cfg.is_interactive_chat_enabled(emile_org) is False
-
-    # Default None org
-    assert cfg.is_interactive_chat_enabled(None) is False
+    with patch.dict(os.environ, {"ODIS_AI_FREE_MODE": "False"}, clear=False):
+        assert cfg.is_interactive_chat_enabled(chat_org) is True
+        assert cfg.is_interactive_chat_enabled(no_chat_org) is False
+        assert cfg.is_interactive_chat_enabled(None) is False
 
 
 def test_ia_analysis_content_chat_disabled_for_default_org():
@@ -412,10 +407,11 @@ def test_ia_analysis_content_chat_disabled_for_default_org():
     )
 
     with (
+        patch.dict(os.environ, {"ODIS_AI_FREE_MODE": "False"}, clear=False),
         patch("ui.ai_analysis_dialog.st.session_state", {
             "search_results": search_results,
             "active_search_hash": "test_h",
-            "org": Org(id="emile_aura", name="EMILE", enable_interactive_chat=False),
+            "org": Org(id="no_chat_org", name="No Chat Org", enable_interactive_chat=False),
         }),
         patch("ui.ai_analysis_dialog._render_initial_analysis_report") as mock_render_report,
         patch("ui.ai_analysis_dialog.st.chat_input") as mock_chat_input,
@@ -426,11 +422,10 @@ def test_ia_analysis_content_chat_disabled_for_default_org():
         mock_chat_input.assert_not_called()
 
 
-def test_ia_analysis_content_chat_enabled_for_jaccueille():
-    """Verify that ia_analysis_content renders chat input if chat is enabled for J'Accueille."""
+def test_ia_analysis_content_chat_enabled_for_org():
+    """Verify that ia_analysis_content renders chat input if chat is enabled for the Org."""
     from ui.ai_analysis_dialog import ia_analysis_content
-    from core.models import SearchResultsData
-    import config as cfg
+    from core.models import SearchResultsData, Org
 
     commune = CommuneResult(
         codgeo="33063",
@@ -451,10 +446,11 @@ def test_ia_analysis_content_chat_enabled_for_jaccueille():
     )
 
     with (
+        patch.dict(os.environ, {"ODIS_AI_FREE_MODE": "False"}, clear=False),
         patch("ui.ai_analysis_dialog.st.session_state", {
             "search_results": search_results,
             "active_search_hash": "test_h",
-            "org": cfg.ORGANIZATION_PROFILES["jaccueille"],
+            "org": Org(id="chat_org", name="Chat Org", enable_interactive_chat=True),
         }),
         patch("ui.ai_analysis_dialog._render_initial_analysis_report") as mock_render_report,
         patch("ui.ai_analysis_dialog.st.divider"),
@@ -465,9 +461,7 @@ def test_ia_analysis_content_chat_enabled_for_jaccueille():
     ):
         ia_analysis_content("Bordeaux", "33063", None)
         mock_render_report.assert_called_once()
-        # Chat input must be called for J'Accueille
         mock_chat_input.assert_called_once()
-        # chat_message should only be called for follow-up messages (2 times), NOT for message 0
         assert mock_chat_msg.call_count == 2
 
 

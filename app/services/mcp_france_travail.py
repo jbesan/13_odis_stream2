@@ -167,7 +167,9 @@ def _search_job_offers_logic(
 
     if location:
         params["commune"] = location
-        params["distance"] = distance if (distance is not None and distance != "") else 10
+        params["distance"] = (
+            distance if (distance is not None and distance != "") else 10
+        )
 
     headers = {
         "Authorization": f"Bearer {token}",
@@ -193,7 +195,10 @@ def _search_job_offers_logic(
             fallback_params.pop("codeROME", None)
             fallback_params["motsCles"] = label_to_use
             response = requests.get(
-                f"{BASE_URL}/offres/search", params=fallback_params, headers=headers, timeout=10
+                f"{BASE_URL}/offres/search",
+                params=fallback_params,
+                headers=headers,
+                timeout=10,
             )
 
     if response.status_code == 204:
@@ -224,8 +229,12 @@ def _search_job_offers_logic(
     if "/" in content_range:
         try:
             total = int(content_range.split("/")[-1])
-        except:
-            pass
+        except (ValueError, IndexError) as exc:
+            logger.debug(
+                "Failed to parse total from Content-Range header '%s': %s",
+                content_range,
+                exc,
+            )
 
     pruned_offres = [_prune_job_offer(o) for o in data.get("resultats", [])]
 

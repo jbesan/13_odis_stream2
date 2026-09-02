@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import Literal, Any
 from pydantic_ai import Agent
@@ -9,6 +10,8 @@ from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.providers.google_cloud import GoogleCloudProvider
 
 from agents.google_model import GroundingGoogleModel
+
+logger = logging.getLogger(__name__)
 
 
 # --- Configuration Models ---
@@ -174,8 +177,8 @@ def get_p_model(agent_name: str, client: genai.Client | None = None) -> GoogleMo
                 **default_profile,
                 "google_supports_server_side_tool_invocations": False,
             }
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Could not resolve model profile for '%s': %s", model_name, exc)
 
     return GroundingGoogleModel(
         model_name,
@@ -228,6 +231,7 @@ def get_swarm_boilerplate(
             "**Instructions opérationnelles**:\n"
             "- Ne recherche jamais une deuxième fois des éléments déjà à ta disposition.\n"
             "- Priorisation des outils : N'utilise `search_web_batch_tool` que lorsque les autres outils n'ont rien donné ou ne sont pas pertinents sur un point essentiel.\n"
+            "- `search_places_batch_tool` (recherche de lieux et équipements locaux Google Places) doit être utilisé avec grande parcimonie : limite-toi à un seul appel batch par mission regroupant au maximum 3 à 5 requêtes ciblées indispensables (ex: 2 ou 3 structures clés). Ne cherche jamais via Places ce qui figure déjà dans le dossier ou les référentiels.\n"
             "- Pour un outil donné, regroupe toutes les recherches indépendantes dans un seul appel batch.\n"
             "- Si plusieurs outils sont indépendants, appelle-les dans la même réponse, sans attendre le premier résultat.\n"
             "- `search_web_batch_tool` est limité à un seul appel par mission : donne-lui une liste de besoins indépendants (termes clés, question et lieu si nécessaire), jamais une recherche à la fois.\n"

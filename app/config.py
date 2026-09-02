@@ -1,7 +1,11 @@
+import logging
 import os
 import warnings
 from typing import Any, Dict, List, Optional, Set, Literal
+import streamlit as st
 from pydantic import BaseModel, Field, ConfigDict
+
+logger = logging.getLogger(__name__)
 
 # Suppress annoying warnings from third-party libraries (especially in Python 3.14+)
 warnings.filterwarnings("ignore", module="langchain_core.*")
@@ -73,6 +77,43 @@ LOC_SEARCH_AREA_OPTIONS = {
     "region": "Région",
     "france": "France Métropolitaine",
 }
+
+# --- Metropolitan Geographic Referentials (INSEE COG) ---
+# 13 Metropolitan Regions (excluding DROM 01, 02, 03, 04, 06)
+METROPOLITAN_REGION_CODES: List[str] = [
+    "11",  # Île-de-France
+    "24",  # Centre-Val de Loire
+    "27",  # Bourgogne-Franche-Comté
+    "28",  # Normandie
+    "32",  # Hauts-de-France
+    "44",  # Grand Est
+    "52",  # Pays de la Loire
+    "53",  # Bretagne
+    "75",  # Nouvelle-Aquitaine
+    "76",  # Occitanie
+    "84",  # Auvergne-Rhône-Alpes
+    "93",  # Provence-Alpes-Côte d'Azur
+    "94",  # Corse
+]
+
+# 96 Metropolitan Departments (01-19, 2A, 2B, 21-95; excluding DROM 971-976)
+METROPOLITAN_DEPT_CODES: List[str] = [
+    "01", "02", "03", "04", "05", "06", "07", "08", "09", "10",
+    "11", "12", "13", "14", "15", "16", "17", "18", "19",
+    "2A", "2B",
+    "21", "22", "23", "24", "25", "26", "27", "28", "29",
+    "30", "31", "32", "33", "34", "35", "36", "37", "38", "39",
+    "40", "41", "42", "43", "44", "45", "46", "47", "48", "49",
+    "50", "51", "52", "53", "54", "55", "56", "57", "58", "59",
+    "60", "61", "62", "63", "64", "65", "66", "67", "68", "69",
+    "70", "71", "72", "73", "74", "75", "76", "77", "78", "79",
+    "80", "81", "82", "83", "84", "85", "86", "87", "88", "89",
+    "90", "91", "92", "93", "94", "95",
+]
+
+METROPOLITAN_REGION_CODES_SET: Set[str] = set(METROPOLITAN_REGION_CODES)
+METROPOLITAN_DEPT_CODES_SET: Set[str] = set(METROPOLITAN_DEPT_CODES)
+
 HEBERGEMENT_OPTIONS = [
     "Location avec Intermédiation",
     "Centre d'hébergement et de réinsertion sociale (CHRS)",
@@ -152,6 +193,7 @@ WEIGHT_PROFILES = {
     },
 }
 
+
 # --- Organization Model & Profiles (F-54) ---
 class Org(BaseModel):
     """Represents an organization profile with its default configurations and settings."""
@@ -169,76 +211,56 @@ class Org(BaseModel):
 
 
 class User(BaseModel):
-    """Represents a logged-in user and their associated organization profile."""
+    """Represents a logged-in user and their optional organization profile."""
 
     username: str
-    org_id: str
+    org_id: Optional[str] = None
 
     model_config = ConfigDict(populate_by_name=True, revalidate_instances="never")
 
 
-ORGANIZATION_PROFILES: Dict[str, Org] = {
-    "jaccueille": Org(
-        id="jaccueille",
-        name="J'Accueille",
-        description="J'Accueille est un programme de cohabitation solidaire qui met en relation des personnes réfugiées à la recherche d'un logement et des particuliers disposant d'une chambre libre.",
-        zone_type="departement",
-        default_zones=[
-            "01",
-            "13",
-            "22",
-            "26",
-            "30",
-            "31",
-            "33",
-            "34",
-            "35",
-            "37",
-            "38",
-            "40",
-            "42",
-            "44",
-            "64",
-            "69",
-            "72",
-            "75",
-            "76",
-            "77",
-            "78",
-            "81",
-            "91",
-            "92",
-            "93",
-            "94",
-            "95",
-        ],
-        defaults={
-            "hebergement_cible": ["Chez l'habitant"],
-            "org_strategic_locations_filter": True,
-            "org_boosts": {
-                "heb_jaccueille_accueillants_score": 3.0,
-                "heb_jaccueille_prospects_score": 3.0,
-            },
-        },
-        enable_interactive_chat=True,
-    ),
-    "emile_aura": Org(
-        id="emile_aura",
-        name="EMILE Auvergne-Rhône-Alpes",
-        description="EMILE est un programme d’accompagnement renforcé à la mobilité géographique qui permet aux personnes en précarité de logement, volontaires et résidant en zones tendues, d’accéder à l’emploi et au logement dans un nouveau territoire d’accueil.",
-        zone_type="departement",
-        default_zones=["01", "03", "15", "69"],
-        defaults={"org_boosts": {"inc_siae_density_scaled": 3.0}},
-    ),
-    "agir33": Org(
-        id="agir33",
-        name="AGIR 33",
-        description="Le programme AGIR (Accompagnement Global et Individualisé des Réfugiés) dans le département de la Gironde (33).",
-        zone_type="departement",
-        default_zones=["33"],
-        defaults={},
-    ),
-}
+def load_organization_profiles() -> Dict[str, Org]:
+    """Loads organization profiles from Streamlit secrets.
+
+    Returns an empty dict if no organizations are configured in secrets.
+    """
+    try:
+        from streamlit.errors import StreamlitSecretNotFoundError
+    except ImportError:
+        StreamlitSecretNotFoundError = FileNotFoundError  # type: ignore[misc, assignment]
+
+    try:
+        if "organizations" not in st.secrets:
+            return {}
+        raw_orgs = st.secrets["organizations"]
+    except (StreamlitSecretNotFoundError, FileNotFoundError):
+        logger.debug("Streamlit secrets not found, using empty organization profiles.")
+        return {}
+    except Exception as exc:
+        logger.warning("Unable to access Streamlit secrets: %s", exc)
+        return {}
+
+    try:
+        if hasattr(raw_orgs, "to_dict"):
+            raw_orgs = raw_orgs.to_dict()
+        elif not isinstance(raw_orgs, dict):
+            raw_orgs = dict(raw_orgs)
+
+        profiles: Dict[str, Org] = {}
+        for org_id, org_data in raw_orgs.items():
+            if isinstance(org_data, dict) or hasattr(org_data, "items"):
+                data = dict(org_data)
+                data.setdefault("id", org_id)
+                profiles[org_id] = Org(**data)
+        return profiles
+    except Exception as exc:
+        logger.error(
+            "Failed to parse organization profiles from secrets: %s", exc, exc_info=True
+        )
+        return {}
+
+
+ORGANIZATION_PROFILES: Dict[str, Org] = load_organization_profiles()
 
 # --- Map Defaults ---
 DEFAULT_MAP_CENTER = [46.603354, 1.888334]  # Center of France
@@ -501,14 +523,19 @@ def is_ai_free_mode() -> bool:
     if os.environ.get("ODIS_AI_FREE_MODE", "False").lower() in ("true", "1", "yes"):
         return True
 
-    import streamlit as st
-
     try:
         org = st.session_state.get("org")
         if org and getattr(org, "ai_free_mode", False):
             return True
-    except Exception:
-        pass
+    except (AttributeError, RuntimeError) as exc:
+        logger.debug(
+            "st.session_state is unavailable in current context (is_ai_free_mode): %s",
+            exc,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Error reading org from st.session_state in is_ai_free_mode: %s", exc
+        )
 
     return False
 
@@ -553,21 +580,21 @@ def is_interactive_chat_enabled(
 
     active_org = org
     if not active_org:
-        import streamlit as st
-
         try:
             active_org = st.session_state.get("org")
-        except Exception:
-            pass
+        except (AttributeError, RuntimeError) as exc:
+            logger.debug(
+                "st.session_state is unavailable in current context (is_interactive_chat_enabled): %s",
+                exc,
+            )
+        except Exception as exc:
+            logger.warning("Error reading active_org from st.session_state: %s", exc)
 
     if active_org and getattr(active_org, "enable_interactive_chat", False):
         return True
 
-    org_context = (
-        getattr(search_config, "org_context", None) if search_config else None
-    )
+    org_context = getattr(search_config, "org_context", None) if search_config else None
     if org_context and org_context in ORGANIZATION_PROFILES:
         return ORGANIZATION_PROFILES[org_context].enable_interactive_chat
 
     return False
-

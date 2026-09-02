@@ -182,8 +182,8 @@ def test_communes_plm_consolidation(plm_mapping):
     if not population_path.exists():
         pytest.skip("population.parquet does not exist yet. Run the pipeline first.")
 
-    df = pd.read_parquet(communes_path, engine="fastparquet")
-    population = pd.read_parquet(population_path, engine="fastparquet")
+    df = pd.read_parquet(communes_path)
+    population = pd.read_parquet(population_path)
     population["codgeo"] = population["codgeo"].astype(str)
 
     # Assert 'codgeo' exists
@@ -242,7 +242,7 @@ def test_vertical_tables_plm_consolidation(plm_mapping):
         if not filepath.exists():
             continue
 
-        df = pd.read_parquet(filepath, engine="fastparquet")
+        df = pd.read_parquet(filepath)
         df[codgeo_col] = df[codgeo_col].astype(str)
 
         # Assert no child arrondissements exist in vertical table

@@ -114,20 +114,39 @@ def _is_postscoring_ready_for_search(h: Optional[str]) -> bool:
         codgeo_str = str(commune.codgeo)
 
         # Jobs
-        if not (hasattr(commune, "siae_jobs") and getattr(commune, "siae_jobs", None) is not None):
-            jobs_status = bg_res.get("jobs_enrichment", {}).get(codgeo_str, {}).get("status")
+        if not (
+            hasattr(commune, "siae_jobs")
+            and getattr(commune, "siae_jobs", None) is not None
+        ):
+            jobs_status = (
+                bg_res.get("jobs_enrichment", {}).get(codgeo_str, {}).get("status")
+            )
             if not is_terminal_enrichment_status(jobs_status):
                 return False
 
         # Associations
-        if not (hasattr(commune, "associations_details") and getattr(commune, "associations_details", None) is not None):
-            assos_status = bg_res.get("association_enrichment_status", {}).get(codgeo_str, {}).get("status")
+        if not (
+            hasattr(commune, "associations_details")
+            and getattr(commune, "associations_details", None) is not None
+        ):
+            assos_status = (
+                bg_res.get("association_enrichment_status", {})
+                .get(codgeo_str, {})
+                .get("status")
+            )
             if not is_terminal_enrichment_status(assos_status):
                 return False
 
         # Inclusion services
-        if not (hasattr(commune, "inclusion") and getattr(commune.inclusion, "services_detailed", None) is not None):
-            inc_status = bg_res.get("inclusion_enrichment_status", {}).get(codgeo_str, {}).get("status")
+        if not (
+            hasattr(commune, "inclusion")
+            and getattr(commune.inclusion, "services_detailed", None) is not None
+        ):
+            inc_status = (
+                bg_res.get("inclusion_enrichment_status", {})
+                .get(codgeo_str, {})
+                .get("status")
+            )
             if inc_status is not None and not is_terminal_enrichment_status(inc_status):
                 return False
 
@@ -206,8 +225,8 @@ def share_search_modal():
                 else "http"
             )
             base_url = f"{scheme}://{host}"
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Failed to detect base_url from st.context.headers: %s", exc)
 
     permalink = f"{base_url}/?search={share_id}"
 

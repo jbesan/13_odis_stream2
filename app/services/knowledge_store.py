@@ -119,8 +119,12 @@ class KnowledgeStore:
                     with open(file_path, "r", encoding="utf-8") as f:
                         post = frontmatter.load(f)
                         existing_metadata = post.metadata
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to load existing frontmatter from %s: %s",
+                        file_path,
+                        exc,
+                    )
 
             metadata = {
                 **existing_metadata,

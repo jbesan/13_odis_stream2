@@ -38,8 +38,15 @@ with st.sidebar:
         width="stretch",
         icon=":material/fast_forward:",
     ):
-        st.session_state["form_completed"] = True
-        st.switch_page("pages/3_Resultats.py")
+        errors = FormState(st.session_state).get_location_validation_errors()
+        if errors:
+            st.session_state["location_validation_warning"] = errors
+            st.session_state.form_page = "localisation"
+            st.rerun()
+        else:
+            st.session_state.pop("location_validation_warning", None)
+            st.session_state["form_completed"] = True
+            st.switch_page("pages/3_Resultats.py")
 
     page_shell.render_account_sidebar_actions()
 
@@ -68,6 +75,12 @@ PAGES_LIST = list(PAGES.keys())
 
 # These functions now act as simple wrappers, calling the centralized UI components.
 def display_localisation_actuelle_page():
+    errors = FormState(st.session_state).get_location_validation_errors()
+    if not errors and "location_validation_warning" in st.session_state:
+        del st.session_state["location_validation_warning"]
+    elif st.session_state.get("location_validation_warning"):
+        ui_forms.render_location_validation_warning(errors)
+
     st.subheader("Localisation de la personne accompagnée")
     col1, col2, col3 = st.columns([3, 1, 5])
     with col1:
@@ -165,9 +178,22 @@ with col2:
     with st.container(horizontal_alignment="right"):
         if current_page_index < len(PAGES_LIST) - 1:
             if st.button("Suivant"):
+                if st.session_state.form_page == "localisation":
+                    errors = FormState(st.session_state).get_location_validation_errors()
+                    if errors:
+                        st.session_state["location_validation_warning"] = errors
+                        st.rerun()
+                st.session_state.pop("location_validation_warning", None)
                 st.session_state.form_page = PAGES_LIST[current_page_index + 1]
                 st.rerun()
         else:
             if st.button("Voir les résultats", type="primary"):
-                st.session_state["form_completed"] = True
-                st.switch_page("pages/3_Resultats.py")
+                errors = FormState(st.session_state).get_location_validation_errors()
+                if errors:
+                    st.session_state["location_validation_warning"] = errors
+                    st.session_state.form_page = "localisation"
+                    st.rerun()
+                else:
+                    st.session_state.pop("location_validation_warning", None)
+                    st.session_state["form_completed"] = True
+                    st.switch_page("pages/3_Resultats.py")

@@ -26,7 +26,6 @@ def configure_logging(level=logging.INFO):
     logging.basicConfig(level=level, format="%(asctime)s - %(levelname)s - %(message)s")
     # Silence extremely verbose third-party loggers
     for logger_name in [
-        "fastparquet",
         "requests",
         "urllib3",
         "pyarrow",
@@ -129,7 +128,7 @@ def load_dataset(path: Path, config: Dict[str, Any], **kwargs) -> pd.DataFrame:
     # Prioritize config format
     encoding = config.get("encoding", None)
     if fmt == "parquet":
-        return pd.read_parquet(path, engine="fastparquet", **kwargs)
+        return pd.read_parquet(path, **kwargs)
     elif fmt == "csv":
         return pd.read_csv(path, sep=None, engine="python", encoding=encoding, **kwargs)
     elif fmt == "json":
@@ -156,7 +155,7 @@ def load_dataset(path: Path, config: Dict[str, Any], **kwargs) -> pd.DataFrame:
 
     # Fallback to extension
     if path.suffix == ".parquet":
-        return pd.read_parquet(path, engine="fastparquet", **kwargs)
+        return pd.read_parquet(path, **kwargs)
     elif path.suffix == ".csv":
         return pd.read_csv(path, sep=None, engine="python", encoding=encoding, **kwargs)
     elif path.suffix == ".json":
@@ -306,8 +305,6 @@ def validate_dataset_contract(
 
 def atomic_swap(src_path: Path, dst_path: Path):
     """Atomically swaps a staging file to the active cache path."""
-    import os
-
     src_path = Path(src_path)
     dst_path = Path(dst_path)
     if not src_path.exists():
@@ -377,7 +374,7 @@ def finalize_ingest(
             return False
 
         # Load staging clean parquet to validate
-        df = pd.read_parquet(staging_clean, engine="fastparquet")
+        df = pd.read_parquet(staging_clean)
         source_cfg = config["sources"].get(source_name) or config.get(
             "local_files", {}
         ).get(source_name)
@@ -396,15 +393,8 @@ def finalize_ingest(
             f"⚠️ [INGEST WARNING] Dataset '{source_name}' failed validation contract: {e}"
         )
         # Discard staging files
-        if staging_clean.exists():
-            try:
-                os.remove(staging_clean)
-            except:
-                pass
-        if staging_raw and staging_raw.exists():
-            try:
-                os.remove(staging_raw)
-            except:
-                pass
+        staging_clean.unlink(missing_ok=True)
+        if staging_raw:
+            staging_raw.unlink(missing_ok=True)
         logging.warning(f"⚠️ Reverted to last known good cache for '{source_name}'.")
         return False

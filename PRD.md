@@ -16,7 +16,7 @@
 
 - **Données :** Exclusivement Open Data.
 - **Moteur :** Scoring de pertinence (`scoring.py`) basé sur un profil utilisateur.
-- **Stack :** Streamlit (UI), Pandas/GeoPandas (Data), Folium (Carto).
+- **Stack :** Streamlit (UI), Pandas/GeoPandas (Data), Pydeck / Deck.gl (Carto).
 
 ---
 
@@ -143,7 +143,7 @@ Liste en vrac d'idées d'amélioration
 ### 🔑 Key Features
 - **Dead Code Eradication**: Retrait de la définition tronquée et inutile de `clean_bpe` dans `ingest.py`.
 - **Centralized Orchestration Logging (DRY)**: Centralisation des appels de début (`STARTED`), succès (`COMPLETED`), et d'erreur (`ERROR`) de chaque cleaner au niveau du gestionnaire de cycle de vie `run_clean_step_safely`, éliminant plus de 50 lignes de code redondant.
-- **Unified Global Logging Settings**: Centralisation de la configuration `logging.basicConfig` dans `common.py` pour un format homogène, avec mise en sourdine des bibliothèques externes verbeuses (comme `requests` ou `fastparquet`).
+- **Unified Global Logging Settings**: Centralisation de la configuration `logging.basicConfig` dans `common.py` pour un format homogène, avec mise en sourdine des bibliothèques externes verbeuses (comme `requests` ou `pyarrow`).
 - **Clean PLM Arrondissement Reference (DRY)**: Déclaration de la liste des arrondissements PLM sous forme de constante réutilisable unique `PLM_ARRONDISSEMENTS` au lieu de listes dupliquées.
 - **Standardized Exception Capturing**: Remplacement de tous les formats de trace d'exception manuels et des `print()` par `logging.exception()` ou `exc_info=True`.
 

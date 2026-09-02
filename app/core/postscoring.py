@@ -16,6 +16,8 @@ from agents.utils import (
     sanitize_llm_markdown,
 )
 
+from utils.thread_utils import attach_script_run_ctx
+
 logger = logging.getLogger(__name__)
 ENRICHMENT_DEADLINE_SECONDS = 30
 
@@ -112,10 +114,10 @@ def launch_background_refining(
             }
 
             state = rehydrate_graph_state(input_data)
-            logging.info(
+            logging.debug(
                 f"🔍 [REFINER-DEBUG] commune_pressentie in input_data: {commune_pressentie is not None}"
             )
-            logging.info(
+            logging.debug(
                 f"🔍 [REFINER-DEBUG] commune_pressentie in rehydrated state: {state.search_results.commune_pressentie is not None if state.search_results else False}"
             )
             deps = ODISDeps(state=state, client=client)
@@ -185,9 +187,9 @@ def launch_background_refining(
                 loop.close()
 
     # 4. Threading (Non-blocking)
-    import threading
-
-    thread = threading.Thread(target=bg_refiner_task, args=(store, hash_val))
+    thread = attach_script_run_ctx(
+        threading.Thread(target=bg_refiner_task, args=(store, hash_val))
+    )
     thread.daemon = True  # Ensure it doesn't block exit
     thread.start()
 
@@ -319,14 +321,21 @@ def launch_background_association_enrichment(
             }
             results_store[hash_val] = current_val
 
-    thread = threading.Thread(target=bg_enrichment_task, args=(store,))
+    thread = attach_script_run_ctx(
+        threading.Thread(target=bg_enrichment_task, args=(store,))
+    )
     thread.daemon = True
     thread.start()
-    _schedule_enrichment_deadline(store, hash_val, "association_enrichment_status", codgeos)
+    _schedule_enrichment_deadline(
+        store, hash_val, "association_enrichment_status", codgeos
+    )
 
 
 def launch_background_inclusion_enrichment(
-    engine: Any, codgeos: List[str], hash_val: str, thematique_slugs: Optional[List[str]] = None
+    engine: Any,
+    codgeos: List[str],
+    hash_val: str,
+    thematique_slugs: Optional[List[str]] = None,
 ) -> None:
     """
     Launches a background thread to fetch detailed inclusion services for the search results from the Data Inclusion API.
@@ -484,15 +493,13 @@ def launch_background_inclusion_enrichment(
                         or ""
                     )
                     struct_code_insee = (
-                        struct_obj.get("code_insee")
-                        or service.get("code_insee")
-                        or ""
+                        struct_obj.get("code_insee") or service.get("code_insee") or ""
                     )
 
                     # Filter 1: Broad diffusion zones exclusion (keep local: commune, epci, or None)
                     zone_type = (
-                        service.get("zone_diffusion_type") or ""
-                    ).strip().lower()
+                        (service.get("zone_diffusion_type") or "").strip().lower()
+                    )
                     if zone_type in {"departement", "region", "pays"}:
                         continue
 
@@ -510,17 +517,12 @@ def launch_background_inclusion_enrichment(
                         "ccas-cias" in reseaux
                         or typologie == "CCAS"
                         or "CCAS" in nom_structure.upper()
-                        or "CENTRE COMMUNAL D'ACTION SOCIALE"
-                        in nom_structure.upper()
+                        or "CENTRE COMMUNAL D'ACTION SOCIALE" in nom_structure.upper()
                     )
                     is_external = bool(
                         struct_code_insee and str(struct_code_insee) != str(codgeo)
                     )
-                    if (
-                        is_ccas
-                        and is_external
-                        and "CIAS" not in nom_structure.upper()
-                    ):
+                    if is_ccas and is_external and "CIAS" not in nom_structure.upper():
                         continue
 
                     # Deduplication key: same structure offering same service type
@@ -626,7 +628,9 @@ def launch_background_inclusion_enrichment(
             f"✅ [INCLUSION-ENRICH] Background services enrichment finished for hash {hash_val}"
         )
 
-    thread = threading.Thread(target=bg_inclusion_enrichment_task, args=(store,))
+    thread = attach_script_run_ctx(
+        threading.Thread(target=bg_inclusion_enrichment_task, args=(store,))
+    )
     thread.daemon = True
     thread.start()
     _schedule_enrichment_deadline(store, hash_val, "inclusion_services_status", codgeos)
@@ -877,7 +881,9 @@ def launch_background_job_curation(
                             rome_label=rome_label,
                         )
                         if res.get("status") == EnrichmentStatus.ERROR.value:
-                            failed_queries.append(res.get("error_code", "provider_error"))
+                            failed_queries.append(
+                                res.get("error_code", "provider_error")
+                            )
                             continue
                         offres = res.get("offres", [])[:10]
                         api_total_count += res.get("total", 0)
@@ -1005,8 +1011,10 @@ def launch_background_job_curation(
 
     # 4. Spawn a concurrent thread for each target commune code
     for cg in codgeos:
-        thread = threading.Thread(
-            target=bg_jobs_enrichment_for_city_task, args=(str(cg), store)
+        thread = attach_script_run_ctx(
+            threading.Thread(
+                target=bg_jobs_enrichment_for_city_task, args=(str(cg), store)
+            )
         )
         thread.daemon = True
         thread.start()
@@ -1067,7 +1075,7 @@ def launch_background_audit_log(
                 exc_info=True,
             )
 
-    thread = threading.Thread(target=bg_logging_task)
+    thread = attach_script_run_ctx(threading.Thread(target=bg_logging_task))
     thread.daemon = True
     thread.start()
 
@@ -1181,7 +1189,15 @@ def launch_post_scoring_tasks(engine: Any, config: Any, search_results: Any, h: 
         username = st.session_state.get("username", "unknown")
         org = st.session_state.get("org")
         org_id = org.id if org and hasattr(org, "id") else "unknown"
-    except:
+    except (AttributeError, RuntimeError) as exc:
+        logger.debug(
+            "st.session_state is unavailable in postscoring session capture: %s", exc
+        )
+        interaction_id = "unknown"
+        username = "unknown"
+        org_id = "unknown"
+    except Exception as exc:
+        logger.warning("Error capturing session metadata in postscoring: %s", exc)
         interaction_id = "unknown"
         username = "unknown"
         org_id = "unknown"
@@ -1214,7 +1230,9 @@ def launch_post_scoring_tasks(engine: Any, config: Any, search_results: Any, h: 
             i.code if hasattr(i, "code") else str(i)
             for i in getattr(config, "inc_services_selection", [])
         ]
-        launch_background_inclusion_enrichment(engine, target_codgeos, h, thematique_slugs or None)
+        launch_background_inclusion_enrichment(
+            engine, target_codgeos, h, thematique_slugs or None
+        )
         launch_background_job_curation(target_codgeos, config, h, search_results)
         launch_background_audit_log(
             config,
@@ -1262,7 +1280,9 @@ def launch_post_scoring_tasks(engine: Any, config: Any, search_results: Any, h: 
         i.code if hasattr(i, "code") else str(i)
         for i in getattr(config, "inc_services_selection", [])
     ]
-    launch_background_inclusion_enrichment(engine, target_codgeos, h, thematique_slugs or None)
+    launch_background_inclusion_enrichment(
+        engine, target_codgeos, h, thematique_slugs or None
+    )
 
     # 4b. Launch Employment Enrichment (Detailed Jobs - France Travail)
     launch_background_job_curation(target_codgeos, config, h, search_results)

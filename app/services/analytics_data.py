@@ -194,9 +194,74 @@ def fetch_analytics_data(_client: Any, days: int) -> AnalyticsDataResult:
     )
 
 
+BILLING_EXPORT_DEFAULT_TABLE = (
+    "odis-stream2-app.odis_logs.gcp_billing_export_v1_011680_B35255_2DA84B"
+)
+
+
+@st.cache_data
+def fetch_gcp_billing_data(
+    _client: Any,
+    days: int,
+    projects: tuple[str, ...] = ("odis-stream2-app",),
+) -> ServiceOutcome[pd.DataFrame]:
+    """Fetch GCP billing export records aggregated by day, project, service and SKU."""
+    if _client is None:
+        return ServiceOutcome[pd.DataFrame](
+            status=OutcomeStatus.UNAVAILABLE,
+            error_code="ANALYTICS-BQ-UNAVAILABLE",
+        )
+
+    billing_table = os.getenv("ODIS_BILLING_EXPORT_TABLE", BILLING_EXPORT_DEFAULT_TABLE)
+    project_list_sql = ", ".join(f"'{p}'" for p in projects)
+
+    query_billing = f"""
+        SELECT
+            DATE(usage_start_time) AS usage_date,
+            project.id AS project_id,
+            IFNULL(project.name, project.id) AS project_name,
+            service.description AS service_name,
+            sku.description AS sku_description,
+            currency,
+            SUM(cost) AS cost_gross,
+            SUM((SELECT IFNULL(SUM(c.amount), 0) FROM UNNEST(credits) c)) AS credits,
+            SUM(cost + (SELECT IFNULL(SUM(c.amount), 0) FROM UNNEST(credits) c)) AS cost_net
+        FROM `{billing_table}`
+        WHERE usage_start_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {days} DAY)
+          AND project.id IN ({project_list_sql})
+        GROUP BY usage_date, project_id, project_name, service_name, sku_description, currency
+        ORDER BY usage_date DESC, cost_net DESC
+    """
+    return _query_outcome(_client, query_billing, "gcp_billing_export")
+
+
+@st.cache_data
+def fetch_agent_costs_data(_client: Any, days: int) -> ServiceOutcome[pd.DataFrame]:
+    """Fetch AI agent execution estimated costs aggregated by day."""
+    if _client is None:
+        return ServiceOutcome[pd.DataFrame](
+            status=OutcomeStatus.UNAVAILABLE,
+            error_code="ANALYTICS-BQ-UNAVAILABLE",
+        )
+
+    query_agent_costs = f"""
+        SELECT
+            DATE(timestamp) AS usage_date,
+            COUNT(*) AS run_count,
+            SUM(cost_eur) AS total_estimated_cost_eur
+        FROM `{_client.project}.{dataset_id}.agent_state_logs`
+        WHERE TIMESTAMP(timestamp) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {days} DAY)
+        GROUP BY usage_date
+        ORDER BY usage_date DESC
+    """
+    return _query_outcome(_client, query_agent_costs, "agent_state_logs")
+
+
 def clear_analytics_cache() -> None:
     """Invalidate only the query cache owned by this page."""
     fetch_analytics_data.clear()
+    fetch_gcp_billing_data.clear()
+    fetch_agent_costs_data.clear()
 
 
 def parse_json_payload(

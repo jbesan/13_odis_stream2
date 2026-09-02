@@ -1,3 +1,4 @@
+import os
 import pytest
 import pandas as pd
 import hashlib
@@ -174,3 +175,26 @@ def test_resolve_dataset_path_gcs_fallback(mock_storage_client_cls, tmp_path, mo
     assert "salesforce_jaccueille_bdv.parquet" in resolved
     assert "v-test-1" in resolved
     assert dataset_blob.download_to_filename.called
+
+
+def test_dataset_cache_base_dir_routing(monkeypatch, tmp_path):
+    """Verifies that dataset cache directory routes properly across environments."""
+    # 1. Custom ODIS_CACHE_DIR override
+    monkeypatch.setenv("ODIS_CACHE_DIR", str(tmp_path / "custom_cache"))
+    assert data_loader._get_dataset_cache_base_dir() == str(tmp_path / "custom_cache")
+
+    # 2. Cloud Run (K_SERVICE)
+    monkeypatch.delenv("ODIS_CACHE_DIR", raising=False)
+    monkeypatch.delenv("ODIS_DATA_CACHE_DIR", raising=False)
+    monkeypatch.setenv("K_SERVICE", "odis-app-staging")
+    assert data_loader._get_dataset_cache_base_dir() == os.path.join(
+        data_loader.tempfile.gettempdir(), "odis_data_cache"
+    )
+
+    # 3. Local Development (neither K_SERVICE nor PYTEST_CURRENT_TEST)
+    monkeypatch.delenv("K_SERVICE", raising=False)
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    import config as cfg
+    assert data_loader._get_dataset_cache_base_dir() == os.path.join(
+        cfg.APP_DIR, "data", "datasets"
+    )

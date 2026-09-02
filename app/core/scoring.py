@@ -92,7 +92,7 @@ def _resolve_discrete_label(
                 if abs(float(k) - f_score) < 1e-4:
                     return str(label)
             except (ValueError, TypeError):
-                pass
+                continue
 
     # Fallback to direct key match (e.g. string key "1.0")
     if scaled_score in mapping:
@@ -189,7 +189,12 @@ class ScoringEngine:
             codes = [loc_code] if isinstance(loc_code, str) else (loc_code or [])
             filtered_df = df[df["reg_code"].isin(codes)]
         elif loc_type == "france":
-            filtered_df = df[~df["dep_code"].astype(str).str.startswith(("97", "98"))]
+            if hasattr(cfg, "METROPOLITAN_DEPT_CODES_SET"):
+                filtered_df = df[
+                    df["dep_code"].astype(str).isin(cfg.METROPOLITAN_DEPT_CODES_SET)
+                ]
+            else:
+                filtered_df = df[~df["dep_code"].astype(str).str.startswith(("97", "98"))]
         else:
             filtered_df = pd.DataFrame()
 
@@ -200,16 +205,22 @@ class ScoringEngine:
             and getattr(config, "org_context", None) == "jaccueille"
         ):
             # 1. Bassin de vie level: presence of at least one contact (accueillant) OR prospect
-            bv_with_presence = df[
-                (df.get("heb_accueillants_count", 0) > 0)
-                | (df.get("prospects_count", 0) > 0)
-            ]["bassin_de_vie"].dropna().unique()
+            bv_with_presence = (
+                df[
+                    (df.get("heb_accueillants_count", 0) > 0)
+                    | (df.get("prospects_count", 0) > 0)
+                ]["bassin_de_vie"]
+                .dropna()
+                .unique()
+            )
 
             # 2. Department level: must contain coordinators (strategic locations)
             strategic_deps = getattr(config, "org_strategic_locations", [])
-            bv_in_strategic_deps = df[df["dep_code"].isin(strategic_deps)][
-                "bassin_de_vie"
-            ].dropna().unique()
+            bv_in_strategic_deps = (
+                df[df["dep_code"].isin(strategic_deps)]["bassin_de_vie"]
+                .dropna()
+                .unique()
+            )
 
             # 3. Inner join: intersection of both sets of bassins de vie
             valid_bvs = set(bv_with_presence).intersection(set(bv_in_strategic_deps))
@@ -298,7 +309,9 @@ class ScoringEngine:
             if score_id in df.columns:
                 if availability_column in df.columns:
                     available = df[availability_column].fillna(False).astype(bool)
-                    df.loc[available, score_id] = df.loc[available, score_id].fillna(0.0)
+                    df.loc[available, score_id] = df.loc[available, score_id].fillna(
+                        0.0
+                    )
                 else:
                     df[score_id] = df[score_id].fillna(0.0)
             else:
@@ -371,7 +384,9 @@ class ScoringEngine:
             return pd.Series(1.0, index=df.index, dtype=float)
 
         # 1. Resolve population of Bassin de Vie (fallback to commune population if BdV is unavailable)
-        pop_col = "population_bv_bdv" if "population_bv_bdv" in df.columns else "population"
+        pop_col = (
+            "population_bv_bdv" if "population_bv_bdv" in df.columns else "population"
+        )
         if pop_col not in df.columns:
             return pd.Series(1.0, index=df.index, dtype=float)
 
@@ -400,7 +415,6 @@ class ScoringEngine:
         self, df: pd.DataFrame, config: SearchCriterias
     ) -> pd.DataFrame:
         df = df.copy()
-
 
         # Use cached active criteria if available
         active = (
@@ -465,7 +479,9 @@ class ScoringEngine:
                         # Bassin de Vie opportunities act as a bonus to local ones
                         combined = s_c + (1.0 - s_c) * (s_b * bdv_f)
                         val = pd.Series(
-                            np.where(val_commune.notna() | val_bdv.notna(), combined, np.nan),
+                            np.where(
+                                val_commune.notna() | val_bdv.notna(), combined, np.nan
+                            ),
                             index=df.index,
                         )
                     elif bdv_f < 0.0:
@@ -543,7 +559,11 @@ class ScoringEngine:
                     out=np.zeros_like(denom_arr, dtype=float),
                     where=denom_arr > 0,
                 )
-                s = pd.Series(np.where(denom_arr > 0, raw_scores, np.nan), index=df.index, dtype=float)
+                s = pd.Series(
+                    np.where(denom_arr > 0, raw_scores, np.nan),
+                    index=df.index,
+                    dtype=float,
+                )
 
                 # Absolute Category Score (0.0 to 1.0): raw weighted mean of active criteria
                 df[f"{category}_cat_score"] = s
@@ -844,9 +864,8 @@ class ScoringEngine:
             )
             active.add(f"log_loyer_moyen_{type_log}_scaled")
 
-        is_logement_social = (
-            logement_type == "Logement Social"
-            or (isinstance(logement_type, list) and "Logement Social" in logement_type)
+        is_logement_social = logement_type == "Logement Social" or (
+            isinstance(logement_type, list) and "Logement Social" in logement_type
         )
         if is_logement_social:
             active.add("log_soc_inoc_scaled")
@@ -944,10 +963,12 @@ class ScoringEngine:
             static_row.get("ter_insecurite_rate", 0.0)
         )
         territoire_data.is_strategic = bool(static_row.get("is_strategic", False))
-        
+
         med_val = static_row.get("maire_extreme_droite")
-        territoire_data.maire_extreme_droite = bool(med_val) if pd.notna(med_val) else False
-        
+        territoire_data.maire_extreme_droite = (
+            bool(med_val) if pd.notna(med_val) else False
+        )
+
         eh_val = static_row.get("electoral_history")
         territoire_data.electoral_history = str(eh_val) if pd.notna(eh_val) else None
 
@@ -1032,9 +1053,7 @@ class ScoringEngine:
             norm_cat = cat.replace("é", "e").replace("ê", "e").replace("à", "a").lower()
             active_norm_cats.add(norm_cat)
 
-            w_crit = get_effective_weight(
-                score_id, config, float(score_row["weight"])
-            )
+            w_crit = get_effective_weight(score_id, config, float(score_row["weight"]))
 
             cat_internal_weights[norm_cat] = (
                 cat_internal_weights.get(norm_cat, 0.0) + w_crit
@@ -1106,7 +1125,9 @@ class ScoringEngine:
             unit = score_row.get("unit", score_row.get("description", ""))
             fmt = score_row.get("format", None)
             m_type_raw = score_row.get("metric_type", "continuous")
-            metric_type = m_type_raw if m_type_raw in ["continuous", "discrete"] else "continuous"
+            metric_type = (
+                m_type_raw if m_type_raw in ["continuous", "discrete"] else "continuous"
+            )
             discrete_mapping = score_row.get("discrete_mapping", None)
             if not isinstance(discrete_mapping, dict):
                 discrete_mapping = None
@@ -1144,9 +1165,8 @@ class ScoringEngine:
 
             if bdv_f != 0.0:
                 sid_bdv = f"{score_id}_bdv"
-                has_bdv_data = (
-                    (sid_bdv in row and pd.notna(row[sid_bdv]))
-                    or (sid_bdv in static_row and pd.notna(static_row[sid_bdv]))
+                has_bdv_data = (sid_bdv in row and pd.notna(row[sid_bdv])) or (
+                    sid_bdv in static_row and pd.notna(static_row[sid_bdv])
                 )
                 if has_bdv_data:
                     bdv_applied = True
@@ -1461,8 +1481,10 @@ class ScoringEngine:
             ),
         ]:
             for key, col in mapping.items():
-                if col in row:
+                if col in row and pd.notna(row[col]):
                     data_obj.facility_counts[key] = int(row[col])
+                else:
+                    data_obj.facility_counts[key] = 0
 
             if codgeo_str and not annuaire.empty:
                 # Extra safety: filter by codgeo and category to avoid leaks
@@ -1525,7 +1547,9 @@ class ScoringEngine:
                                 and code in self.inclusion_services_index.index
                             ):
                                 val = self.inclusion_services_index.loc[code, "label"]
-                                label = val if isinstance(val, str) else str(val.iloc[0])
+                                label = (
+                                    val if isinstance(val, str) else str(val.iloc[0])
+                                )
                             grouped_incl[label] = sorted(list(set(names)))
 
                         incl_data.services_grouped = grouped_incl
@@ -1577,7 +1601,9 @@ class ScoringEngine:
         )
 
         pop_coeff_val = float(row.get("coeff_population_gauss", 1.0))
-        score_besoins_val = float(row.get("score_besoins", row.get("weighted_score", 0.0)))
+        score_besoins_val = float(
+            row.get("score_besoins", row.get("weighted_score", 0.0))
+        )
 
         return CommuneResult(
             codgeo=str(row.name),
@@ -1789,7 +1815,11 @@ class ScoringEngine:
 
         extra_dfs = []
         c_code_str = str(c_code) if c_code is not None else None
-        if c_code_str and c_code_str in self.df_all_communes.index and c_code_str not in results.index:
+        if (
+            c_code_str
+            and c_code_str in self.df_all_communes.index
+            and c_code_str not in results.index
+        ):
             c_df = self._prune_irrelevant_metrics(
                 self.df_all_communes.loc[[c_code_str]].copy(), config, aggressive=False
             )
@@ -1874,7 +1904,9 @@ class ScoringEngine:
         if "territoire_cat_score" in odis_exploded.columns:
             sort_cols.append("territoire_cat_score")
 
-        odis_sorted = odis_exploded.sort_values(by=sort_cols, ascending=[False] * len(sort_cols))
+        odis_sorted = odis_exploded.sort_values(
+            by=sort_cols, ascending=[False] * len(sort_cols)
+        )
 
         # 🧪 SOTA: Limit the number of polygons
         if len(odis_sorted) > cfg.MAX_MAP_POLYGONS:
@@ -1902,7 +1934,11 @@ class ScoringEngine:
         # Operating in-place
 
         expected_departments = {
-            *[str(department).zfill(2) for department in range(1, 96) if department != 20],
+            *[
+                str(department).zfill(2)
+                for department in range(1, 96)
+                if department != 20
+            ],
             "2A",
             "2B",
         }
@@ -1985,7 +2021,9 @@ class ScoringEngine:
                         "total_postes"
                     ].sum()
                     df[col_bdv_raw] = df["bassin_de_vie"].map(bdv_live_counts)
-                    df.loc[available, col_bdv_raw] = df.loc[available, col_bdv_raw].fillna(0)
+                    df.loc[available, col_bdv_raw] = df.loc[
+                        available, col_bdv_raw
+                    ].fillna(0)
                 else:
                     df[col_bdv_raw] = np.nan
 
@@ -1999,12 +2037,16 @@ class ScoringEngine:
                 min_b, max_b = self._get_bounds(f"{col_raw}_scaled_bdv")
                 if pd.isna(max_b):
                     max_b = 50.0
-                df[f"{col_raw}_scaled_bdv"] = self._scale_series(df[col_bdv_raw], min_b, max_b)
+                df[f"{col_raw}_scaled_bdv"] = self._scale_series(
+                    df[col_bdv_raw], min_b, max_b
+                )
 
                 min_t, max_t = self._get_bounds(f"{col_tension_raw}_scaled")
                 if pd.isna(max_t):
                     max_t = 5.0
-                df[f"{col_tension_raw}_scaled"] = self._scale_series(df[col_tension_raw], min_t, max_t)
+                df[f"{col_tension_raw}_scaled"] = self._scale_series(
+                    df[col_tension_raw], min_t, max_t
+                )
                 df[f"{col_tension_raw}_scaled__available"] = available
 
                 # --- SIAE Jobs Matching (New F-39) ---
@@ -2016,7 +2058,9 @@ class ScoringEngine:
                     siae_prefixes = {c[:3] for c in adult_romes if len(c) >= 3}
 
                     siae_source = self.siae_jobs_data
-                    siae_match = siae_source[siae_source["rome"].str[:3].isin(siae_prefixes)]
+                    siae_match = siae_source[
+                        siae_source["rome"].str[:3].isin(siae_prefixes)
+                    ]
 
                     siae_counts = siae_match.groupby("codgeo").size()
                     df[col_siae_raw] = df.index.map(siae_counts)
@@ -2028,7 +2072,9 @@ class ScoringEngine:
                 min_s, max_s = self._get_bounds(f"{col_siae_raw}_scaled")
                 if pd.isna(max_s):
                     max_s = 5.0
-                df[f"{col_siae_raw}_scaled"] = self._scale_series(df[col_siae_raw], min_s, max_s)
+                df[f"{col_siae_raw}_scaled"] = self._scale_series(
+                    df[col_siae_raw], min_s, max_s
+                )
                 df[f"{col_siae_raw}_scaled__available"] = (
                     available if siae_jobs_available else False
                 )
@@ -2085,7 +2131,9 @@ class ScoringEngine:
                                 form_map_bdv.get(b, set()).intersection(prefs)
                             )
                         )
-                        min_b_bdv, max_b_bdv = self._get_bounds(f"{score_key}_scaled_bdv")
+                        min_b_bdv, max_b_bdv = self._get_bounds(
+                            f"{score_key}_scaled_bdv"
+                        )
                         if pd.isna(max_b_bdv):
                             max_b_bdv = float(len(prefs))
                         df[f"{score_key}_scaled_bdv"] = self._scale_series(
@@ -2131,7 +2179,9 @@ class ScoringEngine:
         # --- Density ---
         if "nb_stops_total" in df.columns:
             population = df["population"].where(df["population"] > 0)
-            df["mob_trans_pub_stop_density"] = (df["nb_stops_total"] / population) * 1000
+            df["mob_trans_pub_stop_density"] = (
+                df["nb_stops_total"] / population
+            ) * 1000
             min_b, max_b = self._get_bounds("mob_trans_pub_density_scaled")
             if pd.isna(max_b):
                 max_b = 10.0

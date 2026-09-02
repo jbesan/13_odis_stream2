@@ -394,8 +394,8 @@ def run_etl():
         )
 
         os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
-        agg.to_parquet(OUTPUT_PATH, index=False, engine="fastparquet")
-        coverage.to_parquet(COVERAGE_OUTPUT_PATH, index=False, engine="fastparquet")
+        agg.to_parquet(OUTPUT_PATH, index=False)
+        coverage.to_parquet(COVERAGE_OUTPUT_PATH, index=False)
 
         duration = (time.time() - METRICS["start_time"]) / 60
         print("\n=== ETL SUMMARY ===")

@@ -18,7 +18,7 @@ from agents.utils import (
     is_terminal_graph_run_status,
     odis_get_bg_result,
 )
-from core import maps
+from core import maps_deck
 
 # Sub-module imports & re-exports for complete backward compatibility
 from ui.results_actions import (
@@ -298,20 +298,25 @@ def _result_highlight_callback(index: int) -> None:
             return
         commune = search_results.results[index]
 
-    is_highlighted, highlighted_rank = st.session_state.highlighted_result
+    is_highlighted, highlighted_rank = st.session_state.get(
+        "highlighted_result", [False, None]
+    )
 
     # If the same button is clicked again, un-highlight it
     if is_highlighted and index == highlighted_rank:
-        st.session_state.highlighted_result = [False, None]
-        st.session_state.zoom = None
+        st.session_state["highlighted_result"] = [False, None]
+        st.session_state["zoom"] = None
+        st.session_state["center"] = st.session_state.get(
+            "initial_center", list(cfg.DEFAULT_MAP_CENTER)
+        )
     else:
-        st.session_state.highlighted_result = [True, index]
-        c_pt = maps._get_geom(
-            commune, "centroid", gdf_context=st.session_state.processed_gdf
+        st.session_state["highlighted_result"] = [True, index]
+        c_pt = maps_deck._get_geom(
+            commune, "centroid", gdf_context=st.session_state.get("processed_gdf")
         )
         if c_pt:
-            st.session_state.center = [c_pt.y, c_pt.x]
-        st.session_state.zoom = cfg.DETAIL_MAP_ZOOM
+            st.session_state["center"] = [c_pt.y, c_pt.x]
+        st.session_state["zoom"] = cfg.DETAIL_MAP_ZOOM
 
 
 def _on_result_feedback(cid: str, c_name: str, score: float, fb_key: str) -> None:
@@ -480,7 +485,7 @@ def _display_result_details(commune: CommuneResult) -> None:
     """Displays the detailed information for a single search result (Commune)."""
     h = st.session_state.get("active_search_hash")
 
-    with st.container(border=True):
+    with st.container(key='city_result_card', border=True):
         # --- Pitch ---
         population = f"{commune.population:,}".replace(",", " ")
         libgeo = commune.name

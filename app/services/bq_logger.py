@@ -66,8 +66,10 @@ def log_agent_state_to_bq(
                 interaction_id = get_interaction_id()
             if not username:
                 username = st.session_state.get("username", "unknown")
-        except Exception:
-            pass  # session_state is unavailable in background threads — that's expected
+        except (AttributeError, RuntimeError) as exc:
+            logger.debug("Session state unavailable in background thread: %s", exc)
+        except Exception as exc:
+            logger.warning("Error resolving session metadata in bq_logger: %s", exc)
 
         interaction_id = interaction_id or "unknown"
         username = username or "unknown"
@@ -133,28 +135,16 @@ def log_agent_state_to_bq(
             "token_cost_eur": float(usage_value("token_cost_eur", 0.0) or 0.0),
             "input_tokens": int(usage_value("input_tokens", 0) or 0),
             "input_tokens_new": int(usage_value("input_tokens_new", 0) or 0),
-            "input_tokens_cached": int(
-                usage_value("cache_read_tokens", 0) or 0
-            ),
+            "input_tokens_cached": int(usage_value("cache_read_tokens", 0) or 0),
             "output_tokens": int(usage_value("output_tokens", 0) or 0),
-            "cache_write_tokens": int(
-                usage_value("cache_write_tokens", 0) or 0
-            ),
-            "cache_hit_ratio": float(
-                usage_value("cache_hit_ratio", 0.0) or 0.0
-            ),
+            "cache_write_tokens": int(usage_value("cache_write_tokens", 0) or 0),
+            "cache_hit_ratio": float(usage_value("cache_hit_ratio", 0.0) or 0.0),
             "requests": int(usage_value("requests", 0) or 0),
             "tool_calls": int(usage_value("tool_calls", 0) or 0),
-            "grounding_queries": int(
-                usage_value("grounding_queries", 0) or 0
-            ),
-            "grounding_cost_eur": float(
-                usage_value("grounding_cost_eur", 0.0) or 0.0
-            ),
+            "grounding_queries": int(usage_value("grounding_queries", 0) or 0),
+            "grounding_cost_eur": float(usage_value("grounding_cost_eur", 0.0) or 0.0),
             "places_requests": int(usage_value("places_requests", 0) or 0),
-            "places_cost_eur": float(
-                usage_value("places_cost_eur", 0.0) or 0.0
-            ),
+            "places_cost_eur": float(usage_value("places_cost_eur", 0.0) or 0.0),
             "unpriced_model_requests": int(
                 usage_value("unpriced_model_requests", 0) or 0
             ),

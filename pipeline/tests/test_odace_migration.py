@@ -59,7 +59,7 @@ def test_odace_client_fetch_table_success(mock_get, temp_cache_dirs):
         ]
     )
     pq_buffer = io.BytesIO()
-    df_dummy.to_parquet(pq_buffer, engine="fastparquet")
+    df_dummy.to_parquet(pq_buffer)
     pq_bytes = pq_buffer.getvalue()
 
     mock_resp = MagicMock()
@@ -140,7 +140,7 @@ def test_clean_caf_odace_success(mock_get_client, temp_cache_dirs):
     out_file = clean_dir / "caf.parquet"
     assert out_file.exists()
 
-    df_clean = pd.read_parquet(out_file, engine="fastparquet")
+    df_clean = pd.read_parquet(out_file)
     assert list(df_clean.columns) == ["codgeo", "taux_couverture"]
     # Should only contain max year (2023)
     assert len(df_clean) == 1
@@ -294,7 +294,7 @@ def test_clean_housing_occupation_uses_odace_only(
     ):
         clean_housing_occupation(config, MagicMock(spec=PipelineLogger))
 
-    output = pd.read_parquet(clean_dir / "housing_occupation.parquet", engine="fastparquet")
+    output = pd.read_parquet(clean_dir / "housing_occupation.parquet")
     assert len(output) == 2
     mock_client.fetch_table.assert_called_once_with("fact_occupation_logement")
 
@@ -374,7 +374,7 @@ def test_clean_communes_keeps_odace_commune_sk_for_candidate_joins(
 
     clean_communes(config, MagicMock(spec=PipelineLogger))
 
-    result = pd.read_parquet(clean_dir / "communes.parquet", engine="fastparquet")
+    result = pd.read_parquet(clean_dir / "communes.parquet")
     assert result.loc[0, "commune_sk"] == "odace-sk-75001"
 
 
@@ -496,7 +496,7 @@ def test_clean_bpe_odace_failure_does_not_use_legacy_raw(
             }
         ]
     )
-    df_raw.to_parquet(local_raw_path, engine="fastparquet")
+    df_raw.to_parquet(local_raw_path)
 
     config = {
         "sources": {

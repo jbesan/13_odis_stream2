@@ -330,18 +330,10 @@ def fetch_source(
                     f"🔄 [Static Source] Swapping staging files to active for '{name}' immediately."
                 )
                 active_extracted_path = CACHE_DIR / extracted_file
-                if active_extracted_path.exists():
-                    try:
-                        os.remove(active_extracted_path)
-                    except:
-                        pass
+                active_extracted_path.unlink(missing_ok=True)
                 os.rename(staging_extracted_path, active_extracted_path)
 
-                if local_path.exists():
-                    try:
-                        os.remove(local_path)
-                    except:
-                        pass
+                local_path.unlink(missing_ok=True)
                 os.rename(staging_local_path, local_path)
                 return active_extracted_path
 
@@ -351,11 +343,7 @@ def fetch_source(
             logging.info(
                 f"🔄 [Static Source] Swapping staging raw file for '{name}' to active."
             )
-            if local_path.exists():
-                try:
-                    os.remove(local_path)
-                except:
-                    pass
+            local_path.unlink(missing_ok=True)
             os.rename(staging_local_path, local_path)
             return local_path
 
@@ -408,7 +396,7 @@ def fetch_rome_referential(
         df = pd.DataFrame(data)
         if "code" in df.columns and "libelle" in df.columns:
             df = df[["code", "libelle"]].rename(columns={"libelle": "label"})
-            df.to_parquet(local_path, engine="fastparquet")
+            df.to_parquet(local_path)
             logging.info(
                 f"✅ [ROME] Saved {len(df)} métiers to {local_path} from France Travail API"
             )
@@ -445,7 +433,7 @@ def fetch_rome_referential(
             # Normalize column names just in case
             if "code" in df.columns and "libelle" in df.columns:
                 df = df[["code", "libelle"]].rename(columns={"libelle": "label"})
-                df.to_parquet(local_path, engine="fastparquet")
+                df.to_parquet(local_path)
                 logging.info(
                     f"✅ [ROME] Saved {len(df)} métiers to {local_path} from static ROME referential"
                 )
@@ -515,7 +503,7 @@ def clean_population_active(config: Dict[str, Any], logger: PipelineLogger):
                     actif_2022["codgeo"] = actif_2022["codgeo"].astype(str).str.zfill(5)
 
                     output_path = CLEAN_DIR / "population_active.parquet"
-                    actif_2022.to_parquet(output_path, engine="fastparquet")
+                    actif_2022.to_parquet(output_path)
                     logger.log_step(
                         "clean_population_active",
                         "COMPLETED",
@@ -574,7 +562,7 @@ def clean_lovac(config: Dict[str, Any], logger: PipelineLogger):
                 )
 
                 output_path = CLEAN_DIR / "lovac.parquet"
-                df_out.to_parquet(output_path, engine="fastparquet")
+                df_out.to_parquet(output_path)
                 logger.log_step(
                     "clean_lovac", "COMPLETED", {"rows": len(df_out), "source": "odace"}
                 )
@@ -632,7 +620,7 @@ def clean_rpls(config: Dict[str, Any], logger: PipelineLogger):
                     )
 
                     output_path = CLEAN_DIR / "rpls.parquet"
-                    df_out.to_parquet(output_path, engine="fastparquet")
+                    df_out.to_parquet(output_path)
                     logger.log_step(
                         "clean_rpls",
                         "COMPLETED",
@@ -679,7 +667,7 @@ def clean_caf(config: Dict[str, Any], logger: PipelineLogger):
                 )
 
                 output_path = CLEAN_DIR / "caf.parquet"
-                df_out.to_parquet(output_path, engine="fastparquet")
+                df_out.to_parquet(output_path)
                 logger.log_step(
                     "clean_caf",
                     "COMPLETED",
@@ -734,7 +722,7 @@ def clean_services_inclusion(config: Dict[str, Any], logger: PipelineLogger):
 
                         try:
                             raw_extracted = ast.literal_eval(val)
-                        except:
+                        except (ValueError, SyntaxError):
                             raw_extracted = [val]
                 else:
                     raw_extracted = [val]
@@ -756,7 +744,7 @@ def clean_services_inclusion(config: Dict[str, Any], logger: PipelineLogger):
             flatten(raw_extracted)
             return flat_list
         except Exception as e:
-            # logging.warning(f"Error parsing thematiques: {val} -> {e}")
+            logging.warning(f"Error parsing thematiques: {val} -> {e}")
             return []
 
     df["thematique_list"] = df["thematiques"].apply(parse_thematiques)
@@ -790,7 +778,7 @@ def clean_services_inclusion(config: Dict[str, Any], logger: PipelineLogger):
     df_out = df_out.drop(columns=["codgeo_numeric"])
 
     output_path = CLEAN_DIR / "services_inclusion.parquet"
-    df_out.to_parquet(output_path, engine="fastparquet")
+    df_out.to_parquet(output_path)
     logger.log_step(
         "clean_services_inclusion",
         "COMPLETED",
@@ -842,11 +830,12 @@ def clean_structures_inclusion(config: Dict[str, Any], logger: PipelineLogger):
                     try:
                         # Handle "['a', 'b']"
                         return ast.literal_eval(val)
-                    except:
-                        pass
+                    except (ValueError, SyntaxError):
+                        return [val]
                 return [val]  # Fallback for single string
             return []
-        except:
+        except Exception as exc:
+            logging.debug(f"Failed to parse reseaux_porteurs '{val}': {exc}")
             return []
 
     df["reseaux_parsed"] = df["reseaux_porteurs"].apply(parse_reseaux)
@@ -918,7 +907,7 @@ def clean_structures_inclusion(config: Dict[str, Any], logger: PipelineLogger):
     df_out = df_filtered[existing_cols]
 
     output_path = CLEAN_DIR / "structures_inclusion.parquet"
-    df_out.to_parquet(output_path, engine="fastparquet")
+    df_out.to_parquet(output_path)
     logger.log_step(
         "clean_structures_inclusion",
         "COMPLETED",
@@ -953,7 +942,7 @@ def clean_associations(config: Dict[str, Any], logger: PipelineLogger):
                 )
 
                 output_path.parent.mkdir(parents=True, exist_ok=True)
-                df_out.to_parquet(output_path, engine="fastparquet")
+                df_out.to_parquet(output_path)
                 logger.log_step(
                     "clean_associations",
                     "COMPLETED",
@@ -1058,7 +1047,7 @@ def clean_refugee_associations(config: Dict[str, Any], logger: PipelineLogger):
     df_out = df_refug[[c for c in useful_cols if c in df_refug.columns]].copy()
 
     output_path = CLEAN_DIR / "refugee_associations.parquet"
-    df_out.to_parquet(output_path, engine="fastparquet")
+    df_out.to_parquet(output_path)
     _save_rag_cache(output_path, shared_path)
     logger.log_source("rna_rag_refugee", "REFRESHED", output_path)
     logger.log_step(
@@ -1092,7 +1081,7 @@ def clean_population(config: Dict[str, Any], logger: PipelineLogger):
                 # No longer overriding population for Paris, Marseille, and Lyon as Odace API now returns correct populations for parent codes
 
                 output_path = CLEAN_DIR / "population.parquet"
-                df_out.to_parquet(output_path, engine="fastparquet")
+                df_out.to_parquet(output_path)
                 logger.log_step(
                     "clean_population",
                     "COMPLETED",
@@ -1218,7 +1207,7 @@ def clean_communes(config: Dict[str, Any], logger: PipelineLogger):
                 ]
                 df_final = pd.DataFrame(gdf[[c for c in out_cols if c in gdf.columns]])
 
-                df_final.to_parquet(output_path, engine="fastparquet")
+                df_final.to_parquet(output_path)
                 logger.log_step(
                     "clean_communes",
                     "COMPLETED",
@@ -1297,7 +1286,7 @@ def clean_political(config: Dict[str, Any], logger: PipelineLogger):
 
         df_out = df[["codgeo", "pol_num", "maire_extreme_droite"]]
         output_path = CLEAN_DIR / "political.parquet"
-        df_out.to_parquet(output_path, engine="fastparquet")
+        df_out.to_parquet(output_path)
         logger.log_step("clean_political", "COMPLETED", {"path": str(output_path)})
     else:
         logging.warning(f"Political: Columns not found. Found: {df.columns}")
@@ -1566,7 +1555,7 @@ def clean_electoral_history(config: Dict[str, Any], logger: PipelineLogger):
     )
 
     output_path = CLEAN_DIR / "electoral_history.parquet"
-    df_out.to_parquet(output_path, engine="fastparquet")
+    df_out.to_parquet(output_path)
     logger.log_step("clean_electoral_history", "COMPLETED", {"path": str(output_path)})
 
 
@@ -1712,7 +1701,7 @@ def clean_housing_occupation(config: Dict[str, Any], logger: PipelineLogger):
 
         output_path = CLEAN_DIR / "housing_occupation.parquet"
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        df_out.to_parquet(output_path, engine="fastparquet")
+        df_out.to_parquet(output_path)
         logger.log_step(
             "clean_housing_occupation",
             "COMPLETED",
@@ -1895,7 +1884,7 @@ def clean_school_effectifs(config: Dict[str, Any], logger: PipelineLogger):
     )
 
     output_path = CLEAN_DIR / "school_effectifs.parquet"
-    df_agg.to_parquet(output_path, engine="fastparquet")
+    df_agg.to_parquet(output_path)
     logger.log_step(
         "clean_school_effectifs",
         "COMPLETED",
@@ -2114,7 +2103,7 @@ def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
         )
         .reset_index()
     )
-    df_edu_cols.to_parquet(output_edu_cols, engine="fastparquet")
+    df_edu_cols.to_parquet(output_edu_cols)
 
     # --- 2. Housing & Accommodation (Logement & Hébergement) ---
     df_heb = df[df["TYPEQU"].isin(["D703", "D704", "D705", "D710"])].copy()
@@ -2164,7 +2153,7 @@ def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
         )
         .reset_index()
     )
-    df_heb_cols.to_parquet(output_heb_cols, engine="fastparquet")
+    df_heb_cols.to_parquet(output_heb_cols)
 
     # --- 3. Health (Santé) ---
     df_sante = df[
@@ -2209,7 +2198,7 @@ def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
         )
         .reset_index()
     )
-    df_sante_cols.to_parquet(output_sante_cols, engine="fastparquet")
+    df_sante_cols.to_parquet(output_sante_cols)
 
     # --- 4. Action Sociale ---
     df_act = df[df["TYPEQU"].isin(["A125", "A128", "A129", "D711"])].copy()
@@ -2238,7 +2227,7 @@ def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
         )
         .reset_index()
     )
-    df_act_cols.to_parquet(output_act_cols, engine="fastparquet")
+    df_act_cols.to_parquet(output_act_cols)
 
     # --- 5. Gares ---
     df_gares = df[df["TYPEQU"].isin(["E107", "E108", "E109"])].copy()
@@ -2250,7 +2239,7 @@ def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
         .reset_index()
     )
     df_gares_cols["has_gare"] = (df_gares_cols["gare_count"] > 0).astype(int)
-    df_gares_cols.to_parquet(output_gares_cols, engine="fastparquet")
+    df_gares_cols.to_parquet(output_gares_cols)
 
     # --- 6. Unified POIs output ---
     pois_parts = []
@@ -2374,7 +2363,7 @@ def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
 
     if pois_parts:
         pois_df = pd.concat(pois_parts, ignore_index=True)
-        pois_df.to_parquet(output_pois, engine="fastparquet")
+        pois_df.to_parquet(output_pois)
         logger.log_step(
             "clean_bpe",
             "COMPLETED",
@@ -2479,7 +2468,7 @@ def clean_hebergement_rna(config: Dict[str, Any], logger: PipelineLogger):
         agg = df_iml.merge(df_cit, on="codgeo", how="outer").fillna(0)
         agg["codgeo"] = agg["codgeo"].astype(str).str.zfill(5)
 
-        agg.to_parquet(output_agg, engine="fastparquet")
+        agg.to_parquet(output_agg)
         _save_rag_cache(output_agg, shared_path)
         logger.log_source("rna_rag_hebergement", "REFRESHED", output_agg)
         logger.log_step(
@@ -2539,7 +2528,7 @@ def clean_loyers(config: Dict[str, Any], logger: PipelineLogger):
     df_out = df_out.groupby("codgeo")["loyer_app_m2"].mean().reset_index()
 
     output_path = CLEAN_DIR / "loyers.parquet"
-    df_out.to_parquet(output_path, engine="fastparquet")
+    df_out.to_parquet(output_path)
     logger.log_step("clean_loyers", "COMPLETED", {"path": str(output_path)})
 
 
@@ -2604,7 +2593,7 @@ def clean_population_details(config: Dict[str, Any], logger: PipelineLogger):
                         df_pivot[col] = np.nan
 
                 output_path = CLEAN_DIR / "population_details.parquet"
-                df_pivot.to_parquet(output_path, engine="fastparquet")
+                df_pivot.to_parquet(output_path)
                 logger.log_step(
                     "clean_population_details",
                     "COMPLETED",
@@ -2678,7 +2667,7 @@ def clean_nomenclature_waldec(config: Dict[str, Any], logger: PipelineLogger):
             df_out["label"] = df_out["label"].astype(str)
 
             output_path = CLEAN_DIR / "referentiel_waldec.parquet"
-            df_out.to_parquet(output_path, engine="fastparquet")
+            df_out.to_parquet(output_path)
             logger.log_step(
                 "clean_nomenclature_waldec",
                 "COMPLETED",
@@ -3090,7 +3079,7 @@ def run_clean_step_safely(
                 raise FileNotFoundError(
                     f"Clean step did not generate the clean parquet file: {active_clean}"
                 )
-            df_clean = pd.read_parquet(active_clean, engine="fastparquet")
+            df_clean = pd.read_parquet(active_clean)
             if len(df_clean) == 0:
                 raise ValueError(f"Clean step '{step_name}' produced an empty dataset")
             details = {"rows": len(df_clean), "path": str(active_clean)}
@@ -3131,16 +3120,10 @@ def run_clean_step_safely(
                 {"error": f"Raw validation failed: {str(e)}"},
             )
             # Discard staging files and abort
-            if staging_raw and staging_raw.exists():
-                try:
-                    os.remove(staging_raw)
-                except:
-                    pass
-            if staging_ext and staging_ext.exists():
-                try:
-                    os.remove(staging_ext)
-                except:
-                    pass
+            if staging_raw:
+                staging_raw.unlink(missing_ok=True)
+            if staging_ext:
+                staging_ext.unlink(missing_ok=True)
             logging.warning(f"⚠️ [ABORTED] Retained existing cache for '{step_name}'.")
             raise PipelineRunError(
                 f"Required clean step '{step_name}' failed raw contract validation"
@@ -3195,16 +3178,13 @@ def run_clean_step_safely(
                 f"Clean step did not generate the clean parquet file: {active_clean}"
             )
 
-        df_clean = pd.read_parquet(active_clean, engine="fastparquet")
+        df_clean = pd.read_parquet(active_clean)
         if len(df_clean) == 0:
             raise ValueError("Cleaned output dataset is empty.")
 
         # Success! Commit changes (delete backups)
         for bak_path in backups.values():
-            try:
-                os.remove(bak_path)
-            except:
-                pass
+            bak_path.unlink(missing_ok=True)
         logging.info(
             f"✅ [SUCCESS] Ingested and verified '{step_name}' successfully. Staging committed."
         )
@@ -3222,20 +3202,12 @@ def run_clean_step_safely(
 
         # Rollback!
         # Delete failed active clean parquet
-        if active_clean.exists():
-            try:
-                os.remove(active_clean)
-            except:
-                pass
+        active_clean.unlink(missing_ok=True)
 
         # Move active files back to staging (re-create staging files if we want to preserve them, or delete them)
         # To match Option A "discards staging files", we can delete any active files that were staging
         for active_path, _ in moved_staging:
-            if active_path.exists():
-                try:
-                    os.remove(active_path)
-                except:
-                    pass
+            active_path.unlink(missing_ok=True)
 
         # Restore original active files from backups
         for active_path, bak_path in backups.items():
@@ -3428,7 +3400,7 @@ def clean_codes_postaux(config: Dict[str, Any], logger: PipelineLogger):
             df_out = df[["code_postal", "codgeo"]].drop_duplicates()
 
             output_path = CLEAN_DIR / "codes_postaux.parquet"
-            df_out.to_parquet(output_path, engine="fastparquet")
+            df_out.to_parquet(output_path)
             logger.log_step(
                 "clean_codes_postaux", "COMPLETED", {"path": str(output_path)}
             )
@@ -3449,7 +3421,7 @@ def clean_formations(config: Dict[str, Any], logger: PipelineLogger):
         logging.warning("Codes Postaux clean file not found. Skipping formations.")
         return
 
-    cp_df = pd.read_parquet(cp_path, engine="fastparquet")
+    cp_df = pd.read_parquet(cp_path)
     # cp_df has 'code_postal', 'codgeo'
 
     # 2. Formations Referentiel (XLSX)
@@ -3472,7 +3444,7 @@ def clean_formations(config: Dict[str, Any], logger: PipelineLogger):
             )
 
             output_ref = CLEAN_DIR / "formations_referentiel.parquet"
-            df_ref.to_parquet(output_ref, engine="fastparquet")
+            df_ref.to_parquet(output_ref)
             logger.log_step(
                 "clean_formations", "REFERENTIEL", {"path": str(output_ref)}
             )
@@ -3489,7 +3461,10 @@ def clean_formations(config: Dict[str, Any], logger: PipelineLogger):
             df_annuaire = pd.read_csv(
                 annuaire_path, sep=";", on_bad_lines="skip", low_memory=False
             )
-        except:
+        except (pd.errors.ParserError, UnicodeDecodeError, ValueError) as exc:
+            logging.debug(
+                f"Failed to read annuaire CSV with ';' separator ({exc}), retrying with ','."
+            )
             df_annuaire = pd.read_csv(
                 annuaire_path, sep=",", on_bad_lines="skip", low_memory=False
             )
@@ -3578,7 +3553,7 @@ def clean_formations(config: Dict[str, Any], logger: PipelineLogger):
             df_out = merged[["codgeo", "formation_code"]].drop_duplicates()
 
             output_annuaire = CLEAN_DIR / "formations_annuaire.parquet"
-            df_out.to_parquet(output_annuaire, engine="fastparquet")
+            df_out.to_parquet(output_annuaire)
             logger.log_step(
                 "clean_formations",
                 "ANNUAIRE",
@@ -3641,12 +3616,8 @@ def clean_odace_rent(config: Dict[str, Any], logger: PipelineLogger):
         df_rent = df_rent.drop(columns=["maille_priority"])
 
     # Save to Clean Dir
-    df_rent.to_parquet(
-        CLEAN_DIR / "odace_loyer_annonce.parquet", index=False, engine="fastparquet"
-    )
-    df_profil.to_parquet(
-        CLEAN_DIR / "odace_logement_profil.parquet", index=False, engine="fastparquet"
-    )
+    df_rent.to_parquet(CLEAN_DIR / "odace_loyer_annonce.parquet", index=False)
+    df_profil.to_parquet(CLEAN_DIR / "odace_logement_profil.parquet", index=False)
 
     logger.log_step(
         "clean_odace_rent",
@@ -3679,7 +3650,7 @@ def clean_departements(config: Dict[str, Any], logger: PipelineLogger):
             df_out["reg_code"] = df_out["reg_code"].astype(str).str.zfill(2)
 
         output_path = CLEAN_DIR / "departements.parquet"
-        df_out.to_parquet(output_path, engine="fastparquet")
+        df_out.to_parquet(output_path)
         logger.log_step(
             "clean_departements",
             "COMPLETED",
@@ -3772,7 +3743,7 @@ def fetch_rna_rag_stats(
         else:
             df_pivot["inc_asso_refug_count"] = 0
 
-        df_pivot.to_parquet(local_path, engine="fastparquet")
+        df_pivot.to_parquet(local_path)
         _save_rag_cache(local_path, shared_path)
         logging.info(
             f"✅ [RNA RAG] Saved {len(df_pivot)} commune stats to {local_path}"
@@ -3849,7 +3820,7 @@ def clean_mob_transports_pub(config: Dict[str, Any], logger: PipelineLogger):
                 )
 
                 output_path = CLEAN_DIR / "mob_transports_pub.parquet"
-                df_pivot.to_parquet(output_path, engine="fastparquet")
+                df_pivot.to_parquet(output_path)
                 logger.log_step(
                     "clean_mob_transports_pub",
                     "COMPLETED",
@@ -3902,7 +3873,7 @@ def clean_log_soc_delay(config: Dict[str, Any], logger: PipelineLogger):
                 )
 
                 output_path.parent.mkdir(parents=True, exist_ok=True)
-                df_clean.to_parquet(output_path, engine="fastparquet")
+                df_clean.to_parquet(output_path)
                 logger.log_step(
                     "clean_log_soc_delay",
                     "COMPLETED",
@@ -3951,7 +3922,7 @@ def clean_sante_apl(config: Dict[str, Any], logger: PipelineLogger):
                 )
 
                 output_path.parent.mkdir(parents=True, exist_ok=True)
-                df_out.to_parquet(output_path, engine="fastparquet")
+                df_out.to_parquet(output_path)
                 logger.log_step(
                     "clean_sante_apl",
                     "COMPLETED",
@@ -4003,7 +3974,7 @@ def clean_mob_durable(config: Dict[str, Any], logger: PipelineLogger):
 
                 df_out = df_pivot[["codgeo", "mob_dur_share"]]
                 output_path.parent.mkdir(parents=True, exist_ok=True)
-                df_out.to_parquet(output_path, engine="fastparquet")
+                df_out.to_parquet(output_path)
                 logger.log_step(
                     "clean_mob_durable",
                     "COMPLETED",
@@ -4054,7 +4025,7 @@ def clean_ter_insecurite(config: Dict[str, Any], logger: PipelineLogger):
                 df_agg["codgeo"] = df_agg["codgeo"].astype(str).str.zfill(5)
 
                 output_path.parent.mkdir(parents=True, exist_ok=True)
-                df_agg.to_parquet(output_path, engine="fastparquet")
+                df_agg.to_parquet(output_path)
                 logger.log_step(
                     "clean_ter_insecurite",
                     "COMPLETED",

@@ -47,7 +47,7 @@ class OdaceClient:
                     logging.info(
                         f"OdaceClient: Loading {table_name} from Parquet cache (age: {file_age / 3600:.1f}h, TTL: {ttl_seconds / (24 * 3600):.1f} days)"
                     )
-                    return pd.read_parquet(cache_file, engine="fastparquet")
+                    return pd.read_parquet(cache_file)
                 except Exception as e:
                     logging.warning(
                         f"OdaceClient: Failed to read Parquet cache for {table_name}: {e}"
@@ -69,7 +69,7 @@ class OdaceClient:
                 for chunk in response.iter_content(chunk_size=65536):
                     f.write(chunk)
 
-            downloaded = pd.read_parquet(staging_file, engine="fastparquet")
+            downloaded = pd.read_parquet(staging_file)
             if downloaded.empty:
                 raise ValueError(f"Odace export '{table_name}' is empty")
             os.replace(staging_file, cache_file)
@@ -89,7 +89,7 @@ class OdaceClient:
                     f"OdaceClient: API failed for {table_name}, falling back to expired Parquet cache ({cache_file.name})"
                 )
                 try:
-                    return pd.read_parquet(cache_file, engine="fastparquet")
+                    return pd.read_parquet(cache_file)
                 except Exception as cache_err:
                     logging.error(
                         f"OdaceClient: Expired cache read also failed for {table_name}: {cache_err}"
@@ -179,7 +179,9 @@ class OdaceClient:
 
         return self._fetch_table_export(table_name, ttl_seconds=ttl_days * 24 * 60 * 60)
 
-    def execute_query(self, sql: str, cache_name: str, ttl_seconds: int) -> pd.DataFrame:
+    def execute_query(
+        self, sql: str, cache_name: str, ttl_seconds: int
+    ) -> pd.DataFrame:
         """Executes a custom SQL query via the Odace query API (with pagination) and caches the result."""
         cache_file = CACHE_DIR / f"{cache_name}.parquet"
 
@@ -191,7 +193,7 @@ class OdaceClient:
                     logging.info(
                         f"OdaceClient: Loading query '{cache_name}' from Parquet cache (age: {file_age / 3600:.1f}h, TTL: {ttl_seconds / (24 * 3600):.1f} days)"
                     )
-                    return pd.read_parquet(cache_file, engine="fastparquet")
+                    return pd.read_parquet(cache_file)
                 except Exception as e:
                     logging.warning(
                         f"OdaceClient: Failed to read Parquet cache for query '{cache_name}': {e}"
@@ -236,7 +238,7 @@ class OdaceClient:
 
             # Save to cache parquet file
             CACHE_DIR.mkdir(parents=True, exist_ok=True)
-            df.to_parquet(cache_file, engine="fastparquet")
+            df.to_parquet(cache_file)
 
             logging.info(
                 f"OdaceClient: Cached query '{cache_name}' to {cache_file} (total rows: {len(df)})"
@@ -253,9 +255,11 @@ class OdaceClient:
                     f"OdaceClient: Query failed for '{cache_name}', falling back to expired Parquet cache ({cache_file.name})"
                 )
                 try:
-                    return pd.read_parquet(cache_file, engine="fastparquet")
-                except:
-                    pass
+                    return pd.read_parquet(cache_file)
+                except Exception as exc:
+                    logging.warning(
+                        f"OdaceClient: Failed to read expired fallback cache '{cache_file}': {exc}"
+                    )
 
             if self.logger:
                 self.logger.log_source(f"odace_query_{cache_name}", "ERROR", error_msg)

@@ -45,20 +45,7 @@ ODIS implements a secure, role-based organizational profile context enforced imm
     *   Every page enters through `ui/page_shell.py`, which applies the authentication guard before rendering and centralizes telemetry, shared-link routing and standard sidebar actions.
     *   **Local Development**: By default (when Cloud Run environment variable `K_SERVICE` is not detected), the app auto-logins with a fallback developer user (`jacques-local`) belonging to the `jaccueille` organization.
     *   **Forced Auth Override**: Setting `ODIS_FORCE_AUTH=True` in environment variables disables this bypass, forcing the Streamlit login screen to render even during local development.
-    *   **Production Authentication (Hybrid)**: On Cloud Run, users can authenticate via two methods presented side-by-side:
-        *   **OpenID Connect (OIDC / Google Workspace)**: Uses Streamlit's native `st.login("google")` / `st.user` to authenticate an identity. The application then authorizes it on every page entry against the fail-closed `OIDC_AUTHORIZATION_POLICY_JSON` Secret Manager secret. Its strict JSON contract maps `allowed_domains` and `allowed_emails` directly to an existing static Organization profile. An unknown identity, malformed policy, or unknown organization is denied; there is no generic/default organization fallback.
-        *   **Legacy Credentials**: Checked against the `ODIS_USERS_CONFIG` JSON environment variable or Streamlit secrets:
-            ```json
-            {
-              "users": {
-                "user@domaine.fr": {
-                  "password_hash": "pbkdf2_sha256$20000$...",
-                  "org_id": "myorg"
-                }
-              }
-            }
-            ```
-            Passwords are verified using timing-safe `PBKDF2-HMAC-SHA256` password hashing.
+    *   **Production Authentication (OIDC / Google Workspace)**: On Cloud Run, authentication uses Streamlit's native `st.login("google")` / `st.user` to authenticate an identity. The application then authorizes it on every page entry against the fail-closed `OIDC_AUTHORIZATION_POLICY_JSON` Secret Manager secret. Its strict JSON contract maps `allowed_domains` and `allowed_emails` directly to an existing static Organization profile. An unknown identity, malformed policy, or unknown organization is denied; there is no generic/default organization fallback.
 
 2.  **Organization Defaults & Smart Merge (`app/utils/data_loader.py`)**:
     *   Upon successful authentication, the active user context is stored as a Pydantic `User` model, and their organization context is loaded from `config.ORGANIZATION_PROFILES` as a Pydantic `Org` model in `st.session_state['org']`.
@@ -248,7 +235,7 @@ app/
 │   ├── telemetry.py      # BigQuery search & usage events logger
 │   └── bq_logger.py      # Agent state and chat trajectory BigQuery logger
 ├── utils/
-│   ├── auth.py           # Password gates, admin whitelist checks, and idle monitor triggers
+│   ├── auth.py           # OIDC authentication, policy authorization, and session lifecycle
 │   └── data_loader.py    # Lazy-loaded data singletons
 └── config.py             # Global constants, admin whitelist, and options catalogs
 ```

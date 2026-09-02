@@ -2,6 +2,7 @@ import requests
 import logging
 import re
 from typing import Dict, Any, Optional
+import streamlit as st
 import pandas as pd
 import config as cfg
 from utils.data_loader import load_parquet_dataset
@@ -72,7 +73,9 @@ def _prune_inclusion_structure(offer: Dict[str, Any]) -> Dict[str, Any]:
 
     return {
         "id": offer.get("id"),
-        "name": offer.get("enseigne") or offer.get("raison_sociale") or offer.get("name"),
+        "name": offer.get("enseigne")
+        or offer.get("raison_sociale")
+        or offer.get("name"),
         "type": offer.get("type"),
         "siret": offer.get("siret"),
         "description": desc,
@@ -203,13 +206,15 @@ def _get_inclusion_job_details_logic(siae_id: str) -> Dict[str, Any]:
     # 3. Fallback to Streamlit session state
     if not dept:
         try:
-            import streamlit as st
-
             dept_state = st.session_state.get("ui_departement")
             if dept_state:
                 dept = str(dept_state)
-        except Exception:
-            pass
+        except (AttributeError, RuntimeError) as exc:
+            logger.debug(
+                "st.session_state unavailable when resolving department: %s", exc
+            )
+        except Exception as exc:
+            logger.warning("Error reading ui_departement from session state: %s", exc)
 
     # If we couldn't resolve the department, fallback to default '33'
     if not dept:
