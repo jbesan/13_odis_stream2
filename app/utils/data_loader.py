@@ -1003,13 +1003,13 @@ def get_data_mtime() -> str:
     return get_active_release_context().identity
 
 
-@st.cache_resource
+@st.cache_resource(show_spinner=False)
 def get_referentiels_data(release_context: ReleaseContext) -> Dict[str, Any]:
     """Cached reference indices for one immutable release context."""
     return load_referentiels_raw(release_context)
 
 
-@st.cache_resource
+@st.cache_resource(show_spinner=False)
 def get_scoring_datasets(release_context: ReleaseContext) -> Dict[str, Any]:
     """Cached complete scoring bundle for one immutable release context."""
     refs = get_referentiels_data(release_context)

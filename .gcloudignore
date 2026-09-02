@@ -4,6 +4,7 @@
 # Allow app directory
 !app/
 !tests/
+!scripts/
 !pyproject.toml
 !uv.lock
 !.python-version
