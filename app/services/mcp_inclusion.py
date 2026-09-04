@@ -2,7 +2,6 @@ import requests
 import logging
 import re
 from typing import Dict, Any, Optional
-import streamlit as st
 import pandas as pd
 import config as cfg
 from utils.data_loader import load_parquet_dataset
@@ -203,20 +202,7 @@ def _get_inclusion_job_details_logic(siae_id: str) -> Dict[str, Any]:
             except Exception as e:
                 logger.warning(f"[Inclusion] Parquet job ID lookup failed: {e}")
 
-    # 3. Fallback to Streamlit session state
-    if not dept:
-        try:
-            dept_state = st.session_state.get("ui_departement")
-            if dept_state:
-                dept = str(dept_state)
-        except (AttributeError, RuntimeError) as exc:
-            logger.debug(
-                "st.session_state unavailable when resolving department: %s", exc
-            )
-        except Exception as exc:
-            logger.warning("Error reading ui_departement from session state: %s", exc)
-
-    # If we couldn't resolve the department, fallback to default '33'
+    # Fallback to default '33' if not resolved
     if not dept:
         logger.warning(
             f"[Inclusion] Could not resolve department for {siae_id_str}. Defaulting to '33'."

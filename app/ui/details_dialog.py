@@ -164,15 +164,17 @@ def _get_jaccueille_salesforce_urls(
     org_is_jaccueille = False
     org = st.session_state.get("org")
     if org:
-        org_id = getattr(org, "id", str(org))
+        if isinstance(org, dict):
+            org_id = org.get("id")
+        elif hasattr(org, "id"):
+            org_id = org.id
+        else:
+            org_id = str(org)
         if str(org_id).lower() == "jaccueille":
             org_is_jaccueille = True
 
     cfg_obj = st.session_state.get("config")
     if cfg_obj and getattr(cfg_obj, "org_context", None) == "jaccueille":
-        org_is_jaccueille = True
-
-    if st.session_state.get("ui_org_context") == "jaccueille":
         org_is_jaccueille = True
 
     if not org_is_jaccueille:

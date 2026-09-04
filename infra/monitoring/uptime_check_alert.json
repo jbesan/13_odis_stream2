@@ -1,0 +1,33 @@
+{
+  "displayName": "ODIS Production - Service Down (Uptime Check Failure)",
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "Sonde de disponibilité en échec",
+      "conditionThreshold": {
+        "filter": "resource.type = \"uptime_url\" AND metric.type = \"monitoring.googleapis.com/uptime_check/check_passed\"",
+        "aggregations": [
+          {
+            "alignmentPeriod": "300s",
+            "perSeriesAligner": "ALIGN_FRACTION_TRUE",
+            "crossSeriesReducer": "REDUCE_MIN"
+          }
+        ],
+        "comparison": "COMPARISON_LT",
+        "thresholdValue": 1,
+        "duration": "300s",
+        "trigger": {
+          "count": 1
+        }
+      }
+    }
+  ],
+  "alertStrategy": {
+    "autoClose": "1800s"
+  },
+  "severity": "CRITICAL",
+  "documentation": {
+    "content": "### 🔴 Panne Critique : Le service odis-app ne répond plus !\n\nLa sonde synthétique n'arrive plus à joindre `/_stcore/health` depuis plusieurs régions pendant 5 minutes.\n\n**Diagnostics d'urgence :**\n1. Statut Cloud Run :\n```bash\ngcloud run services describe odis-app --project=odis-stream2-app --region=europe-west1\n```\n2. Derniers crashs / logs système :\n```bash\ngcloud logging read 'resource.type=cloud_run_revision AND resource.labels.service_name=odis-app' --project=odis-stream2-app --limit=20\n```",
+    "mimeType": "text/markdown"
+  }
+}

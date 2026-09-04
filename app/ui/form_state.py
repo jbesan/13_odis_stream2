@@ -14,12 +14,12 @@ from typing import Any
 import pandas as pd
 
 import config as cfg
-from core.models import CriteriaItem, SearchCriterias
+from core.models import CriteriaItem, SearchAreaLevel, SearchCriterias
 
 
 FORM_INITIALIZED_KEY = "_form_state_initialized"
 EDITOR_SOURCE_HASH_KEY = "_criteria_editor_source_hash"
-EDITOR_WIDGET_KEYS = ("ui_departement", "ui_commune")
+EDITOR_WIDGET_KEYS = ("ui_commune",)
 
 
 def _safe_option(value: str) -> str:
@@ -73,7 +73,6 @@ class FormState:
     """Owns the mapping rules for ODIS form widget keys."""
 
     FIELD_KEYS = {
-        "departement_actuel": "ui_departement",
         "commune_actuelle": "ui_commune",
         "nb_adultes": "ui_nb_adultes",
         "nb_enfants": "ui_nb_enfants",
@@ -178,32 +177,13 @@ class FormState:
                 self._put(key, None, overwrite=overwrite)
                 continue
             if field == "commune_actuelle":
-                if isinstance(value, Mapping):
-                    value = value.get("label", value.get("code"))
-                elif hasattr(value, "label"):
-                    value = value.label
+                code = _code(value)
+                value = str(code) if code is not None else None
             elif field == "type_logement":
                 value = _code(value)
             elif field == "notes_qualitatives" and isinstance(value, list):
                 value = "\n".join(str(item) for item in value)
             self._put(key, value, overwrite=overwrite)
-
-        # ``SearchCriterias`` persists the current commune as an INSEE item,
-        # not a separate department field.  A complete form bundle lets us
-        # faithfully restore the dependent department selectbox too; otherwise
-        # Streamlit would select the first department when the editor appears.
-        current_commune_code = _code(values.get("commune_actuelle"))
-        depcom_df = bundle.get("depcom_df") if bundle else None
-        if current_commune_code is not None and isinstance(depcom_df, pd.DataFrame):
-            commune_matches = depcom_df.loc[
-                depcom_df.index.astype(str) == str(current_commune_code)
-            ]
-            if not commune_matches.empty and "dep_code" in commune_matches:
-                self._put(
-                    "ui_departement",
-                    str(commune_matches.iloc[0]["dep_code"]),
-                    overwrite=overwrite,
-                )
 
         housing = values.get("hebergement_cible")
         if housing is not None:
@@ -241,18 +221,13 @@ class FormState:
                 value = _codes(item) if field != "classe_enfants" else item
                 self._put(f"{key_base}_{index}", value, overwrite=True)
 
-        area = values.get("loc_search_area")
+        area = values.get("loc_search_area", SearchAreaLevel.DEPARTEMENT)
+        self._put("ui_loc_search_area", area, overwrite=overwrite)
         codes = _codes(values.get("loc_search_code", []))
-        if area == "france":
-            self._put("ui_france_search", True, overwrite=overwrite)
-            self._put("ui_region_search", False, overwrite=overwrite)
-        elif area == "region":
-            self._put("ui_france_search", False, overwrite=overwrite)
-            self._put("ui_region_search", True, overwrite=overwrite)
+        area_str = str(area).lower()
+        if area == SearchAreaLevel.REGION or area_str == "region":
             self._put("ui_mobility_region", codes, overwrite=overwrite)
-        elif area == "departement":
-            self._put("ui_france_search", False, overwrite=overwrite)
-            self._put("ui_region_search", False, overwrite=overwrite)
+        elif area == SearchAreaLevel.DEPARTEMENT or area_str == "departement":
             self._put("ui_mobility_dept", codes, overwrite=overwrite)
 
         pressentie = values.get("commune_pressentie")
@@ -385,42 +360,43 @@ class FormState:
         """
         errors: list[str] = []
 
-        # 1. Point de départ (commune et département actuels)
-        dept = self.state.get("ui_departement")
+        # 1. Point de départ (commune actuelle)
         commune = self.state.get("ui_commune")
-        if not dept or not commune:
+        if not commune:
             errors.append(
-                "Point de départ : veuillez sélectionner un département et une commune actuelle."
+                "Point de départ : veuillez sélectionner une ville actuelle."
             )
 
-        # 2. Zone de recherche (France entière, région avec tous départements, ou région avec départements spécifiques)
-        is_france = bool(self.state.get("ui_france_search"))
-        regions = _codes(self.state.get("ui_mobility_region", []))
-        all_depts = bool(self.state.get("ui_region_search"))
-        depts = _codes(self.state.get("ui_mobility_dept", []))
-
-        is_search_zone_valid = is_france or (bool(regions) and (all_depts or bool(depts)))
-        if not is_search_zone_valid:
-            errors.append(
-                "Zone de recherche : veuillez cocher « Toute la France » ou sélectionner au moins une région et ses départements cibles."
-            )
+        # 2. Zone de recherche
+        loc_area = self.state.get("ui_loc_search_area", SearchAreaLevel.DEPARTEMENT)
+        area_str = str(loc_area).lower()
+        if loc_area == SearchAreaLevel.REGION or area_str == "region":
+            if not _codes(self.state.get("ui_mobility_region", [])):
+                errors.append(
+                    "Zone de recherche : veuillez sélectionner au moins une région cible."
+                )
+        elif loc_area == SearchAreaLevel.DEPARTEMENT or area_str == "departement":
+            if not _codes(self.state.get("ui_mobility_dept", [])):
+                errors.append(
+                    "Zone de recherche : veuillez sélectionner au moins un département cible."
+                )
 
         return errors
 
     def collect(self, app_data: Mapping[str, Any]) -> SearchCriterias:
         """Build the immutable domain input from the current widget values."""
-        dept_code = self.state.get("ui_departement")
-        commune_label = self.state.get("ui_commune")
+        commune_val = self.state.get("ui_commune")
         commune = None
-        if dept_code and commune_label:
-            matches = app_data["depcom_df"]
-            matches = matches[
-                (matches.dep_code == dept_code) & (matches.libgeo == commune_label)
-            ]
-            if not matches.empty:
-                commune = CriteriaItem(
-                    code=str(matches.index[0]), label=str(commune_label)
-                )
+        if commune_val:
+            code = str(commune_val)
+            commune_names = app_data.get("commune_names", {})
+            odis = app_data.get("odis", pd.DataFrame())
+            label = (
+                odis.loc[code, "libgeo"]
+                if not odis.empty and code in odis.index
+                else commune_names.get(code, code)
+            )
+            commune = CriteriaItem(code=code, label=str(label))
 
         commune_pressentie = None
         if self.state.get("ui_has_commune_pressentie") and self.state.get(
@@ -436,13 +412,15 @@ class FormState:
             )
             commune_pressentie = CriteriaItem(code=code, label=str(label))
 
-        if self.state.get("ui_france_search"):
-            area, area_codes = "france", []
-        elif self.state.get("ui_region_search"):
-            area = "region"
+        loc_area = self.state.get("ui_loc_search_area", SearchAreaLevel.DEPARTEMENT)
+        area_str = str(loc_area).lower()
+        if loc_area == SearchAreaLevel.FRANCE or area_str == "france":
+            area, area_codes = SearchAreaLevel.FRANCE, []
+        elif loc_area == SearchAreaLevel.REGION or area_str == "region":
+            area = SearchAreaLevel.REGION
             area_codes = _codes(self.state.get("ui_mobility_region", []))
         else:
-            area = "departement"
+            area = SearchAreaLevel.DEPARTEMENT
             area_codes = _codes(self.state.get("ui_mobility_dept", []))
 
         children_count = int(self.state.get("ui_nb_enfants", 0))

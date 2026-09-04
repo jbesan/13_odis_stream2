@@ -12,7 +12,7 @@ def test_render_jaccueille_housing_info_uses_codgeo_bdv(monkeypatch):
         info_calls.append(msg)
 
     monkeypatch.setattr(st, "info", mock_info)
-    monkeypatch.setattr(st, "session_state", {"ui_org_context": "jaccueille"})
+    monkeypatch.setattr(st, "session_state", {"org": {"id": "jaccueille"}})
 
     # Mock BDV dataframe containing postal codes for BDV 33063 (Bordeaux)
     mock_df_bdv = pd.DataFrame(

@@ -58,8 +58,10 @@ def test_happy_path_end_to_end(
 
     mock_launch_post_scoring_tasks.side_effect = fake_launch
 
-    # 2. Initialize AppTest at main.py (so page paths resolve correctly relative to root)
-    at = AppTest.from_file("app/main.py", default_timeout=60)
+    # 2. Initialize AppTest at main.py (using absolute path from repo root)
+    from pathlib import Path
+    root_path = Path(__file__).resolve().parent.parent.parent
+    at = AppTest.from_file(str(root_path / "app" / "main.py"), default_timeout=60)
 
     # Bypass authentication and pre-populate defaults
     from core.models import User
@@ -85,12 +87,8 @@ def test_happy_path_end_to_end(
     assert len(at.exception) == 0
 
     # Fill in localisation widgets
-    at.selectbox(key="ui_departement").select("33").run()
-    at.selectbox(key="ui_commune").select("Bordeaux").run()
+    at.selectbox(key="ui_commune").select("33063").run()
     at.selectbox(key="ui_freq_retour").select("1 fois/mois").run()
-    at.checkbox(key="ui_france_search").uncheck().run()
-    at.checkbox(key="ui_region_search").uncheck().run()
-    at.multiselect(key="ui_mobility_region").select("75").run()  # region code
     at.multiselect(key="ui_mobility_dept").select("33").run()
     at.radio(key="ui_target_city_size_label").set_value("🏘️ Petite Ville").run()
 

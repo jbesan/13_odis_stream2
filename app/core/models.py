@@ -1,3 +1,4 @@
+from enum import Enum
 from typing import List, Dict, Any, Union, Optional, Set, Literal
 import functools
 import hashlib
@@ -96,6 +97,14 @@ class CriteriaItem(BaseModel):
         return data
 
 
+class SearchAreaLevel(str, Enum):
+    """Geographic search scope level."""
+
+    FRANCE = "france"
+    REGION = "region"
+    DEPARTEMENT = "departement"
+
+
 class SearchCriterias(BaseModel):
     """
     Criteria for searching and scoring cities based on user needs.
@@ -110,14 +119,34 @@ class SearchCriterias(BaseModel):
         None,
         description="Commune pressentie à titre de comparaison",
     )
-    loc_search_area: str = Field(
-        "",
+    loc_search_area: Union[SearchAreaLevel, str] = Field(
+        default=SearchAreaLevel.DEPARTEMENT,
         description="Zone de recherche (département, région, France)",
     )
     loc_search_code: List[str] = Field(
         default_factory=list,
         description="Codes géographiques de la zone de recherche",
     )
+
+    @field_validator("loc_search_area", mode="before")
+    @classmethod
+    def validate_loc_search_area(cls, v: Any) -> SearchAreaLevel:
+        """Coerce raw strings or enum members into valid SearchAreaLevel."""
+        if isinstance(v, SearchAreaLevel):
+            return v
+        if not v or not isinstance(v, str):
+            return SearchAreaLevel.DEPARTEMENT
+        v_clean = v.strip().lower()
+        if "france" in v_clean:
+            return SearchAreaLevel.FRANCE
+        if "region" in v_clean or "région" in v_clean:
+            return SearchAreaLevel.REGION
+        if "dep" in v_clean or "dép" in v_clean:
+            return SearchAreaLevel.DEPARTEMENT
+        try:
+            return SearchAreaLevel(v_clean)
+        except ValueError:
+            return SearchAreaLevel.DEPARTEMENT
 
     nb_adultes: int = Field(
         1,
@@ -374,7 +403,7 @@ class SearchCriterias(BaseModel):
             data["notes_qualitatives"] = [data["notes_qualitatives"]]
 
         # Synchronize trapezoid bounds from target_city_size or legacy target_population
-        size_label = data.get("target_city_size") or data.get("ui_target_city_size_label")
+        size_label = data.get("target_city_size")
         if size_label and size_label in cfg.CITY_SIZE_MAPPING:
             bounds = cfg.CITY_SIZE_MAPPING[size_label]
             data.setdefault("target_population_a", bounds["a"])

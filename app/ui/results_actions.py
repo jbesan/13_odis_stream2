@@ -234,6 +234,7 @@ def share_search_modal():
         "Ce lien ouvre un instantané immuable de ces résultats. Les critères peuvent "
         "être repris pour créer explicitement une nouvelle recherche avec les données actuelles."
     )
+    st.caption("ℹ️ Ce lien de partage et ses données associées sont conservés pendant 90 jours.")
 
     st.code(permalink, language=None)
 

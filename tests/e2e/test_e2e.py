@@ -123,19 +123,11 @@ def run_test_scenario(scenario_id, app_data):
     for i in range(default_data["nb_enfants"]):
         mock_session_state.setdefault(f"ui_classe_enfant_{i}", cfg.CLASSES_SCOLAIRES[0])
 
-    # Map old loc_search_area to new Mobility UI fields for test compatibility
-    loc_val = default_data.get("loc_search_area")
-    if loc_val == "france":
-        mock_session_state["ui_france_search"] = True
-        mock_session_state["ui_region_search"] = False
-    elif loc_val == "region":
-        mock_session_state["ui_france_search"] = False
-        mock_session_state["ui_region_search"] = True
-    else:
-        mock_session_state["ui_france_search"] = False
-        mock_session_state["ui_region_search"] = False
+    # Set search area on modern ui_loc_search_area key
+    loc_val = default_data.get("loc_search_area") or "departement"
+    mock_session_state["ui_loc_search_area"] = loc_val
 
-    if not mock_session_state.get("ui_france_search"):
+    if loc_val != "france":
         current_dept_code = mock_session_state["ui_departement"]
         # Find region code for the department
         dept_details = app_data.get("dept_details", {})
@@ -261,8 +253,7 @@ def test_result_details_display(app_data):
     mock_config_state = MockSessionState(
         {
             "app_data": app_data,
-            "ui_departement": "33",
-            "ui_commune": "Bordeaux",
+            "ui_commune": "33063",
             "ui_mobility_france": False,
             "ui_mobility_region": ["75"],  # IDF
             "ui_mobility_dept": "75",

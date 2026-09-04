@@ -2,7 +2,7 @@ import copy
 import pandas as pd
 
 import config as cfg
-from core.models import CriteriaItem, Org, SearchCriterias
+from core.models import CriteriaItem, Org, SearchAreaLevel, SearchCriterias
 from ui.form_state import FormState, health_key, housing_key
 
 
@@ -31,7 +31,6 @@ def test_initialize_uses_widget_keys_without_unprefixed_mirrors():
     state = {}
     FormState(state).initialize(cfg.DEMO_DATA_DEFAULT)
 
-    assert state["ui_departement"] is None
     assert state["ui_commune"] is None
     assert "departement_actuel" not in state
     assert "commune_actuelle" not in state
@@ -113,8 +112,7 @@ def test_prepare_editor_restores_active_commune_and_preserves_unsaved_draft():
         source_hash=criteria.compute_hash(),
         app_data=app_data,
     )
-    assert state["ui_departement"] == "75"
-    assert state["ui_commune"] == "Paris"
+    assert state["ui_commune"] == "75056"
     assert state["ui_nb_adultes"] == 2
 
     # A dialog may be closed and reopened before a new search is launched.
@@ -189,32 +187,34 @@ def test_get_location_validation_errors():
     assert "Point de départ" in errors[0]
     assert "Zone de recherche" in errors[1]
 
-    # 2. Only department set, no commune
-    state["ui_departement"] = "33"
-    assert len(form.get_location_validation_errors()) == 2
-
-    # 3. Departure complete (dept + commune), but search zone empty
-    state["ui_commune"] = "Bordeaux"
+    # 2. Departure complete (commune), but search zone empty
+    state["ui_commune"] = "33063"
     errors = form.get_location_validation_errors()
     assert len(errors) == 1
     assert "Zone de recherche" in errors[0]
 
-    # 4. Departure complete + "Toute la France"
-    state["ui_france_search"] = True
+    # 3. Departure complete + France entière via SearchAreaLevel
+    state["ui_loc_search_area"] = SearchAreaLevel.FRANCE
     assert form.get_location_validation_errors() == []
 
-    # 5. Departure complete + region selected + "Tous les départements"
-    state["ui_france_search"] = False
+    # 4. Departure complete + region selected
+    state["ui_loc_search_area"] = SearchAreaLevel.REGION
     state["ui_mobility_region"] = ["75"]
-    state["ui_region_search"] = True
     assert form.get_location_validation_errors() == []
 
-    # 6. Departure complete + region selected + specific department
-    state["ui_region_search"] = False
+    # 5. Region selected but region list empty -> error
+    state["ui_mobility_region"] = []
+    errors = form.get_location_validation_errors()
+    assert len(errors) == 1
+    assert "Zone de recherche" in errors[0]
+
+    # 6. Departure complete + department selected WITHOUT region -> VALID!
+    state["ui_loc_search_area"] = SearchAreaLevel.DEPARTEMENT
+    state["ui_mobility_region"] = []
     state["ui_mobility_dept"] = ["33"]
     assert form.get_location_validation_errors() == []
 
-    # 7. Departure complete + region selected, but no depts and "Tous les départements" is False
+    # 7. Department mode but department list empty -> error
     state["ui_mobility_dept"] = []
     errors = form.get_location_validation_errors()
     assert len(errors) == 1
@@ -222,7 +222,7 @@ def test_get_location_validation_errors():
 
     # 8. Departure missing commune again
     state["ui_commune"] = None
-    state["ui_france_search"] = True
+    state["ui_loc_search_area"] = SearchAreaLevel.FRANCE
     errors = form.get_location_validation_errors()
     assert len(errors) == 1
     assert "Point de départ" in errors[0]
@@ -232,9 +232,8 @@ def test_unvisited_form_steps_fallback_to_defaults():
     # If the user only fills step 1 and clicks 'Passer aux résultats',
     # unvisited checkbox groups should fall back to cfg.DEMO_DATA_DEFAULT values.
     state = {
-        "ui_departement": "33",
-        "ui_commune": "Bordeaux",
-        "ui_france_search": True,
+        "ui_commune": "33063",
+        "ui_loc_search_area": SearchAreaLevel.FRANCE,
     }
     form = FormState(state)
     assert form.selected_long_term_housing() == ["Location"]

@@ -21,7 +21,6 @@ else:
     app_data = data_loader.ensure_data_initialized()
 
 FormState(st.session_state).preserve_widgets_across_steps()
-import logging
 
 # Sidebar
 with st.sidebar:
@@ -84,16 +83,14 @@ def display_localisation_actuelle_page():
     elif st.session_state.get("location_validation_warning"):
         ui_forms.render_location_validation_warning(errors)
 
-    st.subheader("Localisation de la personne accompagnée")
+    # st.subheader("Localisation de la personne accompagnée")
     col1, col2, col3 = st.columns([3, 1, 5])
     with col1:
-        st.markdown("**Localisation actuelle**")
         ui_forms.render_localisation_form(app_data)
     with col2:
         st.space("large")
         st.header(":material/arrow_forward_ios:", text_alignment="center")
     with col3:
-        st.markdown("**Zone de recherche**")
         ui_forms.render_mobility_form(app_data)
 
 
@@ -174,7 +171,6 @@ with col1:
         if current_page_index > 0:
             if st.button("Précédent"):
                 st.session_state.form_page = PAGES_LIST[current_page_index - 1]
-                logging.info(st.session_state.ui_nb_enfants)
                 st.rerun()
 
 with col2:

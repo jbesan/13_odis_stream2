@@ -133,7 +133,7 @@ st.html(
         max-height: calc(100vh - 2rem) !important;
         box-sizing: border-box !important;
         overflow-x: hidden !important;
-        overflow-y: hidden !important;
+        overflow-y: auto !important;
         padding: 0.75rem !important;
         z-index: 20 !important;
         background: rgba(255, 255, 255, 0.5) !important;
@@ -152,6 +152,28 @@ st.html(
 
     div[class*="st-key-city_result_card"] {
         background: rgba(255, 255, 255, 1.0) !important;
+    }
+
+    div[class*="st-key-btn_top"] button {
+        display: inline-flex !important;
+        justify-content: flex-start !important;
+        align-items: center !important;
+    }
+    div[class*="st-key-btn_top"] button > div {
+        display: flex !important;
+        justify-content: flex-start !important;
+        width: 100% !important;
+    }
+    div[class*="st-key-btn_top"] button span {
+        display: inline-flex !important;
+        justify-content: flex-start !important;
+    }
+    div[class*="st-key-btn_top"] button div[data-testid="stMarkdownContainer"] {
+        width: 100% !important;
+        text-align: left !important;
+    }
+    div[class*="st-key-btn_top"] button p {
+        text-align: left !important;
     }
 
     @media (max-width: 900px) {
@@ -491,9 +513,6 @@ if st.session_state.get("processed_gdf") is not None:
             st.subheader("Meilleures Propositions")
             if not is_highlighted:
                 st.caption("👇 Cliquez sur une ville pour afficher les détails.", text_alignment="center", width="stretch")
-            st.html(
-                '<style> [class*="st-key-btn_top"] .stButton button div, [class*="st-key-btn_top"] .stButton button p { justify-content: flex-start !important; text-align: left !important; width: 100%; } </style>',
-            )
             # A. Ville Souhaitée (if present)
             if search_results.commune_pressentie:
                 p_commune = search_results.commune_pressentie

@@ -3,7 +3,7 @@ name = "odis-stream2"
 version = "0.1.0"
 description = "OD&IS Stream 2 - Application SaaS & Pipeline de Données"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.14,<3.15"
 dependencies = [
     # --- Web Framework & Authentication ---
     "streamlit==1.63.0",

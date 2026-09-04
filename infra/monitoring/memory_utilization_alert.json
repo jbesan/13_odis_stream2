@@ -1,0 +1,33 @@
+{
+  "displayName": "ODIS Production - Mémoire > 80%",
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "Cloud Run Memory Utilization > 80% pendant 15 min",
+      "conditionThreshold": {
+        "filter": "resource.type = \"cloud_run_revision\" AND resource.labels.service_name = \"odis-app\" AND metric.type = \"run.googleapis.com/container/memory/utilizations\"",
+        "aggregations": [
+          {
+            "alignmentPeriod": "60s",
+            "perSeriesAligner": "ALIGN_PERCENTILE_99",
+            "crossSeriesReducer": "REDUCE_MAX"
+          }
+        ],
+        "comparison": "COMPARISON_GT",
+        "thresholdValue": 0.8,
+        "duration": "900s",
+        "trigger": {
+          "count": 1
+        }
+      }
+    }
+  ],
+  "alertStrategy": {
+    "autoClose": "3600s"
+  },
+  "severity": "WARNING",
+  "documentation": {
+    "content": "### ⚠️ Utilisation mémoire critique (> 80% pendant 15 min)\n\nLa mémoire du container odis-app approche des 4 Go alloués. Avec `--max-instances=1`, si la mémoire atteint 100%, Cloud Run tuera le container (OOM / Exit 137).\n\n**Action recommandée :**\nRedémarrer le container proprement en forçant une nouvelle révision ou en redéployant le tag courant :\n```bash\nmake promote-prod TAG=<current-tag>\n```",
+    "mimeType": "text/markdown"
+  }
+}
