@@ -197,7 +197,97 @@ def mock_storage_client_for_offline_tests():
         patcher.stop()
 
 
+# --- Network Leak Protection & Offline Mocks ---
+import socket
+
+
+class NetworkLeakError(RuntimeError):
+    """Raised when an unmocked external network call is made during offline tests."""
+
+    pass
+
+
+@pytest.fixture(autouse=True)
+def guard_network_sockets(request):
+    """Ensure tests not marked 'eval' never attempt external socket connections."""
+    if "eval" in request.keywords or run_evals:
+        yield
+        return
+
+    orig_connect = socket.socket.connect
+    orig_connect_ex = socket.socket.connect_ex
+    orig_getaddrinfo = socket.getaddrinfo
+
+    def _is_loopback(host):
+        if not host:
+            return True
+        host_str = str(host).lower()
+        return host_str in ("127.0.0.1", "localhost", "::1", "0.0.0.0")
+
+    def guarded_connect(sock, address):
+        host = address[0] if isinstance(address, (tuple, list)) and address else address
+        if not _is_loopback(host):
+            raise NetworkLeakError(
+                f"External network call forbidden in offline tests! Attempted connection to: {address}"
+            )
+        return orig_connect(sock, address)
+
+    def guarded_connect_ex(sock, address):
+        host = address[0] if isinstance(address, (tuple, list)) and address else address
+        if not _is_loopback(host):
+            raise NetworkLeakError(
+                f"External network call forbidden in offline tests! Attempted connection to: {address}"
+            )
+        return orig_connect_ex(sock, address)
+
+    def guarded_getaddrinfo(host, port, *args, **kwargs):
+        if not _is_loopback(host):
+            raise NetworkLeakError(
+                f"External DNS resolution forbidden in offline tests! Attempted to resolve: {host}:{port}"
+            )
+        return orig_getaddrinfo(host, port, *args, **kwargs)
+
+    socket.socket.connect = guarded_connect
+    socket.socket.connect_ex = guarded_connect_ex
+    socket.getaddrinfo = guarded_getaddrinfo
+    try:
+        yield
+    finally:
+        socket.socket.connect = orig_connect
+        socket.socket.connect_ex = orig_connect_ex
+        socket.getaddrinfo = orig_getaddrinfo
+
+
+@pytest.fixture(autouse=True)
+def default_mock_bq_streaming(request, monkeypatch):
+    """Ensure background BigQuery streaming never hits real network in offline tests."""
+    if "eval" in request.keywords or run_evals:
+        return
+
+    import unittest.mock
+
+    mock_bq_client = unittest.mock.MagicMock()
+    mock_bq_client.project = "test-project"
+    mock_bq_client.insert_rows_json.return_value = []
+
+    try:
+        monkeypatch.setattr(
+            "google.cloud.bigquery.Client", lambda *args, **kwargs: mock_bq_client
+        )
+    except Exception:
+        pass
+
+
 # --- Test Fixtures ---
+
+
+@pytest.fixture(scope="session")
+def sample_communes_df():
+    """Returns the curated hermetic 50-commune DataFrame for fast deterministic tests."""
+    sample_path = os.path.join(
+        os.path.dirname(__file__), "fixtures", "data", "sample_communes.parquet"
+    )
+    return pd.read_parquet(sample_path)
 
 
 @pytest.fixture
