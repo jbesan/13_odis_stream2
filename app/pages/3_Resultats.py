@@ -389,8 +389,8 @@ with st.sidebar:
     # --- Export to PDF & Partager ---
     if st.session_state.get("search_results") is not None:
         h = st.session_state.search_results.search_hash
-        # Deterministic results are immediately shareable/exportable. Optional
-        # providers must not hold these actions in a permanent loading state.
+        # Export and share actions become active once background post-scoring
+        # enrichments reach a terminal state (or timeout).
         action_buttons_container_static(h)
 
     st.divider()
