@@ -11,6 +11,8 @@ from core.models import (
     AssociationDetail,
 )
 
+pytestmark = pytest.mark.e2e
+
 
 @pytest.fixture
 def sample_session_state():

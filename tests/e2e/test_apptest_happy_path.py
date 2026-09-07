@@ -1,10 +1,12 @@
 import pandas as pd
+import pytest
 from streamlit.testing.v1 import AppTest
 from unittest.mock import patch
 from core.models import SearchCriterias
 
 
 # Mocking custom components that require JS/HTML environments or external API hits
+@pytest.mark.e2e
 @patch("ui.page_shell.inject_idle_disconnect")
 @patch("core.postscoring.launch_post_scoring_tasks")
 @patch("utils.data_loader.fetch_salesforce_jaccueille_bdv")

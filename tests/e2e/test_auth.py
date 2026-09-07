@@ -1,7 +1,10 @@
+import pytest
 from unittest.mock import MagicMock, patch
 
 from core.models import Org
 from utils.auth import check_password, resolve_org_for_oidc
+
+pytestmark = pytest.mark.e2e
 
 
 def test_check_password_flow_authenticated_oidc():

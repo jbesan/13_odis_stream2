@@ -1,16 +1,14 @@
 from unittest.mock import patch
 import sys
 import os
+import pytest
 
 # Add app directory to path to allow imports
 sys.path.append(os.path.join(os.getcwd(), "app"))
 
-# We want to test the logic that we added to main.py
-# Since main.py is a script that runs on import (due to Streamlit's model),
-# we can't easily "test" it without running it, but we can test the
-# components and the logic flow.
-
 from utils.auth import check_password
+
+pytestmark = pytest.mark.e2e
 
 
 def test_main_logic_authenticated():

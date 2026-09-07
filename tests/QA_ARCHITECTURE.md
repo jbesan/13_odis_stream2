@@ -51,7 +51,7 @@ tests/
 ### 4. Level 4: AI Quality Evaluation (`tests/evals/`)
 *   **Scope**: Tests live LLM agent graph runs against golden datasets to evaluate routing, expert capabilities, and synthesis quality.
 *   **Two Evaluation Sub-suites**:
-    - **Full Analysis Evaluation (`test_golden_evals.py`)**: Runs the entire multi-agent LangGraph map-reduce swarm. Programmatically validates graph state routing, token count aggregation, and asserts that each expert successfully generated its specific qualitative report. Evaluated via `LLMJudge` to ensure the final synthesized report meets the target user needs.
+    - **Full Analysis Evaluation (`test_golden_evals.py`)**: Runs the entire multi-agent Pydantic Graph map-reduce swarm. Programmatically validates graph state routing, token count aggregation, and asserts that each expert successfully generated its specific qualitative report. Evaluated via `LLMJudge` to ensure the final synthesized report meets the target user needs.
     - **Brief Refinement Evaluation (`test_brief_evals.py`)**: Runs the isolated `refiner_agent` directly. This bypasses the expensive map-reduce swarm and evaluates the single agent briefing logic in 2-3 seconds at a cost of ~$0.0016 per run, enabling rapid iterations.
 *   **Pydantic Evals Integration**: Utilizes the official `pydantic_evals` framework (`Dataset`, `Case`, `LLMJudge`) to run evaluation datasets.
 *   **LLM-as-a-Judge (Rubric-Based)**: Instead of using brittle string asserts, `LLMJudge` is instantiated with a semantic rubric to evaluate whether the generated synthesis covers all specific constraints in the candidate's profile (job, housing, education, health, inclusion, and proximity preferences).
@@ -98,36 +98,40 @@ tests/
         agent.root_capability.capabilities.remove(online_eval)
     ```
 
-### 9. Programmatic Verification of Expert Swarm Outputs
-*   **Problem**: We must confirm that the map-reduce swarm actually invokes the requested expert agents and that they each produce valid outputs, rather than failing silently or returning empty analyses.
-*   **Solution**: During evaluation runs of the full swarm (in `test_golden_evals.py`), we programmatically verify that all expected experts (e.g., jobs, housing, health) successfully generated a report. We do this by checking the dictionary of generated expert reports inside the state and asserting a minimum character length:
-    ```python
-    for expert in scenario["expected_experts"]:
-        assert expert in city_res.expert_analysis, f"Expert analysis for '{expert}' was not generated"
-        assert len(city_res.expert_analysis[expert]) > 50, f"Analysis for '{expert}' is too short/empty"
-    ```
+### 10. Strict Offline Network Isolation & Socket Guard
+*   **Problem**: Background threads (BigQuery telemetry streaming, unmocked inclusion lookups) can silently attempt outbound network calls in "offline" tests, causing test flakiness, latency, or masked failures.
+*   **Solution**: `tests/conftest.py` installs an autouse `guard_network_sockets` fixture intercepting `socket.connect`, `socket.connect_ex`, and `socket.getaddrinfo`. Any outbound connection to non-loopback addresses outside `@pytest.mark.eval` immediately raises `NetworkLeakError`. Background BigQuery streaming is neutralized by `default_mock_bq_streaming`.
+
+### 11. Pytest Import Mode Isolation
+*   **Problem**: Duplicate test file names across test layers (e.g. `tests/integration/test_data_loader.py` and `tests/unit/test_data_loader.py`) cause module collisions with standard pytest collection.
+*   **Solution**: `pytest.ini` configures `addopts = --import-mode=importlib --tb=line` and `testpaths = tests`, ensuring clean hermetic module loading without name collisions.
+
+### 12. Hermetic 50-Commune Sample Dataset
+*   **Problem**: Loading the full 35,000-commune production dataset in unit tests ties test execution to large disk files and adds unnecessary overhead.
+*   **Solution**: A stratified sample of 50 metropolitan French communes is curated in `tests/fixtures/data/sample_communes.parquet` (~117 KB), covering PLM métropoles, rural extremes, Corse 2A/2B, ANVITA members, and CCAS fallback logic. Tests access this instantly via the `sample_communes_df` fixture.
 
 ---
 
 ## 💻 CLI Commands
 
-Always run tests using the local virtual environment executable to avoid system-level package conflicts.
+Always run tests using `uv` inside the project virtual environment.
 
-### Run All Default Tests (Unit, Integration, E2E)
+### Run All Deterministic Tests (Unit & Integration)
 ```bash
-.venv/bin/pytest
+uv run pytest tests/unit tests/integration --tb=line
 ```
+*(This is the exact quality gate executed in `cloudbuild.yaml` before Docker container packaging).*
 
 ### Run Specific Levels
 ```bash
 # Level 1: Unit
-.venv/bin/pytest tests/unit/
+uv run pytest tests/unit/
 
 # Level 2: Integration
-.venv/bin/pytest tests/integration/
+uv run pytest tests/integration/
 
 # Level 3: E2E & UI
-.venv/bin/pytest tests/e2e/
+uv run pytest tests/e2e/ -m e2e
 ```
 
 ### Run Live AI Evaluations (Level 4)
@@ -135,13 +139,13 @@ Evaluating live graphs requires the `RUN_EVALS` environment variable to be set t
 
 ```bash
 # Run all evaluations (both brief refiner and full graph)
-RUN_EVALS=true .venv/bin/pytest tests/evals/ -s -p no:logfire
+RUN_EVALS=true uv run pytest tests/evals/ -s -p no:logfire
 
 # Run ONLY the fast & cheap brief refiner evaluations (~3s, $0.001)
-RUN_EVALS=true .venv/bin/pytest tests/evals/test_brief_evals.py -s -p no:logfire
+RUN_EVALS=true uv run pytest tests/evals/test_brief_evals.py -s -p no:logfire
 
 # Run ONLY the full map-reduce swarm graph evaluations (~80s)
-RUN_EVALS=true .venv/bin/pytest tests/evals/test_golden_evals.py -s -p no:logfire
+RUN_EVALS=true uv run pytest tests/evals/test_golden_evals.py -s -p no:logfire
 ```
 
 ### Code Quality, Linting & Type Checking
@@ -150,17 +154,17 @@ Before committing or pushing changes, verify linting, formatting, and type corre
 
 ```bash
 # Run Ruff lint checks
-.venv/bin/ruff check app tests
+uv run ruff check app tests scripts
 
 # Run Ruff format check
-.venv/bin/ruff format --check app tests
+uv run ruff format --check app tests scripts
 
 # Run Ruff auto-fix and code formatting
-.venv/bin/ruff format app tests
-.venv/bin/ruff check --fix app tests
+uv run ruff format app tests scripts
+uv run ruff check --fix app tests scripts
 
 # Run Ty semantic type checker
-.venv/bin/ty check app
+uv run ty check app
 ```
 
 ---

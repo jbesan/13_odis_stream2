@@ -6,6 +6,8 @@ from core.models import JobOfferDetail, EmploymentMetrics, CommuneResult
 from agents.utils import get_odis_bg_store
 from core.postscoring import launch_background_job_curation
 
+pytestmark = pytest.mark.e2e
+
 
 @pytest.fixture(autouse=True)
 def clean_streamlit_session():

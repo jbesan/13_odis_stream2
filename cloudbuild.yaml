@@ -31,11 +31,7 @@ steps:
         uv run python scripts/sync_datasets.py --bucket=${_DATA_BUCKET}
         uv run ruff check app tests
         uv run ty check app
-        uv run pytest --tb=line \
-          tests/unit/test_active_manifest.py \
-          tests/unit/test_sync_datasets.py \
-          tests/unit/test_logfire_env.py \
-          tests/unit/test_rna_rag_service.py
+        uv run pytest tests/unit tests/integration --tb=line
 
   - name: gcr.io/cloud-builders/docker
     args:
