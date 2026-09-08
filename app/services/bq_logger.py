@@ -220,6 +220,7 @@ def log_agent_state_to_bq(
         row = {
             "interaction_id": interaction_id,
             "timestamp": timestamp_paris,
+            "env": os.getenv("ODIS_DEPLOYMENT_ENV", "local"),
             "username": username,
             "last_user_message": user_input[:2000] if user_input else "",
             "last_agent_response": last_response[:10000] if last_response else "",

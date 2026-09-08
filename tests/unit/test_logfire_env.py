@@ -25,13 +25,12 @@ def test_setup_logfire_prod():
     mock_logfire = MagicMock()
     mock_logfire.DEFAULT_LOGFIRE_INSTANCE.config.environment = None
 
-    with (
-        patch("utils.logger.logfire", mock_logfire),
-        patch.dict(
-            os.environ,
-            {"K_SERVICE": "my-cloud-run-service", "LOGFIRE_TOKEN": "some-token"},
-        ),
-    ):
+    env_mock = os.environ.copy()
+    env_mock.pop("ODIS_DEPLOYMENT_ENV", None)
+    env_mock["K_SERVICE"] = "my-cloud-run-service"
+    env_mock["LOGFIRE_TOKEN"] = "some-token"
+
+    with patch("utils.logger.logfire", mock_logfire), patch("os.environ", env_mock):
         setup_logfire()
 
         mock_logfire.configure.assert_called_once_with(

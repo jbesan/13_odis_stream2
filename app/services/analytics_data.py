@@ -163,6 +163,7 @@ def fetch_analytics_data(_client: Any, days: int) -> AnalyticsDataResult:
         SELECT
             interaction_id,
             timestamp,
+            IFNULL(env, 'production') AS env,
             username,
             IFNULL(org_id, 'défaut') AS org_id,
             IFNULL(search_hash, '') AS search_hash,
@@ -180,6 +181,7 @@ def fetch_analytics_data(_client: Any, days: int) -> AnalyticsDataResult:
             interaction_id,
             login_session_id,
             timestamp,
+            IFNULL(env, 'production') AS env,
             username,
             IFNULL(org_id, 'défaut') AS org_id,
             event_name,
@@ -236,13 +238,17 @@ def fetch_gcp_billing_data(
 
 
 @st.cache_data
-def fetch_agent_costs_data(_client: Any, days: int) -> ServiceOutcome[pd.DataFrame]:
+def fetch_agent_costs_data(
+    _client: Any, days: int, env: str | None = "production"
+) -> ServiceOutcome[pd.DataFrame]:
     """Fetch AI agent execution estimated costs aggregated by day."""
     if _client is None:
         return ServiceOutcome[pd.DataFrame](
             status=OutcomeStatus.UNAVAILABLE,
             error_code="ANALYTICS-BQ-UNAVAILABLE",
         )
+
+    env_filter = f"AND (env = '{env}' OR env IS NULL)" if env else ""
 
     query_agent_costs = f"""
         SELECT
@@ -251,6 +257,7 @@ def fetch_agent_costs_data(_client: Any, days: int) -> ServiceOutcome[pd.DataFra
             SUM(cost_eur) AS total_estimated_cost_eur
         FROM `{_client.project}.{dataset_id}.agent_state_logs`
         WHERE TIMESTAMP(timestamp) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {days} DAY)
+          {env_filter}
         GROUP BY usage_date
         ORDER BY usage_date DESC
     """

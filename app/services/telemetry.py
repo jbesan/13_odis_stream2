@@ -9,7 +9,7 @@ import streamlit as st
 import os
 from google.cloud import bigquery
 from core.models import SearchCriterias, SearchResultsData
-from typing import Any, Optional
+from typing import Any, Optional, Set
 from utils import auth
 
 # Use root logger for critical visibility in background threads
@@ -46,6 +46,37 @@ _TELEMETRY_EXECUTOR = ThreadPoolExecutor(
 )
 atexit.register(_TELEMETRY_EXECUTOR.shutdown, wait=False)
 
+_VERIFIED_BQ_TABLES: Set[str] = set()
+
+SAVED_SEARCHES_SCHEMA = [
+    bigquery.SchemaField("share_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("event_type", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("status", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("timestamp", "TIMESTAMP", mode="REQUIRED"),
+    bigquery.SchemaField("env", "STRING", mode="NULLABLE"),
+    bigquery.SchemaField("username", "STRING", mode="NULLABLE"),
+    bigquery.SchemaField("org_id", "STRING", mode="NULLABLE"),
+    bigquery.SchemaField("search_hash", "STRING", mode="NULLABLE"),
+    bigquery.SchemaField("gcs_uri", "STRING", mode="NULLABLE"),
+    bigquery.SchemaField("app_version", "STRING", mode="NULLABLE"),
+    bigquery.SchemaField("schema_version", "STRING", mode="NULLABLE"),
+    bigquery.SchemaField("data_release", "STRING", mode="NULLABLE"),
+    bigquery.SchemaField("interaction_id", "STRING", mode="NULLABLE"),
+]
+
+
+def _ensure_table_exists(
+    client: bigquery.Client, table_ref: str, schema: list[bigquery.SchemaField]
+) -> None:
+    if table_ref in _VERIFIED_BQ_TABLES:
+        return
+    try:
+        table = bigquery.Table(table_ref, schema=schema)
+        client.create_table(table, exists_ok=True)
+        _VERIFIED_BQ_TABLES.add(table_ref)
+    except Exception as exc:
+        logger.warning("Could not auto-create BigQuery table %s: %s", table_ref, exc)
+
 
 def _execute_bq_insert(table_name_or_ref: str, row: dict) -> None:
     """Execute BigQuery streaming insertion in the background."""
@@ -55,6 +86,10 @@ def _execute_bq_insert(table_name_or_ref: str, row: dict) -> None:
             table_ref = table_name_or_ref
         else:
             table_ref = f"{client.project}.odis_logs.{table_name_or_ref}"
+
+        if "saved_searches" in table_ref:
+            _ensure_table_exists(client, table_ref, SAVED_SEARCHES_SCHEMA)
+
         errors = client.insert_rows_json(table_ref, [row], timeout=15)
         if errors:
             logger.error(f"❌ [TELEMETRY] BQ Insert Error for {table_ref}: {errors}")
@@ -245,6 +280,7 @@ def log_usage_event(
             "interaction_id": interaction_id,
             "login_session_id": login_session_id,
             "timestamp": timestamp_str,
+            "env": os.getenv("ODIS_DEPLOYMENT_ENV", "local"),
             "username": username,
             "org_id": org_id,
             "event_name": event_name,
@@ -256,6 +292,84 @@ def log_usage_event(
         _submit_bq_insert("usage_events", row)
     except Exception as e:
         logger.error(f"❌ [TELEMETRY] Failed to queue usage event to BQ: {str(e)}")
+
+
+def log_saved_search_event(
+    event_type: str,
+    share_id: str,
+    *,
+    status: str = "success",
+    env: Optional[str] = None,
+    gcs_uri: Optional[str] = None,
+    search_hash: Optional[str] = None,
+    app_version: Optional[str] = None,
+    schema_version: Optional[str] = None,
+    data_release: Optional[str] = None,
+    username: Optional[str] = None,
+    org_id: Optional[str] = None,
+    interaction_id: Optional[str] = None,
+) -> None:
+    """Logs a structured saved search lifecycle event ('create' or 'view') to BigQuery saved_searches table."""
+    if not os.getenv("GOOGLE_CLOUD_PROJECT") and not os.getenv("GCP_PROJECT"):
+        return
+
+    if status != "success":
+        return
+
+    try:
+        try:
+            if not username:
+                username = st.session_state.get("username", "unknown")
+            if not interaction_id:
+                interaction_id = get_interaction_id()
+            if not org_id:
+                org = st.session_state.get("org")
+                org_id = org.id if org and hasattr(org, "id") else "unknown"
+        except (AttributeError, RuntimeError) as exc:
+            _telemetry_logger.debug(
+                "st.session_state unavailable in log_saved_search_event: %s", exc
+            )
+            username = username or "unknown"
+            interaction_id = interaction_id or "unknown"
+            org_id = org_id or "unknown"
+        except Exception as exc:
+            _telemetry_logger.warning(
+                "Error resolving session metadata in log_saved_search_event: %s", exc
+            )
+            username = username or "unknown"
+            interaction_id = interaction_id or "unknown"
+            org_id = org_id or "unknown"
+
+        try:
+            paris_tz = zoneinfo.ZoneInfo("Europe/Paris")
+            timestamp_str = datetime.now(paris_tz).isoformat()
+        except Exception as exc:
+            _telemetry_logger.debug(
+                "Failed to obtain Europe/Paris time in log_saved_search_event: %s", exc
+            )
+            timestamp_str = datetime.now().isoformat()
+
+        resolved_env = env or os.getenv("ODIS_DEPLOYMENT_ENV", "local")
+
+        row = {
+            "share_id": share_id,
+            "event_type": event_type,
+            "status": status,
+            "timestamp": timestamp_str,
+            "env": resolved_env,
+            "username": username,
+            "org_id": org_id,
+            "search_hash": search_hash or "",
+            "gcs_uri": gcs_uri or "",
+            "app_version": app_version or "",
+            "schema_version": schema_version or "1.0",
+            "data_release": data_release or "unknown",
+            "interaction_id": interaction_id or "",
+        }
+
+        _submit_bq_insert("saved_searches", row)
+    except Exception as e:
+        logger.error(f"❌ [TELEMETRY] Failed to queue saved_searches event to BQ: {e}")
 
 
 def log_page_view(page_name: str):
@@ -443,6 +557,7 @@ def log_search_complete(
         row = {
             "interaction_id": interaction_id,
             "timestamp": timestamp_str,
+            "env": os.getenv("ODIS_DEPLOYMENT_ENV", "local"),
             "username": username,
             "org_id": org_id,
             "manifest_version": get_manifest_version(),

@@ -25,6 +25,7 @@ def _submit_to_bq(feedback_type, comment, context=None):
         row = {
             "interaction_id": interaction_id,
             "timestamp": datetime.now(timezone.utc).isoformat(),
+            "env": os.getenv("ODIS_DEPLOYMENT_ENV", "local"),
             "username": username,
             "feedback_type": feedback_type,
             "comment": comment,

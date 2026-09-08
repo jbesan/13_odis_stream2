@@ -1,0 +1,161 @@
+{
+  "share_id": "refv2001",
+  "schema_version": "1.0",
+  "app_version": "0.2.0-sha1234",
+  "created_at": "2026-09-08T10:00:00+02:00",
+  "username": "ts_current@jaccueille.org",
+  "org_id": "jaccueille",
+  "search_hash": "a1b2c3d4e5f6071829",
+  "config": {
+    "commune_actuelle": {
+      "code": "33063",
+      "label": "Bordeaux (33)"
+    },
+    "commune_pressentie": {
+      "code": "33522",
+      "label": "Talence (33)"
+    },
+    "loc_search_area": "departement",
+    "loc_search_code": ["33", "24"],
+    "nb_adultes": 2,
+    "nb_enfants": 3,
+    "classe_enfants": ["Primaire", "Collège", "Lycée"],
+    "codes_metiers": [
+      [{"code": "M1602", "label": "Opérations administratives"}],
+      [{"code": "I1304", "label": "Maintenance industrielle"}]
+    ],
+    "codes_formations": [
+      [{"code": "F1601", "label": "Bureautique"}]
+    ],
+    "inc_services_selection": [
+      {"code": "num_01", "label": "Atelier numérique"}
+    ],
+    "inc_asso_add_selection": [
+      {"code": "asso_sport", "label": "Club sportif"}
+    ],
+    "hebergement_cible": ["110"],
+    "logement": ["Location", "Logement Social"],
+    "type_logement": {
+      "code": "Appartement",
+      "label": "Appartement"
+    },
+    "besoin_sante": ["medecin_generaliste", "pediatre"],
+    "freq_retour": "1 fois/mois",
+    "notes_qualitatives": [
+      "Recherche proche école primaire",
+      "Mobilité douce privilégiée"
+    ],
+    "weight_profile": "custom",
+    "criteria_weights": {
+      "sante_medecins": 2.0,
+      "densite_services": 1.5
+    },
+    "target_city_size": "🏘️ Petite Ville",
+    "target_population_a": 20000,
+    "target_population_b": 40000,
+    "target_population_c": 60000,
+    "target_population_d": 80000
+  },
+  "search_results": {
+    "search_hash": "a1b2c3d4e5f6071829",
+    "global_pitch": "Les communes proposées répondent aux besoins de santé et d'éducation.",
+    "current_geo": {
+      "codgeo": "33063",
+      "name": "Bordeaux",
+      "population": 260000,
+      "codgeo_bdv": "33063",
+      "name_bdv": "Bordeaux",
+      "global_score": 75.0
+    },
+    "commune_pressentie": {
+      "codgeo": "33522",
+      "name": "Talence",
+      "population": 44000,
+      "global_score": 82.0
+    },
+    "results": [
+      {
+        "codgeo": "33281",
+        "name": "Mérignac",
+        "population": 72000,
+        "global_score": 88.5,
+        "score_besoins": 86.0,
+        "scores": {
+          "sante": [
+            {
+              "score_id": "sante_medecins",
+              "label": "Médecins",
+              "valeur_kpi": 15.0,
+              "score_normalise": 90.0
+            }
+          ]
+        },
+        "employment": {
+          "taux_chomage": 8.2
+        },
+        "housing": {
+          "loyer_moyen_m2": 13.5
+        },
+        "education": {
+          "nb_ecoles_primaires": 14
+        },
+        "health": {
+          "nb_medecins": 52
+        },
+        "inclusion": {
+          "nb_structures_insertion": 6,
+          "services_detailed": {
+            "num_01": [
+              {
+                "id": "s_1",
+                "name": "Médiathèque numérique",
+                "description": "Accès libre et ateliers",
+                "lien_source": "https://example.org",
+                "source": "data_inclusion"
+              }
+            ]
+          }
+        },
+        "mobility": {
+          "temps_acces_gare_min": 12.0
+        },
+        "territoire": {
+          "est_adherent_anvita": true
+        },
+        "refiner_pitch": "Mérignac combine une forte dynamique économique et des infrastructures complètes.",
+        "expert_analysis": {
+          "housing": "Offre locative accessible."
+        },
+        "odis_synthesis": [
+          {
+            "role": "assistant",
+            "content": "Synthèse pour Mérignac."
+          }
+        ],
+        "analysis_report": {
+          "city_name": "Mérignac",
+          "city_code": "33281",
+          "avis_global": "Favorable pour la famille.",
+          "domains": {
+            "housing": {
+              "domain_key": "housing",
+              "label": "Logement",
+              "short_label": "Logement",
+              "content": "Détails logement."
+            }
+          }
+        }
+      }
+    ]
+  },
+  "snapshot": {
+    "policy": "immutable",
+    "data_release": "release_2026_09_02_150500",
+    "map_context": [],
+    "current_map_context": [],
+    "map_view": {
+      "center": [44.8378, -0.5792],
+      "zoom": 11
+    }
+  }
+}
