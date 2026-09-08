@@ -142,6 +142,9 @@ class SearchController:
         state["zoom"] = maps_deck.get_map_zoom(config.loc_search_area)
         state["last_centered_hash"] = search_hash
         if config.commune_actuelle is not None:
-            state["selected_geo"] = app_data["odis"].loc[
-                [config.commune_actuelle.code]
-            ].copy()
+            c_code = config.commune_actuelle.code
+            if c_code in app_data["odis"].index:
+                selected_geo = app_data["odis"].loc[[c_code]].copy()
+                if "odis_geo" in app_data and c_code in app_data["odis_geo"].index:
+                    selected_geo["polygon"] = app_data["odis_geo"].loc[[c_code]].values
+                state["selected_geo"] = selected_geo

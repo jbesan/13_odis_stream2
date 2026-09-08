@@ -93,11 +93,23 @@ def render_admin_sidebar_link() -> None:
             st.switch_page("pages/4_Analytics.py")
 
 
+def render_about_sidebar_link() -> None:
+    """Renders the 'À propos' button in the sidebar opening the about dialog."""
+    from ui.sources_dialog import show_about_dialog
+
+    if st.button(
+        "À propos",
+        key="btn_about_dialog",
+        width="stretch",
+        type="tertiary",
+        icon=":material/info:",
+    ):
+        show_about_dialog()
+
+
 def render_sources_sidebar_link() -> None:
-    """Renders the 'Sources des données' button in the sidebar opening the sources dialog."""
-    from ui.sources_dialog import show_sources_dialog
-    if st.button("Sources des données", key="btn_sources_dialog", width='stretch', type='tertiary'):
-        show_sources_dialog()
+    """Backward-compatible alias for render_about_sidebar_link."""
+    render_about_sidebar_link()
 
 
 def render_logout_sidebar_button() -> None:

@@ -117,5 +117,5 @@ def render_account_sidebar_actions(*, show_admin: bool = True) -> None:
     st.divider()
     if show_admin:
         components.render_admin_sidebar_link()
-    components.render_sources_sidebar_link()
+    components.render_about_sidebar_link()
     components.render_logout_sidebar_button()

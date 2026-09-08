@@ -60,7 +60,12 @@ def prepare_map_payload(
     if selected_ids is None:
         selected_ids = set()
 
-    gdf_ctx = current_map_context if current_map_context is not None else gdf_scores
+    top_contexts = [
+        ctx for ctx in (gdf_scores, current_map_context) if ctx is not None and not ctx.empty
+    ]
+    curr_contexts = [
+        ctx for ctx in (current_map_context, gdf_scores) if ctx is not None and not ctx.empty
+    ]
 
     # 1. Extract minimal scores dictionary: {codgeo: score_float}
     scores_dict: Dict[str, float] = {}
@@ -84,7 +89,7 @@ def prepare_map_payload(
     top_markers: List[Dict[str, Any]] = []
     if search_results and show_top_5 and getattr(search_results, "results", None):
         for i, c in enumerate(search_results.results[:5]):
-            centroid = _get_geom(c, "centroid", gdf_context=gdf_ctx)
+            centroid = _get_geom(c, "centroid", gdf_context=top_contexts)
             if centroid is not None:
                 top_markers.append({
                     "rank": i + 1,
@@ -100,7 +105,7 @@ def prepare_map_payload(
         # Shortlisted city (Ville pressentie)
         p_city = getattr(search_results, "commune_pressentie", None)
         if p_city is not None:
-            p_centroid = _get_geom(p_city, "centroid", gdf_context=gdf_ctx)
+            p_centroid = _get_geom(p_city, "centroid", gdf_context=top_contexts)
             if p_centroid is not None:
                 top_markers.append({
                     "rank": 0,
@@ -117,15 +122,14 @@ def prepare_map_payload(
     current_marker = None
     if search_results and getattr(search_results, "current_geo", None):
         c_geo = search_results.current_geo
-        c_centroid = _get_geom(c_geo, "centroid", gdf_context=gdf_ctx)
-        if c_centroid is not None:
-            current_marker = {
-                "name": getattr(c_geo, "name", "Commune Actuelle"),
-                "codgeo": str(getattr(c_geo, "codgeo", "")),
-                "lat": float(c_centroid.y),
-                "lon": float(c_centroid.x),
-                "type": "current",
-            }
+        c_centroid = _get_geom(c_geo, "centroid", gdf_context=curr_contexts)
+        current_marker = {
+            "name": getattr(c_geo, "name", "Commune Actuelle"),
+            "codgeo": str(getattr(c_geo, "codgeo", "")),
+            "lat": float(c_centroid.y) if c_centroid is not None else None,
+            "lon": float(c_centroid.x) if c_centroid is not None else None,
+            "type": "current",
+        }
 
     # 5. POI Markers (Mairies, Écoles, Santé, Inclusion)
     poi_markers: List[Dict[str, Any]] = []

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 from html import escape
-from typing import Any, List, Optional, Set, Tuple, Union
+from typing import Any, List, Optional, Sequence, Set, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -110,7 +110,7 @@ def build_choropleth_legend_html(
 def _get_geom(
     row: Union[pd.Series, Any],
     field: str = "polygon",
-    gdf_context: Optional[pd.DataFrame] = None,
+    gdf_context: Optional[Union[pd.DataFrame, Sequence[pd.DataFrame]]] = None,
 ) -> Optional[Any]:
     """Helper to extract and JIT-decode geometry from a row or model."""
     codgeo = None
@@ -122,28 +122,35 @@ def _get_geom(
         codgeo = str(row.get("codgeo", ""))
 
     # 1. Context lookup
-    if gdf_context is not None and codgeo in gdf_context.index:
-        try:
-            if field == "centroid" and "centroid" not in gdf_context.columns:
-                poly_wkb = gdf_context.loc[codgeo, "polygon"]
-                poly = (
-                    wkb.loads(bytes(poly_wkb))
-                    if isinstance(poly_wkb, (bytes, bytearray))
-                    else poly_wkb
-                )
-                return poly.centroid if poly else None
+    contexts: List[pd.DataFrame] = []
+    if isinstance(gdf_context, pd.DataFrame):
+        contexts = [gdf_context]
+    elif gdf_context is not None:
+        contexts = [c for c in gdf_context if isinstance(c, pd.DataFrame)]
 
-            val = gdf_context.loc[codgeo, field]
-            if isinstance(val, (bytes, bytearray)):
-                return wkb.loads(bytes(val))
-            return val
-        except KeyError:
-            alt_field = "geometry" if field == "polygon" else "polygon"
-            val = gdf_context.loc[codgeo].get(alt_field)
-            geom = wkb.loads(bytes(val)) if isinstance(val, (bytes, bytearray)) else val
-            if field == "centroid" and geom and not hasattr(geom, "x"):
-                return geom.centroid
-            return geom
+    for ctx in contexts:
+        if codgeo in ctx.index:
+            try:
+                if field == "centroid" and "centroid" not in ctx.columns:
+                    poly_wkb = ctx.loc[codgeo, "polygon"]
+                    poly = (
+                        wkb.loads(bytes(poly_wkb))
+                        if isinstance(poly_wkb, (bytes, bytearray))
+                        else poly_wkb
+                    )
+                    return poly.centroid if poly else None
+
+                val = ctx.loc[codgeo, field]
+                if isinstance(val, (bytes, bytearray)):
+                    return wkb.loads(bytes(val))
+                return val
+            except KeyError:
+                alt_field = "geometry" if field == "polygon" else "polygon"
+                val = ctx.loc[codgeo].get(alt_field)
+                geom = wkb.loads(bytes(val)) if isinstance(val, (bytes, bytearray)) else val
+                if field == "centroid" and geom and not hasattr(geom, "x"):
+                    return geom.centroid
+                return geom
 
     # 2. Object inspection fallback
     val = None
@@ -717,18 +724,20 @@ def create_deck_map(
 
     # 2. Current Location Layer
     if search_results and search_results.current_geo:
+        curr_contexts = [ctx for ctx in (current_map_context, gdf_scores) if ctx is not None and not ctx.empty]
         loc_layer = build_current_loc_layer(
             search_results.current_geo,
-            gdf_context=current_map_context if current_map_context is not None else gdf_scores,
+            gdf_context=curr_contexts,
         )
         if loc_layer:
             layers.append(loc_layer)
 
     # 3. Top Results & Shortlisted City Layers
     if search_results:
+        top_contexts = [ctx for ctx in (gdf_scores, current_map_context) if ctx is not None and not ctx.empty]
         top_layers = build_top_results_layers(
             search_results,
-            gdf_context=current_map_context if current_map_context is not None else gdf_scores,
+            gdf_context=top_contexts,
             highlighted_rank=highlighted_rank,
             show_top_5=show_top_5,
         )
