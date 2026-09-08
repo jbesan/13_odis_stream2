@@ -1,6 +1,5 @@
 import logging
 from typing import List, Optional
-import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -79,7 +78,6 @@ __all__ = [
     "render_details_trigger_button",
     "render_ai_trigger_button",
     "render_refiner_panel",
-    "render_global_pitch",
     # Readiness and polling helpers
     "_is_postscoring_ready_for_search",
     "_is_hydration_ready_for_city",
@@ -106,7 +104,6 @@ __all__ = [
     "_merge_agent_results",
     # Main results listing
     "render_active_dialogs",
-    "display_results_list",
     "_display_result_details",
     "_result_highlight_callback",
     "_on_result_feedback",
@@ -166,11 +163,11 @@ def _is_hydration_ready_for_city(commune: CommuneResult, h: Optional[str]) -> bo
 
 def _is_postscoring_ready_for_city(commune: CommuneResult, h: Optional[str]) -> bool:
     """Return True if all background post-scoring tasks for this commune have reached a terminal state."""
+    if getattr(commune, "odis_synthesis", None) or getattr(commune, "analysis_report", None):
+        return True
+
     if st.session_state.get("immutable_shared_snapshot"):
         return False
-
-    if getattr(commune, "odis_synthesis", None):
-        return True
 
     if not h:
         return True
@@ -225,11 +222,18 @@ def render_details_trigger_button(commune: CommuneResult, h: Optional[str]) -> b
 @st.fragment(run_every=2.0)
 def render_ai_trigger_button(commune: CommuneResult, h: Optional[str]) -> bool:
     """Renders the AI Analysis trigger button with up-to-date state in-place."""
+    has_analysis = bool(
+        getattr(commune, "analysis_report", None)
+        or getattr(commune, "odis_synthesis", None)
+    )
     ready = _is_postscoring_ready_for_city(commune, h)
     immutable_snapshot = bool(st.session_state.get("immutable_shared_snapshot"))
 
-    if immutable_snapshot:
-        btn_label = "Analyse Avancée (indisponible pour l'instantané)"
+    if has_analysis:
+        btn_label = "Consulter l'Analyse Avancée" if immutable_snapshot else "Analyse Avancée"
+        btn_disabled = False
+    elif immutable_snapshot:
+        btn_label = "Analyse Avancée (non réalisée)"
         btn_disabled = True
     elif not ready:
         btn_label = "Analyse Avancée (Préparation...)"
@@ -354,131 +358,6 @@ def render_active_dialogs() -> None:
     active_ccas_index = st.session_state.get("active_ccas_index")
     if active_ccas_index is not None:
         show_ccas_dialog(active_ccas_index)
-
-
-def render_global_pitch(h: Optional[str] = None):
-    """Renders the global intro pitch if available, or a loading message."""
-    search_results: SearchResultsData = st.session_state.get("search_results")
-    if not search_results:
-        return
-
-    if not h:
-        h = st.session_state.get("active_search_hash")
-
-    bg_res = odis_get_bg_result(h) if h else None
-    refiner_status = bg_res.get("status_refiner") if isinstance(bg_res, dict) else None
-    if refiner_status != "done":
-        if is_terminal_refiner_status(refiner_status):
-            st.caption("Analyse stratégique IA indisponible pour cette recherche.")
-        else:
-            st.info("✨ _Analyse stratégique des résultats en cours..._")
-        return
-
-    if bg_res and "pitches" in bg_res:
-        if not search_results.global_pitch:
-            search_results.global_pitch = bg_res["pitches"].get("global", "")
-
-    if search_results.global_pitch:
-        st.markdown(
-            f"""
-        <div style="background-color: #f8f9fa; padding: 20px; border-radius: 10px; border-left: 5px solid #006268; margin-bottom: 20px;">
-            {search_results.global_pitch}
-        </div>
-        """,
-            unsafe_allow_html=False,
-        )
-
-
-def display_results_list(display_gdf: Optional[pd.DataFrame] = None) -> None:
-    """Renders the list of search results or the detailed view for the highlighted result."""
-    h = st.session_state.get("active_search_hash")
-    search_results: SearchResultsData = st.session_state.get("search_results")
-
-    if not search_results or not search_results.results:
-        st.info("Aucun résultat à afficher.")
-        return
-
-    # Keep the legacy renderer's behavior when it is used by other pages.
-    render_active_dialogs()
-
-    st.markdown(
-        '<style> [class*="st-key-button_top"] .stButton button div, [class*="st-key-button_top"] .stButton button p { justify-content: flex-start !important; text-align: left !important; width: 100%; } </style>',
-        unsafe_allow_html=True,
-    )
-
-    is_highlighted, highlighted_rank = st.session_state.highlighted_result
-
-    # Hydrate all search results if background data is available
-    bg_res = odis_get_bg_result(h) if h else None
-    if bg_res:
-        for c in search_results.results:
-            sync_background_data(c, h)
-        if search_results.commune_pressentie:
-            sync_background_data(search_results.commune_pressentie, h)
-        if "odis_brief" in bg_res and st.session_state.get("config"):
-            brief_val = bg_res["odis_brief"]
-            if brief_val and st.session_state.config.odis_brief != brief_val:
-                st.session_state.config.odis_brief = brief_val
-
-    # Shortlisted City (Ville Pressentie) Button (Feature F-61)
-    if search_results.commune_pressentie:
-        st.markdown(
-            """
-        <style>
-        [class*="st-key-btn_pressentie"] .stButton button div, [class*="st-key-btn_pressentie"] .stButton button p {
-            justify-content: flex-start !important; 
-            text-align: left !important; 
-            width: 100%;
-        }
-        div[class*="st-key-btn_pressentie"] button {
-            background-color: #F5D819 !important;
-            color: #1B4429 !important;
-            font-weight: bold !important;
-            border: 1px solid #F5D819 !important;
-        }
-        div[class*="st-key-btn_pressentie"] button:hover {
-            background-color: #E2C617 !important;
-            color: #1B4429 !important;
-        }
-        </style>
-        """,
-            unsafe_allow_html=True,
-        )
-
-        p_commune = search_results.commune_pressentie
-        title_p = f"**{p_commune.global_score * 100:.0f}/100**  -  {p_commune.name} (Ville Souhaitée)"
-
-        st.button(
-            title_p,
-            on_click=_result_highlight_callback,
-            args=(-1,),
-            width="stretch",
-            key="btn_pressentie",
-            type="primary",
-            icon=":material/push_pin:",
-        )
-
-        if is_highlighted and highlighted_rank == -1:
-            _display_result_details(p_commune)
-
-        st.text("Alternatives : ")
-
-    for i, commune in enumerate(search_results.results):
-        title = f"**{commune.global_score * 100:.0f}/100**  -  {commune.name}"
-
-        st.button(
-            title,
-            on_click=_result_highlight_callback,
-            args=(i,),
-            width="stretch",
-            key=f"button_top{i + 1}",
-            type="primary",
-            icon=f":material/counter_{i + 1}:",
-        )
-
-        # Check if this row's index matches the highlighted index
-        if is_highlighted and i == highlighted_rank:
-            _display_result_details(commune)
 
 
 def _display_result_details(commune: CommuneResult) -> None:

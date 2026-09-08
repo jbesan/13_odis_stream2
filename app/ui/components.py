@@ -107,10 +107,6 @@ def render_about_sidebar_link() -> None:
         show_about_dialog()
 
 
-def render_sources_sidebar_link() -> None:
-    """Backward-compatible alias for render_about_sidebar_link."""
-    render_about_sidebar_link()
-
 
 def render_logout_sidebar_button() -> None:
     """Renders the connected user info badge and logout button in the sidebar."""

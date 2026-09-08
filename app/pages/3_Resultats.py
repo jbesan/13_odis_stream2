@@ -399,17 +399,8 @@ with st.sidebar:
     page_shell.render_account_sidebar_actions()
 
 
-# The custom results layout does not call display_results_list(), so dispatch
-# active result dialogs explicitly on the full rerun triggered by each action.
+# Dispatch active result dialogs explicitly on the full rerun triggered by each action.
 ui_results.render_active_dialogs()
-
-# Global Pitch (Strategic intro + Loading state)
-# if st.session_state.get('search_results'):
-#     h = st.session_state.search_results.search_hash
-# @st.fragment(run_every=3.0)
-# def global_pitch_container(h: str):
-#     ui_results.render_global_pitch(h)
-# global_pitch_container(h)
 
 # Main results & full-screen map layout
 if st.session_state.get("processed_gdf") is not None:
@@ -477,7 +468,7 @@ if st.session_state.get("processed_gdf") is not None:
     if show_top_5:
         legend_markers.append(("#D63E2A", "Top 5"))
         if search_results and search_results.commune_pressentie:
-            legend_markers.append(("#F5D819", "Ville souhaitée"))
+            legend_markers.append(("#036BFC", "Ville pressentie"))
     if not snapshot_mode:
         if "mairie" in selected_ids:
             legend_markers.append(("#F5D819", "Mairies"))
@@ -521,17 +512,20 @@ if st.session_state.get("processed_gdf") is not None:
                 score_pct = f"{p_commune.global_score * 100:.0f}/100"
 
                 st.button(
-                    f"**{score_pct}** - {p_commune.name}",
+                    f"**{score_pct}** - {p_commune.name} (ville pressentie)",
                     help=f"Ville Souhaitée : {p_commune.name}",
                     key="btn_top_pressentie",
                     type="secondary",
                     width="stretch",
                     on_click=ui_results._result_highlight_callback,
                     args=(-1,),
+                    icon=":material/bookmark_added:"
                 )
                 if is_active:
                     ui_results._display_result_details(p_commune)
                     st.write("")
+                
+                st.space("small")
 
             # B. Top 5 Results (Vertical list)
             for i, c in enumerate(search_results.results[:5]):
@@ -540,9 +534,7 @@ if st.session_state.get("processed_gdf") is not None:
                 score_pct = f"{c.global_score * 100:.0f}/100"
                 st.button(
                     f"**{score_pct}** - {c.name}",
-                    # help=f"Top {i+1} : {c.name}",
                     key=f"btn_top_{i+1}",
-                    # type=btn_type,
                     icon=f":material/counter_{i+1}:",
                     type="primary",
                     width="stretch",

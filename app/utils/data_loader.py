@@ -66,11 +66,6 @@ class ReleaseContext:
         )
 
 
-def preload_scoring_datasets_async() -> None:
-    """No-op retained for backwards compatibility: datasets are baked into the container."""
-    pass
-
-
 def load_scores_config_as_df(config_path: str) -> pd.DataFrame:
     """Loads the scores configuration YAML as a DataFrame."""
     with open(config_path, "r") as f:
@@ -160,13 +155,6 @@ def apply_logged_in_org_defaults(defaults: Dict[str, Any]) -> None:
         if st.session_state.get("org_defaults_applied") != org.id:
             # st.toast(f"Profil Organisation activé : **{org.name}**", icon="🏢")
             st.session_state["org_defaults_applied"] = org.id
-
-
-def session_states_init(defaults: Dict[str, Any]) -> None:
-    """Initialize missing Streamlit widget values through the form adapter."""
-    from ui.form_state import FormState
-
-    FormState(st.session_state).initialize(defaults)
 
 
 def apply_search_criteria_to_ui(

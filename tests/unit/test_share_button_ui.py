@@ -5,6 +5,7 @@ from ui.results import (
     render_export_pdf_button,
     render_details_trigger_button,
     render_active_dialogs,
+    render_ai_trigger_button,
 )
 from core.models import SearchResultsData, CommuneResult
 
@@ -164,3 +165,85 @@ def test_render_active_dialogs_dispatches_all_result_dialogs(monkeypatch):
         ("details", "33009"),
         ("ccas", "33009"),
     ]
+
+
+def test_render_ai_trigger_button_in_immutable_snapshot_with_existing_analysis(monkeypatch):
+    """Verify that in immutable snapshot mode, if an analysis already exists, the button is enabled."""
+    button_calls = []
+
+    def mock_button(label, **kwargs):
+        button_calls.append((label, kwargs))
+        return False
+
+    monkeypatch.setattr(st, "button", mock_button)
+    search_results = _create_mock_search_results("33063")
+    commune = search_results.results[0]
+    commune.odis_synthesis = [{"role": "assistant", "content": "Synthèse sauvegardée"}]
+    monkeypatch.setattr("ui.results.st.session_state", {
+        "search_results": search_results,
+        "immutable_shared_snapshot": True,
+    })
+
+    _call_fn(render_ai_trigger_button, commune=commune, h="hash_123")
+
+    assert len(button_calls) == 1
+    label, kwargs = button_calls[0]
+    assert label == "Consulter l'Analyse Avancée"
+    assert kwargs.get("disabled") is False
+
+
+def test_render_ai_trigger_button_in_immutable_snapshot_without_analysis(monkeypatch):
+    """Verify that in immutable snapshot mode, if no analysis exists, the button is disabled."""
+    button_calls = []
+
+    def mock_button(label, **kwargs):
+        button_calls.append((label, kwargs))
+        return False
+
+    monkeypatch.setattr(st, "button", mock_button)
+    search_results = _create_mock_search_results("33063")
+    commune = search_results.results[0]
+    commune.odis_synthesis = None
+    commune.analysis_report = None
+    monkeypatch.setattr("ui.results.st.session_state", {
+        "search_results": search_results,
+        "immutable_shared_snapshot": True,
+    })
+
+    _call_fn(render_ai_trigger_button, commune=commune, h="hash_123")
+
+    assert len(button_calls) == 1
+    label, kwargs = button_calls[0]
+    assert label == "Analyse Avancée (non réalisée)"
+    assert kwargs.get("disabled") is True
+
+
+def test_render_ai_trigger_button_in_live_mode(monkeypatch):
+    """Verify that in live mode, button displays standard labels depending on readiness."""
+    button_calls = []
+
+    def mock_button(label, **kwargs):
+        button_calls.append((label, kwargs))
+        return False
+
+    monkeypatch.setattr(st, "button", mock_button)
+    search_results = _create_mock_search_results("33063")
+    commune = search_results.results[0]
+    commune.odis_synthesis = None
+    commune.analysis_report = None
+    monkeypatch.setattr("ui.results.st.session_state", {
+        "search_results": search_results,
+        "immutable_shared_snapshot": False,
+    })
+    # Postscoring not ready
+    monkeypatch.setattr("ui.results._is_postscoring_ready_for_city", lambda c, h: False)
+
+    _call_fn(render_ai_trigger_button, commune=commune, h="hash_123")
+    assert button_calls[0][0] == "Analyse Avancée (Préparation...)"
+    assert button_calls[0][1].get("disabled") is True
+
+    # Postscoring ready
+    monkeypatch.setattr("ui.results._is_postscoring_ready_for_city", lambda c, h: True)
+    _call_fn(render_ai_trigger_button, commune=commune, h="hash_123")
+    assert button_calls[1][0] == "Analyse Avancée"
+    assert button_calls[1][1].get("disabled") is False

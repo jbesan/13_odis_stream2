@@ -97,21 +97,6 @@ def compute_top_cities(criteria: SearchCriterias) -> Dict[str, Any]:
         return {"error": str(e)}
 
 
-def update_search_criteria(criteria_to_update: Dict[str, Any]) -> str:
-    """Met à jour les critères de recherche (ex: {'nb_adultes': 2}). Appelle cet outil dès que tu as validé une info."""
-    return "SUCCESS: Critères mis à jour."
-
-
-def set_focus_city(city_name: str) -> str:
-    """
-    Définit la ville 'active' ou 'focus' pour la conversation de terrain.
-    À utiliser dès que l'utilisateur s'intéresse à une ville spécifique (ex: 'Parle moi de Bordeaux').
-    """
-    # Simply return the city name; the Agent/Graph will handle the state update.
-    logger.info(f"🔍 [TOOL] set_focus_city: {city_name}")
-    return f"SUCCÈS: Ville active définie sur {city_name}."
-
-
 async def search_job_offers_batch(queries: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Version optimisée pour effectuer plusieurs recherches d'offres d'emploi en un seul appel (Parallelize).

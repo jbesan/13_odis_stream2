@@ -6,12 +6,11 @@ from core.models import User, Org
 MAIN_PY = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../app/main.py"))
 
 
-@patch("utils.data_loader.preload_scoring_datasets_async")
 @patch("utils.data_loader.initialize_session_state")
 @patch("services.telemetry.log_page_view")
 @patch("utils.auth.check_password", return_value=True)
 def test_main_app_redirect_authenticated(
-    mock_auth, mock_page_view, mock_initialize, mock_preload
+    mock_auth, mock_page_view, mock_initialize
 ):
     at = AppTest.from_file(MAIN_PY, default_timeout=60)
     at.session_state["username"] = "user"
@@ -25,13 +24,12 @@ def test_main_app_redirect_authenticated(
     assert len(at.exception) == 0
 
 
-@patch("utils.data_loader.preload_scoring_datasets_async")
 @patch("utils.data_loader.initialize_session_state")
 @patch("services.telemetry.log_page_view")
 @patch("utils.auth.check_password", return_value=False)
 @patch("ui.page_shell.inject_idle_disconnect")
 def test_main_app_blocks_unauthenticated(
-    mock_idle_disconnect, mock_auth, mock_page_view, mock_initialize, mock_preload
+    mock_idle_disconnect, mock_auth, mock_page_view, mock_initialize
 ):
     # Set Cloud Run env so check_password logic actually triggers the form
     with patch("os.environ", {"K_SERVICE": "yes"}):
@@ -41,15 +39,13 @@ def test_main_app_blocks_unauthenticated(
         # Verify the common shell stopped before initialization/navigation.
         assert len(at.exception) == 0
         mock_initialize.assert_not_called()
-        mock_preload.assert_not_called()
 
 
-@patch("utils.data_loader.preload_scoring_datasets_async")
 @patch("utils.data_loader.initialize_session_state")
 @patch("services.telemetry.log_page_view")
 @patch("utils.auth.check_password", return_value=True)
 def test_accueil_page_runs_authenticated(
-    mock_auth, mock_page_view, mock_initialize, mock_preload
+    mock_auth, mock_page_view, mock_initialize
 ):
     accueil_py = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../app/pages/1_Accueil.py"))
     at = AppTest.from_file(accueil_py, default_timeout=60)

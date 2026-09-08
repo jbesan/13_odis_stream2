@@ -22,7 +22,7 @@ from core.models import SearchCriterias, SearchResultsData
 from services.app_session import AppSession
 from services.search_controller import SearchController
 from services.service_outcomes import OutcomeStatus, ServiceOutcome
-from google.cloud import storage, bigquery
+from google.cloud import storage
 from google.api_core import exceptions as google_exceptions
 from pydantic import ValidationError
 
@@ -83,20 +83,6 @@ def _get_gcs_client():
         logger.error(
             "Shared-search GCS client initialization failed",
             extra={"extra_data": {"error_code": "SHARE-GCS-UNAVAILABLE"}},
-            exc_info=True,
-        )
-        return None
-
-
-def _get_bq_client():
-    """Attempts to initialize BQ client if GCP project is set."""
-    if not os.getenv("GOOGLE_CLOUD_PROJECT") and not os.getenv("GCP_PROJECT"):
-        return None
-    try:
-        return bigquery.Client()
-    except Exception:
-        logger.warning(
-            "Shared-search telemetry BigQuery client initialization failed",
             exc_info=True,
         )
         return None

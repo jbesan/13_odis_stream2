@@ -652,7 +652,7 @@ def render_vector_map(
                   id: 'top5-circles-layer',
                   data: payload.top_markers,
                   getPosition: d => [d.lon, d.lat],
-                  getFillColor: d => d.type === 'pressentie' ? [245, 216, 25, 255] : (d.is_highlighted ? [239, 68, 68, 255] : [214, 62, 42, 255]),
+                  getFillColor: d => d.type === 'pressentie' ? [3, 107, 242, 255] : (d.is_highlighted ? [239, 68, 68, 255] : [214, 62, 42, 255]),
                   getLineColor: d => d.type === 'pressentie' ? [27, 68, 41, 255] : [255, 255, 255, 255],
                   lineWidthMinPixels: 2.5,
                   getRadius: d => d.is_highlighted ? 18 : 15,

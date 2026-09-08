@@ -1718,13 +1718,6 @@ class ScoringEngine:
             commune_pressentie=commune_pressentie_details,
         )
 
-    def get_city_details(self, codgeo: str) -> CommuneResult:
-        """Retrieves detailed information using static data."""
-        if codgeo not in self.df_all_communes.index:
-            raise KeyError(f"Commune code {codgeo} not found.")
-
-        return self.format_city_details(self.df_all_communes.loc[codgeo])
-
     def run_optimized(
         self, config: SearchCriterias, log_prefix: str = "search_results"
     ) -> Tuple[SearchResultsData, pd.DataFrame]:

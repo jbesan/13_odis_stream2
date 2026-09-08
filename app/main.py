@@ -15,7 +15,6 @@ page_shell.enter_page(
 # --- Initialize State / Start Async Preload ---
 with logfire.span("ODIS Session"):
     data_loader.initialize_session_state()
-    data_loader.preload_scoring_datasets_async()
 
 # --- Silent Redirect ---
 # This makes main.py purely an entry point that leads to the first page

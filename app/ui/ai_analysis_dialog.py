@@ -414,17 +414,34 @@ def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
     h = st.session_state.get("active_search_hash")
     task_key = f"analysis_{h}_{codgeo}"
 
+    immutable_snapshot = bool(st.session_state.get("immutable_shared_snapshot"))
+
     # 2. Trigger analysis if synthesis is missing (Polled within its own fragment)
-    if not commune.odis_synthesis:
+    if not commune.odis_synthesis and not getattr(commune, "analysis_report", None):
+        if immutable_snapshot:
+            st.info(
+                "Aucune analyse avancée n'a été réalisée pour cette commune avant l'enregistrement de l'instantané."
+            )
+            return
         polling_synthesis_fragment(task_key, nom, codgeo, search_criterias, commune, h)
         return
 
     # 3. Render Full Structured Analysis Report directly
-    history = list(commune.odis_synthesis)
+    history = list(commune.odis_synthesis) if commune.odis_synthesis else []
     _render_initial_analysis_report(
         commune,
         history[0]["content"] if history else "",
     )
+
+    # In immutable snapshot mode, interactive chat input is omitted to maintain read-only snapshot guarantee
+    if immutable_snapshot:
+        if len(history) > 1:
+            st.divider()
+            st.subheader(f"💬 Questions complémentaires archivées sur {nom}")
+            for msg in history[1:]:
+                with st.chat_message(msg["role"]):
+                    st.markdown(msg["content"])
+        return
 
     # 4. Check if Interactive Chat is enabled for the active organization
     active_org = st.session_state.get("org")
