@@ -6,6 +6,7 @@ import base64
 import math
 import ast
 import re
+import copy
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Tuple, Optional, Any, Dict, List
@@ -27,7 +28,7 @@ from pydantic import ValidationError
 
 logger = logging.getLogger("services.share_service")
 
-SHARE_SNAPSHOT_VERSION = "2.0"
+SHARE_SCHEMA_VERSION = "1.0"
 _SHARE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{4,64}$")
 
 
@@ -55,7 +56,6 @@ class SharedSearchSnapshot:
     """
 
     share_id: str
-    version: str
     created_at: Optional[str]
     data_release: Optional[str]
     config: SearchCriterias
@@ -65,6 +65,8 @@ class SharedSearchSnapshot:
     map_view: Dict[str, Any]
     org_id: Optional[str] = None
     username: Optional[str] = None
+    schema_version: str = SHARE_SCHEMA_VERSION
+    app_version: Optional[str] = None
 
     @property
     def has_map_context(self) -> bool:
@@ -124,6 +126,98 @@ def _clean_set_strings(obj: Any) -> Any:
     if isinstance(obj, list):
         return [_clean_set_strings(i) for i in obj]
     return obj
+
+
+def _migrate_payload_dict(payload_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalizes legacy or incomplete shared search payloads before Pydantic validation.
+
+    Guarantees structural backward compatibility across snapshot schema versions.
+    """
+    if not isinstance(payload_dict, dict):
+        return {}
+
+    migrated = copy.deepcopy(payload_dict)
+
+    # 1. Normalize schema_version
+    schema_version_str = str(
+        migrated.get("schema_version") or SHARE_SCHEMA_VERSION
+    )
+    migrated["schema_version"] = schema_version_str
+    migrated.setdefault("app_version", None)
+
+    # 2. Ensure config and search_results dicts exist
+    config_data = migrated.get("config")
+    if not isinstance(config_data, dict):
+        config_data = {}
+        migrated["config"] = config_data
+
+    results_data = migrated.get("search_results")
+    if not isinstance(results_data, dict):
+        results_data = {}
+        migrated["search_results"] = results_data
+
+    # 3. Clean string sets from config and search_results
+    config_data = _clean_set_strings(config_data)
+    results_data = _clean_set_strings(results_data)
+
+    # 4. In search_results, ensure results is a list of valid commune dicts
+    raw_results = results_data.get("results")
+    if not isinstance(raw_results, list):
+        results_data["results"] = []
+    else:
+        clean_communes = []
+        for item in raw_results:
+            if not isinstance(item, dict):
+                continue
+            if not item.get("codgeo") or not item.get("name"):
+                continue
+            clean_communes.append(item)
+        results_data["results"] = clean_communes
+
+    # 5. In search_results, ensure current_geo and commune_pressentie are None if not dict
+    if "current_geo" in results_data and not isinstance(
+        results_data["current_geo"], dict
+    ):
+        results_data["current_geo"] = None
+    if "commune_pressentie" in results_data and not isinstance(
+        results_data["commune_pressentie"], dict
+    ):
+        results_data["commune_pressentie"] = None
+
+    # 6. If search_hash is missing, fallback to root or empty string
+    if not results_data.get("search_hash"):
+        results_data["search_hash"] = str(migrated.get("search_hash") or "")
+
+    # 7. Normalize legacy config criteria (e.g. legacy 'sante' -> 'besoin_sante')
+    if "sante" in config_data and "besoin_sante" not in config_data:
+        val = config_data["sante"]
+        config_data["besoin_sante"] = (
+            val if isinstance(val, list) else [val] if val else []
+        )
+
+    # If legacy 'target_population' is present without trapezoid bounds
+    if (
+        config_data.get("target_population") is not None
+        and "target_population_a" not in config_data
+    ):
+        pop = config_data["target_population"]
+        if isinstance(pop, (int, float)):
+            if pop <= 10000:
+                bounds = cfg.CITY_SIZE_MAPPING["🚜 Commune rurale"]
+            elif pop <= 30000:
+                bounds = cfg.CITY_SIZE_MAPPING["🏡 Bourg"]
+            elif pop <= 80000:
+                bounds = cfg.CITY_SIZE_MAPPING["🏘️ Petite Ville"]
+            else:
+                bounds = cfg.CITY_SIZE_MAPPING["🏙️ Ville moyenne"]
+            config_data.setdefault("target_population_a", bounds["a"])
+            config_data.setdefault("target_population_b", bounds["b"])
+            config_data.setdefault("target_population_c", bounds["c"])
+            config_data.setdefault("target_population_d", bounds["d"])
+
+    migrated["config"] = config_data
+    migrated["search_results"] = results_data
+    return migrated
 
 
 def _decompress_payload_bytes(data_bytes: bytes) -> Dict[str, Any]:
@@ -279,7 +373,8 @@ def save_shared_search(
 
     payload: Dict[str, Any] = {
         "share_id": share_id,
-        "version": SHARE_SNAPSHOT_VERSION,
+        "schema_version": SHARE_SCHEMA_VERSION,
+        "app_version": cfg.ODIS_APP_VERSION,
         "created_at": timestamp_str,
         "username": username,
         "org_id": org_id,
@@ -333,23 +428,25 @@ def save_shared_search(
             "Impossible d'enregistrer la recherche partagée dans GCS."
         ) from e
 
-    # Log telemetry only after the durable snapshot has been stored.
+    # Log to BigQuery saved_searches registry
     try:
         from services import telemetry
 
-        telemetry.log_usage_event(
-            "search_shared",
-            {
-                "share_id": share_id,
-                "search_hash": getattr(search_results, "search_hash", ""),
-                "gcs_uri": gcs_uri,
-                "data_release": data_release or "unknown",
-            },
+        telemetry.log_saved_search_event(
+            event_type="create",
+            share_id=share_id,
+            status="success",
+            env=cfg.ODIS_DEPLOYMENT_ENV,
+            gcs_uri=gcs_uri,
+            search_hash=getattr(search_results, "search_hash", ""),
+            app_version=cfg.ODIS_APP_VERSION,
+            schema_version=SHARE_SCHEMA_VERSION,
+            data_release=data_release or "unknown",
             username=username,
             org_id=org_id,
         )
     except Exception as e:
-        logger.warning(f"⚠️ BQ telemetry log failed for shared search: {e}")
+        logger.warning(f"⚠️ BQ telemetry log failed for shared search create: {e}")
 
     return share_id
 
@@ -518,18 +615,18 @@ def load_shared_search_snapshot_outcome(
         )
 
     try:
-        cfg_clean = _clean_set_strings(payload_dict["config"])
-        res_clean = _clean_set_strings(payload_dict["search_results"])
-        config = SearchCriterias.model_validate(cfg_clean)
-        search_results = SearchResultsData.model_validate(res_clean)
-        snapshot_data = payload_dict.get("snapshot")
+        migrated_payload = _migrate_payload_dict(payload_dict)
+        config = SearchCriterias.model_validate(migrated_payload["config"])
+        search_results = SearchResultsData.model_validate(
+            migrated_payload["search_results"]
+        )
+        snapshot_data = migrated_payload.get("snapshot")
         if not isinstance(snapshot_data, dict):
             snapshot_data = {}
         map_view = snapshot_data.get("map_view")
         snapshot = SharedSearchSnapshot(
             share_id=share_id,
-            version=str(payload_dict.get("version", "1.0")),
-            created_at=payload_dict.get("created_at"),
+            created_at=migrated_payload.get("created_at"),
             data_release=snapshot_data.get("data_release"),
             config=config,
             search_results=search_results,
@@ -537,7 +634,11 @@ def load_shared_search_snapshot_outcome(
             current_map_context=snapshot_data.get("current_map_context", []),
             map_view=map_view if isinstance(map_view, dict) else {},
             org_id=snapshot_org_id,
-            username=payload_dict.get("username"),
+            username=migrated_payload.get("username"),
+            schema_version=str(
+                migrated_payload.get("schema_version", SHARE_SCHEMA_VERSION)
+            ),
+            app_version=migrated_payload.get("app_version"),
         )
     except (ValidationError, TypeError, ValueError, KeyError):
         return _share_load_failure(
@@ -594,7 +695,6 @@ def restore_shared_search_to_session_state(
     if snapshot is None:
         snapshot = SharedSearchSnapshot(
             share_id=share_id,
-            version="1.0",
             created_at=None,
             data_release=None,
             config=config_obj,
@@ -602,6 +702,7 @@ def restore_shared_search_to_session_state(
             map_context=[],
             current_map_context=[],
             map_view={},
+            schema_version=SHARE_SCHEMA_VERSION,
         )
 
     # An immutable snapshot contains all data needed for display. It must not
@@ -624,7 +725,7 @@ def restore_shared_search_to_session_state(
         share_id=share_id,
         processed_gdf=processed_gdf,
         current_map_context=current_map_context,
-        version=snapshot.version,
+        version=snapshot.schema_version,
         data_release=snapshot.data_release,
         created_at=snapshot.created_at,
         has_map=snapshot.has_map_context,
@@ -683,4 +784,26 @@ def restore_shared_search_from_query_params() -> bool:
     restore_shared_search_to_session_state(
         outcome.value.config, outcome.value.search_results, share_id, outcome.value
     )
+
+    # Log successful view event to BigQuery saved_searches registry
+    try:
+        from services import telemetry
+
+        bucket_name = os.getenv("GCS_SHARED_SEARCHES_BUCKET", "unknown")
+        telemetry.log_saved_search_event(
+            event_type="view",
+            share_id=share_id,
+            status="success",
+            env=cfg.ODIS_DEPLOYMENT_ENV,
+            gcs_uri=f"gs://{bucket_name}/searches/{share_id}.json",
+            search_hash=getattr(outcome.value.search_results, "search_hash", ""),
+            app_version=cfg.ODIS_APP_VERSION,
+            schema_version=outcome.value.schema_version,
+            data_release=outcome.value.data_release,
+            username=outcome.value.username or _resolve_caller_org_id(),
+            org_id=outcome.value.org_id or caller_org_id,
+        )
+    except Exception as e:
+        logger.warning(f"⚠️ BQ telemetry log failed for shared search view: {e}")
+
     return True

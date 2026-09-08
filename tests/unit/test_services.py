@@ -90,6 +90,7 @@ def test_log_agent_state_to_bq(mock_client_class):
             assert row["username"] == "test_user"
             assert row["last_user_message"] == "hello"
             assert row["cost_eur"] == 0.01
+            assert "env" in row
             assert "cost_usd" not in row
             usage_payload = json.loads(row["artifacts"])
             assert usage_payload["__usage__"]["cost_eur"] == 0.01
@@ -119,6 +120,7 @@ def test_feedback_submission(mock_client_class):
             row = args[1][0]
             assert row["feedback_type"] == "Bug"
             assert row["comment"] == "It's broken"
+            assert "env" in row
 
 
 @patch("services.telemetry.bigquery.Client")
@@ -176,6 +178,7 @@ def test_log_search_complete(mock_client_class, monkeypatch):
             assert row["source_flow"] == "classic"
             assert "search_hash" in row
             assert "org_id" in row
+            assert "env" in row
 
             criteria_loaded = json.loads(row["search_criteria"])
             assert criteria_loaded["commune_actuelle"]["code"] == "33063"
@@ -227,6 +230,7 @@ def test_log_usage_event(mock_client_class):
             row = args[1][0]
             assert row["event_name"] == "click_button"
             assert row["login_session_id"] == "session-abc-123"
+            assert "env" in row
             assert "en_savoir_plus" in row["payload"]
 
 

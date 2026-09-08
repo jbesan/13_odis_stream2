@@ -64,7 +64,9 @@ with col_filter3:
 with st.spinner("Chargement des données BigQuery..."):
     analytics_result = analytics_data.fetch_analytics_data(client, period_days)
     billing_outcome = analytics_data.fetch_gcp_billing_data(client, period_days)
-    agent_costs_outcome = analytics_data.fetch_agent_costs_data(client, period_days)
+    agent_costs_outcome = analytics_data.fetch_agent_costs_data(
+        client, period_days, env="production"
+    )
 
 if analytics_result.status == analytics_data.OutcomeStatus.UNAUTHORIZED:
     st.error(
@@ -845,9 +847,19 @@ with tab_finops:
             total_credits_val = (
                 abs(float(df_finops["credits"].sum())) if not df_finops.empty else 0.0
             )
+            prod_searches_df = (
+                df_searches[df_searches["env"] == "production"]
+                if not df_searches.empty and "env" in df_searches.columns
+                else df_searches
+            )
+            total_searches_prod = (
+                len(prod_searches_df) if not prod_searches_df.empty else 0
+            )
             avg_daily_cost = total_net_cost / max(period_days, 1)
             cost_per_search_val = (
-                (total_net_cost / total_searches) if total_searches > 0 else 0.0
+                (total_net_cost / total_searches_prod)
+                if total_searches_prod > 0
+                else 0.0
             )
 
             with kpi_net:
@@ -859,7 +871,7 @@ with tab_finops:
             with kpi_avg_day:
                 st.metric("Dépense Moyenne / Jour", f"{avg_daily_cost:.2f} €/j")
             with kpi_per_search:
-                st.metric("Coût Infra / Recherche", f"{cost_per_search_val:.3f} €")
+                st.metric("Coût Infra / Rech. Prod", f"{cost_per_search_val:.3f} €")
 
             st.divider()
 

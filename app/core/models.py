@@ -92,6 +92,8 @@ class CriteriaItem(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def handle_redefinition(cls, data: Any) -> Any:
+        if isinstance(data, str):
+            return {"code": data, "label": data}
         if data.__class__.__name__ == cls.__name__ and not isinstance(data, cls):
             return data.model_dump() if hasattr(data, "model_dump") else data.__dict__
         return data
@@ -439,9 +441,11 @@ class CommuneScoreDetail(BaseModel):
     """Represents the value and score of a specific indicator."""
 
     label: str = Field(
+        default="",
         description="Nom d'affichage lisible (ex: 'Écoles élémentaires')",
     )
     score_id: str = Field(
+        default="",
         description="Code interne unique (ex: 'edu_elementaire_ct')",
     )
     valeur_kpi: Optional[Union[float, int, str]] = Field(
@@ -449,12 +453,15 @@ class CommuneScoreDetail(BaseModel):
         description="Valeur brute métier",
     )
     score_normalise: float = Field(
+        default=0.0,
         description="Score de 0.0 à 1.0 issu du ScoringEngine",
     )
     unit: str = Field(
+        default="",
         description="Unité de la valeur brute (ex: 'habitants', '%')",
     )
     relative_weight: float = Field(
+        default=0.0,
         description="Poids relatif en % dans sa catégorie",
     )
     valeur_kpi_commune: Optional[Union[float, int, str]] = Field(
@@ -871,16 +878,20 @@ class DomainReport(BaseModel):
     """Rapport structuré d'un expert thématique (Logement, Mobilité, Santé, etc.)."""
 
     domain_key: str = Field(
-        description="Identifiant unique de l'expert (ex: housing_expert, mobility_expert)"
+        default="",
+        description="Identifiant unique de l'expert (ex: housing_expert, mobility_expert)",
     )
     label: str = Field(
-        description="Libellé complet de la section (ex: 🏠 Logement & Hébergement)"
+        default="",
+        description="Libellé complet de la section (ex: 🏠 Logement & Hébergement)",
     )
     short_label: str = Field(
-        description="Libellé court pour l'onglet UI (ex: 🏠 Logement)"
+        default="",
+        description="Libellé court pour l'onglet UI (ex: 🏠 Logement)",
     )
     content: str = Field(
-        description="Contenu textuel Markdown de la fiche expert"
+        default="",
+        description="Contenu textuel Markdown de la fiche expert",
     )
     sources: List[Dict[str, Any]] = Field(
         default_factory=list,
@@ -898,13 +909,16 @@ class CityAnalysisReport(BaseModel):
     """Rapport d'analyse stratégique complet et structuré d'une commune cible."""
 
     city_name: str = Field(
-        description="Nom de la commune analysée"
+        default="",
+        description="Nom de la commune analysée",
     )
     city_code: str = Field(
-        description="Code INSEE (CODGEO) de la commune"
+        default="",
+        description="Code INSEE (CODGEO) de la commune",
     )
     avis_global: str = Field(
-        description="Avis Global d'Orientation stratégique pour la commune"
+        default="",
+        description="Avis Global d'Orientation stratégique pour la commune",
     )
     domains: Dict[str, DomainReport] = Field(
         default_factory=dict,
@@ -1100,18 +1114,19 @@ class SearchResultsData(BaseModel):
     """Main payload container for search results."""
 
     search_hash: str = Field(
+        default="",
         description="MD5 hash of the criteria used",
     )
     results: List[CommuneResult] = Field(
         default_factory=list,
         description="Top recommended communes in rank order",
     )
-    current_geo: CommuneResult = Field(
-        ...,
+    current_geo: Optional[CommuneResult] = Field(
+        default=None,
         description="Reference data for the user current location",
     )
     commune_pressentie: Optional[CommuneResult] = Field(
-        None,
+        default=None,
         description="Données de la commune pressentie",
     )
     global_pitch: str = Field(

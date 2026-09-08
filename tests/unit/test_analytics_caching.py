@@ -154,3 +154,5 @@ def test_fetch_agent_costs_data():
     assert outcome.status == OutcomeStatus.SUCCESS
     assert outcome.value is not None
     assert outcome.value.iloc[0]["run_count"] == 5
+    query_executed = mock_client.query.call_args[0][0]
+    assert "env = 'production'" in query_executed

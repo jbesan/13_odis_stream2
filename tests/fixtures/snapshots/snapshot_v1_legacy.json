@@ -1,0 +1,60 @@
+{
+  "share_id": "legac001",
+  "schema_version": "1.0",
+  "created_at": "2025-11-10T14:30:00+01:00",
+  "username": "ts_legacy@example.org",
+  "org_id": "jaccueille",
+  "config": {
+    "commune_actuelle": "33063",
+    "loc_search_area": "departement",
+    "loc_search_code": ["33"],
+    "nb_adultes": 2,
+    "nb_enfants": 1,
+    "sante": ["medecin", "hopital"],
+    "target_population": 25000,
+    "codes_metiers": [["M1602"]],
+    "codes_formations": [["F1601"]],
+    "criteria_weights": {
+      "sante_medecins": 2.0,
+      "vieux_critere_supprime": 3.0
+    }
+  },
+  "search_results": {
+    "results": [
+      {
+        "codgeo": "33063",
+        "name": "Bordeaux",
+        "population": 260000,
+        "global_score": 85.5,
+        "score_besoins": 82.0,
+        "scores": {
+          "sante": [
+            {
+              "score_id": "sante_medecins",
+              "label": "Médecins",
+              "valeur_kpi": 12.5,
+              "score_normalise": 85.0
+            },
+            {
+              "score_id": "vieux_critere_supprime",
+              "label": "Ancien Critère",
+              "valeur_kpi": 5.0,
+              "score_normalise": 90.0
+            }
+          ]
+        },
+        "refiner_pitch": "Bordeaux offre un bon tissu d'opportunités."
+      }
+    ]
+  },
+  "snapshot": {
+    "policy": "immutable",
+    "data_release": "release_2025_11_01",
+    "map_context": [],
+    "current_map_context": [],
+    "map_view": {
+      "center": [44.8378, -0.5792],
+      "zoom": 10
+    }
+  }
+}

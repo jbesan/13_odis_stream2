@@ -1,3 +1,5 @@
+import json
+from pathlib import Path
 import pytest
 from unittest.mock import patch
 
@@ -145,7 +147,7 @@ def test_save_and_load_shared_search_roundtrip(monkeypatch):
 
     snapshot = load_shared_search_snapshot(share_id, caller_org_id="test_org")
     assert snapshot is not None
-    assert snapshot.version == "2.0"
+    assert snapshot.schema_version == "1.0"
     assert snapshot.org_id == "test_org"
     assert snapshot.username == "test_user"
     assert snapshot.data_release == "release-2026-08-04"
@@ -313,7 +315,7 @@ def test_restore_snapshot_hydrates_ui_without_rescoring():
     point_wkb_b64 = "AQEAAAAAAAAAAACAAAAAAAAAAAA="
     snapshot = SharedSearchSnapshot(
         share_id="deadbeef",
-        version="2.0",
+        schema_version="1.0",
         created_at="2026-08-04T12:00:00+02:00",
         data_release="release-2026-08-04",
         config=config,
@@ -443,7 +445,7 @@ def test_restore_shared_search_from_query_params_org_scenarios(monkeypatch):
     )
     matching_snapshot = SharedSearchSnapshot(
         share_id="share123",
-        version="2.0",
+        schema_version="1.0",
         created_at=None,
         data_release=None,
         config=config,
@@ -496,4 +498,227 @@ def test_restore_shared_search_from_query_params_org_scenarios(monkeypatch):
         fail_unauth = restore_shared_search_from_query_params()
         assert fail_unauth is False
         assert "SHARE-UNAUTHORIZED" in state_unauth.get("share_error", "")
+
+
+def test_save_snapshot_includes_app_version_and_schema_version(monkeypatch):
+    """Verify that save_shared_search persists app_version and schema_version metadata without legacy version."""
+    stored_payloads = {}
+    logged_telemetry = []
+
+    class FakeBlob:
+        def __init__(self, name):
+            self.name = name
+            self.content_encoding = None
+
+        def upload_from_string(self, data, content_type=None, if_generation_match=None):
+            import gzip
+            stored_payloads[self.name] = json.loads(gzip.decompress(data).decode("utf-8"))
+
+        def exists(self):
+            return True
+
+    class FakeBucket:
+        def blob(self, name):
+            return FakeBlob(name)
+
+    class FakeClient:
+        def bucket(self, name):
+            return FakeBucket()
+
+    monkeypatch.setattr("services.share_service._get_gcs_client", lambda: FakeClient())
+    monkeypatch.setattr(
+        "services.telemetry.log_saved_search_event",
+        lambda **kwargs: logged_telemetry.append(kwargs),
+    )
+
+    import config as cfg
+    from services.share_service import SHARE_SCHEMA_VERSION
+
+    config = SearchCriterias(nb_adultes=1)
+    results = SearchResultsData(search_hash="hash-1", results=[])
+
+    share_id = save_shared_search(
+        config=config,
+        search_results=results,
+        username="user1",
+        org_id="test_org",
+    )
+
+    blob_path = f"searches/{share_id}.json"
+    assert blob_path in stored_payloads
+    payload = stored_payloads[blob_path]
+    assert "version" not in payload
+    assert payload["schema_version"] == SHARE_SCHEMA_VERSION
+    assert payload["app_version"] == cfg.ODIS_APP_VERSION
+
+    # Check telemetry 'create' event was logged
+    assert len(logged_telemetry) == 1
+    event = logged_telemetry[0]
+    assert event["event_type"] == "create"
+    assert event["status"] == "success"
+    assert event["share_id"] == share_id
+    assert event["schema_version"] == SHARE_SCHEMA_VERSION
+    assert "env" in event
+
+
+def test_load_legacy_v1_snapshot_backward_compatibility(monkeypatch):
+    """Verify that a legacy v1 snapshot without current_geo, search_hash or CriteriaItem dicts loads cleanly."""
+    import gzip
+    fixture_path = Path(__file__).parent.parent / "fixtures" / "snapshots" / "snapshot_v1_legacy.json"
+    assert fixture_path.exists(), f"Missing fixture at {fixture_path}"
+
+    with open(fixture_path, "r", encoding="utf-8") as f:
+        raw_json_str = f.read()
+
+    compressed_bytes = gzip.compress(raw_json_str.encode("utf-8"))
+
+    class FakeBlob:
+        def exists(self):
+            return True
+
+        def download_as_bytes(self):
+            return compressed_bytes
+
+    class FakeBucket:
+        def blob(self, name):
+            return FakeBlob()
+
+    class FakeClient:
+        def bucket(self, name):
+            return FakeBucket()
+
+    monkeypatch.setattr("services.share_service._get_gcs_client", lambda: FakeClient())
+
+    outcome = load_shared_search_snapshot_outcome("legac001", caller_org_id="jaccueille")
+    assert outcome.is_success is True
+    assert outcome.value is not None
+
+    snapshot = outcome.value
+    assert snapshot.schema_version == "1.0"
+    assert snapshot.config.commune_actuelle is not None
+    assert snapshot.config.commune_actuelle.code == "33063"
+    assert snapshot.config.nb_adultes == 2
+    assert snapshot.config.nb_enfants == 1
+    assert snapshot.config.besoin_sante == ["medecin", "hopital"]
+    assert snapshot.search_results.current_geo is None
+    assert len(snapshot.search_results.results) == 1
+    assert snapshot.search_results.results[0].codgeo == "33063"
+    assert snapshot.search_results.results[0].name == "Bordeaux"
+
+    # UI hydration check: ensure restore does not crash FormState
+    fake_session = {}
+    with patch("streamlit.session_state", fake_session):
+        restore_shared_search_to_session_state(
+            snapshot.config, snapshot.search_results, "legac001", snapshot
+        )
+        assert fake_session.get("ui_commune") == "33063"
+        assert fake_session.get("ui_nb_adultes") == 2
+        assert fake_session.get("ui_nb_enfants") == 1
+
+
+def test_load_reference_v2_snapshot_contract(monkeypatch):
+    """Verify that an exhaustive snapshot with all models and enrichments loads completely."""
+    import gzip
+    fixture_path = Path(__file__).parent.parent / "fixtures" / "snapshots" / "snapshot_v2_reference.json"
+    assert fixture_path.exists(), f"Missing fixture at {fixture_path}"
+
+    with open(fixture_path, "r", encoding="utf-8") as f:
+        raw_json_str = f.read()
+
+    compressed_bytes = gzip.compress(raw_json_str.encode("utf-8"))
+
+    class FakeBlob:
+        def exists(self):
+            return True
+
+        def download_as_bytes(self):
+            return compressed_bytes
+
+    class FakeBucket:
+        def blob(self, name):
+            return FakeBlob()
+
+    class FakeClient:
+        def bucket(self, name):
+            return FakeBucket()
+
+    monkeypatch.setattr("services.share_service._get_gcs_client", lambda: FakeClient())
+
+    outcome = load_shared_search_snapshot_outcome("refv2001", caller_org_id="jaccueille")
+    assert outcome.is_success is True
+    assert outcome.value is not None
+
+    snapshot = outcome.value
+    assert snapshot.schema_version == "1.0"
+    assert snapshot.app_version == "0.2.0-sha1234"
+    assert snapshot.config.commune_pressentie is not None
+    assert snapshot.config.commune_pressentie.code == "33522"
+    assert snapshot.search_results.current_geo is not None
+    assert snapshot.search_results.current_geo.codgeo == "33063"
+    assert snapshot.search_results.commune_pressentie is not None
+    assert snapshot.search_results.commune_pressentie.codgeo == "33522"
+    assert len(snapshot.search_results.results) == 1
+    merignac = snapshot.search_results.results[0]
+    assert merignac.codgeo == "33281"
+    assert "num_01" in merignac.inclusion.services_detailed
+    assert merignac.analysis_report is not None
+    assert merignac.analysis_report.city_name == "Mérignac"
+
+    # UI hydration check
+    fake_session = {}
+    with patch("streamlit.session_state", fake_session):
+        restore_shared_search_to_session_state(
+            snapshot.config, snapshot.search_results, "refv2001", snapshot
+        )
+        assert fake_session.get("ui_commune") == "33063"
+        assert fake_session.get("ui_commune_pressentie") == "33522"
+
+
+def test_restore_shared_search_from_query_params_logs_view_telemetry(monkeypatch):
+    """Verify that restoring a snapshot from query params triggers a 'view' event in saved_searches telemetry."""
+    logged_views = []
+    test_org = Org(id="jaccueille", name="J'accueille", zone_type="departement", default_zones=[])
+
+    config = SearchCriterias(nb_adultes=1)
+    results = SearchResultsData(search_hash="hash-view", results=[])
+    matching_snapshot = SharedSearchSnapshot(
+        share_id="view1234",
+        created_at="2026-09-08T12:00:00",
+        data_release="release-1",
+        config=config,
+        search_results=results,
+        map_context=[],
+        current_map_context=[],
+        map_view={},
+        org_id="jaccueille",
+        username="alice",
+        schema_version="1.0",
+        app_version="0.2.0",
+    )
+
+    monkeypatch.setattr(
+        "services.telemetry.log_saved_search_event",
+        lambda **kwargs: logged_views.append(kwargs),
+    )
+
+    state = {"org": test_org}
+    with (
+        patch("streamlit.query_params", {"search": "view1234"}),
+        patch("streamlit.session_state", state),
+        patch(
+            "services.share_service.load_shared_search_snapshot_outcome",
+            return_value=ServiceOutcome(status=OutcomeStatus.SUCCESS, value=matching_snapshot),
+        ),
+        patch("services.share_service.restore_shared_search_to_session_state"),
+    ):
+        success = restore_shared_search_from_query_params()
+        assert success is True
+        assert len(logged_views) == 1
+        view_event = logged_views[0]
+        assert view_event["event_type"] == "view"
+        assert view_event["status"] == "success"
+        assert view_event["share_id"] == "view1234"
+        assert view_event["org_id"] == "jaccueille"
+        assert "env" in view_event
+
 

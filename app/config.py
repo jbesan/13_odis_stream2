@@ -29,6 +29,8 @@ ASSETS_DIR: str = os.path.join(APP_DIR, "ui", "assets")
 
 # --- Constants ---
 VERSION = "0.2.0"
+ODIS_APP_VERSION: str = os.getenv("ODIS_APP_VERSION", VERSION)
+ODIS_DEPLOYMENT_ENV: str = os.getenv("ODIS_DEPLOYMENT_ENV", "local")
 
 # --- File Paths ---
 ODIS_FILE = "odis_communes.parquet"

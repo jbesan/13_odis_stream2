@@ -1,6 +1,8 @@
 import pytest
 from agents.state import GraphState
 
+pytestmark = pytest.mark.e2e
+
 
 def test_rehydration_logic():
     """

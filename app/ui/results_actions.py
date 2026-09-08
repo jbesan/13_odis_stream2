@@ -231,10 +231,8 @@ def share_search_modal():
     permalink = f"{base_url}/?search={share_id}"
 
     st.markdown(
-        "Ce lien ouvre un instantané immuable de ces résultats. Les critères peuvent "
-        "être repris pour créer explicitement une nouvelle recherche avec les données actuelles."
+        "Le lien ci-dessous permet de retrouver les résultats de cette recherche tels quels sans relancer les calculs associés. Ces résultats sont accessibles pendant **90 jours**."
     )
-    st.caption("ℹ️ Ce lien de partage et ses données associées sont conservés pendant 90 jours.")
 
     st.code(permalink, language=None)
 

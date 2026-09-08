@@ -6,6 +6,8 @@ from core.models import InclusionServiceDetail, InclusionMetrics
 from agents.utils import get_odis_bg_store
 from core.postscoring import launch_background_inclusion_enrichment
 
+pytestmark = pytest.mark.e2e
+
 
 @pytest.fixture(autouse=True)
 def clean_bg_store():
