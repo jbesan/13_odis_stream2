@@ -418,14 +418,25 @@ def render_mobility_form(app_data: dict[str, Any]) -> None:
     if "ui_target_city_size_label" not in st.session_state:
         st.session_state["ui_target_city_size_label"] = cfg.DEFAULT_CITY_SIZE
 
+    target_captions = []
+    for opt in target_options:
+        bounds = cfg.CITY_SIZE_MAPPING.get(opt, {})
+        b_val = bounds.get("b")
+        c_val = bounds.get("c")
+        if b_val is not None and c_val is not None:
+            target_captions.append(f"Idéalement entre {b_val:,} et {c_val:,} habitants".replace(",", " "))
+        else:
+            target_captions.append("")
+
     st.markdown("##### Taille de la ville recherchée")
+    st.caption("La population du bassin de vie et non celle de la commune sera évaluée.")
     with st.container(horizontal=True, width="stretch", horizontal_alignment="center"):
         st.radio(
             "Taille de la ville recherchée",
             options=target_options,
+            captions=target_captions,
             key="ui_target_city_size_label",
             horizontal=True,
-            help="Définit la taille idéale du cadre de vie (calculé sur la population du Bassin de Vie pour prendre en compte le bassin de vie réel et les services du quotidien).",
             label_visibility="collapsed",
         )
 

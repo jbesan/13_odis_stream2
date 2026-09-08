@@ -131,3 +131,38 @@ def test_city_size_radio_hash_invalidation():
 
         assert size1 != size2, f"Expected target city sizes to differ but got {size1} == {size2}"
         assert hash1 != hash2, "Expected search criteria hash to change when city size radio changes"
+
+
+@pytest.mark.unit
+def test_render_mobility_form_city_size_captions_and_title_caption():
+    """Verify that render_mobility_form renders city size radio with target population captions and a subtitle caption."""
+    mock_app_data = {
+        "dept_details": {"75": {"reg_code": "11", "label": "Paris"}},
+        "regions_names": {},
+    }
+    session_state = SessionStateDict({"ui_departement": "75"})
+
+    mock_radio = MagicMock()
+    mock_caption = MagicMock()
+
+    with patch("app.ui.forms.st.session_state", session_state), \
+         patch("app.ui.forms.st.columns", return_value=[MagicMock(), MagicMock()]), \
+         patch("app.ui.forms.st.multiselect", return_value=[]), \
+         patch("app.ui.forms.st.checkbox", return_value=False), \
+         patch("app.ui.forms.st.markdown"), \
+         patch("app.ui.forms.st.divider"), \
+         patch("app.ui.forms.st.container", return_value=MagicMock()), \
+         patch("app.ui.forms.st.caption", mock_caption), \
+         patch("app.ui.forms.st.radio", mock_radio):
+        render_mobility_form(mock_app_data)
+
+    mock_caption.assert_any_call("La population du bassin de vie et non celle de la commune sera évaluée.")
+    mock_radio.assert_called_once()
+    _, kwargs = mock_radio.call_args
+    assert "captions" in kwargs
+    captions = kwargs["captions"]
+    assert len(captions) == 4
+    assert captions[0] == "Idéalement entre 1 000 et 30 000 habitants"
+    assert captions[1] == "Idéalement entre 10 000 et 70 000 habitants"
+    assert captions[2] == "Idéalement entre 30 000 et 200 000 habitants"
+    assert captions[3] == "Idéalement entre 80 000 et 500 000 habitants"
