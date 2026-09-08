@@ -26,6 +26,7 @@ steps:
           exit 64
         fi
         export PIP_BREAK_SYSTEM_PACKAGES=1
+        export GCS_SHARED_SEARCHES_BUCKET=${_SHARES_BUCKET}
         pip install --no-cache-dir uv
         uv sync --frozen --all-groups
         uv run python scripts/sync_datasets.py --bucket=${_DATA_BUCKET}
