@@ -173,6 +173,10 @@ class SearchCriterias(BaseModel):
         default_factory=list,
         description="Formations ciblées",
     )
+    recherche_siae: bool = Field(
+        True,
+        description="Rechercher également dans les SIAE",
+    )
 
     inc_services_selection: List[CriteriaItem] = Field(
         default_factory=list,

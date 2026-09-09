@@ -808,6 +808,7 @@ class ScoringEngine:
         nb_adultes = getattr(config, "nb_adultes", 0)
         codes_metiers = getattr(config, "codes_metiers", [])
         codes_formations = getattr(config, "codes_formations", [])
+        recherche_siae = getattr(config, "recherche_siae", True)
 
         for i in range(nb_adultes):
             adult_idx = i + 1
@@ -815,7 +816,8 @@ class ScoringEngine:
             if i < len(codes_metiers) and codes_metiers[i]:
                 active.add(f"met_match_adult{adult_idx}_scaled")
                 active.add(f"met_match_adult{adult_idx}_tension_scaled")
-                active.add(f"met_siae_match_adult{adult_idx}_scaled")
+                if recherche_siae:
+                    active.add(f"met_siae_match_adult{adult_idx}_scaled")
 
             # Formations
             if i < len(codes_formations) and codes_formations[i]:
@@ -916,6 +918,10 @@ class ScoringEngine:
         # 8. Territory (Partners & Strategic Locations)
         if getattr(config, "org_strategic_locations", []):
             active.add("ter_strategic_locations_scaled")
+
+        # 9. SIAE Filter
+        if not getattr(config, "recherche_siae", True):
+            active.discard("inc_siae_density_scaled")
 
         return active
 
@@ -1341,7 +1347,13 @@ class ScoringEngine:
                 emploi_data.source_availability["france_travail"] = "unavailable"
 
             # --- SIAE Jobs Match (New F-39) ---
-            if not self.siae_jobs_data.empty:
+            if not getattr(config, "recherche_siae", True):
+                emploi_data.source_availability["emplois_inclusion"] = "disabled"
+                emploi_data.inclusive_jobs_total = 0
+                emploi_data.inclusive_jobs_summary = {}
+                emploi_data.inclusive_jobs_matching_summary = {}
+                emploi_data.inclusive_jobs_matching_total = 0
+            elif not self.siae_jobs_data.empty:
                 emploi_data.source_availability["emplois_inclusion"] = "available"
                 siae_city = self.siae_jobs_data[
                     self.siae_jobs_data["codgeo"] == codgeo_str
@@ -1936,7 +1948,10 @@ class ScoringEngine:
         live_columns = {"commune", "romeCode", "total_postes"}
         live_jobs_available = live_columns.issubset(self.live_jobs_data.columns)
         siae_columns = {"rome", "codgeo"}
-        siae_jobs_available = siae_columns.issubset(self.siae_jobs_data.columns)
+        recherche_siae = getattr(config, "recherche_siae", True)
+        siae_jobs_available = (
+            recherche_siae and siae_columns.issubset(self.siae_jobs_data.columns)
+        )
         self._unavailable_runtime_scores.clear()
 
         # --- Live Jobs (ROME-based) ---
@@ -1949,7 +1964,7 @@ class ScoringEngine:
                             f"met_match_adult{adult_number}_tension_scaled",
                         }
                     )
-                if not siae_jobs_available:
+                if recherche_siae and not siae_jobs_available:
                     self._unavailable_runtime_scores.add(
                         f"met_siae_match_adult{adult_number}_scaled"
                     )

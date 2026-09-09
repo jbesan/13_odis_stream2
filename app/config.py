@@ -352,6 +352,7 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     "nb_enfants": 0,
     "codes_metiers": [],
     "codes_formations": [],
+    "recherche_siae": True,
     "classe_enfants": [],
     "inc_services_selection": DEFAULT_INC_SERVICES_CORE,
     "inc_asso_add_selection": [],

@@ -3,6 +3,9 @@
 AGENTS.md
 __pycache__
 .pytest_cache
+.coverage
+.coverage.*
+htmlcov/
 
 app/__pycache__
 app/cached_df

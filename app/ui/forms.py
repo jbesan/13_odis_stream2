@@ -175,6 +175,20 @@ def render_employment_form(app_data: dict[str, Any]) -> None:
                 wrap=True
             )
 
+    st.write("")
+    if "ui_recherche_siae" not in st.session_state:
+        st.session_state["ui_recherche_siae"] = True
+
+    st.checkbox(
+        "Rechercher également dans les SIAE",
+        key="ui_recherche_siae",
+        help=(
+            "Structures d'Insertion par l'Activité Économique : "
+            "Ateliers et Chantiers d'Insertion (ACI), Entreprises d'Insertion (EI), "
+            "Associations Intermédiaires (AI) ou Entreprises de Travail Temporaire d'Insertion (ETTI)."
+        ),
+    )
+
 
 def render_housing_form() -> None:
     """Renders the UI for the 'Logement' form section."""

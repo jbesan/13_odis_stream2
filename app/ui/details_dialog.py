@@ -901,29 +901,35 @@ def show_details_dialog(index: Any):
                 else:
                     render_jobs_enrichment(commune, h)
 
-                # 2. SIAE matching or local listings second
-                matching_siae = employment_data.inclusive_jobs_matching_summary
-                if matching_siae:
-                    with st.expander(
-                        f"Offres par les SIAE correspondant au projet ({employment_data.inclusive_jobs_matching_total})",
-                        expanded=True,
-                    ):
-                        for label, count in matching_siae.items():
-                            st.write(
-                                f"• **{label}** : {count} offre{'s' if count > 1 else ''}"
-                            )
-                elif employment_data.inclusive_jobs_total > 0:
-                    with st.expander(
-                        f"Toutes les offres par les SIAE locales ({employment_data.inclusive_jobs_total})",
-                        expanded=False,
-                    ):
-                        for (
-                            label,
-                            count,
-                        ) in employment_data.inclusive_jobs_summary.items():
-                            st.write(
-                                f"• **{label}** : {count} offre{'s' if count > 1 else ''}"
-                            )
+                # 2. SIAE matching or local listings second (only if recherche_siae is True)
+                cfg_obj = st.session_state.get("config")
+                recherche_siae = getattr(cfg_obj, "recherche_siae", True) if cfg_obj else True
+                if hasattr(commune, "search_criteria") and commune.search_criteria:
+                    recherche_siae = getattr(commune.search_criteria, "recherche_siae", recherche_siae)
+
+                if recherche_siae:
+                    matching_siae = employment_data.inclusive_jobs_matching_summary
+                    if matching_siae:
+                        with st.expander(
+                            f"Offres par les SIAE correspondant au projet ({employment_data.inclusive_jobs_matching_total})",
+                            expanded=True,
+                        ):
+                            for label, count in matching_siae.items():
+                                st.write(
+                                    f"• **{label}** : {count} offre{'s' if count > 1 else ''}"
+                                )
+                    elif employment_data.inclusive_jobs_total > 0:
+                        with st.expander(
+                            f"Toutes les offres par les SIAE locales ({employment_data.inclusive_jobs_total})",
+                            expanded=False,
+                        ):
+                            for (
+                                label,
+                                count,
+                            ) in employment_data.inclusive_jobs_summary.items():
+                                st.write(
+                                    f"• **{label}** : {count} offre{'s' if count > 1 else ''}"
+                                )
 
                 # 3. Métiers recherchés at the bottom
                 with st.expander("Métiers les plus recherchés", expanded=False):

@@ -856,19 +856,20 @@ def _render_commune_sheet(
         pdf.cell(pdf.epw, 4, "  • Données de tension non disponibles", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(1.5)
 
-    # 2. Offres SIAE
-    pdf.set_font("DejaVu", "B", 8)
-    pdf.set_text_color(*COLOR_PRIMARY_TEAL)
-    pdf.cell(pdf.epw, 4.5, "▸ Offres d'emplois par les SIAE locales (Insertion Professionnelle)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.set_font("DejaVu", "", 7.5)
-    pdf.set_text_color(*COLOR_DARK_SLATE)
-    siae_summary = emp.inclusive_jobs_summary if emp else {}
-    if siae_summary:
-        for sector, count in sorted(siae_summary.items(), key=lambda x: x[1], reverse=True)[:4]:
-            pdf.cell(pdf.epw, 4, f"  • {sector} : {count} offre(s)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    else:
-        pdf.cell(pdf.epw, 4, "  • Aucune offre inclusive active identifiée", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.ln(1.5)
+    # 2. Offres SIAE (only if recherche_siae is True)
+    if getattr(config, "recherche_siae", True):
+        pdf.set_font("DejaVu", "B", 8)
+        pdf.set_text_color(*COLOR_PRIMARY_TEAL)
+        pdf.cell(pdf.epw, 4.5, "▸ Offres d'emplois par les SIAE locales (Insertion Professionnelle)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_font("DejaVu", "", 7.5)
+        pdf.set_text_color(*COLOR_DARK_SLATE)
+        siae_summary = emp.inclusive_jobs_summary if emp else {}
+        if siae_summary:
+            for sector, count in sorted(siae_summary.items(), key=lambda x: x[1], reverse=True)[:4]:
+                pdf.cell(pdf.epw, 4, f"  • {sector} : {count} offre(s)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        else:
+            pdf.cell(pdf.epw, 4, "  • Aucune offre inclusive active identifiée", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.ln(1.5)
 
     # 3. Associations Réfugiés & Inclusion
     pdf.set_font("DejaVu", "B", 8)
