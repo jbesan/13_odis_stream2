@@ -1,4 +1,4 @@
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 
 import pandas as pd
 
@@ -44,7 +44,16 @@ def test_execute_owns_search_transition_and_background_launch():
     assert state["active_search_hash"] == "run-hash"
     assert state["form_completed"] is False
     reset_telemetry.assert_called_once_with()
-    launch_tasks.assert_called_once_with(engine, config, results, "run-hash")
+    launch_tasks.assert_called_once_with(
+        engine,
+        config,
+        results,
+        "run-hash",
+        interaction_id=ANY,
+        username="unknown",
+        org_id="unknown",
+        is_ai_free=False,
+    )
 
 
 def test_execute_does_not_duplicate_existing_background_run():

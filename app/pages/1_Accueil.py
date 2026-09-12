@@ -11,8 +11,7 @@ st.set_page_config(page_title="OD&IS", page_icon="👋", layout="wide")
 
 # --- Authentication ---
 
-from services import telemetry
-from ui import page_shell
+from ui import page_shell, ui_telemetry
 
 page_shell.enter_page(
     "Accueil", handle_shared_search=True, redirect_shared_to_results=True
@@ -36,8 +35,6 @@ with st.sidebar:
     if st.session_state.get("org"):
         page_shell.render_sidebar_logo()
     page_shell.render_account_sidebar_actions()
-
-
 
 
 # --- CSS / Styling (V3 Global Green) ---
@@ -185,7 +182,7 @@ st.markdown(header_html, unsafe_allow_html=True)
 
 
 # --- Input & Navigation Section ---
-if cfg.is_ai_free_mode():
+if cfg.is_ai_free_mode(st.session_state.get("org")):
     st.subheader("Entrée de données", divider="yellow", width="stretch")
 
     st.markdown(
@@ -277,7 +274,7 @@ else:
                                 "response": result_data.response,
                                 "criteria": result_data.search_criteria,
                             }
-                            telemetry.log_usage_event(
+                            ui_telemetry.track_ui_event(
                                 "auto_detect_criteria",
                                 {"text_length": len(text_input)},
                             )

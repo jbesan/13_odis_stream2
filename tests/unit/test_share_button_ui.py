@@ -309,7 +309,7 @@ def test_polling_synthesis_fragment_renders_status_and_progress_on_first_turn(mo
     # launch_background_city_analysis starts the task and returns running state
     launched = []
 
-    def mock_launch(nom, codgeo, search_criterias, results, h):
+    def mock_launch(nom, codgeo, search_criterias, results, h, **kwargs):
         launched.append((nom, codgeo))
         return {"status": "running", "start_time": 100.0, "deadline_at": 160.0}
 

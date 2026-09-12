@@ -13,11 +13,9 @@ from typing import Any, Dict, Literal, Optional, TYPE_CHECKING, cast
 
 import logfire
 import pandas as pd
-import streamlit as st
 
 from core.models import SearchCriterias, CriteriaItem
 from services.telemetry import resolve_interaction_id
-from utils.thread_utils import attach_script_run_ctx
 
 logger = logging.getLogger(__name__)
 
@@ -85,17 +83,17 @@ class GraphRunRecord:
         }
 
 
-# Global storage for background tasks (Now restricted to session state for privacy)
-def get_odis_bg_store() -> dict:
-    """Returns a session-specific dictionary for background task results."""
-    if "odis_bg_store" not in st.session_state:
-        st.session_state["odis_bg_store"] = {}
-    return st.session_state["odis_bg_store"]
+_ODIS_BG_STORE: dict[str, Any] = {}
+
+
+def get_odis_bg_store() -> dict[str, Any]:
+    """Returns the store dictionary for background task results."""
+    return _ODIS_BG_STORE
 
 
 def odis_get_bg_result(hash_val: str) -> Any:
-    """Safely retrieves a background result from the global store."""
-    return get_odis_bg_store().get(hash_val)
+    """Safely retrieves a background result from the store."""
+    return _ODIS_BG_STORE.get(hash_val)
 
 
 def is_terminal_graph_run_status(status: str | None) -> bool:
@@ -110,7 +108,7 @@ def get_graph_run_timeout_seconds() -> float:
     )
     try:
         timeout_seconds = float(raw_value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         logging.warning(
             "Invalid ODIS_GRAPH_RUN_TIMEOUT_SECONDS=%r; using %.0fs",
             raw_value,
@@ -475,13 +473,7 @@ def launch_background_city_analysis(
     else:
         identity = GraphRunIdentity(run_id=uuid.uuid4().hex, attempt=1)
 
-    try:
-        current_username = username or st.session_state.get("username", "unknown")
-    except (AttributeError, RuntimeError):
-        current_username = username or "unknown"
-    except Exception as exc:
-        logger.debug("Error getting username from session state: %s", exc)
-        current_username = username or "unknown"
+    current_username = username or "unknown"
 
     try:
         current_interaction_id = resolve_interaction_id(interaction_id)
@@ -616,13 +608,11 @@ def launch_background_city_analysis(
                 error_code="graph_run_failed",
             )
 
-    thread = attach_script_run_ctx(
-        threading.Thread(
-            target=bg_analysis_task,
-            args=(store, identity, input_data, cancel_event, timeout_seconds),
-            name=f"odis-ai-{codgeo}-{identity.attempt}",
-            daemon=True,
-        )
+    thread = threading.Thread(
+        target=bg_analysis_task,
+        args=(store, identity, input_data, cancel_event, timeout_seconds),
+        name=f"odis-ai-{codgeo}-{identity.attempt}",
+        daemon=True,
     )
     thread.start()
     return record
@@ -663,23 +653,10 @@ def run_async_safe(input_data: dict) -> Any:
     Gère le cycle de vie via run_coroutine_sync (asyncio.Runner), éliminant
     les fuites de boucle thread-locale et les warnings sous Python 3.14.
     """
-    try:
-        interaction_id = resolve_interaction_id(input_data.get("interaction_id"))
-        username = st.session_state.get("username", "unknown")
-    except (AttributeError, RuntimeError) as exc:
-        logger.debug(
-            "st.session_state is unavailable in execute_graph_in_sync_thread: %s", exc
-        )
-        interaction_id = uuid.uuid4().hex[:8]
-        username = "unknown"
-    except Exception as exc:
-        logger.warning(
-            "Error resolving session metadata in execute_graph_in_sync_thread: %s", exc
-        )
-        interaction_id = uuid.uuid4().hex[:8]
-        username = "unknown"
+    interaction_id = resolve_interaction_id(input_data.get("interaction_id"))
+    username = input_data.get("username", "unknown")
 
-    # 2. Inject into input_data
+    # Inject normalized values into input_data
     input_data["interaction_id"] = interaction_id
     input_data["username"] = username
 
@@ -697,9 +674,7 @@ def run_autodetect_safe(text: str) -> Any:
     deps = ODISDeps(state=GraphState(), client=client)
     model = get_p_model("interviewer", client=client)
 
-    result = run_coroutine_sync(
-        interviewer_agent.run(text, deps=deps, model=model)
-    )
+    result = run_coroutine_sync(interviewer_agent.run(text, deps=deps, model=model))
     return getattr(result, "output", result)
 
 

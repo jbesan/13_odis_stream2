@@ -5,7 +5,6 @@ import threading
 from typing import Any, Dict, List, Optional
 import logfire
 import pandas as pd
-import streamlit as st
 
 import config as cfg
 from core.enrichment_status import EnrichmentStatus, enrichment_result
@@ -16,8 +15,6 @@ from agents.utils import (
     rehydrate_graph_state,
     sanitize_llm_markdown,
 )
-
-from utils.thread_utils import attach_script_run_ctx
 
 logger = logging.getLogger(__name__)
 ENRICHMENT_DEADLINE_SECONDS = 30
@@ -183,9 +180,7 @@ def launch_background_refining(
             results_store[hash_val] = current_val
 
     # 4. Threading (Non-blocking)
-    thread = attach_script_run_ctx(
-        threading.Thread(target=bg_refiner_task, args=(store, hash_val))
-    )
+    thread = threading.Thread(target=bg_refiner_task, args=(store, hash_val))
     thread.daemon = True  # Ensure it doesn't block exit
     thread.start()
 
@@ -317,9 +312,7 @@ def launch_background_association_enrichment(
             }
             results_store[hash_val] = current_val
 
-    thread = attach_script_run_ctx(
-        threading.Thread(target=bg_enrichment_task, args=(store,))
-    )
+    thread = threading.Thread(target=bg_enrichment_task, args=(store,))
     thread.daemon = True
     thread.start()
     _schedule_enrichment_deadline(
@@ -624,9 +617,7 @@ def launch_background_inclusion_enrichment(
             f"✅ [INCLUSION-ENRICH] Background services enrichment finished for hash {hash_val}"
         )
 
-    thread = attach_script_run_ctx(
-        threading.Thread(target=bg_inclusion_enrichment_task, args=(store,))
-    )
+    thread = threading.Thread(target=bg_inclusion_enrichment_task, args=(store,))
     thread.daemon = True
     thread.start()
     _schedule_enrichment_deadline(store, hash_val, "inclusion_services_status", codgeos)
@@ -637,6 +628,7 @@ def _curate_jobs_with_agent(
     profile_brief: str,
     notes_qualitatives: List[str],
     target_city: Optional[Any] = None,
+    is_ai_free: Optional[bool] = None,
 ) -> List[Dict[str, Any]]:
     """Curates a list of job offers using job_curator_agent based on candidate context.
 
@@ -645,11 +637,13 @@ def _curate_jobs_with_agent(
         profile_brief: Narrative summary of candidate's situation.
         notes_qualitatives: List of qualitative project notes.
         target_city: Optional CommuneResult representing the city ciblée.
+        is_ai_free: Optional bool indicating if AI-free mode is active.
 
     Returns:
         List of curated job offer details dictionaries (top 10 in AI-free mode, top 5 otherwise).
     """
-    if cfg.is_ai_free_mode():
+    ai_free = cfg.is_ai_free_mode() if is_ai_free is None else is_ai_free
+    if ai_free:
         return jobs[:10]
     try:
         from agents.job_curator import job_curator_agent
@@ -737,7 +731,12 @@ def _curate_jobs_with_agent(
 
 
 def launch_background_job_curation(
-    codgeos: List[str], config: Any, hash_val: str, search_results: Optional[Any] = None
+    codgeos: List[str],
+    config: Any,
+    hash_val: str,
+    search_results: Optional[Any] = None,
+    *,
+    is_ai_free: Optional[bool] = None,
 ):
     """Launches background threads in parallel (one per target commune) to fetch and curate job offers.
 
@@ -746,7 +745,9 @@ def launch_background_job_curation(
         config: The SearchCriterias configuration object or a list of ROME codes for legacy compatibility.
         hash_val: Unique MD5 search criteria hash.
         search_results: Optional SearchResultsData container for target city lookup.
+        is_ai_free: Optional bool indicating if AI-free mode is active.
     """
+    ai_free_mode = cfg.is_ai_free_mode() if is_ai_free is None else is_ai_free
     store = get_odis_bg_store()
 
     # 1. Pre-initialize the jobs_enrichment dictionary for all communes to pending state
@@ -843,7 +844,9 @@ def launch_background_job_curation(
     from services.mcp_france_travail import _search_job_offers_logic
 
     # Define the worker task for a single city
-    def bg_jobs_enrichment_for_city_task(cg: str, results_store: dict):
+    def bg_jobs_enrichment_for_city_task(
+        cg: str, results_store: dict, is_ai_free: bool = False
+    ):
         try:
             logging.debug(
                 f"🚀 [JOBS-ENRICH-CITY] Starting background job enrichment for commune {cg} (hash: {hash_val})"
@@ -919,8 +922,7 @@ def launch_background_job_curation(
                         )
 
                 # Apply post-curation to the pooled jobs list for this adult
-                # Note: cfg.is_ai_free_mode() is checked here as an outer guard, returning 10 raw jobs directly.
-                if cfg.is_ai_free_mode():
+                if is_ai_free:
                     curated_jobs = adult_pooled_jobs[:10]
                 elif len(adult_pooled_jobs) <= 5:
                     curated_jobs = adult_pooled_jobs
@@ -946,6 +948,7 @@ def launch_background_job_curation(
                         profile_brief,
                         notes_qualitatives,
                         target_city=target_city,
+                        is_ai_free=is_ai_free,
                     )
 
                 city_results.append(curated_jobs)
@@ -1001,10 +1004,9 @@ def launch_background_job_curation(
 
     # 4. Spawn a concurrent thread for each target commune code
     for cg in codgeos:
-        thread = attach_script_run_ctx(
-            threading.Thread(
-                target=bg_jobs_enrichment_for_city_task, args=(str(cg), store)
-            )
+        thread = threading.Thread(
+            target=bg_jobs_enrichment_for_city_task,
+            args=(str(cg), store, ai_free_mode),
         )
         thread.daemon = True
         thread.start()
@@ -1065,7 +1067,7 @@ def launch_background_audit_log(
                 exc_info=True,
             )
 
-    thread = attach_script_run_ctx(threading.Thread(target=bg_logging_task))
+    thread = threading.Thread(target=bg_logging_task)
     thread.daemon = True
     thread.start()
 
@@ -1162,7 +1164,17 @@ def generate_static_pitch(commune: Union[CommuneResult, Dict[str, Any]]) -> str:
     return "\n".join(pitch_lines)
 
 
-def launch_post_scoring_tasks(engine: Any, config: Any, search_results: Any, h: str):
+def launch_post_scoring_tasks(
+    engine: Any,
+    config: Any,
+    search_results: Any,
+    h: str,
+    *,
+    interaction_id: Optional[str] = None,
+    username: Optional[str] = None,
+    org_id: Optional[str] = None,
+    is_ai_free: Optional[bool] = None,
+):
     """
     Orchestrator for all background tasks triggered after scoring.
     """
@@ -1171,28 +1183,14 @@ def launch_post_scoring_tasks(engine: Any, config: Any, search_results: Any, h: 
     if h not in store:
         store[h] = {}
 
-    # Capture session metadata FROM THE MAIN THREAD
-    try:
-        from services.telemetry import get_interaction_id
+    from services.telemetry import get_interaction_id
 
-        interaction_id = get_interaction_id()
-        username = st.session_state.get("username", "unknown")
-        org = st.session_state.get("org")
-        org_id = org.id if org and hasattr(org, "id") else "unknown"
-    except (AttributeError, RuntimeError) as exc:
-        logger.debug(
-            "st.session_state is unavailable in postscoring session capture: %s", exc
-        )
-        interaction_id = "unknown"
-        username = "unknown"
-        org_id = "unknown"
-    except Exception as exc:
-        logger.warning("Error capturing session metadata in postscoring: %s", exc)
-        interaction_id = "unknown"
-        username = "unknown"
-        org_id = "unknown"
+    current_interaction_id = interaction_id or get_interaction_id()
+    current_username = username or "unknown"
+    current_org_id = org_id or "unknown"
+    ai_free = cfg.is_ai_free_mode() if is_ai_free is None else is_ai_free
 
-    if cfg.is_ai_free_mode():
+    if ai_free:
         # Compute static pitches for results
         pitches = {}
         for c in search_results.results:
@@ -1223,14 +1221,16 @@ def launch_post_scoring_tasks(engine: Any, config: Any, search_results: Any, h: 
         launch_background_inclusion_enrichment(
             engine, target_codgeos, h, thematique_slugs or None
         )
-        launch_background_job_curation(target_codgeos, config, h, search_results)
+        launch_background_job_curation(
+            target_codgeos, config, h, search_results, is_ai_free=True
+        )
         launch_background_audit_log(
             config,
             search_results,
             h,
-            interaction_id=interaction_id,
-            username=username,
-            org_id=org_id,
+            interaction_id=current_interaction_id,
+            username=current_username,
+            org_id=current_org_id,
         )
         return
 
@@ -1257,8 +1257,8 @@ def launch_post_scoring_tasks(engine: Any, config: Any, search_results: Any, h: 
         top_cities=top_cities_full,
         current_geo=current_geo_full,
         commune_pressentie=commune_pressentie_full,
-        interaction_id=interaction_id,
-        username=username,
+        interaction_id=current_interaction_id,
+        username=current_username,
     )
 
     # 4. Launch Enrichment (Detailed Associations - BQ/RAG)
@@ -1275,10 +1275,12 @@ def launch_post_scoring_tasks(engine: Any, config: Any, search_results: Any, h: 
     )
 
     # 4b. Launch Employment Enrichment (Detailed Jobs - France Travail)
-    launch_background_job_curation(target_codgeos, config, h, search_results)
+    launch_background_job_curation(
+        target_codgeos, config, h, search_results, is_ai_free=False
+    )
 
     # 4c. Launch Automated City Analysis (if enabled)
-    if not cfg.is_ai_free_mode() and cfg.is_auto_analyse_top_cities_enabled():
+    if not ai_free and cfg.is_auto_analyse_top_cities_enabled():
         for city in (getattr(search_results, "results", []) or [])[:5]:
             nom = getattr(city, "name", None) or (
                 city.get("name") if isinstance(city, dict) else ""
@@ -1293,9 +1295,9 @@ def launch_post_scoring_tasks(engine: Any, config: Any, search_results: Any, h: 
                     search_criterias=config,
                     search_results=search_results,
                     h=h,
-                    interaction_id=interaction_id,
-                    username=username,
-                    organization_id=org_id,
+                    interaction_id=current_interaction_id,
+                    username=current_username,
+                    organization_id=current_org_id,
                     trigger="post_scoring_auto",
                 )
 
@@ -1304,7 +1306,7 @@ def launch_post_scoring_tasks(engine: Any, config: Any, search_results: Any, h: 
         config,
         search_results,
         h,
-        interaction_id=interaction_id,
-        username=username,
-        org_id=org_id,
+        interaction_id=current_interaction_id,
+        username=current_username,
+        org_id=current_org_id,
     )

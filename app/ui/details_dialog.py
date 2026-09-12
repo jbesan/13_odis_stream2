@@ -15,7 +15,7 @@ from core.scoring import _format_kpi_value
 from core.enrichment_status import EnrichmentStatus
 from utils.data_loader import fetch_salesforce_jaccueille_bdv
 from agents.utils import odis_get_bg_result
-from services import telemetry
+from ui import ui_telemetry
 
 logger = logging.getLogger("ui.details_dialog")
 
@@ -201,16 +201,17 @@ def _get_jaccueille_salesforce_urls(
                         json.loads(cp_json) if isinstance(cp_json, str) else cp_json
                     )
                 except Exception as e:
-                    logger.warning("Error parsing codes_postaux JSON for J'Accueille SF link: %s", e)
+                    logger.warning(
+                        "Error parsing codes_postaux JSON for J'Accueille SF link: %s",
+                        e,
+                    )
 
     cp_param = ",".join(str(cp) for cp in codes_postaux) if codes_postaux else ""
     acc_report_base = cfg.SF_REPORT_ACCUEILLANTS_URL
     prosp_report_base = cfg.SF_REPORT_PROSPECTS_URL
 
     acc_url = f"{acc_report_base}?fv0={cp_param}" if cp_param else acc_report_base
-    prosp_url = (
-        f"{prosp_report_base}?fv0={cp_param}" if cp_param else prosp_report_base
-    )
+    prosp_url = f"{prosp_report_base}?fv0={cp_param}" if cp_param else prosp_report_base
     return acc_url, prosp_url
 
 
@@ -459,7 +460,9 @@ def render_inclusion_services_enrichment(commune: CommuneResult, h: Optional[str
             st.info("Aucun service spécifique référencé.")
 
         if is_loading:
-            st.caption("⌛ _Chargement des détails des services depuis Data Inclusion..._")
+            st.caption(
+                "⌛ _Chargement des détails des services depuis Data Inclusion..._"
+            )
 
     if not h:
         return
@@ -646,9 +649,7 @@ def render_scores_for_category(
     """Renders normalized indicator scores and discrete badges for a specific category."""
     # category_key: emploi, logement, education, sante, inclusion, mobilite, territoire
     scores: List[CommuneScoreDetail] = (
-        scores_list
-        if scores_list is not None
-        else commune.scores.get(category_key, [])
+        scores_list if scores_list is not None else commune.scores.get(category_key, [])
     )
     if metric_filter == "discrete":
         scores = [s for s in scores if s.metric_type == "discrete"]
@@ -702,9 +703,13 @@ def render_scores_for_category(
                 with c_label:
                     st.markdown(f"**{s.label}**")
                     if s.score_id == "heb_jaccueille_accueillants_score" and acc_url:
-                        st.caption(f"[:material/open_in_new: Voir la liste sur Salesforce]({acc_url})")
+                        st.caption(
+                            f"[:material/open_in_new: Voir la liste sur Salesforce]({acc_url})"
+                        )
                     elif s.score_id == "heb_jaccueille_prospects_score" and prosp_url:
-                        st.caption(f"[:material/open_in_new: Voir la liste sur Salesforce]({prosp_url})")
+                        st.caption(
+                            f"[:material/open_in_new: Voir la liste sur Salesforce]({prosp_url})"
+                        )
                 with c_val:
                     st.badge(status_c, icon=badge_icon, color=badge_color)
 
@@ -798,7 +803,7 @@ def show_details_dialog(index: Any):
         st.error("Détails non disponibles.")
         return
 
-    telemetry.log_usage_event(
+    ui_telemetry.track_ui_event(
         "view_commune_details", {"codgeo": commune.codgeo, "name": commune.name}
     )
 
@@ -847,7 +852,11 @@ def show_details_dialog(index: Any):
                 help="Score = Adéquation besoins × Adéquation démographique.",
             )
 
-    def _render_cat_scores(cat_key: str, metric_filter: Optional[str] = None, scores_list: Optional[List[CommuneScoreDetail]] = None):
+    def _render_cat_scores(
+        cat_key: str,
+        metric_filter: Optional[str] = None,
+        scores_list: Optional[List[CommuneScoreDetail]] = None,
+    ):
         render_scores_for_category(
             commune=commune,
             category_key=cat_key,
@@ -903,9 +912,13 @@ def show_details_dialog(index: Any):
 
                 # 2. SIAE matching or local listings second (only if recherche_siae is True)
                 cfg_obj = st.session_state.get("config")
-                recherche_siae = getattr(cfg_obj, "recherche_siae", True) if cfg_obj else True
+                recherche_siae = (
+                    getattr(cfg_obj, "recherche_siae", True) if cfg_obj else True
+                )
                 if hasattr(commune, "search_criteria") and commune.search_criteria:
-                    recherche_siae = getattr(commune.search_criteria, "recherche_siae", recherche_siae)
+                    recherche_siae = getattr(
+                        commune.search_criteria, "recherche_siae", recherche_siae
+                    )
 
                 if recherche_siae:
                     matching_siae = employment_data.inclusive_jobs_matching_summary
@@ -970,8 +983,16 @@ def show_details_dialog(index: Any):
             with c_h_title:
                 st.markdown("#### :material/monitoring: Indicateurs Emploi")
             with c_h_score:
-                with st.container(border=False, width="stretch", horizontal=True, horizontal_alignment="right"):
-                    st.text("Score", help="Score relatif aux scores des autres territoires de la recherche")
+                with st.container(
+                    border=False,
+                    width="stretch",
+                    horizontal=True,
+                    horizontal_alignment="right",
+                ):
+                    st.text(
+                        "Score",
+                        help="Score relatif aux scores des autres territoires de la recherche",
+                    )
             _render_cat_scores("emploi", metric_filter="continuous")
 
     with tab_logement:
@@ -986,8 +1007,16 @@ def show_details_dialog(index: Any):
             with c_h_title:
                 st.markdown("#### :material/home: Indicateurs Logement")
             with c_h_score:
-                with st.container(border=False, width="stretch", horizontal=True, horizontal_alignment="right"):
-                    st.text("Score", help="Score relatif aux scores des autres territoires de la recherche")
+                with st.container(
+                    border=False,
+                    width="stretch",
+                    horizontal=True,
+                    horizontal_alignment="right",
+                ):
+                    st.text(
+                        "Score",
+                        help="Score relatif aux scores des autres territoires de la recherche",
+                    )
             _render_cat_scores("logement", metric_filter="continuous")
 
     with tab_edu:
@@ -1013,8 +1042,16 @@ def show_details_dialog(index: Any):
             with c_h_title:
                 st.markdown("#### :material/analytics: Indicateurs Éducation")
             with c_h_score:
-                with st.container(border=False, width="stretch", horizontal=True, horizontal_alignment="right"):
-                    st.text("Score", help="Score relatif aux scores des autres territoires de la recherche")
+                with st.container(
+                    border=False,
+                    width="stretch",
+                    horizontal=True,
+                    horizontal_alignment="right",
+                ):
+                    st.text(
+                        "Score",
+                        help="Score relatif aux scores des autres territoires de la recherche",
+                    )
             _render_cat_scores("education", metric_filter="continuous")
 
     with tab_sante:
@@ -1022,7 +1059,9 @@ def show_details_dialog(index: Any):
         c1, c2 = st.columns([1, 1], gap="medium")
         with c1:
             with st.container(border=False):
-                st.markdown("#### :material/medical_services: Structures & Professionnels")
+                st.markdown(
+                    "#### :material/medical_services: Structures & Professionnels"
+                )
                 facility_details = health_data.facility_details
                 if facility_details:
                     for cat, names in sorted(facility_details.items()):
@@ -1040,15 +1079,25 @@ def show_details_dialog(index: Any):
             with c_h_title:
                 st.markdown("#### :material/medical_services: Indicateurs Santé")
             with c_h_score:
-                with st.container(border=False, width="stretch", horizontal=True, horizontal_alignment="right"):
-                    st.text("Score", help="Score relatif aux scores des autres territoires de la recherche")
+                with st.container(
+                    border=False,
+                    width="stretch",
+                    horizontal=True,
+                    horizontal_alignment="right",
+                ):
+                    st.text(
+                        "Score",
+                        help="Score relatif aux scores des autres territoires de la recherche",
+                    )
             _render_cat_scores("sante", metric_filter="continuous")
 
     with tab_vie:
         c1, c2 = st.columns([1, 1], gap="medium")
         with c1:
             with st.container(border=False):
-                st.markdown("#### :material/volunteer_activism: Services d'Inclusion à moins de 10km")
+                st.markdown(
+                    "#### :material/volunteer_activism: Services d'Inclusion à moins de 10km"
+                )
                 if _should_poll_enrichment(
                     h, "inclusion_services_status", commune.codgeo
                 ):
@@ -1072,8 +1121,16 @@ def show_details_dialog(index: Any):
             with c_h_title:
                 st.markdown("#### :material/diversity_3: Indicateurs Inclusion")
             with c_h_score:
-                with st.container(border=False, width="stretch", horizontal=True, horizontal_alignment="right"):
-                    st.text("Score", help="Score relatif aux scores des autres territoires de la recherche")
+                with st.container(
+                    border=False,
+                    width="stretch",
+                    horizontal=True,
+                    horizontal_alignment="right",
+                ):
+                    st.text(
+                        "Score",
+                        help="Score relatif aux scores des autres territoires de la recherche",
+                    )
             _render_cat_scores("inclusion", metric_filter="continuous")
 
     with tab_mob:
@@ -1086,8 +1143,16 @@ def show_details_dialog(index: Any):
             with c_h_title:
                 st.markdown("#### :material/commute: Indicateurs Mobilité")
             with c_h_score:
-                with st.container(border=False, width="stretch", horizontal=True, horizontal_alignment="right"):
-                    st.text("Score", help="Score relatif aux scores des autres territoires de la recherche")
+                with st.container(
+                    border=False,
+                    width="stretch",
+                    horizontal=True,
+                    horizontal_alignment="right",
+                ):
+                    st.text(
+                        "Score",
+                        help="Score relatif aux scores des autres territoires de la recherche",
+                    )
             _render_cat_scores("mobilite", metric_filter="continuous")
 
     with tab_ter:
@@ -1160,17 +1225,26 @@ def show_details_dialog(index: Any):
                                 for item in history
                             ]
                             st.dataframe(
-                                pd.DataFrame(table_rows), hide_index=True, width="stretch"
+                                pd.DataFrame(table_rows),
+                                hide_index=True,
+                                width="stretch",
                             )
                 except Exception as e:
                     st.caption("Erreur lors du chargement de l'historique électoral.")
 
-            
         with c2:
             c_h_title, c_h_score = st.columns([2.8, 1.2], vertical_alignment="bottom")
             with c_h_title:
                 st.markdown("#### :material/security: Indicateurs Territoriaux")
             with c_h_score:
-                with st.container(border=False, width="stretch", horizontal=True, horizontal_alignment="right"):
-                    st.text("Score", help="Score relatif aux scores des autres territoires de la recherche")
+                with st.container(
+                    border=False,
+                    width="stretch",
+                    horizontal=True,
+                    horizontal_alignment="right",
+                ):
+                    st.text(
+                        "Score",
+                        help="Score relatif aux scores des autres territoires de la recherche",
+                    )
             _render_cat_scores("territoire", metric_filter="continuous")

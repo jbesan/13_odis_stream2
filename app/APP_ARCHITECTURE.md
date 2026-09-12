@@ -135,7 +135,7 @@ AI agents are utilized strictly for dynamic parameter translation and qualitativ
 When initiating long-running scoring or AI swarm tasks:
 1.  The UI spawns a background thread via [launch_background_city_analysis](file:///Users/jacques/dev/13_odis_stream2/app/agents/utils.py#L130).
 2.  The UI displays a loading widget inside a `@st.fragment(run_every=2.0)` polling component.
-3.  The thread writes state updates to the session-specific `st.session_state['odis_bg_store']`.
+3.  The thread writes state updates to the in-memory background store `get_odis_bg_store()`.
 4.  Once the status changes to `"done"`, the UI triggers a page rerun to render the new state.
 
 Form widget state is intentionally not wrapped in a second reactive store. Each widget has one native `ui_*` Session State value. `FormState.hydrate()` applies defaults, organization/demo profiles, auto-detection and shared criteria before widgets render; `FormState.collect()` is the sole conversion to `SearchCriterias`. Composite mirrors such as checkbox-list copies, expert flags and organization boost dictionaries are derived instead of persisted.

@@ -10,7 +10,7 @@ from core.enrichment_status import (
 )
 from core.pdf_generator import generate_pdf_report
 from agents.utils import odis_get_bg_result
-from services import telemetry
+from ui import ui_telemetry
 
 logger = logging.getLogger("ui.results.actions")
 
@@ -51,7 +51,7 @@ def pdf_modal():
                 return
             st.session_state.pdf_modal_data = pdf_bytes
             st.session_state["pdf_modal_warnings"] = sorted(set(pdf_warnings))
-            telemetry.log_usage_event(
+            ui_telemetry.track_ui_event(
                 "export_pdf",
                 {"search_hash": search_results.search_hash if search_results else ""},
             )

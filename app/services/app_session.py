@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import config as cfg
+from agents.utils import get_odis_bg_store
 
 
 @dataclass(frozen=True)
@@ -153,12 +154,16 @@ class AppSession:
 
     def _drop_workers_for(self, search_hash: str) -> None:
         store = self.state.get("odis_bg_store")
-        if not isinstance(store, dict):
-            return
-        store.pop(search_hash, None)
-        for key in list(store):
+        if isinstance(store, dict):
+            store.pop(search_hash, None)
+            for key in list(store):
+                if str(key).startswith(f"analysis_{search_hash}_"):
+                    store.pop(key, None)
+        bg_store = get_odis_bg_store()
+        bg_store.pop(search_hash, None)
+        for key in list(bg_store):
             if str(key).startswith(f"analysis_{search_hash}_"):
-                store.pop(key, None)
+                bg_store.pop(key, None)
 
     def reset_for_home(self) -> int:
         """Clear the draft and active run while retaining identity/resources."""

@@ -64,8 +64,19 @@ class SearchController:
 
         search_hash = search_results.search_hash
         if odis_get_bg_result(search_hash) is None:
+            org = self.session.state.get("org")
+            username = self.session.state.get("username", "unknown")
+            org_id = getattr(org, "id", "unknown") if org else "unknown"
+            is_ai_free = cfg.is_ai_free_mode(org)
             launch_post_scoring_tasks(
-                engine, config, search_results, search_hash
+                engine,
+                config,
+                search_results,
+                search_hash,
+                interaction_id=telemetry.get_interaction_id(),
+                username=username,
+                org_id=org_id,
+                is_ai_free=is_ai_free,
             )
 
         self._center_map(config, search_results, app_data)

@@ -45,6 +45,7 @@ from agents.web_search import (
 from services.ai_pricing import estimate_google_grounding_cost_eur
 from utils.logger import log_agent_trace
 import services.bq_logger as bq_logger
+from services.telemetry import log_usage_event
 from agents.agent_config import get_model, get_p_model, get_model_settings
 
 logger = logging.getLogger("odis_graph")
@@ -68,6 +69,7 @@ def capture_usage(result: Any, node_name: str, model_id: str) -> UsageStats:
     """Backward-compatible public wrapper around the shared usage extractor."""
 
     return capture_usage_stats(result, node_name, model_id)
+
 
 # --- Graph Nodes ---
 @logfire.instrument("Node: triage")
@@ -146,7 +148,9 @@ async def triage_step(
                 if ctx.state.focus_city:
                     state_dict["focus_city"] = ctx.state.focus_city.model_dump()
                 if ctx.state.search_criteria:
-                    state_dict["search_criteria"] = ctx.state.search_criteria.model_dump()
+                    state_dict["search_criteria"] = (
+                        ctx.state.search_criteria.model_dump()
+                    )
                 if ctx.state.search_results:
                     state_dict["search_results"] = ctx.state.search_results.model_dump()
 
@@ -210,7 +214,9 @@ async def triage_step(
                 if local_worker not in experts_to_run:
                     experts_to_run.append(local_worker)
                     ctx.state.expert_tasks[local_worker] = "Analyse déterministe locale"
-                    ctx.state.expert_skill_instructions[local_worker] = "Traitement déterministe Python"
+                    ctx.state.expert_skill_instructions[local_worker] = (
+                        "Traitement déterministe Python"
+                    )
                     ctx.state.expert_skill_tools[local_worker] = []
 
         logger.info(
@@ -283,15 +289,27 @@ async def expert_worker_step(
 
     # 1. RESOLVE FULL COMMUNE RESULT FROM SEARCH RESULTS
     city_res = None
-    if ctx.state.search_results and ctx.state.focus_city and ctx.state.focus_city.codgeo:
+    if (
+        ctx.state.search_results
+        and ctx.state.focus_city
+        and ctx.state.focus_city.codgeo
+    ):
         city_res = ctx.state.search_results.get_by_code(ctx.state.focus_city.codgeo)
     target_city = city_res or ctx.state.focus_city
 
     # 2. LOCAL DETERMINISTIC WORKERS (Phase 1: 0 tokens, <15ms)
     if domain == "city_comparator":
-        logger.info(f"⚡ [CITY_COMPARATOR] Running local deterministic comparison for {focus}.")
-        ref_geo = ctx.state.search_results.current_geo if ctx.state.search_results else None
-        press_geo = ctx.state.search_results.commune_pressentie if ctx.state.search_results else None
+        logger.info(
+            f"⚡ [CITY_COMPARATOR] Running local deterministic comparison for {focus}."
+        )
+        ref_geo = (
+            ctx.state.search_results.current_geo if ctx.state.search_results else None
+        )
+        press_geo = (
+            ctx.state.search_results.commune_pressentie
+            if ctx.state.search_results
+            else None
+        )
         artifact = compute_city_comparison(target_city, ref_geo, press_geo)
         logfire.info(
             "Expert run finished",
@@ -302,7 +320,9 @@ async def expert_worker_step(
         return artifact
 
     if domain == "ccas_locator":
-        logger.info(f"⚡ [CCAS_LOCATOR] Running local deterministic CCAS search for {focus}.")
+        logger.info(
+            f"⚡ [CCAS_LOCATOR] Running local deterministic CCAS search for {focus}."
+        )
         artifact = locate_ccas_deterministic(target_city)
         logfire.info(
             "Expert run finished",
@@ -411,9 +431,7 @@ async def expert_worker_step(
                 usage.grounding_queries
             )
             usage.cost_eur = (
-                usage.token_cost_eur
-                + usage.grounding_cost_eur
-                + usage.places_cost_eur
+                usage.token_cost_eur + usage.grounding_cost_eur + usage.places_cost_eur
                 if usage.eur_priced
                 else 0.0
             )
@@ -427,10 +445,9 @@ async def expert_worker_step(
                 parent_breakdown["grounding_sources"] = []
                 parent_breakdown["grounding_supports"] = []
                 parent_breakdown["grounding_cost_eur"] = 0.0
-                parent_breakdown["cost_eur"] = (
-                    parent_breakdown.get("token_cost_eur", 0.0)
-                    + parent_breakdown.get("places_cost_eur", 0.0)
-                )
+                parent_breakdown["cost_eur"] = parent_breakdown.get(
+                    "token_cost_eur", 0.0
+                ) + parent_breakdown.get("places_cost_eur", 0.0)
         # The direct web call is outside PydanticAI's Usage object.  Merge it
         # before persisting the artifact so total cost/tokens include both the
         # expert loop and its optional one-call web batch.
@@ -489,9 +506,7 @@ async def synthesizer_step(
                 ctx.state.usage.merge(artifact.usage)
 
         if ctx.state.search_results and ctx.state.focus_city:
-            city_res = ctx.state.search_results.get_by_code(
-                ctx.state.focus_city.codgeo
-            )
+            city_res = ctx.state.search_results.get_by_code(ctx.state.focus_city.codgeo)
             if city_res:
                 for artifact in input_data:
                     city_res.expert_analysis[artifact.domain] = artifact.result
@@ -560,12 +575,10 @@ async def synthesizer_step(
         )
         # ``usage_events.payload`` remains a flexible JSON column and mirrors
         # the EUR rate-card breakdown stored in ``agent_state_logs.cost_eur``.
-        from services.telemetry import log_usage_event
-
         await asyncio.to_thread(
             log_usage_event,
             "ai_run_usage",
-            {
+            payload={
                 "cost_eur": ctx.state.usage.cost_eur,
                 "cost_eur_available": ctx.state.usage.eur_priced,
                 "token_cost_eur": ctx.state.usage.token_cost_eur,
@@ -581,9 +594,9 @@ async def synthesizer_step(
                 "unpriced_model_requests": ctx.state.usage.unpriced_model_requests,
                 "cost_basis": "EUR rate-card estimate; free-tier/account aggregation may differ from invoice",
             },
-            ctx.state.interaction_id,
-            ctx.state.username,
-            ctx.state.organization_id,
+            interaction_id=ctx.state.interaction_id,
+            username=ctx.state.username,
+            org_id=ctx.state.organization_id,
         )
     except Exception as e:
         logger.warning(f"⚠️ [BQ-LOG] Synthesis logging failed: {e}")
@@ -618,7 +631,11 @@ async def synthesizer_step(
             ("mobility_expert", "🚆 Mobilité & Transports", "🚆 Mobilité"),
             ("healthcare_expert", "🏥 Santé & Accompagnement Médical", "🏥 Santé"),
             ("education_expert", "🎓 Éducation & Petite Enfance", "🎓 Éducation"),
-            ("social_integration_expert", "🤝 Insertion Sociale & Solidarité", "🤝 Insertion"),
+            (
+                "social_integration_expert",
+                "🤝 Insertion Sociale & Solidarité",
+                "🤝 Insertion",
+            ),
             ("job_hunter", "💼 Emploi & Insertion Professionnelle", "💼 Emploi"),
         ]
         domains_map: dict[str, DomainReport] = {}
@@ -649,7 +666,9 @@ async def synthesizer_step(
             avis_global=avis_global,
             domains=domains_map,
             analyse_comparative=analyse_comp if analyse_comp else None,
-            elements_non_verifies=elements_non_verifies if elements_non_verifies else None,
+            elements_non_verifies=elements_non_verifies
+            if elements_non_verifies
+            else None,
             ccas_contact=ccas_content,
             et_ensuite=et_ensuite if et_ensuite else None,
         )

@@ -7,9 +7,8 @@ from typing import Optional
 
 import streamlit as st
 
-from services import telemetry
 from services.app_session import AppSession
-from ui import components
+from ui import components, ui_telemetry
 from ui.idle_sleep import inject_idle_disconnect
 from utils import auth, common
 
@@ -87,7 +86,7 @@ def enter_page(
         st.error(f"⚠️ {error}")
 
     if page_name:
-        telemetry.log_page_view(page_name)
+        ui_telemetry.log_page_view(page_name)
 
 
 def render_sidebar_logo() -> None:

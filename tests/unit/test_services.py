@@ -3,7 +3,7 @@ import json
 import pytest
 from unittest.mock import MagicMock, patch
 from services import telemetry, bq_logger
-from ui import feedback
+from ui import feedback, ui_telemetry
 
 
 @pytest.fixture
@@ -19,48 +19,43 @@ def mock_session_state():
 
 
 def test_interaction_id_persistence(mock_session_state):
-    """Test that interaction_id is generated and remains stable."""
+    """Test that interaction_id is generated and remains stable in UI state."""
     with patch("streamlit.session_state", mock_session_state):
         # First call should generate it
-        first_id = telemetry.get_interaction_id()
+        first_id = ui_telemetry.get_ui_interaction_id()
         assert len(first_id) == 8
 
         # Second call should return the same ID
-        second_id = telemetry.get_interaction_id()
+        second_id = ui_telemetry.get_ui_interaction_id()
         assert second_id == first_id
 
         # Reset should change it
-        reset_id = telemetry.reset_interaction_id()
+        reset_id = ui_telemetry.reset_ui_interaction_id()
         assert reset_id != first_id
         assert len(reset_id) == 8
 
 
 def test_interaction_id_logic():
-    """Test that interaction_id is generated and remains stable."""
+    """Test that interaction_id is resolved from UI state."""
     with patch("streamlit.session_state", MagicMock()) as mock_ss:
-        # Mocking the attribute behavior
-        mock_ss.interaction_id = "test-id"
-        mock_ss.__contains__.side_effect = lambda k: k == "interaction_id"
+        mock_ss.get.side_effect = lambda k, d=None: (
+            "test-id" if k == "interaction_id" else d
+        )
 
-        val = telemetry.get_interaction_id()
+        val = ui_telemetry.get_ui_interaction_id()
         assert val == "test-id"
 
 
 def test_missing_interaction_id_sentinel_is_replaced():
     with patch("streamlit.session_state", {"interaction_id": "unknown"}):
-        value = telemetry.get_interaction_id()
+        value = ui_telemetry.get_ui_interaction_id()
 
     assert value != "unknown"
     assert len(value) == 8
 
 
 def test_resolve_interaction_id_prefers_valid_explicit_value():
-    with patch("services.telemetry.get_interaction_id") as get_current:
-        assert telemetry.resolve_interaction_id(" interaction-123 ") == (
-            "interaction-123"
-        )
-
-    get_current.assert_not_called()
+    assert telemetry.resolve_interaction_id(" interaction-123 ") == ("interaction-123")
 
 
 @patch("services.bq_logger.bigquery.Client")
@@ -70,32 +65,28 @@ def test_log_agent_state_to_bq(mock_client_class):
     mock_client.project = "test-project"
     mock_client.insert_rows_json.return_value = []
 
-    with patch("streamlit.session_state", MagicMock()) as mock_ss:
-        mock_ss.get.side_effect = lambda k, d=None: (
-            "test_user" if k == "username" else d
-        )
-        mock_ss.interaction_id = "test-id"
-        mock_ss.__contains__.side_effect = lambda k: k == "interaction_id"
+    with patch("os.getenv", return_value="test-project"):
+        agent_state = {
+            "messages": [{"role": "user", "content": "hello"}],
+            "usage": {"cost_eur": 0.01, "cost_usd": 99.0},
+            "username": "test_user",
+            "interaction_id": "test-id",
+        }
+        bq_logger.log_agent_state_to_bq("hello", agent_state)
 
-        with patch("os.getenv", return_value="test-project"):
-            agent_state = {
-                "messages": [{"role": "user", "content": "hello"}],
-                "usage": {"cost_eur": 0.01, "cost_usd": 99.0},
-            }
-            bq_logger.log_agent_state_to_bq("hello", agent_state)
-
-            assert mock_client.insert_rows_json.called
-            args, _ = mock_client.insert_rows_json.call_args
-            row = args[1][0]  # client.insert_rows_json(table_ref, [row])
-            assert row["username"] == "test_user"
-            assert row["last_user_message"] == "hello"
-            assert row["cost_eur"] == 0.01
-            assert "env" in row
-            assert "cost_usd" not in row
-            usage_payload = json.loads(row["artifacts"])
-            assert usage_payload["__usage__"]["cost_eur"] == 0.01
-            assert "cost_usd" not in usage_payload["__usage__"]
-            assert "cost_eur" in usage_payload["__usage__"]
+        assert mock_client.insert_rows_json.called
+        args, _ = mock_client.insert_rows_json.call_args
+        row = args[1][0]  # client.insert_rows_json(table_ref, [row])
+        assert row["username"] == "test_user"
+        assert row["interaction_id"] == "test-id"
+        assert row["last_user_message"] == "hello"
+        assert row["cost_eur"] == 0.01
+        assert "env" in row
+        assert "cost_usd" not in row
+        usage_payload = json.loads(row["artifacts"])
+        assert usage_payload["__usage__"]["cost_eur"] == 0.01
+        assert "cost_usd" not in usage_payload["__usage__"]
+        assert "cost_eur" in usage_payload["__usage__"]
 
 
 @patch("ui.feedback.bigquery.Client")
@@ -203,35 +194,43 @@ def test_log_usage_event(mock_client_class):
     mock_client.project = "test-project"
     mock_client.insert_rows_json.return_value = []
 
-    mock_state = {"login_session_id": "session-abc-123"}
-    with patch("streamlit.session_state", MagicMock()) as mock_ss:
-        mock_ss.get.side_effect = lambda k, d=None: (
-            "test_user"
-            if k == "username"
-            else (
-                "jaccueille"
-                if k == "org"
-                else mock_state.get(k, d)
-            )
+    with patch("os.getenv", return_value="test-project"):
+        telemetry.log_usage_event(
+            "click_button",
+            {"button": "en_savoir_plus"},
+            interaction_id="test-id",
+            username="test_user",
+            org_id="jaccueille",
+            login_session_id="session-abc-123",
         )
-        mock_ss.__contains__.side_effect = lambda k: k in (
-            "interaction_id",
-            "username",
-            "login_session_id",
-        )
-        mock_ss.interaction_id = "test-id"
+        assert mock_client.insert_rows_json.called
+        args, _ = mock_client.insert_rows_json.call_args
+        row = args[1][0]
+        assert row["event_name"] == "click_button"
+        assert row["login_session_id"] == "session-abc-123"
+        assert row["username"] == "test_user"
+        assert row["interaction_id"] == "test-id"
+        assert "env" in row
+        assert "en_savoir_plus" in row["payload"]
 
-        with patch("os.getenv", return_value="test-project"), patch(
-            "utils.auth.get_login_session_id", return_value="session-abc-123"
-        ):
-            telemetry.log_usage_event("click_button", {"button": "en_savoir_plus"})
-            assert mock_client.insert_rows_json.called
-            args, _ = mock_client.insert_rows_json.call_args
-            row = args[1][0]
-            assert row["event_name"] == "click_button"
-            assert row["login_session_id"] == "session-abc-123"
-            assert "env" in row
-            assert "en_savoir_plus" in row["payload"]
+
+def test_track_ui_event():
+    """Test that track_ui_event extracts session metadata from Streamlit and forwards it."""
+    mock_state = {
+        "interaction_id": "test-id",
+        "username": "test_user",
+    }
+    with (
+        patch("streamlit.session_state", mock_state),
+        patch("utils.auth.get_login_session_id", return_value="session-abc-123"),
+        patch("services.telemetry.log_usage_event") as mock_log,
+    ):
+        ui_telemetry.track_ui_event("click_button", {"button": "en_savoir_plus"})
+        assert mock_log.called
+        k_args = mock_log.call_args.kwargs
+        assert k_args["interaction_id"] == "test-id"
+        assert k_args["username"] == "test_user"
+        assert k_args["login_session_id"] == "session-abc-123"
 
 
 def test_capture_usage_defensive():
@@ -283,23 +282,26 @@ def test_log_page_view_deduplication():
     mock_ss.get.side_effect = get_item
     mock_ss.__setitem__.side_effect = set_item
 
-    with patch("streamlit.session_state", mock_ss), patch("services.telemetry.log_usage_event") as mock_log_usage:
+    with (
+        patch("streamlit.session_state", mock_ss),
+        patch("ui.ui_telemetry.track_ui_event") as mock_track,
+    ):
         # First visit to Accueil
-        telemetry.log_page_view("Accueil")
+        ui_telemetry.log_page_view("Accueil")
         assert fake_state.get("current_page") == "Accueil"
-        assert mock_log_usage.called
-        assert mock_log_usage.call_args[0][0] == "page_view"
-        assert mock_log_usage.call_args[0][1]["page"] == "Accueil"
+        assert mock_track.called
+        assert mock_track.call_args[0][0] == "page_view"
+        assert mock_track.call_args[0][1]["page"] == "Accueil"
 
-        mock_log_usage.reset_mock()
+        mock_track.reset_mock()
 
         # Second re-run on Accueil (should NOT log again)
-        telemetry.log_page_view("Accueil")
-        assert not mock_log_usage.called
+        ui_telemetry.log_page_view("Accueil")
+        assert not mock_track.called
 
         # Navigate to Formulaire (should log with origin=Accueil)
-        telemetry.log_page_view("Formulaire")
+        ui_telemetry.log_page_view("Formulaire")
         assert fake_state.get("current_page") == "Formulaire"
         assert fake_state.get("previous_page") == "Accueil"
-        assert mock_log_usage.called
-        assert mock_log_usage.call_args[0][1]["origin"] == "Accueil"
+        assert mock_track.called
+        assert mock_track.call_args[0][1]["origin"] == "Accueil"

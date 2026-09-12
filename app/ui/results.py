@@ -18,7 +18,7 @@ from agents.utils import (
     odis_get_bg_result,
 )
 from core import maps_deck
-from services import telemetry
+from ui import ui_telemetry
 
 # Sub-module imports & re-exports for complete backward compatibility
 from ui.results_actions import (
@@ -126,7 +126,10 @@ def _is_hydration_ready_for_city(commune: CommuneResult, h: Optional[str]) -> bo
     codgeo_str = str(commune.codgeo)
 
     # 1. Jobs enrichment status
-    if not (hasattr(commune, "siae_jobs") and getattr(commune, "siae_jobs", None) is not None):
+    if not (
+        hasattr(commune, "siae_jobs")
+        and getattr(commune, "siae_jobs", None) is not None
+    ):
         jobs_status = (
             bg_res.get("jobs_enrichment", {}).get(codgeo_str, {}).get("status")
         )
@@ -164,7 +167,9 @@ def _is_hydration_ready_for_city(commune: CommuneResult, h: Optional[str]) -> bo
 
 def _is_postscoring_ready_for_city(commune: CommuneResult, h: Optional[str]) -> bool:
     """Return True if all background post-scoring tasks for this commune have reached a terminal state."""
-    if getattr(commune, "odis_synthesis", None) or getattr(commune, "analysis_report", None):
+    if getattr(commune, "odis_synthesis", None) or getattr(
+        commune, "analysis_report", None
+    ):
         return True
 
     if st.session_state.get("immutable_shared_snapshot"):
@@ -231,7 +236,9 @@ def render_ai_trigger_button(commune: CommuneResult, h: Optional[str]) -> bool:
     immutable_snapshot = bool(st.session_state.get("immutable_shared_snapshot"))
 
     if has_analysis:
-        btn_label = "Consulter l'Analyse Avancée" if immutable_snapshot else "Analyse Avancée"
+        btn_label = (
+            "Consulter l'Analyse Avancée" if immutable_snapshot else "Analyse Avancée"
+        )
         btn_disabled = False
     elif immutable_snapshot:
         btn_label = "Analyse Avancée (non réalisée)"
@@ -251,7 +258,7 @@ def render_ai_trigger_button(commune: CommuneResult, h: Optional[str]) -> bool:
         disabled=btn_disabled,
     ):
         st.session_state.active_ia_city_index = commune.codgeo
-        telemetry.log_usage_event(
+        ui_telemetry.track_ui_event(
             "run_ia_analysis", {"codgeo": commune.codgeo, "name": commune.name}
         )
         show_ia_analysis_dialog(commune.codgeo)
@@ -368,7 +375,7 @@ def _display_result_details(commune: CommuneResult) -> None:
     """Displays the detailed information for a single search result (Commune)."""
     h = st.session_state.get("active_search_hash")
 
-    with st.container(key='city_result_card', border=True):
+    with st.container(key="city_result_card", border=True):
         # --- Pitch ---
         population = f"{commune.population:,}".replace(",", " ")
         libgeo = commune.name
@@ -383,9 +390,9 @@ def _display_result_details(commune: CommuneResult) -> None:
         # that was already shown as a provisional summary.
         render_refiner_panel(commune, h)
         st.markdown(
-                    '<style> [class*="st-key-btn_ia"] .stButton button { background-color: #F5D819; color: #1B4429; } </style>',
-                    unsafe_allow_html=True,
-                )
+            '<style> [class*="st-key-btn_ia"] .stButton button { background-color: #F5D819; color: #1B4429; } </style>',
+            unsafe_allow_html=True,
+        )
 
         # st.space("small")
         c1, c2 = st.columns(2)
@@ -393,7 +400,7 @@ def _display_result_details(commune: CommuneResult) -> None:
         with c1:
             render_details_trigger_button(commune, h)
         with c2:
-            if not cfg.is_ai_free_mode():
+            if not cfg.is_ai_free_mode(st.session_state.get("org")):
                 render_ai_trigger_button(commune, h)
         # with c3:
         if st.button(
@@ -413,8 +420,6 @@ def _display_result_details(commune: CommuneResult) -> None:
         ):
             st.session_state.active_ccas_index = commune.codgeo
             show_ccas_dialog(commune.codgeo)
-
-
 
         # --- Radar Chart with Comparison ---
         st.space("small")

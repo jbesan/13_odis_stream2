@@ -47,38 +47,22 @@ def set_data_context(context: Dict[str, Any]) -> None:
 
 
 def ensure_data_context() -> None:
-    """
-    Ensures data context is loaded, sharing the Streamlit @st.cache_resource.
+    """Ensures data context is loaded.
 
-    Uses get_app_data() instead of load_all_data_raw() so that the MCP server
-    reuses the already-loaded in-process data dict (zero I/O) when running
-    inside the same Streamlit process. Falls back to direct load only if the
-    Streamlit cache is unavailable (e.g. standalone MCP server mode).
+    Uses the injected in-memory DATA_CONTEXT (populated via set_data_context on
+    main thread startup), or directly loads the verified release bundle via
+    load_all_data_raw (without any Streamlit dependency) for standalone/CLI/test mode.
     """
     global DATA_CONTEXT
     if not DATA_CONTEXT:
         with DATA_LOCK:
             if not DATA_CONTEXT:
-                try:
-                    # Try to reuse the Streamlit @st.cache_resource first (zero I/O)
-                    from utils.data_loader import get_app_data
+                logger.info(
+                    "⚙️ [MCP] Loading a verified release bundle (direct load without Streamlit)..."
+                )
+                from utils.data_loader import get_active_release_context
 
-                    DATA_CONTEXT = get_app_data()
-                    logger.info(
-                        "⚙️ [MCP] Data context loaded from Streamlit cache (shared)."
-                    )
-                except Exception:
-                    # Fallback: standalone MCP mode (e.g. running as separate process)
-                    try:
-                        logger.info(
-                            "⚙️ [MCP] Loading a verified release bundle (fallback direct load)..."
-                        )
-                        from utils.data_loader import get_active_release_context
-
-                        DATA_CONTEXT = load_all_data_raw(get_active_release_context())
-                    except Exception as e2:
-                        logger.error(f"Failed to load data context: {e2}")
-                        raise RuntimeError(f"Failed to load ODIS data: {e2}")
+                DATA_CONTEXT = load_all_data_raw(get_active_release_context())
 
 
 def get_scoring_engine() -> ScoringEngine:

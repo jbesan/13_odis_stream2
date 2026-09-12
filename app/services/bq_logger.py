@@ -5,9 +5,7 @@ from datetime import datetime
 
 import zoneinfo
 from google.cloud import bigquery
-import streamlit as st
 from typing import Any, Optional
-from services.telemetry import get_interaction_id
 
 logger = logging.getLogger(__name__)
 
@@ -70,29 +68,12 @@ def log_agent_state_to_bq(
         return
 
     try:
-        # Tier 1: Use explicit caller-supplied values (thread-safe)
-        # Tier 2: Fall back to values baked into the agent_state dict (thread-safe)
-        # Tier 3: Try Streamlit session_state (only safe on the main thread)
-        if not interaction_id:
-            interaction_id = (
-                agent_state.get("interaction_id", "")
-                if isinstance(agent_state, dict)
-                else ""
-            )
-        if not username or username == "unknown":
-            username = (
-                agent_state.get("username", "") if isinstance(agent_state, dict) else ""
-            )
-
-        try:
-            if not interaction_id:
-                interaction_id = get_interaction_id()
-            if not username:
-                username = st.session_state.get("username", "unknown")
-        except (AttributeError, RuntimeError) as exc:
-            logger.debug("Session state unavailable in background thread: %s", exc)
-        except Exception as exc:
-            logger.warning("Error resolving session metadata in bq_logger: %s", exc)
+        # Tier 1: Use explicit caller-supplied values
+        # Tier 2: Fall back to values baked into the agent_state dict
+        if not interaction_id and isinstance(agent_state, dict):
+            interaction_id = agent_state.get("interaction_id", "")
+        if (not username or username == "unknown") and isinstance(agent_state, dict):
+            username = agent_state.get("username", "")
 
         interaction_id = interaction_id or "unknown"
         username = username or "unknown"

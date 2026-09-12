@@ -104,7 +104,13 @@ def polling_synthesis_fragment(
     status_data = odis_get_bg_result(task_key)
     if not status_data:
         status_data = launch_background_city_analysis(
-            nom, codgeo, search_criterias, st.session_state.search_results, h
+            nom,
+            codgeo,
+            search_criterias,
+            st.session_state.search_results,
+            h,
+            username=st.session_state.get("username", "unknown"),
+            organization_id=getattr(st.session_state.get("org"), "id", None),
         )
 
     status = status_data.get("status") if status_data else None
@@ -146,10 +152,10 @@ def polling_synthesis_fragment(
                     elif elapsed >= 4.0:
                         st.caption("⏳ *En attente de la synthèse...*")
 
-                # st.progress(
-                #     progress,
-                #     text=f"Préparation de la synthèse (jusqu'à {timeout_seconds:.0f} secondes)...",
-                # )
+                st.progress(
+                    progress,
+                    text=f"Préparation de la synthèse (jusqu'à {timeout_seconds:.0f} secondes)...",
+                )
 
             if elapsed >= timeout_seconds:
                 status = "timeout"
@@ -164,7 +170,11 @@ def polling_synthesis_fragment(
     if status in {"error", "timeout", "cancelled"}:
         st.error(
             (status_data.get("error") if status_data else None)
-            or ("L'analyse a été annulée." if status == "cancelled" else "L'analyse IA n'a pas pu être réalisée. Réessayez.")
+            or (
+                "L'analyse a été annulée."
+                if status == "cancelled"
+                else "L'analyse IA n'a pas pu être réalisée. Réessayez."
+            )
         )
         if st.button("Réessayer", key=f"retry_analysis_{task_key}"):
             # Product decision: a retry replaces the prior displayed analysis.
@@ -180,6 +190,8 @@ def polling_synthesis_fragment(
                 search_criterias,
                 st.session_state.search_results,
                 h,
+                username=st.session_state.get("username", "unknown"),
+                organization_id=getattr(st.session_state.get("org"), "id", None),
                 retry=True,
             )
             st.rerun()
@@ -212,7 +224,9 @@ def polling_chat_fragment(
         while status == "running":
             with chat_container.container():
                 with st.chat_message("assistant"):
-                    st.write("✨ _Recherche de la réponse en cours (Job Hunter / Scouts)..._")
+                    st.write(
+                        "✨ _Recherche de la réponse en cours (Job Hunter / Scouts)..._"
+                    )
 
             time.sleep(1.0)
             status_data = odis_get_bg_result(task_key)
@@ -522,6 +536,8 @@ def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
             results,
             h,
             messages=history + [{"role": "user", "content": question}],
+            username=st.session_state.get("username", "unknown"),
+            organization_id=getattr(st.session_state.get("org"), "id", None),
         )
         st.session_state[chat_task_key] = True
         st.rerun()

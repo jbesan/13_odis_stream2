@@ -1,8 +1,8 @@
 import logging
 import os
+import tomllib
 import warnings
 from typing import Any, Dict, List, Optional, Set, Literal
-import streamlit as st
 from pydantic import BaseModel, Field, ConfigDict
 
 logger = logging.getLogger(__name__)
@@ -221,25 +221,31 @@ class User(BaseModel):
     model_config = ConfigDict(populate_by_name=True, revalidate_instances="never")
 
 
+def _load_secrets_toml() -> Dict[str, Any]:
+    """Loads secrets.toml using standard library tomllib."""
+    candidates = [
+        os.path.join(APP_DIR, ".streamlit", "secrets.toml"),
+        os.path.join(PROJECT_ROOT, ".streamlit", "secrets.toml"),
+        "/app/.streamlit/secrets.toml",
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            try:
+                with open(p, "rb") as f:
+                    return tomllib.load(f)
+            except Exception as e:
+                logger.warning("Error reading secrets from %s: %s", p, e)
+    return {}
+
+
 def load_organization_profiles() -> Dict[str, Org]:
-    """Loads organization profiles from Streamlit secrets.
+    """Loads organization profiles from secrets.toml.
 
     Returns an empty dict if no organizations are configured in secrets.
     """
-    try:
-        from streamlit.errors import StreamlitSecretNotFoundError
-    except ImportError:
-        StreamlitSecretNotFoundError = FileNotFoundError  # type: ignore[misc, assignment]
-
-    try:
-        if "organizations" not in st.secrets:
-            return {}
-        raw_orgs = st.secrets["organizations"]
-    except (StreamlitSecretNotFoundError, FileNotFoundError):
-        logger.debug("Streamlit secrets not found, using empty organization profiles.")
-        return {}
-    except Exception as exc:
-        logger.warning("Unable to access Streamlit secrets: %s", exc)
+    raw_secrets = _load_secrets_toml()
+    raw_orgs = raw_secrets.get("organizations", {})
+    if not raw_orgs:
         return {}
 
     try:
@@ -275,26 +281,22 @@ PROJECTED_CRS = "EPSG:2154"  # RGF93 / Lambert-93, suitable for metropolitan Fra
 
 
 def _get_auth_secret(key: str, default: Any) -> Any:
-    """Read an auth configuration value from st.secrets, with a safe fallback.
+    """Read an auth configuration value from secrets.toml, with a safe fallback.
 
     Reads from the [auth] section or top-level of .streamlit/secrets.toml.
-    Falls back to `default` when Streamlit is not running (e.g. during tests or pipeline runs).
+    Falls back to `default` when secrets are unavailable.
 
     Args:
         key: The key within the secrets configuration.
         default: The fallback value if the secret is unavailable.
 
     Returns:
-        The secret value, or `default` if Streamlit secrets are inaccessible.
+        The secret value, or `default` if secrets are inaccessible.
     """
-    try:
-        import streamlit as st
-
-        if key in st.secrets:
-            return st.secrets[key]
-        return st.secrets.get("auth", {}).get(key, default)
-    except Exception:
-        return default
+    raw_secrets = _load_secrets_toml()
+    if key in raw_secrets:
+        return raw_secrets[key]
+    return raw_secrets.get("auth", {}).get(key, default)
 
 
 # The OIDC authorization policy is supplied by Secret Manager at runtime and
@@ -511,28 +513,23 @@ WALDEC_REFUGEE_LABELS = {
 }
 
 
-def is_ai_free_mode() -> bool:
-    """
-    Checks if the application is running in 'AI-free' mode.
+def is_ai_free_mode(org: Optional[Org] = None) -> bool:
+    """Checks if the application is running in 'AI-free' mode.
+
     Returns True if ODIS_AI_FREE_MODE is set to 'true', '1' or 'yes' in environment,
-    or if the active organization setting has 'ai_free_mode' set to True.
+    or if the provided organization setting has 'ai_free_mode' set to True.
+
+    Args:
+        org: Optional Org instance.
+
+    Returns:
+        bool: True if AI-free mode is active.
     """
     if os.environ.get("ODIS_AI_FREE_MODE", "False").lower() in ("true", "1", "yes"):
         return True
 
-    try:
-        org = st.session_state.get("org")
-        if org and getattr(org, "ai_free_mode", False):
-            return True
-    except (AttributeError, RuntimeError) as exc:
-        logger.debug(
-            "st.session_state is unavailable in current context (is_ai_free_mode): %s",
-            exc,
-        )
-    except Exception as exc:
-        logger.warning(
-            "Error reading org from st.session_state in is_ai_free_mode: %s", exc
-        )
+    if org and getattr(org, "ai_free_mode", False):
+        return True
 
     return False
 
@@ -561,33 +558,21 @@ def is_interactive_chat_enabled(
 ) -> bool:
     """Checks if interactive chat under city analysis is enabled.
 
-    Interactive chat is enabled if the active organization profile explicitly enables it
+    Interactive chat is enabled if the provided organization profile explicitly enables it
     (or if ODIS_ENABLE_INTERACTIVE_CHAT is set to 'true' in the environment).
     It is automatically disabled if AI-free mode is active.
 
     Returns:
         bool: True if interactive chat is allowed for the active session.
     """
-    if is_ai_free_mode():
+    if is_ai_free_mode(org=org):
         return False
 
     env_override = os.environ.get("ODIS_ENABLE_INTERACTIVE_CHAT", "").strip().lower()
     if env_override in ("true", "1", "yes"):
         return True
 
-    active_org = org
-    if not active_org:
-        try:
-            active_org = st.session_state.get("org")
-        except (AttributeError, RuntimeError) as exc:
-            logger.debug(
-                "st.session_state is unavailable in current context (is_interactive_chat_enabled): %s",
-                exc,
-            )
-        except Exception as exc:
-            logger.warning("Error reading active_org from st.session_state: %s", exc)
-
-    if active_org and getattr(active_org, "enable_interactive_chat", False):
+    if org and getattr(org, "enable_interactive_chat", False):
         return True
 
     org_context = getattr(search_config, "org_context", None) if search_config else None
