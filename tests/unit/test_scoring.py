@@ -1489,24 +1489,24 @@ class TestP108TieBreak:
 
         test_df = pd.DataFrame(
             {
-                "population": [28000, 800, 500000, 300, 45000],
-                "population_bv_bdv": [65000, 65000, 2000000, 5000, 1700000],
+                "population": [20000, 800, 500000, 300, 45000],
+                "population_bv_bdv": [35000, 35000, 2000000, 5000, 1700000],
             },
             index=["petite_ville_centre", "petite_ville_satellite", "metropole_centre", "village_rural", "suburb_of_metropole"]
         )
 
-        # Target: "🏘️ Petite Ville" (a=10k, b=30k, c=200k, d=450k, floor=cfg.DEMOGRAPHIC_MIN_FLOOR)
+        # Target: "🏘️ Petite Ville" (a=10k, b=20k, c=50k, d=100k, floor=cfg.DEMOGRAPHIC_MIN_FLOOR)
         config = SearchCriterias(target_city_size="🏘️ Petite Ville")
         modifier = engine._compute_demographic_modifier(test_df, config)
         floor = cfg.DEMOGRAPHIC_MIN_FLOOR
 
-        # Bergerac centre (BdV 65k) is on the 100% plateau
+        # Figeac centre (BdV 35k) is on the 100% plateau
         assert abs(modifier["petite_ville_centre"] - 1.0) < 1e-5
-        # Satellite village in Bergerac BdV (BdV 65k) is on the 100% plateau
+        # Satellite village in Figeac BdV (BdV 35k) is on the 100% plateau
         assert abs(modifier["petite_ville_satellite"] - 1.0) < 1e-5
-        # Metropole centre (BdV 2M) is beyond d (450k) -> residual floor
+        # Metropole centre (BdV 2M) is beyond d (100k) -> residual floor
         assert abs(modifier["metropole_centre"] - floor) < 1e-5
-        # Suburb of metropole (commune 45k, but BdV 1.7M) is beyond d (450k) -> residual floor
+        # Suburb of metropole (commune 45k, but BdV 1.7M) is beyond d (100k) -> residual floor
         assert abs(modifier["suburb_of_metropole"] - floor) < 1e-5
         # Deep rural village (BdV 5k) is below a (10k) -> residual floor
         assert abs(modifier["village_rural"] - floor) < 1e-5

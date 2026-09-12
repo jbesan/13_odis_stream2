@@ -244,11 +244,11 @@
       }
     },
     "clean_formations": {
-      "status": "COMPLETED",
-      "timestamp": "2026-07-31T10:01:30.154599",
+      "status": "ANNUAIRE",
+      "timestamp": "2026-09-10T13:35:47.477650+00:00",
       "details": {
-        "rows": 223905,
-        "path": "pipeline/cache/clean/formations_annuaire.parquet"
+        "path": "pipeline/cache/clean/formations_annuaire.parquet",
+        "rows": 223905
       }
     },
     "apply_prescoring": {

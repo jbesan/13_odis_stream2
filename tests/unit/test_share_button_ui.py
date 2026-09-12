@@ -1,4 +1,5 @@
 from unittest.mock import MagicMock
+import pytest
 import streamlit as st
 from ui.results import (
     render_share_search_button,
@@ -247,3 +248,167 @@ def test_render_ai_trigger_button_in_live_mode(monkeypatch):
     _call_fn(render_ai_trigger_button, commune=commune, h="hash_123")
     assert button_calls[1][0] == "Analyse Avancée"
     assert button_calls[1][1].get("disabled") is False
+
+
+from ui.ai_analysis_dialog import polling_synthesis_fragment
+
+
+class _MockStatus:
+    def __init__(self, label: str, expanded: bool = True):
+        self.label = label
+        self.expanded = expanded
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        pass
+
+
+def test_polling_synthesis_fragment_renders_status_and_progress_on_first_turn(monkeypatch):
+    """Verify that on initial launch (status_data is None), background analysis is started
+    and st.status + st.progress are immediately rendered rather than stalling on a caption.
+    """
+    status_calls = []
+    markdown_calls = []
+    caption_calls = []
+    progress_calls = []
+    button_calls = []
+
+    monkeypatch.setattr(
+        "ui.ai_analysis_dialog.st.status",
+        lambda label, **kwargs: (status_calls.append((label, kwargs)) or _MockStatus(label, **kwargs)),
+    )
+    monkeypatch.setattr("ui.ai_analysis_dialog.st.markdown", lambda text: markdown_calls.append(text))
+    monkeypatch.setattr("ui.ai_analysis_dialog.st.caption", lambda text: caption_calls.append(text))
+    monkeypatch.setattr(
+        "ui.ai_analysis_dialog.st.progress",
+        lambda val, text=None: progress_calls.append((val, text)),
+    )
+    monkeypatch.setattr(
+        "ui.ai_analysis_dialog.st.button",
+        lambda label, **kwargs: (button_calls.append((label, kwargs)) or False),
+    )
+
+    search_results = _create_mock_search_results("69123")
+    commune = search_results.results[0]
+    mock_state = type("MockState", (dict,), {"__getattr__": dict.__getitem__})({"search_results": search_results})
+    monkeypatch.setattr("ui.ai_analysis_dialog.st.session_state", mock_state)
+
+    # Initially no bg result, then transitions to done inside the in-place polling loop
+    call_count = [0]
+
+    def mock_get_bg(task_key):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            return None
+        return {"status": "done", "result": {}}
+
+    monkeypatch.setattr("ui.ai_analysis_dialog.odis_get_bg_result", mock_get_bg)
+
+    # launch_background_city_analysis starts the task and returns running state
+    launched = []
+
+    def mock_launch(nom, codgeo, search_criterias, results, h):
+        launched.append((nom, codgeo))
+        return {"status": "running", "start_time": 100.0, "deadline_at": 160.0}
+
+    monkeypatch.setattr("ui.ai_analysis_dialog.launch_background_city_analysis", mock_launch)
+    import time
+
+    monkeypatch.setattr(time, "time", lambda: 102.0)
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+    rerun_calls = []
+    monkeypatch.setattr("ui.ai_analysis_dialog.st.rerun", lambda: rerun_calls.append(True))
+
+    _call_fn(
+        polling_synthesis_fragment,
+        task_key="analysis_69123_hash_123",
+        nom="Lyon",
+        codgeo="69123",
+        search_criterias=MagicMock(),
+        commune=commune,
+        h="hash_123",
+    )
+
+    assert len(launched) == 1
+    assert launched[0] == ("Lyon", "69123")
+
+    # Status and progress must be immediately visible on turn 1
+    assert len(status_calls) == 1
+    assert status_calls[0][0] == "🧠 Analyse stratégique en cours..."
+    assert status_calls[0][1].get("expanded") is True
+
+    # At elapsed = 2s, step 1 is active, experts are pending
+    assert any("Étape 1" in m for m in markdown_calls)
+    assert any("En attente des experts" in c for c in caption_calls)
+
+    assert len(progress_calls) == 1
+    progress_val, progress_text = progress_calls[0]
+    assert pytest.approx(progress_val, 0.001) == 2.0 / 60.0
+    assert "Préparation de la synthèse" in progress_text
+
+    # Cancel button is displayed
+    assert any("Annuler l'analyse" in b[0] for b in button_calls)
+
+    # st.rerun must be called to schedule the next tick
+    assert len(rerun_calls) == 1
+
+
+def test_polling_synthesis_fragment_step_progression_with_elapsed_time(monkeypatch):
+    """Verify that as time elapses, st.status reveals steps 2 and 3 progressively."""
+    status_calls = []
+    markdown_calls = []
+    caption_calls = []
+    progress_calls = []
+
+    monkeypatch.setattr(
+        "ui.ai_analysis_dialog.st.status",
+        lambda label, **kwargs: (status_calls.append((label, kwargs)) or _MockStatus(label, **kwargs)),
+    )
+    monkeypatch.setattr("ui.ai_analysis_dialog.st.markdown", lambda text: markdown_calls.append(text))
+    monkeypatch.setattr("ui.ai_analysis_dialog.st.caption", lambda text: caption_calls.append(text))
+    monkeypatch.setattr(
+        "ui.ai_analysis_dialog.st.progress",
+        lambda val, text=None: progress_calls.append((val, text)),
+    )
+    monkeypatch.setattr("ui.ai_analysis_dialog.st.button", lambda label, **kwargs: False)
+
+    search_results = _create_mock_search_results("69123")
+    commune = search_results.results[0]
+    monkeypatch.setattr("ui.ai_analysis_dialog.st.session_state", {"search_results": search_results})
+
+    # Already running, elapsed = 20s, then transitions to done inside in-place polling loop
+    call_count = [0]
+
+    def mock_get_bg(task_key):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            return {"status": "running", "start_time": 100.0, "deadline_at": 160.0}
+        return {"status": "done", "result": {}}
+
+    monkeypatch.setattr("ui.ai_analysis_dialog.odis_get_bg_result", mock_get_bg)
+    import time
+
+    monkeypatch.setattr(time, "time", lambda: 120.0)
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+    rerun_calls = []
+    monkeypatch.setattr("ui.ai_analysis_dialog.st.rerun", lambda: rerun_calls.append(True))
+
+    _call_fn(
+        polling_synthesis_fragment,
+        task_key="analysis_69123_hash_123",
+        nom="Lyon",
+        codgeo="69123",
+        search_criterias=MagicMock(),
+        commune=commune,
+        h="hash_123",
+    )
+
+    # At elapsed = 20s, all 3 steps should be displayed in markdown
+    assert any("Étape 1" in m for m in markdown_calls)
+    assert any("Étape 2" in m for m in markdown_calls)
+    assert any("Étape 3" in m for m in markdown_calls)
+    assert len(caption_calls) == 0
+    assert len(rerun_calls) == 1
+

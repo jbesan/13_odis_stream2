@@ -145,10 +145,10 @@ HOUSING_TYPE_OPTIONS = {
 
 # --- Bassin de Vie Demographic Sizing (Trapezoidal Membership) ---
 CITY_SIZE_MAPPING = {
-    "🚜 Commune rurale": {"a": 0, "b": 1000, "c": 30000, "d": 60000},
-    "🏡 Bourg": {"a": 2000, "b": 10000, "c": 70000, "d": 130000},
-    "🏘️ Petite Ville": {"a": 10000, "b": 30000, "c": 200000, "d": 450000},
-    "🏙️ Ville moyenne": {"a": 30000, "b": 80000, "c": 500000, "d": 1200000},
+    "🚜 Commune rurale": {"a": 0, "b": 500, "c": 3000, "d": 8000},
+    "🏡 Bourg": {"a": 2000, "b": 5000, "c": 15000, "d": 30000},
+    "🏘️ Petite Ville": {"a": 10000, "b": 20000, "c": 50000, "d": 100000},
+    "🏙️ Ville moyenne": {"a": 35000, "b": 70000, "c": 300000, "d": 800000},
 }
 DEFAULT_CITY_SIZE = "🏘️ Petite Ville"
 DEFAULT_TRAPEZOID = CITY_SIZE_MAPPING[DEFAULT_CITY_SIZE]

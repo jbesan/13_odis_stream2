@@ -144,25 +144,29 @@ def test_render_mobility_form_city_size_captions_and_title_caption():
 
     mock_radio = MagicMock()
     mock_caption = MagicMock()
+    mock_markdown = MagicMock()
 
     with patch("app.ui.forms.st.session_state", session_state), \
          patch("app.ui.forms.st.columns", return_value=[MagicMock(), MagicMock()]), \
          patch("app.ui.forms.st.multiselect", return_value=[]), \
          patch("app.ui.forms.st.checkbox", return_value=False), \
-         patch("app.ui.forms.st.markdown"), \
+         patch("app.ui.forms.st.markdown", mock_markdown), \
          patch("app.ui.forms.st.divider"), \
          patch("app.ui.forms.st.container", return_value=MagicMock()), \
          patch("app.ui.forms.st.caption", mock_caption), \
          patch("app.ui.forms.st.radio", mock_radio):
         render_mobility_form(mock_app_data)
 
-    mock_caption.assert_any_call("La population du bassin de vie et non celle de la commune sera évaluée.")
+    mock_markdown.assert_any_call(
+        "##### Taille de la ville (Bassin de vie) recherchée",
+        help="Le bassin de vie intègre la ville et ses banlieues",
+    )
     mock_radio.assert_called_once()
     _, kwargs = mock_radio.call_args
     assert "captions" in kwargs
     captions = kwargs["captions"]
     assert len(captions) == 4
-    assert captions[0] == "Idéalement entre 1 000 et 30 000 habitants"
-    assert captions[1] == "Idéalement entre 10 000 et 70 000 habitants"
-    assert captions[2] == "Idéalement entre 30 000 et 200 000 habitants"
-    assert captions[3] == "Idéalement entre 80 000 et 500 000 habitants"
+    assert captions[0] == " 500 < Pop. < 3 000"
+    assert captions[1] == " 5 000 < Pop. < 15 000"
+    assert captions[2] == " 20 000 < Pop. < 50 000"
+    assert captions[3] == " 70 000 < Pop. < 300 000"

@@ -3432,9 +3432,7 @@ def clean_formations(config: Dict[str, Any], logger: PipelineLogger):
         # Read with header=None, skip first 2 rows (based on inspection)
         # Row 2 (index 2) has data "100.0 Formations générales"
         # So we can read from row 2 onwards.
-        # Actually, read_excel with header=None gives index 0, 1...
-        # We saw row 0, 1 are NaN. Row 2 has data.
-        df_ref = pd.read_excel(ref_path, header=None, skiprows=2)
+        df_ref = load_dataset(ref_path, ref_cfg, header=None, skiprows=2)
         # Columns 0: Code, 1: Label
         if len(df_ref.columns) >= 2:
             df_ref = df_ref.iloc[:, :2]

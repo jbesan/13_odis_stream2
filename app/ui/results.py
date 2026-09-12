@@ -18,6 +18,7 @@ from agents.utils import (
     odis_get_bg_result,
 )
 from core import maps_deck
+from services import telemetry
 
 # Sub-module imports & re-exports for complete backward compatibility
 from ui.results_actions import (
@@ -250,6 +251,9 @@ def render_ai_trigger_button(commune: CommuneResult, h: Optional[str]) -> bool:
         disabled=btn_disabled,
     ):
         st.session_state.active_ia_city_index = commune.codgeo
+        telemetry.log_usage_event(
+            "run_ia_analysis", {"codgeo": commune.codgeo, "name": commune.name}
+        )
         show_ia_analysis_dialog(commune.codgeo)
 
     return ready
@@ -378,37 +382,39 @@ def _display_result_details(commune: CommuneResult) -> None:
         # state (AI result or deterministic fallback). It never replaces text
         # that was already shown as a provisional summary.
         render_refiner_panel(commune, h)
+        st.markdown(
+                    '<style> [class*="st-key-btn_ia"] .stButton button { background-color: #F5D819; color: #1B4429; } </style>',
+                    unsafe_allow_html=True,
+                )
 
-        st.space("small")
+        # st.space("small")
         c1, c2 = st.columns(2)
+        # c1, c2, c3 = st.columns(3)
         with c1:
             render_details_trigger_button(commune, h)
         with c2:
-            if st.button(
-                "Contact local",
-                key=f"btn_ccas_commune_{commune.codgeo}",
-                icon=":material/phone:",
-                type="secondary",
-                width="stretch",
-                disabled=bool(st.session_state.get("immutable_shared_snapshot")),
-                help=(
-                    "Les coordonnées locales en direct ne font pas partie de "
-                    "cet instantané partagé."
-                    if st.session_state.get("immutable_shared_snapshot")
-                    else None
-                ),
-            ):
-                st.session_state.active_ccas_index = commune.codgeo
-                show_ccas_dialog(commune.codgeo)
+            if not cfg.is_ai_free_mode():
+                render_ai_trigger_button(commune, h)
+        # with c3:
+        if st.button(
+            "Contact local",
+            key=f"btn_ccas_commune_{commune.codgeo}",
+            icon=":material/phone:",
+            type="tertiary",
+            width="stretch",
+            wrap=True,
+            disabled=bool(st.session_state.get("immutable_shared_snapshot")),
+            help=(
+                "Les coordonnées locales en direct ne font pas partie de "
+                "cet instantané partagé."
+                if st.session_state.get("immutable_shared_snapshot")
+                else None
+            ),
+        ):
+            st.session_state.active_ccas_index = commune.codgeo
+            show_ccas_dialog(commune.codgeo)
 
-        # F-IA: AI Dialog Trigger (Session State based)
-        if not cfg.is_ai_free_mode():
-            st.markdown(
-                '<style> [class*="st-key-btn_ia"] .stButton button { background-color: #F5D819; color: #1B4429; } </style>',
-                unsafe_allow_html=True,
-            )
 
-            render_ai_trigger_button(commune, h)
 
         # --- Radar Chart with Comparison ---
         st.space("small")

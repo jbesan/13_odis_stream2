@@ -69,7 +69,7 @@ PAGES.update(
         "health": "Santé",
         "other_needs": "Inclusion",
         "notes": "Autres",
-        "profile": "Profil",
+        "profile": "Priorités",
     }
 )
 PAGES_LIST = list(PAGES.keys())

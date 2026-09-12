@@ -438,12 +438,12 @@ def render_mobility_form(app_data: dict[str, Any]) -> None:
         b_val = bounds.get("b")
         c_val = bounds.get("c")
         if b_val is not None and c_val is not None:
-            target_captions.append(f"Idéalement entre {b_val:,} et {c_val:,} habitants".replace(",", " "))
+            target_captions.append(f" {b_val:,} < Pop. < {c_val:,}".replace(",", " "))
         else:
             target_captions.append("")
 
-    st.markdown("##### Taille de la ville recherchée")
-    st.caption("La population du bassin de vie et non celle de la commune sera évaluée.")
+    st.markdown("##### Taille de la ville (Bassin de vie) recherchée", help="Le bassin de vie intègre la ville et ses banlieues")
+    
     with st.container(horizontal=True, width="stretch", horizontal_alignment="center"):
         st.radio(
             "Taille de la ville recherchée",
@@ -703,7 +703,7 @@ def display_input_tabs(app_data: dict[str, Any]) -> None:
         "Santé",
         "Inclusion",
         "Autres",
-        "Profil",
+        "Priorités",
     ]
 
     # Note: Org settings step/tab is hidden by default from forms, but preserved.

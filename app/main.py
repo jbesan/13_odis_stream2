@@ -1,3 +1,9 @@
+import sys
+
+# Runtime isolation: mask geopandas so optional dependencies (e.g. google-cloud-bigquery)
+# never load geopandas/pyproj/libproj in the application runtime.
+sys.modules.setdefault("geopandas", None)
+
 import streamlit as st
 import logfire
 import utils.logger  # noqa: F401  # Import configures logging before any spans are created.

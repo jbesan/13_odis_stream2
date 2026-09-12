@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import Any
 import streamlit as st
 
@@ -18,7 +19,6 @@ from agents.source_registry import (
     is_vertex_grounding_redirect,
     source_references_for_result,
 )
-from services import telemetry
 
 logger = logging.getLogger("ui.ai_analysis_dialog")
 
@@ -92,7 +92,6 @@ def _merge_agent_results(final_state_results, codgeo: str, commune: CommuneResul
                 commune.analysis_report = new_report
 
 
-@st.fragment(run_every=2.0)
 def polling_synthesis_fragment(
     task_key: str,
     nom: str,
@@ -101,36 +100,71 @@ def polling_synthesis_fragment(
     commune: CommuneResult,
     h: str,
 ):
-    """Fragment that automatically polls for synthesis completion every 2s."""
+    """Component that polls for synthesis completion in-place without full-page reruns."""
     status_data = odis_get_bg_result(task_key)
     if not status_data:
-        launch_background_city_analysis(
+        status_data = launch_background_city_analysis(
             nom, codgeo, search_criterias, st.session_state.search_results, h
         )
-        st.caption("Lancement de la synthèse...")
-    elif status_data.get("status") == "running":
-        import time
 
-        start_time = status_data.get("start_time", time.time())
-        deadline_at = status_data.get("deadline_at")
-        elapsed = time.time() - start_time
-        timeout_seconds = (
-            max(1.0, float(deadline_at) - float(start_time))
-            if deadline_at is not None
-            else 60.0
-        )
-        progress = min(1.0, elapsed / timeout_seconds)
-        st.progress(
-            progress,
-            text=f"Préparation de la synthèse (jusqu'à {timeout_seconds:.0f} secondes)...",
-        )
+    status = status_data.get("status") if status_data else None
+
+    if status == "running":
+        status_container = st.empty()
         if st.button("Annuler l'analyse", key=f"cancel_analysis_{task_key}"):
             cancel_background_city_analysis(task_key)
+            status = "cancelled"
             st.rerun()
-    elif status_data.get("status") in {"error", "timeout", "cancelled"}:
+
+        while status == "running":
+            start_time = status_data.get("start_time", time.time())
+            deadline_at = status_data.get("deadline_at")
+            elapsed = time.time() - start_time
+            timeout_seconds = (
+                max(1.0, float(deadline_at) - float(start_time))
+                if deadline_at is not None
+                else 60.0
+            )
+            progress = min(1.0, elapsed / timeout_seconds)
+
+            with status_container.container():
+                with st.status("🧠 Analyse stratégique en cours...", expanded=True):
+                    st.markdown("🧭 **Étape 1 : Cadrage & Triage**")
+                    if elapsed >= 4.0:
+                        st.markdown(
+                            "🔬 **Étape 2 : Consultation des experts thématiques** "
+                            "(Logement, Emploi, Santé, Mobilité etc.)"
+                        )
+                    else:
+                        st.caption("⏳ *En attente des experts...*")
+
+                    if elapsed >= 18.0:
+                        st.markdown(
+                            "✍️ **Étape 3 : Réconciliation & Rédaction de la synthèse** "
+                            "(Synthesizer)"
+                        )
+                    elif elapsed >= 4.0:
+                        st.caption("⏳ *En attente de la synthèse...*")
+
+                # st.progress(
+                #     progress,
+                #     text=f"Préparation de la synthèse (jusqu'à {timeout_seconds:.0f} secondes)...",
+                # )
+
+            if elapsed >= timeout_seconds:
+                status = "timeout"
+                break
+
+            time.sleep(1.0)
+            status_data = odis_get_bg_result(task_key)
+            status = status_data.get("status") if status_data else None
+
+        status_container.empty()
+
+    if status in {"error", "timeout", "cancelled"}:
         st.error(
-            status_data.get("error")
-            or "L'analyse IA n'a pas pu être réalisée. Réessayez."
+            (status_data.get("error") if status_data else None)
+            or ("L'analyse a été annulée." if status == "cancelled" else "L'analyse IA n'a pas pu être réalisée. Réessayez.")
         )
         if st.button("Réessayer", key=f"retry_analysis_{task_key}"):
             # Product decision: a retry replaces the prior displayed analysis.
@@ -149,7 +183,7 @@ def polling_synthesis_fragment(
                 retry=True,
             )
             st.rerun()
-    elif status_data.get("status") == "done":
+    elif status == "done":
         _merge_agent_results(status_data.get("result"), codgeo, commune)
         if not commune.odis_synthesis:
             commune.odis_synthesis = [
@@ -158,38 +192,47 @@ def polling_synthesis_fragment(
                     "content": "⚠️ *Synthèse introuvable ou erreur de génération.*",
                 }
             ]
-        st.rerun()  # Full dialog rerun to reveal content
+        st.rerun()  # One single final rerun to reveal full report
 
 
-@st.fragment(run_every=2.0)
 def polling_chat_fragment(
     task_key: str, chat_task_key: str, codgeo: str, commune: CommuneResult
 ):
-    """Fragment that automatically polls for follow-up chat response every 2s."""
+    """Component that polls for follow-up chat response in-place without full-page reruns."""
     status_data = odis_get_bg_result(task_key)
-    if status_data and status_data.get("status") == "done":
+    status = status_data.get("status") if status_data else "running"
+
+    if status == "running":
+        chat_container = st.empty()
+        if st.button("Annuler", key=f"cancel_chat_{task_key}"):
+            cancel_background_city_analysis(task_key)
+            st.session_state[chat_task_key] = False
+            st.rerun()
+
+        while status == "running":
+            with chat_container.container():
+                with st.chat_message("assistant"):
+                    st.write("✨ _Recherche de la réponse en cours (Job Hunter / Scouts)..._")
+
+            time.sleep(1.0)
+            status_data = odis_get_bg_result(task_key)
+            status = status_data.get("status") if status_data else None
+
+        chat_container.empty()
+
+    if status == "done" and status_data:
         _merge_agent_results(status_data.get("result"), codgeo, commune)
         if chat_task_key in st.session_state:
             del st.session_state[chat_task_key]
-        st.rerun()  # Full dialog rerun
-    elif status_data and status_data.get("status") in {
-        "error",
-        "timeout",
-        "cancelled",
-    }:
+        st.rerun()
+    elif status in {"error", "timeout", "cancelled"}:
         st.error(
-            status_data.get("error")
+            (status_data.get("error") if status_data else None)
             or "La réponse IA n'a pas pu être générée. Réessayez."
         )
         if chat_task_key in st.session_state:
             del st.session_state[chat_task_key]
         st.rerun()
-    else:
-        with st.chat_message("assistant"):
-            st.write("✨ _Recherche de la réponse en cours (Job Hunter / Scouts)..._")
-            if st.button("Annuler", key=f"cancel_chat_{task_key}"):
-                cancel_background_city_analysis(task_key)
-                st.rerun()
 
 
 def _render_sources_popover(
@@ -499,8 +542,6 @@ def show_ia_analysis_dialog(index: Any):
 
     nom = commune.name
     codgeo = commune.codgeo
-
-    telemetry.log_usage_event("run_ia_analysis", {"codgeo": codgeo, "name": nom})
 
     st.header(f"Analyse OD&IS pour {nom}")
     st.info(
