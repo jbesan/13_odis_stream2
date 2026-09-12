@@ -49,16 +49,77 @@ class JsonFormatter(logging.Formatter):
         return json_out
 
 
+class HumanFormatter(logging.Formatter):
+    """
+    Human-friendly console formatter for local development.
+
+    Outputs concise one-line logs for normal levels, while automatically
+    including caller module/line, function names, extra metadata, and full
+    exception tracebacks for warnings and errors.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            fmt="%(asctime)s - [%(levelname)s] - %(message)s",
+            datefmt="%H:%M:%S",
+        )
+
+    def format(self, record: logging.LogRecord) -> str:
+        """
+        Format a LogRecord into a human-friendly string.
+
+        Args:
+            record: The logging.LogRecord instance to format.
+
+        Returns:
+            The formatted log message string.
+        """
+        if record.levelno >= logging.WARNING:
+            prefix = (
+                f"{self.formatTime(record, self.datefmt)} - [{record.levelname}] "
+                f"({record.module}:{record.lineno} in {record.funcName})"
+            )
+        else:
+            prefix = f"{self.formatTime(record, self.datefmt)} - [{record.levelname}]"
+
+        message = record.getMessage()
+        formatted = f"{prefix} - {message}"
+
+        if hasattr(record, "extra_data") and record.extra_data:
+            formatted += f"\n    Extra: {record.extra_data}"
+
+        if record.exc_info:
+            if not record.exc_text:
+                record.exc_text = self.formatException(record.exc_info)
+            if record.exc_text:
+                if not formatted.endswith("\n"):
+                    formatted += "\n"
+                formatted += record.exc_text
+
+        if record.stack_info:
+            if not formatted.endswith("\n"):
+                formatted += "\n"
+            formatted += self.formatStack(record.stack_info)
+
+        return formatted
+
+
 def setup_logging() -> None:
     """
-    Configures the root logger to output JSON to stderr.
+    Configures the root logger to output structured JSON on Cloud Run,
+    or human-friendly logs in local development.
     """
     handler = logging.StreamHandler(sys.stderr)
 
-    if os.environ.get("MCP_SIMPLE_LOGS") == "true":
+    log_format = os.environ.get("ODIS_LOG_FORMAT", "").lower()
+    is_cloud_run = os.environ.get("K_SERVICE") is not None
+
+    if log_format == "json" or (is_cloud_run and log_format != "human"):
+        formatter: logging.Formatter = JsonFormatter()
+    elif os.environ.get("MCP_SIMPLE_LOGS") == "true":
         formatter = logging.Formatter("[%(levelname)s] %(message)s")
     else:
-        formatter = JsonFormatter()
+        formatter = HumanFormatter()
 
     handler.setFormatter(formatter)
 
