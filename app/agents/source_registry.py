@@ -15,7 +15,7 @@ from collections.abc import Mapping
 from typing import Any
 from urllib.parse import urlparse
 
-from agents.grounding import extract_web_grounding
+from agents.grounding import GroundingPayload, extract_web_grounding
 
 
 SOURCE_CATALOG: dict[str, dict[str, Any]] = {
@@ -152,7 +152,7 @@ def _web_search_terms_from_result(result: Any) -> list[str]:
             if isinstance(args, str):
                 try:
                     args = json.loads(args)
-                except TypeError, ValueError:
+                except (TypeError, ValueError):
                     args = None
             if not isinstance(args, Mapping):
                 continue
@@ -238,6 +238,7 @@ def source_references_for_result(
     # Provider metadata is an independent evidence of a Google search.  It can
     # survive even when the native web-search part is absent from the recorded
     # PydanticAI history, so do not require a tool part before extracting it.
+    grounding: GroundingPayload
     if web_result is not None:
         tool_called.add("web")
         if hasattr(web_result, "sources"):
@@ -254,7 +255,7 @@ def source_references_for_result(
                 "query_count": len(getattr(web_result, "queries", [])),
             }
         elif isinstance(web_result, dict):
-            grounding = web_result
+            grounding = web_result  # type: ignore[assignment]
         else:
             grounding = extract_web_grounding(result)
     else:
