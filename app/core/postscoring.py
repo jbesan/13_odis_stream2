@@ -8,7 +8,14 @@ import pandas as pd
 
 import config as cfg
 from core.enrichment_status import EnrichmentStatus, enrichment_result
-from core.models import CommuneResult
+from core.models import (
+    AssociationDetail,
+    CommuneResult,
+    InclusionServiceDetail,
+    JobOfferDetail,
+    SearchCriterias,
+    SearchResultsData,
+)
 from agents.utils import (
     get_odis_bg_store,
     launch_background_city_analysis,
@@ -1310,3 +1317,168 @@ def launch_post_scoring_tasks(
         username=current_username,
         org_id=current_org_id,
     )
+
+
+def sync_commune_data(commune: CommuneResult, bg_res: Optional[dict[str, Any]]) -> None:
+    """Syncs enrichment results and pitch from the background store into a CommuneResult model.
+
+    Args:
+        commune: The commune result domain model to hydrate.
+        bg_res: The background execution store dictionary for this search run.
+    """
+    if not isinstance(bg_res, dict):
+        return
+
+    # 1. Sync Enrichment (Associations)
+    if "enrichment" in bg_res:
+        enrich_data = bg_res["enrichment"].get(str(commune.codgeo))
+        if enrich_data and not commune.inclusion.asso_inclusion_list_by_cat:
+            logger.debug("✨ [SYNC] Associations sync for %s", commune.codgeo)
+            inc_data = commune.inclusion
+            inc_data.asso_refugee_list = [
+                AssociationDetail.model_validate(a)
+                for a in enrich_data.get("refugee", [])
+            ]
+            inc_data.asso_refugee_count = len(inc_data.asso_refugee_list)
+
+            raw_inclusion = enrich_data.get("inclusion", {})
+            inc_data.asso_inclusion_list_by_cat = {
+                cat: [AssociationDetail.model_validate(a) for a in asso_list]
+                for cat, asso_list in raw_inclusion.items()
+            }
+            inc_data.asso_inclusion_count = sum(
+                len(asso_list)
+                for asso_list in inc_data.asso_inclusion_list_by_cat.values()
+            )
+
+    # 1b. Sync Enrichment (Job Offers)
+    if "jobs_enrichment" in bg_res:
+        jobs_city_data = bg_res["jobs_enrichment"].get(str(commune.codgeo))
+        if (
+            jobs_city_data
+            and jobs_city_data.get("status")
+            in {
+                EnrichmentStatus.SUCCESS_NONEMPTY.value,
+                EnrichmentStatus.SUCCESS_EMPTY.value,
+                EnrichmentStatus.PARTIAL.value,
+            }
+            and not commune.employment.matching_job_offers
+        ):
+            logger.debug("✨ [SYNC] Jobs sync for %s", commune.codgeo)
+            emp_data = commune.employment
+
+            raw_jobs = jobs_city_data.get("jobs", [])
+            emp_data.matching_job_offers = [
+                [JobOfferDetail.model_validate(o) for o in adult_list]
+                for adult_list in raw_jobs
+            ]
+            if "total" in jobs_city_data:
+                emp_data.standard_jobs_matching_total = jobs_city_data["total"]
+
+    # 1c. Sync Enrichment (Inclusion Services)
+    if "inclusion_services_enrichment" in bg_res:
+        incl_services_data = bg_res["inclusion_services_enrichment"].get(
+            str(commune.codgeo)
+        )
+        if incl_services_data and not commune.inclusion.services_detailed:
+            logger.debug("✨ [SYNC] Inclusion services sync for %s", commune.codgeo)
+            inc_data = commune.inclusion
+            inc_data.services_detailed = {
+                cat: [InclusionServiceDetail.model_validate(s) for s in svc_list]
+                for cat, svc_list in incl_services_data.items()
+            }
+
+    # 2. Sync Pitch for this specific commune
+    if "pitches" in bg_res:
+        pitches_data = bg_res["pitches"]
+        if isinstance(pitches_data, dict) and "pitches" in pitches_data:
+            city_pitches = pitches_data["pitches"]
+            if isinstance(city_pitches, dict):
+                cg = str(commune.codgeo).strip()
+                cname = commune.name.lower().strip() if commune.name else ""
+                pitch_for_city = (
+                    city_pitches.get(cg)
+                    or city_pitches.get(cg.zfill(5))
+                    or city_pitches.get(cg.lstrip("0"))
+                    or city_pitches.get(cname)
+                    or next(
+                        (
+                            v
+                            for k, v in city_pitches.items()
+                            if k.lower().strip() == cname
+                        ),
+                        None,
+                    )
+                )
+                if pitch_for_city and not commune.refiner_pitch:
+                    logger.debug("✨ [SYNC] Pitch sync for %s", commune.codgeo)
+                    commune.refiner_pitch = pitch_for_city
+
+    # 3. Mark commune hydrated when all post-scoring tasks reach terminal state
+    if not getattr(commune, "commune_results_hydrated", False):
+        codgeo_str = str(commune.codgeo)
+        jobs_status = (
+            bg_res.get("jobs_enrichment", {}).get(codgeo_str, {}).get("status")
+        )
+        assos_status = (
+            bg_res.get("association_enrichment_status", {})
+            .get(codgeo_str, {})
+            .get("status")
+        )
+        inc_status = (
+            bg_res.get("inclusion_services_status", {})
+            .get(codgeo_str, {})
+            .get("status")
+        )
+        if inc_status is None:
+            inc_status = (
+                bg_res.get("inclusion_enrichment_status", {})
+                .get(codgeo_str, {})
+                .get("status")
+            )
+
+        jobs_done = bool(jobs_status and jobs_status != EnrichmentStatus.PENDING)
+        assos_done = bool(assos_status and assos_status != EnrichmentStatus.PENDING)
+        inc_done = inc_status is None or inc_status != EnrichmentStatus.PENDING
+
+        if jobs_done and assos_done and inc_done:
+            commune.commune_results_hydrated = True
+            logger.debug("✨ [SYNC] Commune %s marked hydrated", commune.codgeo)
+
+
+def sync_search_results_data(
+    search_results: SearchResultsData,
+    bg_res: Optional[dict[str, Any]],
+    config: Optional[SearchCriterias] = None,
+) -> None:
+    """Syncs background post-scoring results across all communes, global pitch, and config briefing.
+
+    Args:
+        search_results: The deterministic search results container to hydrate.
+        bg_res: The background execution store dictionary for this search run.
+        config: Optional search criteria model to hydrate with refined briefing if present.
+    """
+    if not isinstance(bg_res, dict):
+        return
+
+    # Sync all candidate cities
+    for commune in search_results.results:
+        sync_commune_data(commune, bg_res)
+
+    # Sync commune pressentie if present
+    if search_results.commune_pressentie:
+        sync_commune_data(search_results.commune_pressentie, bg_res)
+
+    # Sync Global Pitch
+    if "pitches" in bg_res:
+        pitches_data = bg_res["pitches"]
+        if isinstance(pitches_data, dict) and "global" in pitches_data:
+            if not search_results.global_pitch:
+                search_results.global_pitch = pitches_data["global"]
+
+    # Sync Unified Briefing
+    if "odis_brief" in bg_res and config is not None:
+        brief_val = bg_res["odis_brief"]
+        if brief_val and config.odis_brief != brief_val:
+            logger.debug("✨ [SYNC] Unified Briefing sync")
+            config.odis_brief = brief_val

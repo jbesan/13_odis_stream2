@@ -1,6 +1,5 @@
 import logging
-from typing import List, Optional
-import plotly.graph_objects as go
+from typing import Optional
 import streamlit as st
 
 import config as cfg
@@ -8,13 +7,10 @@ from core.models import (
     CommuneResult,
     SearchResultsData,
 )
-from core.enrichment_status import (
-    is_terminal_enrichment_status,
-    is_terminal_refiner_status,
-)
+from core.enrichment_status import is_terminal_refiner_status
 from core.postscoring import generate_static_pitch
 from agents.utils import (
-    is_terminal_graph_run_status,
+    launch_background_city_analysis,
     odis_get_bg_result,
 )
 from core import maps_deck
@@ -27,6 +23,7 @@ from ui.results_actions import (
     share_search_modal,
     render_share_search_button,
     _is_postscoring_ready_for_search,
+    _is_hydration_ready_for_city,
 )
 from ui.ccas_dialog import (
     show_ccas_dialog,
@@ -48,7 +45,6 @@ from ui.details_dialog import (
     _on_details_dialog_dismiss,
     _enrichment_status_for_city,
     _should_poll_enrichment,
-    sync_background_data,
     _get_jaccueille_salesforce_urls,
     render_jaccueille_housing_info,
     render_associations_enrichment,
@@ -58,6 +54,10 @@ from ui.details_dialog import (
     polling_inclusion_services_fragment,
     polling_jobs_fragment,
     render_scores_for_category,
+)
+from core.postscoring import (
+    sync_commune_data,
+    sync_search_results_data,
 )
 
 # Configure Logging
@@ -85,7 +85,8 @@ __all__ = [
     "_is_postscoring_ready_for_city",
     "_enrichment_status_for_city",
     "_should_poll_enrichment",
-    "sync_background_data",
+    "sync_commune_data",
+    "sync_search_results_data",
     # Detailed sub-renderers
     "_get_jaccueille_salesforce_urls",
     "render_jaccueille_housing_info",
@@ -111,62 +112,8 @@ __all__ = [
 ]
 
 
-def _is_hydration_ready_for_city(commune: CommuneResult, h: Optional[str]) -> bool:
-    """Return True if all data hydrations (jobs, associations, inclusions) for this commune are terminal."""
-    if st.session_state.get("immutable_shared_snapshot"):
-        return True
-
-    if not h:
-        return True
-
-    bg_res = odis_get_bg_result(h)
-    if not isinstance(bg_res, dict):
-        return False
-
-    codgeo_str = str(commune.codgeo)
-
-    # 1. Jobs enrichment status
-    if not (
-        hasattr(commune, "siae_jobs")
-        and getattr(commune, "siae_jobs", None) is not None
-    ):
-        jobs_status = (
-            bg_res.get("jobs_enrichment", {}).get(codgeo_str, {}).get("status")
-        )
-        if not is_terminal_enrichment_status(jobs_status):
-            return False
-
-    # 2. Associations enrichment status
-    if not (
-        hasattr(commune, "associations_details")
-        and getattr(commune, "associations_details", None) is not None
-    ):
-        assos_status = (
-            bg_res.get("association_enrichment_status", {})
-            .get(codgeo_str, {})
-            .get("status")
-        )
-        if not is_terminal_enrichment_status(assos_status):
-            return False
-
-    # 3. Inclusion services enrichment status
-    if not (
-        hasattr(commune, "inclusion")
-        and getattr(commune.inclusion, "services_detailed", None) is not None
-    ):
-        inc_status = (
-            bg_res.get("inclusion_enrichment_status", {})
-            .get(codgeo_str, {})
-            .get("status")
-        )
-        if inc_status is not None and not is_terminal_enrichment_status(inc_status):
-            return False
-
-    return True
-
-
 def _is_postscoring_ready_for_city(commune: CommuneResult, h: Optional[str]) -> bool:
-    """Return True if all background post-scoring tasks for this commune have reached a terminal state."""
+    """Return True if prerequisite background post-scoring tasks for this commune are ready."""
     if getattr(commune, "odis_synthesis", None) or getattr(
         commune, "analysis_report", None
     ):
@@ -182,24 +129,19 @@ def _is_postscoring_ready_for_city(commune: CommuneResult, h: Optional[str]) -> 
     if not _is_hydration_ready_for_city(commune, h):
         return False
 
+    # 2. Refiner status (pitches & briefing)
+    if isinstance(getattr(commune, "refiner_pitch", None), str) and bool(
+        getattr(commune, "refiner_pitch", None)
+    ):
+        return True
+
     bg_res = odis_get_bg_result(h)
     if not isinstance(bg_res, dict):
         return False
 
-    # 2. Refiner status (pitches & briefing)
     refiner_status = bg_res.get("status_refiner")
     if not is_terminal_refiner_status(refiner_status):
         return False
-
-    codgeo_str = str(commune.codgeo)
-
-    # 3. Automated city analysis status (if enabled)
-    if cfg.is_auto_analyse_top_cities_enabled():
-        auto_run = odis_get_bg_result(f"analysis_{h}_{codgeo_str}")
-        if isinstance(auto_run, dict):
-            auto_status = auto_run.get("status")
-            if not is_terminal_graph_run_status(auto_status):
-                return False
 
     return True
 
@@ -227,43 +169,161 @@ def render_details_trigger_button(commune: CommuneResult, h: Optional[str]) -> b
 
 @st.fragment(run_every=2.0)
 def render_ai_trigger_button(commune: CommuneResult, h: Optional[str]) -> bool:
-    """Renders the AI Analysis trigger button with up-to-date state in-place."""
+    """Renders the AI Analysis trigger button with up-to-date state in-place.
+
+    Automatically triggers background analysis when prerequisites are met,
+    displays live non-blocking status, and opens the modal dialog once complete.
+    """
     has_analysis = bool(
         getattr(commune, "analysis_report", None)
         or getattr(commune, "odis_synthesis", None)
     )
-    ready = _is_postscoring_ready_for_city(commune, h)
     immutable_snapshot = bool(st.session_state.get("immutable_shared_snapshot"))
 
-    if has_analysis:
-        btn_label = (
-            "Consulter l'Analyse Avancée" if immutable_snapshot else "Analyse Avancée"
-        )
-        btn_disabled = False
-    elif immutable_snapshot:
-        btn_label = "Analyse Avancée (non réalisée)"
-        btn_disabled = True
-    elif not ready:
-        btn_label = "Analyse Avancée (Préparation...)"
-        btn_disabled = True
-    else:
-        btn_label = "Analyse Avancée"
-        btn_disabled = False
+    # 1. Snapshot mode: strictly read-only
+    if immutable_snapshot:
+        if has_analysis:
+            if st.button(
+                "Consulter l'Analyse Avancée",
+                key=f"btn_ia_comm_{commune.codgeo}",
+                icon=":material/wand_stars:",
+                width="stretch",
+                disabled=False,
+            ):
+                st.session_state.active_ia_city_index = commune.codgeo
+                show_ia_analysis_dialog(commune.codgeo)
+            return True
+        else:
+            st.button(
+                "Analyse Avancée (non réalisée)",
+                key=f"btn_ia_comm_{commune.codgeo}",
+                icon=":material/wand_stars:",
+                width="stretch",
+                disabled=True,
+            )
+            return False
 
-    if st.button(
-        btn_label,
+    # 2. Live mode: Check background task state
+    task_key = f"analysis_{h}_{commune.codgeo}" if h else f"analysis_{commune.codgeo}"
+    status_data = odis_get_bg_result(task_key) if h else None
+    status = status_data.get("status") if isinstance(status_data, dict) else None
+
+    # 3. Completed state (in memory or freshly finished in bg store)
+    if has_analysis or status == "done":
+        if status == "done" and not has_analysis and status_data:
+            _merge_agent_results(status_data.get("result"), str(commune.codgeo), commune)
+
+        # Notify via toast once per city
+        toasted_set = st.session_state.setdefault("ia_analysis_toasted", set())
+        if commune.codgeo not in toasted_set:
+            toasted_set.add(commune.codgeo)
+            st.toast(f"Analyse Avancée pour {commune.name} disponible", icon="✨", duration="long")
+
+        if st.button(
+            "Analyse Avancée",
+            key=f"btn_ia_comm_{commune.codgeo}",
+            icon=":material/wand_stars:",
+            width="stretch",
+            disabled=False,
+        ):
+            st.session_state.active_ia_city_index = commune.codgeo
+            ui_telemetry.track_ui_event(
+                "run_ia_analysis", {"codgeo": commune.codgeo, "name": commune.name}
+            )
+            show_ia_analysis_dialog(commune.codgeo)
+        return True
+
+    # 4. Error / Timeout / Cancelled -> Retry state
+    if status in {"error", "timeout", "cancelled"}:
+        if st.button(
+            "Analyse Avancée [Échec - Réessayer ?]",
+            key=f"btn_ia_comm_{commune.codgeo}",
+            icon=":material/error:",
+            width="stretch",
+        ):
+            if h and st.session_state.get("search_results"):
+                st.session_state.get("ia_analysis_launch_toasted", set()).discard(
+                    commune.codgeo
+                )
+                st.session_state.get("ia_analysis_toasted", set()).discard(
+                    commune.codgeo
+                )
+                launch_background_city_analysis(
+                    nom=commune.name,
+                    codgeo=commune.codgeo,
+                    search_criterias=st.session_state.get("config"),
+                    search_results=st.session_state.get("search_results"),
+                    h=h,
+                    username=st.session_state.get("username", "unknown"),
+                    organization_id=getattr(st.session_state.get("org"), "id", None),
+                    retry=True,
+                    trigger="city_card_retry",
+                )
+                st.toast(f"Analyse Avancée pour {commune.name} lancée...", icon="🧠", duration="short")
+                st.rerun()
+        return False
+
+    # 5. Running state
+    if status == "running":
+        start_time = (
+            status_data.get("start_time", 0) if isinstance(status_data, dict) else 0
+        )
+        import time
+
+        elapsed = time.time() - start_time if start_time else 0
+        btn_label = (
+            "Analyse Avancée [Lancement...]"
+            if elapsed < 1.0
+            else "Analyse Avancée [En cours...]"
+        )
+        st.button(
+            btn_label,
+            key=f"btn_ia_comm_{commune.codgeo}",
+            icon=":material/wand_stars:",
+            width="stretch",
+            disabled=True,
+        )
+        return False
+
+    # 6. Not yet launched -> check prerequisites and auto-launch!
+    ready = _is_postscoring_ready_for_city(commune, h)
+    if not ready:
+        st.button(
+            "Analyse Avancée [Lancement...]",
+            key=f"btn_ia_comm_{commune.codgeo}",
+            icon=":material/wand_stars:",
+            width="stretch",
+            disabled=True,
+        )
+        return False
+
+    # Prerequisites are ready -> Auto-launch background city analysis
+    if h and st.session_state.get("search_results"):
+        launch_background_city_analysis(
+            nom=commune.name,
+            codgeo=commune.codgeo,
+            search_criterias=st.session_state.get("config"),
+            search_results=st.session_state.get("search_results"),
+            h=h,
+            username=st.session_state.get("username", "unknown"),
+            organization_id=getattr(st.session_state.get("org"), "id", None),
+            trigger="city_card_autoload",
+        )
+        launch_toasted_set = st.session_state.setdefault(
+            "ia_analysis_launch_toasted", set()
+        )
+        if commune.codgeo not in launch_toasted_set:
+            launch_toasted_set.add(commune.codgeo)
+            st.toast(f"Analyse Avancée pour {commune.name} lancée...", icon="🧠", duration="short")
+
+    st.button(
+        "Analyse Avancée [Lancement...]",
         key=f"btn_ia_comm_{commune.codgeo}",
         icon=":material/wand_stars:",
         width="stretch",
-        disabled=btn_disabled,
-    ):
-        st.session_state.active_ia_city_index = commune.codgeo
-        ui_telemetry.track_ui_event(
-            "run_ia_analysis", {"codgeo": commune.codgeo, "name": commune.name}
-        )
-        show_ia_analysis_dialog(commune.codgeo)
-
-    return ready
+        disabled=True,
+    )
+    return False
 
 
 @st.fragment(run_every=2.0)
@@ -282,12 +342,13 @@ def render_refiner_panel(commune: CommuneResult, h: Optional[str]) -> bool:
             st.markdown(generate_static_pitch(commune))
         return True
 
-    sync_background_data(commune, h)
+    bg_res = odis_get_bg_result(h) if h else None
+    if bg_res:
+        sync_commune_data(commune, bg_res)
     if commune.refiner_pitch:
         st.markdown(commune.refiner_pitch)
         return True
 
-    bg_res = odis_get_bg_result(h) if h else None
     refiner_status = bg_res.get("status_refiner") if isinstance(bg_res, dict) else None
     if is_terminal_refiner_status(refiner_status):
         st.markdown(generate_static_pitch(commune))
@@ -422,114 +483,114 @@ def _display_result_details(commune: CommuneResult) -> None:
             show_ccas_dialog(commune.codgeo)
 
         # --- Radar Chart with Comparison ---
-        st.space("small")
-        all_cats = [
-            "emploi",
-            "logement",
-            "education",
-            "sante",
-            "inclusion",
-            "mobilite",
-            "territoire",
-        ]
-        cat_map = {
-            "emploi": "employment",
-            "logement": "housing",
-            "education": "education",
-            "sante": "health",
-            "inclusion": "inclusion",
-            "mobilite": "mobility",
-            "territoire": "territoire",
-        }
+        # st.space("small")
+        # all_cats = [
+        #     "emploi",
+        #     "logement",
+        #     "education",
+        #     "sante",
+        #     "inclusion",
+        #     "mobilite",
+        #     "territoire",
+        # ]
+        # cat_map = {
+        #     "emploi": "employment",
+        #     "logement": "housing",
+        #     "education": "education",
+        #     "sante": "health",
+        #     "inclusion": "inclusion",
+        #     "mobilite": "mobility",
+        #     "territoire": "territoire",
+        # }
 
-        config = st.session_state.get("config")
-        if config and hasattr(config, "active_categories") and config.active_categories:
-            active_cats = [
-                cat
-                for cat in all_cats
-                if cat in config.active_categories or cat in ["mobilite", "territoire"]
-            ]
-        else:
-            active_cats = all_cats
+        # config = st.session_state.get("config")
+        # if config and hasattr(config, "active_categories") and config.active_categories:
+        #     active_cats = [
+        #         cat
+        #         for cat in all_cats
+        #         if cat in config.active_categories or cat in ["mobilite", "territoire"]
+        #     ]
+        # else:
+        #     active_cats = all_cats
 
-        def get_radar_data(c: CommuneResult, active_cats: List[str]):
-            label_map = {
-                "emploi": "Emploi",
-                "logement": "Logement",
-                "education": "Éducation",
-                "sante": "Santé",
-                "inclusion": "Inclusion",
-                "mobilite": "Mobilité",
-                "territoire": "Territoire",
-            }
-            labels = [label_map.get(cat, cat.capitalize()) for cat in active_cats]
+        # def get_radar_data(c: CommuneResult, active_cats: List[str]):
+        #     label_map = {
+        #         "emploi": "Emploi",
+        #         "logement": "Logement",
+        #         "education": "Éducation",
+        #         "sante": "Santé",
+        #         "inclusion": "Inclusion",
+        #         "mobilite": "Mobilité",
+        #         "territoire": "Territoire",
+        #     }
+        #     labels = [label_map.get(cat, cat.capitalize()) for cat in active_cats]
 
-            vals = []
-            for cat in active_cats:
-                attr_name = cat_map.get(cat, cat)
-                data = getattr(c, attr_name, None)
-                if data and hasattr(data, "cat_score"):
-                    val = float(data.cat_score) if data.cat_score is not None else 0.0
-                    vals.append(val * 100)
-                else:
-                    vals.append(0.0)
+        #     vals = []
+        #     for cat in active_cats:
+        #         attr_name = cat_map.get(cat, cat)
+        #         data = getattr(c, attr_name, None)
+        #         if data and hasattr(data, "cat_score"):
+        #             val = float(data.cat_score) if data.cat_score is not None else 0.0
+        #             vals.append(val * 100)
+        #         else:
+        #             vals.append(0.0)
 
-            if vals:
-                vals.append(vals[0])
-                labels.append(labels[0])
-            return labels, vals
+        #     if vals:
+        #         vals.append(vals[0])
+        #         labels.append(labels[0])
+        #     return labels, vals
 
-        labels_target, vals_target = get_radar_data(commune, active_cats)
+        # labels_target, vals_target = get_radar_data(commune, active_cats)
 
-        search_results: SearchResultsData = st.session_state.get("search_results")
+        # search_results: SearchResultsData = st.session_state.get("search_results")
 
-        fig = go.Figure()
+        # fig = go.Figure()
 
-        # Add trace for target city (Green)
-        fig.add_trace(
-            go.Scatterpolar(
-                r=vals_target,
-                theta=labels_target,
-                fill="toself",
-                name=libgeo,
-                fillcolor="rgba(0, 98, 104, 0.5)",
-                line=dict(color="#006268"),
-                hovertemplate="%{theta}: %{r:.0f}/100<extra></extra>",
-            )
-        )
+        # # Add trace for target city (Green)
+        # fig.add_trace(
+        #     go.Scatterpolar(
+        #         r=vals_target,
+        #         theta=labels_target,
+        #         fill="toself",
+        #         name=libgeo,
+        #         fillcolor="rgba(0, 98, 104, 0.5)",
+        #         line=dict(color="#006268"),
+        #         hovertemplate="%{theta}: %{r:.0f}/100<extra></extra>",
+        #     )
+        # )
 
-        # Add trace for current city (Blue) if available
-        if search_results and search_results.current_geo:
-            _, vals_current = get_radar_data(search_results.current_geo, active_cats)
-            current_name = search_results.current_geo.name or "Votre ville"
+        # # Add trace for current city (Blue) if available
+        # if search_results and search_results.current_geo:
+        #     _, vals_current = get_radar_data(search_results.current_geo, active_cats)
+        #     current_name = search_results.current_geo.name or "Votre ville"
 
-            st.text(
-                f"Comparaison avec {current_name}",
-                help=f"Comparaison des profils : la zone verte représente **{commune.name}**, la zone bleue **{current_name}**. Une plus grande surface indique une meilleure adéquation avec vos critères.",
-            )
+        #     st.text(
+        #         f"Comparaison avec {current_name}",
+        #         help=f"Comparaison des profils : la zone verte représente **{commune.name}**, la zone bleue **{current_name}**. Une plus grande surface indique une meilleure adéquation avec vos critères.",
+        #     )
 
-            fig.add_trace(
-                go.Scatterpolar(
-                    r=vals_current,
-                    theta=labels_target,
-                    fill="toself",
-                    name=current_name,
-                    fillcolor="rgba(31, 119, 180, 0.4)",
-                    line=dict(color="#1f77b4"),
-                    hovertemplate="%{theta}: %{r:.0f}/100<extra></extra>",
-                )
-            )
+        #     fig.add_trace(
+        #         go.Scatterpolar(
+        #             r=vals_current,
+        #             theta=labels_target,
+        #             fill="toself",
+        #             name=current_name,
+        #             fillcolor="rgba(31, 119, 180, 0.4)",
+        #             line=dict(color="#1f77b4"),
+        #             hovertemplate="%{theta}: %{r:.0f}/100<extra></extra>",
+        #         )
+        #     )
 
-            fig.update_layout(
-                polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
-                showlegend=True,
-                legend=dict(
-                    orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
-                ),
-                margin=dict(l=50, r=50, t=50, b=50),
-            )
+        #     fig.update_layout(
+        #         polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
+        #         showlegend=True,
+        #         legend=dict(
+        #             orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
+        #         ),
+        #         margin=dict(l=50, r=50, t=50, b=50),
+        #     )
 
-            st.plotly_chart(fig, width="stretch", height=300, config=None)
+        #     st.plotly_chart(fig, width="stretch", height=300, config=None)
 
         st.divider()
         with st.container(

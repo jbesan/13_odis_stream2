@@ -1,5 +1,4 @@
 from unittest.mock import MagicMock
-import pytest
 import streamlit as st
 from ui.results import (
     render_share_search_button,
@@ -13,12 +12,18 @@ from core.models import SearchResultsData, CommuneResult
 
 def _create_mock_search_results(codgeo: str = "69123") -> SearchResultsData:
     commune = MagicMock(spec=CommuneResult)
+    commune.name = "Bordeaux"
     commune.codgeo = codgeo
-    commune.siae_jobs = None
-    commune.associations_details = None
+    commune.employment = MagicMock()
+    commune.employment.matching_job_offers = []
+    commune.employment.standard_jobs_matching_total = 0
     commune.inclusion = MagicMock()
-    commune.inclusion.services_detailed = None
+    commune.inclusion.asso_inclusion_list_by_cat = {}
+    commune.inclusion.asso_refugee_list = []
+    commune.inclusion.services_detailed = {}
+    commune.commune_results_hydrated = False
     commune.odis_synthesis = None
+    commune.refiner_pitch = ""
 
     search_results = MagicMock(spec=SearchResultsData)
     search_results.results = [commune]
@@ -68,7 +73,7 @@ def test_render_share_search_button_enabled_when_postscoring_done(monkeypatch):
         "status_refiner": "done",
         "jobs_enrichment": {"69123": {"status": "success_nonempty"}},
         "association_enrichment_status": {"69123": {"status": "success_nonempty"}},
-        "inclusion_enrichment_status": {"69123": {"status": "success_nonempty"}},
+        "inclusion_services_status": {"69123": {"status": "success_nonempty"}},
     }
     monkeypatch.setattr("ui.results_actions.odis_get_bg_result", lambda h: mock_bg_res)
 
@@ -104,7 +109,7 @@ def test_render_export_pdf_button_states(monkeypatch):
         "status_refiner": "done",
         "jobs_enrichment": {"69123": {"status": "success_nonempty"}},
         "association_enrichment_status": {"69123": {"status": "success_nonempty"}},
-        "inclusion_enrichment_status": {"69123": {"status": "success_nonempty"}},
+        "inclusion_services_status": {"69123": {"status": "success_nonempty"}},
     }
     monkeypatch.setattr("ui.results_actions.odis_get_bg_result", lambda h: mock_bg_res)
     _call_fn(render_export_pdf_button, h="hash_123")
@@ -127,7 +132,7 @@ def test_render_details_trigger_button_states(monkeypatch):
     monkeypatch.setattr("ui.results.st.session_state", {"search_results": search_results})
 
     # 1. Hydration running
-    monkeypatch.setattr("ui.results.odis_get_bg_result", lambda h: None)
+    monkeypatch.setattr("ui.results_actions.odis_get_bg_result", lambda h: None)
     _call_fn(render_details_trigger_button, commune=commune, h="hash_123")
     assert len(button_calls) == 1
     assert button_calls[0][0] == "En savoir plus (Préparation...)"
@@ -138,13 +143,46 @@ def test_render_details_trigger_button_states(monkeypatch):
         "status_refiner": "running",  # Refiner is NOT done yet
         "jobs_enrichment": {"69123": {"status": "success_nonempty"}},
         "association_enrichment_status": {"69123": {"status": "success_nonempty"}},
-        "inclusion_enrichment_status": {"69123": {"status": "success_nonempty"}},
+        "inclusion_services_status": {"69123": {"status": "success_nonempty"}},
     }
-    monkeypatch.setattr("ui.results.odis_get_bg_result", lambda h: mock_bg_res)
+    monkeypatch.setattr("ui.results_actions.odis_get_bg_result", lambda h: mock_bg_res)
     _call_fn(render_details_trigger_button, commune=commune, h="hash_123")
     assert len(button_calls) == 2
     assert button_calls[1][0] == "En savoir plus"
     assert button_calls[1][1].get("disabled") is False
+
+
+def test_buttons_enabled_when_commune_results_hydrated_flag_is_true(monkeypatch):
+    """Verify all actions unlock immediately when commune_results_hydrated is True, even with empty bg store."""
+    button_calls = []
+
+    def mock_button(label, **kwargs):
+        button_calls.append((label, kwargs))
+        return False
+
+    monkeypatch.setattr(st, "button", mock_button)
+    search_results = _create_mock_search_results("69123")
+    commune = search_results.results[0]
+    commune.commune_results_hydrated = True
+    monkeypatch.setattr("ui.results_actions.st.session_state", {"search_results": search_results})
+    monkeypatch.setattr("ui.results.st.session_state", {"search_results": search_results})
+    # volatile bg store is completely empty / None
+    monkeypatch.setattr("ui.results_actions.odis_get_bg_result", lambda h: None)
+
+    # 1. En savoir plus
+    _call_fn(render_details_trigger_button, commune=commune, h="hash_123")
+    assert button_calls[-1][0] == "En savoir plus"
+    assert button_calls[-1][1].get("disabled") is False
+
+    # 2. Export PDF
+    _call_fn(render_export_pdf_button, h="hash_123")
+    assert button_calls[-1][0] == "Exporter résultats"
+    assert button_calls[-1][1].get("disabled") is False
+
+    # 3. Share results
+    _call_fn(render_share_search_button, h="hash_123", button_text="Partager")
+    assert button_calls[-1][0] == "Partager"
+    assert button_calls[-1][1].get("disabled") is False
 
 
 def test_render_active_dialogs_dispatches_all_result_dialogs(monkeypatch):
@@ -220,7 +258,7 @@ def test_render_ai_trigger_button_in_immutable_snapshot_without_analysis(monkeyp
 
 
 def test_render_ai_trigger_button_in_live_mode(monkeypatch):
-    """Verify that in live mode, button displays standard labels depending on readiness."""
+    """Verify that in live mode, button displays non-blocking states depending on readiness."""
     button_calls = []
 
     def mock_button(label, **kwargs):
@@ -236,55 +274,74 @@ def test_render_ai_trigger_button_in_live_mode(monkeypatch):
         "search_results": search_results,
         "immutable_shared_snapshot": False,
     })
-    # Postscoring not ready
+    # 1. Postscoring not ready -> Lancement (disabled)
     monkeypatch.setattr("ui.results._is_postscoring_ready_for_city", lambda c, h: False)
+    monkeypatch.setattr("ui.results.odis_get_bg_result", lambda k: None)
 
     _call_fn(render_ai_trigger_button, commune=commune, h="hash_123")
-    assert button_calls[0][0] == "Analyse Avancée (Préparation...)"
+    assert button_calls[0][0] == "Analyse Avancée [Lancement...]"
     assert button_calls[0][1].get("disabled") is True
 
-    # Postscoring ready
+    # 2. Postscoring ready -> auto-launches, emits launch toast, and stays in Lancement (disabled)
+    launched = []
+    toasts = []
+    monkeypatch.setattr(st, "toast", lambda msg, **kwargs: toasts.append(msg))
+    monkeypatch.setattr(
+        "ui.results.launch_background_city_analysis",
+        lambda **kwargs: launched.append(kwargs),
+    )
     monkeypatch.setattr("ui.results._is_postscoring_ready_for_city", lambda c, h: True)
     _call_fn(render_ai_trigger_button, commune=commune, h="hash_123")
-    assert button_calls[1][0] == "Analyse Avancée"
-    assert button_calls[1][1].get("disabled") is False
+    assert len(launched) == 1
+    assert any("lancée..." in t for t in toasts)
+    assert button_calls[1][0] == "Analyse Avancée [Lancement...]"
+    assert button_calls[1][1].get("disabled") is True
+
+    # 3. Running state (> 1s) -> En cours... (disabled)
+    monkeypatch.setattr(
+        "ui.results.odis_get_bg_result",
+        lambda k: {"status": "running", "start_time": 100.0},
+    )
+    import time
+
+    monkeypatch.setattr(time, "time", lambda: 105.0)
+    _call_fn(render_ai_trigger_button, commune=commune, h="hash_123")
+    assert button_calls[2][0] == "Analyse Avancée [En cours...]"
+    assert button_calls[2][1].get("disabled") is True
+
+    # 4. Error state -> Échec - Réessayer ? (enabled)
+    monkeypatch.setattr(
+        "ui.results.odis_get_bg_result",
+        lambda k: {"status": "error", "error": "timeout"},
+    )
+    _call_fn(render_ai_trigger_button, commune=commune, h="hash_123")
+    assert button_calls[3][0] == "Analyse Avancée [Échec - Réessayer ?]"
+    assert button_calls[3][1].get("disabled") in (False, None)
+
+    # 5. Done state -> Analyse Avancée (enabled) + toast emitted
+    toasts = []
+    monkeypatch.setattr(st, "toast", lambda msg, **kwargs: toasts.append(msg))
+    monkeypatch.setattr(
+        "ui.results.odis_get_bg_result",
+        lambda k: {"status": "done", "result": {}},
+    )
+    _call_fn(render_ai_trigger_button, commune=commune, h="hash_123")
+    assert button_calls[4][0] == "Analyse Avancée"
+    assert button_calls[4][1].get("disabled") in (False, None)
+    assert len(toasts) == 1
+    assert "disponible" in toasts[0]
 
 
 from ui.ai_analysis_dialog import polling_synthesis_fragment
 
 
-class _MockStatus:
-    def __init__(self, label: str, expanded: bool = True):
-        self.label = label
-        self.expanded = expanded
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        pass
-
-
-def test_polling_synthesis_fragment_renders_status_and_progress_on_first_turn(monkeypatch):
-    """Verify that on initial launch (status_data is None), background analysis is started
-    and st.status + st.progress are immediately rendered rather than stalling on a caption.
-    """
-    status_calls = []
-    markdown_calls = []
-    caption_calls = []
-    progress_calls = []
+def test_polling_synthesis_fragment_nonblocking_running_state(monkeypatch):
+    """Verify that when synthesis is running, an informative note and cancel button are rendered without blocking sleep."""
+    info_calls = []
     button_calls = []
 
-    monkeypatch.setattr(
-        "ui.ai_analysis_dialog.st.status",
-        lambda label, **kwargs: (status_calls.append((label, kwargs)) or _MockStatus(label, **kwargs)),
-    )
-    monkeypatch.setattr("ui.ai_analysis_dialog.st.markdown", lambda text: markdown_calls.append(text))
-    monkeypatch.setattr("ui.ai_analysis_dialog.st.caption", lambda text: caption_calls.append(text))
-    monkeypatch.setattr(
-        "ui.ai_analysis_dialog.st.progress",
-        lambda val, text=None: progress_calls.append((val, text)),
-    )
+    monkeypatch.setattr("ui.ai_analysis_dialog.st.info", lambda text: info_calls.append(text))
+    monkeypatch.setattr("ui.ai_analysis_dialog.st.caption", lambda text: None)
     monkeypatch.setattr(
         "ui.ai_analysis_dialog.st.button",
         lambda label, **kwargs: (button_calls.append((label, kwargs)) or False),
@@ -292,32 +349,52 @@ def test_polling_synthesis_fragment_renders_status_and_progress_on_first_turn(mo
 
     search_results = _create_mock_search_results("69123")
     commune = search_results.results[0]
-    mock_state = type("MockState", (dict,), {"__getattr__": dict.__getitem__})({"search_results": search_results})
-    monkeypatch.setattr("ui.ai_analysis_dialog.st.session_state", mock_state)
+    monkeypatch.setattr(
+        "ui.ai_analysis_dialog.st.session_state",
+        {"search_results": search_results},
+    )
+    monkeypatch.setattr(
+        "ui.ai_analysis_dialog.odis_get_bg_result",
+        lambda task_key: {"status": "running", "start_time": 100.0},
+    )
 
-    # Initially no bg result, then transitions to done inside the in-place polling loop
-    call_count = [0]
+    _call_fn(
+        polling_synthesis_fragment,
+        task_key="analysis_69123_hash_123",
+        nom="Lyon",
+        codgeo="69123",
+        search_criterias=MagicMock(),
+        commune=commune,
+        h="hash_123",
+    )
 
-    def mock_get_bg(task_key):
-        call_count[0] += 1
-        if call_count[0] == 1:
-            return None
-        return {"status": "done", "result": {}}
+    assert len(info_calls) == 1
+    assert "en cours d'exécution en arrière-plan" in info_calls[0]
+    assert any("Annuler l'analyse" in b[0] for b in button_calls)
 
-    monkeypatch.setattr("ui.ai_analysis_dialog.odis_get_bg_result", mock_get_bg)
 
-    # launch_background_city_analysis starts the task and returns running state
-    launched = []
-
-    def mock_launch(nom, codgeo, search_criterias, results, h, **kwargs):
-        launched.append((nom, codgeo))
-        return {"status": "running", "start_time": 100.0, "deadline_at": 160.0}
-
-    monkeypatch.setattr("ui.ai_analysis_dialog.launch_background_city_analysis", mock_launch)
-    import time
-
-    monkeypatch.setattr(time, "time", lambda: 102.0)
-    monkeypatch.setattr(time, "sleep", lambda s: None)
+def test_polling_synthesis_fragment_done_state_merges_and_reruns(monkeypatch):
+    """Verify that when synthesis finishes, results are merged and st.rerun() is invoked."""
+    search_results = _create_mock_search_results("69123")
+    commune = search_results.results[0]
+    monkeypatch.setattr(
+        "ui.ai_analysis_dialog.st.session_state",
+        {"search_results": search_results},
+    )
+    monkeypatch.setattr(
+        "ui.ai_analysis_dialog.odis_get_bg_result",
+        lambda task_key: {
+            "status": "done",
+            "result": {
+                "results": [
+                    {
+                        "codgeo": "69123",
+                        "odis_synthesis": [{"role": "assistant", "content": "Synthèse Lyon"}],
+                    }
+                ]
+            },
+        },
+    )
     rerun_calls = []
     monkeypatch.setattr("ui.ai_analysis_dialog.st.rerun", lambda: rerun_calls.append(True))
 
@@ -331,69 +408,31 @@ def test_polling_synthesis_fragment_renders_status_and_progress_on_first_turn(mo
         h="hash_123",
     )
 
-    assert len(launched) == 1
-    assert launched[0] == ("Lyon", "69123")
-
-    # Status and progress must be immediately visible on turn 1
-    assert len(status_calls) == 1
-    assert status_calls[0][0] == "🧠 Analyse stratégique en cours..."
-    assert status_calls[0][1].get("expanded") is True
-
-    # At elapsed = 2s, step 1 is active, experts are pending
-    assert any("Étape 1" in m for m in markdown_calls)
-    assert any("En attente des experts" in c for c in caption_calls)
-
-    assert len(progress_calls) == 1
-    progress_val, progress_text = progress_calls[0]
-    assert pytest.approx(progress_val, 0.001) == 2.0 / 60.0
-    assert "Préparation de la synthèse" in progress_text
-
-    # Cancel button is displayed
-    assert any("Annuler l'analyse" in b[0] for b in button_calls)
-
-    # st.rerun must be called to schedule the next tick
     assert len(rerun_calls) == 1
+    assert commune.odis_synthesis[0]["content"] == "Synthèse Lyon"
 
 
-def test_polling_synthesis_fragment_step_progression_with_elapsed_time(monkeypatch):
-    """Verify that as time elapses, st.status reveals steps 2 and 3 progressively."""
-    status_calls = []
-    markdown_calls = []
-    caption_calls = []
-    progress_calls = []
+def test_polling_synthesis_fragment_error_state_shows_retry(monkeypatch):
+    """Verify that when synthesis fails, an error and a retry button are rendered."""
+    error_calls = []
+    button_calls = []
 
+    monkeypatch.setattr("ui.ai_analysis_dialog.st.error", lambda text: error_calls.append(text))
     monkeypatch.setattr(
-        "ui.ai_analysis_dialog.st.status",
-        lambda label, **kwargs: (status_calls.append((label, kwargs)) or _MockStatus(label, **kwargs)),
+        "ui.ai_analysis_dialog.st.button",
+        lambda label, **kwargs: (button_calls.append((label, kwargs)) or False),
     )
-    monkeypatch.setattr("ui.ai_analysis_dialog.st.markdown", lambda text: markdown_calls.append(text))
-    monkeypatch.setattr("ui.ai_analysis_dialog.st.caption", lambda text: caption_calls.append(text))
-    monkeypatch.setattr(
-        "ui.ai_analysis_dialog.st.progress",
-        lambda val, text=None: progress_calls.append((val, text)),
-    )
-    monkeypatch.setattr("ui.ai_analysis_dialog.st.button", lambda label, **kwargs: False)
 
     search_results = _create_mock_search_results("69123")
     commune = search_results.results[0]
-    monkeypatch.setattr("ui.ai_analysis_dialog.st.session_state", {"search_results": search_results})
-
-    # Already running, elapsed = 20s, then transitions to done inside in-place polling loop
-    call_count = [0]
-
-    def mock_get_bg(task_key):
-        call_count[0] += 1
-        if call_count[0] == 1:
-            return {"status": "running", "start_time": 100.0, "deadline_at": 160.0}
-        return {"status": "done", "result": {}}
-
-    monkeypatch.setattr("ui.ai_analysis_dialog.odis_get_bg_result", mock_get_bg)
-    import time
-
-    monkeypatch.setattr(time, "time", lambda: 120.0)
-    monkeypatch.setattr(time, "sleep", lambda s: None)
-    rerun_calls = []
-    monkeypatch.setattr("ui.ai_analysis_dialog.st.rerun", lambda: rerun_calls.append(True))
+    monkeypatch.setattr(
+        "ui.ai_analysis_dialog.st.session_state",
+        {"search_results": search_results},
+    )
+    monkeypatch.setattr(
+        "ui.ai_analysis_dialog.odis_get_bg_result",
+        lambda task_key: {"status": "error", "error": "LLM timeout"},
+    )
 
     _call_fn(
         polling_synthesis_fragment,
@@ -405,10 +444,7 @@ def test_polling_synthesis_fragment_step_progression_with_elapsed_time(monkeypat
         h="hash_123",
     )
 
-    # At elapsed = 20s, all 3 steps should be displayed in markdown
-    assert any("Étape 1" in m for m in markdown_calls)
-    assert any("Étape 2" in m for m in markdown_calls)
-    assert any("Étape 3" in m for m in markdown_calls)
-    assert len(caption_calls) == 0
-    assert len(rerun_calls) == 1
+    assert len(error_calls) == 1
+    assert "LLM timeout" in error_calls[0]
+    assert any("Réessayer" in b[0] for b in button_calls)
 

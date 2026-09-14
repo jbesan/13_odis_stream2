@@ -18,7 +18,7 @@ def test_refiner_panel_stays_processing_until_a_terminal_result():
             "ui.results.odis_get_bg_result",
             return_value={"status_refiner": "running"},
         ),
-        patch("ui.results.sync_background_data"),
+        patch("ui.results.sync_commune_data"),
         patch("ui.results.st.info") as info,
         patch("ui.results.st.caption"),
     ):
@@ -35,7 +35,7 @@ def test_refiner_panel_uses_static_top_three_after_a_terminal_failure():
             "ui.results.odis_get_bg_result",
             return_value={"status_refiner": "error"},
         ),
-        patch("ui.results.sync_background_data"),
+        patch("ui.results.sync_commune_data"),
         patch("ui.results.generate_static_pitch", return_value="- indicateur") as pitch,
         patch("ui.results.st.caption"),
         patch("ui.results.st.markdown") as markdown,
@@ -51,7 +51,7 @@ def test_refiner_panel_keeps_the_completed_refiner_output():
     commune.refiner_pitch = "Analyse personnalisée"
     with (
         patch("ui.results.st.session_state", {}),
-        patch("ui.results.sync_background_data"),
+        patch("ui.results.sync_commune_data"),
         patch("ui.results.st.markdown") as markdown,
     ):
         assert _render_refiner_panel(commune, "search-hash") is True

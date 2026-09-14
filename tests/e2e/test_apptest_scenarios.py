@@ -180,7 +180,7 @@ def test_enrichment_timeout_and_error_graceful_unlock():
             "33063": {"status": EnrichmentStatus.TIMEOUT.value},
             "64445": {"status": EnrichmentStatus.ERROR.value},
         },
-        "inclusion_enrichment_status": {
+        "inclusion_services_status": {
             "33063": {"status": EnrichmentStatus.NOT_CONFIGURED.value},
             "64445": {"status": EnrichmentStatus.TIMEOUT.value},
         },

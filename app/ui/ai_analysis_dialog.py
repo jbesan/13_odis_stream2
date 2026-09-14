@@ -1,5 +1,4 @@
 import logging
-import time
 from typing import Any
 import streamlit as st
 
@@ -100,7 +99,7 @@ def polling_synthesis_fragment(
     commune: CommuneResult,
     h: str,
 ):
-    """Component that polls for synthesis completion in-place without full-page reruns."""
+    """Component that handles fallback display if dialog is opened before analysis finishes."""
     status_data = odis_get_bg_result(task_key)
     if not status_data:
         status_data = launch_background_city_analysis(
@@ -116,56 +115,14 @@ def polling_synthesis_fragment(
     status = status_data.get("status") if status_data else None
 
     if status == "running":
-        status_container = st.empty()
+        st.info("🧠 L'analyse stratégique est en cours d'exécution en arrière-plan...")
+        st.caption(
+            "Vous pouvez fermer cette modale. Une notification apparaîtra dès que la synthèse sera prête."
+        )
         if st.button("Annuler l'analyse", key=f"cancel_analysis_{task_key}"):
             cancel_background_city_analysis(task_key)
-            status = "cancelled"
             st.rerun()
-
-        while status == "running":
-            start_time = status_data.get("start_time", time.time())
-            deadline_at = status_data.get("deadline_at")
-            elapsed = time.time() - start_time
-            timeout_seconds = (
-                max(1.0, float(deadline_at) - float(start_time))
-                if deadline_at is not None
-                else 60.0
-            )
-            progress = min(1.0, elapsed / timeout_seconds)
-
-            with status_container.container():
-                with st.status("🧠 Analyse stratégique en cours...", expanded=True):
-                    st.markdown("🧭 **Étape 1 : Cadrage & Triage**")
-                    if elapsed >= 4.0:
-                        st.markdown(
-                            "🔬 **Étape 2 : Consultation des experts thématiques** "
-                            "(Logement, Emploi, Santé, Mobilité etc.)"
-                        )
-                    else:
-                        st.caption("⏳ *En attente des experts...*")
-
-                    if elapsed >= 18.0:
-                        st.markdown(
-                            "✍️ **Étape 3 : Réconciliation & Rédaction de la synthèse** "
-                            "(Synthesizer)"
-                        )
-                    elif elapsed >= 4.0:
-                        st.caption("⏳ *En attente de la synthèse...*")
-
-                st.progress(
-                    progress,
-                    text=f"Préparation de la synthèse (jusqu'à {timeout_seconds:.0f} secondes)...",
-                )
-
-            if elapsed >= timeout_seconds:
-                status = "timeout"
-                break
-
-            time.sleep(1.0)
-            status_data = odis_get_bg_result(task_key)
-            status = status_data.get("status") if status_data else None
-
-        status_container.empty()
+        return
 
     if status in {"error", "timeout", "cancelled"}:
         st.error(
@@ -207,32 +164,24 @@ def polling_synthesis_fragment(
         st.rerun()  # One single final rerun to reveal full report
 
 
+@st.fragment(run_every=2.0)
 def polling_chat_fragment(
     task_key: str, chat_task_key: str, codgeo: str, commune: CommuneResult
 ):
-    """Component that polls for follow-up chat response in-place without full-page reruns."""
+    """Component that polls for follow-up chat response non-blockingly."""
     status_data = odis_get_bg_result(task_key)
     status = status_data.get("status") if status_data else "running"
 
     if status == "running":
-        chat_container = st.empty()
-        if st.button("Annuler", key=f"cancel_chat_{task_key}"):
-            cancel_background_city_analysis(task_key)
-            st.session_state[chat_task_key] = False
-            st.rerun()
-
-        while status == "running":
-            with chat_container.container():
-                with st.chat_message("assistant"):
-                    st.write(
-                        "✨ _Recherche de la réponse en cours (Job Hunter / Scouts)..._"
-                    )
-
-            time.sleep(1.0)
-            status_data = odis_get_bg_result(task_key)
-            status = status_data.get("status") if status_data else None
-
-        chat_container.empty()
+        with st.chat_message("assistant"):
+            st.write(
+                "✨ _Recherche de la réponse en cours (Job Hunter / Scouts)..._"
+            )
+            if st.button("Annuler", key=f"cancel_chat_{task_key}"):
+                cancel_background_city_analysis(task_key)
+                if chat_task_key in st.session_state:
+                    del st.session_state[chat_task_key]
+                st.rerun()
 
     if status == "done" and status_data:
         _merge_agent_results(status_data.get("result"), codgeo, commune)

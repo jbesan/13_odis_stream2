@@ -5,6 +5,7 @@ import streamlit as st
 import config as cfg
 from core import maps_deck
 from core.models import SearchResultsData
+from core.postscoring import sync_search_results_data
 from services.app_session import AppSession
 from services.search_controller import SearchController
 from ui import forms as ui_forms
@@ -284,6 +285,14 @@ if not is_immutable_snapshot or is_editing_snapshot:
     FormState(st.session_state).preserve_widgets_across_steps()
 
 search_results: SearchResultsData = st.session_state.get("search_results")
+if search_results and search_results.results:
+    h_init = search_results.search_hash
+    if h_init:
+        sync_search_results_data(
+            search_results,
+            ui_results.odis_get_bg_result(h_init),
+            config=st.session_state.get("config"),
+        )
 
 
 def run_search() -> None:
@@ -490,16 +499,12 @@ if st.session_state.get("processed_gdf") is not None:
     # 3. Floating Box 3: Volet de résultats (Top 5 + Accordéon à gauche)
     with st.container(key="results_floating_panel", border=False):
         if search_results and search_results.results:
-            bg_res = ui_results.odis_get_bg_result(h) if h else None
-            if bg_res:
-                for c in search_results.results:
-                    ui_results.sync_background_data(c, h)
-                if search_results.commune_pressentie:
-                    ui_results.sync_background_data(search_results.commune_pressentie, h)
-                if "odis_brief" in bg_res and st.session_state.get("config"):
-                    brief_val = bg_res["odis_brief"]
-                    if brief_val and st.session_state.config.odis_brief != brief_val:
-                        st.session_state.config.odis_brief = brief_val
+            if h:
+                sync_search_results_data(
+                    search_results,
+                    ui_results.odis_get_bg_result(h),
+                    config=st.session_state.get("config"),
+                )
 
             st.subheader("Meilleures Propositions")
             if not is_highlighted:

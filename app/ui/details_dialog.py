@@ -13,6 +13,7 @@ from core.models import (
 )
 from core.scoring import _format_kpi_value
 from core.enrichment_status import EnrichmentStatus
+from core.postscoring import sync_commune_data
 from utils.data_loader import fetch_salesforce_jaccueille_bdv
 from agents.utils import odis_get_bg_result
 from ui import ui_telemetry
@@ -42,119 +43,6 @@ def _should_poll_enrichment(h: Optional[str], status_key: str, codgeo: str) -> b
         return False
     status = _enrichment_status_for_city(h, status_key, codgeo)
     return status is None or status == EnrichmentStatus.PENDING.value
-
-
-def sync_background_data(commune: CommuneResult, h: Optional[str]):
-    """
-    Syncs both enrichment (associations) and pitches from the background store
-    back into the CommuneResult model for persistence.
-    """
-    if not h:
-        return
-
-    bg_res = odis_get_bg_result(h)
-    if not isinstance(bg_res, dict):
-        return
-
-    # 1. Sync Enrichment (Associations)
-    if "enrichment" in bg_res:
-        enrich_data = bg_res["enrichment"].get(str(commune.codgeo))
-        if enrich_data and not commune.inclusion.asso_inclusion_list_by_cat:
-            logging.debug(f"✨ [SYNC] Associations sync for {commune.codgeo}")
-            inc_data = commune.inclusion
-            inc_data.asso_refugee_list = [
-                AssociationDetail.model_validate(a)
-                for a in enrich_data.get("refugee", [])
-            ]
-            inc_data.asso_refugee_count = len(inc_data.asso_refugee_list)
-
-            raw_inclusion = enrich_data.get("inclusion", {})
-            inc_data.asso_inclusion_list_by_cat = {
-                cat: [AssociationDetail.model_validate(a) for a in asso_list]
-                for cat, asso_list in raw_inclusion.items()
-            }
-            inc_data.asso_inclusion_count = sum(
-                len(l) for l in inc_data.asso_inclusion_list_by_cat.values()
-            )
-
-    # 1b. Sync Enrichment (Job Offers)
-    if "jobs_enrichment" in bg_res:
-        jobs_city_data = bg_res["jobs_enrichment"].get(str(commune.codgeo))
-        if (
-            jobs_city_data
-            and jobs_city_data.get("status")
-            in {
-                EnrichmentStatus.SUCCESS_NONEMPTY.value,
-                EnrichmentStatus.SUCCESS_EMPTY.value,
-                EnrichmentStatus.PARTIAL.value,
-            }
-            and not commune.employment.matching_job_offers
-        ):
-            logging.debug(f"✨ [SYNC] Jobs sync for {commune.codgeo}")
-            emp_data = commune.employment
-
-            raw_jobs = jobs_city_data.get("jobs", [])
-            emp_data.matching_job_offers = [
-                [JobOfferDetail.model_validate(o) for o in adult_list]
-                for adult_list in raw_jobs
-            ]
-            if "total" in jobs_city_data:
-                emp_data.standard_jobs_matching_total = jobs_city_data["total"]
-
-    # 1c. Sync Enrichment (Inclusion Services)
-    if "inclusion_services_enrichment" in bg_res:
-        incl_services_data = bg_res["inclusion_services_enrichment"].get(
-            str(commune.codgeo)
-        )
-        if incl_services_data and not commune.inclusion.services_detailed:
-            logging.debug(f"✨ [SYNC] Inclusion services sync for {commune.codgeo}")
-            inc_data = commune.inclusion
-            inc_data.services_detailed = {
-                cat: [InclusionServiceDetail.model_validate(s) for s in svc_list]
-                for cat, svc_list in incl_services_data.items()
-            }
-
-    # 2. Sync Pitches (AI analysis)
-    if "pitches" in bg_res:
-        pitches_data = bg_res["pitches"]
-        if isinstance(pitches_data, dict):
-            # A. City-specific pitch
-            if "pitches" in pitches_data:
-                city_pitches = pitches_data["pitches"]
-                if isinstance(city_pitches, dict):
-                    cg = str(commune.codgeo).strip()
-                    cname = commune.name.lower().strip() if commune.name else ""
-                    pitch_for_city = (
-                        city_pitches.get(cg)
-                        or city_pitches.get(cg.zfill(5))
-                        or city_pitches.get(cg.lstrip("0"))
-                        or city_pitches.get(cname)
-                        or next(
-                            (
-                                v
-                                for k, v in city_pitches.items()
-                                if k.lower().strip() == cname
-                            ),
-                            None,
-                        )
-                    )
-                    if pitch_for_city and not commune.refiner_pitch:
-                        logging.debug(f"✨ [SYNC] Pitch sync for {commune.codgeo}")
-                        commune.refiner_pitch = pitch_for_city
-
-            # B. Global introduction (Global Pitch)
-            if "global" in pitches_data and "search_results" in st.session_state:
-                if not st.session_state.search_results.global_pitch:
-                    st.session_state.search_results.global_pitch = pitches_data[
-                        "global"
-                    ]
-
-    # 3. Sync Unified Briefing (Profile Summary)
-    if "odis_brief" in bg_res and st.session_state.get("config"):
-        brief_val = bg_res["odis_brief"]
-        if brief_val and st.session_state.config.odis_brief != brief_val:
-            logging.debug("✨ [SYNC] Unified Briefing sync")
-            st.session_state.config.odis_brief = brief_val
 
 
 def _get_jaccueille_salesforce_urls(
@@ -814,7 +702,8 @@ def show_details_dialog(index: Any):
     h = st.session_state.get("active_search_hash")
 
     # Sync background results into model if available
-    sync_background_data(commune, h)
+    if h:
+        sync_commune_data(commune, odis_get_bg_result(h))
 
     # Salesforce J'Accueille report links (org == jaccueille)
     acc_url, prosp_url = _get_jaccueille_salesforce_urls(commune)

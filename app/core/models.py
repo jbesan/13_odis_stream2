@@ -1111,6 +1111,11 @@ class CommuneResult(BaseModel):
                 )
         return data
 
+    commune_results_hydrated: bool = Field(
+        default=False,
+        description="Indique si les enrichissements post-scoring (emplois, associations, services) ont été hydratés pour cette commune",
+    )
+
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 
 
