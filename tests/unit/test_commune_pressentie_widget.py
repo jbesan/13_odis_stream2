@@ -180,7 +180,7 @@ def test_render_mobility_form_city_size_captions_and_title_caption():
         render_mobility_form(mock_app_data)
 
     mock_markdown.assert_any_call(
-        "##### Taille de la ville (Bassin de vie) recherchée",
+        "##### Taille de la ville recherchée (bassin de vie)",
         help="Le bassin de vie intègre la ville et ses banlieues",
     )
     mock_radio.assert_called_once()
