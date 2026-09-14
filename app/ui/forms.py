@@ -163,7 +163,7 @@ def render_employment_form(app_data: dict[str, Any]) -> None:
                 available_options,
                 format_func=format_rome_label,
                 key=f"ui_metiers_adult_{i}",
-                help="Recherchez par nom de métier (Référentiel ROME). La liste affiche les métiers les plus demandés en nombre de postes.",
+                help="Recherchez par nom de métier (Référentiel ROME). La liste affiche les métiers les plus demandés en nombre de postes (>100).",
                 wrap=True,
             )
         with col2:
@@ -172,10 +172,11 @@ def render_employment_form(app_data: dict[str, Any]) -> None:
                 codform_select.index,
                 format_func=lambda x: codform_select.loc[x, "label"],
                 key=f"ui_formations_adult_{i}",
+                help="Recherchez par nom de formation (Référentiel NSF). L'outil recherche sur tous les organismes de formations (publics comme privés).",
                 wrap=True,
             )
 
-    st.write("")
+    st.space("small")
     if "ui_recherche_siae" not in st.session_state:
         st.session_state["ui_recherche_siae"] = True
 
@@ -208,7 +209,8 @@ def render_housing_form() -> None:
                 continue
             if cb_key not in st.session_state:
                 st.session_state[cb_key] = opt in current_heb
-            st.checkbox(opt, key=cb_key)
+            label = getattr(cfg, "HEBERGEMENT_LABELS", {}).get(opt, opt)
+            st.checkbox(label, key=cb_key)
 
     with col2:
         st.markdown("#### Logement cible")
@@ -218,7 +220,8 @@ def render_housing_form() -> None:
             cb_key = long_term_housing_key(opt)
             if cb_key not in st.session_state:
                 st.session_state[cb_key] = opt in current_logement
-            st.checkbox(opt, key=cb_key)
+            label = getattr(cfg, "LOGEMENT_LABELS", {}).get(opt, opt)
+            st.checkbox(label, key=cb_key)
 
     heb_sel = form_state.selected_housing()
     logement_sel = form_state.selected_long_term_housing()
@@ -251,7 +254,8 @@ def render_health_form() -> None:
         cb_key = health_key(opt)
         if cb_key not in st.session_state:
             st.session_state[cb_key] = opt in current_sante
-        st.checkbox(opt, key=cb_key)
+        label = getattr(cfg, "SANTE_LABELS", {}).get(opt, opt)
+        st.checkbox(label, key=cb_key)
 
 
 def render_other_needs_form(app_data: dict[str, Any]) -> None:
@@ -262,7 +266,7 @@ def render_other_needs_form(app_data: dict[str, Any]) -> None:
     with col2:
         st.markdown("#### Associations Locales")
         st.text(
-            "Sélectionnez vos centres d'intérêt pour identifier les territoires avec un tissu associatif correspondant (Solidarité, Loisirs, Culture...)."
+            "Sélectionnez vos centres d'intérêt pour identifier les territoires avec un tissu associatif correspondant (Solidarité, Loisirs, Culture...). Les associations référencées sont issues du Répertoire National des Associations."
         )
 
         if "waldec_index" in app_data:
@@ -298,7 +302,7 @@ def render_other_needs_form(app_data: dict[str, Any]) -> None:
             st.warning("Référentiel WALDEC non chargé.")
 
     with col1:
-        st.markdown("#### Services d'Inclusion")
+        st.markdown("#### Services d'Inclusion (i.e. Soliguide)")
         st.text(
             "Sélectionnez les services d'accompagnement social requis pour la personne ou la famille."
         )
@@ -355,8 +359,9 @@ def render_other_notes_form() -> None:
         st.session_state.ui_notes_qualitatives = ""
 
     st.text(
-        "Précisez ici tout élément supplémentaire potentiellement utile pour la recherche (origine culturelle, contexte familial, passions, contraintes spécifiques, etc.)."
+        "Précisez ici tout élément supplémentaire potentiellement utile pour la recherche (origine culturelle, pratiques religieuses, contexte familial, passions, contraintes spécifiques, etc.)."
     )
+    st.warning("Les éléments ajoutés ci-dessous n'impacteront pas le calcul du score. Ils seront utilisés pour affiner les Analyses Avancées des territoires les mieux notés.")
 
     st.text_area(
         "Notes qualitatives",
@@ -457,7 +462,7 @@ def render_mobility_form(app_data: dict[str, Any]) -> None:
             target_captions.append("")
 
     st.markdown(
-        "##### Taille de la ville (Bassin de vie) recherchée",
+        "##### Taille de la ville recherchée (bassin de vie)",
         help="Le bassin de vie intègre la ville et ses banlieues",
     )
 

@@ -493,7 +493,11 @@ def _render_executive_summary_page(
     if getattr(config, "type_logement", None):
         type_logement_str = config.type_logement.label
     elif getattr(config, "logement", None):
-        type_logement_str = config.logement
+        log_val = config.logement
+        if isinstance(log_val, list):
+            type_logement_str = ", ".join([cfg.LOGEMENT_LABELS.get(x, x) for x in log_val])
+        else:
+            type_logement_str = cfg.LOGEMENT_LABELS.get(log_val, log_val)
 
     target_pop = getattr(config, "target_population", None)
     target_sigma = getattr(config, "target_population_sigma", None)
@@ -507,9 +511,9 @@ def _render_executive_summary_page(
 
     besoin_sante = getattr(config, "besoin_sante", None)
     besoin_sante_str = (
-        ", ".join(besoin_sante)
+        ", ".join([cfg.SANTE_LABELS.get(x, x) for x in besoin_sante])
         if isinstance(besoin_sante, list)
-        else (besoin_sante if besoin_sante else "Standard")
+        else (cfg.SANTE_LABELS.get(besoin_sante, besoin_sante) if besoin_sante else "Standard")
     )
 
     col1_items = [

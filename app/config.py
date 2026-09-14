@@ -211,15 +211,29 @@ HEBERGEMENT_OPTIONS = [
     "Chez l'habitant",
 ]
 LOGEMENT_OPTIONS = ["Location", "Logement Social"]
+LOGEMENT_LABELS: Dict[str, str] = {
+    "Location": "Location parc privé",
+    "Logement Social": "Logement Social",
+}
+HEBERGEMENT_LABELS: Dict[str, str] = {opt: opt for opt in HEBERGEMENT_OPTIONS}
 SANTE_OPTIONS = [
     "Hôpital",
     "Maternité",
     "Soutien Psychologique",
     "Dialyse",
-    "Maison de santé",
+    # "Maison de santé",
     "Addictologie",
     "Santé maternelle et infantile (PMI)",
 ]
+SANTE_LABELS: Dict[str, str] = {
+    "Hôpital": "Suivi à l'hôpital",
+    "Maternité": "Suivi dans une maternité",
+    "Soutien Psychologique": "Soutien Psychologique",
+    "Dialyse": "Dialyse",
+    # "Maison de santé": "Maison de santé",
+    "Addictologie": "Addictologie",
+    "Santé maternelle et infantile (PMI)": "Santé maternelle et infantile (PMI)",
+}
 POIDS_OPTIONS = [0.0, 0.25, 0.5, 0.75, 1.0]
 HOUSING_TYPE_OPTIONS = {
     "appt_all": "Appartement (Tous types)",
@@ -452,7 +466,7 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     "weight_profile": "Équilibré",
     "besoin_sante": [],
     "notes_qualitatives": "",
-    "freq_retour": "1 fois/mois",
+    "freq_retour": "1 fois/an",
     "target_city_size": DEFAULT_CITY_SIZE,
     "target_population_a": DEFAULT_TRAPEZOID["a"],
     "target_population_b": DEFAULT_TRAPEZOID["b"],
