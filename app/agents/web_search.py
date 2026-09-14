@@ -25,6 +25,7 @@ from agents.usage import capture_direct_google_usage
 from core.evidence import (
     EvidenceStatus,
     WebSearchBatchResult,
+    WebSearchCompactResult,
     WebSearchNeed,
     WebGroundingSupport,
     WebSource,
@@ -107,6 +108,20 @@ def pop_web_search_usage(deps: ODISDeps, scope: str) -> UsageStats:
 
     deps.web_search_call_counts.pop(scope, None)
     return deps.web_search_usage.pop(scope, UsageStats())
+
+
+def record_web_search_result(
+    deps: ODISDeps, scope: str, result: WebSearchBatchResult
+) -> None:
+    """Store the full grounding result out-of-band for application source ledger."""
+
+    deps.web_search_results[scope] = result
+
+
+def pop_web_search_result(deps: ODISDeps, scope: str) -> WebSearchBatchResult | None:
+    """Retrieve and clean one worker's direct grounding result."""
+
+    return deps.web_search_results.pop(scope, None)
 
 
 def _effective_needs(searches: list[WebSearchNeed]) -> list[dict[str, Any]]:
@@ -286,7 +301,7 @@ async def search_web_batch_tool(
             description="Besoins indépendants à traiter en un seul appel Web.",
         ),
     ],
-) -> WebSearchBatchResult:
+) -> WebSearchCompactResult:
     """Search several independent needs in one grounded Gemini call.
 
     The application enforces one invocation per expert run.  A second model
@@ -298,7 +313,7 @@ async def search_web_batch_tool(
     scope, reserved = reserve_web_search_call(deps)
     if not reserved:
         logger.warning("Web search batch called more than once for scope %s", scope)
-        return WebSearchBatchResult(status="unavailable")
+        return WebSearchCompactResult(status="unavailable")
 
     state = deps.state
     attrs = {
@@ -326,6 +341,7 @@ async def search_web_batch_tool(
                 timeout_seconds=timeout_seconds,
             )
         record_web_search_usage(deps, scope, usage)
+        record_web_search_result(deps, scope, result)
         logfire.info(
             "Web Search batch finished",
             **attrs,
@@ -338,7 +354,7 @@ async def search_web_batch_tool(
             cost_eur=usage.cost_eur,
             grounding_confirmed=bool(result.sources or result.grounding_supports),
         )
-        return result
+        return result.to_compact()
     except Exception as exc:
         logger.exception("Direct Gemini web search failed")
         logfire.info(
@@ -346,4 +362,4 @@ async def search_web_batch_tool(
             **attrs,
             error_type=type(exc).__name__,
         )
-        return WebSearchBatchResult(status="unavailable")
+        return WebSearchCompactResult(status="unavailable")

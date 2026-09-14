@@ -5,8 +5,11 @@ from dataclasses import dataclass, field
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 from google import genai
 from core.models import SearchCriterias, SearchResultsData, CommuneResult, CriteriaItem
-from core.evidence import DomainArtifact as EvidenceDomainArtifact
-from services.ai_pricing import estimate_google_grounding_cost_eur, estimate_places_cost_eur
+from core.evidence import DomainArtifact as EvidenceDomainArtifact, WebSearchBatchResult
+from services.ai_pricing import (
+    estimate_google_grounding_cost_eur,
+    estimate_places_cost_eur,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -71,9 +74,7 @@ class UsageStats(BaseModel):
         )
         self.places_cost_eur = estimate_places_cost_eur(self.places_requests)
         self.cost_eur = (
-            self.token_cost_eur
-            + self.grounding_cost_eur
-            + self.places_cost_eur
+            self.token_cost_eur + self.grounding_cost_eur + self.places_cost_eur
             if self.eur_priced
             else 0.0
         )
@@ -168,6 +169,7 @@ class ODISDeps:
     # never mutate the aggregate UsageStats concurrently.
     web_search_usage: Dict[str, UsageStats] = field(default_factory=dict)
     web_search_call_counts: Dict[str, int] = field(default_factory=dict)
+    web_search_results: Dict[str, WebSearchBatchResult] = field(default_factory=dict)
 
     # Allow arbitrary types for genai.Client
     class Meta:
@@ -262,8 +264,12 @@ class ODISContextBuilder:
             "Population": commune.population,
             "Bassin de vie": commune.name_bdv or commune.codgeo_bdv or "N/A",
             "Score global": int((commune.global_score or 0.0) * 100),
-            "Adéquation besoins": int((commune.score_besoins or commune.global_score or 0.0) * 100),
-            "Adéquation démographique": int((commune.coeff_population_gauss or 1.0) * 100),
+            "Adéquation besoins": int(
+                (commune.score_besoins or commune.global_score or 0.0) * 100
+            ),
+            "Adéquation démographique": int(
+                (commune.coeff_population_gauss or 1.0) * 100
+            ),
         }
 
     @classmethod

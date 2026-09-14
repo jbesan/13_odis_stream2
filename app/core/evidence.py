@@ -190,8 +190,29 @@ class WebSearchNeed(FrozenModel):
     )
 
 
+class WebSearchCompactResult(FrozenModel):
+    """Compact function-tool return for the LLM conversation history.
+
+    Contains only the factual text and consulted domain names, omitting
+    raw redirect URLs, chunk indices, and character offsets to keep the LLM
+    context clean and token-frugal.
+    """
+
+    status: EvidenceStatus
+    summary: str | None = Field(
+        default=None,
+        max_length=12000,
+        description="Texte libre issu de la recherche Google Search.",
+    )
+    consulted_domains: list[str] = Field(
+        default_factory=list,
+        max_length=32,
+        description="Noms de domaine des sources web consultées.",
+    )
+
+
 class WebSearchBatchResult(FrozenModel):
-    """Compact function-tool result; URLs/supports come from provider metadata."""
+    """Full function-tool result; URLs/supports come from provider metadata."""
 
     status: EvidenceStatus
     summary: str | None = Field(
@@ -212,6 +233,19 @@ class WebSearchBatchResult(FrozenModel):
             "retournés par Google."
         ),
     )
+
+    def to_compact(self) -> WebSearchCompactResult:
+        """Derive a lightweight result tailored for the LLM context window."""
+        domains: list[str] = []
+        for s in self.sources:
+            domain = s.domain or (s.title if s.title and "." in s.title else None)
+            if domain and domain not in domains:
+                domains.append(domain)
+        return WebSearchCompactResult(
+            status=self.status,
+            summary=self.summary,
+            consulted_domains=domains[:32],
+        )
 
 
 class WebEvidenceBundle(FrozenModel):

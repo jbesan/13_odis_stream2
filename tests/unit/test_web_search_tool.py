@@ -10,6 +10,7 @@ from agents.web_search import (
     WEB_SEARCH_MODEL,
     WEB_SEARCH_TOOL_ID,
     execute_web_search_batch,
+    pop_web_search_result,
     pop_web_search_usage,
     reserve_web_search_call,
     search_web_batch_tool,
@@ -17,6 +18,7 @@ from agents.web_search import (
 from core.evidence import (
     WebGroundingSupport,
     WebSearchBatchResult,
+    WebSearchCompactResult,
     WebSearchNeed,
     WebSource,
 )
@@ -405,3 +407,47 @@ async def test_function_tool_enforces_one_batch_call_per_scope():
         ctx, [WebSearchNeed(key_terms=["aide locale"])]
     )
     assert result.status == "unavailable"
+
+
+@pytest.mark.asyncio
+async def test_web_search_tool_returns_compact_result_and_preserves_out_of_band_metadata():
+    client = FakeClient(grounded_response())
+    state = GraphState(run_id="test-run")
+    deps = ODISDeps(state=state, client=client)
+    ctx = SimpleNamespace(deps=deps)
+
+    # Call the tool with a search request
+    compact = await search_web_batch_tool(
+        ctx, [WebSearchNeed(key_terms=["cours FLE"], location="Albi")]
+    )
+
+    # 1. Verify that the LLM receives a compact result without long redirect URLs or grounding offsets
+    assert isinstance(compact, WebSearchCompactResult)
+    assert compact.status == "resolved"
+    assert compact.summary == "Une structure locale propose des cours de français."
+    assert compact.consulted_domains == ["example.org"]
+    dumped = compact.model_dump()
+    assert "sources" not in dumped
+    assert "grounding_supports" not in dumped
+    assert "queries" not in dumped
+
+    # 2. Verify that the full result is stored out-of-band in deps
+    scope = f"standalone:{id(deps)}"
+    full_result = pop_web_search_result(deps, scope)
+    assert isinstance(full_result, WebSearchBatchResult)
+    assert full_result.status == "resolved"
+    assert len(full_result.sources) == 1
+    assert full_result.sources[0].url == "https://example.org/fle"
+    assert len(full_result.grounding_supports) == 1
+    assert full_result.grounding_supports[0].grounding_chunk_indices == [0]
+
+    # 3. Verify that the source registry constructs the full source ledger from the out-of-band result
+    references = source_references_for_result(
+        "social_integration_expert", None, web_result=full_result
+    )
+    web_refs = [r for r in references if r["source_key"] == "web"]
+    assert len(web_refs) == 1
+    assert web_refs[0]["reference_id"] == "Ref-1"
+    assert web_refs[0]["source_url"] == "https://example.org/fle"
+    assert web_refs[0]["grounding_domain"] == "example.org"
+    assert web_refs[0]["grounding_supports"][0]["grounding_chunk_indices"] == [0]
