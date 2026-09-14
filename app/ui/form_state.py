@@ -259,7 +259,9 @@ class FormState:
                     overwrite=overwrite,
                 )
 
-        target_label = values.get("target_city_size") or values.get("ui_target_city_size_label")
+        target_label = values.get("target_city_size") or values.get(
+            "ui_target_city_size_label"
+        )
         if target_label and target_label in cfg.CITY_SIZE_MAPPING:
             self._put("ui_target_city_size_label", target_label, overwrite=overwrite)
         elif "target_population_a" in values:
@@ -268,7 +270,12 @@ class FormState:
             c = values["target_population_c"]
             d = values["target_population_d"]
             for label, mapping in cfg.CITY_SIZE_MAPPING.items():
-                if mapping["a"] == a and mapping["b"] == b and mapping["c"] == c and mapping["d"] == d:
+                if (
+                    mapping["a"] == a
+                    and mapping["b"] == b
+                    and mapping["c"] == c
+                    and mapping["d"] == d
+                ):
                     self._put("ui_target_city_size_label", label, overwrite=overwrite)
                     break
 
@@ -285,7 +292,9 @@ class FormState:
             self._put(f"ui_{key}", value, overwrite=overwrite)
         if explicit_weights and profile in cfg.WEIGHT_PROFILES:
             expected = cfg.WEIGHT_PROFILES[profile]
-            if any(expected.get(key) != value for key, value in explicit_weights.items()):
+            if any(
+                expected.get(key) != value for key, value in explicit_weights.items()
+            ):
                 self._put(
                     "ui_weight_profile", "Profil personnalisé", overwrite=overwrite
                 )
@@ -310,14 +319,23 @@ class FormState:
         )
         if not has_any_key:
             default_val = cfg.DEMO_DATA_DEFAULT.get("hebergement_cible", [])
-            return list(
+            selected = list(
                 default_val if isinstance(default_val, list) else [default_val]
             )
-        return [
-            option
-            for option in cfg.HEBERGEMENT_OPTIONS
-            if self.state.get(housing_key(option), False)
-        ]
+        else:
+            selected = [
+                option
+                for option in cfg.HEBERGEMENT_OPTIONS
+                if self.state.get(housing_key(option), False)
+            ]
+        org = self.state.get("org")
+        if (
+            org is not None
+            and getattr(org, "id", None) == "jaccueille"
+            and "Chez l'habitant" not in selected
+        ):
+            selected.append("Chez l'habitant")
+        return selected
 
     def selected_long_term_housing(self) -> list[str]:
         has_any_key = any(
@@ -326,9 +344,7 @@ class FormState:
         )
         if not has_any_key:
             default_val = cfg.DEMO_DATA_DEFAULT.get("logement", ["Location"])
-            return list(
-                default_val if isinstance(default_val, list) else [default_val]
-            )
+            return list(default_val if isinstance(default_val, list) else [default_val])
         return [
             option
             for option in cfg.LOGEMENT_OPTIONS
@@ -343,9 +359,7 @@ class FormState:
             default_val = cfg.DEMO_DATA_DEFAULT.get(
                 "besoin_sante", cfg.DEMO_DATA_DEFAULT.get("sante", [])
             )
-            return list(
-                default_val if isinstance(default_val, list) else [default_val]
-            )
+            return list(default_val if isinstance(default_val, list) else [default_val])
         return [
             option
             for option in cfg.SANTE_OPTIONS
@@ -364,9 +378,7 @@ class FormState:
         # 1. Point de départ (commune actuelle)
         commune = self.state.get("ui_commune")
         if not commune:
-            errors.append(
-                "Point de départ : veuillez sélectionner une ville actuelle."
-            )
+            errors.append("Point de départ : veuillez sélectionner une ville actuelle.")
 
         # 2. Zone de recherche
         loc_area = self.state.get("ui_loc_search_area", SearchAreaLevel.DEPARTEMENT)
@@ -447,21 +459,15 @@ class FormState:
         ]
         formations = [
             [
-                CriteriaItem(
-                    code=code, label=_label_from_index(formation_index, code)
-                )
-                for code in _codes(
-                    self.state.get(f"ui_formations_adult_{index}", [])
-                )
+                CriteriaItem(code=code, label=_label_from_index(formation_index, code))
+                for code in _codes(self.state.get(f"ui_formations_adult_{index}", []))
             ]
             for index in range(adults_count)
         ]
 
         inclusion_index = app_data.get("inclusion_services_index", pd.DataFrame())
         inclusion = [
-            CriteriaItem(
-                code=code, label=_label_from_index(inclusion_index, code)
-            )
+            CriteriaItem(code=code, label=_label_from_index(inclusion_index, code))
             for code in sorted(
                 set(_codes(self.state.get("ui_inc_services_selection_raw", [])))
             )
@@ -492,9 +498,7 @@ class FormState:
         org_defaults = getattr(org, "defaults", {}) if org else {}
         boosts = {
             criterion_id: float(
-                self.state.get(
-                    f"ui_org_boost_slider_{criterion_id}", default_value
-                )
+                self.state.get(f"ui_org_boost_slider_{criterion_id}", default_value)
             )
             for criterion_id, default_value in org_defaults.get(
                 "org_boosts", {}
@@ -525,9 +529,7 @@ class FormState:
             hebergement_cible=self.selected_housing(),
             logement=self.selected_long_term_housing(),
             type_logement=housing_type,
-            freq_retour=self.state.get(
-                "ui_freq_retour", "Pas d'attache particulière"
-            ),
+            freq_retour=self.state.get("ui_freq_retour", "Pas d'attache particulière"),
             codes_metiers=jobs,
             codes_formations=formations,
             recherche_siae=bool(self.state.get("ui_recherche_siae", True)),
@@ -537,9 +539,7 @@ class FormState:
             inc_asso_add_selection=associations,
             notes_qualitatives=[notes] if notes else [],
             org_context=org.id if org else None,
-            org_strategic_locations=self.state.get(
-                "ui_org_strategic_locations", []
-            ),
+            org_strategic_locations=self.state.get("ui_org_strategic_locations", []),
             org_strategic_locations_type=self.state.get(
                 "ui_org_strategic_locations_type", "departement"
             ),

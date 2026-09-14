@@ -332,6 +332,73 @@ def test_render_ai_trigger_button_in_live_mode(monkeypatch):
     assert "disponible" in toasts[0]
 
 
+def test_render_ai_trigger_button_retry_action(monkeypatch):
+    """Verify clicking retry on failed AI analysis re-launches analysis and reruns."""
+    launched = []
+    toasts = []
+    reruns = []
+
+    monkeypatch.setattr(st, "button", lambda label, **kwargs: True)
+    monkeypatch.setattr(st, "toast", lambda msg, **kwargs: toasts.append(msg))
+    monkeypatch.setattr(st, "rerun", lambda: reruns.append(True))
+    monkeypatch.setattr(
+        "ui.results.launch_background_city_analysis",
+        lambda **kwargs: launched.append(kwargs),
+    )
+    monkeypatch.setattr(
+        "ui.results.odis_get_bg_result",
+        lambda k: {"status": "error", "error": "timeout"},
+    )
+
+    search_results = _create_mock_search_results("33063")
+    commune = search_results.results[0]
+    monkeypatch.setattr("ui.results.st.session_state", {
+        "search_results": search_results,
+        "config": MagicMock(),
+        "immutable_shared_snapshot": False,
+        "ia_analysis_launch_toasted": {"33063"},
+        "ia_analysis_toasted": {"33063"},
+    })
+
+    res = _call_fn(render_ai_trigger_button, commune=commune, h="hash_123")
+    assert res is False
+    assert len(launched) == 1
+    assert launched[0]["retry"] is True
+    assert launched[0]["trigger"] == "city_card_retry"
+    assert len(toasts) == 1
+    assert "lancée..." in toasts[0]
+    assert len(reruns) == 1
+
+
+def test_render_ai_trigger_button_opens_dialog_directly(monkeypatch):
+    """Verify clicking done button directly opens dialog and sets active city index."""
+    dialog_calls = []
+    telemetry_calls = []
+
+    monkeypatch.setattr(st, "button", lambda label, **kwargs: True)
+    monkeypatch.setattr("ui.results.show_ia_analysis_dialog", lambda codgeo: dialog_calls.append(codgeo))
+    monkeypatch.setattr("ui.results.ui_telemetry.track_ui_event", lambda event, data: telemetry_calls.append((event, data)))
+    monkeypatch.setattr(
+        "ui.results.odis_get_bg_result",
+        lambda k: {"status": "done", "result": {}},
+    )
+
+    search_results = _create_mock_search_results("33063")
+    commune = search_results.results[0]
+    session_state = {
+        "search_results": search_results,
+        "immutable_shared_snapshot": False,
+    }
+    monkeypatch.setattr("ui.results.st.session_state", session_state)
+
+    res = _call_fn(render_ai_trigger_button, commune=commune, h="hash_123")
+    assert res is True
+    assert dialog_calls == ["33063"]
+    assert session_state.get("active_ia_city_index") == "33063"
+    assert len(telemetry_calls) == 1
+    assert telemetry_calls[0][0] == "run_ia_analysis"
+
+
 from ui.ai_analysis_dialog import polling_synthesis_fragment
 
 

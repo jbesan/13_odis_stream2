@@ -31,28 +31,38 @@ def test_render_commune_pressentie_form_initialization():
         "reg_details": {},
         "reg_dep_mapping": {"11": ["75"]},
         "odis": pd.DataFrame(
-            {"population": [10000, 50000], "libgeo": ["Paris", "Lyon"], "dep_code": ["75", "69"]},
+            {
+                "population": [10000, 50000],
+                "libgeo": ["Paris", "Lyon"],
+                "dep_code": ["75", "69"],
+            },
             index=["75056", "69123"],
-        )
+        ),
     }
 
-    session_state = SessionStateDict({
-        "ui_departement": "75",
-        "ui_has_commune_pressentie": True,
-        "ui_commune_pressentie": "69123",
-        "ui_loc_search_area": "departement",
-        "ui_mobility_region": ["11"],
-        "ui_mobility_dept": ["75"],
-        "ui_target_city_size_label": "Petite Ville (10k-50k)",
-    })
+    session_state = SessionStateDict(
+        {
+            "ui_departement": "75",
+            "ui_has_commune_pressentie": True,
+            "ui_commune_pressentie": "69123",
+            "ui_loc_search_area": "departement",
+            "ui_mobility_region": ["11"],
+            "ui_mobility_dept": ["75"],
+            "ui_target_city_size_label": "Petite Ville (10k-50k)",
+        }
+    )
 
     def mock_checkbox(label, key=None, **kwargs):
         return session_state.get(key, False)
 
     def mock_selectbox(label, options=None, format_func=None, key=None, **kwargs):
         if key == "ui_commune_pressentie":
-            assert "index" not in kwargs, "selectbox for ui_commune_pressentie should not use index parameter"
-            assert format_func is not None, "format_func must be provided for codgeo labels"
+            assert "index" not in kwargs, (
+                "selectbox for ui_commune_pressentie should not use index parameter"
+            )
+            assert format_func is not None, (
+                "format_func must be provided for codgeo labels"
+            )
             assert format_func("69123") == "Lyon (69)"
             assert format_func("75056") == "Paris (75)"
         val = session_state.get(key)
@@ -60,16 +70,17 @@ def test_render_commune_pressentie_form_initialization():
             val = options[0]
         return val
 
-    with patch("app.ui.forms.st.session_state", session_state), \
-         patch("app.ui.forms.st.checkbox", side_effect=mock_checkbox), \
-         patch("app.ui.forms.st.selectbox", side_effect=mock_selectbox), \
-         patch("app.ui.forms.st.multiselect"), \
-         patch("app.ui.forms.st.radio"), \
-         patch("app.ui.forms.st.markdown"), \
-         patch("app.ui.forms.st.divider"), \
-         patch("app.ui.forms.st.columns", return_value=[MagicMock(), MagicMock()]), \
-         patch("app.ui.forms.st.container", return_value=MagicMock()):
-        
+    with (
+        patch("app.ui.forms.st.session_state", session_state),
+        patch("app.ui.forms.st.checkbox", side_effect=mock_checkbox),
+        patch("app.ui.forms.st.selectbox", side_effect=mock_selectbox),
+        patch("app.ui.forms.st.multiselect"),
+        patch("app.ui.forms.st.radio"),
+        patch("app.ui.forms.st.markdown"),
+        patch("app.ui.forms.st.divider"),
+        patch("app.ui.forms.st.columns", return_value=[MagicMock(), MagicMock()]),
+        patch("app.ui.forms.st.container", return_value=MagicMock()),
+    ):
         render_mobility_form(mock_app_data)
 
         assert "ui_commune_pressentie" in session_state
@@ -85,14 +96,16 @@ def test_render_mobility_form_handles_missing_regions():
     }
     session_state = SessionStateDict({"ui_departement": "75"})
 
-    with patch("app.ui.forms.st.session_state", session_state), \
-         patch("app.ui.forms.st.columns", return_value=[MagicMock(), MagicMock()]), \
-         patch("app.ui.forms.st.multiselect", return_value=[]), \
-         patch("app.ui.forms.st.checkbox", return_value=False), \
-         patch("app.ui.forms.st.markdown"), \
-         patch("app.ui.forms.st.divider"), \
-         patch("app.ui.forms.st.container", return_value=MagicMock()), \
-         patch("app.ui.forms.st.radio"):
+    with (
+        patch("app.ui.forms.st.session_state", session_state),
+        patch("app.ui.forms.st.columns", return_value=[MagicMock(), MagicMock()]),
+        patch("app.ui.forms.st.multiselect", return_value=[]),
+        patch("app.ui.forms.st.checkbox", return_value=False),
+        patch("app.ui.forms.st.markdown"),
+        patch("app.ui.forms.st.divider"),
+        patch("app.ui.forms.st.container", return_value=MagicMock()),
+        patch("app.ui.forms.st.radio"),
+    ):
         render_mobility_form(mock_app_data)
 
     assert session_state["ui_mobility_region"] == []
@@ -106,18 +119,21 @@ def test_city_size_radio_hash_invalidation():
     mock_app_data = {
         "coddep_set": ["75"],
         "dept_details": {"75": {"reg_code": "11"}},
-        "depcom_df": pd.DataFrame({"dep_code": ["75"], "libgeo": ["Paris"]}, index=["75056"]),
+        "depcom_df": pd.DataFrame(
+            {"dep_code": ["75"], "libgeo": ["Paris"]}, index=["75056"]
+        ),
         "odis": pd.DataFrame(),
     }
 
-    session_state = SessionStateDict({
-        "ui_departement": "75",
-        "ui_commune": "Paris",
-        "ui_target_city_size_label": "🏘️ Petite Ville",
-    })
+    session_state = SessionStateDict(
+        {
+            "ui_departement": "75",
+            "ui_commune": "Paris",
+            "ui_target_city_size_label": "🏘️ Petite Ville",
+        }
+    )
 
     with patch("app.ui.forms.st.session_state", session_state):
-        
         criterias1 = create_search_criterias_from_inputs(mock_app_data)
         size1 = criterias1.target_city_size
         hash1 = criterias1.compute_hash()
@@ -129,8 +145,12 @@ def test_city_size_radio_hash_invalidation():
         size2 = criterias2.target_city_size
         hash2 = criterias2.compute_hash()
 
-        assert size1 != size2, f"Expected target city sizes to differ but got {size1} == {size2}"
-        assert hash1 != hash2, "Expected search criteria hash to change when city size radio changes"
+        assert size1 != size2, (
+            f"Expected target city sizes to differ but got {size1} == {size2}"
+        )
+        assert hash1 != hash2, (
+            "Expected search criteria hash to change when city size radio changes"
+        )
 
 
 @pytest.mark.unit
@@ -146,15 +166,17 @@ def test_render_mobility_form_city_size_captions_and_title_caption():
     mock_caption = MagicMock()
     mock_markdown = MagicMock()
 
-    with patch("app.ui.forms.st.session_state", session_state), \
-         patch("app.ui.forms.st.columns", return_value=[MagicMock(), MagicMock()]), \
-         patch("app.ui.forms.st.multiselect", return_value=[]), \
-         patch("app.ui.forms.st.checkbox", return_value=False), \
-         patch("app.ui.forms.st.markdown", mock_markdown), \
-         patch("app.ui.forms.st.divider"), \
-         patch("app.ui.forms.st.container", return_value=MagicMock()), \
-         patch("app.ui.forms.st.caption", mock_caption), \
-         patch("app.ui.forms.st.radio", mock_radio):
+    with (
+        patch("app.ui.forms.st.session_state", session_state),
+        patch("app.ui.forms.st.columns", return_value=[MagicMock(), MagicMock()]),
+        patch("app.ui.forms.st.multiselect", return_value=[]),
+        patch("app.ui.forms.st.checkbox", return_value=False),
+        patch("app.ui.forms.st.markdown", mock_markdown),
+        patch("app.ui.forms.st.divider"),
+        patch("app.ui.forms.st.container", return_value=MagicMock()),
+        patch("app.ui.forms.st.caption", mock_caption),
+        patch("app.ui.forms.st.radio", mock_radio),
+    ):
         render_mobility_form(mock_app_data)
 
     mock_markdown.assert_any_call(
@@ -170,3 +192,110 @@ def test_render_mobility_form_city_size_captions_and_title_caption():
     assert captions[1] == " 5 000 < Pop. < 15 000"
     assert captions[2] == " 20 000 < Pop. < 50 000"
     assert captions[3] == " 70 000 < Pop. < 300 000"
+
+
+@pytest.mark.unit
+def test_render_mobility_form_shows_zones_user_description_warning():
+    """Verify that render_mobility_form displays st.warning when org has zones_user_description and filter is active."""
+    from config import Org
+
+    mock_app_data = {
+        "dept_details": {"75": {"reg_code": "11", "label": "Paris"}},
+        "regions_names": {},
+    }
+    org = Org(
+        id="jaccueille",
+        name="J'Accueille",
+        zones_user_description="Seules les villes disposant d'une coordination départementale seront retenues.",
+    )
+    session_state = SessionStateDict(
+        {"org": org, "ui_org_strategic_locations_filter": True}
+    )
+    mock_warning = MagicMock()
+
+    with (
+        patch("app.ui.forms.st.session_state", session_state),
+        patch("app.ui.forms.st.segmented_control", return_value=None),
+        patch("app.ui.forms.st.multiselect", return_value=[]),
+        patch("app.ui.forms.st.checkbox", return_value=False),
+        patch("app.ui.forms.st.markdown"),
+        patch("app.ui.forms.st.divider"),
+        patch("app.ui.forms.st.container", return_value=MagicMock()),
+        patch("app.ui.forms.st.radio"),
+        patch("app.ui.forms.st.warning", mock_warning),
+    ):
+        render_mobility_form(mock_app_data)
+
+    mock_warning.assert_called_once_with(
+        "Seules les villes disposant d'une coordination départementale seront retenues."
+    )
+
+
+@pytest.mark.unit
+def test_render_mobility_form_hides_warning_when_filter_disabled():
+    """Verify that render_mobility_form hides st.warning when ui_org_strategic_locations_filter is False."""
+    from config import Org
+
+    mock_app_data = {
+        "dept_details": {"75": {"reg_code": "11", "label": "Paris"}},
+        "regions_names": {},
+    }
+    org = Org(
+        id="jaccueille",
+        name="J'Accueille",
+        zones_user_description="Seules les villes disposant d'une coordination départementale seront retenues.",
+    )
+    session_state = SessionStateDict(
+        {"org": org, "ui_org_strategic_locations_filter": False}
+    )
+    mock_warning = MagicMock()
+
+    with (
+        patch("app.ui.forms.st.session_state", session_state),
+        patch("app.ui.forms.st.segmented_control", return_value=None),
+        patch("app.ui.forms.st.multiselect", return_value=[]),
+        patch("app.ui.forms.st.checkbox", return_value=False),
+        patch("app.ui.forms.st.markdown"),
+        patch("app.ui.forms.st.divider"),
+        patch("app.ui.forms.st.container", return_value=MagicMock()),
+        patch("app.ui.forms.st.radio"),
+        patch("app.ui.forms.st.warning", mock_warning),
+    ):
+        render_mobility_form(mock_app_data)
+
+    mock_warning.assert_not_called()
+
+
+@pytest.mark.unit
+def test_render_mobility_form_no_warning_when_description_empty():
+    """Verify that render_mobility_form does not show st.warning if org has no zones_user_description."""
+    from config import Org
+
+    mock_app_data = {
+        "dept_details": {"75": {"reg_code": "11", "label": "Paris"}},
+        "regions_names": {},
+    }
+    org = Org(
+        id="autre_org",
+        name="Autre",
+        zones_user_description=None,
+    )
+    session_state = SessionStateDict(
+        {"org": org, "ui_org_strategic_locations_filter": True}
+    )
+    mock_warning = MagicMock()
+
+    with (
+        patch("app.ui.forms.st.session_state", session_state),
+        patch("app.ui.forms.st.segmented_control", return_value=None),
+        patch("app.ui.forms.st.multiselect", return_value=[]),
+        patch("app.ui.forms.st.checkbox", return_value=False),
+        patch("app.ui.forms.st.markdown"),
+        patch("app.ui.forms.st.divider"),
+        patch("app.ui.forms.st.container", return_value=MagicMock()),
+        patch("app.ui.forms.st.radio"),
+        patch("app.ui.forms.st.warning", mock_warning),
+    ):
+        render_mobility_form(mock_app_data)
+
+    mock_warning.assert_not_called()

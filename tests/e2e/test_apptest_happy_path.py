@@ -32,7 +32,7 @@ def test_happy_path_end_to_end(
         columns=["bassin_de_vie", "contact_count", "lead_count"]
     )
 
-    def fake_launch(engine, config, search_results, h):
+    def fake_launch(engine, config, search_results, h, **kwargs):
         from agents.utils import get_odis_bg_store
 
         store = get_odis_bg_store()
@@ -230,15 +230,21 @@ def test_happy_path_end_to_end(
     # =========================================================================
     assert "processed_gdf" in at.session_state, "Results dataframe was not generated"
     results_gdf = at.session_state["processed_gdf"]
-    assert results_gdf is not None and not results_gdf.empty, "Results dataframe is empty"
+    assert results_gdf is not None and not results_gdf.empty, (
+        "Results dataframe is empty"
+    )
     assert "weighted_score" in results_gdf.columns
 
     # All active criteria must exist as columns in processed_gdf and be bounded [0, 1]
     for crit in active_criteria:
-        assert crit in results_gdf.columns, f"Active criterion column '{crit}' missing from processed_gdf"
+        assert crit in results_gdf.columns, (
+            f"Active criterion column '{crit}' missing from processed_gdf"
+        )
         col = results_gdf[crit].dropna()
         if not col.empty:
-            assert (col >= 0.0).all() and (col <= 1.0).all(), f"Criterion '{crit}' has out-of-bounds scores"
+            assert (col >= 0.0).all() and (col <= 1.0).all(), (
+                f"Criterion '{crit}' has out-of-bounds scores"
+            )
 
     # Data Inclusion FLE service must have positive calculated scores on real territorial data
     assert (results_gdf["inc_services_incl_scaled"] > 0.0).any(), (
@@ -253,7 +259,9 @@ def test_happy_path_end_to_end(
     # =========================================================================
     # EXHAUSTIVE VERIFICATION 4: SearchResultsData Breakdown & Libourne Check
     # =========================================================================
-    assert "search_results" in at.session_state, "SearchResultsData not found in session state"
+    assert "search_results" in at.session_state, (
+        "SearchResultsData not found in session state"
+    )
     sr = at.session_state["search_results"]
 
     # Current location check

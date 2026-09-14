@@ -3,7 +3,7 @@
 import pandas as pd
 import pytest
 
-from core.models import CriteriaItem, SearchCriterias
+from core.models import CriteriaItem, SearchCriterias, SearchResultsData
 from core import scoring
 from ui.form_state import FormState
 
@@ -150,6 +150,23 @@ def test_evaluate_employment_features_siae_disabled(base_sample_data, live_score
     assert res_disabled.employment.inclusive_jobs_matching_total == 0
     assert res_disabled.employment.inclusive_jobs_summary == {}
     assert res_disabled.employment.inclusive_jobs_matching_summary == {}
+
+    # Ensure SearchResultsData and Pydantic validation succeed with 'disabled' availability
+    results_data = SearchResultsData(
+        search_hash="test_siae_disabled",
+        results=[res_disabled],
+        current_geo=res_disabled,
+    )
+    assert (
+        results_data.results[0].employment.source_availability.get("emplois_inclusion")
+        == "disabled"
+    )
+    dumped = results_data.model_dump()
+    revalidated = SearchResultsData.model_validate(dumped)
+    assert (
+        revalidated.results[0].employment.source_availability.get("emplois_inclusion")
+        == "disabled"
+    )
 
     # With recherche_siae=True
     config_enabled = SearchCriterias(

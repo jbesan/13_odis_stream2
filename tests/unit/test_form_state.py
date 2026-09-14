@@ -11,18 +11,12 @@ def _app_data():
         "depcom_df": pd.DataFrame(
             {"dep_code": ["33"], "libgeo": ["Bordeaux"]}, index=["33063"]
         ),
-        "rome_index": pd.DataFrame(
-            {"label": ["Développeur"]}, index=["M1805"]
-        ),
-        "codformations_index": pd.DataFrame(
-            {"label": ["Informatique"]}, index=["326"]
-        ),
+        "rome_index": pd.DataFrame({"label": ["Développeur"]}, index=["M1805"]),
+        "codformations_index": pd.DataFrame({"label": ["Informatique"]}, index=["326"]),
         "inclusion_services_index": pd.DataFrame(
             {"label": ["Français"]}, index=["fle"]
         ),
-        "waldec_index": pd.DataFrame(
-            {"label": ["Culture"]}, index=["006030"]
-        ),
+        "waldec_index": pd.DataFrame({"label": ["Culture"]}, index=["006030"]),
         "commune_names": {},
     }
 
@@ -48,12 +42,8 @@ def test_hydrate_and_collect_use_one_canonical_value_per_composite():
             loc_search_area="departement",
             loc_search_code=["33"],
             nb_adultes=1,
-            codes_metiers=[
-                [CriteriaItem(code="M1805", label="Développeur")]
-            ],
-            codes_formations=[
-                [CriteriaItem(code="326", label="Informatique")]
-            ],
+            codes_metiers=[[CriteriaItem(code="M1805", label="Développeur")]],
+            codes_formations=[[CriteriaItem(code="326", label="Informatique")]],
             hebergement_cible=["Chez l'habitant"],
             besoin_sante=["Maternité"],
             inc_services_selection=[CriteriaItem(code="fle", label="Français")],
@@ -80,9 +70,7 @@ def test_hydrate_and_collect_use_one_canonical_value_per_composite():
 def test_named_weight_profile_is_derived_without_expert_flag():
     state = {}
     form = FormState(state)
-    form.hydrate(
-        {"weight_profile": "Famille"}, overwrite=True, exclude_unset=False
-    )
+    form.hydrate({"weight_profile": "Famille"}, overwrite=True, exclude_unset=False)
 
     assert state["ui_weight_profile"] == "Famille"
     assert state["ui_poids_education"] == 1.0
@@ -165,7 +153,9 @@ def test_long_term_housing_checkboxes_and_cada_cph_hidden():
     from ui.form_state import long_term_housing_key
 
     # 1. Verify CADA and CPH are not in active HEBERGEMENT_OPTIONS
-    assert "Centre d'accueil de demandeurs d'asile (CADA)" not in cfg.HEBERGEMENT_OPTIONS
+    assert (
+        "Centre d'accueil de demandeurs d'asile (CADA)" not in cfg.HEBERGEMENT_OPTIONS
+    )
     assert "Centre provisoire d'hébergement (CPH)" not in cfg.HEBERGEMENT_OPTIONS
 
     # 2. Test hydration and collection of long-term housing checkboxes
@@ -246,4 +236,55 @@ def test_unvisited_form_steps_fallback_to_defaults():
     assert criteria.nb_enfants == 0
 
 
+def test_jaccueille_selected_housing_always_includes_chez_l_habitant():
+    org = Org(id="jaccueille", name="J'Accueille")
+    state = {"org": org}
+    form = FormState(state)
+    assert "Chez l'habitant" in form.selected_housing()
 
+
+def test_render_housing_form_masks_chez_l_habitant_for_jaccueille():
+    from unittest.mock import MagicMock, patch
+    from app.ui.forms import render_housing_form
+
+    org = Org(id="jaccueille", name="J'Accueille")
+    state = {"org": org}
+    rendered_checkboxes = []
+
+    def mock_checkbox(label, **kwargs):
+        rendered_checkboxes.append(label)
+        return False
+
+    with (
+        patch("app.ui.forms.st.session_state", state),
+        patch("app.ui.forms.st.columns", return_value=[MagicMock(), MagicMock()]),
+        patch("app.ui.forms.st.markdown"),
+        patch("app.ui.forms.st.checkbox", side_effect=mock_checkbox),
+    ):
+        render_housing_form()
+
+    assert "Chez l'habitant" not in rendered_checkboxes
+    assert state[housing_key("Chez l'habitant")] is True
+
+
+def test_render_housing_form_shows_chez_l_habitant_for_other_orgs():
+    from unittest.mock import MagicMock, patch
+    from app.ui.forms import render_housing_form
+
+    org = Org(id="autre_org", name="Autre")
+    state = {"org": org}
+    rendered_checkboxes = []
+
+    def mock_checkbox(label, **kwargs):
+        rendered_checkboxes.append(label)
+        return False
+
+    with (
+        patch("app.ui.forms.st.session_state", state),
+        patch("app.ui.forms.st.columns", return_value=[MagicMock(), MagicMock()]),
+        patch("app.ui.forms.st.markdown"),
+        patch("app.ui.forms.st.checkbox", side_effect=mock_checkbox),
+    ):
+        render_housing_form()
+
+    assert "Chez l'habitant" in rendered_checkboxes

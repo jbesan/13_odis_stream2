@@ -94,11 +94,13 @@ def test_search_modification_replaces_prior_results(
         columns=["bassin_de_vie", "contact_count", "lead_count"]
     )
 
-    def fake_launch(engine, config, search_results, h):
+    def fake_launch(engine, config, search_results, h, **kwargs):
         store = get_odis_bg_store()
         store[h] = {
             "status_refiner": "done",
-            "pitches": {c.codgeo: f"Pitch for {c.name}" for c in search_results.results},
+            "pitches": {
+                c.codgeo: f"Pitch for {c.name}" for c in search_results.results
+            },
             "enrichment": {c.codgeo: {} for c in search_results.results},
             "jobs": {c.codgeo: [] for c in search_results.results},
         }
@@ -188,4 +190,6 @@ def test_enrichment_timeout_and_error_graceful_unlock():
 
     # Verify that terminal failure states are recognized as ready (unblocking export & share)
     ready = _is_postscoring_ready_for_search("test_hash_timeout_123")
-    assert ready is True, "Terminal error/timeout status did not unlock post-scoring readiness"
+    assert ready is True, (
+        "Terminal error/timeout status did not unlock post-scoring readiness"
+    )

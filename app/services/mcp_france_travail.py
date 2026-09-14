@@ -1,8 +1,11 @@
 from fastmcp import FastMCP
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 import os
 import time
 import logging
+import threading
 from typing import Dict, Any, Optional
 import re
 
@@ -33,6 +36,31 @@ mcp = FastMCP("France-Travail")
 # Token Cache
 TOKEN_CACHE = {"access_token": None, "expires_at": 0}
 
+_thread_local = threading.local()
+
+
+def _get_session() -> requests.Session:
+    """Retrieves or initializes a thread-local requests.Session configured with retries."""
+    session = getattr(_thread_local, "session", None)
+    if session is None:
+        session = requests.Session()
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=0.5,
+            status_forcelist=[429, 500, 502, 503, 504],
+            raise_on_status=False,
+            allowed_methods=["GET", "POST", "HEAD", "OPTIONS"],
+        )
+        adapter = HTTPAdapter(
+            max_retries=retry_strategy,
+            pool_connections=10,
+            pool_maxsize=10,
+        )
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
+        _thread_local.session = session
+    return session
+
 
 def _get_access_token() -> str:
     """Retrieves or refreshes the OAuth2 access token using Client Credentials flow."""
@@ -60,7 +88,8 @@ def _get_access_token() -> str:
     }
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
 
-    response = requests.post(AUTH_URL, data=payload, headers=headers, timeout=10)
+    session = _get_session()
+    response = session.post(AUTH_URL, data=payload, headers=headers, timeout=10)
     if response.status_code != 200:
         logger.error(
             f"❌ [FranceTravail] Auth Failed: {response.status_code} - {response.text}"
@@ -180,7 +209,8 @@ def _search_job_offers_logic(
     logger.debug(
         f"👉 [FranceTravail] API Call: {BASE_URL}/offres/search | Params: {params}"
     )
-    response = requests.get(
+    session = _get_session()
+    response = session.get(
         f"{BASE_URL}/offres/search", params=params, headers=headers, timeout=10
     )
 
@@ -194,7 +224,7 @@ def _search_job_offers_logic(
             fallback_params = dict(params)
             fallback_params.pop("codeROME", None)
             fallback_params["motsCles"] = label_to_use
-            response = requests.get(
+            response = session.get(
                 f"{BASE_URL}/offres/search",
                 params=fallback_params,
                 headers=headers,
@@ -295,7 +325,8 @@ def _get_job_details_logic(job_id: str) -> Dict[str, Any]:
 
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
 
-    response = requests.get(f"{BASE_URL}/offres/{job_id}", headers=headers, timeout=10)
+    session = _get_session()
+    response = session.get(f"{BASE_URL}/offres/{job_id}", headers=headers, timeout=10)
 
     if response.status_code == 204:
         return {"error": "Offre non trouvée."}

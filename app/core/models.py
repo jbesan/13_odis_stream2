@@ -18,6 +18,7 @@ ScoreCategory = Literal[
 ScoreComputation = Literal["precomputed", "live", "calculated"]
 ScoreMissingStrategy = Literal["exclude", "zero"]
 ScoreMetricType = Literal["continuous", "discrete"]
+SourceAvailabilityStatus = Literal["available", "unavailable", "disabled"]
 
 
 class ScoreDisplayConfigSchema(BaseModel):
@@ -592,7 +593,7 @@ class EmploymentMetrics(BaseModel):
         0.0,
         description="Score Emploi",
     )
-    source_availability: Dict[str, Literal["available", "unavailable"]] = Field(
+    source_availability: Dict[str, SourceAvailabilityStatus] = Field(
         default_factory=dict,
         description="Disponibilité des sources d'offres utilisées par les indicateurs emploi",
     )

@@ -1,6 +1,8 @@
 import logging
+import time
 from typing import Optional
 import streamlit as st
+from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 import config as cfg
 from core.models import (
@@ -168,108 +170,25 @@ def render_details_trigger_button(commune: CommuneResult, h: Optional[str]) -> b
 
 
 @st.fragment(run_every=2.0)
-def render_ai_trigger_button(commune: CommuneResult, h: Optional[str]) -> bool:
-    """Renders the AI Analysis trigger button with up-to-date state in-place.
-
-    Automatically triggers background analysis when prerequisites are met,
-    displays live non-blocking status, and opens the modal dialog once complete.
-    """
+def _render_ai_polling_button(commune: CommuneResult, h: Optional[str]) -> bool:
+    """Internal polling fragment for in-progress AI analysis."""
+    task_key = f"analysis_{h}_{commune.codgeo}" if h else f"analysis_{commune.codgeo}"
+    status_data = odis_get_bg_result(task_key) if h else None
+    status = status_data.get("status") if isinstance(status_data, dict) else None
     has_analysis = bool(
         getattr(commune, "analysis_report", None)
         or getattr(commune, "odis_synthesis", None)
     )
-    immutable_snapshot = bool(st.session_state.get("immutable_shared_snapshot"))
 
-    # 1. Snapshot mode: strictly read-only
-    if immutable_snapshot:
-        if has_analysis:
-            if st.button(
-                "Consulter l'Analyse Avancée",
-                key=f"btn_ia_comm_{commune.codgeo}",
-                icon=":material/wand_stars:",
-                width="stretch",
-                disabled=False,
-            ):
-                st.session_state.active_ia_city_index = commune.codgeo
-                show_ia_analysis_dialog(commune.codgeo)
-            return True
-        else:
-            st.button(
-                "Analyse Avancée (non réalisée)",
-                key=f"btn_ia_comm_{commune.codgeo}",
-                icon=":material/wand_stars:",
-                width="stretch",
-                disabled=True,
-            )
-            return False
+    # If completed or failed while polling, do a single rerun to transition to static button
+    if has_analysis or status in {"done", "error", "timeout", "cancelled"}:
+        st.rerun()
 
-    # 2. Live mode: Check background task state
-    task_key = f"analysis_{h}_{commune.codgeo}" if h else f"analysis_{commune.codgeo}"
-    status_data = odis_get_bg_result(task_key) if h else None
-    status = status_data.get("status") if isinstance(status_data, dict) else None
-
-    # 3. Completed state (in memory or freshly finished in bg store)
-    if has_analysis or status == "done":
-        if status == "done" and not has_analysis and status_data:
-            _merge_agent_results(status_data.get("result"), str(commune.codgeo), commune)
-
-        # Notify via toast once per city
-        toasted_set = st.session_state.setdefault("ia_analysis_toasted", set())
-        if commune.codgeo not in toasted_set:
-            toasted_set.add(commune.codgeo)
-            st.toast(f"Analyse Avancée pour {commune.name} disponible", icon="✨", duration="long")
-
-        if st.button(
-            "Analyse Avancée",
-            key=f"btn_ia_comm_{commune.codgeo}",
-            icon=":material/wand_stars:",
-            width="stretch",
-            disabled=False,
-        ):
-            st.session_state.active_ia_city_index = commune.codgeo
-            ui_telemetry.track_ui_event(
-                "run_ia_analysis", {"codgeo": commune.codgeo, "name": commune.name}
-            )
-            show_ia_analysis_dialog(commune.codgeo)
-        return True
-
-    # 4. Error / Timeout / Cancelled -> Retry state
-    if status in {"error", "timeout", "cancelled"}:
-        if st.button(
-            "Analyse Avancée [Échec - Réessayer ?]",
-            key=f"btn_ia_comm_{commune.codgeo}",
-            icon=":material/error:",
-            width="stretch",
-        ):
-            if h and st.session_state.get("search_results"):
-                st.session_state.get("ia_analysis_launch_toasted", set()).discard(
-                    commune.codgeo
-                )
-                st.session_state.get("ia_analysis_toasted", set()).discard(
-                    commune.codgeo
-                )
-                launch_background_city_analysis(
-                    nom=commune.name,
-                    codgeo=commune.codgeo,
-                    search_criterias=st.session_state.get("config"),
-                    search_results=st.session_state.get("search_results"),
-                    h=h,
-                    username=st.session_state.get("username", "unknown"),
-                    organization_id=getattr(st.session_state.get("org"), "id", None),
-                    retry=True,
-                    trigger="city_card_retry",
-                )
-                st.toast(f"Analyse Avancée pour {commune.name} lancée...", icon="🧠", duration="short")
-                st.rerun()
-        return False
-
-    # 5. Running state
+    # Running state
     if status == "running":
         start_time = (
             status_data.get("start_time", 0) if isinstance(status_data, dict) else 0
         )
-        import time
-
         elapsed = time.time() - start_time if start_time else 0
         btn_label = (
             "Analyse Avancée [Lancement...]"
@@ -285,7 +204,7 @@ def render_ai_trigger_button(commune: CommuneResult, h: Optional[str]) -> bool:
         )
         return False
 
-    # 6. Not yet launched -> check prerequisites and auto-launch!
+    # Not yet launched -> check prerequisites and auto-launch!
     ready = _is_postscoring_ready_for_city(commune, h)
     if not ready:
         st.button(
@@ -324,6 +243,110 @@ def render_ai_trigger_button(commune: CommuneResult, h: Optional[str]) -> bool:
         disabled=True,
     )
     return False
+
+
+def render_ai_trigger_button(commune: CommuneResult, h: Optional[str]) -> bool:
+    """Renders the AI Analysis trigger button with up-to-date state in-place.
+
+    Uses static buttons for terminal states (done, error, snapshot) to allow
+    opening modal dialogs directly without fragment interference, and delegates
+    to an isolated polling fragment only during active in-progress executions.
+    """
+    has_analysis = bool(
+        getattr(commune, "analysis_report", None)
+        or getattr(commune, "odis_synthesis", None)
+    )
+    immutable_snapshot = bool(st.session_state.get("immutable_shared_snapshot"))
+
+    # 1. Snapshot mode: strictly read-only
+    if immutable_snapshot:
+        if has_analysis:
+            if st.button(
+                "Consulter l'Analyse Avancée",
+                key=f"btn_ia_comm_{commune.codgeo}",
+                icon=":material/wand_stars:",
+                width="stretch",
+                disabled=False,
+            ):
+                st.session_state["active_ia_city_index"] = commune.codgeo
+                show_ia_analysis_dialog(commune.codgeo)
+            return True
+        else:
+            st.button(
+                "Analyse Avancée (non réalisée)",
+                key=f"btn_ia_comm_{commune.codgeo}",
+                icon=":material/wand_stars:",
+                width="stretch",
+                disabled=True,
+            )
+            return False
+
+    # 2. Live mode: Check background task state
+    task_key = f"analysis_{h}_{commune.codgeo}" if h else f"analysis_{commune.codgeo}"
+    status_data = odis_get_bg_result(task_key) if h else None
+    status = status_data.get("status") if isinstance(status_data, dict) else None
+
+    # 3. Completed state (in memory or freshly finished in bg store)
+    if has_analysis or status == "done":
+        if status == "done" and not has_analysis and status_data:
+            _merge_agent_results(status_data.get("result"), str(commune.codgeo), commune)
+
+        # Notify via toast once per city
+        toasted_set = st.session_state.setdefault("ia_analysis_toasted", set())
+        if commune.codgeo not in toasted_set:
+            toasted_set.add(commune.codgeo)
+            st.toast(f"Analyse Avancée pour {commune.name} disponible", icon="✨", duration="long")
+
+        if st.button(
+            "Analyse Avancée",
+            key=f"btn_ia_comm_{commune.codgeo}",
+            icon=":material/wand_stars:",
+            width="stretch",
+            disabled=False,
+        ):
+            st.session_state["active_ia_city_index"] = commune.codgeo
+            ui_telemetry.track_ui_event(
+                "run_ia_analysis", {"codgeo": commune.codgeo, "name": commune.name}
+            )
+            show_ia_analysis_dialog(commune.codgeo)
+        return True
+
+    # 4. Error / Timeout / Cancelled -> Retry state
+    if status in {"error", "timeout", "cancelled"}:
+        if st.button(
+            "Analyse Avancée [Échec - Réessayer ?]",
+            key=f"btn_ia_comm_{commune.codgeo}",
+            icon=":material/error:",
+            width="stretch",
+        ):
+            if h and st.session_state.get("search_results"):
+                st.session_state.setdefault("ia_analysis_launch_toasted", set()).discard(
+                    commune.codgeo
+                )
+                st.session_state.setdefault("ia_analysis_toasted", set()).discard(
+                    commune.codgeo
+                )
+                launch_background_city_analysis(
+                    nom=commune.name,
+                    codgeo=commune.codgeo,
+                    search_criterias=st.session_state.get("config"),
+                    search_results=st.session_state.get("search_results"),
+                    h=h,
+                    username=st.session_state.get("username", "unknown"),
+                    organization_id=getattr(st.session_state.get("org"), "id", None),
+                    retry=True,
+                    trigger="city_card_retry",
+                )
+                st.toast(f"Analyse Avancée pour {commune.name} lancée...", icon="🧠", duration="short")
+                st.rerun()
+        return False
+
+    # 5. In-progress (running or waiting for prerequisites) -> delegate to polling fragment
+    # In bare-mode test environments (no ScriptRunContext), call unwrapped logic directly
+    if get_script_run_ctx() is None:
+        target = getattr(_render_ai_polling_button, "__wrapped__", _render_ai_polling_button)
+        return target(commune, h)
+    return _render_ai_polling_button(commune, h)
 
 
 @st.fragment(run_every=2.0)
