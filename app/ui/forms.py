@@ -684,11 +684,11 @@ def render_weight_profile_form() -> None:
     )
 
     labels_map = {
-        "ui_poids_education": "Education",
         "ui_poids_emploi": "Projet Pro",
         "ui_poids_logement": "Logement",
         "ui_poids_inclusion": "Inclusion",
         "ui_poids_sante": "Santé",
+        "ui_poids_education": "Scolaire",
         "ui_poids_mobilite": "Mobilité",
         "ui_poids_territoire": "Territoire",
     }
