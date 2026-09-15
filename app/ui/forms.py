@@ -361,7 +361,9 @@ def render_other_notes_form() -> None:
     st.text(
         "Précisez ici tout élément supplémentaire potentiellement utile pour la recherche (origine culturelle, pratiques religieuses, contexte familial, passions, contraintes spécifiques, etc.)."
     )
-    st.warning("Les éléments ajoutés ci-dessous n'impacteront pas le calcul du score. Ils seront utilisés pour affiner les Analyses Avancées des territoires les mieux notés.")
+    st.warning(
+        "Les éléments ajoutés ci-dessous n'impacteront pas le calcul du score. Ils seront utilisés pour affiner les Analyses Avancées des territoires les mieux notés."
+    )
 
     st.text_area(
         "Notes qualitatives",
@@ -448,33 +450,40 @@ def render_mobility_form(app_data: dict[str, Any]) -> None:
     target_options = getattr(
         cfg, "TARGET_CITY_SIZE_OPTIONS", list(cfg.CITY_SIZE_MAPPING.keys())[:4]
     )
-    if "ui_target_city_size_label" not in st.session_state:
-        st.session_state["ui_target_city_size_label"] = cfg.DEFAULT_CITY_SIZE
-
-    target_captions = []
-    for opt in target_options:
-        bounds = cfg.CITY_SIZE_MAPPING.get(opt, {})
-        b_val = bounds.get("b")
-        c_val = bounds.get("c")
-        if b_val is not None and c_val is not None:
-            target_captions.append(f" {b_val:,} < Pop. < {c_val:,}".replace(",", " "))
+    if "ui_target_city_size_range" not in st.session_state:
+        legacy_label = st.session_state.get("ui_target_city_size_label")
+        if legacy_label and legacy_label in cfg.CITY_SIZE_MAPPING:
+            st.session_state["ui_target_city_size_range"] = (legacy_label, legacy_label)
         else:
-            target_captions.append("")
+            st.session_state["ui_target_city_size_range"] = cfg.DEFAULT_CITY_SIZE_RANGE
 
     st.markdown(
         "##### Taille de la ville recherchée (bassin de vie)",
         help="Le bassin de vie intègre la ville et ses banlieues",
     )
 
-    with st.container(horizontal=True, width="stretch", horizontal_alignment="center"):
-        st.radio(
-            "Taille de la ville recherchée",
-            options=target_options,
-            captions=target_captions,
-            key="ui_target_city_size_label",
-            horizontal=True,
-            label_visibility="collapsed",
+    start_city, end_city = st.select_slider(
+        "Taille de la ville recherchée (bassin de vie)",
+        options=target_options,
+        value=st.session_state.get(
+            "ui_target_city_size_range", cfg.DEFAULT_CITY_SIZE_RANGE
+        ),
+        key="ui_target_city_size_range",
+        label_visibility="collapsed",
+    )
+
+    trapezoid = cfg.get_trapezoid_for_range(start_city, end_city)
+    b_val = trapezoid["b"]
+    c_val = trapezoid["c"]
+    st.caption(
+        f"💡 Bassin de vie ciblé idéalement entre {b_val:,} et {c_val:,} habitants".replace(
+            ",", " "
         )
+    )
+    # Maintain legacy label in session state for backward compatibility
+    st.session_state["ui_target_city_size_label"] = (
+        start_city if start_city == end_city else f"{start_city} à {end_city}"
+    )
 
     st.divider()
 

@@ -96,7 +96,9 @@ def test_happy_path_end_to_end(
     at.selectbox(key="ui_commune").select("33063").run()
     at.selectbox(key="ui_freq_retour").select("1 fois/mois").run()
     at.multiselect(key="ui_mobility_dept").select("33").run()
-    at.radio(key="ui_target_city_size_label").set_value("🏘️ Petite Ville").run()
+    at.select_slider(key="ui_target_city_size_range").set_value(
+        ("🏡 Bourg", "🏘️ Petite Ville")
+    ).run()
 
     # Shortlisted city (Ville pressentie): Libourne (33243)
     at.checkbox(key="ui_has_commune_pressentie").check().run()

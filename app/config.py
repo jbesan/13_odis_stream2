@@ -249,9 +249,38 @@ CITY_SIZE_MAPPING = {
     "🏘️ Petite Ville": {"a": 10000, "b": 20000, "c": 50000, "d": 100000},
     "🏙️ Ville moyenne": {"a": 35000, "b": 70000, "c": 300000, "d": 800000},
 }
-DEFAULT_CITY_SIZE = "🏘️ Petite Ville"
-DEFAULT_TRAPEZOID = CITY_SIZE_MAPPING[DEFAULT_CITY_SIZE]
+DEFAULT_CITY_SIZE_RANGE = ("🏡 Bourg", "🏘️ Petite Ville")
+DEFAULT_CITY_SIZE = ["🏡 Bourg", "🏘️ Petite Ville"]
 TARGET_CITY_SIZE_OPTIONS = list(CITY_SIZE_MAPPING.keys())
+
+
+def get_trapezoid_for_range(min_label: str, max_label: str) -> dict[str, int]:
+    """Computes the dynamic trapezoid bounds [a, b, c, d] for a range of city sizes.
+
+    Args:
+        min_label: Lower bound city size category.
+        max_label: Upper bound city size category.
+
+    Returns:
+        Dict with keys 'a', 'b', 'c', 'd'.
+    """
+    min_bounds = CITY_SIZE_MAPPING.get(
+        min_label, CITY_SIZE_MAPPING[TARGET_CITY_SIZE_OPTIONS[0]]
+    )
+    max_bounds = CITY_SIZE_MAPPING.get(
+        max_label, CITY_SIZE_MAPPING[TARGET_CITY_SIZE_OPTIONS[-1]]
+    )
+    return {
+        "a": min_bounds["a"],
+        "b": min_bounds["b"],
+        "c": max_bounds["c"],
+        "d": max_bounds["d"],
+    }
+
+
+DEFAULT_TRAPEZOID = get_trapezoid_for_range(
+    DEFAULT_CITY_SIZE_RANGE[0], DEFAULT_CITY_SIZE_RANGE[1]
+)
 DEMOGRAPHIC_MIN_FLOOR = 0.30
 
 # --- Weight Profiles (F-15) ---

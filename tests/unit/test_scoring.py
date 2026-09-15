@@ -70,7 +70,7 @@ class TestFilterCommunes:
     def test_filter_communes_jaccueille_strategic(self, sample_data):
         """Tests the J'Accueille operational area filter logic."""
         start_commune = sample_data.loc[["33063"]]  # Bordeaux
-        
+
         # Prepare sample data with bassin_de_vie and counts
         df = sample_data.loc[["33063", "64445", "75056"]].copy()
         df["bassin_de_vie"] = ["BV1", "BV2", "BV3"]
@@ -98,7 +98,7 @@ class TestFilterCommunes:
         config_enabled = SearchCriterias(
             org_context="jaccueille",
             org_strategic_locations_filter=True,
-            org_strategic_locations=["33", "40"], # Strategic departments
+            org_strategic_locations=["33", "40"],  # Strategic departments
         )
         filtered = scoring.ScoringEngine._filter_communes(
             df=df,
@@ -107,7 +107,7 @@ class TestFilterCommunes:
             loc_code=None,
             config=config_enabled,
         )
-        
+
         # BV1 has 1 accueillant and is in dep 33 (strategic) -> Kept
         # BV2 has 5 prospects and is in dep 40 (strategic) -> Kept
         # BV3 has 0 accueillants/prospects and is in dep 75 -> Dropped
@@ -130,12 +130,12 @@ class TestScoringLogic:
         """Tests that heb_jaccueille_prospects_score is activated and computed correctly."""
         from core.scoring import ScoringEngine
         from app.core.models import SearchCriterias
-        
+
         # When hebergement_cible contains "Chez l'habitant"
         config = SearchCriterias(
             hebergement_cible=["Chez l'habitant"],
         )
-        
+
         engine = ScoringEngine(
             df_all_communes=sample_data,
             df_bv_geo=pd.DataFrame(),
@@ -146,11 +146,11 @@ class TestScoringLogic:
             codformations_index=pd.DataFrame(columns=["label"]),
             global_stats=global_stats,
         )
-        
+
         active = engine._get_active_criteria(config)
         assert "heb_jaccueille_accueillants_score" in active
         assert "heb_jaccueille_prospects_score" in active
-        
+
         # When hebergement_cible does not contain "Chez l'habitant"
         config_no_habitant = SearchCriterias(
             hebergement_cible=["Location"],
@@ -158,6 +158,7 @@ class TestScoringLogic:
         active_no_habitant = engine._get_active_criteria(config_no_habitant)
         assert "heb_jaccueille_accueillants_score" not in active_no_habitant
         assert "heb_jaccueille_prospects_score" not in active_no_habitant
+
     def test_compute_criteria_scores_structure(
         self,
         sample_data,
@@ -422,7 +423,7 @@ class TestConditionalScoring:
             {
                 "emploi_cat_score": [1.0],
                 "education_cat_score": [0.5],  # Should be ignored (nb_enfants == 0)
-                "sante_cat_score": [0.5],      # Included as universal baseline
+                "sante_cat_score": [0.5],  # Included as universal baseline
                 "logement_cat_score": [1.0],
             }
         )
@@ -432,7 +433,7 @@ class TestConditionalScoring:
             poids_emploi=1.0,
             poids_logement=1.0,
             poids_education=1.0,  # Weight is present, but education is ignored (nb_enfants == 0)
-            poids_sante=1.0,      # Weight is present, health baseline is evaluated
+            poids_sante=1.0,  # Weight is present, health baseline is evaluated
             poids_inclusion=0.0,
             poids_mobilite=0.0,
             commune_actuelle="33063",
@@ -1319,18 +1320,25 @@ class TestP102ScoringReconciliation:
     def test_get_effective_weight_canonical_behavior(self):
         config = SearchCriterias(
             dept_code="33",
-            active_criteria=["mob_dist_current_loc_scaled", "log_loyer_moyen_appt_all_scaled"],
+            active_criteria=[
+                "mob_dist_current_loc_scaled",
+                "log_loyer_moyen_appt_all_scaled",
+            ],
             criteria_weights={"log_loyer_moyen_appt_all_scaled": 2.5},
             org_boosts={"log_loyer_moyen_appt_all_scaled": 1.2},
             freq_retour="1 fois/semaine",
         )
 
         # Standard criterion with weight replacement + org boost: 2.5 * 1.2 = 3.0
-        w_rent = scoring.get_effective_weight("log_loyer_moyen_appt_all_scaled", config, catalog_weight=1.0)
+        w_rent = scoring.get_effective_weight(
+            "log_loyer_moyen_appt_all_scaled", config, catalog_weight=1.0
+        )
         assert abs(w_rent - 3.0) < 1e-6
 
         # Proximity criterion with freq multiplier 3.0: catalog 1.0 * 3.0 = 3.0
-        w_prox = scoring.get_effective_weight("mob_dist_current_loc_scaled", config, catalog_weight=1.0)
+        w_prox = scoring.get_effective_weight(
+            "mob_dist_current_loc_scaled", config, catalog_weight=1.0
+        )
         assert abs(w_prox - 3.0) < 1e-6
 
     def test_global_score_reconciliation_exact(
@@ -1370,7 +1378,9 @@ class TestP102ScoringReconciliation:
                 "logement": commune.housing.cat_score if commune.housing else 0.0,
                 "inclusion": commune.inclusion.cat_score if commune.inclusion else 0.0,
                 "mobilite": commune.mobility.cat_score if commune.mobility else 0.0,
-                "territoire": commune.territoire.cat_score if commune.territoire else 0.0,
+                "territoire": commune.territoire.cat_score
+                if commune.territoire
+                else 0.0,
             }
             # Active weights
             weights = {
@@ -1380,7 +1390,9 @@ class TestP102ScoringReconciliation:
                 "mobilite": config.poids_mobilite,
                 "territoire": config.poids_territoire,
             }
-            expected_global = sum(cat_scores[k] * weights[k] for k in cat_scores) / sum(weights.values())
+            expected_global = sum(cat_scores[k] * weights[k] for k in cat_scores) / sum(
+                weights.values()
+            )
             assert abs(commune.global_score - expected_global) < 1e-6, (
                 f"Global score mismatch for {commune.name}: got {commune.global_score}, expected {expected_global}"
             )
@@ -1388,7 +1400,9 @@ class TestP102ScoringReconciliation:
 
 @pytest.mark.unit
 class TestMissingnessHandling:
-    def test_category_scoring_excludes_nan(self, live_scores_cat, sample_data, sample_incl_index, global_stats):
+    def test_category_scoring_excludes_nan(
+        self, live_scores_cat, sample_data, sample_incl_index, global_stats
+    ):
         """Verify that NaN criterion scores are excluded from category weighted means without biasing to 0 or 1."""
         df = sample_data.copy()
         # Set ter_insecurite_scaled to NaN for Bordeaux (33063)
@@ -1420,7 +1434,9 @@ class TestMissingnessHandling:
 class TestP108TieBreak:
     """Tests for P1-08: Secondary sorting by territoire_cat_score when weighted_score ties."""
 
-    def test_territoire_tie_break_order(self, sample_data, live_scores_cat, sample_incl_index, global_stats):
+    def test_territoire_tie_break_order(
+        self, sample_data, live_scores_cat, sample_incl_index, global_stats
+    ):
         df = sample_data.copy()
 
         # Add a second commune in dept 33 so dept filtering returns 2 communes
@@ -1461,7 +1477,9 @@ class TestP108TieBreak:
         # Both c1 and c2 have equal weighted_score contribution, but c2 has higher territoire_cat_score
         score_c1 = results_tied.loc[c1, "weighted_score"]
         score_c2 = results_tied.loc[c2, "weighted_score"]
-        assert abs(score_c1 - score_c2) < 1e-5, f"Expected equal weighted score, got {score_c1} vs {score_c2}"
+        assert abs(score_c1 - score_c2) < 1e-5, (
+            f"Expected equal weighted score, got {score_c1} vs {score_c2}"
+        )
 
         ter_c1 = results_tied.loc[c1, "territoire_cat_score"]
         ter_c2 = results_tied.loc[c2, "territoire_cat_score"]
@@ -1470,7 +1488,9 @@ class TestP108TieBreak:
         # Assert c2 is sorted before c1 because of secondary key territoire_cat_score
         idx_c1 = results_tied.index.get_loc(c1)
         idx_c2 = results_tied.index.get_loc(c2)
-        assert idx_c2 < idx_c1, f"Expected c2 ({c2}) to be ordered before c1 ({c1}) due to territoire_cat_score tie-break"
+        assert idx_c2 < idx_c1, (
+            f"Expected c2 ({c2}) to be ordered before c1 ({c1}) due to territoire_cat_score tie-break"
+        )
 
     def test_compute_demographic_modifier(
         self, sample_data, live_scores_cat, global_stats
@@ -1492,7 +1512,13 @@ class TestP108TieBreak:
                 "population": [20000, 800, 500000, 300, 45000],
                 "population_bv_bdv": [35000, 35000, 2000000, 5000, 1700000],
             },
-            index=["petite_ville_centre", "petite_ville_satellite", "metropole_centre", "village_rural", "suburb_of_metropole"]
+            index=[
+                "petite_ville_centre",
+                "petite_ville_satellite",
+                "metropole_centre",
+                "village_rural",
+                "suburb_of_metropole",
+            ],
         )
 
         # Target: "🏘️ Petite Ville" (a=10k, b=20k, c=50k, d=100k, floor=cfg.DEMOGRAPHIC_MIN_FLOOR)
@@ -1513,5 +1539,49 @@ class TestP108TieBreak:
         # All bounded in [floor, 1.0]
         assert (modifier >= floor).all() and (modifier <= 1.0).all()
 
+    def test_demographic_modifier_multi_size_range_trapezoid(
+        self, sample_data, live_scores_cat, global_stats
+    ):
+        """Verify that a multi-size range (e.g. Bourg to Petite Ville) builds an expanded ideal plateau."""
+        engine = scoring.ScoringEngine(
+            df_all_communes=sample_data,
+            df_bv_geo=pd.DataFrame(),
+            scores_cat=live_scores_cat,
+            incl_index=pd.DataFrame(),
+            associations_data=pd.DataFrame(columns=["codgeo", "id_waldec", "count"]),
+            formations_data=pd.DataFrame(columns=["codgeo", "formation_code"]),
+            codformations_index=pd.DataFrame(columns=["label"]),
+            global_stats=global_stats,
+        )
 
+        test_df = pd.DataFrame(
+            {
+                "population": [7000, 35000, 500000, 500],
+                "population_bv_bdv": [7000, 35000, 2000000, 500],
+            },
+            index=[
+                "bourg_commune",
+                "petite_ville_commune",
+                "metropole_centre",
+                "deep_rural",
+            ],
+        )
 
+        # Range: "🏡 Bourg" to "🏘️ Petite Ville"
+        # a=2000, b=5000, c=50000, d=100000
+        config = SearchCriterias(target_city_size=["🏡 Bourg", "🏘️ Petite Ville"])
+        assert config.target_population_a == 2000
+        assert config.target_population_b == 5000
+        assert config.target_population_c == 50000
+        assert config.target_population_d == 100000
+
+        modifier = engine._compute_demographic_modifier(test_df, config)
+        floor = cfg.DEMOGRAPHIC_MIN_FLOOR
+
+        # Both Bourg (BdV 7k) and Petite Ville (BdV 35k) fall on the 100% ideal plateau
+        assert abs(modifier["bourg_commune"] - 1.0) < 1e-5
+        assert abs(modifier["petite_ville_commune"] - 1.0) < 1e-5
+        # Metropole (2M) is beyond d (100k) -> floor
+        assert abs(modifier["metropole_centre"] - floor) < 1e-5
+        # Deep rural (500) is below a (2k) -> floor
+        assert abs(modifier["deep_rural"] - floor) < 1e-5

@@ -259,25 +259,41 @@ class FormState:
                     overwrite=overwrite,
                 )
 
-        target_label = values.get("target_city_size") or values.get(
-            "ui_target_city_size_label"
+        # Resolve target city size range (with fallback to legacy target_city_size / target_population bounds)
+        raw_size = (
+            values.get("ui_target_city_size_range")
+            or values.get("target_city_size")
+            or values.get("ui_target_city_size_label")
         )
-        if target_label and target_label in cfg.CITY_SIZE_MAPPING:
-            self._put("ui_target_city_size_label", target_label, overwrite=overwrite)
-        elif "target_population_a" in values:
+        resolved_range = None
+        if isinstance(raw_size, (list, tuple)) and len(raw_size) >= 2:
+            resolved_range = (str(raw_size[0]), str(raw_size[-1]))
+        elif isinstance(raw_size, (list, tuple)) and len(raw_size) == 1:
+            resolved_range = (str(raw_size[0]), str(raw_size[0]))
+        elif isinstance(raw_size, str) and raw_size in cfg.CITY_SIZE_MAPPING:
+            resolved_range = (raw_size, raw_size)
+        elif "target_population_a" in values and "target_population_d" in values:
             a = values["target_population_a"]
-            b = values["target_population_b"]
-            c = values["target_population_c"]
             d = values["target_population_d"]
-            for label, mapping in cfg.CITY_SIZE_MAPPING.items():
-                if (
-                    mapping["a"] == a
-                    and mapping["b"] == b
-                    and mapping["c"] == c
-                    and mapping["d"] == d
-                ):
-                    self._put("ui_target_city_size_label", label, overwrite=overwrite)
-                    break
+            min_opt = None
+            max_opt = None
+            for opt, bounds in cfg.CITY_SIZE_MAPPING.items():
+                if bounds["a"] == a:
+                    min_opt = opt
+                if bounds["d"] == d:
+                    max_opt = opt
+            if min_opt and max_opt:
+                resolved_range = (min_opt, max_opt)
+
+        if resolved_range:
+            self._put("ui_target_city_size_range", resolved_range, overwrite=overwrite)
+            self._put(
+                "ui_target_city_size_label",
+                resolved_range[0]
+                if resolved_range[0] == resolved_range[1]
+                else f"{resolved_range[0]} à {resolved_range[1]}",
+                overwrite=overwrite,
+            )
 
         profile = values.get("weight_profile")
         explicit_weights = {
@@ -478,11 +494,42 @@ class FormState:
             for code in _codes(self.state.get("ui_inc_asso_add_selection_raw", []))
         ]
 
-        selected_city_label = self.state.get(
-            "ui_target_city_size_label", cfg.DEFAULT_CITY_SIZE
+        raw_range = self.state.get("ui_target_city_size_range")
+        if not raw_range:
+            legacy_label = self.state.get("ui_target_city_size_label")
+            if legacy_label and legacy_label in cfg.CITY_SIZE_MAPPING:
+                raw_range = (legacy_label, legacy_label)
+            else:
+                raw_range = cfg.DEFAULT_CITY_SIZE_RANGE
+
+        if isinstance(raw_range, (list, tuple)) and len(raw_range) >= 2:
+            min_city, max_city = str(raw_range[0]), str(raw_range[-1])
+        elif isinstance(raw_range, (list, tuple)) and len(raw_range) == 1:
+            min_city, max_city = str(raw_range[0]), str(raw_range[0])
+        elif isinstance(raw_range, str):
+            min_city, max_city = raw_range, raw_range
+        else:
+            min_city, max_city = (
+                cfg.DEFAULT_CITY_SIZE_RANGE[0],
+                cfg.DEFAULT_CITY_SIZE_RANGE[1],
+            )
+
+        idx1 = (
+            cfg.TARGET_CITY_SIZE_OPTIONS.index(min_city)
+            if min_city in cfg.TARGET_CITY_SIZE_OPTIONS
+            else 0
         )
-        trapezoid = cfg.CITY_SIZE_MAPPING.get(
-            selected_city_label, cfg.DEFAULT_TRAPEZOID
+        idx2 = (
+            cfg.TARGET_CITY_SIZE_OPTIONS.index(max_city)
+            if max_city in cfg.TARGET_CITY_SIZE_OPTIONS
+            else len(cfg.TARGET_CITY_SIZE_OPTIONS) - 1
+        )
+        start_idx, end_idx = min(idx1, idx2), max(idx1, idx2)
+        target_city_list = cfg.TARGET_CITY_SIZE_OPTIONS[start_idx : end_idx + 1]
+
+        trapezoid = cfg.get_trapezoid_for_range(
+            cfg.TARGET_CITY_SIZE_OPTIONS[start_idx],
+            cfg.TARGET_CITY_SIZE_OPTIONS[end_idx],
         )
         housing_type_code = self.state.get("ui_type_logement", "appt_all")
         housing_type = (
@@ -515,7 +562,7 @@ class FormState:
             poids_sante=self.state.get("ui_poids_sante", 0.5),
             poids_mobilite=self.state.get("ui_poids_mobilite", 0.5),
             criteria_weights={},
-            target_city_size=selected_city_label,
+            target_city_size=target_city_list,
             target_population_a=trapezoid["a"],
             target_population_b=trapezoid["b"],
             target_population_c=trapezoid["c"],

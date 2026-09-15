@@ -76,6 +76,10 @@ def test_render_commune_pressentie_form_initialization():
         patch("app.ui.forms.st.selectbox", side_effect=mock_selectbox),
         patch("app.ui.forms.st.multiselect"),
         patch("app.ui.forms.st.radio"),
+        patch(
+            "app.ui.forms.st.select_slider", return_value=("🏡 Bourg", "🏘️ Petite Ville")
+        ),
+        patch("app.ui.forms.st.caption"),
         patch("app.ui.forms.st.markdown"),
         patch("app.ui.forms.st.divider"),
         patch("app.ui.forms.st.columns", return_value=[MagicMock(), MagicMock()]),
@@ -105,6 +109,10 @@ def test_render_mobility_form_handles_missing_regions():
         patch("app.ui.forms.st.divider"),
         patch("app.ui.forms.st.container", return_value=MagicMock()),
         patch("app.ui.forms.st.radio"),
+        patch(
+            "app.ui.forms.st.select_slider", return_value=("🏡 Bourg", "🏘️ Petite Ville")
+        ),
+        patch("app.ui.forms.st.caption"),
     ):
         render_mobility_form(mock_app_data)
 
@@ -112,8 +120,8 @@ def test_render_mobility_form_handles_missing_regions():
 
 
 @pytest.mark.unit
-def test_city_size_radio_hash_invalidation():
-    """Test that changing ui_target_city_size_label instantly updates SearchCriterias target_population."""
+def test_city_size_slider_hash_invalidation():
+    """Test that changing ui_target_city_size_range instantly updates SearchCriterias target_population."""
     from app.ui.forms import create_search_criterias_from_inputs
 
     mock_app_data = {
@@ -129,7 +137,7 @@ def test_city_size_radio_hash_invalidation():
         {
             "ui_departement": "75",
             "ui_commune": "Paris",
-            "ui_target_city_size_label": "🏘️ Petite Ville",
+            "ui_target_city_size_range": ("🏡 Bourg", "🏘️ Petite Ville"),
         }
     )
 
@@ -138,8 +146,11 @@ def test_city_size_radio_hash_invalidation():
         size1 = criterias1.target_city_size
         hash1 = criterias1.compute_hash()
 
-        # Change city size radio selection
-        session_state["ui_target_city_size_label"] = "🏙️ Ville moyenne"
+        # Change city size slider selection
+        session_state["ui_target_city_size_range"] = (
+            "🏙️ Ville moyenne",
+            "🏙️ Ville moyenne",
+        )
 
         criterias2 = create_search_criterias_from_inputs(mock_app_data)
         size2 = criterias2.target_city_size
@@ -149,20 +160,20 @@ def test_city_size_radio_hash_invalidation():
             f"Expected target city sizes to differ but got {size1} == {size2}"
         )
         assert hash1 != hash2, (
-            "Expected search criteria hash to change when city size radio changes"
+            "Expected search criteria hash to change when city size slider changes"
         )
 
 
 @pytest.mark.unit
-def test_render_mobility_form_city_size_captions_and_title_caption():
-    """Verify that render_mobility_form renders city size radio with target population captions and a subtitle caption."""
+def test_render_mobility_form_city_size_select_slider_and_caption():
+    """Verify that render_mobility_form renders city size select_slider with dynamic caption."""
     mock_app_data = {
         "dept_details": {"75": {"reg_code": "11", "label": "Paris"}},
         "regions_names": {},
     }
     session_state = SessionStateDict({"ui_departement": "75"})
 
-    mock_radio = MagicMock()
+    mock_slider = MagicMock(return_value=("🏡 Bourg", "🏘️ Petite Ville"))
     mock_caption = MagicMock()
     mock_markdown = MagicMock()
 
@@ -175,7 +186,7 @@ def test_render_mobility_form_city_size_captions_and_title_caption():
         patch("app.ui.forms.st.divider"),
         patch("app.ui.forms.st.container", return_value=MagicMock()),
         patch("app.ui.forms.st.caption", mock_caption),
-        patch("app.ui.forms.st.radio", mock_radio),
+        patch("app.ui.forms.st.select_slider", mock_slider),
     ):
         render_mobility_form(mock_app_data)
 
@@ -183,15 +194,10 @@ def test_render_mobility_form_city_size_captions_and_title_caption():
         "##### Taille de la ville recherchée (bassin de vie)",
         help="Le bassin de vie intègre la ville et ses banlieues",
     )
-    mock_radio.assert_called_once()
-    _, kwargs = mock_radio.call_args
-    assert "captions" in kwargs
-    captions = kwargs["captions"]
-    assert len(captions) == 4
-    assert captions[0] == " 500 < Pop. < 3 000"
-    assert captions[1] == " 5 000 < Pop. < 15 000"
-    assert captions[2] == " 20 000 < Pop. < 50 000"
-    assert captions[3] == " 70 000 < Pop. < 300 000"
+    mock_slider.assert_called_once()
+    mock_caption.assert_called_once_with(
+        "💡 Bassin de vie ciblé idéalement entre 5 000 et 50 000 habitants"
+    )
 
 
 @pytest.mark.unit

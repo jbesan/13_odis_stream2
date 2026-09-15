@@ -293,9 +293,9 @@ class SearchCriterias(BaseModel):
     )
 
     # Bassin de Vie demographic target (Trapezoid bounds: a, b, c, d)
-    target_city_size: Optional[str] = Field(
-        default_factory=lambda: cfg.DEFAULT_CITY_SIZE,
-        description="Type de territoire / bassin de vie cible",
+    target_city_size: Optional[List[str]] = Field(
+        default_factory=lambda: list(cfg.DEFAULT_CITY_SIZE),
+        description="Type de territoire / bassin de vie cible (liste ordonnée des catégories)",
     )
     target_population_a: int = Field(
         default_factory=lambda: cfg.DEFAULT_TRAPEZOID["a"],
@@ -363,6 +363,33 @@ class SearchCriterias(BaseModel):
             return []
         return v
 
+    @field_validator("target_city_size", mode="before")
+    @classmethod
+    def _coerce_target_city_size(cls, v: Any) -> Optional[List[str]]:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            if v in cfg.TARGET_CITY_SIZE_OPTIONS:
+                return [v]
+            return [v]
+        if isinstance(v, (list, tuple)):
+            items = list(v)
+            if not items:
+                return []
+            if (
+                len(items) == 2
+                and items[0] in cfg.TARGET_CITY_SIZE_OPTIONS
+                and items[1] in cfg.TARGET_CITY_SIZE_OPTIONS
+            ):
+                idx1 = cfg.TARGET_CITY_SIZE_OPTIONS.index(items[0])
+                idx2 = cfg.TARGET_CITY_SIZE_OPTIONS.index(items[1])
+                start_idx, end_idx = min(idx1, idx2), max(idx1, idx2)
+                return cfg.TARGET_CITY_SIZE_OPTIONS[start_idx : end_idx + 1]
+            return [
+                item for item in cfg.TARGET_CITY_SIZE_OPTIONS if item in items
+            ] or items
+        return v
+
     @model_validator(mode="before")
     @classmethod
     def fix_stringified_items(cls, data: Any) -> Any:
@@ -410,14 +437,41 @@ class SearchCriterias(BaseModel):
             data["notes_qualitatives"] = [data["notes_qualitatives"]]
 
         # Synchronize trapezoid bounds from target_city_size or legacy target_population
-        size_label = data.get("target_city_size")
-        if size_label and size_label in cfg.CITY_SIZE_MAPPING:
-            bounds = cfg.CITY_SIZE_MAPPING[size_label]
-            data.setdefault("target_population_a", bounds["a"])
-            data.setdefault("target_population_b", bounds["b"])
-            data.setdefault("target_population_c", bounds["c"])
-            data.setdefault("target_population_d", bounds["d"])
-        elif data.get("target_population") is not None and "target_population_a" not in data:
+        size_selection = data.get("target_city_size")
+        if size_selection:
+            min_cat = None
+            max_cat = None
+            if isinstance(size_selection, str):
+                min_cat = size_selection
+                max_cat = size_selection
+            elif isinstance(size_selection, (list, tuple)) and len(size_selection) > 0:
+                valid_items = [
+                    item
+                    for item in cfg.TARGET_CITY_SIZE_OPTIONS
+                    if item in size_selection
+                ]
+                if valid_items:
+                    min_cat = valid_items[0]
+                    max_cat = valid_items[-1]
+                else:
+                    min_cat = size_selection[0]
+                    max_cat = size_selection[-1]
+
+            if (
+                min_cat
+                and max_cat
+                and min_cat in cfg.CITY_SIZE_MAPPING
+                and max_cat in cfg.CITY_SIZE_MAPPING
+            ):
+                bounds = cfg.get_trapezoid_for_range(min_cat, max_cat)
+                data.setdefault("target_population_a", bounds["a"])
+                data.setdefault("target_population_b", bounds["b"])
+                data.setdefault("target_population_c", bounds["c"])
+                data.setdefault("target_population_d", bounds["d"])
+        elif (
+            data.get("target_population") is not None
+            and "target_population_a" not in data
+        ):
             pop = data["target_population"]
             if pop <= 10000:
                 bounds = cfg.CITY_SIZE_MAPPING["🚜 Commune rurale"]
@@ -969,11 +1023,14 @@ class CityAnalysisReport(BaseModel):
         expert_sections = []
         for domain in self.domains.values():
             if domain.content and domain.content.strip():
-                expert_sections.append(f"### {domain.label}\n\n{domain.content.strip()}")
+                expert_sections.append(
+                    f"### {domain.label}\n\n{domain.content.strip()}"
+                )
 
         if expert_sections:
             report_sections.append(
-                "# 🔬 Analyses Thématiques Détaillées\n\n" + "\n\n---\n\n".join(expert_sections)
+                "# 🔬 Analyses Thématiques Détaillées\n\n"
+                + "\n\n---\n\n".join(expert_sections)
             )
 
         # 3. Digested territorial comparison
